@@ -26,7 +26,7 @@ Writing these programs surfaced questions the language reference (roadmap 0.1) h
 
 | Program | Finding | Where it stands |
 | --- | --- | --- |
-| `lennard_jones.npl` | Newton's third law writes `forces[i]` and `forces[j]` from one parallel iteration, which the disjoint-write rule rejects. The example computes each pair twice instead, doubling the work. | Decided: [0013](../decisions/0013-parallel-accumulation.md); see [what `prange` cannot express yet](../reference/parallel-loops.md#what-prange-cannot-express-yet) |
+| `lennard_jones.npl` | Newton's third law writes `forces[i]` and `forces[j]` from one parallel iteration, which the disjoint-write rule rejects. The example computes each pair twice instead, doubling the work. | Decided: [0013](../decisions/0013-parallel-accumulation.md); see [adding into shared arrays](../reference/parallel-loops.md#adding-into-shared-arrays). The example switches to it in roadmap 1.14.1 |
 | `lennard_jones.npl` | `atoms.positions` and `atoms.forces` are passed to one call, one read-only and one `InOut`. The exclusivity check must accept disjoint fields of one struct, not just distinct variables. | Settled: [places and overlap](../reference/values-and-references.md#places-and-overlap) |
 | `lennard_jones.npl` | `Array.zeros((N,), Vec3)` names the element type as an argument. The reference needs one way to give an array's element type at construction. | Settled: [creating arrays](../reference/arrays.md#creating-arrays) |
 | `heat_equation.npl` | `u, out = out, u` swaps two arrays. The reference must define tuple assignment as a simultaneous move, so the swap copies nothing. | Settled: [tuple assignment](../reference/values-and-references.md#tuple-assignment) |
