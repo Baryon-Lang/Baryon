@@ -18,7 +18,9 @@
 //!   body, only the operations a type parameter's bound allows.
 //! - **Enums and `match`** (roadmap 1.7.6): each pattern checked against the subject, and the
 //!   cases without a guard covering every value, with an error that names a value they miss.
-//!   See the `body` module for what later slices add.
+//! - **Errors** (roadmap 1.7.7): every error type a call or `raise` can fail with is caught by
+//!   a `try` around it or declared in the function's `Raises`. See the `body` module for what
+//!   later slices add.
 //!
 //! It is an implementation crate. It reads trees and names only through the `database`
 //! interface and publishes its results through the `types` interface, whose

@@ -64,7 +64,10 @@ def main():
 ```
 
 - Each `except` names one error type, or a parenthesized tuple of them, and may bind the error to a
-  name with `as`.
+  name with `as`. A name bound by a tuple `except` has no single type, so its fields cannot be
+  read; give each error type its own `except` to read them.
+- A bare `raise` inside an `except` block raises the caught error again, so the function must
+  declare it in its `Raises` or a `try` around the block must handle it.
 - A `try` handles the errors of the calls in its body; an error type no `except` names passes on to
   the caller, which must allow it.
 - `try` and `except` compile to a branch on the returned value. When no error occurs, the cost is
