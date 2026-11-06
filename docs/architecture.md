@@ -67,6 +67,8 @@ Nothing else changes.
 | [`syntax`](../crates/syntax) | `interface` | The flat syntax tree: 16-byte nodes in preorder, their kinds, roles, operators and flags |
 | [`database`](../crates/database) | `interface` | The incremental query database: source files and packages as inputs, module names and the module map, and the `Db` trait each stage's result is read through ([0016](decisions/0016-salsa-query-engine.md)) |
 | [`parser`](../crates/parser) | `implementation` | Parses source text into a `syntax` tree with Ruff's Python parser, and reports syntax errors as diagnostics |
+| [`syntax_check`](../crates/syntax_check) | `implementation` | Reports each Python construct in a `syntax` tree that the language does not support, following the language reference |
+| [`front_end_tests`](../crates/front_end_tests) | `application` | Tests only: runs the parser, then the syntax check, over a corpus and the example programs. Tests that need two implementations live in an application crate, since an implementation may not depend on another |
 | [`driver`](../crates/driver) | `application` | The `npl` command: owns the concrete database, wires each stage into it, and runs `npl check` |
 | [`bench`](../bench) | `tooling` | `cargo kernels`: builds, verifies and times the C++ and Fortran baseline kernels |
 | [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules, the documentation link check, the roadmap check, the example syntax check and the external dependency check |

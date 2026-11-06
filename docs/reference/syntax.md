@@ -24,6 +24,10 @@ names it adds where Python has no spelling.
 
 ## Statements
 
+The compiler reports every construct in a "no" row below, and every rule in the notes that can be
+seen from the syntax alone, with a message that names it, says why and, where there is one, gives
+the spelling to use instead.
+
 | Statement | Accepted | Notes |
 | --- | --- | --- |
 | Expression statement | yes | Only a call or a documentation string. A bare `x == 1` is an error, which catches it written for `x = 1` |
