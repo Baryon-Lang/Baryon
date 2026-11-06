@@ -44,6 +44,7 @@ procedure on paper.
 | 0.3.1 | Record the Apple silicon baseline: run `FC=gfortran-14 cargo kernels --record` on an M-series Mac and commit `bench/baselines/macos-aarch64.json` | — | 0.3 | Planned | — | — |
 | 0.3.2 | Fail a benchmark run when repeated runs of one kernel report different checksums | — | 0.3 | Done | Claude | [#5](https://github.com/csimpson1964/New-Programming-Language/pull/5) |
 | 0.4 | Repository foundation: ground rules, roadmap, workspace, lints, architecture and link checks, CI | 1 | — | Done | Claude | [#1](https://github.com/csimpson1964/New-Programming-Language/pull/1) |
+| 0.5 | Close gaps found reviewing 0.4: the roadmap check compares against the pull request's base, and the link check handles `~~~` fences and links from the repository root | — | 0.4 | Done | Claude | [#6](https://github.com/csimpson1964/New-Programming-Language/pull/6) |
 
 ## Phase 1: MVP compiler
 
@@ -149,3 +150,4 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Done | Collins | [0011](docs/decisions/0011-checked-simd.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.10 | Position the language against Julia, Mojo, Numba, Pythran, Codon and Chapel | — | — | Idea | — | — |
 | I.11 | Run the example programs under CPython with a small shim library, as a correctness oracle for the compiler's output | 1 | I.1 | Idea | — | — |
+| I.12 | Diagnostics measure the display width of wide characters (CJK, emoji) so markers line up under them | — | — | Idea | — | — |
