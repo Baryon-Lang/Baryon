@@ -11,26 +11,31 @@
 
 mod architecture;
 mod ci;
+mod links;
 
 use std::error::Error;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+/// Help text printed by `cargo xtask help` and on a missing or unknown command.
 const USAGE: &str = "\
 Usage: cargo xtask <command>
 
 Commands:
-  ci                   Run every check CI runs: format, architecture, lint, test, docs
+  ci                   Run every check CI runs: format, architecture, links, lint, test, docs
   check-architecture   Verify crate dependencies follow docs/architecture.md
+  check-links          Verify every relative link in the Markdown documentation resolves
   help                 Show this message";
 
 /// The result type for every xtask command.
 type Outcome = Result<(), Box<dyn Error>>;
 
+/// Runs the command named by the first argument and exits non-zero if it fails.
 fn main() -> ExitCode {
     let outcome = match std::env::args().nth(1).as_deref() {
         Some("ci") => ci::run(),
         Some("check-architecture") => architecture::check(),
+        Some("check-links") => links::check(),
         Some("help" | "--help" | "-h") => {
             println!("{USAGE}");
             Ok(())

@@ -34,6 +34,7 @@ enum Kind {
 }
 
 impl Kind {
+    /// Every kind, in the order the documentation lists them.
     const ALL: [Self; 5] = [
         Self::Foundation,
         Self::Interface,
@@ -42,6 +43,7 @@ impl Kind {
         Self::Tooling,
     ];
 
+    /// The kind as written in a crate manifest.
     fn name(self) -> &'static str {
         match self {
             Self::Foundation => "foundation",
@@ -52,10 +54,12 @@ impl Kind {
         }
     }
 
+    /// The kind a manifest names, or `None` if the name is not a kind.
     fn parse(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.name() == name)
     }
 
+    /// Whether a crate of this kind may depend on a crate of the `dependency` kind.
     fn may_depend_on(self, dependency: Self) -> bool {
         match self {
             Self::Foundation => dependency == Self::Foundation,
@@ -73,25 +77,38 @@ impl Kind {
 
 /// A workspace crate as the checker sees it.
 struct Crate {
+    /// The package name.
     name: String,
+    /// The declared kind, as written, if the manifest declares one.
     kind: Option<String>,
+    /// Names of the workspace crates it depends on, in any dependency section.
     dependencies: Vec<String>,
 }
 
 /// One broken rule.
 #[derive(Debug, PartialEq, Eq)]
 enum Violation {
+    /// A crate declares no kind.
     MissingKind {
+        /// The crate.
         name: String,
     },
+    /// A crate declares a kind that does not exist.
     UnknownKind {
+        /// The crate.
         name: String,
+        /// The kind it declares.
         kind: String,
     },
+    /// A crate depends on a crate its kind may not depend on.
     ForbiddenDependency {
+        /// The crate.
         name: String,
+        /// Its kind.
         kind: Kind,
+        /// The crate it depends on.
         dependency: String,
+        /// The dependency's kind.
         dependency_kind: Kind,
     },
 }
@@ -126,6 +143,7 @@ impl fmt::Display for Violation {
     }
 }
 
+/// Loads the workspace, checks every crate, and reports each violation.
 pub(crate) fn check() -> Outcome {
     let crates = load_workspace()?;
     let violations = violations(&crates);
@@ -146,6 +164,7 @@ pub(crate) fn check() -> Outcome {
     .into())
 }
 
+/// Every rule the given crates break, in manifest order.
 fn violations(crates: &[Crate]) -> Vec<Violation> {
     let mut kinds = HashMap::new();
     let mut found = Vec::new();
@@ -184,6 +203,7 @@ fn violations(crates: &[Crate]) -> Vec<Violation> {
     found
 }
 
+/// Reads every workspace crate from `cargo metadata`.
 fn load_workspace() -> Result<Vec<Crate>, Box<dyn std::error::Error>> {
     let output = Command::new(cargo())
         .args(["metadata", "--format-version", "1", "--no-deps", "--locked"])
@@ -203,6 +223,7 @@ fn load_workspace() -> Result<Vec<Crate>, Box<dyn std::error::Error>> {
     Ok(packages.iter().map(crate_from_package).collect())
 }
 
+/// Converts one package from `cargo metadata` output into a [`Crate`].
 fn crate_from_package(package: &Value) -> Crate {
     let text = |value: &Value| value.as_str().map(str::to_owned);
     let workspace_dependencies = package["dependencies"]

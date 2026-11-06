@@ -1,7 +1,7 @@
 //! Compiler messages: what went wrong, where, and what else the reader should know.
 //!
 //! Every stage reports problems as [`Diagnostic`] values and returns them; no stage prints.
-//! The application decides where diagnostics go. [`render`] produces the plain-text form used
+//! The application decides where diagnostics go. [`render()`] produces the plain-text form used
 //! on the command line.
 
 mod render;
@@ -35,7 +35,9 @@ impl fmt::Display for Severity {
 /// A span of source text with a short message explaining its part in the diagnostic.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Label {
+    /// The text the label points at.
     span: Span,
+    /// What the label says about that text. May be empty.
     message: String,
 }
 
@@ -69,10 +71,15 @@ impl Label {
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic {
+    /// How serious the diagnostic is.
     severity: Severity,
+    /// The one-line summary shown first.
     message: String,
+    /// The main location of the problem, marked with `^` when rendered.
     primary: Option<Label>,
+    /// Related locations, marked with `-` when rendered.
     secondary: Vec<Label>,
+    /// Extra explanation shown after the source excerpts.
     notes: Vec<String>,
 }
 

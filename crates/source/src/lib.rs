@@ -2,21 +2,42 @@
 //!
 //! A [`SourceMap`] owns every loaded file. Stages refer to a file by its [`FileId`] and to a
 //! piece of text by a [`Span`], so they never copy source text or hold references into it.
+//! Turning a span back into something a person can read is the [`SourceFile`]'s job.
+//!
+//! ```
+//! use source::{Position, SourceMap, Span};
+//!
+//! let mut sources = SourceMap::new();
+//! let file = sources.add("orbit.npl", "mass = 5.97e24\nradius = 6.37e6\n")?;
+//!
+//! // The span of `radius` on the second line: bytes 15 to 21.
+//! let radius = Span::new(file, 15, 21);
+//! let text = sources.get(radius.file());
+//! assert_eq!(text.position(radius.start()), Position { line: 2, column: 1 });
+//! assert_eq!(text.line(2), Some("radius = 6.37e6"));
+//! # Ok::<(), source::SourceError>(())
+//! ```
 
 use std::error::Error;
 use std::fmt;
 
 /// Identifies one file in a [`SourceMap`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct FileId(u32);
+pub struct FileId(
+    /// Index of the file in its map's file list.
+    u32,
+);
 
 /// A byte range `start..end` within one source file.
 ///
 /// Offsets are `u32`, which limits a single file to 4 GiB and keeps a span at 12 bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
+    /// The file the span points into.
     file: FileId,
+    /// Byte offset of the first byte in the span.
     start: u32,
+    /// Byte offset one past the last byte in the span.
     end: u32,
 }
 
@@ -65,12 +86,17 @@ pub struct Position {
 /// One loaded source file: its name, its text and an index of where each line starts.
 #[derive(Debug)]
 pub struct SourceFile {
+    /// The name the file was loaded under, usually its path.
     name: String,
+    /// The full text of the file.
     text: String,
+    /// Byte offset where each line starts, in order. Always begins with 0.
     line_starts: Vec<u32>,
 }
 
 impl SourceFile {
+    /// Builds a file and its line index. Only [`SourceMap::add`] calls this, after checking
+    /// that the text fits in `u32` offsets.
     fn new(name: String, text: String) -> Self {
         let line_starts = std::iter::once(0)
             .chain(
@@ -131,6 +157,7 @@ impl SourceFile {
 /// Owns every source file in a compilation.
 #[derive(Debug, Default)]
 pub struct SourceMap {
+    /// Every file added so far. A [`FileId`] is an index into this list.
     files: Vec<SourceFile>,
 }
 

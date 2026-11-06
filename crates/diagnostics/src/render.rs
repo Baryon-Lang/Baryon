@@ -17,6 +17,25 @@ use std::fmt;
 const TAB_WIDTH: usize = 4;
 
 /// Returns a value that formats `diagnostic` as text, reading source lines from `sources`.
+///
+/// Nothing is formatted until the value is displayed, so writing it straight to a terminal or
+/// a log allocates no intermediate string.
+///
+/// ```
+/// use diagnostics::{Diagnostic, render};
+/// use source::{SourceMap, Span};
+///
+/// let mut sources = SourceMap::new();
+/// let file = sources.add("main.npl", "y = x + 1\n")?;
+/// let diagnostic = Diagnostic::error("undefined name `x`")
+///     .with_primary(Span::new(file, 4, 5), "not defined in this scope");
+///
+/// assert_eq!(
+///     render(&diagnostic, &sources).to_string(),
+///     "error: undefined name `x`\n --> main.npl:1:5\n  |\n1 | y = x + 1\n  |     ^ not defined in this scope",
+/// );
+/// # Ok::<(), source::SourceError>(())
+/// ```
 #[must_use]
 pub fn render<'a>(diagnostic: &'a Diagnostic, sources: &'a SourceMap) -> Rendered<'a> {
     Rendered {
@@ -25,10 +44,12 @@ pub fn render<'a>(diagnostic: &'a Diagnostic, sources: &'a SourceMap) -> Rendere
     }
 }
 
-/// A diagnostic ready to display. Created by [`render`].
+/// A diagnostic ready to display. Created by [`render()`].
 #[derive(Clone, Copy, Debug)]
 pub struct Rendered<'a> {
+    /// The diagnostic to format.
     diagnostic: &'a Diagnostic,
+    /// Where the diagnostic's spans point, for reading file names and source lines.
     sources: &'a SourceMap,
 }
 
@@ -65,11 +86,15 @@ impl fmt::Display for Rendered<'_> {
 }
 
 impl Rendered<'_> {
+    /// The 1-based line where a label starts, used to size the line-number gutter.
     fn line_of(&self, label: &Label) -> u32 {
         let span = label.span();
         self.sources.get(span.file()).position(span.start()).line
     }
 
+    /// Writes one label: its location, the source line, and markers under the labelled text.
+    ///
+    /// A span that runs past the end of its first line is marked to the end of that line.
     fn write_excerpt(
         &self,
         formatter: &mut fmt::Formatter<'_>,
