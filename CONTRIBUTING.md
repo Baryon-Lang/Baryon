@@ -70,7 +70,23 @@ documentation is unfinished, and unfinished code is not merged.
 
 [`docs/README.md`](docs/README.md) maps all documentation by reader.
 
-## Rule 3: exceptionally clean
+## Rule 3: the roadmap is the source of truth
+
+[`ROADMAP.md`](ROADMAP.md) is where project management happens. It lists every phase, work item,
+open decision and idea, with who is working on what.
+
+- **Claim before you start.** Mark the item `In progress` with your name, or add the item if it is
+  missing. Link your draft pull request so others can see the claim.
+- **Close when you finish.** The pull request that completes an item marks it `Done` and links
+  itself.
+- **Ideas are always welcome, through the roadmap.** Add any new idea to the Ideas table. Work that
+  is not on the roadmap does not get merged, so a good idea that skips the roadmap is lost.
+- **Never delete a row.** Finished and dropped items are the project's history.
+
+`cargo xtask check-roadmap` validates every row, and CI fails any change that does not update
+`ROADMAP.md`.
+
+## Rule 4: exceptionally clean
 
 The repository should look like someone obsessive built it, because someone did.
 
@@ -87,34 +103,39 @@ The repository should look like someone obsessive built it, because someone did.
 - The top-level layout in the [README](README.md#repository-layout) is fixed. A new top-level
   directory needs a decision record.
 
-## Rule 4: tested
+## Rule 5: tested
 
 - Every crate has unit tests. Every bug fix adds a test that fails without the fix.
 - Tests are deterministic and fast. Diagnostics are tested by their full rendered text.
 - Never weaken, skip or delete a test to make a change pass.
 
-## Rule 5: few dependencies
+## Rule 6: few dependencies
 
 - External crates are declared once, in `[workspace.dependencies]` in the root `Cargo.toml`.
 - A pull request that adds one says in a sentence why writing it ourselves would be worse.
   Compiler crates aim for zero external dependencies.
 
-## Rule 6: decisions are written down
+## Rule 7: decisions are written down
 
 A choice that is hard to reverse, or that affects more than one crate, gets a decision record in
 [`docs/decisions/`](docs/decisions/README.md) before or with the code that implements it.
 
 ## Workflow
 
-1. Branch from `main` as `<type>/<short-description>`, for example `feat/lexer-indentation`.
-2. Make one logical change. Keep the pull request small enough to review in one sitting.
-3. Update the documentation the change affects.
-4. Run `cargo xtask ci` and make it pass. CI runs the same command on macOS (Apple silicon) and
+1. Find your item in [`ROADMAP.md`](ROADMAP.md), or add it.
+2. Branch from `main` as `<type>/<short-description>`, for example `feat/lexer-indentation`.
+3. Mark the item `In progress` with your name, open a draft pull request, and link it from the
+   item.
+4. Make one logical change. Keep the pull request small enough to review in one sitting.
+5. Update the documentation the change affects.
+6. Mark the item `Done` when the work is complete.
+7. Run `cargo xtask ci` and make it pass. CI runs the same command on macOS (Apple silicon) and
    Linux.
-5. Write commits as [Conventional Commits](https://www.conventionalcommits.org/):
+8. Write commits as [Conventional Commits](https://www.conventionalcommits.org/):
    `type(scope): summary`, imperative mood, at most 72 characters, with a body that explains why.
    Types: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, `chore`.
-6. Open a pull request using the template. `main` always passes CI; pull requests are squash-merged.
+9. Mark the pull request ready for review. `main` always passes CI; pull requests are
+   squash-merged.
 
 The Rust toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml) and `Cargo.lock` is
 committed, so every machine builds the same thing.

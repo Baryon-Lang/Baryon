@@ -25,6 +25,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Full history, so the roadmap check can compare the change with origin/main.
+          fetch-depth: 0
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - name: Run every check

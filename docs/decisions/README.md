@@ -32,3 +32,4 @@ What becomes easier, what becomes harder, and what we give up.
 | Record | Status |
 | --- | --- |
 | [0001. Modular crate architecture with enforced dependency rules](0001-modular-crate-architecture.md) | Accepted |
+| [0002. The roadmap is the source of truth for project management](0002-roadmap-source-of-truth.md) | Accepted |

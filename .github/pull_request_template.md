@@ -2,11 +2,14 @@
 
 <!-- One logical change. What it does and why it is needed. -->
 
+Roadmap item: <!-- ID from ROADMAP.md, for example 1.1 -->
+
 ## How it was checked
 
 - [ ] `cargo xtask ci` passes locally
 - [ ] Tests added or updated for the change
 - [ ] Documentation added or updated: rustdoc with examples, and every affected document
+- [ ] `ROADMAP.md` updated: item marked `In progress` or `Done`, new ideas added
 
 ## Rules
 

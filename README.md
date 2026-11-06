@@ -31,8 +31,11 @@ def heat_step(u: Array[f64, 2], alpha: f64) -> Array[f64, 2]:
 
 ## Status
 
-Phase 0: design and foundation. The compiler does not exist yet. The plan, its phases and its open
-decisions are in [`docs/design/language-design-plan.md`](docs/design/language-design-plan.md).
+Phase 0: design and foundation. The compiler does not exist yet.
+
+[`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the
+place to add new ideas. The reasoning behind it is in the
+[design plan](docs/design/language-design-plan.md).
 
 ## Getting started
 
@@ -42,8 +45,8 @@ Install [rustup](https://rustup.rs). The pinned toolchain installs itself on fir
 cargo xtask ci
 ```
 
-That runs every check CI runs: format, architecture rules, documentation links, lints, tests and
-API docs.
+That runs every check CI runs: format, roadmap, architecture rules, documentation links, lints,
+tests and API docs.
 
 ## Documentation
 
@@ -54,6 +57,7 @@ contributing to the compiler, or integrating one of its crates.
 
 | Path | Contents |
 | --- | --- |
+| `ROADMAP.md` | Phases, work items, decisions and ideas: the source of truth |
 | `crates/` | The compiler, one crate per responsibility |
 | `xtask/` | Repository automation behind `cargo xtask` |
 | `docs/README.md` | Map of all documentation |
@@ -64,7 +68,8 @@ contributing to the compiler, or integrating one of its crates.
 
 ## Contributing
 
-Read [`CONTRIBUTING.md`](CONTRIBUTING.md). AI agents start with [`AGENTS.md`](AGENTS.md).
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md), then pick or add an item in [`ROADMAP.md`](ROADMAP.md).
+AI agents start with [`AGENTS.md`](AGENTS.md).
 
 ## License
 

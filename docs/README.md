@@ -13,7 +13,8 @@ including a side-by-side comparison with Python.
 
 | Document | What it covers |
 | --- | --- |
-| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | The binding rules: modularity, documentation, cleanliness, tests, dependencies, workflow |
+| [`ROADMAP.md`](../ROADMAP.md) | The source of truth: phases, work items, who is on what, decisions needed, ideas |
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | The binding rules: modularity, documentation, roadmap, cleanliness, tests, dependencies, workflow |
 | [`AGENTS.md`](../AGENTS.md) | Extra rules for AI coding agents |
 | [`architecture.md`](architecture.md) | Crate kinds, what may depend on what, and how stages connect |
 | [`decisions/`](decisions/README.md) | Every hard-to-reverse choice, why it was made, and what it costs |
