@@ -60,7 +60,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.3 | Tree-sitter grammar for editor highlighting. Dropped: editors already highlight the files as Python | 1 | 0.1 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.4 | Incremental query engine and the file and module database | 2 | 1.2 | Done | Claude | [0016](docs/decisions/0016-salsa-query-engine.md), [#14](https://github.com/csimpson1964/New-Programming-Language/pull/14) |
 | 1.5 | Name resolution, modules and imports | 2 | 1.4 | Done | Claude | [#16](https://github.com/csimpson1964/New-Programming-Language/pull/16) |
-| 1.6 | Type representation, interning, layouts, compile-time shapes, complex numbers | 2 | 1.5 | In progress | Claude | — |
+| 1.6 | Type representation, interning, layouts, compile-time shapes, complex numbers | 2 | 1.5 | Done | Claude | [#19](https://github.com/csimpson1964/New-Programming-Language/pull/19) |
 | 1.7 | Type checker: local inference, generics, static-dispatch traits, enums, match | 6 | 1.6 | Planned | — | — |
 | 1.8 | Reference and exclusivity checker | 3 | 1.7 | Planned | — | — |
 | 1.8.1 | `prange(n, accumulate=...)`: check that listed arrays are only added to, and suggest the argument in the disjoint-write error | — | 1.8 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
