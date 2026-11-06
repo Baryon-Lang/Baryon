@@ -62,6 +62,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.5 | Name resolution, modules and imports | 2 | 1.4 | Done | Claude | [#16](https://github.com/csimpson1964/New-Programming-Language/pull/16) |
 | 1.6 | Type representation, interning, layouts, compile-time shapes, complex numbers | 2 | 1.5 | Done | Claude | [#19](https://github.com/csimpson1964/New-Programming-Language/pull/19) |
 | 1.7 | Type checker: local inference, generics, static-dispatch traits, enums, match | 6 | 1.6 | Planned | — | — |
+| 1.7.1 | Warn when reordering a struct's fields would save padding, naming the order that does; fields keep declaration order otherwise (#19) | — | 1.6, 1.7 | Planned | — | — |
 | 1.8 | Reference and exclusivity checker | 3 | 1.7 | Planned | — | — |
 | 1.8.1 | `prange(n, accumulate=...)`: check that listed arrays are only added to, and suggest the argument in the disjoint-write error | — | 1.8 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.9 | Mid-level IR: lowering, drops, monomorphization | 5 | 1.7 | Planned | — | — |
