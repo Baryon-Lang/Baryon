@@ -5,14 +5,17 @@ missing or unclear, that is a bug: open an issue.
 
 ## Learning the language
 
-The language guide and reference will live here once the first compiler prototype runs. Until
-then:
+No compiler runs yet, so the language is learned from its definition and from examples. A
+beginner's guide will follow the first compiler prototype.
 
+- The [language reference](reference/README.md) defines what a program may say and what it means.
+  Python programmers should start with its
+  [differences from Python](reference/differences-from-python.md).
 - [`examples/`](examples/README.md) has five physics and mathematics programs written in the
   language, each explaining the features it uses.
-- The [design plan](design/language-design-plan.md) shows the planned syntax and semantics,
-  including a side-by-side comparison with Python.
 - The [decision records](decisions/README.md) explain each settled or proposed design choice.
+- The [design plan](design/language-design-plan.md) gives the reasoning behind the whole design.
+  Where it and a decision record differ, the decision record wins.
 
 ## Contributing to the compiler
 

@@ -38,7 +38,7 @@ procedure on paper.
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0.1 | Language reference: grammar, type rules, reference rules, array semantics | 3 | — | In progress | Claude | [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
+| 0.1 | Language reference: grammar, type rules, reference rules, array semantics | 3 | — | In progress | Claude | [#9](https://github.com/csimpson1964/New-Programming-Language/pull/9) |
 | 0.2 | 20 example programs, iterated for readability | 2 | 0.1 | In progress | Claude | [#4](https://github.com/csimpson1964/New-Programming-Language/pull/4) |
 | 0.3 | Physics kernel suite in Fortran and C++ with a benchmark harness: N-body, Lennard-Jones MD, 3D stencil, CG on sparse, RK4, Monte Carlo, matmul, FFT | 1 | — | Done | Claude | [#3](https://github.com/csimpson1964/New-Programming-Language/pull/3) |
 | 0.3.1 | Record the Apple silicon baseline: run `FC=gfortran-14 cargo kernels --record` on an M-series Mac and commit `bench/baselines/macos-aarch64.json` | — | 0.3 | Planned | — | — |
@@ -134,6 +134,9 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.6 | Language name and file extension; blocks 1.17 | — | — | Planned | Collins | — |
 | D.7 | Resolve the plan's FFI contradiction: no FFI before Phase 4, yet an `ffi` module in the MVP. Decided: no user-facing FFI before Phase 4 | — | — | Done | Collins | [0012](docs/decisions/0012-no-ffi-in-mvp.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | — | — | Planned | Collins | — |
+| D.9 | Traits: how user code declares a trait and how a type implements it, structurally as Python's `Protocol` does or by naming it as Rust does | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
+| D.10 | Sum types: how to spell an enum whose variants carry data, in valid Python syntax | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
+| D.11 | Integer overflow in release builds: wrap, as the plan says, or panic, as in debug builds | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
 | D.13 | Class inheritance: Python-style subclassing, or classes as plain structs with methods. Decided: no inheritance; shared behavior comes from traits | — | — | Done | Collins | [0015](docs/decisions/0015-no-class-inheritance.md), [#12](https://github.com/csimpson1964/New-Programming-Language/pull/12) |
 
 ## Ideas
@@ -148,7 +151,7 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.4 | Keep bounds checks on in release builds, with an `unsafe` opt-out | — | — | Done | Collins | [0010](docs/decisions/0010-bounds-checks.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.5 | Export functions to Python in Phase 2; move DataFrame, file formats and plotting (3.13 to 3.16) to Phase 4 | 3 | 1.10 | Idea | — | — |
 | I.6 | Array-valued reductions in parallel loops, needed for Lennard-Jones force accumulation | — | 1.14 | Idea | — | — |
-| I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Done | Collins | [0009](docs/decisions/0009-number-mixing.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
+| I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Done | Collins | [0009](docs/decisions/0009-number-mixing.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2), [0014](docs/decisions/0014-number-conversions-are-calls.md) |
 | I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Done | Collins | [0007](docs/decisions/0007-array-types.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Done | Collins | [0011](docs/decisions/0011-checked-simd.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.10 | Position the language against Julia, Mojo, Numba, Pythran, Codon and Chapel | — | — | Idea | — | — |
