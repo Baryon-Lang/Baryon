@@ -60,6 +60,7 @@ contributing to the compiler, or integrating one of its crates.
 | `ROADMAP.md` | Phases, work items, decisions and ideas: the source of truth |
 | `crates/` | The compiler, one crate per responsibility |
 | `xtask/` | Repository automation behind `cargo xtask` |
+| `bench/` | Baseline physics kernels in C++ and Fortran, and `cargo kernels`, which times them |
 | `docs/README.md` | Map of all documentation |
 | `docs/architecture.md` | Crate kinds and dependency rules |
 | `docs/decisions/` | Decision records |

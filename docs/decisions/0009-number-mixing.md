@@ -1,6 +1,6 @@
 # 0009. Numbers mix the way Python's do, within one width
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
 Roadmap: I.7
 

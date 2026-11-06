@@ -1,6 +1,6 @@
 # 0010. Bounds checks stay on in release builds
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
 Roadmap: I.4
 

@@ -1,6 +1,6 @@
 # 0011. `simd` loops are a checked request, not an unchecked promise
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
 Roadmap: I.9
 

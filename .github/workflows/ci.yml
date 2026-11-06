@@ -32,3 +32,30 @@ jobs:
         run: rustup toolchain install
       - name: Run every check
         run: cargo xtask ci
+
+  kernels:
+    name: cargo kernels --size smoke (${{ matrix.os }})
+    # Builds every baseline kernel in C++ and Fortran and fails if the two languages disagree.
+    # Times on shared runners are too noisy to gate on; see docs/decisions/0003-benchmark-suite.md.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            fortran: gfortran-14
+          - os: ubuntu-24.04
+            fortran: gfortran
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: Show the compilers
+        run: |
+          clang++ --version
+          ${{ matrix.fortran }} --version
+      - name: Build, run and verify every kernel
+        run: cargo kernels --size smoke
+        env:
+          CXX: clang++
+          FC: ${{ matrix.fortran }}

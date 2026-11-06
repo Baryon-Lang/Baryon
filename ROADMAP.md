@@ -14,8 +14,9 @@ which explains the reasoning behind each one.
    Link, so others can see the claim.
 2. **When you finish**, set the item to `Done` in the same pull request that completes it.
 3. **If you are stuck**, set the item to `Blocked` and add the reason to its description.
-4. **New ideas** go in the Ideas table with status `Idea`. An accepted idea moves into a phase as
-   `Planned`; a rejected one becomes `Dropped` with a one-line reason.
+4. **New ideas** go in the Ideas table with status `Idea`. An accepted idea becomes `Done`, linking
+   the decision or pull request that accepted it, and its work moves into a phase as `Planned`
+   items. A rejected idea becomes `Dropped` with a one-line reason.
 5. **Never delete a row.** Finished and dropped items stay as the project's history.
 
 `cargo xtask check-roadmap` keeps this file valid, and CI fails any pull request that changes
@@ -39,7 +40,8 @@ procedure on paper.
 | --- | --- | --- | --- | --- | --- | --- |
 | 0.1 | Language reference: grammar, type rules, reference rules, array semantics | 3 | — | In progress | Claude | [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | 0.2 | 20 example programs, iterated for readability | 2 | 0.1 | In progress | Claude | [#4](https://github.com/csimpson1964/New-Programming-Language/pull/4) |
-| 0.3 | Physics kernel suite in Fortran and C++ with a benchmark harness: N-body, Lennard-Jones MD, 3D stencil, CG on sparse, RK4, Monte Carlo, matmul, FFT | 1 | — | Planned | — | — |
+| 0.3 | Physics kernel suite in Fortran and C++ with a benchmark harness: N-body, Lennard-Jones MD, 3D stencil, CG on sparse, RK4, Monte Carlo, matmul, FFT | 1 | — | Done | Claude | [#3](https://github.com/csimpson1964/New-Programming-Language/pull/3) |
+| 0.3.1 | Record the Apple silicon baseline: run `FC=gfortran-14 cargo kernels --record` on an M-series Mac and commit `bench/baselines/macos-aarch64.json` | — | 0.3 | Planned | — | — |
 | 0.4 | Repository foundation: ground rules, roadmap, workspace, lints, architecture and link checks, CI | 1 | — | Done | Claude | [#1](https://github.com/csimpson1964/New-Programming-Language/pull/1) |
 
 ## Phase 1: MVP compiler
@@ -49,9 +51,9 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.1 | Lexer with indentation tokens and a token arena | 1 | 0.1 | Planned | — | — |
-| 1.2 | Parser, flat syntax tree, error recovery, parser test corpus | 3 | 1.1 | Planned | — | — |
-| 1.3 | Tree-sitter grammar for editor highlighting | 1 | 0.1 | Planned | — | — |
+| 1.1 | Lexer with indentation tokens and a token arena. Dropped: the existing Python parser lexes, indentation included | 1 | 0.1 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
+| 1.2 | Front end: an existing Python 3.12 parser written in Rust behind an interface crate, lowering to a flat syntax tree, error messages written for this language, parser test corpus | 2 | 0.1 | Planned | — | [0004](docs/decisions/0004-python-syntax.md) |
+| 1.3 | Tree-sitter grammar for editor highlighting. Dropped: editors already highlight the files as Python | 1 | 0.1 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.4 | Incremental query engine and the file and module database | 2 | 1.2 | Planned | — | — |
 | 1.5 | Name resolution, modules and imports | 2 | 1.4 | Planned | — | — |
 | 1.6 | Type representation, interning, layouts, compile-time shapes, complex numbers | 2 | 1.5 | Planned | — | — |
@@ -63,7 +65,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.12 | Runtime: allocator, panics, traps, thread pool | 2 | 1.10 | Planned | — | — |
 | 1.13 | Standard library: core and collections | 3 | 1.11 | Planned | — | — |
 | 1.14 | Standard library: N-dimensional arrays, views, stencil, simd and parallel loops, random numbers, BLAS | 5 | 1.13 | Planned | — | — |
-| 1.15 | Formatter built on the syntax tree | 2 | 1.2 | Planned | — | — |
+| 1.15 | Formatter built on the syntax tree. Dropped: existing Python formatters such as Ruff and Black format the files | 2 | 1.2 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.16 | Language server: diagnostics, go to definition, hover, completion, fixes | 4 | 1.8 | Planned | — | — |
 | 1.17 | VS Code extension | 1 | 1.16 | Planned | — | — |
 | 1.18 | Execution corpus, benchmark baselines and fuzzing in CI | 2 | 1.11 | Planned | — | — |
@@ -123,10 +125,10 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.1 | Team size and hours per week; sets every estimate | — | — | Planned | Collins | — |
 | D.2 | Target workload for the Phase 3 gate (review suggests Lennard-Jones MD) | — | — | Planned | Collins | — |
 | D.3 | Mark `inout` at the call site as well as the signature | — | 0.2 | Planned | — | [0006](docs/decisions/0006-parameter-passing.md) |
-| D.4 | Default array layout: column-major (plan) or row-major (review) | — | — | Planned | Collins | [0008](docs/decisions/0008-row-major-arrays.md) |
+| D.4 | Default array layout: column-major (plan) or row-major (review). Decided: row-major | — | — | Done | Collins | [0008](docs/decisions/0008-row-major-arrays.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | D.5 | C++ interop: full, a C-shaped subset, or dropped | — | — | Planned | Collins | — |
-| D.6 | Language name and file extension; blocks 1.3 and 1.17 | — | — | Planned | Collins | — |
-| D.7 | Resolve the plan's FFI contradiction: no FFI before Phase 4, yet an `ffi` module in the MVP | — | — | Planned | Collins | [0012](docs/decisions/0012-no-ffi-in-mvp.md) |
+| D.6 | Language name and file extension; blocks 1.17 | — | — | Planned | Collins | — |
+| D.7 | Resolve the plan's FFI contradiction: no FFI before Phase 4, yet an `ffi` module in the MVP. Decided: no user-facing FFI before Phase 4 | — | — | Done | Collins | [0012](docs/decisions/0012-no-ffi-in-mvp.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | — | — | Planned | Collins | — |
 
 ## Ideas
@@ -135,14 +137,14 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| I.1 | Make every source file valid Python grammar and parse it with an existing parser; replaces 1.1, 1.2, 1.3 and 1.15 | — | — | Idea | — | [0004](docs/decisions/0004-python-syntax.md), [0005](docs/decisions/0005-error-handling.md) |
+| I.1 | Make every source file valid Python grammar and parse it with an existing parser; replaces 1.1, 1.2, 1.3 and 1.15 | — | — | Done | Collins | [0004](docs/decisions/0004-python-syntax.md), [0005](docs/decisions/0005-error-handling.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.2 | Before the full spec, build a small compiler that emits C and benchmark it against gfortran | 4 | 0.3 | Idea | — | — |
-| I.3 | Pass parameters as read-only borrows by default instead of moving them | — | — | Idea | — | [0006](docs/decisions/0006-parameter-passing.md) |
-| I.4 | Keep bounds checks on in release builds, with an `unsafe` opt-out | — | — | Idea | — | [0010](docs/decisions/0010-bounds-checks.md) |
+| I.3 | Pass parameters as read-only borrows by default instead of moving them | — | — | Done | Collins | [0006](docs/decisions/0006-parameter-passing.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
+| I.4 | Keep bounds checks on in release builds, with an `unsafe` opt-out | — | — | Done | Collins | [0010](docs/decisions/0010-bounds-checks.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.5 | Export functions to Python in Phase 2; move DataFrame, file formats and plotting (3.13 to 3.16) to Phase 4 | 3 | 1.10 | Idea | — | — |
 | I.6 | Array-valued reductions in parallel loops, needed for Lennard-Jones force accumulation | — | 1.14 | Idea | — | — |
-| I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Idea | — | [0009](docs/decisions/0009-number-mixing.md) |
-| I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Idea | — | [0007](docs/decisions/0007-array-types.md) |
-| I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Idea | — | [0011](docs/decisions/0011-checked-simd.md) |
+| I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Done | Collins | [0009](docs/decisions/0009-number-mixing.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
+| I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Done | Collins | [0007](docs/decisions/0007-array-types.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
+| I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Done | Collins | [0011](docs/decisions/0011-checked-simd.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.10 | Position the language against Julia, Mojo, Numba, Pythran, Codon and Chapel | — | — | Idea | — | — |
 | I.11 | Run the example programs under CPython with a small shim library, as a correctness oracle for the compiler's output | 1 | I.1 | Idea | — | — |

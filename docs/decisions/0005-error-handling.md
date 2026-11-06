@@ -1,6 +1,6 @@
 # 0005. Errors use Python's `raise` and `try`, compiled to plain error returns
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
 Roadmap: I.1
 
