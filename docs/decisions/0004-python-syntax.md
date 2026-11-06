@@ -1,6 +1,6 @@
 # 0004. Every source file is valid Python syntax
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
 Roadmap: I.1
 

@@ -1,6 +1,6 @@
 # 0012. No foreign function interface before Phase 4
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
 Roadmap: D.7
 

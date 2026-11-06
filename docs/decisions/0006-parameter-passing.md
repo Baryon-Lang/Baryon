@@ -1,6 +1,6 @@
 # 0006. Parameters are read-only borrows unless marked `InOut` or `Owned`
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
 Roadmap: I.3, D.3
 

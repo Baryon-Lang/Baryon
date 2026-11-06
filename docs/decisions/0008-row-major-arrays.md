@@ -1,6 +1,6 @@
 # 0008. Arrays are row-major by default
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
 Roadmap: D.4
 

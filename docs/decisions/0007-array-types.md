@@ -1,6 +1,6 @@
 # 0007. One array family: `Array` on the heap, `Fixed` inline
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
 Roadmap: I.8
 
