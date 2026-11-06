@@ -40,6 +40,9 @@ impl<'db> Body<'db> {
             return self.class_attribute(node, file, class, attribute);
         }
         let base = self.expression(value, None);
+        if self.maybe_none(value, base) {
+            return self.lowerer.unknown();
+        }
         let name = self.tree.text(attribute, self.text);
         if let Some(ty) = self.array_attribute(node, base, name) {
             return ty;

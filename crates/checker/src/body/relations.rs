@@ -9,8 +9,8 @@ use types::{Nominal, Type, TypeDb, TypeKind};
 ///
 /// Equal types match. A type that contains an unknown type, from an error already reported,
 /// matches anything, so one mistake gives one message. A type parameter is rigid: inside a
-/// generic body, `T` matches only `T`. `None` and a `T` match `T | None`. A `T | None` also
-/// matches `T` until the `None` check that narrows it is checked (roadmap 1.7.8).
+/// generic body, `T` matches only `T`. `None` and a `T` match `T | None`; a `T | None` does not
+/// match `T` until a `None` check narrows it (the `flow` module).
 pub(crate) fn compatible<'db>(db: &'db dyn TypeDb, expected: Type<'db>, found: Type<'db>) -> bool {
     let unknown = |ty: Type<'db>| matches!(ty.kind(db), TypeKind::Unknown);
     if expected == found || contains(db, expected, &unknown) || contains(db, found, &unknown) {
@@ -19,7 +19,6 @@ pub(crate) fn compatible<'db>(db: &'db dyn TypeDb, expected: Type<'db>, found: T
     match (expected.kind(db), found.kind(db)) {
         (TypeKind::Optional(_), TypeKind::None) => true,
         (TypeKind::Optional(value), _) => compatible(db, *value, found),
-        (_, TypeKind::Optional(value)) => compatible(db, expected, *value),
         _ => false,
     }
 }

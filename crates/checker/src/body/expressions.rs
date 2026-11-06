@@ -177,8 +177,9 @@ impl<'db> Body<'db> {
     pub(super) fn name(&mut self, node: NodeId) -> Type<'db> {
         match self.lowerer.definition(node) {
             Some(Definition::Local(binding)) => self
-                .locals
+                .narrowed
                 .get(binding)
+                .or_else(|| self.locals.get(binding))
                 .copied()
                 .unwrap_or_else(|| self.lowerer.unknown()),
             Some(&Definition::Item(file, name)) => self.item_value(file, name),
@@ -215,6 +216,11 @@ impl<'db> Body<'db> {
     /// `value[index]`: an element of a list, a string, a tuple, an `Array` or a `Fixed`.
     fn subscript(&mut self, node: NodeId) -> Type<'db> {
         let base = self.child_type(node, Role::Value);
+        if let Some(value) = self.tree.child(node, Role::Value)
+            && self.maybe_none(value, base)
+        {
+            return self.lowerer.unknown();
+        }
         let Some(index) = self.tree.child(node, Role::Index) else {
             return self.lowerer.unknown();
         };
@@ -329,15 +335,30 @@ impl<'db> Body<'db> {
 
     /// `value if condition else other`: both branches have one type.
     fn conditional(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
-        self.condition(self.tree.child(node, Role::Condition));
-        let value = match self.tree.child(node, Role::Value) {
-            Some(value) => self.expression(value, expected),
-            None => return self.lowerer.unknown(),
+        let condition = self.tree.child(node, Role::Condition);
+        self.condition(condition);
+        let (yes, no) = condition
+            .map(|condition| self.facts(condition))
+            .unwrap_or_default();
+        let entry = self.narrowed.clone();
+        self.assume(&yes);
+        let value = self
+            .tree
+            .child(node, Role::Value)
+            .map(|value| self.expression(value, expected));
+        self.narrowed.clone_from(&entry);
+        self.assume(&no);
+        let other = self
+            .tree
+            .child(node, Role::Else)
+            .map(|other| self.expression(other, value));
+        self.narrowed = entry;
+        let Some(value) = value else {
+            return self.lowerer.unknown();
         };
-        let Some(other_node) = self.tree.child(node, Role::Else) else {
+        let Some(other) = other else {
             return value;
         };
-        let other = self.expression(other_node, Some(value));
         if relations::compatible(self.db, value, other) {
             return value;
         }
