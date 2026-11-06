@@ -1,0 +1,25 @@
+[package]
+name = "checker"
+description = "The type checker: works out what every definition declares in types, and checks programs against it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "implementation"
+
+[dependencies]
+database.workspace = true
+diagnostics.workspace = true
+salsa.workspace = true
+syntax.workspace = true
+types.workspace = true
+
+[dev-dependencies]
+source.workspace = true
+
+[lints]
+workspace = true

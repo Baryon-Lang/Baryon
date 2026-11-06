@@ -27,10 +27,13 @@ pub struct Type<'db> {
 #[salsa::interned(debug)]
 pub struct Item<'db> {
     /// The package the definition belongs to, which its names are resolved in.
+    #[returns(copy)]
     pub package: Package,
     /// The file that holds the definition.
+    #[returns(copy)]
     pub file: File,
     /// The definition's `Name` node in that file: the name after `def` or `class`, or the
     /// target of the alias or constant.
+    #[returns(copy)]
     pub name: NodeId,
 }

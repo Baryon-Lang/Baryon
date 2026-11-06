@@ -51,9 +51,7 @@ mod layout;
 mod primitive;
 mod shape;
 
-pub use declaration::{
-    Checked, Declaration, Field, Mode, Parameter, Signature, TypeDb, Value,
-};
+pub use declaration::{Checked, Declaration, Field, Mode, Parameter, Signature, TypeDb, Value};
 pub use display::Displayed;
 pub use interned::{Item, Type};
 pub use layout::{Declared, Layout, LayoutError, Record, layout};
