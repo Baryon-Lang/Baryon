@@ -17,6 +17,7 @@ including a side-by-side comparison with Python.
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | The binding rules: modularity, documentation, roadmap, cleanliness, tests, dependencies, workflow |
 | [`AGENTS.md`](../AGENTS.md) | Extra rules for AI coding agents |
 | [`architecture.md`](architecture.md) | Crate kinds, what may depend on what, and how stages connect |
+| [`bench/README.md`](../bench/README.md) | The baseline benchmark suite: the kernels, how to run and record them, and the numbers NPL must match |
 | [`decisions/`](decisions/README.md) | Every hard-to-reverse choice, why it was made, and what it costs |
 | [`design/language-design-plan.md`](design/language-design-plan.md) | Goals, language design, compiler architecture, roadmap and open questions |
 

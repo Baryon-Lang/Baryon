@@ -35,6 +35,7 @@ What becomes easier, what becomes harder, and what we give up.
 | --- | --- |
 | [0001. Modular crate architecture with enforced dependency rules](0001-modular-crate-architecture.md) | Accepted |
 | [0002. The roadmap is the source of truth for project management](0002-roadmap-source-of-truth.md) | Accepted |
+| [0003. A C++ and Fortran baseline suite in `bench/`, run by a Rust harness](0003-benchmark-suite.md) | Accepted |
 | [0004. Every source file is valid Python syntax](0004-python-syntax.md) | Proposed |
 | [0005. Errors use Python's `raise` and `try`, compiled to plain error returns](0005-error-handling.md) | Proposed |
 | [0006. Parameters are read-only borrows unless marked `InOut` or `Owned`](0006-parameter-passing.md) | Proposed |
