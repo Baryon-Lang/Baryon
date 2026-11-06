@@ -26,7 +26,7 @@ pub(crate) struct Report {
 /// The result of running one kernel in one language several times.
 #[derive(Debug)]
 pub(crate) struct Measurement {
-    /// The checksum of the last run. Every run computes the same thing, so all runs agree.
+    /// The checksum every run reported; [`summarize`] rejects runs that disagree.
     pub(crate) checksum: f64,
     /// Seconds for every run, in the order they ran.
     pub(crate) runs: Vec<f64>,
@@ -55,20 +55,48 @@ impl Measurement {
 ///
 /// # Errors
 ///
-/// Fails if a run cannot start, exits unsuccessfully, or prints output that [`parse`] rejects.
+/// Fails if a run cannot start, exits unsuccessfully, prints output that [`parse`] rejects, or
+/// reports a checksum different from the first run's (see [`summarize`]).
 pub(crate) fn measure(
     executable: &Path,
     arguments: &[u64],
     repetitions: usize,
 ) -> Result<Measurement, String> {
-    let mut runs = Vec::with_capacity(repetitions);
-    let mut checksum = f64::NAN;
-    for _ in 0..repetitions {
-        let report = run(executable, arguments)?;
-        checksum = report.checksum;
-        runs.push(report.seconds);
+    let reports = (0..repetitions)
+        .map(|_| run(executable, arguments))
+        .collect::<Result<Vec<_>, _>>()?;
+    summarize(&reports).map_err(|error| format!("{}: {error}", executable.display()))
+}
+
+/// Combines the reports of repeated runs of one executable into a [`Measurement`].
+///
+/// The same binary on the same input must compute the same result, so every checksum has to match
+/// the first one exactly. A mismatch means the kernel is nondeterministic, which would make its
+/// checksum meaningless as a correctness check.
+///
+/// # Errors
+///
+/// Fails if there are no reports or any checksum differs from the first.
+fn summarize(reports: &[Report]) -> Result<Measurement, String> {
+    let Some(first) = reports.first() else {
+        return Err(String::from("no runs to summarize"));
+    };
+    if let Some((index, report)) = reports
+        .iter()
+        .enumerate()
+        .find(|(_, report)| report.checksum.to_bits() != first.checksum.to_bits())
+    {
+        return Err(format!(
+            "run {} reported checksum {:e}, but run 1 reported {:e}; the kernel is not deterministic",
+            index + 1,
+            report.checksum,
+            first.checksum
+        ));
     }
-    Ok(Measurement { checksum, runs })
+    Ok(Measurement {
+        checksum: first.checksum,
+        runs: reports.iter().map(|report| report.seconds).collect(),
+    })
 }
 
 /// Runs `executable` once and reads its report.
@@ -162,6 +190,39 @@ mod tests {
                 seconds: 1.75e-5,
             })
         );
+    }
+
+    #[test]
+    fn summarizes_runs_that_agree() {
+        let reports = [
+            Report {
+                checksum: 2.5,
+                seconds: 0.3,
+            },
+            Report {
+                checksum: 2.5,
+                seconds: 0.2,
+            },
+        ];
+        let measurement =
+            summarize(&reports).map(|measurement| (measurement.checksum, measurement.runs));
+        assert_eq!(measurement, Ok((2.5, vec![0.3, 0.2])));
+    }
+
+    #[test]
+    fn rejects_runs_whose_checksums_differ() {
+        let reports = [
+            Report {
+                checksum: 2.5,
+                seconds: 0.3,
+            },
+            Report {
+                checksum: 2.500_000_000_000_001,
+                seconds: 0.2,
+            },
+        ];
+        assert!(summarize(&reports).is_err());
+        assert!(summarize(&[]).is_err());
     }
 
     #[test]
