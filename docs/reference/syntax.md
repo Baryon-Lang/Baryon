@@ -37,7 +37,7 @@ names it adds where Python has no spelling.
 | `for x in e` | yes | Over `range`, `prange`, `simd`, an array, a list, a string or a tuple of one type. No `else` clause |
 | `break`, `continue`, `pass`, `return` | yes | `break` and `return` are not allowed in a `prange` body |
 | `def` | yes | At module level, and as methods inside a class. Nested functions are not in version 0 |
-| `class` | yes | Only with the base `Struct` (optionally with `Copy`), `Exception` or `Enum`; see [Types](types.md#structs) |
+| `class` | yes | Only with the base `Struct` (optionally with `Copy`), `Exception` or `Enum`. No inheritance, by [decision 0015](../decisions/0015-no-class-inheritance.md); see [Types](types.md#structs) |
 | `import m`, `from m import x`, `as` | yes | No `from m import *` |
 | `raise E(...)` | yes | Only inside a function that declares it can fail; see [Errors](errors.md) |
 | `try` with `except` | yes | Each `except` names the error types it handles. No bare `except:`, no `else`, no `finally` |

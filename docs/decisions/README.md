@@ -46,4 +46,5 @@ What becomes easier, what becomes harder, and what we give up.
 | [0011. `simd` loops are a checked request, not an unchecked promise](0011-checked-simd.md) | Accepted |
 | [0012. No foreign function interface before Phase 4](0012-no-ffi-in-mvp.md) | Accepted |
 | [0014. Numbers mix the way Python's do, and conversions are calls](0014-number-conversions-are-calls.md) | Accepted |
+| [0015. Classes have no inheritance](0015-no-class-inheritance.md) | Accepted |
 | [0016. Incremental queries run on the `salsa` crate](0016-salsa-query-engine.md) | Accepted |
