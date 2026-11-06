@@ -1,0 +1,212 @@
+# Values and references
+
+This chapter is what makes the language as safe as Rust without a garbage collector, and it is the
+one with no Python equivalent. It is written as a decision procedure: a finite list of checks the
+compiler runs, each with the error it reports. The Phase 0 gate requires exactly this.
+
+The rules come from [decision 0006](../decisions/0006-parameter-passing.md) and the design plan's
+memory model. Three ideas carry them:
+
+1. Every value has one owner, and is destroyed when its owner goes away.
+2. A function borrows its arguments for the length of the call, unless it says otherwise.
+3. While a function can change a value, nothing else can see that value.
+
+## Ownership
+
+Every value has exactly one owner: a variable, a field of a struct, an element of a container, or a
+temporary inside an expression.
+
+A value is destroyed when its owner is destroyed:
+
+- a local variable's value, when the function returns, on every path, including through a `raise`;
+- a variable's old value, when a new value is assigned to it;
+- a field's or element's value, when the struct or container holding it is destroyed.
+
+Destroying an array frees its memory. There is no garbage collector and no reference counting, so
+memory is freed at a point the source shows, and a loop that allocates frees as it goes.
+
+## Copy types
+
+Some types copy instead of moving. Using a value of a copy type leaves the original untouched.
+
+The copy types are: every number type, `bool`, `None`, enums without data, `Fixed` arrays,
+tuples whose elements are all copy types, and structs declared with the `Copy` base whose fields
+are all copy types.
+
+```python
+class Vec2(Struct, Copy):
+    x: f64
+    y: f64
+```
+
+Structs are not copy types by default because a copy of a large struct costs time that the source
+should show. `Fixed` arrays are copy types because they are small by design; the compiler warns
+when one has more than 64 elements ([decision 0007](../decisions/0007-array-types.md)).
+
+## Moves
+
+A value of any other type (an `Array`, a `list`, a `str`, a struct without `Copy`) moves when it is:
+
+- assigned to a variable, field or element: `b = a`;
+- passed as an `Owned` argument;
+- returned from a function;
+- placed in a struct, tuple or list being built: `Atoms(positions, velocities, forces)`.
+
+After a move, the old owner holds nothing. Using it is an error until a new value is assigned:
+
+```text
+error: `a` was moved
+ --> heat.npl:12:9
+   |
+11 |     b = a
+   |         - `a` moved here
+12 |     total = a.sum()
+   |             ^ used after the move
+   = help: to keep both, copy it: `b = a.copy()`
+```
+
+Python programmers expect `b = a` to make two names for one list. Here it moves, and the error
+appears at the first use that would have shared data, which is where a Python bug of the same shape
+would have been introduced.
+
+Moving a value out of a field ends the struct that held it, because a struct with a hole in it
+cannot be used. So a field may be moved out only of a struct owned by a local variable or an
+`Owned` parameter, and that struct cannot be used again unless it is assigned a new value. Its
+other fields are destroyed when the function returns. In any other case, such as
+`x = atoms.positions` with `atoms` used later, write `x = atoms.positions.copy()`, or pass
+`atoms.positions` straight to the function that needs it. Values cannot be moved out of array or
+list elements at all; elements of arrays are copy types anyway.
+
+### Tuple assignment
+
+`a, b = e1, e2` evaluates every expression on the right, in order, before assigning anything on the
+left. The values on the right move into temporaries first, then into the targets. So swapping two
+arrays moves two pointers and copies no data:
+
+```python
+u, out = out, u
+```
+
+## Parameters
+
+A function says, for each parameter, how it receives its argument
+([decision 0006](../decisions/0006-parameter-passing.md)):
+
+| Annotation | Mode | The caller | The function |
+| --- | --- | --- | --- |
+| `x: T` | read-only borrow | keeps `x`, unchanged | may read `x`, never change it |
+| `x: InOut[T]` | exclusive borrow | keeps `x`, and sees the function's changes | may read and change `x`, or assign it a new value |
+| `x: Owned[T]` | move | loses `x`, as in a move | owns `x`, and may keep or return it |
+
+Call sites look the same in every mode: `saxpy(2.0, x, y)`.
+
+A borrow lasts exactly as long as the call. A function cannot store a borrowed parameter in a
+struct, return it, or put it in a list; it can copy it, or pass it on to another call. This is what
+lets the language skip Rust's lifetime annotations: every borrow ends where the call ends, so the
+compiler never has to reason about how long one lives.
+
+Returning a read-only parameter is therefore an error that suggests `return x.copy()`.
+
+## Methods
+
+A method's first parameter is `self`. Its mode follows the same table:
+
+```python
+class Histogram(Struct):
+    counts: Array[i64, 1]
+    width: f64
+
+    def total(self) -> i64:                       # reads the histogram
+        return self.counts.sum()
+
+    def add(self: InOut[Self], value: f64):       # changes the histogram
+        self.counts[i64(value / self.width)] += 1
+
+    def into_counts(self: Owned[Self]) -> Array[i64, 1]:  # consumes it
+        return self.counts
+```
+
+`Self` is Python's `typing.Self`: the struct the method belongs to. A method called on a place,
+`histogram.add(2.5)`, borrows that place in the method's mode, so the exclusivity check below
+treats `self` like any other argument.
+
+## The exclusivity check
+
+The check guarantees that while a function can change a value, no other argument of the same call
+refers to it. That guarantee is what lets the compiler tell LLVM that arrays never alias, so loops
+vectorize with no run-time overlap tests, as Fortran's do.
+
+### Places and overlap
+
+A **place** is a variable followed by zero or more steps, each either `.field` or `[...]`:
+`atoms`, `atoms.forces`, `atoms.forces[i]`, `grid[1:n, 0]`.
+
+Two places **overlap** when they start at the same variable and, step by step, one is a prefix of
+the other, where:
+
+- `.a` and `.a` match, and `.a` and `.b` do not;
+- any `[...]` matches any `[...]`, whatever the indices or slices.
+
+So `atoms.positions` and `atoms.forces` do not overlap, `atoms` and `atoms.forces` do, and
+`a[0:5]` and `a[5:10]` do, because the check does not compare index values. Comparing indices
+would make the check depend on arithmetic it cannot always do; version 0 keeps it simple and
+predictable. Disjoint parts of one array go through separate parameters by splitting with a library
+function, planned with the array views work (roadmap 1.14).
+
+### The procedure
+
+For every call, including method calls and operators that change their left side, the compiler:
+
+1. Lists the call's arguments that are places, each with its mode. An argument that is not a place,
+   such as `x + 1`, is a temporary and cannot conflict.
+2. For every `InOut` or `Owned` argument, checks that its place overlaps no other argument's place.
+   If one does, it reports both arguments:
+
+   ```text
+   error: `atoms` is changed by this call and also passed to it
+    --> md.npl:40:5
+      |
+   40 |     integrate(atoms, atoms.forces)
+      |               -----  ^^^^^^^^^^^^ `atoms.forces` is part of `atoms`
+      |               |
+      |               `atoms` is passed as `InOut`
+   ```
+
+3. For every `Owned` argument, marks its place as moved after the call.
+4. Checks the arguments' types against the parameters.
+
+Reading the same place twice is always allowed: `dot(residual, residual)`.
+
+Because a borrow cannot outlive its call, this per-call check is the whole check. There is no
+analysis across statements, and no case where a borrow made in one line blocks a use on another.
+
+### Compound assignment
+
+`target op= value` changes `target`, and `value` may read it: `residual -= alpha * residual`. The
+result is as if `value` were computed in full before `target` changes. On arrays, the compiler
+writes the result in place, with no temporary array, when every read of `target` in `value` is at
+the same index being written, which is the common case. Otherwise it computes `value` into a
+temporary array first. NumPy behaves the same way.
+
+## Loops over collections
+
+`for v in values:` gives `v` each element in turn. Elements of arrays are copy types, so `v` is a
+copy. For a `list` of a non-copy type, `v` is a read-only borrow of the element for one iteration.
+
+The collection is borrowed for the whole loop, so the loop body cannot change it: no `append`, no
+assignment to its elements. To change elements while looping, loop over the indices:
+`for i in range(len(values)):`.
+
+## Slices
+
+A slice of an array, `a[1:n]` or `grid[:, 0]`, is a view: it refers to the array's own memory and
+copies nothing. A view is a borrow, so in version 0 it can be used only where a borrow can:
+
+- as an argument: `total = sum_of(a[1:n])`;
+- as the target of an assignment or compound assignment: `a[1:n] = 0.0`, `a[1:n] += b[0:n - 1]`;
+- inside an array expression that builds a new array: `c = a[1:n] - a[0:n - 1]`.
+
+Binding a view to a name, `edge = grid[:, 0]`, is an error that suggests `.copy()`. Python
+programmers expect the name to share memory with the array (NumPy's rule), and silently copying
+would break that expectation; allowing the name would make the view a stored borrow, which the
+rules above exclude. Named views may come with the reference work planned for Phase 3.
