@@ -65,11 +65,13 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.7 | Type checker: local inference, generics, static-dispatch traits, enums, match | 6 | 1.6 | In progress | Claude | — |
 | 1.7.1 | Warn when reordering a struct's fields would save padding, naming the order that does; fields keep declaration order otherwise (#19) | — | 1.6, 1.7 | Done | Claude | [#22](https://github.com/csimpson1964/New-Programming-Language/pull/22) |
 | 1.7.2 | Declarations: signatures, struct fields, enum variants, aliases and `Final` constants computed by the compiler, with errors for annotations that mean no type | 1 | 1.6 | Done | Claude | [#20](https://github.com/csimpson1964/New-Programming-Language/pull/20) |
-| 1.7.3 | Function bodies: local inference, literals, number mixing, operators, calls, definite assignment | 2 | 1.7.2 | Planned | — | — |
+| 1.7.3 | Function bodies: local inference, literals, number mixing, operators, conditions, calls, fields and methods, assignments and returns | 2 | 1.7.2 | Done | Claude | [#24](https://github.com/csimpson1964/New-Programming-Language/pull/24) |
 | 1.7.4 | Arrays: copy-type elements, indexing, slicing, whole-array arithmetic | 1 | 1.7.3 | Planned | — | — |
 | 1.7.5 | Generics: standard-trait bounds, type arguments inferred at calls | 1 | 1.7.3 | Planned | — | — |
 | 1.7.6 | Enums and exhaustive `match` | 0.5 | 1.7.3 | Planned | — | — |
 | 1.7.7 | `Raises`, `raise` and `try`: error types checked through calls | 0.5 | 1.7.3 | Planned | — | — |
+| 1.7.8 | `None` checks narrow an optional value to its type; using an unchecked optional is an error | 0.5 | 1.7.3 | Planned | — | — |
+| 1.7.9 | Definite assignment, naming the path that skips the assignment, and a missing `return` at the end of a function | 1 | 1.7.3 | Planned | — | — |
 | 1.8 | Reference and exclusivity checker | 3 | 1.7 | Planned | — | — |
 | 1.8.1 | `prange(n, accumulate=...)`: check that listed arrays are only added to, and suggest the argument in the disjoint-write error | — | 1.8 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.9 | Mid-level IR: lowering, drops, monomorphization | 5 | 1.7 | Planned | — | — |

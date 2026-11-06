@@ -1,11 +1,16 @@
 //! The type checker: works out what every definition declares in types, and checks programs
 //! against it.
 //!
-//! It runs after name resolution. This first slice (roadmap 1.7.2) computes *declarations*:
-//! each function's signature, each struct's fields and methods, each enum's variants, the type
-//! each alias names and the type and value of each `Final` constant. It reports annotations
-//! that mean no type, such as `Array[f64]` without a rank, and constants it cannot compute.
-//! Function bodies are checked by later slices.
+//! It runs after name resolution, in two parts:
+//!
+//! - **Declarations** (roadmap 1.7.2): each function's signature, each struct's fields and
+//!   methods, each enum's variants, the type each alias names and the type and value of each
+//!   `Final` constant. It reports annotations that mean no type, such as `Array[f64]` without a
+//!   rank, and constants it cannot compute.
+//! - **Function bodies** (roadmap 1.7.3): the type of every expression, inferred locally, and
+//!   the errors in how values are used: numbers that do not mix, conditions that are not
+//!   `bool`, calls with the wrong arguments, missing fields, and a variable given a value of
+//!   another type. See the `body` module for what later slices add.
 //!
 //! It is an implementation crate. It reads trees and names only through the `database`
 //! interface and publishes its results through the `types` interface, whose
@@ -116,6 +121,7 @@
 //! # Ok::<(), source::SourceError>(())
 //! ```
 
+mod body;
 mod constant;
 mod declare;
 mod lower;
@@ -172,8 +178,9 @@ pub fn cycle<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Checked<'db> {
 }
 
 /// Every type error and warning in `file`, a file of `package`: the errors of each definition's
-/// declaration, in source order, methods after their class, then a warning for each struct whose
-/// fields would take fewer bytes in another order (see the `padding` module).
+/// declaration and, for a function, of its body, in source order, methods after their class,
+/// then a warning for each struct whose fields would take fewer bytes in another order (see
+/// the `padding` module).
 ///
 /// The application caches this per file in a tracked function. See the crate example.
 #[must_use]
@@ -183,7 +190,11 @@ pub fn check_file(db: &dyn TypeDb, package: Package, file: File) -> Vec<Diagnost
         .iter()
         .flat_map(|entry| {
             let item = Item::new(db, package, file, entry.name);
-            db.declaration(item).diagnostics.clone()
+            let mut diagnostics = db.declaration(item).diagnostics.clone();
+            if entry.kind == Kind::Function {
+                diagnostics.extend(body::check(db, package, file, entry));
+            }
+            diagnostics
         })
         .chain(padding::padding(db, package, file))
         .collect()

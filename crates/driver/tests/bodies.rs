@@ -1,0 +1,340 @@
+//! Function bodies, end to end: programs go through every stage up to the type checker, and the
+//! rendered diagnostics are compared in full.
+//!
+//! These tests live in the driver because they need several implementations, and only an
+//! application crate may depend on more than one (decision 0001).
+
+use driver::Session;
+
+/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// string means the program is clean. The program's first newline, which only lets a test start
+/// it on its own line, is dropped.
+fn check_one(text: &str) -> String {
+    let mut session = Session::new();
+    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+        return error.to_string();
+    }
+    session
+        .check()
+        .iter()
+        .map(|diagnostic| diagnostics::render(diagnostic, &session).to_string())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// Literals that take their type from the context, `Fixed` vectors built and unpacked, a
+/// `Callable` argument, a generic call, loops over `range` and `enumerate`, a comprehension, an
+/// `InOut` method and an f-string all check clean.
+#[test]
+fn valid_bodies_check_clean() {
+    let program = r#"
+from math import sqrt
+
+Vec3 = Fixed[f64, (3,)]
+N: Final = 8
+
+
+class Body(Struct):
+    position: Vec3
+    mass: f64
+
+    def push(self: InOut[Self], by: f64):
+        self.mass = self.mass + by
+
+
+def norm(v: Vec3) -> f64:
+    x, y, z = v
+    return sqrt(x * x + y * y + z * z)
+
+
+def apply(f: Callable[[f64], f64], x: f64) -> f64:
+    return f(x)
+
+
+def half(x: f64) -> f64:
+    return x / 2
+
+
+def largest[T: Number](a: T, b: T) -> T:
+    return a if a > b else b
+
+
+def run(masses: list[f64], limit: f64 | None) -> f32:
+    scale: f32 = 0
+    scale = scale * 2 + 1
+    body = Body(Vec3(1.0, 2.0, 3.0), 1.0)
+    body.push(0.5)
+    total = 0.0
+    for i, mass in enumerate(masses):
+        total += mass * i / N
+    for j in range(1, N + 1):
+        total += apply(half, f64(j))
+    pairs = [k * k for k in range(4) if k % 2 == 0]
+    biggest = largest(1.0, 2.0)
+    print(f"total {total:.3f}", norm(body.position), len(pairs), biggest, limit)
+    return scale
+"#;
+    assert_eq!(check_one(program), "");
+}
+
+/// Floats, integers or signed and unsigned integers of different types, `bool` in arithmetic,
+/// and a literal too large for its type.
+#[test]
+fn numbers_that_do_not_mix_are_reported() {
+    let program = r"
+def mix(a: f32, b: f64, n: i32, m: i64, u: u32) -> f64:
+    c = a + b
+    d = n * m
+    e = m + u
+    f = 1 + True
+    g = a < b
+    small: u8 = 300
+    return b
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `+` cannot mix `f32` and `f64`
+ --> main.npl:2:9
+  |
+2 |     c = a + b
+  |         ^^^^^ different number types
+  = note: convert one side so both are the same type, such as `f64(x)`
+
+error: `*` cannot mix `i32` and `i64`
+ --> main.npl:3:9
+  |
+3 |     d = n * m
+  |         ^^^^^ different number types
+  = note: convert one side so both are the same type, such as `i64(x)`
+
+error: `+` cannot mix `i64` and `u32`
+ --> main.npl:4:9
+  |
+4 |     e = m + u
+  |         ^^^^^ different number types
+  = note: convert one side so both are the same type, such as `i64(x)`
+
+error: `+` cannot mix `i64` and `bool`
+ --> main.npl:5:9
+  |
+5 |     f = 1 + True
+  |         ^^^^^^^^ `bool` is not a number
+  = note: convert one side so both are the same type, such as `i64(x)`
+
+error: `<` cannot mix `f32` and `f64`
+ --> main.npl:6:10
+  |
+6 |     g = a < b
+  |          ^^^^ different number types
+  = note: convert one side so both are the same type, such as `f64(x)`
+
+error: `300` does not fit in `u8`
+ --> main.npl:7:17
+  |
+7 |     small: u8 = 300
+  |                 ^^^ out of range"
+    );
+}
+
+/// A variable given a value of another type, an in-place operator that would change it, a
+/// number unpacked into names, an empty list without a type, and a list of mixed items.
+#[test]
+fn a_variable_keeps_one_type() {
+    let program = r#"
+def walk(steps: int) -> f64:
+    total = 0.0
+    total = "done"
+    count = 0
+    count += 0.5
+    x, y = 1.0
+    empty = []
+    items = [1, "a"]
+    return total
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: `total` has type `f64`, so it cannot hold `str`
+ --> main.npl:3:13
+  |
+3 |     total = "done"
+  |             ^^^^^^ type `str`
+  = note: a variable keeps one type for its whole scope; give this value a new name
+
+error: `+=` gives `f64`, but the target has type `i64`
+ --> main.npl:5:5
+  |
+5 |     count += 0.5
+  |     ^^^^^^^^^^^^ would change the target's type
+  = note: a variable keeps one type for its whole scope; convert the value, or use a new name
+
+error: a value of type `f64` cannot be unpacked into 2 names
+ --> main.npl:6:5
+  |
+6 |     x, y = 1.0
+  |     ^^^^ does not match the value
+
+error: an empty list needs its type written
+ --> main.npl:7:13
+  |
+7 |     empty = []
+  |             ^^ the item type is unknown
+  = note: for example `values: list[f64] = []`
+
+error: list items must share one type, found `i64` and `str`
+ --> main.npl:8:17
+  |
+8 |     items = [1, "a"]
+  |                 ^^^ a different type"#
+    );
+}
+
+/// Conditions, `and` operands and `not` operands that are not `bool`, and the branches of a
+/// conditional expression that differ.
+#[test]
+fn conditions_are_bool() {
+    let program = r#"
+def decide(dt: f64, steps: int) -> bool:
+    if steps:
+        pass
+    while dt and steps > 0:
+        pass
+    flag = not steps
+    return 2.0 if dt > 0.0 else "no"
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: a condition must be a `bool`, found `i64`
+ --> main.npl:2:8
+  |
+2 |     if steps:
+  |        ^^^^^ not a `bool`
+  = note: compare explicitly, such as `n != 0` or `x is not None`
+
+error: `and` needs `bool` operands, found `f64`
+ --> main.npl:4:11
+  |
+4 |     while dt and steps > 0:
+  |           ^^ not a `bool`
+  = note: compare explicitly, such as `n != 0` or `x is not None`
+
+error: `not` does not apply to `i64`
+ --> main.npl:6:12
+  |
+6 |     flag = not steps
+  |            ^^^^^^^^^ no such operation
+
+error: both branches must have one type, found `f64` and `str`
+ --> main.npl:7:12
+  |
+7 |     return 2.0 if dt > 0.0 else "no"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^ branches differ"#
+    );
+}
+
+/// Constructor and method calls with missing, repeated, extra or mistyped arguments, a missing
+/// field, a missing enum member, an unknown keyword, and indexing a number.
+#[test]
+fn calls_fields_and_members_are_checked() {
+    let program = r#"
+class Particle(Struct):
+    mass: f64
+    speed: f64
+
+    def energy(self, scale: f64) -> f64:
+        return 0.5 * self.mass * self.speed**2 * scale
+
+
+class Boundary(Enum):
+    PERIODIC = 1
+
+
+def step(dt: f64, steps: int = 10) -> f64:
+    p = Particle(1.0)
+    q = Particle(1.0, 2.0, mass=3.0)
+    q.energy(1.0, 2.0)
+    q.energy(scale="x")
+    charge = q.charge
+    side = Boundary.CLOSED
+    step(1.0, steps=5, extra=1)
+    return dt[0]
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: `Particle` is missing the argument `speed`
+  --> main.npl:14:9
+   |
+14 |     p = Particle(1.0)
+   |         ^^^^^^^^^^^^^ missing arguments
+
+error: `mass` is given twice
+  --> main.npl:15:28
+   |
+15 |     q = Particle(1.0, 2.0, mass=3.0)
+   |                            ^^^^ already given by position
+
+error: `energy` takes 1 argument, found 2
+  --> main.npl:16:5
+   |
+16 |     q.energy(1.0, 2.0)
+   |     ^^^^^^^^^^^^^^^^^^ too many arguments
+
+error: `scale` has type `f64`, found `str`
+  --> main.npl:17:20
+   |
+17 |     q.energy(scale="x")
+   |                    ^^^ type `str`
+
+error: `Particle` has no field or method `charge`
+  --> main.npl:18:14
+   |
+18 |     charge = q.charge
+   |              ^^^^^^^^ not defined on this struct
+
+error: `Boundary` has no member `CLOSED`
+  --> main.npl:19:12
+   |
+19 |     side = Boundary.CLOSED
+   |            ^^^^^^^^^^^^^^^ not a member
+
+error: `step` has no parameter `extra`
+  --> main.npl:20:24
+   |
+20 |     step(1.0, steps=5, extra=1)
+   |                        ^^^^^ unknown parameter
+
+error: a value of type `f64` cannot be indexed
+  --> main.npl:21:12
+   |
+21 |     return dt[0]
+   |            ^^^^^ not a sequence"#
+    );
+}
+
+/// A value returned from a function without a return type, and a bare `return` in a function
+/// that returns a value.
+#[test]
+fn returns_match_the_signature() {
+    let program = r"
+def nothing():
+    return 1
+
+
+def count() -> int:
+    return
+";
+    assert_eq!(
+        check_one(program),
+        r"error: this function has no return type, so it cannot return `i64`
+ --> main.npl:2:12
+  |
+2 |     return 1
+  |            ^ returns a value
+  = note: declare what it returns: `-> i64`
+
+error: this function returns `i64`, so `return` needs a value
+ --> main.npl:6:5
+  |
+6 |     return
+  |     ^^^^^^ no value"
+    );
+}

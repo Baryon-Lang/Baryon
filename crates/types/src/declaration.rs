@@ -79,6 +79,8 @@ pub struct Parameter<'db> {
     pub ty: Type<'db>,
     /// How the argument is passed.
     pub mode: Mode,
+    /// Whether the parameter has a default value, `dt: f64 = 0.01`, so a call may leave it out.
+    pub default: bool,
 }
 
 /// How an argument is passed (decision 0006).

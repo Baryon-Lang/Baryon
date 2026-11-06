@@ -84,6 +84,15 @@ impl Lowerer<'_> {
         }
     }
 
+    /// The value of a constant expression, or `None`, without reporting why it has none: for
+    /// places where a non-constant is allowed, such as a tuple index.
+    pub(crate) fn evaluate_quietly(&mut self, node: NodeId) -> Option<Value> {
+        let reported = self.diagnostics.len();
+        let value = self.evaluate(node);
+        self.diagnostics.truncate(reported);
+        value
+    }
+
     /// The value of an integer literal such as `64`, `100_000` or `0xff`.
     fn integer(&mut self, node: NodeId) -> Option<Value> {
         let written = self.tree.text(node, self.text);
