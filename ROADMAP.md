@@ -153,3 +153,4 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.10 | Position the language against Julia, Mojo, Numba, Pythran, Codon and Chapel | — | — | Idea | — | — |
 | I.11 | Run the example programs under CPython with a small shim library, as a correctness oracle for the compiler's output | 1 | I.1 | Idea | — | — |
 | I.12 | Diagnostics measure the display width of wide characters (CJK, emoji) so markers line up under them | — | — | Idea | — | — |
+| I.13 | Run the RustSec advisory check on a daily schedule and on pushes to `main` instead of on every pull request, so a newly published advisory does not turn unrelated pull requests red; the license, ban and source checks stay on every pull request and need no network | — | 0.6 | Idea | — | [#10](https://github.com/csimpson1964/New-Programming-Language/pull/10) |
