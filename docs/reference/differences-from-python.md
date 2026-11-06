@@ -24,7 +24,7 @@ reason in a line.
 | Exceptions unwind, and any function may raise | A function that can fail says so with `Raises[T, E]`; errors are return values | Failure is visible in signatures and costs one branch. [Errors](errors.md) |
 | Every failure is an exception and can be caught | Bugs such as an index out of range panic, and panics cannot be caught | A caught bug is an ignored bug. [Panics](errors.md#panics) |
 | `assert` is removed by `python -O` | `assert` is checked in every build | [Syntax](syntax.md#statements) |
-| Classes have inheritance and reference semantics | A class with base `Struct` is a value type with no inheritance | Value semantics are what make arrays of structs contiguous. [Structs](types.md#structs) |
+| Classes have inheritance and reference semantics | A class is a struct, an error type or an enum: a value type with no inheritance. Types share behavior through traits | Inheritance would make struct sizes unknown and method calls indirect, which stops arrays of structs being contiguous and loops vectorizing. [Decision 0015](../decisions/0015-no-class-inheritance.md) |
 | Top-level code runs on import; modules have global variables | Only definitions at the top level; the program starts at `main` | Shared mutable state would race in parallel loops. [Source files](syntax.md#source-files) |
 
 ## What Python has that version 0 does not
@@ -32,9 +32,10 @@ reason in a line.
 `lambda` and nested functions, generators and `yield`, `async`, `global` and `nonlocal`, `del`,
 `*args` and `**kwargs`, star assignment, `:=`, `dict` and `set` displays and comprehensions,
 generator expressions, `try` with `finally` or `else`, `for` and `while` with `else`, `with` other
-than `with unsafe:`, class inheritance, decorators other than `@test` and `@bench`, and the `type`
-statement. The compiler rejects each with a message; none is silently ignored. Some will come
-later; the [Syntax](syntax.md) chapter lists what is accepted.
+than `with unsafe:`, decorators other than `@test` and `@bench`, and the `type` statement. The
+compiler rejects each with a message; none is silently ignored. Some will come later; the
+[Syntax](syntax.md) chapter lists what is accepted. Class inheritance will not come: it is left out
+by design (see the table above).
 
 ## Names that look like Python's modules
 

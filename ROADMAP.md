@@ -137,6 +137,7 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.9 | Traits: how user code declares a trait and how a type implements it, structurally as Python's `Protocol` does or by naming it as Rust does | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
 | D.10 | Sum types: how to spell an enum whose variants carry data, in valid Python syntax | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
 | D.11 | Integer overflow in release builds: wrap, as the plan says, or panic, as in debug builds | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
+| D.13 | Class inheritance: Python-style subclassing, or classes as plain structs with methods. Decided: no inheritance; shared behavior comes from traits | — | — | Done | Collins | [0015](docs/decisions/0015-no-class-inheritance.md), [#12](https://github.com/csimpson1964/New-Programming-Language/pull/12) |
 
 ## Ideas
 
