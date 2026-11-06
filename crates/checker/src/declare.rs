@@ -61,7 +61,13 @@ impl<'db> Lowerer<'db> {
                     (ty, Mode::Borrow)
                 }
             };
-            parameters.push(Parameter { name, ty, mode });
+            let default = self.tree.child(node, Role::Default).is_some();
+            parameters.push(Parameter {
+                name,
+                ty,
+                mode,
+                default,
+            });
         }
         let returns = match self.tree.child(statement, Role::Returns) {
             Some(returns) => self.lower(returns),
@@ -254,7 +260,7 @@ impl<'db> Lowerer<'db> {
 }
 
 /// Whether `number` fits in the integer type `integer`.
-fn fits(integer: Integer, number: i64) -> bool {
+pub(crate) fn fits(integer: Integer, number: i64) -> bool {
     let bits = integer.bits();
     if integer.is_signed() {
         bits == 64 || (-(1_i64 << (bits - 1))..1_i64 << (bits - 1)).contains(&number)

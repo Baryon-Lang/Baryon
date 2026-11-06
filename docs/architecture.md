@@ -71,7 +71,7 @@ Nothing else changes.
 | [`types`](../crates/types) | `interface` | The type representation: interned types, number primitives including complex numbers, `Fixed` shapes, and memory layouts; each definition's declaration and the `TypeDb` query that reads it |
 | [`parser`](../crates/parser) | `implementation` | Parses source text into a `syntax` tree with Ruff's Python parser, and reports syntax errors as diagnostics |
 | [`resolver`](../crates/resolver) | `implementation` | Name resolution: finds the definition each name refers to, through scopes, modules and imports, and reports names that refer to nothing |
-| [`checker`](../crates/checker) | `implementation` | The type checker: computes each definition's declaration from its annotations, including `Final` constants, and reports annotations that mean no type |
+| [`checker`](../crates/checker) | `implementation` | The type checker: computes each definition's declaration from its annotations, including `Final` constants, infers the types in function bodies, and reports what does not type-check |
 | [`syntax_check`](../crates/syntax_check) | `implementation` | Reports each Python construct in a `syntax` tree that the language does not support, following the language reference |
 | [`front_end_tests`](../crates/front_end_tests) | `application` | Tests only: runs the parser, then the syntax check, over a corpus and the example programs. Tests that need two implementations live in an application crate, since an implementation may not depend on another |
 | [`driver`](../crates/driver) | `application` | The `npl` command: owns the concrete database, wires the parser, the syntax check, the resolver and the checker into it, and runs `npl check` |
