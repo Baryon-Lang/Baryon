@@ -120,6 +120,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "checker"
+version = "0.0.0"
+dependencies = [
+ "database",
+ "diagnostics",
+ "salsa",
+ "source",
+ "syntax",
+ "types",
+]
+
+[[package]]
 name = "collection_literals"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -183,6 +195,7 @@ dependencies = [
 name = "driver"
 version = "0.0.0"
 dependencies = [
+ "checker",
  "database",
  "diagnostics",
  "parser",
@@ -191,6 +204,7 @@ dependencies = [
  "source",
  "syntax",
  "syntax_check",
+ "types",
 ]
 
 [[package]]
@@ -902,6 +916,7 @@ name = "types"
 version = "0.0.0"
 dependencies = [
  "database",
+ "diagnostics",
  "salsa",
  "source",
  "syntax",

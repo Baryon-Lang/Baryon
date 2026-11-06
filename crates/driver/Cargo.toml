@@ -16,6 +16,7 @@ name = "npl"
 path = "src/main.rs"
 
 [dependencies]
+checker.workspace = true
 database.workspace = true
 diagnostics.workspace = true
 parser.workspace = true
@@ -23,6 +24,7 @@ resolver.workspace = true
 salsa.workspace = true
 source.workspace = true
 syntax_check.workspace = true
+types.workspace = true
 
 [dev-dependencies]
 syntax.workspace = true

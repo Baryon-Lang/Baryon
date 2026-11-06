@@ -12,6 +12,8 @@
 //! - [`Shape`]: the compile-time dimension lengths of a `Fixed` array.
 //! - [`Layout`] and [`layout()`]: the size and alignment of a value of a type in memory, and
 //!   the field offsets of a record.
+//! - [`Item`], [`Declaration`] and the [`TypeDb`] trait: what each definition declares in
+//!   types, which the type checker computes and later stages read.
 //!
 //! The rules come from the language reference ("Types" and "Arrays") and decisions 0007
 //! (`Array` and `Fixed`), 0008 (row-major) and 0014 (number mixing).
@@ -42,14 +44,16 @@
 //! assert_eq!((layout.size(), layout.align()), (24, 8));
 //! ```
 
+mod declaration;
 mod display;
 mod interned;
 mod layout;
 mod primitive;
 mod shape;
 
+pub use declaration::{Checked, Declaration, Field, Mode, Parameter, Signature, TypeDb, Value};
 pub use display::Displayed;
-pub use interned::Type;
+pub use interned::{Item, Type};
 pub use layout::{Declared, Layout, LayoutError, Record, layout};
 pub use primitive::{Complex, Float, Integer, Primitive};
 pub use shape::Shape;

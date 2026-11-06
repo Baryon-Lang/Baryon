@@ -2,9 +2,10 @@
 //!
 //! It owns the concrete database, which implements each stage query of [`database::Db`] by
 //! calling the implementation crate for it, inside a `#[salsa::tracked]` function so the result
-//! is cached. Today the stages are the `parser`, the `syntax_check` and the `resolver`. Swapping
-//! an implementation means changing the one function here that calls it. A [`Session`] holds that database with one package
-//! loaded into it.
+//! is cached. Today the stages are the `parser`, the `syntax_check`, the `resolver` and the
+//! `checker`, which also answers [`types::TypeDb`]'s query. Swapping an implementation means
+//! changing the one function here that calls it. A [`Session`] holds that database with one
+//! package loaded into it.
 //!
 //! The `npl` executable (`src/main.rs`) is a thin command line over this library:
 //! `npl check <directory>` loads every source file under the directory, checks the package, and
@@ -16,14 +17,14 @@
 //! use driver::Session;
 //!
 //! let mut session = Session::new();
-//! let file = session.add_file("main.npl", "steps = 100\n")?;
+//! let file = session.add_file("main.npl", "STEPS: Final = 100\n")?;
 //! assert!(session.check().is_empty());
 //!
 //! // An edit: only this file is parsed again.
-//! session.set_text(file, "steps = \n")?;
+//! session.set_text(file, "STEPS: Final = \n")?;
 //! let problems = session.check();
 //! assert_eq!(problems.len(), 1);
-//! assert!(diagnostics::render(&problems[0], &session).to_string().contains("main.npl:1:9"));
+//! assert!(diagnostics::render(&problems[0], &session).to_string().contains("main.npl:1:16"));
 //! # Ok::<(), source::SourceError>(())
 //! ```
 
@@ -32,6 +33,7 @@ use diagnostics::Diagnostic;
 use salsa::Setter;
 use source::{FileId, SourceError, SourceFile, Sources};
 use std::fmt;
+use types::{Checked, Item, TypeDb};
 
 /// The compiler's incremental database: every input and every cached query result.
 #[salsa::db]
@@ -109,8 +111,9 @@ impl Session {
 
     /// Every problem in the package: module naming errors first, then each file's problems, in
     /// the order the files were added. A file's problems are its syntax errors or, when it has
-    /// none, the constructs the language does not support and the names that refer to nothing. Cached: after an edit, only the edited file
-    /// is parsed again.
+    /// none, the constructs the language does not support, the names that refer to nothing and
+    /// the type errors in its declarations. Cached: after an edit, only the edited file is
+    /// parsed again.
     #[must_use]
     pub fn check(&self) -> Vec<Diagnostic> {
         check(&self.database, self.package).clone()
@@ -155,6 +158,13 @@ impl Db for Database {
     }
 }
 
+#[salsa::db]
+impl TypeDb for Database {
+    fn declaration<'db>(&'db self, item: Item<'db>) -> &'db Checked<'db> {
+        declaration(self, item)
+    }
+}
+
 /// The parse query: runs the `parser` crate on one file. Cached until the file's source
 /// changes. `no_eq` because a syntax tree has no cheap equality; queries that read the tree
 /// compare their own, smaller results instead.
@@ -179,10 +189,30 @@ fn unsupported(db: &dyn Db, file: File) -> Vec<Diagnostic> {
     syntax_check::check(db.parse(file).tree(), file.source(db).text())
 }
 
+/// The declaration query: runs the `checker` on one definition. Cached until the definition's
+/// file, its names, or a declaration it reads changes. An alias or constant defined in terms of
+/// itself ends the cycle with [`declaration_cycle`].
+#[salsa::tracked(returns(ref), cycle_result = declaration_cycle)]
+fn declaration<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Checked<'db> {
+    checker::declaration(db, item)
+}
+
+/// The declaration of an item whose declaration needs itself: the `checker`'s cycle error.
+fn declaration_cycle<'db>(db: &'db dyn TypeDb, _: salsa::Id, item: Item<'db>) -> Checked<'db> {
+    checker::cycle(db, item)
+}
+
+/// The type check query: the type errors of one file's declarations. Cached until the file or
+/// a declaration it reads changes.
+#[salsa::tracked(returns(ref))]
+fn type_errors(db: &dyn TypeDb, package: Package, file: File) -> Vec<Diagnostic> {
+    checker::check_file(db, package, file)
+}
+
 /// The check query behind [`Session::check`]. Its result compares equal after an edit that
 /// changes no diagnostic, so anything that reads it later stays cached.
 #[salsa::tracked(returns(ref))]
-fn check(db: &dyn Db, package: Package) -> Vec<Diagnostic> {
+fn check(db: &dyn TypeDb, package: Package) -> Vec<Diagnostic> {
     let mut problems = database::modules(db, package).diagnostics().to_vec();
     for &file in package.files(db) {
         let syntax = db.parse(file).diagnostics();
@@ -192,6 +222,7 @@ fn check(db: &dyn Db, package: Package) -> Vec<Diagnostic> {
         if syntax.is_empty() {
             problems.extend_from_slice(unsupported(db, file));
             problems.extend_from_slice(db.resolve(package, file).diagnostics());
+            problems.extend_from_slice(type_errors(db, package, file));
         }
     }
     problems
@@ -202,6 +233,8 @@ mod tests {
     use super::*;
     use database::Definition;
     use std::sync::{Arc, Mutex};
+    use syntax::Role;
+    use types::{Declaration, Mode, Value};
 
     /// A session that records the name of every query it runs, in order.
     fn logged() -> (Session, Arc<Mutex<Vec<String>>>) {
@@ -226,12 +259,12 @@ mod tests {
     #[test]
     fn an_edit_reparses_only_the_edited_file() {
         let (mut session, log) = logged();
-        let first = session.add_file("first.npl", "x = 1\n").unwrap();
-        session.add_file("second.npl", "y = 2\n").unwrap();
+        let first = session.add_file("first.npl", "X: Final = 1\n").unwrap();
+        session.add_file("second.npl", "Y: Final = 2\n").unwrap();
         assert!(session.check().is_empty());
         assert_eq!(parses(&log), 2);
 
-        session.set_text(first, "x = 3\n").unwrap();
+        session.set_text(first, "X: Final = 3\n").unwrap();
         assert!(session.check().is_empty());
         assert_eq!(parses(&log), 1);
 
@@ -317,5 +350,63 @@ mod tests {
         assert_eq!(file, nbody);
         let nbody_tree = database.parse(nbody).tree();
         assert_eq!(nbody_tree.text(node, nbody.source(database).text()), "step");
+    }
+
+    #[test]
+    fn declarations_carry_types_and_values() {
+        let mut session = Session::new();
+        let program = "LATTICE: Final = 8\nN: Final = LATTICE**3\nBOX: Final = LATTICE * 1.5\n\
+                       Vec3 = Fixed[f64, (3,)]\n\n\n\
+                       def step(atoms: InOut[Array[Vec3, 1]], dt: f64) -> f64:\n    return dt\n";
+        let main = session.add_file("main.npl", program).unwrap();
+        let database = &session.database;
+        let tree = database.parse(main).tree();
+        let declaration = |index: usize| {
+            let statement = tree.children(tree.root()).nth(index).unwrap();
+            let name = tree
+                .child(statement, Role::Target)
+                .or_else(|| tree.child(statement, Role::Name))
+                .unwrap();
+            let item = Item::new(database, session.package, main, name);
+            &database.declaration(item).declaration
+        };
+        let show = |ty: types::Type<'_>| ty.display(database).to_string();
+
+        let Declaration::Constant { ty, value } = declaration(1) else {
+            panic!("`N` is not a constant");
+        };
+        assert_eq!(
+            (show(*ty), *value),
+            ("i64".to_owned(), Some(Value::Integer(512)))
+        );
+        let Declaration::Constant { ty, value } = declaration(2) else {
+            panic!("`BOX` is not a constant");
+        };
+        let twelve = Some(Value::Float(12.0_f64.to_bits()));
+        assert_eq!((show(*ty), *value), ("f64".to_owned(), twelve));
+        let Declaration::Alias(vec3) = declaration(3) else {
+            panic!("`Vec3` is not an alias");
+        };
+        assert_eq!(show(*vec3), "Fixed[f64, (3,)]");
+        let Declaration::Function(signature) = declaration(4) else {
+            panic!("`step` is not a function");
+        };
+        let parameters: Vec<_> = signature
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.name.as_str(), show(parameter.ty), parameter.mode))
+            .collect();
+        assert_eq!(
+            parameters,
+            [
+                (
+                    "atoms",
+                    "Array[Fixed[f64, (3,)], 1]".to_owned(),
+                    Mode::InOut
+                ),
+                ("dt", "f64".to_owned(), Mode::Borrow),
+            ]
+        );
+        assert_eq!(show(signature.returns), "f64");
     }
 }
