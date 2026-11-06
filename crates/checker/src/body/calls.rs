@@ -1,7 +1,7 @@
 //! Calls: to functions, methods, struct constructors, aliases of `Fixed` vectors, number
 //! conversions and the language's built-in functions.
 
-use super::expressions::Member;
+use super::members::Member;
 use super::{Body, numbers, relations};
 use crate::outline::{Base, Kind, outline};
 use database::{Definition, File};
@@ -9,16 +9,17 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Integer, Item, Nominal, Parameter, Primitive, Signature, Type, TypeKind};
 
 /// The arguments of one call, as written.
-struct Arguments {
+pub(super) struct Arguments {
     /// The positional arguments, in order.
-    positional: Vec<NodeId>,
+    pub(super) positional: Vec<NodeId>,
     /// The keyword arguments: each `Keyword` node's `Name` and `Value`.
-    keywords: Vec<(NodeId, NodeId)>,
+    pub(super) keywords: Vec<(NodeId, NodeId)>,
 }
 
 impl<'db> Body<'db> {
-    /// The type of a call, after checking its arguments.
-    pub(super) fn call(&mut self, node: NodeId) -> Type<'db> {
+    /// The type of a call, after checking its arguments. `expected` is the type the context
+    /// needs, which gives `Array.zeros(n)` its element type.
+    pub(super) fn call(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
         let arguments = self.arguments(node);
         let Some(function) = self.tree.child(node, Role::Function) else {
             return self.untyped(&arguments);
@@ -36,13 +37,14 @@ impl<'db> Body<'db> {
             Some(&Definition::Item(file, name)) => {
                 self.call_item(node, &callee, file, name, &arguments)
             }
+            Some(Definition::Builtin("Array")) => self.array_from_list(node, &arguments, expected),
             Some(Definition::Builtin(builtin)) => self.builtin(node, builtin, &arguments),
             Some(Definition::Local(_)) => {
                 let ty = self.expression(function, None);
                 self.call_value(node, &callee, ty, &arguments)
             }
             None if self.tree.kind(function) == SyntaxKind::Attribute => {
-                self.method_call(node, function, &arguments)
+                self.method_call(node, function, &arguments, expected)
             }
             Some(_) | None => self.untyped(&arguments),
         }
@@ -76,7 +78,7 @@ impl<'db> Body<'db> {
 
     /// Types every argument with no expectation, for a call this slice cannot check, and gives
     /// the call an unknown type.
-    fn untyped(&mut self, arguments: &Arguments) -> Type<'db> {
+    pub(super) fn untyped(&mut self, arguments: &Arguments) -> Type<'db> {
         for &argument in &arguments.positional {
             self.expression(argument, None);
         }
@@ -155,20 +157,30 @@ impl<'db> Body<'db> {
         arguments: &Arguments,
     ) -> Type<'db> {
         match ty.kind(self.db) {
-            TypeKind::Fixed { element, shape } if shape.rank() == 1 => {
-                let length = shape.elements();
-                let found = arguments.positional.len() + arguments.keywords.len();
-                if u64::try_from(found).ok() != Some(length) {
-                    self.untyped(arguments);
-                    let message = format!("`{callee}` takes {length} elements, found {found}");
-                    return self
-                        .lowerer
-                        .error(node, &message, "wrong number of elements", None);
+            TypeKind::Fixed { element, shape } => {
+                let (element, shape) = (*element, shape.clone());
+                for &(_, value) in &arguments.keywords {
+                    self.expression(value, None);
                 }
-                let element = *element;
-                for &argument in &arguments.positional {
-                    let value = self.expression(argument, Some(element));
-                    self.expect(argument, element, value, "each element is");
+                let matched = arguments.keywords.is_empty()
+                    && self.fixed_elements(&arguments.positional, element, shape.lengths());
+                if !matched {
+                    let message = format!("`{callee}` needs its elements in the shape `{shape}`");
+                    let hint = if shape.rank() == 1 {
+                        format!(
+                            "for example `{callee}({})`",
+                            vec!["0.0"; usize::try_from(shape.elements()).unwrap_or(0).min(4)]
+                                .join(", ")
+                        )
+                    } else {
+                        "write each row as a tuple: `Mat3((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))`".to_owned()
+                    };
+                    return self.lowerer.error(
+                        node,
+                        &message,
+                        "wrong number of elements",
+                        Some(&hint),
+                    );
                 }
                 ty
             }
@@ -228,23 +240,43 @@ impl<'db> Body<'db> {
     }
 
     /// `value.method(arguments)` on a struct.
-    fn method_call(&mut self, node: NodeId, function: NodeId, arguments: &Arguments) -> Type<'db> {
+    fn method_call(
+        &mut self,
+        node: NodeId,
+        function: NodeId,
+        arguments: &Arguments,
+        expected: Option<Type<'db>>,
+    ) -> Type<'db> {
         let (Some(value), Some(attribute)) = (
             self.tree.child(function, Role::Value),
             self.tree.child(function, Role::Attribute),
         ) else {
             return self.untyped(arguments);
         };
-        if let Some(Definition::Item(..)) = self.lowerer.definition(value) {
-            // `Class.method(...)`, such as `Vec3.zeros()`: typed by a later slice.
-            return self.untyped(arguments);
+        let callee = self.tree.text(attribute, self.text).to_owned();
+        match self.lowerer.definition(value) {
+            Some(Definition::Builtin("Array")) => {
+                return self.array_function(node, &callee, arguments, expected);
+            }
+            Some(Definition::Item(..)) => {
+                // `Vec3.zeros()` on an alias of a `Fixed` type; anything else on a class has no
+                // functions in version 0.
+                let ty = self.lowerer.lower(value);
+                return match ty.kind(self.db) {
+                    TypeKind::Fixed { .. } => self.fixed_function(node, ty, &callee, arguments),
+                    _ => self.untyped(arguments),
+                };
+            }
+            _ => {}
         }
         let base = self.expression(value, None);
+        if let Some(result) = self.container_method(node, base, &callee, arguments) {
+            return result;
+        }
         let TypeKind::Struct(nominal) = base.kind(self.db) else {
             return self.untyped(arguments);
         };
         let nominal = nominal.clone();
-        let callee = self.tree.text(attribute, self.text).to_owned();
         match self.member(function, &nominal, base, attribute) {
             Some(Member::Method {
                 item,
