@@ -66,6 +66,7 @@ Nothing else changes.
 | [`diagnostics`](../crates/diagnostics) | `foundation` | Compiler messages and their plain-text rendering |
 | [`syntax`](../crates/syntax) | `interface` | The flat syntax tree: 16-byte nodes in preorder, their kinds, roles, operators and flags |
 | [`database`](../crates/database) | `interface` | The incremental query database: source files and packages as inputs, module names and the module map, and the `Db` trait each stage's result is read through ([0016](decisions/0016-salsa-query-engine.md)) |
+| [`types`](../crates/types) | `interface` | The type representation: interned types, number primitives including complex numbers, `Fixed` shapes, and memory layouts |
 | [`parser`](../crates/parser) | `implementation` | Parses source text into a `syntax` tree with Ruff's Python parser, and reports syntax errors as diagnostics |
 | [`resolver`](../crates/resolver) | `implementation` | Name resolution: finds the definition each name refers to, through scopes, modules and imports, and reports names that refer to nothing |
 | [`syntax_check`](../crates/syntax_check) | `implementation` | Reports each Python construct in a `syntax` tree that the language does not support, following the language reference |

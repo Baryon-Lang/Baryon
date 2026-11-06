@@ -20,6 +20,7 @@ resolver = { path = "crates/resolver" }
 source = { path = "crates/source" }
 syntax = { path = "crates/syntax" }
 syntax_check = { path = "crates/syntax_check" }
+types = { path = "crates/types" }
 
 ruff_python_ast = "=0.0.21"
 ruff_python_parser = "=0.0.21"
