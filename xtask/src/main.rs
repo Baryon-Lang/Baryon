@@ -16,7 +16,9 @@ mod links;
 mod roadmap;
 
 use std::error::Error;
-use std::path::PathBuf;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 /// Help text printed by `cargo xtask help` and on a missing or unknown command.
@@ -31,6 +33,9 @@ Commands:
   check-links          Verify every relative link in the Markdown documentation resolves
   check-roadmap        Verify ROADMAP.md is well formed and updated by the current change
   help                 Show this message";
+
+/// Directories never searched for files: version-control data and build output.
+const SKIPPED_DIRECTORIES: [&str; 2] = [".git", "target"];
 
 /// The result type for every xtask command.
 type Outcome = Result<(), Box<dyn Error>>;
@@ -70,4 +75,38 @@ fn workspace_root() -> PathBuf {
 /// The `cargo` that invoked xtask, so every step uses the pinned toolchain.
 fn cargo() -> String {
     std::env::var("CARGO").unwrap_or_else(|_| String::from("cargo"))
+}
+
+/// Adds every file under `directory` whose extension is `extension` to `files`, at any depth,
+/// skipping [`SKIPPED_DIRECTORIES`]. Files are added in directory order; callers sort.
+fn collect_files(directory: &Path, extension: &str, files: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            let skipped = SKIPPED_DIRECTORIES
+                .iter()
+                .any(|name| entry.file_name() == *name);
+            if !skipped {
+                collect_files(&path, extension, files)?;
+            }
+        } else if path.extension().is_some_and(|found| found == extension) {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collects_files_in_subdirectories_by_extension() {
+        let root = workspace_root();
+        let mut files = Vec::new();
+        collect_files(&root.join("docs"), "npl", &mut files).unwrap();
+        assert!(files.contains(&root.join("docs/examples/heat_equation.npl")));
+        assert!(files.iter().all(|file| file.extension().unwrap() == "npl"));
+    }
 }

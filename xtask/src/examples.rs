@@ -4,9 +4,8 @@
 //! The check runs Python's own parser through `python3`, so it agrees exactly with what editors,
 //! formatters and CPython accept. It needs Python 3.12 or newer on the `PATH`.
 
-use crate::{Outcome, workspace_root};
-use std::fs;
-use std::path::{Path, PathBuf};
+use crate::{Outcome, collect_files, workspace_root};
+use std::path::Path;
 use std::process::Command;
 
 /// Where the example programs live, relative to the repository root.
@@ -18,13 +17,12 @@ const EXTENSION: &str = "npl";
 /// The Python script that parses each file named on its command line.
 const CHECK_SYNTAX: &str = include_str!("../python/check_syntax.py");
 
-/// Parses every example program and reports each one that is not valid Python syntax.
+/// Parses every example program, in any subdirectory, and reports each one that is not valid
+/// Python syntax.
 pub(crate) fn check() -> Outcome {
     let root = workspace_root();
-    let mut files: Vec<PathBuf> = fs::read_dir(root.join(EXAMPLES))?
-        .map(|entry| entry.map(|entry| entry.path()))
-        .collect::<Result<_, _>>()?;
-    files.retain(|path| is_program(path));
+    let mut files = Vec::new();
+    collect_files(&root.join(EXAMPLES), EXTENSION, &mut files)?;
     files.sort();
     if files.is_empty() {
         return Err(format!("no `.{EXTENSION}` programs found in {EXAMPLES}").into());
@@ -52,23 +50,5 @@ pub(crate) fn check() -> Outcome {
         Ok(())
     } else {
         Err("an example program is not valid Python syntax; see the lines above".into())
-    }
-}
-
-/// Whether `path` names a program in the language.
-fn is_program(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|extension| extension == EXTENSION)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn recognizes_programs_by_extension() {
-        assert!(is_program(Path::new("docs/examples/heat_equation.npl")));
-        assert!(!is_program(Path::new("docs/examples/README.md")));
-        assert!(!is_program(Path::new("docs/examples/npl")));
     }
 }

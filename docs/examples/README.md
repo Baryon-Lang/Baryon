@@ -1,10 +1,10 @@
 # Example programs
 
-Five small physics and mathematics programs written in the language as currently proposed. They
+Five small physics and mathematics programs written in the language as currently designed. They
 are roadmap item 0.2: the way to test the design on real code before any compiler exists. No
 compiler can run them yet.
 
-The syntax follows the proposed decisions [0004](../decisions/0004-python-syntax.md) to
+The syntax follows decisions [0004](../decisions/0004-python-syntax.md) to
 [0012](../decisions/0012-no-ffi-in-mvp.md). If a decision changes, these programs change with it.
 Every file is valid Python 3.12 syntax, which `cargo xtask check-examples` verifies in CI.
 `.npl` is a working extension until roadmap decision D.6 names the language.

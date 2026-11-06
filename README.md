@@ -65,7 +65,7 @@ contributing to the compiler, or integrating one of its crates.
 | `docs/architecture.md` | Crate kinds and dependency rules |
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan |
-| `docs/examples/` | Example programs in the proposed syntax |
+| `docs/examples/` | Example programs written in the language |
 | `.github/` | CI workflow and pull request template |
 
 ## Contributing

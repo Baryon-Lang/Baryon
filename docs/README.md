@@ -9,7 +9,7 @@ The language guide and reference will live here once the first compiler prototyp
 then:
 
 - [`examples/`](examples/README.md) has five physics and mathematics programs written in the
-  proposed syntax, each explaining the features it uses.
+  language, each explaining the features it uses.
 - The [design plan](design/language-design-plan.md) shows the planned syntax and semantics,
   including a side-by-side comparison with Python.
 - The [decision records](decisions/README.md) explain each settled or proposed design choice.

@@ -5,13 +5,8 @@
 //! URL scheme (`https://`, `mailto:`) are not fetched: CI must not depend on the network.
 //! Anchors after `#` are not checked; only the file part of a link is.
 
-use crate::{Outcome, workspace_root};
+use crate::{Outcome, collect_files, workspace_root};
 use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
-
-/// Directories never scanned: version-control data and build output.
-const SKIPPED_DIRECTORIES: [&str; 2] = [".git", "target"];
 
 /// A link in a Markdown file, with where it was found.
 #[derive(Debug, PartialEq, Eq)]
@@ -26,7 +21,7 @@ struct Link<'a> {
 pub(crate) fn check() -> Outcome {
     let root = workspace_root();
     let mut files = Vec::new();
-    collect_markdown(&root, &mut files)?;
+    collect_files(&root, "md", &mut files)?;
     files.sort();
 
     let mut broken = 0;
@@ -53,25 +48,6 @@ pub(crate) fn check() -> Outcome {
     } else {
         Err(format!("{broken} broken documentation link(s)").into())
     }
-}
-
-/// Adds every `.md` file under `directory` to `files`, skipping [`SKIPPED_DIRECTORIES`].
-fn collect_markdown(directory: &Path, files: &mut Vec<PathBuf>) -> io::Result<()> {
-    for entry in fs::read_dir(directory)? {
-        let entry = entry?;
-        let path = entry.path();
-        if entry.file_type()?.is_dir() {
-            let skipped = SKIPPED_DIRECTORIES
-                .iter()
-                .any(|name| entry.file_name() == *name);
-            if !skipped {
-                collect_markdown(&path, files)?;
-            }
-        } else if path.extension().is_some_and(|extension| extension == "md") {
-            files.push(path);
-        }
-    }
-    Ok(())
 }
 
 /// Every relative inline link `[text](target)` outside code blocks and inline code.
