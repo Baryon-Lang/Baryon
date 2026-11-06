@@ -45,6 +45,7 @@ procedure on paper.
 | 0.3.2 | Fail a benchmark run when repeated runs of one kernel report different checksums | — | 0.3 | Done | Claude | [#5](https://github.com/csimpson1964/New-Programming-Language/pull/5) |
 | 0.4 | Repository foundation: ground rules, roadmap, workspace, lints, architecture and link checks, CI | 1 | — | Done | Claude | [#1](https://github.com/csimpson1964/New-Programming-Language/pull/1) |
 | 0.5 | Close gaps found reviewing 0.4: the roadmap check compares against the pull request's base, and the link check handles `~~~` fences and links from the repository root | — | 0.4 | Done | Claude | [#6](https://github.com/csimpson1964/New-Programming-Language/pull/6) |
+| 0.6 | Check dependencies with cargo-deny in `cargo xtask ci`: licenses compatible with Apache-2.0 and MIT, RustSec advisories, banned and duplicate crates, allowed sources | — | 0.4 | Done | Claude | [#10](https://github.com/csimpson1964/New-Programming-Language/pull/10) |
 
 ## Phase 1: MVP compiler
 
