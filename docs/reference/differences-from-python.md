@@ -36,10 +36,10 @@ reason in a line.
 `lambda` and nested functions, generators and `yield`, `async`, `global` and `nonlocal`, `del`,
 `*args` and `**kwargs`, star assignment, `:=`, `dict` and `set` displays and comprehensions,
 generator expressions, `try` with `finally` or `else`, `for` and `while` with `else`, `with` other
-than `with unsafe:`, decorators other than `@test`, `@bench` and `@layout("C")`, and the `type` statement. The
-compiler rejects each with a message; none is silently ignored. Some will come later; the
-[Syntax](syntax.md) chapter lists what is accepted. Class inheritance will not come: it is left out
-by design (see the table above).
+than `with unsafe:`, decorators other than `@test`, `@bench` and `@layout("C")`, and the `type`
+statement. The compiler rejects each with a message; none is silently ignored. Some will come
+later; the [Syntax](syntax.md) chapter lists what is accepted. Class inheritance will not come: it
+is left out by design (see the table above).
 
 ## Names that look like Python's modules
 
