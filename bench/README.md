@@ -36,9 +36,14 @@ Typical output (Linux x86-64 in a shared cloud VM; your numbers will differ):
 
 ```text
 kernel                        C++      Fortran     C++/F  checksum
-nbody                      1.0456       0.7041      1.49  identical
-lennard_jones              2.5631       2.5502      1.01  identical
-...
+nbody                      0.9139       0.5898      1.55  identical
+lennard_jones              4.0736       3.9299      1.04  identical
+heat_stencil               0.7571       0.7651      0.99  identical
+conjugate_gradient         0.7838       0.8895      0.88  identical
+runge_kutta                0.4277       0.6066      0.71  identical
+monte_carlo                0.7300       0.7117      1.03  identical
+matmul                     0.4469       0.4013      1.11  identical
+fft                        1.0374       1.0276      1.01  identical
 ```
 
 Times are the fastest of the runs, in seconds. `C++/F` is the C++ time divided by the Fortran
