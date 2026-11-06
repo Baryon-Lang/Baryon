@@ -3,7 +3,8 @@
 //!
 //! Broken links are the most common way documentation rots, so CI catches them. Links with a
 //! URL scheme (`https://`, `mailto:`) are not fetched: CI must not depend on the network.
-//! Anchors after `#` are not checked; only the file part of a link is.
+//! Anchors after `#` are not checked; only the file part of a link is. A link that starts with
+//! `/` is resolved from the repository root, as GitHub resolves it.
 
 use crate::{Outcome, workspace_root};
 use std::fs;
@@ -34,7 +35,7 @@ pub(crate) fn check() -> Outcome {
         let text = fs::read_to_string(file)?;
         let directory = file.parent().unwrap_or(&root);
         for link in relative_links(&text) {
-            if !directory.join(link.target).exists() {
+            if !resolve(&root, directory, link.target).exists() {
                 let shown = file.strip_prefix(&root).unwrap_or(file).display();
                 eprintln!(
                     "links: {shown}:{}: `{}` does not exist",
@@ -74,16 +75,32 @@ fn collect_markdown(directory: &Path, files: &mut Vec<PathBuf>) -> io::Result<()
     Ok(())
 }
 
+/// The file a link target names: from the repository `root` when the target starts with `/`,
+/// otherwise from the `directory` of the file that holds the link.
+fn resolve(root: &Path, directory: &Path, target: &str) -> PathBuf {
+    match target.strip_prefix('/') {
+        Some(from_root) => root.join(from_root),
+        None => directory.join(target),
+    }
+}
+
 /// Every relative inline link `[text](target)` outside code blocks and inline code.
+///
+/// A code block opens with a fence of three backticks or three tildes and closes with a fence of
+/// the same character, so a block fenced with tildes may contain backtick fences and the reverse.
 fn relative_links(text: &str) -> Vec<Link<'_>> {
     let mut links = Vec::new();
-    let mut in_code_block = false;
+    let mut open_fence: Option<&str> = None;
     for (index, line) in text.lines().enumerate() {
-        if line.trim_start().starts_with("```") {
-            in_code_block = !in_code_block;
-            continue;
+        let fence = ["```", "~~~"]
+            .into_iter()
+            .find(|fence| line.trim_start().starts_with(fence));
+        match (open_fence, fence) {
+            (None, Some(opened)) => open_fence = Some(opened),
+            (Some(open), Some(closed)) if open == closed => open_fence = None,
+            _ => {}
         }
-        if in_code_block {
+        if open_fence.is_some() || fence.is_some() {
             continue;
         }
         // Splitting on backticks puts inline code at odd positions; only prose is scanned.
@@ -165,5 +182,25 @@ mod tests {
     fn ignores_links_inside_fenced_code() {
         let text = "```markdown\n[a](missing.md)\n```\n[b](present.md)";
         assert_eq!(targets(text), ["present.md"]);
+    }
+
+    #[test]
+    fn ignores_links_inside_tilde_fences_holding_backtick_fences() {
+        let text = "~~~markdown\n```\n[a](missing.md)\n~~~\n[b](present.md)";
+        assert_eq!(targets(text), ["present.md"]);
+    }
+
+    #[test]
+    fn resolves_root_absolute_links_from_the_repository_root() {
+        let root = Path::new("/repo");
+        let directory = Path::new("/repo/docs/decisions");
+        assert_eq!(
+            resolve(root, directory, "/ROADMAP.md"),
+            Path::new("/repo/ROADMAP.md")
+        );
+        assert_eq!(
+            resolve(root, directory, "0001-modular-crate-architecture.md"),
+            Path::new("/repo/docs/decisions/0001-modular-crate-architecture.md")
+        );
     }
 }

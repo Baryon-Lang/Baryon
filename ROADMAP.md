@@ -42,6 +42,7 @@ procedure on paper.
 | 0.3 | Physics kernel suite in Fortran and C++ with a benchmark harness: N-body, Lennard-Jones MD, 3D stencil, CG on sparse, RK4, Monte Carlo, matmul, FFT | 1 | — | Done | Claude | [#3](https://github.com/csimpson1964/New-Programming-Language/pull/3) |
 | 0.3.1 | Record the Apple silicon baseline: run `FC=gfortran-14 cargo kernels --record` on an M-series Mac and commit `bench/baselines/macos-aarch64.json` | — | 0.3 | Planned | — | — |
 | 0.4 | Repository foundation: ground rules, roadmap, workspace, lints, architecture and link checks, CI | 1 | — | Done | Claude | [#1](https://github.com/csimpson1964/New-Programming-Language/pull/1) |
+| 0.5 | Close gaps found reviewing 0.4: the roadmap check compares against the pull request's base, and the link check handles `~~~` fences and links from the repository root | — | 0.4 | In progress | Claude | — |
 
 ## Phase 1: MVP compiler
 
@@ -146,3 +147,4 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Idea | — | — |
 | I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Idea | — | — |
 | I.10 | Position the language against Julia, Mojo, Numba, Pythran, Codon and Chapel | — | — | Idea | — | — |
+| I.12 | Diagnostics measure the display width of wide characters (CJK, emoji) so markers line up under them | — | — | Idea | — | — |
