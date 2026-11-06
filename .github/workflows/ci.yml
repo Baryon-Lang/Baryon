@@ -30,6 +30,11 @@ jobs:
           fetch-depth: 0
       - name: Install the pinned toolchain
         run: rustup toolchain install
+      - name: Install cargo-deny, which checks dependencies
+        # The version must match CARGO_DENY_VERSION in xtask/src/dependencies.rs.
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-deny@0.20.2
       - name: Run every check
         run: cargo xtask ci
 

@@ -114,6 +114,10 @@ The repository should look like someone obsessive built it, because someone did.
 - External crates are declared once, in `[workspace.dependencies]` in the root `Cargo.toml`.
 - A pull request that adds one says in a sentence why writing it ourselves would be worse.
   Compiler crates aim for zero external dependencies.
+- Every dependency, direct or indirect, passes the rules in [`deny.toml`](deny.toml): a license
+  compatible with Apache-2.0 and MIT, no RustSec advisory, one version per crate, and crates.io
+  as the only source. `cargo xtask check-dependencies` enforces them; `deny.toml` says how to
+  record an exception and why each one exists.
 
 ## Rule 7: decisions are written down
 

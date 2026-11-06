@@ -1,0 +1,62 @@
+# Rules for every crate the workspace depends on, checked by cargo-deny.
+#
+# `cargo xtask ci` runs `cargo deny --locked check` against this file, and CI runs the same
+# command. CONTRIBUTING.md rule 6 says why: compiler crates aim for zero external dependencies,
+# and every one that does get in must be safe to ship and safe to license.
+#
+# Run one section with `cargo deny check <section>`, where the section is `advisories`,
+# `licenses`, `bans` or `sources`. Reference: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check every feature of every crate, so an optional dependency cannot slip past the rules.
+all-features = true
+
+[advisories]
+# Every advisory in the RustSec database (https://rustsec.org) fails the check: vulnerabilities,
+# unmaintained crates, unsound code and yanked versions. To accept one, add its id here with a
+# reason, for example:
+#   { id = "RUSTSEC-0000-0000", reason = "only reachable from the benchmark harness" }
+ignore = []
+yanked = "deny"
+
+[licenses]
+# The project is Apache-2.0 and may become dual Apache-2.0 OR MIT (ROADMAP.md, D.8), so every
+# dependency must be usable under both. Each license below is permissive and compatible with
+# both, and each is listed only because a dependency in Cargo.lock needs it. A license that no
+# dependency uses any more fails the check, so this list never grows stale.
+#
+# Before adding a license, confirm that it is permissive and compatible with Apache-2.0 and MIT.
+# Copyleft licenses (GPL, LGPL, AGPL, MPL) are not added.
+allow = [
+    "Apache-2.0",
+    "MIT",
+    # Unicode data tables: `unicode-ident` and `ruff_unicode_names2`, through the parser.
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+]
+unused-allowed-license = "deny"
+# Detected license text must match its declared license closely before it counts.
+confidence-threshold = 0.93
+
+[licenses.private]
+# Workspace crates are never published (`publish = false`), and their license is the
+# project's own, so they are not checked against the list above.
+ignore = true
+
+[bans]
+# Two versions of one crate double its compile time and binary size. Each exception names the
+# crate that forces it; remove the exception when that crate catches up.
+multiple-versions = "deny"
+skip = [
+    { crate = "syn@2.0.119", reason = "is-macro, used by ruff_python_ast, is still on syn 2" },
+]
+# A `*` version requirement builds whatever was published last. Workspace path dependencies
+# carry no version, so they are allowed.
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+# Crates come from crates.io only. A git or other registry dependency needs a reason here first.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
