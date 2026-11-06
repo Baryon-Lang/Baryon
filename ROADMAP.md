@@ -37,7 +37,7 @@ procedure on paper.
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0.1 | Language reference: grammar, type rules, reference rules, array semantics | 3 | — | Planned | — | — |
+| 0.1 | Language reference: grammar, type rules, reference rules, array semantics | 3 | — | In progress | Claude | — |
 | 0.2 | 20 example programs, iterated for readability | 2 | 0.1 | Planned | — | — |
 | 0.3 | Physics kernel suite in Fortran and C++ with a benchmark harness: N-body, Lennard-Jones MD, 3D stencil, CG on sparse, RK4, Monte Carlo, matmul, FFT | 1 | — | Planned | — | — |
 | 0.4 | Repository foundation: ground rules, roadmap, workspace, lints, architecture and link checks, CI | 1 | — | Done | Claude | [#1](https://github.com/csimpson1964/New-Programming-Language/pull/1) |
@@ -122,11 +122,11 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | --- | --- | --- | --- | --- | --- | --- |
 | D.1 | Team size and hours per week; sets every estimate | — | — | Planned | Collins | — |
 | D.2 | Target workload for the Phase 3 gate (review suggests Lennard-Jones MD) | — | — | Planned | Collins | — |
-| D.3 | Mark `inout` at the call site as well as the signature | — | 0.2 | Planned | — | — |
-| D.4 | Default array layout: column-major (plan) or row-major (review) | — | — | Planned | Collins | — |
+| D.3 | Mark `inout` at the call site as well as the signature | — | 0.2 | Planned | — | [0006](docs/decisions/0006-parameter-passing.md) |
+| D.4 | Default array layout: column-major (plan) or row-major (review) | — | — | Planned | Collins | [0008](docs/decisions/0008-row-major-arrays.md) |
 | D.5 | C++ interop: full, a C-shaped subset, or dropped | — | — | Planned | Collins | — |
 | D.6 | Language name and file extension; blocks 1.3 and 1.17 | — | — | Planned | Collins | — |
-| D.7 | Resolve the plan's FFI contradiction: no FFI before Phase 4, yet an `ffi` module in the MVP | — | — | Planned | Collins | — |
+| D.7 | Resolve the plan's FFI contradiction: no FFI before Phase 4, yet an `ffi` module in the MVP | — | — | Planned | Collins | [0012](docs/decisions/0012-no-ffi-in-mvp.md) |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | — | — | Planned | Collins | — |
 
 ## Ideas
@@ -135,13 +135,13 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| I.1 | Make every source file valid Python grammar and parse it with an existing parser; replaces 1.1, 1.2, 1.3 and 1.15 | — | — | Idea | — | — |
+| I.1 | Make every source file valid Python grammar and parse it with an existing parser; replaces 1.1, 1.2, 1.3 and 1.15 | — | — | Idea | — | [0004](docs/decisions/0004-python-syntax.md), [0005](docs/decisions/0005-error-handling.md) |
 | I.2 | Before the full spec, build a small compiler that emits C and benchmark it against gfortran | 4 | 0.3 | Idea | — | — |
-| I.3 | Pass parameters as read-only borrows by default instead of moving them | — | — | Idea | — | — |
-| I.4 | Keep bounds checks on in release builds, with an `unsafe` opt-out | — | — | Idea | — | — |
+| I.3 | Pass parameters as read-only borrows by default instead of moving them | — | — | Idea | — | [0006](docs/decisions/0006-parameter-passing.md) |
+| I.4 | Keep bounds checks on in release builds, with an `unsafe` opt-out | — | — | Idea | — | [0010](docs/decisions/0010-bounds-checks.md) |
 | I.5 | Export functions to Python in Phase 2; move DataFrame, file formats and plotting (3.13 to 3.16) to Phase 4 | 3 | 1.10 | Idea | — | — |
 | I.6 | Array-valued reductions in parallel loops, needed for Lennard-Jones force accumulation | — | 1.14 | Idea | — | — |
-| I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Idea | — | — |
-| I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Idea | — | — |
-| I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Idea | — | — |
+| I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Idea | — | [0009](docs/decisions/0009-number-mixing.md) |
+| I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Idea | — | [0007](docs/decisions/0007-array-types.md) |
+| I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Idea | — | [0011](docs/decisions/0011-checked-simd.md) |
 | I.10 | Position the language against Julia, Mojo, Numba, Pythran, Codon and Chapel | — | — | Idea | — | — |

@@ -1,7 +1,8 @@
 # Decision records
 
 A decision record captures one choice that is hard to reverse or that affects more than one crate:
-what was decided, why, and what it costs. Records are never edited after acceptance except to
+what was decided, why, and what it costs. A record starts as `Proposed` and becomes `Accepted` or
+`Rejected` when the project owner decides. Records are never edited after acceptance except to
 change their status; a new record supersedes an old one.
 
 ## Format
@@ -11,8 +12,9 @@ Name the file `NNNN-short-title.md`, numbered in order, and use this outline:
 ```markdown
 # NNNN. Title
 
-Status: Proposed | Accepted | Superseded by NNNN
+Status: Proposed | Accepted | Rejected | Superseded by NNNN
 Date: YYYY-MM-DD
+Roadmap: the ROADMAP.md item IDs this record settles, if any
 
 ## Context
 
@@ -33,3 +35,12 @@ What becomes easier, what becomes harder, and what we give up.
 | --- | --- |
 | [0001. Modular crate architecture with enforced dependency rules](0001-modular-crate-architecture.md) | Accepted |
 | [0002. The roadmap is the source of truth for project management](0002-roadmap-source-of-truth.md) | Accepted |
+| [0004. Every source file is valid Python syntax](0004-python-syntax.md) | Proposed |
+| [0005. Errors use Python's `raise` and `try`, compiled to plain error returns](0005-error-handling.md) | Proposed |
+| [0006. Parameters are read-only borrows unless marked `InOut` or `Owned`](0006-parameter-passing.md) | Proposed |
+| [0007. One array family: `Array` on the heap, `Fixed` inline](0007-array-types.md) | Proposed |
+| [0008. Arrays are row-major by default](0008-row-major-arrays.md) | Proposed |
+| [0009. Numbers mix the way Python's do, within one width](0009-number-mixing.md) | Proposed |
+| [0010. Bounds checks stay on in release builds](0010-bounds-checks.md) | Proposed |
+| [0011. `simd` loops are a checked request, not an unchecked promise](0011-checked-simd.md) | Proposed |
+| [0012. No foreign function interface before Phase 4](0012-no-ffi-in-mvp.md) | Proposed |
