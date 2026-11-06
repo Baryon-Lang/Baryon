@@ -24,10 +24,10 @@ Floating-point arithmetic follows IEEE 754 exactly, with no reordering, unless a
 ### Number literals
 
 A number literal takes the type its context needs
-([decision 0009](../decisions/0009-number-mixing.md)): in `2 * x`, the `2` is an `f32` if `x` is
-an `f32`. A literal with no context to decide takes a default: `int` for `7`, `float` for `7.0`
-and `1e-3`, `complex` for `2j`. A literal that does not fit its type, such as `300` where a `u8`
-is needed, is a compile error.
+([decision 0014](../decisions/0014-number-conversions-are-calls.md)): in `2 * x`, the `2` is an
+`f32` if `x` is an `f32`. A literal with no context to decide takes a default: `int` for `7`,
+`float` for `7.0` and `1e-3`, `complex` for `2j`. A literal that does not fit its type, such as
+`300` where a `u8` is needed, is a compile error.
 
 ### Number mixing
 
@@ -49,11 +49,9 @@ non-negative exponent; a negative one panics.
 
 ### Conversions
 
-A conversion is a call to the target type: `f64(n)`, `i32(x)`, `u8(k)`. It is the only way to
-change a number's width or kind. ([Decision 0009](../decisions/0009-number-mixing.md) writes
-conversions as Rust's `x as f64`, but that is not valid Python, which
-[decision 0004](../decisions/0004-python-syntax.md) requires, so the call form is the spelling.
-It is NumPy's spelling too: `np.float64(x)`.)
+A conversion is a call to the target type: `f64(n)`, `i32(x)`, `u8(k)`
+([decision 0014](../decisions/0014-number-conversions-are-calls.md)). It is the only way to change
+a number's width or kind.
 
 | Conversion | Result |
 | --- | --- |

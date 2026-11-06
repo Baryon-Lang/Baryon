@@ -1,6 +1,6 @@
 # 0009. Numbers mix the way Python's do, within one width
 
-Status: Accepted
+Status: Superseded by 0014
 Date: 2026-11-06
 Roadmap: I.7
 
