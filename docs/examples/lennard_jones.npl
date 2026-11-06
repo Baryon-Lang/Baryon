@@ -1,0 +1,109 @@
+"""Molecular dynamics: argon-like atoms in a periodic box, integrated with velocity Verlet.
+
+512 atoms start on a cubic lattice at rest and interact through the Lennard-Jones potential.
+The program prints the kinetic, potential and total energy every 50 steps; the total should stay
+constant to about four digits, which is the standard check that the integrator is correct.
+
+Units are reduced Lennard-Jones units: length sigma, energy epsilon and mass are all 1.
+
+Language features shown:
+- `Fixed[f64, (3,)]`, a 3-vector stored inline, so vector arithmetic never allocates
+- `Array[Vec3, 1]`, an array whose elements are fixed-size vectors, stored contiguously
+- a `Struct` holding the simulation state, passed as `InOut`
+- passing two different fields of one `InOut` struct to one call, which the exclusivity check
+  allows because the fields do not overlap
+- `prange` with a `+=` reduction that the compiler infers
+"""
+
+from math import sqrt
+
+Vec3 = Fixed[f64, (3,)]
+"""A position, velocity or force in three dimensions."""
+
+LATTICE: Final = 8
+"""Atoms along each edge of the starting lattice."""
+
+N: Final = LATTICE**3
+SPACING: Final = 1.2
+BOX: Final = LATTICE * SPACING
+CUTOFF: Final = 2.5
+DT: Final = 0.005
+STEPS: Final = 200
+
+
+class Atoms(Struct):
+    """The state of the simulation. Each array has one element per atom."""
+
+    positions: Array[Vec3, 1]
+    velocities: Array[Vec3, 1]
+    forces: Array[Vec3, 1]
+
+
+def lattice() -> Atoms:
+    """Places every atom on a simple cubic lattice, at rest."""
+    positions = Array.zeros((N,), Vec3)
+    for atom in range(N):
+        x = atom % LATTICE
+        y = atom // LATTICE % LATTICE
+        z = atom // (LATTICE * LATTICE)
+        positions[atom] = Vec3(x * SPACING, y * SPACING, z * SPACING)
+    return Atoms(positions, Array.zeros((N,), Vec3), Array.zeros((N,), Vec3))
+
+
+def compute_forces(positions: Array[Vec3, 1], forces: InOut[Array[Vec3, 1]]) -> f64:
+    """Fills `forces` with the force on every atom and returns the potential energy.
+
+    Each atom sums the forces from all of its neighbours itself, so iteration `i` writes only
+    `forces[i]` and the parallel loop has no data race. Newton's third law would halve the work
+    but write both `forces[i]` and `forces[j]` from one iteration; that needs array-valued
+    reductions (roadmap idea I.6).
+    """
+    energy = 0.0
+    for i in prange(N):
+        force = Vec3.zeros()
+        for j in range(N):
+            if j == i:
+                continue
+            delta = positions[i] - positions[j]
+            delta -= BOX * (delta / BOX).round()
+            distance_squared = delta.dot(delta)
+            if distance_squared < CUTOFF * CUTOFF:
+                inverse_6 = 1.0 / distance_squared**3
+                force += delta * (24.0 * inverse_6 * (2.0 * inverse_6 - 1.0) / distance_squared)
+                energy += 2.0 * inverse_6 * (inverse_6 - 1.0)
+        forces[i] = force
+    return energy
+
+
+def kinetic_energy(velocities: Array[Vec3, 1]) -> f64:
+    energy = 0.0
+    for i in prange(N):
+        energy += 0.5 * velocities[i].dot(velocities[i])
+    return energy
+
+
+def step(atoms: InOut[Atoms]) -> f64:
+    """Advances the atoms by one velocity Verlet step and returns the new potential energy."""
+    for i in prange(N):
+        atoms.velocities[i] += 0.5 * DT * atoms.forces[i]
+        atoms.positions[i] += DT * atoms.velocities[i]
+    potential = compute_forces(atoms.positions, atoms.forces)
+    for i in prange(N):
+        atoms.velocities[i] += 0.5 * DT * atoms.forces[i]
+    return potential
+
+
+def main():
+    atoms = lattice()
+    compute_forces(atoms.positions, atoms.forces)
+    for number in range(1, STEPS + 1):
+        potential = step(atoms)
+        if number % 50 == 0:
+            kinetic = kinetic_energy(atoms.velocities)
+            total = kinetic + potential
+            temperature = 2.0 * kinetic / (3.0 * N)
+            print(
+                f"step {number:4d}  kinetic {kinetic:10.4f}  potential {potential:10.4f}  "
+                f"total {total:10.4f}  temperature {temperature:.4f}  "
+                f"rms speed {sqrt(2.0 * kinetic / N):.4f}"
+            )

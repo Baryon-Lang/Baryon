@@ -1,6 +1,6 @@
 //! `cargo xtask ci`: every check, cheapest first, stopping at the first failure.
 
-use crate::{Outcome, architecture, cargo, links, roadmap, workspace_root};
+use crate::{Outcome, architecture, cargo, examples, links, roadmap, workspace_root};
 use std::process::Command;
 
 /// One check in the CI sequence.
@@ -20,6 +20,8 @@ enum Check {
     Links,
     /// `ROADMAP.md` is well formed and updated by the current change.
     Roadmap,
+    /// Every example program is valid Python syntax.
+    Examples,
 }
 
 /// The checks `cargo xtask ci` runs, in order. Fast checks come first so failures surface early.
@@ -32,6 +34,7 @@ const CHECKS: &[Check] = &[
     Check::Roadmap,
     Check::Architecture,
     Check::Links,
+    Check::Examples,
     Check::Cargo {
         name: "lint",
         arguments: &[
@@ -81,6 +84,7 @@ impl Check {
             Self::Architecture => "architecture",
             Self::Links => "links",
             Self::Roadmap => "roadmap",
+            Self::Examples => "examples",
         }
     }
 
@@ -106,6 +110,7 @@ impl Check {
             Self::Architecture => architecture::check(),
             Self::Links => links::check(),
             Self::Roadmap => roadmap::check(),
+            Self::Examples => examples::check(),
         }
     }
 }

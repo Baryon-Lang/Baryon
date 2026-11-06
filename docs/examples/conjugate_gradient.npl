@@ -1,0 +1,111 @@
+"""Solving Poisson's equation on a square with the conjugate gradient method.
+
+The 5-point finite-difference Laplacian on a 64 x 64 grid becomes a sparse linear system with
+4,096 unknowns, stored in compressed sparse row (CSR) form. Conjugate gradient solves it, or
+reports an error if it fails to converge in time.
+
+Language features shown:
+- a `Struct` with a method, `CsrMatrix.multiply`
+- `list` for building data of unknown length, converted to an `Array` once built
+- `Raises[T, E]`: a function that can fail says so in its signature
+- `raise`, `try` and `except`, compiled to plain error returns with no unwinding
+- `prange` reductions in `dot`
+"""
+
+from math import sqrt
+
+
+class ConvergenceError(Exception):
+    """Conjugate gradient did not reach the tolerance within the allowed iterations."""
+
+    iterations: int
+    residual: f64
+
+
+class CsrMatrix(Struct):
+    """A sparse matrix in compressed sparse row form.
+
+    The entries of row `r` are `values[row_starts[r]:row_starts[r + 1]]`, in the columns given
+    by the same slice of `columns`.
+    """
+
+    rows: int
+    row_starts: Array[i64, 1]
+    columns: Array[i64, 1]
+    values: Array[f64, 1]
+
+    def multiply(self, x: Array[f64, 1], y: InOut[Array[f64, 1]]):
+        """Computes `y = self @ x`."""
+        for row in prange(self.rows):
+            total = 0.0
+            for entry in range(self.row_starts[row], self.row_starts[row + 1]):
+                total += self.values[entry] * x[self.columns[entry]]
+            y[row] = total
+
+
+def poisson_matrix(n: int) -> CsrMatrix:
+    """The 5-point Laplacian on an `n` x `n` grid with zero boundary values."""
+    row_starts: list[i64] = [0]
+    columns: list[i64] = []
+    values: list[f64] = []
+    for i in range(n):
+        for j in range(n):
+            row = i * n + j
+            if i > 0:
+                columns.append(row - n)
+                values.append(-1.0)
+            if j > 0:
+                columns.append(row - 1)
+                values.append(-1.0)
+            columns.append(row)
+            values.append(4.0)
+            if j < n - 1:
+                columns.append(row + 1)
+                values.append(-1.0)
+            if i < n - 1:
+                columns.append(row + n)
+                values.append(-1.0)
+            row_starts.append(len(columns))
+    return CsrMatrix(n * n, Array(row_starts), Array(columns), Array(values))
+
+
+def dot(a: Array[f64, 1], b: Array[f64, 1]) -> f64:
+    total = 0.0
+    for i in prange(len(a)):
+        total += a[i] * b[i]
+    return total
+
+
+def solve(
+    matrix: CsrMatrix, b: Array[f64, 1], tolerance: f64, max_iterations: int
+) -> Raises[Array[f64, 1], ConvergenceError]:
+    """Solves `matrix @ x = b` for a symmetric positive-definite `matrix`."""
+    x = Array.zeros((matrix.rows,))
+    residual = b.copy()
+    direction = residual.copy()
+    product = Array.zeros((matrix.rows,))
+    residual_squared = dot(residual, residual)
+
+    for _ in range(max_iterations):
+        if sqrt(residual_squared) < tolerance:
+            return x
+        matrix.multiply(direction, product)
+        alpha = residual_squared / dot(direction, product)
+        x += alpha * direction
+        residual -= alpha * product
+        next_residual_squared = dot(residual, residual)
+        direction = residual + (next_residual_squared / residual_squared) * direction
+        residual_squared = next_residual_squared
+
+    raise ConvergenceError(max_iterations, sqrt(residual_squared))
+
+
+def main():
+    n = 64
+    matrix = poisson_matrix(n)
+    b = Array.fill((n * n,), 1.0)
+    try:
+        x = solve(matrix, b, 1e-10, 1000)
+        print(f"converged; value at the centre: {x[(n // 2) * n + n // 2]:.6f}")
+    except ConvergenceError as error:
+        print(f"no convergence after {error.iterations} iterations; residual {error.residual:.3e}")
