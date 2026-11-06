@@ -33,3 +33,4 @@ What becomes easier, what becomes harder, and what we give up.
 | --- | --- |
 | [0001. Modular crate architecture with enforced dependency rules](0001-modular-crate-architecture.md) | Accepted |
 | [0002. The roadmap is the source of truth for project management](0002-roadmap-source-of-truth.md) | Accepted |
+| [0003. A C++ and Fortran baseline suite in `bench/`, run by a Rust harness](0003-benchmark-suite.md) | Accepted |
