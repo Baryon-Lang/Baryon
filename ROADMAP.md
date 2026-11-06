@@ -53,7 +53,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1.1 | Lexer with indentation tokens and a token arena. Dropped: the existing Python parser lexes, indentation included | 1 | 0.1 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
-| 1.2 | Front end: an existing Python 3.12 parser written in Rust behind an interface crate, lowering to a flat syntax tree, error messages written for this language, parser test corpus | 2 | 0.1 | Planned | — | [0004](docs/decisions/0004-python-syntax.md) |
+| 1.2 | Front end: an existing Python 3.12 parser written in Rust behind an interface crate, lowering to a flat syntax tree, error messages written for this language, parser test corpus | 2 | 0.1 | In progress | Claude | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.3 | Tree-sitter grammar for editor highlighting. Dropped: editors already highlight the files as Python | 1 | 0.1 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.4 | Incremental query engine and the file and module database | 2 | 1.2 | Planned | — | — |
 | 1.5 | Name resolution, modules and imports | 2 | 1.4 | Planned | — | — |
