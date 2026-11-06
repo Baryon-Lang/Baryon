@@ -100,8 +100,12 @@ impl<'db> Body<'db> {
     }
 
     /// The type of a number literal: the number type the context expects, if it can hold the
-    /// literal, or the literal's default, `i64`, `f64` or `complex128`.
-    fn literal(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
+    /// literal, or the literal's default, `i64`, `f64` or `complex128`. Under a type parameter
+    /// whose bound allows literals, the literal takes the type parameter.
+    pub(super) fn literal(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
+        if let Some(parameter) = expected.filter(|&ty| self.trait_of(ty).is_some()) {
+            return self.generic_literal_type(node, parameter);
+        }
         let wanted = expected.and_then(|ty| match ty.kind(self.db) {
             TypeKind::Primitive(primitive) if numbers::is_number(*primitive) => Some(*primitive),
             TypeKind::Optional(value) => match value.kind(self.db) {
@@ -136,7 +140,7 @@ impl<'db> Body<'db> {
     }
 
     /// Whether a number literal is imaginary, `2j` or `-2j`.
-    fn is_imaginary(&self, node: NodeId) -> bool {
+    pub(super) fn is_imaginary(&self, node: NodeId) -> bool {
         match self.tree.kind(node) {
             SyntaxKind::Imaginary => true,
             SyntaxKind::UnaryOperation => self

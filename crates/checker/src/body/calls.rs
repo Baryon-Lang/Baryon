@@ -2,11 +2,11 @@
 //! conversions and the language's built-in functions.
 
 use super::members::Member;
-use super::{Body, numbers, relations};
+use super::{Body, relations};
 use crate::outline::{Base, Kind, outline};
 use database::{Definition, File};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Declaration, Integer, Item, Nominal, Parameter, Primitive, Signature, Type, TypeKind};
+use types::{Declaration, Item, Nominal, Parameter, Signature, Type, TypeKind};
 
 /// The arguments of one call, as written.
 pub(super) struct Arguments {
@@ -51,7 +51,7 @@ impl<'db> Body<'db> {
     }
 
     /// The arguments of a call, split into positional and keyword.
-    fn arguments(&self, call: NodeId) -> Arguments {
+    pub(super) fn arguments(&self, call: NodeId) -> Arguments {
         let mut arguments = Arguments {
             positional: Vec::new(),
             keywords: Vec::new(),
@@ -112,15 +112,24 @@ impl<'db> Body<'db> {
             (Kind::Class(class), Declaration::Struct { fields, .. })
                 if class.base != Base::Enum =>
             {
+                let type_parameters: Vec<Type<'db>> = class
+                    .type_parameters
+                    .iter()
+                    .map(|&parameter| {
+                        Type::new(
+                            self.db,
+                            TypeKind::Parameter {
+                                file,
+                                name: parameter,
+                            },
+                        )
+                    })
+                    .collect();
                 let nominal = Nominal {
                     file,
                     name,
-                    arguments: Vec::new(),
+                    arguments: type_parameters.clone(),
                 };
-                if !class.type_parameters.is_empty() {
-                    // Type arguments are inferred from the fields by generic checking (1.7.5).
-                    return self.untyped(arguments);
-                }
                 let parameters = fields
                     .into_iter()
                     .map(|field| Parameter {
@@ -131,7 +140,7 @@ impl<'db> Body<'db> {
                     })
                     .collect();
                 let constructor = Signature {
-                    type_parameters: Vec::new(),
+                    type_parameters,
                     parameters,
                     returns: Type::new(self.db, TypeKind::Struct(nominal)),
                 };
@@ -310,7 +319,8 @@ impl<'db> Body<'db> {
     }
 
     /// Checks a call's arguments against `signature`, whose first `skip` parameters are
-    /// already given (a method's `self`), and returns the call's type.
+    /// already given (a method's `self`), and returns the call's type. A generic signature's
+    /// type arguments are inferred from the arguments.
     fn check_call(
         &mut self,
         node: NodeId,
@@ -320,8 +330,6 @@ impl<'db> Body<'db> {
         arguments: &Arguments,
     ) -> Type<'db> {
         let parameters = signature.parameters.get(skip..).unwrap_or_default();
-        let generic = !signature.type_parameters.is_empty();
-        let mut given = vec![false; parameters.len()];
         if arguments.positional.len() > parameters.len() {
             let message = format!(
                 "`{callee}` takes {} argument{}, found {}",
@@ -334,10 +342,10 @@ impl<'db> Body<'db> {
                 .lowerer
                 .error(node, &message, "too many arguments", None);
         }
-        for (index, &argument) in arguments.positional.iter().enumerate() {
-            given[index] = true;
-            self.argument(argument, &parameters[index], generic);
-        }
+        let mut pairs: Vec<(NodeId, usize)> =
+            arguments.positional.iter().copied().zip(0..).collect();
+        let mut given = vec![false; parameters.len()];
+        given[..pairs.len()].fill(true);
         for &(name, value) in &arguments.keywords {
             let written = self.tree.text(name, self.text);
             match parameters
@@ -352,7 +360,7 @@ impl<'db> Body<'db> {
                 }
                 Some(index) => {
                     given[index] = true;
-                    self.argument(value, &parameters[index], generic);
+                    pairs.push((value, index));
                 }
                 None => {
                     self.expression(value, None);
@@ -377,140 +385,27 @@ impl<'db> Body<'db> {
             self.lowerer
                 .error(node, &message, "missing arguments", None);
         }
-        if generic {
-            // Type arguments are inferred at calls by generic checking (1.7.5).
-            return self.lowerer.unknown();
+        if !signature.type_parameters.is_empty() {
+            return self.generic_call(node, callee, signature, parameters, &pairs);
+        }
+        for (argument, index) in pairs {
+            self.argument(argument, &parameters[index]);
         }
         signature.returns
     }
 
-    /// Checks one argument against its parameter. A generic function's parameters are
-    /// checked by a later slice.
-    fn argument(&mut self, argument: NodeId, parameter: &Parameter<'db>, generic: bool) {
-        let expected = (!generic).then_some(parameter.ty);
-        let found = self.expression(argument, expected);
-        if let Some(expected) = expected
-            && !relations::compatible(self.db, expected, found)
-        {
+    /// Checks one argument against its parameter.
+    fn argument(&mut self, argument: NodeId, parameter: &Parameter<'db>) {
+        let found = self.expression(argument, Some(parameter.ty));
+        if !relations::compatible(self.db, parameter.ty, found) {
             let message = format!(
                 "`{}` has type `{}`, found `{}`",
                 parameter.name,
-                self.show(expected),
+                self.show(parameter.ty),
                 self.show(found)
             );
             let label = format!("type `{}`", self.show(found));
             self.lowerer.error(argument, &message, &label, None);
-        }
-    }
-
-    /// A call to one of the language's names: a number conversion such as `f64(n)`, or a
-    /// built-in function.
-    fn builtin(&mut self, node: NodeId, name: &str, arguments: &Arguments) -> Type<'db> {
-        let all: Vec<NodeId> = arguments
-            .positional
-            .iter()
-            .copied()
-            .chain(arguments.keywords.iter().map(|&(_, value)| value))
-            .collect();
-        let types: Vec<Type<'db>> = all
-            .iter()
-            .map(|&argument| self.expression(argument, None))
-            .collect();
-        let primitive = |db, kind| Type::new(db, TypeKind::Primitive(kind));
-        if let Some(target) = Primitive::from_name(name) {
-            if types.len() != 1 {
-                let message = format!("`{name}(...)` converts one value, found {}", types.len());
-                return self
-                    .lowerer
-                    .error(node, &message, "wrong number of arguments", None);
-            }
-            return primitive(self.db, target);
-        }
-        let int = primitive(self.db, Primitive::Integer(Integer::I64));
-        match (name, types.as_slice()) {
-            ("str", [_]) => Type::new(self.db, TypeKind::Str),
-            ("print", _) => Type::new(self.db, TypeKind::None),
-            ("len", [_]) => int,
-            ("round", [value]) if self.is_number(*value) => int,
-            ("abs", [value]) | ("round", [value, _]) => *value,
-            ("min" | "max", [first, rest @ ..]) if !rest.is_empty() => {
-                let mut result = *first;
-                for (&ty, &argument) in rest.iter().zip(&all[1..]) {
-                    result = match (result.kind(self.db), ty.kind(self.db)) {
-                        (TypeKind::Primitive(a), TypeKind::Primitive(b)) => {
-                            match numbers::common(*a, *b) {
-                                Some(common) => primitive(self.db, common),
-                                None => self.mixing_error(argument, name, *a, *b),
-                            }
-                        }
-                        _ => self.lowerer.unknown(),
-                    };
-                }
-                result
-            }
-            _ => self.lowerer.unknown(),
-        }
-    }
-
-    /// Whether `ty` is a number type.
-    fn is_number(&self, ty: Type<'db>) -> bool {
-        matches!(ty.kind(self.db), TypeKind::Primitive(primitive) if numbers::is_number(*primitive))
-    }
-
-    /// The element type of a `for` loop over `range`, `prange`, `enumerate` or `zip`, or
-    /// `None` when the iterator is not a call to one of them.
-    pub(super) fn builtin_iteration(&mut self, iterator: NodeId) -> Option<Type<'db>> {
-        if self.tree.kind(iterator) != SyntaxKind::Call {
-            return None;
-        }
-        let function = self.tree.child(iterator, Role::Function)?;
-        let Some(Definition::Builtin(name)) = self.lowerer.definition(function) else {
-            return None;
-        };
-        let arguments = self.arguments(iterator);
-        let int = Type::new(
-            self.db,
-            TypeKind::Primitive(Primitive::Integer(Integer::I64)),
-        );
-        match *name {
-            "range" | "prange" => {
-                let mut element: Option<Type<'db>> = None;
-                for &argument in &arguments.positional {
-                    let found = self.expression(argument, Some(element.unwrap_or(int)));
-                    let is_integer = matches!(
-                        found.kind(self.db),
-                        TypeKind::Primitive(Primitive::Integer(_))
-                    );
-                    if !is_integer && !relations::is_open(self.db, found) {
-                        let message =
-                            format!("`{name}` counts in integers, found `{}`", self.show(found));
-                        self.lowerer
-                            .error(argument, &message, "not an integer", None);
-                    } else if is_integer && element.is_none() {
-                        element = Some(found);
-                    }
-                }
-                for &(_, value) in &arguments.keywords {
-                    self.expression(value, None);
-                }
-                Some(element.unwrap_or(int))
-            }
-            "enumerate" => {
-                let element = match arguments.positional.first() {
-                    Some(&sequence) => self.iteration(sequence),
-                    None => self.lowerer.unknown(),
-                };
-                Some(Type::new(self.db, TypeKind::Tuple(vec![int, element])))
-            }
-            "zip" => {
-                let elements = arguments
-                    .positional
-                    .iter()
-                    .map(|&sequence| self.iteration(sequence))
-                    .collect();
-                Some(Type::new(self.db, TypeKind::Tuple(elements)))
-            }
-            _ => None,
         }
     }
 }

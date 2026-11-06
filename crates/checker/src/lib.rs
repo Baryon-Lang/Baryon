@@ -12,8 +12,11 @@
 //!   `bool`, calls with the wrong arguments, missing fields, and a variable given a value of
 //!   another type.
 //! - **Arrays** (roadmap 1.7.4): copy-type elements, one index per dimension, slices as views,
-//!   the version 0 methods, and whole-array arithmetic on matching ranks and shapes. See the
-//!   `body` module for what later slices add.
+//!   the version 0 methods, and whole-array arithmetic on matching ranks and shapes.
+//! - **Generics** (roadmap 1.7.5): type arguments inferred from a call's arguments and checked
+//!   against the bounds `Number`, `Float`, `VectorSpace` and `Copy`, and, inside a generic
+//!   body, only the operations a type parameter's bound allows. See the `body` module for
+//!   what later slices add.
 //!
 //! It is an implementation crate. It reads trees and names only through the `database`
 //! interface and publishes its results through the `types` interface, whose
@@ -131,6 +134,7 @@ mod forms;
 mod lower;
 mod outline;
 mod padding;
+mod traits;
 
 use database::{File, Package};
 use diagnostics::Diagnostic;

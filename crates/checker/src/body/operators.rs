@@ -1,7 +1,8 @@
 //! Operators: arithmetic, bitwise and boolean operators, and comparisons, with the number
 //! mixing rules of the `numbers` module.
 
-use super::{Body, number_context, numbers, relations};
+use super::{Body, numbers, relations};
+use crate::traits::Trait;
 use syntax::{NodeId, Operator, Role};
 use types::{Primitive, Type, TypeKind};
 
@@ -22,11 +23,11 @@ impl<'db> Body<'db> {
     pub(super) fn operands(&mut self, left: NodeId, right: NodeId) -> (Type<'db>, Type<'db>) {
         if self.is_number_literal(left) && !self.is_number_literal(right) {
             let right = self.expression(right, None);
-            let left = self.expression(left, number_context(self.db, right));
+            let left = self.expression(left, self.number_context(right));
             (left, right)
         } else {
             let left = self.expression(left, None);
-            let right = self.expression(right, number_context(self.db, left));
+            let right = self.expression(right, self.number_context(left));
             (left, right)
         }
     }
@@ -39,6 +40,9 @@ impl<'db> Body<'db> {
         left: Type<'db>,
         right: Type<'db>,
     ) -> Type<'db> {
+        if let Some(result) = self.generic_arithmetic(node, operator, left, right) {
+            return result;
+        }
         let unknown = self.lowerer.unknown();
         if relations::is_open(self.db, left) || relations::is_open(self.db, right) {
             return unknown;
@@ -115,6 +119,28 @@ impl<'db> Body<'db> {
     pub(super) fn unary(&mut self, node: NodeId) -> Type<'db> {
         let operator = self.tree.node(node).operator();
         let operand = self.child_type(node, Role::Value);
+        if matches!(operator, Operator::Negate | Operator::Plus)
+            && self.number_context(operand) == Some(operand)
+        {
+            // A number, or a type parameter whose bound allows literals.
+            return operand;
+        }
+        if matches!(operand.kind(self.db), TypeKind::Parameter { .. }) {
+            if operator == Operator::Negate && self.trait_of(operand) == Some(Trait::VectorSpace) {
+                return operand;
+            }
+            let message = format!(
+                "`{}` does not apply to `{}`",
+                operator.symbol(),
+                self.show(operand)
+            );
+            return self.lowerer.error(
+                node,
+                &message,
+                "the type parameter's bound does not allow it",
+                None,
+            );
+        }
         if relations::is_open(self.db, operand) {
             return self.lowerer.unknown();
         }
@@ -182,7 +208,7 @@ impl<'db> Body<'db> {
             };
             let (left_type, right_type) = match left {
                 Some(left_type) => {
-                    let right = self.expression(right_node, number_context(self.db, left_type));
+                    let right = self.expression(right_node, self.number_context(left_type));
                     (left_type, right)
                 }
                 None => self.operands(left_node, right_node),
@@ -201,14 +227,34 @@ impl<'db> Body<'db> {
 
     /// Reports two values one comparison cannot compare.
     fn comparable(&mut self, node: NodeId, operator: Operator, left: Type<'db>, right: Type<'db>) {
-        if relations::is_open(self.db, left) || relations::is_open(self.db, right) {
-            return;
-        }
         let symbol = operator.symbol();
         let ordering = matches!(
             operator,
             Operator::Less | Operator::LessEqual | Operator::Greater | Operator::GreaterEqual
         );
+        let parameter = |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Parameter { .. });
+        let unknown = |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Unknown);
+        if (parameter(left) || parameter(right)) && !unknown(left) && !unknown(right) {
+            if left != right {
+                let message = format!(
+                    "`{symbol}` cannot compare `{}` and `{}`",
+                    self.show(left),
+                    self.show(right)
+                );
+                self.lowerer.error(node, &message, "different types", None);
+            } else if ordering && !self.is_ordered_parameter(left) {
+                let message = format!("`{symbol}` cannot order `{}` values", self.show(left));
+                let hint = format!(
+                    "bound the type parameter by `Number` or `Float`: `[{}: Number]`",
+                    self.show(left)
+                );
+                self.lowerer.error(node, &message, "no order", Some(&hint));
+            }
+            return;
+        }
+        if relations::is_open(self.db, left) || relations::is_open(self.db, right) {
+            return;
+        }
         match (left.kind(self.db), right.kind(self.db)) {
             (TypeKind::Primitive(a), TypeKind::Primitive(b)) => {
                 let complex =
