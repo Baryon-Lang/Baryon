@@ -1,6 +1,6 @@
 # 0013. Parallel loops may add into shared arrays they declare with `accumulate=`
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
 Roadmap: I.6, D.12
 

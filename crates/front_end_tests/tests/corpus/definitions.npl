@@ -1,0 +1,33 @@
+def variadic(*values: f64, **options: f64) -> f64:
+    return 0.0
+
+
+@staticmethod
+def decorated():
+    pass
+
+
+@test
+@timed(10)
+def timed_test():
+    pass
+
+
+class Plain:
+    x: f64
+
+
+class Child(Particle):
+    y: f64
+
+
+class Point(Struct, metaclass=Meta):
+    x: f64
+
+
+class Mixed(Struct, Enum):
+    A = 1
+
+
+class Copied(Copy):
+    x: f64

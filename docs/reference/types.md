@@ -130,8 +130,10 @@ class Particle(Struct):
 - `Particle(p, v, 1.0)` builds one, with arguments in field order, by position or by name.
 - Methods are `def` inside the class, with `self` first. How `self` is passed is in
   [Values and references](values-and-references.md#methods).
-- Structs have no inheritance: no base besides `Struct` and, optionally, `Copy`. Share code
-  between structs with functions and generics instead.
+- Structs have no inheritance
+  ([decision 0015](../decisions/0015-no-class-inheritance.md)): no base besides `Struct` and,
+  optionally, `Copy`. Types share behavior through traits and generic functions, and share data
+  by holding one another as fields.
 - A struct moves when assigned, unless it is declared `class Particle(Struct, Copy)`; see
   [copy types](values-and-references.md#copy-types).
 

@@ -56,19 +56,22 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | --- | --- | --- | --- | --- | --- | --- |
 | 1.1 | Lexer with indentation tokens and a token arena. Dropped: the existing Python parser lexes, indentation included | 1 | 0.1 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.2 | Front end: an existing Python 3.12 parser written in Rust behind an interface crate, lowering to a flat syntax tree, error messages written for this language, parser test corpus | 2 | 0.1 | Done | Claude | [0004](docs/decisions/0004-python-syntax.md), [#7](https://github.com/csimpson1964/New-Programming-Language/pull/7) |
-| 1.2.1 | Reject the Python constructs the language does not support yet, with a diagnostic for each, as a pass over the syntax tree that follows the language reference's list | 1 | 0.1, 1.2 | Planned | — | — |
+| 1.2.1 | Reject the Python constructs the language does not support yet, with a diagnostic for each, as a pass over the syntax tree that follows the language reference's list | 1 | 0.1, 1.2 | Done | Claude | [#13](https://github.com/csimpson1964/New-Programming-Language/pull/13) |
 | 1.3 | Tree-sitter grammar for editor highlighting. Dropped: editors already highlight the files as Python | 1 | 0.1 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.4 | Incremental query engine and the file and module database | 2 | 1.2 | Planned | — | — |
 | 1.5 | Name resolution, modules and imports | 2 | 1.4 | Planned | — | — |
 | 1.6 | Type representation, interning, layouts, compile-time shapes, complex numbers | 2 | 1.5 | Planned | — | — |
 | 1.7 | Type checker: local inference, generics, static-dispatch traits, enums, match | 6 | 1.6 | Planned | — | — |
 | 1.8 | Reference and exclusivity checker | 3 | 1.7 | Planned | — | — |
+| 1.8.1 | `prange(n, accumulate=...)`: check that listed arrays are only added to, and suggest the argument in the disjoint-write error | — | 1.8 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.9 | Mid-level IR: lowering, drops, monomorphization | 5 | 1.7 | Planned | — | — |
 | 1.10 | LLVM backend: no-alias metadata, debug info, Apple AArch64 ABI, Mach-O output | 6 | 1.9 | Planned | — | — |
 | 1.11 | Driver: build, run, test, manifest, linking, compile-time reporting | 3 | 1.10 | Planned | — | — |
 | 1.12 | Runtime: allocator, panics, traps, thread pool | 2 | 1.10 | Planned | — | — |
+| 1.12.1 | Accumulated arrays in `prange`: blocked private buffers per chunk, combined in the fixed reduction tree | — | 1.12 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.13 | Standard library: core and collections | 3 | 1.11 | Planned | — | — |
 | 1.14 | Standard library: N-dimensional arrays, views, stencil, simd and parallel loops, random numbers, BLAS | 5 | 1.13 | Planned | — | — |
+| 1.14.1 | Half-list Lennard-Jones with `accumulate=` in the examples, and a threaded half-list OpenMP baseline in the benchmark suite to compare against | — | 1.14 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.15 | Formatter built on the syntax tree. Dropped: existing Python formatters such as Ruff and Black format the files | 2 | 1.2 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.16 | Language server: diagnostics, go to definition, hover, completion, fixes | 4 | 1.8 | Planned | — | — |
 | 1.17 | VS Code extension | 1 | 1.16 | Planned | — | — |
@@ -137,7 +140,8 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.9 | Traits: how user code declares a trait and how a type implements it, structurally as Python's `Protocol` does or by naming it as Rust does | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
 | D.10 | Sum types: how to spell an enum whose variants carry data, in valid Python syntax | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
 | D.11 | Integer overflow in release builds: wrap, as the plan says, or panic, as in debug builds | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
-| D.12 | Parallel loops that add into shared arrays (Newton's third law, histograms, assembly): `prange(n, accumulate=forces)`, write-only, reproducible, blocked private buffers | — | I.6 | In progress | Claude | [0013](docs/decisions/0013-parallel-accumulation.md), [#8](https://github.com/csimpson1964/New-Programming-Language/pull/8) |
+| D.12 | Parallel loops that add into shared arrays (Newton's third law, histograms, assembly). Decided: `prange(n, accumulate=forces)`, add-only, reproducible, blocked private buffers | — | I.6 | Done | Collins | [0013](docs/decisions/0013-parallel-accumulation.md), [#8](https://github.com/csimpson1964/New-Programming-Language/pull/8) |
+| D.13 | Class inheritance: Python-style subclassing, or classes as plain structs with methods. Decided: no inheritance; shared behavior comes from traits | — | — | Done | Collins | [0015](docs/decisions/0015-no-class-inheritance.md), [#12](https://github.com/csimpson1964/New-Programming-Language/pull/12) |
 
 ## Ideas
 
@@ -150,7 +154,7 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.3 | Pass parameters as read-only borrows by default instead of moving them | — | — | Done | Collins | [0006](docs/decisions/0006-parameter-passing.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.4 | Keep bounds checks on in release builds, with an `unsafe` opt-out | — | — | Done | Collins | [0010](docs/decisions/0010-bounds-checks.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.5 | Export functions to Python in Phase 2; move DataFrame, file formats and plotting (3.13 to 3.16) to Phase 4 | 3 | 1.10 | Idea | — | — |
-| I.6 | Array-valued reductions in parallel loops, needed for Lennard-Jones force accumulation. Proposed as `prange(n, accumulate=forces)` in decision D.12 | — | 1.14 | Idea | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
+| I.6 | Array-valued reductions in parallel loops, needed for Lennard-Jones force accumulation. Accepted as `prange(n, accumulate=forces)` | — | 1.14 | Done | Collins | [0013](docs/decisions/0013-parallel-accumulation.md), [#8](https://github.com/csimpson1964/New-Programming-Language/pull/8) |
 | I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Done | Collins | [0009](docs/decisions/0009-number-mixing.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2), [0014](docs/decisions/0014-number-conversions-are-calls.md) |
 | I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Done | Collins | [0007](docs/decisions/0007-array-types.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Done | Collins | [0011](docs/decisions/0011-checked-simd.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |

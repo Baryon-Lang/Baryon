@@ -1,0 +1,97 @@
+error: module-level variables are not supported
+ --> placement.npl:4:1
+  |
+4 | scale: float = 2.0
+  | ^^^^^^^^^^^^^^^^^^ a variable at the top level of a module
+  = note: a module-level variable is shared mutable state, which a parallel loop could race on
+  = note: mark a constant with `Final`: `scale: Final = ...`
+
+error: only definitions may be at the top level of a module
+ --> placement.npl:6:1
+  |
+6 | a, b = 1, 2
+  | ^^^^^^^^^^^ this is code that would run when the module loads
+  = note: a module holds only imports, `Final` constants, type aliases, functions and classes; the program starts at its `main` function
+  = note: move this into `main` or another function
+
+error: only definitions may be at the top level of a module
+ --> placement.npl:7:1
+  |
+7 | counter += 1
+  | ^^^^^^^^^^^^ this is code that would run when the module loads
+  = note: a module holds only imports, `Final` constants, type aliases, functions and classes; the program starts at its `main` function
+  = note: move this into `main` or another function
+
+error: only definitions may be at the top level of a module
+ --> placement.npl:8:1
+  |
+8 | print("loading")
+  | ^^^^^^^^^^^^^^^^ this is code that would run when the module loads
+  = note: a module holds only imports, `Final` constants, type aliases, functions and classes; the program starts at its `main` function
+  = note: move this into `main` or another function
+
+error: this string documents nothing
+ --> placement.npl:9:1
+  |
+9 | """A string that documents nothing."""
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not in a documentation position
+  = note: documentation goes first in the module, or right after the constant or type alias it documents
+
+error: only definitions may be at the top level of a module
+  --> placement.npl:11:1
+   |
+11 | if LIMIT > 5:
+   | ^^^^^^^^^^^^^ this is code that would run when the module loads
+   = note: a module holds only imports, `Final` constants, type aliases, functions and classes; the program starts at its `main` function
+   = note: move this into `main` or another function
+
+error: only definitions may be at the top level of a module
+  --> placement.npl:15:1
+   |
+15 | for i in range(3):
+   | ^^^^^^^^^^^^^^^^^^ this is code that would run when the module loads
+   = note: a module holds only imports, `Final` constants, type aliases, functions and classes; the program starts at its `main` function
+   = note: move this into `main` or another function
+
+error: a class body holds only fields, methods and documentation
+  --> placement.npl:24:5
+   |
+24 |     if size > 0:
+   |     ^^^^^^^^^^^^
+   = note: move this code into a method
+
+error: a class body holds only fields, methods and documentation
+  --> placement.npl:27:5
+   |
+27 |     print(size)
+   |     ^^^^^^^^^^^
+   = note: move this code into a method
+
+error: this expression's value is never used
+  --> placement.npl:32:5
+   |
+32 |     x == 1
+   |     ^^^^^^ computed, then thrown away
+   = note: to assign, write `=` instead of `==`
+
+error: this expression's value is never used
+  --> placement.npl:33:5
+   |
+33 |     x + 1
+   |     ^^^^^ computed, then thrown away
+   = note: only a call, or a documentation string, can stand on a line by itself
+
+error: this expression's value is never used
+  --> placement.npl:34:5
+   |
+34 |     ...
+   |     ^^^ computed, then thrown away
+   = note: write `pass` for an empty block
+
+error: this string documents nothing
+  --> placement.npl:35:5
+   |
+35 |     "not documentation"
+   |     ^^^^^^^^^^^^^^^^^^^ not in a documentation position
+   = note: documentation goes first in the function
+

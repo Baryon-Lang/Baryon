@@ -21,8 +21,10 @@ class ConvergenceError(Exception):
 ```
 
 `ConvergenceError(1000, 3.2e-6)` builds one, with arguments in field order. An error type is not
-part of a hierarchy: `Exception` is a marker, as `Struct` is, and an error type cannot have another
-error type as its base.
+part of a hierarchy ([decision 0015](../decisions/0015-no-class-inheritance.md)): `Exception`
+is a marker, as `Struct` is, and an error type cannot have another error type as its base. Where
+Python code would catch a base class, list the error types instead: in `Raises` as a union, and
+in `except` as a tuple.
 
 ## Functions that can fail
 
