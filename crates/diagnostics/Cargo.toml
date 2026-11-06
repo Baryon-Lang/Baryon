@@ -1,0 +1,18 @@
+[package]
+name = "diagnostics"
+description = "Compiler messages with source locations, and their plain-text rendering."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "foundation"
+
+[dependencies]
+source.workspace = true
+
+[lints]
+workspace = true
