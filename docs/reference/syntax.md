@@ -18,6 +18,17 @@ names it adds where Python has no spelling.
   Why: top-level statements and global variables are shared mutable state, which a parallel loop
   could race on. Without them, every function's inputs are its parameters.
 
+- Each top-level name is defined once per module. Defining a function, class, constant or alias
+  twice is an error, where Python would let the second silently replace the first. Two
+  `import a.b` and `import a.c` both binding `a` are not a clash.
+- Top-level names are visible throughout their module, in any order, because a module holds only
+  definitions.
+- Imports name modules from the package root: `from physics.nbody import step`. Relative imports,
+  `from . import x` and `from .nbody import step`, are not supported, so a module's imports read
+  the same wherever the file sits.
+- A name starting with `_` is private to its module: importing it, or reading it as
+  `module._name`, is an error.
+
 - A string literal as the first statement of a module, function or class is its documentation, as
   in Python. A string literal right after a `Final` constant or a field documents that constant or
   field. Documentation tools read both.
@@ -42,7 +53,7 @@ the spelling to use instead.
 | `break`, `continue`, `pass`, `return` | yes | `break` and `return` are not allowed in a `prange` body |
 | `def` | yes | At module level, and as methods inside a class. Nested functions are not in version 0 |
 | `class` | yes | Only with the base `Struct` (optionally with `Copy`), `Exception` or `Enum`. No inheritance, by [decision 0015](../decisions/0015-no-class-inheritance.md); see [Types](types.md#structs) |
-| `import m`, `from m import x`, `as` | yes | No `from m import *` |
+| `import m`, `from m import x`, `as` | yes | No `from m import *`, no relative imports; see [Source files](#source-files) |
 | `raise E(...)` | yes | Only inside a function that declares it can fail; see [Errors](errors.md) |
 | `try` with `except` | yes | Each `except` names the error types it handles. No bare `except:`, no `else`, no `finally` |
 | `with unsafe:` | yes | The only `with` form in version 0 |

@@ -1,0 +1,22 @@
+[package]
+name = "resolver"
+description = "Name resolution: finds the definition every name in a file refers to, across modules and imports."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "implementation"
+
+[dependencies]
+database.workspace = true
+diagnostics.workspace = true
+salsa.workspace = true
+source.workspace = true
+syntax.workspace = true
+
+[lints]
+workspace = true
