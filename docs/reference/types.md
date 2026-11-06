@@ -140,6 +140,38 @@ class Particle(Struct):
 Python programmers will recognize this as a `@dataclass`. It is written as a class with a base
 rather than a decorator so that the base, not a convention, is what changes the semantics.
 
+### Field layout
+
+A struct stores its fields in the order they are declared, each at the next offset its alignment
+allows, as a C struct does. The compiler never reorders them. An array of structs is therefore laid
+out exactly as its author wrote it, and can be shared byte for byte with C, a NumPy structured
+array or a binary file format.
+
+Alignment can leave gaps. A field of 8 bytes starts at a multiple of 8, so a 1-byte `bool` before
+it is followed by 7 unused bytes. Declaring fields from largest to smallest avoids that:
+
+```python
+class Sample(Struct):
+    """24 bytes: 7 unused after `valid`, 4 more at the end to keep the next element aligned."""
+
+    valid: bool
+    value: f64
+    count: i32
+
+
+class PackedSample(Struct):
+    """16 bytes: the same fields, largest first."""
+
+    value: f64
+    count: i32
+    valid: bool
+```
+
+Rust reorders fields to save space unless told not to; this language keeps the declared order
+because data shared with other programs must match a layout someone wrote down, and a struct whose
+size changes when the compiler improves would break every file written before. A compiler warning
+that names the order that saves padding is planned as roadmap item 1.7.1.
+
 ## Enums
 
 ```python
