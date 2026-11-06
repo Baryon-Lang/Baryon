@@ -1,0 +1,16 @@
+def expressions(items: list[int], a: int, b: int):
+    square = lambda x: x * x
+    table = {"a": 1}
+    unique = {1, 2}
+    squares = {x * x for x in items}
+    names = {x: str(x) for x in items}
+    total = sum(x * x for x in items)
+    pairs = (x for x in items)
+    if (n := len(items)) > 10:
+        pass
+    show(*items)
+    show(**options)
+    joined = [*items, 1]
+    same = a is b
+    different = a is not b < 3
+    values = [x async for x in stream()]

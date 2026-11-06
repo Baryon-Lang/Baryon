@@ -1,0 +1,48 @@
+def statements(items: list[int]):
+    first, *rest = items
+    del first
+    global counter
+    nonlocal total
+    while True:
+        break
+    else:
+        pass
+    for item in items:
+        pass
+    # else: in a comment is not the keyword
+    else:
+        pass
+    with open("data.txt") as handle:
+        pass
+    try:
+        work()
+    except:
+        pass
+    else:
+        done()
+    finally:
+        cleanup()
+    try:
+        work()
+    except* ValueError:
+        pass
+    yield 1
+    yield from items
+
+
+type Vector = list[float]
+
+from math import *
+
+
+async def fetch():
+    async for chunk in stream():
+        pass
+    async with lock():
+        await chunk
+
+
+def outer():
+    def inner():
+        pass
+    inner()

@@ -1,0 +1,20 @@
+[package]
+name = "syntax_check"
+description = "Rejects the Python constructs the language does not support, one diagnostic each."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "implementation"
+
+[dependencies]
+diagnostics.workspace = true
+source.workspace = true
+syntax.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,157 @@
+error: star targets are not supported
+ --> statements.npl:2:12
+  |
+2 |     first, *rest = items
+  |            ^^^^^
+  = note: unpack a fixed number of names, `a, b = pair`, or index and slice the sequence: `first = items[0]`
+
+error: `del` is not supported
+ --> statements.npl:3:5
+  |
+3 |     del first
+  |     ^^^^^^^^^
+  = note: a value is destroyed when its owner goes out of scope, so nothing needs `del`
+
+error: `global` is not supported
+ --> statements.npl:4:5
+  |
+4 |     global counter
+  |     ^^^^^^^^^^^^^^
+  = note: there are no module-level variables
+  = note: pass the value as a parameter, declared `InOut[T]` if the function changes it
+
+error: `nonlocal` is not supported
+ --> statements.npl:5:5
+  |
+5 |     nonlocal total
+  |     ^^^^^^^^^^^^^^
+  = note: functions do not nest, so there is no enclosing function's variable to change
+  = note: pass the value as a parameter, declared `InOut[T]` if the function changes it
+
+error: `while` with `else` is not supported
+ --> statements.npl:8:5
+  |
+8 |     else:
+  |     ^^^^ this `else` belongs to the loop
+  = note: a loop's `else` runs when the loop ends without `break`, which readers often misread
+  = note: set a flag before `break` and test it after the loop
+
+error: `for` with `else` is not supported
+  --> statements.npl:13:5
+   |
+13 |     else:
+   |     ^^^^ this `else` belongs to the loop
+   = note: a loop's `else` runs when the loop ends without `break`, which readers often misread
+   = note: set a flag before `break` and test it after the loop
+
+error: `with` is supported only as `with unsafe:`
+  --> statements.npl:15:10
+   |
+15 |     with open("data.txt") as handle:
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: context managers are not in version 0
+   = note: cleanup is automatic: every value is destroyed when its owner goes out of scope
+
+error: `except` must name the error types it handles
+  --> statements.npl:19:5
+   |
+19 |     except:
+   |     ^^^^^^ catches every error
+   = note: a function's signature lists every error it can raise, so the handler can name them
+   = note: write `except ErrorType:`, or `except (FirstError, SecondError):`
+
+error: `try` with `else` is not supported
+  --> statements.npl:21:5
+   |
+21 |     else:
+   |     ^^^^
+   = note: move this code to the end of the `try` body
+
+error: `try` with `finally` is not supported
+  --> statements.npl:23:5
+   |
+23 |     finally:
+   |     ^^^^^^^
+   = note: cleanup is automatic: every value is destroyed when its owner goes out of scope, on every path out of a function
+
+error: `except*` is not supported
+  --> statements.npl:27:5
+   |
+27 |     except* ValueError:
+   |     ^^^^^^
+   = note: exception groups are not in version 0; write `except` instead
+
+error: `yield` is not supported
+  --> statements.npl:29:5
+   |
+29 |     yield 1
+   |     ^^^^^^^
+   = note: generators are not in version 0; build and return a `list` instead
+
+error: `yield` is not supported
+  --> statements.npl:30:5
+   |
+30 |     yield from items
+   |     ^^^^^^^^^^^^^^^^
+   = note: generators are not in version 0; build and return a `list` instead
+
+error: the `type` statement is not supported
+  --> statements.npl:33:1
+   |
+33 | type Vector = list[float]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: a type alias is an assignment, so there is one spelling for one thing
+   = note: write it as `Vector = list[float]`
+
+error: `import *` is not supported
+  --> statements.npl:35:18
+   |
+35 | from math import *
+   |                  ^ imports every name
+   = note: a name's origin should be visible in the file that uses it
+   = note: name each import: `from math import first, second`
+
+error: `async` is not supported
+  --> statements.npl:38:1
+   |
+38 | async def fetch():
+   | ^^^^^
+   = note: version 0 has no asynchronous code; parallel work uses `prange`
+
+error: `async` is not supported
+  --> statements.npl:39:5
+   |
+39 |     async for chunk in stream():
+   |     ^^^^^
+   = note: version 0 has no asynchronous code; parallel work uses `prange`
+
+error: `async` is not supported
+  --> statements.npl:41:5
+   |
+41 |     async with lock():
+   |     ^^^^^
+   = note: version 0 has no asynchronous code; parallel work uses `prange`
+
+error: `with` is supported only as `with unsafe:`
+  --> statements.npl:41:16
+   |
+41 |     async with lock():
+   |                ^^^^^^
+   = note: context managers are not in version 0
+   = note: cleanup is automatic: every value is destroyed when its owner goes out of scope
+
+error: `await` is not supported
+  --> statements.npl:42:9
+   |
+42 |         await chunk
+   |         ^^^^^^^^^^^
+   = note: version 0 has no asynchronous code; parallel work uses `prange`
+
+error: functions cannot be defined inside functions
+  --> statements.npl:46:9
+   |
+46 |     def inner():
+   |         ^^^^^ a nested function
+   = note: nested functions are not in version 0
+   = note: move it to the top level of the module, and pass what it uses as parameters
+

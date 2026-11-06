@@ -19,8 +19,8 @@
 //! 3.12 is reported as an error, so every file stays readable by every Python 3.12 tool.
 //!
 //! The parser accepts all of Python 3.12. Rejecting the constructs this language does not
-//! support, such as `lambda` or `global`, is a later stage's job, so that the list can change
-//! without touching the parser.
+//! support, such as `lambda` or `global`, is the next stage's job, the `syntax_check` crate's, so
+//! that the list can change without touching the parser.
 //!
 //! # Example
 //!

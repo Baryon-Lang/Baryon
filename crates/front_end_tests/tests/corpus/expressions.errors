@@ -1,0 +1,102 @@
+error: `lambda` is not supported
+ --> expressions.npl:2:14
+  |
+2 |     square = lambda x: x * x
+  |              ^^^^^^^^^^^^^^^
+  = note: pass a function defined with `def` at the top level of the module instead
+
+error: dictionaries are not supported yet
+ --> expressions.npl:3:13
+  |
+3 |     table = {"a": 1}
+  |             ^^^^^^^^
+  = note: dictionaries are not in version 0; for named values, use a struct
+
+error: sets are not supported yet
+ --> expressions.npl:4:14
+  |
+4 |     unique = {1, 2}
+  |              ^^^^^^
+  = note: sets are not in version 0; use a `list`
+
+error: sets are not supported yet
+ --> expressions.npl:5:15
+  |
+5 |     squares = {x * x for x in items}
+  |               ^^^^^^^^^^^^^^^^^^^^^^
+  = note: sets are not in version 0; use a `list`
+
+error: dictionaries are not supported yet
+ --> expressions.npl:6:13
+  |
+6 |     names = {x: str(x) for x in items}
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: dictionaries are not in version 0; for named values, use a struct
+
+error: generator expressions are not supported
+ --> expressions.npl:7:17
+  |
+7 |     total = sum(x * x for x in items)
+  |                 ^^^^^^^^^^^^^^^^^^^^
+  = note: generators are not in version 0
+  = note: write a list comprehension instead: `[x * x for x in items]`
+
+error: generator expressions are not supported
+ --> expressions.npl:8:13
+  |
+8 |     pairs = (x for x in items)
+  |             ^^^^^^^^^^^^^^^^^^
+  = note: generators are not in version 0
+  = note: write a list comprehension instead: `[x for x in items]`
+
+error: assignment expressions `:=` are not supported
+ --> expressions.npl:9:9
+  |
+9 |     if (n := len(items)) > 10:
+  |         ^^^^^^^^^^^^^^^
+  = note: assign on the line before: `n = len(items)`
+
+error: `*` unpacking in a call is not supported
+  --> expressions.npl:11:10
+   |
+11 |     show(*items)
+   |          ^^^^^^
+   = note: pass each argument by position or by name
+
+error: `**` unpacking in a call is not supported
+  --> expressions.npl:12:10
+   |
+12 |     show(**options)
+   |          ^^^^^^^^^
+   = note: pass each argument by name
+
+error: `*` unpacking is not supported
+  --> expressions.npl:13:15
+   |
+13 |     joined = [*items, 1]
+   |               ^^^^^^
+   = note: build the collection with a loop, or join lists with `+`
+
+error: `is` compares only with `None`
+  --> expressions.npl:14:12
+   |
+14 |     same = a is b
+   |            ^^^^^^
+   = note: `x is None` asks whether a value is missing
+   = note: to compare values, write `==`
+
+error: `is` compares only with `None`
+  --> expressions.npl:15:17
+   |
+15 |     different = a is not b < 3
+   |                 ^^^^^^^^^^
+   = note: `x is None` asks whether a value is missing
+   = note: to compare values, write `!=`
+
+error: `async` is not supported
+  --> expressions.npl:16:17
+   |
+16 |     values = [x async for x in stream()]
+   |                 ^^^^^
+   = note: version 0 has no asynchronous code; parallel work uses `prange`
+
