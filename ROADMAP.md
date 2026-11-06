@@ -68,7 +68,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.7.3 | Function bodies: local inference, literals, number mixing, operators, conditions, calls, fields and methods, assignments and returns | 2 | 1.7.2 | Done | Claude | [#24](https://github.com/csimpson1964/New-Programming-Language/pull/24) |
 | 1.7.4 | Arrays: copy-type elements, indexing, slicing, whole-array arithmetic | 1 | 1.7.3 | Done | Claude | [#25](https://github.com/csimpson1964/New-Programming-Language/pull/25) |
 | 1.7.5 | Generics: standard-trait bounds, type arguments inferred at calls | 1 | 1.7.3 | Done | Claude | [#26](https://github.com/csimpson1964/New-Programming-Language/pull/26) |
-| 1.7.6 | Enums and exhaustive `match` | 0.5 | 1.7.3 | Planned | — | — |
+| 1.7.6 | Enums and exhaustive `match` | 0.5 | 1.7.3 | Done | Claude | [#28](https://github.com/csimpson1964/New-Programming-Language/pull/28) |
 | 1.7.7 | `Raises`, `raise` and `try`: error types checked through calls | 0.5 | 1.7.3 | Planned | — | — |
 | 1.7.8 | `None` checks narrow an optional value to its type; using an unchecked optional is an error | 0.5 | 1.7.3 | Planned | — | — |
 | 1.7.9 | Definite assignment, naming the path that skips the assignment, and a missing `return` at the end of a function | 1 | 1.7.3 | Planned | — | — |

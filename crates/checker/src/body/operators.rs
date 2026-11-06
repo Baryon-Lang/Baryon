@@ -271,6 +271,15 @@ impl<'db> Body<'db> {
                     self.lowerer.error(node, &message, "no order", None);
                 }
             }
+            (TypeKind::Enum(_), TypeKind::Enum(_)) if ordering && left == right => {
+                let message = format!("`{symbol}` cannot order `{}` values", self.show(left));
+                self.lowerer.error(
+                    node,
+                    &message,
+                    "no order",
+                    Some("enum members are compared with `==` and `!=`"),
+                );
+            }
             _ if left == right || relations::compatible(self.db, left, right) => {}
             _ if self.is_scalar(left) && self.is_scalar(right) => {
                 let message = format!(
