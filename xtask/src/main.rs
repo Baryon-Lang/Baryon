@@ -12,6 +12,7 @@
 mod architecture;
 mod ci;
 mod links;
+mod roadmap;
 
 use std::error::Error;
 use std::path::PathBuf;
@@ -22,9 +23,10 @@ const USAGE: &str = "\
 Usage: cargo xtask <command>
 
 Commands:
-  ci                   Run every check CI runs: format, architecture, links, lint, test, docs
+  ci                   Run every check CI runs: format, roadmap, architecture, links, lint, test, docs
   check-architecture   Verify crate dependencies follow docs/architecture.md
   check-links          Verify every relative link in the Markdown documentation resolves
+  check-roadmap        Verify ROADMAP.md is well formed and updated by the current change
   help                 Show this message";
 
 /// The result type for every xtask command.
@@ -36,6 +38,7 @@ fn main() -> ExitCode {
         Some("ci") => ci::run(),
         Some("check-architecture") => architecture::check(),
         Some("check-links") => links::check(),
+        Some("check-roadmap") => roadmap::check(),
         Some("help" | "--help" | "-h") => {
             println!("{USAGE}");
             Ok(())
