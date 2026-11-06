@@ -10,13 +10,14 @@
 //! ```
 
 use crate::{Diagnostic, Label};
-use source::SourceMap;
+use source::Sources;
 use std::fmt;
 
 /// Columns a tab advances in rendered source lines.
 const TAB_WIDTH: usize = 4;
 
-/// Returns a value that formats `diagnostic` as text, reading source lines from `sources`.
+/// Returns a value that formats `diagnostic` as text, reading source lines from `sources`: a
+/// [`source::SourceMap`] or any other [`Sources`], such as the compiler's database.
 ///
 /// Nothing is formatted until the value is displayed, so writing it straight to a terminal or
 /// a log allocates no intermediate string.
@@ -37,7 +38,7 @@ const TAB_WIDTH: usize = 4;
 /// # Ok::<(), source::SourceError>(())
 /// ```
 #[must_use]
-pub fn render<'a>(diagnostic: &'a Diagnostic, sources: &'a SourceMap) -> Rendered<'a> {
+pub fn render<'a>(diagnostic: &'a Diagnostic, sources: &'a dyn Sources) -> Rendered<'a> {
     Rendered {
         diagnostic,
         sources,
@@ -50,7 +51,7 @@ pub struct Rendered<'a> {
     /// The diagnostic to format.
     diagnostic: &'a Diagnostic,
     /// Where the diagnostic's spans point, for reading file names and source lines.
-    sources: &'a SourceMap,
+    sources: &'a dyn Sources,
 }
 
 impl fmt::Display for Rendered<'_> {
@@ -89,7 +90,7 @@ impl Rendered<'_> {
     /// The 1-based line where a label starts, used to size the line-number gutter.
     fn line_of(&self, label: &Label) -> u32 {
         let span = label.span();
-        self.sources.get(span.file()).position(span.start()).line
+        self.sources.file(span.file()).position(span.start()).line
     }
 
     /// Writes one label: its location, the source line, and markers under the labelled text.
@@ -104,7 +105,7 @@ impl Rendered<'_> {
         gutter: usize,
     ) -> fmt::Result {
         let span = label.span();
-        let file = self.sources.get(span.file());
+        let file = self.sources.file(span.file());
         let start = file.position(span.start());
         let end = file.position(span.end());
         let line_text = file.line(start.line).unwrap_or_default();

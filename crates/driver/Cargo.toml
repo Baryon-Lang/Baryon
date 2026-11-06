@@ -1,0 +1,26 @@
+[package]
+name = "driver"
+description = "The `npl` command: wires the compiler's stages together behind the incremental database."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "application"
+
+[[bin]]
+name = "npl"
+path = "src/main.rs"
+
+[dependencies]
+database.workspace = true
+diagnostics.workspace = true
+parser.workspace = true
+salsa.workspace = true
+source.workspace = true
+
+[lints]
+workspace = true

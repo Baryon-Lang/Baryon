@@ -4,6 +4,10 @@
 //! piece of text by a [`Span`], so they never copy source text or hold references into it.
 //! Turning a span back into something a person can read is the [`SourceFile`]'s job.
 //!
+//! A [`SourceMap`] suits a batch of files loaded once. A collection whose files change, such as
+//! the compiler's incremental database, builds each [`SourceFile`] itself, issues its own
+//! [`FileId`]s, and implements [`Sources`] so diagnostics can still be rendered from it.
+//!
 //! ```
 //! use source::{Position, SourceMap, Span};
 //!
@@ -21,12 +25,35 @@
 use std::error::Error;
 use std::fmt;
 
-/// Identifies one file in a [`SourceMap`].
+/// Identifies one file in a [`SourceMap`] or another collection of files.
+///
+/// An id is meaningful only to the collection that issued it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FileId(
-    /// Index of the file in its map's file list.
+    /// Index of the file in its collection's file list.
     u32,
 );
+
+impl FileId {
+    /// The id at `index` in a collection's file list. A collection other than [`SourceMap`]
+    /// uses this to issue its own ids, numbering its files from 0.
+    ///
+    /// ```
+    /// use source::FileId;
+    ///
+    /// assert_eq!(FileId::from_index(3).index(), 3);
+    /// ```
+    #[must_use]
+    pub fn from_index(index: u32) -> Self {
+        Self(index)
+    }
+
+    /// The file's index in the list of the collection that issued the id.
+    #[must_use]
+    pub fn index(self) -> u32 {
+        self.0
+    }
+}
 
 /// A byte range `start..end` within one source file.
 ///
@@ -95,20 +122,35 @@ pub struct SourceFile {
 }
 
 impl SourceFile {
-    /// Builds a file and its line index. Only [`SourceMap::add`] calls this, after checking
-    /// that the text fits in `u32` offsets.
-    fn new(name: String, text: String) -> Self {
+    /// Builds a file and the index of where its lines start. Cost: one pass over the text.
+    ///
+    /// ```
+    /// use source::SourceFile;
+    ///
+    /// let file = SourceFile::new("heat.npl", "alpha = 0.1\nsteps = 100\n")?;
+    /// assert_eq!(file.line(2), Some("steps = 100"));
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Fails if the text is 4 GiB or larger, because offsets are `u32`.
+    pub fn new(name: impl Into<String>, text: impl Into<String>) -> Result<Self, SourceError> {
+        let (name, text) = (name.into(), text.into());
+        if u32::try_from(text.len()).is_err() {
+            return Err(SourceError::FileTooLarge { name });
+        }
         let line_starts = std::iter::once(0)
             .chain(
                 text.match_indices('\n')
                     .map(|(index, _)| offset_of(index + 1)),
             )
             .collect();
-        Self {
+        Ok(Self {
             name,
             text,
             line_starts,
-        }
+        })
     }
 
     /// The name the file was loaded under, usually its path.
@@ -178,12 +220,8 @@ impl SourceMap {
         name: impl Into<String>,
         text: impl Into<String>,
     ) -> Result<FileId, SourceError> {
-        let (name, text) = (name.into(), text.into());
-        if u32::try_from(text.len()).is_err() {
-            return Err(SourceError::FileTooLarge { name });
-        }
         let id = u32::try_from(self.files.len()).map_err(|_| SourceError::TooManyFiles)?;
-        self.files.push(SourceFile::new(name, text));
+        self.files.push(SourceFile::new(name, text)?);
         Ok(FileId(id))
     }
 
@@ -198,7 +236,34 @@ impl SourceMap {
     }
 }
 
-/// Why a file could not be added to a [`SourceMap`].
+impl Sources for SourceMap {
+    fn file(&self, id: FileId) -> &SourceFile {
+        self.get(id)
+    }
+}
+
+/// Anything that looks up source files by id: a [`SourceMap`], or the compiler's incremental
+/// database. Diagnostic rendering reads file names and lines through this trait, so it works
+/// with either.
+///
+/// ```
+/// use source::{SourceMap, Sources};
+///
+/// let mut sources = SourceMap::new();
+/// let file = sources.add("main.npl", "x = 1\n")?;
+/// assert_eq!(sources.file(file).name(), "main.npl");
+/// # Ok::<(), source::SourceError>(())
+/// ```
+pub trait Sources: fmt::Debug {
+    /// The file with the given id.
+    ///
+    /// # Panics
+    ///
+    /// May panic if `id` was issued by a different collection.
+    fn file(&self, id: FileId) -> &SourceFile;
+}
+
+/// Why a source file could not be built or added to a [`SourceMap`].
 #[derive(Debug, PartialEq, Eq)]
 pub enum SourceError {
     /// The file is 4 GiB or larger.
@@ -223,7 +288,7 @@ impl fmt::Display for SourceError {
 
 impl Error for SourceError {}
 
-/// Converts an in-file index to a `u32` offset. `SourceMap::add` guarantees it fits.
+/// Converts an in-file index to a `u32` offset. `SourceFile::new` guarantees it fits.
 fn offset_of(index: usize) -> u32 {
     u32::try_from(index).unwrap_or(u32::MAX)
 }

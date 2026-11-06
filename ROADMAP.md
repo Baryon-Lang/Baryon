@@ -58,7 +58,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.2 | Front end: an existing Python 3.12 parser written in Rust behind an interface crate, lowering to a flat syntax tree, error messages written for this language, parser test corpus | 2 | 0.1 | Done | Claude | [0004](docs/decisions/0004-python-syntax.md), [#7](https://github.com/csimpson1964/New-Programming-Language/pull/7) |
 | 1.2.1 | Reject the Python constructs the language does not support yet, with a diagnostic for each, as a pass over the syntax tree that follows the language reference's list | 1 | 0.1, 1.2 | Done | Claude | [#13](https://github.com/csimpson1964/New-Programming-Language/pull/13) |
 | 1.3 | Tree-sitter grammar for editor highlighting. Dropped: editors already highlight the files as Python | 1 | 0.1 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
-| 1.4 | Incremental query engine and the file and module database | 2 | 1.2 | Planned | — | — |
+| 1.4 | Incremental query engine and the file and module database | 2 | 1.2 | Done | Claude | [0016](docs/decisions/0016-salsa-query-engine.md), [#14](https://github.com/csimpson1964/New-Programming-Language/pull/14) |
 | 1.5 | Name resolution, modules and imports | 2 | 1.4 | Planned | — | — |
 | 1.6 | Type representation, interning, layouts, compile-time shapes, complex numbers | 2 | 1.5 | Planned | — | — |
 | 1.7 | Type checker: local inference, generics, static-dispatch traits, enums, match | 6 | 1.6 | Planned | — | — |
@@ -66,6 +66,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.9 | Mid-level IR: lowering, drops, monomorphization | 5 | 1.7 | Planned | — | — |
 | 1.10 | LLVM backend: no-alias metadata, debug info, Apple AArch64 ABI, Mach-O output | 6 | 1.9 | Planned | — | — |
 | 1.11 | Driver: build, run, test, manifest, linking, compile-time reporting | 3 | 1.10 | Planned | — | — |
+| 1.11.1 | Prototype `npl check <directory>`: load a package into the query database and print its module and syntax errors | — | 1.4 | Done | Claude | [#14](https://github.com/csimpson1964/New-Programming-Language/pull/14) |
 | 1.12 | Runtime: allocator, panics, traps, thread pool | 2 | 1.10 | Planned | — | — |
 | 1.13 | Standard library: core and collections | 3 | 1.11 | Planned | — | — |
 | 1.14 | Standard library: N-dimensional arrays, views, stencil, simd and parallel loops, random numbers, BLAS | 5 | 1.13 | Planned | — | — |

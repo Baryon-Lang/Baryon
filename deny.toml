@@ -33,6 +33,9 @@ allow = [
     # Unicode data tables: `unicode-ident` and `ruff_unicode_names2`, through the parser.
     "Unicode-3.0",
     "Unicode-DFS-2016",
+    # `foldhash`, the default hasher of `hashbrown`, through the query engine `salsa` (decision
+    # 0016). Zlib is permissive, needs no notice in binaries, and is compatible with both.
+    "Zlib",
 ]
 unused-allowed-license = "deny"
 # Detected license text must match its declared license closely before it counts.
