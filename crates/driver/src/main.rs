@@ -5,8 +5,8 @@
 //! ```
 //!
 //! loads every `.npl` file under the directory as one package, checks it, and prints each
-//! problem to standard error. Today checking means module naming and syntax; each new stage adds
-//! its diagnostics here. The exit status is 0 when there are no errors, 1 when there are, and 2
+//! problem to standard error. Today checking means module naming, syntax, the constructs the
+//! language supports, and names that refer to nothing; each new stage adds its diagnostics here. The exit status is 0 when there are no errors, 1 when there are, and 2
 //! when the command itself is wrong or a file cannot be read.
 
 use diagnostics::Severity;

@@ -2,8 +2,8 @@
 //!
 //! It owns the concrete database, which implements each stage query of [`database::Db`] by
 //! calling the implementation crate for it, inside a `#[salsa::tracked]` function so the result
-//! is cached. Today that is one stage, the `parser`. Swapping an implementation means changing
-//! the one function here that calls it. A [`Session`] holds that database with one package
+//! is cached. Today the stages are the `parser`, the `syntax_check` and the `resolver`. Swapping
+//! an implementation means changing the one function here that calls it. A [`Session`] holds that database with one package
 //! loaded into it.
 //!
 //! The `npl` executable (`src/main.rs`) is a thin command line over this library:
@@ -27,7 +27,7 @@
 //! # Ok::<(), source::SourceError>(())
 //! ```
 
-use database::{Db, File, Package, ParsedFile};
+use database::{Db, File, Package, ParsedFile, Resolution};
 use diagnostics::Diagnostic;
 use salsa::Setter;
 use source::{FileId, SourceError, SourceFile, Sources};
@@ -107,8 +107,9 @@ impl Session {
         Ok(())
     }
 
-    /// Every problem in the package: module naming errors first, then each file's syntax
-    /// errors, in the order the files were added. Cached: after an edit, only the edited file
+    /// Every problem in the package: module naming errors first, then each file's problems, in
+    /// the order the files were added. A file's problems are its syntax errors or, when it has
+    /// none, the constructs the language does not support and the names that refer to nothing. Cached: after an edit, only the edited file
     /// is parsed again.
     #[must_use]
     pub fn check(&self) -> Vec<Diagnostic> {
@@ -148,6 +149,10 @@ impl Db for Database {
     fn parse(&self, file: File) -> &ParsedFile {
         parse(self, file)
     }
+
+    fn resolve(&self, package: Package, file: File) -> &Resolution {
+        resolve(self, package, file)
+    }
 }
 
 /// The parse query: runs the `parser` crate on one file. Cached until the file's source
@@ -160,13 +165,34 @@ fn parse(db: &dyn Db, file: File) -> ParsedFile {
     ParsedFile::new(tree, diagnostics)
 }
 
+/// The resolve query: runs the `resolver` crate on one file. Cached until the file's tree, the
+/// module map, or the top-level names of a module the file imports from change.
+#[salsa::tracked(returns(ref))]
+fn resolve(db: &dyn Db, package: Package, file: File) -> Resolution {
+    resolver::resolve(db, package, file)
+}
+
+/// The syntax check query: runs the `syntax_check` crate on one file, reporting the Python
+/// constructs the language does not support. Cached until the file's source changes.
+#[salsa::tracked(returns(ref))]
+fn unsupported(db: &dyn Db, file: File) -> Vec<Diagnostic> {
+    syntax_check::check(db.parse(file).tree(), file.source(db).text())
+}
+
 /// The check query behind [`Session::check`]. Its result compares equal after an edit that
 /// changes no diagnostic, so anything that reads it later stays cached.
 #[salsa::tracked(returns(ref))]
 fn check(db: &dyn Db, package: Package) -> Vec<Diagnostic> {
     let mut problems = database::modules(db, package).diagnostics().to_vec();
     for &file in package.files(db) {
-        problems.extend_from_slice(db.parse(file).diagnostics());
+        let syntax = db.parse(file).diagnostics();
+        problems.extend_from_slice(syntax);
+        // A file with syntax errors has `Missing` nodes and half-built statements, so later
+        // stages would report noise; its syntax errors come first.
+        if syntax.is_empty() {
+            problems.extend_from_slice(unsupported(db, file));
+            problems.extend_from_slice(db.resolve(package, file).diagnostics());
+        }
     }
     problems
 }
@@ -174,6 +200,7 @@ fn check(db: &dyn Db, package: Package) -> Vec<Diagnostic> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use database::Definition;
     use std::sync::{Arc, Mutex};
 
     /// A session that records the name of every query it runs, in order.
@@ -241,5 +268,54 @@ mod tests {
         assert_eq!(first.id(&session.database), FileId::from_index(0));
         assert_eq!(second.id(&session.database), FileId::from_index(1));
         assert_eq!(session.file(second.id(&session.database)).name(), "b.npl");
+    }
+
+    #[test]
+    fn every_use_of_a_name_points_to_its_definition() {
+        let mut session = Session::new();
+        let nbody = session
+            .add_file("nbody.npl", "def step(dt: f64) -> f64:\n    return dt\n")
+            .unwrap();
+        let main = session
+            .add_file(
+                "main.npl",
+                "from nbody import step\n\n\ndef main():\n    x = 1.0\n    x = step(x)\n",
+            )
+            .unwrap();
+        let database = &session.database;
+        let resolution = database.resolve(session.package, main);
+        let tree = database.parse(main).tree();
+        let text = main.source(database).text();
+        let definition_of = |wanted: &str, occurrence: usize| {
+            let node = tree
+                .nodes()
+                .iter()
+                .enumerate()
+                .filter(|(_, node)| {
+                    node.kind() == syntax::SyntaxKind::Name
+                        && &text[node.start() as usize..node.end() as usize] == wanted
+                })
+                .nth(occurrence)
+                .map(|(index, _)| index)
+                .unwrap();
+            resolution
+                .references()
+                .iter()
+                .find(|(id, _)| id.index() == node)
+                .map(|(_, definition)| definition.clone())
+                .unwrap()
+        };
+        let Definition::Local(first) = definition_of("x", 0) else {
+            panic!("`x` is not a local");
+        };
+        for occurrence in 1..3 {
+            assert_eq!(definition_of("x", occurrence), Definition::Local(first));
+        }
+        let Definition::Item(file, node) = definition_of("step", 1) else {
+            panic!("`step` is not an item");
+        };
+        assert_eq!(file, nbody);
+        let nbody_tree = database.parse(nbody).tree();
+        assert_eq!(nbody_tree.text(node, nbody.source(database).text()), "step");
     }
 }

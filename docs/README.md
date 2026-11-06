@@ -5,7 +5,7 @@ missing or unclear, that is a bug: open an issue.
 
 ## Learning the language
 
-The compiler only checks syntax and module names so far (`cargo run --package driver -- check
+The compiler only checks syntax, supported constructs, module names and names so far (`cargo run --package driver -- check
 <directory>`), so the language is learned from its definition and from examples. A beginner's
 guide will follow the first compiler prototype that runs programs.
 
