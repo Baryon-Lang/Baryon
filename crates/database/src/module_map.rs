@@ -83,6 +83,7 @@ impl fmt::Display for ModuleName {
 /// # #[salsa::db]
 /// # impl Db for Database {
 /// #     fn parse(&self, _: File) -> &ParsedFile { unreachable!() }
+/// #     fn resolve(&self, _: database::Package, _: File) -> &database::Resolution { unreachable!() }
 /// # }
 /// let database = Database::default();
 /// let source = SourceFile::new("fluids/heat_2d.npl", "")?;
@@ -247,6 +248,10 @@ mod tests {
     impl Db for Database {
         fn parse(&self, _: File) -> &ParsedFile {
             unreachable!("module queries never parse")
+        }
+
+        fn resolve(&self, _: Package, _: File) -> &crate::Resolution {
+            unreachable!("module queries never resolve names")
         }
     }
 

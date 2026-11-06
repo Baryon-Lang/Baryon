@@ -1,0 +1,242 @@
+//! Resolving imports: finding the module, package or definition an import names.
+
+use crate::items::{Binding, Import, ImportTarget, module_items};
+use database::{Db, Definition, File, ModuleName, Modules, STANDARD_MODULES};
+use diagnostics::Diagnostic;
+use syntax::{NodeId, SyntaxTree};
+
+/// How many imports one name may pass through before resolution gives up: `from a import x`
+/// where `a` itself imports `x` from `b`, and so on. Deep enough for any real chain of
+/// re-exports, and it stops a cycle of imports from looping.
+const MAXIMUM_CHAIN: usize = 16;
+
+/// Resolves imports against one package's modules.
+pub(crate) struct Importer<'a> {
+    /// The database, for reading other modules' top-level names.
+    db: &'a dyn Db,
+    /// The package's module map.
+    modules: &'a Modules,
+}
+
+impl<'a> Importer<'a> {
+    /// An importer for a package with the given modules.
+    pub(crate) fn new(db: &'a dyn Db, modules: &'a Modules) -> Self {
+        Self { db, modules }
+    }
+
+    /// What `import`, written in `tree`, refers to.
+    ///
+    /// # Errors
+    ///
+    /// Fails, with an error pointing into `tree`, when the module or the member does not
+    /// exist, the member is private, or the import is relative.
+    pub(crate) fn resolve(
+        &self,
+        tree: &SyntaxTree,
+        import: &Import,
+    ) -> Result<Definition, Diagnostic> {
+        self.resolve_target(&import.target, 0).map_err(|failure| {
+            let node = match (&import.target, failure.at) {
+                (ImportTarget::Member { module_node, .. }, At::Module) => *module_node,
+                (ImportTarget::Member { member_node, .. }, At::Member) => *member_node,
+                _ => import.node,
+            };
+            let mut diagnostic =
+                Diagnostic::error(failure.message).with_primary(tree.span(node), failure.label);
+            if let Some(text) = failure.note {
+                diagnostic = diagnostic.with_note(text);
+            }
+            diagnostic
+        })
+    }
+
+    /// What `target` refers to, after passing through `depth` imports already.
+    fn resolve_target(&self, target: &ImportTarget, depth: usize) -> Result<Definition, Failure> {
+        match target {
+            ImportTarget::Module { path, written } => {
+                self.module(written, At::Module)?;
+                self.module(path, At::Module)
+            }
+            ImportTarget::Member { module, member, .. } => self.member(module, member, depth),
+            ImportTarget::Relative => Err(Failure {
+                message: "relative imports are not supported".to_owned(),
+                label: "imported relative to this module",
+                note: Some(
+                    "write the module's full name from the package root, such as \
+                     `from physics.nbody import step`"
+                        .to_owned(),
+                ),
+                at: At::Whole,
+            }),
+        }
+    }
+
+    /// The module or package `path` names, a standard library module or one of the program's.
+    fn module(&self, path: &str, at: At) -> Result<Definition, Failure> {
+        let mut components = path.split('.');
+        if let Some(module) = standard(components.next().unwrap_or_default()) {
+            return if components.next().is_none() {
+                Ok(Definition::Standard {
+                    module,
+                    member: None,
+                })
+            } else {
+                Err(Failure::new(
+                    format!("the standard library module `{module}` has no submodules"),
+                    "no such module",
+                    at,
+                ))
+            };
+        }
+        ModuleName::from_dotted(path)
+            .filter(|name| self.exists(name))
+            .map(Definition::Module)
+            .ok_or_else(|| Failure::new(format!("no module named `{path}`"), "no such module", at))
+    }
+
+    /// Whether the package has a module or a package called `name`.
+    fn exists(&self, name: &ModuleName) -> bool {
+        self.modules.get(name).is_some()
+            || self.modules.iter().any(|(module, _)| {
+                module.components().len() > name.components().len()
+                    && module.components().starts_with(name.components())
+            })
+    }
+
+    /// What `member` of `module` is: a submodule, or a top-level name of the module's file.
+    fn member(&self, module: &str, member: &str, depth: usize) -> Result<Definition, Failure> {
+        if let Some(standard) = standard(module) {
+            return Ok(Definition::Standard {
+                module: standard,
+                member: Some(member.to_owned()),
+            });
+        }
+        let Definition::Module(name) = self.module(module, At::Module)? else {
+            return Err(Failure::new(
+                format!("the standard library module `{module}` has no submodules"),
+                "no such module",
+                At::Module,
+            ));
+        };
+        if member.starts_with('_') {
+            return Err(Failure {
+                message: format!("`{member}` is private to module `{module}`"),
+                label: "private name",
+                note: Some(
+                    "a name starting with `_` can only be used in its own module".to_owned(),
+                ),
+                at: At::Member,
+            });
+        }
+        if let Some(submodule) = ModuleName::from_dotted(&format!("{module}.{member}"))
+            .filter(|submodule| self.exists(submodule))
+        {
+            return Ok(Definition::Module(submodule));
+        }
+        let missing = || {
+            Failure::new(
+                format!("module `{module}` has no `{member}`"),
+                "not defined there",
+                At::Member,
+            )
+        };
+        let file = self.modules.get(&name).ok_or_else(missing)?;
+        match module_items(self.db, file)
+            .get(member)
+            .ok_or_else(missing)?
+        {
+            Binding::Defined(node) => Ok(Definition::Item(file, *node)),
+            Binding::Imported(_) if depth >= MAXIMUM_CHAIN => Err(Failure::new(
+                format!("`{member}` is imported in a circle, ending at module `{module}`"),
+                "imported in a circle",
+                At::Member,
+            )),
+            Binding::Imported(import) => {
+                self.resolve_target(&import.target, depth + 1).map_err(|_| {
+                    Failure::new(
+                        format!("module `{module}` imports `{member}`, but that import fails"),
+                        "its import fails",
+                        At::Member,
+                    )
+                })
+            }
+        }
+    }
+
+    /// What `member` means in `module.member`, where `module` is a module of the program and
+    /// `node` is the `Name` node of `member` in `tree`.
+    ///
+    /// # Errors
+    ///
+    /// Fails, pointing at `node`, when the module has no such member or it is private.
+    pub(crate) fn attribute(
+        &self,
+        tree: &SyntaxTree,
+        module: &ModuleName,
+        member: &str,
+        node: NodeId,
+    ) -> Result<Definition, Diagnostic> {
+        self.member(&module.to_string(), member, 0)
+            .map_err(|failure| {
+                let diagnostic =
+                    Diagnostic::error(failure.message).with_primary(tree.span(node), failure.label);
+                match failure.note {
+                    Some(text) => diagnostic.with_note(text),
+                    None => diagnostic,
+                }
+            })
+    }
+
+    /// The definition of a name bound at the top level of `file`, the module being resolved.
+    pub(crate) fn top_level(
+        &self,
+        tree: &SyntaxTree,
+        file: File,
+        binding: &Binding,
+    ) -> Result<Definition, Diagnostic> {
+        match binding {
+            Binding::Defined(node) => Ok(Definition::Item(file, *node)),
+            Binding::Imported(import) => self.resolve(tree, import),
+        }
+    }
+}
+
+/// The standard library module called `name`, if there is one.
+fn standard(name: &str) -> Option<&'static str> {
+    STANDARD_MODULES.into_iter().find(|&module| module == name)
+}
+
+/// Where in an import an error points.
+#[derive(Clone, Copy)]
+enum At {
+    /// The module path after `from`, or the dotted path after `import`.
+    Module,
+    /// The imported member's name.
+    Member,
+    /// The bound name: for an error about the import as a whole.
+    Whole,
+}
+
+/// Why an import failed, before it is placed in the source.
+struct Failure {
+    /// The diagnostic's message.
+    message: String,
+    /// The label under the source text.
+    label: &'static str,
+    /// An optional note on how to fix it.
+    note: Option<String>,
+    /// Which part of the import the error points at.
+    at: At,
+}
+
+impl Failure {
+    /// A failure with no note.
+    fn new(message: String, label: &'static str, at: At) -> Self {
+        Self {
+            message,
+            label,
+            note: None,
+            at,
+        }
+    }
+}

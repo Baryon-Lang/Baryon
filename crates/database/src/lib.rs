@@ -12,8 +12,10 @@
 //! - the **inputs**: each source [`File`], and the [`Package`] that lists them;
 //! - the **file and module database**: the [`ModuleName`] of each file and the [`Modules`] map of
 //!   a package, which name resolution reads to find what an `import` refers to;
+//! - the results stages exchange through the database: a [`ParsedFile`], and a file's
+//!   [`Resolution`], which says what each name refers to;
 //! - the [`Db`] trait, with one method per stage query that an implementation crate provides,
-//!   such as [`Db::parse`].
+//!   such as [`Db::parse`] and [`Db::resolve`].
 //!
 //! # How stages plug in
 //!
@@ -28,7 +30,7 @@
 //! which calls the `parser` crate, lives in the `driver` application.
 //!
 //! ```
-//! use database::{Db, File, Package, ParsedFile};
+//! use database::{Db, File, Package, ParsedFile, Resolution};
 //! use source::{FileId, SourceFile};
 //! use syntax::{Role, SyntaxKind, TreeBuilder};
 //!
@@ -46,6 +48,10 @@
 //!     fn parse(&self, file: File) -> &ParsedFile {
 //!         parse_empty(self, file)
 //!     }
+//!
+//!     fn resolve(&self, package: Package, file: File) -> &Resolution {
+//!         resolve_nothing(self, package, file)
+//!     }
 //! }
 //!
 //! /// Cached per file; runs again only when that file's source changes.
@@ -56,6 +62,12 @@
 //!     builder.open(SyntaxKind::Module, Role::Root, 0, length);
 //!     builder.close();
 //!     ParsedFile::new(builder.finish(), Vec::new())
+//! }
+//!
+//! /// An empty module has no names to resolve.
+//! #[salsa::tracked(returns(ref))]
+//! fn resolve_nothing(db: &dyn Db, package: Package, file: File) -> Resolution {
+//!     Resolution::new(Vec::new(), Vec::new())
 //! }
 //!
 //! let database = Database::default();
@@ -73,9 +85,11 @@
 
 mod inputs;
 mod module_map;
+mod names;
 
 pub use inputs::{File, Package};
 pub use module_map::{ModuleName, Modules, module_name, modules};
+pub use names::{BUILTINS, Definition, Resolution, STANDARD_MODULES};
 
 use diagnostics::Diagnostic;
 use syntax::SyntaxTree;
@@ -92,6 +106,13 @@ pub trait Db: salsa::Database {
     /// The result is cached until the file's source changes. The tree is complete even when the
     /// file has errors.
     fn parse(&self, file: File) -> &ParsedFile;
+
+    /// What each name in `file`, a file of `package`, refers to, and the errors found: names
+    /// that refer to nothing, imports that find nothing, and clashing definitions.
+    ///
+    /// The result is cached until something it read changes: the file's tree, the package's
+    /// module map, or the top-level names of a module it imports from.
+    fn resolve(&self, package: Package, file: File) -> &Resolution;
 }
 
 /// A parsed file: its syntax tree and its syntax errors. The result of [`Db::parse`].

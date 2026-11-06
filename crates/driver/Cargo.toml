@@ -19,8 +19,13 @@ path = "src/main.rs"
 database.workspace = true
 diagnostics.workspace = true
 parser.workspace = true
+resolver.workspace = true
 salsa.workspace = true
 source.workspace = true
+syntax_check.workspace = true
+
+[dev-dependencies]
+syntax.workspace = true
 
 [lints]
 workspace = true
