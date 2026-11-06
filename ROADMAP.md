@@ -131,7 +131,7 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.6 | Language name and file extension; blocks 1.17 | — | — | Planned | Collins | — |
 | D.7 | Resolve the plan's FFI contradiction: no FFI before Phase 4, yet an `ffi` module in the MVP. Decided: no user-facing FFI before Phase 4 | — | — | Done | Collins | [0012](docs/decisions/0012-no-ffi-in-mvp.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | — | — | Planned | Collins | — |
-| D.12 | Parallel loops that add into shared arrays (Newton's third law, histograms, assembly): `prange(n, accumulate=forces)`, write-only, reproducible, blocked private buffers | — | I.6 | In progress | Claude | [0013](docs/decisions/0013-parallel-accumulation.md) |
+| D.12 | Parallel loops that add into shared arrays (Newton's third law, histograms, assembly): `prange(n, accumulate=forces)`, write-only, reproducible, blocked private buffers | — | I.6 | In progress | Claude | [0013](docs/decisions/0013-parallel-accumulation.md), [#8](https://github.com/csimpson1964/New-Programming-Language/pull/8) |
 
 ## Ideas
 
