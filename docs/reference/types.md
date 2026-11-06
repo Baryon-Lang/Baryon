@@ -148,7 +148,8 @@ out exactly as its author wrote it, and can be shared byte for byte with C, a Nu
 array or a binary file format.
 
 Alignment can leave gaps. A field of 8 bytes starts at a multiple of 8, so a 1-byte `bool` before
-it is followed by 7 unused bytes. Declaring fields from largest to smallest avoids that:
+it is followed by 7 unused bytes. Declaring fields from largest to smallest keeps the gaps
+smallest:
 
 ```python
 class Sample(Struct):
@@ -160,7 +161,7 @@ class Sample(Struct):
 
 
 class PackedSample(Struct):
-    """16 bytes: the same fields, largest first."""
+    """16 bytes: the same fields, largest first, with 3 unused at the end."""
 
     value: f64
     count: i32
