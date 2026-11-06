@@ -13,9 +13,10 @@ for i in prange(1, N - 1):
             out[i, j, k] = u[i, j, k] + ALPHA * (laplacian(u, i, j, k))
 ```
 
-`prange` takes the same arguments as `range`. Its iterations may run in any order, on any number of
-threads, and the result must not depend on that. The compiler checks that it cannot, with the rules
-below.
+`prange` takes the same arguments as `range`, plus an optional `accumulate=` described in
+[adding into shared arrays](#adding-into-shared-arrays). Its iterations may run in any order, on
+any number of threads, and the result must not depend on that. The compiler checks that it cannot,
+with the rules below.
 
 The runtime splits the iterations into chunks and hands them to a thread pool sized to the
 machine's cores, started on the first parallel loop. A program with no `prange` starts no threads.
@@ -40,7 +41,9 @@ before the loop and used inside it is **shared**. The rules concern shared varia
    ```
 
    This guarantees each element is written by one iteration and read by no other. Fields work the
-   same way: `atoms.velocities[i] += dt * atoms.forces[i]` is allowed.
+   same way: `atoms.velocities[i] += dt * atoms.forces[i]` is allowed. An array that iterations
+   only add into, at any index, is the exception: list it in `accumulate=`, as
+   [adding into shared arrays](#adding-into-shared-arrays) explains.
 3. **Writing a shared scalar** is allowed only as a **reduction**: every write in the body has one
    form, `x += e` and `x -= e` (which may be mixed), `x *= e`, `x = min(x, e)` or
    `x = max(x, e)`, and the body reads `x` nowhere else. Each thread then keeps a private `x`,
@@ -71,7 +74,9 @@ error: iterations of this parallel loop may write the same element of `forces`
 58 |             forces[j] -= force
    |             ^^^^^^^^^ indexed by `j`, not by the loop variable `i`
    = note: each element of a shared array may be written only at the loop variable's index
-   = help: compute each element's total in its own iteration, or use `range` for this loop
+   = help: if every write to `forces` in this loop adds to it, declare it add-only:
+           `prange(N, accumulate=forces)`
+   = help: or compute each element's total in its own iteration, or use `range` for this loop
 ```
 
 ### Reproducible reductions
@@ -89,15 +94,76 @@ Reproducibility is the design plan's default because a simulation whose result c
 machine cannot be debugged or checked against a previous run. Its cost is that chunk sizes cannot
 adapt to the thread count, which the benchmark suite (roadmap 0.3) measures.
 
-### What `prange` cannot express yet
+### Adding into shared arrays
 
-A loop that adds to several elements from one iteration, such as applying Newton's third law in a
-pair-force loop (`forces[i] += f` and `forces[j] -= f`), breaks rule 2. Version 0 has no safe
-parallel form of it: compute each element's total in its own iteration, as the
-[Lennard-Jones example](../examples/lennard_jones.npl) does, at twice the arithmetic.
+Some loops add into elements that other iterations add into too. The pair-force loop of molecular
+dynamics is the common case. By Newton's third law, the force atom `j` exerts on atom `i` is minus
+the force `i` exerts on `j`, so computing each pair once and applying it to both atoms halves the
+work. Iteration `i` then writes `forces[j]`, which breaks rule 2. Histograms
+(`counts[bin] += 1`), charge deposition in particle-in-cell codes and finite-element assembly have
+the same shape.
 
-Roadmap idea I.6 tracked the fix. [Decision 0013](../decisions/0013-parallel-accumulation.md)
-allows it by declaring such arrays add-only: `prange(n, accumulate=forces)`.
+Name such arrays in `accumulate=`
+([decision 0013](../decisions/0013-parallel-accumulation.md)):
+
+```python
+def compute_forces(positions: Array[Vec3, 1], forces: InOut[Array[Vec3, 1]]) -> f64:
+    """Each pair is computed once and applied to both atoms."""
+    for i in prange(N):
+        forces[i] = Vec3.zeros()
+    energy = 0.0
+    for i in prange(N, accumulate=forces):
+        for j in range(i + 1, N):
+            delta = positions[i] - positions[j]
+            delta -= BOX * (delta / BOX).round()
+            distance_squared = delta.dot(delta)
+            if distance_squared < CUTOFF * CUTOFF:
+                inverse_6 = 1.0 / distance_squared**3
+                force = delta * (24.0 * inverse_6 * (2.0 * inverse_6 - 1.0) / distance_squared)
+                forces[i] += force
+                forces[j] -= force
+                energy += 4.0 * inverse_6 * (inverse_6 - 1.0)
+    return energy
+```
+
+Several arrays go in a tuple: `prange(N, accumulate=(forces, virial))`. Inside the loop, an array
+listed in `accumulate=`:
+
+- is only added to. It appears only as the target of `+=` or `-=`, at any index or slice that `+=`
+  accepts outside a loop, and indices are bounds-checked as everywhere else.
+- appears nowhere else in the body. It is never read, assigned with `=` or passed to a function. A
+  helper function cannot add into it on the loop's behalf: the helper returns its contribution,
+  and the loop adds it.
+- holds elements that can be added and have a zero: integers, floats, complex numbers, and `Fixed`
+  arrays of them.
+
+Listing an array the body never adds to is an error, so the argument cannot go stale. Only arrays
+written at an index other than the loop variable need it: writes at the loop variable still follow
+rule 2 with no annotation, and scalar reductions are still inferred. Only addition is supported;
+`*=`, `min` and `max` into arrays wait for a program that needs them.
+
+After the loop, the array is an ordinary array again, holding what it held before the loop plus
+everything the loop added, as the same loop run serially would. That is why the example zeroes
+`forces` first, in a loop of its own.
+
+**Result.** Accumulated arrays follow the same contract as scalar reductions: each chunk adds its
+iterations in order, and the chunk results combine in the fixed tree described in
+[reproducible reductions](#reproducible-reductions). Float results are bit-identical on every run
+and any number of cores, and may differ from the serial loop's in the last bits. Integer results
+are exact.
+
+**Cost.** The runtime gives each chunk private copies of only the blocks of the array it adds
+into, made when it first touches them, and the combine step sums only those blocks. For spatially
+sorted particles the extra memory is about one more copy of the array; at worst, when every chunk
+touches every block, it is one copy per chunk running at once. That cost is why an array must be
+named while a scalar, whose private copy costs a few bytes, is inferred: privatizing a whole array
+should be visible in the source.
+
+The alternative that needs no `accumulate=` and no extra memory is to compute every pair twice, so
+iteration `i` writes only `forces[i]`. That is what the
+[Lennard-Jones example](../examples/lennard_jones.npl) does today, at twice the arithmetic.
+Molecular dynamics codes such as LAMMPS find the add-into form faster on CPUs; a benchmark
+decides for a given kernel.
 
 ### Random numbers
 

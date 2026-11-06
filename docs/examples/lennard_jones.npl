@@ -55,8 +55,8 @@ def compute_forces(positions: Array[Vec3, 1], forces: InOut[Array[Vec3, 1]]) -> 
 
     Each atom sums the forces from all of its neighbours itself, so iteration `i` writes only
     `forces[i]` and the parallel loop has no data race. Newton's third law would halve the work
-    but write both `forces[i]` and `forces[j]` from one iteration; that needs array-valued
-    reductions (roadmap idea I.6).
+    but write both `forces[i]` and `forces[j]` from one iteration; that form needs
+    `prange(N, accumulate=forces)` (decision 0013), which roadmap item 1.14.1 adopts here.
     """
     energy = 0.0
     for i in prange(N):

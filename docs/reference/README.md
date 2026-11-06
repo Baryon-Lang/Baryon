@@ -27,7 +27,7 @@ not mention is not in the language yet; the compiler rejects it with a message, 
 | [Values and references](values-and-references.md) | Moves, copies, borrows, and the exclusivity check, written as a decision procedure |
 | [Arrays](arrays.md) | `Array` and `Fixed`: construction, layout, indexing, slicing, whole-array arithmetic |
 | [Errors and panics](errors.md) | `Raises`, `raise`, `try`/`except`, and failures that stop the program |
-| [Parallel and vector loops](parallel-loops.md) | `prange`, reductions, the disjoint-write rule, and `simd` |
+| [Parallel and vector loops](parallel-loops.md) | `prange`, reductions, the disjoint-write rule, adding into shared arrays with `accumulate=`, and `simd` |
 | [Differences from Python](differences-from-python.md) | Every place a Python programmer will be surprised, with the reason |
 
 A reader who knows Python should start with [Differences from Python](differences-from-python.md),
