@@ -131,7 +131,9 @@ is designed to win on:
 
 ## Correctness check
 
-Each kernel prints a checksum. The harness fails if the C++ and Fortran checksums differ by more
+Each kernel prints a checksum. The harness checks it twice. Repeated runs of one executable must
+report exactly the same checksum, or the kernel is nondeterministic and the run fails. Then the
+harness fails if the C++ and Fortran checksums differ by more
 than the kernel's relative tolerance: `1e-9` for most kernels, `1e-5` for `lennard_jones`.
 Molecular dynamics is chaotic, so a one-bit difference (for example, a compiler fusing a multiply
 and add) grows over the run; its checksum is the total energy, which the integrator conserves to
