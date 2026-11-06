@@ -12,6 +12,7 @@
 //! ```
 
 use super::exhaustive::{self, Pattern, Space};
+use super::flow::{End, Skip};
 use super::{Body, relations};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Primitive, Type, TypeKind};
@@ -27,15 +28,16 @@ impl<'db> Body<'db> {
             return true;
         };
         let subject = self.expression(value, None);
-        let entry = self.narrowed.clone();
-        let mut falls = false;
+        let entry = self.state.clone();
+        let mut ends = Vec::new();
         let mut rows = Vec::new();
         // After an unguarded `case None:`, the later cases see a `T | None` subject as a `T`.
         let mut remaining = subject;
         let cases: Vec<NodeId> = self.tree.children_with(statement, Role::Case).collect();
         for case in cases {
-            self.narrowed.clone_from(&entry);
-            let pattern = match self.tree.child(case, Role::Pattern) {
+            self.state.clone_from(&entry);
+            let written = self.tree.child(case, Role::Pattern);
+            let pattern = match written {
                 Some(pattern) => self.pattern(pattern, remaining),
                 None => Pattern::Wild,
             };
@@ -49,40 +51,53 @@ impl<'db> Body<'db> {
                 }
                 rows.push(pattern);
             }
-            falls |= self.block(case, Role::Body);
+            if self.block(case, Role::Body) {
+                let label = "not assigned when this case matches";
+                ends.push(End {
+                    state: self.state.clone(),
+                    skip: Skip {
+                        node: written.unwrap_or(case),
+                        label,
+                    },
+                });
+            }
         }
-        // What the cases learn is not joined: after a `match`, only what held before it and
-        // that no case changed is known.
-        self.narrowed = entry;
-        self.forget_assigned(statement);
-        if relations::is_open(self.db, subject) {
-            return true;
+        // A subject of unknown type has had its error; its cases count as covering it.
+        let missing = (!relations::is_open(self.db, subject))
+            .then(|| exhaustive::missing(&rows, &self.space(subject)))
+            .flatten();
+        if let Some(example) = missing {
+            self.not_exhaustive(value, subject, &example);
+            let label = "not assigned when no case matches";
+            ends.push(End {
+                state: entry.clone(),
+                skip: Skip { node: value, label },
+            });
         }
-        let Some(example) = exhaustive::missing(&rows, &self.space(subject)) else {
-            return falls;
+        self.merge(entry, &ends)
+    }
+
+    /// Reports a `match` on `subject`, at `value`, whose cases miss `example`.
+    fn not_exhaustive(&mut self, value: NodeId, subject: Type<'db>, example: &str) {
+        let guards = "a `case` with an `if` guard may not match, so it does not count";
+        let (message, hint) = if example == "_" {
+            (
+                format!(
+                    "this `match` does not handle every value of type `{}`",
+                    self.show(subject)
+                ),
+                format!("add `case _:` at the end; {guards}"),
+            )
+        } else {
+            (
+                format!("this `match` does not handle `{example}`"),
+                format!(
+                    "add `case {example}:`, or `case _:` for every value not matched yet; {guards}"
+                ),
+            )
         };
-        {
-            let guards = "a `case` with an `if` guard may not match, so it does not count";
-            let (message, hint) = if example == "_" {
-                (
-                    format!(
-                        "this `match` does not handle every value of type `{}`",
-                        self.show(subject)
-                    ),
-                    format!("add `case _:` at the end; {guards}"),
-                )
-            } else {
-                (
-                    format!("this `match` does not handle `{example}`"),
-                    format!(
-                        "add `case {example}:`, or `case _:` for every value not matched yet; {guards}"
-                    ),
-                )
-            };
-            self.lowerer
-                .error(value, &message, "not every value is handled", Some(&hint));
-        }
-        true
+        self.lowerer
+            .error(value, &message, "not every value is handled", Some(&hint));
     }
 
     /// Checks a pattern against the subject type `ty`, binds its captures, and reduces it for
@@ -121,6 +136,7 @@ impl<'db> Body<'db> {
                     "not supported",
                     Some("a `case` matches literals, enum members, `True`, `False`, `None`, tuples, names and `_`"),
                 );
+                self.assume_captured(node);
                 Pattern::Wild
             }
         }
@@ -185,6 +201,7 @@ impl<'db> Body<'db> {
                 );
                 self.lowerer
                     .error(node, &message, "does not match the subject", None);
+                self.assume_captured(node);
                 return Pattern::Wild;
             }
         };
@@ -194,6 +211,14 @@ impl<'db> Body<'db> {
             .map(|(item, ty)| self.pattern(item, ty))
             .collect();
         Pattern::Tuple(patterns)
+    }
+
+    /// Counts the names a pattern with an error captures as assigned, so a read of one is not
+    /// reported a second time.
+    fn assume_captured(&mut self, pattern: NodeId) {
+        let mut captured = std::collections::BTreeSet::new();
+        self.pattern_names(pattern, &mut captured);
+        self.state.assigned.extend(captured);
     }
 
     /// Reports a pattern whose type cannot match the subject's.

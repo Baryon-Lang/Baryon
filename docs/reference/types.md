@@ -336,7 +336,13 @@ def classify(energy: f64) -> str:
 ```
 
 After a `try` statement, a variable assigned in the `try` body is assigned only if every `except`
-branch also assigns it or leaves the function.
+branch also assigns it or leaves the function. A loop body may run zero times, so a variable first
+assigned inside a loop is not assigned after it. A `match` that handles every value counts like an
+`if` with an `else`.
+
+A function that returns a value must not reach its end: every path ends in `return` or `raise`.
+`while True:` with no `break` counts as never ending, so a search loop that returns from inside
+needs no `return` after it.
 
 ## Constants
 

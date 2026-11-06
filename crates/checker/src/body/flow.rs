@@ -19,15 +19,46 @@
 //! Assigning a `T` narrows a variable too, and assigning `None` or a `T | None` widens it again.
 //! A loop body may run many times, so a variable assigned anywhere in a loop loses what was
 //! known about it before the loop.
+//!
+//! The same walk tracks which variables are assigned on every path (the `assignment` module):
+//! after an `if`, those every branch that falls through assigns; after a loop, only those
+//! assigned before it, as the body may run zero times. For each variable some path skips, it
+//! remembers where that path starts, so the error can point at it.
 
 use super::Body;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::{Type, TypeKind};
 
-/// What is known about variables at one point: the narrowed type of each, by the `Name` node of
-/// its first binding.
-pub(super) type Narrowed<'db> = BTreeMap<NodeId, Type<'db>>;
+/// What is known about variables at one point in a function body. Variables are named by the
+/// `Name` node of their first binding, which the resolver gives every use.
+#[derive(Clone, Debug, Default)]
+pub(super) struct State<'db> {
+    /// The `T | None` variables known to hold a `T`, with that `T`.
+    pub(super) narrowed: BTreeMap<NodeId, Type<'db>>,
+    /// The variables assigned on every path that reaches this point.
+    pub(super) assigned: BTreeSet<NodeId>,
+    /// For a variable some path to this point does not assign, where that path starts.
+    pub(super) skipped: BTreeMap<NodeId, Skip>,
+}
+
+/// Where a path that skips an assignment starts, and what to say about it.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Skip {
+    /// The node to point at: a condition, a clause, a pattern or a loop's header.
+    pub(super) node: NodeId,
+    /// The label at that node, such as "not assigned when this is false".
+    pub(super) label: &'static str,
+}
+
+/// One path that falls through to the end of a branching statement: what is known at its end,
+/// and where it starts.
+pub(super) struct End<'db> {
+    /// What is known at the end of the path.
+    pub(super) state: State<'db>,
+    /// Where the path starts, to name it when it skips an assignment.
+    pub(super) skip: Skip,
+}
 
 /// Narrowings that hold when a condition is true, or when it is false.
 type Facts<'db> = Vec<(NodeId, Type<'db>)>;
@@ -96,34 +127,59 @@ impl<'db> Body<'db> {
 
     /// Records `facts` as known from here on.
     pub(super) fn assume(&mut self, facts: &Facts<'db>) {
-        self.narrowed.extend(facts.iter().copied());
+        self.state.narrowed.extend(facts.iter().copied());
     }
 
-    /// What is known after branches that each fall through with one of `ends`: the narrowings
-    /// they all agree on.
-    fn join(ends: Vec<Narrowed<'db>>) -> Narrowed<'db> {
-        let mut ends = ends.into_iter();
-        let mut joined = ends.next().unwrap_or_default();
-        for end in ends {
-            joined.retain(|binding, ty| end.get(binding) == Some(ty));
+    /// Continues after a branching statement whose paths that fall through end as `ends`, and
+    /// returns whether there are any. What is known is what they all agree on; a variable
+    /// that some of them assign is remembered as skipped by the others. With no path falling
+    /// through, what follows cannot run, and `entry` is kept.
+    pub(super) fn merge(&mut self, entry: State<'db>, ends: &[End<'db>]) -> bool {
+        let Some(first) = ends.first() else {
+            self.state = entry;
+            return false;
+        };
+        let mut joined = first.state.clone();
+        for end in &ends[1..] {
+            joined
+                .narrowed
+                .retain(|binding, ty| end.state.narrowed.get(binding) == Some(ty));
+            joined
+                .assigned
+                .retain(|binding| end.state.assigned.contains(binding));
         }
-        joined
+        for end in ends {
+            for (&binding, &skip) in &end.state.skipped {
+                joined.skipped.entry(binding).or_insert(skip);
+            }
+        }
+        for end in ends {
+            for other in ends {
+                for &binding in &other.state.assigned {
+                    if !end.state.assigned.contains(&binding) {
+                        joined.skipped.entry(binding).or_insert(end.skip);
+                    }
+                }
+            }
+        }
+        self.state = joined;
+        true
     }
 
     /// Updates what is known about the variable `binding`, declared with the type `held`, after
     /// it is assigned a value of type `ty`.
     pub(super) fn assigned(&mut self, binding: NodeId, held: Type<'db>, ty: Type<'db>) {
-        self.narrowed.remove(&binding);
+        self.state.narrowed.remove(&binding);
         if let TypeKind::Optional(value) = held.kind(self.db)
             && ty == *value
         {
-            self.narrowed.insert(binding, *value);
+            self.state.narrowed.insert(binding, *value);
         }
     }
 
     /// Forgets what is known about every variable assigned anywhere inside `node`.
     pub(super) fn forget_assigned(&mut self, node: NodeId) {
-        if self.narrowed.is_empty() {
+        if self.state.narrowed.is_empty() {
             return;
         }
         let role = self.tree.node(node).role();
@@ -131,7 +187,7 @@ impl<'db> Body<'db> {
             && matches!(role, Role::Target | Role::Name | Role::Item)
             && let Some(&database::Definition::Local(binding)) = self.lowerer.definition(node)
         {
-            self.narrowed.remove(&binding);
+            self.state.narrowed.remove(&binding);
         }
         let children: Vec<NodeId> = self.tree.children(node).collect();
         for child in children {
@@ -142,7 +198,7 @@ impl<'db> Body<'db> {
     /// `if`, `elif` and `else`: each branch starts from what its condition, and the conditions
     /// before it being false, tell. Returns whether any branch falls through.
     pub(super) fn if_statement(&mut self, statement: NodeId) -> bool {
-        let entry = self.narrowed.clone();
+        let entry = self.state.clone();
         let mut branches = vec![(self.tree.child(statement, Role::Condition), statement)];
         branches.extend(
             self.tree
@@ -150,60 +206,111 @@ impl<'db> Body<'db> {
                 .map(|clause| (self.tree.child(clause, Role::Condition), clause)),
         );
         let mut ends = Vec::new();
-        let mut otherwise = true;
+        let mut last_condition = None;
         for (condition, parent) in branches {
-            let (yes, no) = if let Some(condition) = condition {
+            let (yes, no, skip) = if let Some(condition) = condition {
                 self.condition(Some(condition));
-                self.facts(condition)
+                last_condition = Some(condition);
+                let (yes, no) = self.facts(condition);
+                let label = "not assigned when this is true";
+                (
+                    yes,
+                    no,
+                    Skip {
+                        node: condition,
+                        label,
+                    },
+                )
             } else {
-                otherwise = false;
-                (Vec::new(), Vec::new())
+                last_condition = None;
+                let label = "not assigned in this `else` branch";
+                (
+                    Vec::new(),
+                    Vec::new(),
+                    Skip {
+                        node: parent,
+                        label,
+                    },
+                )
             };
-            let before = self.narrowed.clone();
+            let before = self.state.clone();
             self.assume(&yes);
             if self.block(parent, Role::Body) {
-                ends.push(self.narrowed.clone());
+                ends.push(End {
+                    state: self.state.clone(),
+                    skip,
+                });
             }
-            self.narrowed = before;
+            self.state = before;
             self.assume(&no);
         }
-        if otherwise {
-            ends.push(self.narrowed.clone());
+        if let Some(condition) = last_condition {
+            let label = "not assigned when this is false";
+            ends.push(End {
+                state: self.state.clone(),
+                skip: Skip {
+                    node: condition,
+                    label,
+                },
+            });
         }
-        let falls = !ends.is_empty();
-        self.narrowed = if falls { Self::join(ends) } else { entry };
-        falls
+        self.merge(entry, &ends)
     }
 
-    /// `while condition:` and its `else`. The body runs with the condition's facts.
-    pub(super) fn while_statement(&mut self, statement: NodeId) {
-        self.forget_assigned(statement);
-        let entry = self.narrowed.clone();
+    /// `while condition:` and its `else`. The body runs with the condition's facts. Returns
+    /// whether the loop can end: `while True:` ends only through a `break`.
+    pub(super) fn while_statement(&mut self, statement: NodeId) -> bool {
         let condition = self.tree.child(statement, Role::Condition);
-        self.condition(condition);
-        let (yes, _) = condition
-            .map(|condition| self.facts(condition))
-            .unwrap_or_default();
-        self.assume(&yes);
-        self.block(statement, Role::Body);
-        self.narrowed = entry.clone();
-        self.block(statement, Role::Else);
-        self.narrowed = entry;
+        let header = condition.unwrap_or(statement);
+        self.repeated(statement, header, |body| {
+            body.condition(condition);
+            let (yes, _) = condition
+                .map(|condition| body.facts(condition))
+                .unwrap_or_default();
+            let entry = body.state.clone();
+            body.assume(&yes);
+            body.block(statement, Role::Body);
+            body.state = entry;
+            body.block(statement, Role::Else);
+        });
+        let forever =
+            condition.is_some_and(|condition| self.tree.kind(condition) == SyntaxKind::True);
+        !forever || self.breaks(statement)
     }
 
-    /// Runs `check` on a loop, a `try` or another statement whose parts may run any number of
-    /// times or stop part way, starting and ending with what is known before it, less the
-    /// variables it assigns.
-    pub(super) fn isolated<T>(
+    /// Whether a `break` inside `node` ends the loop `node`, not a loop nested in it.
+    fn breaks(&self, node: NodeId) -> bool {
+        self.tree
+            .children(node)
+            .any(|child| match self.tree.kind(child) {
+                SyntaxKind::Break => true,
+                SyntaxKind::For | SyntaxKind::While => false,
+                kind if kind.is_expression() => false,
+                _ => self.breaks(child),
+            })
+    }
+
+    /// Checks a loop, whose body may run any number of times, including none, with `check`.
+    /// Afterwards, what is known is what was known before it, less what it assigns: a variable
+    /// first assigned in the loop is skipped by the path that runs the body zero times, which
+    /// starts at `header`.
+    pub(super) fn repeated(
         &mut self,
         statement: NodeId,
-        check: impl FnOnce(&mut Self) -> T,
-    ) -> T {
+        header: NodeId,
+        check: impl FnOnce(&mut Self),
+    ) {
         self.forget_assigned(statement);
-        let entry = self.narrowed.clone();
-        let result = check(self);
-        self.narrowed = entry;
-        result
+        let entry = self.state.clone();
+        check(self);
+        let inside = std::mem::replace(&mut self.state, entry);
+        for binding in inside.assigned.difference(&self.state.assigned) {
+            let label = "not assigned if the loop runs zero times";
+            self.state.skipped.entry(*binding).or_insert(Skip {
+                node: header,
+                label,
+            });
+        }
     }
 
     /// Reports `ty`, the type of `node`, when it is a `T | None` used where only a `T` will do,
