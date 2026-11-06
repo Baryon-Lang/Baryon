@@ -1,0 +1,2 @@
+def first[T = int](values: list[T]) -> T:
+    return values[0]

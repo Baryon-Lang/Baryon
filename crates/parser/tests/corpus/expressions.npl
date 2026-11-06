@@ -1,0 +1,22 @@
+a and b or not c
+-x + +y * ~z ** 2 // 3 % 4 @ m
+0 <= x < n is not None
+first if condition else second
+(n := 10)
+lambda value, *rest: value
+f(1, *args, key=2, **options)
+grid.values[1:n:2, ::-1, i]
+[1, *tail], (1,), {1, 2}, {"key": 1, **more}, ()
+[x * x for x in range(n) if x % 2 if x > 0]
+{k: v for k, v in pairs}
+{item for item in items}
+sum(x for x in values)
+42, 0xff, 1_000, 6.37e6, 2j, True, False, None, ...
+"implicitly " "joined", b"bytes"
+f"t = {t:5.1f} {name!r} {value=} {{literal}}" "!"
+
+
+async def worker():
+    await task
+    yield result
+    yield from others

@@ -1,0 +1,15 @@
+match command:
+    case [x, y, *rest] if x > 0:
+        pass
+    case {"action": action, **other}:
+        pass
+    case Point(0, y=0) | Point(x=0):
+        pass
+    case 1 | -2 | 3.5 | "text" | Color.RED:
+        pass
+    case None | True:
+        pass
+    case (first, second) as pair:
+        pass
+    case _:
+        pass

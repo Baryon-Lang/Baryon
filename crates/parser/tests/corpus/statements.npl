@@ -1,0 +1,43 @@
+from math import sqrt as root, pi
+import numpy.linalg
+
+total = count = 0
+total += 1
+energy: f64 = 0.0
+del count
+
+for i in range(10):
+    if i == 3:
+        continue
+    elif i > 8:
+        break
+    else:
+        pass
+else:
+    total -= 1
+
+while total < 100:
+    total *= 2
+
+with open("data.csv") as file, lock:
+    pass
+
+try:
+    raise ValueError("bad") from None
+except ValueError as error:
+    assert error, "message"
+else:
+    pass
+finally:
+    pass
+
+
+def counter():
+    global total
+    value = 0
+
+    def step():
+        nonlocal value
+        return value
+
+    return step

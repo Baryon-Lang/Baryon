@@ -1,0 +1,14 @@
+Module 0..29
+  Assign @Body 0..14
+    Name @Target 0..1 "x"
+    BinaryOperation @Target + 5..10
+      Integer @Left 5..6 "1"
+      Name @Right 9..10 "y"
+    Integer @Value 13..14 "2"
+  Assign @Body 15..20
+    Name @Target 15..16 "z"
+    Integer @Value 19..20 "3"
+  ExpressionStatement @Body 21..28
+    Call @Value 21..28
+      Name @Function 21..25 "call"
+      Arguments @Arguments 25..28 "(,)"
