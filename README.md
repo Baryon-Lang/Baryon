@@ -26,6 +26,8 @@ def heat_step(u: Array[f64, 2], alpha: f64) -> Array[f64, 2]:
   code.
 - **Built for science.** N-dimensional arrays, complex numbers, parallel loops, reproducible
   random numbers and per-block floating-point control are part of the language, not add-ons.
+- **Documented to learn from.** Every feature, crate and function is documented with tested
+  examples, so the language can be learned and integrated from its documentation alone.
 
 ## Status
 
@@ -40,7 +42,13 @@ Install [rustup](https://rustup.rs). The pinned toolchain installs itself on fir
 cargo xtask ci
 ```
 
-That runs every check CI runs: format, architecture rules, lints, tests and docs.
+That runs every check CI runs: format, architecture rules, documentation links, lints, tests and
+API docs.
+
+## Documentation
+
+[`docs/README.md`](docs/README.md) lists every document by reader: learning the language,
+contributing to the compiler, or integrating one of its crates.
 
 ## Repository layout
 
@@ -48,6 +56,7 @@ That runs every check CI runs: format, architecture rules, lints, tests and docs
 | --- | --- |
 | `crates/` | The compiler, one crate per responsibility |
 | `xtask/` | Repository automation behind `cargo xtask` |
+| `docs/README.md` | Map of all documentation |
 | `docs/architecture.md` | Crate kinds and dependency rules |
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan |

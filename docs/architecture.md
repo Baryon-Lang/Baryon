@@ -58,7 +58,7 @@ Nothing else changes.
 | --- | --- | --- |
 | [`source`](../crates/source) | `foundation` | Source files, file ids, byte spans, line and column lookup |
 | [`diagnostics`](../crates/diagnostics) | `foundation` | Compiler messages and their plain-text rendering |
-| [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules |
+| [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules and the documentation link check |
 
 A crate is created when it has code to hold, never as a placeholder.
 
@@ -67,6 +67,8 @@ A crate is created when it has code to hold, never as a placeholder.
 1. Create `crates/<name>/` with a `Cargo.toml` that inherits the workspace package fields and
    lints, as the existing crates do.
 2. Declare its kind under `[package.metadata.architecture]`.
-3. Add it to `[workspace.dependencies]` in the root `Cargo.toml` if other crates will use it.
-4. Add a row to the table above.
-5. Run `cargo xtask ci`.
+3. Open `src/lib.rs` with `//!` documentation: what the crate is for, where it sits in the
+   pipeline, and a tested example.
+4. Add it to `[workspace.dependencies]` in the root `Cargo.toml` if other crates will use it.
+5. Add a row to the table above.
+6. Run `cargo xtask ci`.

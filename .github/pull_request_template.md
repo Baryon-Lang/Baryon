@@ -6,6 +6,7 @@
 
 - [ ] `cargo xtask ci` passes locally
 - [ ] Tests added or updated for the change
+- [ ] Documentation added or updated: rustdoc with examples, and every affected document
 
 ## Rules
 
