@@ -58,6 +58,7 @@
 //! # Ok::<(), source::SourceError>(())
 //! ```
 
+mod definitions;
 mod expressions;
 mod statements;
 
