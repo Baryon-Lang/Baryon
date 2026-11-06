@@ -1,0 +1,47 @@
+"""Heat spreading through a cube: the 3D heat equation, solved with an explicit stencil.
+
+A hot spot starts at the centre of a cold cube. Each time step, every interior cell moves toward
+the average of its six neighbours; the faces of the cube are held at zero. The program prints how
+much heat remains after the last step.
+
+Language features shown:
+- `Final` constants, usable as compile-time values
+- `Array[f64, 3]`, a 3-dimensional array whose shape is known at run time
+- a read-only parameter next to an `InOut` parameter
+- `prange`, a parallel loop whose iterations write disjoint cells
+- swapping two arrays by tuple assignment, which moves them and copies nothing
+"""
+
+N: Final = 64
+"""Cells along each edge of the cube."""
+
+ALPHA: Final = 0.1
+"""Diffusion number: diffusivity times the time step over the cell size squared. Explicit
+stepping in 3D is stable only up to 1/6."""
+
+STEPS: Final = 100
+
+
+def step(u: Array[f64, 3], out: InOut[Array[f64, 3]]):
+    """Advances the temperature field `u` by one time step, writing the result into `out`."""
+    for i in prange(1, N - 1):
+        for j in range(1, N - 1):
+            for k in range(1, N - 1):
+                neighbours = (
+                    u[i - 1, j, k] + u[i + 1, j, k]
+                    + u[i, j - 1, k] + u[i, j + 1, k]
+                    + u[i, j, k - 1] + u[i, j, k + 1]
+                )
+                out[i, j, k] = u[i, j, k] + ALPHA * (neighbours - 6.0 * u[i, j, k])
+
+
+def main():
+    u = Array.zeros((N, N, N))
+    u[N // 2, N // 2, N // 2] = 1000.0
+    out = u.copy()
+
+    for _ in range(STEPS):
+        step(u, out)
+        u, out = out, u
+
+    print(f"heat remaining after {STEPS} steps: {u.sum():.6f}")

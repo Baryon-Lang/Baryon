@@ -1,2 +1,3 @@
 * text=auto eol=lf
+*.npl linguist-language=Python
 Cargo.lock linguist-generated=true

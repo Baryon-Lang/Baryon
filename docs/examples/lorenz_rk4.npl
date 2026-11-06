@@ -1,0 +1,44 @@
+"""The Lorenz system, integrated with the classic fourth-order Runge-Kutta method.
+
+The Lorenz equations model convection in a fluid layer and are the textbook example of chaos.
+The program integrates them for 40 time units and prints the state every 10.
+
+Language features shown:
+- a generic function, `rk4_step[S: VectorSpace]`, compiled once per state type it is used with
+- passing a function as an argument; the compiler inlines it into the generic step
+- `Fixed[f64, (3,)]` arithmetic, unrolled with no allocation
+"""
+
+Vec3 = Fixed[f64, (3,)]
+
+SIGMA: Final = 10.0
+RHO: Final = 28.0
+BETA: Final = 8.0 / 3.0
+STEP: Final = 0.001
+
+
+def lorenz(t: f64, state: Vec3) -> Vec3:
+    """The right-hand side of the Lorenz equations. They do not depend on time."""
+    x, y, z = state
+    return Vec3(SIGMA * (y - x), x * (RHO - z) - y, x * y - BETA * z)
+
+
+def rk4_step[S: VectorSpace](derivative: Callable[[f64, S], S], t: f64, state: S, h: f64) -> S:
+    """One classic Runge-Kutta step of size `h` for any state that can be added and scaled."""
+    k1 = derivative(t, state)
+    k2 = derivative(t + h / 2, state + h / 2 * k1)
+    k3 = derivative(t + h / 2, state + h / 2 * k2)
+    k4 = derivative(t + h, state + h * k3)
+    return state + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+
+
+def main():
+    state = Vec3(1.0, 1.0, 1.0)
+    t = 0.0
+    steps_per_report = round(10.0 / STEP)
+    for report in range(1, 5):
+        for _ in range(steps_per_report):
+            state = rk4_step(lorenz, t, state, STEP)
+            t += STEP
+        x, y, z = state
+        print(f"t = {t:5.1f}  x = {x:9.4f}  y = {y:9.4f}  z = {z:9.4f}")
