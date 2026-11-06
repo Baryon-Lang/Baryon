@@ -33,7 +33,8 @@ def heat_step(u: Array[f64, 2], alpha: f64) -> Array[f64, 2]:
 
 Phase 0, specification and foundation, is nearly done, and the Phase 1 compiler has started. The
 compiler parses source files, rejects the Python constructs the language does not support, and
-reports module and syntax errors with `npl check`; it does not yet type-check or run programs.
+reports syntax errors, module errors, undefined names and bad imports with `npl check`; it does
+not yet type-check or run programs.
 
 [`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the
 place to add new ideas. The reasoning behind it is in the

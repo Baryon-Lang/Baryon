@@ -61,8 +61,8 @@ check, the crate architecture and its check, CI, the dependency policy, and the 
 baseline benchmark suite. The language reference is at version 0 and five example programs are
 written. The compiler has started: the front end parses source files into a flat syntax tree,
 rejects the Python constructs the language does not support, loads a package into the incremental
-query database, and reports all of it through `npl check`. Name resolution (roadmap 1.5) is next
-on the critical path.
+query database, resolves every name through scopes, modules and imports, and reports all of it
+through `npl check`. Type representation (roadmap 1.6) is next on the critical path.
 
 The [roadmap](../../ROADMAP.md) has the item-by-item status.
 
@@ -431,8 +431,8 @@ There is no `ffi` module ([0012](../decisions/0012-no-ffi-in-mvp.md)). Phase 3 a
 `fft` over LAPACK and FFTW or Accelerate, `data` (DataFrame), file formats, `plot`, `stats` and the
 REPL; Phase 4 adds `py` for Python interop.
 
-Tooling ships in the one `npl` executable, as in Go and Zig: `check` (exists today: syntax and
-module errors), `build`, `run`, `test` with a built-in runner for `@test` functions, `bench` for
+Tooling ships in the one `npl` executable, as in Go and Zig: `check` (exists today: syntax,
+module and name errors), `build`, `run`, `test` with a built-in runner for `@test` functions, `bench` for
 `@bench` functions against a stored baseline, and `doc` in Phase 3. There is no `fmt`: Ruff and
 Black already format the files.
 
@@ -490,7 +490,7 @@ it revealed. The work items, their estimates in engineer-weeks and their depende
 [`ROADMAP.md`](../../ROADMAP.md).
 
 The critical path through Phase 1 runs 1.2, 1.4, 1.5, 1.6, 1.7, 1.9, 1.10, 1.11: front end, query
-database, name resolution, types, type checker, IR, LLVM backend, driver. The first two are done.
+database, name resolution, types, type checker, IR, LLVM backend, driver. The first three are done.
 The standard library, language server and execution corpus are off the critical path. Decision
 0004 removed the lexer, the tree-sitter grammar and the formatter (1.1, 1.3, 1.15), about four
 weeks of work.
