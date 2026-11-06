@@ -1,0 +1,19 @@
+@test
+def every_parameter_kind[T: Number, *Shape, **Options](
+    position, /, ordinary: T = 1, *rest: T, keyword: f64, **extra
+) -> T:
+    return position
+
+
+async def fetch(path: str) -> bytes:
+    pass
+
+
+class Particle(Struct):
+    """A point mass."""
+
+    mass: f64
+    position: Vec3
+
+
+type Field[T] = Array[T, 3]

@@ -1,0 +1,179 @@
+Module 0..574
+  ExpressionStatement @Body 0..16
+    BooleanOperation @Value or 0..16
+      BooleanOperation and 0..7
+        Name 0..1 "a"
+        Name 6..7 "b"
+      UnaryOperation not 11..16
+        Name @Value 15..16 "c"
+  ExpressionStatement @Body 17..47
+    BinaryOperation @Value + 17..47
+      UnaryOperation @Left - 17..19
+        Name @Value 18..19 "x"
+      BinaryOperation @Right @ 22..47
+        BinaryOperation @Left % 22..43
+          BinaryOperation @Left // 22..39
+            BinaryOperation @Left * 22..34
+              UnaryOperation @Left + 22..24
+                Name @Value 23..24 "y"
+              UnaryOperation @Right ~ 27..34
+                BinaryOperation @Value ** 28..34
+                  Name @Left 28..29 "z"
+                  Integer @Right 33..34 "2"
+            Integer @Right 38..39 "3"
+          Integer @Right 42..43 "4"
+        Name @Right 46..47 "m"
+  ExpressionStatement @Body 48..70
+    Compare @Value 48..70
+      Integer @Left 48..49 "0"
+      Comparator <= 49..54
+        Name @Right 53..54 "x"
+      Comparator < 54..58
+        Name @Right 57..58 "n"
+      Comparator is not 58..70
+        None @Right 66..70 "None"
+  ExpressionStatement @Body 71..101
+    Conditional @Value 71..101
+      Name @Value 71..76 "first"
+      Name @Condition 80..89 "condition"
+      Name @Else 95..101 "second"
+  ExpressionStatement @Body 102..111
+    NamedExpression @Value 103..110
+      Name @Target 103..104 "n"
+      Integer @Value 108..110 "10"
+  ExpressionStatement @Body 112..138
+    Lambda @Value 112..138
+      Parameters @Parameters 119..131
+        Parameter 119..124
+          Name @Name 119..124 "value"
+        StarParameter 126..131
+          Name @Name 127..131 "rest"
+      Name @Body 133..138 "value"
+  ExpressionStatement @Body 139..168
+    Call @Value 139..168
+      Name @Function 139..140 "f"
+      Arguments @Arguments 140..168
+        Integer 141..142 "1"
+        Starred 144..149
+          Name @Value 145..149 "args"
+        Keyword 151..156
+          Name @Name 151..154 "key"
+          Integer @Value 155..156 "2"
+        DoubleStarred 158..167
+          Name @Value 160..167 "options"
+  ExpressionStatement @Body 169..196
+    Subscript @Value 169..196
+      Attribute @Value 169..180
+        Name @Value 169..173 "grid"
+        Name @Attribute 174..180 "values"
+      Tuple @Index 181..195
+        Slice 181..186
+          Integer @Lower 181..182 "1"
+          Name @Upper 183..184 "n"
+          Integer @Step 185..186 "2"
+        Slice 188..192
+          UnaryOperation @Step - 190..192
+            Integer @Value 191..192 "1"
+        Name 194..195 "i"
+  ExpressionStatement @Body 197..245
+    Tuple @Value 197..245
+      List 197..207
+        Integer 198..199 "1"
+        Starred 201..206
+          Name @Value 202..206 "tail"
+      Tuple parenthesized 209..213
+        Integer 210..211 "1"
+      Set 215..221
+        Integer 216..217 "1"
+        Integer 219..220 "2"
+      Dictionary 223..241
+        DictionaryEntry 224..232
+          StringLiteral @Key 224..229 "\"key\""
+          Integer @Value 231..232 "1"
+        DoubleStarred 234..240
+          Name @Value 236..240 "more"
+      Tuple parenthesized 243..245 "()"
+  ExpressionStatement @Body 246..289
+    ListComprehension @Value 246..289
+      BinaryOperation @Value * 247..252
+        Name @Left 247..248 "x"
+        Name @Right 251..252 "x"
+      Comprehension 253..288
+        Name @Target 257..258 "x"
+        Call @Iterator 262..270
+          Name @Function 262..267 "range"
+          Arguments @Arguments 267..270
+            Name 268..269 "n"
+        BinaryOperation @Condition % 274..279
+          Name @Left 274..275 "x"
+          Integer @Right 278..279 "2"
+        Compare @Condition 283..288
+          Name @Left 283..284 "x"
+          Comparator > 284..288
+            Integer @Right 287..288 "0"
+  ExpressionStatement @Body 290..314
+    DictionaryComprehension @Value 290..314
+      Name @Key 291..292 "k"
+      Name @Value 294..295 "v"
+      Comprehension 296..313
+        Tuple @Target 300..304
+          Name 300..301 "k"
+          Name 303..304 "v"
+        Name @Iterator 308..313 "pairs"
+  ExpressionStatement @Body 315..339
+    SetComprehension @Value 315..339
+      Name @Value 316..320 "item"
+      Comprehension 321..338
+        Name @Target 325..329 "item"
+        Name @Iterator 333..338 "items"
+  ExpressionStatement @Body 340..362
+    Call @Value 340..362
+      Name @Function 340..343 "sum"
+      Arguments @Arguments 343..362
+        Generator 344..361
+          Name @Value 344..345 "x"
+          Comprehension 346..361
+            Name @Target 350..351 "x"
+            Name @Iterator 355..361 "values"
+  ExpressionStatement @Body 363..414
+    Tuple @Value 363..414
+      Integer 363..365 "42"
+      Integer 367..371 "0xff"
+      Integer 373..378 "1_000"
+      Float 380..386 "6.37e6"
+      Imaginary 388..390 "2j"
+      True 392..396 "True"
+      False 398..403 "False"
+      None 405..409 "None"
+      Ellipsis 411..414 "..."
+  ExpressionStatement @Body 415..447
+    Tuple @Value 415..447
+      StringLiteral 415..437 "\"implicitly \" \"joined\""
+      BytesLiteral 439..447 "b\"bytes\""
+  ExpressionStatement @Body 448..497
+    FormattedString @Value 448..497
+      FormattedText 450..454 "t = "
+      Interpolation 454..462
+        Name @Value 455..456 "t"
+        FormatSpecification @Format 457..461
+          FormattedText 457..461 "5.1f"
+      FormattedText 462..463 " "
+      Interpolation !r 463..471
+        Name @Value 464..468 "name"
+      FormattedText 471..472 " "
+      Interpolation debug 472..480
+        Name @Value 473..478 "value"
+      FormattedText 480..492 " {{literal}}"
+      StringLiteral 494..497 "\"!\""
+  FunctionDefinition @Body async 500..573
+    Name @Name 510..516 "worker"
+    Parameters @Parameters 516..518 "()"
+    ExpressionStatement @Body 524..534
+      Await @Value 524..534
+        Name @Value 530..534 "task"
+    ExpressionStatement @Body 539..551
+      Yield @Value 539..551
+        Name @Value 545..551 "result"
+    ExpressionStatement @Body 556..573
+      YieldFrom @Value 556..573
+        Name @Value 567..573 "others"

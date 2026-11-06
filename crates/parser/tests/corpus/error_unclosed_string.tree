@@ -1,0 +1,7 @@
+Module 0..33
+  Assign @Body 0..23
+    Name @Target 0..7 "message"
+    StringLiteral @Value 10..23 "\"never closed"
+  Assign @Body 24..32
+    Name @Target 24..28 "next"
+    Integer @Value 31..32 "1"

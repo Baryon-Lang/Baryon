@@ -1,6 +1,6 @@
 //! `cargo xtask ci`: every check, cheapest first, stopping at the first failure.
 
-use crate::{Outcome, architecture, cargo, examples, links, roadmap, workspace_root};
+use crate::{Outcome, architecture, cargo, dependencies, examples, links, roadmap, workspace_root};
 use std::process::Command;
 
 /// One check in the CI sequence.
@@ -22,6 +22,8 @@ enum Check {
     Roadmap,
     /// Every example program is valid Python syntax.
     Examples,
+    /// Every external crate passes the license, advisory, ban and source rules in `deny.toml`.
+    Dependencies,
 }
 
 /// The checks `cargo xtask ci` runs, in order. Fast checks come first so failures surface early.
@@ -35,6 +37,7 @@ const CHECKS: &[Check] = &[
     Check::Architecture,
     Check::Links,
     Check::Examples,
+    Check::Dependencies,
     Check::Cargo {
         name: "lint",
         arguments: &[
@@ -85,6 +88,7 @@ impl Check {
             Self::Links => "links",
             Self::Roadmap => "roadmap",
             Self::Examples => "examples",
+            Self::Dependencies => "dependencies",
         }
     }
 
@@ -111,6 +115,7 @@ impl Check {
             Self::Links => links::check(),
             Self::Roadmap => roadmap::check(),
             Self::Examples => examples::check(),
+            Self::Dependencies => dependencies::check(),
         }
     }
 }

@@ -94,22 +94,25 @@ Outside the loop the array is an ordinary array again. Its contents before the l
 loop adds to them, exactly as the same loop run serially would. Listing an array the body never
 adds to is an error, so the argument cannot go stale.
 
-This extends the disjoint-write rule of the language reference rather than replacing it. Writes
-at the loop variable still need no annotation, and scalar reductions are still inferred. Only an
-array written at an index other than the loop variable needs `accumulate=`, and the checker's
-error says so:
+This extends the disjoint-write rule of the language reference ([rule
+2](../reference/parallel-loops.md#what-a-prange-body-may-do)) rather than replacing it. Writes at
+the loop variable still need no annotation, and scalar reductions are still inferred. Only an array
+written at an index other than the loop variable needs `accumulate=`, and the checker's error says
+so:
 
 ```text
-error: `forces[j]` may be written by more than one iteration of this `prange` loop
-  --> lennard_jones.npl:59:17
+error: iterations of this parallel loop may write the same element of `forces`
+ --> md.npl:58:13
    |
-59 |                 forces[j] -= force
-   |                 ^^^^^^^^^ written at `j`, not at the loop variable `i`
-   |
-help: if every write to `forces` in this loop adds to it, list it as accumulated:
-   |
-50 |     for i in prange(N, accumulate=forces):
-   |                      +++++++++++++++++++
+51 |     for i in prange(N):
+   |              --------- iterations run in parallel
+...
+58 |             forces[j] -= force
+   |             ^^^^^^^^^ indexed by `j`, not by the loop variable `i`
+   = note: each element of a shared array may be written only at the loop variable's index
+   = help: if every write to `forces` in this loop adds to it, declare it add-only:
+           `prange(N, accumulate=forces)`
+   = help: or compute each element's total in its own iteration, or use `range` for this loop
 ```
 
 ### What the result is
@@ -117,17 +120,18 @@ help: if every write to `forces` in this loop adds to it, list it as accumulated
 - **Meaning.** The array ends up equal to the serial loop's result, except that floating-point
   additions may be grouped differently. Integer accumulation is exact.
 - **Reproducibility.** Accumulated arrays follow the same reproducibility contract as scalar
-  reductions in the language reference: the result is bitwise identical from run to run and
-  independent of the thread count, because contributions are combined per fixed chunk of
-  iterations in a fixed order. As for scalar reductions, there is no opt-out. A GPU back end
-  that wants unordered atomics (Phase 4) needs its own decision record, which would add an
-  opt-out for scalar and array reductions together.
-- **Strategy.** How the runtime makes it safe is an implementation choice behind the
-  `prange` runtime interface, not language semantics. The Phase 1 strategy is GROMACS-style
-  blocked private buffers: a chunk allocates a private copy of a block of the array only when
-  it first adds into that block, and the combine step sums only touched blocks, in chunk order.
-  Colouring stays available as a future strategy that passes the same tests. Atomics do not,
-  because they make the order of additions vary, so they wait for the GPU record above.
+  reductions in the language reference ([reproducible
+  reductions](../reference/parallel-loops.md#reproducible-reductions)): the result is bitwise
+  identical from run to run and independent of the thread count, because each chunk adds its
+  iterations in order and the chunk results combine in the reference's fixed tree. As for scalar
+  reductions, there is no opt-out. A GPU back end that wants unordered atomics (Phase 4) needs its
+  own decision record, which would add an opt-out for scalar and array reductions together.
+- **Strategy.** How the runtime makes it safe is an implementation choice behind the `prange`
+  runtime interface, not language semantics. The Phase 1 strategy is GROMACS-style blocked private
+  buffers: a chunk allocates a private copy of a block of the array only when it first adds into
+  that block, and the combine step sums only touched blocks, in that fixed tree. Colouring stays
+  available as a future strategy that passes the same tests. Atomics do not, because they make the
+  order of additions vary, so they wait for the GPU record above.
 - **Cost, documented with the feature.** Extra memory is the touched blocks of the chunks in
   flight. For spatially sorted particles that is about one extra copy of the array; the worst
   case, every chunk touching every block, is one copy per chunk in flight. The language

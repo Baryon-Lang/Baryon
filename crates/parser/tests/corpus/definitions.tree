@@ -1,0 +1,61 @@
+Module 0..318
+  FunctionDefinition @Body 0..155
+    Decorator @Decorator 0..5
+      Name @Value 1..5 "test"
+    Name @Name 10..30 "every_parameter_kind"
+    TypeParameters @TypeParameters 30..60
+      TypeVariable 31..40
+        Name @Name 31..32 "T"
+        Name @Bound 34..40 "Number"
+      TypeVariableTuple 42..48
+        Name @Name 43..48 "Shape"
+      ParameterSpecification 50..59
+        Name @Name 52..59 "Options"
+    Parameters @Parameters 60..129
+      Parameter @PositionalOnly 66..74
+        Name @Name 66..74 "position"
+      Parameter 79..94
+        Name @Name 79..87 "ordinary"
+        Name @Annotation 89..90 "T"
+        Integer @Default 93..94 "1"
+      StarParameter 96..104
+        Name @Name 97..101 "rest"
+        Name @Annotation 103..104 "T"
+      Parameter @KeywordOnly 106..118
+        Name @Name 106..113 "keyword"
+        Name @Annotation 115..118 "f64"
+      DoubleStarParameter 120..127
+        Name @Name 122..127 "extra"
+    Name @Returns 133..134 "T"
+    Return @Body 140..155
+      Name @Value 147..155 "position"
+  FunctionDefinition @Body async 158..203
+    Name @Name 168..173 "fetch"
+    Parameters @Parameters 173..184
+      Parameter 174..183
+        Name @Name 174..178 "path"
+        Name @Annotation 180..183 "str"
+    Name @Returns 188..193 "bytes"
+    Pass @Body 199..203 "pass"
+  ClassDefinition @Body 206..287
+    Name @Name 212..220 "Particle"
+    Arguments @Arguments 220..228
+      Name 221..227 "Struct"
+    ExpressionStatement @Body 234..253
+      StringLiteral @Value 234..253 "\"\"\"A point mass.\"\"\""
+    AnnotatedAssign @Body 259..268
+      Name @Target 259..263 "mass"
+      Name @Annotation 265..268 "f64"
+    AnnotatedAssign @Body 273..287
+      Name @Target 273..281 "position"
+      Name @Annotation 283..287 "Vec3"
+  TypeAlias @Body 290..317
+    Name @Name 295..300 "Field"
+    TypeParameters @TypeParameters 300..303
+      TypeVariable 301..302
+        Name @Name 301..302 "T"
+    Subscript @Value 306..317
+      Name @Value 306..311 "Array"
+      Tuple @Index 312..316
+        Name 312..313 "T"
+        Integer 315..316 "3"

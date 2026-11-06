@@ -1,0 +1,70 @@
+Module 0..371
+  ExpressionStatement @Body 0..82
+    StringLiteral @Value 0..82 "\"\"\"The constructs this language spells differently from Python (decision 0004).\"\"\""
+  AnnotatedAssign @Body 84..99
+    Name @Target 84..85 "N"
+    Name @Annotation 87..92 "Final"
+    Integer @Value 95..99 "1024"
+  ClassDefinition @Body 102..148
+    Name @Name 108..113 "State"
+    Arguments @Arguments 113..121
+      Name 114..120 "Struct"
+    AnnotatedAssign @Body 127..148
+      Name @Target 127..133 "values"
+      Subscript @Annotation 135..148
+        Name @Value 135..140 "Array"
+        Tuple @Index 141..147
+          Name 141..144 "f64"
+          Integer 146..147 "1"
+  FunctionDefinition @Body 151..370
+    Name @Name 155..160 "scale"
+    Parameters @Parameters 160..194
+      Parameter 161..180
+        Name @Name 161..166 "state"
+        Subscript @Annotation 168..180
+          Name @Value 168..173 "InOut"
+          Name @Index 174..179 "State"
+      Parameter 182..193
+        Name @Name 182..188 "factor"
+        Name @Annotation 190..193 "f64"
+    For @Body 200..253
+      Name @Target 204..205 "i"
+      Call @Iterator 209..218
+        Name @Function 209..215 "prange"
+        Arguments @Arguments 215..218
+          Name 216..217 "N"
+      AugmentedAssign @Body * 228..253
+        Subscript @Target 228..243
+          Attribute @Value 228..240
+            Name @Value 228..233 "state"
+            Name @Attribute 234..240 "values"
+          Name @Index 241..242 "i"
+        Name @Value 247..253 "factor"
+    For @Body 258..313
+      Name @Target 262..263 "i"
+      Call @Iterator 267..281
+        Name @Function 267..271 "simd"
+        Arguments @Arguments 271..281
+          Call 272..280
+            Name @Function 272..277 "range"
+            Arguments @Arguments 277..280
+              Name 278..279 "N"
+      AugmentedAssign @Body + 291..313
+        Subscript @Target 291..306
+          Attribute @Value 291..303
+            Name @Value 291..296 "state"
+            Name @Attribute 297..303 "values"
+          Name @Index 304..305 "i"
+        Float @Value 310..313 "1.0"
+    With @Body 318..370
+      WithItem 323..329
+        Name @Value 323..329 "unsafe"
+      Assign @Body 339..370
+        Subscript @Target 339..364
+          Attribute @Value 339..361
+            Attribute @Value 339..351
+              Name @Value 339..344 "state"
+              Name @Attribute 345..351 "values"
+            Name @Attribute 352..361 "unchecked"
+          Integer @Index 362..363 "0"
+        Float @Value 367..370 "0.0"

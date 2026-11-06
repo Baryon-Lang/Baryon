@@ -145,6 +145,10 @@ impl Rendered<'_> {
 }
 
 /// Width of `characters` on screen, with tabs expanded to [`TAB_WIDTH`] columns.
+///
+/// Every other character counts as one column. Wide characters, such as CJK text and most emoji,
+/// take two columns in a terminal, so markers under or after them fall short; roadmap idea I.12
+/// tracks measuring true display width.
 fn display_width<'a>(characters: impl Iterator<Item = &'a char>) -> usize {
     characters
         .map(|&character| if character == '\t' { TAB_WIDTH } else { 1 })

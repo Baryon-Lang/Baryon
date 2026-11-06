@@ -21,19 +21,19 @@ The design plan calls for 20 programs before the Phase 0 gate; these are the fir
 
 ## Where the design got in the way
 
-Writing these programs surfaced questions the language reference (roadmap 0.1) must answer. Each
-is a finding, not yet a decision.
+Writing these programs surfaced questions the language reference (roadmap 0.1) had to answer. The
+[reference](../reference/README.md) settles most of them; the rest stay open where shown.
 
-| Program | Finding | Follows up in |
+| Program | Finding | Where it stands |
 | --- | --- | --- |
-| `lennard_jones.npl` | Newton's third law writes `forces[i]` and `forces[j]` from one parallel iteration, which the disjoint-write rule rejects. The example computes each pair twice instead, doubling the work. | Idea I.6; proposed decision [0013](../decisions/0013-parallel-accumulation.md) |
-| `lennard_jones.npl` | `atoms.positions` and `atoms.forces` are passed to one call, one read-only and one `InOut`. The exclusivity check must accept disjoint fields of one struct, not just distinct variables. | 0.1, reference rules |
-| `lennard_jones.npl` | `Array.zeros((N,), Vec3)` names the element type as an argument. The reference needs one way to give an array's element type at construction. | 0.1, array semantics |
-| `heat_equation.npl` | `u, out = out, u` swaps two arrays. The reference must define tuple assignment as a simultaneous move, so the swap copies nothing. | 0.1, memory model |
-| `conjugate_gradient.npl` | `x` is assigned inside `try` and used only there. Using it after the `try` would need definite-assignment rules across `except` branches. | 0.1, type rules |
-| `conjugate_gradient.npl` | `direction = residual + beta * direction` allocates a new array every iteration unless the compiler reuses `direction`'s storage. | 3.1, array expression fusion |
-| `conjugate_gradient.npl` | Errors subclass `Exception`, Python's spelling, but they are values with fields, not unwinding exceptions. | Decision 0005 |
-| `lorenz_rk4.npl` | `rk4_step` needs a `VectorSpace` trait: addition, and scaling by a float. The standard library must define it, and `Fixed` and `Array` must implement it. | 1.7, traits |
-| `lorenz_rk4.npl` | `lorenz` takes `t` only to match the `Callable` signature. Unused-parameter warnings must allow that. | 1.7, diagnostics |
-| `monte_carlo_pi.npl` | `from random import Philox` shadows the name of Python's own `random` module. That is fine for the compiler but stops the program running under CPython with a shim. | Idea I.11 |
-| All | Methods that mutate their struct have no spelling yet. `def push(self: InOut[Self], ...)` is the candidate. | 0.1, methods |
+| `lennard_jones.npl` | Newton's third law writes `forces[i]` and `forces[j]` from one parallel iteration, which the disjoint-write rule rejects. The example computes each pair twice instead, doubling the work. | Open: idea I.6; proposed decision [0013](../decisions/0013-parallel-accumulation.md); see [what `prange` cannot express yet](../reference/parallel-loops.md#what-prange-cannot-express-yet) |
+| `lennard_jones.npl` | `atoms.positions` and `atoms.forces` are passed to one call, one read-only and one `InOut`. The exclusivity check must accept disjoint fields of one struct, not just distinct variables. | Settled: [places and overlap](../reference/values-and-references.md#places-and-overlap) |
+| `lennard_jones.npl` | `Array.zeros((N,), Vec3)` names the element type as an argument. The reference needs one way to give an array's element type at construction. | Settled: [creating arrays](../reference/arrays.md#creating-arrays) |
+| `heat_equation.npl` | `u, out = out, u` swaps two arrays. The reference must define tuple assignment as a simultaneous move, so the swap copies nothing. | Settled: [tuple assignment](../reference/values-and-references.md#tuple-assignment) |
+| `conjugate_gradient.npl` | `x` is assigned inside `try` and used only there. Using it after the `try` would need definite-assignment rules across `except` branches. | Settled: [definite assignment](../reference/types.md#scope-and-definite-assignment) |
+| `conjugate_gradient.npl` | `direction = residual + beta * direction` allocates a new array every iteration unless the compiler reuses `direction`'s storage. | Open: roadmap 3.1; the meaning is fixed in [whole-array arithmetic](../reference/arrays.md#whole-array-arithmetic) |
+| `conjugate_gradient.npl` | Errors subclass `Exception`, Python's spelling, but they are values with fields, not unwinding exceptions. | Settled: [declaring an error type](../reference/errors.md#declaring-an-error-type) |
+| `lorenz_rk4.npl` | `rk4_step` needs a `VectorSpace` trait: addition, and scaling by a float. The standard library must define it, and `Fixed` and `Array` must implement it. | Settled for version 0: [traits](../reference/types.md#traits); user-defined traits wait on D.9 |
+| `lorenz_rk4.npl` | `lorenz` takes `t` only to match the `Callable` signature. Unused-parameter warnings must allow that. | Open: roadmap 1.7, diagnostics |
+| `monte_carlo_pi.npl` | `from random import Philox` shadows the name of Python's own `random` module. That is fine for the compiler but stops the program running under CPython with a shim. | Open: idea I.11; see [names that look like Python's modules](../reference/differences-from-python.md#names-that-look-like-pythons-modules) |
+| All | Methods that mutate their struct have no spelling yet. `def push(self: InOut[Self], ...)` is the candidate. | Settled: [methods](../reference/values-and-references.md#methods) |

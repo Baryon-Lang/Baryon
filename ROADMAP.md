@@ -38,12 +38,14 @@ procedure on paper.
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0.1 | Language reference: grammar, type rules, reference rules, array semantics | 3 | — | In progress | Claude | [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
+| 0.1 | Language reference: grammar, type rules, reference rules, array semantics | 3 | — | In progress | Claude | [#9](https://github.com/csimpson1964/New-Programming-Language/pull/9) |
 | 0.2 | 20 example programs, iterated for readability | 2 | 0.1 | In progress | Claude | [#4](https://github.com/csimpson1964/New-Programming-Language/pull/4) |
 | 0.3 | Physics kernel suite in Fortran and C++ with a benchmark harness: N-body, Lennard-Jones MD, 3D stencil, CG on sparse, RK4, Monte Carlo, matmul, FFT | 1 | — | Done | Claude | [#3](https://github.com/csimpson1964/New-Programming-Language/pull/3) |
 | 0.3.1 | Record the Apple silicon baseline: run `FC=gfortran-14 cargo kernels --record` on an M-series Mac and commit `bench/baselines/macos-aarch64.json` | — | 0.3 | Planned | — | — |
 | 0.3.2 | Fail a benchmark run when repeated runs of one kernel report different checksums | — | 0.3 | Done | Claude | [#5](https://github.com/csimpson1964/New-Programming-Language/pull/5) |
 | 0.4 | Repository foundation: ground rules, roadmap, workspace, lints, architecture and link checks, CI | 1 | — | Done | Claude | [#1](https://github.com/csimpson1964/New-Programming-Language/pull/1) |
+| 0.5 | Close gaps found reviewing 0.4: the roadmap check compares against the pull request's base, and the link check handles `~~~` fences and links from the repository root | — | 0.4 | Done | Claude | [#6](https://github.com/csimpson1964/New-Programming-Language/pull/6) |
+| 0.6 | Check dependencies with cargo-deny in `cargo xtask ci`: licenses compatible with Apache-2.0 and MIT, RustSec advisories, banned and duplicate crates, allowed sources | — | 0.4 | Done | Claude | [#10](https://github.com/csimpson1964/New-Programming-Language/pull/10) |
 
 ## Phase 1: MVP compiler
 
@@ -53,7 +55,8 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1.1 | Lexer with indentation tokens and a token arena. Dropped: the existing Python parser lexes, indentation included | 1 | 0.1 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
-| 1.2 | Front end: an existing Python 3.12 parser written in Rust behind an interface crate, lowering to a flat syntax tree, error messages written for this language, parser test corpus | 2 | 0.1 | Planned | — | [0004](docs/decisions/0004-python-syntax.md) |
+| 1.2 | Front end: an existing Python 3.12 parser written in Rust behind an interface crate, lowering to a flat syntax tree, error messages written for this language, parser test corpus | 2 | 0.1 | Done | Claude | [0004](docs/decisions/0004-python-syntax.md), [#7](https://github.com/csimpson1964/New-Programming-Language/pull/7) |
+| 1.2.1 | Reject the Python constructs the language does not support yet, with a diagnostic for each, as a pass over the syntax tree that follows the language reference's list | 1 | 0.1, 1.2 | Planned | — | — |
 | 1.3 | Tree-sitter grammar for editor highlighting. Dropped: editors already highlight the files as Python | 1 | 0.1 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.4 | Incremental query engine and the file and module database | 2 | 1.2 | Planned | — | — |
 | 1.5 | Name resolution, modules and imports | 2 | 1.4 | Planned | — | — |
@@ -131,6 +134,9 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.6 | Language name and file extension; blocks 1.17 | — | — | Planned | Collins | — |
 | D.7 | Resolve the plan's FFI contradiction: no FFI before Phase 4, yet an `ffi` module in the MVP. Decided: no user-facing FFI before Phase 4 | — | — | Done | Collins | [0012](docs/decisions/0012-no-ffi-in-mvp.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | — | — | Planned | Collins | — |
+| D.9 | Traits: how user code declares a trait and how a type implements it, structurally as Python's `Protocol` does or by naming it as Rust does | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
+| D.10 | Sum types: how to spell an enum whose variants carry data, in valid Python syntax | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
+| D.11 | Integer overflow in release builds: wrap, as the plan says, or panic, as in debug builds | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
 | D.12 | Parallel loops that add into shared arrays (Newton's third law, histograms, assembly): `prange(n, accumulate=forces)`, write-only, reproducible, blocked private buffers | — | I.6 | In progress | Claude | [0013](docs/decisions/0013-parallel-accumulation.md), [#8](https://github.com/csimpson1964/New-Programming-Language/pull/8) |
 
 ## Ideas
@@ -145,8 +151,10 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.4 | Keep bounds checks on in release builds, with an `unsafe` opt-out | — | — | Done | Collins | [0010](docs/decisions/0010-bounds-checks.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.5 | Export functions to Python in Phase 2; move DataFrame, file formats and plotting (3.13 to 3.16) to Phase 4 | 3 | 1.10 | Idea | — | — |
 | I.6 | Array-valued reductions in parallel loops, needed for Lennard-Jones force accumulation. Proposed as `prange(n, accumulate=forces)` in decision D.12 | — | 1.14 | Idea | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
-| I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Done | Collins | [0009](docs/decisions/0009-number-mixing.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
+| I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Done | Collins | [0009](docs/decisions/0009-number-mixing.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2), [0014](docs/decisions/0014-number-conversions-are-calls.md) |
 | I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Done | Collins | [0007](docs/decisions/0007-array-types.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Done | Collins | [0011](docs/decisions/0011-checked-simd.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.10 | Position the language against Julia, Mojo, Numba, Pythran, Codon and Chapel | — | — | Idea | — | — |
 | I.11 | Run the example programs under CPython with a small shim library, as a correctness oracle for the compiler's output | 1 | I.1 | Idea | — | — |
+| I.12 | Diagnostics measure the display width of wide characters (CJK, emoji) so markers line up under them | — | — | Idea | — | — |
+| I.13 | Run the RustSec advisory check on a daily schedule and on pushes to `main` instead of on every pull request, so a newly published advisory does not turn unrelated pull requests red; the license, ban and source checks stay on every pull request and need no network | — | 0.6 | Idea | — | [#10](https://github.com/csimpson1964/New-Programming-Language/pull/10) |

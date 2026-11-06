@@ -1,0 +1,25 @@
+error: invalid assignment target
+ --> error_recovery.npl:1:6
+  |
+1 | x = (1 +
+  |      ^^^
+
+error: expected `)`, found `=`
+ --> error_recovery.npl:2:3
+  |
+2 | y = 2 z = 3
+  |   ^ expected `)`
+
+error: two statements on one line
+ --> error_recovery.npl:2:7
+  |
+2 | y = 2 z = 3
+  |       ^ a new statement starts here
+  = note: put each statement on its own line
+
+error: expected an expression or a ')'
+ --> error_recovery.npl:3:6
+  |
+3 | call(,)
+  |      ^
+

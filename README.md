@@ -46,7 +46,13 @@ cargo xtask ci
 ```
 
 That runs every check CI runs: format, roadmap, architecture rules, documentation links, example
-syntax, lints, tests and API docs. It needs Python 3.12 or newer to check the example programs.
+syntax, dependency rules, lints, tests and API docs. It needs Python 3.12 or newer to check the
+example programs, and [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) to check
+dependencies:
+
+```sh
+cargo install --locked cargo-deny@0.20.2
+```
 
 ## Documentation
 
@@ -60,12 +66,14 @@ contributing to the compiler, or integrating one of its crates.
 | `ROADMAP.md` | Phases, work items, decisions and ideas: the source of truth |
 | `crates/` | The compiler, one crate per responsibility |
 | `xtask/` | Repository automation behind `cargo xtask` |
+| `deny.toml` | Dependency rules: allowed licenses and sources, advisories, duplicate crates |
 | `bench/` | Baseline physics kernels in C++ and Fortran, and `cargo kernels`, which times them |
 | `docs/README.md` | Map of all documentation |
 | `docs/architecture.md` | Crate kinds and dependency rules |
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan |
 | `docs/examples/` | Example programs written in the language |
+| `docs/reference/` | The language reference: what a program may say and what it means |
 | `.github/` | CI workflow and pull request template |
 
 ## Contributing

@@ -6,8 +6,9 @@
 //! 1. **Every row is well formed.** Each item has a unique id, a known status, an owner once
 //!    work starts, a link once it is done, and dependencies that exist.
 //! 2. **Every change updates the roadmap.** When the working tree differs from where it branched
-//!    off `origin/main`, `ROADMAP.md` must be among the changed files. Contributors mark items
-//!    `In progress` and `Done` as they work, so the roadmap never falls behind the code.
+//!    off its base branch, `ROADMAP.md` must be among the changed files. Contributors mark items
+//!    `In progress` and `Done` as they work, so the roadmap never falls behind the code. The base
+//!    is the pull request's base branch in CI and `origin/main` everywhere else; see [`base`].
 
 use crate::{Outcome, workspace_root};
 use std::collections::HashSet;
@@ -17,8 +18,8 @@ use std::process::Command;
 /// The roadmap's path, relative to the repository root.
 const ROADMAP: &str = "ROADMAP.md";
 
-/// The branch every change is compared against.
-const BASE: &str = "origin/main";
+/// The branch a change is compared against when no pull request names one.
+const DEFAULT_BASE: &str = "main";
 
 /// The header every work-item table uses. Rows of tables with any other header are ignored.
 const HEADER: [&str; 7] = [
@@ -83,8 +84,9 @@ pub(crate) fn check() -> Outcome {
         return Err(format!("{} roadmap problem(s)", problems.len()).into());
     }
 
-    match changed_files()? {
-        None => println!("roadmap: `{BASE}` not found; skipped the check that {ROADMAP} changed"),
+    let base = base(std::env::var("GITHUB_BASE_REF").ok().as_deref());
+    match changed_files(&base)? {
+        None => println!("roadmap: `{base}` not found; skipped the check that {ROADMAP} changed"),
         Some(files) if files.is_empty() || files.iter().any(|file| file == ROADMAP) => {}
         Some(files) => {
             return Err(format!(
@@ -185,10 +187,23 @@ fn table_cells(line: &str) -> Option<Vec<&str>> {
     Some(inner.split('|').map(str::trim).collect())
 }
 
-/// Files changed since the working tree branched off [`BASE`], or `None` if [`BASE`] does not
-/// exist locally. Uncommitted changes and new, untracked files count.
-fn changed_files() -> Result<Option<Vec<String>>, Box<dyn std::error::Error>> {
-    let Some(merge_base) = git(&["merge-base", BASE, "HEAD"])? else {
+/// The remote branch a change is compared against: the pull request's base branch when GitHub
+/// Actions names one in `GITHUB_BASE_REF`, otherwise [`DEFAULT_BASE`].
+///
+/// A stacked pull request targets another pull request's branch, not `main`. Comparing it with
+/// `main` would let the parent's roadmap edit satisfy the check for a child that never touched
+/// the roadmap.
+fn base(github_base_ref: Option<&str>) -> String {
+    let branch = github_base_ref
+        .filter(|branch| !branch.is_empty())
+        .unwrap_or(DEFAULT_BASE);
+    format!("origin/{branch}")
+}
+
+/// Files changed since the working tree branched off `base`, or `None` if `base` does not exist
+/// locally. Uncommitted changes and new, untracked files count.
+fn changed_files(base: &str) -> Result<Option<Vec<String>>, Box<dyn std::error::Error>> {
+    let Some(merge_base) = git(&["merge-base", base, "HEAD"])? else {
         return Ok(None);
     };
     let changed = git(&["diff", "--name-only", merge_base.trim()])?
@@ -290,5 +305,15 @@ mod tests {
     fn reports_rows_with_the_wrong_number_of_cells() {
         let text = table("| 1.1 | Lexer | Planned |\n");
         assert_eq!(problems(&text), ["5: row has 3 cells; expected 7"]);
+    }
+
+    #[test]
+    fn compares_against_the_pull_request_base_when_named() {
+        assert_eq!(base(None), "origin/main");
+        assert_eq!(base(Some("")), "origin/main");
+        assert_eq!(
+            base(Some("docs/core-language-decisions")),
+            "origin/docs/core-language-decisions"
+        );
     }
 }

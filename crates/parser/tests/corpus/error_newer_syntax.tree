@@ -1,0 +1,18 @@
+Module 0..63
+  FunctionDefinition @Body 0..62
+    Name @Name 4..9 "first"
+    TypeParameters @TypeParameters 9..18
+      TypeVariable 10..17
+        Name @Name 10..11 "T"
+        Name @Default 14..17 "int"
+    Parameters @Parameters 18..35
+      Parameter 19..34
+        Name @Name 19..25 "values"
+        Subscript @Annotation 27..34
+          Name @Value 27..31 "list"
+          Name @Index 32..33 "T"
+    Name @Returns 39..40 "T"
+    Return @Body 46..62
+      Subscript @Value 53..62
+        Name @Value 53..59 "values"
+        Integer @Index 60..61 "0"

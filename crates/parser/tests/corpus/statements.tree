@@ -1,0 +1,97 @@
+Module 0..580
+  ImportFrom @Body 0..33
+    Name @Module 5..9 "math"
+    Alias 17..29
+      Name @Name 17..21 "sqrt"
+      Name @Alias 25..29 "root"
+    Alias 31..33
+      Name @Name 31..33 "pi"
+  Import @Body 34..53
+    Alias 41..53
+      Name @Name 41..53 "numpy.linalg"
+  Assign @Body 55..72
+    Name @Target 55..60 "total"
+    Name @Target 63..68 "count"
+    Integer @Value 71..72 "0"
+  AugmentedAssign @Body + 73..83
+    Name @Target 73..78 "total"
+    Integer @Value 82..83 "1"
+  AnnotatedAssign @Body 84..101
+    Name @Target 84..90 "energy"
+    Name @Annotation 92..95 "f64"
+    Float @Value 98..101 "0.0"
+  Delete @Body 102..111
+    Name @Target 106..111 "count"
+  For @Body 113..238
+    Name @Target 117..118 "i"
+    Call @Iterator 122..131
+      Name @Function 122..127 "range"
+      Arguments @Arguments 127..131
+        Integer 128..130 "10"
+    If @Body 137..217
+      Compare @Condition 140..146
+        Name @Left 140..141 "i"
+        Comparator == 141..146
+          Integer @Right 145..146 "3"
+      Continue @Body 156..164 "continue"
+      ElifClause @Else 169..194
+        Compare @Condition 174..179
+          Name @Left 174..175 "i"
+          Comparator > 175..179
+            Integer @Right 178..179 "8"
+        Break @Body 189..194 "break"
+      ElseClause @Else 199..217
+        Pass @Body 213..217 "pass"
+    AugmentedAssign @Else - 228..238
+      Name @Target 228..233 "total"
+      Integer @Value 237..238 "1"
+  While @Body 240..273
+    Compare @Condition 246..257
+      Name @Left 246..251 "total"
+      Comparator < 251..257
+        Integer @Right 254..257 "100"
+    AugmentedAssign @Body * 263..273
+      Name @Target 263..268 "total"
+      Integer @Value 272..273 "2"
+  With @Body 275..320
+    WithItem 280..304
+      Call @Value 280..296
+        Name @Function 280..284 "open"
+        Arguments @Arguments 284..296
+          StringLiteral 285..295 "\"data.csv\""
+      Name @Target 300..304 "file"
+    WithItem 306..310
+      Name @Value 306..310 "lock"
+    Pass @Body 316..320 "pass"
+  Try @Body 322..453
+    Raise @Body 331..364
+      Call @Value 337..354
+        Name @Function 337..347 "ValueError"
+        Arguments @Arguments 347..354
+          StringLiteral 348..353 "\"bad\""
+      None @Cause 360..364 "None"
+    ExceptHandler @Handler 365..420
+      Name @Type 372..382 "ValueError"
+      Name @Name 386..391 "error"
+      Assert @Body 397..420
+        Name @Condition 404..409 "error"
+        StringLiteral @Message 411..420 "\"message\""
+    Pass @Else 431..435 "pass"
+    Pass @Finally 449..453 "pass"
+  FunctionDefinition @Body 456..579
+    Name @Name 460..467 "counter"
+    Parameters @Parameters 467..469 "()"
+    Global @Body 475..487
+      Name 482..487 "total"
+    Assign @Body 492..501
+      Name @Target 492..497 "value"
+      Integer @Value 500..501 "0"
+    FunctionDefinition @Body 507..562
+      Name @Name 511..515 "step"
+      Parameters @Parameters 515..517 "()"
+      Nonlocal @Body 527..541
+        Name 536..541 "value"
+      Return @Body 550..562
+        Name @Value 557..562 "value"
+    Return @Body 568..579
+      Name @Value 575..579 "step"

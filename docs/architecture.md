@@ -58,8 +58,10 @@ Nothing else changes.
 | --- | --- | --- |
 | [`source`](../crates/source) | `foundation` | Source files, file ids, byte spans, line and column lookup |
 | [`diagnostics`](../crates/diagnostics) | `foundation` | Compiler messages and their plain-text rendering |
+| [`syntax`](../crates/syntax) | `interface` | The flat syntax tree: 16-byte nodes in preorder, their kinds, roles, operators and flags |
+| [`parser`](../crates/parser) | `implementation` | Parses source text into a `syntax` tree with Ruff's Python parser, and reports syntax errors as diagnostics |
 | [`bench`](../bench) | `tooling` | `cargo kernels`: builds, verifies and times the C++ and Fortran baseline kernels |
-| [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules, the documentation link check, the roadmap check and the example syntax check |
+| [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules, the documentation link check, the roadmap check, the example syntax check and the external dependency check |
 
 A crate is created when it has code to hold, never as a placeholder.
 
