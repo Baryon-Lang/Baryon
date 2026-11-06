@@ -26,6 +26,9 @@ reason in a line.
 | `assert` is removed by `python -O` | `assert` is checked in every build | [Syntax](syntax.md#statements) |
 | Classes have inheritance and reference semantics | A class is a struct, an error type or an enum: a value type with no inheritance. Types share behavior through traits | Inheritance would make struct sizes unknown and method calls indirect, which stops arrays of structs being contiguous and loops vectorizing. [Decision 0015](../decisions/0015-no-class-inheritance.md) |
 | Top-level code runs on import; modules have global variables | Only definitions at the top level; the program starts at `main` | Shared mutable state would race in parallel loops. [Source files](syntax.md#source-files) |
+| A second `def f` at the top level silently replaces the first | Each top-level name is defined once per module | A replaced definition is almost always a mistake. [Source files](syntax.md#source-files) |
+| `from . import x` imports relative to the current package | Imports always name modules from the package root | An import reads the same wherever the file sits. [Source files](syntax.md#source-files) |
+| A leading `_` marks a name private by convention only | A leading `_` makes a name private to its module; importing it is an error | A module's private helpers stay free to change. [Source files](syntax.md#source-files) |
 
 ## What Python has that version 0 does not
 
