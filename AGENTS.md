@@ -47,3 +47,4 @@ undocumented code is unfinished code.
 | Build and open the API docs | `cargo doc --workspace --no-deps --open` |
 | Tests for one crate | `cargo test --package <crate>` |
 | Format | `cargo fmt --all` |
+| Baseline benchmarks: build, verify, time | `cargo kernels` (see [`bench/README.md`](bench/README.md)) |
