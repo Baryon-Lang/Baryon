@@ -1,9 +1,10 @@
-//! Checks on definitions: where a function may be, its decorators, and a class's bases.
+//! Checks on definitions: where a function may be, its decorators, and a class's bases and
+//! decorators.
 
 use crate::{Checker, Scope};
 use syntax::{Flags, NodeId, Role, SyntaxKind};
 
-/// The decorators the language has, both marking functions for the test runner.
+/// The function decorators the language has, both marking functions for the test runner.
 const DECORATORS: [&str; 2] = ["test", "bench"];
 
 impl Checker<'_> {
@@ -36,7 +37,7 @@ impl Checker<'_> {
         self.decorators(id);
     }
 
-    /// Checks a definition's decorators: only `@test` and `@bench` exist.
+    /// Checks a function's decorators: only `@test` and `@bench` exist.
     fn decorators(&mut self, id: NodeId) {
         let decorators: Vec<NodeId> = self.tree.children_with(id, Role::Decorator).collect();
         for decorator in decorators {
@@ -50,19 +51,19 @@ impl Checker<'_> {
                     self.tree.span(decorator),
                     "",
                     &[
-                        "the only decorators are `@test` and `@bench`, which mark test and \
-                       benchmark functions",
+                        "the only function decorators are `@test` and `@bench`, which mark test \
+                         and benchmark functions",
                     ],
                 );
             }
         }
     }
 
-    /// Checks a class definition: its decorators and its bases. A class takes exactly one of
+    /// Checks a class definition: its bases and its decorators. A class takes exactly one of
     /// the bases `Struct`, `Struct, Copy`, `Exception` and `Enum`: there is no inheritance
     /// (decision 0015).
     pub(crate) fn class(&mut self, id: NodeId) {
-        self.decorators(id);
+        self.class_decorators(id);
         let name = self
             .tree
             .child(id, Role::Name)
@@ -125,5 +126,78 @@ impl Checker<'_> {
                 &["a class's bases are `Struct`, `Struct, Copy`, `Exception` or `Enum`"],
             );
         }
+    }
+
+    /// Checks a class's decorators: only `@layout("C")` exists, and only on a class with the
+    /// base `Struct` (decision 0017). Which bases may be combined is checked with the bases.
+    fn class_decorators(&mut self, id: NodeId) {
+        let is_struct = self
+            .tree
+            .child(id, Role::Arguments)
+            .into_iter()
+            .flat_map(|arguments| self.tree.children(arguments))
+            .any(|base| self.tree.kind(base) == SyntaxKind::Name && self.text(base) == "Struct");
+        let decorators: Vec<NodeId> = self.tree.children_with(id, Role::Decorator).collect();
+        for decorator in decorators {
+            let span = self.tree.span(decorator);
+            let Some(value) = self.tree.child(decorator, Role::Value) else {
+                continue;
+            };
+            let call = (self.tree.kind(value) == SyntaxKind::Call)
+                .then(|| self.tree.child(value, Role::Function))
+                .flatten();
+            let named = call.unwrap_or(value);
+            if self.tree.kind(named) != SyntaxKind::Name || self.text(named) != "layout" {
+                self.error(
+                    "this decorator is not supported",
+                    span,
+                    "",
+                    &[
+                        "the only class decorator is `@layout(\"C\")`, which keeps a struct's \
+                         fields in the order written without the padding warning",
+                    ],
+                );
+                continue;
+            }
+            if !self.is_c_layout(value) {
+                self.error(
+                    "`@layout` takes one argument, `\"C\"`",
+                    span,
+                    "",
+                    &[
+                        "C layout is the only one: fields in the order written, each at the next \
+                         offset its alignment allows",
+                    ],
+                );
+                continue;
+            }
+            if !is_struct {
+                self.error(
+                    "`@layout` applies only to structs",
+                    span,
+                    "",
+                    &[
+                        "enums and error types are never shared with other programs byte for \
+                         byte, so their layout is the compiler's",
+                    ],
+                );
+            }
+        }
+    }
+
+    /// Whether the decorator expression `value` is exactly `layout("C")`.
+    fn is_c_layout(&self, value: NodeId) -> bool {
+        if self.tree.kind(value) != SyntaxKind::Call {
+            return false;
+        }
+        let items: Vec<NodeId> = self
+            .tree
+            .child(value, Role::Arguments)
+            .into_iter()
+            .flat_map(|arguments| self.tree.children(arguments))
+            .collect();
+        matches!(items.as_slice(), [only]
+            if self.tree.kind(*only) == SyntaxKind::StringLiteral
+                && ["\"C\"", "'C'"].contains(&self.text(*only)))
     }
 }

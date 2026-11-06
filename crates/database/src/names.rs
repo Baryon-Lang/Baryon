@@ -14,7 +14,7 @@ use syntax::NodeId;
 /// The names every module can use without an import: the names the language adds and the
 /// Python built-ins it keeps (language reference, "Syntax", "Names the language adds"), and the
 /// standard traits (language reference, "Types", "Traits").
-pub const BUILTINS: [&str; 49] = [
+pub const BUILTINS: [&str; 50] = [
     "f64",
     "f32",
     "i64",
@@ -41,6 +41,7 @@ pub const BUILTINS: [&str; 49] = [
     "unsafe",
     "test",
     "bench",
+    "layout",
     "Callable",
     "print",
     "len",

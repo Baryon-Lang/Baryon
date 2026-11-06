@@ -24,6 +24,14 @@ class Particle(Struct, Copy):
         return 0.5 * self.mass
 
 
+@layout("C")
+class Header(Struct, Copy):
+    """A record fixed by a file format: the padding after `version` is part of it."""
+
+    version: u8
+    length: u64
+
+
 class Boundary(Enum):
     PERIODIC = 1
     REFLECTING = 2

@@ -108,6 +108,7 @@ in scope, with no import.
 | `prange`, `simd` | Parallel and vectorized loops | [Parallel and vector loops](parallel-loops.md) |
 | `unsafe` | Context for operations the compiler cannot check | [Arrays](arrays.md#unchecked-access) |
 | `test`, `bench` | Decorators marking test and benchmark functions | Roadmap 1.11 |
+| `layout` | Decorator that pins a struct's field order: `@layout("C")` | [Types](types.md#field-layout) |
 | `Callable` | The type of a function passed as an argument | [Types](types.md#functions-as-arguments) |
 | `Number`, `Float`, `VectorSpace` | Standard traits that bound a type parameter, as in `def rk4_step[S: VectorSpace](...)` | [Types](types.md#traits) |
 

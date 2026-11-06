@@ -153,6 +153,7 @@ spelling, the language uses a name that Python's grammar already accepts:
 | Unchecked index | `a.unchecked[i]`, only inside `with unsafe:` | [0010](../decisions/0010-bounds-checks.md) |
 | Number conversion | `f64(x)`, `i32(n)` | [0014](../decisions/0014-number-conversions-are-calls.md) |
 | Test and benchmark | `@test`, `@bench` | [0004](../decisions/0004-python-syntax.md) |
+| Struct layout fixed on purpose | `@layout("C")` on a struct | [0017](../decisions/0017-layout-decorator.md) |
 
 A kernel looks like this:
 

@@ -19,9 +19,10 @@
 //!   `with unsafe:`.
 //! - Expressions: `lambda`, `await`, `yield`, dictionary and set literals and comprehensions,
 //!   generator expressions, `:=`, `*` and `**` unpacking, and `is` with anything but `None`.
-//! - Definitions: `*args` and `**kwargs` parameters, decorators other than `@test` and
-//!   `@bench`, and class bases other than `Struct`, `Struct, Copy`, `Exception` and `Enum`:
-//!   there is no class inheritance (decision 0015).
+//! - Definitions: `*args` and `**kwargs` parameters, function decorators other than `@test`
+//!   and `@bench`, class decorators other than `@layout("C")` on a struct, and class bases
+//!   other than `Struct`, `Struct, Copy`, `Exception` and `Enum`: there is no class inheritance
+//!   (decision 0015).
 //! - Placement: top-level statements other than imports, `Final` constants, type aliases,
 //!   functions, classes and documentation strings; class bodies holding anything but fields,
 //!   methods and documentation; and an expression on its own line that is not a call.
