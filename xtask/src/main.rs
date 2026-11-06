@@ -11,6 +11,7 @@
 
 mod architecture;
 mod ci;
+mod examples;
 mod links;
 mod roadmap;
 
@@ -23,8 +24,10 @@ const USAGE: &str = "\
 Usage: cargo xtask <command>
 
 Commands:
-  ci                   Run every check CI runs: format, roadmap, architecture, links, lint, test, docs
+  ci                   Run every check CI runs: format, roadmap, architecture, links, examples,
+                       lint, test, docs
   check-architecture   Verify crate dependencies follow docs/architecture.md
+  check-examples       Verify every example program is valid Python 3.12 syntax
   check-links          Verify every relative link in the Markdown documentation resolves
   check-roadmap        Verify ROADMAP.md is well formed and updated by the current change
   help                 Show this message";
@@ -37,6 +40,7 @@ fn main() -> ExitCode {
     let outcome = match std::env::args().nth(1).as_deref() {
         Some("ci") => ci::run(),
         Some("check-architecture") => architecture::check(),
+        Some("check-examples") => examples::check(),
         Some("check-links") => links::check(),
         Some("check-roadmap") => roadmap::check(),
         Some("help" | "--help" | "-h") => {
