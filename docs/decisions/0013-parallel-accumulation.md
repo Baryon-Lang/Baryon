@@ -117,15 +117,17 @@ help: if every write to `forces` in this loop adds to it, list it as accumulated
 - **Meaning.** The array ends up equal to the serial loop's result, except that floating-point
   additions may be grouped differently. Integer accumulation is exact.
 - **Reproducibility.** Accumulated arrays follow the same reproducibility contract as scalar
-  reductions in the language reference: by default the result is bitwise identical from run to
-  run and independent of the thread count, because contributions are combined per fixed chunk
-  of iterations in a fixed order. Whatever opt-out the reference defines for scalar reductions
-  applies here too, and is what a GPU back end that uses atomics (Phase 4) requires.
+  reductions in the language reference: the result is bitwise identical from run to run and
+  independent of the thread count, because contributions are combined per fixed chunk of
+  iterations in a fixed order. As for scalar reductions, there is no opt-out. A GPU back end
+  that wants unordered atomics (Phase 4) needs its own decision record, which would add an
+  opt-out for scalar and array reductions together.
 - **Strategy.** How the runtime makes it safe is an implementation choice behind the
   `prange` runtime interface, not language semantics. The Phase 1 strategy is GROMACS-style
   blocked private buffers: a chunk allocates a private copy of a block of the array only when
   it first adds into that block, and the combine step sums only touched blocks, in chunk order.
-  Atomics and colouring stay available as future strategies that pass the same tests.
+  Colouring stays available as a future strategy that passes the same tests. Atomics do not,
+  because they make the order of additions vary, so they wait for the GPU record above.
 - **Cost, documented with the feature.** Extra memory is the touched blocks of the chunks in
   flight. For spatially sorted particles that is about one extra copy of the array; the worst
   case, every chunk touching every block, is one copy per chunk in flight. The language
