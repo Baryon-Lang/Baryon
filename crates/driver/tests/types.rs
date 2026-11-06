@@ -336,19 +336,21 @@ class SolverError(Exception):
 ";
     assert_eq!(
         check_one(program),
-        r"warning: reordering the fields of `Particle` would save 8 bytes
+        r#"warning: reordering the fields of `Particle` would save 8 bytes
  --> main.npl:1:7
   |
 1 | class Particle(Struct):
   |       ^^^^^^^^ 24 bytes as declared, 16 reordered
   = note: declare the fields in the order `mass, charge, alive, species`; the compiler keeps the order written, so the layout matches C and `numpy`
+  = note: if the order is fixed by a file format or a C library, decorate the struct `@layout("C")` to keep it without this warning
 
 warning: reordering the fields of `SolverError` would save 8 bytes
  --> main.npl:8:7
   |
 8 | class SolverError(Exception):
   |       ^^^^^^^^^^^ 24 bytes as declared, 16 reordered
-  = note: declare the fields in the order `residual, converged, diverged`; the compiler keeps the order written, so the layout matches C and `numpy`"
+  = note: declare the fields in the order `residual, converged, diverged`; the compiler keeps the order written, so the layout matches C and `numpy`
+  = note: if the order is fixed by a file format or a C library, decorate the struct `@layout("C")` to keep it without this warning"#
     );
 }
 
@@ -377,12 +379,13 @@ class Cell(Struct):
 ";
     assert_eq!(
         check(&[("shapes.npl", shapes), ("main.npl", main)]),
-        r"warning: reordering the fields of `Cell` would save 8 bytes
+        r#"warning: reordering the fields of `Cell` would save 8 bytes
  --> main.npl:5:7
   |
 5 | class Cell(Struct):
   |       ^^^^ 32 bytes as declared, 24 reordered
-  = note: declare the fields in the order `extent, count, boundary`; the compiler keeps the order written, so the layout matches C and `numpy`"
+  = note: declare the fields in the order `extent, count, boundary`; the compiler keeps the order written, so the layout matches C and `numpy`
+  = note: if the order is fixed by a file format or a C library, decorate the struct `@layout("C")` to keep it without this warning"#
     );
 }
 
@@ -415,5 +418,34 @@ class Broken(Struct):
 14 |     mass: Array[f64]
    |           ^^^^^^^^^^ wrong number of arguments
    = note: for example `Array[f64, 1]`"
+    );
+}
+
+/// A struct decorated `@layout("C")` keeps its padding without a warning (decision 0017); a
+/// struct without it still gets one.
+#[test]
+fn padding_is_not_reported_for_a_pinned_layout() {
+    let program = r#"
+@layout("C")
+class Header(Struct, Copy):
+    version: u8
+    length: u64
+    flags: u8
+
+
+class Sample(Struct):
+    valid: bool
+    value: f64
+    count: i32
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"warning: reordering the fields of `Sample` would save 8 bytes
+ --> main.npl:8:7
+  |
+8 | class Sample(Struct):
+  |       ^^^^^^ 24 bytes as declared, 16 reordered
+  = note: declare the fields in the order `value, count, valid`; the compiler keeps the order written, so the layout matches C and `numpy`
+  = note: if the order is fixed by a file format or a C library, decorate the struct `@layout("C")` to keep it without this warning"#
     );
 }

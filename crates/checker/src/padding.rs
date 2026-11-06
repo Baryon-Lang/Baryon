@@ -27,6 +27,9 @@
 //! instance, through that struct's own size. A struct whose layout cannot be computed, because a
 //! field's type is unknown from an earlier error or the struct contains itself, gets no warning:
 //! that error is reported elsewhere.
+//!
+//! A struct decorated `@layout("C")` gets no warning: its author has said the order is fixed on
+//! purpose, to match a file format or a C library (decision 0017).
 
 use crate::outline::{Kind, outline};
 use database::{File, Package};
@@ -36,7 +39,7 @@ use syntax::{NodeId, SyntaxTree};
 use types::{Declaration, Declared, Item, Layout, Nominal, Type, TypeDb, TypeKind};
 
 /// A warning for each non-generic struct in `file`, a file of `package`, whose fields would take
-/// fewer bytes in another order, in source order.
+/// fewer bytes in another order, in source order. A struct decorated `@layout("C")` gets none.
 ///
 /// Cost: one layout per field of each struct, which visits every type nested in the field. A
 /// struct's declaration and those of the classes its fields name are read through the cached
@@ -47,9 +50,10 @@ pub(crate) fn padding(db: &dyn TypeDb, package: Package, file: File) -> Vec<Diag
     outline(db, file)
         .entries()
         .iter()
-        .filter(
-            |entry| matches!(&entry.kind, Kind::Class(class) if class.type_parameters.is_empty()),
-        )
+        .filter(|entry| {
+            matches!(&entry.kind, Kind::Class(class)
+                if class.type_parameters.is_empty() && !class.c_layout)
+        })
         .filter_map(|entry| {
             let item = Item::new(db, package, file, entry.name);
             let Declaration::Struct { fields, .. } = &db.declaration(item).declaration else {
@@ -118,6 +122,10 @@ impl Saving {
              layout matches C and `numpy`",
             order.join(", ")
         ))
+        .with_note(
+            "if the order is fixed by a file format or a C library, decorate the struct \
+             `@layout(\"C\")` to keep it without this warning",
+        )
     }
 }
 

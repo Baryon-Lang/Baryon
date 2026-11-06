@@ -17,14 +17,14 @@ error: this decorator is not supported
   |
 5 | @staticmethod
   | ^^^^^^^^^^^^^
-  = note: the only decorators are `@test` and `@bench`, which mark test and benchmark functions
+  = note: the only function decorators are `@test` and `@bench`, which mark test and benchmark functions
 
 error: this decorator is not supported
   --> definitions.npl:11:1
    |
 11 | @timed(10)
    | ^^^^^^^^^^
-   = note: the only decorators are `@test` and `@bench`, which mark test and benchmark functions
+   = note: the only function decorators are `@test` and `@bench`, which mark test and benchmark functions
 
 error: a class needs a base: `Struct`, `Exception` or `Enum`
   --> definitions.npl:16:7
@@ -62,4 +62,39 @@ error: these bases cannot be combined
 32 | class Copied(Copy):
    |             ^^^^^^
    = note: a class's bases are `Struct`, `Struct, Copy`, `Exception` or `Enum`
+
+error: this decorator is not supported
+  --> definitions.npl:36:1
+   |
+36 | @dataclass
+   | ^^^^^^^^^^
+   = note: the only class decorator is `@layout("C")`, which keeps a struct's fields in the order written without the padding warning
+
+error: `@layout` takes one argument, `"C"`
+  --> definitions.npl:41:1
+   |
+41 | @layout("packed")
+   | ^^^^^^^^^^^^^^^^^
+   = note: C layout is the only one: fields in the order written, each at the next offset its alignment allows
+
+error: `@layout` takes one argument, `"C"`
+  --> definitions.npl:46:1
+   |
+46 | @layout
+   | ^^^^^^^
+   = note: C layout is the only one: fields in the order written, each at the next offset its alignment allows
+
+error: `@layout` applies only to structs
+  --> definitions.npl:51:1
+   |
+51 | @layout("C")
+   | ^^^^^^^^^^^^
+   = note: enums and error types are never shared with other programs byte for byte, so their layout is the compiler's
+
+error: this decorator is not supported
+  --> definitions.npl:56:1
+   |
+56 | @layout("C")
+   | ^^^^^^^^^^^^
+   = note: the only function decorators are `@test` and `@bench`, which mark test and benchmark functions
 

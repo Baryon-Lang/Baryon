@@ -180,11 +180,27 @@ warning: reordering the fields of `Sample` would save 8 bytes
 1 | class Sample(Struct):
   |       ^^^^^^ 24 bytes as declared, 16 reordered
   = note: declare the fields in the order `value, count, valid`; the compiler keeps the order written, so the layout matches C and `numpy`
+  = note: if the order is fixed by a file format or a C library, decorate the struct `@layout("C")` to keep it without this warning
 ```
 
 The order it names sorts the fields by alignment, largest first, keeping the written order among
 fields of equal alignment; no order takes fewer bytes. A generic struct is checked through each
 non-generic struct that holds an instance of it.
+
+When the order is fixed on purpose, because the struct mirrors a record in a file format or a C
+library, say so with `@layout("C")` ([decision 0017](../decisions/0017-layout-decorator.md)). The
+struct keeps its fields and padding exactly as written, and the compiler does not warn:
+
+```python
+@layout("C")
+class Header(Struct, Copy):
+    """The 16-byte header of a trajectory file: 7 bytes of padding follow `version`."""
+
+    version: u8
+    frames: u64
+```
+
+`"C"` is the only layout, and `@layout` applies only to structs; anything else is a compile error.
 
 ## Enums
 

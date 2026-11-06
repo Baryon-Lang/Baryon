@@ -31,3 +31,28 @@ class Mixed(Struct, Enum):
 
 class Copied(Copy):
     x: f64
+
+
+@dataclass
+class Decorated(Struct):
+    x: f64
+
+
+@layout("packed")
+class Packed(Struct):
+    x: f64
+
+
+@layout
+class Bare(Struct):
+    x: f64
+
+
+@layout("C")
+class Tagged(Enum):
+    A = 1
+
+
+@layout("C")
+def pinned():
+    pass

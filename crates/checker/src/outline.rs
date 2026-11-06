@@ -66,6 +66,9 @@ pub(crate) struct Class {
     pub(crate) base: Base,
     /// Whether `Copy` is among its bases.
     pub(crate) copy: bool,
+    /// Whether it is decorated `@layout("C")`, which pins its field order and silences the
+    /// padding warning (decision 0017). The syntax check rejects any other `@layout`.
+    pub(crate) c_layout: bool,
     /// The `Name` node of each type parameter, in order.
     pub(crate) type_parameters: Vec<NodeId>,
 }
@@ -121,7 +124,7 @@ pub(crate) fn outline(db: &dyn Db, file: File) -> Outline {
     Outline { entries }
 }
 
-/// What a class is: its base, whether it is `Copy`, and its type parameters.
+/// What a class is: its base, whether it is `Copy` or `@layout("C")`, and its type parameters.
 fn class(tree: &SyntaxTree, text: &str, statement: NodeId) -> Class {
     let bases: Vec<&str> = tree
         .child(statement, Role::Arguments)
@@ -137,9 +140,20 @@ fn class(tree: &SyntaxTree, text: &str, statement: NodeId) -> Class {
     } else {
         Base::Struct
     };
+    let c_layout = tree
+        .children_with(statement, Role::Decorator)
+        .any(|decorator| {
+            tree.child(decorator, Role::Value)
+                .filter(|&value| tree.kind(value) == SyntaxKind::Call)
+                .and_then(|call| tree.child(call, Role::Function))
+                .is_some_and(|function| {
+                    tree.kind(function) == SyntaxKind::Name && tree.text(function, text) == "layout"
+                })
+        });
     Class {
         base,
         copy: bases.contains(&"Copy"),
+        c_layout,
         type_parameters: type_parameters(tree, statement),
     }
 }
