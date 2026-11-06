@@ -13,6 +13,7 @@ kind = "interface"
 
 [dependencies]
 database.workspace = true
+diagnostics.workspace = true
 salsa.workspace = true
 syntax.workspace = true
 

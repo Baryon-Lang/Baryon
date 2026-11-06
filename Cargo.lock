@@ -902,6 +902,7 @@ name = "types"
 version = "0.0.0"
 dependencies = [
  "database",
+ "diagnostics",
  "salsa",
  "source",
  "syntax",
