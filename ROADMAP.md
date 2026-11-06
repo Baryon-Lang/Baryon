@@ -64,7 +64,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.6 | Type representation, interning, layouts, compile-time shapes, complex numbers | 2 | 1.5 | Done | Claude | [#19](https://github.com/csimpson1964/New-Programming-Language/pull/19) |
 | 1.7 | Type checker: local inference, generics, static-dispatch traits, enums, match | 6 | 1.6 | In progress | Claude | — |
 | 1.7.1 | Warn when reordering a struct's fields would save padding, naming the order that does; fields keep declaration order otherwise (#19) | — | 1.6, 1.7 | Planned | — | — |
-| 1.7.2 | Declarations: signatures, struct fields, enum variants, aliases and `Final` constants computed by the compiler, with errors for annotations that mean no type | 1 | 1.6 | In progress | Claude | — |
+| 1.7.2 | Declarations: signatures, struct fields, enum variants, aliases and `Final` constants computed by the compiler, with errors for annotations that mean no type | 1 | 1.6 | Done | Claude | [#20](https://github.com/csimpson1964/New-Programming-Language/pull/20) |
 | 1.7.3 | Function bodies: local inference, literals, number mixing, operators, calls, definite assignment | 2 | 1.7.2 | Planned | — | — |
 | 1.7.4 | Arrays: copy-type elements, indexing, slicing, whole-array arithmetic | 1 | 1.7.3 | Planned | — | — |
 | 1.7.5 | Generics: standard-trait bounds, type arguments inferred at calls | 1 | 1.7.3 | Planned | — | — |
