@@ -140,6 +140,52 @@ class Particle(Struct):
 Python programmers will recognize this as a `@dataclass`. It is written as a class with a base
 rather than a decorator so that the base, not a convention, is what changes the semantics.
 
+### Field layout
+
+A struct stores its fields in the order they are declared, each at the next offset its alignment
+allows, as a C struct does. The compiler never reorders them. An array of structs is therefore laid
+out exactly as its author wrote it, and can be shared byte for byte with C, a NumPy structured
+array or a binary file format.
+
+Alignment can leave gaps. A field of 8 bytes starts at a multiple of 8, so a 1-byte `bool` before
+it is followed by 7 unused bytes. Declaring fields from largest to smallest keeps the gaps
+smallest:
+
+```python
+class Sample(Struct):
+    """24 bytes: 7 unused after `valid`, 4 more at the end to keep the next element aligned."""
+
+    valid: bool
+    value: f64
+    count: i32
+
+
+class PackedSample(Struct):
+    """16 bytes: the same fields, largest first, with 3 unused at the end."""
+
+    value: f64
+    count: i32
+    valid: bool
+```
+
+Rust reorders fields to save space unless told not to; this language keeps the declared order
+because data shared with other programs must match a layout someone wrote down, and a struct whose
+size changes when the compiler improves would break every file written before. When another order
+would save space, the compiler warns at the class name and names that order:
+
+```text
+warning: reordering the fields of `Sample` would save 8 bytes
+ --> main.npl:1:7
+  |
+1 | class Sample(Struct):
+  |       ^^^^^^ 24 bytes as declared, 16 reordered
+  = note: declare the fields in the order `value, count, valid`; the compiler keeps the order written, so the layout matches C and `numpy`
+```
+
+The order it names sorts the fields by alignment, largest first, keeping the written order among
+fields of equal alignment; no order takes fewer bytes. A generic struct is checked through each
+non-generic struct that holds an instance of it.
+
 ## Enums
 
 ```python
