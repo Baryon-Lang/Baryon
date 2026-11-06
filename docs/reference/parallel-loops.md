@@ -96,9 +96,8 @@ pair-force loop (`forces[i] += f` and `forces[j] -= f`), breaks rule 2. Version 
 parallel form of it: compute each element's total in its own iteration, as the
 [Lennard-Jones example](../examples/lennard_jones.npl) does, at twice the arithmetic.
 
-Roadmap idea I.6 tracks the fix. Decision 0013, proposed in
-[pull request #8](https://github.com/csimpson1964/New-Programming-Language/pull/8), would allow it
-by declaring such arrays add-only: `prange(n, accumulate=forces)`.
+Roadmap idea I.6 tracked the fix. [Decision 0013](../decisions/0013-parallel-accumulation.md)
+allows it by declaring such arrays add-only: `prange(n, accumulate=forces)`.
 
 ### Random numbers
 
