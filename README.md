@@ -73,6 +73,7 @@ contributing to the compiler, or integrating one of its crates.
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan |
 | `docs/examples/` | Example programs written in the language |
+| `docs/reference/` | The language reference: what a program may say and what it means |
 | `.github/` | CI workflow and pull request template |
 
 ## Contributing
