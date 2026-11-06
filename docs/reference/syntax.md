@@ -98,6 +98,7 @@ in scope, with no import.
 | `unsafe` | Context for operations the compiler cannot check | [Arrays](arrays.md#unchecked-access) |
 | `test`, `bench` | Decorators marking test and benchmark functions | Roadmap 1.11 |
 | `Callable` | The type of a function passed as an argument | [Types](types.md#functions-as-arguments) |
+| `Number`, `Float`, `VectorSpace` | Standard traits that bound a type parameter, as in `def rk4_step[S: VectorSpace](...)` | [Types](types.md#traits) |
 
 Python's own built-in names that the language keeps, with their Python meaning where it applies:
 `print`, `len`, `range`, `round`, `abs`, `min`, `max`, `sum`, `enumerate`, `zip`, `int`, `float`,
