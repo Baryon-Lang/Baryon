@@ -123,7 +123,7 @@ A choice that is hard to reverse, or that affects more than one crate, gets a de
 ## Workflow
 
 1. Find your item in [`ROADMAP.md`](ROADMAP.md), or add it.
-2. Branch from `main` as `<type>/<short-description>`, for example `feat/lexer-indentation`.
+2. Branch from `main` as `<type>/<short-description>`, for example `feat/syntax-tree-lowering`.
 3. Mark the item `In progress` with your name, open a draft pull request, and link it from the
    item.
 4. Make one logical change. Keep the pull request small enough to review in one sitting.
