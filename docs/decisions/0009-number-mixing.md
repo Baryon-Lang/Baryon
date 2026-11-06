@@ -19,11 +19,11 @@ becoming a 32-bit one.
   whether `x` is `f32` or `f64`.
 - In arithmetic that mixes an integer and a float, the integer converts to the float's type.
 - Numbers of the same kind but different widths never mix implicitly: `f32` with `f64` and `i32`
-  with `i64` are errors that suggest an explicit conversion, written as a call: `f64(x)`.
+  with `i64` are errors that suggest an explicit `as` conversion.
 
 ## Consequences
 
 - The plan's `mean` example compiles as written, and so does almost any Python arithmetic.
-- Precision never changes without a conversion call, such as `f32(x)`, in the source.
+- Precision never changes without an `as` in the source.
 - Converting a large `i64` to `f64` can lose precision silently, as it does in Python and NumPy.
   The type checker may warn on conversions that a constant shows to be lossy.

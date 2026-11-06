@@ -50,7 +50,10 @@ non-negative exponent; a negative one panics.
 ### Conversions
 
 A conversion is a call to the target type: `f64(n)`, `i32(x)`, `u8(k)`. It is the only way to
-change a number's width or kind.
+change a number's width or kind. ([Decision 0009](../decisions/0009-number-mixing.md) writes
+conversions as Rust's `x as f64`, but that is not valid Python, which
+[decision 0004](../decisions/0004-python-syntax.md) requires, so the call form is the spelling.
+It is NumPy's spelling too: `np.float64(x)`.)
 
 | Conversion | Result |
 | --- | --- |
