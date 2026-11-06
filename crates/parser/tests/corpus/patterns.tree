@@ -1,0 +1,73 @@
+Module 0..326
+  Match @Body 0..325
+    Name @Value 6..13 "command"
+    MatchCase @Case 19..60
+      PatternSequence @Pattern 24..37
+        PatternAs 25..26
+          Name @Name 25..26 "x"
+        PatternAs 28..29
+          Name @Name 28..29 "y"
+        PatternStar 31..36
+          Name @Name 32..36 "rest"
+      Compare @Condition 41..46
+        Name @Left 41..42 "x"
+        Comparator > 42..46
+          Integer @Right 45..46 "0"
+      Pass @Body 56..60 "pass"
+    MatchCase @Case 65..111
+      PatternMapping @Pattern 70..97
+        StringLiteral @Key 71..79 "\"action\""
+        PatternAs @Pattern 81..87
+          Name @Name 81..87 "action"
+        Name @Rest 91..96 "other"
+      Pass @Body 107..111 "pass"
+    MatchCase @Case 116..161
+      PatternOr @Pattern 121..147
+        PatternClass 121..134
+          Name @Class 121..126 "Point"
+          PatternValue 127..128
+            Integer @Value 127..128 "0"
+          PatternKeyword 130..133
+            Name @Name 130..131 "y"
+            PatternValue @Pattern 132..133
+              Integer @Value 132..133 "0"
+        PatternClass 137..147
+          Name @Class 137..142 "Point"
+          PatternKeyword 143..146
+            Name @Name 143..144 "x"
+            PatternValue @Pattern 145..146
+              Integer @Value 145..146 "0"
+      Pass @Body 157..161 "pass"
+    MatchCase @Case 166..218
+      PatternOr @Pattern 171..204
+        PatternValue 171..172
+          Integer @Value 171..172 "1"
+        PatternValue 175..177
+          UnaryOperation @Value - 175..177
+            Integer @Value 176..177 "2"
+        PatternValue 180..183
+          Float @Value 180..183 "3.5"
+        PatternValue 186..192
+          StringLiteral @Value 186..192 "\"text\""
+        PatternValue 195..204
+          Attribute @Value 195..204
+            Name @Value 195..200 "Color"
+            Name @Attribute 201..204 "RED"
+      Pass @Body 214..218 "pass"
+    MatchCase @Case 223..253
+      PatternOr @Pattern 228..239
+        PatternSingleton 228..232 "None"
+        PatternSingleton 235..239 "True"
+      Pass @Body 249..253 "pass"
+    MatchCase @Case 258..300
+      PatternAs @Pattern 263..286
+        PatternSequence @Pattern 263..278
+          PatternAs 264..269
+            Name @Name 264..269 "first"
+          PatternAs 271..277
+            Name @Name 271..277 "second"
+        Name @Name 282..286 "pair"
+      Pass @Body 296..300 "pass"
+    MatchCase @Case 305..325
+      PatternAs @Pattern 310..311 "_"
+      Pass @Body 321..325 "pass"

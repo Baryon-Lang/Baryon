@@ -1,0 +1,10 @@
+Module 0..33
+  FunctionDefinition @Body 0..32
+    Name @Name 4..5 "f"
+    Parameters @Parameters 5..7 "()"
+    Assign @Body 17..22
+      Name @Target 17..18 "x"
+      Integer @Value 21..22 "1"
+    Assign @Body 27..32
+      Name @Target 27..28 "y"
+      Integer @Value 31..32 "2"

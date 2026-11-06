@@ -15,7 +15,11 @@ publish = false
 [workspace.dependencies]
 diagnostics = { path = "crates/diagnostics" }
 source = { path = "crates/source" }
+syntax = { path = "crates/syntax" }
 
+ruff_python_ast = "=0.0.21"
+ruff_python_parser = "=0.0.21"
+ruff_text_size = "=0.0.21"
 serde_json = "1.0.154"
 
 [workspace.lints.rust]

@@ -1,0 +1,16 @@
+"""The constructs this language spells differently from Python (decision 0004)."""
+
+N: Final = 1024
+
+
+class State(Struct):
+    values: Array[f64, 1]
+
+
+def scale(state: InOut[State], factor: f64):
+    for i in prange(N):
+        state.values[i] *= factor
+    for i in simd(range(N)):
+        state.values[i] += 1.0
+    with unsafe:
+        state.values.unchecked[0] = 0.0

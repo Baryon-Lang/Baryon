@@ -1,0 +1,8 @@
+Module 0..22
+  FunctionDefinition @Body 0..21
+    Name @Name 4..5 "f"
+    Parameters @Parameters 5..8
+      Parameter 6..7
+        Name @Name 6..7 "x"
+    Return @Body 13..21
+      Name @Value 20..21 "x"

@@ -1,0 +1,7 @@
+error: this string is never closed
+ --> error_unclosed_string.npl:1:11
+  |
+1 | message = "never closed
+  |           ^^^^^^^^^^^^^ the string starts here
+  = note: close it with the same quote it opens with
+
