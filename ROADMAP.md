@@ -38,7 +38,7 @@ procedure on paper.
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0.1 | Language reference: grammar, type rules, reference rules, array semantics | 3 | — | In progress | Claude | [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
-| 0.2 | 20 example programs, iterated for readability | 2 | 0.1 | Planned | — | — |
+| 0.2 | 20 example programs, iterated for readability | 2 | 0.1 | In progress | Claude | — |
 | 0.3 | Physics kernel suite in Fortran and C++ with a benchmark harness: N-body, Lennard-Jones MD, 3D stencil, CG on sparse, RK4, Monte Carlo, matmul, FFT | 1 | — | Planned | — | — |
 | 0.4 | Repository foundation: ground rules, roadmap, workspace, lints, architecture and link checks, CI | 1 | — | Done | Claude | [#1](https://github.com/csimpson1964/New-Programming-Language/pull/1) |
 
@@ -145,3 +145,4 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Idea | — | [0007](docs/decisions/0007-array-types.md) |
 | I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Idea | — | [0011](docs/decisions/0011-checked-simd.md) |
 | I.10 | Position the language against Julia, Mojo, Numba, Pythran, Codon and Chapel | — | — | Idea | — | — |
+| I.11 | Run the example programs under CPython with a small shim library, as a correctness oracle for the compiler's output | 1 | I.1 | Idea | — | — |

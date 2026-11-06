@@ -43,6 +43,7 @@ undocumented code is unfinished code.
 | Every check CI runs | `cargo xtask ci` |
 | Crate dependency rules only | `cargo xtask check-architecture` |
 | Documentation links only | `cargo xtask check-links` |
+| Example programs parse as Python only | `cargo xtask check-examples` |
 | Roadmap only | `cargo xtask check-roadmap` |
 | Build and open the API docs | `cargo doc --workspace --no-deps --open` |
 | Tests for one crate | `cargo test --package <crate>` |

@@ -58,7 +58,7 @@ Nothing else changes.
 | --- | --- | --- |
 | [`source`](../crates/source) | `foundation` | Source files, file ids, byte spans, line and column lookup |
 | [`diagnostics`](../crates/diagnostics) | `foundation` | Compiler messages and their plain-text rendering |
-| [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules, the documentation link check and the roadmap check |
+| [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules, the documentation link check, the roadmap check and the example syntax check |
 
 A crate is created when it has code to hold, never as a placeholder.
 
