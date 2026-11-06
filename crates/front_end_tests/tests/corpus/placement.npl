@@ -1,0 +1,36 @@
+"""Module documentation is fine."""
+
+counter = 0
+scale: float = 2.0
+LIMIT: Final = 10
+a, b = 1, 2
+counter += 1
+print("loading")
+"""A string that documents nothing."""
+
+if LIMIT > 5:
+    def helper():
+        pass
+
+for i in range(3):
+    pass
+
+
+class Grid(Struct):
+    """A grid."""
+
+    size: int
+
+    if size > 0:
+        pass
+
+    print(size)
+
+
+def body(x: int):
+    """Documentation is fine here."""
+    x == 1
+    x + 1
+    ...
+    "not documentation"
+    x.method()

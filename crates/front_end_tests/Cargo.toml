@@ -1,0 +1,23 @@
+[package]
+name = "front_end_tests"
+description = "End-to-end tests of the front end: the parser, then the syntax check, over a corpus."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# An application crate, because it wires two implementations together: an implementation crate
+# may not depend on another, even for its tests.
+[package.metadata.architecture]
+kind = "application"
+
+[dev-dependencies]
+diagnostics.workspace = true
+parser.workspace = true
+source.workspace = true
+syntax_check.workspace = true
+
+[lints]
+workspace = true

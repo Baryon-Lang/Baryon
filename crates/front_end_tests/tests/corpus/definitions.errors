@@ -1,0 +1,65 @@
+error: `*args` parameters are not supported
+ --> definitions.npl:1:14
+  |
+1 | def variadic(*values: f64, **options: f64) -> f64:
+  |              ^^^^^^^^^^^^
+  = note: declare each parameter, or take a `list[T]` or an `Array`
+
+error: `**kwargs` parameters are not supported
+ --> definitions.npl:1:28
+  |
+1 | def variadic(*values: f64, **options: f64) -> f64:
+  |                            ^^^^^^^^^^^^^^
+  = note: declare each parameter by name; one with a default value is optional
+
+error: this decorator is not supported
+ --> definitions.npl:5:1
+  |
+5 | @staticmethod
+  | ^^^^^^^^^^^^^
+  = note: the only decorators are `@test` and `@bench`, which mark test and benchmark functions
+
+error: this decorator is not supported
+  --> definitions.npl:11:1
+   |
+11 | @timed(10)
+   | ^^^^^^^^^^
+   = note: the only decorators are `@test` and `@bench`, which mark test and benchmark functions
+
+error: a class needs a base: `Struct`, `Exception` or `Enum`
+  --> definitions.npl:16:7
+   |
+16 | class Plain:
+   |       ^^^^^ no base
+   = note: the base says what the class is: a struct, an error type or an enum
+   = note: for a struct, write `class Plain(Struct):`
+
+error: a class cannot inherit from `Particle`
+  --> definitions.npl:20:13
+   |
+20 | class Child(Particle):
+   |             ^^^^^^^^ not one of `Struct`, `Copy`, `Exception` or `Enum`
+   = note: there is no class inheritance (decision 0015)
+   = note: share behavior through traits, and data by holding the other struct in a field
+
+error: class keyword `metaclass=Meta` is not supported
+  --> definitions.npl:24:21
+   |
+24 | class Point(Struct, metaclass=Meta):
+   |                     ^^^^^^^^^^^^^^
+   = note: metaclasses and class keywords are not in version 0
+
+error: these bases cannot be combined
+  --> definitions.npl:28:12
+   |
+28 | class Mixed(Struct, Enum):
+   |            ^^^^^^^^^^^^^^
+   = note: a class's bases are `Struct`, `Struct, Copy`, `Exception` or `Enum`
+
+error: these bases cannot be combined
+  --> definitions.npl:32:13
+   |
+32 | class Copied(Copy):
+   |             ^^^^^^
+   = note: a class's bases are `Struct`, `Struct, Copy`, `Exception` or `Enum`
+

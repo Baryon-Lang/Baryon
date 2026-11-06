@@ -1,0 +1,65 @@
+"""Everything here is in the language, so the syntax check reports nothing."""
+
+import math
+from math import sqrt as root
+
+N: Final = 64
+"""The grid size."""
+
+DT: Final[f32] = 0.005
+
+Vec3 = Fixed[f64, (3,)]
+"""A 3-vector."""
+
+
+class Particle(Struct, Copy):
+    """A point mass."""
+
+    position: Vec3
+    """Where it is."""
+
+    mass: f64
+
+    def kinetic_energy(self) -> f64:
+        return 0.5 * self.mass
+
+
+class Boundary(Enum):
+    PERIODIC = 1
+    REFLECTING = 2
+
+
+class ConvergenceError(Exception):
+    iterations: int
+
+
+def solve[S: VectorSpace](state: S, *, tolerance: f64 = 1e-9) -> Raises[S, ConvergenceError]:
+    """Keyword-only parameters after a bare `*` are fine."""
+    a, b = state, state
+    total = 0.0
+    for i in prange(N):
+        total += f64(i)
+    while total > 1.0:
+        total /= 2.0
+    if total is None or a is not None:
+        pass
+    squares = [x * x for x in range(10) if x % 2 == 0]
+    try:
+        check(state)
+    except ConvergenceError as error:
+        print(error)
+    except (ValueError, IndexError):
+        raise ConvergenceError(0)
+    with unsafe:
+        a.unchecked[0] = 1.0
+    match total:
+        case 0.0:
+            pass
+        case _:
+            assert total > 0.0, "positive"
+    return a
+
+
+@test
+def test_solve():
+    solve(1.0, tolerance=1e-6)
