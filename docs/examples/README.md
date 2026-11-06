@@ -26,7 +26,7 @@ is a finding, not yet a decision.
 
 | Program | Finding | Follows up in |
 | --- | --- | --- |
-| `lennard_jones.npl` | Newton's third law writes `forces[i]` and `forces[j]` from one parallel iteration, which the disjoint-write rule rejects. The example computes each pair twice instead, doubling the work. | Idea I.6, array-valued reductions |
+| `lennard_jones.npl` | Newton's third law writes `forces[i]` and `forces[j]` from one parallel iteration, which the disjoint-write rule rejects. The example computes each pair twice instead, doubling the work. | Idea I.6; proposed decision [0013](../decisions/0013-parallel-accumulation.md) |
 | `lennard_jones.npl` | `atoms.positions` and `atoms.forces` are passed to one call, one read-only and one `InOut`. The exclusivity check must accept disjoint fields of one struct, not just distinct variables. | 0.1, reference rules |
 | `lennard_jones.npl` | `Array.zeros((N,), Vec3)` names the element type as an argument. The reference needs one way to give an array's element type at construction. | 0.1, array semantics |
 | `heat_equation.npl` | `u, out = out, u` swaps two arrays. The reference must define tuple assignment as a simultaneous move, so the swap copies nothing. | 0.1, memory model |

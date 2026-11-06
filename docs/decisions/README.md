@@ -45,3 +45,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0010. Bounds checks stay on in release builds](0010-bounds-checks.md) | Accepted |
 | [0011. `simd` loops are a checked request, not an unchecked promise](0011-checked-simd.md) | Accepted |
 | [0012. No foreign function interface before Phase 4](0012-no-ffi-in-mvp.md) | Accepted |
+| [0013. Parallel loops may add into shared arrays they declare with `accumulate=`](0013-parallel-accumulation.md) | Proposed |

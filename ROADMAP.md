@@ -131,6 +131,7 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.6 | Language name and file extension; blocks 1.17 | — | — | Planned | Collins | — |
 | D.7 | Resolve the plan's FFI contradiction: no FFI before Phase 4, yet an `ffi` module in the MVP. Decided: no user-facing FFI before Phase 4 | — | — | Done | Collins | [0012](docs/decisions/0012-no-ffi-in-mvp.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | — | — | Planned | Collins | — |
+| D.12 | Parallel loops that add into shared arrays (Newton's third law, histograms, assembly): `prange(n, accumulate=forces)`, write-only, reproducible, blocked private buffers | — | I.6 | In progress | Claude | [0013](docs/decisions/0013-parallel-accumulation.md) |
 
 ## Ideas
 
@@ -143,7 +144,7 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.3 | Pass parameters as read-only borrows by default instead of moving them | — | — | Done | Collins | [0006](docs/decisions/0006-parameter-passing.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.4 | Keep bounds checks on in release builds, with an `unsafe` opt-out | — | — | Done | Collins | [0010](docs/decisions/0010-bounds-checks.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.5 | Export functions to Python in Phase 2; move DataFrame, file formats and plotting (3.13 to 3.16) to Phase 4 | 3 | 1.10 | Idea | — | — |
-| I.6 | Array-valued reductions in parallel loops, needed for Lennard-Jones force accumulation | — | 1.14 | Idea | — | — |
+| I.6 | Array-valued reductions in parallel loops, needed for Lennard-Jones force accumulation. Proposed as `prange(n, accumulate=forces)` in decision D.12 | — | 1.14 | Idea | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
 | I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Done | Collins | [0009](docs/decisions/0009-number-mixing.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Done | Collins | [0007](docs/decisions/0007-array-types.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | I.9 | `simd` loops as a checked request that fails to compile when vectorization fails | — | — | Done | Collins | [0011](docs/decisions/0011-checked-simd.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
