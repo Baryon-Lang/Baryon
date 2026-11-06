@@ -45,8 +45,8 @@ Install [rustup](https://rustup.rs). The pinned toolchain installs itself on fir
 cargo xtask ci
 ```
 
-That runs every check CI runs: format, roadmap, architecture rules, documentation links, lints,
-tests and API docs.
+That runs every check CI runs: format, roadmap, architecture rules, documentation links, example
+syntax, lints, tests and API docs. It needs Python 3.12 or newer to check the example programs.
 
 ## Documentation
 
@@ -65,6 +65,7 @@ contributing to the compiler, or integrating one of its crates.
 | `docs/architecture.md` | Crate kinds and dependency rules |
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan |
+| `docs/examples/` | Example programs written in the language |
 | `.github/` | CI workflow and pull request template |
 
 ## Contributing

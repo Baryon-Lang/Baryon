@@ -1,0 +1,35 @@
+"""Estimating pi by Monte Carlo, in parallel and reproducibly.
+
+Random points fall in the unit square; the fraction inside the quarter circle approaches pi / 4.
+Each chunk of samples draws from its own stream of one counter-based generator, so the result is
+identical on every run and every core count.
+
+Language features shown:
+- `Philox`, a counter-based random number generator whose streams are independent and
+  reproducible from one seed
+- `prange` with an integer `+=` reduction that the compiler infers
+- integer and float arithmetic mixing the way Python's does: `4.0 * hits / SAMPLES`
+"""
+
+from math import pi, sqrt
+from random import Philox
+
+SEED: Final = 2026
+CHUNKS: Final = 1024
+SAMPLES_PER_CHUNK: Final = 100_000
+SAMPLES: Final = CHUNKS * SAMPLES_PER_CHUNK
+
+
+def main():
+    hits = 0
+    for chunk in prange(CHUNKS):
+        generator = Philox(SEED, stream=chunk)
+        for _ in range(SAMPLES_PER_CHUNK):
+            x = generator.uniform()
+            y = generator.uniform()
+            if x * x + y * y < 1.0:
+                hits += 1
+
+    estimate = 4.0 * hits / SAMPLES
+    standard_error = 4.0 * sqrt(pi / 4 * (1 - pi / 4) / SAMPLES)
+    print(f"pi is about {estimate:.6f} (error {estimate - pi:+.6f}, expected {standard_error:.6f})")
