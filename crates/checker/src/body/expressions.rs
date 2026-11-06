@@ -3,28 +3,10 @@
 
 use super::{Body, numbers, relations};
 use crate::declare::fits;
-use crate::outline::{Base, Kind, outline};
+use crate::outline::{Kind, outline};
 use database::Definition;
 use syntax::{Flags, NodeId, Operator, Role, SyntaxKind};
-use types::{
-    Complex, Declaration, Float, Integer, Item, Nominal, Primitive, Type, TypeKind, Value,
-};
-
-/// What a name after a dot refers to on a struct.
-pub(super) enum Member<'db> {
-    /// A field, with the struct's type arguments substituted into its type.
-    Field(Type<'db>),
-    /// A method, with the class's type parameters and the struct's type arguments, to
-    /// substitute into its signature.
-    Method {
-        /// The method.
-        item: Item<'db>,
-        /// The `Name` nodes of the class's type parameters.
-        parameters: Vec<NodeId>,
-        /// The struct's type arguments.
-        arguments: Vec<Type<'db>>,
-    },
-}
+use types::{Complex, Declaration, Float, Integer, Item, Primitive, Type, TypeKind, Value};
 
 impl<'db> Body<'db> {
     /// The type of `node`. `expected` is the type the context needs, which gives a number
@@ -43,7 +25,7 @@ impl<'db> Body<'db> {
             SyntaxKind::Name => self.name(node),
             SyntaxKind::Attribute => self.attribute(node),
             SyntaxKind::Subscript => self.subscript(node),
-            SyntaxKind::Call => self.call(node),
+            SyntaxKind::Call => self.call(node, expected),
             SyntaxKind::BinaryOperation => self.binary(node),
             SyntaxKind::UnaryOperation => self.unary(node),
             SyntaxKind::BooleanOperation => self.boolean(node),
@@ -185,7 +167,7 @@ impl<'db> Body<'db> {
     }
 
     /// The type of a name read as a value.
-    fn name(&mut self, node: NodeId) -> Type<'db> {
+    pub(super) fn name(&mut self, node: NodeId) -> Type<'db> {
         match self.lowerer.definition(node) {
             Some(Definition::Local(binding)) => self
                 .locals
@@ -223,120 +205,6 @@ impl<'db> Body<'db> {
         }
     }
 
-    /// `value.name`: a module's member, an enum's member, or a struct's field.
-    fn attribute(&mut self, node: NodeId) -> Type<'db> {
-        let (Some(value), Some(attribute)) = (
-            self.tree.child(node, Role::Value),
-            self.tree.child(node, Role::Attribute),
-        ) else {
-            return self.lowerer.unknown();
-        };
-        if self.lowerer.definition(attribute).is_some() {
-            return self.name(attribute);
-        }
-        if let Some(&Definition::Item(file, class)) = self.lowerer.definition(value) {
-            return self.class_attribute(node, file, class, attribute);
-        }
-        let base = self.expression(value, None);
-        let TypeKind::Struct(nominal) = base.kind(self.db) else {
-            return self.lowerer.unknown();
-        };
-        match self.member(node, nominal, base, attribute) {
-            Some(Member::Field(ty)) => ty,
-            _ => self.lowerer.unknown(),
-        }
-    }
-
-    /// `Class.name`: an enum member, checked to exist. Anything else on a class, such as
-    /// `Vec3.zeros`, is typed by a later slice.
-    fn class_attribute(
-        &mut self,
-        node: NodeId,
-        file: database::File,
-        class: NodeId,
-        attribute: NodeId,
-    ) -> Type<'db> {
-        let is_enum = matches!(
-            outline(self.db, file).get(class).map(|entry| &entry.kind),
-            Some(Kind::Class(class)) if class.base == Base::Enum
-        );
-        if !is_enum {
-            return self.lowerer.unknown();
-        }
-        let item = Item::new(self.db, self.lowerer.package, file, class);
-        let Declaration::Enum { variants } = &self.db.declaration(item).declaration else {
-            return self.lowerer.unknown();
-        };
-        let wanted = self.tree.text(attribute, self.text);
-        if !variants.iter().any(|variant| variant == wanted) {
-            let class_name = self
-                .db
-                .parse(file)
-                .tree()
-                .text(class, file.source(self.db).text());
-            let message = format!("`{class_name}` has no member `{wanted}`");
-            return self.lowerer.error(node, &message, "not a member", None);
-        }
-        let nominal = Nominal {
-            file,
-            name: class,
-            arguments: Vec::new(),
-        };
-        Type::new(self.db, TypeKind::Enum(nominal))
-    }
-
-    /// The field or method `attribute` names on a struct of type `base`, or `None` after
-    /// reporting that it has neither.
-    pub(super) fn member(
-        &mut self,
-        node: NodeId,
-        nominal: &Nominal<'db>,
-        base: Type<'db>,
-        attribute: NodeId,
-    ) -> Option<Member<'db>> {
-        let wanted = self.tree.text(attribute, self.text);
-        let item = Item::new(self.db, self.lowerer.package, nominal.file, nominal.name);
-        let parameters = match outline(self.db, nominal.file).get(nominal.name) {
-            Some(entry) => match &entry.kind {
-                Kind::Class(class) => class.type_parameters.clone(),
-                _ => Vec::new(),
-            },
-            None => Vec::new(),
-        };
-        let Declaration::Struct {
-            fields, methods, ..
-        } = &self.db.declaration(item).declaration
-        else {
-            return None;
-        };
-        if let Some(field) = fields.iter().find(|field| field.name == wanted) {
-            let ty = relations::substitute(
-                self.db,
-                field.ty,
-                nominal.file,
-                &parameters,
-                &nominal.arguments,
-            );
-            return Some(Member::Field(ty));
-        }
-        let class_tree = self.db.parse(nominal.file).tree();
-        let class_text = nominal.file.source(self.db).text();
-        if let Some(&method) = methods
-            .iter()
-            .find(|method| class_tree.text(method.name(self.db), class_text) == wanted)
-        {
-            return Some(Member::Method {
-                item: method,
-                parameters,
-                arguments: nominal.arguments.clone(),
-            });
-        }
-        let message = format!("`{}` has no field or method `{wanted}`", self.show(base));
-        self.lowerer
-            .error(node, &message, "not defined on this struct", None);
-        None
-    }
-
     /// `value[index]`: an element of a list, a string, a tuple, an `Array` or a `Fixed`.
     fn subscript(&mut self, node: NodeId) -> Type<'db> {
         let base = self.child_type(node, Role::Value);
@@ -368,21 +236,53 @@ impl<'db> Body<'db> {
                     .unwrap_or(unknown),
                 _ => unknown,
             },
-            (TypeKind::Array { element, rank }, indices)
-                if !sliced && indices.len() == *rank as usize =>
-            {
-                *element
+            (TypeKind::Array { element, rank }, indices) => {
+                self.array_index(node, base, *element, *rank as usize, indices)
             }
-            (TypeKind::Fixed { element, shape }, indices)
-                if !sliced && indices.len() == shape.rank() =>
-            {
-                *element
+            (TypeKind::Fixed { element, shape }, indices) => {
+                self.array_index(node, base, *element, shape.rank(), indices)
             }
             (TypeKind::Primitive(_) | TypeKind::None, _) => {
                 let message = format!("a value of type `{}` cannot be indexed", self.show(base));
                 self.lowerer.error(node, &message, "not a sequence", None)
             }
             _ => unknown,
+        }
+    }
+
+    /// `a[i, j]` or `a[i, :]` on an array of `rank` dimensions: one index or slice per
+    /// dimension (language reference, "Arrays", "Indexing"). All indices give the element; each
+    /// slice keeps its dimension in the view the subscript gives.
+    fn array_index(
+        &mut self,
+        node: NodeId,
+        base: Type<'db>,
+        element: Type<'db>,
+        rank: usize,
+        indices: &[NodeId],
+    ) -> Type<'db> {
+        if indices.len() != rank {
+            let message = format!(
+                "`{}` takes {rank} ind{}, found {}",
+                self.show(base),
+                if rank == 1 { "ex" } else { "ices" },
+                indices.len()
+            );
+            return self.lowerer.error(
+                node,
+                &message,
+                "one index per dimension",
+                Some("take a row or column with a slice, such as `a[i, :]`"),
+            );
+        }
+        let slices = indices
+            .iter()
+            .filter(|&&index| self.tree.kind(index) == SyntaxKind::Slice)
+            .count();
+        match u32::try_from(slices) {
+            Ok(0) => element,
+            Ok(rank) => Type::new(self.db, TypeKind::Array { element, rank }),
+            Err(_) => self.lowerer.unknown(),
         }
     }
 

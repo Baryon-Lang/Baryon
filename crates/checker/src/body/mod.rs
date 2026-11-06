@@ -5,15 +5,18 @@
 //! type of the first value assigned to it, or its annotation, and keeps that type for its whole
 //! scope. One walk over the body in source order types every statement.
 //!
-//! What this slice (roadmap 1.7.3) checks: number literals, number mixing, operators and
-//! comparisons, `bool` conditions, calls to functions, constructors and methods against their
-//! signatures, field access, assignments and returns. What later slices check, and this one
-//! lets through as an unknown type without an error: array operations and methods (1.7.4),
-//! calls to generic functions (1.7.5), `match` patterns (1.7.6), `try` and errors (1.7.7), and
-//! the `None` check that narrows `T | None` to `T` (1.7.8).
+//! What it checks: number literals, number mixing, operators and comparisons, `bool`
+//! conditions, calls to functions, constructors and methods against their signatures, field
+//! access, assignments and returns (roadmap 1.7.3), and arrays: creating them, indexing,
+//! slicing, methods, whole-array arithmetic and `@` (1.7.4, the `arrays` module). What later
+//! slices check, and this one lets through as an unknown type without an error: calls to
+//! generic functions (1.7.5), `match` patterns (1.7.6), `try` and errors (1.7.7), and the
+//! `None` check that narrows `T | None` to `T` (1.7.8).
 
+mod arrays;
 mod calls;
 mod expressions;
+mod members;
 mod numbers;
 mod operators;
 mod relations;
@@ -397,10 +400,14 @@ impl<'db> Body<'db> {
 }
 
 /// The type a number literal on the other side of an operator should take: the other side's
-/// type, when it is a number.
+/// type when it is a number, or its element type when it is an array, so `2.0 * a` with
+/// `a: Array[f32, 1]` multiplies by an `f32`.
 fn number_context<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> Option<Type<'db>> {
     match ty.kind(db) {
         TypeKind::Primitive(primitive) if numbers::is_number(*primitive) => Some(ty),
+        TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
+            number_context(db, *element)
+        }
         _ => None,
     }
 }

@@ -77,6 +77,7 @@ impl<'db> Body<'db> {
             {
                 left
             }
+            _ if let Some(result) = self.array_arithmetic(node, operator, left, right) => result,
             _ if self.is_scalar(left) && self.is_scalar(right) => {
                 let message = format!(
                     "`{symbol}` cannot combine `{}` and `{}`",
