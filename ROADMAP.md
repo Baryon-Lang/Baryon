@@ -63,7 +63,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.5 | Name resolution, modules and imports | 2 | 1.4 | Done | Claude | [#16](https://github.com/csimpson1964/New-Programming-Language/pull/16) |
 | 1.6 | Type representation, interning, layouts, compile-time shapes, complex numbers | 2 | 1.5 | Done | Claude | [#19](https://github.com/csimpson1964/New-Programming-Language/pull/19) |
 | 1.7 | Type checker: local inference, generics, static-dispatch traits, enums, match | 6 | 1.6 | In progress | Claude | — |
-| 1.7.1 | Warn when reordering a struct's fields would save padding, naming the order that does; fields keep declaration order otherwise (#19) | — | 1.6, 1.7 | Planned | — | — |
+| 1.7.1 | Warn when reordering a struct's fields would save padding, naming the order that does; fields keep declaration order otherwise (#19) | — | 1.6, 1.7 | Done | Claude | [#22](https://github.com/csimpson1964/New-Programming-Language/pull/22) |
 | 1.7.2 | Declarations: signatures, struct fields, enum variants, aliases and `Final` constants computed by the compiler, with errors for annotations that mean no type | 1 | 1.6 | Done | Claude | [#20](https://github.com/csimpson1964/New-Programming-Language/pull/20) |
 | 1.7.3 | Function bodies: local inference, literals, number mixing, operators, calls, definite assignment | 2 | 1.7.2 | Planned | — | — |
 | 1.7.4 | Arrays: copy-type elements, indexing, slicing, whole-array arithmetic | 1 | 1.7.3 | Planned | — | — |
@@ -172,3 +172,4 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.11 | Run the example programs under CPython with a small shim library, as a correctness oracle for the compiler's output | 1 | I.1 | Idea | — | — |
 | I.12 | Diagnostics measure the display width of wide characters (CJK, emoji) so markers line up under them | — | — | Idea | — | — |
 | I.13 | Run the RustSec advisory check on a daily schedule and on pushes to `main` instead of on every pull request, so a newly published advisory does not turn unrelated pull requests red; the license, ban and source checks stay on every pull request and need no network | — | 0.6 | Idea | — | [#10](https://github.com/csimpson1964/New-Programming-Language/pull/10) |
+| I.14 | A way to keep a struct's field order on purpose without the padding warning (1.7.1), for a layout fixed by a file format or C library. Its spelling is a language-visible choice | — | 1.7.1 | Idea | — | [#22](https://github.com/csimpson1964/New-Programming-Language/pull/22) |

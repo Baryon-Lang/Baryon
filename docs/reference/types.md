@@ -170,8 +170,21 @@ class PackedSample(Struct):
 
 Rust reorders fields to save space unless told not to; this language keeps the declared order
 because data shared with other programs must match a layout someone wrote down, and a struct whose
-size changes when the compiler improves would break every file written before. A compiler warning
-that names the order that saves padding is planned as roadmap item 1.7.1.
+size changes when the compiler improves would break every file written before. When another order
+would save space, the compiler warns at the class name and names that order:
+
+```text
+warning: reordering the fields of `Sample` would save 8 bytes
+ --> main.npl:1:7
+  |
+1 | class Sample(Struct):
+  |       ^^^^^^ 24 bytes as declared, 16 reordered
+  = note: declare the fields in the order `value, count, valid`; the compiler keeps the order written, so the layout matches C and `numpy`
+```
+
+The order it names sorts the fields by alignment, largest first, keeping the written order among
+fields of equal alignment; no order takes fewer bytes. A generic struct is checked through each
+non-generic struct that holds an instance of it.
 
 ## Enums
 

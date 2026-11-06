@@ -120,6 +120,7 @@ mod constant;
 mod declare;
 mod lower;
 mod outline;
+mod padding;
 
 use database::{File, Package};
 use diagnostics::Diagnostic;
@@ -170,8 +171,9 @@ pub fn cycle<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Checked<'db> {
     declare::finish(lowerer, declaration)
 }
 
-/// Every type error in `file`, a file of `package`: the errors of each definition's
-/// declaration, in source order, methods after their class.
+/// Every type error and warning in `file`, a file of `package`: the errors of each definition's
+/// declaration, in source order, methods after their class, then a warning for each struct whose
+/// fields would take fewer bytes in another order (see the `padding` module).
 ///
 /// The application caches this per file in a tracked function. See the crate example.
 #[must_use]
@@ -183,5 +185,6 @@ pub fn check_file(db: &dyn TypeDb, package: Package, file: File) -> Vec<Diagnost
             let item = Item::new(db, package, file, entry.name);
             db.declaration(item).diagnostics.clone()
         })
+        .chain(padding::padding(db, package, file))
         .collect()
 }

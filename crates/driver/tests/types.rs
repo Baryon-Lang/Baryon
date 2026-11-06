@@ -316,3 +316,104 @@ error: an array's rank is a whole number of dimensions, at least 1
   = note: for example `Array[f64, 1]` for a vector or `Array[f64, 2]` for a grid"
     );
 }
+
+/// A struct whose fields leave padding gets one warning at its name, naming the order that takes
+/// the fewest bytes; ties keep the order written. Error types are structs too.
+#[test]
+fn padding_that_reordering_saves_is_reported() {
+    let program = r"
+class Particle(Struct):
+    alive: bool
+    mass: f64
+    charge: f32
+    species: u8
+
+
+class SolverError(Exception):
+    converged: bool
+    residual: f64
+    diverged: bool
+";
+    assert_eq!(
+        check_one(program),
+        r"warning: reordering the fields of `Particle` would save 8 bytes
+ --> main.npl:1:7
+  |
+1 | class Particle(Struct):
+  |       ^^^^^^^^ 24 bytes as declared, 16 reordered
+  = note: declare the fields in the order `mass, charge, alive, species`; the compiler keeps the order written, so the layout matches C and `numpy`
+
+warning: reordering the fields of `SolverError` would save 8 bytes
+ --> main.npl:8:7
+  |
+8 | class SolverError(Exception):
+  |       ^^^^^^^^^^^ 24 bytes as declared, 16 reordered
+  = note: declare the fields in the order `residual, converged, diverged`; the compiler keeps the order written, so the layout matches C and `numpy`"
+    );
+}
+
+/// Field sizes come from the classes the fields name, in this module or another: an enum is a
+/// one-byte tag and `Pair[f64]` is two `f64`s, its type argument substituted.
+#[test]
+fn padding_counts_fields_of_other_classes() {
+    let shapes = r"
+class Boundary(Enum):
+    PERIODIC = 1
+    REFLECTING = 2
+
+
+class Pair[T](Struct):
+    first: T
+    second: T
+";
+    let main = r"
+from shapes import Boundary, Pair
+
+
+class Cell(Struct):
+    boundary: Boundary
+    extent: Pair[f64]
+    count: i32
+";
+    assert_eq!(
+        check(&[("shapes.npl", shapes), ("main.npl", main)]),
+        r"warning: reordering the fields of `Cell` would save 8 bytes
+ --> main.npl:5:7
+  |
+5 | class Cell(Struct):
+  |       ^^^^ 32 bytes as declared, 24 reordered
+  = note: declare the fields in the order `extent, count, boundary`; the compiler keeps the order written, so the layout matches C and `numpy`"
+    );
+}
+
+/// No warning for a struct already in its smallest order, a generic struct, which has no
+/// layout until it is instantiated, or a struct whose field type is an error reported already.
+#[test]
+fn padding_is_not_reported_when_nothing_can_be_saved() {
+    let program = r"
+class Body(Struct, Copy):
+    position: Fixed[f64, (3,)]
+    mass: f32
+    alive: bool
+
+
+class Wrapper[T](Struct):
+    alive: bool
+    value: T
+
+
+class Broken(Struct):
+    alive: bool
+    mass: Array[f64]
+    charge: f64
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `Array` takes 2 type arguments, found 1
+  --> main.npl:14:11
+   |
+14 |     mass: Array[f64]
+   |           ^^^^^^^^^^ wrong number of arguments
+   = note: for example `Array[f64, 1]`"
+    );
+}
