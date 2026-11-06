@@ -134,7 +134,7 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.6 | Language name and file extension; blocks 1.17 | — | — | Planned | Collins | — |
 | D.7 | Resolve the plan's FFI contradiction: no FFI before Phase 4, yet an `ffi` module in the MVP. Decided: no user-facing FFI before Phase 4 | — | — | Done | Collins | [0012](docs/decisions/0012-no-ffi-in-mvp.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | — | — | Planned | Collins | — |
-| D.13 | Class inheritance: Python-style subclassing, or classes as plain structs with methods. Decided: no inheritance; shared behavior comes from traits | — | — | In progress | Collins | [0015](docs/decisions/0015-no-class-inheritance.md) |
+| D.13 | Class inheritance: Python-style subclassing, or classes as plain structs with methods. Decided: no inheritance; shared behavior comes from traits | — | — | Done | Collins | [0015](docs/decisions/0015-no-class-inheritance.md), [#12](https://github.com/csimpson1964/New-Programming-Language/pull/12) |
 
 ## Ideas
 
