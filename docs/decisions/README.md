@@ -48,3 +48,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0013. Parallel loops may add into shared arrays they declare with `accumulate=`](0013-parallel-accumulation.md) | Accepted |
 | [0014. Numbers mix the way Python's do, and conversions are calls](0014-number-conversions-are-calls.md) | Accepted |
 | [0015. Classes have no inheritance](0015-no-class-inheritance.md) | Accepted |
+| [0016. Incremental queries run on the `salsa` crate](0016-salsa-query-engine.md) | Accepted |

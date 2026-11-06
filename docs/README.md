@@ -5,8 +5,9 @@ missing or unclear, that is a bug: open an issue.
 
 ## Learning the language
 
-No compiler runs yet, so the language is learned from its definition and from examples. A
-beginner's guide will follow the first compiler prototype.
+The compiler only checks syntax and module names so far (`cargo run --package driver -- check
+<directory>`), so the language is learned from its definition and from examples. A beginner's
+guide will follow the first compiler prototype that runs programs.
 
 - The [language reference](reference/README.md) defines what a program may say and what it means.
   Python programmers should start with its

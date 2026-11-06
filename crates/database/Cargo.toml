@@ -1,0 +1,21 @@
+[package]
+name = "database"
+description = "The incremental query database: source files and modules as inputs, and the queries every stage shares."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "interface"
+
+[dependencies]
+diagnostics.workspace = true
+salsa.workspace = true
+source.workspace = true
+syntax.workspace = true
+
+[lints]
+workspace = true

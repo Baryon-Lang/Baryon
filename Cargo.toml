@@ -13,6 +13,7 @@ publish = false
 # Every external dependency is declared here, once, with its version.
 # Member crates opt in with `name.workspace = true`. See CONTRIBUTING.md, "Dependencies".
 [workspace.dependencies]
+database = { path = "crates/database" }
 diagnostics = { path = "crates/diagnostics" }
 parser = { path = "crates/parser" }
 source = { path = "crates/source" }
@@ -22,6 +23,10 @@ syntax_check = { path = "crates/syntax_check" }
 ruff_python_ast = "=0.0.21"
 ruff_python_parser = "=0.0.21"
 ruff_text_size = "=0.0.21"
+# The incremental query engine (decision 0016). Pinned exactly: its API changes between minor
+# versions. Default features are off: `inventory` registers queries at startup, `macros` writes
+# the query plumbing; parallel queries (`rayon`) are turned on when a stage needs them.
+salsa = { version = "=0.28.5", default-features = false, features = ["inventory", "macros"] }
 serde_json = "1.0.154"
 
 [workspace.lints.rust]

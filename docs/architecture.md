@@ -38,6 +38,12 @@ parser   checker   backend     implementation: each reads and writes interface t
 driver                         application: runs parser → checker → backend in order
 ```
 
+Every stage runs as a cached query in one incremental database
+([decision 0016](decisions/0016-salsa-query-engine.md)). The `database` interface crate defines
+its inputs and a `Db` trait with one method per stage result; a stage asks for another stage's
+result through `Db`, and only the application wires each method to an implementation. An edit
+reruns only the queries that read what changed.
+
 The type checker reads `syntax` trees; it does not know which parser built them. To replace the
 parser, write a new implementation crate that produces `syntax` trees and point the driver at it.
 Nothing else changes.
@@ -59,9 +65,11 @@ Nothing else changes.
 | [`source`](../crates/source) | `foundation` | Source files, file ids, byte spans, line and column lookup |
 | [`diagnostics`](../crates/diagnostics) | `foundation` | Compiler messages and their plain-text rendering |
 | [`syntax`](../crates/syntax) | `interface` | The flat syntax tree: 16-byte nodes in preorder, their kinds, roles, operators and flags |
+| [`database`](../crates/database) | `interface` | The incremental query database: source files and packages as inputs, module names and the module map, and the `Db` trait each stage's result is read through ([0016](decisions/0016-salsa-query-engine.md)) |
 | [`parser`](../crates/parser) | `implementation` | Parses source text into a `syntax` tree with Ruff's Python parser, and reports syntax errors as diagnostics |
 | [`syntax_check`](../crates/syntax_check) | `implementation` | Reports each Python construct in a `syntax` tree that the language does not support, following the language reference |
 | [`front_end_tests`](../crates/front_end_tests) | `application` | Tests only: runs the parser, then the syntax check, over a corpus and the example programs. Tests that need two implementations live in an application crate, since an implementation may not depend on another |
+| [`driver`](../crates/driver) | `application` | The `npl` command: owns the concrete database, wires each stage into it, and runs `npl check` |
 | [`bench`](../bench) | `tooling` | `cargo kernels`: builds, verifies and times the C++ and Fortran baseline kernels |
 | [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules, the documentation link check, the roadmap check, the example syntax check and the external dependency check |
 
