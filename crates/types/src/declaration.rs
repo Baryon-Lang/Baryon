@@ -2,7 +2,7 @@
 //! variants, an alias's type, a constant's type and value. The type checker computes these from
 //! annotations; every stage after it reads them through [`TypeDb::declaration`].
 
-use crate::{Item, Type};
+use crate::{Item, Type, TypedBody};
 use diagnostics::Diagnostic;
 
 /// The stage queries that need types, on top of [`database::Db`]'s.
@@ -15,6 +15,11 @@ pub trait TypeDb: database::Db {
     /// What `item` declares, and the errors found reading its annotations. Cached until the
     /// file, its names, or a declaration it reads changes.
     fn declaration<'db>(&'db self, item: Item<'db>) -> &'db Checked<'db>;
+
+    /// The checked body of the function or method `item`: the type of each expression, what
+    /// each call calls, and the body's errors. Empty for any other item. Cached until the
+    /// function's file, its names, or a declaration it reads changes.
+    fn body<'db>(&'db self, item: Item<'db>) -> &'db TypedBody<'db>;
 }
 
 /// A declaration and the errors found computing it.

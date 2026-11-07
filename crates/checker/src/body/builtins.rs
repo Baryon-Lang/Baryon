@@ -5,7 +5,7 @@ use super::calls::Arguments;
 use super::{Body, numbers, relations};
 use database::Definition;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Integer, Primitive, Type, TypeKind};
+use types::{Call, Callee, Integer, Key, Primitive, Type, TypeKind};
 
 impl<'db> Body<'db> {
     /// A call to one of the language's names: a number conversion such as `f64(n)`, or a
@@ -121,5 +121,67 @@ impl<'db> Body<'db> {
             }
             _ => None,
         }
+    }
+
+    /// Records the call `node` of `function` for the stages after the checker, when it calls
+    /// something the language provides rather than a declared function: a conversion such as
+    /// `f64(x)` or `Vec3(1.0, 0.0, 0.0)`, which builds `ty`, a built-in function, an `Array`
+    /// or `Fixed` function, or a method of a list or array, whose receiver comes first. A call
+    /// the checker could not resolve, after an error, is not recorded.
+    pub(super) fn record_builtin(
+        &mut self,
+        node: NodeId,
+        function: NodeId,
+        arguments: &Arguments,
+        ty: Type<'db>,
+    ) {
+        let mut receiver = None;
+        let callee = match (self.tree.kind(function), self.lowerer.definition(function)) {
+            (_, Some(Definition::Builtin(name))) if Primitive::from_name(name).is_some() => {
+                Callee::Conversion(ty)
+            }
+            (_, Some(Definition::Builtin(name))) => Callee::Builtin((*name).to_owned()),
+            (_, Some(Definition::Item(..)))
+                if matches!(ty.kind(self.db), TypeKind::Fixed { .. }) =>
+            {
+                Callee::Conversion(ty)
+            }
+            (SyntaxKind::Attribute, None) => {
+                let (Some(value), Some(attribute)) = (
+                    self.tree.child(function, Role::Value),
+                    self.tree.child(function, Role::Attribute),
+                ) else {
+                    return;
+                };
+                let method = self.tree.text(attribute, self.text);
+                let owner = match self.lowerer.definition(value) {
+                    Some(Definition::Builtin("Array")) => "Array",
+                    Some(Definition::Item(..)) => "Fixed",
+                    _ => {
+                        receiver = Some(value);
+                        match self.typed.expression(value).map(|ty| ty.kind(self.db)) {
+                            Some(TypeKind::List(_)) => "list",
+                            Some(TypeKind::Array { .. }) => "Array",
+                            Some(TypeKind::Fixed { .. }) => "Fixed",
+                            _ => return,
+                        }
+                    }
+                };
+                Callee::Builtin(format!("{owner}.{method}"))
+            }
+            _ => return,
+        };
+        let written = receiver
+            .into_iter()
+            .chain(arguments.positional.iter().copied())
+            .chain(arguments.keywords.iter().map(|&(_, value)| value))
+            .map(|argument| Some(Key(argument)))
+            .collect();
+        let call = Call {
+            callee,
+            type_arguments: Vec::new(),
+            arguments: written,
+        };
+        self.typed.calls.insert(Key(node), call);
     }
 }

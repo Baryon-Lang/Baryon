@@ -52,21 +52,21 @@ mod shared;
 use crate::lower::Lowerer;
 use crate::outline::Entry;
 use database::{Definition, File, Package};
-use diagnostics::Diagnostic;
 use std::collections::{BTreeMap, BTreeSet};
 use syntax::{NodeId, Role, SyntaxKind, SyntaxTree};
-use types::{Declaration, Item, Primitive, Signature, Type, TypeDb, TypeKind};
+use types::{Declaration, Item, Primitive, Signature, Type, TypeDb, TypeKind, TypedBody};
 
-/// Checks the body of the function or method `entry` in `file`, returning the errors found.
-pub(crate) fn check(
-    db: &dyn TypeDb,
+/// Checks the body of the function or method `entry` in `file`, returning what the stages
+/// after the checker read and the errors found.
+pub(crate) fn check<'db>(
+    db: &'db dyn TypeDb,
     package: Package,
     file: File,
     entry: &Entry,
-) -> Vec<Diagnostic> {
+) -> TypedBody<'db> {
     let item = Item::new(db, package, file, entry.name);
     let Declaration::Function(signature) = &db.declaration(item).declaration else {
-        return Vec::new();
+        return TypedBody::default();
     };
     let lowerer = Lowerer::new(db, package, file, entry.class, entry.statement);
     let mut body = Body {
@@ -85,6 +85,7 @@ pub(crate) fn check(
         loops: Vec::new(),
         parallel: Vec::new(),
         accumulate: Vec::new(),
+        typed: TypedBody::default(),
     };
     let mut bound = BTreeSet::new();
     body.statement_bindings(entry.statement, &mut bound);
@@ -93,7 +94,14 @@ pub(crate) fn check(
     if body.block(entry.statement, Role::Body) {
         body.missing_return(entry.name);
     }
-    body.lowerer.diagnostics
+    let mut typed = body.typed;
+    typed.locals = body
+        .locals
+        .into_iter()
+        .map(|(binding, ty)| (types::Key(binding), ty))
+        .collect();
+    typed.diagnostics = body.lowerer.diagnostics;
+    typed
 }
 
 /// The state of checking one function body.
@@ -133,6 +141,8 @@ struct Body<'db> {
     /// The valid entries of the `accumulate=` argument of the `prange` call just checked,
     /// waiting for its loop to start (the `accumulate` module).
     accumulate: Vec<NodeId>,
+    /// What the stages after the checker read about this body, filled as it is checked.
+    typed: TypedBody<'db>,
 }
 
 impl<'db> Body<'db> {

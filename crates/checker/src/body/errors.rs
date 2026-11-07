@@ -14,7 +14,7 @@ use super::Body;
 use super::flow::{End, Skip};
 use crate::outline::{Base, Kind, outline};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Type, TypeKind};
+use types::{Key, Type, TypeKind};
 
 impl<'db> Body<'db> {
     /// The type of a call's value: the `T` of a call that returns `Raises[T, E]`, after
@@ -24,6 +24,7 @@ impl<'db> Body<'db> {
             return ty;
         };
         let (value, errors) = (*value, errors.clone());
+        self.typed.errors.insert(Key(call), errors.clone());
         let callee = self
             .tree
             .child(call, Role::Function)
@@ -40,7 +41,10 @@ impl<'db> Body<'db> {
         }
         let Some(value) = self.tree.child(statement, Role::Value) else {
             match self.caught.last().cloned() {
-                Some(errors) => self.propagate(statement, "this `raise` passes on", &errors),
+                Some(errors) => {
+                    self.typed.errors.insert(Key(statement), errors.clone());
+                    self.propagate(statement, "this `raise` passes on", &errors);
+                }
                 None => {
                     self.lowerer.error(
                         statement,
@@ -57,6 +61,7 @@ impl<'db> Body<'db> {
             return;
         }
         if self.is_error(ty) {
+            self.typed.errors.insert(Key(statement), vec![ty]);
             self.propagate(value, "this `raise` fails with", &[ty]);
         } else {
             let message = format!("`raise` needs an error, found `{}`", self.show(ty));

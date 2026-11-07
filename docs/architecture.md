@@ -43,8 +43,9 @@ Every stage runs as a cached query in one incremental database
 its inputs and a `Db` trait with one method per stage result; a stage asks for another stage's
 result through `Db`, and only the application wires each method to an implementation. An
 interface crate whose results need its own types adds a trait on top of `Db`: `types` adds
-`TypeDb`, whose `declaration` query is what each definition declares, so `database` never
-depends on `types`. An edit reruns only the queries that read what changed.
+`TypeDb`, whose `declaration` query is what each definition declares and whose `body` query is
+a function's checked body, so `database` never depends on `types`. An edit reruns only the
+queries that read what changed.
 
 The type checker reads `syntax` trees; it does not know which parser built them. To replace the
 parser, write a new implementation crate that produces `syntax` trees and point the driver at it.
@@ -68,7 +69,7 @@ Nothing else changes.
 | [`diagnostics`](../crates/diagnostics) | `foundation` | Compiler messages and their plain-text rendering |
 | [`syntax`](../crates/syntax) | `interface` | The flat syntax tree: 16-byte nodes in preorder, their kinds, roles, operators and flags |
 | [`database`](../crates/database) | `interface` | The incremental query database: source files and packages as inputs, module names and the module map, and the `Db` trait each stage's result is read through ([0016](decisions/0016-salsa-query-engine.md)) |
-| [`types`](../crates/types) | `interface` | The type representation: interned types, number primitives including complex numbers, `Fixed` shapes, and memory layouts; each definition's declaration and the `TypeDb` query that reads it |
+| [`types`](../crates/types) | `interface` | The type representation: interned types, number primitives including complex numbers, `Fixed` shapes, and memory layouts; each definition's declaration, each function's typed body, and the `TypeDb` queries that read them |
 | [`mir`](../crates/mir) | `interface` | The mid-level IR: each function body as basic blocks of statements over typed locals and places, with explicit drops, bounds checks and error edges; its validator and text form ([0018](decisions/0018-mid-level-ir.md)) |
 | [`monomorphize`](../crates/monomorphize) | `implementation` | Monomorphization: the body of an instance of a generic function, with every type parameter replaced by its argument in every type the `mir` body mentions ([0018](decisions/0018-mid-level-ir.md)) |
 | [`parser`](../crates/parser) | `implementation` | Parses source text into a `syntax` tree with Ruff's Python parser, and reports syntax errors as diagnostics |

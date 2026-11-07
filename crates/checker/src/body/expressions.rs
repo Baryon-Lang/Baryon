@@ -10,8 +10,16 @@ use types::{Complex, Declaration, Float, Integer, Item, Primitive, Type, TypeKin
 
 impl<'db> Body<'db> {
     /// The type of `node`. `expected` is the type the context needs, which gives a number
-    /// literal its type (decision 0014): in `x: f32 = 0.5`, the `0.5` is an `f32`.
+    /// literal its type (decision 0014): in `x: f32 = 0.5`, the `0.5` is an `f32`. The type is
+    /// recorded for the stages after the checker (`types::TypedBody`).
     pub(super) fn expression(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
+        let ty = self.untracked_expression(node, expected);
+        self.typed.expressions.insert(types::Key(node), ty);
+        ty
+    }
+
+    /// `expression` without recording the result.
+    fn untracked_expression(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
         let primitive = |kind| Type::new(self.db, TypeKind::Primitive(kind));
         match self.tree.kind(node) {
             _ if self.is_number_literal(node) => self.literal(node, expected),
@@ -440,6 +448,10 @@ impl<'db> Body<'db> {
     /// The type of each element a `for` loop over `iterator` sees.
     pub(super) fn iteration(&mut self, iterator: NodeId) -> Type<'db> {
         if let Some(element) = self.builtin_iteration(iterator) {
+            if let Some(function) = self.tree.child(iterator, Role::Function) {
+                let arguments = self.arguments(iterator);
+                self.record_builtin(iterator, function, &arguments, element);
+            }
             return element;
         }
         let ty = self.expression(iterator, None);
