@@ -23,6 +23,10 @@
 //! - **Checks.** Integer `//` and `%` assert a non-zero divisor; each array index asserts it is
 //!   in bounds, except under `a.unchecked` and for a constant index into a `Fixed` array, which
 //!   the checker already proved; `assert` becomes an [`Assert`](mir::TerminatorKind::Assert).
+//! - **Errors.** A call that can fail gets an error edge (decision 0018). The edge, and each
+//!   `raise`, goes to the innermost `except` that names the error, or else drops what the
+//!   function owns and [`Raise`](mir::TerminatorKind::Raise)s it to the caller. A bare `raise`
+//!   raises the caught error again.
 //! - **Arrays.** `a[i, j]` is a place with one index local per dimension, and a negative literal
 //!   counts back from the length. Whole-array arithmetic stays one
 //!   [`Elementwise`](mir::Rvalue::Elementwise) expression for array expansion to loop over.
@@ -38,11 +42,12 @@
 //!
 //! # What it does not lower yet
 //!
-//! This is the first slice. A construct outside it gives an error that names it and roadmap
-//! 1.9.3, and no body: slices, indexing lists and strings, `prange`, `match`, `try`, calls that
-//! can fail, calls that leave out a defaulted argument, the built-in functions and methods other
-//! than `len` of an array and the array constructors, calls of a `Callable` value, `**`, `@`,
-//! `in`, unpacking assignment, `with` other than `with unsafe:`, and comprehensions.
+//! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
+//! 1.9.3, and no body: slices, indexing lists and strings, `prange`, `match`, `raise ... from`,
+//! an `except` that names its error through a module, calls that leave out a defaulted argument,
+//! the built-in functions and methods other than `len` of an array and the array constructors,
+//! calls of a `Callable` value, `**`, `@`, `in`, unpacking assignment, `with` other than
+//! `with unsafe:`, and comprehensions.
 //!
 //! # Example
 //!
@@ -191,6 +196,7 @@ mod builder;
 mod calls;
 mod constants;
 mod creation;
+mod errors;
 mod expressions;
 mod facts;
 mod statements;

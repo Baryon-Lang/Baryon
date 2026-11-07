@@ -46,8 +46,40 @@ pub(crate) struct Builder<'db> {
     temporaries: Vec<Vec<Local>>,
     /// The enclosing loops, innermost last.
     pub(crate) loops: Vec<Loop>,
+    /// The `try` statements whose bodies are being lowered, innermost last: where an error
+    /// raised inside one goes.
+    pub(crate) handlers: Vec<Handler<'db>>,
+    /// The `except` clauses whose bodies are being lowered, innermost last: what a bare `raise`
+    /// raises again.
+    pub(crate) caught: Vec<Clause<'db>>,
     /// One error per construct the first slice does not lower.
     diagnostics: Vec<Diagnostic>,
+}
+
+/// One `try` statement whose body is being lowered.
+pub(crate) struct Handler<'db> {
+    /// Its `except` clauses, in source order.
+    pub(crate) clauses: Vec<Clause<'db>>,
+    /// How many temporary scopes were open when the `try` started. An error caught by it drops
+    /// the temporaries of the scopes opened since.
+    pub(crate) depth: usize,
+}
+
+/// One `except` clause of a `try`.
+#[derive(Clone)]
+pub(crate) struct Clause<'db> {
+    /// The `ExceptHandler` node.
+    pub(crate) node: NodeId,
+    /// The error types it catches, in the order it names them.
+    pub(crate) errors: Vec<Type<'db>>,
+    /// Where each caught error is stored, by position in `errors`: the variable `as` binds for
+    /// a clause of one type, otherwise a temporary of that error's type.
+    pub(crate) locals: Vec<Local>,
+    /// For a clause of several types, an `i64` local that says which one was caught, so a bare
+    /// `raise` raises that one again.
+    pub(crate) which: Option<Local>,
+    /// The block its body starts in.
+    pub(crate) block: BlockId,
 }
 
 /// Where `break` and `continue` go in one loop.
@@ -121,6 +153,8 @@ impl<'db> Builder<'db> {
             variables,
             temporaries: vec![Vec::new()],
             loops: Vec::new(),
+            handlers: Vec::new(),
+            caught: Vec::new(),
             diagnostics: Vec::new(),
         }
     }
@@ -278,6 +312,39 @@ impl<'db> Builder<'db> {
         }
     }
 
+    /// Whether [`drop_all`](Self::drop_all) would drop `local`: a variable or `Owned` parameter
+    /// that owns memory, or an owning temporary of a statement being lowered.
+    pub(crate) fn dropped_on_exit(&self, local: Local) -> bool {
+        self.temporaries
+            .iter()
+            .flatten()
+            .any(|&temporary| temporary == local)
+            || self.owners().contains(&local)
+    }
+
+    /// How many temporary scopes are open, for [`drop_temporaries`](Self::drop_temporaries).
+    pub(crate) fn depth(&self) -> usize {
+        self.temporaries.len()
+    }
+
+    /// Drops the owning temporaries of every scope past the first `depth`, innermost first, for
+    /// a jump out of those scopes to `node`'s handler. The scopes stay open: the code after the
+    /// jump is unreachable, and each scope still ends where it was entered.
+    pub(crate) fn drop_temporaries(&mut self, depth: usize, node: NodeId) {
+        let temporaries: Vec<Local> = self
+            .temporaries
+            .get(depth..)
+            .unwrap_or_default()
+            .iter()
+            .flatten()
+            .rev()
+            .copied()
+            .collect();
+        for local in temporaries {
+            self.push(StatementKind::Drop(Place::from(local)), node);
+        }
+    }
+
     /// Before leaving the function at `node`: drops the owning temporaries of every statement
     /// being lowered, then every variable and `Owned` parameter that owns memory, the last
     /// declared first. Borrowed parameters belong to the caller.
@@ -286,7 +353,14 @@ impl<'db> Builder<'db> {
         for local in temporaries {
             self.push(StatementKind::Drop(Place::from(local)), node);
         }
-        let owned: Vec<Local> = (1..self.body.locals.len())
+        for local in self.owners() {
+            self.push(StatementKind::Drop(Place::from(local)), node);
+        }
+    }
+
+    /// Every variable and `Owned` parameter that owns memory, the last declared first.
+    fn owners(&self) -> Vec<Local> {
+        (1..self.body.locals.len())
             .rev()
             .map(Local::new)
             .filter(|&local| {
@@ -298,10 +372,7 @@ impl<'db> Builder<'db> {
                 };
                 owner && self.needs_drop(declaration.ty)
             })
-            .collect();
-        for local in owned {
-            self.push(StatementKind::Drop(Place::from(local)), node);
-        }
+            .collect()
     }
 
     /// The variable local whose name `node` binds or reads, which an assignment target names.

@@ -31,7 +31,7 @@ impl<'db> Builder<'db> {
     }
 
     /// Lowers every statement of `parent` with the role `role`, in order.
-    fn block(&mut self, parent: NodeId, role: Role) {
+    pub(crate) fn block(&mut self, parent: NodeId, role: Role) {
         let statements: Vec<NodeId> = self.tree.children_with(parent, role).collect();
         for statement in statements {
             self.enter();
@@ -104,8 +104,8 @@ impl<'db> Builder<'db> {
                 });
             }
             SyntaxKind::Match => self.unsupported(statement, "`match`"),
-            SyntaxKind::Try => self.unsupported(statement, "`try`"),
             SyntaxKind::With => self.with_statement(statement),
+            SyntaxKind::Try => self.try_statement(statement),
             _ => self.unsupported(statement, "this statement"),
         }
     }
@@ -201,11 +201,10 @@ impl<'db> Builder<'db> {
             return self.unsupported(statement, "`raise ... from`");
         }
         let Some(value) = self.tree.child(statement, Role::Value) else {
-            return self.unsupported(statement, "a bare `raise`");
+            return self.raise_again(statement);
         };
         let error = self.operand(value);
-        self.drop_all(statement);
-        self.terminate(TerminatorKind::Raise(error), statement);
+        self.fail(error, self.ty(value), statement);
     }
 
     /// The `bool` value of a condition. Owning temporaries it made are dropped before control
