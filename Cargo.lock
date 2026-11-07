@@ -204,12 +204,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "documentation"
+version = "0.0.0"
+dependencies = [
+ "source",
+ "syntax",
+]
+
+[[package]]
 name = "driver"
 version = "0.0.0"
 dependencies = [
  "checker",
  "database",
  "diagnostics",
+ "documentation",
  "parser",
  "resolver",
  "salsa",
