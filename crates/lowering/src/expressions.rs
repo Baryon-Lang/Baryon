@@ -28,9 +28,15 @@ impl<'db> Builder<'db> {
                 let operand = self.operand(node);
                 self.assign(place, Rvalue::Use(operand), node);
             }
-            SyntaxKind::Name | SyntaxKind::Attribute => {
+            SyntaxKind::Attribute | SyntaxKind::Subscript if self.is_array_attribute(node) => {
+                self.array_attribute(place, node);
+            }
+            SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript => {
                 let operand = self.operand(node);
                 self.assign(place, Rvalue::Use(operand), node);
+            }
+            SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation if self.is_array(ty) => {
+                self.elementwise(place, node);
             }
             SyntaxKind::BinaryOperation => self.binary(place, node),
             SyntaxKind::UnaryOperation => self.unary(place, node),
@@ -43,7 +49,6 @@ impl<'db> Builder<'db> {
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
             SyntaxKind::List => self.unsupported(node, "list displays"),
-            SyntaxKind::Subscript => self.unsupported(node, "indexing and slicing"),
             SyntaxKind::FormattedString => self.unsupported(node, "f-strings"),
             SyntaxKind::ListComprehension => self.unsupported(node, "comprehensions"),
             _ => self.unsupported(node, "this expression"),
@@ -60,13 +65,16 @@ impl<'db> Builder<'db> {
             return Operand::Constant(constant);
         }
         let ty = self.ty(node);
-        if let Some(place) = self.place(node) {
+        if !self.is_array_attribute(node)
+            && let Some(place) = self.place(node)
+        {
             return self.take(place, ty);
         }
         if matches!(
             self.tree.kind(node),
-            SyntaxKind::Name | SyntaxKind::Attribute
-        ) {
+            SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
+        ) && !self.is_array_attribute(node)
+        {
             // A name of something lowering does not handle, already reported by `place`.
             return Operand::Constant(Constant {
                 ty,
@@ -158,7 +166,7 @@ impl<'db> Builder<'db> {
                 let field = self.field(value, node)?;
                 if !matches!(
                     self.tree.kind(value),
-                    SyntaxKind::Name | SyntaxKind::Attribute
+                    SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
                 ) {
                     self.unsupported(node, "fields of a value that is not a variable");
                     return None;
@@ -166,6 +174,7 @@ impl<'db> Builder<'db> {
                 let base = self.place(value)?;
                 Some(base.project(Projection::Field(field)))
             }
+            SyntaxKind::Subscript => self.subscript(node),
             _ => None,
         }
     }

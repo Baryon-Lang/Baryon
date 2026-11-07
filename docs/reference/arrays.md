@@ -138,6 +138,7 @@ direction = residual + beta * direction
   of `Fixed` operands are checked when compiling. Broadcasting between different shapes, NumPy's
   `a + b[:, None]`, comes in Phase 3.
 - The number mixing rules of [Types](types.md#number-mixing) apply to the element types.
+- `-a` negates each element and `+a` keeps it. Both need an array of numbers.
 - An expression of element-wise operations runs as a single loop with no temporary arrays.
   `x += alpha * direction` reads each element of `direction` once and writes each element of `x`
   once.
