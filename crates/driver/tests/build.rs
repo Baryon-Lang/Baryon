@@ -339,3 +339,61 @@ def main() -> Raises[None, ConfigError | LimitError]:
     assert_eq!(stderr(&ran), "error: LimitError(code=12, limit=10.0)\n");
     assert_eq!(ran.status.code(), Some(1));
 }
+
+/// Optional values end to end: absent and present values passed on, narrowed by `is None` and
+/// `is not None`, given a default, and holding an array, which is freed only when present.
+/// Each argument is a variable already of the parameter's `T | None` type.
+#[test]
+fn optional_values_build_and_run() {
+    let program = "\
+class Particle(Struct):
+    mass: f64
+
+
+def scaled(distance: f64 | None, particle: Particle | None) -> f64:
+    if distance is None:
+        distance = 1.0
+    assert particle is not None, 'needs a particle'
+    return distance * particle.mass
+
+
+def nearest(distance: f64 | None, limit: f64) -> f64:
+    if distance is not None and distance < limit:
+        return distance
+    return limit
+
+
+def size(values: Array[f64, 1] | None) -> i64:
+    if values is not None:
+        return len(values)
+    return -1
+
+
+def main():
+    p: Particle | None = Particle(2.5)
+    absent: f64 | None = None
+    four: f64 | None = 4.0
+    print(scaled(absent, p), scaled(four, p))
+    near: f64 | None = 1.5
+    far: f64 | None = 7.0
+    print(nearest(absent, 3.0), nearest(near, 3.0), nearest(far, 3.0))
+    none: Array[f64, 1] | None = None
+    ones: Array[f64, 1] | None = Array.ones(4)
+    print(size(none), size(ones))
+    nobody: Particle | None = None
+    print(scaled(four, nobody))
+";
+    let directory = package("optionals", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "2.5 10.0\n3.0 1.5 3.0\n-1 4\n"
+    );
+    assert_eq!(
+        stderr(&ran),
+        "panic: assertion failed: particle is not None, 'needs a particle'\n  \
+         --> main.npl:8:5\n"
+    );
+}

@@ -274,7 +274,17 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     (address, ty) = self.error_payload(&address, ty, *position)?;
                     continue;
                 }
-                Projection::Value => return Err(Unsupported::new("optionals")),
+                Projection::Value => {
+                    let TypeKind::Optional(value) = ty.kind(self.types.db) else {
+                        return Err(self.types.unsupported(ty));
+                    };
+                    let container = self.types.value(ty)?;
+                    address = self.emit(&format!(
+                        "getelementptr inbounds {container}, ptr {address}, i32 0, i32 0"
+                    ));
+                    ty = *value;
+                    continue;
+                }
             };
             let container = self.types.value(ty)?;
             ty = self.field(ty, *position)?;
@@ -315,6 +325,12 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             }
             Operand::Constant(constant) => {
                 let value = match &constant.value {
+                    // An absent `T | None` is all zeros, its flag false; `None` itself has no value.
+                    ConstantValue::None
+                        if matches!(constant.ty.kind(self.types.db), TypeKind::Optional(_)) =>
+                    {
+                        "zeroinitializer".to_owned()
+                    }
                     ConstantValue::None => return Ok(None),
                     ConstantValue::Bool(value) => value.to_string(),
                     ConstantValue::Integer(value) => {
