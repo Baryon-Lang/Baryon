@@ -20,7 +20,9 @@
 //! `assignment` module); and moves: a value that is not a copy type is read only until it
 //! moves, and only a variable the function owns can move (1.8.2, the `moves` module); and
 //! exclusivity: no argument refers to a value its call changes or moves, and a read-only
-//! parameter is never changed (1.8.3, the `exclusive` module).
+//! parameter is never changed (1.8.3, the `exclusive` module); and loops over collections:
+//! the body changes neither the collection nor the element it borrows (1.8.4, the `loops`
+//! module).
 
 mod arrays;
 mod assignment;
@@ -33,6 +35,7 @@ mod exhaustive;
 mod expressions;
 mod flow;
 mod generics;
+mod loops;
 mod members;
 mod moves;
 mod numbers;
@@ -73,6 +76,7 @@ pub(crate) fn check(
         caught: Vec::new(),
         bound: BTreeSet::new(),
         modes: BTreeMap::new(),
+        loops: Vec::new(),
     };
     let mut bound = BTreeSet::new();
     body.statement_bindings(entry.statement, &mut bound);
@@ -114,6 +118,8 @@ struct Body<'db> {
     bound: BTreeSet<NodeId>,
     /// How each parameter, by its `Name` node, receives its argument (the `moves` module).
     modes: BTreeMap<NodeId, types::Mode>,
+    /// The enclosing `for` loops over collections, innermost last (the `loops` module).
+    loops: Vec<loops::Loop>,
 }
 
 impl<'db> Body<'db> {
@@ -183,20 +189,7 @@ impl<'db> Body<'db> {
             SyntaxKind::AugmentedAssign => self.augmented(statement),
             SyntaxKind::If => return self.if_statement(statement),
             SyntaxKind::While => return self.while_statement(statement),
-            SyntaxKind::For => {
-                let iterator = self.tree.child(statement, Role::Iterator);
-                let element = match iterator {
-                    Some(iterator) => self.iteration(iterator),
-                    None => self.lowerer.unknown(),
-                };
-                self.repeated(statement, iterator.unwrap_or(statement), |body| {
-                    if let Some(target) = body.tree.child(statement, Role::Target) {
-                        body.bind(target, element, None);
-                    }
-                    body.block(statement, Role::Body);
-                    body.block(statement, Role::Else);
-                });
-            }
+            SyntaxKind::For => self.for_statement(statement),
             SyntaxKind::With => {
                 let items: Vec<NodeId> = self.tree.children_with(statement, Role::Item).collect();
                 for item in items {

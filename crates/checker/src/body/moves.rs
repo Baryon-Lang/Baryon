@@ -53,6 +53,7 @@ impl<'db> Body<'db> {
             return;
         }
         match self.tree.kind(node) {
+            SyntaxKind::Name | SyntaxKind::Attribute if self.borrowed_by_loop(node, "moved") => {}
             SyntaxKind::Name => self.move_variable(node, node),
             SyntaxKind::Attribute => {
                 // Moving a field out moves the whole struct: one with a hole cannot be used.
