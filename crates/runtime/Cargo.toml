@@ -1,0 +1,50 @@
+[package]
+name = "runtime"
+description = "The runtime linked into every compiled program: the allocator shim, panics and the thread pool that runs prange loops."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "runtime"
+
+[lib]
+# `staticlib` is the archive the driver links into every program; `rlib` is for this crate's
+# own tests and doc tests.
+crate-type = ["staticlib", "rlib"]
+
+# The workspace lints, copied rather than inherited, because the runtime needs `unsafe` and the
+# workspace forbids it (decision 0021). `forbid` cannot be relaxed by an attribute, `deny` can,
+# so each item that needs `unsafe` allows it locally and gives its reason. Every other level
+# matches the root `Cargo.toml`; change both together. The last three clippy lints are extra:
+# they make each `unsafe` block carry a `// SAFETY:` comment and do one unsafe thing.
+[lints.rust]
+missing_docs = "warn"
+unreachable_pub = "warn"
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+unused_qualifications = "warn"
+
+[lints.rustdoc]
+broken_intra_doc_links = "warn"
+missing_crate_level_docs = "warn"
+private_intra_doc_links = "warn"
+unescaped_backticks = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+expect_used = "warn"
+missing_docs_in_private_items = "warn"
+panic = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+todo = "warn"
+unimplemented = "warn"
+unwrap_used = "warn"
+multiple_unsafe_ops_per_block = "warn"
+undocumented_unsafe_blocks = "warn"
+allow_attributes_without_reason = "warn"

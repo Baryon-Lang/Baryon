@@ -53,3 +53,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0018. The mid-level IR is basic blocks over typed locals and places](0018-mid-level-ir.md) | Accepted |
 | [0019. The language server is `npl lsp`, speaking the protocol over `serde_json`](0019-language-server-protocol.md) | Accepted |
 | [0020. The first LLVM backend writes textual IR and hands it to `clang`](0020-llvm-backend-emits-text.md) | Accepted |
+| [0021. The runtime is one Rust crate of its own kind, the only one outside a backend allowed `unsafe`](0021-runtime-crate-and-unsafe-code.md) | Accepted |

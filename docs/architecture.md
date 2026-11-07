@@ -11,8 +11,9 @@ replaced without touching anything else.
 | `foundation` | Building blocks with no compiler logic: source text, spans, diagnostics | `foundation` |
 | `interface` | Data types and traits that stages exchange: syntax trees, types, IR | `foundation`, `interface` |
 | `implementation` | One replaceable piece of the compiler: a parser, a type checker, a backend | `foundation`, `interface` |
-| `application` | An executable that wires implementations together: the driver, the language server | `foundation`, `interface`, `implementation` |
+| `application` | An executable that wires implementations together: the driver, the language server | `foundation`, `interface`, `implementation`, `runtime` |
 | `tooling` | Repository automation | any kind except `tooling` |
+| `runtime` | Code linked into every compiled program rather than into the compiler ([0021](decisions/0021-runtime-crate-and-unsafe-code.md)). Only `application` and `tooling` crates may depend on it | `runtime` |
 
 A crate declares its kind in its `Cargo.toml`:
 
@@ -83,6 +84,7 @@ Nothing else changes.
 | [`syntax_check`](../crates/syntax_check) | `implementation` | Reports each Python construct in a `syntax` tree that the language does not support, following the language reference |
 | [`front_end_tests`](../crates/front_end_tests) | `application` | Tests only: runs the parser, then the syntax check, over a corpus and the example programs. Tests that need two implementations live in an application crate, since an implementation may not depend on another |
 | [`driver`](../crates/driver) | `application` | The `npl` command: owns the concrete database, wires the parser, the syntax check, the resolver, the checker and lowering into it, and runs `npl check`, the documentation generator, `npl doc`, and the language server, `npl lsp` ([0019](decisions/0019-language-server-protocol.md)) |
+| [`runtime`](../crates/runtime) | `runtime` | The runtime linked into every compiled program: heap memory from the system allocator, panics that print their message and location, and the thread pool that runs `prange` loops in fixed chunks; the only crate outside a backend allowed `unsafe` ([0021](decisions/0021-runtime-crate-and-unsafe-code.md)) |
 | [`bench`](../bench) | `tooling` | `cargo kernels`: builds, verifies and times the C++ and Fortran baseline kernels |
 | [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules, the documentation link check, the roadmap check, the example syntax check and the external dependency check |
 
