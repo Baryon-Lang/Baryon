@@ -1,0 +1,25 @@
+[package]
+name = "array_expansion"
+description = "Array expansion: turns each whole-array expression in a mid-level IR body into a loop nest over its elements."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "implementation"
+
+[dependencies]
+mir.workspace = true
+salsa.workspace = true
+source.workspace = true
+types.workspace = true
+
+[dev-dependencies]
+database.workspace = true
+syntax.workspace = true
+
+[lints]
+workspace = true

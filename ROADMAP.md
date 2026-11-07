@@ -85,7 +85,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.9.3 | Lowering: function bodies to `mir`, with control flow, calls, argument modes, bounds checks, `Raises` error edges and scope-exit drops | 1.5 | 1.9.1, 1.9.2 | Planned | — | [0018](docs/decisions/0018-mid-level-ir.md) |
 | 1.9.4 | Drop elaboration: remove drops of moved values, guard partly moved ones with flags | 0.5 | 1.9.1 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md) |
 | 1.9.5 | Monomorphization: instances at concrete types, collected from `main` and each `@test`. Substitution is done; collection waits on lowering | 1 | 1.9.3, 1.7.5 | In progress | Claude | [0018](docs/decisions/0018-mid-level-ir.md) |
-| 1.9.6 | Whole-array expressions as one `Elementwise` rvalue, expanded to loop nests before a backend. Allocates results with `NewArray` (1.9.8) | 0.5 | 1.9.8 | Planned | — | [0018](docs/decisions/0018-mid-level-ir.md) |
+| 1.9.6 | Whole-array expressions as one `Elementwise` rvalue, expanded to loop nests before a backend. Allocates results with `NewArray` (1.9.8) | 0.5 | 1.9.8 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md) |
 | 1.9.7 | `prange` bodies outlined behind a `ParallelFor` terminator, and `simd` loops marked and checked | 1 | 1.9.3, 1.8 | Planned | — | [0018](docs/decisions/0018-mid-level-ir.md), [0011](docs/decisions/0011-checked-simd.md), [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.9.8 | `NewArray` in `mir`: allocate an `Array` with run-time lengths, so array expansion can create its result | — | 1.9.1 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md) |
 | 1.10 | LLVM backend: no-alias metadata, debug info, Apple AArch64 ABI, Mach-O output | 6 | 1.9 | Planned | — | — |
