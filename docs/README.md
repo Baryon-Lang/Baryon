@@ -10,6 +10,10 @@ The compiler only checks syntax, supported constructs, module names and names so
 definition and from examples. A beginner's guide will follow the first compiler prototype that
 runs programs.
 
+To see the same diagnostics in an editor as you type, point its Language Server Protocol client
+at `npl lsp` for `.npl` files: build it with `cargo build --package driver` and run
+`target/debug/npl lsp`. A VS Code extension that does this for you is roadmap item 1.17.
+
 - The [language reference](reference/README.md) defines what a program may say and what it means.
   Python programmers should start with its
   [differences from Python](reference/differences-from-python.md).

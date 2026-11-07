@@ -1,0 +1,2 @@
+def energy(mass: f64) -> f64:
+    return mass

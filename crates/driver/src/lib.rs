@@ -109,6 +109,23 @@ impl Session {
         Ok(())
     }
 
+    /// The id of `file`, which the spans of its diagnostics carry. Files get ids in the order
+    /// they are added, starting at 0.
+    ///
+    /// ```
+    /// use driver::Session;
+    /// use source::Sources;
+    ///
+    /// let mut session = Session::new();
+    /// let file = session.add_file("heat.npl", "ALPHA: Final = 0.1\n")?;
+    /// assert_eq!(session.file(session.file_id(file)).name(), "heat.npl");
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
+    #[must_use]
+    pub fn file_id(&self, file: File) -> FileId {
+        file.id(&self.database)
+    }
+
     /// Every problem in the package: module naming errors first, then each file's problems, in
     /// the order the files were added. A file's problems are its syntax errors or, when it has
     /// none, the constructs the language does not support, the names that refer to nothing and
