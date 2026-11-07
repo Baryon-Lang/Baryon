@@ -74,7 +74,14 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.7.9 | Definite assignment, naming the path that skips the assignment, and a missing `return` at the end of a function | 1 | 1.7.3 | Planned | — | — |
 | 1.8 | Reference and exclusivity checker | 3 | 1.7 | Planned | — | — |
 | 1.8.1 | `prange(n, accumulate=...)`: check that listed arrays are only added to, and suggest the argument in the disjoint-write error | — | 1.8 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
-| 1.9 | Mid-level IR: lowering, drops, monomorphization | 5 | 1.7 | Planned | — | — |
+| 1.9 | Mid-level IR: lowering, drops, monomorphization | 5 | 1.7 | In progress | Claude | [0018](docs/decisions/0018-mid-level-ir.md) |
+| 1.9.1 | IR design and the `mir` interface crate: bodies as basic blocks over typed locals and places, explicit drops, bounds checks and error edges, a validator and a text form | 1 | 1.6 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md) |
+| 1.9.2 | Typed bodies: a query that gives the type of every expression and the definition of every name in a function body, for lowering to read | 0.5 | 1.7 | Planned | — | — |
+| 1.9.3 | Lowering: function bodies to `mir`, with control flow, calls, argument modes, bounds checks, `Raises` error edges and scope-exit drops | 1.5 | 1.9.1, 1.9.2 | Planned | — | [0018](docs/decisions/0018-mid-level-ir.md) |
+| 1.9.4 | Drop elaboration: remove drops of moved values, guard partly moved ones with flags | 0.5 | 1.9.3 | Planned | — | [0018](docs/decisions/0018-mid-level-ir.md) |
+| 1.9.5 | Monomorphization: instances at concrete types, collected from `main` and each `@test` | 1 | 1.9.3, 1.7.5 | Planned | — | [0018](docs/decisions/0018-mid-level-ir.md) |
+| 1.9.6 | Whole-array expressions as one `Elementwise` rvalue, expanded to loop nests before a backend | 0.5 | 1.9.3, 1.7.4 | Planned | — | [0018](docs/decisions/0018-mid-level-ir.md) |
+| 1.9.7 | `prange` bodies outlined behind a `ParallelFor` terminator, and `simd` loops marked and checked | 1 | 1.9.3, 1.8 | Planned | — | [0018](docs/decisions/0018-mid-level-ir.md), [0011](docs/decisions/0011-checked-simd.md), [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.10 | LLVM backend: no-alias metadata, debug info, Apple AArch64 ABI, Mach-O output | 6 | 1.9 | Planned | — | — |
 | 1.11 | Driver: build, run, test, manifest, linking, compile-time reporting | 3 | 1.10 | Planned | — | — |
 | 1.11.1 | Prototype `npl check <directory>`: load a package into the query database and print its module and syntax errors | — | 1.4 | Done | Claude | [#14](https://github.com/csimpson1964/New-Programming-Language/pull/14) |
@@ -154,6 +161,7 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.11 | Integer overflow in release builds: wrap, as the plan says, or panic, as in debug builds | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
 | D.12 | Parallel loops that add into shared arrays (Newton's third law, histograms, assembly). Decided: `prange(n, accumulate=forces)`, add-only, reproducible, blocked private buffers | — | I.6 | Done | Collins | [0013](docs/decisions/0013-parallel-accumulation.md), [#8](https://github.com/csimpson1964/New-Programming-Language/pull/8) |
 | D.13 | Class inheritance: Python-style subclassing, or classes as plain structs with methods. Decided: no inheritance; shared behavior comes from traits | — | — | Done | Collins | [0015](docs/decisions/0015-no-class-inheritance.md), [#12](https://github.com/csimpson1964/New-Programming-Language/pull/12) |
+| D.14 | Mid-level IR shape: static single assignment (plan) or locals and places; how `Raises`, monomorphization and whole-array expressions lower | — | — | Planned | Collins | [0018](docs/decisions/0018-mid-level-ir.md) |
 
 ## Ideas
 

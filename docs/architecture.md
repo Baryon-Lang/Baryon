@@ -31,7 +31,7 @@ An implementation never depends on another implementation. Stages talk through i
 ```text
 source, diagnostics            foundation
         │
-syntax ─┼─ types ─ ir          interface: the data each stage produces
+syntax ─┼─ types ─ mir         interface: the data each stage produces
         │
 parser   checker   backend     implementation: each reads and writes interface types only
         │
@@ -69,6 +69,7 @@ Nothing else changes.
 | [`syntax`](../crates/syntax) | `interface` | The flat syntax tree: 16-byte nodes in preorder, their kinds, roles, operators and flags |
 | [`database`](../crates/database) | `interface` | The incremental query database: source files and packages as inputs, module names and the module map, and the `Db` trait each stage's result is read through ([0016](decisions/0016-salsa-query-engine.md)) |
 | [`types`](../crates/types) | `interface` | The type representation: interned types, number primitives including complex numbers, `Fixed` shapes, and memory layouts; each definition's declaration and the `TypeDb` query that reads it |
+| [`mir`](../crates/mir) | `interface` | The mid-level IR: each function body as basic blocks of statements over typed locals and places, with explicit drops, bounds checks and error edges; its validator and text form ([0018](decisions/0018-mid-level-ir.md)) |
 | [`parser`](../crates/parser) | `implementation` | Parses source text into a `syntax` tree with Ruff's Python parser, and reports syntax errors as diagnostics |
 | [`resolver`](../crates/resolver) | `implementation` | Name resolution: finds the definition each name refers to, through scopes, modules and imports, and reports names that refer to nothing |
 | [`checker`](../crates/checker) | `implementation` | The type checker: computes each definition's declaration from its annotations, including `Final` constants, infers the types in function bodies, and reports what does not type-check |

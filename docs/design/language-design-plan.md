@@ -363,8 +363,11 @@ unnecessary.
 
 ### Middle end: the IR
 
-The typed tree lowers to a mid-level IR in static single assignment form with explicit control
-flow, drops and bounds checks. Language-specific optimizations live here, before any backend:
+The typed tree lowers to a mid-level IR with explicit control flow, drops and bounds checks:
+basic blocks over typed locals and places, as in Rust's MIR, not static single assignment form,
+because the reference rules, `noalias` metadata and drops are all stated over places and the
+backends build SSA themselves (proposed in [0018](../decisions/0018-mid-level-ir.md)).
+Language-specific optimizations live here, before any backend:
 
 - array expression fusion into one loop nest;
 - drop elision and move forwarding;
@@ -373,8 +376,10 @@ flow, drops and bounds checks. Language-specific optimizations live here, before
 - `noalias`, `nonnull` and `dereferenceable` metadata from the reference rules, so LLVM gets what
   Fortran compilers get for free.
 
-Monomorphization happens here. Instantiations are deduplicated by the hash of their lowered IR to
-control code size and compile time.
+Monomorphization happens here: lowering builds each generic body once, and an instance query
+substitutes concrete types into it. Whole-array expressions stay one IR node until fusion has
+seen them, and `prange` bodies are outlined for the runtime. Instantiations may later be
+deduplicated by the hash of their lowered IR to control code size and compile time.
 
 ### Back ends
 

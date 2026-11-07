@@ -50,3 +50,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0015. Classes have no inheritance](0015-no-class-inheritance.md) | Accepted |
 | [0016. Incremental queries run on the `salsa` crate](0016-salsa-query-engine.md) | Accepted |
 | [0017. `@layout("C")` pins a struct's layout and silences the padding warning](0017-layout-decorator.md) | Accepted |
+| [0018. The mid-level IR is basic blocks over typed locals and places](0018-mid-level-ir.md) | Proposed |
