@@ -15,18 +15,24 @@
 //!   passed `Owned`, arrives by value. A borrow of anything else arrives as a `noalias readonly`
 //!   pointer, and an `InOut` as a `noalias` pointer: the exclusivity check guarantees nothing
 //!   else refers to it during the call, which is what lets LLVM vectorize without overlap tests.
-//! - **Checks become traps.** A failed [`Assert`](mir::TerminatorKind::Assert), or a conversion
-//!   that loses its value (language reference, "Conversions"), branches to one block that calls
-//!   `llvm.trap`. The run-time's panic messages (roadmap 1.12) replace it.
+//! - **Checks panic through the runtime.** A failed [`Assert`](mir::TerminatorKind::Assert), or
+//!   a conversion that loses its value (language reference, "Conversions"), branches to a block
+//!   of its own that calls the runtime's panic function (decision 0021) with the message and the
+//!   file, line and column, so the program prints what failed and where, and exits with status
+//!   101. The program links the `runtime` library for them.
 //! - **Integer arithmetic wraps**, as [`Binary`](mir::Rvalue::Binary) defines, and never reaches
 //!   LLVM's undefined cases: `x // -1` and `x % -1` are computed without `sdiv`'s overflow, and a
 //!   shift by the width or more gives what shifting one bit at a time would.
 //! - **Float `//` and `%` call the C math library**: LLVM compiles `frem` and `llvm.floor` to
 //!   `fmod` and `floor`, so a program links `libm`, as C programs do.
+//! - **Arrays are a header and heap elements.** An `Array[T, rank]` value is the header
+//!   [`types::layout`] describes: the data pointer, each length and each stride. A new array is
+//!   allocated by the runtime, an element is found through the strides, and a drop frees the
+//!   elements with the size they were allocated with.
 //!
-//! This first slice (roadmap 1.10.1) covers numbers, `bool`, enums without data, tuples and
-//! structs, control flow, direct calls and checks. A body that uses anything else, such as an
-//! array or a call that can raise, gets an [`Unsupported`] error naming it.
+//! The backend so far (roadmap 1.10.1 to 1.10.3) covers numbers, `bool`, enums without data,
+//! tuples and structs, `Array`, control flow, direct calls and checks. A body that uses anything
+//! else, such as an optional or a call that can raise, gets an [`Unsupported`] error naming it.
 //!
 //! # Example
 //!
@@ -35,7 +41,7 @@
 //! ```
 //! use mir::{BinaryOperator, Body, Constant, LocalKind, Operand, Place, Rvalue, Statement,
 //!     StatementKind, Terminator, TerminatorKind};
-//! use source::{FileId, Span};
+//! use source::{SourceMap, Span};
 //! use types::{Declared, Float, Mode, Primitive, Type, TypeKind};
 //!
 //! # #[salsa::db]
@@ -52,7 +58,9 @@
 //! # }
 //! let database = Database::default();
 //! let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
-//! let span = Span::new(FileId::from_index(0), 0, 40);
+//! let mut sources = SourceMap::new();
+//! let file = sources.add("double.npl", "def double(x: f64) -> f64: return x * 2.0")?;
+//! let span = Span::new(file, 0, 40);
 //!
 //! let mut body = Body::new(f64, span);
 //! let x = body.push_local(f64, LocalKind::Parameter { name: "x".into(), mode: Mode::Borrow }, span);
@@ -71,7 +79,7 @@
 //!
 //! let declared = |_: &types::Nominal<'_>| Declared::Struct(Vec::new());
 //! let symbol = |_: &types::Item<'_>, _: &[Type<'_>]| String::new();
-//! let mut module = llvm_backend::Module::new(&database, &declared, &symbol);
+//! let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
 //! module.define("double", &body)?;
 //! assert_eq!(
 //!     module.finish(),
@@ -91,11 +99,13 @@
 //! }
 //! ",
 //! );
-//! # Ok::<(), llvm_backend::Unsupported>(())
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+mod array;
 mod convert;
 mod function;
+mod panic;
 mod rvalue;
 mod ty;
 
@@ -113,6 +123,8 @@ pub struct Module<'a, 'db> {
     symbol: &'a dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
     /// Each function definition's text, in the order they were defined.
     definitions: Vec<String>,
+    /// The messages and source locations failed checks point to.
+    constants: panic::Constants<'a>,
     /// The symbols this module defines, so they are not declared too.
     defined: BTreeSet<String>,
     /// The declaration of each symbol called, written from the call, by symbol.
@@ -120,12 +132,14 @@ pub struct Module<'a, 'db> {
 }
 
 impl<'a, 'db> Module<'a, 'db> {
-    /// An empty module. `declared` says what each struct or enum declares, with its type
+    /// An empty module. `sources` holds the files the bodies' spans point into, for the file,
+    /// line and column a panic reports; `declared` says what each struct or enum declares, with its type
     /// arguments substituted, as [`types::layout`] needs; `symbol` names the instance of a
     /// function at its type arguments, the same way for every module of a program so calls
     /// between modules link.
     pub fn new(
         db: &'db dyn database::Db,
+        sources: &'a dyn source::Sources,
         declared: &'a dyn Fn(&Nominal<'db>) -> Declared<'db>,
         symbol: &'a dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
     ) -> Self {
@@ -133,6 +147,7 @@ impl<'a, 'db> Module<'a, 'db> {
             types: ty::Types { db, declared },
             symbol,
             definitions: Vec::new(),
+            constants: panic::Constants::new(sources),
             defined: BTreeSet::new(),
             declarations: BTreeMap::new(),
         }
@@ -148,18 +163,26 @@ impl<'a, 'db> Module<'a, 'db> {
     /// [`Unsupported`] when the body uses a type or form this slice of the backend does not
     /// translate yet; the module is left as it was.
     pub fn define(&mut self, symbol: &str, body: &Body<'db>) -> Result<(), Unsupported> {
-        let (text, calls) = function::Function::write(self.types, self.symbol, symbol, body)?;
+        let mark = self.constants.mark();
+        let (text, calls) =
+            function::Function::write(self.types, self.symbol, &mut self.constants, symbol, body)
+                .inspect_err(|_| self.constants.roll_back(mark))?;
         self.definitions.push(text);
         self.defined.insert(symbol.to_owned());
         self.declarations.extend(calls);
         Ok(())
     }
 
-    /// The module's text: every definition in order, then a declaration of each function called
-    /// and not defined here, in symbol order, so the text is the same on every run.
+    /// The module's text: every definition in order, then the message and location constants
+    /// their checks point to, then a declaration of each function called and not defined here, in symbol order, so the text is the same on every run.
     #[must_use]
     pub fn finish(self) -> String {
         let mut text = self.definitions.join("\n");
+        let constants = self.constants.finish();
+        if !constants.is_empty() {
+            text.push('\n');
+            text.push_str(&constants);
+        }
         let declared: Vec<&String> = self
             .declarations
             .iter()
@@ -178,7 +201,7 @@ impl<'a, 'db> Module<'a, 'db> {
 }
 
 /// A form of the mid-level IR this slice of the backend does not translate yet, such as values
-/// of an array type. Roadmap 1.10 adds them slice by slice; a type-checked program reaches this
+/// of an optional type. Roadmap 1.10 adds them slice by slice; a type-checked program reaches this
 /// only through features the backend has not caught up with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unsupported {
