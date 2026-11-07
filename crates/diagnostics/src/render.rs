@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! error: undefined name `x`
-//!  --> main.npl:1:5
+//!  --> main.byn:1:5
 //!   |
 //! 1 | y = x + 1
 //!   |     ^ not defined in this scope
@@ -27,13 +27,13 @@ const TAB_WIDTH: usize = 4;
 /// use source::{SourceMap, Span};
 ///
 /// let mut sources = SourceMap::new();
-/// let file = sources.add("main.npl", "y = x + 1\n")?;
+/// let file = sources.add("main.byn", "y = x + 1\n")?;
 /// let diagnostic = Diagnostic::error("undefined name `x`")
 ///     .with_primary(Span::new(file, 4, 5), "not defined in this scope");
 ///
 /// assert_eq!(
 ///     render(&diagnostic, &sources).to_string(),
-///     "error: undefined name `x`\n --> main.npl:1:5\n  |\n1 | y = x + 1\n  |     ^ not defined in this scope",
+///     "error: undefined name `x`\n --> main.byn:1:5\n  |\n1 | y = x + 1\n  |     ^ not defined in this scope",
 /// );
 /// # Ok::<(), source::SourceError>(())
 /// ```
@@ -163,7 +163,7 @@ mod tests {
 
     fn rendered(text: &str, build: impl Fn(source::FileId) -> Diagnostic) -> String {
         let mut sources = SourceMap::new();
-        let file = sources.add("main.npl", text).unwrap();
+        let file = sources.add("main.byn", text).unwrap();
         render(&build(file), &sources).to_string()
     }
 
@@ -182,7 +182,7 @@ mod tests {
         });
         let expected = "\
 error: undefined name `x`
- --> main.npl:1:5
+ --> main.byn:1:5
   |
 1 | y = x + 1
   |     ^ not defined in this scope
@@ -200,11 +200,11 @@ error: undefined name `x`
         });
         let expected = "\
 error: value `a` used after move
- --> main.npl:3:5
+ --> main.byn:3:5
   |
 3 | c = a
   |     ^ used here after the move
- ::: main.npl:2:5
+ ::: main.byn:2:5
   |
 2 | b = a
   |     - moved here";
@@ -219,7 +219,7 @@ error: value `a` used after move
         });
         let expected = "\
 warning: unused variable `x`
-   --> main.npl:100:1
+   --> main.byn:100:1
     |
 100 | x = 1
     | ^";

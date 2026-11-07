@@ -128,7 +128,7 @@
 //! }
 //!
 //! let database = Database::default();
-//! let source = SourceFile::new("main.npl", "N: Final = 64\n")?;
+//! let source = SourceFile::new("main.byn", "N: Final = 64\n")?;
 //! let file = File::new(&database, FileId::from_index(0), source);
 //! let package = Package::new(&database, vec![file]);
 //!

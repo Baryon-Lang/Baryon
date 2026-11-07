@@ -1,5 +1,5 @@
 //! Debug information: line tables that map each instruction back to the line and column of the
-//! source it came from, so a debugger can step through `.npl` files, a profiler can name the
+//! source it came from, so a debugger can step through `.byn` files, a profiler can name the
 //! hot line, and a backtrace can say where each frame was.
 //!
 //! The module carries DWARF line tables only (LLVM's `LineTablesOnly`): no variables or types
@@ -120,7 +120,7 @@ impl Debug {
         let _ = writeln!(
             text,
             "!0 = distinct !DICompileUnit(language: DW_LANG_Python, file: {file}, \
-             producer: \"npl\", isOptimized: true, runtimeVersion: 0, \
+             producer: \"baryon\", isOptimized: true, runtimeVersion: 0, \
              emissionKind: LineTablesOnly)"
         );
         text.push_str("!1 = !{i32 7, !\"Dwarf Version\", i32 4}\n");

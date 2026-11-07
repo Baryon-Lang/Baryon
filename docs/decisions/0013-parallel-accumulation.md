@@ -17,7 +17,7 @@ once and writing both `forces[i]` and `forces[j]` halves the pair work, but iter
 writes element `j`, which iteration `j` also writes. The checker rejects it, correctly: unguarded,
 it is a data race that silently loses forces.
 
-The current workaround, in [`lennard_jones.npl`](../examples/lennard_jones.npl), computes every
+The current workaround, in [`lennard_jones.byn`](../examples/lennard_jones.byn), computes every
 pair twice so each iteration writes only its own atom. That is the "full neighbour list" in
 molecular dynamics terms. It is safe and simple, and it does twice the arithmetic. The same shape
 appears well beyond molecular dynamics: histograms (`counts[bin] += 1`), particle-in-cell charge

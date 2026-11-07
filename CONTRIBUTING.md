@@ -5,7 +5,7 @@ Most of them are enforced by `cargo xtask ci`; the rest are enforced in review.
 
 ## Mission
 
-NPL (working name) is a compiled language that reads like Python and runs like Rust, C and
+Baryon is a compiled language that reads like Python and runs like Rust, C and
 Fortran. It exists to make physics, mathematics and data science fast to write and fast to run.
 Enormous calculations and huge datasets should be routine work, not heroics.
 

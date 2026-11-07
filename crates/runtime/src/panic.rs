@@ -146,7 +146,7 @@ mod tests {
     use super::*;
 
     /// The location the tests report.
-    static HERE: Location = Location::new("heat.npl", 12, 9);
+    static HERE: Location = Location::new("heat.byn", 12, 9);
 
     #[test]
     fn reports_an_index_out_of_range_with_its_location() {
@@ -157,7 +157,7 @@ mod tests {
         };
         assert_eq!(
             report(failure, Some(&HERE)),
-            "panic: index 10 is out of range for dimension 0 of length 8\n  --> heat.npl:12:9\n"
+            "panic: index 10 is out of range for dimension 0 of length 8\n  --> heat.byn:12:9\n"
         );
     }
 

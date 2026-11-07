@@ -1,7 +1,7 @@
 //! The parser test corpus, and a check that every example program parses cleanly.
 //!
 //! `tests/corpus/` holds small programs, each covering one area of the grammar. Next to each
-//! `name.npl` sits `name.tree`, the expected tree as `SyntaxTree::display` prints it, and, for
+//! `name.byn` sits `name.tree`, the expected tree as `SyntaxTree::display` prints it, and, for
 //! a program with syntax errors, `name.errors`, the expected diagnostics as rendered text.
 //!
 //! After an intended change to the tree or the messages, regenerate the expected files with
@@ -22,8 +22,8 @@ use syntax::{NodeId, SyntaxKind, SyntaxTree};
 /// What a helper returns: its value, or the error that stops the test.
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// The source file extension, a working choice until roadmap decision D.6 names the language.
-const EXTENSION: &str = "npl";
+/// The source file extension, fixed by decision 0023.
+const EXTENSION: &str = "byn";
 
 /// The directory of this crate.
 fn crate_directory() -> &'static Path {

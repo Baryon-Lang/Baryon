@@ -8,11 +8,11 @@
 
 use driver::Session;
 
-/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// Checks `main.byn` and returns every diagnostic, rendered and joined by blank lines. An empty
 /// string means the program is clean. The program's first newline is dropped.
 fn check_one(text: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+    if let Err(error) = session.add_file("main.byn", text.strip_prefix('\n').unwrap_or(text)) {
         return error.to_string();
     }
     session
@@ -124,22 +124,22 @@ def run(a: InOut[Array[f64, 1]], b: InOut[Array[f64, 1]], n: i64) -> f64:
     assert_eq!(
         check_one(program),
         r"error: an iteration of this parallel loop may read an element of `a` that another iteration writes
- --> main.npl:9:16
+ --> main.byn:9:16
   |
 9 |         a[i] = a[i - 1] + 1.0
   |                ^^^^^^^^ indexed by `i - 1`, not by the loop variable `i`
- ::: main.npl:8:14
+ ::: main.byn:8:14
   |
 8 |     for i in prange(1, n):
   |              ------------ iterations run in parallel
   = note: an array the loop writes may be read only at the loop variable's index; read a copy made before the loop instead
 
 error: iterations of this parallel loop may write the same element of `b`
-  --> main.npl:10:9
+  --> main.byn:10:9
    |
 10 |         b[i - 1] = 0.0
    |         ^^^^^^^^ indexed by `i - 1`, not by the loop variable `i`
-  ::: main.npl:8:14
+  ::: main.byn:8:14
    |
  8 |     for i in prange(1, n):
    |              ------------ iterations run in parallel
@@ -147,22 +147,22 @@ error: iterations of this parallel loop may write the same element of `b`
    = note: or compute each element's total in its own iteration, or use `range` for this loop
 
 error: `b` is written element by element in this parallel loop, so the body cannot use it whole
-  --> main.npl:11:15
+  --> main.byn:11:15
    |
 11 |         scale(b)
    |               ^ used whole here
-  ::: main.npl:8:14
+  ::: main.byn:8:14
    |
  8 |     for i in prange(1, n):
    |              ------------ iterations run in parallel
    = note: use single elements at the loop variable's index, or use `range` for this loop
 
 error: iterations of this parallel loop all write `last`
-  --> main.npl:12:9
+  --> main.byn:12:9
    |
 12 |         last = a[i]
    |         ^^^^ not a reduction
-  ::: main.npl:8:14
+  ::: main.byn:8:14
    |
  8 |     for i in prange(1, n):
    |              ------------ iterations run in parallel
@@ -170,22 +170,22 @@ error: iterations of this parallel loop all write `last`
    = note: to keep a value for one iteration, assign a new variable inside the loop
 
 error: `total` is reduced two ways in this parallel loop
-  --> main.npl:14:9
+  --> main.byn:14:9
    |
 14 |         total *= 2.0
    |         ^^^^^ a different reduction
-  ::: main.npl:13:9
+  ::: main.byn:13:9
    |
 13 |         total += a[i]
    |         ----- first reduced here
    = note: a shared variable reduces one way: `+=` and `-=` together, or `*=`, `min` or `max` alone
 
 error: `total` is a reduction in this parallel loop, so the body cannot read it
-  --> main.npl:15:12
+  --> main.byn:15:12
    |
 15 |         if total > 1.0:
    |            ^^^^^ read here
-  ::: main.npl:13:9
+  ::: main.byn:13:9
    |
 13 |         total += a[i]
    |         ----- reduced here
@@ -222,47 +222,47 @@ def run(a: Array[f64, 1], n: i64) -> Raises[f64, Bad]:
     assert_eq!(
         check_one(program),
         r"error: this `raise` fails with `Bad`, which is not handled inside this parallel loop
-  --> main.npl:16:19
+  --> main.byn:16:19
    |
 16 |             raise Bad()
    |                   ^^^^^ can fail with `Bad`
    = note: catch it with `try:` and `except Bad:` inside the loop body: an error cannot leave a parallel loop
 
 error: `check` can fail with `Bad`, which is not handled inside this parallel loop
-  --> main.npl:17:17
+  --> main.byn:17:17
    |
 17 |         value = check(a[i])
    |                 ^^^^^^^^^^^ can fail with `Bad`
    = note: catch it with `try:` and `except Bad:` inside the loop body: an error cannot leave a parallel loop
 
 error: a parallel loop cannot run inside another
-  --> main.npl:18:18
+  --> main.byn:18:18
    |
 18 |         for j in prange(n):
    |                  ^^^^^^^^^ inside a parallel loop
-  ::: main.npl:10:14
+  ::: main.byn:10:14
    |
 10 |     for i in prange(n):
    |              --------- the outer parallel loop
    = note: use `range` for the inner loop: nested parallel loops would oversubscribe the cores
 
 error: a parallel loop cannot end early
-  --> main.npl:12:13
+  --> main.byn:12:13
    |
 12 |             return a[i]
    |             ^^^^^^^^^^^ returns from inside the loop
-  ::: main.npl:10:14
+  ::: main.byn:10:14
    |
 10 |     for i in prange(n):
    |              --------- iterations run in parallel
    = note: every iteration runs; skip the rest of one with `continue`, or use `range` for a loop that stops early
 
 error: a parallel loop cannot end early
-  --> main.npl:14:13
+  --> main.byn:14:13
    |
 14 |             break
    |             ^^^^^ leaves the loop
-  ::: main.npl:10:14
+  ::: main.byn:10:14
    |
 10 |     for i in prange(n):
    |              --------- iterations run in parallel
@@ -293,61 +293,61 @@ def run(forces: InOut[Array[f64, 1]], spare: InOut[Array[f64, 1]], names: list[s
     assert_eq!(
         check_one(program),
         r"error: `forces` is listed in `accumulate=`, so this loop may only add to it
- --> main.npl:7:22
+ --> main.byn:7:22
   |
 7 |         forces[i] += forces[0]
   |                      ^^^^^^^^^ read here
- ::: main.npl:6:36
+ ::: main.byn:6:36
   |
 6 |     for i in prange(n, accumulate=(forces, spare)):
   |                                    ------ listed here
   = note: an accumulated array appears only as the target of `+=` or `-=`; a helper function cannot add into it, so return the contribution and add it in the loop
 
 error: `forces` is listed in `accumulate=`, so this loop may only add to it
- --> main.npl:8:9
+ --> main.byn:8:9
   |
 8 |         forces[i] = 1.0
   |         ^^^^^^^^^ not an addition
- ::: main.npl:6:36
+ ::: main.byn:6:36
   |
 6 |     for i in prange(n, accumulate=(forces, spare)):
   |                                    ------ listed here
   = note: an accumulated array appears only as the target of `+=` or `-=`; a helper function cannot add into it, so return the contribution and add it in the loop
 
 error: `forces` is listed in `accumulate=`, so this loop may only add to it
- --> main.npl:9:19
+ --> main.byn:9:19
   |
 9 |         x = total(forces)
   |                   ^^^^^^ read here
- ::: main.npl:6:36
+ ::: main.byn:6:36
   |
 6 |     for i in prange(n, accumulate=(forces, spare)):
   |                                    ------ listed here
   = note: an accumulated array appears only as the target of `+=` or `-=`; a helper function cannot add into it, so return the contribution and add it in the loop
 
 error: `spare` is listed in `accumulate=`, but this loop never adds to it
- --> main.npl:6:44
+ --> main.byn:6:44
   |
 6 |     for i in prange(n, accumulate=(forces, spare)):
   |                                            ^^^^^ never added to
   = note: remove it from `accumulate=`
 
 error: `accumulate=` lists arrays by name
-  --> main.npl:10:35
+  --> main.byn:10:35
    |
 10 |     for i in prange(n, accumulate=forces[0]):
    |                                   ^^^^^^^^^ not a variable or field
    = note: name the arrays the loop adds into: `accumulate=forces` or `accumulate=(forces, virial)`
 
 error: `accumulate=` needs an array of numbers, found `list[str]`
-  --> main.npl:12:35
+  --> main.byn:12:35
    |
 12 |     for i in prange(n, accumulate=names, chunk=4):
    |                                   ^^^^^ cannot be added into
    = note: an accumulated array holds integers, floats, complex numbers, or `Fixed` arrays of them
 
 error: `prange` has no parameter `chunk`
-  --> main.npl:12:42
+  --> main.byn:12:42
    |
 12 |     for i in prange(n, accumulate=names, chunk=4):
    |                                          ^^^^^ unknown parameter
@@ -368,11 +368,11 @@ def pairs(forces: InOut[Array[f64, 1]], n: i64):
     assert_eq!(
         check_one(program),
         r"error: iterations of this parallel loop may write the same element of `forces`
- --> main.npl:5:13
+ --> main.byn:5:13
   |
 5 |             forces[j] -= 1.0
   |             ^^^^^^^^^ indexed by `j`, not by the loop variable `i`
- ::: main.npl:2:14
+ ::: main.byn:2:14
   |
 2 |     for i in prange(n):
   |              --------- iterations run in parallel

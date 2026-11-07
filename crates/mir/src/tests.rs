@@ -51,7 +51,7 @@ fn named(database: &Database, name: &str) -> (File, NodeId) {
     let file = File::new(
         database,
         FileId::from_index(0),
-        SourceFile::new("a.npl", name).unwrap(),
+        SourceFile::new("a.byn", name).unwrap(),
     );
     let tree = database.parse(file).tree();
     let statement = tree.children(tree.root()).next().unwrap();

@@ -1,5 +1,5 @@
 //! The documentation generator: turns the documentation strings in a package's source into
-//! Markdown pages, one per module, behind `npl doc`.
+//! Markdown pages, one per module, behind `baryon doc`.
 //!
 //! # Where it sits
 //!
@@ -39,7 +39,7 @@
 //!
 //! let text = "\"\"\"Heat flow.\"\"\"\nALPHA: Final = 0.1\n\"\"\"Diffusivity.\"\"\"\n";
 //! let mut sources = SourceMap::new();
-//! let file = sources.add("heat.npl", text)?;
+//! let file = sources.add("heat.byn", text)?;
 //!
 //! let mut builder = TreeBuilder::new(file);
 //! builder.open(SyntaxKind::Module, Role::Root, 0, 55);
@@ -98,7 +98,7 @@ pub fn document(tree: &SyntaxTree, source: &str, name: &str) -> ModuleDocumentat
 ///
 /// let text = "\"Integrators.\"\n";
 /// let mut sources = SourceMap::new();
-/// let mut builder = TreeBuilder::new(sources.add("rk4.npl", text)?);
+/// let mut builder = TreeBuilder::new(sources.add("rk4.byn", text)?);
 /// builder.open(SyntaxKind::Module, Role::Root, 0, 15);
 /// builder.open(SyntaxKind::ExpressionStatement, Role::Body, 0, 14);
 /// builder.leaf(SyntaxKind::StringLiteral, Role::Value, 0, 14);

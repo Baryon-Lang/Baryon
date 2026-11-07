@@ -29,8 +29,8 @@ fn parses(log: &Mutex<Vec<String>>) -> usize {
 #[test]
 fn an_edit_reparses_only_the_edited_file() {
     let (mut session, log) = logged();
-    let first = session.add_file("first.npl", "X: Final = 1\n").unwrap();
-    session.add_file("second.npl", "Y: Final = 2\n").unwrap();
+    let first = session.add_file("first.byn", "X: Final = 1\n").unwrap();
+    session.add_file("second.byn", "Y: Final = 2\n").unwrap();
     assert!(session.check().is_empty());
     assert_eq!(parses(&log), 2);
 
@@ -45,8 +45,8 @@ fn an_edit_reparses_only_the_edited_file() {
 #[test]
 fn diagnostics_render_from_the_database() {
     let mut session = Session::new();
-    session.add_file("physics/bad-name.npl", "").unwrap();
-    session.add_file("main.npl", "x = \n").unwrap();
+    session.add_file("physics/bad-name.byn", "").unwrap();
+    session.add_file("main.byn", "x = \n").unwrap();
     let rendered: Vec<String> = session
         .check()
         .iter()
@@ -55,10 +55,10 @@ fn diagnostics_render_from_the_database() {
     assert_eq!(
         rendered,
         [
-            "error: `physics/bad-name.npl` cannot be imported: `bad-name` is not a valid \
+            "error: `physics/bad-name.byn` cannot be imported: `bad-name` is not a valid \
              module name\n = note: module names follow Python's rules for names: letters, \
              digits and underscores, not starting with a digit",
-            "error: expected an expression\n --> main.npl:1:5\n  |\n1 | x = \n  |     ^ an expression should be here",
+            "error: expected an expression\n --> main.byn:1:5\n  |\n1 | x = \n  |     ^ an expression should be here",
         ]
     );
 }
@@ -66,22 +66,22 @@ fn diagnostics_render_from_the_database() {
 #[test]
 fn files_get_ids_in_the_order_they_are_added() {
     let mut session = Session::new();
-    let first = session.add_file("a.npl", "").unwrap();
-    let second = session.add_file("b.npl", "").unwrap();
+    let first = session.add_file("a.byn", "").unwrap();
+    let second = session.add_file("b.byn", "").unwrap();
     assert_eq!(first.id(&session.database), FileId::from_index(0));
     assert_eq!(second.id(&session.database), FileId::from_index(1));
-    assert_eq!(session.file(second.id(&session.database)).name(), "b.npl");
+    assert_eq!(session.file(second.id(&session.database)).name(), "b.byn");
 }
 
 #[test]
 fn every_use_of_a_name_points_to_its_definition() {
     let mut session = Session::new();
     let nbody = session
-        .add_file("nbody.npl", "def step(dt: f64) -> f64:\n    return dt\n")
+        .add_file("nbody.byn", "def step(dt: f64) -> f64:\n    return dt\n")
         .unwrap();
     let main = session
         .add_file(
-            "main.npl",
+            "main.byn",
             "from nbody import step\n\n\ndef main():\n    x = 1.0\n    x = step(x)\n",
         )
         .unwrap();
@@ -128,7 +128,7 @@ fn declarations_carry_types_and_values() {
     let program = "LATTICE: Final = 8\nN: Final = LATTICE**3\nBOX: Final = LATTICE * 1.5\n\
                    Vec3 = Fixed[f64, (3,)]\n\n\n\
                    def step(atoms: InOut[Array[Vec3, 1]], dt: f64) -> f64:\n    return dt\n";
-    let main = session.add_file("main.npl", program).unwrap();
+    let main = session.add_file("main.byn", program).unwrap();
     let database = &session.database;
     let tree = database.parse(main).tree();
     let declaration = |index: usize| {
@@ -198,7 +198,7 @@ fn typed_bodies_record_what_lowering_reads() {
                    \x20           return z\n\
                    \x20       case Side.RIGHT:\n\
                    \x20           return -z\n";
-    let main = session.add_file("main.npl", program).unwrap();
+    let main = session.add_file("main.byn", program).unwrap();
     let database = &session.database;
     let tree = database.parse(main).tree();
     let text = main.source(database).text();

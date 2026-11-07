@@ -10,7 +10,7 @@
 //!
 //! ```text
 //! error: `atoms` is changed by this call and also passed to it
-//!   --> md.npl:40:22
+//!   --> md.byn:40:22
 //!    |
 //! 40 |     integrate(atoms, atoms.forces)
 //!    |               -----  ^^^^^^^^^^^^ `atoms.forces` is part of `atoms`

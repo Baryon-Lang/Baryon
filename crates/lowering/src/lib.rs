@@ -167,7 +167,7 @@
 //! }
 //!
 //! let database = Database::default();
-//! let source = SourceFile::new("double.npl", TEXT)?;
+//! let source = SourceFile::new("double.byn", TEXT)?;
 //! let file = File::new(&database, FileId::from_index(0), source);
 //! let package = Package::new(&database, vec![file]);
 //! let double = Item::new(&database, package, file, node(&database, file, 2));

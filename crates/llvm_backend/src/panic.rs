@@ -6,9 +6,9 @@
 //!
 //! | Check | Runtime function | What it prints |
 //! | --- | --- | --- |
-//! | An index in bounds | `npl_rt_panic_index` | The index, the dimension and its length |
-//! | Two arrays of the same length | `npl_rt_panic_length_mismatch` | The dimension and both lengths |
-//! | Everything else | `npl_rt_panic` | A message the backend writes as a constant |
+//! | An index in bounds | `baryon_rt_panic_index` | The index, the dimension and its length |
+//! | Two arrays of the same length | `baryon_rt_panic_length_mismatch` | The dimension and both lengths |
+//! | Everything else | `baryon_rt_panic` | A message the backend writes as a constant |
 //!
 //! Each call passes a pointer to a `Location` constant, the runtime's `#[repr(C)]` structure
 //! `{ ptr file, i64 file_length, i32 line, i32 column }`. The `i64` is the runtime's `usize`, so
@@ -151,13 +151,13 @@ impl<'a> Constants<'a> {
             .unwrap_or_default()
     }
 
-    /// The constant holding `bytes`, as `@npl.str.N`, made the first time it is asked for.
+    /// The constant holding `bytes`, as `@baryon.str.N`, made the first time it is asked for.
     pub(crate) fn bytes(&mut self, bytes: &[u8]) -> String {
         let key = Key::Bytes(bytes.to_vec());
         if let Some(&number) = self.numbers.get(&key) {
-            return format!("@npl.str.{number}");
+            return format!("@baryon.str.{number}");
         }
-        let name = format!("@npl.str.{}", self.definitions.len());
+        let name = format!("@baryon.str.{}", self.definitions.len());
         let mut escaped = String::new();
         for &byte in bytes {
             if byte == b'"' || byte == b'\\' || !(0x20..0x7f).contains(&byte) {
@@ -174,20 +174,20 @@ impl<'a> Constants<'a> {
         name
     }
 
-    /// The `Location` constant of where `span` starts, as `@npl.loc.N`.
+    /// The `Location` constant of where `span` starts, as `@baryon.loc.N`.
     pub(crate) fn location(&mut self, span: Span) -> String {
         let key = Key::Location {
             file: span.file(),
             offset: span.start(),
         };
         if let Some(&number) = self.numbers.get(&key) {
-            return format!("@npl.loc.{number}");
+            return format!("@baryon.loc.{number}");
         }
         let file = self.sources.file(span.file());
         let position = file.position(span.start());
         let name_bytes = file.name().as_bytes().to_vec();
         let file_name = self.bytes(&name_bytes);
-        let name = format!("@npl.loc.{}", self.definitions.len());
+        let name = format!("@baryon.loc.{}", self.definitions.len());
         let definition = format!(
             "{name} = private unnamed_addr constant {{ ptr, i64, i32, i32 }} \
              {{ ptr {file_name}, i64 {}, i32 {}, i32 {} }}",
@@ -292,11 +292,11 @@ pub(crate) fn call(
             let text = constants.bytes(message.as_bytes());
             (
                 format!(
-                    "call void @npl_rt_panic(ptr {text}, i64 {}, ptr {location})",
+                    "call void @baryon_rt_panic(ptr {text}, i64 {}, ptr {location})",
                     message.len()
                 ),
-                "npl_rt_panic",
-                "declare void @npl_rt_panic(ptr, i64, ptr) cold noreturn nounwind",
+                "baryon_rt_panic",
+                "declare void @baryon_rt_panic(ptr, i64, ptr) cold noreturn nounwind",
             )
         }
         Failure::Index {
@@ -305,11 +305,11 @@ pub(crate) fn call(
             length,
         } => (
             format!(
-                "call void @npl_rt_panic_index(i64 {index}, i32 {dimension}, i64 {length}, \
+                "call void @baryon_rt_panic_index(i64 {index}, i32 {dimension}, i64 {length}, \
                  ptr {location})"
             ),
-            "npl_rt_panic_index",
-            "declare void @npl_rt_panic_index(i64, i32, i64, ptr) cold noreturn nounwind",
+            "baryon_rt_panic_index",
+            "declare void @baryon_rt_panic_index(i64, i32, i64, ptr) cold noreturn nounwind",
         ),
         Failure::Length {
             dimension,
@@ -317,11 +317,11 @@ pub(crate) fn call(
             found,
         } => (
             format!(
-                "call void @npl_rt_panic_length_mismatch(i32 {dimension}, i64 {expected}, \
+                "call void @baryon_rt_panic_length_mismatch(i32 {dimension}, i64 {expected}, \
                  i64 {found}, ptr {location})"
             ),
-            "npl_rt_panic_length_mismatch",
-            "declare void @npl_rt_panic_length_mismatch(i32, i64, i64, ptr) cold noreturn nounwind",
+            "baryon_rt_panic_length_mismatch",
+            "declare void @baryon_rt_panic_length_mismatch(i32, i64, i64, ptr) cold noreturn nounwind",
         ),
     }
 }

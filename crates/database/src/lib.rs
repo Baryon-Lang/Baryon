@@ -71,7 +71,7 @@
 //! }
 //!
 //! let database = Database::default();
-//! let source = SourceFile::new("physics/nbody.npl", "")?;
+//! let source = SourceFile::new("physics/nbody.byn", "")?;
 //! let file = File::new(&database, FileId::from_index(0), source);
 //! let package = Package::new(&database, vec![file]);
 //!

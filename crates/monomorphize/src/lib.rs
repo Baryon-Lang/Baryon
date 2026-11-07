@@ -38,7 +38,7 @@
 //! #     let file = database::File::new(
 //! #         database,
 //! #         FileId::from_index(0),
-//! #         source::SourceFile::new("a.npl", "T").unwrap(),
+//! #         source::SourceFile::new("a.byn", "T").unwrap(),
 //! #     );
 //! #     let mut builder = syntax::TreeBuilder::new(FileId::from_index(0));
 //! #     builder.leaf(syntax::SyntaxKind::Name, syntax::Role::Root, 0, 1);
