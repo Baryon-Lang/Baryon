@@ -1,12 +1,14 @@
 //! Writes one body as one LLVM function: its signature, a stack slot per local, each block's
-//! statements and terminator, and the shared block a failed check jumps to.
+//! statements and terminator, and a block of its own for each check that can fail.
 
 use crate::Unsupported;
+use crate::panic::Constants;
 use crate::ty::{Repr, Types};
 use mir::{
     Argument, BlockId, Body, Callee, ConstantValue, LocalKind, Operand, Place, Projection,
     Statement, StatementKind, Terminator, TerminatorKind,
 };
+use source::Span;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use types::{Item, Mode, Type, TypeKind};
@@ -36,8 +38,15 @@ pub(crate) struct Function<'f, 'a, 'db> {
     next_value: u32,
     /// The number of the next block made inside a statement, `%c0`, `%c1`, ….
     next_block: u32,
-    /// Whether any check jumps to the `panic` block, so it must be written.
-    pub(crate) panics: bool,
+    /// The module's message and location constants, which a failed check points to.
+    pub(crate) constants: &'f mut Constants<'a>,
+    /// Where the statement or terminator being written comes from, for a failed check's
+    /// location.
+    pub(crate) span: Span,
+    /// The blocks failed checks jump to, written after the body's own blocks.
+    pub(crate) failures: String,
+    /// The number of the next failure block, `%p0`, `%p1`, ….
+    pub(crate) next_failure: u32,
     /// The declaration of each function or intrinsic called, by symbol.
     pub(crate) calls: BTreeMap<String, String>,
 }
@@ -48,6 +57,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
     pub(crate) fn write(
         types: Types<'a, 'db>,
         symbol: &'f dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
+        constants: &'f mut Constants<'a>,
         name: &str,
         body: &'f Body<'db>,
     ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
@@ -59,27 +69,26 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             code: String::new(),
             next_value: 0,
             next_block: 0,
-            panics: false,
+            constants,
+            span: body.span,
+            failures: String::new(),
+            next_failure: 0,
             calls: BTreeMap::new(),
         };
         let (signature, entry) = function.prologue(name)?;
         for (index, block) in body.blocks.iter().enumerate() {
             function.line_label(&block_label(BlockId::new(index)));
             for statement in &block.statements {
+                function.span = statement.span;
                 function.statement(statement)?;
             }
+            function.span = block.terminator.span;
             function.terminator(&block.terminator)?;
         }
-        if function.panics {
-            function.line_label("panic");
-            function.line("call void @llvm.trap()");
-            function.line("unreachable");
-            function.declare(
-                "llvm.trap",
-                "declare void @llvm.trap() cold noreturn nounwind",
-            );
-        }
-        let text = format!("{signature} {{\nstart:\n{entry}{}}}\n", function.code);
+        let text = format!(
+            "{signature} {{\nstart:\n{entry}{}{}}}\n",
+            function.code, function.failures
+        );
         Ok((text, function.calls))
     }
 
@@ -215,12 +224,15 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 self.line(&format!("br label %{}", block_label(*target)));
             }
             TerminatorKind::Assert {
-                condition, target, ..
+                condition,
+                check,
+                target,
             } => {
                 let (condition, _) = self.value(condition)?;
-                self.panics = true;
+                let failure = self.failure(check)?;
+                let failed = self.failure_block(&failure);
                 self.line(&format!(
-                    "br i1 {condition}, label %{}, label %panic",
+                    "br i1 {condition}, label %{}, label %{failed}",
                     block_label(*target)
                 ));
             }
@@ -420,14 +432,6 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         self.calls
             .entry(symbol.to_owned())
             .or_insert_with(|| declaration.to_owned());
-    }
-
-    /// Branches to the `panic` block unless `condition` holds, and continues in a new block.
-    pub(crate) fn check(&mut self, condition: &str) {
-        let next = self.fresh_block();
-        self.panics = true;
-        self.line(&format!("br i1 {condition}, label %{next}, label %panic"));
-        self.line_label(&next);
     }
 }
 

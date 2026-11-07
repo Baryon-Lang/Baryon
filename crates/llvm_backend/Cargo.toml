@@ -14,11 +14,11 @@ kind = "implementation"
 [dependencies]
 database.workspace = true
 mir.workspace = true
+source.workspace = true
 types.workspace = true
 
 [dev-dependencies]
 salsa.workspace = true
-source.workspace = true
 syntax.workspace = true
 
 [lints]

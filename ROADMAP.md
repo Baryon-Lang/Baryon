@@ -92,6 +92,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.9.8 | `NewArray` in `mir`: allocate an `Array` with run-time lengths, so array expansion can create its result | — | 1.9.1 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md), [#37](https://github.com/csimpson1964/New-Programming-Language/pull/37) |
 | 1.10 | LLVM backend: no-alias metadata, debug info, Apple AArch64 ABI, Mach-O output | 6 | 1.9 | In progress | Claude | [0020](docs/decisions/0020-llvm-backend-emits-text.md) |
 | 1.10.1 | Scalar bodies to LLVM IR text: numbers, `bool`, enums, tuples and structs, control flow, direct calls, checks as traps, Python's `//` and `%` | 1 | 1.9.1 | Done | Claude | [0020](docs/decisions/0020-llvm-backend-emits-text.md), [#43](https://github.com/csimpson1964/New-Programming-Language/pull/43) |
+| 1.10.2 | Failed checks call the runtime's panic functions with a message and a file, line and column constant, in place of traps | 0.5 | 1.10.1, 1.12 | In progress | Claude | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
 | 1.11 | Driver: build, run, test, manifest, linking, compile-time reporting | 3 | 1.10 | Planned | — | — |
 | 1.11.1 | Prototype `npl check <directory>`: load a package into the query database and print its module and syntax errors | — | 1.4 | Done | Claude | [#14](https://github.com/csimpson1964/New-Programming-Language/pull/14) |
 | 1.11.2 | `npl check` also runs the syntax check (1.2.1) and name resolution (1.5) | — | 1.2.1, 1.5, 1.11.1 | Done | Claude | [#16](https://github.com/csimpson1964/New-Programming-Language/pull/16) |
@@ -199,3 +200,4 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.15 | Run the code examples in documentation strings as tests, as Rust's doc tests do, so documented examples cannot drift from the code; needs 1.10 to run programs | — | 3.8 | Idea | — | — |
 | I.16 | Link names in documentation to their definitions across pages, using the resolver, and publish HTML with search | — | 3.8 | Idea | — | — |
 | I.17 | Let a user choose how many threads `prange` uses, such as with an environment variable; today the pool follows the machine's cores. User-visible, so it needs Collins | — | 1.12.2 | Idea | — | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
+| I.18 | Name the values in overflow and conversion panics, as the reference's panic table asks: `u8(300)` reports 300. Needs runtime entry points that take the operands, or formatting in compiled code | — | 1.10.2 | Idea | — | — |
