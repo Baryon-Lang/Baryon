@@ -44,6 +44,7 @@
 //! assert_eq!((layout.size(), layout.align()), (24, 8));
 //! ```
 
+mod body;
 mod declaration;
 mod display;
 mod interned;
@@ -51,6 +52,7 @@ mod layout;
 mod primitive;
 mod shape;
 
+pub use body::{Call, Callee, Key, TypedBody};
 pub use declaration::{Checked, Declaration, Field, Mode, Parameter, Signature, TypeDb, Value};
 pub use display::Displayed;
 pub use interned::{Item, Type};
