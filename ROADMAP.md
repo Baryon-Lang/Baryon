@@ -92,9 +92,9 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.11 | Driver: build, run, test, manifest, linking, compile-time reporting | 3 | 1.10 | Planned | — | — |
 | 1.11.1 | Prototype `npl check <directory>`: load a package into the query database and print its module and syntax errors | — | 1.4 | Done | Claude | [#14](https://github.com/csimpson1964/New-Programming-Language/pull/14) |
 | 1.11.2 | `npl check` also runs the syntax check (1.2.1) and name resolution (1.5) | — | 1.2.1, 1.5, 1.11.1 | Done | Claude | [#16](https://github.com/csimpson1964/New-Programming-Language/pull/16) |
-| 1.12 | Runtime: allocator, panics, traps, thread pool | 2 | 1.10 | In progress | Claude | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
+| 1.12 | Runtime: allocator, panics, traps, thread pool | 2 | 1.10 | In progress | Claude | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md), [#44](https://github.com/csimpson1964/New-Programming-Language/pull/44) |
 | 1.12.1 | Accumulated arrays in `prange`: blocked private buffers per chunk, combined in the fixed reduction tree | — | 1.12 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
-| 1.12.2 | The `runtime` crate and its `unsafe` policy: allocator shim, array allocation for `NewArray`, panic entry points with locations, and the `prange` thread pool over fixed chunks | 1 | — | Done | Claude | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
+| 1.12.2 | The `runtime` crate and its `unsafe` policy: allocator shim, array allocation for `NewArray`, panic entry points with locations, and the `prange` thread pool over fixed chunks | 1 | — | Done | Claude | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md), [#44](https://github.com/csimpson1964/New-Programming-Language/pull/44) |
 | 1.12.3 | Backtraces in panic messages in debug builds | — | 1.10, 1.12.2 | Planned | — | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
 | 1.12.4 | Shrink a statically linked program that prints a number under 100 KB: measure, then choose between the standard library built for size and a `no_std` runtime | — | 1.11, 1.12.2 | Planned | — | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
 | 1.13 | Standard library: core and collections | 3 | 1.11 | Planned | — | — |
