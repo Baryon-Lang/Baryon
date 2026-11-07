@@ -61,8 +61,9 @@ impl<'db> Body<'db> {
 
     /// A call to a generic function or constructor: infers the type arguments from the
     /// arguments, checks each argument against its parameter and each type argument against
-    /// its bound, and returns the return type with the type arguments substituted.
-    /// `arguments` pairs each argument node with the index of its parameter in `parameters`.
+    /// its bound, and returns the return type with the type arguments substituted, and the
+    /// type of each argument. `arguments` pairs each argument node with the index of its
+    /// parameter in `parameters`.
     pub(super) fn generic_call(
         &mut self,
         node: NodeId,
@@ -70,7 +71,7 @@ impl<'db> Body<'db> {
         signature: &Signature<'db>,
         parameters: &[Parameter<'db>],
         arguments: &[(NodeId, usize)],
-    ) -> Type<'db> {
+    ) -> (Type<'db>, Vec<Type<'db>>) {
         let names: Vec<(File, NodeId)> = signature
             .type_parameters
             .iter()
@@ -89,9 +90,6 @@ impl<'db> Body<'db> {
                 let declared = parameters[index].ty;
                 let expected = self.instantiate(declared, &names, &bindings, false);
                 let ty = self.expression(argument, expected);
-                if parameters[index].mode == types::Mode::Owned {
-                    self.consume(argument, ty);
-                }
                 self.unify(declared, ty, &names, &mut bindings);
                 found[slot] = Some(ty);
             }
@@ -133,8 +131,14 @@ impl<'db> Body<'db> {
                     .error(node, &message, "bound not satisfied", None);
             }
         }
-        self.instantiate(signature.returns, &names, &bindings, true)
-            .unwrap_or_else(|| self.lowerer.unknown())
+        let returns = self
+            .instantiate(signature.returns, &names, &bindings, true)
+            .unwrap_or_else(|| self.lowerer.unknown());
+        let found = found
+            .into_iter()
+            .map(|ty| ty.unwrap_or_else(|| self.lowerer.unknown()))
+            .collect();
+        (returns, found)
     }
 
     /// `ty` with the type arguments found so far substituted. With `fill`, a type parameter

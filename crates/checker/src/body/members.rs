@@ -22,6 +22,10 @@ pub(super) enum Member<'db> {
         /// The struct's type arguments.
         arguments: Vec<Type<'db>>,
     },
+    /// `copy`, which every struct has unless it defines its own: a new struct holding a copy
+    /// of each field. It is how to keep a struct and also move it (language reference,
+    /// "Values and references", "Moves").
+    Copy,
 }
 
 impl<'db> Body<'db> {
@@ -139,6 +143,9 @@ impl<'db> Body<'db> {
                 parameters,
                 arguments: nominal.arguments.clone(),
             });
+        }
+        if wanted == "copy" {
+            return Some(Member::Copy);
         }
         let message = format!("`{}` has no field or method `{wanted}`", self.show(base));
         self.lowerer

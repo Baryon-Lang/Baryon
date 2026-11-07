@@ -1,6 +1,7 @@
 //! Calls: to functions, methods, struct constructors, aliases of `Fixed` vectors, number
 //! conversions and the language's built-in functions.
 
+use super::exclusive::Passed;
 use super::members::Member;
 use super::{Body, relations};
 use crate::outline::{Base, Kind, outline};
@@ -107,7 +108,7 @@ impl<'db> Body<'db> {
         let declaration = self.db.declaration(item).declaration.clone();
         match (kind, declaration) {
             (Kind::Function, Declaration::Function(signature)) => {
-                self.check_call(node, callee, &signature, 0, arguments)
+                self.check_call(node, callee, &signature, None, arguments)
             }
             (Kind::Class(class), Declaration::Struct { fields, .. })
                 if class.base != Base::Enum =>
@@ -144,7 +145,7 @@ impl<'db> Body<'db> {
                     parameters,
                     returns: Type::new(self.db, TypeKind::Struct(nominal)),
                 };
-                self.check_call(node, callee, &constructor, 0, arguments)
+                self.check_call(node, callee, &constructor, None, arguments)
             }
             (Kind::Alias, Declaration::Alias(ty)) => self.construct(node, callee, ty, arguments),
             (Kind::Constant, _) => {
@@ -224,7 +225,7 @@ impl<'db> Body<'db> {
                         .collect(),
                     returns: *returns,
                 };
-                self.check_call(node, callee, &signature, 0, arguments)
+                self.check_call(node, callee, &signature, None, arguments)
             }
             _ if relations::is_open(self.db, ty) || !self.is_value_scalar(ty) => {
                 self.untyped(arguments)
@@ -284,12 +285,25 @@ impl<'db> Body<'db> {
             return self.lowerer.unknown();
         }
         if let Some(result) = self.container_method(node, base, &callee, arguments) {
+            if matches!(base.kind(self.db), TypeKind::List(_))
+                && matches!(callee.as_str(), "append" | "pop")
+            {
+                self.change(value);
+            }
             return result;
         }
-        let TypeKind::Struct(nominal) = base.kind(self.db) else {
-            return self.untyped(arguments);
+        let copy = Signature {
+            type_parameters: Vec::new(),
+            parameters: Vec::new(),
+            returns: base,
         };
-        let nominal = nominal.clone();
+        let nominal = match base.kind(self.db) {
+            TypeKind::Str if callee == "copy" => {
+                return self.check_call(node, &callee, &copy, None, arguments);
+            }
+            TypeKind::Struct(nominal) => nominal.clone(),
+            _ => return self.untyped(arguments),
+        };
         match self.member(function, &nominal, base, attribute) {
             Some(Member::Method {
                 item,
@@ -315,24 +329,33 @@ impl<'db> Body<'db> {
                         .collect(),
                     returns: substitute(signature.returns),
                 };
-                self.check_call(node, &callee, &signature, 1, arguments)
+                let receiver = signature.parameters.first().map(|parameter| Passed {
+                    node: value,
+                    mode: parameter.mode,
+                    ty: base,
+                });
+                self.check_call(node, &callee, &signature, receiver, arguments)
             }
             Some(Member::Field(ty)) => self.call_value(node, &callee, ty, arguments),
+            Some(Member::Copy) => self.check_call(node, &callee, &copy, None, arguments),
             None => self.untyped(arguments),
         }
     }
 
-    /// Checks a call's arguments against `signature`, whose first `skip` parameters are
-    /// already given (a method's `self`), and returns the call's type. A generic signature's
-    /// type arguments are inferred from the arguments.
+    /// Checks a call's arguments against `signature`, and returns the call's type. A method
+    /// call's `receiver` is already checked, and given for the first parameter, `self`. A
+    /// generic signature's type arguments are inferred from the arguments. Then the
+    /// arguments, the receiver among them, are checked for exclusivity (the `exclusive`
+    /// module).
     fn check_call(
         &mut self,
         node: NodeId,
         callee: &str,
         signature: &Signature<'db>,
-        skip: usize,
+        receiver: Option<Passed<'db>>,
         arguments: &Arguments,
     ) -> Type<'db> {
+        let skip = usize::from(receiver.is_some());
         let parameters = signature.parameters.get(skip..).unwrap_or_default();
         if arguments.positional.len() > parameters.len() {
             let message = format!(
@@ -389,21 +412,30 @@ impl<'db> Body<'db> {
             self.lowerer
                 .error(node, &message, "missing arguments", None);
         }
-        if !signature.type_parameters.is_empty() {
-            return self.generic_call(node, callee, signature, parameters, &pairs);
-        }
-        for (argument, index) in pairs {
-            self.argument(argument, &parameters[index]);
-        }
-        signature.returns
+        let (returns, found) = if signature.type_parameters.is_empty() {
+            let found = pairs
+                .iter()
+                .map(|&(argument, index)| self.argument(argument, &parameters[index]))
+                .collect();
+            (signature.returns, found)
+        } else {
+            self.generic_call(node, callee, signature, parameters, &pairs)
+        };
+        let passed: Vec<Passed<'db>> = receiver
+            .into_iter()
+            .chain(pairs.iter().zip(found).map(|(&(node, index), ty)| Passed {
+                node,
+                mode: parameters[index].mode,
+                ty,
+            }))
+            .collect();
+        self.pass(&passed);
+        returns
     }
 
-    /// Checks one argument against its parameter.
-    fn argument(&mut self, argument: NodeId, parameter: &Parameter<'db>) {
+    /// Checks one argument against its parameter, and returns the argument's type.
+    fn argument(&mut self, argument: NodeId, parameter: &Parameter<'db>) -> Type<'db> {
         let found = self.expression(argument, Some(parameter.ty));
-        if parameter.mode == types::Mode::Owned {
-            self.consume(argument, found);
-        }
         if !relations::compatible(self.db, parameter.ty, found)
             && !self.unchecked(argument, parameter.ty, found)
         {
@@ -416,5 +448,6 @@ impl<'db> Body<'db> {
             let label = format!("type `{}`", self.show(found));
             self.lowerer.error(argument, &message, &label, None);
         }
+        found
     }
 }

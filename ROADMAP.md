@@ -76,7 +76,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.8 | Reference and exclusivity checker | 3 | 1.7 | In progress | Claude | — |
 | 1.8.1 | `prange(n, accumulate=...)`: check that listed arrays are only added to, and suggest the argument in the disjoint-write error | — | 1.8 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.8.2 | Moves: a moved value is not read again; borrowed parameters, elements and slices cannot move | 1 | 1.7.9 | Done | Claude | [#32](https://github.com/csimpson1964/New-Programming-Language/pull/32) |
-| 1.8.3 | Exclusivity: an `InOut` or `Owned` argument overlaps no other argument; read-only parameters are not changed | 1 | 1.8.2 | Planned | — | [0006](docs/decisions/0006-parameter-passing.md) |
+| 1.8.3 | Exclusivity: an `InOut` or `Owned` argument overlaps no other argument; read-only parameters are not changed | 1 | 1.8.2 | Done | Claude | [0006](docs/decisions/0006-parameter-passing.md), [#34](https://github.com/csimpson1964/New-Programming-Language/pull/34) |
 | 1.8.4 | A loop over a collection does not change the collection in its body | 0.5 | 1.8.3 | Planned | — | — |
 | 1.9 | Mid-level IR: lowering, drops, monomorphization | 5 | 1.7 | In progress | Claude | [0018](docs/decisions/0018-mid-level-ir.md), [#27](https://github.com/csimpson1964/New-Programming-Language/pull/27) |
 | 1.9.1 | IR design and the `mir` interface crate: bodies as basic blocks over typed locals and places, explicit drops, bounds checks and error edges, a validator and a text form | 1 | 1.6 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md), [#27](https://github.com/csimpson1964/New-Programming-Language/pull/27) |

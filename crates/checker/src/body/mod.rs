@@ -18,13 +18,17 @@
 //! `flow` module); and definite assignment: a variable is read only where every path has
 //! assigned it, and a function that returns a value cannot reach its end (1.7.9, the
 //! `assignment` module); and moves: a value that is not a copy type is read only until it
-//! moves, and only a variable the function owns can move (1.8.2, the `moves` module).
+//! moves, and only a variable the function owns can move (1.8.2, the `moves` module); and
+//! exclusivity: no argument refers to a value its call changes or moves, and a read-only
+//! parameter is never changed (1.8.3, the `exclusive` module).
 
 mod arrays;
 mod assignment;
 mod builtins;
 mod calls;
+mod elementwise;
 mod errors;
+mod exclusive;
 mod exhaustive;
 mod expressions;
 mod flow;
@@ -270,6 +274,7 @@ impl<'db> Body<'db> {
             return;
         };
         let operator = self.tree.node(statement).operator();
+        self.change(target);
         let current = self.expression(target, None);
         if self.maybe_none(target, current) {
             self.expression(value, None);
@@ -367,6 +372,7 @@ impl<'db> Body<'db> {
                 let Some(&Definition::Local(binding)) = self.lowerer.definition(target) else {
                     return;
                 };
+                self.change(target);
                 self.state.assigned.insert(binding);
                 self.state.moved.remove(&binding);
                 match self.locals.get(&binding) {
@@ -425,6 +431,7 @@ impl<'db> Body<'db> {
                 }
             }
             SyntaxKind::Attribute | SyntaxKind::Subscript => {
+                self.change(target);
                 let held = self.expression(target, None);
                 self.expect(value.unwrap_or(target), held, ty, "the target holds");
             }
