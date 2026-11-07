@@ -153,6 +153,24 @@ impl<'db> Body<'db> {
         if relations::is_open(self.db, operand) {
             return self.lowerer.unknown();
         }
+        if matches!(operator, Operator::Negate | Operator::Plus)
+            && let TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } =
+                operand.kind(self.db)
+        {
+            // Element by element, like the binary operators on arrays.
+            if matches!(element.kind(self.db), TypeKind::Primitive(primitive) if numbers::is_number(*primitive))
+            {
+                return operand;
+            }
+            let message = format!(
+                "`{}` does not apply to `{}`",
+                operator.symbol(),
+                self.show(operand)
+            );
+            return self
+                .lowerer
+                .error(node, &message, "its elements are not numbers", None);
+        }
         let valid = match (operator, operand.kind(self.db)) {
             (Operator::Not, TypeKind::Primitive(Primitive::Bool))
             | (Operator::Invert, TypeKind::Primitive(Primitive::Integer(_))) => true,

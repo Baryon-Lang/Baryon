@@ -20,8 +20,15 @@
 //! - **Drops.** Every exit from the function drops each variable and `Owned` parameter that
 //!   owns memory, and each statement drops the owning temporaries it made. In a built body a
 //!   drop of a value that was moved out does nothing; drop elaboration makes that exact.
-//! - **Checks.** Integer `//` and `%` assert a non-zero divisor; `assert` becomes an
-//!   [`Assert`](mir::TerminatorKind::Assert).
+//! - **Checks.** Integer `//` and `%` assert a non-zero divisor; each array index asserts it is
+//!   in bounds, except under `a.unchecked` and for a constant index into a `Fixed` array, which
+//!   the checker already proved; `assert` becomes an [`Assert`](mir::TerminatorKind::Assert).
+//! - **Arrays.** `a[i, j]` is a place with one index local per dimension, and a negative literal
+//!   counts back from the length. Whole-array arithmetic stays one
+//!   [`Elementwise`](mir::Rvalue::Elementwise) expression for array expansion to loop over.
+//!   `Array.zeros`, `ones` and `fill` allocate with [`NewArray`](mir::Rvalue::NewArray) and fill
+//!   the elements in a loop nest; a `Fixed` array is an [`Aggregate`](mir::Rvalue::Aggregate) of
+//!   its elements in row-major order.
 //! - **Conversions.** Where number mixing converts an operand (decision 0014), a
 //!   [`Convert`](mir::Rvalue::Convert) does it, and `/` on integers converts both sides to `f64`.
 //!
@@ -32,9 +39,10 @@
 //! # What it does not lower yet
 //!
 //! This is the first slice. A construct outside it gives an error that names it and roadmap
-//! 1.9.3, and no body: arrays and indexing, `prange`, `match`, `try`, calls that can fail, calls
-//! that leave out a defaulted argument, the built-in functions and methods, calls of a
-//! `Callable` value, `**`, `@`, `in`, unpacking assignment, `with`, and comprehensions.
+//! 1.9.3, and no body: slices, indexing lists and strings, `prange`, `match`, `try`, calls that
+//! can fail, calls that leave out a defaulted argument, the built-in functions and methods other
+//! than `len` of an array and the array constructors, calls of a `Callable` value, `**`, `@`,
+//! `in`, unpacking assignment, `with` other than `with unsafe:`, and comprehensions.
 //!
 //! # Example
 //!
@@ -178,9 +186,11 @@
 //! # Ok::<(), source::SourceError>(())
 //! ```
 
+mod arrays;
 mod builder;
 mod calls;
 mod constants;
+mod creation;
 mod expressions;
 mod facts;
 mod statements;
