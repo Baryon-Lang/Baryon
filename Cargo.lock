@@ -388,6 +388,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "llvm_backend"
+version = "0.0.0"
+dependencies = [
+ "database",
+ "mir",
+ "salsa",
+ "source",
+ "syntax",
+ "types",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"

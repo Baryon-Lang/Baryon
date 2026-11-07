@@ -18,6 +18,7 @@ checker = { path = "crates/checker" }
 database = { path = "crates/database" }
 diagnostics = { path = "crates/diagnostics" }
 drop_elaboration = { path = "crates/drop_elaboration" }
+llvm_backend = { path = "crates/llvm_backend" }
 mir = { path = "crates/mir" }
 monomorphize = { path = "crates/monomorphize" }
 parser = { path = "crates/parser" }

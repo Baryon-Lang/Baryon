@@ -336,7 +336,7 @@ dependency passes the license, advisory and source rules in [`deny.toml`](../../
 | --- | --- | --- |
 | Parser | Ruff's Python parser (`ruff_python_parser`), pinned to an exact version behind the `parser` crate | The files are Python, so an existing fast, error-tolerant parser does the job; writing one would cost weeks and add nothing ([0004](../decisions/0004-python-syntax.md)) |
 | Incremental queries | `salsa`, pinned to an exact version | Memoized, dependency-tracked queries make the IDE fast and incremental builds correct; it is what rust-analyzer uses ([0016](../decisions/0016-salsa-query-engine.md)) |
-| Release backend | LLVM via `inkwell` | Best optimizer available: vectorizer, LTO, PGO, every target |
+| Release backend | LLVM, through its textual IR and `clang` ([0020](../decisions/0020-llvm-backend-emits-text.md)) | Best optimizer available: vectorizer, LTO, PGO, every target |
 | Debug backend | Cranelift (Phase 2) | Generates code 10 to 20 times faster than LLVM |
 | Linker | `lld` bundled | Linking is often half of a debug build's wall time with the system linker |
 | Interning and arenas | our own | Core to compile speed, so owned and tuned |

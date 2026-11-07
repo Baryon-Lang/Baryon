@@ -1,0 +1,25 @@
+[package]
+name = "llvm_backend"
+description = "The LLVM backend: translates mid-level IR bodies into LLVM's textual IR, which clang optimizes and compiles."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "implementation"
+
+[dependencies]
+database.workspace = true
+mir.workspace = true
+types.workspace = true
+
+[dev-dependencies]
+salsa.workspace = true
+source.workspace = true
+syntax.workspace = true
+
+[lints]
+workspace = true
