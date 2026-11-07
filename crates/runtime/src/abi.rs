@@ -195,10 +195,10 @@ pub unsafe extern "C" fn npl_rt_panic(
 }
 
 /// Ends the program with a panic for an array index out of range: `index` is negative, or not
-/// below the dimension's `length` (decision 0010). Compiled code calls it on the failing side of
+/// below the `length` of `dimension`, 0 for the outermost (decision 0010). Compiled code calls it on the failing side of
 /// an IR `IndexInBounds` check.
 ///
-/// Prints `panic: index <index> is out of range for length <length>` and the location, as
+/// Prints `panic: index <index> is out of range for dimension <dimension> of length <length>` and the location, as
 /// [`npl_rt_panic`] does.
 ///
 /// # Safety
@@ -212,16 +212,21 @@ pub unsafe extern "C" fn npl_rt_panic(
 ///
 /// static HERE: Location = Location::new("md.npl", 58, 13);
 /// // SAFETY: the location is a constant that lives as long as the program.
-/// unsafe { npl_rt_panic_index(10, 8, &HERE) }
+/// unsafe { npl_rt_panic_index(10, 0, 8, &HERE) }
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn npl_rt_panic_index(
     index: i64,
+    dimension: u32,
     length: i64,
     location: *const Location,
 ) -> ! {
-    let failure = Failure::IndexOutOfRange { index, length };
+    let failure = Failure::IndexOutOfRange {
+        index,
+        dimension,
+        length,
+    };
     // SAFETY: the caller's promise about `location`, passed on.
     panic(failure, unsafe { self::location(location) })
 }
@@ -362,7 +367,7 @@ mod tests {
     fn a_panic_prints_its_message_and_exits_with_status_101() {
         if std::env::var_os(CHILD).is_some() {
             // SAFETY: `HERE` is a static location.
-            unsafe { npl_rt_panic_index(10, 8, &raw const HERE) }
+            unsafe { npl_rt_panic_index(10, 0, 8, &raw const HERE) }
         }
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
@@ -376,7 +381,7 @@ mod tests {
         assert_eq!(output.status.code(), Some(101));
         assert_eq!(
             String::from_utf8_lossy(&output.stderr),
-            "panic: index 10 is out of range for length 8\n  --> md.npl:58:13\n"
+            "panic: index 10 is out of range for dimension 0 of length 8\n  --> md.npl:58:13\n"
         );
     }
 

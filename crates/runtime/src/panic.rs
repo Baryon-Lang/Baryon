@@ -24,6 +24,8 @@ pub(crate) enum Failure<'text> {
     IndexOutOfRange {
         /// The index.
         index: i64,
+        /// The dimension indexed, 0 for the outermost.
+        dimension: u32,
         /// The dimension's length.
         length: i64,
     },
@@ -68,10 +70,14 @@ impl fmt::Display for Failure<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::Message(text) => formatter.write_str(text),
-            Self::IndexOutOfRange { index, length } => {
+            Self::IndexOutOfRange {
+                index,
+                dimension,
+                length,
+            } => {
                 write!(
                     formatter,
-                    "index {index} is out of range for length {length}"
+                    "index {index} is out of range for dimension {dimension} of length {length}"
                 )
             }
             Self::LengthMismatch {
@@ -145,11 +151,12 @@ mod tests {
     fn reports_an_index_out_of_range_with_its_location() {
         let failure = Failure::IndexOutOfRange {
             index: 10,
+            dimension: 0,
             length: 8,
         };
         assert_eq!(
             report(failure, Some(&HERE)),
-            "panic: index 10 is out of range for length 8\n  --> heat.npl:12:9\n"
+            "panic: index 10 is out of range for dimension 0 of length 8\n  --> heat.npl:12:9\n"
         );
     }
 

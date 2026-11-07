@@ -50,9 +50,9 @@
 //!         a.add(index).write(0.0);
 //!     }
 //!     if !(0..n).contains(&i) {
-//!         // Prints "panic: index 10 is out of range for length 8" and "  --> heat.npl:5:5",
-//!         // then exits with status 101.
-//!         npl_rt_panic_index(i, n, &INDEX);
+//!         // Prints "panic: index 10 is out of range for dimension 0 of length 8" and
+//!         // "  --> heat.npl:5:5", then exits with status 101.
+//!         npl_rt_panic_index(i, 0, n, &INDEX);
 //!     }
 //!     npl_rt_deallocate(a.cast(), 64, 8);
 //! }

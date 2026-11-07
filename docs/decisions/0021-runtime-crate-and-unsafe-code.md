@@ -53,7 +53,7 @@ it by name. The first set:
 | `npl_rt_allocate(bytes, align, location)`, `npl_rt_deallocate(pointer, bytes, align)` | Heap memory from the system allocator. Zero bytes allocate nothing |
 | `npl_rt_allocate_array(count, element_size, align, location)` | An IR `NewArray`: checks the length is not negative and the size fits, then allocates |
 | `npl_rt_panic(message, length, location)` | A panic whose message compiled code wrote: overflow, division by zero, a failed `assert` |
-| `npl_rt_panic_index(index, length, location)` | An `IndexInBounds` check that failed (decision 0010) |
+| `npl_rt_panic_index(index, dimension, length, location)` | An `IndexInBounds` check that failed (decision 0010) |
 | `npl_rt_panic_length_mismatch(dimension, expected, found, location)` | A `SameLength` check that failed |
 | `npl_rt_chunk_count(iterations)`, `npl_rt_parallel_for(iterations, body, context)` | A `prange` loop on the thread pool, in fixed chunks |
 
