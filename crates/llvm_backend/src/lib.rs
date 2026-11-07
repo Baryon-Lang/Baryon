@@ -33,6 +33,9 @@
 //!   [`types::layout`] describes: the data pointer, each length and each stride. A new array is
 //!   allocated by the runtime, an element is found through the strides, and a drop frees the
 //!   elements with the size they were allocated with.
+//! - **Line tables, when asked for.** With [`Module::debug_info`], each function and each
+//!   instruction points back to its source line and column (the `debug` module), so `gdb`,
+//!   `lldb` and profilers show `.npl` lines.
 //! - **`print` calls the runtime once per argument**, which writes the value as Python does;
 //!   the space between arguments and the line end are byte constants it prints too.
 //!
@@ -112,6 +115,7 @@
 mod array;
 mod call;
 mod convert;
+mod debug;
 mod entry;
 mod errors;
 mod function;
@@ -260,6 +264,7 @@ impl<'a, 'db> Module<'a, 'db> {
     #[must_use]
     pub fn finish(self) -> String {
         let mut text = self.definitions.join("\n");
+        let metadata = self.constants.metadata();
         let constants = self.constants.finish();
         if !constants.is_empty() {
             text.push('\n');
@@ -278,7 +283,45 @@ impl<'a, 'db> Module<'a, 'db> {
                 text.push('\n');
             }
         }
+        if !metadata.is_empty() {
+            text.push('\n');
+            text.push_str(&metadata);
+        }
         text
+    }
+
+    /// Adds line tables to the module: each function and the instructions written from each
+    /// statement point back to their source line and column, so debuggers, profilers and
+    /// backtraces can name them (the `debug` module). `directory` is the absolute directory the
+    /// source files' names are relative to, the package's root. Call it before
+    /// [`define`](Self::define); functions defined earlier have no line tables.
+    ///
+    /// Cost: one location per instruction in the text, which `clang` turns into a DWARF line
+    /// table; the code itself is the same.
+    ///
+    /// ```
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// let database = Database::default();
+    /// let sources = source::SourceMap::new();
+    /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
+    /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
+    /// let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
+    /// module.debug_info("/home/ada/heat");
+    /// assert!(module.finish().contains("emissionKind: LineTablesOnly"));
+    /// ```
+    pub fn debug_info(&mut self, directory: &str) {
+        self.constants.debug = Some(debug::Debug::new(directory));
     }
 }
 

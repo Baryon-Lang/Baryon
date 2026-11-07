@@ -5,6 +5,7 @@
 //! what a failed check reports without this crate depending on the runtime.
 
 mod arrays;
+mod debug;
 mod errors;
 mod panics;
 mod print;

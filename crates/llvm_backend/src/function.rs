@@ -51,6 +51,12 @@ pub(crate) struct Function<'f, 'a, 'db> {
     pub(crate) next_failure: u32,
     /// The declaration of each function or intrinsic called, by symbol.
     pub(crate) calls: BTreeMap<String, String>,
+    /// The function's debug subprogram, `!N`, when the module has debug information: each
+    /// instruction then carries the location of the statement it comes from.
+    pub(crate) scope: Option<String>,
+    /// The location every instruction gets in place of its statement's, for a function written
+    /// without a body, such as the C `main`.
+    pub(crate) fixed_location: Option<String>,
 }
 
 impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
@@ -76,6 +82,8 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             failures: String::new(),
             next_failure: 0,
             calls: BTreeMap::new(),
+            scope: None,
+            fixed_location: None,
         }
     }
 
@@ -90,7 +98,11 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         errors: &'f [Type<'db>],
     ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
         let mut function = Self::new(types, symbol, constants, body, errors);
-        let (signature, entry) = function.prologue(name)?;
+        function.scope = function.constants.subprogram(name, body.span);
+        let (mut signature, entry) = function.prologue(name)?;
+        if let Some(scope) = &function.scope {
+            let _ = write!(signature, " !dbg {scope}");
+        }
         for (index, block) in body.blocks.iter().enumerate() {
             function.line_label(&block_label(BlockId::new(index)));
             for statement in &block.statements {
@@ -368,9 +380,25 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         name
     }
 
+    /// `instruction` with the `!dbg` location of the statement being written, when the module
+    /// has debug information.
+    pub(crate) fn located(&self, instruction: &str) -> String {
+        if let Some(location) = &self.fixed_location {
+            return format!("{instruction}, !dbg {location}");
+        }
+        match &self.scope {
+            Some(scope) => format!(
+                "{instruction}, !dbg {}",
+                self.constants.debug_location(scope, self.span)
+            ),
+            None => instruction.to_owned(),
+        }
+    }
+
     /// Writes one instruction.
     pub(crate) fn line(&mut self, instruction: &str) {
-        let _ = writeln!(self.code, "  {instruction}");
+        let located = self.located(instruction);
+        let _ = writeln!(self.code, "  {located}");
     }
 
     /// Starts the block `label`.

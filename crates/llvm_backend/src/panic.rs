@@ -17,6 +17,7 @@
 //! Constants are shared across the module: one per distinct message, file name and location.
 
 use crate::Unsupported;
+use crate::debug::Debug;
 use crate::function::Function;
 use mir::Check;
 use source::{FileId, Sources, Span};
@@ -71,6 +72,17 @@ pub(crate) struct Constants<'a> {
     definitions: Vec<(Key, String)>,
     /// The number of each constant, by what it holds.
     numbers: BTreeMap<Key, usize>,
+    /// The module's debug information, when the driver asked for it.
+    pub(crate) debug: Option<Debug>,
+}
+
+/// How many constants and subprograms there were, to roll back to.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Mark {
+    /// The number of constants.
+    constants: usize,
+    /// The number of subprograms.
+    subprograms: usize,
 }
 
 impl<'a> Constants<'a> {
@@ -80,19 +92,47 @@ impl<'a> Constants<'a> {
             sources,
             definitions: Vec::new(),
             numbers: BTreeMap::new(),
+            debug: None,
         }
     }
 
-    /// How many constants there are, to [`roll_back`](Self::roll_back) to.
-    pub(crate) fn mark(&self) -> usize {
-        self.definitions.len()
+    /// How many constants and subprograms there are, to [`roll_back`](Self::roll_back) to.
+    pub(crate) fn mark(&self) -> Mark {
+        Mark {
+            constants: self.definitions.len(),
+            subprograms: self.debug.as_ref().map_or(0, Debug::mark),
+        }
     }
 
-    /// Forgets every constant made after `mark`, when the function that made them failed.
-    pub(crate) fn roll_back(&mut self, mark: usize) {
-        for (key, _) in self.definitions.drain(mark..) {
+    /// Forgets every constant and subprogram made after `mark`, when the function that made
+    /// them failed.
+    pub(crate) fn roll_back(&mut self, mark: Mark) {
+        for (key, _) in self.definitions.drain(mark.constants..) {
             self.numbers.remove(&key);
         }
+        if let Some(debug) = &mut self.debug {
+            debug.roll_back(mark.subprograms);
+        }
+    }
+
+    /// A subprogram for the function `name` starting at `span`, as `!N`, or `None` without
+    /// debug information.
+    pub(crate) fn subprogram(&mut self, name: &str, span: Span) -> Option<String> {
+        let sources = self.sources;
+        self.debug
+            .as_mut()
+            .map(|debug| debug.subprogram(sources, name, span))
+    }
+
+    /// The subprogram of the C `main`, as `!N`, or `None` without debug information.
+    pub(crate) fn entry_subprogram(&mut self) -> Option<String> {
+        let sources = self.sources;
+        self.debug.as_mut().map(|debug| debug.entry(sources))
+    }
+
+    /// The `!dbg` location of `span` in the subprogram `scope`.
+    pub(crate) fn debug_location(&self, scope: &str, span: Span) -> String {
+        Debug::location(self.sources, scope, span)
     }
 
     /// Every constant's definition, one per line, in the order they were made.
@@ -101,6 +141,14 @@ impl<'a> Constants<'a> {
             .into_iter()
             .map(|(_, definition)| definition + "\n")
             .collect()
+    }
+
+    /// The debug information's metadata, or nothing when it is off.
+    pub(crate) fn metadata(&self) -> String {
+        self.debug
+            .as_ref()
+            .map(|debug| debug.finish(self.sources))
+            .unwrap_or_default()
     }
 
     /// The constant holding `bytes`, as `@npl.str.N`, made the first time it is asked for.
@@ -189,7 +237,8 @@ impl<'db> Function<'_, '_, 'db> {
         let location = self.constants.location(self.span);
         let (instruction, symbol, declaration) = call(self.constants, failure, &location);
         self.declare(symbol, declaration);
-        let _ = write!(self.failures, "{label}:\n  {instruction}\n  unreachable\n");
+        let located = self.located(&instruction);
+        let _ = write!(self.failures, "{label}:\n  {located}\n  unreachable\n");
         label
     }
 
