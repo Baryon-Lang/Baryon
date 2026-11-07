@@ -3,7 +3,7 @@
 //! It owns the concrete database, which implements each stage query of [`database::Db`] by
 //! calling the implementation crate for it, inside a `#[salsa::tracked]` function so the result
 //! is cached. Today the stages are the `parser`, the `syntax_check`, the `resolver` and the
-//! `checker`, which also answers [`types::TypeDb`]'s query. Swapping an implementation means
+//! `checker`, which also answers [`types::TypeDb`]'s queries. Swapping an implementation means
 //! changing the one function here that calls it. A [`Session`] holds that database with one
 //! package loaded into it.
 //!
@@ -33,7 +33,7 @@ use diagnostics::Diagnostic;
 use salsa::Setter;
 use source::{FileId, SourceError, SourceFile, Sources};
 use std::fmt;
-use types::{Checked, Item, TypeDb};
+use types::{Checked, Item, TypeDb, TypedBody};
 
 /// The compiler's incremental database: every input and every cached query result.
 #[salsa::db]
@@ -180,6 +180,10 @@ impl TypeDb for Database {
     fn declaration<'db>(&'db self, item: Item<'db>) -> &'db Checked<'db> {
         declaration(self, item)
     }
+
+    fn body<'db>(&'db self, item: Item<'db>) -> &'db TypedBody<'db> {
+        body(self, item)
+    }
 }
 
 /// The parse query: runs the `parser` crate on one file. Cached until the file's source
@@ -217,6 +221,14 @@ fn declaration<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Checked<'db> {
 /// The declaration of an item whose declaration needs itself: the `checker`'s cycle error.
 fn declaration_cycle<'db>(db: &'db dyn TypeDb, _: salsa::Id, item: Item<'db>) -> Checked<'db> {
     checker::cycle(db, item)
+}
+
+/// The body query: runs the `checker` on one function or method body. Cached until the
+/// function's file, its names, or a declaration it reads changes. `check` and lowering both
+/// read it, so each body is checked once per revision.
+#[salsa::tracked(returns(ref))]
+fn body<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> TypedBody<'db> {
+    checker::body(db, item)
 }
 
 /// The type check query: the type errors of one file's declarations. Cached until the file or
@@ -425,5 +437,90 @@ mod tests {
             ]
         );
         assert_eq!(show(signature.returns), "f64");
+    }
+
+    /// The body query records, for one function, the types lowering reads: a literal typed by
+    /// its context, a conversion, a method on a built-in type, a fallible call and its errors,
+    /// and the enum member each case tests.
+    #[test]
+    fn typed_bodies_record_what_lowering_reads() {
+        let mut session = Session::new();
+        let program = "class Bad(Exception):\n    pass\n\n\n\
+                       class Side(Enum):\n    LEFT = 1\n    RIGHT = 2\n\n\n\
+                       def solve(x: f64, scale: f64 = 1.0) -> Raises[f64, Bad]:\n    return x * scale\n\n\n\
+                       def run(x: f32, side: Side, values: InOut[list[f64]]) -> Raises[f64, Bad]:\n\
+                       \x20   y = x * 2\n\
+                       \x20   z = f64(y) + solve(1.0)\n\
+                       \x20   values.append(z)\n\
+                       \x20   match side:\n\
+                       \x20       case Side.LEFT:\n\
+                       \x20           return z\n\
+                       \x20       case Side.RIGHT:\n\
+                       \x20           return -z\n";
+        let main = session.add_file("main.npl", program).unwrap();
+        let database = &session.database;
+        let tree = database.parse(main).tree();
+        let text = main.source(database).text();
+        let run = tree.children(tree.root()).nth(3).unwrap();
+        let name = tree.child(run, Role::Name).unwrap();
+        let body = database.body(Item::new(database, session.package, main, name));
+        let show = |ty: types::Type<'_>| ty.display(database).to_string();
+        let node = |key: &types::Key| tree.text(key.0, text);
+
+        assert!(body.diagnostics.is_empty(), "{:?}", body.diagnostics);
+        let literal = body
+            .expressions
+            .keys()
+            .find(|key| tree.kind(key.0) == syntax::SyntaxKind::Integer)
+            .copied()
+            .unwrap();
+        assert_eq!(show(body.expressions[&literal]), "f32");
+        let calls: Vec<String> = body
+            .calls
+            .iter()
+            .map(|(key, call)| {
+                let arguments: Vec<&str> = call
+                    .arguments
+                    .iter()
+                    .map(|argument| argument.as_ref().map_or("default", node))
+                    .collect();
+                let callee = match &call.callee {
+                    types::Callee::Function(_) => "function".to_owned(),
+                    types::Callee::Builtin(name) => name.clone(),
+                    types::Callee::Conversion(ty) => format!("conversion to {}", show(*ty)),
+                    other => format!("{other:?}"),
+                };
+                format!("{}: {callee} {arguments:?}", node(key))
+            })
+            .collect();
+        assert_eq!(
+            calls,
+            [
+                r#"f64(y): conversion to f64 ["y"]"#,
+                r#"solve(1.0): function ["1.0", "default"]"#,
+                r#"values.append(z): list.append ["values", "z"]"#,
+            ]
+        );
+        let errors: Vec<String> = body
+            .errors
+            .iter()
+            .map(|(key, errors)| {
+                let shown: Vec<String> = errors.iter().map(|&ty| show(ty)).collect();
+                format!("{}: {shown:?}", node(key))
+            })
+            .collect();
+        assert_eq!(errors, [r#"solve(1.0): ["Bad"]"#]);
+        let patterns: Vec<(&str, u32)> = body
+            .patterns
+            .iter()
+            .map(|(key, &position)| (node(key), position))
+            .collect();
+        assert_eq!(patterns, [("Side.LEFT", 0), ("Side.RIGHT", 1)]);
+        let z = body
+            .expressions
+            .iter()
+            .find(|(key, _)| node(key) == "z")
+            .map(|(_, &ty)| show(ty));
+        assert_eq!(z.as_deref(), Some("f64"));
     }
 }

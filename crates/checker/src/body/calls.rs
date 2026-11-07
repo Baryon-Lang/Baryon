@@ -7,7 +7,7 @@ use super::{Body, relations};
 use crate::outline::{Base, Kind, outline};
 use database::{Definition, File};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Declaration, Item, Nominal, Parameter, Signature, Type, TypeKind};
+use types::{Call, Callee, Declaration, Item, Key, Nominal, Parameter, Signature, Type, TypeKind};
 
 /// The arguments of one call, as written.
 pub(super) struct Arguments {
@@ -34,7 +34,7 @@ impl<'db> Body<'db> {
             _ => None,
         };
         let callee = self.tree.text(function, self.text).to_owned();
-        match resolved {
+        let ty = match resolved {
             Some(&Definition::Item(file, name)) => {
                 self.call_item(node, &callee, file, name, &arguments)
             }
@@ -48,7 +48,11 @@ impl<'db> Body<'db> {
                 self.method_call(node, function, &arguments, expected)
             }
             Some(_) | None => self.untyped(&arguments),
+        };
+        if !self.typed.calls.contains_key(&Key(node)) {
+            self.record_builtin(node, function, &arguments, ty);
         }
+        ty
     }
 
     /// The arguments of a call, split into positional and keyword.
@@ -107,9 +111,14 @@ impl<'db> Body<'db> {
         let item = Item::new(self.db, self.lowerer.package, file, name);
         let declaration = self.db.declaration(item).declaration.clone();
         match (kind, declaration) {
-            (Kind::Function, Declaration::Function(signature)) => {
-                self.check_call(node, callee, &signature, None, arguments)
-            }
+            (Kind::Function, Declaration::Function(signature)) => self.check_call(
+                node,
+                callee,
+                &signature,
+                None,
+                Callee::Function(item),
+                arguments,
+            ),
             (Kind::Class(class), Declaration::Struct { fields, .. })
                 if class.base != Base::Enum =>
             {
@@ -145,7 +154,14 @@ impl<'db> Body<'db> {
                     parameters,
                     returns: Type::new(self.db, TypeKind::Struct(nominal)),
                 };
-                self.check_call(node, callee, &constructor, None, arguments)
+                self.check_call(
+                    node,
+                    callee,
+                    &constructor,
+                    None,
+                    Callee::Constructor(item),
+                    arguments,
+                )
             }
             (Kind::Alias, Declaration::Alias(ty)) => self.construct(node, callee, ty, arguments),
             (Kind::Constant, _) => {
@@ -225,7 +241,7 @@ impl<'db> Body<'db> {
                         .collect(),
                     returns: *returns,
                 };
-                self.check_call(node, callee, &signature, None, arguments)
+                self.check_call(node, callee, &signature, None, Callee::Value, arguments)
             }
             _ if relations::is_open(self.db, ty) || !self.is_value_scalar(ty) => {
                 self.untyped(arguments)
@@ -292,14 +308,26 @@ impl<'db> Body<'db> {
             }
             return result;
         }
+        // `copy` on a `str` or a struct that does not define its own: a built-in method.
         let copy = Signature {
             type_parameters: Vec::new(),
-            parameters: Vec::new(),
+            parameters: vec![Parameter {
+                name: "self".to_owned(),
+                ty: base,
+                mode: types::Mode::Borrow,
+                default: false,
+            }],
             returns: base,
+        };
+        let receiver = Passed {
+            node: value,
+            mode: types::Mode::Borrow,
+            ty: base,
         };
         let nominal = match base.kind(self.db) {
             TypeKind::Str if callee == "copy" => {
-                return self.check_call(node, &callee, &copy, None, arguments);
+                let builtin = Callee::Builtin("str.copy".to_owned());
+                return self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments);
             }
             TypeKind::Struct(nominal) => nominal.clone(),
             _ => return self.untyped(arguments),
@@ -330,14 +358,17 @@ impl<'db> Body<'db> {
                     returns: substitute(signature.returns),
                 };
                 let receiver = signature.parameters.first().map(|parameter| Passed {
-                    node: value,
                     mode: parameter.mode,
-                    ty: base,
+                    ..receiver
                 });
-                self.check_call(node, &callee, &signature, receiver, arguments)
+                let method = Callee::Method(item);
+                self.check_call(node, &callee, &signature, receiver, method, arguments)
             }
             Some(Member::Field(ty)) => self.call_value(node, &callee, ty, arguments),
-            Some(Member::Copy) => self.check_call(node, &callee, &copy, None, arguments),
+            Some(Member::Copy) => {
+                let builtin = Callee::Builtin("struct.copy".to_owned());
+                self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments)
+            }
             None => self.untyped(arguments),
         }
     }
@@ -346,13 +377,14 @@ impl<'db> Body<'db> {
     /// call's `receiver` is already checked, and given for the first parameter, `self`. A
     /// generic signature's type arguments are inferred from the arguments. Then the
     /// arguments, the receiver among them, are checked for exclusivity (the `exclusive`
-    /// module).
+    /// module), and the call is recorded as calling `target` for the stages after the checker.
     fn check_call(
         &mut self,
         node: NodeId,
         callee: &str,
         signature: &Signature<'db>,
         receiver: Option<Passed<'db>>,
+        target: Callee<'db>,
         arguments: &Arguments,
     ) -> Type<'db> {
         let skip = usize::from(receiver.is_some());
@@ -412,15 +444,38 @@ impl<'db> Body<'db> {
             self.lowerer
                 .error(node, &message, "missing arguments", None);
         }
-        let (returns, found) = if signature.type_parameters.is_empty() {
+        let (returns, found, type_arguments) = if signature.type_parameters.is_empty() {
             let found = pairs
                 .iter()
                 .map(|&(argument, index)| self.argument(argument, &parameters[index]))
                 .collect();
-            (signature.returns, found)
+            (signature.returns, found, Vec::new())
         } else {
             self.generic_call(node, callee, signature, parameters, &pairs)
         };
+        let mut slots = vec![None; signature.parameters.len()];
+        for (slot, argument) in receiver
+            .as_ref()
+            .map(|receiver| (0, receiver.node))
+            .into_iter()
+            .chain(
+                pairs
+                    .iter()
+                    .map(|&(argument, index)| (index + skip, argument)),
+            )
+        {
+            if let Some(slot) = slots.get_mut(slot) {
+                *slot = Some(Key(argument));
+            }
+        }
+        self.typed.calls.insert(
+            Key(node),
+            Call {
+                callee: target,
+                type_arguments,
+                arguments: slots,
+            },
+        );
         let passed: Vec<Passed<'db>> = receiver
             .into_iter()
             .chain(pairs.iter().zip(found).map(|(&(node, index), ty)| Passed {

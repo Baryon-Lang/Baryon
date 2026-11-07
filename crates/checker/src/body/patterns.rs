@@ -124,7 +124,15 @@ impl<'db> Body<'db> {
                 )
             }
             SyntaxKind::PatternValue => match self.tree.child(node, Role::Value) {
-                Some(value) => self.value_pattern(value, ty),
+                Some(value) => {
+                    let pattern = self.value_pattern(value, ty);
+                    if let Pattern::Member(index) = pattern
+                        && let Ok(index) = u32::try_from(index)
+                    {
+                        self.typed.patterns.insert(types::Key(node), index);
+                    }
+                    pattern
+                }
                 None => Pattern::Wild,
             },
             SyntaxKind::PatternSingleton => self.singleton_pattern(node, ty),

@@ -1,7 +1,7 @@
 //! What the type checker learned about one function body, for the stages after it: the type
 //! of every expression, what each call calls, and what each fallible call or `raise` can fail
-//! with. Lowering to the mid-level IR (roadmap 1.9.3, decision 0018) reads it instead of
-//! checking the body again.
+//! with. Lowering to the mid-level IR (roadmap 1.9.3, decision 0018) reads it through
+//! [`TypeDb::body`](crate::TypeDb::body) instead of checking the body again.
 //!
 //! Every map is keyed by syntax node, in the file the function is defined in, wrapped in a
 //! [`Key`] so the result can be cached in the database; the getters take a plain [`NodeId`].

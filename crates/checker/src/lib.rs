@@ -28,7 +28,8 @@
 //!
 //! It is an implementation crate. It reads trees and names only through the `database`
 //! interface and publishes its results through the `types` interface, whose
-//! [`TypeDb::declaration`] query the application wires to [`declaration`] (decision 0016).
+//! [`TypeDb::declaration`] and [`TypeDb::body`] queries the application wires to
+//! [`declaration`] and [`body()`] (decision 0016).
 //!
 //! # The rules
 //!
@@ -56,7 +57,7 @@
 //! use database::{Db, Definition, File, Package, ParsedFile, Resolution};
 //! use source::{FileId, SourceFile};
 //! use syntax::{Role, SyntaxKind, TreeBuilder};
-//! use types::{Checked, Declaration, Item, TypeDb, Value};
+//! use types::{Checked, Declaration, Item, TypeDb, TypedBody, Value};
 //!
 //! #[salsa::db]
 //! #[derive(Clone, Default)]
@@ -82,6 +83,10 @@
 //! impl TypeDb for Database {
 //!     fn declaration<'db>(&'db self, item: Item<'db>) -> &'db Checked<'db> {
 //!         declaration(self, item)
+//!     }
+//!
+//!     fn body<'db>(&'db self, item: Item<'db>) -> &'db TypedBody<'db> {
+//!         body(self, item)
 //!     }
 //! }
 //!
@@ -117,6 +122,11 @@
 //!     checker::cycle(db, item)
 //! }
 //!
+//! #[salsa::tracked(returns(ref))]
+//! fn body<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> TypedBody<'db> {
+//!     checker::body(db, item)
+//! }
+//!
 //! let database = Database::default();
 //! let source = SourceFile::new("main.npl", "N: Final = 64\n")?;
 //! let file = File::new(&database, FileId::from_index(0), source);
@@ -148,7 +158,7 @@ use database::{File, Package};
 use diagnostics::Diagnostic;
 use lower::Lowerer;
 use outline::Kind;
-use types::{Checked, Declaration, Item, TypeDb};
+use types::{Checked, Declaration, Item, TypeDb, TypedBody};
 
 /// What `item` declares, and the errors found reading its annotations and computing its value.
 ///
@@ -193,6 +203,21 @@ pub fn cycle<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Checked<'db> {
     declare::finish(lowerer, declaration)
 }
 
+/// The checked body of the function or method `item`: the type of every expression, what each
+/// call calls, and the errors in the body (see the `body` module). Empty for any other item.
+///
+/// The application calls this from its implementation of [`TypeDb::body`], inside a
+/// `#[salsa::tracked]` function, so each body is checked once per revision and both
+/// [`check_file`] and lowering read the same result. See the crate example.
+#[must_use]
+pub fn body<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> TypedBody<'db> {
+    let (package, file, name) = (item.package(db), item.file(db), item.name(db));
+    match outline::outline(db, file).get(name) {
+        Some(entry) if entry.kind == Kind::Function => body::check(db, package, file, entry),
+        _ => TypedBody::default(),
+    }
+}
+
 /// Every type error and warning in `file`, a file of `package`: the errors of each definition's
 /// declaration and, for a function, of its body, in source order, methods after their class,
 /// then a warning for each struct whose fields would take fewer bytes in another order (see
@@ -208,7 +233,7 @@ pub fn check_file(db: &dyn TypeDb, package: Package, file: File) -> Vec<Diagnost
             let item = Item::new(db, package, file, entry.name);
             let mut diagnostics = db.declaration(item).diagnostics.clone();
             if entry.kind == Kind::Function {
-                diagnostics.extend(body::check(db, package, file, entry));
+                diagnostics.extend(db.body(item).diagnostics.iter().cloned());
             }
             diagnostics
         })

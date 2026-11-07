@@ -61,8 +61,8 @@ impl<'db> Body<'db> {
 
     /// A call to a generic function or constructor: infers the type arguments from the
     /// arguments, checks each argument against its parameter and each type argument against
-    /// its bound, and returns the return type with the type arguments substituted, and the
-    /// type of each argument. `arguments` pairs each argument node with the index of its
+    /// its bound, and returns the return type with the type arguments substituted, the type of
+    /// each argument, and the type arguments. `arguments` pairs each argument node with the index of its
     /// parameter in `parameters`.
     pub(super) fn generic_call(
         &mut self,
@@ -71,7 +71,7 @@ impl<'db> Body<'db> {
         signature: &Signature<'db>,
         parameters: &[Parameter<'db>],
         arguments: &[(NodeId, usize)],
-    ) -> (Type<'db>, Vec<Type<'db>>) {
+    ) -> (Type<'db>, Vec<Type<'db>>, Vec<Type<'db>>) {
         let names: Vec<(File, NodeId)> = signature
             .type_parameters
             .iter()
@@ -138,7 +138,11 @@ impl<'db> Body<'db> {
             .into_iter()
             .map(|ty| ty.unwrap_or_else(|| self.lowerer.unknown()))
             .collect();
-        (returns, found)
+        let type_arguments = bindings
+            .into_iter()
+            .map(|ty| ty.unwrap_or_else(|| self.lowerer.unknown()))
+            .collect();
+        (returns, found, type_arguments)
     }
 
     /// `ty` with the type arguments found so far substituted. With `fill`, a type parameter
