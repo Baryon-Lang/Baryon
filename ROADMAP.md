@@ -92,8 +92,11 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.11 | Driver: build, run, test, manifest, linking, compile-time reporting | 3 | 1.10 | Planned | — | — |
 | 1.11.1 | Prototype `npl check <directory>`: load a package into the query database and print its module and syntax errors | — | 1.4 | Done | Claude | [#14](https://github.com/csimpson1964/New-Programming-Language/pull/14) |
 | 1.11.2 | `npl check` also runs the syntax check (1.2.1) and name resolution (1.5) | — | 1.2.1, 1.5, 1.11.1 | Done | Claude | [#16](https://github.com/csimpson1964/New-Programming-Language/pull/16) |
-| 1.12 | Runtime: allocator, panics, traps, thread pool | 2 | 1.10 | Planned | — | — |
+| 1.12 | Runtime: allocator, panics, traps, thread pool | 2 | 1.10 | In progress | Claude | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
 | 1.12.1 | Accumulated arrays in `prange`: blocked private buffers per chunk, combined in the fixed reduction tree | — | 1.12 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
+| 1.12.2 | The `runtime` crate and its `unsafe` policy: allocator shim, array allocation for `NewArray`, panic entry points with locations, and the `prange` thread pool over fixed chunks | 1 | — | Done | Claude | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
+| 1.12.3 | Backtraces in panic messages in debug builds | — | 1.10, 1.12.2 | Planned | — | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
+| 1.12.4 | Shrink a statically linked program that prints a number under 100 KB: measure, then choose between the standard library built for size and a `no_std` runtime | — | 1.11, 1.12.2 | Planned | — | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
 | 1.13 | Standard library: core and collections | 3 | 1.11 | Planned | — | — |
 | 1.14 | Standard library: N-dimensional arrays, views, stencil, simd and parallel loops, random numbers, BLAS | 5 | 1.13 | Planned | — | — |
 | 1.14.1 | Half-list Lennard-Jones with `accumulate=` in the examples, and a threaded half-list OpenMP baseline in the benchmark suite to compare against | — | 1.14 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
@@ -190,3 +193,4 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.12 | Diagnostics measure the display width of wide characters (CJK, emoji) so markers line up under them | — | — | Idea | — | — |
 | I.13 | Run the RustSec advisory check on a daily schedule and on pushes to `main` instead of on every pull request, so a newly published advisory does not turn unrelated pull requests red; the license, ban and source checks stay on every pull request and need no network | — | 0.6 | Idea | — | [#10](https://github.com/csimpson1964/New-Programming-Language/pull/10) |
 | I.14 | A way to keep a struct's field order on purpose without the padding warning (1.7.1), for a layout fixed by a file format or C library. Accepted by Collins as `@layout("C")` | — | 1.7.1 | Done | Claude | [#22](https://github.com/csimpson1964/New-Programming-Language/pull/22), [0017](docs/decisions/0017-layout-decorator.md), [#23](https://github.com/csimpson1964/New-Programming-Language/pull/23) |
+| I.15 | Let a user choose how many threads `prange` uses, such as with an environment variable; today the pool follows the machine's cores. User-visible, so it needs Collins | — | 1.12.2 | Idea | — | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |

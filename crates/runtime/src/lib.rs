@@ -1,0 +1,72 @@
+//! The runtime: the code linked into every compiled program, beside the program's own.
+//!
+//! The compiler turns a program into machine code, but some of what that code does is the same in
+//! every program and is written once, here: getting memory from the system, ending the program
+//! when a check fails, and running `prange` loops on every core. The design plan asks for a
+//! runtime "as small as C's": no garbage collector, no scheduler, no reflection.
+//!
+//! Where it sits: the runtime is not part of the compiler. It is built as a static library
+//! (`libruntime.a`) that the driver links into each program (roadmap 1.11), and the backend emits
+//! calls to the functions it exports (roadmap 1.10). It is the one crate of kind `runtime`, which
+//! may depend on no other workspace crate, so nothing from the compiler ends up inside a user's
+//! program (decision 0021).
+//!
+//! What compiled code calls, all with C names and the C calling convention:
+//!
+//! | Function | Job |
+//! | --- | --- |
+//! | [`npl_rt_allocate`], [`npl_rt_deallocate`] | Heap memory for a value, from the system allocator |
+//! | [`npl_rt_allocate_array`] | Memory for an array's elements, checking the length and the size; an IR `NewArray` |
+//! | [`npl_rt_panic`] | End the program with a message the compiler wrote, such as a failed `assert` |
+//! | [`npl_rt_panic_index`] | End the program for an index out of range (decision 0010) |
+//! | [`npl_rt_panic_length_mismatch`] | End the program for arrays of different lengths combined element by element |
+//! | [`npl_rt_chunk_count`], [`npl_rt_parallel_for`] | Run a `prange` loop on the thread pool, in fixed chunks |
+//!
+//! A panic prints its message and the [`Location`] of the check to standard error, then exits
+//! with status 101. Panics cannot be caught (decision 0005), so the runtime never unwinds.
+//!
+//! This crate is the one place outside a backend where `unsafe` code is allowed, under the rules
+//! decision 0021 sets: each item that uses it says why, each `unsafe` block carries a
+//! `// SAFETY:` comment and does one unsafe thing, and the logic lives in safe functions the
+//! exported wrappers call.
+//!
+//! # Example
+//!
+//! The calls compiled code makes for `a = zeros(n)` followed by `a[i]` with `i` out of range,
+//! written in Rust:
+//!
+//! ```no_run
+//! use runtime::{Location, npl_rt_allocate_array, npl_rt_deallocate, npl_rt_panic_index};
+//!
+//! static ALLOCATION: Location = Location::new("heat.npl", 4, 9);
+//! static INDEX: Location = Location::new("heat.npl", 5, 5);
+//!
+//! let (n, i) = (8_i64, 10_i64);
+//! // SAFETY: the locations are statics; the elements are written before they are read and
+//! // freed once with the size they were allocated with.
+//! unsafe {
+//!     let a = npl_rt_allocate_array(n, 8, 8, &ALLOCATION).cast::<f64>();
+//!     for index in 0..8 {
+//!         a.add(index).write(0.0);
+//!     }
+//!     if !(0..n).contains(&i) {
+//!         // Prints "panic: index 10 is out of range for length 8" and "  --> heat.npl:5:5",
+//!         // then exits with status 101.
+//!         npl_rt_panic_index(i, n, &INDEX);
+//!     }
+//!     npl_rt_deallocate(a.cast(), 64, 8);
+//! }
+//! ```
+
+mod abi;
+mod location;
+mod memory;
+mod panic;
+mod parallel;
+
+pub use abi::{
+    npl_rt_allocate, npl_rt_allocate_array, npl_rt_chunk_count, npl_rt_deallocate, npl_rt_panic,
+    npl_rt_panic_index, npl_rt_panic_length_mismatch, npl_rt_parallel_for,
+};
+pub use location::Location;
+pub use parallel::ChunkBody;

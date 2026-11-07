@@ -94,6 +94,8 @@ The repository should look like someone obsessive built it, because someone did.
   [`Cargo.toml`](Cargo.toml).
 - `unsafe` is forbidden in every crate. A crate that truly needs it (the runtime, a backend) gets an
   exception through a decision record, and every `unsafe` block carries a `// SAFETY:` comment.
+  The runtime's exception and its rules are
+  [decision 0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md).
 - Library code never calls `unwrap`, `expect`, `panic!`, `todo!` or `dbg!`, and never prints.
   Errors are values. `assert!` is reserved for invariants whose violation is a bug.
 - No dead code, no commented-out code, no `TODO` comments. Open an issue instead.

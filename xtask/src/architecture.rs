@@ -31,16 +31,20 @@ enum Kind {
     Application,
     /// Repository automation that no compiler crate may depend on.
     Tooling,
+    /// Code linked into every compiled program rather than into the compiler (decision 0021). It
+    /// depends on no other kind, so nothing from the compiler ends up in a user's program.
+    Runtime,
 }
 
 impl Kind {
     /// Every kind, in the order the documentation lists them.
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Foundation,
         Self::Interface,
         Self::Implementation,
         Self::Application,
         Self::Tooling,
+        Self::Runtime,
     ];
 
     /// The kind as written in a crate manifest.
@@ -51,6 +55,7 @@ impl Kind {
             Self::Implementation => "implementation",
             Self::Application => "application",
             Self::Tooling => "tooling",
+            Self::Runtime => "runtime",
         }
     }
 
@@ -68,9 +73,10 @@ impl Kind {
             }
             Self::Application => matches!(
                 dependency,
-                Self::Foundation | Self::Interface | Self::Implementation
+                Self::Foundation | Self::Interface | Self::Implementation | Self::Runtime
             ),
             Self::Tooling => dependency != Self::Tooling,
+            Self::Runtime => dependency == Self::Runtime,
         }
     }
 }
@@ -296,6 +302,33 @@ mod tests {
             member("xtask", Some("tooling"), &[]),
         ];
         assert_eq!(violations(&crates).len(), 1);
+    }
+
+    #[test]
+    fn keeps_the_runtime_apart_from_the_compiler() {
+        let crates = [
+            member("source", Some("foundation"), &[]),
+            member("runtime", Some("runtime"), &["source"]),
+            member("backend", Some("implementation"), &["runtime"]),
+            member("driver", Some("application"), &["runtime"]),
+        ];
+        assert_eq!(
+            violations(&crates),
+            [
+                Violation::ForbiddenDependency {
+                    name: "runtime".to_owned(),
+                    kind: Kind::Runtime,
+                    dependency: "source".to_owned(),
+                    dependency_kind: Kind::Foundation,
+                },
+                Violation::ForbiddenDependency {
+                    name: "backend".to_owned(),
+                    kind: Kind::Implementation,
+                    dependency: "runtime".to_owned(),
+                    dependency_kind: Kind::Runtime,
+                },
+            ]
+        );
     }
 
     #[test]
