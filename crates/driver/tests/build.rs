@@ -276,3 +276,28 @@ def main():
         "mean: 1.5\n1e+16 0.30000000000000004 1.5e-05 -0.0\n-5 4294967295 True 0.1\n\ndone\n"
     );
 }
+
+/// `npl run` builds the package, runs it with the terminal's output, and exits with the
+/// program's own status: the lines it printed reach standard output, then the panic of its
+/// failed `assert` exits with 101.
+#[test]
+fn run_builds_and_runs_with_the_programs_status() {
+    let program = "\
+def main():
+    print(\"started\")
+    assert 1 > 2
+";
+    let directory = package("run", &[("main.npl", program)]).unwrap();
+    build_runtime();
+    let ran = Command::new(NPL)
+        .arg("run")
+        .arg(directory.join("package"))
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), "started\n");
+    assert_eq!(ran.status.code(), Some(101));
+    assert_eq!(
+        stderr(&ran),
+        "panic: assertion failed: 1 > 2\n  --> main.npl:3:5\n"
+    );
+}
