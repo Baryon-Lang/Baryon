@@ -60,6 +60,19 @@ fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
+/// The text of standard error before a panic's backtrace: its message and location. The test
+/// `panics_print_a_backtrace_of_npl_frames` checks the backtrace itself.
+fn panic_report(output: &Output) -> String {
+    let text = stderr(output);
+    match text.split_once(BACKTRACE) {
+        Some((report, _)) => report.to_owned(),
+        None => text,
+    }
+}
+
+/// The line a panic's backtrace starts with.
+const BACKTRACE: &str = "backtrace, most recent call last:\n";
+
 /// A program across two modules compiles, calls between them, and runs to the end; a failed
 /// `assert` prints its source and location through the runtime and exits with status 101.
 #[test]
@@ -108,7 +121,7 @@ fn programs_build_and_run() {
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(ran.status.code(), Some(101));
     assert_eq!(
-        stderr(&ran),
+        panic_report(&ran),
         "panic: assertion failed: n * 6 == 41, \"arithmetic\"\n  --> main.npl:3:5\n"
     );
 }
@@ -186,7 +199,7 @@ def main():
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(ran.status.code(), Some(101));
     assert_eq!(
-        stderr(&ran),
+        panic_report(&ran),
         "panic: index 1000 is out of range for dimension 0 of length 1000\n  \
          --> main.npl:25:14\n"
     );
@@ -243,7 +256,7 @@ def main():
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(
-        stderr(&ran),
+        panic_report(&ran),
         "panic: assertion failed: handled(4) == 3.0, \"last\"\n  --> main.npl:39:5\n"
     );
 }
@@ -297,7 +310,7 @@ def main():
     assert_eq!(String::from_utf8_lossy(&ran.stdout), "started\n");
     assert_eq!(ran.status.code(), Some(101));
     assert_eq!(
-        stderr(&ran),
+        panic_report(&ran),
         "panic: assertion failed: 1 > 2\n  --> main.npl:3:5\n"
     );
 }
@@ -392,8 +405,46 @@ def main():
         "2.5 10.0\n3.0 1.5 3.0\n-1 4\n"
     );
     assert_eq!(
-        stderr(&ran),
+        panic_report(&ran),
         "panic: assertion failed: particle is not None, 'needs a particle'\n  \
          --> main.npl:8:5\n"
+    );
+}
+
+/// A panic ends its report with the `.npl` frames that led to it, most recent last, each with
+/// its function and source position, read from the line tables (roadmap 1.12.3). Inlined calls
+/// keep their frames, and the runtime's own frames are left out.
+#[test]
+fn panics_print_a_backtrace_of_npl_frames() {
+    let program = "\
+def pick(values: Array[f64, 1], i: i64) -> f64:
+    return values[i]
+
+
+def total(n: i64) -> f64:
+    values: Array[f64, 1] = Array.zeros(n)
+    return pick(values, n)
+
+
+def main():
+    print(total(4))
+";
+    let directory = package("backtrace", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    let root = directory.join("package").canonicalize().unwrap();
+    let file = root.join("main.npl").display().to_string();
+    assert_eq!(
+        stderr(&ran),
+        format!(
+            "panic: index 4 is out of range for dimension 0 of length 4\n  \
+             --> main.npl:2:19\n\
+             {BACKTRACE}  \
+             main.main at {file}:11:11\n  \
+             main.total at {file}:7:12\n  \
+             main.pick at {file}:2:19\n"
+        )
     );
 }
