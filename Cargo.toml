@@ -16,6 +16,7 @@ publish = false
 checker = { path = "crates/checker" }
 database = { path = "crates/database" }
 diagnostics = { path = "crates/diagnostics" }
+drop_elaboration = { path = "crates/drop_elaboration" }
 mir = { path = "crates/mir" }
 parser = { path = "crates/parser" }
 resolver = { path = "crates/resolver" }
