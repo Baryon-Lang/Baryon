@@ -33,6 +33,27 @@ names it adds where Python has no spelling.
   in Python. A string literal right after a `Final` constant or a field documents that constant or
   field. Documentation tools read both.
 
+### Documentation strings
+
+A documentation string is written in Markdown: backticks around code, `-` before list items, a
+blank line between paragraphs. Its first line is a one-sentence summary that stands alone. Its
+indentation in the source is removed before it is read, as Python's `inspect.cleandoc` does.
+
+```python
+def kinetic_energy(velocities: Array[Vec3, 1]) -> f64:
+    """The total kinetic energy of the atoms, in reduced units.
+
+    Every atom has mass 1, so this is half the sum of `|v|²` over `velocities`.
+    """
+```
+
+`npl doc <directory> <output>` writes a package's documentation as Markdown: one page per module,
+named after it (`physics.nbody.md`), and an `index.md` listing every module with its summary. A
+page gives the module's documentation, then each public constant, type alias, function and
+class in source order, with its signature as written and its documentation; a class's fields
+and methods follow it. Names starting with `_` are private and left out. An item with no
+documentation string is still listed, with its signature.
+
 ## Statements
 
 The compiler reports every construct in a "no" row below, and every rule in the notes that can be

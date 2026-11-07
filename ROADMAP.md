@@ -82,12 +82,12 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.9 | Mid-level IR: lowering, drops, monomorphization | 5 | 1.7 | In progress | Claude | [0018](docs/decisions/0018-mid-level-ir.md), [#27](https://github.com/csimpson1964/New-Programming-Language/pull/27) |
 | 1.9.1 | IR design and the `mir` interface crate: bodies as basic blocks over typed locals and places, explicit drops, bounds checks and error edges, a validator and a text form | 1 | 1.6 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md), [#27](https://github.com/csimpson1964/New-Programming-Language/pull/27) |
 | 1.9.2 | Typed bodies: a query that gives the type of every expression and the definition of every name in a function body, for lowering to read | 0.5 | 1.7 | Done | Claude | [#39](https://github.com/csimpson1964/New-Programming-Language/pull/39), [#41](https://github.com/csimpson1964/New-Programming-Language/pull/41) |
-| 1.9.3 | Lowering: function bodies to `mir`, with control flow, calls, argument modes, bounds checks, `Raises` error edges and scope-exit drops | 1.5 | 1.9.1, 1.9.2 | Planned | — | [0018](docs/decisions/0018-mid-level-ir.md) |
+| 1.9.3 | Lowering: function bodies to `mir`, with control flow, calls, argument modes, bounds checks, `Raises` error edges and scope-exit drops. First slice: numbers, `if`, `while`, `for` over `range`, calls, struct fields, `raise` and drops; arrays, `match`, `try` and calls that can fail follow | 1.5 | 1.9.1, 1.9.2 | In progress | Claude | [0018](docs/decisions/0018-mid-level-ir.md), [#45](https://github.com/csimpson1964/New-Programming-Language/pull/45) |
 | 1.9.4 | Drop elaboration: remove drops of moved values, guard partly moved ones with flags | 0.5 | 1.9.1 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md) |
 | 1.9.5 | Monomorphization: instances at concrete types, collected from `main` and each `@test`. Substitution is done; collection waits on lowering | 1 | 1.9.3, 1.7.5 | In progress | Claude | [0018](docs/decisions/0018-mid-level-ir.md) |
-| 1.9.6 | Whole-array expressions as one `Elementwise` rvalue, expanded to loop nests before a backend. Allocates results with `NewArray` (1.9.8) | 0.5 | 1.9.8 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md) |
+| 1.9.6 | Whole-array expressions as one `Elementwise` rvalue, expanded to loop nests before a backend. Allocates results with `NewArray` (1.9.8) | 0.5 | 1.9.8 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md), [#40](https://github.com/csimpson1964/New-Programming-Language/pull/40) |
 | 1.9.7 | `prange` bodies outlined behind a `ParallelFor` terminator, and `simd` loops marked and checked | 1 | 1.9.3, 1.8 | Planned | — | [0018](docs/decisions/0018-mid-level-ir.md), [0011](docs/decisions/0011-checked-simd.md), [0013](docs/decisions/0013-parallel-accumulation.md) |
-| 1.9.8 | `NewArray` in `mir`: allocate an `Array` with run-time lengths, so array expansion can create its result | — | 1.9.1 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md) |
+| 1.9.8 | `NewArray` in `mir`: allocate an `Array` with run-time lengths, so array expansion can create its result | — | 1.9.1 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md), [#37](https://github.com/csimpson1964/New-Programming-Language/pull/37) |
 | 1.10 | LLVM backend: no-alias metadata, debug info, Apple AArch64 ABI, Mach-O output | 6 | 1.9 | Planned | — | — |
 | 1.11 | Driver: build, run, test, manifest, linking, compile-time reporting | 3 | 1.10 | Planned | — | — |
 | 1.11.1 | Prototype `npl check <directory>`: load a package into the query database and print its module and syntax errors | — | 1.4 | Done | Claude | [#14](https://github.com/csimpson1964/New-Programming-Language/pull/14) |
@@ -131,7 +131,7 @@ the REPL, and three external users have written something real.
 | 3.5 | Trait objects and dynamic dispatch | 4 | 1.7 | Planned | — | — |
 | 3.6 | First-class references or regions: design and prototype | 4 | 1.8 | Planned | — | — |
 | 3.7 | Optimization remarks in the editor | 2 | 3.1 | Planned | — | — |
-| 3.8 | Documentation generator | 1 | 1.2 | Planned | — | — |
+| 3.8 | Documentation generator: `npl doc` writes one Markdown page per module from its documentation strings and public signatures, and an index | 1 | 1.2 | Done | Claude | [#42](https://github.com/csimpson1964/New-Programming-Language/pull/42) |
 | 3.9 | Broadcasting and axis reductions | 3 | 3.1 | Planned | — | — |
 | 3.10 | Linear algebra and FFT over LAPACK and FFTW or Accelerate | 2 | 1.14 | Planned | — | — |
 | 3.11 | REPL on the Cranelift backend with persistent values | 4 | 2.1 | Planned | — | — |
@@ -193,4 +193,6 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.12 | Diagnostics measure the display width of wide characters (CJK, emoji) so markers line up under them | — | — | Idea | — | — |
 | I.13 | Run the RustSec advisory check on a daily schedule and on pushes to `main` instead of on every pull request, so a newly published advisory does not turn unrelated pull requests red; the license, ban and source checks stay on every pull request and need no network | — | 0.6 | Idea | — | [#10](https://github.com/csimpson1964/New-Programming-Language/pull/10) |
 | I.14 | A way to keep a struct's field order on purpose without the padding warning (1.7.1), for a layout fixed by a file format or C library. Accepted by Collins as `@layout("C")` | — | 1.7.1 | Done | Claude | [#22](https://github.com/csimpson1964/New-Programming-Language/pull/22), [0017](docs/decisions/0017-layout-decorator.md), [#23](https://github.com/csimpson1964/New-Programming-Language/pull/23) |
-| I.15 | Let a user choose how many threads `prange` uses, such as with an environment variable; today the pool follows the machine's cores. User-visible, so it needs Collins | — | 1.12.2 | Idea | — | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |
+| I.15 | Run the code examples in documentation strings as tests, as Rust's doc tests do, so documented examples cannot drift from the code; needs 1.10 to run programs | — | 3.8 | Idea | — | — |
+| I.16 | Link names in documentation to their definitions across pages, using the resolver, and publish HTML with search | — | 3.8 | Idea | — | — |
+| I.17 | Let a user choose how many threads `prange` uses, such as with an environment variable; today the pool follows the machine's cores. User-visible, so it needs Collins | — | 1.12.2 | Idea | — | [0021](docs/decisions/0021-runtime-crate-and-unsafe-code.md) |

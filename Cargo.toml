@@ -17,7 +17,9 @@ array_expansion = { path = "crates/array_expansion" }
 checker = { path = "crates/checker" }
 database = { path = "crates/database" }
 diagnostics = { path = "crates/diagnostics" }
+documentation = { path = "crates/documentation" }
 drop_elaboration = { path = "crates/drop_elaboration" }
+lowering = { path = "crates/lowering" }
 mir = { path = "crates/mir" }
 monomorphize = { path = "crates/monomorphize" }
 parser = { path = "crates/parser" }

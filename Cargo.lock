@@ -204,12 +204,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "documentation"
+version = "0.0.0"
+dependencies = [
+ "source",
+ "syntax",
+]
+
+[[package]]
 name = "driver"
 version = "0.0.0"
 dependencies = [
  "checker",
  "database",
  "diagnostics",
+ "documentation",
+ "lowering",
  "parser",
  "resolver",
  "salsa",
@@ -394,6 +404,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
 dependencies = [
  "scopeguard",
+]
+
+[[package]]
+name = "lowering"
+version = "0.0.0"
+dependencies = [
+ "database",
+ "diagnostics",
+ "mir",
+ "salsa",
+ "source",
+ "syntax",
+ "types",
 ]
 
 [[package]]

@@ -139,7 +139,7 @@ threads panicking at once print one message. Both are documented where they are 
 - The runtime's lint table is a copy and can drift from the workspace's. The comment above it in
   `crates/runtime/Cargo.toml` says to change both together.
 - The thread count follows the machine's cores; there is no setting yet. A way to choose it,
-  such as an environment variable, is user-visible, so it is an idea on the roadmap (I.15), not
+  such as an environment variable, is user-visible, so it is an idea on the roadmap (I.17), not
   part of this record.
 - Accumulated arrays in `prange` (1.12.1) build on the same chunks: each chunk adds into its
   blocked private buffer, combined in a fixed tree, as decision 0013 describes.

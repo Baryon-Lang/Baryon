@@ -441,7 +441,8 @@ REPL; Phase 4 adds `py` for Python interop.
 
 Tooling ships in the one `npl` executable, as in Go and Zig: `check` (exists today: syntax,
 module and name errors), `build`, `run`, `test` with a built-in runner for `@test` functions, `bench` for
-`@bench` functions against a stored baseline, and `doc` in Phase 3. There is no `fmt`: Ruff and
+`@bench` functions against a stored baseline, and `doc` (exists today: Markdown pages from the
+documentation strings). There is no `fmt`: Ruff and
 Black already format the files.
 
 Testing the compiler needs four suites from the start: a parser corpus (exists), a type-checker
