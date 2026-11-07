@@ -147,3 +147,47 @@ fn programs_start_at_main_npl() {
          = note: add `def main():` to `main.npl` at the package's root\n\n"
     );
 }
+
+/// Arrays end to end: allocated with run-time lengths, filled, combined with whole-array
+/// arithmetic, summed, and freed; a `Fixed` array built and indexed from both ends; and an index
+/// one past the end stopped by the bounds check, which names the index, dimension and length.
+#[test]
+fn array_programs_build_and_run() {
+    let program = "\
+Vec3 = Fixed[f64, (3,)]
+
+
+def axpy(a: Array[f64, 1], b: Array[f64, 1]) -> Array[f64, 1]:
+    return -a + b * 2
+
+
+def total(a: Array[f64, 1]) -> f64:
+    s = 0.0
+    for i in range(len(a)):
+        s += a[i]
+    return s
+
+
+def main():
+    n = 1000
+    a = Array.zeros(n)
+    b = Array.zeros(n)
+    for i in range(n):
+        a[i] = 1.0
+        b[i] = f64(i)
+    assert total(axpy(a, b)) == 998000.0
+    v = Vec3(1.0, 2.0, 3.0)
+    assert v[0] + v[-1] == 4.0
+    assert a[n] == 0.0
+";
+    let directory = package("arrays", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert_eq!(
+        stderr(&ran),
+        "panic: index 1000 is out of range for dimension 0 of length 1000\n  \
+         --> main.npl:25:14\n"
+    );
+}
