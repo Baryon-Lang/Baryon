@@ -18,6 +18,7 @@ database = { path = "crates/database" }
 diagnostics = { path = "crates/diagnostics" }
 drop_elaboration = { path = "crates/drop_elaboration" }
 mir = { path = "crates/mir" }
+monomorphize = { path = "crates/monomorphize" }
 parser = { path = "crates/parser" }
 resolver = { path = "crates/resolver" }
 source = { path = "crates/source" }
