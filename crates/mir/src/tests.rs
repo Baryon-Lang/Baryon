@@ -2,9 +2,9 @@
 //! build them.
 
 use crate::{
-    Argument, BasicBlock, BinaryOperator, BlockId, Body, Callee, Check, Constant, Elementwise,
-    ErrorEdge, Invalid, Local, LocalKind, Operand, Phase, Place, Projection, Rvalue, Statement,
-    StatementKind, Terminator, TerminatorKind,
+    Argument, BasicBlock, BinaryOperator, BlockId, Body, Builtin, Callee, Check, Constant,
+    Elementwise, ErrorEdge, Invalid, Local, LocalKind, Operand, Phase, Place, Projection, Rvalue,
+    Statement, StatementKind, Terminator, TerminatorKind,
 };
 use database::{Db, File, Package, ParsedFile, Resolution};
 use source::{FileId, SourceFile, Span};
@@ -457,5 +457,43 @@ fn same_length_check_reports_both_lengths() {
         body.display(&database)
             .to_string()
             .contains("assert(copy _3, same length in dimension 0: copy _2 == copy _1) -> bb1;")
+    );
+}
+
+/// `print(x, 2.0)` calls the built-in by name, with no item and no type arguments.
+#[test]
+fn builtins_are_called_by_name() {
+    let database = Database::default();
+    let f64 = primitive(&database, Primitive::Float(Float::F64));
+    let none = Type::new(&database, TypeKind::None);
+    let mut body = Body::new(none, span());
+    let x = body.push_local(
+        f64,
+        LocalKind::Parameter {
+            name: "x".into(),
+            mode: Mode::Borrow,
+        },
+        span(),
+    );
+    let printed = body.push_local(none, LocalKind::Temporary, span());
+    body.push_block(end(TerminatorKind::Call {
+        callee: Callee::Builtin(Builtin::Print),
+        arguments: vec![
+            Argument::Borrow(x.into()),
+            Argument::Owned(Operand::Constant(Constant::float(f64, 2.0))),
+        ],
+        destination: printed.into(),
+        target: BlockId::new(1),
+        error: None,
+    }));
+    body.push_block(end(TerminatorKind::Return));
+
+    assert_eq!(body.validate(&database), Vec::new());
+    assert!(
+        body.display(&database)
+            .to_string()
+            .contains("_2 = call print(_1, owned 2.0_f64) -> [return: bb1];"),
+        "{}",
+        body.display(&database)
     );
 }

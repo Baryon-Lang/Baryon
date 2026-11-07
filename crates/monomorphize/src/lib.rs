@@ -236,6 +236,7 @@ impl<'db> Substitution<'_, 'db> {
                         }
                     }
                     Callee::Value(operand) => self.operand(operand),
+                    Callee::Builtin(_) => {}
                 }
                 for argument in arguments {
                     if let Argument::Owned(operand) = argument {
