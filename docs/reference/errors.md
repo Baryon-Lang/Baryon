@@ -105,16 +105,17 @@ program with exit status 101, so a script can tell a panic from an error that re
 `main` (status 1). A panic in any iteration of a parallel loop ends the whole
 program.
 
-The backtrace lists the calls that led to the panic, most recent first, each as the function and
-its file, line and column. Calls the optimizer inlined keep their own line:
+The backtrace lists the calls that led to the panic, most recent last as Python's traceback does,
+each as the function and its file, line and column. Calls the optimizer inlined keep their own
+line:
 
 ```text
 panic: index 4 is out of range for dimension 0 of length 4
   --> main.npl:2:19
-backtrace, most recent call first:
-  main.pick at /home/ada/heat/main.npl:2:19
-  main.total at /home/ada/heat/main.npl:7:12
+backtrace, most recent call last:
   main.main at /home/ada/heat/main.npl:11:11
+  main.total at /home/ada/heat/main.npl:7:12
+  main.pick at /home/ada/heat/main.npl:2:19
 ```
 
 There is one build mode for now, and `npl build` and `npl run` always include the debug

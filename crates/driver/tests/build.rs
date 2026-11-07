@@ -71,7 +71,7 @@ fn panic_report(output: &Output) -> String {
 }
 
 /// The line a panic's backtrace starts with.
-const BACKTRACE: &str = "backtrace, most recent call first:\n";
+const BACKTRACE: &str = "backtrace, most recent call last:\n";
 
 /// A program across two modules compiles, calls between them, and runs to the end; a failed
 /// `assert` prints its source and location through the runtime and exits with status 101.
@@ -411,7 +411,7 @@ def main():
     );
 }
 
-/// A panic ends its report with the `.npl` frames that led to it, most recent first, each with
+/// A panic ends its report with the `.npl` frames that led to it, most recent last, each with
 /// its function and source position, read from the line tables (roadmap 1.12.3). Inlined calls
 /// keep their frames, and the runtime's own frames are left out.
 #[test]
@@ -442,9 +442,9 @@ def main():
             "panic: index 4 is out of range for dimension 0 of length 4\n  \
              --> main.npl:2:19\n\
              {BACKTRACE}  \
-             main.pick at {file}:2:19\n  \
+             main.main at {file}:11:11\n  \
              main.total at {file}:7:12\n  \
-             main.main at {file}:11:11\n"
+             main.pick at {file}:2:19\n"
         )
     );
 }

@@ -5,12 +5,13 @@
 //! standard library's backtrace can name each frame of compiled code and its `.npl` line, inlined
 //! calls included. The capture also holds frames that are not the program's: the runtime's own
 //! functions, the C `main` and the C library. Only the frames whose location is a `.npl` file are
-//! the programmer's, so the report keeps those, most recent call first:
+//! the programmer's, so the report keeps those, most recent call last as Python's traceback
+//! lists them (decision 0004):
 //!
 //! ```text
-//! backtrace, most recent call first:
-//!   main.pick at /home/ada/heat/main.npl:2:19
+//! backtrace, most recent call last:
 //!   main.main at /home/ada/heat/main.npl:11:11
+//!   main.pick at /home/ada/heat/main.npl:2:19
 //! ```
 //!
 //! A program built without debug information has no `.npl` frames, and its report has no
@@ -45,8 +46,8 @@ fn render(backtrace: &str) -> String {
     if frames.is_empty() {
         return String::new();
     }
-    let mut text = String::from("backtrace, most recent call first:\n");
-    for frame in frames {
+    let mut text = String::from("backtrace, most recent call last:\n");
+    for frame in frames.iter().rev() {
         let _ = writeln!(text, "  {} at {}", frame.function, frame.location);
     }
     text
@@ -107,13 +108,13 @@ mod tests {
 ";
 
     #[test]
-    fn keeps_the_frames_of_npl_source_most_recent_first() {
+    fn keeps_the_frames_of_npl_source_most_recent_last() {
         assert_eq!(
             render(CAPTURED),
-            "backtrace, most recent call first:\n  \
-             main.pick at /home/ada/heat/main.npl:2:19\n  \
+            "backtrace, most recent call last:\n  \
+             main.main at /home/ada/heat/main.npl:11:11\n  \
              main.total at /home/ada/heat/main.npl:7:12\n  \
-             main.main at /home/ada/heat/main.npl:11:11\n"
+             main.pick at /home/ada/heat/main.npl:2:19\n"
         );
     }
 
