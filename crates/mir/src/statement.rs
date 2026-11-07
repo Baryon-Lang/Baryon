@@ -146,6 +146,43 @@ pub enum Check<'db> {
     NoOverflow(BinaryOperator),
     /// A divisor is not zero.
     NonZeroDivisor,
+    /// Two arrays combined element by element have the same length in one dimension, as
+    /// whole-array arithmetic requires until broadcasting (roadmap 3.9).
+    SameLength {
+        /// The dimension, 0 for the outermost.
+        dimension: u32,
+        /// The length the first array has.
+        expected: Operand<'db>,
+        /// The length this array has.
+        found: Operand<'db>,
+    },
     /// A program's `assert` statement holds.
     Assertion,
+}
+
+impl<'db> Check<'db> {
+    /// The operands the check's panic message reports, in order; empty for checks that report
+    /// none. Passes that visit every operand of a body use it so a new check cannot be missed.
+    #[must_use]
+    pub fn operands(&self) -> Vec<&Operand<'db>> {
+        match self {
+            Self::IndexInBounds { index, length } => vec![index, length],
+            Self::SameLength {
+                expected, found, ..
+            } => vec![expected, found],
+            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::Assertion => Vec::new(),
+        }
+    }
+
+    /// The operands the check reports, to change in place, in the order of
+    /// [`operands`](Self::operands).
+    pub fn operands_mut(&mut self) -> Vec<&mut Operand<'db>> {
+        match self {
+            Self::IndexInBounds { index, length } => vec![index, length],
+            Self::SameLength {
+                expected, found, ..
+            } => vec![expected, found],
+            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::Assertion => Vec::new(),
+        }
+    }
 }

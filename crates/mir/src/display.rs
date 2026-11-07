@@ -293,6 +293,15 @@ impl Writer<'_> {
             ),
             Check::NoOverflow(operator) => format!("no overflow: {}", binary_name(*operator)),
             Check::NonZeroDivisor => "non-zero divisor".to_owned(),
+            Check::SameLength {
+                dimension,
+                expected,
+                found,
+            } => format!(
+                "same length in dimension {dimension}: {} == {}",
+                self.operand(found),
+                self.operand(expected)
+            ),
             Check::Assertion => "assertion".to_owned(),
         }
     }
