@@ -21,7 +21,7 @@
 //! | [`npl_rt_panic_index`] | End the program for an index out of range (decision 0010) |
 //! | [`npl_rt_panic_length_mismatch`] | End the program for arrays of different lengths combined element by element |
 //! | [`npl_rt_chunk_count`], [`npl_rt_parallel_for`] | Run a `prange` loop on the thread pool, in fixed chunks |
-//! | [`npl_rt_print_i64`], [`npl_rt_print_u64`], [`npl_rt_print_f64`], [`npl_rt_print_f32`], [`npl_rt_print_bool`], [`npl_rt_print_str`] | Print one argument of `print` to standard output, as Python writes it |
+//! | [`npl_rt_print_i64`], [`npl_rt_print_u64`], [`npl_rt_print_f64`], [`npl_rt_print_f32`], [`npl_rt_print_bool`], [`npl_rt_print_str`] | Print one argument of `print` to standard output, or a field of an error that ends `main` to standard error, as Python writes it |
 //!
 //! A panic prints its message and the [`Location`] of the check to standard error, then exits
 //! with status 101. Panics cannot be caught (decision 0005), so the runtime never unwinds.
