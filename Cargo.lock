@@ -215,11 +215,15 @@ dependencies = [
 name = "driver"
 version = "0.0.0"
 dependencies = [
+ "array_expansion",
  "checker",
  "database",
  "diagnostics",
  "documentation",
+ "drop_elaboration",
+ "llvm_backend",
  "lowering",
+ "mir",
  "parser",
  "resolver",
  "salsa",

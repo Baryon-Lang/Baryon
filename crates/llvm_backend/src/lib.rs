@@ -173,6 +173,43 @@ impl<'a, 'db> Module<'a, 'db> {
         Ok(())
     }
 
+    /// Makes the function `symbol` the program's entry point: adds a C `main` that calls it and
+    /// returns 0, the exit status of a program that ran to its end. `symbol` takes no arguments
+    /// and returns `None`; a failed check inside it ends the program through the runtime with
+    /// status 101 instead.
+    ///
+    /// ```
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// let database = Database::default();
+    /// let sources = source::SourceMap::new();
+    /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
+    /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
+    /// let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
+    /// module.entry("main.main");
+    /// assert_eq!(
+    ///     module.finish(),
+    ///     "define i32 @main() {\nstart:\n  call void @main.main()\n  ret i32 0\n}\n"
+    /// );
+    /// ```
+    pub fn entry(&mut self, symbol: &str) {
+        self.definitions.push(format!(
+            "define i32 @main() {{\nstart:\n  call void {}()\n  ret i32 0\n}}\n",
+            function::global(symbol)
+        ));
+        self.defined.insert("main".to_owned());
+    }
+
     /// The module's text: every definition in order, then the message and location constants
     /// their checks point to, then a declaration of each function called and not defined here, in symbol order, so the text is the same on every run.
     #[must_use]

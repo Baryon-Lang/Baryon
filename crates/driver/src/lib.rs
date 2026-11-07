@@ -30,6 +30,7 @@
 //! # Ok::<(), source::SourceError>(())
 //! ```
 
+mod compile;
 mod lowered;
 
 use database::{Db, File, Package, ParsedFile, Resolution};

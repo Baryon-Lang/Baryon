@@ -158,7 +158,7 @@ use database::{File, Package};
 use diagnostics::Diagnostic;
 use lower::Lowerer;
 use outline::Kind;
-use types::{Checked, Declaration, Item, TypeDb, TypedBody};
+use types::{Checked, Declaration, Declared, Item, Nominal, TypeDb, TypedBody};
 
 /// What `item` declares, and the errors found reading its annotations and computing its value.
 ///
@@ -216,6 +216,21 @@ pub fn body<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> TypedBody<'db> {
         Some(entry) if entry.kind == Kind::Function => body::check(db, package, file, entry),
         _ => TypedBody::default(),
     }
+}
+
+/// What the struct or enum `nominal`, a class of `package`, declares, as [`types::layout()`]
+/// and the passes after lowering read it: a struct's field types with its type arguments
+/// substituted, or an enum's number of variants. The application passes it, closed over its
+/// database and package, to drop elaboration, array expansion and the backend.
+///
+/// Cost: the class's cached declaration, and one substitution per field of a generic struct.
+#[must_use]
+pub fn declared<'db>(
+    db: &'db dyn TypeDb,
+    package: Package,
+    nominal: &Nominal<'db>,
+) -> Declared<'db> {
+    padding::declared(db, package, nominal)
 }
 
 /// Every type error and warning in `file`, a file of `package`: the errors of each definition's
