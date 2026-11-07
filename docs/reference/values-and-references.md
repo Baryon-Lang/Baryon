@@ -56,13 +56,30 @@ After a move, the old owner holds nothing. Using it is an error until a new valu
 
 ```text
 error: `a` was moved
- --> heat.npl:12:9
+  --> heat.npl:12:13
+   |
+12 |     total = a.sum()
+   |             ^ read after the move
+  ::: heat.npl:11:9
    |
 11 |     b = a
    |         - `a` moved here
-12 |     total = a.sum()
-   |             ^ used after the move
-   = help: to keep both, copy it: `b = a.copy()`
+   = note: to keep both, move a copy: `a.copy()`
+```
+
+A variable moved on only one branch of an `if` counts as moved after it. A variable moved inside
+a loop, and not assigned a new value later in the same pass, is an error at the move, because the
+next pass would read it.
+
+A read-only or `InOut` parameter belongs to the caller, so it cannot be moved, returned included:
+
+```text
+error: `u` is borrowed from the caller, so it cannot be moved
+  --> heat.npl:23:12
+   |
+23 |     return u
+   |            ^ moved here
+   = note: move a copy instead: `u.copy()`, or take the parameter as `Owned[...]`
 ```
 
 Python programmers expect `b = a` to make two names for one list. Here it moves, and the error

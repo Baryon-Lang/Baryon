@@ -31,8 +31,8 @@ Mat3 = Fixed[f64, (3, 3)]
 
 
 def clean(grid: Array[f64, 2], small: Array[f32, 1], values: list[f64]) -> f64:
-    row = grid[1, :]
-    column = grid[:, 0]
+    row = grid[1, :].copy()
+    column = grid[:, 0].copy()
     total = row.sum() + column.max()
     scaled = 2.0 * grid - grid / 3.0
     product = grid @ grid

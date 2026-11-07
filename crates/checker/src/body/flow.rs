@@ -40,6 +40,9 @@ pub(super) struct State<'db> {
     pub(super) assigned: BTreeSet<NodeId>,
     /// For a variable some path to this point does not assign, where that path starts.
     pub(super) skipped: BTreeMap<NodeId, Skip>,
+    /// The variables moved on some path to this point, each with where it moved (the `moves`
+    /// module).
+    pub(super) moved: BTreeMap<NodeId, NodeId>,
 }
 
 /// Where a path that skips an assignment starts, and what to say about it.
@@ -151,6 +154,9 @@ impl<'db> Body<'db> {
         for end in ends {
             for (&binding, &skip) in &end.state.skipped {
                 joined.skipped.entry(binding).or_insert(skip);
+            }
+            for (&binding, &site) in &end.state.moved {
+                joined.moved.entry(binding).or_insert(site);
             }
         }
         for end in ends {
@@ -304,6 +310,10 @@ impl<'db> Body<'db> {
         let entry = self.state.clone();
         check(self);
         let inside = std::mem::replace(&mut self.state, entry);
+        self.moved_in_loop(statement, &self.state.clone(), &inside);
+        for (&binding, &site) in &inside.moved {
+            self.state.moved.entry(binding).or_insert(site);
+        }
         for binding in inside.assigned.difference(&self.state.assigned) {
             let label = "not assigned if the loop runs zero times";
             self.state.skipped.entry(*binding).or_insert(Skip {

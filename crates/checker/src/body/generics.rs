@@ -89,6 +89,9 @@ impl<'db> Body<'db> {
                 let declared = parameters[index].ty;
                 let expected = self.instantiate(declared, &names, &bindings, false);
                 let ty = self.expression(argument, expected);
+                if parameters[index].mode == types::Mode::Owned {
+                    self.consume(argument, ty);
+                }
                 self.unify(declared, ty, &names, &mut bindings);
                 found[slot] = Some(ty);
             }

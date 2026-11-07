@@ -77,7 +77,7 @@ def largest[T: Number](a: T, b: T) -> T:
     return b * 0.5
 
 
-def keep[T](value: T, other: T) -> T:
+def keep[T: Copy](value: T, other: T) -> T:
     if value < other:
         return value + other
     return value

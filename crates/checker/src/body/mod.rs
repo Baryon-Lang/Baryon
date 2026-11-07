@@ -17,7 +17,8 @@
 //! values: a `T | None` is used as a `T` only after a `None` check narrows it (1.7.8, the
 //! `flow` module); and definite assignment: a variable is read only where every path has
 //! assigned it, and a function that returns a value cannot reach its end (1.7.9, the
-//! `assignment` module).
+//! `assignment` module); and moves: a value that is not a copy type is read only until it
+//! moves, and only a variable the function owns can move (1.8.2, the `moves` module).
 
 mod arrays;
 mod assignment;
@@ -29,6 +30,7 @@ mod expressions;
 mod flow;
 mod generics;
 mod members;
+mod moves;
 mod numbers;
 mod operators;
 mod patterns;
@@ -66,6 +68,7 @@ pub(crate) fn check(
         handled: Vec::new(),
         caught: Vec::new(),
         bound: BTreeSet::new(),
+        modes: BTreeMap::new(),
     };
     let mut bound = BTreeSet::new();
     body.statement_bindings(entry.statement, &mut bound);
@@ -105,6 +108,8 @@ struct Body<'db> {
     /// The variables statements bind, which are checked for definite assignment (the
     /// `assignment` module).
     bound: BTreeSet<NodeId>,
+    /// How each parameter, by its `Name` node, receives its argument (the `moves` module).
+    modes: BTreeMap<NodeId, types::Mode>,
 }
 
 impl<'db> Body<'db> {
@@ -118,10 +123,16 @@ impl<'db> Body<'db> {
             .filter(|&parameter| self.tree.kind(parameter) == SyntaxKind::Parameter)
             .filter(|&parameter| self.tree.child(parameter, Role::Name).is_some())
             .collect();
-        let types: Vec<Type<'db>> = self.signature.parameters.iter().map(|p| p.ty).collect();
-        for (node, ty) in nodes.into_iter().zip(types) {
+        let parameters: Vec<(Type<'db>, types::Mode)> = self
+            .signature
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.ty, parameter.mode))
+            .collect();
+        for (node, (ty, mode)) in nodes.into_iter().zip(parameters) {
             if let Some(name) = self.tree.child(node, Role::Name) {
                 self.locals.insert(name, ty);
+                self.modes.insert(name, mode);
                 self.state.assigned.insert(name);
             }
             if let Some(default) = self.tree.child(node, Role::Default) {
@@ -220,6 +231,7 @@ impl<'db> Body<'db> {
             _ => None,
         };
         let ty = self.expression(value, expected);
+        self.consume(value, ty);
         for target in targets {
             self.bind(target, ty, Some(value));
         }
@@ -243,6 +255,7 @@ impl<'db> Body<'db> {
         }
         if let Some(value) = value {
             let found = self.expression(value, Some(ty));
+            self.consume(value, found);
             self.expect(value, ty, found, "the annotation says");
         }
     }
@@ -289,6 +302,7 @@ impl<'db> Body<'db> {
         };
         if let Some(value) = self.tree.child(statement, Role::Value) {
             let found = self.expression(value, Some(expected));
+            self.consume(value, found);
             if self.tree.child(self.function, Role::Returns).is_none()
                 && !relations::compatible(self.db, expected, found)
             {
@@ -354,6 +368,7 @@ impl<'db> Body<'db> {
                     return;
                 };
                 self.state.assigned.insert(binding);
+                self.state.moved.remove(&binding);
                 match self.locals.get(&binding) {
                     Some(&held) => {
                         if relations::compatible(self.db, held, ty) {
