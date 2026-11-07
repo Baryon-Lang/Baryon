@@ -191,3 +191,22 @@ error: expected `f64`, found `f32`
    |              ^^^^^^^ the annotation says `f64`"#
     );
 }
+
+/// `-a` and `+a` work element by element on an array of numbers, and are reported on an array
+/// of anything else.
+#[test]
+fn negating_an_array_needs_number_elements() {
+    let program = r"
+def negate(a: Array[f64, 1], flags: Array[bool, 1]) -> Array[f64, 1]:
+    b = -flags
+    return -a
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `-` does not apply to `Array[bool, 1]`
+ --> main.npl:2:9
+  |
+2 |     b = -flags
+  |         ^^^^^^ its elements are not numbers"
+    );
+}

@@ -105,8 +105,28 @@ impl<'db> Builder<'db> {
             }
             SyntaxKind::Match => self.unsupported(statement, "`match`"),
             SyntaxKind::Try => self.unsupported(statement, "`try`"),
-            SyntaxKind::With => self.unsupported(statement, "`with`"),
+            SyntaxKind::With => self.with_statement(statement),
             _ => self.unsupported(statement, "this statement"),
+        }
+    }
+
+    /// `with unsafe:`, which allows `a.unchecked[i]` in its body and otherwise runs the body as
+    /// it is. Other `with` statements are not lowered yet.
+    fn with_statement(&mut self, statement: NodeId) {
+        let items: Vec<NodeId> = self.tree.children_with(statement, Role::Item).collect();
+        let is_unsafe = match items.as_slice() {
+            [item] => {
+                self.tree.child(*item, Role::Target).is_none()
+                    && self.tree.child(*item, Role::Value).is_some_and(|value| {
+                        self.tree.kind(value) == SyntaxKind::Name && self.text_of(value) == "unsafe"
+                    })
+            }
+            _ => false,
+        };
+        if is_unsafe {
+            self.block(statement, Role::Body);
+        } else {
+            self.unsupported(statement, "`with` other than `with unsafe:`");
         }
     }
 
@@ -127,11 +147,10 @@ impl<'db> Builder<'db> {
                 Some(local) => (Place::from(local), self.local_type(local)),
                 None => return self.unsupported(target, "assignments to this name"),
             },
-            SyntaxKind::Attribute => match self.place(target) {
+            SyntaxKind::Attribute | SyntaxKind::Subscript => match self.place(target) {
                 Some(place) => (place, self.ty(target)),
                 None => return,
             },
-            SyntaxKind::Subscript => return self.unsupported(target, "assignments to an index"),
             _ => return self.unsupported(target, "unpacking assignments"),
         };
         if !self.needs_drop(ty) {
@@ -157,7 +176,8 @@ impl<'db> Builder<'db> {
             return;
         };
         let ty = self.ty(target);
-        if !matches!(ty.kind(self.db), TypeKind::Primitive(_)) {
+        let array = self.is_array(ty);
+        if !array && !matches!(ty.kind(self.db), TypeKind::Primitive(_)) {
             return self.unsupported(statement, "in-place operators on values other than numbers");
         }
         let syntax = self.tree.node(statement).operator();
@@ -167,6 +187,9 @@ impl<'db> Builder<'db> {
         let Some(place) = self.place(target) else {
             return;
         };
+        if array {
+            return self.augmented_array(place, ty, operator, value, statement);
+        }
         let right = self.operand_as(value, ty);
         let left = Operand::Copy(place.clone());
         self.arithmetic(place, operator, (left, right), ty, statement);
@@ -389,7 +412,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The value of an integer literal, possibly negative, or of a `Final` integer constant.
-    fn constant_integer(&self, node: NodeId) -> Option<i128> {
+    pub(crate) fn constant_integer(&self, node: NodeId) -> Option<i128> {
         match self.tree.kind(node) {
             SyntaxKind::Integer => {
                 integer(&self.text_of(node).replace('_', "").to_ascii_lowercase())

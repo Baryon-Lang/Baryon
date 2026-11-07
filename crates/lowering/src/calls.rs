@@ -3,7 +3,7 @@
 
 use crate::builder::Builder;
 use mir::{Argument, Callee, Place, Rvalue, TerminatorKind};
-use syntax::NodeId;
+use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
 
 impl<'db> Builder<'db> {
@@ -39,18 +39,29 @@ impl<'db> Builder<'db> {
                     let operand = self.operand_as(*argument, *to);
                     self.assign(place, Rvalue::Use(operand), node);
                 }
-                (TypeKind::Fixed { .. }, _) => {
-                    let operands = arguments
+                (&TypeKind::Fixed { element, .. }, _) => {
+                    let mut elements = Vec::new();
+                    for argument in arguments {
+                        self.elements(argument, &mut elements);
+                    }
+                    let operands = elements
                         .into_iter()
-                        .map(|argument| self.operand(argument))
+                        .map(|node| self.operand_as(node, element))
                         .collect();
                     self.assign(place, Rvalue::Aggregate(*to, operands), node);
                 }
                 _ => self.unsupported(node, "this conversion"),
             },
-            types::Callee::Builtin(name) => {
-                self.unsupported(node, &format!("the built-in `{name}`"));
-            }
+            types::Callee::Builtin(name) => match (name.split_once('.'), arguments.as_slice()) {
+                (None, [argument]) if name == "len" => self.len(place, *argument, node),
+                (Some(("Array", function @ ("zeros" | "ones" | "fill"))), _) => {
+                    self.new_array(&place, function, &arguments, node);
+                }
+                (Some(("Fixed", function @ ("zeros" | "ones" | "fill"))), _) => {
+                    self.new_fixed(place, function, &arguments, node);
+                }
+                _ => self.unsupported(node, &format!("the built-in `{name}`")),
+            },
             types::Callee::Value => self.unsupported(node, "calls of a function value"),
         }
     }
@@ -94,6 +105,17 @@ impl<'db> Builder<'db> {
             target,
             error: None,
         });
+    }
+
+    /// The elements of a `Fixed` array that `node` writes, in row-major order, onto
+    /// `elements`: a row such as `(1.0, 0.0)` is its items, each of which may be a row again.
+    fn elements(&self, node: NodeId, elements: &mut Vec<NodeId>) {
+        if self.tree.kind(node) != SyntaxKind::Tuple {
+            return elements.push(node);
+        }
+        for item in self.tree.children_with(node, Role::Item) {
+            self.elements(item, elements);
+        }
     }
 
     /// The value of `node` evaluated for its effect, as an expression statement: the result is

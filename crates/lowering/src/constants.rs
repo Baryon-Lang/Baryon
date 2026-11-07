@@ -150,6 +150,23 @@ impl<'db> Builder<'db> {
             }
         }
     }
+
+    /// The number `value` as a constant of the number type `ty`: an integer, a float, a complex
+    /// number with no imaginary part, or for `bool`, whether it is not zero.
+    pub(crate) fn number_constant(&self, ty: Type<'db>, value: i64) -> Constant<'db> {
+        #[expect(clippy::cast_precision_loss, reason = "0 and 1 are exact")]
+        let float = value as f64;
+        let value = match ty.kind(self.db) {
+            TypeKind::Primitive(Primitive::Bool) => ConstantValue::Bool(value != 0),
+            TypeKind::Primitive(Primitive::Float(_)) => ConstantValue::Float(float.to_bits()),
+            TypeKind::Primitive(Primitive::Complex(_)) => ConstantValue::Complex {
+                real: float.to_bits(),
+                imaginary: 0.0_f64.to_bits(),
+            },
+            _ => ConstantValue::Integer(i128::from(value)),
+        };
+        Constant { ty, value }
+    }
 }
 
 /// The value of an integer literal written in lowercase without underscores: `42`, `0xff`,
