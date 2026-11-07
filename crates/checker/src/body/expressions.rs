@@ -25,7 +25,10 @@ impl<'db> Body<'db> {
             SyntaxKind::Name => self.name(node),
             SyntaxKind::Attribute => self.attribute(node),
             SyntaxKind::Subscript => self.subscript(node),
-            SyntaxKind::Call => self.call(node, expected),
+            SyntaxKind::Call => {
+                let ty = self.call(node, expected);
+                self.fallible(node, ty)
+            }
             SyntaxKind::BinaryOperation => self.binary(node),
             SyntaxKind::UnaryOperation => self.unary(node),
             SyntaxKind::BooleanOperation => self.boolean(node),

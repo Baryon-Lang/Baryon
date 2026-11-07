@@ -12,12 +12,15 @@
 //! generics: type arguments inferred at calls, bounds checked, and inside a generic body only
 //! the operations a bound allows (1.7.5, the `generics` module); and `match`: patterns
 //! against the subject, and cases that cover every value (1.7.6, the `patterns` and
-//! `exhaustive` modules). What later slices check, and this one lets through without an error:
-//! `try` and errors (1.7.7), and the `None` check that narrows `T | None` to `T` (1.7.8).
+//! `exhaustive` modules); and errors: each error a call or `raise` can fail with is caught by a
+//! `try` or declared in the function's `Raises` (1.7.7, the `errors` module). What a later
+//! slice checks, and this one lets through without an error: the `None` check that narrows
+//! `T | None` to `T` (1.7.8).
 
 mod arrays;
 mod builtins;
 mod calls;
+mod errors;
 mod exhaustive;
 mod expressions;
 mod generics;
@@ -55,6 +58,8 @@ pub(crate) fn check(
         signature: signature.clone(),
         function: entry.statement,
         locals: BTreeMap::new(),
+        handled: Vec::new(),
+        caught: Vec::new(),
     };
     body.parameters(entry.statement);
     body.block(entry.statement, Role::Body);
@@ -78,6 +83,11 @@ struct Body<'db> {
     /// The type of each local variable, by the `Name` node of its first binding, which the
     /// resolver gives every use of the variable.
     locals: BTreeMap<NodeId, Type<'db>>,
+    /// The error types each enclosing `try` handles, innermost last.
+    handled: Vec<Vec<Type<'db>>>,
+    /// The error types each enclosing `except` block caught, innermost last, which a bare
+    /// `raise` raises again.
+    caught: Vec<Vec<Type<'db>>>,
 }
 
 impl<'db> Body<'db> {
@@ -115,7 +125,8 @@ impl<'db> Body<'db> {
     fn statement(&mut self, statement: NodeId) {
         let child = |role| self.tree.child(statement, role);
         match self.tree.kind(statement) {
-            SyntaxKind::ExpressionStatement | SyntaxKind::Raise => {
+            SyntaxKind::Raise => self.raise(statement),
+            SyntaxKind::ExpressionStatement => {
                 if let Some(value) = child(Role::Value) {
                     self.expression(value, None);
                 }
@@ -159,16 +170,7 @@ impl<'db> Body<'db> {
                 self.block(statement, Role::Body);
             }
             SyntaxKind::Match => self.match_statement(statement),
-            SyntaxKind::Try => {
-                self.block(statement, Role::Body);
-                let handlers: Vec<NodeId> =
-                    self.tree.children_with(statement, Role::Handler).collect();
-                for handler in handlers {
-                    self.block(handler, Role::Body);
-                }
-                self.block(statement, Role::Else);
-                self.block(statement, Role::Finally);
-            }
+            SyntaxKind::Try => self.try_statement(statement),
             SyntaxKind::Assert => {
                 self.condition(child(Role::Condition));
                 if let Some(message) = child(Role::Message) {
