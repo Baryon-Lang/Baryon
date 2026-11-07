@@ -4,7 +4,8 @@
 //! calling the implementation crate for it, inside a `#[salsa::tracked]` function so the result
 //! is cached. Today the stages are the `parser`, the `syntax_check`, the `resolver` and the
 //! `checker`, which also answers [`types::TypeDb`]'s queries. The `documentation` generator
-//! reads the parser's trees for [`Session::document`]. Swapping an implementation means
+//! reads the parser's trees for [`Session::document`], and `lowering` turns a checked function
+//! into the mid-level IR for [`Session::mir`]. Swapping an implementation means
 //! changing the one function here that calls it. A [`Session`] holds that database with one
 //! package loaded into it.
 //!
@@ -28,6 +29,8 @@
 //! assert!(diagnostics::render(&problems[0], &session).to_string().contains("main.npl:1:16"));
 //! # Ok::<(), source::SourceError>(())
 //! ```
+
+mod lowered;
 
 use database::{Db, File, Package, ParsedFile, Resolution};
 use diagnostics::Diagnostic;
