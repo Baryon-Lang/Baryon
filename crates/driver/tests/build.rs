@@ -113,9 +113,10 @@ fn programs_build_and_run() {
     );
 }
 
-/// A package without `main` builds nothing and says why.
+/// A package without `main.npl` builds nothing and says why, and so does one whose `main` is in
+/// another module: a program starts only at `main.npl`'s.
 #[test]
-fn packages_need_a_main_function() {
+fn programs_start_at_main_npl() {
     let directory = package(
         "no-main",
         &[("main.npl", "def f() -> i64:\n    return 1\n")],
@@ -126,7 +127,23 @@ fn packages_need_a_main_function() {
     assert_eq!(
         stderr(&output),
         "error: the package has no `main` function to run\n \
-         = note: add `def main():` to one of its modules\n\n"
+         = note: add `def main():` to `main.npl` at the package's root\n\n"
     );
     assert!(!program.exists());
+
+    let elsewhere = package("main-elsewhere", &[("app.npl", "def main():\n    pass\n")]).unwrap();
+    let (output, _) = npl_build(&elsewhere).unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stderr(&output),
+        "error: only `main.npl` may define `main`\n \
+         --> app.npl:1:5\n  \
+         |\n\
+         1 | def main():\n  \
+         |     ^^^^ only `main.npl` may define `main`\n  \
+         = note: a program starts at the `main` function of the `main.npl` at the package's \
+         root; rename this function\n\n\
+         error: the package has no `main` function to run\n \
+         = note: add `def main():` to `main.npl` at the package's root\n\n"
+    );
 }

@@ -1,5 +1,6 @@
 //! Compiling a package to one LLVM module, for `npl build`: each function lowered, made ready
-//! for a backend, and written as LLVM IR text, with a C `main` that calls the package's `main`.
+//! for a backend, and written as LLVM IR text, with a C `main` that calls the `main` function of
+//! the package's `main.npl`.
 //!
 //! This is the prototype of roadmap 1.11.3. It compiles every function and method that has no
 //! type parameters. Generic functions wait for monomorphization's collection of instances
@@ -22,11 +23,14 @@ struct Function<'db> {
     symbol: String,
     /// Whether it is a top-level function named `main`.
     main: bool,
+    /// Whether its module is the package's `main`, from `main.npl` at the root: the only module
+    /// whose `main` function a program starts at.
+    in_main_module: bool,
 }
 
 impl Session {
     /// The package as one LLVM module, in LLVM's textual IR (decision 0020), with a C `main` that
-    /// runs the package's `main` function. `clang` compiles and links it with the runtime.
+    /// runs the `main` function of the package's `main.npl`. `clang` compiles and links it with the runtime.
     ///
     /// Each function's symbol is its module's name and its own, joined by dots, with a method's
     /// class between them: `physics.nbody.step`, `physics.nbody.Body.energy`. Dots keep them
@@ -49,8 +53,8 @@ impl Session {
     /// # Errors
     ///
     /// The package's errors when it does not check; otherwise one error per function that
-    /// cannot be compiled yet, and an error when the package has no `main` function, more than
-    /// one, or one that takes parameters or returns a value.
+    /// cannot be compiled yet, and an error when `main.npl` has no `main` function, when another
+    /// module defines one, or when it takes parameters or returns a value.
     pub fn compile(&self) -> Result<String, Vec<Diagnostic>> {
         let errors: Vec<Diagnostic> = self
             .check()
@@ -80,6 +84,16 @@ impl Session {
             if !signature.type_parameters.is_empty() {
                 continue;
             }
+            if function.main && !function.in_main_module {
+                errors.push(
+                    self.at(function.item, "only `main.npl` may define `main`")
+                        .with_note(
+                            "a program starts at the `main` function of the `main.npl` at the \
+                             package's root; rename this function",
+                        ),
+                );
+                continue;
+            }
             if function.main {
                 let returns_none = matches!(signature.returns.kind(database), TypeKind::None);
                 if signature.parameters.is_empty() && returns_none {
@@ -101,17 +115,13 @@ impl Session {
                 Err(problems) => errors.extend(problems),
             }
         }
-        match entries.as_slice() {
-            [main] => module.entry(&main.symbol),
-            [] => errors.push(
+        // `main.npl` defines `main` at most once: a second top-level definition is a check error.
+        match entries.first() {
+            Some(main) => module.entry(&main.symbol),
+            None => errors.push(
                 Diagnostic::error("the package has no `main` function to run")
-                    .with_note("add `def main():` to one of its modules"),
+                    .with_note("add `def main():` to `main.npl` at the package's root"),
             ),
-            [_, others @ ..] => {
-                for other in others {
-                    errors.push(self.at(other.item, "the package defines `main` more than once"));
-                }
-            }
         }
         if errors.is_empty() {
             Ok(module.finish())
@@ -135,11 +145,13 @@ impl Session {
                 tree.child(statement, Role::Name)
                     .filter(|&name| tree.kind(name) == SyntaxKind::Name)
             };
+            let in_main_module = module == "main";
             let mut push = |node: NodeId, symbol: String, main: bool| {
                 functions.push(Function {
                     item: Item::new(database, self.package, file, node),
                     symbol,
                     main,
+                    in_main_module,
                 });
             };
             for statement in tree.children_with(tree.root(), Role::Body) {

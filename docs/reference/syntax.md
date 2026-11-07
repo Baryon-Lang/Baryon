@@ -13,7 +13,8 @@ names it adds where Python has no spelling.
 - One file is one module. A directory of modules is a package; it needs no `__init__` file.
 - A module holds only these at its top level: imports, `Final` constants, type aliases, functions
   and classes. There is no other top-level code and there are no module-level variables. A program
-  starts at its `main` function.
+  starts at its `main` function, which takes no parameters and is defined in `main.npl` at the
+  package's root. No other module may define a function named `main`.
 
   Why: top-level statements and global variables are shared mutable state, which a parallel loop
   could race on. Without them, every function's inputs are its parameters.
