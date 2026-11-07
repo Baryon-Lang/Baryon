@@ -5,6 +5,7 @@
 //! what a failed check reports without this crate depending on the runtime.
 
 mod arrays;
+mod errors;
 mod panics;
 
 use crate::{Module, Unsupported};
@@ -149,7 +150,7 @@ fn module<'db>(database: &'db Database, functions: &[(&str, Body<'db>)]) -> Stri
     let sources = sources();
     let mut module = Module::new(database, &sources, &no_structs, &symbol);
     for (name, body) in functions {
-        module.define(name, body).unwrap();
+        module.define(name, body, &[]).unwrap();
     }
     module.finish()
 }
@@ -464,7 +465,7 @@ fn unsupported_types_are_named() {
     let symbol = symbol_of(&database);
     let sources = sources();
     let mut module = Module::new(&database, &sources, &no_structs, &symbol);
-    let result = module.define("make", &Body::new(optional, span()));
+    let result = module.define("make", &Body::new(optional, span()), &[]);
     assert_eq!(
         result.map_err(|error: Unsupported| error.to_string()),
         Err("the LLVM backend does not compile values of type `f64 | None` yet".to_owned())

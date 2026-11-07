@@ -5,8 +5,8 @@ use crate::Unsupported;
 use crate::panic::Constants;
 use crate::ty::{Repr, Types};
 use mir::{
-    Argument, BlockId, Body, Callee, ConstantValue, LocalKind, Operand, Place, Projection,
-    Statement, StatementKind, Terminator, TerminatorKind,
+    BlockId, Body, ConstantValue, LocalKind, Operand, Place, Projection, Statement, StatementKind,
+    Terminator, TerminatorKind,
 };
 use source::Span;
 use std::collections::BTreeMap;
@@ -27,9 +27,11 @@ pub(crate) struct Function<'f, 'a, 'db> {
     /// How to represent each type.
     pub(crate) types: Types<'a, 'db>,
     /// The symbol of each function instance called.
-    symbol: &'f dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
+    pub(crate) symbol: &'f dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
     /// The body being written.
-    body: &'f Body<'db>,
+    pub(crate) body: &'f Body<'db>,
+    /// The error types the function can raise, in its `Raises` order; empty when it cannot fail.
+    pub(crate) errors: &'f [Type<'db>],
     /// How each local's parameter arrives, by local.
     passing: Vec<Passing>,
     /// The instructions written so far, after the entry block.
@@ -60,11 +62,13 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         constants: &'f mut Constants<'a>,
         name: &str,
         body: &'f Body<'db>,
+        errors: &'f [Type<'db>],
     ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
         let mut function = Self {
             types,
             symbol,
             body,
+            errors,
             passing: vec![Passing::Slot; body.locals.len()],
             code: String::new(),
             next_value: 0,
@@ -95,10 +99,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
     /// The `define` line, and the entry block: a slot per local, each by-value parameter stored
     /// in its slot, and a jump to the first block.
     fn prologue(&mut self, name: &str) -> Result<(String, String), Unsupported> {
-        let returns = match self.types.repr(self.body.locals[0].ty)? {
-            Repr::Empty => "void".to_owned(),
-            Repr::Value(ty) => ty,
-        };
+        let returns = self.returns()?;
         let mut parameters = Vec::new();
         let mut entry = String::new();
         for (index, local) in self.body.locals.iter().enumerate() {
@@ -132,6 +133,9 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             {
                 let _ = writeln!(entry, "  store {ty} %a{index}, ptr %_{index}");
             }
+        }
+        if !self.errors.is_empty() {
+            parameters.push("ptr noalias %error".to_owned());
         }
         entry.push_str("  br label %bb0\n");
         let signature = format!(
@@ -201,27 +205,14 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     cases.join(" ")
                 ));
             }
-            TerminatorKind::Return => match self.types.repr(self.body.locals[0].ty)? {
-                Repr::Empty => self.line("ret void"),
-                Repr::Value(ty) => {
-                    let value = self.fresh();
-                    self.line(&format!("{value} = load {ty}, ptr %_0"));
-                    self.line(&format!("ret {ty} {value}"));
-                }
-            },
+            TerminatorKind::Return => self.return_value()?,
             TerminatorKind::Call {
                 callee,
                 arguments,
                 destination,
                 target,
                 error,
-            } => {
-                if error.is_some() {
-                    return Err(Unsupported::new("calls to functions that can raise"));
-                }
-                self.call(callee, arguments, destination)?;
-                self.line(&format!("br label %{}", block_label(*target)));
-            }
+            } => self.call(callee, arguments, destination, *target, error.as_ref())?,
             TerminatorKind::Assert {
                 condition,
                 check,
@@ -235,72 +226,9 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     block_label(*target)
                 ));
             }
-            TerminatorKind::Raise(_) => return Err(Unsupported::new("`raise`")),
+            TerminatorKind::Raise(error) => self.raise(error)?,
             TerminatorKind::Unreachable => self.line("unreachable"),
         }
-        Ok(())
-    }
-
-    /// Writes a call of `callee` with `arguments`, storing its result at `destination`.
-    fn call(
-        &mut self,
-        callee: &Callee<'db>,
-        arguments: &[Argument<'db>],
-        destination: &Place,
-    ) -> Result<(), Unsupported> {
-        let Callee::Function {
-            item,
-            type_arguments,
-        } = callee
-        else {
-            return Err(Unsupported::new("calls of `Callable` values"));
-        };
-        let symbol = (self.symbol)(item, type_arguments);
-        let mut written = Vec::new();
-        let mut parameters = Vec::new();
-        for argument in arguments {
-            let (ty, value) = match argument {
-                Argument::Borrow(place) => {
-                    let (address, ty) = self.place(place)?;
-                    if self.types.by_value(ty) {
-                        let Some(value) = self.load(&address, ty)? else {
-                            continue;
-                        };
-                        (self.types.value(ty)?, value)
-                    } else {
-                        ("ptr".to_owned(), address)
-                    }
-                }
-                Argument::InOut(place) => ("ptr".to_owned(), self.place(place)?.0),
-                Argument::Owned(operand) => {
-                    let Some((value, ty)) = self.operand(operand)? else {
-                        continue;
-                    };
-                    (self.types.value(ty)?, value)
-                }
-            };
-            written.push(format!("{ty} {value}"));
-            parameters.push(ty);
-        }
-        let (address, ty) = self.place(destination)?;
-        let returns = match self.types.repr(ty)? {
-            Repr::Empty => "void".to_owned(),
-            Repr::Value(llvm) => llvm,
-        };
-        let call = format!("call {returns} {}({})", global(&symbol), written.join(", "));
-        if returns == "void" {
-            self.line(&call);
-        } else {
-            let value = self.fresh();
-            self.line(&format!("{value} = {call}"));
-            self.line(&format!("store {returns} {value}, ptr {address}"));
-        }
-        let declaration = format!(
-            "declare {returns} {}({})",
-            global(&symbol),
-            parameters.join(", ")
-        );
-        self.declare(&symbol, &declaration);
         Ok(())
     }
 
@@ -319,9 +247,11 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     (address, ty) = self.element(&address, ty, indices)?;
                     continue;
                 }
-                Projection::Value | Projection::Error(_) => {
-                    return Err(Unsupported::new("optionals and errors"));
+                Projection::Error(position) => {
+                    (address, ty) = self.error_payload(&address, ty, *position)?;
+                    continue;
                 }
+                Projection::Value => return Err(Unsupported::new("optionals")),
             };
             let container = self.types.value(ty)?;
             ty = self.field(ty, *position)?;
@@ -391,7 +321,11 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
     }
 
     /// Loads the value of type `ty` at `address`; `None` for a `None` value.
-    fn load(&mut self, address: &str, ty: Type<'db>) -> Result<Option<String>, Unsupported> {
+    pub(crate) fn load(
+        &mut self,
+        address: &str,
+        ty: Type<'db>,
+    ) -> Result<Option<String>, Unsupported> {
         let Repr::Value(llvm) = self.types.repr(ty)? else {
             return Ok(None);
         };
@@ -442,7 +376,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
 }
 
 /// The label of block `block`: `bb0`, `bb1`, ….
-fn block_label(block: BlockId) -> String {
+pub(crate) fn block_label(block: BlockId) -> String {
     format!("bb{}", block.index())
 }
 
