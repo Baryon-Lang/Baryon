@@ -112,6 +112,7 @@ fn bounds_check_and_drop() {
     let check = body.push_block(end(TerminatorKind::Assert {
         condition: Operand::Copy(in_bounds.into()),
         check: Check::IndexInBounds {
+            dimension: 0,
             index: Operand::Copy(index.into()),
             length: Operand::Copy(length.into()),
         },
@@ -161,7 +162,7 @@ fn(_1: Owned[Array[f64, 1]]) -> f64 {
         _2 = 0_i64;
         _3 = len(_1, 0);
         _4 = Less(copy _2, copy _3);
-        assert(copy _4, index in bounds: copy _2 < copy _3) -> bb1;
+        assert(copy _4, index in bounds in dimension 0: copy _2 < copy _3) -> bb1;
     }
 
     bb1: {
