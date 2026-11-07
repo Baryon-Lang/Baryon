@@ -85,13 +85,12 @@ impl<'db> Body<'db> {
     /// Reports `other` when its place overlaps that of `claimed`, which the call changes or
     /// moves.
     fn overlap(&mut self, claimed: &Passed<'db>, other: &Passed<'db>) {
-        let (Some((root, steps)), Some((other_root, other_steps))) =
+        let (Some((_, steps)), Some((_, other_steps))) =
             (self.place(claimed.node), self.place(other.node))
         else {
             return;
         };
-        let matched = steps.iter().zip(&other_steps).all(|(a, b)| a == b);
-        if root != other_root || !matched {
+        if !self.overlaps(claimed.node, other.node) {
             return;
         }
         let name = self.tree.text(claimed.node, self.text);
@@ -133,6 +132,18 @@ impl<'db> Body<'db> {
         self.lowerer.diagnostics.push(diagnostic);
     }
 
+    /// Whether the places `first` and `second` overlap: they start at the same variable, and
+    /// one's steps are a prefix of the other's. Not a place, such as `x + 1`, overlaps
+    /// nothing.
+    pub(super) fn overlaps(&self, first: NodeId, second: NodeId) -> bool {
+        let (Some((root, steps)), Some((other_root, other_steps))) =
+            (self.place(first), self.place(second))
+        else {
+            return false;
+        };
+        root == other_root && steps.iter().zip(&other_steps).all(|(a, b)| a == b)
+    }
+
     /// The variable a place such as `atoms.forces[i]` starts at, and its steps; `None` when
     /// `node` is not a place, such as `x + 1`.
     fn place(&self, node: NodeId) -> Option<(NodeId, Vec<Step<'_>>)> {
@@ -157,11 +168,15 @@ impl<'db> Body<'db> {
     }
 
     /// Records that the place `node` is changed: an assignment target, the target of `+=`,
-    /// an `InOut` argument or receiver. Reports it when it is part of a read-only parameter.
+    /// an `InOut` argument or receiver. Reports it when an enclosing loop borrows it (the
+    /// `loops` module), or when it is part of a read-only parameter.
     pub(super) fn change(&mut self, node: NodeId) {
         let Some(root) = self.place_root(node) else {
             return;
         };
+        if self.borrowed_by_loop(node, "changed") {
+            return;
+        }
         let Some(&Definition::Local(binding)) = self.lowerer.definition(root) else {
             return;
         };

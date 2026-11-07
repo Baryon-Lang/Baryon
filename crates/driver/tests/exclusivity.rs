@@ -231,3 +231,115 @@ error: `u` is a read-only parameter, so it cannot be changed
    = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = u.copy()`"
     );
 }
+
+/// A loop over the indices that changes elements, a loop that reads non-copy elements and
+/// copies one to keep, a loop over one field that changes another, and a loop over a
+/// temporary.
+#[test]
+fn loops_that_leave_their_collection_alone_check_clean() {
+    let program = r"
+class Atoms(Struct):
+    positions: Array[f64, 1]
+    forces: Array[f64, 1]
+
+
+def run(atoms: InOut[Atoms], rows: InOut[list[Array[f64, 1]]], n: i64) -> f64:
+    total = 0.0
+    for i in range(len(rows)):
+        rows[i][0] = 0.0
+    kept: list[Array[f64, 1]] = []
+    for row in rows:
+        total += row.sum()
+        kept.append(row.copy())
+    for x in atoms.positions:
+        atoms.forces[0] += x
+    for k in range(n):
+        rows.append(atoms.forces.copy())
+    return total
+";
+    assert_eq!(check_one(program), "");
+}
+
+/// Appending to, assigning an element of, and moving the collection a loop goes over, from
+/// its body and from a nested loop's body; and changing and moving a loop variable that
+/// borrows a non-copy element.
+#[test]
+fn loops_that_change_their_collection_are_reported() {
+    let program = r"
+def keep(values: Owned[list[Array[f64, 1]]]):
+    pass
+
+
+def run(rows: InOut[list[Array[f64, 1]]], values: InOut[list[f64]]):
+    for v in values:
+        values.append(v * 2.0)
+        values[0] = 1.0
+    for row in rows:
+        for v in values:
+            rows.append(row.copy())
+        row[0] = 1.0
+        kept = row
+    for row in rows:
+        keep(rows)
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `values` cannot be changed while a loop goes over it
+ --> main.npl:7:9
+  |
+7 |         values.append(v * 2.0)
+  |         ^^^^^^ changed here
+ ::: main.npl:6:14
+  |
+6 |     for v in values:
+  |              ------ the loop goes over `values` here
+  = note: loop over the indices instead: `for i in range(len(values)):`
+
+error: `values` cannot be changed while a loop goes over it
+ --> main.npl:8:9
+  |
+8 |         values[0] = 1.0
+  |         ^^^^^^^^^ changed here
+ ::: main.npl:6:14
+  |
+6 |     for v in values:
+  |              ------ the loop goes over `values` here
+  = note: loop over the indices instead: `for i in range(len(values)):`
+
+error: `rows` cannot be changed while a loop goes over it
+  --> main.npl:11:13
+   |
+11 |             rows.append(row.copy())
+   |             ^^^^ changed here
+  ::: main.npl:9:16
+   |
+ 9 |     for row in rows:
+   |                ---- the loop goes over `rows` here
+   = note: loop over the indices instead: `for i in range(len(rows)):`
+
+error: `row` borrows an element of `rows`, so it cannot be changed
+  --> main.npl:12:9
+   |
+12 |         row[0] = 1.0
+   |         ^^^^^^ changed here
+   = note: work on a copy, `row.copy()`, or loop over the indices to change the element: `for i in range(len(rows)):`
+
+error: `row` borrows an element of `rows`, so it cannot be moved
+  --> main.npl:13:16
+   |
+13 |         kept = row
+   |                ^^^ moved here
+   = note: to keep the element, keep a copy: `row.copy()`
+
+error: `rows` cannot be moved while a loop goes over it
+  --> main.npl:15:14
+   |
+15 |         keep(rows)
+   |              ^^^^ moved here
+  ::: main.npl:14:16
+   |
+14 |     for row in rows:
+   |                ---- the loop goes over `rows` here
+   = note: loop over the indices instead: `for i in range(len(rows)):`"
+    );
+}

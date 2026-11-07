@@ -231,6 +231,23 @@ The collection is borrowed for the whole loop, so the loop body cannot change it
 assignment to its elements. To change elements while looping, loop over the indices:
 `for i in range(len(values)):`.
 
+```text
+error: `values` cannot be changed while a loop goes over it
+ --> stats.npl:3:9
+  |
+3 |         values.append(v * 2.0)
+  |         ^^^^^^ changed here
+ ::: stats.npl:2:14
+  |
+2 |     for v in values:
+  |              ------ the loop goes over `values` here
+  = note: loop over the indices instead: `for i in range(len(values)):`
+```
+
+A loop variable that borrows a non-copy element cannot be changed or moved either; keep a copy,
+`v.copy()`, to hold on to one. A loop over a temporary, such as `range(n)` or a call's result,
+borrows nothing.
+
 ## Slices
 
 A slice of an array, `a[1:n]` or `grid[:, 0]`, is a view: it refers to the array's own memory and
