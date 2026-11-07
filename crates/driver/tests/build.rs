@@ -3,10 +3,11 @@
 //! functions by the names and signatures it exports (decision 0021), which no other test can,
 //! since the backend may not depend on the runtime.
 
+use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::Once;
+use std::sync::{Mutex, Once, PoisonError};
 
 /// The `baryon` executable cargo built for these tests.
 const BARYON: &str = env!("CARGO_BIN_EXE_baryon");
@@ -29,7 +30,17 @@ fn build_runtime() {
 }
 
 /// A new directory holding the package `files`, each a path and its text, for the test `name`.
+///
+/// The tests run in parallel and each name is one directory, which this function first empties,
+/// so two tests sharing a name would delete each other's files. A name used twice panics, so
+/// that mistake fails every run instead of one run in a few.
 fn package(name: &str, files: &[(&str, &str)]) -> io::Result<PathBuf> {
+    static NAMES: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+    let fresh = NAMES
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(name.to_owned());
+    assert!(fresh, "two tests use the package name `{name}`");
     let directory =
         std::env::temp_dir().join(format!("baryon-build-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
@@ -78,7 +89,7 @@ const BACKTRACE: &str = "backtrace, most recent call last:\n";
 #[test]
 fn programs_build_and_run() {
     let directory = package(
-        "run",
+        "fibonacci",
         &[
             (
                 "numbers/fibonacci.byn",
