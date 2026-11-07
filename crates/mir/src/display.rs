@@ -286,8 +286,12 @@ impl Writer<'_> {
     /// What an assert checks, as its panic message will say it.
     fn check(self, check: &Check<'_>) -> String {
         match check {
-            Check::IndexInBounds { index, length } => format!(
-                "index in bounds: {} < {}",
+            Check::IndexInBounds {
+                dimension,
+                index,
+                length,
+            } => format!(
+                "index in bounds in dimension {dimension}: {} < {}",
                 self.operand(index),
                 self.operand(length)
             ),

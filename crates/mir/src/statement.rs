@@ -137,6 +137,8 @@ pub struct ErrorEdge {
 pub enum Check<'db> {
     /// An array index is below its dimension's length and not negative (decision 0010).
     IndexInBounds {
+        /// The dimension indexed, 0 for the outermost, so the panic message can name it.
+        dimension: u32,
         /// The index.
         index: Operand<'db>,
         /// The dimension's length.
@@ -166,7 +168,7 @@ impl<'db> Check<'db> {
     #[must_use]
     pub fn operands(&self) -> Vec<&Operand<'db>> {
         match self {
-            Self::IndexInBounds { index, length } => vec![index, length],
+            Self::IndexInBounds { index, length, .. } => vec![index, length],
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
@@ -178,7 +180,7 @@ impl<'db> Check<'db> {
     /// [`operands`](Self::operands).
     pub fn operands_mut(&mut self) -> Vec<&mut Operand<'db>> {
         match self {
-            Self::IndexInBounds { index, length } => vec![index, length],
+            Self::IndexInBounds { index, length, .. } => vec![index, length],
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
