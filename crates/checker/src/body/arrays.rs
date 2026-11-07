@@ -1,19 +1,18 @@
-//! Arrays (language reference, "Arrays"): creating them, their methods and attributes,
-//! whole-array arithmetic and the matrix product, and the list methods.
+//! Arrays (language reference, "Arrays"): creating them, their methods and attributes, and
+//! the list methods.
 //!
 //! - `Array.zeros(shape)`, `Array.ones(shape)` and `Array.fill(shape, value)` create an `Array`
 //!   whose rank is the length of the `shape` tuple. Its element type is the one the context
 //!   needs, else the `dtype` argument, else `f64` (for `fill`, the value's type).
 //! - `Vec3.zeros()`, `Vec3.ones()` and `Vec3.fill(value)` create a `Fixed` array an alias
 //!   names, and `Mat3((1.0, 0.0), (0.0, 1.0))` builds one from nested tuples of its elements.
-//! - Arithmetic works element by element on two arrays of the same rank (`Array`) or shape
-//!   (`Fixed`), or on an array and a number; the number mixing rules apply to the elements.
+//! - Arithmetic on arrays and the matrix product are in the `elementwise` module.
 
 use super::calls::Arguments;
 use super::{Body, relations};
 use crate::forms::is_copy;
-use syntax::{Flags, NodeId, Operator, Role, SyntaxKind};
-use types::{Float, Integer, Primitive, Shape, Type, TypeKind};
+use syntax::{Flags, NodeId, Role, SyntaxKind};
+use types::{Float, Integer, Primitive, Type, TypeKind};
 
 /// The methods version 0 defines on arrays, for messages.
 const ARRAY_METHODS: &str = "`copy`, `sum`, `min`, `max`, `dot`, `round` and `fill`";
@@ -281,10 +280,12 @@ impl<'db> Body<'db> {
                 return Some(match (name, arguments.positional.as_slice()) {
                     ("append", [value]) => {
                         let found = self.expression(*value, Some(item));
+                        self.consume(*value, found);
                         self.expect(*value, item, found, "the list holds");
                         nothing
                     }
                     ("pop", []) => item,
+                    ("copy", []) => base,
                     _ => {
                         self.untyped(arguments);
                         let message = format!("`{}` has no method `{name}`", self.show(base));
@@ -292,7 +293,7 @@ impl<'db> Body<'db> {
                             node,
                             &message,
                             "not defined",
-                            Some("a list has `append` and `pop`, and works with `len`, indexing, slicing, `in` and loops"),
+                            Some("a list has `append`, `pop` and `copy`, and works with `len`, indexing, slicing, `in` and loops"),
                         )
                     }
                 });
@@ -365,155 +366,5 @@ impl<'db> Body<'db> {
                 )
             }
         })
-    }
-
-    /// `left op right` where at least one side is an array, or `None` when neither is.
-    pub(super) fn array_arithmetic(
-        &mut self,
-        node: NodeId,
-        operator: Operator,
-        left: Type<'db>,
-        right: Type<'db>,
-    ) -> Option<Type<'db>> {
-        use TypeKind::{Array, Fixed};
-        let symbol = operator.symbol();
-        if operator == Operator::MatrixMultiply {
-            return Some(self.matrix_product(node, left, right));
-        }
-        if !matches!(
-            operator,
-            Operator::Add
-                | Operator::Subtract
-                | Operator::Multiply
-                | Operator::Divide
-                | Operator::FloorDivide
-                | Operator::Modulo
-                | Operator::Power
-        ) {
-            return None;
-        }
-        let scalar = |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Primitive(_));
-        let result = match (left.kind(self.db), right.kind(self.db)) {
-            (
-                Array {
-                    element: a,
-                    rank: m,
-                },
-                Array {
-                    element: b,
-                    rank: n,
-                },
-            ) => {
-                if m != n {
-                    return Some(self.shape_error(node, symbol, left, right));
-                }
-                let (a, b, rank) = (*a, *b, *m);
-                let element = self.combine(node, operator, a, b);
-                Array { element, rank }
-            }
-            (
-                Fixed {
-                    element: a,
-                    shape: s,
-                },
-                Fixed {
-                    element: b,
-                    shape: t,
-                },
-            ) => {
-                if s != t {
-                    return Some(self.shape_error(node, symbol, left, right));
-                }
-                let (a, b, shape) = (*a, *b, s.clone());
-                let element = self.combine(node, operator, a, b);
-                Fixed { element, shape }
-            }
-            (Array { element, rank }, _) if scalar(right) => {
-                let (element, rank) = (*element, *rank);
-                let element = self.combine(node, operator, element, right);
-                Array { element, rank }
-            }
-            (_, Array { element, rank }) if scalar(left) => {
-                let (element, rank) = (*element, *rank);
-                let element = self.combine(node, operator, left, element);
-                Array { element, rank }
-            }
-            (Fixed { element, shape }, _) if scalar(right) => {
-                let (element, shape) = (*element, shape.clone());
-                let element = self.combine(node, operator, element, right);
-                Fixed { element, shape }
-            }
-            (_, Fixed { element, shape }) if scalar(left) => {
-                let (element, shape) = (*element, shape.clone());
-                let element = self.combine(node, operator, left, element);
-                Fixed { element, shape }
-            }
-            (Array { .. } | Fixed { .. }, _) | (_, Array { .. } | Fixed { .. }) => {
-                return Some(self.shape_error(node, symbol, left, right));
-            }
-            _ => return None,
-        };
-        Some(Type::new(self.db, result))
-    }
-
-    /// `a @ b`: the matrix product of two matrices, or of a matrix and a vector.
-    fn matrix_product(&mut self, node: NodeId, left: Type<'db>, right: Type<'db>) -> Type<'db> {
-        use TypeKind::{Array, Fixed};
-        let product = match (left.kind(self.db), right.kind(self.db)) {
-            (
-                Array {
-                    element: a,
-                    rank: 2,
-                },
-                Array { element: b, rank },
-            ) if *rank <= 2 => {
-                let (a, b, rank) = (*a, *b, *rank);
-                let element = self.combine(node, Operator::Multiply, a, b);
-                Some(Array { element, rank })
-            }
-            (
-                Fixed {
-                    element: a,
-                    shape: s,
-                },
-                Fixed {
-                    element: b,
-                    shape: t,
-                },
-            ) if s.rank() == 2 && t.rank() <= 2 && s.lengths()[1] == t.lengths()[0] => {
-                let mut lengths = vec![s.lengths()[0]];
-                lengths.extend_from_slice(&t.lengths()[1..]);
-                let (a, b) = (*a, *b);
-                let element = self.combine(node, Operator::Multiply, a, b);
-                Shape::new(lengths).map(|shape| Fixed { element, shape })
-            }
-            _ => None,
-        };
-        match product {
-            Some(kind) => Type::new(self.db, kind),
-            None => self.shape_error(node, "@", left, right),
-        }
-    }
-
-    /// Reports two operands whose ranks or shapes do not match.
-    fn shape_error(
-        &mut self,
-        node: NodeId,
-        symbol: &str,
-        left: Type<'db>,
-        right: Type<'db>,
-    ) -> Type<'db> {
-        let message = format!(
-            "`{symbol}` cannot combine `{}` and `{}`",
-            self.show(left),
-            self.show(right)
-        );
-        let hint = if symbol == "@" {
-            "`@` multiplies a matrix by a matrix or a vector whose lengths match"
-        } else {
-            "both arrays need the same rank, or the same shape for `Fixed` arrays, or one side a single number"
-        };
-        self.lowerer
-            .error(node, &message, "shapes do not match", Some(hint))
     }
 }

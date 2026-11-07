@@ -30,7 +30,7 @@ Vec3 = Fixed[f64, (3,)]
 Mat3 = Fixed[f64, (3, 3)]
 
 
-def clean(grid: Array[f64, 2], small: Array[f32, 1], values: list[f64]) -> f64:
+def clean(grid: Array[f64, 2], small: Array[f32, 1], values: InOut[list[f64]]) -> f64:
     row = grid[1, :].copy()
     column = grid[:, 0].copy()
     total = row.sum() + column.max()
@@ -123,7 +123,7 @@ error: `Mat3` needs its elements in the shape `(3, 3)`
 #[test]
 fn array_methods_and_creation_mistakes_are_reported() {
     let program = r#"
-def methods(grid: Array[f64, 2], counts: list[i64]):
+def methods(grid: Array[f64, 2], counts: InOut[list[i64]]):
     g = grid.dot(grid)
     h = grid.mean()
     k = Array.zeros((2.5,))
@@ -175,7 +175,7 @@ error: `list[i64]` has no method `push`
   |
 7 |     counts.push(2)
   |     ^^^^^^^^^^^^^^ not defined
-  = note: a list has `append` and `pop`, and works with `len`, indexing, slicing, `in` and loops
+  = note: a list has `append`, `pop` and `copy`, and works with `len`, indexing, slicing, `in` and loops
 
 error: `Array[f64, 2]` has no attribute `length`
  --> main.npl:8:9

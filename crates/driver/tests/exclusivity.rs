@@ -1,0 +1,233 @@
+//! Exclusivity and read-only parameters, end to end, through every stage up to the type
+//! checker: no argument of a call refers to a value the call changes or moves, and a
+//! read-only parameter that is not a copy type is never changed.
+//!
+//! These tests live in the driver because they need several implementations, and only an
+//! application crate may depend on more than one (decision 0001).
+
+use driver::Session;
+
+/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// string means the program is clean. The program's first newline is dropped.
+fn check_one(text: &str) -> String {
+    let mut session = Session::new();
+    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+        return error.to_string();
+    }
+    session
+        .check()
+        .iter()
+        .map(|diagnostic| diagnostics::render(diagnostic, &session).to_string())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// Disjoint fields, the same place read twice, a temporary next to a changed place, copy
+/// types passed `Owned` twice, an `InOut` method on an `InOut` parameter, a read-only
+/// copy-type parameter changed locally, and the `copy` every struct and `str` has.
+#[test]
+fn calls_that_keep_their_arguments_apart_check_clean() {
+    let program = r"
+class Atoms(Struct):
+    positions: Array[f64, 1]
+    forces: Array[f64, 1]
+
+    def clear(self: InOut[Self]):
+        self.forces[0] = 0.0
+
+
+class Point(Struct, Copy):
+    x: f64
+    y: f64
+
+
+def integrate(positions: InOut[Array[f64, 1]], forces: Array[f64, 1]):
+    positions[0] += forces[0]
+
+
+def dot(a: Array[f64, 1], b: Array[f64, 1]) -> f64:
+    return a[0] * b[0]
+
+
+def scale(values: InOut[Array[f64, 1]], factor: f64):
+    values[0] *= factor
+
+
+def step(atoms: InOut[Atoms], n: i64) -> f64:
+    integrate(atoms.positions, atoms.forces)
+    scale(atoms.forces, atoms.positions[0] + 1.0)
+    atoms.clear()
+    n = abs(n)
+    point = Point(1.0, 2.0)
+    point = Point(point.x, point.x)
+    snapshot = atoms.copy()
+    label = 'step'
+    kept = label.copy()
+    return dot(atoms.forces, snapshot.forces) + point.y + f64(n) + f64(len(kept))
+";
+    assert_eq!(check_one(program), "");
+}
+
+/// A struct changed by a call that also reads its field, the same array passed twice, two
+/// elements of one array (indices are not compared), and a value moved by a call that also
+/// reads it.
+#[test]
+fn arguments_that_overlap_a_changed_or_moved_one_are_reported() {
+    let program = r"
+class Atoms(Struct):
+    positions: Array[f64, 1]
+    forces: Array[f64, 1]
+
+
+def integrate(atoms: InOut[Atoms], forces: Array[f64, 1]):
+    pass
+
+
+def axpy(y: InOut[Array[f64, 1]], x: Array[f64, 1]):
+    pass
+
+
+def swap(a: InOut[f64], b: InOut[f64]):
+    pass
+
+
+def keep(values: Owned[Array[f64, 1]], other: Array[f64, 1]):
+    pass
+
+
+def calls(atoms: InOut[Atoms], u: InOut[Array[f64, 1]]):
+    integrate(atoms, atoms.forces)
+    axpy(u, u)
+    swap(u[0], u[1])
+    work = u.copy()
+    keep(work, work)
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `atoms` is changed by this call and also passed to it
+  --> main.npl:23:22
+   |
+23 |     integrate(atoms, atoms.forces)
+   |                      ^^^^^^^^^^^^ `atoms.forces` is part of `atoms`
+  ::: main.npl:23:15
+   |
+23 |     integrate(atoms, atoms.forces)
+   |               ----- `atoms` is passed as `InOut`
+   = note: a value this call changes cannot also be read through another argument; pass a copy: `atoms.forces.copy()`
+
+error: `u` is changed by this call and also passed to it
+  --> main.npl:24:13
+   |
+24 |     axpy(u, u)
+   |             ^ `u` again
+  ::: main.npl:24:10
+   |
+24 |     axpy(u, u)
+   |          - `u` is passed as `InOut`
+   = note: a value this call changes cannot also be read through another argument; pass a copy: `u.copy()`
+
+error: `u[0]` is changed by this call and also passed to it
+  --> main.npl:25:16
+   |
+25 |     swap(u[0], u[1])
+   |                ^^^^ `u[1]` may be the same as `u[0]`: indices are not compared
+  ::: main.npl:25:10
+   |
+25 |     swap(u[0], u[1])
+   |          ---- `u[0]` is passed as `InOut`
+   = note: a value this call changes cannot also be read through another argument; read it into a variable first: `value = u[1]`
+
+error: `work` is moved by this call and also passed to it
+  --> main.npl:27:16
+   |
+27 |     keep(work, work)
+   |                ^^^^ `work` again
+  ::: main.npl:27:10
+   |
+27 |     keep(work, work)
+   |          ---- `work` is passed as `Owned`
+   = note: a value this call moves cannot also be read through another argument; pass a copy: `work.copy()`"
+    );
+}
+
+/// A read-only parameter assigned, added to, passed as `InOut`, appended to, given to a
+/// method that changes it, and assigned a new value; and `self` changed by a read-only method.
+#[test]
+fn changes_to_read_only_parameters_are_reported() {
+    let program = r"
+class Atoms(Struct):
+    positions: Array[f64, 1]
+    forces: Array[f64, 1]
+
+    def clear(self: InOut[Self]):
+        self.forces[0] = 0.0
+
+    def total(self) -> f64:
+        self.forces[0] = 1.0
+        return self.forces.sum()
+
+
+def axpy(y: InOut[Array[f64, 1]], x: Array[f64, 1]):
+    pass
+
+
+def changes(u: Array[f64, 1], values: list[f64], atoms: Atoms):
+    u[0] = 1.0
+    u += 1.0
+    axpy(u, u.copy())
+    values.append(1.0)
+    atoms.clear()
+    u = Array(values)
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `self` is a read-only parameter, so it cannot be changed
+ --> main.npl:9:9
+  |
+9 |         self.forces[0] = 1.0
+  |         ^^^^^^^^^^^^^^ changed here
+  = note: to change the struct, declare the method's first parameter `self: InOut[Self]`
+
+error: `u` is a read-only parameter, so it cannot be changed
+  --> main.npl:18:5
+   |
+18 |     u[0] = 1.0
+   |     ^^^^ changed here
+   = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = u.copy()`
+
+error: `u` is a read-only parameter, so it cannot be changed
+  --> main.npl:19:5
+   |
+19 |     u += 1.0
+   |     ^ changed here
+   = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = u.copy()`
+
+error: `u` is a read-only parameter, so it cannot be changed
+  --> main.npl:20:10
+   |
+20 |     axpy(u, u.copy())
+   |          ^ changed here
+   = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = u.copy()`
+
+error: `values` is a read-only parameter, so it cannot be changed
+  --> main.npl:21:5
+   |
+21 |     values.append(1.0)
+   |     ^^^^^^ changed here
+   = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = values.copy()`
+
+error: `atoms` is a read-only parameter, so it cannot be changed
+  --> main.npl:22:5
+   |
+22 |     atoms.clear()
+   |     ^^^^^ changed here
+   = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = atoms.copy()`
+
+error: `u` is a read-only parameter, so it cannot be changed
+  --> main.npl:23:5
+   |
+23 |     u = Array(values)
+   |     ^ changed here
+   = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = u.copy()`"
+    );
+}

@@ -40,7 +40,8 @@ class Vec2(Struct, Copy):
 ```
 
 Structs are not copy types by default because a copy of a large struct costs time that the source
-should show. `Fixed` arrays are copy types because they are small by design; the compiler warns
+should show. That copy is written `.copy()`, which every value that moves has: an `Array`, a
+`list`, a `str`, and a struct, whose `copy` copies each field unless the struct defines its own. `Fixed` arrays are copy types because they are small by design; the compiler warns
 when one has more than 64 elements ([decision 0007](../decisions/0007-array-types.md)).
 
 ## Moves
@@ -123,6 +124,21 @@ lets the language skip Rust's lifetime annotations: every borrow ends where the 
 compiler never has to reason about how long one lives.
 
 Returning a read-only parameter is therefore an error that suggests `return x.copy()`.
+
+A read-only parameter is never changed: assigning it, its fields or its elements, using it as the
+target of `+=`, passing it as `InOut` and calling a method that changes it are all errors. The
+exception is a copy type, such as an `f64`, a `Fixed` vector or a `Copy` struct. It is passed by
+value, so the function holds its own copy and may change it, as in `n = abs(n)`, without the caller
+seeing.
+
+```text
+error: `values` is a read-only parameter, so it cannot be changed
+ --> stats.npl:3:5
+  |
+3 |     values.append(0.0)
+  |     ^^^^^^ changed here
+  = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = values.copy()`
+```
 
 ## Methods
 
