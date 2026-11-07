@@ -1,8 +1,7 @@
-//! Calls: to functions, methods, struct constructors, aliases of `Fixed` vectors, number
-//! conversions and the language's built-in functions.
+//! Calls: to functions, struct constructors, aliases of `Fixed` vectors, number conversions
+//! and the language's built-in functions. Method calls are in the `methods` module.
 
 use super::exclusive::Passed;
-use super::members::Member;
 use super::{Body, relations};
 use crate::outline::{Base, Kind, outline};
 use database::{Definition, File};
@@ -215,7 +214,7 @@ impl<'db> Body<'db> {
     }
 
     /// A call to a value, such as a `Callable` parameter.
-    fn call_value(
+    pub(super) fn call_value(
         &mut self,
         node: NodeId,
         callee: &str,
@@ -265,120 +264,12 @@ impl<'db> Body<'db> {
         )
     }
 
-    /// `value.method(arguments)` on a struct.
-    fn method_call(
-        &mut self,
-        node: NodeId,
-        function: NodeId,
-        arguments: &Arguments,
-        expected: Option<Type<'db>>,
-    ) -> Type<'db> {
-        let (Some(value), Some(attribute)) = (
-            self.tree.child(function, Role::Value),
-            self.tree.child(function, Role::Attribute),
-        ) else {
-            return self.untyped(arguments);
-        };
-        let callee = self.tree.text(attribute, self.text).to_owned();
-        match self.lowerer.definition(value) {
-            Some(Definition::Builtin("Array")) => {
-                return self.array_function(node, &callee, arguments, expected);
-            }
-            Some(Definition::Item(..)) => {
-                // `Vec3.zeros()` on an alias of a `Fixed` type; anything else on a class has no
-                // functions in version 0.
-                let ty = self.lowerer.lower(value);
-                return match ty.kind(self.db) {
-                    TypeKind::Fixed { .. } => self.fixed_function(node, ty, &callee, arguments),
-                    _ => self.untyped(arguments),
-                };
-            }
-            _ => {}
-        }
-        let base = self.expression(value, None);
-        if self.maybe_none(value, base) {
-            self.untyped(arguments);
-            return self.lowerer.unknown();
-        }
-        if let Some(result) = self.container_method(node, base, &callee, arguments) {
-            if matches!(base.kind(self.db), TypeKind::List(_))
-                && matches!(callee.as_str(), "append" | "pop")
-            {
-                self.change(value);
-            }
-            return result;
-        }
-        // `copy` on a `str` or a struct that does not define its own: a built-in method.
-        let copy = Signature {
-            type_parameters: Vec::new(),
-            parameters: vec![Parameter {
-                name: "self".to_owned(),
-                ty: base,
-                mode: types::Mode::Borrow,
-                default: false,
-            }],
-            returns: base,
-        };
-        let receiver = Passed {
-            node: value,
-            mode: types::Mode::Borrow,
-            ty: base,
-        };
-        let nominal = match base.kind(self.db) {
-            TypeKind::Str if callee == "copy" => {
-                let builtin = Callee::Builtin("str.copy".to_owned());
-                return self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments);
-            }
-            TypeKind::Struct(nominal) => nominal.clone(),
-            _ => return self.untyped(arguments),
-        };
-        match self.member(function, &nominal, base, attribute) {
-            Some(Member::Method {
-                item,
-                parameters,
-                arguments: type_arguments,
-            }) => {
-                let Declaration::Function(signature) = &self.db.declaration(item).declaration
-                else {
-                    return self.untyped(arguments);
-                };
-                let substitute = |ty| {
-                    relations::substitute(self.db, ty, nominal.file, &parameters, &type_arguments)
-                };
-                let signature = Signature {
-                    type_parameters: signature.type_parameters.clone(),
-                    parameters: signature
-                        .parameters
-                        .iter()
-                        .map(|parameter| Parameter {
-                            ty: substitute(parameter.ty),
-                            ..parameter.clone()
-                        })
-                        .collect(),
-                    returns: substitute(signature.returns),
-                };
-                let receiver = signature.parameters.first().map(|parameter| Passed {
-                    mode: parameter.mode,
-                    ..receiver
-                });
-                let method = Callee::Method(item);
-                self.check_call(node, &callee, &signature, receiver, method, arguments)
-            }
-            Some(Member::Field(ty)) => self.call_value(node, &callee, ty, arguments),
-            Some(Member::Copy) => {
-                let builtin = Callee::Builtin("struct.copy".to_owned());
-                self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments)
-            }
-            None => self.untyped(arguments),
-        }
-    }
-
     /// Checks a call's arguments against `signature`, and returns the call's type. A method
     /// call's `receiver` is already checked, and given for the first parameter, `self`. A
     /// generic signature's type arguments are inferred from the arguments. Then the
     /// arguments, the receiver among them, are checked for exclusivity (the `exclusive`
     /// module), and the call is recorded as calling `target` for the stages after the checker.
-    fn check_call(
+    pub(super) fn check_call(
         &mut self,
         node: NodeId,
         callee: &str,
