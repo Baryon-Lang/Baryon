@@ -11,8 +11,9 @@
 //! | an enum without data | the unsigned integer its layout gives it, such as `i8` |
 //! | a tuple, or a struct | a literal structure of its items or fields in declaration order |
 //! | `None` | nothing: a `None` value is never stored, and a function returning it returns `void` |
+//! | `Array[T, rank]` | its header `{ ptr, [rank x i64], [rank x i64] }`: the elements, each length, each stride |
 //!
-//! The other types (complex numbers, arrays, strings, lists, optionals and errors) are
+//! The other types (complex numbers, `Fixed` arrays, strings, lists, optionals and errors) are
 //! [`Unsupported`] until the slices of roadmap 1.10 that add them.
 
 use crate::Unsupported;
@@ -58,6 +59,9 @@ impl<'db> Types<'_, 'db> {
                 Declared::Struct(fields) => self.structure(&fields),
                 Declared::Enum { .. } => Err(self.unsupported(ty)),
             },
+            TypeKind::Array { rank, .. } => {
+                Ok(format!("{{ ptr, [{rank} x i64], [{rank} x i64] }}"))
+            }
             TypeKind::Enum(_) => {
                 let layout =
                     types::layout(self.db, ty, self.declared).map_err(|_| self.unsupported(ty))?;

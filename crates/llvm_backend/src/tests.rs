@@ -1,6 +1,11 @@
 //! Tests of the backend over bodies built by hand, as lowering builds them. Most compile the
 //! module with `clang`, link it with a small C program and run it, so they check what the code
-//! computes, not only the text; `clang` is what the driver uses too (decision 0020).
+//! computes, not only the text; `clang` is what the driver uses too (decision 0020). The
+//! program links [`RUNTIME`], a stand-in for the runtime's functions, so a test sees
+//! what a failed check reports without this crate depending on the runtime.
+
+mod arrays;
+mod panics;
 
 use crate::{Module, Unsupported};
 use database::{Db, File, Package, ParsedFile, Resolution};
@@ -8,7 +13,7 @@ use mir::{
     Argument, BinaryOperator, BlockId, Body, Callee, Check, Local, LocalKind, Operand, Place,
     Projection, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
 };
-use source::{FileId, SourceFile, Span};
+use source::{FileId, SourceFile, SourceMap, Span};
 use std::path::PathBuf;
 use std::process::Command;
 use syntax::{NodeId, Role, SyntaxKind, TreeBuilder};
@@ -62,7 +67,17 @@ fn item<'db>(database: &'db Database, name: &str) -> Item<'db> {
     Item::new(database, Package::new(database, Vec::new()), file, node)
 }
 
-/// The span every test statement carries.
+/// The source file the test spans point into, `heat.npl`, whose first line is an `assert`.
+const SOURCE: &str = "assert total >= 0,\n    'total is negative'\n";
+
+/// The sources holding [`SOURCE`] as file 0.
+fn sources() -> SourceMap {
+    let mut sources = SourceMap::new();
+    sources.add("heat.npl", SOURCE).unwrap();
+    sources
+}
+
+/// The span every test statement carries: the first character of [`SOURCE`].
 fn span() -> Span {
     Span::new(FileId::from_index(0), 0, 1)
 }
@@ -131,7 +146,8 @@ fn symbol_of<'db>(database: &'db Database) -> impl Fn(&Item<'db>, &[Type<'db>]) 
 /// A module of the functions `functions`, each a symbol and a body.
 fn module<'db>(database: &'db Database, functions: &[(&str, Body<'db>)]) -> String {
     let symbol = symbol_of(database);
-    let mut module = Module::new(database, &no_structs, &symbol);
+    let sources = sources();
+    let mut module = Module::new(database, &sources, &no_structs, &symbol);
     for (name, body) in functions {
         module.define(name, body).unwrap();
     }
@@ -146,12 +162,51 @@ fn scratch(name: &str) -> PathBuf {
     directory
 }
 
-/// Compiles `module` at `-O2` with the C program `main` into an executable, and returns its
+/// The runtime's panic and array memory functions, written in C as the runtime prints them (decision 0021), but
+/// to standard output, which a test reads.
+const RUNTIME: &str = r#"
+    #include <stdint.h>
+    #include <stdio.h>
+    #include <stdlib.h>
+    typedef struct { const char *file; size_t length; uint32_t line, column; } Location;
+    static void stop(const Location *at) {
+        if (at) printf("  --> %.*s:%u:%u\n", (int)at->length, at->file, at->line, at->column);
+        exit(101);
+    }
+    void npl_rt_panic(const char *message, size_t length, const Location *at) {
+        printf("panic: %.*s\n", (int)length, message);
+        stop(at);
+    }
+    void npl_rt_panic_length_mismatch(uint32_t dimension, int64_t expected, int64_t found,
+                                      const Location *at) {
+        printf("panic: array lengths differ in dimension %u: %lld and %lld\n", dimension,
+               (long long)expected, (long long)found);
+        stop(at);
+    }
+    void npl_rt_panic_index(int64_t index, uint32_t dimension, int64_t length,
+                            const Location *at) {
+        printf("panic: index %lld is out of range for dimension %u of length %lld\n",
+               (long long)index, dimension, (long long)length);
+        stop(at);
+    }
+    void *npl_rt_allocate_array(int64_t count, size_t size, size_t align, const Location *at) {
+        (void)align;
+        (void)at;
+        return malloc(count * size);
+    }
+    void npl_rt_deallocate(void *pointer, size_t bytes, size_t align) {
+        printf("freed %zu bytes aligned to %zu\n", bytes, align);
+        free(pointer);
+    }
+"#;
+
+/// Compiles `module` at `-O2` with the C program `main` and [`RUNTIME`] into an executable, and returns its
 /// path. Fails the test, with `clang`'s message, when the module is not valid LLVM IR.
 fn build(name: &str, module: &str, main: &str) -> PathBuf {
     let directory = scratch(name);
     std::fs::write(directory.join("module.ll"), module).unwrap();
     std::fs::write(directory.join("main.c"), main).unwrap();
+    std::fs::write(directory.join("runtime.c"), RUNTIME).unwrap();
     let executable = directory.join("program");
     let output = Command::new("clang")
         .current_dir(&directory)
@@ -160,6 +215,7 @@ fn build(name: &str, module: &str, main: &str) -> PathBuf {
             "-Wno-override-module",
             "module.ll",
             "main.c",
+            "runtime.c",
             "-lm",
             "-o",
         ])
@@ -174,13 +230,16 @@ fn build(name: &str, module: &str, main: &str) -> PathBuf {
     executable
 }
 
-/// Runs `executable` with `arguments`: its output, or `None` when it stopped on a trap.
-fn run(executable: &PathBuf, arguments: &[&str]) -> Option<String> {
+/// Runs `executable` with `arguments`: its output, or what it printed when it panicked, which
+/// is exiting with status 101. Fails the test on any other way of stopping.
+fn run(executable: &PathBuf, arguments: &[&str]) -> Result<String, String> {
     let output = Command::new(executable).args(arguments).output().unwrap();
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8(output.stdout).unwrap())
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    match output.status.code() {
+        Some(0) => Ok(stdout),
+        Some(101) => Err(stdout),
+        status => panic!("the program stopped with {status:?}, printing {stdout:?}"),
+    }
 }
 
 /// `//`, `%` and the shifts on signed integers give Python's results, including the cases
@@ -266,52 +325,6 @@ fn float_operators_follow_python() {
     );
 }
 
-/// A conversion that cannot keep its value stops the program, as the language reference's
-/// "Conversions" requires, and one that can rounds toward zero.
-#[test]
-fn conversions_check_their_range() {
-    let database = Database::default();
-    let f64 = primitive(&database, Primitive::Float(Float::F64));
-    let i8 = primitive(&database, Primitive::Integer(Integer::I8));
-    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
-    let u8 = primitive(&database, Primitive::Integer(Integer::U8));
-    let text = module(
-        &database,
-        &[
-            ("float_to_i8", conversion(f64, i8)),
-            ("i64_to_u8", conversion(i64, u8)),
-        ],
-    );
-    let main = r#"
-        #include <stdio.h>
-        #include <stdint.h>
-        #include <stdlib.h>
-        #include <string.h>
-        int8_t float_to_i8(double);
-        uint8_t i64_to_u8(int64_t);
-        int main(int count, char **arguments) {
-            (void)count;
-            if (strcmp(arguments[1], "float") == 0) {
-                printf("%d\n", float_to_i8(strtod(arguments[2], NULL)));
-            } else {
-                printf("%u\n", i64_to_u8(strtoll(arguments[2], NULL, 10)));
-            }
-            return 0;
-        }
-    "#;
-    let executable = build("conversions", &text, main);
-    let convert = |kind: &str, value: &str| run(&executable, &[kind, value]);
-    assert_eq!(convert("float", "3.9").as_deref(), Some("3\n"));
-    assert_eq!(convert("float", "-128.9").as_deref(), Some("-128\n"));
-    assert_eq!(convert("float", "127.99").as_deref(), Some("127\n"));
-    assert_eq!(convert("float", "128"), None);
-    assert_eq!(convert("float", "-129"), None);
-    assert_eq!(convert("float", "nan"), None);
-    assert_eq!(convert("integer", "255").as_deref(), Some("255\n"));
-    assert_eq!(convert("integer", "256"), None);
-    assert_eq!(convert("integer", "-1"), None);
-}
-
 /// The body of `step`: adds `n` to `total` with an overflow check, then calls `report(total)`.
 fn step_body(database: &Database) -> Body<'_> {
     let i64 = primitive(database, Primitive::Integer(Integer::I64));
@@ -369,8 +382,8 @@ fn step_body(database: &Database) -> Body<'_> {
 
 /// `def step(total: InOut[i64], n: i64)`: adds `n` to `total` with an overflow check, then
 /// calls `report(total)`, a function defined elsewhere. Shows the `InOut` pointer, the checked
-/// arithmetic into a `tuple[i64, bool]`, the shared `panic` block and the declaration of the
-/// callee, and runs it.
+/// arithmetic into a `tuple[i64, bool]`, the failure block with its message and location
+/// constants, and the declarations of the runtime's panic and of the callee, and runs it.
 #[test]
 fn inout_parameters_checked_arithmetic_and_calls() {
     let database = Database::default();
@@ -396,7 +409,7 @@ bb0:
   %t5 = xor i1 %t4, true
   store i1 %t5, ptr %_4
   %t6 = load i1, ptr %_4
-  br i1 %t6, label %bb1, label %panic
+  br i1 %t6, label %bb1, label %p0
 bb1:
   %t7 = getelementptr inbounds { i64, i1 }, ptr %_3, i32 0, i32 0
   %t8 = load i64, ptr %t7
@@ -406,13 +419,17 @@ bb1:
   br label %bb2
 bb2:
   ret void
-panic:
-  call void @llvm.trap()
+p0:
+  call void @npl_rt_panic(ptr @npl.str.2, i64 23, ptr @npl.loc.1)
   unreachable
 }
 
+@npl.str.0 = private unnamed_addr constant [8 x i8] c\"heat.npl\"
+@npl.loc.1 = private unnamed_addr constant { ptr, i64, i32, i32 } { ptr @npl.str.0, i64 8, i32 1, i32 1 }
+@npl.str.2 = private unnamed_addr constant [23 x i8] c\"integer overflow in `+`\"
+
 declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64)
-declare void @llvm.trap() cold noreturn nounwind
+declare void @npl_rt_panic(ptr, i64, ptr) cold noreturn nounwind
 declare void @report(i64)
 "
     );
@@ -430,8 +447,11 @@ declare void @report(i64)
         }
     "#;
     let executable = build("step", &text, main);
-    assert_eq!(run(&executable, &["37"]).as_deref(), Some("42\n"));
-    assert_eq!(run(&executable, &["9223372036854775807"]), None);
+    assert_eq!(run(&executable, &["37"]).as_deref(), Ok("42\n"));
+    assert_eq!(
+        run(&executable, &["9223372036854775807"]),
+        Err("panic: integer overflow in `+`\n  --> heat.npl:1:1\n".to_owned())
+    );
 }
 
 /// A body that uses a type this slice does not translate gets an error naming it, and the
@@ -440,19 +460,14 @@ declare void @report(i64)
 fn unsupported_types_are_named() {
     let database = Database::default();
     let f64 = primitive(&database, Primitive::Float(Float::F64));
-    let array = Type::new(
-        &database,
-        TypeKind::Array {
-            element: f64,
-            rank: 1,
-        },
-    );
+    let optional = Type::new(&database, TypeKind::Optional(f64));
     let symbol = symbol_of(&database);
-    let mut module = Module::new(&database, &no_structs, &symbol);
-    let result = module.define("make", &Body::new(array, span()));
+    let sources = sources();
+    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    let result = module.define("make", &Body::new(optional, span()));
     assert_eq!(
         result.map_err(|error: Unsupported| error.to_string()),
-        Err("the LLVM backend does not compile values of type `Array[f64, 1]` yet".to_owned())
+        Err("the LLVM backend does not compile values of type `f64 | None` yet".to_owned())
     );
     assert_eq!(module.finish(), "");
 }

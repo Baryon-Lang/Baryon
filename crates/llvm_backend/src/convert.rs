@@ -1,9 +1,10 @@
 //! Conversions between number types, with the range checks the language reference's
 //! "Conversions" requires: a narrowing integer conversion, or a float to integer one, that does
-//! not keep the value jumps to the `panic` block.
+//! not keep the value panics.
 
 use crate::Unsupported;
 use crate::function::{Function, float};
+use crate::panic::Failure;
 use crate::ty::Number;
 use mir::Operand;
 use types::Type;
@@ -11,7 +12,7 @@ use types::Type;
 impl<'db> Function<'_, '_, 'db> {
     /// A number converted to the number type `to`, checked as the language reference's
     /// "Conversions" requires: a narrowing integer conversion, or a float to integer one, that
-    /// does not keep the value jumps to the `panic` block.
+    /// does not keep the value panics, naming the target type.
     pub(crate) fn convert(
         &mut self,
         operand: &Operand<'db>,
@@ -51,7 +52,14 @@ impl<'db> Function<'_, '_, 'db> {
                 let widening = (from_signed == to_signed && to_bits >= from_bits)
                     || (!from_signed && to_signed && to_bits > from_bits);
                 if !widening {
-                    self.check_integer_fits(&value, &source_llvm, from_signed, to_bits, to_signed);
+                    self.check_integer_fits(
+                        &value,
+                        &source_llvm,
+                        from_signed,
+                        to_bits,
+                        to_signed,
+                        to,
+                    );
                 }
                 match to_bits.cmp(&from_bits) {
                     std::cmp::Ordering::Greater => {
@@ -66,7 +74,7 @@ impl<'db> Function<'_, '_, 'db> {
                 }
             }
             (Number::Float(from_bits), Number::Integer { bits, signed }) => {
-                self.check_float_fits(&value, &source_llvm, from_bits, bits, signed);
+                self.check_float_fits(&value, &source_llvm, from_bits, bits, signed, to);
                 if signed { "fptosi" } else { "fptoui" }
             }
             _ => {
@@ -91,6 +99,7 @@ impl<'db> Function<'_, '_, 'db> {
         from_signed: bool,
         bits: u32,
         signed: bool,
+        to: Type<'db>,
     ) {
         let extend = if from_signed { "sext" } else { "zext" };
         let wide = self.emit(&format!("{extend} {llvm} {value} to i128"));
@@ -98,7 +107,7 @@ impl<'db> Function<'_, '_, 'db> {
         let above = self.emit(&format!("icmp sge i128 {wide}, {minimum}"));
         let below = self.emit(&format!("icmp sle i128 {wide}, {maximum}"));
         let fits = self.emit(&format!("and i1 {above}, {below}"));
-        self.check(&fits);
+        self.check(&fits, &self.lost_value(to));
     }
 
     /// Checks that the float `value`, rounded toward zero, fits an integer type `bits` wide,
@@ -111,6 +120,7 @@ impl<'db> Function<'_, '_, 'db> {
         from_bits: u32,
         bits: u32,
         signed: bool,
+        to: Type<'db>,
     ) {
         let wide = if from_bits == 32 {
             self.emit(&format!("fpext {llvm} {value} to double"))
@@ -140,7 +150,15 @@ impl<'db> Function<'_, '_, 'db> {
         let limit = float((maximum + 1) as f64, false);
         let below = self.emit(&format!("fcmp olt double {wide}, {limit}"));
         let fits = self.emit(&format!("and i1 {above}, {below}"));
-        self.check(&fits);
+        self.check(&fits, &self.lost_value(to));
+    }
+
+    /// The failure of a conversion to `to` that cannot keep its value.
+    fn lost_value(&self, to: Type<'db>) -> Failure {
+        Failure::Message(format!(
+            "the value does not fit in `{}`",
+            to.display(self.types.db)
+        ))
     }
 }
 
