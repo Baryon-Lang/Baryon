@@ -108,7 +108,11 @@ impl Session {
             }
             match ready(database, function.item, &declared) {
                 Ok(body) => {
-                    if let Err(unsupported) = module.define(&function.symbol, &body) {
+                    let raises = match signature.returns.kind(database) {
+                        TypeKind::Fallible { errors, .. } => errors.as_slice(),
+                        _ => &[],
+                    };
+                    if let Err(unsupported) = module.define(&function.symbol, &body, raises) {
                         errors.push(self.at(function.item, unsupported.to_string()));
                     }
                 }

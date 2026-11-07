@@ -25,15 +25,18 @@
 //!   shift by the width or more gives what shifting one bit at a time would.
 //! - **Float `//` and `%` call the C math library**: LLVM compiles `frem` and `llvm.floor` to
 //!   `fmod` and `floor`, so a program links `libm`, as C programs do.
+//! - **Errors are values, not unwinding** (decision 0005). A function that can fail writes its
+//!   error through a pointer it is passed last and returns a failure flag beside its value; the
+//!   caller branches on the flag to its error edge.
 //! - **Arrays are a header and heap elements.** An `Array[T, rank]` value is the header
 //!   [`types::layout`] describes: the data pointer, each length and each stride. A new array is
 //!   allocated by the runtime, an element is found through the strides, and a drop frees the
 //!   elements with the size they were allocated with.
 //!
-//! The backend so far (roadmap 1.10.1 to 1.10.4) covers numbers, `bool`, enums without data,
-//! tuples and structs, `Array` and `Fixed`, control flow, direct calls and checks. A body that
-//! uses anything else, such as an optional or a call that can raise, gets an [`Unsupported`]
-//! error naming it.
+//! The backend so far (roadmap 1.10.1 to 1.10.5) covers numbers, `bool`, enums without data,
+//! tuples and structs, `Array` and `Fixed`, control flow, direct calls, errors and checks. A body
+//! that uses anything else, such as an optional or a string, gets an [`Unsupported`] error
+//! naming it.
 //!
 //! # Example
 //!
@@ -81,7 +84,7 @@
 //! let declared = |_: &types::Nominal<'_>| Declared::Struct(Vec::new());
 //! let symbol = |_: &types::Item<'_>, _: &[Type<'_>]| String::new();
 //! let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
-//! module.define("double", &body)?;
+//! module.define("double", &body, &[])?;
 //! assert_eq!(
 //!     module.finish(),
 //!     "\
@@ -104,7 +107,9 @@
 //! ```
 
 mod array;
+mod call;
 mod convert;
+mod errors;
 mod function;
 mod panic;
 mod rvalue;
@@ -155,7 +160,9 @@ impl<'a, 'db> Module<'a, 'db> {
     }
 
     /// Adds the function `symbol` with the body `body`, which must be in phase
-    /// [`Ready`](mir::Phase::Ready) and valid.
+    /// [`Ready`](mir::Phase::Ready) and valid. `errors` are the error types its `Raises` lists,
+    /// in order, or none when it cannot fail; a function that can fail takes a pointer to where
+    /// it writes its error, after its parameters, and returns a failure flag beside its value.
     ///
     /// Cost: one pass over the body, writing text proportional to its size.
     ///
@@ -163,11 +170,22 @@ impl<'a, 'db> Module<'a, 'db> {
     ///
     /// [`Unsupported`] when the body uses a type or form this slice of the backend does not
     /// translate yet; the module is left as it was.
-    pub fn define(&mut self, symbol: &str, body: &Body<'db>) -> Result<(), Unsupported> {
+    pub fn define(
+        &mut self,
+        symbol: &str,
+        body: &Body<'db>,
+        errors: &[Type<'db>],
+    ) -> Result<(), Unsupported> {
         let mark = self.constants.mark();
-        let (text, calls) =
-            function::Function::write(self.types, self.symbol, &mut self.constants, symbol, body)
-                .inspect_err(|_| self.constants.roll_back(mark))?;
+        let (text, calls) = function::Function::write(
+            self.types,
+            self.symbol,
+            &mut self.constants,
+            symbol,
+            body,
+            errors,
+        )
+        .inspect_err(|_| self.constants.roll_back(mark))?;
         self.definitions.push(text);
         self.defined.insert(symbol.to_owned());
         self.declarations.extend(calls);

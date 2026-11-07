@@ -191,3 +191,59 @@ def main():
          --> main.npl:25:14\n"
     );
 }
+
+/// Errors end to end (decision 0005): functions that raise, a call whose error passes on to its
+/// caller, and `except` clauses that catch each error type and read its field. The last
+/// `assert` fails on purpose, so the test sees every earlier one pass.
+#[test]
+fn errors_are_raised_passed_on_and_caught() {
+    let program = "\
+class ParseError(Exception):
+    position: i64
+
+
+class RangeError(Exception):
+    value: f64
+
+
+def parse(x: i64) -> Raises[f64, ParseError]:
+    if x < 0:
+        raise ParseError(x)
+    return f64(x) / 2.0
+
+
+def checked(x: f64) -> Raises[f64, ParseError | RangeError]:
+    if x > 100.0:
+        raise RangeError(x)
+    return x
+
+
+def chain(x: i64) -> Raises[f64, ParseError | RangeError]:
+    return checked(parse(x))
+
+
+def handled(x: i64) -> f64:
+    try:
+        value = chain(x)
+    except ParseError as error:
+        value = f64(error.position)
+    except RangeError as problem:
+        value = -problem.value
+    return value
+
+
+def main():
+    assert handled(10) == 5.0
+    assert handled(-3) == -3.0
+    assert handled(400) == -200.0
+    assert handled(4) == 3.0, \"last\"
+";
+    let directory = package("errors", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(
+        stderr(&ran),
+        "panic: assertion failed: handled(4) == 3.0, \"last\"\n  --> main.npl:39:5\n"
+    );
+}

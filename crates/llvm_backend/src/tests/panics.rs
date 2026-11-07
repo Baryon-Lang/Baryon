@@ -143,15 +143,21 @@ fn index_checks_report_the_dimension() {
 fn rejected_bodies_leave_no_constants() {
     let database = Database::default();
     let mut body = assert_body(&database, BinaryOperator::Equal, Check::Assertion, span());
-    body.blocks[1].terminator = end(TerminatorKind::Raise(Operand::Copy(Local::new(1).into())));
+    body.blocks[1].statements = vec![Statement {
+        kind: StatementKind::Assign(
+            Local::new(3).into(),
+            Rvalue::IsPresent(Local::new(1).into()),
+        ),
+        span: span(),
+    }];
     let symbol = symbol_of(&database);
     let sources = sources();
     let mut module = Module::new(&database, &sources, &no_structs, &symbol);
     assert_eq!(
         module
-            .define("check", &body)
+            .define("check", &body, &[])
             .map_err(|error| error.to_string()),
-        Err("the LLVM backend does not compile `raise` yet".to_owned())
+        Err("the LLVM backend does not compile optional values yet".to_owned())
     );
     assert_eq!(module.finish(), "");
 }
