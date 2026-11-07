@@ -67,8 +67,7 @@
 //! ```
 
 use mir::{
-    Argument, Body, Callee, Check, Constant, Elementwise, Operand, Rvalue, StatementKind,
-    TerminatorKind,
+    Argument, Body, Callee, Constant, Elementwise, Operand, Rvalue, StatementKind, TerminatorKind,
 };
 use types::{Nominal, Type, TypeKind};
 
@@ -190,7 +189,7 @@ impl<'db> Substitution<'_, 'db> {
                 self.operand(operand);
                 *ty = self.ty(*ty);
             }
-            Rvalue::Aggregate(ty, operands) => {
+            Rvalue::Aggregate(ty, operands) | Rvalue::NewArray(ty, operands) => {
                 *ty = self.ty(*ty);
                 for operand in operands {
                     self.operand(operand);
@@ -248,9 +247,8 @@ impl<'db> Substitution<'_, 'db> {
                 condition, check, ..
             } => {
                 self.operand(condition);
-                if let Check::IndexInBounds { index, length } = check {
-                    self.operand(index);
-                    self.operand(length);
+                for operand in check.operands_mut() {
+                    self.operand(operand);
                 }
             }
         }

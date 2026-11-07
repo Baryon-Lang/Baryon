@@ -5,8 +5,8 @@
 //! tracked; every other part of a value lives and dies with its nearest tracked ancestor.
 
 use mir::{
-    Argument, BlockId, Callee, Check, Elementwise, Operand, Place, Projection, Rvalue,
-    StatementKind, TerminatorKind,
+    Argument, BlockId, Callee, Elementwise, Operand, Place, Projection, Rvalue, StatementKind,
+    TerminatorKind,
 };
 
 /// What one step does to the move paths under a place.
@@ -160,9 +160,8 @@ pub(crate) fn terminator_effects(terminator: &TerminatorKind<'_>) -> Vec<Effect>
             condition, check, ..
         } => {
             operand_moves(condition, &mut effects);
-            if let Check::IndexInBounds { index, length } = check {
-                operand_moves(index, &mut effects);
-                operand_moves(length, &mut effects);
+            for operand in check.operands() {
+                operand_moves(operand, &mut effects);
             }
         }
     }
@@ -219,7 +218,7 @@ fn rvalue_moves(rvalue: &Rvalue<'_>, effects: &mut Vec<Effect>) {
             operand_moves(left, effects);
             operand_moves(right, effects);
         }
-        Rvalue::Aggregate(_, operands) => {
+        Rvalue::Aggregate(_, operands) | Rvalue::NewArray(_, operands) => {
             for operand in operands {
                 operand_moves(operand, effects);
             }

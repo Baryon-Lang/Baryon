@@ -165,6 +165,9 @@ impl Writer<'_> {
             Rvalue::Aggregate(ty, operands) => {
                 format!("{}({})", self.ty(*ty), self.operands(operands))
             }
+            Rvalue::NewArray(ty, lengths) => {
+                format!("new {}({})", self.ty(*ty), self.operands(lengths))
+            }
             Rvalue::Length(place, dimension) => format!("len({}, {dimension})", place_text(place)),
             Rvalue::IsPresent(place) => format!("is_present({})", place_text(place)),
             Rvalue::ErrorIndex(place) => format!("error_index({})", place_text(place)),
@@ -290,6 +293,15 @@ impl Writer<'_> {
             ),
             Check::NoOverflow(operator) => format!("no overflow: {}", binary_name(*operator)),
             Check::NonZeroDivisor => "non-zero divisor".to_owned(),
+            Check::SameLength {
+                dimension,
+                expected,
+                found,
+            } => format!(
+                "same length in dimension {dimension}: {} == {}",
+                self.operand(found),
+                self.operand(expected)
+            ),
             Check::Assertion => "assertion".to_owned(),
         }
     }

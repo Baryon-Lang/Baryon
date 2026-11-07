@@ -4,8 +4,8 @@
 //! mistake is made, not in a backend three stages later.
 
 use crate::{
-    Argument, BasicBlock, BlockId, Body, Callee, Check, Elementwise, Local, LocalKind, Operand,
-    Phase, Place, Projection, Rvalue, StatementKind, TerminatorKind,
+    Argument, BasicBlock, BlockId, Body, Callee, Elementwise, Local, LocalKind, Operand, Phase,
+    Place, Projection, Rvalue, StatementKind, TerminatorKind,
 };
 use database::Db;
 use std::fmt;
@@ -236,9 +236,8 @@ impl Uses {
                 target,
             } => {
                 self.operand(condition);
-                if let Check::IndexInBounds { index, length } = check {
-                    self.operand(index);
-                    self.operand(length);
+                for operand in check.operands() {
+                    self.operand(operand);
                 }
                 self.blocks.push(*target);
             }
@@ -273,7 +272,7 @@ impl Uses {
                 self.operand(left);
                 self.operand(right);
             }
-            Rvalue::Aggregate(_, operands) => {
+            Rvalue::Aggregate(_, operands) | Rvalue::NewArray(_, operands) => {
                 for operand in operands {
                     self.operand(operand);
                 }

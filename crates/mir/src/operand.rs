@@ -85,6 +85,13 @@ pub enum Rvalue<'db> {
     /// A value built from its parts: a struct's fields or a tuple's items in order, a `Fixed`
     /// array's elements in row-major order, or the one value of a present `T | None`.
     Aggregate(Type<'db>, Vec<Operand<'db>>),
+    /// A new `Array` of the given type, with one `i64` length per dimension, outermost first,
+    /// allocated on the heap. Its elements are not set: the stage that writes this rvalue writes
+    /// every element before anything reads one, as array expansion does when it fills a result.
+    /// Every length is zero or more; the writer checks that with an [`Assert`](crate::Check)
+    /// first when it is not already known, as it does for an index. Running out of memory panics.
+    /// The array is owned by the place it is assigned to, which drops it like any other array.
+    NewArray(Type<'db>, Vec<Operand<'db>>),
     /// The length of one dimension of the array at the place, as an `i64`; dimension 0 is the
     /// outermost.
     Length(Place, u32),
