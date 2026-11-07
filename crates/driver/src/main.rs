@@ -18,7 +18,8 @@
 //! with `clang` and the runtime ([`link`]). Running it runs the package's one `main` function;
 //! a failed check in it prints a panic with its location and exits with status 101. A package
 //! that does not check, or uses what the compiler cannot build yet, gets its errors printed and
-//! the exit status 1. This is a prototype (roadmap 1.11.3): no generic functions yet.
+//! the exit status 1. The executable carries line tables, so `gdb` and `lldb` stop at and show
+//! `.npl` lines. This is a prototype (roadmap 1.11.3): no generic functions yet.
 //!
 //! `npl run` builds the package the same way into a scratch directory, runs the program with
 //! the terminal's standard input and output, removes it, and exits with the program's own exit
@@ -173,7 +174,9 @@ fn run(root: &Path) -> Result<ExitCode, String> {
 /// missing or the link fails.
 fn compile(root: &Path, output: &Path) -> Result<Result<usize, ExitCode>, String> {
     let (session, files) = load(root)?;
-    let module = match session.compile() {
+    let directory =
+        fs::canonicalize(root).map_err(|error| format!("{}: {error}", root.display()))?;
+    let module = match session.compile(Some(&directory.to_string_lossy())) {
         Ok(module) => module,
         Err(problems) => {
             let mut stderr = io::stderr().lock();

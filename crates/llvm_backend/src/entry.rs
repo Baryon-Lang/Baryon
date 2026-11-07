@@ -27,9 +27,15 @@ impl<'db> Function<'_, '_, 'db> {
         errors: &[Reported<'db>],
     ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
         let callee = global(symbol);
+        let mut signature = String::from("define i32 @main()");
+        if let Some(scope) = self.constants.entry_subprogram() {
+            signature = format!("{signature} !dbg {scope}");
+            self.fixed_location = Some(format!("!DILocation(line: 0, scope: {scope})"));
+        }
         if errors.is_empty() {
-            let text =
-                format!("define i32 @main() {{\nstart:\n  call void {callee}()\n  ret i32 0\n}}\n");
+            self.line(&format!("call void {callee}()"));
+            self.line("ret i32 0");
+            let text = format!("{signature} {{\nstart:\n{}}}\n", self.code);
             return Ok((text, self.calls));
         }
         let none = Type::new(self.types.db, TypeKind::None);
@@ -63,7 +69,7 @@ impl<'db> Function<'_, '_, 'db> {
             self.report(&payload, *ty, fields)?;
             self.line("ret i32 1");
         }
-        let text = format!("define i32 @main() {{\nstart:\n{}}}\n", self.code);
+        let text = format!("{signature} {{\nstart:\n{}}}\n", self.code);
         Ok((text, self.calls))
     }
 

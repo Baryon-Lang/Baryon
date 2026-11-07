@@ -36,12 +36,16 @@ impl Session {
     /// class between them: `physics.nbody.step`, `physics.nbody.Body.energy`. Dots keep them
     /// apart from every C symbol.
     ///
+    /// `root` is the package's directory, absolute, when the module should carry line tables
+    /// that point debuggers, profilers and backtraces back to the source files under it; `None`
+    /// leaves them out.
+    ///
     /// ```
     /// use driver::Session;
     ///
     /// let mut session = Session::new();
     /// session.add_file("main.npl", "def main():\n    assert 6 * 7 == 42\n")?;
-    /// let module = session.compile().unwrap();
+    /// let module = session.compile(None).unwrap();
     /// assert!(module.contains("define void @main.main()"), "{module}");
     /// assert!(module.contains("define i32 @main()"), "{module}");
     /// # Ok::<(), source::SourceError>(())
@@ -56,7 +60,7 @@ impl Session {
     /// cannot be compiled yet, and an error when `main.npl` has no `main` function, when another
     /// module defines one, or when it takes parameters or returns a value. `main` may raise; an
     /// error that reaches its end is printed and the program exits with status 1.
-    pub fn compile(&self) -> Result<String, Vec<Diagnostic>> {
+    pub fn compile(&self, root: Option<&str>) -> Result<String, Vec<Diagnostic>> {
         let errors: Vec<Diagnostic> = self
             .check()
             .into_iter()
@@ -75,6 +79,9 @@ impl Session {
             |item: &Item<'_>, _: &[types::Type<'_>]| symbols.get(item).cloned().unwrap_or_default();
         let declared = declared(database, self.package);
         let mut module = llvm_backend::Module::new(database, self, &declared, &symbol);
+        if let Some(root) = root {
+            module.debug_info(root);
+        }
         let mut errors = Vec::new();
         let mut entries = Vec::new();
         for function in &functions {
