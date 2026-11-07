@@ -7,15 +7,18 @@
 //!
 //! What it checks: number literals, number mixing, operators and comparisons, `bool`
 //! conditions, calls to functions, constructors and methods against their signatures, field
-//! access, assignments and returns (roadmap 1.7.3), and arrays: creating them, indexing,
-//! slicing, methods, whole-array arithmetic and `@` (1.7.4, the `arrays` module). What later
-//! slices check, and this one lets through as an unknown type without an error: calls to
-//! generic functions (1.7.5), `match` patterns (1.7.6), `try` and errors (1.7.7), and the
-//! `None` check that narrows `T | None` to `T` (1.7.8).
+//! access, assignments and returns (roadmap 1.7.3); arrays: creating them, indexing,
+//! slicing, methods, whole-array arithmetic and `@` (1.7.4, the `arrays` module); and
+//! generics: type arguments inferred at calls, bounds checked, and inside a generic body only
+//! the operations a bound allows (1.7.5, the `generics` module). What later slices check, and
+//! this one lets through as an unknown type without an error: `match` patterns (1.7.6), `try`
+//! and errors (1.7.7), and the `None` check that narrows `T | None` to `T` (1.7.8).
 
 mod arrays;
+mod builtins;
 mod calls;
 mod expressions;
+mod generics;
 mod members;
 mod numbers;
 mod operators;
@@ -226,7 +229,7 @@ impl<'db> Body<'db> {
         };
         let operator = self.tree.node(statement).operator();
         let current = self.expression(target, None);
-        let operand = self.expression(value, number_context(self.db, current));
+        let operand = self.expression(value, self.number_context(current));
         let result = self.combine(statement, operator, current, operand);
         if !relations::compatible(self.db, current, result) {
             let message = format!(
@@ -393,21 +396,22 @@ impl<'db> Body<'db> {
         self.lowerer.error(node, &message, &label, None);
     }
 
+    /// The type a number literal on the other side of an operator should take: the other
+    /// side's type when it is a number, its element type when it is an array, so `2.0 * a`
+    /// with `a: Array[f32, 1]` multiplies by an `f32`, and what a type parameter's bound
+    /// gives a literal (the `generics` module).
+    fn number_context(&self, ty: Type<'db>) -> Option<Type<'db>> {
+        match ty.kind(self.db) {
+            TypeKind::Primitive(primitive) if numbers::is_number(*primitive) => Some(ty),
+            TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
+                self.number_context(*element)
+            }
+            _ => self.generic_literal(ty),
+        }
+    }
+
     /// A type as a program writes it.
     fn show(&self, ty: Type<'db>) -> String {
         ty.display(self.db).to_string()
-    }
-}
-
-/// The type a number literal on the other side of an operator should take: the other side's
-/// type when it is a number, or its element type when it is an array, so `2.0 * a` with
-/// `a: Array[f32, 1]` multiplies by an `f32`.
-fn number_context<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> Option<Type<'db>> {
-    match ty.kind(db) {
-        TypeKind::Primitive(primitive) if numbers::is_number(*primitive) => Some(ty),
-        TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
-            number_context(db, *element)
-        }
-        _ => None,
     }
 }

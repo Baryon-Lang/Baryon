@@ -3,6 +3,7 @@
 use crate::constant::to_float;
 use crate::lower::Lowerer;
 use crate::outline::{Base, Entry, Kind};
+use crate::traits::Trait;
 use diagnostics::Diagnostic;
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{
@@ -13,6 +14,9 @@ use types::{
 impl<'db> Lowerer<'db> {
     /// What the definition `entry` declares, with the errors found.
     pub(crate) fn declare(mut self, entry: &Entry) -> Checked<'db> {
+        if matches!(entry.kind, Kind::Function | Kind::Class(_)) {
+            self.bounds(entry.statement);
+        }
         let declaration = match &entry.kind {
             Kind::Function => Declaration::Function(self.signature(entry)),
             Kind::Class(class) if class.base == Base::Enum => self.enumeration(entry.statement),
@@ -30,6 +34,34 @@ impl<'db> Lowerer<'db> {
         Checked {
             declaration,
             diagnostics: self.diagnostics,
+        }
+    }
+
+    /// Reports each bound in a definition's type parameters that names something other than
+    /// a standard trait, such as a class.
+    fn bounds(&mut self, definition: NodeId) {
+        let Some(parameters) = self.tree.child(definition, Role::TypeParameters) else {
+            return;
+        };
+        let variables: Vec<NodeId> = self.tree.children_with(parameters, Role::Item).collect();
+        for variable in variables {
+            let Some(bound) = self.tree.child(variable, Role::Bound) else {
+                continue;
+            };
+            let written = self.tree.text(bound, self.text);
+            let is_trait =
+                self.tree.kind(bound) == SyntaxKind::Name && Trait::from_name(written).is_some();
+            if is_trait || self.definition(bound).is_none() {
+                // An undefined name is already reported by name resolution.
+                continue;
+            }
+            let message = format!("`{written}` is not a trait");
+            self.error(
+                bound,
+                &message,
+                "expected a trait",
+                Some("a type parameter is bounded by `Number`, `Float`, `VectorSpace` or `Copy`"),
+            );
         }
     }
 

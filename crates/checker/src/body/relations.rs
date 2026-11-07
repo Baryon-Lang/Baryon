@@ -7,12 +7,13 @@ use types::{Nominal, Type, TypeDb, TypeKind};
 
 /// Whether a value of type `found` may stand where `expected` is needed.
 ///
-/// Equal types match. A type that contains an unknown type, from an error already reported, or
-/// a type parameter, which generic checking (roadmap 1.7.5) will handle, matches anything, so
-/// one mistake gives one message. `None` and a `T` match `T | None`. A `T | None` also matches
-/// `T` until the `None` check that narrows it is checked (roadmap 1.7.8).
+/// Equal types match. A type that contains an unknown type, from an error already reported,
+/// matches anything, so one mistake gives one message. A type parameter is rigid: inside a
+/// generic body, `T` matches only `T`. `None` and a `T` match `T | None`. A `T | None` also
+/// matches `T` until the `None` check that narrows it is checked (roadmap 1.7.8).
 pub(crate) fn compatible<'db>(db: &'db dyn TypeDb, expected: Type<'db>, found: Type<'db>) -> bool {
-    if expected == found || is_open(db, expected) || is_open(db, found) {
+    let unknown = |ty: Type<'db>| matches!(ty.kind(db), TypeKind::Unknown);
+    if expected == found || contains(db, expected, &unknown) || contains(db, found, &unknown) {
         return true;
     }
     match (expected.kind(db), found.kind(db)) {
@@ -23,21 +24,42 @@ pub(crate) fn compatible<'db>(db: &'db dyn TypeDb, expected: Type<'db>, found: T
     }
 }
 
-/// Whether `ty` contains an unknown type or a type parameter anywhere.
+/// Whether `ty` contains an unknown type or a type parameter anywhere: a type whose operations
+/// the checker cannot judge on its own.
 pub(crate) fn is_open<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
-    let all = |types: &[Type<'db>]| types.iter().any(|&ty| is_open(db, ty));
+    contains(db, ty, &|ty| {
+        matches!(ty.kind(db), TypeKind::Unknown | TypeKind::Parameter { .. })
+    })
+}
+
+/// Whether `ty` contains `parameter` anywhere, so `list[T]` mentions `T`.
+pub(crate) fn mentions<'db>(db: &'db dyn TypeDb, ty: Type<'db>, parameter: Type<'db>) -> bool {
+    contains(db, ty, &|ty| ty == parameter)
+}
+
+/// Whether `ty` or any type inside it passes `test`.
+fn contains<'db>(db: &'db dyn TypeDb, ty: Type<'db>, test: &dyn Fn(Type<'db>) -> bool) -> bool {
+    if test(ty) {
+        return true;
+    }
+    let all = |types: &[Type<'db>]| types.iter().any(|&ty| contains(db, ty, test));
     match ty.kind(db) {
-        TypeKind::Unknown | TypeKind::Parameter { .. } => true,
-        TypeKind::Primitive(_) | TypeKind::Str | TypeKind::None => false,
+        TypeKind::Unknown
+        | TypeKind::Parameter { .. }
+        | TypeKind::Primitive(_)
+        | TypeKind::Str
+        | TypeKind::None => false,
         TypeKind::Tuple(items) => all(items),
-        TypeKind::List(item) | TypeKind::Optional(item) => is_open(db, *item),
-        TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => is_open(db, *element),
+        TypeKind::List(item) | TypeKind::Optional(item) => contains(db, *item, test),
+        TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
+            contains(db, *element, test)
+        }
         TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => all(&nominal.arguments),
         TypeKind::Callable {
             parameters,
             returns,
-        } => all(parameters) || is_open(db, *returns),
-        TypeKind::Fallible { value, errors } => is_open(db, *value) || all(errors),
+        } => all(parameters) || contains(db, *returns, test),
+        TypeKind::Fallible { value, errors } => contains(db, *value, test) || all(errors),
     }
 }
 

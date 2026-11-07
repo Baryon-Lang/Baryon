@@ -253,7 +253,16 @@ def rk4_step[S: VectorSpace](derivative: Callable[[f64, S], S], t: f64, state: S
 
 Generics are compiled once per set of type arguments used (monomorphized), as in Rust and C++, so
 they cost nothing at run time. A type argument is never written at the call; the compiler infers it
-from the arguments.
+from the arguments. Each type parameter takes the type of the first argument that fixes it, reading
+left to right and number literals last, so `largest(x, 0)` with `x: f32` makes the `0` an `f32`.
+Every other argument must then have the same type: `largest(x, n)` with `x: f64` and `n: i64` is an
+error, as in non-generic code. A generic struct is built the same way: `Pair(1.5, 2.5)` is a
+`Pair[f64]`.
+
+Inside a generic function, a type parameter is its own type: a `T` matches only `T`, and only the
+operations its bound allows apply to it. A number literal takes the type `T` under `Float`; under
+`Number` only an integer literal does, since `T` may be an integer type, so `x * 0.5` needs
+`[T: Float]`. Under `VectorSpace` a literal is an `f64`, which is what scales a vector.
 
 ### Traits
 
