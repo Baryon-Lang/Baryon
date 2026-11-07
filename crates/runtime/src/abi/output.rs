@@ -1,0 +1,111 @@
+//! The functions compiled code calls for `print`, one per kind of value (the `print` module).
+//!
+//! A narrower integer is widened before the call: signed types to `i64`, unsigned ones to `u64`.
+//! `print(a, b)` with an `i32` and an `f64` compiles to these calls:
+//!
+//! ```
+//! use runtime::{npl_rt_print_f64, npl_rt_print_i64, npl_rt_print_str};
+//!
+//! // SAFETY: each pointer and length is a string constant's.
+//! unsafe {
+//!     npl_rt_print_i64(7);
+//!     npl_rt_print_str(" ".as_ptr(), 1);
+//!     npl_rt_print_f64(0.5);
+//!     npl_rt_print_str("\n".as_ptr(), 1);
+//! }
+//! ```
+//!
+//! That prints `7 0.5`.
+
+use crate::print;
+
+/// Prints a signed integer in decimal, as Python does: `-12`.
+///
+/// # Example
+///
+/// ```
+/// runtime::npl_rt_print_i64(-12);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub extern "C" fn npl_rt_print_i64(value: i64) {
+    print::write(&value.to_string());
+}
+
+/// Prints an unsigned integer in decimal, as Python does: `18446744073709551615`.
+///
+/// # Example
+///
+/// ```
+/// runtime::npl_rt_print_u64(u64::MAX);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub extern "C" fn npl_rt_print_u64(value: u64) {
+    print::write(&value.to_string());
+}
+
+/// Prints an `f64` as Python's `repr` writes a float: `0.1`, `2.0`, `1e+16`, `nan`.
+///
+/// # Example
+///
+/// ```
+/// runtime::npl_rt_print_f64(0.1 + 0.2); // 0.30000000000000004
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub extern "C" fn npl_rt_print_f64(value: f64) {
+    print::write(&print::float(&format!("{value:e}")));
+}
+
+/// Prints an `f32` with the fewest digits that read back as the same `f32`, placed as Python's
+/// `repr` places them: `0.1`, not the `0.10000000149011612` of the same value widened.
+///
+/// # Example
+///
+/// ```
+/// runtime::npl_rt_print_f32(0.1);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub extern "C" fn npl_rt_print_f32(value: f32) {
+    print::write(&print::float(&format!("{value:e}")));
+}
+
+/// Prints a `bool` as Python does: `True` or `False`.
+///
+/// # Example
+///
+/// ```
+/// runtime::npl_rt_print_bool(true);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub extern "C" fn npl_rt_print_bool(value: bool) {
+    print::write(print::bool(value));
+}
+
+/// Prints `length` bytes of UTF-8 text at `text` as they are: a `str` argument, and the space
+/// between arguments and the line end that compiled code writes itself. Bytes that are not UTF-8,
+/// which only a compiler bug passes, print as replacement characters.
+///
+/// # Safety
+///
+/// `text` points to `length` readable bytes.
+///
+/// # Example
+///
+/// ```
+/// use runtime::npl_rt_print_str;
+///
+/// let line = "converged\n";
+/// // SAFETY: the pointer and length are the constant's.
+/// unsafe { npl_rt_print_str(line.as_ptr(), line.len()) }
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn npl_rt_print_str(text: *const u8, length: usize) {
+    // SAFETY: the caller guarantees `text` points to `length` readable bytes.
+    let bytes = unsafe { std::slice::from_raw_parts(text, length) };
+    print::write(&String::from_utf8_lossy(bytes));
+}
