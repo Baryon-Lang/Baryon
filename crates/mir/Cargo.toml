@@ -1,0 +1,24 @@
+[package]
+name = "mir"
+description = "The mid-level IR: each function body as basic blocks of statements over typed locals and places, with explicit drops, checks and error edges."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "interface"
+
+[dependencies]
+database.workspace = true
+salsa.workspace = true
+source.workspace = true
+types.workspace = true
+
+[dev-dependencies]
+syntax.workspace = true
+
+[lints]
+workspace = true
