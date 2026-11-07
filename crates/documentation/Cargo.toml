@@ -1,0 +1,21 @@
+[package]
+name = "documentation"
+description = "The documentation generator: reads the documentation strings in a syntax tree and writes Markdown pages."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "implementation"
+
+[dependencies]
+syntax.workspace = true
+
+[dev-dependencies]
+source.workspace = true
+
+[lints]
+workspace = true

@@ -3,13 +3,14 @@
 //! It owns the concrete database, which implements each stage query of [`database::Db`] by
 //! calling the implementation crate for it, inside a `#[salsa::tracked]` function so the result
 //! is cached. Today the stages are the `parser`, the `syntax_check`, the `resolver` and the
-//! `checker`, which also answers [`types::TypeDb`]'s queries. Swapping an implementation means
+//! `checker`, which also answers [`types::TypeDb`]'s queries. The `documentation` generator
+//! reads the parser's trees for [`Session::document`]. Swapping an implementation means
 //! changing the one function here that calls it. A [`Session`] holds that database with one
 //! package loaded into it.
 //!
 //! The `npl` executable (`src/main.rs`) is a thin command line over this library:
 //! `npl check <directory>` loads every source file under the directory, checks the package, and
-//! prints its diagnostics.
+//! prints its diagnostics; `npl doc <directory> <output>` writes its documentation pages.
 //!
 //! # Example
 //!
@@ -30,6 +31,7 @@
 
 use database::{Db, File, Package, ParsedFile, Resolution};
 use diagnostics::Diagnostic;
+use documentation::ModuleDocumentation;
 use salsa::Setter;
 use source::{FileId, SourceError, SourceFile, Sources};
 use std::fmt;
@@ -134,6 +136,48 @@ impl Session {
     #[must_use]
     pub fn check(&self) -> Vec<Diagnostic> {
         check(&self.database, self.package).clone()
+    }
+
+    /// The documentation of every module in the package, in the order the files were added,
+    /// read by the `documentation` crate; or, when the package has module naming errors or
+    /// syntax errors, those problems instead, since a module without a name or a tree has no
+    /// page. Type errors do not stop documentation.
+    ///
+    /// ```
+    /// use driver::Session;
+    ///
+    /// let mut session = Session::new();
+    /// session.add_file("ode/rk4.npl", "\"Runge-Kutta integrators.\"\n")?;
+    /// let modules = session.document().unwrap();
+    /// assert_eq!(modules[0].name(), "ode.rk4");
+    /// assert_eq!(modules[0].summary(), Some("Runge-Kutta integrators."));
+    ///
+    /// session.add_file("broken.npl", "def f(:\n")?;
+    /// assert!(session.document().is_err());
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the module naming errors and syntax errors, in the order [`check`](Self::check)
+    /// reports them, when there are any.
+    pub fn document(&self) -> Result<Vec<ModuleDocumentation>, Vec<Diagnostic>> {
+        let db = &self.database;
+        let mut problems = database::modules(db, self.package).diagnostics().to_vec();
+        let mut modules = Vec::new();
+        for &file in &self.files {
+            problems.extend_from_slice(db.parse(file).diagnostics());
+            if let Ok(name) = database::module_name(db, file) {
+                let text = file.source(db).text();
+                let tree = db.parse(file).tree();
+                modules.push(documentation::document(tree, text, &name.to_string()));
+            }
+        }
+        if problems.is_empty() {
+            Ok(modules)
+        } else {
+            Err(problems)
+        }
     }
 }
 

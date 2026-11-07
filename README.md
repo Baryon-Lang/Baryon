@@ -35,7 +35,8 @@ Phase 0, specification and foundation, is nearly done, and the Phase 1 compiler 
 compiler parses source files, rejects the Python constructs the language does not support, and
 reports syntax errors, module errors, undefined names and bad imports with `npl check`; it does
 not yet type-check or run programs. `npl lsp` is a language server that shows the same
-diagnostics in any editor with a Language Server Protocol client, as you type.
+diagnostics in any editor with a Language Server Protocol client, as you type. `npl doc` writes a
+package's documentation strings as Markdown pages.
 
 [`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the
 place to add new ideas. The reasoning behind it is in the

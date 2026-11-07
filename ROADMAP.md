@@ -128,7 +128,7 @@ the REPL, and three external users have written something real.
 | 3.5 | Trait objects and dynamic dispatch | 4 | 1.7 | Planned | — | — |
 | 3.6 | First-class references or regions: design and prototype | 4 | 1.8 | Planned | — | — |
 | 3.7 | Optimization remarks in the editor | 2 | 3.1 | Planned | — | — |
-| 3.8 | Documentation generator | 1 | 1.2 | Planned | — | — |
+| 3.8 | Documentation generator: `npl doc` writes one Markdown page per module from its documentation strings and public signatures, and an index | 1 | 1.2 | Done | Claude | — |
 | 3.9 | Broadcasting and axis reductions | 3 | 3.1 | Planned | — | — |
 | 3.10 | Linear algebra and FFT over LAPACK and FFTW or Accelerate | 2 | 1.14 | Planned | — | — |
 | 3.11 | REPL on the Cranelift backend with persistent values | 4 | 2.1 | Planned | — | — |
@@ -190,3 +190,5 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.12 | Diagnostics measure the display width of wide characters (CJK, emoji) so markers line up under them | — | — | Idea | — | — |
 | I.13 | Run the RustSec advisory check on a daily schedule and on pushes to `main` instead of on every pull request, so a newly published advisory does not turn unrelated pull requests red; the license, ban and source checks stay on every pull request and need no network | — | 0.6 | Idea | — | [#10](https://github.com/csimpson1964/New-Programming-Language/pull/10) |
 | I.14 | A way to keep a struct's field order on purpose without the padding warning (1.7.1), for a layout fixed by a file format or C library. Accepted by Collins as `@layout("C")` | — | 1.7.1 | Done | Claude | [#22](https://github.com/csimpson1964/New-Programming-Language/pull/22), [0017](docs/decisions/0017-layout-decorator.md), [#23](https://github.com/csimpson1964/New-Programming-Language/pull/23) |
+| I.15 | Run the code examples in documentation strings as tests, as Rust's doc tests do, so documented examples cannot drift from the code; needs 1.10 to run programs | — | 3.8 | Idea | — | — |
+| I.16 | Link names in documentation to their definitions across pages, using the resolver, and publish HTML with search | — | 3.8 | Idea | — | — |
