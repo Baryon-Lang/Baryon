@@ -19,6 +19,7 @@ path = "src/main.rs"
 checker.workspace = true
 database.workspace = true
 diagnostics.workspace = true
+documentation.workspace = true
 parser.workspace = true
 resolver.workspace = true
 salsa.workspace = true

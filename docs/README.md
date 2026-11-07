@@ -14,6 +14,11 @@ To see the same diagnostics in an editor as you type, point its Language Server 
 at `npl lsp` for `.npl` files: build it with `cargo build --package driver` and run
 `target/debug/npl lsp`. A VS Code extension that does this for you is roadmap item 1.17.
 
+To read a package's documentation strings as pages, run
+`cargo run --package driver -- doc <directory> <output>`: it writes one Markdown page per module
+and an `index.md` listing them. What it reads is in the
+[syntax chapter](reference/syntax.md#documentation-strings).
+
 - The [language reference](reference/README.md) defines what a program may say and what it means.
   Python programmers should start with its
   [differences from Python](reference/differences-from-python.md).
