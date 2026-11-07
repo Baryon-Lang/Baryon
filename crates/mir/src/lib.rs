@@ -97,7 +97,8 @@ pub use operand::{
 };
 pub use place::{Place, Projection};
 pub use statement::{
-    Argument, Callee, Check, ErrorEdge, Statement, StatementKind, Terminator, TerminatorKind,
+    Argument, Builtin, Callee, Check, ErrorEdge, Statement, StatementKind, Terminator,
+    TerminatorKind,
 };
 pub use validate::Invalid;
 
