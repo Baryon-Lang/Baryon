@@ -10,7 +10,9 @@
 //!   `x = min(x, e)` or `x = max(x, e)`, one kind per variable, and read nowhere else in the
 //!   body.
 //! - Passing a shared place as `InOut`, or appending to a shared list, counts as writing it.
-//! - The body never leaves the loop early, and holds no other `prange`.
+//! - The body never leaves the loop early: no `return` or `break`, and every error a call or
+//!   `raise` in it can fail with is caught by a `try` inside it (the `errors` module).
+//! - The body holds no other `prange`.
 //!
 //! Arrays named in `accumulate=` follow their own rule, in the `accumulate` module.
 //!
@@ -36,6 +38,9 @@ pub(super) struct Parallel {
     pub(super) writes: BTreeSet<NodeId>,
     /// The arrays listed in `accumulate=` (the `accumulate` module).
     pub(super) accumulate: Vec<NodeId>,
+    /// How many `try` frames were open when the loop started: only those opened inside it
+    /// handle its errors (the `errors` module).
+    pub(super) handled: usize,
 }
 
 /// A place's steps after its variable: a field's name, or `None` for any `[...]`.
@@ -122,6 +127,7 @@ impl Body<'_> {
             shared,
             writes: BTreeSet::new(),
             accumulate: std::mem::take(&mut self.accumulate),
+            handled: self.handled.len(),
         });
         true
     }
@@ -131,7 +137,7 @@ impl Body<'_> {
         let Some(parallel) = self.parallel.pop() else {
             return;
         };
-        self.early_exits(statement, &parallel, false, false);
+        self.early_exits(statement, &parallel, false);
         let mut accesses = Vec::new();
         for child in self.tree.children_with(statement, Role::Body) {
             self.collect(child, &parallel, &mut accesses);
@@ -141,22 +147,20 @@ impl Body<'_> {
         self.reductions(&parallel, &accesses, &elements);
     }
 
-    /// Reports each `return`, `raise` and `break` inside `node` that would leave the loop.
-    /// `nested` says a loop inside the parallel one holds `node`, and `guarded` that the body
-    /// of a `try` inside it does.
-    fn early_exits(&mut self, node: NodeId, parallel: &Parallel, nested: bool, guarded: bool) {
-        let in_try = self.tree.kind(node) == SyntaxKind::Try;
+    /// Reports each `return` and `break` inside `node` that would leave the loop. `nested`
+    /// says a loop inside the parallel one holds `node`. An error that would leave it, from
+    /// `raise` or a call, is the `errors` module's to report, as it knows which `try` catches
+    /// what.
+    fn early_exits(&mut self, node: NodeId, parallel: &Parallel, nested: bool) {
         let children: Vec<NodeId> = self.tree.children(node).collect();
         for child in children {
             let kind = self.tree.kind(child);
             if kind.is_expression() {
                 continue;
             }
-            let guarded = guarded || (in_try && self.tree.node(child).role() == Role::Body);
             let label = match kind {
                 SyntaxKind::Return => Some("returns from inside the loop"),
                 SyntaxKind::Break if !nested => Some("leaves the loop"),
-                SyntaxKind::Raise if !guarded => Some("raises out of the loop"),
                 _ => None,
             };
             if let Some(label) = label {
@@ -169,7 +173,7 @@ impl Body<'_> {
                 self.lowerer.diagnostics.push(diagnostic);
             }
             let nested = nested || matches!(kind, SyntaxKind::For | SyntaxKind::While);
-            self.early_exits(child, parallel, nested, guarded);
+            self.early_exits(child, parallel, nested);
         }
     }
 

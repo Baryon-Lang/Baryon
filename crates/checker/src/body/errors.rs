@@ -160,14 +160,31 @@ impl<'db> Body<'db> {
             TypeKind::Fallible { value, errors } => (*value, errors.clone()),
             _ => (self.signature.returns, Vec::new()),
         };
+        // Inside a `prange` body only a `try` inside the body counts: an error cannot leave a
+        // parallel loop (the `parallel` module).
+        let parallel = self.parallel.last().map(|parallel| parallel.handled);
         for &error in errors {
+            let frames = self
+                .handled
+                .get(parallel.unwrap_or(0)..)
+                .unwrap_or_default();
             let covered = matches!(error.kind(self.db), TypeKind::Unknown)
-                || allowed.contains(&error)
-                || self.handled.iter().any(|frame| frame.contains(&error));
+                || (parallel.is_none() && allowed.contains(&error))
+                || frames.iter().any(|frame| frame.contains(&error));
             if covered {
                 continue;
             }
             let shown = self.show(error);
+            if parallel.is_some() {
+                let message =
+                    format!("{what} `{shown}`, which is not handled inside this parallel loop");
+                let hint = format!(
+                    "catch it with `try:` and `except {shown}:` inside the loop body: an error cannot leave a parallel loop"
+                );
+                let label = format!("can fail with `{shown}`");
+                self.lowerer.error(node, &message, &label, Some(&hint));
+                continue;
+            }
             let listed: Vec<String> = allowed
                 .iter()
                 .chain([&error])

@@ -193,12 +193,17 @@ error: `total` is a reduction in this parallel loop, so the body cannot read it
     );
 }
 
-/// `return`, `break` and `raise` out of a parallel loop, and a `prange` inside one.
+/// `return`, `break`, `raise` and an unhandled failing call in a parallel loop, even in a
+/// function that declares the error, and a `prange` inside one.
 #[test]
 fn leaving_or_nesting_a_parallel_loop_is_reported() {
     let program = r"
 class Bad(Exception):
     pass
+
+
+def check(x: f64) -> Raises[f64, Bad]:
+    return x
 
 
 def run(a: Array[f64, 1], n: i64) -> Raises[f64, Bad]:
@@ -209,53 +214,57 @@ def run(a: Array[f64, 1], n: i64) -> Raises[f64, Bad]:
             break
         if a[i] > 3.0:
             raise Bad()
+        value = check(a[i])
         for j in prange(n):
             pass
     return 0.0
 ";
     assert_eq!(
         check_one(program),
-        r"error: a parallel loop cannot run inside another
-  --> main.npl:13:18
+        r"error: this `raise` fails with `Bad`, which is not handled inside this parallel loop
+  --> main.npl:16:19
    |
-13 |         for j in prange(n):
+16 |             raise Bad()
+   |                   ^^^^^ can fail with `Bad`
+   = note: catch it with `try:` and `except Bad:` inside the loop body: an error cannot leave a parallel loop
+
+error: `check` can fail with `Bad`, which is not handled inside this parallel loop
+  --> main.npl:17:17
+   |
+17 |         value = check(a[i])
+   |                 ^^^^^^^^^^^ can fail with `Bad`
+   = note: catch it with `try:` and `except Bad:` inside the loop body: an error cannot leave a parallel loop
+
+error: a parallel loop cannot run inside another
+  --> main.npl:18:18
+   |
+18 |         for j in prange(n):
    |                  ^^^^^^^^^ inside a parallel loop
-  ::: main.npl:6:14
+  ::: main.npl:10:14
    |
- 6 |     for i in prange(n):
+10 |     for i in prange(n):
    |              --------- the outer parallel loop
    = note: use `range` for the inner loop: nested parallel loops would oversubscribe the cores
 
 error: a parallel loop cannot end early
- --> main.npl:8:13
-  |
-8 |             return a[i]
-  |             ^^^^^^^^^^^ returns from inside the loop
- ::: main.npl:6:14
-  |
-6 |     for i in prange(n):
-  |              --------- iterations run in parallel
-  = note: every iteration runs; skip the rest of one with `continue`, or use `range` for a loop that stops early
-
-error: a parallel loop cannot end early
-  --> main.npl:10:13
+  --> main.npl:12:13
    |
-10 |             break
-   |             ^^^^^ leaves the loop
-  ::: main.npl:6:14
+12 |             return a[i]
+   |             ^^^^^^^^^^^ returns from inside the loop
+  ::: main.npl:10:14
    |
- 6 |     for i in prange(n):
+10 |     for i in prange(n):
    |              --------- iterations run in parallel
    = note: every iteration runs; skip the rest of one with `continue`, or use `range` for a loop that stops early
 
 error: a parallel loop cannot end early
-  --> main.npl:12:13
+  --> main.npl:14:13
    |
-12 |             raise Bad()
-   |             ^^^^^^^^^^^ raises out of the loop
-  ::: main.npl:6:14
+14 |             break
+   |             ^^^^^ leaves the loop
+  ::: main.npl:10:14
    |
- 6 |     for i in prange(n):
+10 |     for i in prange(n):
    |              --------- iterations run in parallel
    = note: every iteration runs; skip the rest of one with `continue`, or use `range` for a loop that stops early"
     );
