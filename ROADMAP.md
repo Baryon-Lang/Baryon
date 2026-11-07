@@ -128,7 +128,7 @@ the REPL, and three external users have written something real.
 | 3.5 | Trait objects and dynamic dispatch | 4 | 1.7 | Planned | — | — |
 | 3.6 | First-class references or regions: design and prototype | 4 | 1.8 | Planned | — | — |
 | 3.7 | Optimization remarks in the editor | 2 | 3.1 | Planned | — | — |
-| 3.8 | Documentation generator: `npl doc` writes one Markdown page per module from its documentation strings and public signatures, and an index | 1 | 1.2 | Done | Claude | — |
+| 3.8 | Documentation generator: `npl doc` writes one Markdown page per module from its documentation strings and public signatures, and an index | 1 | 1.2 | Done | Claude | [#42](https://github.com/csimpson1964/New-Programming-Language/pull/42) |
 | 3.9 | Broadcasting and axis reductions | 3 | 3.1 | Planned | — | — |
 | 3.10 | Linear algebra and FFT over LAPACK and FFTW or Accelerate | 2 | 1.14 | Planned | — | — |
 | 3.11 | REPL on the Cranelift backend with persistent values | 4 | 2.1 | Planned | — | — |
