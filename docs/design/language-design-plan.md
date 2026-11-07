@@ -419,7 +419,9 @@ violation in terms of the two access paths that overlap, never compiler internal
 The runtime is as small as C's: no garbage collector, no scheduler, no reflection. A statically
 linked program that prints a number should be under 100 KB. It holds an allocator shim over the
 system `malloc`, a panic handler with backtraces in debug builds, bounds-check and overflow-trap
-intrinsics, and a thread pool for `prange`, started on first use (roadmap 1.12).
+intrinsics, and a thread pool for `prange`, started on first use (roadmap 1.12). It is a Rust
+static library that compiled code calls through C functions, and the one crate outside a backend
+allowed `unsafe` ([0021](../decisions/0021-runtime-crate-and-unsafe-code.md)).
 
 The MVP standard library is deliberately narrow so the compiler team is not also a library team:
 

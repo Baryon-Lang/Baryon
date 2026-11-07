@@ -96,7 +96,8 @@ These panic:
 | A negative exponent in integer `**` | The exponent |
 
 A panic prints its message and the source location, with a backtrace in debug builds, and ends the
-program with a non-zero exit status. A panic in any iteration of a parallel loop ends the whole
+program with exit status 101, so a script can tell a panic from an error that reached the end of
+`main` (status 1). A panic in any iteration of a parallel loop ends the whole
 program.
 
 Panics cannot be caught, by `try` or anything else. A bug that could be caught would be a bug that
