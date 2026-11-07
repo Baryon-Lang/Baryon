@@ -22,9 +22,6 @@ impl<'db> Builder<'db> {
         let ty = self.ty(node);
         match &call.callee {
             types::Callee::Function(item) | types::Callee::Method(item) => {
-                if !self.typed.errors(node).is_empty() {
-                    return self.unsupported(node, "calls that can fail");
-                }
                 self.function_call(place, *item, call.type_arguments.clone(), &arguments, node);
             }
             types::Callee::Constructor(_) => {
@@ -67,7 +64,8 @@ impl<'db> Builder<'db> {
     }
 
     /// A call of the function or method `item` at `type_arguments`, with `arguments` in its
-    /// parameters' order, the receiver first for a method.
+    /// parameters' order, the receiver first for a method. A call that can fail gets an error
+    /// edge (the `errors` module).
     fn function_call(
         &mut self,
         place: Place,
@@ -95,16 +93,26 @@ impl<'db> Builder<'db> {
                 Mode::Owned => Argument::Owned(self.operand(argument)),
             });
         }
-        self.then(node, |target| TerminatorKind::Call {
-            callee: Callee::Function {
-                item,
-                type_arguments,
+        let errors = self.typed.errors(node);
+        let edge = self.error_edge(errors, node);
+        let next = self.new_block();
+        self.terminate(
+            TerminatorKind::Call {
+                callee: Callee::Function {
+                    item,
+                    type_arguments,
+                },
+                arguments: passed,
+                destination: place,
+                target: next,
+                error: edge.clone(),
             },
-            arguments: passed,
-            destination: place,
-            target,
-            error: None,
-        });
+            node,
+        );
+        if let Some(edge) = edge {
+            self.dispatch(&edge, errors, node);
+        }
+        self.start(next);
     }
 
     /// The elements of a `Fixed` array that `node` writes, in row-major order, onto
