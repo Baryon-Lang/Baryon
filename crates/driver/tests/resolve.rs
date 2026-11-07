@@ -200,7 +200,7 @@ fn a_top_level_name_defined_twice_is_reported() {
 #[test]
 fn type_parameters_are_visible_in_the_signature_and_body() {
     let program =
-        "def first[T](values: list[T]) -> T:\n    result: T = values[0]\n    return result\n";
+        "def first[T: Copy](values: list[T]) -> T:\n    result: T = values[0]\n    return result\n";
     assert_eq!(check_one(program), "");
 }
 

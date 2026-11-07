@@ -62,7 +62,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.4 | Incremental query engine and the file and module database | 2 | 1.2 | Done | Claude | [0016](docs/decisions/0016-salsa-query-engine.md), [#14](https://github.com/csimpson1964/New-Programming-Language/pull/14) |
 | 1.5 | Name resolution, modules and imports | 2 | 1.4 | Done | Claude | [#16](https://github.com/csimpson1964/New-Programming-Language/pull/16) |
 | 1.6 | Type representation, interning, layouts, compile-time shapes, complex numbers | 2 | 1.5 | Done | Claude | [#19](https://github.com/csimpson1964/New-Programming-Language/pull/19) |
-| 1.7 | Type checker: local inference, generics, static-dispatch traits, enums, match | 6 | 1.6 | In progress | Claude | — |
+| 1.7 | Type checker: local inference, generics, static-dispatch traits, enums, match | 6 | 1.6 | Done | Claude | [#20](https://github.com/csimpson1964/New-Programming-Language/pull/20)–[#31](https://github.com/csimpson1964/New-Programming-Language/pull/31) |
 | 1.7.1 | Warn when reordering a struct's fields would save padding, naming the order that does; fields keep declaration order otherwise (#19) | — | 1.6, 1.7 | Done | Claude | [#22](https://github.com/csimpson1964/New-Programming-Language/pull/22) |
 | 1.7.2 | Declarations: signatures, struct fields, enum variants, aliases and `Final` constants computed by the compiler, with errors for annotations that mean no type | 1 | 1.6 | Done | Claude | [#20](https://github.com/csimpson1964/New-Programming-Language/pull/20) |
 | 1.7.3 | Function bodies: local inference, literals, number mixing, operators, conditions, calls, fields and methods, assignments and returns | 2 | 1.7.2 | Done | Claude | [#24](https://github.com/csimpson1964/New-Programming-Language/pull/24) |
@@ -72,8 +72,12 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.7.7 | `Raises`, `raise` and `try`: error types checked through calls | 0.5 | 1.7.3 | Done | Claude | [#29](https://github.com/csimpson1964/New-Programming-Language/pull/29) |
 | 1.7.8 | `None` checks narrow an optional value to its type; using an unchecked optional is an error | 0.5 | 1.7.3 | Done | Claude | [#30](https://github.com/csimpson1964/New-Programming-Language/pull/30) |
 | 1.7.9 | Definite assignment, naming the path that skips the assignment, and a missing `return` at the end of a function | 1 | 1.7.3 | Done | Claude | [#31](https://github.com/csimpson1964/New-Programming-Language/pull/31) |
-| 1.8 | Reference and exclusivity checker | 3 | 1.7 | Planned | — | — |
+| 1.7.10 | User-defined traits and their static dispatch, once D.9 settles their syntax; the standard traits are done in 1.7.5 | 1 | D.9 | Planned | — | — |
+| 1.8 | Reference and exclusivity checker | 3 | 1.7 | In progress | Claude | — |
 | 1.8.1 | `prange(n, accumulate=...)`: check that listed arrays are only added to, and suggest the argument in the disjoint-write error | — | 1.8 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
+| 1.8.2 | Moves: a moved value is not read again; borrowed parameters, elements and slices cannot move | 1 | 1.7.9 | Done | Claude | [#32](https://github.com/csimpson1964/New-Programming-Language/pull/32) |
+| 1.8.3 | Exclusivity: an `InOut` or `Owned` argument overlaps no other argument; read-only parameters are not changed | 1 | 1.8.2 | Planned | — | [0006](docs/decisions/0006-parameter-passing.md) |
+| 1.8.4 | A loop over a collection does not change the collection in its body | 0.5 | 1.8.3 | Planned | — | — |
 | 1.9 | Mid-level IR: lowering, drops, monomorphization | 5 | 1.7 | In progress | Claude | [0018](docs/decisions/0018-mid-level-ir.md), [#27](https://github.com/csimpson1964/New-Programming-Language/pull/27) |
 | 1.9.1 | IR design and the `mir` interface crate: bodies as basic blocks over typed locals and places, explicit drops, bounds checks and error edges, a validator and a text form | 1 | 1.6 | Done | Claude | [0018](docs/decisions/0018-mid-level-ir.md), [#27](https://github.com/csimpson1964/New-Programming-Language/pull/27) |
 | 1.9.2 | Typed bodies: a query that gives the type of every expression and the definition of every name in a function body, for lowering to read | 0.5 | 1.7 | Planned | — | — |

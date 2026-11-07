@@ -105,7 +105,7 @@ def solve(
     return "done"
 
 
-def first[T](values: Owned[list[T]]) -> T:
+def first[T: Copy](values: Owned[list[T]]) -> T:
     return values[0]
 "#;
     let strip = |text: &'static str| text.strip_prefix('\n').unwrap_or(text);

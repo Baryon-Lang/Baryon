@@ -401,6 +401,9 @@ impl<'db> Body<'db> {
     /// Checks one argument against its parameter.
     fn argument(&mut self, argument: NodeId, parameter: &Parameter<'db>) {
         let found = self.expression(argument, Some(parameter.ty));
+        if parameter.mode == types::Mode::Owned {
+            self.consume(argument, found);
+        }
         if !relations::compatible(self.db, parameter.ty, found)
             && !self.unchecked(argument, parameter.ty, found)
         {

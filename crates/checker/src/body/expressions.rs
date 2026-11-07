@@ -43,7 +43,12 @@ impl<'db> Body<'db> {
                 let items = items
                     .into_iter()
                     .enumerate()
-                    .map(|(index, item)| self.expression(item, expected_items.get(index).copied()))
+                    .map(|(index, item)| {
+                        // Building a tuple moves each value into it.
+                        let ty = self.expression(item, expected_items.get(index).copied());
+                        self.consume(item, ty);
+                        ty
+                    })
                     .collect();
                 Type::new(self.db, TypeKind::Tuple(items))
             }
@@ -178,6 +183,7 @@ impl<'db> Body<'db> {
         match self.lowerer.definition(node) {
             Some(&Definition::Local(binding)) => {
                 self.read(node, binding);
+                self.read_moved(node, binding);
                 self.state
                     .narrowed
                     .get(&binding)
@@ -394,6 +400,7 @@ impl<'db> Body<'db> {
         }
         for item in items {
             let found = self.expression(item, item_type);
+            self.consume(item, found);
             match item_type {
                 None => item_type = Some(found),
                 Some(first) if !relations::compatible(self.db, first, found) => {

@@ -1,0 +1,184 @@
+//! Moves, end to end, through every stage up to the type checker: a value that is not a copy
+//! type moves when assigned, returned, passed as `Owned` or built into a tuple or list, and
+//! the old owner cannot be read until it is assigned again.
+//!
+//! These tests live in the driver because they need several implementations, and only an
+//! application crate may depend on more than one (decision 0001).
+
+use driver::Session;
+
+/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// string means the program is clean. The program's first newline is dropped.
+fn check_one(text: &str) -> String {
+    let mut session = Session::new();
+    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+        return error.to_string();
+    }
+    session
+        .check()
+        .iter()
+        .map(|diagnostic| diagnostics::render(diagnostic, &session).to_string())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// A swap, an `Owned` parameter moved and returned, a variable assigned again after a move,
+/// copies, copy types used twice, a field moved out of an owned struct, and a variable moved
+/// and assigned again inside a loop.
+#[test]
+fn moves_that_follow_the_rules_check_clean() {
+    let program = r"
+class Atoms(Struct):
+    positions: Array[f64, 1]
+    forces: Array[f64, 1]
+
+
+class Point(Struct, Copy):
+    x: f64
+    y: f64
+
+
+def consume(values: Owned[Array[f64, 1]]) -> f64:
+    return values.sum()
+
+
+def keep(values: Owned[Array[f64, 1]]) -> Array[f64, 1]:
+    return values
+
+
+def positions(atoms: Owned[Atoms]) -> Array[f64, 1]:
+    return atoms.positions
+
+
+def step(u: Array[f64, 1], n: i64) -> f64:
+    out = u.copy()
+    work = u.copy()
+    work, out = out, work
+    total = consume(out)
+    out = work.copy()
+    total += out.sum()
+    for i in range(n):
+        total += consume(work)
+        work = out.copy()
+    point = Point(1.0, 2.0)
+    other = point
+    return total + point.x + other.y + keep(work).sum()
+";
+    assert_eq!(check_one(program), "");
+}
+
+/// A read after a move, after a move on one branch, and after a field moved out; moving a
+/// read-only or `InOut` parameter, returning one included; moving out of an element; keeping
+/// a slice; and a move in one pass of a loop that the next pass reads.
+#[test]
+fn moves_that_break_the_rules_are_reported() {
+    let program = r"
+class Atoms(Struct):
+    positions: Array[f64, 1]
+    forces: Array[f64, 1]
+
+
+def consume(values: Owned[Array[f64, 1]]) -> f64:
+    return values.sum()
+
+
+def reads(u: Array[f64, 1], flag: bool) -> f64:
+    a = u.copy()
+    b = a
+    c = u.copy()
+    if flag:
+        consume(c)
+    atoms = Atoms(u.copy(), u.copy())
+    x = atoms.positions
+    return a.sum() + c.sum() + atoms.forces.sum() + b.sum() + x.sum()
+
+
+def borrowed(u: Array[f64, 1], v: InOut[Array[f64, 1]]) -> Array[f64, 1]:
+    w = v
+    return u
+
+
+def elements(rows: list[Array[f64, 1]], grid: Array[f64, 2]) -> f64:
+    first = rows[0]
+    column = grid[:, 0]
+    return first.sum() + column.sum()
+
+
+def looped(u: Array[f64, 1], n: i64) -> f64:
+    work = u.copy()
+    total = 0.0
+    for i in range(n):
+        total += consume(work)
+    return total
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `a` was moved
+  --> main.npl:18:12
+   |
+18 |     return a.sum() + c.sum() + atoms.forces.sum() + b.sum() + x.sum()
+   |            ^ read after the move
+  ::: main.npl:12:9
+   |
+12 |     b = a
+   |         - `a` moved here
+   = note: to keep both, move a copy: `a.copy()`
+
+error: `c` was moved
+  --> main.npl:18:22
+   |
+18 |     return a.sum() + c.sum() + atoms.forces.sum() + b.sum() + x.sum()
+   |                      ^ read after the move
+  ::: main.npl:15:17
+   |
+15 |         consume(c)
+   |                 - `c` moved here
+   = note: to keep both, move a copy: `c.copy()`
+
+error: `atoms` was moved
+  --> main.npl:18:32
+   |
+18 |     return a.sum() + c.sum() + atoms.forces.sum() + b.sum() + x.sum()
+   |                                ^^^^^ read after the move
+  ::: main.npl:17:9
+   |
+17 |     x = atoms.positions
+   |         --------------- `atoms` moved here
+   = note: to keep both, move a copy: `atoms.positions.copy()`
+
+error: `v` is borrowed from the caller as `InOut`, so it cannot be moved
+  --> main.npl:22:9
+   |
+22 |     w = v
+   |         ^ moved here
+   = note: move a copy instead: `v.copy()`, or assign it a new value in place
+
+error: `u` is borrowed from the caller, so it cannot be moved
+  --> main.npl:23:12
+   |
+23 |     return u
+   |            ^ moved here
+   = note: move a copy instead: `u.copy()`, or take the parameter as `Owned[...]`
+
+error: a value cannot be moved out of an element
+  --> main.npl:27:13
+   |
+27 |     first = rows[0]
+   |             ^^^^^^^ moved out of an element
+   = note: move a copy instead: `rows[0].copy()`
+
+error: a slice of an array cannot be kept
+  --> main.npl:28:14
+   |
+28 |     column = grid[:, 0]
+   |              ^^^^^^^^^^ a view of the array's memory
+   = note: a slice can be passed to a call or assigned to, but to keep it, copy it: `grid[:, 0].copy()`
+
+error: `work` is moved in one pass of the loop and read in the next
+  --> main.npl:36:26
+   |
+36 |         total += consume(work)
+   |                          ^^^^ moved here, inside a loop
+   = note: move a copy, `.copy()`, or assign the variable a new value later in the loop"
+    );
+}

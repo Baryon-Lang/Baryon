@@ -54,6 +54,25 @@ impl Trait {
 /// The bound of the type parameter whose `Name` node is `name` in `file`: the trait after `:`
 /// in `def f[T: Number]` or `class Pair[T: Number]`.
 pub(crate) fn bound(db: &dyn types::TypeDb, file: File, name: NodeId) -> Option<Trait> {
+    match written_bound(db, file, name)? {
+        Bound::Trait(found) => Some(found),
+        Bound::Other => None,
+    }
+}
+
+/// What a type parameter's bound, as written, names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Bound {
+    /// A standard trait.
+    Trait(Trait),
+    /// Anything else, which declaring the parameter reports. Checks treat it as no constraint
+    /// at all, so the one error does not cascade.
+    Other,
+}
+
+/// The bound written on the type parameter whose `Name` node is `name` in `file`, or `None`
+/// when it has none.
+pub(crate) fn written_bound(db: &dyn types::TypeDb, file: File, name: NodeId) -> Option<Bound> {
     let tree = db.parse(file).tree();
     let text = file.source(db).text();
     outline(db, file).entries().iter().find_map(|entry| {
@@ -62,8 +81,9 @@ pub(crate) fn bound(db: &dyn types::TypeDb, file: File, name: NodeId) -> Option<
             .children_with(parameters, Role::Item)
             .find(|&variable| tree.child(variable, Role::Name) == Some(name))?;
         let bound = tree.child(variable, Role::Bound)?;
-        (tree.kind(bound) == SyntaxKind::Name)
+        let found = (tree.kind(bound) == SyntaxKind::Name)
             .then(|| Trait::from_name(tree.text(bound, text)))
-            .flatten()
+            .flatten();
+        Some(found.map_or(Bound::Other, Bound::Trait))
     })
 }
