@@ -52,4 +52,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0017. `@layout("C")` pins a struct's layout and silences the padding warning](0017-layout-decorator.md) | Accepted |
 | [0018. The mid-level IR is basic blocks over typed locals and places](0018-mid-level-ir.md) | Accepted |
 | [0019. The language server is `npl lsp`, speaking the protocol over `serde_json`](0019-language-server-protocol.md) | Accepted |
-| [0020. The first LLVM backend writes textual IR and hands it to `clang`](0020-llvm-backend-emits-text.md) | Proposed |
+| [0020. The first LLVM backend writes textual IR and hands it to `clang`](0020-llvm-backend-emits-text.md) | Accepted |

@@ -1,6 +1,6 @@
 # 0020. The first LLVM backend writes textual IR and hands it to `clang`
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-07
 Roadmap: 1.10
 

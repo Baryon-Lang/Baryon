@@ -20,6 +20,7 @@ diagnostics = { path = "crates/diagnostics" }
 documentation = { path = "crates/documentation" }
 drop_elaboration = { path = "crates/drop_elaboration" }
 llvm_backend = { path = "crates/llvm_backend" }
+lowering = { path = "crates/lowering" }
 mir = { path = "crates/mir" }
 monomorphize = { path = "crates/monomorphize" }
 parser = { path = "crates/parser" }
