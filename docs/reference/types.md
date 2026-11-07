@@ -109,6 +109,20 @@ def describe(distance: f64 | None) -> str:
 Using a `T | None` as a `T` without the check is a compile error. There is no null pointer and no
 sentinel value: `None` on a value type costs a flag, not an allocation.
 
+The compiler follows the program's branches to know where a variable has been checked:
+
+- Inside `if x is not None:`, and after `if x is None:` whose body ends in `return`, `raise`,
+  `break` or `continue`, `x` is a `T`.
+- After an `if`, `x` is a `T` when every branch that carries on leaves it one, so
+  `if x is None: x = 0.0` checks it too.
+- `and` and `or` check their right side with what the left side tells:
+  `x is not None and x > 0.0`. So does a conditional expression: `x if x is not None else 0.0`.
+- `assert x is not None` checks `x` for the rest of the block.
+- Assigning a `T` makes `x` a `T` until it is assigned `None` or another `T | None`.
+- In a `match`, the cases after `case None:` see a `T`.
+- A loop body may run many times, so a variable assigned anywhere in a loop is unchecked again
+  at the start of the loop and after it.
+
 ## Structs
 
 A struct is a record type: named fields, stored together, with value semantics.

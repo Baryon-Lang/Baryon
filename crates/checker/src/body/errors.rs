@@ -69,15 +69,16 @@ impl<'db> Body<'db> {
     }
 
     /// `try:` with its `except` clauses. The errors the clauses name are handled in the `try`
-    /// body; each clause's body runs with its name bound to the error it caught.
-    pub(super) fn try_statement(&mut self, statement: NodeId) {
+    /// body; each clause's body runs with its name bound to the error it caught. Returns
+    /// whether the statement can fall through: when the body or any clause can.
+    pub(super) fn try_statement(&mut self, statement: NodeId) -> bool {
         let handlers: Vec<NodeId> = self.tree.children_with(statement, Role::Handler).collect();
         let caught: Vec<Vec<Type<'db>>> = handlers
             .iter()
             .map(|&handler| self.except_types(handler))
             .collect();
         self.handled.push(caught.concat());
-        self.block(statement, Role::Body);
+        let mut falls = self.block(statement, Role::Body);
         self.handled.pop();
         for (handler, errors) in handlers.into_iter().zip(caught) {
             if let Some(name) = self.tree.child(handler, Role::Name) {
@@ -88,11 +89,12 @@ impl<'db> Body<'db> {
                 self.bind(name, ty, None);
             }
             self.caught.push(errors);
-            self.block(handler, Role::Body);
+            falls |= self.block(handler, Role::Body);
             self.caught.pop();
         }
         self.block(statement, Role::Else);
         self.block(statement, Role::Finally);
+        falls
     }
 
     /// The error types an `except` names, one or a parenthesized tuple of them, reporting any

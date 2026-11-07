@@ -15,8 +15,11 @@ impl<'db> Body<'db> {
         ) else {
             return self.lowerer.unknown();
         };
-        let (left, right) = self.operands(left, right);
-        self.combine(node, self.tree.node(node).operator(), left, right)
+        let (left_type, right_type) = self.operands(left, right);
+        if self.maybe_none(left, left_type) | self.maybe_none(right, right_type) {
+            return self.lowerer.unknown();
+        }
+        self.combine(node, self.tree.node(node).operator(), left_type, right_type)
     }
 
     /// The types of two operands. A number literal takes the other side's type.
@@ -119,6 +122,12 @@ impl<'db> Body<'db> {
     pub(super) fn unary(&mut self, node: NodeId) -> Type<'db> {
         let operator = self.tree.node(node).operator();
         let operand = self.child_type(node, Role::Value);
+        if operator != Operator::Not
+            && let Some(value) = self.tree.child(node, Role::Value)
+            && self.maybe_none(value, operand)
+        {
+            return self.lowerer.unknown();
+        }
         if matches!(operator, Operator::Negate | Operator::Plus)
             && self.number_context(operand) == Some(operand)
         {
@@ -174,9 +183,14 @@ impl<'db> Body<'db> {
     pub(super) fn boolean(&mut self, node: NodeId) -> Type<'db> {
         let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
         let symbol = self.tree.node(node).operator().symbol();
+        let and = self.tree.node(node).operator() == Operator::And;
         let items: Vec<NodeId> = self.tree.children_with(node, Role::Item).collect();
+        let entry = self.narrowed.clone();
         for item in items {
             let found = self.expression(item, Some(boolean));
+            // `x is not None and x > 0`: each operand runs only when those before it allow.
+            let (yes, no) = self.facts(item);
+            self.assume(if and { &yes } else { &no });
             if !relations::compatible(self.db, boolean, found) {
                 let message = format!(
                     "`{symbol}` needs `bool` operands, found `{}`",
@@ -190,6 +204,7 @@ impl<'db> Body<'db> {
                 );
             }
         }
+        self.narrowed = entry;
         boolean
     }
 
@@ -213,10 +228,18 @@ impl<'db> Body<'db> {
                 }
                 None => self.operands(left_node, right_node),
             };
-            if !matches!(
+            let ordering = matches!(
+                operator,
+                Operator::Less | Operator::LessEqual | Operator::Greater | Operator::GreaterEqual
+            );
+            let unchecked = ordering
+                && (self.maybe_none(left_node, left_type)
+                    | self.maybe_none(right_node, right_type));
+            let identity = matches!(
                 operator,
                 Operator::Is | Operator::IsNot | Operator::In | Operator::NotIn
-            ) {
+            );
+            if !unchecked && !identity {
                 self.comparable(comparator, operator, left_type, right_type);
             }
             left = Some(right_type);

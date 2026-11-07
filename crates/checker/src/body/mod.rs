@@ -13,9 +13,9 @@
 //! the operations a bound allows (1.7.5, the `generics` module); and `match`: patterns
 //! against the subject, and cases that cover every value (1.7.6, the `patterns` and
 //! `exhaustive` modules); and errors: each error a call or `raise` can fail with is caught by a
-//! `try` or declared in the function's `Raises` (1.7.7, the `errors` module). What a later
-//! slice checks, and this one lets through without an error: the `None` check that narrows
-//! `T | None` to `T` (1.7.8).
+//! `try` or declared in the function's `Raises` (1.7.7, the `errors` module); and optional
+//! values: a `T | None` is used as a `T` only after a `None` check narrows it (1.7.8, the
+//! `flow` module).
 
 mod arrays;
 mod builtins;
@@ -23,6 +23,7 @@ mod calls;
 mod errors;
 mod exhaustive;
 mod expressions;
+mod flow;
 mod generics;
 mod members;
 mod numbers;
@@ -58,6 +59,7 @@ pub(crate) fn check(
         signature: signature.clone(),
         function: entry.statement,
         locals: BTreeMap::new(),
+        narrowed: BTreeMap::new(),
         handled: Vec::new(),
         caught: Vec::new(),
     };
@@ -83,6 +85,8 @@ struct Body<'db> {
     /// The type of each local variable, by the `Name` node of its first binding, which the
     /// resolver gives every use of the variable.
     locals: BTreeMap<NodeId, Type<'db>>,
+    /// The `T | None` variables known here to hold a `T`, with that `T` (the `flow` module).
+    narrowed: flow::Narrowed<'db>,
     /// The error types each enclosing `try` handles, innermost last.
     handled: Vec<Vec<Type<'db>>>,
     /// The error types each enclosing `except` block caught, innermost last, which a bare
@@ -113,19 +117,33 @@ impl<'db> Body<'db> {
         }
     }
 
-    /// Checks every statement of `parent` with the role `role`, in order.
-    fn block(&mut self, parent: NodeId, role: Role) {
+    /// Checks every statement of `parent` with the role `role`, in order, and returns whether
+    /// the block can fall through to what follows it. Statements after one that cannot are
+    /// still checked.
+    fn block(&mut self, parent: NodeId, role: Role) -> bool {
         let statements: Vec<NodeId> = self.tree.children_with(parent, role).collect();
+        let mut falls = true;
         for statement in statements {
-            self.statement(statement);
+            falls &= self.statement(statement);
         }
+        falls
     }
 
-    /// Checks one statement.
-    fn statement(&mut self, statement: NodeId) {
+    /// Checks one statement, and returns whether it can fall through to the next: `return`,
+    /// `raise`, `break` and `continue` cannot, nor can an `if` or `match` none of whose branches
+    /// can.
+    fn statement(&mut self, statement: NodeId) -> bool {
         let child = |role| self.tree.child(statement, role);
         match self.tree.kind(statement) {
-            SyntaxKind::Raise => self.raise(statement),
+            SyntaxKind::Raise => {
+                self.raise(statement);
+                return false;
+            }
+            SyntaxKind::Return => {
+                self.return_statement(statement);
+                return false;
+            }
+            SyntaxKind::Break | SyntaxKind::Continue => return false,
             SyntaxKind::ExpressionStatement => {
                 if let Some(value) = child(Role::Value) {
                     self.expression(value, None);
@@ -134,32 +152,19 @@ impl<'db> Body<'db> {
             SyntaxKind::Assign => self.assignment(statement),
             SyntaxKind::AnnotatedAssign => self.annotated(statement),
             SyntaxKind::AugmentedAssign => self.augmented(statement),
-            SyntaxKind::Return => self.return_statement(statement),
-            SyntaxKind::If => {
-                self.condition(child(Role::Condition));
-                self.block(statement, Role::Body);
-                let clauses: Vec<NodeId> = self.tree.children_with(statement, Role::Else).collect();
-                for clause in clauses {
-                    self.condition(self.tree.child(clause, Role::Condition));
-                    self.block(clause, Role::Body);
-                }
-            }
-            SyntaxKind::While => {
-                self.condition(child(Role::Condition));
-                self.block(statement, Role::Body);
-                self.block(statement, Role::Else);
-            }
-            SyntaxKind::For => {
-                let element = match child(Role::Iterator) {
-                    Some(iterator) => self.iteration(iterator),
-                    None => self.lowerer.unknown(),
+            SyntaxKind::If => return self.if_statement(statement),
+            SyntaxKind::While => self.while_statement(statement),
+            SyntaxKind::For => self.isolated(statement, |body| {
+                let element = match body.tree.child(statement, Role::Iterator) {
+                    Some(iterator) => body.iteration(iterator),
+                    None => body.lowerer.unknown(),
                 };
-                if let Some(target) = child(Role::Target) {
-                    self.bind(target, element, None);
+                if let Some(target) = body.tree.child(statement, Role::Target) {
+                    body.bind(target, element, None);
                 }
-                self.block(statement, Role::Body);
-                self.block(statement, Role::Else);
-            }
+                body.block(statement, Role::Body);
+                body.block(statement, Role::Else);
+            }),
             SyntaxKind::With => {
                 let items: Vec<NodeId> = self.tree.children_with(statement, Role::Item).collect();
                 for item in items {
@@ -167,18 +172,26 @@ impl<'db> Body<'db> {
                         self.expression(value, None);
                     }
                 }
-                self.block(statement, Role::Body);
+                return self.block(statement, Role::Body);
             }
-            SyntaxKind::Match => self.match_statement(statement),
-            SyntaxKind::Try => self.try_statement(statement),
+            SyntaxKind::Match => return self.match_statement(statement),
+            SyntaxKind::Try => {
+                return self.isolated(statement, |body| body.try_statement(statement));
+            }
             SyntaxKind::Assert => {
-                self.condition(child(Role::Condition));
+                let condition = child(Role::Condition);
+                self.condition(condition);
                 if let Some(message) = child(Role::Message) {
                     self.expression(message, None);
+                }
+                if let Some(condition) = condition {
+                    let (yes, _) = self.facts(condition);
+                    self.assume(&yes);
                 }
             }
             _ => {}
         }
+        true
     }
 
     /// `a = b = value`.
@@ -223,6 +236,10 @@ impl<'db> Body<'db> {
         };
         let operator = self.tree.node(statement).operator();
         let current = self.expression(target, None);
+        if self.maybe_none(target, current) {
+            self.expression(value, None);
+            return;
+        }
         let operand = self.expression(value, self.number_context(current));
         let result = self.combine(statement, operator, current, operand);
         if !relations::compatible(self.db, current, result) {
@@ -316,7 +333,9 @@ impl<'db> Body<'db> {
                 };
                 match self.locals.get(&binding) {
                     Some(&held) => {
-                        if !relations::compatible(self.db, held, ty) {
+                        if relations::compatible(self.db, held, ty) {
+                            self.assigned(binding, held, ty);
+                        } else {
                             let name = self.tree.text(target, self.text);
                             let message = format!(
                                 "`{name}` has type `{}`, so it cannot hold `{}`",
@@ -378,7 +397,8 @@ impl<'db> Body<'db> {
     /// Reports `found` where `expected` is needed, at `node`. `context` says where the expected
     /// type comes from, such as "the function returns".
     fn expect(&mut self, node: NodeId, expected: Type<'db>, found: Type<'db>, context: &str) {
-        if relations::compatible(self.db, expected, found) {
+        if relations::compatible(self.db, expected, found) || self.unchecked(node, expected, found)
+        {
             return;
         }
         let message = format!(
@@ -401,6 +421,16 @@ impl<'db> Body<'db> {
                 self.number_context(*element)
             }
             _ => self.generic_literal(ty),
+        }
+    }
+
+    /// Reports a `T | None` given where a `T` is expected, and returns whether it was one.
+    fn unchecked(&mut self, node: NodeId, expected: Type<'db>, found: Type<'db>) -> bool {
+        match found.kind(self.db) {
+            TypeKind::Optional(value) if relations::compatible(self.db, expected, *value) => {
+                self.maybe_none(node, found)
+            }
+            _ => false,
         }
     }
 

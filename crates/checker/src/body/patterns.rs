@@ -3,7 +3,8 @@
 //! every value of the subject.
 //!
 //! Version 0 patterns are literals, enum members, `True`, `False` and `None`, tuples, captures,
-//! the wildcard `_`, and `a | b` of these. Class, mapping and star patterns are errors. The
+//! the wildcard `_`, and `a | b` of these. Class, mapping and star patterns are errors. After
+//! `case None:`, the later cases of a `T | None` subject match a `T`. The
 //! `exhaustive` module decides whether the cases cover every value and names one they miss:
 //!
 //! ```text
@@ -18,28 +19,49 @@ use types::{Declaration, Item, Primitive, Type, TypeKind};
 impl<'db> Body<'db> {
     /// Checks a `match` statement: its subject, each case's pattern, guard and body, and that
     /// the cases without a guard cover every value of the subject.
-    pub(super) fn match_statement(&mut self, statement: NodeId) {
+    ///
+    /// Returns whether the statement can fall through: when a case's body can, or when the
+    /// cases do not cover every value.
+    pub(super) fn match_statement(&mut self, statement: NodeId) -> bool {
         let Some(value) = self.tree.child(statement, Role::Value) else {
-            return;
+            return true;
         };
         let subject = self.expression(value, None);
+        let entry = self.narrowed.clone();
+        let mut falls = false;
         let mut rows = Vec::new();
+        // After an unguarded `case None:`, the later cases see a `T | None` subject as a `T`.
+        let mut remaining = subject;
         let cases: Vec<NodeId> = self.tree.children_with(statement, Role::Case).collect();
         for case in cases {
+            self.narrowed.clone_from(&entry);
             let pattern = match self.tree.child(case, Role::Pattern) {
-                Some(pattern) => self.pattern(pattern, subject),
+                Some(pattern) => self.pattern(pattern, remaining),
                 None => Pattern::Wild,
             };
-            match self.tree.child(case, Role::Condition) {
-                Some(guard) => self.condition(Some(guard)),
-                None => rows.push(pattern),
+            if let Some(guard) = self.tree.child(case, Role::Condition) {
+                self.condition(Some(guard));
+            } else {
+                if let (Pattern::None, TypeKind::Optional(value)) =
+                    (&pattern, remaining.kind(self.db))
+                {
+                    remaining = *value;
+                }
+                rows.push(pattern);
             }
-            self.block(case, Role::Body);
+            falls |= self.block(case, Role::Body);
         }
+        // What the cases learn is not joined: after a `match`, only what held before it and
+        // that no case changed is known.
+        self.narrowed = entry;
+        self.forget_assigned(statement);
         if relations::is_open(self.db, subject) {
-            return;
+            return true;
         }
-        if let Some(example) = exhaustive::missing(&rows, &self.space(subject)) {
+        let Some(example) = exhaustive::missing(&rows, &self.space(subject)) else {
+            return falls;
+        };
+        {
             let guards = "a `case` with an `if` guard may not match, so it does not count";
             let (message, hint) = if example == "_" {
                 (
@@ -60,6 +82,7 @@ impl<'db> Body<'db> {
             self.lowerer
                 .error(value, &message, "not every value is handled", Some(&hint));
         }
+        true
     }
 
     /// Checks a pattern against the subject type `ty`, binds its captures, and reduces it for

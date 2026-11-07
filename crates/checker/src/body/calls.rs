@@ -279,6 +279,10 @@ impl<'db> Body<'db> {
             _ => {}
         }
         let base = self.expression(value, None);
+        if self.maybe_none(value, base) {
+            self.untyped(arguments);
+            return self.lowerer.unknown();
+        }
         if let Some(result) = self.container_method(node, base, &callee, arguments) {
             return result;
         }
@@ -397,7 +401,9 @@ impl<'db> Body<'db> {
     /// Checks one argument against its parameter.
     fn argument(&mut self, argument: NodeId, parameter: &Parameter<'db>) {
         let found = self.expression(argument, Some(parameter.ty));
-        if !relations::compatible(self.db, parameter.ty, found) {
+        if !relations::compatible(self.db, parameter.ty, found)
+            && !self.unchecked(argument, parameter.ty, found)
+        {
             let message = format!(
                 "`{}` has type `{}`, found `{}`",
                 parameter.name,
