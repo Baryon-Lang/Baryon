@@ -247,3 +247,32 @@ def main():
         "panic: assertion failed: handled(4) == 3.0, \"last\"\n  --> main.npl:39:5\n"
     );
 }
+
+/// `print` end to end: each argument as Python writes it, separated by spaces, one line per
+/// call. A string literal prints as it is; an `f32` prints its own shortest digits.
+#[test]
+fn programs_print_as_python_does() {
+    let program = "\
+def mean(a: f64, b: f64) -> f64:
+    return (a + b) / 2.0
+
+
+def main():
+    print(\"mean:\", mean(1.0, 2.0))
+    print(1e16, 0.1 + 0.2, 1.5e-05, -0.0)
+    small: i8 = -5
+    large: u32 = 4294967295
+    print(small, large, 3 > 2, f32(0.1))
+    print()
+    print('done')
+";
+    let directory = package("printing", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "mean: 1.5\n1e+16 0.30000000000000004 1.5e-05 -0.0\n-5 4294967295 True 0.1\n\ndone\n"
+    );
+}
