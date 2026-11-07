@@ -6,7 +6,7 @@ use crate::Unsupported;
 use crate::function::Function;
 use crate::ty::Number;
 use mir::{BinaryOperator, Operand, Rvalue, UnaryOperator};
-use types::Type;
+use types::{Type, TypeKind};
 
 impl<'db> Function<'_, '_, 'db> {
     /// Writes the instructions that compute `rvalue`, whose type is `ty`, and returns the value;
@@ -315,19 +315,43 @@ impl<'db> Function<'_, '_, 'db> {
         operands: &[Operand<'db>],
     ) -> Result<String, Unsupported> {
         let llvm = self.types.value(ty)?;
-        if !llvm.starts_with('{') {
-            return Err(self.types.unsupported(ty));
-        }
+        // A `Fixed` array's operands are its elements in row-major order; each goes at the
+        // indices that position unravels to. A tuple's or struct's go at their own position.
+        let lengths: Vec<u64> = match ty.kind(self.types.db) {
+            TypeKind::Fixed { shape, .. } => shape.lengths().to_vec(),
+            _ if llvm.starts_with('{') => Vec::new(),
+            _ => return Err(self.types.unsupported(ty)),
+        };
         let mut built = "poison".to_owned();
         for (position, operand) in operands.iter().enumerate() {
             let (value, item) = self.value(operand)?;
             let item = self.types.value(item)?;
+            let indices = if lengths.is_empty() {
+                position.to_string()
+            } else {
+                unravel(position as u64, &lengths)
+            };
             built = self.emit(&format!(
-                "insertvalue {llvm} {built}, {item} {value}, {position}"
+                "insertvalue {llvm} {built}, {item} {value}, {indices}"
             ));
         }
         Ok(built)
     }
+}
+
+/// The row-major indices of the element at flat `position` in an array of `lengths`, as an
+/// LLVM index list: position 3 of a 2 by 2 array is `1, 1`.
+fn unravel(mut position: u64, lengths: &[u64]) -> String {
+    let mut indices = vec![0; lengths.len()];
+    for (index, &length) in indices.iter_mut().zip(lengths).rev() {
+        *index = position % length.max(1);
+        position /= length.max(1);
+    }
+    indices
+        .iter()
+        .map(u64::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The values signed `//` and `%` share, each the name of an LLVM value.

@@ -30,9 +30,10 @@
 //!   allocated by the runtime, an element is found through the strides, and a drop frees the
 //!   elements with the size they were allocated with.
 //!
-//! The backend so far (roadmap 1.10.1 to 1.10.3) covers numbers, `bool`, enums without data,
-//! tuples and structs, `Array`, control flow, direct calls and checks. A body that uses anything
-//! else, such as an optional or a call that can raise, gets an [`Unsupported`] error naming it.
+//! The backend so far (roadmap 1.10.1 to 1.10.4) covers numbers, `bool`, enums without data,
+//! tuples and structs, `Array` and `Fixed`, control flow, direct calls and checks. A body that
+//! uses anything else, such as an optional or a call that can raise, gets an [`Unsupported`]
+//! error naming it.
 //!
 //! # Example
 //!

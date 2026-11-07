@@ -6,7 +6,9 @@
 //! (decision 0008): the last dimension's stride is 1. The elements live on the heap, allocated
 //! and freed by the runtime (decision 0021).
 //!
-//! Element `[i, j]` is at `data + i * stride[0] + j * stride[1]`. The step itself is unchecked:
+//! A `Fixed[T, shape]` holds its elements in place, as nested LLVM arrays, and owns no memory.
+//!
+//! Element `[i, j]` of an `Array` is at `data + i * stride[0] + j * stride[1]`. The step itself is unchecked:
 //! lowering puts a bounds check before it (decision 0010).
 
 use crate::Unsupported;
@@ -102,13 +104,32 @@ impl<'db> Function<'_, '_, 'db> {
     }
 
     /// The address of the element at `indices` of the array of type `ty` at `address`, and the
-    /// element type. Each index local holds an integer of any width; it is widened to `i64`.
+    /// element type. A `Fixed` array holds its elements in place, so that is one
+    /// `getelementptr` through its nested LLVM arrays; an `Array` goes through its header. Each
+    /// index local holds an integer of any width; it is widened to `i64`.
     pub(crate) fn element(
         &mut self,
         address: &str,
         ty: Type<'db>,
         indices: &[Local],
     ) -> Result<(String, Type<'db>), Unsupported> {
+        if let TypeKind::Fixed { element, shape } = ty.kind(self.types.db) {
+            if indices.len() != shape.rank() {
+                return Err(Unsupported::new(
+                    "an index with the wrong number of dimensions",
+                ));
+            }
+            let llvm = self.types.value(ty)?;
+            let mut steps = vec!["i64 0".to_owned()];
+            for &index in indices {
+                steps.push(format!("i64 {}", self.index(index)?));
+            }
+            let address = self.emit(&format!(
+                "getelementptr inbounds {llvm}, ptr {address}, {}",
+                steps.join(", ")
+            ));
+            return Ok((address, *element));
+        }
         let (element, rank) = self.array(ty)?;
         if indices.len() != rank as usize {
             return Err(Unsupported::new(

@@ -239,3 +239,57 @@ bb0:
 "
     );
 }
+
+/// `def corner(i: i64, j: i64) -> f64: m = Mat2(1.0, 2.0, 3.0, 4.0); return m[i, j]`: a `Fixed`
+/// array is nested LLVM arrays, built element by element in row-major order and indexed in
+/// place with one `getelementptr`.
+#[test]
+fn fixed_arrays_are_nested_arrays() {
+    let database = Database::default();
+    let types = Types::new(&database);
+    let matrix = Type::new(
+        &database,
+        TypeKind::Fixed {
+            element: types.f64,
+            shape: types::Shape::new(vec![2, 2]).unwrap(),
+        },
+    );
+    let mut corner = body(
+        types.f64,
+        &[(types.i64, Mode::Borrow), (types.i64, Mode::Borrow)],
+        Vec::new(),
+    );
+    let m = corner.push_local(matrix, mir::LocalKind::Temporary, span());
+    let element = |value: f64| Operand::Constant(mir::Constant::float(types.f64, value));
+    corner.blocks[0].statements = vec![
+        assign(
+            m,
+            Rvalue::Aggregate(
+                matrix,
+                vec![element(1.0), element(2.0), element(3.0), element(4.0)],
+            ),
+        ),
+        assign(
+            Local::RETURN,
+            Rvalue::Use(Operand::Copy(
+                Place::from(m).project(Projection::Index(vec![Local::new(1), Local::new(2)])),
+            )),
+        ),
+    ];
+    let text = super::module(&database, &[("corner", corner)]);
+    let main = r#"
+        #include <stdio.h>
+        #include <stdint.h>
+        double corner(int64_t, int64_t);
+        int main(void) {
+            printf("%g %g %g %g\n", corner(0, 0), corner(0, 1), corner(1, 0), corner(1, 1));
+            return 0;
+        }
+    "#;
+    assert!(
+        text.contains("insertvalue [2 x [2 x double]] %t1, double 0x4008000000000000, 1, 0"),
+        "{text}"
+    );
+    let executable = build("fixed", &text, main);
+    assert_eq!(run(&executable, &[]).as_deref(), Ok("1 2 3 4\n"));
+}
