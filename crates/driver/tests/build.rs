@@ -301,3 +301,41 @@ def main():
         "panic: assertion failed: 1 > 2\n  --> main.npl:3:5\n"
     );
 }
+
+/// An error that reaches the end of `main` is printed to standard error with its type and fields,
+/// and the program exits with status 1 (the reference, "Errors"). The second error of the list
+/// is raised, so the report picks it by its position.
+#[test]
+fn errors_that_end_main_are_reported() {
+    let program = "\
+class ConfigError(Exception):
+    line: i64
+    strict: bool
+
+
+class LimitError(Exception):
+    code: u8
+    limit: f64
+
+
+def load(n: i64) -> Raises[f64, ConfigError | LimitError]:
+    if n < 0:
+        raise ConfigError(n, True)
+    if n > 10:
+        raise LimitError(u8(n), 10.0)
+    return f64(n)
+
+
+def main() -> Raises[None, ConfigError | LimitError]:
+    print(\"loaded\", load(3))
+    print(\"loaded\", load(12))
+    print(\"unreachable\")
+";
+    let directory = package("main_raises", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), "loaded 3.0\n");
+    assert_eq!(stderr(&ran), "error: LimitError(code=12, limit=10.0)\n");
+    assert_eq!(ran.status.code(), Some(1));
+}

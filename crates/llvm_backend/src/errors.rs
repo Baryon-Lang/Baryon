@@ -119,11 +119,21 @@ impl<'db> Function<'_, '_, 'db> {
     /// Which error the error value at `place` holds, as an `i64`: its tag, widened.
     pub(crate) fn error_index(&mut self, place: &Place) -> Result<String, Unsupported> {
         let (address, ty) = self.place(place)?;
+        let tag = self.error_tag(&address, ty)?;
+        Ok(self.emit(&format!("zext i8 {tag} to i64")))
+    }
+
+    /// The tag of the error value of type `ty` at `address`, an `i8`: the position of the error
+    /// it holds in its list.
+    pub(crate) fn error_tag(
+        &mut self,
+        address: &str,
+        ty: Type<'db>,
+    ) -> Result<String, Unsupported> {
         let llvm = self.types.value(ty)?;
         let tag = self.emit(&format!(
             "getelementptr inbounds {llvm}, ptr {address}, i32 0, i32 0"
         ));
-        let tag = self.emit(&format!("load i8, ptr {tag}"));
-        Ok(self.emit(&format!("zext i8 {tag} to i64")))
+        Ok(self.emit(&format!("load i8, ptr {tag}")))
     }
 }

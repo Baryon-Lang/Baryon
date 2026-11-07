@@ -27,7 +27,8 @@
 //!   `fmod` and `floor`, so a program links `libm`, as C programs do.
 //! - **Errors are values, not unwinding** (decision 0005). A function that can fail writes its
 //!   error through a pointer it is passed last and returns a failure flag beside its value; the
-//!   caller branches on the flag to its error edge.
+//!   caller branches on the flag to its error edge. An error that ends `main` is printed to
+//!   standard error by the C `main` [`Module::entry`] writes, which returns 1.
 //! - **Arrays are a header and heap elements.** An `Array[T, rank]` value is the header
 //!   [`types::layout`] describes: the data pointer, each length and each stride. A new array is
 //!   allocated by the runtime, an element is found through the strides, and a drop frees the
@@ -111,6 +112,7 @@
 mod array;
 mod call;
 mod convert;
+mod entry;
 mod errors;
 mod function;
 mod panic;
@@ -200,6 +202,16 @@ impl<'a, 'db> Module<'a, 'db> {
     /// and returns `None`; a failed check inside it ends the program through the runtime with
     /// status 101 instead.
     ///
+    /// `errors` are the error types `symbol` can raise, in its `Raises` order, each with its
+    /// fields' names in declaration order; empty when it cannot fail. An error that reaches the
+    /// end of `main` is printed to standard error as `error: ParseError(position=-3)` and the
+    /// program returns 1 (the reference, "Errors").
+    ///
+    /// # Errors
+    ///
+    /// [`Unsupported`] when an error has a field this slice of the backend cannot print, such
+    /// as a `str`; the module is left as it was.
+    ///
     /// ```
     /// # #[salsa::db]
     /// # #[derive(Clone, Default)]
@@ -218,18 +230,29 @@ impl<'a, 'db> Module<'a, 'db> {
     /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
     /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
     /// let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
-    /// module.entry("main.main");
+    /// module.entry("main.main", &[])?;
     /// assert_eq!(
     ///     module.finish(),
     ///     "define i32 @main() {\nstart:\n  call void @main.main()\n  ret i32 0\n}\n"
     /// );
+    /// # Ok::<(), llvm_backend::Unsupported>(())
     /// ```
-    pub fn entry(&mut self, symbol: &str) {
-        self.definitions.push(format!(
-            "define i32 @main() {{\nstart:\n  call void {}()\n  ret i32 0\n}}\n",
-            function::global(symbol)
-        ));
+    pub fn entry(
+        &mut self,
+        symbol: &str,
+        errors: &[(Type<'db>, Vec<String>)],
+    ) -> Result<(), Unsupported> {
+        let mark = self.constants.mark();
+        let body = entry::no_body(self.types.db);
+        let function =
+            function::Function::new(self.types, self.symbol, &mut self.constants, &body, &[]);
+        let (text, calls) = function
+            .entry(symbol, errors)
+            .inspect_err(|_| self.constants.roll_back(mark))?;
+        self.definitions.push(text);
         self.defined.insert("main".to_owned());
+        self.declarations.extend(calls);
+        Ok(())
     }
 
     /// The module's text: every definition in order, then the message and location constants

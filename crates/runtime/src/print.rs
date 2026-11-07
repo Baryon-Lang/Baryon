@@ -3,7 +3,9 @@
 //! The language prints values as Python does (decision 0004, Python's spelling and behavior where
 //! Python has them), so a script ported from Python prints the same lines. Compiled code calls
 //! one runtime function per argument, and prints the separator and the line end with
-//! [`npl_rt_print_str`](crate::npl_rt_print_str): `print(a, b)` is four calls.
+//! [`npl_rt_print_str`](crate::npl_rt_print_str): `print(a, b)` is four calls. Each call names
+//! its stream: 1 for standard output, where `print` writes, or 2 for standard error, where the
+//! report of an error that ends `main` goes.
 //!
 //! A float prints as Python's `repr` writes it: the fewest digits that read back as the same
 //! value, `.0` on a whole number, and an exponent below `1e-4` and from `1e16` up.
@@ -17,11 +19,20 @@
 use std::fmt::Write as _;
 use std::io::Write as _;
 
-/// Writes `text` to standard output, ignoring a failed write.
-pub(crate) fn write(text: &str) {
+/// Writes `text` to standard error when `stream` is 2, the POSIX number of standard error, and
+/// to standard output otherwise, ignoring a failed write.
+pub(crate) fn write(stream: i32, text: &str) {
     // A program whose output is closed has nowhere to report it; it carries on.
-    let _ = std::io::stdout().lock().write_all(text.as_bytes());
+    let _ = if stream == STDERR {
+        std::io::stderr().lock().write_all(text.as_bytes())
+    } else {
+        std::io::stdout().lock().write_all(text.as_bytes())
+    };
 }
+
+/// The stream number of standard error, as POSIX numbers it. `print` writes to 1, standard
+/// output; the report of an error that ends `main` writes to 2.
+const STDERR: i32 = 2;
 
 /// `value` as Python writes a `bool`: `True` or `False`.
 pub(crate) fn bool(value: bool) -> &'static str {

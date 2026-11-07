@@ -44,12 +44,12 @@ start:
   store i8 %a1, ptr %_1
   br label %bb0
 bb0:
-  call void @npl_rt_print_str(ptr @npl.str.0, i64 3)
-  call void @npl_rt_print_str(ptr @npl.str.1, i64 1)
+  call void @npl_rt_print_str(i32 1, ptr @npl.str.0, i64 3)
+  call void @npl_rt_print_str(i32 1, ptr @npl.str.1, i64 1)
   %t0 = load i8, ptr %_1
   %t1 = zext i8 %t0 to i64
-  call void @npl_rt_print_u64(i64 %t1)
-  call void @npl_rt_print_str(ptr @npl.str.2, i64 1)
+  call void @npl_rt_print_u64(i32 1, i64 %t1)
+  call void @npl_rt_print_str(i32 1, ptr @npl.str.2, i64 1)
   br label %bb1
 bb1:
   ret void
@@ -59,8 +59,8 @@ bb1:
 @npl.str.1 = private unnamed_addr constant [1 x i8] c\" \"
 @npl.str.2 = private unnamed_addr constant [1 x i8] c\"\\0A\"
 
-declare void @npl_rt_print_str(ptr, i64) nounwind
-declare void @npl_rt_print_u64(i64) nounwind
+declare void @npl_rt_print_str(i32, ptr, i64) nounwind
+declare void @npl_rt_print_u64(i32, i64) nounwind
 "
     );
 }

@@ -54,17 +54,15 @@ pub(crate) struct Function<'f, 'a, 'db> {
 }
 
 impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
-    /// Writes `body` as the function `name`, and returns its text and the declarations of what
-    /// it calls.
-    pub(crate) fn write(
+    /// The state for writing `body`, which can raise `errors`, with nothing written yet.
+    pub(crate) fn new(
         types: Types<'a, 'db>,
         symbol: &'f dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
         constants: &'f mut Constants<'a>,
-        name: &str,
         body: &'f Body<'db>,
         errors: &'f [Type<'db>],
-    ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
-        let mut function = Self {
+    ) -> Self {
+        Self {
             types,
             symbol,
             body,
@@ -78,7 +76,20 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             failures: String::new(),
             next_failure: 0,
             calls: BTreeMap::new(),
-        };
+        }
+    }
+
+    /// Writes `body` as the function `name`, and returns its text and the declarations of what
+    /// it calls.
+    pub(crate) fn write(
+        types: Types<'a, 'db>,
+        symbol: &'f dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
+        constants: &'f mut Constants<'a>,
+        name: &str,
+        body: &'f Body<'db>,
+        errors: &'f [Type<'db>],
+    ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
+        let mut function = Self::new(types, symbol, constants, body, errors);
         let (signature, entry) = function.prologue(name)?;
         for (index, block) in body.blocks.iter().enumerate() {
             function.line_label(&block_label(BlockId::new(index)));

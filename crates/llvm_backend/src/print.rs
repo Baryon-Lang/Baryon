@@ -5,14 +5,22 @@
 //! integer is widened to `i64` and an unsigned one to `u64`, so two functions cover every width;
 //! a float keeps its width, so an `f32` prints its own shortest digits. A string literal, which
 //! lowering passes as a constant, becomes a byte constant printed with `npl_rt_print_str`, as
-//! the separator and the line end are. `str` values, complex numbers, enums and anything else
+//! the separator and the line end are. Each runtime call names its stream first: 1, standard
+//! output, for `print`. `str` values, complex numbers, enums and anything else
 //! are not printed yet.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
 use crate::ty::Number;
 use mir::{Argument, BlockId, ConstantValue, Operand};
-use types::TypeKind;
+use types::{Type, TypeKind};
+
+/// The runtime's number for standard output, where `print` writes.
+pub(crate) const STDOUT: u8 = 1;
+
+/// The runtime's number for standard error, where the report of an error that ends `main`
+/// goes.
+pub(crate) const STDERR: u8 = 2;
 
 impl<'db> Function<'_, '_, 'db> {
     /// Writes `print(arguments…)` and goes to `target`.
@@ -23,11 +31,11 @@ impl<'db> Function<'_, '_, 'db> {
     ) -> Result<(), Unsupported> {
         for (position, argument) in arguments.iter().enumerate() {
             if position > 0 {
-                self.print_text(b" ");
+                self.print_text(STDOUT, b" ");
             }
             self.print_argument(argument)?;
         }
-        self.print_text(b"\n");
+        self.print_text(STDOUT, b"\n");
         self.line(&format!("br label %{}", block_label(target)));
         Ok(())
     }
@@ -37,7 +45,7 @@ impl<'db> Function<'_, '_, 'db> {
         let (value, ty) = match argument {
             Argument::Owned(Operand::Constant(constant)) => {
                 if let ConstantValue::Str(text) = &constant.value {
-                    self.print_text(text.as_bytes());
+                    self.print_text(STDOUT, text.as_bytes());
                     return Ok(());
                 }
                 self.value(&Operand::Constant(constant.clone()))?
@@ -51,6 +59,16 @@ impl<'db> Function<'_, '_, 'db> {
                 (value, ty)
             }
         };
+        self.print_value(STDOUT, &value, ty)
+    }
+
+    /// Prints `value`, of type `ty`, to `stream` with the runtime function for its type.
+    pub(crate) fn print_value(
+        &mut self,
+        stream: u8,
+        value: &str,
+        ty: Type<'db>,
+    ) -> Result<(), Unsupported> {
         let printing = || {
             Unsupported::new(format!(
                 "printing values of type `{}`",
@@ -64,9 +82,9 @@ impl<'db> Function<'_, '_, 'db> {
             _ => None,
         };
         let (function, parameter, value) = match number.ok_or_else(printing)? {
-            Number::Bool => ("npl_rt_print_bool", "i1 zeroext", value),
-            Number::Float(32) => ("npl_rt_print_f32", "float", value),
-            Number::Float(_) => ("npl_rt_print_f64", "double", value),
+            Number::Bool => ("npl_rt_print_bool", "i1 zeroext", value.to_owned()),
+            Number::Float(32) => ("npl_rt_print_f32", "float", value.to_owned()),
+            Number::Float(_) => ("npl_rt_print_f64", "double", value.to_owned()),
             Number::Integer { bits, signed } => {
                 let function = if signed {
                     "npl_rt_print_i64"
@@ -74,7 +92,7 @@ impl<'db> Function<'_, '_, 'db> {
                     "npl_rt_print_u64"
                 };
                 let value = match (bits, signed) {
-                    (64, _) => value,
+                    (64, _) => value.to_owned(),
                     (_, true) => self.emit(&format!("sext i{bits} {value} to i64")),
                     (_, false) => self.emit(&format!("zext i{bits} {value} to i64")),
                 };
@@ -83,21 +101,23 @@ impl<'db> Function<'_, '_, 'db> {
         };
         self.declare(
             function,
-            &format!("declare void @{function}({parameter}) nounwind"),
+            &format!("declare void @{function}(i32, {parameter}) nounwind"),
         );
-        self.line(&format!("call void @{function}({parameter} {value})"));
+        self.line(&format!(
+            "call void @{function}(i32 {stream}, {parameter} {value})"
+        ));
         Ok(())
     }
 
-    /// Prints the bytes `text` through a byte constant.
-    fn print_text(&mut self, text: &[u8]) {
+    /// Prints the bytes `text` to `stream` through a byte constant.
+    pub(crate) fn print_text(&mut self, stream: u8, text: &[u8]) {
         let constant = self.constants.bytes(text);
         self.declare(
             "npl_rt_print_str",
-            "declare void @npl_rt_print_str(ptr, i64) nounwind",
+            "declare void @npl_rt_print_str(i32, ptr, i64) nounwind",
         );
         self.line(&format!(
-            "call void @npl_rt_print_str(ptr {constant}, i64 {})",
+            "call void @npl_rt_print_str(i32 {stream}, ptr {constant}, i64 {})",
             text.len()
         ));
     }
