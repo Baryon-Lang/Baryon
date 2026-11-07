@@ -29,7 +29,7 @@ impl<'db> Function<'_, '_, 'db> {
             Rvalue::Length(place, dimension) => self.length(place, *dimension)?,
             Rvalue::Elementwise(_) => return Err(Unsupported::new("whole-array operations")),
             Rvalue::IsPresent(_) => return Err(Unsupported::new("optional values")),
-            Rvalue::ErrorIndex(_) => return Err(Unsupported::new("errors")),
+            Rvalue::ErrorIndex(place) => self.error_index(place)?,
         };
         Ok(Some(value))
     }

@@ -259,7 +259,8 @@ impl Writer<'_> {
         }
     }
 
-    /// The function a call calls: its name and type arguments, or the operand holding it.
+    /// The function a call calls: its name and type arguments, the operand holding it, or a
+    /// built-in's name.
     fn callee(self, callee: &Callee<'_>) -> String {
         match callee {
             Callee::Function {
@@ -280,6 +281,7 @@ impl Writer<'_> {
                 }
             }
             Callee::Value(operand) => format!("({})", self.operand(operand)),
+            Callee::Builtin(builtin) => builtin.name().to_owned(),
         }
     }
 

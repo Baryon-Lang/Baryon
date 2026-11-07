@@ -12,9 +12,10 @@
 //! | a tuple, or a struct | a literal structure of its items or fields in declaration order |
 //! | `None` | nothing: a `None` value is never stored, and a function returning it returns `void` |
 //! | `Fixed[T, (n, m)]` | nested arrays `[n x [m x T]]`, row-major (decision 0008) |
+//! | `Raises[T, E1 \| E2]` | `{ i8, [n x iA] }`: the tag, then room for the largest of `T` and the errors |
 //! | `Array[T, rank]` | its header `{ ptr, [rank x i64], [rank x i64] }`: the elements, each length, each stride |
 //!
-//! The other types (complex numbers, strings, lists, optionals and errors) are
+//! The other types (complex numbers, strings, lists and optionals) are
 //! [`Unsupported`] until the slices of roadmap 1.10 that add them.
 
 use crate::Unsupported;
@@ -66,6 +67,15 @@ impl<'db> Types<'_, 'db> {
                     nested = format!("[{length} x {nested}]");
                 }
                 Ok(nested)
+            }
+            TypeKind::Fallible { .. } => {
+                // A one-byte tag, then the payload at its alignment, as `types::layout` lays it
+                // out: the whole is the tag padded to the alignment, then the payload.
+                let layout =
+                    types::layout(self.db, ty, self.declared).map_err(|_| self.unsupported(ty))?;
+                let align = layout.align();
+                let count = (layout.size() - align) / align;
+                Ok(format!("{{ i8, [{count} x i{}] }}", align * 8))
             }
             TypeKind::Array { rank, .. } => {
                 Ok(format!("{{ ptr, [{rank} x i64], [{rank} x i64] }}"))

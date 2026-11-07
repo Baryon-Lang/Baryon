@@ -26,7 +26,8 @@ const SYSTEM_LIBRARIES: &[&str] = if cfg!(target_os = "macos") {
 };
 
 /// Compiles the LLVM module `module` at `-O2` and links it with the runtime into the executable
-/// `output`.
+/// `output`. `-g` keeps the module's line tables in the executable; on macOS it also runs
+/// `dsymutil`, since the object file that holds them is deleted with the scratch directory.
 pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
     let runtime = runtime()?;
     let scratch = env::temp_dir().join(format!("npl-build-{}", std::process::id()));
@@ -42,7 +43,7 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
 /// Runs `clang` on the module `source` and the archive `runtime`, writing `output`.
 fn clang(source: &Path, runtime: &Path, output: &Path) -> Result<(), String> {
     let result = Command::new("clang")
-        .args(["-O2", "-Wno-override-module"])
+        .args(["-O2", "-g", "-Wno-override-module"])
         .arg(source)
         .arg(runtime)
         .args(SYSTEM_LIBRARIES)

@@ -6,6 +6,13 @@
 //! raw pointers into references, under the promise in its `# Safety` section, and calls the safe
 //! code in the other modules.
 
+mod output;
+
+pub use output::{
+    npl_rt_print_bool, npl_rt_print_f32, npl_rt_print_f64, npl_rt_print_i64, npl_rt_print_str,
+    npl_rt_print_u64,
+};
+
 use crate::Location;
 use crate::memory;
 use crate::panic::{Failure, panic};

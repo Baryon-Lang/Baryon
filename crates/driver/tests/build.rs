@@ -191,3 +191,151 @@ def main():
          --> main.npl:25:14\n"
     );
 }
+
+/// Errors end to end (decision 0005): functions that raise, a call whose error passes on to its
+/// caller, and `except` clauses that catch each error type and read its field. The last
+/// `assert` fails on purpose, so the test sees every earlier one pass.
+#[test]
+fn errors_are_raised_passed_on_and_caught() {
+    let program = "\
+class ParseError(Exception):
+    position: i64
+
+
+class RangeError(Exception):
+    value: f64
+
+
+def parse(x: i64) -> Raises[f64, ParseError]:
+    if x < 0:
+        raise ParseError(x)
+    return f64(x) / 2.0
+
+
+def checked(x: f64) -> Raises[f64, ParseError | RangeError]:
+    if x > 100.0:
+        raise RangeError(x)
+    return x
+
+
+def chain(x: i64) -> Raises[f64, ParseError | RangeError]:
+    return checked(parse(x))
+
+
+def handled(x: i64) -> f64:
+    try:
+        value = chain(x)
+    except ParseError as error:
+        value = f64(error.position)
+    except RangeError as problem:
+        value = -problem.value
+    return value
+
+
+def main():
+    assert handled(10) == 5.0
+    assert handled(-3) == -3.0
+    assert handled(400) == -200.0
+    assert handled(4) == 3.0, \"last\"
+";
+    let directory = package("errors", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(
+        stderr(&ran),
+        "panic: assertion failed: handled(4) == 3.0, \"last\"\n  --> main.npl:39:5\n"
+    );
+}
+
+/// `print` end to end: each argument as Python writes it, separated by spaces, one line per
+/// call. A string literal prints as it is; an `f32` prints its own shortest digits.
+#[test]
+fn programs_print_as_python_does() {
+    let program = "\
+def mean(a: f64, b: f64) -> f64:
+    return (a + b) / 2.0
+
+
+def main():
+    print(\"mean:\", mean(1.0, 2.0))
+    print(1e16, 0.1 + 0.2, 1.5e-05, -0.0)
+    small: i8 = -5
+    large: u32 = 4294967295
+    print(small, large, 3 > 2, f32(0.1))
+    print()
+    print('done')
+";
+    let directory = package("printing", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "mean: 1.5\n1e+16 0.30000000000000004 1.5e-05 -0.0\n-5 4294967295 True 0.1\n\ndone\n"
+    );
+}
+
+/// `npl run` builds the package, runs it with the terminal's output, and exits with the
+/// program's own status: the lines it printed reach standard output, then the panic of its
+/// failed `assert` exits with 101.
+#[test]
+fn run_builds_and_runs_with_the_programs_status() {
+    let program = "\
+def main():
+    print(\"started\")
+    assert 1 > 2
+";
+    let directory = package("run", &[("main.npl", program)]).unwrap();
+    build_runtime();
+    let ran = Command::new(NPL)
+        .arg("run")
+        .arg(directory.join("package"))
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), "started\n");
+    assert_eq!(ran.status.code(), Some(101));
+    assert_eq!(
+        stderr(&ran),
+        "panic: assertion failed: 1 > 2\n  --> main.npl:3:5\n"
+    );
+}
+
+/// An error that reaches the end of `main` is printed to standard error with its type and fields,
+/// and the program exits with status 1 (the reference, "Errors"). The second error of the list
+/// is raised, so the report picks it by its position.
+#[test]
+fn errors_that_end_main_are_reported() {
+    let program = "\
+class ConfigError(Exception):
+    line: i64
+    strict: bool
+
+
+class LimitError(Exception):
+    code: u8
+    limit: f64
+
+
+def load(n: i64) -> Raises[f64, ConfigError | LimitError]:
+    if n < 0:
+        raise ConfigError(n, True)
+    if n > 10:
+        raise LimitError(u8(n), 10.0)
+    return f64(n)
+
+
+def main() -> Raises[None, ConfigError | LimitError]:
+    print(\"loaded\", load(3))
+    print(\"loaded\", load(12))
+    print(\"unreachable\")
+";
+    let directory = package("main_raises", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), "loaded 3.0\n");
+    assert_eq!(stderr(&ran), "error: LimitError(code=12, limit=10.0)\n");
+    assert_eq!(ran.status.code(), Some(1));
+}

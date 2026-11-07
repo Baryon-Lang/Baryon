@@ -5,8 +5,8 @@ use crate::Unsupported;
 use crate::panic::Constants;
 use crate::ty::{Repr, Types};
 use mir::{
-    Argument, BlockId, Body, Callee, ConstantValue, LocalKind, Operand, Place, Projection,
-    Statement, StatementKind, Terminator, TerminatorKind,
+    BlockId, Body, ConstantValue, LocalKind, Operand, Place, Projection, Statement, StatementKind,
+    Terminator, TerminatorKind,
 };
 use source::Span;
 use std::collections::BTreeMap;
@@ -27,9 +27,11 @@ pub(crate) struct Function<'f, 'a, 'db> {
     /// How to represent each type.
     pub(crate) types: Types<'a, 'db>,
     /// The symbol of each function instance called.
-    symbol: &'f dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
+    pub(crate) symbol: &'f dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
     /// The body being written.
-    body: &'f Body<'db>,
+    pub(crate) body: &'f Body<'db>,
+    /// The error types the function can raise, in its `Raises` order; empty when it cannot fail.
+    pub(crate) errors: &'f [Type<'db>],
     /// How each local's parameter arrives, by local.
     passing: Vec<Passing>,
     /// The instructions written so far, after the entry block.
@@ -49,22 +51,28 @@ pub(crate) struct Function<'f, 'a, 'db> {
     pub(crate) next_failure: u32,
     /// The declaration of each function or intrinsic called, by symbol.
     pub(crate) calls: BTreeMap<String, String>,
+    /// The function's debug subprogram, `!N`, when the module has debug information: each
+    /// instruction then carries the location of the statement it comes from.
+    pub(crate) scope: Option<String>,
+    /// The location every instruction gets in place of its statement's, for a function written
+    /// without a body, such as the C `main`.
+    pub(crate) fixed_location: Option<String>,
 }
 
 impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
-    /// Writes `body` as the function `name`, and returns its text and the declarations of what
-    /// it calls.
-    pub(crate) fn write(
+    /// The state for writing `body`, which can raise `errors`, with nothing written yet.
+    pub(crate) fn new(
         types: Types<'a, 'db>,
         symbol: &'f dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
         constants: &'f mut Constants<'a>,
-        name: &str,
         body: &'f Body<'db>,
-    ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
-        let mut function = Self {
+        errors: &'f [Type<'db>],
+    ) -> Self {
+        Self {
             types,
             symbol,
             body,
+            errors,
             passing: vec![Passing::Slot; body.locals.len()],
             code: String::new(),
             next_value: 0,
@@ -74,8 +82,27 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             failures: String::new(),
             next_failure: 0,
             calls: BTreeMap::new(),
-        };
-        let (signature, entry) = function.prologue(name)?;
+            scope: None,
+            fixed_location: None,
+        }
+    }
+
+    /// Writes `body` as the function `name`, and returns its text and the declarations of what
+    /// it calls.
+    pub(crate) fn write(
+        types: Types<'a, 'db>,
+        symbol: &'f dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
+        constants: &'f mut Constants<'a>,
+        name: &str,
+        body: &'f Body<'db>,
+        errors: &'f [Type<'db>],
+    ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
+        let mut function = Self::new(types, symbol, constants, body, errors);
+        function.scope = function.constants.subprogram(name, body.span);
+        let (mut signature, entry) = function.prologue(name)?;
+        if let Some(scope) = &function.scope {
+            let _ = write!(signature, " !dbg {scope}");
+        }
         for (index, block) in body.blocks.iter().enumerate() {
             function.line_label(&block_label(BlockId::new(index)));
             for statement in &block.statements {
@@ -95,10 +122,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
     /// The `define` line, and the entry block: a slot per local, each by-value parameter stored
     /// in its slot, and a jump to the first block.
     fn prologue(&mut self, name: &str) -> Result<(String, String), Unsupported> {
-        let returns = match self.types.repr(self.body.locals[0].ty)? {
-            Repr::Empty => "void".to_owned(),
-            Repr::Value(ty) => ty,
-        };
+        let returns = self.returns()?;
         let mut parameters = Vec::new();
         let mut entry = String::new();
         for (index, local) in self.body.locals.iter().enumerate() {
@@ -132,6 +156,9 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             {
                 let _ = writeln!(entry, "  store {ty} %a{index}, ptr %_{index}");
             }
+        }
+        if !self.errors.is_empty() {
+            parameters.push("ptr noalias %error".to_owned());
         }
         entry.push_str("  br label %bb0\n");
         let signature = format!(
@@ -201,27 +228,14 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     cases.join(" ")
                 ));
             }
-            TerminatorKind::Return => match self.types.repr(self.body.locals[0].ty)? {
-                Repr::Empty => self.line("ret void"),
-                Repr::Value(ty) => {
-                    let value = self.fresh();
-                    self.line(&format!("{value} = load {ty}, ptr %_0"));
-                    self.line(&format!("ret {ty} {value}"));
-                }
-            },
+            TerminatorKind::Return => self.return_value()?,
             TerminatorKind::Call {
                 callee,
                 arguments,
                 destination,
                 target,
                 error,
-            } => {
-                if error.is_some() {
-                    return Err(Unsupported::new("calls to functions that can raise"));
-                }
-                self.call(callee, arguments, destination)?;
-                self.line(&format!("br label %{}", block_label(*target)));
-            }
+            } => self.call(callee, arguments, destination, *target, error.as_ref())?,
             TerminatorKind::Assert {
                 condition,
                 check,
@@ -235,72 +249,9 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     block_label(*target)
                 ));
             }
-            TerminatorKind::Raise(_) => return Err(Unsupported::new("`raise`")),
+            TerminatorKind::Raise(error) => self.raise(error)?,
             TerminatorKind::Unreachable => self.line("unreachable"),
         }
-        Ok(())
-    }
-
-    /// Writes a call of `callee` with `arguments`, storing its result at `destination`.
-    fn call(
-        &mut self,
-        callee: &Callee<'db>,
-        arguments: &[Argument<'db>],
-        destination: &Place,
-    ) -> Result<(), Unsupported> {
-        let Callee::Function {
-            item,
-            type_arguments,
-        } = callee
-        else {
-            return Err(Unsupported::new("calls of `Callable` values"));
-        };
-        let symbol = (self.symbol)(item, type_arguments);
-        let mut written = Vec::new();
-        let mut parameters = Vec::new();
-        for argument in arguments {
-            let (ty, value) = match argument {
-                Argument::Borrow(place) => {
-                    let (address, ty) = self.place(place)?;
-                    if self.types.by_value(ty) {
-                        let Some(value) = self.load(&address, ty)? else {
-                            continue;
-                        };
-                        (self.types.value(ty)?, value)
-                    } else {
-                        ("ptr".to_owned(), address)
-                    }
-                }
-                Argument::InOut(place) => ("ptr".to_owned(), self.place(place)?.0),
-                Argument::Owned(operand) => {
-                    let Some((value, ty)) = self.operand(operand)? else {
-                        continue;
-                    };
-                    (self.types.value(ty)?, value)
-                }
-            };
-            written.push(format!("{ty} {value}"));
-            parameters.push(ty);
-        }
-        let (address, ty) = self.place(destination)?;
-        let returns = match self.types.repr(ty)? {
-            Repr::Empty => "void".to_owned(),
-            Repr::Value(llvm) => llvm,
-        };
-        let call = format!("call {returns} {}({})", global(&symbol), written.join(", "));
-        if returns == "void" {
-            self.line(&call);
-        } else {
-            let value = self.fresh();
-            self.line(&format!("{value} = {call}"));
-            self.line(&format!("store {returns} {value}, ptr {address}"));
-        }
-        let declaration = format!(
-            "declare {returns} {}({})",
-            global(&symbol),
-            parameters.join(", ")
-        );
-        self.declare(&symbol, &declaration);
         Ok(())
     }
 
@@ -319,9 +270,11 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     (address, ty) = self.element(&address, ty, indices)?;
                     continue;
                 }
-                Projection::Value | Projection::Error(_) => {
-                    return Err(Unsupported::new("optionals and errors"));
+                Projection::Error(position) => {
+                    (address, ty) = self.error_payload(&address, ty, *position)?;
+                    continue;
                 }
+                Projection::Value => return Err(Unsupported::new("optionals")),
             };
             let container = self.types.value(ty)?;
             ty = self.field(ty, *position)?;
@@ -391,7 +344,11 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
     }
 
     /// Loads the value of type `ty` at `address`; `None` for a `None` value.
-    fn load(&mut self, address: &str, ty: Type<'db>) -> Result<Option<String>, Unsupported> {
+    pub(crate) fn load(
+        &mut self,
+        address: &str,
+        ty: Type<'db>,
+    ) -> Result<Option<String>, Unsupported> {
         let Repr::Value(llvm) = self.types.repr(ty)? else {
             return Ok(None);
         };
@@ -423,9 +380,25 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         name
     }
 
+    /// `instruction` with the `!dbg` location of the statement being written, when the module
+    /// has debug information.
+    pub(crate) fn located(&self, instruction: &str) -> String {
+        if let Some(location) = &self.fixed_location {
+            return format!("{instruction}, !dbg {location}");
+        }
+        match &self.scope {
+            Some(scope) => format!(
+                "{instruction}, !dbg {}",
+                self.constants.debug_location(scope, self.span)
+            ),
+            None => instruction.to_owned(),
+        }
+    }
+
     /// Writes one instruction.
     pub(crate) fn line(&mut self, instruction: &str) {
-        let _ = writeln!(self.code, "  {instruction}");
+        let located = self.located(instruction);
+        let _ = writeln!(self.code, "  {located}");
     }
 
     /// Starts the block `label`.
@@ -442,7 +415,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
 }
 
 /// The label of block `block`: `bb0`, `bb1`, ….
-fn block_label(block: BlockId) -> String {
+pub(crate) fn block_label(block: BlockId) -> String {
     format!("bb{}", block.index())
 }
 

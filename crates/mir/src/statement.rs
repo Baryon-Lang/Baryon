@@ -106,6 +106,33 @@ pub enum Callee<'db> {
     },
     /// A function passed in as a value, of a `Callable` type.
     Value(Operand<'db>),
+    /// A function the language provides, which has no item: each backend writes it itself.
+    Builtin(Builtin),
+}
+
+/// A function the language provides that a [`Call`](TerminatorKind::Call) can call by
+/// [`Callee::Builtin`]. Built-ins that are only arithmetic, such as `len` or a conversion, are
+/// lowered to rvalues instead; the ones here need code a backend or the runtime provides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, salsa::SalsaValue)]
+pub enum Builtin {
+    /// `print(a, b, …)`: writes each argument to standard output as Python does, separated by a
+    /// space, then a line end. Each argument is a number, a `bool` or a `str`, passed `Borrow`
+    /// or `Owned`; the destination has type `None` and the call cannot fail.
+    Print,
+}
+
+impl Builtin {
+    /// The name the source calls it by.
+    ///
+    /// ```
+    /// assert_eq!(mir::Builtin::Print.name(), "print");
+    /// ```
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Print => "print",
+        }
+    }
 }
 
 /// One argument of a call, in the mode its parameter declares (decision 0006). The modes stay

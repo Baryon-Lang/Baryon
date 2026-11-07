@@ -36,12 +36,16 @@ impl Session {
     /// class between them: `physics.nbody.step`, `physics.nbody.Body.energy`. Dots keep them
     /// apart from every C symbol.
     ///
+    /// `root` is the package's directory, absolute, when the module should carry line tables
+    /// that point debuggers, profilers and backtraces back to the source files under it; `None`
+    /// leaves them out.
+    ///
     /// ```
     /// use driver::Session;
     ///
     /// let mut session = Session::new();
     /// session.add_file("main.npl", "def main():\n    assert 6 * 7 == 42\n")?;
-    /// let module = session.compile().unwrap();
+    /// let module = session.compile(None).unwrap();
     /// assert!(module.contains("define void @main.main()"), "{module}");
     /// assert!(module.contains("define i32 @main()"), "{module}");
     /// # Ok::<(), source::SourceError>(())
@@ -54,8 +58,9 @@ impl Session {
     ///
     /// The package's errors when it does not check; otherwise one error per function that
     /// cannot be compiled yet, and an error when `main.npl` has no `main` function, when another
-    /// module defines one, or when it takes parameters or returns a value.
-    pub fn compile(&self) -> Result<String, Vec<Diagnostic>> {
+    /// module defines one, or when it takes parameters or returns a value. `main` may raise; an
+    /// error that reaches its end is printed and the program exits with status 1.
+    pub fn compile(&self, root: Option<&str>) -> Result<String, Vec<Diagnostic>> {
         let errors: Vec<Diagnostic> = self
             .check()
             .into_iter()
@@ -74,6 +79,9 @@ impl Session {
             |item: &Item<'_>, _: &[types::Type<'_>]| symbols.get(item).cloned().unwrap_or_default();
         let declared = declared(database, self.package);
         let mut module = llvm_backend::Module::new(database, self, &declared, &symbol);
+        if let Some(root) = root {
+            module.debug_info(root);
+        }
         let mut errors = Vec::new();
         let mut entries = Vec::new();
         for function in &functions {
@@ -95,9 +103,15 @@ impl Session {
                 continue;
             }
             if function.main {
-                let returns_none = matches!(signature.returns.kind(database), TypeKind::None);
+                let returns_none = match signature.returns.kind(database) {
+                    TypeKind::None => true,
+                    TypeKind::Fallible { value, .. } => {
+                        matches!(value.kind(database), TypeKind::None)
+                    }
+                    _ => false,
+                };
                 if signature.parameters.is_empty() && returns_none {
-                    entries.push(function);
+                    entries.push((function, signature.returns));
                 } else {
                     errors.push(self.at(
                         function.item,
@@ -108,7 +122,11 @@ impl Session {
             }
             match ready(database, function.item, &declared) {
                 Ok(body) => {
-                    if let Err(unsupported) = module.define(&function.symbol, &body) {
+                    let raises = match signature.returns.kind(database) {
+                        TypeKind::Fallible { errors, .. } => errors.as_slice(),
+                        _ => &[],
+                    };
+                    if let Err(unsupported) = module.define(&function.symbol, &body, raises) {
                         errors.push(self.at(function.item, unsupported.to_string()));
                     }
                 }
@@ -117,7 +135,12 @@ impl Session {
         }
         // `main.npl` defines `main` at most once: a second top-level definition is a check error.
         match entries.first() {
-            Some(main) => module.entry(&main.symbol),
+            Some((main, returns)) => {
+                let reported = self.reported(*returns);
+                if let Err(unsupported) = module.entry(&main.symbol, &reported) {
+                    errors.push(self.at(main.item, unsupported.to_string()));
+                }
+            }
             None => errors.push(
                 Diagnostic::error("the package has no `main` function to run")
                     .with_note("add `def main():` to `main.npl` at the package's root"),
@@ -180,6 +203,33 @@ impl Session {
             }
         }
         functions
+    }
+
+    /// The error types a `main` returning `returns` can raise, each with its fields' names,
+    /// for the report of an error that ends the program; empty when it cannot fail.
+    fn reported<'db>(&'db self, returns: types::Type<'db>) -> Vec<(types::Type<'db>, Vec<String>)> {
+        let database = &self.database;
+        let TypeKind::Fallible { errors, .. } = returns.kind(database) else {
+            return Vec::new();
+        };
+        errors
+            .iter()
+            .map(|&error| {
+                let fields = match error.kind(database) {
+                    TypeKind::Struct(nominal) => {
+                        let item = Item::new(database, self.package, nominal.file, nominal.name);
+                        match &database.declaration(item).declaration {
+                            Declaration::Struct { fields, .. } => {
+                                fields.iter().map(|field| field.name.clone()).collect()
+                            }
+                            _ => Vec::new(),
+                        }
+                    }
+                    _ => Vec::new(),
+                };
+                (error, fields)
+            })
+            .collect()
     }
 
     /// An error at the name of `item`.
