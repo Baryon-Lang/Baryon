@@ -1,9 +1,10 @@
 //! Tests of the backend over bodies built by hand, as lowering builds them. Most compile the
 //! module with `clang`, link it with a small C program and run it, so they check what the code
 //! computes, not only the text; `clang` is what the driver uses too (decision 0020). The
-//! program links [`RUNTIME`], a stand-in for the runtime's panic functions, so a test sees
+//! program links [`RUNTIME`], a stand-in for the runtime's functions, so a test sees
 //! what a failed check reports without this crate depending on the runtime.
 
+mod arrays;
 mod panics;
 
 use crate::{Module, Unsupported};
@@ -161,7 +162,7 @@ fn scratch(name: &str) -> PathBuf {
     directory
 }
 
-/// The runtime's panic functions, written in C as the runtime prints them (decision 0021), but
+/// The runtime's panic and array memory functions, written in C as the runtime prints them (decision 0021), but
 /// to standard output, which a test reads.
 const RUNTIME: &str = r#"
     #include <stdint.h>
@@ -181,6 +182,21 @@ const RUNTIME: &str = r#"
         printf("panic: array lengths differ in dimension %u: %lld and %lld\n", dimension,
                (long long)expected, (long long)found);
         stop(at);
+    }
+    void npl_rt_panic_index(int64_t index, uint32_t dimension, int64_t length,
+                            const Location *at) {
+        printf("panic: index %lld is out of range for dimension %u of length %lld\n",
+               (long long)index, dimension, (long long)length);
+        stop(at);
+    }
+    void *npl_rt_allocate_array(int64_t count, size_t size, size_t align, const Location *at) {
+        (void)align;
+        (void)at;
+        return malloc(count * size);
+    }
+    void npl_rt_deallocate(void *pointer, size_t bytes, size_t align) {
+        printf("freed %zu bytes aligned to %zu\n", bytes, align);
+        free(pointer);
     }
 "#;
 
@@ -444,20 +460,14 @@ declare void @report(i64)
 fn unsupported_types_are_named() {
     let database = Database::default();
     let f64 = primitive(&database, Primitive::Float(Float::F64));
-    let array = Type::new(
-        &database,
-        TypeKind::Array {
-            element: f64,
-            rank: 1,
-        },
-    );
+    let optional = Type::new(&database, TypeKind::Optional(f64));
     let symbol = symbol_of(&database);
     let sources = sources();
     let mut module = Module::new(&database, &sources, &no_structs, &symbol);
-    let result = module.define("make", &Body::new(array, span()));
+    let result = module.define("make", &Body::new(optional, span()));
     assert_eq!(
         result.map_err(|error: Unsupported| error.to_string()),
-        Err("the LLVM backend does not compile values of type `Array[f64, 1]` yet".to_owned())
+        Err("the LLVM backend does not compile values of type `f64 | None` yet".to_owned())
     );
     assert_eq!(module.finish(), "");
 }

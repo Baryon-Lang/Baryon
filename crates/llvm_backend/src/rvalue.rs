@@ -1,5 +1,6 @@
 //! Rvalues: the operators, with Python's rounding for `//` and `%`, overflow-reporting
-//! arithmetic, and building tuples and structs. Conversions are in the `convert` module.
+//! arithmetic, and building tuples and structs. Conversions are in the `convert` module, and
+//! new arrays and their lengths in the `array` module.
 
 use crate::Unsupported;
 use crate::function::Function;
@@ -24,9 +25,9 @@ impl<'db> Function<'_, '_, 'db> {
             }
             Rvalue::Convert(operand, to) => self.convert(operand, *to)?,
             Rvalue::Aggregate(_, operands) => self.aggregate(ty, operands)?,
-            Rvalue::NewArray(..) | Rvalue::Length(..) | Rvalue::Elementwise(_) => {
-                return Err(Unsupported::new("arrays"));
-            }
+            Rvalue::NewArray(ty, lengths) => self.new_array(*ty, lengths)?,
+            Rvalue::Length(place, dimension) => self.length(place, *dimension)?,
+            Rvalue::Elementwise(_) => return Err(Unsupported::new("whole-array operations")),
             Rvalue::IsPresent(_) => return Err(Unsupported::new("optional values")),
             Rvalue::ErrorIndex(_) => return Err(Unsupported::new("errors")),
         };

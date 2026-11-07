@@ -25,10 +25,14 @@
 //!   shift by the width or more gives what shifting one bit at a time would.
 //! - **Float `//` and `%` call the C math library**: LLVM compiles `frem` and `llvm.floor` to
 //!   `fmod` and `floor`, so a program links `libm`, as C programs do.
+//! - **Arrays are a header and heap elements.** An `Array[T, rank]` value is the header
+//!   [`types::layout`] describes: the data pointer, each length and each stride. A new array is
+//!   allocated by the runtime, an element is found through the strides, and a drop frees the
+//!   elements with the size they were allocated with.
 //!
-//! The backend so far (roadmap 1.10.1 and 1.10.2) covers numbers, `bool`, enums without data,
-//! tuples and structs, control flow, direct calls and checks. A body that uses anything else, such as an
-//! array or a call that can raise, gets an [`Unsupported`] error naming it.
+//! The backend so far (roadmap 1.10.1 to 1.10.3) covers numbers, `bool`, enums without data,
+//! tuples and structs, `Array`, control flow, direct calls and checks. A body that uses anything
+//! else, such as an optional or a call that can raise, gets an [`Unsupported`] error naming it.
 //!
 //! # Example
 //!
@@ -98,6 +102,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+mod array;
 mod convert;
 mod function;
 mod panic;
@@ -196,7 +201,7 @@ impl<'a, 'db> Module<'a, 'db> {
 }
 
 /// A form of the mid-level IR this slice of the backend does not translate yet, such as values
-/// of an array type. Roadmap 1.10 adds them slice by slice; a type-checked program reaches this
+/// of an optional type. Roadmap 1.10 adds them slice by slice; a type-checked program reaches this
 /// only through features the backend has not caught up with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unsupported {

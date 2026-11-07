@@ -6,10 +6,9 @@
 //!
 //! | Check | Runtime function | What it prints |
 //! | --- | --- | --- |
+//! | An index in bounds | `npl_rt_panic_index` | The index, the dimension and its length |
 //! | Two arrays of the same length | `npl_rt_panic_length_mismatch` | The dimension and both lengths |
 //! | Everything else | `npl_rt_panic` | A message the backend writes as a constant |
-//!
-//! Index checks will call `npl_rt_panic_index` once arrays are translated.
 //!
 //! Each call passes a pointer to a `Location` constant, the runtime's `#[repr(C)]` structure
 //! `{ ptr file, i64 file_length, i32 line, i32 column }`. The `i64` is the runtime's `usize`, so
@@ -29,6 +28,15 @@ use std::fmt::Write as _;
 pub(crate) enum Failure {
     /// A message written in full, such as "integer overflow in `+`".
     Message(String),
+    /// An index out of range: the index, the dimension, 0 for the outermost, and its length.
+    Index {
+        /// The index, an `i64` operand.
+        index: String,
+        /// The dimension indexed.
+        dimension: u32,
+        /// The dimension's length, an `i64` operand.
+        length: String,
+    },
     /// Arrays combined element by element whose lengths differ in `dimension`.
     Length {
         /// The dimension, 0 for the outermost.
@@ -207,8 +215,18 @@ impl<'db> Function<'_, '_, 'db> {
                 expected: self.value(expected)?.0,
                 found: self.value(found)?.0,
             },
-            // Arrays come in a later slice, with the dimension the check is gaining.
-            Check::IndexInBounds { .. } => return Err(Unsupported::new("array index checks")),
+            Check::IndexInBounds {
+                dimension,
+                index,
+                length,
+            } => {
+                let (index, ty) = self.value(index)?;
+                Failure::Index {
+                    index: self.widen(&index, ty)?,
+                    dimension: *dimension,
+                    length: self.value(length)?.0,
+                }
+            }
         })
     }
 }
@@ -232,6 +250,18 @@ pub(crate) fn call(
                 "declare void @npl_rt_panic(ptr, i64, ptr) cold noreturn nounwind",
             )
         }
+        Failure::Index {
+            index,
+            dimension,
+            length,
+        } => (
+            format!(
+                "call void @npl_rt_panic_index(i64 {index}, i32 {dimension}, i64 {length}, \
+                 ptr {location})"
+            ),
+            "npl_rt_panic_index",
+            "declare void @npl_rt_panic_index(i64, i32, i64, ptr) cold noreturn nounwind",
+        ),
         Failure::Length {
             dimension,
             expected,

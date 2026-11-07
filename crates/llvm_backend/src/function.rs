@@ -155,8 +155,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 }
                 Ok(())
             }
-            // Every type this slice represents owns no memory, so dropping one does nothing.
-            StatementKind::Drop(place) => self.place(place).map(|_| ()),
+            StatementKind::Drop(place) => self.drop_place(place),
         }
     }
 
@@ -314,8 +313,15 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             Passing::Pointer => format!("%a{local}"),
         };
         for projection in &place.projections {
-            let Projection::Field(position) = projection else {
-                return Err(Unsupported::new("array elements, optionals and errors"));
+            let position = match projection {
+                Projection::Field(position) => position,
+                Projection::Index(indices) => {
+                    (address, ty) = self.element(&address, ty, indices)?;
+                    continue;
+                }
+                Projection::Value | Projection::Error(_) => {
+                    return Err(Unsupported::new("optionals and errors"));
+                }
             };
             let container = self.types.value(ty)?;
             ty = self.field(ty, *position)?;
@@ -329,7 +335,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
     }
 
     /// The type of item or field `position` of the tuple or struct type `ty`.
-    fn field(&self, ty: Type<'db>, position: u32) -> Result<Type<'db>, Unsupported> {
+    pub(crate) fn field(&self, ty: Type<'db>, position: u32) -> Result<Type<'db>, Unsupported> {
         let items = match ty.kind(self.types.db) {
             TypeKind::Tuple(items) => items.clone(),
             TypeKind::Struct(nominal) => match (self.types.declared)(nominal) {

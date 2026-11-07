@@ -116,19 +116,34 @@ fn length_checks_report_both_lengths() {
     );
 }
 
+/// An index check passes the index, widened to `i64`, its dimension and the length to the
+/// runtime, which names them.
+#[test]
+fn index_checks_report_the_dimension() {
+    let database = Database::default();
+    let check = Check::IndexInBounds {
+        dimension: 2,
+        index: Operand::Copy(Local::new(1).into()),
+        length: Operand::Copy(Local::new(2).into()),
+    };
+    let body = assert_body(&database, BinaryOperator::Less, check, span());
+    let executable = build("index", &super::module(&database, &[("check", body)]), MAIN);
+    assert_eq!(run(&executable, &["7", "8"]).as_deref(), Ok("ok\n"));
+    assert_eq!(
+        run(&executable, &["8", "8"]),
+        Err(
+            "panic: index 8 is out of range for dimension 2 of length 8\n  --> heat.npl:1:1\n"
+                .to_owned()
+        )
+    );
+}
+
 /// A body the backend rejects after writing some of its checks leaves no constants behind.
 #[test]
 fn rejected_bodies_leave_no_constants() {
     let database = Database::default();
     let mut body = assert_body(&database, BinaryOperator::Equal, Check::Assertion, span());
-    body.blocks[1].terminator = end(TerminatorKind::Assert {
-        condition: Operand::Copy(Local::new(3).into()),
-        check: Check::IndexInBounds {
-            index: Operand::Copy(Local::new(1).into()),
-            length: Operand::Copy(Local::new(2).into()),
-        },
-        target: BlockId::new(1),
-    });
+    body.blocks[1].terminator = end(TerminatorKind::Raise(Operand::Copy(Local::new(1).into())));
     let symbol = symbol_of(&database);
     let sources = sources();
     let mut module = Module::new(&database, &sources, &no_structs, &symbol);
@@ -136,7 +151,7 @@ fn rejected_bodies_leave_no_constants() {
         module
             .define("check", &body)
             .map_err(|error| error.to_string()),
-        Err("the LLVM backend does not compile array index checks yet".to_owned())
+        Err("the LLVM backend does not compile `raise` yet".to_owned())
     );
     assert_eq!(module.finish(), "");
 }
