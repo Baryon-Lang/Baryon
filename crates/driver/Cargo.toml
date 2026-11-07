@@ -22,6 +22,7 @@ diagnostics.workspace = true
 parser.workspace = true
 resolver.workspace = true
 salsa.workspace = true
+serde_json.workspace = true
 source.workspace = true
 syntax_check.workspace = true
 types.workspace = true

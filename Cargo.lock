@@ -201,6 +201,7 @@ dependencies = [
  "parser",
  "resolver",
  "salsa",
+ "serde_json",
  "source",
  "syntax",
  "syntax_check",

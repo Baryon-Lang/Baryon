@@ -77,7 +77,7 @@ Nothing else changes.
 | [`drop_elaboration`](../crates/drop_elaboration) | `implementation` | Drop elaboration: makes every drop in a `mir` body unconditional, removing drops of moved values, guarding partly moved ones with flags and dropping the remaining fields of a struct a field was moved out of ([0018](decisions/0018-mid-level-ir.md)) |
 | [`syntax_check`](../crates/syntax_check) | `implementation` | Reports each Python construct in a `syntax` tree that the language does not support, following the language reference |
 | [`front_end_tests`](../crates/front_end_tests) | `application` | Tests only: runs the parser, then the syntax check, over a corpus and the example programs. Tests that need two implementations live in an application crate, since an implementation may not depend on another |
-| [`driver`](../crates/driver) | `application` | The `npl` command: owns the concrete database, wires the parser, the syntax check, the resolver and the checker into it, and runs `npl check` |
+| [`driver`](../crates/driver) | `application` | The `npl` command: owns the concrete database, wires the parser, the syntax check, the resolver and the checker into it, and runs `npl check` and the language server, `npl lsp` ([0019](decisions/0019-language-server-protocol.md)) |
 | [`bench`](../bench) | `tooling` | `cargo kernels`: builds, verifies and times the C++ and Fortran baseline kernels |
 | [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules, the documentation link check, the roadmap check, the example syntax check and the external dependency check |
 

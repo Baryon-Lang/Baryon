@@ -1,0 +1,5 @@
+from physics.nbody import energy
+
+
+def main():
+    e = energy(1.0)
