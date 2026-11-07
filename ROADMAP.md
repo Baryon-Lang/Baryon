@@ -93,7 +93,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.14.1 | Half-list Lennard-Jones with `accumulate=` in the examples, and a threaded half-list OpenMP baseline in the benchmark suite to compare against | — | 1.14 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.15 | Formatter built on the syntax tree. Dropped: existing Python formatters such as Ruff and Black format the files | 2 | 1.2 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.16 | Language server: diagnostics, go to definition, hover, completion, fixes | 4 | 1.8 | Planned | — | — |
-| 1.16.1 | `npl lsp`: a language server over standard input and output that publishes `npl check`'s diagnostics as the user types, from the same incremental session | 0.5 | 1.11.2 | In progress | Claude | [0019](docs/decisions/0019-language-server-protocol.md) |
+| 1.16.1 | `npl lsp`: a language server over standard input and output that publishes `npl check`'s diagnostics as the user types, from the same incremental session | 0.5 | 1.11.2 | Done | Claude | [0019](docs/decisions/0019-language-server-protocol.md), [#35](https://github.com/csimpson1964/New-Programming-Language/pull/35) |
 | 1.17 | VS Code extension | 1 | 1.16 | Planned | — | — |
 | 1.18 | Execution corpus, benchmark baselines and fuzzing in CI | 2 | 1.11 | Planned | — | — |
 
