@@ -15,8 +15,10 @@
 //!   the version 0 methods, and whole-array arithmetic on matching ranks and shapes.
 //! - **Generics** (roadmap 1.7.5): type arguments inferred from a call's arguments and checked
 //!   against the bounds `Number`, `Float`, `VectorSpace` and `Copy`, and, inside a generic
-//!   body, only the operations a type parameter's bound allows. See the `body` module for
-//!   what later slices add.
+//!   body, only the operations a type parameter's bound allows.
+//! - **Enums and `match`** (roadmap 1.7.6): each pattern checked against the subject, and the
+//!   cases without a guard covering every value, with an error that names a value they miss.
+//!   See the `body` module for what later slices add.
 //!
 //! It is an implementation crate. It reads trees and names only through the `database`
 //! interface and publishes its results through the `types` interface, whose

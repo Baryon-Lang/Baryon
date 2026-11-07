@@ -212,8 +212,24 @@ class Boundary(Enum):
 ```
 
 A class with the base `Enum` is an enumeration of named constants, as in Python. Enums are `Copy`
-and can be compared with `==` and matched with `match`. Enums whose variants carry data wait on
-roadmap decision D.10.
+and can be compared with `==` and `!=`, but not ordered with `<`. Enums whose variants carry data
+wait on roadmap decision D.10.
+
+A `match` must handle every value of its subject. Over an enum, that means a `case` for each
+member or a final `case _:`; the compiler names a member that is missing, so adding a member to an
+enum points at every `match` that needs a new case. The same holds for `bool` (`True` and `False`),
+`T | None` (`None` and the values of `T`) and tuples of these, taken apart item by item. A number
+or a string has too many values to list, so a `match` on one needs `case _:` or a capture. A `case`
+with an `if` guard may not match, so it does not count towards handling every value.
+
+```python
+def wrap(boundary: Boundary, index: i64, n: i64) -> i64:
+    match boundary:
+        case Boundary.PERIODIC:
+            return index % n
+        case Boundary.REFLECTING | Boundary.ABSORBING:
+            return min(index, n - 1)
+```
 
 ## Errors
 

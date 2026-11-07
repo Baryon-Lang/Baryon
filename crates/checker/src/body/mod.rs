@@ -10,18 +10,21 @@
 //! access, assignments and returns (roadmap 1.7.3); arrays: creating them, indexing,
 //! slicing, methods, whole-array arithmetic and `@` (1.7.4, the `arrays` module); and
 //! generics: type arguments inferred at calls, bounds checked, and inside a generic body only
-//! the operations a bound allows (1.7.5, the `generics` module). What later slices check, and
-//! this one lets through as an unknown type without an error: `match` patterns (1.7.6), `try`
-//! and errors (1.7.7), and the `None` check that narrows `T | None` to `T` (1.7.8).
+//! the operations a bound allows (1.7.5, the `generics` module); and `match`: patterns
+//! against the subject, and cases that cover every value (1.7.6, the `patterns` and
+//! `exhaustive` modules). What later slices check, and this one lets through without an error:
+//! `try` and errors (1.7.7), and the `None` check that narrows `T | None` to `T` (1.7.8).
 
 mod arrays;
 mod builtins;
 mod calls;
+mod exhaustive;
 mod expressions;
 mod generics;
 mod members;
 mod numbers;
 mod operators;
+mod patterns;
 mod relations;
 
 use crate::lower::Lowerer;
@@ -155,18 +158,7 @@ impl<'db> Body<'db> {
                 }
                 self.block(statement, Role::Body);
             }
-            SyntaxKind::Match => {
-                if let Some(value) = child(Role::Value) {
-                    self.expression(value, None);
-                }
-                let cases: Vec<NodeId> = self.tree.children_with(statement, Role::Case).collect();
-                for case in cases {
-                    if let Some(guard) = self.tree.child(case, Role::Condition) {
-                        self.condition(Some(guard));
-                    }
-                    self.block(case, Role::Body);
-                }
-            }
+            SyntaxKind::Match => self.match_statement(statement),
             SyntaxKind::Try => {
                 self.block(statement, Role::Body);
                 let handlers: Vec<NodeId> =
