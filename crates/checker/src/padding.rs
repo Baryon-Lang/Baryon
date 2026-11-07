@@ -131,7 +131,11 @@ impl Saving {
 
 /// What the class `nominal` declares, as [`types::layout()`] needs it: a struct's field types
 /// with its type arguments substituted, or an enum's number of variants.
-fn declared<'db>(db: &'db dyn TypeDb, package: Package, nominal: &Nominal<'db>) -> Declared<'db> {
+pub(crate) fn declared<'db>(
+    db: &'db dyn TypeDb,
+    package: Package,
+    nominal: &Nominal<'db>,
+) -> Declared<'db> {
     let item = Item::new(db, package, nominal.file, nominal.name);
     match &db.declaration(item).declaration {
         Declaration::Struct { fields, .. } => {

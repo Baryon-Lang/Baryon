@@ -2,6 +2,7 @@
 //!
 //! ```text
 //! npl check <directory>
+//! npl build <directory> <output>
 //! npl doc <directory> <output>
 //! npl lsp
 //! ```
@@ -12,6 +13,12 @@
 //! diagnostics here. The exit status is 0 when there are no errors, 1 when there are, and 2 when
 //! the command itself is wrong or a file cannot be read.
 //!
+//! `npl build` checks the package the same way, compiles it, and links the executable `output`
+//! with `clang` and the runtime ([`link`]). Running it runs the package's one `main` function;
+//! a failed check in it prints a panic with its location and exits with status 101. A package
+//! that does not check, or uses what the compiler cannot build yet, gets its errors printed and
+//! the exit status 1. This is a prototype (roadmap 1.11.3): no generic functions yet.
+//!
 //! `npl doc` loads the package the same way and writes its documentation as Markdown into the
 //! output directory, creating it if needed: one page per module, named after the module, such
 //! as `physics.nbody.md`, and an `index.md` listing them. A package with syntax or module naming
@@ -21,6 +28,7 @@
 //! and output ([`lsp`], decision 0019). It reports the same diagnostics as `npl check`, as the
 //! user types.
 
+mod link;
 mod lsp;
 mod package;
 
@@ -32,12 +40,15 @@ use std::process::ExitCode;
 use std::{env, fs};
 
 /// How to call the command, printed when the arguments are wrong.
-const USAGE: &str = "usage: npl check <directory> | npl doc <directory> <output> | npl lsp";
+const USAGE: &str = "usage: npl check <directory> | npl build <directory> <output> | npl doc <directory> <output> | npl lsp";
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = env::args().skip(1).collect();
     let outcome = match arguments.as_slice() {
         [command, directory] if command == "check" => check(Path::new(directory)),
+        [command, directory, output] if command == "build" => {
+            build(Path::new(directory), Path::new(output))
+        }
         [command, directory, output] if command == "doc" => {
             document(Path::new(directory), Path::new(output))
         }
@@ -98,6 +109,37 @@ fn check(root: &Path) -> Result<ExitCode, String> {
     } else {
         ExitCode::FAILURE
     })
+}
+
+/// Runs `npl build` on the package rooted at `root`, writing the executable `output`.
+///
+/// # Errors
+///
+/// Fails with a message when a file cannot be read, or when `clang` or the runtime archive is
+/// missing or the link fails.
+fn build(root: &Path, output: &Path) -> Result<ExitCode, String> {
+    let (session, files) = load(root)?;
+    let module = match session.compile() {
+        Ok(module) => module,
+        Err(problems) => {
+            let mut stderr = io::stderr().lock();
+            problems
+                .iter()
+                .try_for_each(|problem| {
+                    writeln!(stderr, "{}\n", diagnostics::render(problem, &session))
+                })
+                .map_err(|error| error.to_string())?;
+            return Ok(ExitCode::FAILURE);
+        }
+    };
+    link::link(&module, output)?;
+    writeln!(
+        io::stderr(),
+        "built {} from {files} file(s)",
+        output.display()
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Runs `npl doc` on the package rooted at `root`, writing its pages into `output`.

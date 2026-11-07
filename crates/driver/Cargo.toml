@@ -16,11 +16,15 @@ name = "npl"
 path = "src/main.rs"
 
 [dependencies]
+array_expansion.workspace = true
 checker.workspace = true
 database.workspace = true
 diagnostics.workspace = true
 documentation.workspace = true
+drop_elaboration.workspace = true
+llvm_backend.workspace = true
 lowering.workspace = true
+mir.workspace = true
 parser.workspace = true
 resolver.workspace = true
 salsa.workspace = true

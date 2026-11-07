@@ -33,8 +33,10 @@ def heat_step(u: Array[f64, 2], alpha: f64) -> Array[f64, 2]:
 
 Phase 0, specification and foundation, is nearly done, and the Phase 1 compiler has started. The
 compiler parses source files, rejects the Python constructs the language does not support, and
-reports syntax errors, module errors, undefined names and bad imports with `npl check`; it does
-not yet type-check or run programs. `npl lsp` is a language server that shows the same
+reports syntax errors, module errors, undefined names, bad imports and type errors with
+`npl check`. `npl build <directory> <output>` compiles a package through LLVM into an executable
+that runs its `main` function; it handles numbers, control flow, calls, structs and `assert` so
+far, with `clang` installed. `npl lsp` is a language server that shows the same
 diagnostics in any editor with a Language Server Protocol client, as you type. `npl doc` writes a
 package's documentation strings as Markdown pages.
 
