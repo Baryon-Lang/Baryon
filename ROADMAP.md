@@ -179,7 +179,7 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.3 | Mark `inout` at the call site as well as the signature | — | 0.2 | Planned | — | [0006](docs/decisions/0006-parameter-passing.md) |
 | D.4 | Default array layout: column-major (plan) or row-major (review). Decided: row-major | — | — | Done | Collins | [0008](docs/decisions/0008-row-major-arrays.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | D.5 | C++ interop: full, a C-shaped subset, or dropped | — | — | Planned | Collins | — |
-| D.6 | Language name and file extension; blocks 1.17. Decided: Baryon, `.byn`, tool `baryon` | — | — | In progress | Collins | [0023](docs/decisions/0023-language-name-baryon.md) |
+| D.6 | Language name and file extension; blocks 1.17. Decided: Baryon, `.byn`, tool `baryon` | — | — | Done | Collins | [0023](docs/decisions/0023-language-name-baryon.md), [#64](https://github.com/csimpson1964/New-Programming-Language/pull/64) |
 | D.7 | Resolve the plan's FFI contradiction: no FFI before Phase 4, yet an `ffi` module in the MVP. Decided: no user-facing FFI before Phase 4 | — | — | Done | Collins | [0012](docs/decisions/0012-no-ffi-in-mvp.md), [#2](https://github.com/csimpson1964/New-Programming-Language/pull/2) |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | — | — | Planned | Collins | — |
 | D.9 | Traits: how user code declares a trait and how a type implements it, structurally as Python's `Protocol` does or by naming it as Rust does | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
