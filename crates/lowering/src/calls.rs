@@ -2,7 +2,7 @@
 //! constructor; and of a number type, which converts.
 
 use crate::builder::Builder;
-use mir::{Argument, Callee, Place, Rvalue, TerminatorKind};
+use mir::{Argument, Builtin, Callee, Operand, Place, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
 
@@ -51,6 +51,7 @@ impl<'db> Builder<'db> {
             },
             types::Callee::Builtin(name) => match (name.split_once('.'), arguments.as_slice()) {
                 (None, [argument]) if name == "len" => self.len(place, *argument, node),
+                (None, _) if name == "print" => self.print(place, &arguments, node),
                 (Some(("Array", function @ ("zeros" | "ones" | "fill"))), _) => {
                     self.new_array(&place, function, &arguments, node);
                 }
@@ -112,6 +113,41 @@ impl<'db> Builder<'db> {
         if let Some(edge) = edge {
             self.dispatch(&edge, errors, node);
         }
+        self.start(next);
+    }
+
+    /// `print(arguments…)`, its `None` result written into `place`. A literal is passed as its
+    /// constant, so a backend can print a string literal without a `str` value; anything else
+    /// is borrowed, since printing does not consume it.
+    fn print(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
+        let keyword = self
+            .tree
+            .child(node, Role::Arguments)
+            .into_iter()
+            .flat_map(|list| self.tree.children_with(list, Role::Item))
+            .any(|item| self.tree.kind(item) == SyntaxKind::Keyword);
+        if keyword {
+            return self.unsupported(node, "keyword arguments of `print`");
+        }
+        let mut passed = Vec::with_capacity(arguments.len());
+        for &argument in arguments {
+            passed.push(if self.is_literal(argument) {
+                Argument::Owned(Operand::Constant(self.literal(argument)))
+            } else {
+                Argument::Borrow(self.borrow(argument))
+            });
+        }
+        let next = self.new_block();
+        self.terminate(
+            TerminatorKind::Call {
+                callee: Callee::Builtin(Builtin::Print),
+                arguments: passed,
+                destination: place,
+                target: next,
+                error: None,
+            },
+            node,
+        );
         self.start(next);
     }
 

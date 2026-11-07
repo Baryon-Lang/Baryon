@@ -138,6 +138,18 @@ Python's own built-in names that the language keeps, with their Python meaning w
 `print`, `len`, `range`, `round`, `abs`, `min`, `max`, `sum`, `enumerate`, `zip`, `int`, `float`,
 `complex`, `bool`, `str`, `list`, `tuple`, `True`, `False`, `None`, `Exception` and `Enum`.
 
+`print(a, b, ...)` writes its arguments to standard output as Python does: separated by one space,
+followed by a line end. A float prints as Python's `repr` writes it, with the fewest digits that
+read back as the same value: `0.1`, `2.0`, `0.30000000000000004`, and an exponent below `1e-4` or
+from `1e16` up, as in `1.5e-05` and `1e+16`. An `f32` prints the fewest digits that read back as
+the same `f32`, so `f32(0.1)` prints `0.1`. A `bool` prints `True` or `False`.
+
+```python
+def main():
+    print("mean:", (1.0 + 2.0) / 2.0)  # mean: 1.5
+    print(1e16, 3 > 2)                 # 1e+16 True
+```
+
 ## Names and style
 
 Names follow Python's rules. By convention, functions, variables and modules are `snake_case`,

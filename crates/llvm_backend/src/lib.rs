@@ -32,11 +32,13 @@
 //!   [`types::layout`] describes: the data pointer, each length and each stride. A new array is
 //!   allocated by the runtime, an element is found through the strides, and a drop frees the
 //!   elements with the size they were allocated with.
+//! - **`print` calls the runtime once per argument**, which writes the value as Python does;
+//!   the space between arguments and the line end are byte constants it prints too.
 //!
-//! The backend so far (roadmap 1.10.1 to 1.10.5) covers numbers, `bool`, enums without data,
-//! tuples and structs, `Array` and `Fixed`, control flow, direct calls, errors and checks. A body
-//! that uses anything else, such as an optional or a string, gets an [`Unsupported`] error
-//! naming it.
+//! The backend so far (roadmap 1.10.1 to 1.10.6) covers numbers, `bool`, enums without data,
+//! tuples and structs, `Array` and `Fixed`, control flow, direct calls, errors, checks and
+//! `print` of numbers, `bool` and string literals. A body that uses anything else, such as an
+//! optional or a string value, gets an [`Unsupported`] error naming it.
 //!
 //! # Example
 //!
@@ -112,6 +114,7 @@ mod convert;
 mod errors;
 mod function;
 mod panic;
+mod print;
 mod rvalue;
 mod ty;
 

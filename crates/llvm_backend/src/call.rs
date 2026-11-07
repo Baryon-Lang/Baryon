@@ -10,7 +10,7 @@
 use crate::Unsupported;
 use crate::function::{Function, block_label, global};
 use crate::ty::Repr;
-use mir::{Argument, BlockId, Callee, ErrorEdge, Place};
+use mir::{Argument, BlockId, Builtin, Callee, ErrorEdge, Place};
 
 impl<'db> Function<'_, '_, 'db> {
     /// Writes a call of `callee` with `arguments`, storing its result at `destination` and going
@@ -24,12 +24,13 @@ impl<'db> Function<'_, '_, 'db> {
         target: BlockId,
         error: Option<&ErrorEdge>,
     ) -> Result<(), Unsupported> {
-        let Callee::Function {
-            item,
-            type_arguments,
-        } = callee
-        else {
-            return Err(Unsupported::new("calls of `Callable` values"));
+        let (item, type_arguments) = match callee {
+            Callee::Function {
+                item,
+                type_arguments,
+            } => (item, type_arguments),
+            Callee::Builtin(Builtin::Print) => return self.print(arguments, target),
+            Callee::Value(_) => return Err(Unsupported::new("calls of `Callable` values")),
         };
         let symbol = (self.symbol)(item, type_arguments);
         let mut written = Vec::new();
