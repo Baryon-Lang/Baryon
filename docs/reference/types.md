@@ -92,8 +92,8 @@ Tuples unpack in assignments and `for` loops: `x, y, z = position`.
 `Vec`, C++'s `std::vector`. It supports `append`, `pop`, `copy`, `len`, indexing, slicing, `in`,
 iteration and list comprehensions. `copy` makes a new list holding a copy of each element, which is
 how to keep a list and also pass it on, since a list moves
-([values and references](values-and-references.md#moves)). A list is for building up data of unknown length; convert it to an
-`Array` with `Array(values)` for numeric work. An empty list needs its type written:
+([values and references](values-and-references.md#moves)). A list is for building up data of
+unknown length; convert it to an `Array` with `Array(values)` for numeric work. An empty list needs its type written:
 `columns: list[i64] = []`.
 
 ## Optional values

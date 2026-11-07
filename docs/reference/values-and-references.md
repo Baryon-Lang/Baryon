@@ -41,8 +41,9 @@ class Vec2(Struct, Copy):
 
 Structs are not copy types by default because a copy of a large struct costs time that the source
 should show. That copy is written `.copy()`, which every value that moves has: an `Array`, a
-`list`, a `str`, and a struct, whose `copy` copies each field unless the struct defines its own. `Fixed` arrays are copy types because they are small by design; the compiler warns
-when one has more than 64 elements ([decision 0007](../decisions/0007-array-types.md)).
+`list`, a `str`, and a struct, whose `copy` copies each field unless the struct defines its own.
+`Fixed` arrays are copy types because they are small by design; the compiler warns when one has
+more than 64 elements ([decision 0007](../decisions/0007-array-types.md)).
 
 ## Moves
 
