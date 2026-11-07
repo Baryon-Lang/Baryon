@@ -21,8 +21,10 @@
 //! - **Errors** (roadmap 1.7.7): every error type a call or `raise` can fail with is caught by
 //!   a `try` around it or declared in the function's `Raises`.
 //! - **Optional values** (roadmap 1.7.8): a `T | None` is used as a `T` only where a `None`
-//!   check, an early exit or an assignment has narrowed it. See the `body` module for what
-//!   later slices add.
+//!   check, an early exit or an assignment has narrowed it.
+//! - **Definite assignment** (roadmap 1.7.9): a variable is read only where every path has
+//!   assigned it, with the error pointing at the path that skips it, and a function that
+//!   returns a value cannot reach its end. See the `body` module for how each is checked.
 //!
 //! It is an implementation crate. It reads trees and names only through the `database`
 //! interface and publishes its results through the `types` interface, whose

@@ -176,12 +176,15 @@ impl<'db> Body<'db> {
     /// The type of a name read as a value.
     pub(super) fn name(&mut self, node: NodeId) -> Type<'db> {
         match self.lowerer.definition(node) {
-            Some(Definition::Local(binding)) => self
-                .narrowed
-                .get(binding)
-                .or_else(|| self.locals.get(binding))
-                .copied()
-                .unwrap_or_else(|| self.lowerer.unknown()),
+            Some(&Definition::Local(binding)) => {
+                self.read(node, binding);
+                self.state
+                    .narrowed
+                    .get(&binding)
+                    .or_else(|| self.locals.get(&binding))
+                    .copied()
+                    .unwrap_or_else(|| self.lowerer.unknown())
+            }
             Some(&Definition::Item(file, name)) => self.item_value(file, name),
             _ => self.lowerer.unknown(),
         }
@@ -340,19 +343,19 @@ impl<'db> Body<'db> {
         let (yes, no) = condition
             .map(|condition| self.facts(condition))
             .unwrap_or_default();
-        let entry = self.narrowed.clone();
+        let entry = self.state.narrowed.clone();
         self.assume(&yes);
         let value = self
             .tree
             .child(node, Role::Value)
             .map(|value| self.expression(value, expected));
-        self.narrowed.clone_from(&entry);
+        self.state.narrowed.clone_from(&entry);
         self.assume(&no);
         let other = self
             .tree
             .child(node, Role::Else)
             .map(|other| self.expression(other, value));
-        self.narrowed = entry;
+        self.state.narrowed = entry;
         let Some(value) = value else {
             return self.lowerer.unknown();
         };

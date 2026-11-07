@@ -11,6 +11,7 @@
 //! ```
 
 use super::Body;
+use super::flow::{End, Skip};
 use crate::outline::{Base, Kind, outline};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Type, TypeKind};
@@ -77,10 +78,26 @@ impl<'db> Body<'db> {
             .iter()
             .map(|&handler| self.except_types(handler))
             .collect();
+        // A handler may run after the body stopped part way, so what the body assigns is
+        // unknown in it.
+        self.forget_assigned(statement);
+        let entry = self.state.clone();
+        let mut ends = Vec::new();
         self.handled.push(caught.concat());
-        let mut falls = self.block(statement, Role::Body);
+        if self.block(statement, Role::Body) {
+            let first = self.tree.children_with(statement, Role::Body).next();
+            let label = "not assigned when the `try` body succeeds";
+            ends.push(End {
+                state: self.state.clone(),
+                skip: Skip {
+                    node: first.unwrap_or(statement),
+                    label,
+                },
+            });
+        }
         self.handled.pop();
         for (handler, errors) in handlers.into_iter().zip(caught) {
+            self.state.clone_from(&entry);
             if let Some(name) = self.tree.child(handler, Role::Name) {
                 let ty = match errors.as_slice() {
                     [only] => *only,
@@ -89,12 +106,21 @@ impl<'db> Body<'db> {
                 self.bind(name, ty, None);
             }
             self.caught.push(errors);
-            falls |= self.block(handler, Role::Body);
+            if self.block(handler, Role::Body) {
+                let label = "not assigned when this handler runs";
+                ends.push(End {
+                    state: self.state.clone(),
+                    skip: Skip {
+                        node: self.tree.child(handler, Role::Type).unwrap_or(handler),
+                        label,
+                    },
+                });
+            }
             self.caught.pop();
         }
         self.block(statement, Role::Else);
         self.block(statement, Role::Finally);
-        falls
+        self.merge(entry, &ends)
     }
 
     /// The error types an `except` names, one or a parenthesized tuple of them, reporting any

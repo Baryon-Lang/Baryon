@@ -185,7 +185,7 @@ impl<'db> Body<'db> {
         let symbol = self.tree.node(node).operator().symbol();
         let and = self.tree.node(node).operator() == Operator::And;
         let items: Vec<NodeId> = self.tree.children_with(node, Role::Item).collect();
-        let entry = self.narrowed.clone();
+        let entry = self.state.narrowed.clone();
         for item in items {
             let found = self.expression(item, Some(boolean));
             // `x is not None and x > 0`: each operand runs only when those before it allow.
@@ -204,7 +204,7 @@ impl<'db> Body<'db> {
                 );
             }
         }
-        self.narrowed = entry;
+        self.state.narrowed = entry;
         boolean
     }
 

@@ -15,9 +15,12 @@
 //! `exhaustive` modules); and errors: each error a call or `raise` can fail with is caught by a
 //! `try` or declared in the function's `Raises` (1.7.7, the `errors` module); and optional
 //! values: a `T | None` is used as a `T` only after a `None` check narrows it (1.7.8, the
-//! `flow` module).
+//! `flow` module); and definite assignment: a variable is read only where every path has
+//! assigned it, and a function that returns a value cannot reach its end (1.7.9, the
+//! `assignment` module).
 
 mod arrays;
+mod assignment;
 mod builtins;
 mod calls;
 mod errors;
@@ -35,7 +38,7 @@ use crate::lower::Lowerer;
 use crate::outline::Entry;
 use database::{Definition, File, Package};
 use diagnostics::Diagnostic;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use syntax::{NodeId, Role, SyntaxKind, SyntaxTree};
 use types::{Declaration, Item, Primitive, Signature, Type, TypeDb, TypeKind};
 
@@ -59,12 +62,18 @@ pub(crate) fn check(
         signature: signature.clone(),
         function: entry.statement,
         locals: BTreeMap::new(),
-        narrowed: BTreeMap::new(),
+        state: flow::State::default(),
         handled: Vec::new(),
         caught: Vec::new(),
+        bound: BTreeSet::new(),
     };
+    let mut bound = BTreeSet::new();
+    body.statement_bindings(entry.statement, &mut bound);
+    body.bound = bound;
     body.parameters(entry.statement);
-    body.block(entry.statement, Role::Body);
+    if body.block(entry.statement, Role::Body) {
+        body.missing_return(entry.name);
+    }
     body.lowerer.diagnostics
 }
 
@@ -85,13 +94,17 @@ struct Body<'db> {
     /// The type of each local variable, by the `Name` node of its first binding, which the
     /// resolver gives every use of the variable.
     locals: BTreeMap<NodeId, Type<'db>>,
-    /// The `T | None` variables known here to hold a `T`, with that `T` (the `flow` module).
-    narrowed: flow::Narrowed<'db>,
+    /// What is known here about variables: which are assigned, and which `T | None` ones hold
+    /// a `T` (the `flow` module).
+    state: flow::State<'db>,
     /// The error types each enclosing `try` handles, innermost last.
     handled: Vec<Vec<Type<'db>>>,
     /// The error types each enclosing `except` block caught, innermost last, which a bare
     /// `raise` raises again.
     caught: Vec<Vec<Type<'db>>>,
+    /// The variables statements bind, which are checked for definite assignment (the
+    /// `assignment` module).
+    bound: BTreeSet<NodeId>,
 }
 
 impl<'db> Body<'db> {
@@ -109,6 +122,7 @@ impl<'db> Body<'db> {
         for (node, ty) in nodes.into_iter().zip(types) {
             if let Some(name) = self.tree.child(node, Role::Name) {
                 self.locals.insert(name, ty);
+                self.state.assigned.insert(name);
             }
             if let Some(default) = self.tree.child(node, Role::Default) {
                 let found = self.expression(default, Some(ty));
@@ -153,18 +167,21 @@ impl<'db> Body<'db> {
             SyntaxKind::AnnotatedAssign => self.annotated(statement),
             SyntaxKind::AugmentedAssign => self.augmented(statement),
             SyntaxKind::If => return self.if_statement(statement),
-            SyntaxKind::While => self.while_statement(statement),
-            SyntaxKind::For => self.isolated(statement, |body| {
-                let element = match body.tree.child(statement, Role::Iterator) {
-                    Some(iterator) => body.iteration(iterator),
-                    None => body.lowerer.unknown(),
+            SyntaxKind::While => return self.while_statement(statement),
+            SyntaxKind::For => {
+                let iterator = self.tree.child(statement, Role::Iterator);
+                let element = match iterator {
+                    Some(iterator) => self.iteration(iterator),
+                    None => self.lowerer.unknown(),
                 };
-                if let Some(target) = body.tree.child(statement, Role::Target) {
-                    body.bind(target, element, None);
-                }
-                body.block(statement, Role::Body);
-                body.block(statement, Role::Else);
-            }),
+                self.repeated(statement, iterator.unwrap_or(statement), |body| {
+                    if let Some(target) = body.tree.child(statement, Role::Target) {
+                        body.bind(target, element, None);
+                    }
+                    body.block(statement, Role::Body);
+                    body.block(statement, Role::Else);
+                });
+            }
             SyntaxKind::With => {
                 let items: Vec<NodeId> = self.tree.children_with(statement, Role::Item).collect();
                 for item in items {
@@ -175,9 +192,7 @@ impl<'db> Body<'db> {
                 return self.block(statement, Role::Body);
             }
             SyntaxKind::Match => return self.match_statement(statement),
-            SyntaxKind::Try => {
-                return self.isolated(statement, |body| body.try_statement(statement));
-            }
+            SyntaxKind::Try => return self.try_statement(statement),
             SyntaxKind::Assert => {
                 let condition = child(Role::Condition);
                 self.condition(condition);
@@ -216,10 +231,17 @@ impl<'db> Body<'db> {
             Some(annotation) => self.lowerer.lower(annotation),
             None => self.lowerer.unknown(),
         };
+        let value = self.tree.child(statement, Role::Value);
         if let Some(target) = self.tree.child(statement, Role::Target) {
             self.bind(target, ty, None);
+            if value.is_none()
+                && let Some(&Definition::Local(binding)) = self.lowerer.definition(target)
+            {
+                // `x: f64` declares the type, and assigns nothing.
+                self.state.assigned.remove(&binding);
+            }
         }
-        if let Some(value) = self.tree.child(statement, Role::Value) {
+        if let Some(value) = value {
             let found = self.expression(value, Some(ty));
             self.expect(value, ty, found, "the annotation says");
         }
@@ -331,6 +353,7 @@ impl<'db> Body<'db> {
                 let Some(&Definition::Local(binding)) = self.lowerer.definition(target) else {
                     return;
                 };
+                self.state.assigned.insert(binding);
                 match self.locals.get(&binding) {
                     Some(&held) => {
                         if relations::compatible(self.db, held, ty) {
