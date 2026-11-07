@@ -219,7 +219,7 @@ fn rvalue_moves(rvalue: &Rvalue<'_>, effects: &mut Vec<Effect>) {
             operand_moves(left, effects);
             operand_moves(right, effects);
         }
-        Rvalue::Aggregate(_, operands) => {
+        Rvalue::Aggregate(_, operands) | Rvalue::NewArray(_, operands) => {
             for operand in operands {
                 operand_moves(operand, effects);
             }

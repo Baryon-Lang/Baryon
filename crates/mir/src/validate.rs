@@ -273,7 +273,7 @@ impl Uses {
                 self.operand(left);
                 self.operand(right);
             }
-            Rvalue::Aggregate(_, operands) => {
+            Rvalue::Aggregate(_, operands) | Rvalue::NewArray(_, operands) => {
                 for operand in operands {
                     self.operand(operand);
                 }

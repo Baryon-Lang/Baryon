@@ -190,7 +190,7 @@ impl<'db> Substitution<'_, 'db> {
                 self.operand(operand);
                 *ty = self.ty(*ty);
             }
-            Rvalue::Aggregate(ty, operands) => {
+            Rvalue::Aggregate(ty, operands) | Rvalue::NewArray(ty, operands) => {
                 *ty = self.ty(*ty);
                 for operand in operands {
                     self.operand(operand);

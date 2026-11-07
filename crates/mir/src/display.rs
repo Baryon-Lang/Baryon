@@ -165,6 +165,9 @@ impl Writer<'_> {
             Rvalue::Aggregate(ty, operands) => {
                 format!("{}({})", self.ty(*ty), self.operands(operands))
             }
+            Rvalue::NewArray(ty, lengths) => {
+                format!("new {}({})", self.ty(*ty), self.operands(lengths))
+            }
             Rvalue::Length(place, dimension) => format!("len({}, {dimension})", place_text(place)),
             Rvalue::IsPresent(place) => format!("is_present({})", place_text(place)),
             Rvalue::ErrorIndex(place) => format!("error_index({})", place_text(place)),

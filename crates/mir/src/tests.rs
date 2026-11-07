@@ -392,3 +392,37 @@ fn broken_rules_are_reported() {
         ]
     );
 }
+
+/// `c = a * a` over a rank-2 array allocates its result with `a`'s lengths before expansion fills
+/// it; the text form shows the allocation as `new` and the array type.
+#[test]
+fn new_array_names_its_type_and_lengths() {
+    let database = Database::default();
+    let f64 = primitive(&database, Primitive::Float(Float::F64));
+    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
+    let grid = Type::new(
+        &database,
+        TypeKind::Array {
+            element: f64,
+            rank: 2,
+        },
+    );
+    let mut body = Body::new(grid, span());
+    let rows = body.push_local(i64, LocalKind::Temporary, span());
+    let columns = body.push_local(i64, LocalKind::Temporary, span());
+    let entry = body.push_block(end(TerminatorKind::Return));
+    body.blocks[entry.index()].statements = vec![assign(
+        Local::RETURN,
+        Rvalue::NewArray(
+            grid,
+            vec![Operand::Copy(rows.into()), Operand::Copy(columns.into())],
+        ),
+    )];
+
+    assert_eq!(body.validate(&database), Vec::new());
+    assert!(
+        body.display(&database)
+            .to_string()
+            .contains("_0 = new Array[f64, 2](copy _1, copy _2);")
+    );
+}
