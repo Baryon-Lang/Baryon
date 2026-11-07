@@ -5,7 +5,7 @@
 use crate::Unsupported;
 use crate::function::Function;
 use crate::ty::Number;
-use mir::{BinaryOperator, Operand, Rvalue, UnaryOperator};
+use mir::{BinaryOperator, Operand, Place, Rvalue, UnaryOperator};
 use types::{Type, TypeKind};
 
 impl<'db> Function<'_, '_, 'db> {
@@ -28,7 +28,7 @@ impl<'db> Function<'_, '_, 'db> {
             Rvalue::NewArray(ty, lengths) => self.new_array(*ty, lengths)?,
             Rvalue::Length(place, dimension) => self.length(place, *dimension)?,
             Rvalue::Elementwise(_) => return Err(Unsupported::new("whole-array operations")),
-            Rvalue::IsPresent(_) => return Err(Unsupported::new("optional values")),
+            Rvalue::IsPresent(place) => self.is_present(place)?,
             Rvalue::ErrorIndex(place) => self.error_index(place)?,
         };
         Ok(Some(value))
@@ -335,7 +335,21 @@ impl<'db> Function<'_, '_, 'db> {
                 "insertvalue {llvm} {built}, {item} {value}, {indices}"
             ));
         }
+        // A present `T | None` is its value with the flag set.
+        if matches!(ty.kind(self.types.db), TypeKind::Optional(_)) {
+            built = self.emit(&format!("insertvalue {llvm} {built}, i1 true, 1"));
+        }
         Ok(built)
+    }
+
+    /// Whether the `T | None` at `place` holds a value: its flag.
+    fn is_present(&mut self, place: &Place) -> Result<String, Unsupported> {
+        let (address, ty) = self.place(place)?;
+        let llvm = self.types.value(ty)?;
+        let flag = self.emit(&format!(
+            "getelementptr inbounds {llvm}, ptr {address}, i32 0, i32 1"
+        ));
+        Ok(self.emit(&format!("load i1, ptr {flag}")))
     }
 }
 

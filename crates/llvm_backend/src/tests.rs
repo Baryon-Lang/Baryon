@@ -463,14 +463,14 @@ declare void @report(i64)
 fn unsupported_types_are_named() {
     let database = Database::default();
     let f64 = primitive(&database, Primitive::Float(Float::F64));
-    let optional = Type::new(&database, TypeKind::Optional(f64));
+    let list = Type::new(&database, TypeKind::List(f64));
     let symbol = symbol_of(&database);
     let sources = sources();
     let mut module = Module::new(&database, &sources, &no_structs, &symbol);
-    let result = module.define("make", &Body::new(optional, span()), &[]);
+    let result = module.define("make", &Body::new(list, span()), &[]);
     assert_eq!(
         result.map_err(|error: Unsupported| error.to_string()),
-        Err("the LLVM backend does not compile values of type `f64 | None` yet".to_owned())
+        Err("the LLVM backend does not compile values of type `list[f64]` yet".to_owned())
     );
     assert_eq!(module.finish(), "");
 }

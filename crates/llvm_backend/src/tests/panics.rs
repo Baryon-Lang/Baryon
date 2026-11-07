@@ -5,7 +5,7 @@ use super::{
     sources, span, symbol_of,
 };
 use mir::{
-    BinaryOperator, BlockId, Body, Check, Local, LocalKind, Operand, Rvalue, Statement,
+    BinaryOperator, BlockId, Body, Callee, Check, Local, LocalKind, Operand, Rvalue, Statement,
     StatementKind, TerminatorKind,
 };
 use source::{FileId, Span};
@@ -143,13 +143,13 @@ fn index_checks_report_the_dimension() {
 fn rejected_bodies_leave_no_constants() {
     let database = Database::default();
     let mut body = assert_body(&database, BinaryOperator::Equal, Check::Assertion, span());
-    body.blocks[1].statements = vec![Statement {
-        kind: StatementKind::Assign(
-            Local::new(3).into(),
-            Rvalue::IsPresent(Local::new(1).into()),
-        ),
-        span: span(),
-    }];
+    body.blocks[1].terminator = end(TerminatorKind::Call {
+        callee: Callee::Value(Operand::Copy(Local::new(1).into())),
+        arguments: Vec::new(),
+        destination: Local::new(3).into(),
+        target: BlockId::new(1),
+        error: None,
+    });
     let symbol = symbol_of(&database);
     let sources = sources();
     let mut module = Module::new(&database, &sources, &no_structs, &symbol);
@@ -157,7 +157,7 @@ fn rejected_bodies_leave_no_constants() {
         module
             .define("check", &body, &[])
             .map_err(|error| error.to_string()),
-        Err("the LLVM backend does not compile optional values yet".to_owned())
+        Err("the LLVM backend does not compile calls of `Callable` values yet".to_owned())
     );
     assert_eq!(module.finish(), "");
 }

@@ -14,8 +14,9 @@
 //! | `Fixed[T, (n, m)]` | nested arrays `[n x [m x T]]`, row-major (decision 0008) |
 //! | `Raises[T, E1 \| E2]` | `{ i8, [n x iA] }`: the tag, then room for the largest of `T` and the errors |
 //! | `Array[T, rank]` | its header `{ ptr, [rank x i64], [rank x i64] }`: the elements, each length, each stride |
+//! | `T \| None` | `{ T, i1 }`: the value, then whether it is present; `None` is all zeros |
 //!
-//! The other types (complex numbers, strings, lists and optionals) are
+//! The other types (complex numbers, strings and lists) are
 //! [`Unsupported`] until the slices of roadmap 1.10 that add them.
 
 use crate::Unsupported;
@@ -80,6 +81,7 @@ impl<'db> Types<'_, 'db> {
             TypeKind::Array { rank, .. } => {
                 Ok(format!("{{ ptr, [{rank} x i64], [{rank} x i64] }}"))
             }
+            TypeKind::Optional(value) => Ok(format!("{{ {}, i1 }}", self.value(*value)?)),
             TypeKind::Enum(_) => {
                 let layout =
                     types::layout(self.db, ty, self.declared).map_err(|_| self.unsupported(ty))?;
@@ -130,7 +132,9 @@ impl<'db> Types<'_, 'db> {
         match ty.kind(self.db) {
             TypeKind::Primitive(_) | TypeKind::None | TypeKind::Enum(_) => true,
             TypeKind::Tuple(items) => items.iter().all(|&item| self.by_value(item)),
-            TypeKind::Fixed { element, .. } => self.by_value(*element),
+            TypeKind::Fixed { element, .. } | TypeKind::Optional(element) => {
+                self.by_value(*element)
+            }
             _ => false,
         }
     }
