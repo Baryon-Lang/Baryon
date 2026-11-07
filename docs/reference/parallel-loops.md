@@ -66,18 +66,22 @@ the rule. The most common one:
 
 ```text
 error: iterations of this parallel loop may write the same element of `forces`
- --> md.npl:58:13
+  --> md.npl:58:13
+   |
+58 |             forces[j] -= force
+   |             ^^^^^^^^^ indexed by `j`, not by the loop variable `i`
+  ::: md.npl:51:14
    |
 51 |     for i in prange(N):
    |              --------- iterations run in parallel
-...
-58 |             forces[j] -= force
-   |             ^^^^^^^^^ indexed by `j`, not by the loop variable `i`
    = note: each element of a shared array may be written only at the loop variable's index
-   = help: if every write to `forces` in this loop adds to it, declare it add-only:
-           `prange(N, accumulate=forces)`
-   = help: or compute each element's total in its own iteration, or use `range` for this loop
+   = note: if every write to `forces` in this loop adds to it, declare it add-only: `prange(N, accumulate=forces)`
+   = note: or compute each element's total in its own iteration, or use `range` for this loop
 ```
+
+A variable assigned before the loop counts as shared even when the body assigns it too, so
+`last = a[i]` with `last` assigned earlier is an error under rule 3. Give a value that belongs to
+one iteration a name first assigned inside the loop.
 
 ### Reproducible reductions
 

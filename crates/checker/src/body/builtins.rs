@@ -95,8 +95,12 @@ impl<'db> Body<'db> {
                         element = Some(found);
                     }
                 }
-                for &(_, value) in &arguments.keywords {
-                    self.expression(value, None);
+                if *name == "prange" {
+                    self.prange_keywords(&arguments);
+                } else {
+                    for &(_, value) in &arguments.keywords {
+                        self.expression(value, None);
+                    }
                 }
                 Some(element.unwrap_or(int))
             }

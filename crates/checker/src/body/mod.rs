@@ -22,8 +22,12 @@
 //! exclusivity: no argument refers to a value its call changes or moves, and a read-only
 //! parameter is never changed (1.8.3, the `exclusive` module); and loops over collections:
 //! the body changes neither the collection nor the element it borrows (1.8.4, the `loops`
-//! module).
+//! module); and parallel loops: a `prange` body writes shared arrays only at the loop
+//! variable's index and shared scalars only as reductions, never ends early, and only adds
+//! into the arrays it lists in `accumulate=` (1.8.5 and 1.8.1, the `parallel`, `shared` and
+//! `accumulate` modules).
 
+mod accumulate;
 mod arrays;
 mod assignment;
 mod builtins;
@@ -40,8 +44,10 @@ mod members;
 mod moves;
 mod numbers;
 mod operators;
+mod parallel;
 mod patterns;
 mod relations;
+mod shared;
 
 use crate::lower::Lowerer;
 use crate::outline::Entry;
@@ -77,6 +83,8 @@ pub(crate) fn check(
         bound: BTreeSet::new(),
         modes: BTreeMap::new(),
         loops: Vec::new(),
+        parallel: Vec::new(),
+        accumulate: Vec::new(),
     };
     let mut bound = BTreeSet::new();
     body.statement_bindings(entry.statement, &mut bound);
@@ -120,6 +128,11 @@ struct Body<'db> {
     modes: BTreeMap<NodeId, types::Mode>,
     /// The enclosing `for` loops over collections, innermost last (the `loops` module).
     loops: Vec<loops::Loop>,
+    /// The enclosing `prange` loop, if any; never more than one (the `parallel` module).
+    parallel: Vec<parallel::Parallel>,
+    /// The valid entries of the `accumulate=` argument of the `prange` call just checked,
+    /// waiting for its loop to start (the `accumulate` module).
+    accumulate: Vec<NodeId>,
 }
 
 impl<'db> Body<'db> {
