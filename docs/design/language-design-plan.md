@@ -366,7 +366,7 @@ unnecessary.
 The typed tree lowers to a mid-level IR with explicit control flow, drops and bounds checks:
 basic blocks over typed locals and places, as in Rust's MIR, not static single assignment form,
 because the reference rules, `noalias` metadata and drops are all stated over places and the
-backends build SSA themselves (proposed in [0018](../decisions/0018-mid-level-ir.md)).
+backends build SSA themselves (decided in [0018](../decisions/0018-mid-level-ir.md)).
 Language-specific optimizations live here, before any backend:
 
 - array expression fusion into one loop nest;

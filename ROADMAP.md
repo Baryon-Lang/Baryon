@@ -161,7 +161,7 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.11 | Integer overflow in release builds: wrap, as the plan says, or panic, as in debug builds | — | — | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
 | D.12 | Parallel loops that add into shared arrays (Newton's third law, histograms, assembly). Decided: `prange(n, accumulate=forces)`, add-only, reproducible, blocked private buffers | — | I.6 | Done | Collins | [0013](docs/decisions/0013-parallel-accumulation.md), [#8](https://github.com/csimpson1964/New-Programming-Language/pull/8) |
 | D.13 | Class inheritance: Python-style subclassing, or classes as plain structs with methods. Decided: no inheritance; shared behavior comes from traits | — | — | Done | Collins | [0015](docs/decisions/0015-no-class-inheritance.md), [#12](https://github.com/csimpson1964/New-Programming-Language/pull/12) |
-| D.14 | Mid-level IR shape: static single assignment (plan) or locals and places; how `Raises`, monomorphization and whole-array expressions lower | — | — | Planned | Collins | [0018](docs/decisions/0018-mid-level-ir.md), [#27](https://github.com/csimpson1964/New-Programming-Language/pull/27) |
+| D.14 | Mid-level IR shape: static single assignment (plan) or locals and places; how `Raises`, monomorphization and whole-array expressions lower. Decided: locals and places, error edges on calls, instance query, `Elementwise` kept for fusion | — | — | Done | Collins | [0018](docs/decisions/0018-mid-level-ir.md), [#27](https://github.com/csimpson1964/New-Programming-Language/pull/27) |
 
 ## Ideas
 

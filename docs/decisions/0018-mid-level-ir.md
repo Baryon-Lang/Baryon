@@ -1,6 +1,6 @@
 # 0018. The mid-level IR is basic blocks over typed locals and places
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-07
 Roadmap: 1.9
 
