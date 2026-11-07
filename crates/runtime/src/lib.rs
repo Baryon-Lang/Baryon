@@ -2,8 +2,8 @@
 //!
 //! The compiler turns a program into machine code, but some of what that code does is the same in
 //! every program and is written once, here: getting memory from the system, ending the program
-//! when a check fails, and running `prange` loops on every core. The design plan asks for a
-//! runtime "as small as C's": no garbage collector, no scheduler, no reflection.
+//! when a check fails, printing, and running `prange` loops on every core. The design plan asks
+//! for a runtime "as small as C's": no garbage collector, no scheduler, no reflection.
 //!
 //! Where it sits: the runtime is not part of the compiler. It is built as a static library
 //! (`libruntime.a`) that the driver links into each program (roadmap 1.11), and the backend emits
@@ -21,6 +21,7 @@
 //! | [`npl_rt_panic_index`] | End the program for an index out of range (decision 0010) |
 //! | [`npl_rt_panic_length_mismatch`] | End the program for arrays of different lengths combined element by element |
 //! | [`npl_rt_chunk_count`], [`npl_rt_parallel_for`] | Run a `prange` loop on the thread pool, in fixed chunks |
+//! | [`npl_rt_print_i64`], [`npl_rt_print_u64`], [`npl_rt_print_f64`], [`npl_rt_print_f32`], [`npl_rt_print_bool`], [`npl_rt_print_str`] | Print one argument of `print` to standard output, as Python writes it |
 //!
 //! A panic prints its message and the [`Location`] of the check to standard error, then exits
 //! with status 101. Panics cannot be caught (decision 0005), so the runtime never unwinds.
@@ -63,10 +64,12 @@ mod location;
 mod memory;
 mod panic;
 mod parallel;
+mod print;
 
 pub use abi::{
     npl_rt_allocate, npl_rt_allocate_array, npl_rt_chunk_count, npl_rt_deallocate, npl_rt_panic,
-    npl_rt_panic_index, npl_rt_panic_length_mismatch, npl_rt_parallel_for,
+    npl_rt_panic_index, npl_rt_panic_length_mismatch, npl_rt_parallel_for, npl_rt_print_bool,
+    npl_rt_print_f32, npl_rt_print_f64, npl_rt_print_i64, npl_rt_print_str, npl_rt_print_u64,
 };
 pub use location::Location;
 pub use parallel::ChunkBody;
