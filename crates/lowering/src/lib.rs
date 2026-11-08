@@ -47,8 +47,9 @@
 //!   part into its target, left to right, so `a, b = b, a` swaps two arrays without copying them.
 //! - **Parallel loops.** The body of a `prange` loop is outlined into a body of its own that runs
 //!   one iteration, and the loop becomes a [`ParallelFor`](mir::TerminatorKind::ParallelFor)
-//!   that passes it the shared variables, each borrowed or `InOut`, and the scalars it reduces
-//!   into with `+=`, `-=`, `*=`, `min` or `max` (the `parallel` module).
+//!   that passes it the shared variables, each borrowed or `InOut`, the scalars it reduces
+//!   into with `+=`, `-=`, `*=`, `min` or `max` (the `parallel` module), and the arrays listed
+//!   in `accumulate=`, which it adds into with `Accumulate` statements (the `accumulate` module).
 //! - **Conversions.** Where number mixing converts an operand (decision 0014), a
 //!   [`Convert`](mir::Rvalue::Convert) does it, and `/` on integers converts both sides to `f64`.
 //!
@@ -60,13 +61,13 @@
 //!
 //! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
 //! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, slices, indexing lists and strings,
-//! `accumulate=` in `prange`, `match` captures of values that are not copy types or inside `|`,
-//! `raise ... from`, an `except` that names its error through a module, calls that leave out an
-//! argument whose default is not a literal or a constant, or that belongs to a generic function,
-//! the built-in functions and methods other than `print`, `min` and `max` of numbers, `len` of an
-//! array, the array constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a `Fixed`
-//! array, calls of a `Callable` value, `**` on integers, `@`, `in`, nested unpacking, `with`
-//! other than `with unsafe:`, and comprehensions.
+//! `accumulate=` of an array that is not a variable, `match` captures of values that are not copy
+//! types or inside `|`, `raise ... from`, an `except` that names its error through a module, calls
+//! that leave out an argument whose default is not a literal or a constant, or that belongs to a
+//! generic function, the built-in functions and methods other than `print`, `min` and `max` of
+//! numbers, `len` of an array, the array constructors, `a.copy()`, `a.sum()`, and `dot` and
+//! `round` of a `Fixed` array, calls of a `Callable` value, `**` on integers, `@`, `in`, nested
+//! unpacking, `with` other than `with unsafe:`, and comprehensions.
 //!
 //! # Example
 //!
@@ -210,6 +211,7 @@
 //! # Ok::<(), source::SourceError>(())
 //! ```
 
+mod accumulate;
 mod arrays;
 mod builder;
 mod calls;

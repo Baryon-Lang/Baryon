@@ -1,0 +1,9 @@
+{
+  "name": "Baryon",
+  "scopeName": "source.baryon",
+  "patterns": [
+    {
+      "include": "source.python"
+    }
+  ]
+}

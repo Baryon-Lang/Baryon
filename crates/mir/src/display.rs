@@ -86,6 +86,16 @@ impl fmt::Display for DisplayedBody<'_, '_> {
                         format!("{} = {}", place_text(place), writer.rvalue(rvalue))
                     }
                     StatementKind::Drop(place) => format!("drop({})", place_text(place)),
+                    StatementKind::Accumulate {
+                        place,
+                        operator,
+                        value,
+                    } => format!(
+                        "accumulate {} {} {}",
+                        place_text(place),
+                        operator.symbol(),
+                        writer.operand(value)
+                    ),
                 };
                 writeln!(formatter, "        {text};")?;
             }
@@ -260,6 +270,7 @@ impl Writer<'_> {
                 count,
                 arguments,
                 reductions,
+                accumulations,
                 target,
             } => {
                 let mut values = self.arguments(arguments);
@@ -267,6 +278,11 @@ impl Writer<'_> {
                     let operator = reduction.operator.name();
                     format!("reduce {operator} {}", place_text(&reduction.place))
                 }));
+                values.extend(
+                    accumulations
+                        .iter()
+                        .map(|place| format!("accumulate {}", place_text(place))),
+                );
                 format!(
                     "parallel_for body{body}({}; {}) -> bb{}",
                     self.operand(count),

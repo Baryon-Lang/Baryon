@@ -160,7 +160,7 @@ impl<'db> Function<'_, '_, 'db> {
     }
 
     /// The value of the index local `index` as an `i64`, widened by its sign.
-    fn index(&mut self, index: Local) -> Result<String, Unsupported> {
+    pub(crate) fn index(&mut self, index: Local) -> Result<String, Unsupported> {
         let (value, ty) = self.value(&Operand::Copy(index.into()))?;
         self.widen(&value, ty)
     }
@@ -269,7 +269,7 @@ impl<'db> Function<'_, '_, 'db> {
     }
 
     /// The element type and rank of the `Array` type `ty`.
-    fn array(&self, ty: Type<'db>) -> Result<(Type<'db>, u32), Unsupported> {
+    pub(crate) fn array(&self, ty: Type<'db>) -> Result<(Type<'db>, u32), Unsupported> {
         match ty.kind(self.types.db) {
             TypeKind::Array { element, rank } => Ok((*element, *rank)),
             _ => Err(self.types.unsupported(ty)),

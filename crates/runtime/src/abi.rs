@@ -6,9 +6,14 @@
 //! raw pointers into references, under the promise in its `# Safety` section, and calls the safe
 //! code in the other modules.
 
+mod accumulate;
 mod output;
 mod text;
 
+pub use accumulate::{
+    baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
+    baryon_rt_accumulator_slot,
+};
 pub use output::{
     baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
     baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,

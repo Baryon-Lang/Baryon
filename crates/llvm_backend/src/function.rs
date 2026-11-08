@@ -202,6 +202,11 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 Ok(())
             }
             StatementKind::Drop(place) => self.drop_place(place),
+            StatementKind::Accumulate {
+                place,
+                operator,
+                value,
+            } => self.accumulate(place, *operator, value),
         }
     }
 
@@ -275,8 +280,9 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 count,
                 arguments,
                 reductions,
+                accumulations,
                 target,
-            } => self.parallel_for(*body, count, arguments, reductions, *target)?,
+            } => self.parallel_for(*body, count, arguments, reductions, accumulations, *target)?,
         }
         Ok(())
     }
