@@ -23,6 +23,9 @@
 //! - **Checks.** Integer `//` and `%` assert a non-zero divisor; each array index asserts it is
 //!   in bounds, except under `a.unchecked` and for a constant index into a `Fixed` array, which
 //!   the checker already proved; `assert` becomes an [`Assert`](mir::TerminatorKind::Assert).
+//! - **Generic bodies.** A generic function lowers once, with its type parameters left open:
+//!   `+`, `-` and `*` on a `T: Number` and its number literals become the instance's arithmetic
+//!   and constants once monomorphization substitutes `T`.
 //! - **Errors.** A call that can fail gets an error edge (decision 0018). The edge, and each
 //!   `raise`, goes to the innermost `except` that names the error, or else drops what the
 //!   function owns and [`Raise`](mir::TerminatorKind::Raise)s it to the caller. A bare `raise`
@@ -45,11 +48,12 @@
 //! # What it does not lower yet
 //!
 //! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
-//! 1.9.3, and no body: slices, indexing lists and strings, `prange`, `match` captures of values
-//! that are not copy types or inside `|`, `raise ... from`, an `except` that names its error
-//! through a module, calls that leave out a defaulted argument, the built-in functions and
-//! methods other than `len` of an array and the array constructors, calls of a `Callable` value,
-//! `**`, `@`, `in`, unpacking assignment, `with` other than `with unsafe:`, and comprehensions.
+//! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, slices, indexing lists and strings,
+//! `prange`, `match` captures of values that are not copy types or inside `|`, `raise ... from`,
+//! an `except` that names its error through a module, calls that leave out a defaulted argument,
+//! the built-in functions and methods other than `print`, `len` of an array and the array
+//! constructors, calls of a `Callable` value, `**`, `@`, `in`, unpacking assignment, `with` other
+//! than `with unsafe:`, and comprehensions.
 //!
 //! # Example
 //!
@@ -201,6 +205,7 @@ mod creation;
 mod errors;
 mod expressions;
 mod facts;
+mod operators;
 mod patterns;
 mod statements;
 #[cfg(test)]

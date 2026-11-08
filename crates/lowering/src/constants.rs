@@ -120,9 +120,25 @@ impl<'db> Builder<'db> {
         };
         let written = self.text_of(digits).replace('_', "").to_ascii_lowercase();
         let sign = if negative { -1.0 } else { 1.0 };
-        let &TypeKind::Primitive(primitive) = ty.kind(self.db) else {
-            self.unsupported(node, "number literals of a type parameter's type");
-            return ConstantValue::None;
+        let primitive = match *ty.kind(self.db) {
+            TypeKind::Primitive(primitive) => primitive,
+            // A literal of a type parameter's type, `2` in `x * 2` for `T: Number`, keeps the
+            // value as written: an integer, or a float. Monomorphization writes it at the
+            // instance's number type.
+            TypeKind::Parameter { .. } if self.tree.kind(digits) == SyntaxKind::Integer => {
+                return integer(&written).map_or(ConstantValue::None, |value| {
+                    ConstantValue::Integer(if negative { -value } else { value })
+                });
+            }
+            TypeKind::Parameter { .. } if self.tree.kind(digits) == SyntaxKind::Float => {
+                return ConstantValue::Float(
+                    (sign * written.parse::<f64>().unwrap_or(0.0)).to_bits(),
+                );
+            }
+            _ => {
+                self.unsupported(node, "this number literal");
+                return ConstantValue::None;
+            }
         };
         if self.tree.kind(digits) == SyntaxKind::Imaginary {
             let imaginary = written.trim_end_matches('j').parse::<f64>().unwrap_or(0.0);

@@ -3,8 +3,8 @@
 use crate::instantiate;
 use database::{Db, File, Package, ParsedFile, Resolution};
 use mir::{
-    BinaryOperator, BlockId, Body, Callee, Constant, Elementwise, Local, LocalKind, Operand, Phase,
-    Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
+    BinaryOperator, BlockId, Body, Callee, Constant, ConstantValue, Elementwise, Local, LocalKind,
+    Operand, Phase, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
 };
 use source::{FileId, SourceFile, Span};
 use syntax::{NodeId, Role, SyntaxKind, TreeBuilder};
@@ -64,7 +64,8 @@ fn span() -> Span {
 
 /// `def total[T: Number](xs: list[T]) -> T`, reduced to the parts that carry types: a constant
 /// `T(0)`, a conversion to `T`, a whole-array expression with a `T` scalar, and a call of a generic
-/// function at `[T]`. Instantiated at `f32`, every `T` becomes `f32`, and the body is monomorphic.
+/// function at `[T]`. Instantiated at `f32`, every `T` becomes `f32`, the literal `2` is written
+/// as the float `2.0`, and the body is monomorphic.
 #[test]
 fn every_type_is_substituted() {
     let database = Database::default();
@@ -143,7 +144,7 @@ fn(_1: list[f32]) -> f32 {
 
     bb0: {
         _0 = f32(copy _2);
-        _3 = elementwise Multiply(copy _3, 2_f32);
+        _3 = elementwise Multiply(copy _3, 2.0_f32);
         _0 = call first[f32](_1) -> [return: bb1];
     }
 
@@ -190,5 +191,52 @@ fn unlisted_parameters_stay() {
     assert_eq!(
         instance.locals[0].ty,
         Type::new(&database, TypeKind::Tuple(vec![i64, u]))
+    );
+}
+
+/// A literal of a type parameter's type keeps its value as written until the instance gives it a
+/// number type: an integer stays an integer at `i64`, becomes a float at `f64`, and becomes a
+/// complex number with no imaginary part at `complex128`.
+#[test]
+fn literals_take_the_instance_number_type() {
+    let database = Database::default();
+    let (file, name) = named(&database, "T");
+    let t = Type::new(&database, TypeKind::Parameter { file, name });
+    let primitive = |primitive| Type::new(&database, TypeKind::Primitive(primitive));
+    let mut body = Body::new(t, span());
+    let entry = body.push_block(Terminator {
+        kind: TerminatorKind::Return,
+        span: span(),
+    });
+    body.blocks[entry.index()].statements = vec![Statement {
+        kind: StatementKind::Assign(
+            Local::RETURN.into(),
+            Rvalue::Use(Operand::Constant(Constant::integer(t, -3))),
+        ),
+        span: span(),
+    }];
+    let written = |ty| {
+        let instance = instantiate(&database, &body, &[t], &[ty]);
+        match &instance.blocks[0].statements[0].kind {
+            StatementKind::Assign(_, Rvalue::Use(Operand::Constant(constant))) => {
+                constant.value.clone()
+            }
+            other => panic!("expected a constant, found {other:?}"),
+        }
+    };
+    assert_eq!(
+        written(primitive(Primitive::Integer(Integer::I64))),
+        ConstantValue::Integer(-3)
+    );
+    assert_eq!(
+        written(primitive(Primitive::Float(Float::F64))),
+        ConstantValue::Float((-3.0_f64).to_bits())
+    );
+    assert_eq!(
+        written(primitive(Primitive::Complex(types::Complex::C128))),
+        ConstantValue::Complex {
+            real: (-3.0_f64).to_bits(),
+            imaginary: 0.0_f64.to_bits(),
+        }
     );
 }

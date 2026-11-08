@@ -19,7 +19,8 @@
 //! a failed check in it prints a panic with its location and exits with status 101. A package
 //! that does not check, or uses what the compiler cannot build yet, gets its errors printed and
 //! the exit status 1. The executable carries line tables, so `gdb` and `lldb` stop at and show
-//! `.byn` lines. This is a prototype (roadmap 1.11.3): no generic functions yet.
+//! `.byn` lines. This is a prototype (roadmap 1.11.3); a generic function is compiled once per
+//! type it is called at (roadmap 1.9.5).
 //!
 //! `baryon run` builds the package the same way into a scratch directory, runs the program with
 //! the terminal's standard input and output, removes it, and exits with the program's own exit
