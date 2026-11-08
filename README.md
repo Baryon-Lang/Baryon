@@ -42,8 +42,9 @@ optionals, `str` values and f-strings, `prange` loops, errors, `assert` and `pri
 `clang` installed. `baryon run <directory>` builds and runs it in one step, and
 `baryon test <directory>` runs every `@test` function and reports which passed. `baryon lsp` is a
 language server that shows the same diagnostics in any editor with a Language Server Protocol
-client, as you type; the [VS Code extension](editors/vscode/README.md) adds syntax highlighting
-for `.byn` files. `baryon doc` writes a package's documentation strings as Markdown pages.
+client, as you type; the [VS Code extension](editors/vscode/README.md) runs it for you and adds
+syntax highlighting for `.byn` files. `baryon doc` writes a package's documentation strings as
+Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
 compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
