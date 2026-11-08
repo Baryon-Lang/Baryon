@@ -1,6 +1,7 @@
 """Molecular dynamics: argon-like atoms in a periodic box, integrated with velocity Verlet.
 
-512 atoms start on a cubic lattice at rest and interact through the Lennard-Jones potential.
+512 atoms start at rest, each a little off a site of a cubic lattice, and interact through the
+Lennard-Jones potential.
 The program prints the kinetic, potential and total energy every 50 steps; the total should stay
 constant to about four digits, which is the standard check that the integrator is correct.
 
@@ -29,6 +30,8 @@ BOX: Final = LATTICE * SPACING
 CUTOFF: Final = 2.5
 DT: Final = 0.005
 STEPS: Final = 200
+JITTER: Final = 0.05
+"""Largest starting displacement of an atom from its lattice site, along each axis."""
 
 
 class Atoms(Struct):
@@ -39,14 +42,29 @@ class Atoms(Struct):
     forces: Array[Vec3, 1]
 
 
+def jitter(atom: int, axis: int) -> f64:
+    """A small fixed displacement of `atom` along `axis`, between -JITTER and JITTER.
+
+    A perfect lattice is in balance: every force cancels and no atom ever moves. Moving each
+    atom a little off its site starts the motion. The displacement comes from a fixed formula,
+    not a random generator, so every run starts from the same place.
+    """
+    spread = (atom * 7 + axis * 3) * 2654435761 % 1000
+    return JITTER * (spread / 500.0 - 1.0)
+
+
 def lattice() -> Atoms:
-    """Places every atom on a simple cubic lattice, at rest."""
+    """Places every atom near a site of a simple cubic lattice, at rest."""
     positions = Array.zeros((N,), Vec3)
     for atom in range(N):
         x = atom % LATTICE
         y = atom // LATTICE % LATTICE
         z = atom // (LATTICE * LATTICE)
-        positions[atom] = Vec3(x * SPACING, y * SPACING, z * SPACING)
+        positions[atom] = Vec3(
+            x * SPACING + jitter(atom, 0),
+            y * SPACING + jitter(atom, 1),
+            z * SPACING + jitter(atom, 2),
+        )
     return Atoms(positions, Array.zeros((N,), Vec3), Array.zeros((N,), Vec3))
 
 
