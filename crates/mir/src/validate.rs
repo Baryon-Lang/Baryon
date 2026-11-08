@@ -44,6 +44,8 @@ pub enum Invalid {
     NotAccumulated(BlockId, Local),
     /// The outlined body at this position breaks a rule.
     Outlined(u32, Box<Invalid>),
+    /// [`Body::vectorized`] marks a block the body does not have.
+    UnknownVectorized(BlockId),
 }
 
 impl fmt::Display for Invalid {
@@ -115,6 +117,13 @@ impl fmt::Display for Invalid {
             Self::Outlined(body, problem) => {
                 write!(formatter, "in outlined body {body}: {problem}")
             }
+            Self::UnknownVectorized(block) => {
+                write!(
+                    formatter,
+                    "bb{} is marked as a `simd` loop header but does not exist",
+                    block.index()
+                )
+            }
         }
     }
 }
@@ -132,6 +141,7 @@ impl Body<'_> {
     ///   and passes it one value per parameter;
     /// - an [`Accumulate`](StatementKind::Accumulate) adds only into an accumulated parameter
     ///   of an outlined body, so never in a function's own body;
+    /// - each block marked as a `simd` loop header exists,
     /// - each outlined body keeps these rules too.
     ///
     /// It does not check types: lowering builds bodies from type-checked code, and a type check
@@ -220,6 +230,11 @@ impl Body<'_> {
                 }
             }
             self.parallel_for(id, &block.terminator.kind, &mut problems);
+        }
+        for &header in &self.vectorized {
+            if header.index() >= self.blocks.len() {
+                problems.push(Invalid::UnknownVectorized(header));
+            }
         }
         for (position, outlined) in (0..).zip(&self.outlined) {
             let accumulated = self.accumulated(position);
