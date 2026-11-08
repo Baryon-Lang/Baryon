@@ -2,10 +2,10 @@
 //! each value of an f-string (decision 0022).
 //!
 //! The compiler parses and checks each specification (`types::FormatSpec`) and passes its parts
-//! as a [`FormatSpec`], so nothing here can meet a specification Python would reject. Every rule follows
-//! Python's format specification mini-language: the default alignment is right for numbers and
-//! left for text, `0` pads after the sign, `,` and `_` group digits in threes (`_` in fours for
-//! binary, octal and hexadecimal), and `g` drops trailing zeros. A value with the empty
+//! as a [`FormatSpec`], so nothing here can meet a specification Python would reject. Every rule
+//! follows Python's format specification mini-language: the default alignment is right for
+//! numbers and left for text, `0` pads after the sign, `,` and `_` group digits in threes (`_` in
+//! fours for binary, octal and hexadecimal), and `g` drops trailing zeros. A value with the empty
 //! specification is written as `print` writes it, so `f"{x}"` and `print(x)` agree.
 
 use crate::print;
