@@ -58,12 +58,13 @@
 //!
 //! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
 //! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, slices, indexing lists and strings,
-//! `accumulate=` of an array that is not a variable, `match` captures of values that are not copy types or inside `|`,
-//! `raise ... from`, an `except` that names its error through a module, calls that leave out an
-//! argument whose default is not a literal or a constant, or that belongs to a generic function,
-//! the built-in functions and methods other than `print`, `min` and `max` of numbers, `len` of an
-//! array, the array constructors, `a.copy()` and `a.sum()`, calls of a `Callable` value, `**`,
-//! `@`, `in`, nested unpacking, `with` other than `with unsafe:`, and comprehensions.
+//! `accumulate=` of an array that is not a variable, `match` captures of values that are not copy
+//! types or inside `|`, `raise ... from`, an `except` that names its error through a module, calls
+//! that leave out an argument whose default is not a literal or a constant, or that belongs to a
+//! generic function, the built-in functions and methods other than `print`, `min` and `max` of
+//! numbers, `len` of an array, the array constructors, `a.copy()` and `a.sum()`, calls of a
+//! `Callable` value, `**`, `@`, `in`, nested unpacking, `with` other than `with unsafe:`, and
+//! comprehensions.
 //!
 //! # Example
 //!
