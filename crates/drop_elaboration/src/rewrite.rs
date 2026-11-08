@@ -359,7 +359,8 @@ impl<'db> Decider<'_, 'db> {
             | TypeKind::Enum(_)
             | TypeKind::Fixed { .. }
             | TypeKind::Callable { .. }
-            | TypeKind::Function { .. } => false,
+            | TypeKind::Function { .. }
+            | TypeKind::Standard(_) => false,
             TypeKind::Str
             | TypeKind::List(_)
             | TypeKind::Array { .. }

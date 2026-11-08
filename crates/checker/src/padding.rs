@@ -228,6 +228,7 @@ impl<'db> Substitution<'_, 'db> {
             | TypeKind::None
             | TypeKind::Parameter { .. }
             | TypeKind::Function { .. }
+            | TypeKind::Standard(_)
             | TypeKind::Unknown => return ty,
         };
         Type::new(db, kind)

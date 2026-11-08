@@ -36,6 +36,9 @@ impl<'db> Function<'_, '_, 'db> {
             }
             Callee::Builtin(Builtin::Append) => return self.list_append(arguments, target),
             Callee::Builtin(Builtin::Sum) => return self.sum(arguments, destination, target),
+            Callee::Builtin(Builtin::Philox | Builtin::Uniform) => {
+                return Err(Unsupported::new("`random.Philox`"));
+            }
             Callee::Value(_) => return Err(Unsupported::new("calls of `Callable` values")),
         };
         let symbol = (self.symbol)(item, type_arguments);

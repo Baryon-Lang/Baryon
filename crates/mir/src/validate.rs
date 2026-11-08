@@ -305,6 +305,7 @@ fn has_parameter(db: &dyn Db, ty: Type<'_>) -> bool {
         | TypeKind::Str
         | TypeKind::None
         | TypeKind::Function { .. }
+        | TypeKind::Standard(_)
         | TypeKind::Unknown => false,
         TypeKind::Tuple(items) => any(items),
         TypeKind::List(item) | TypeKind::Optional(item) => has_parameter(db, *item),

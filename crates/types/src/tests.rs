@@ -281,3 +281,12 @@ fn a_function_type_shows_its_signature_and_takes_no_bytes() {
     );
     assert_eq!(layout_of(&database, function), Ok((0, 1)));
 }
+
+/// `random.Philox` shows its name, lays out as 11 words, and is distinct from every other type.
+#[test]
+fn philox_is_eleven_words() {
+    let database = Database::default();
+    let philox = Type::new(&database, TypeKind::Standard(crate::StandardType::Philox));
+    assert_eq!(philox.display(&database).to_string(), "Philox");
+    assert_eq!(layout_of(&database, philox), Ok((88, 8)));
+}

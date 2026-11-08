@@ -24,7 +24,7 @@
 //!   compiling, and the callee is compiled once per function (language reference, "Types",
 //!   "Functions as arguments", and decision 0026).
 
-use crate::{Nominal, Primitive, Type, TypeKind};
+use crate::{Nominal, Primitive, StandardType, Type, TypeKind};
 use std::error::Error;
 use std::fmt;
 
@@ -216,6 +216,7 @@ impl<'db> Layouter<'_, 'db> {
             TypeKind::Primitive(primitive) => Ok(primitive_layout(*primitive)),
             TypeKind::Str => WORD.repeat(2).ok_or(too_large),
             TypeKind::List(_) => WORD.repeat(3).ok_or(too_large),
+            TypeKind::Standard(StandardType::Philox) => WORD.repeat(11).ok_or(too_large),
             TypeKind::None | TypeKind::Callable { .. } | TypeKind::Function { .. } => {
                 Ok(Layout::EMPTY)
             }
