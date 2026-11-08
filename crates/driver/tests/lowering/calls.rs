@@ -183,3 +183,104 @@ fn(_1: f64, _2: i64) -> f64 {
 "
     );
 }
+
+/// An argument left out takes its parameter's default, written by the call as a constant: a
+/// literal at the parameter's type, so `scale: f64 = 1` passes `1.0`, or a `Final` constant's
+/// value. Any other default is reported, since evaluating it belongs to the callee.
+#[test]
+fn defaulted_arguments_are_constants() {
+    let program = "\
+TOLERANCE: Final = 1e-9
+
+
+def close(a: f64, b: f64, tolerance: f64 = TOLERANCE, scale: f64 = 1) -> bool:
+    return a - b <= tolerance * scale and b - a <= tolerance * scale
+
+
+def check(x: f64) -> bool:
+    return close(x, 1.0) and close(x, 2.0, scale=3.0)
+
+
+def offset(x: f64, by: f64 = 2.0 * 3.0) -> f64:
+    return x + by
+
+
+def shift(x: f64) -> f64:
+    return offset(x)
+";
+    assert_eq!(
+        lower(program, "check"),
+        "\
+fn(_1: f64) -> bool {
+    let _0: bool; // return
+    let _1: f64; // parameter x
+    let _2: f64;
+    let _3: f64;
+    let _4: f64;
+    let _5: f64;
+    let _6: f64;
+    let _7: f64;
+
+    bb0: {
+        _2 = 1.0_f64;
+        _3 = 1e-9_f64;
+        _4 = 1.0_f64;
+        _0 = call close(_1, _2, _3, _4) -> [return: bb1];
+    }
+
+    bb1: {
+        branch copy _0 -> [true: bb2, false: bb3];
+    }
+
+    bb2: {
+        _5 = 2.0_f64;
+        _6 = 1e-9_f64;
+        _7 = 3.0_f64;
+        _0 = call close(_1, _5, _6, _7) -> [return: bb4];
+    }
+
+    bb3: {
+        return;
+    }
+
+    bb4: {
+        goto -> bb3;
+    }
+}
+"
+    );
+    assert_eq!(
+        lower(program, "shift"),
+        "\
+error: lowering does not handle leaving out an argument whose default is not a literal or a constant yet
+  --> main.byn:17:12
+   |
+17 |     return offset(x)
+   |            ^^^^^^^^^ not lowered yet
+   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}
+
+/// An `InOut` parameter with a default is reported when its argument is left out: whatever the
+/// callee wrote into the default would go nowhere the caller can see.
+#[test]
+fn a_left_out_inout_argument_is_not_lowered() {
+    let program = "\
+def bump(x: InOut[f64] = 1.0):
+    x += 1.0
+
+
+def caller():
+    bump()
+";
+    assert_eq!(
+        lower(program, "caller"),
+        "\
+error: lowering does not handle leaving out an `InOut` argument yet
+ --> main.byn:6:5
+  |
+6 |     bump()
+  |     ^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}

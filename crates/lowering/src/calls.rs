@@ -12,18 +12,20 @@ impl<'db> Builder<'db> {
         let Some(call) = self.typed.call(node) else {
             return self.unsupported(node, "this call");
         };
-        let mut arguments = Vec::with_capacity(call.arguments.len());
-        for argument in &call.arguments {
-            match argument {
-                Some(key) => arguments.push(key.0),
-                None => return self.unsupported(node, "calls that leave out a defaulted argument"),
-            }
+        let given: Vec<Option<NodeId>> = call
+            .arguments
+            .iter()
+            .map(|argument| argument.map(|key| key.0))
+            .collect();
+        if let types::Callee::Function(item) | types::Callee::Method(item) = call.callee {
+            return self.function_call(place, item, call.type_arguments.clone(), &given, node);
         }
+        let Some(arguments) = given.into_iter().collect::<Option<Vec<NodeId>>>() else {
+            return self.unsupported(node, "calls that leave out a defaulted argument");
+        };
         let ty = self.ty(node);
         match &call.callee {
-            types::Callee::Function(item) | types::Callee::Method(item) => {
-                self.function_call(place, *item, call.type_arguments.clone(), &arguments, node);
-            }
+            types::Callee::Function(_) | types::Callee::Method(_) => {}
             types::Callee::Constructor(_) => {
                 let operands = arguments
                     .into_iter()
@@ -73,14 +75,15 @@ impl<'db> Builder<'db> {
     }
 
     /// A call of the function or method `item` at `type_arguments`, with `arguments` in its
-    /// parameters' order, the receiver first for a method. A call that can fail gets an error
-    /// edge (the `errors` module).
+    /// parameters' order, the receiver first for a method, and `None` for each argument left
+    /// out, which takes its default. A call that can fail gets an error edge (the `errors`
+    /// module).
     fn function_call(
         &mut self,
         place: Place,
         item: Item<'db>,
         type_arguments: Vec<types::Type<'db>>,
-        arguments: &[NodeId],
+        arguments: &[Option<NodeId>],
         node: NodeId,
     ) {
         let Declaration::Function(signature) = &self.db.declaration(item).declaration else {
@@ -92,7 +95,25 @@ impl<'db> Builder<'db> {
             .map(|parameter| (parameter.mode, parameter.ty))
             .collect();
         let mut passed = Vec::with_capacity(arguments.len());
-        for (&argument, (mode, ty)) in arguments.iter().zip(parameters) {
+        for (position, (&argument, (mode, ty))) in arguments.iter().zip(parameters).enumerate() {
+            let Some(argument) = argument else {
+                if mode == Mode::InOut {
+                    // The callee's changes to a default would go nowhere the caller can see.
+                    return self.unsupported(node, "leaving out an `InOut` argument");
+                }
+                let Some(constant) = self.default_value(item, position, node) else {
+                    return;
+                };
+                passed.push(if mode == Mode::Owned {
+                    Argument::Owned(Operand::Constant(constant))
+                } else {
+                    let temporary = self.temporary(ty, node);
+                    let value = Rvalue::Use(Operand::Constant(constant));
+                    self.assign(Place::from(temporary), value, node);
+                    Argument::Borrow(Place::from(temporary))
+                });
+                continue;
+            };
             passed.push(match mode {
                 Mode::Borrow => match self.borrow_as(argument, ty) {
                     Some(place) => Argument::Borrow(place),
