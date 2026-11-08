@@ -38,6 +38,10 @@
 //!   `Array.zeros`, `ones` and `fill` allocate with [`NewArray`](mir::Rvalue::NewArray) and fill
 //!   the elements in a loop nest; a `Fixed` array is an [`Aggregate`](mir::Rvalue::Aggregate) of
 //!   its elements in row-major order.
+//! - **Parallel loops.** The body of a `prange` loop is outlined into a body of its own that runs
+//!   one iteration, and the loop becomes a [`ParallelFor`](mir::TerminatorKind::ParallelFor)
+//!   that passes it the shared variables, each borrowed or `InOut`, and the scalars it reduces
+//!   into (the `parallel` module).
 //! - **Conversions.** Where number mixing converts an operand (decision 0014), a
 //!   [`Convert`](mir::Rvalue::Convert) does it, and `/` on integers converts both sides to `f64`.
 //!
@@ -49,11 +53,11 @@
 //!
 //! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
 //! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, slices, indexing lists and strings,
-//! `prange`, `match` captures of values that are not copy types or inside `|`, `raise ... from`,
-//! an `except` that names its error through a module, calls that leave out a defaulted argument,
-//! the built-in functions and methods other than `print`, `len` of an array and the array
-//! constructors, calls of a `Callable` value, `**`, `@`, `in`, unpacking assignment, `with` other
-//! than `with unsafe:`, and comprehensions.
+//! `accumulate=` and `min` and `max` reductions in `prange`, `match` captures of values that are
+//! not copy types or inside `|`, `raise ... from`, an `except` that names its error through a
+//! module, calls that leave out a defaulted argument, the built-in functions and methods other than
+//! `print`, `len` of an array and the array constructors, calls of a `Callable` value, `**`, `@`,
+//! `in`, unpacking assignment, `with` other than `with unsafe:`, and comprehensions.
 //!
 //! # Example
 //!
@@ -206,6 +210,7 @@ mod errors;
 mod expressions;
 mod facts;
 mod operators;
+mod parallel;
 mod patterns;
 mod statements;
 #[cfg(test)]
