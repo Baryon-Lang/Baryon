@@ -10,17 +10,12 @@ but `baryon build`, `baryon run` and `baryon test` compile only part of the lang
 none of the [example programs](examples/README.md) builds yet;
 [What builds today](reference/status.md) lists, chapter by chapter, what does. Until the
 beginner's guide (roadmap item 0.8.3) is written, the language is learned from its definition and
-from the examples. Build the tool with
-`cargo build --package driver` and run it as `target/debug/baryon`.
+from the examples.
 
-To see the same diagnostics in an editor as you type, point its Language Server Protocol client
-at `baryon lsp` for `.byn` files: build it with `cargo build --package driver` and run
-`target/debug/baryon lsp`. A VS Code extension that does this for you is roadmap item 1.17.
-
-To read a package's documentation strings as pages, run
-`cargo run --package driver -- doc <directory> <output>`: it writes one Markdown page per module
-and an `index.md` listing them. What it reads is in the
-[syntax chapter](reference/syntax.md#documentation-strings).
+[The `baryon` command](reference/commands.md) says how to build the tool and what each of its
+commands does, including `baryon lsp`, which shows the same diagnostics in any editor with a
+Language Server Protocol client, and `baryon doc`, which writes a package's documentation strings
+as Markdown pages.
 
 - The [language reference](reference/README.md) defines what a program may say and what it means.
   Python programmers should start with its

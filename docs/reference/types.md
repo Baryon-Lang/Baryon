@@ -285,6 +285,50 @@ for `Fixed[f64, (3,)]`, usable everywhere the full type is, including as a const
 Vec3 = Fixed[f64, (3,)]
 ```
 
+## Default parameter values
+
+A parameter may have a default value, written after its type as in Python. A call that leaves the
+argument out gets the default:
+
+```python
+DT: Final = 0.25
+
+
+def drift(position: f64, velocity: f64, dt: f64 = DT, steps: i64 = 8) -> f64:
+    """Where a particle moving at a constant `velocity` is after `steps` steps of length `dt`."""
+    for step in range(steps):
+        position += velocity * dt
+    return position
+
+
+def main():
+    print(drift(0.0, 2.0))               # 4.0: dt = 0.25, steps = 8
+    print(drift(0.0, 2.0, 0.5))          # 8.0: steps = 8
+    print(drift(0.0, 2.0, steps=2))      # 1.0: dt = 0.25
+    print(drift(0.0, 2.0, 0.5, steps=3)) # 3.0
+```
+
+- The default has the parameter's type, and the compiler checks it as it would an argument: in
+  `steps: i64 = 8` the literal is an `i64`, and in `dt: f64 = 1` the `1` is an `f64`. A default
+  of the wrong type, such as `dt: f64 = "fast"`, is a compile error at the default.
+- Once a parameter has a default, every parameter after it must have one too, as in Python, so
+  a call that leaves arguments out leaves out the last ones. An argument after one left out is
+  passed by name: `drift(0.0, 2.0, steps=3)`.
+- A default may use literals, `Final` constants, arithmetic and calls, but not the function's
+  other parameters, which do not exist yet when the default is needed: `dt: f64 = 1.0 / steps`
+  is an error that names `steps`.
+- Struct fields have no defaults: a struct is built with every field, so its layout and value are
+  always written out where it is made.
+
+Python evaluates a default once, when the `def` runs, and shares that one value between every call
+that leaves the argument out; a default list that a call appends to keeps the item for the next
+call. A default that is a literal or a `Final` constant has the same value whenever it is
+evaluated, so for those the question does not arise. When any other default, such as
+`Array.zeros(3)` or a call to a function, is evaluated is not decided yet; it is roadmap decision
+D.15, listed under [open questions](README.md#open-questions). Until it is decided,
+`baryon check` accepts such a default, but `baryon build` reports a call that leaves its argument
+out as not built yet.
+
 ## Functions as arguments
 
 A parameter of type `Callable[[f64, Vec3], Vec3]` takes a function with that signature. In version
