@@ -393,3 +393,28 @@ fn(_1: Fixed[f64, (3,)]) -> f64 {
 "
     );
 }
+
+/// `zeros` and `ones` have no value to give an enum, whose members are names rather than
+/// numbers, so an array of enums is reported, not filled with whichever member is stored as 0.
+#[test]
+fn zeros_of_an_enum_is_not_lowered() {
+    let program = "
+class Boundary(Enum):
+    PERIODIC = 1
+    FIXED = 2
+
+
+def make(n: i64) -> Array[Boundary, 1]:
+    return Array.zeros(n, dtype=Boundary)
+";
+    assert_eq!(
+        lower(program, &["make"]),
+        "\
+error: lowering does not handle `zeros` of an array of `Boundary` yet
+ --> main.byn:7:12
+  |
+7 |     return Array.zeros(n, dtype=Boundary)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}
