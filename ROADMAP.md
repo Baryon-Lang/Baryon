@@ -54,7 +54,7 @@ procedure on paper.
 | 0.8.4 | Command reference for `baryon`: `check`, `build`, `run`, `test`, `doc` and `lsp`, with arguments, exit status and what each needs (`clang`, `main` in `main.byn`). Today it is spread over the README, three reference chapters and decision 0019 | 0.25 | 1.11.6 | Done | Claude | [#81](https://github.com/Baryon-Lang/Baryon/pull/81) |
 | 0.8.5 | Tested rustdoc examples for the public items callers use directly in `mir` (1 of 15 items rustdoc counts have one), `syntax` (5 of 29), `source` (4 of 23), `diagnostics` (2 of 17) and `documentation` (2 of 15) | 0.5 | — | Planned | — | — |
 | 0.8.6 | Bring the design plan up to date with decisions 0019 (language server) and 0022 (`str` values), which it does not cite | 0.1 | 0.7 | Done | Claude | [#81](https://github.com/Baryon-Lang/Baryon/pull/81) |
-| 0.9 | Cut CI's Actions minutes without weakening the merge gate: macOS only with the `ready-to-merge` label and on `main`, the build skipped for Markdown-only changes, a build cache, and the benchmark kernels only when they change | — | 0.4 | In progress | Claude | — |
+| 0.9 | Cut CI's Actions minutes without weakening the merge gate: macOS only with the `ready-to-merge` label and on `main`, the build skipped for Markdown-only changes, a build cache, and the benchmark kernels only when they change | — | 0.4 | Done | Claude | [#98](https://github.com/Baryon-Lang/Baryon/pull/98) |
 
 ## Phase 1: MVP compiler
 
