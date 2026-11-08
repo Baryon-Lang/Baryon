@@ -458,12 +458,12 @@ error: expected `i64`, found `f64`
 /// call lowering does not handle". `copy` on a `str` still checks.
 #[test]
 fn methods_of_strings_and_numbers_are_reported() {
-    let program = r#"
+    let program = "
 def f(x: f64, s: str) -> str:
     print(x.real)
     s.copy()
     return s.upper()
-"#;
+";
     assert_eq!(
         check_one(program),
         r"error: `f64` has no attribute `real`
@@ -479,5 +479,25 @@ error: `str` has no method `upper`
 4 |     return s.upper()
   |            ^^^^^^^ not defined on this type
   = note: version 0 defines one method on `str`: `copy`"
+    );
+}
+
+/// `y = None`, then `y = 3`: the note says how to declare a variable filled in later, rather
+/// than to use a new name.
+#[test]
+fn a_none_variable_given_a_value_suggests_an_optional() {
+    let program = "
+def f():
+    y = None
+    y = 3
+";
+    assert_eq!(
+        check_one(program),
+        "error: `y` has type `None`, so it cannot hold `i64`
+ --> main.byn:3:9
+  |
+3 |     y = 3
+  |         ^ type `i64`
+  = note: a variable keeps one type for its whole scope; to fill it in later, declare it optional: `y: i64 | None = None`"
     );
 }

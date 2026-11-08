@@ -120,11 +120,21 @@ impl<'db> Body<'db> {
                                 self.show(ty)
                             );
                             let label = format!("type `{}`", self.show(ty));
+                            // `y = None` then `y = 3`: the Python habit of a value that comes
+                            // later, which an optional type writes.
+                            let advice = if matches!(held.kind(self.db), TypeKind::None) {
+                                format!(
+                                    "a variable keeps one type for its whole scope; to fill it in later, declare it optional: `{name}: {} | None = None`",
+                                    self.show(ty)
+                                )
+                            } else {
+                                "a variable keeps one type for its whole scope; give this value a new name".to_owned()
+                            };
                             self.lowerer.error(
                                 value.unwrap_or(target),
                                 &message,
                                 &label,
-                                Some("a variable keeps one type for its whole scope; give this value a new name"),
+                                Some(&advice),
                             );
                         }
                     }
