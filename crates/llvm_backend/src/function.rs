@@ -251,6 +251,9 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             }
             TerminatorKind::Raise(error) => self.raise(error)?,
             TerminatorKind::Unreachable => self.line("unreachable"),
+            TerminatorKind::ParallelFor { .. } => {
+                return Err(Unsupported::new("`prange` loops"));
+            }
         }
         Ok(())
     }

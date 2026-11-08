@@ -78,8 +78,8 @@ use types::{Nominal, Primitive, Type, TypeKind};
 
 /// The body of `generic` at concrete types: each of `parameters`, the function's type parameters
 /// in order as its signature lists them, replaced by the argument at the same position in
-/// `arguments`, in every type the body mentions. The phase is unchanged; drop elaboration and
-/// array expansion still follow.
+/// `arguments`, in every type the body and its outlined `prange` bodies mention. The phase is
+/// unchanged; drop elaboration and array expansion still follow.
 ///
 /// Cost: one visit of every type in the body. Types are interned, so a type that mentions no
 /// parameter is returned as it is, and rebuilding one that does costs one intern per node.
@@ -106,18 +106,28 @@ pub fn instantiate<'db>(
         arguments,
     };
     let mut body = generic.clone();
-    for local in &mut body.locals {
-        local.ty = substitution.ty(local.ty);
-    }
-    for block in &mut body.blocks {
-        for statement in &mut block.statements {
-            if let StatementKind::Assign(_, rvalue) = &mut statement.kind {
-                substitution.rvalue(rvalue);
-            }
-        }
-        substitution.terminator(&mut block.terminator.kind);
-    }
+    substitution.body(&mut body);
     body
+}
+
+impl<'db> Substitution<'_, 'db> {
+    /// Substitutes every type in `body`, its outlined `prange` bodies included.
+    fn body(&self, body: &mut Body<'db>) {
+        for outlined in &mut body.outlined {
+            self.body(outlined);
+        }
+        for local in &mut body.locals {
+            local.ty = self.ty(local.ty);
+        }
+        for block in &mut body.blocks {
+            for statement in &mut block.statements {
+                if let StatementKind::Assign(_, rvalue) = &mut statement.kind {
+                    self.rvalue(rvalue);
+                }
+            }
+            self.terminator(&mut block.terminator.kind);
+        }
+    }
 }
 
 /// A mapping from type parameters to the types that replace them.
@@ -259,6 +269,15 @@ impl<'db> Substitution<'_, 'db> {
         }
     }
 
+    /// Substitutes the types of the values passed as `Owned` arguments.
+    fn arguments(&self, arguments: &mut [Argument<'db>]) {
+        for argument in arguments {
+            if let Argument::Owned(operand) = argument {
+                self.operand(operand);
+            }
+        }
+    }
+
     /// Substitutes the types a terminator names, including a call's type arguments.
     fn terminator(&self, terminator: &mut TerminatorKind<'db>) {
         match terminator {
@@ -278,11 +297,13 @@ impl<'db> Substitution<'_, 'db> {
                     Callee::Value(operand) => self.operand(operand),
                     Callee::Builtin(_) => {}
                 }
-                for argument in arguments {
-                    if let Argument::Owned(operand) = argument {
-                        self.operand(operand);
-                    }
-                }
+                self.arguments(arguments);
+            }
+            TerminatorKind::ParallelFor {
+                count, arguments, ..
+            } => {
+                self.operand(count);
+                self.arguments(arguments);
             }
             TerminatorKind::Assert {
                 condition, check, ..

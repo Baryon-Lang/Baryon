@@ -91,6 +91,49 @@ pub enum TerminatorKind<'db> {
     },
     /// Control never gets here, as after a `match` that covers every case.
     Unreachable,
+    /// Runs a `prange` loop: calls the outlined body `body` once for each iteration
+    /// `0..count`, in any order and on any number of threads, then goes to `target`
+    /// (decision 0018).
+    ///
+    /// The outlined body is [`Body::outlined`](crate::Body::outlined)`[body]`. Its parameters
+    /// are, in order: the iteration number, an `Owned` `i64` counted from 0; one per argument,
+    /// in that argument's mode; and one `InOut` per reduction, of the reduced place's type. It
+    /// returns `None` and cannot fail: the checker allows no `return`, `break` or `raise` in a
+    /// `prange` body, so its `continue` is a return.
+    ///
+    /// A backend gives each chunk of iterations (runtime, `baryon_rt_parallel_for`) a private
+    /// copy of each reduced value, starting at the operator's identity, passes that copy to
+    /// the chunk's iterations in order, and after the loop combines the copies into the place
+    /// in the fixed tree the language reference defines ("Reproducible reductions", decision
+    /// 0021). The chunks and the tree depend only on `count`, so
+    /// the result is the same on any number of threads.
+    ParallelFor {
+        /// The outlined body's position in [`Body::outlined`](crate::Body::outlined).
+        body: u32,
+        /// How many iterations run, an `i64`; none when it is 0 or less.
+        count: Operand<'db>,
+        /// The places from outside the loop that the body reads or writes, each in the mode
+        /// its parameter declares: `Borrow` for one only read, `InOut` for an array written
+        /// only at the iteration's own elements. An `Owned` argument copies a value in.
+        arguments: Vec<Argument<'db>>,
+        /// The shared scalars the body reduces into, such as `energy += e`.
+        reductions: Vec<Reduction>,
+        /// Where control goes when every iteration has finished.
+        target: BlockId,
+    },
+}
+
+/// One value a [`ParallelFor`](TerminatorKind::ParallelFor) loop reduces into: each chunk
+/// combines its iterations' contributions into a private copy that starts at the operator's
+/// identity, and the copies are combined into the place after the loop.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Reduction {
+    /// The scalar reduced into, outside the loop.
+    pub place: Place,
+    /// How contributions combine: [`Add`](BinaryOperator::Add), whose identity is 0, for
+    /// `x += e` and `x -= e`, or [`Multiply`](BinaryOperator::Multiply), whose identity is 1,
+    /// for `x *= e`.
+    pub operator: BinaryOperator,
 }
 
 /// The function a [`Call`](TerminatorKind::Call) calls.

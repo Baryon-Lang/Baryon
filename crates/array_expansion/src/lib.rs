@@ -83,6 +83,8 @@ use mir::{BlockId, Body, Rvalue, StatementKind, Terminator, TerminatorKind};
 /// describes. `declared` says what a struct declares, with its type arguments substituted; it
 /// is called for array leaves reached through a field, such as `atoms.positions`.
 ///
+/// The bodies of the function's `prange` loops are expanded too.
+///
 /// An expression with no array leaf, or whose destination is not an array, is left as it is;
 /// a type-checked body has neither, and [`Body::validate`] reports what is left in a ready body.
 ///
@@ -94,6 +96,9 @@ pub fn expand<'db>(
     body: &mut Body<'db>,
     declared: &dyn Fn(&types::Nominal<'db>) -> types::Declared<'db>,
 ) {
+    for outlined in &mut body.outlined {
+        expand(db, outlined, declared);
+    }
     let types = place_types::Types { db, declared };
     let mut block = 0;
     while block < body.blocks.len() {
