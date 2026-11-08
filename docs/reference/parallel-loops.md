@@ -216,6 +216,30 @@ The reference rules already prove that arrays never alias, so most simple loops 
 `simd`. Write `simd` where vectorization matters enough that a silent failure to vectorize should be
 an error; the error is also the quickest way to learn why a loop is slow.
 
+### What a `simd` body may do
+
+A `simd` body follows [the rules of a `prange` body](#what-a-prange-body-may-do), with the loop
+variable of the `simd` loop in place of the `prange` one: shared arrays are written only at the
+loop variable's index, shared scalars only as reductions, and the body never ends early. Running
+several iterations at once is safe exactly when running them in any order is, so one set of rules
+covers both.
+
+```python
+for i in prange(n):
+    for j in simd(range(n)):
+        grid[i, j] = grid[i, j] * factor  # both loops' rules hold: [i] for prange, [j] for simd
+```
+
+- `simd` takes exactly one `range(...)`: `simd(range(n))`, `simd(range(1, n - 1))`.
+- A `simd` loop may sit inside a `prange` body, the usual shape: threads take the rows and each
+  row is vectorized. Then both loops' rules apply to its body.
+- A `simd` body holds no `prange` and no other `simd`: only one loop is vectorized.
+
+For now these rules are the whole check. The compiler asks LLVM to vectorize every loop that
+passes them; reporting a loop LLVM still declines to vectorize, with the reason mapped back to the
+source, comes with roadmap item 3.7. The rules stay as they are then: a loop they reject would not
+vectorize safely anyway.
+
 `simd` changes speed, never results: a loop that vectorizes computes what the plain loop computes,
 except for the order of operations in a reduction, which follows the same fixed-order rule as
 `prange`.

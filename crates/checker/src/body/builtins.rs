@@ -62,7 +62,8 @@ impl<'db> Body<'db> {
         matches!(ty.kind(self.db), TypeKind::Primitive(primitive) if numbers::is_number(*primitive))
     }
 
-    /// The element type of a `for` loop over `range`, `prange`, `enumerate` or `zip`, or
+    /// The element type of a `for` loop over `range`, `prange`, `simd(range(...))`, `enumerate` or
+    /// `zip`, or
     /// `None` when the iterator is not a call to one of them.
     pub(super) fn builtin_iteration(&mut self, iterator: NodeId) -> Option<Type<'db>> {
         if self.tree.kind(iterator) != SyntaxKind::Call {
@@ -103,6 +104,32 @@ impl<'db> Body<'db> {
                     }
                 }
                 Some(element.unwrap_or(int))
+            }
+            "simd" => {
+                let range = match arguments.positional.as_slice() {
+                    [range]
+                        if arguments.keywords.is_empty() && self.calls_builtin(*range, "range") =>
+                    {
+                        Some(*range)
+                    }
+                    _ => None,
+                };
+                if let Some(range) = range {
+                    return self.builtin_iteration(range);
+                }
+                for &argument in &arguments.positional {
+                    self.expression(argument, None);
+                }
+                for &(_, value) in &arguments.keywords {
+                    self.expression(value, None);
+                }
+                self.lowerer.error(
+                    iterator,
+                    "`simd` takes one `range(...)`",
+                    "not `simd(range(...))`",
+                    Some("write the loop as `for i in simd(range(n)):`"),
+                );
+                Some(int)
             }
             "enumerate" => {
                 let element = match arguments.positional.first() {
