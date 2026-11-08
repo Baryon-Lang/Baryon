@@ -101,7 +101,7 @@ out of a function, including through a `raise`.
 | --- | --- |
 | `Array.zeros`, `Array.ones` and `Array.fill`, with the element type from context, a `dtype` or `f64`; `a.copy()`; `Array(values)` of a list | `Array.zeros` and `Array.ones` of an enum, whose members are not numbers; `Array.fill` with a member works |
 | Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | Slices `a[1:n]` |
-| `len(a)`; `a.shape` bound to a name, then indexed | `a.shape[0]` written directly; `a.size` |
+| `len(a)`, `a.shape`, `a.shape[k]` and `a.size`, of `Array` and `Fixed` arrays | `print(a.shape)`, since `print` of a tuple is not built |
 | `a.unchecked[i]` inside `with unsafe:` | |
 | `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, `v.dot(w)`, `v.round()`, and whole-array arithmetic | |
 | Arrays of `Fixed` arrays and of `Copy` structs | |
