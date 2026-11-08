@@ -25,6 +25,7 @@ drop_elaboration.workspace = true
 llvm_backend.workspace = true
 lowering.workspace = true
 mir.workspace = true
+monomorphize.workspace = true
 parser.workspace = true
 resolver.workspace = true
 salsa.workspace = true

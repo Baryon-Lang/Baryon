@@ -3,9 +3,11 @@
 //! the package's `main.npl`.
 //!
 //! This is the prototype of roadmap 1.11.3. It compiles every function and method that has no
-//! type parameters. Generic functions wait for monomorphization's collection of instances
-//! (roadmap 1.9.5), which will replace the loop over functions here; a call to one is an error
-//! for now. A function lowering or the backend cannot handle yet is reported once, at its name.
+//! type parameters, then collects the instances of generic functions they call (roadmap 1.9.5,
+//! decision 0018): each call of a generic function at concrete types adds that instance, whose
+//! body is the generic body with the types substituted, and whose own calls are followed in turn.
+//! An instance's symbol is its function's with the type arguments after it: `main.square[f64]`.
+//! A function lowering or the backend cannot handle yet is reported once, at its name.
 
 use crate::Session;
 use database::Db;
@@ -75,8 +77,17 @@ impl Session {
             .iter()
             .map(|function| (function.item, function.symbol.clone()))
             .collect();
-        let symbol =
-            |item: &Item<'_>, _: &[types::Type<'_>]| symbols.get(item).cloned().unwrap_or_default();
+        let symbol = |item: &Item<'_>, arguments: &[types::Type<'_>]| {
+            let base = symbols.get(item).cloned().unwrap_or_default();
+            if arguments.is_empty() {
+                return base;
+            }
+            let shown: Vec<String> = arguments
+                .iter()
+                .map(|argument| argument.display(database).to_string())
+                .collect();
+            format!("{base}[{}]", shown.join(", "))
+        };
         let declared = declared(database, self.package);
         let mut module = llvm_backend::Module::new(database, self, &declared, &symbol);
         if let Some(root) = root {
@@ -84,6 +95,7 @@ impl Session {
         }
         let mut errors = Vec::new();
         let mut entries = Vec::new();
+        let mut roots = Vec::new();
         for function in &functions {
             let Declaration::Function(signature) = &database.declaration(function.item).declaration
             else {
@@ -120,19 +132,12 @@ impl Session {
                     continue;
                 }
             }
-            match ready(database, function.item, &declared) {
-                Ok(body) => {
-                    let raises = match signature.returns.kind(database) {
-                        TypeKind::Fallible { errors, .. } => errors.as_slice(),
-                        _ => &[],
-                    };
-                    if let Err(unsupported) = module.define(&function.symbol, &body, raises) {
-                        errors.push(self.at(function.item, unsupported.to_string()));
-                    }
-                }
-                Err(problems) => errors.extend(problems),
-            }
+            roots.push(Instance {
+                item: function.item,
+                arguments: Vec::new(),
+            });
         }
+        errors.extend(self.define(&mut module, roots, &declared, &symbol));
         // `main.npl` defines `main` at most once: a second top-level definition is a check error.
         match entries.first() {
             Some((main, returns)) => {
@@ -151,6 +156,46 @@ impl Session {
         } else {
             Err(errors)
         }
+    }
+
+    /// Defines in `module` each instance a program needs: `roots`, then each instance of a
+    /// generic function that a defined body calls. Returns one error per function lowering or the
+    /// backend cannot handle yet.
+    fn define<'db>(
+        &'db self,
+        module: &mut llvm_backend::Module<'_, 'db>,
+        roots: Vec<Instance<'db>>,
+        declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
+        symbol: &dyn Fn(&Item<'db>, &[types::Type<'db>]) -> String,
+    ) -> Vec<Diagnostic> {
+        let database = &self.database;
+        let mut errors = Vec::new();
+        let mut instances = Instances::new(roots);
+        // Each function's lowering errors once, however many instances of it there are.
+        let mut reported = std::collections::HashSet::new();
+        while let Some(instance) = instances.next() {
+            match ready(database, &instance, declared) {
+                Ok(body) => {
+                    instances.follow(&body);
+                    let Declaration::Function(signature) =
+                        &database.declaration(instance.item).declaration
+                    else {
+                        continue;
+                    };
+                    let raises = match signature.returns.kind(database) {
+                        TypeKind::Fallible { errors, .. } => errors.as_slice(),
+                        _ => &[],
+                    };
+                    let name = symbol(&instance.item, &instance.arguments);
+                    if let Err(unsupported) = module.define(&name, &body, raises) {
+                        errors.push(self.at(instance.item, unsupported.to_string()));
+                    }
+                }
+                Err(problems) if reported.insert(instance.item) => errors.extend(problems),
+                Err(_) => {}
+            }
+        }
+        errors
     }
 
     /// Every function and method of the package, with its symbol, in file and source order.
@@ -249,32 +294,93 @@ fn declared<'db>(
     move |nominal| checker::declared(db, package, nominal)
 }
 
-/// The body of the non-generic function `item`, ready for a backend: lowered, its drops
-/// elaborated and its whole-array expressions expanded. Errors for what lowering cannot handle
-/// yet, and for a call to a generic function, which needs monomorphization (roadmap 1.9.5).
+/// A function and the type arguments it is compiled at: none for a function that is not
+/// generic (decision 0018).
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct Instance<'db> {
+    /// The function or method.
+    item: Item<'db>,
+    /// One concrete type per type parameter, in the order the signature lists them.
+    arguments: Vec<types::Type<'db>>,
+}
+
+/// The instances a program needs, collected as they are found: the roots first, then each
+/// instance of a generic function that a collected body calls, once.
+struct Instances<'db> {
+    /// Every instance found so far, in the order found.
+    found: Vec<Instance<'db>>,
+    /// The same instances, to find a repeat in constant time.
+    seen: std::collections::HashSet<Instance<'db>>,
+    /// How many of `found` [`next`](Self::next) has handed out.
+    handed: usize,
+}
+
+impl<'db> Instances<'db> {
+    /// Starts from `roots`, each compiled whether or not anything calls it.
+    fn new(roots: Vec<Instance<'db>>) -> Self {
+        Self {
+            seen: roots.iter().cloned().collect(),
+            found: roots,
+            handed: 0,
+        }
+    }
+
+    /// The next instance to compile, or `None` when every instance found so far has been.
+    fn next(&mut self) -> Option<Instance<'db>> {
+        let instance = self.found.get(self.handed)?.clone();
+        self.handed += 1;
+        Some(instance)
+    }
+
+    /// Adds each instance of a generic function that `body` calls and is not yet found. The body
+    /// is an instance's, so its type arguments are concrete.
+    fn follow(&mut self, body: &Body<'db>) {
+        for block in &body.blocks {
+            if let TerminatorKind::Call {
+                callee:
+                    Callee::Function {
+                        item,
+                        type_arguments,
+                    },
+                ..
+            } = &block.terminator.kind
+                && !type_arguments.is_empty()
+            {
+                let instance = Instance {
+                    item: *item,
+                    arguments: type_arguments.clone(),
+                };
+                if self.seen.insert(instance.clone()) {
+                    self.found.push(instance);
+                }
+            }
+        }
+    }
+}
+
+/// The body of `instance`, ready for a backend: lowered, its type parameters replaced by the
+/// instance's arguments, its drops elaborated and its whole-array expressions expanded. Errors
+/// for what lowering cannot handle yet, and for a generic method of a generic class, whose
+/// class's type parameters are not collected yet.
 fn ready<'db>(
     db: &'db dyn TypeDb,
-    item: Item<'db>,
+    instance: &Instance<'db>,
     declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
 ) -> Result<Body<'db>, Vec<Diagnostic>> {
-    let mut body = lowering::lower(db, item)?;
-    let generic_calls: Vec<Diagnostic> = body
-        .blocks
-        .iter()
-        .filter_map(|block| match &block.terminator.kind {
-            TerminatorKind::Call {
-                callee: Callee::Function { type_arguments, .. },
-                ..
-            } if !type_arguments.is_empty() => Some(
-                Diagnostic::error("calls to generic functions are not compiled yet")
-                    .with_primary(block.terminator.span, "this calls a generic function")
-                    .with_note("monomorphization comes with roadmap 1.9.5"),
-            ),
-            _ => None,
-        })
-        .collect();
-    if !generic_calls.is_empty() {
-        return Err(generic_calls);
+    let mut body = lowering::lower(db, instance.item)?;
+    if !instance.arguments.is_empty() {
+        let Declaration::Function(signature) = &db.declaration(instance.item).declaration else {
+            return Err(Vec::new());
+        };
+        if signature.type_parameters.len() != instance.arguments.len() {
+            return Err(vec![
+                Diagnostic::error("methods of generic classes are not compiled yet")
+                    .with_primary(body.span, "a method of a generic class")
+                    .with_note("collecting a class's type arguments comes after roadmap 1.9.5"),
+            ]);
+        }
+        body =
+            monomorphize::instantiate(db, &body, &signature.type_parameters, &instance.arguments);
     }
     drop_elaboration::elaborate(db, &mut body, declared);
     array_expansion::expand(db, &mut body, declared);

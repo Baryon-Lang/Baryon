@@ -10,9 +10,13 @@
 //! the MVP, so no trait calls remain to resolve.
 //!
 //! The instance query runs [`instantiate`], then drop elaboration and array expansion, and marks
-//! the result [`Phase::Ready`](mir::Phase). Collecting which instances a program needs, starting
-//! from `main` and each `@test` and following calls, comes with lowering (roadmap 1.9.5), since it
-//! needs the built body of each callee.
+//! the result [`Phase::Ready`](mir::Phase). The driver collects which instances a program needs
+//! (roadmap 1.9.5): it starts from the functions that are not generic and follows each call of a
+//! generic function at concrete types, since that needs both lowering and this crate, and only an
+//! application crate may depend on two implementations.
+//!
+//! A number literal in a generic body, `2` in `x * 2` for `T: Number`, keeps the value written
+//! until substitution gives `T` a number type, then is written at that type: `2.0` for `f64`.
 //!
 //! # Example
 //!
@@ -67,9 +71,10 @@
 //! ```
 
 use mir::{
-    Argument, Body, Callee, Constant, Elementwise, Operand, Rvalue, StatementKind, TerminatorKind,
+    Argument, Body, Callee, Constant, ConstantValue, Elementwise, Operand, Rvalue, StatementKind,
+    TerminatorKind,
 };
-use types::{Nominal, Type, TypeKind};
+use types::{Nominal, Primitive, Type, TypeKind};
 
 /// The body of `generic` at concrete types: each of `parameters`, the function's type parameters
 /// in order as its signature lists them, replaced by the argument at the same position in
@@ -213,9 +218,41 @@ impl<'db> Substitution<'_, 'db> {
     }
 
     /// Substitutes the type of a constant operand; places have no types of their own.
+    ///
+    /// A number literal of a type parameter's type, `2` in `x * 2` for `T: Number`, keeps the
+    /// value as written, an integer or a float. Once `T` is known it is written at that type:
+    /// `2` becomes `2.0` when `T` is `f64`, and a real number becomes a complex one with no
+    /// imaginary part when `T` is complex.
     fn operand(&self, operand: &mut Operand<'db>) {
-        if let Operand::Constant(Constant { ty, .. }) = operand {
-            *ty = self.ty(*ty);
+        let Operand::Constant(Constant { ty, value }) = operand else {
+            return;
+        };
+        let generic = *ty;
+        *ty = self.ty(generic);
+        if *ty == generic {
+            return;
+        }
+        let TypeKind::Primitive(primitive) = ty.kind(self.db) else {
+            return;
+        };
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a literal written as an integer"
+        )]
+        let real = match *value {
+            ConstantValue::Integer(integer) => integer as f64,
+            ConstantValue::Float(bits) => f64::from_bits(bits),
+            _ => return,
+        };
+        match primitive {
+            Primitive::Float(_) => *value = ConstantValue::Float(real.to_bits()),
+            Primitive::Complex(_) => {
+                *value = ConstantValue::Complex {
+                    real: real.to_bits(),
+                    imaginary: 0.0_f64.to_bits(),
+                };
+            }
+            Primitive::Integer(_) | Primitive::Bool => {}
         }
     }
 

@@ -641,3 +641,50 @@ def array_caller(a: Array[f64, 1]) -> f64:
    = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
 }
+
+/// A generic body keeps its type parameters: `+`, `-` and `*` on `T` are the instance's
+/// arithmetic, a literal of type `T` keeps the value written, and a call of a generic function
+/// names its type arguments. `//` depends on whether `T` is an integer, so it waits.
+#[test]
+fn generic_bodies_keep_their_type_parameters() {
+    let program = r"def square[T: Number](x: T) -> T:
+    return x * x
+
+
+def twice[T: Number](x: T) -> T:
+    return square(x) * 2 - x
+
+
+def halve[T: Number](x: T) -> T:
+    return x // 2
+";
+    assert_eq!(
+        lower(program, "twice"),
+        r"fn(_1: T) -> T {
+    let _0: T; // return
+    let _1: T; // parameter x
+    let _2: T;
+    let _3: T;
+
+    bb0: {
+        _3 = call square[T](_1) -> [return: bb1];
+    }
+
+    bb1: {
+        _2 = Multiply(copy _3, 2_T);
+        _0 = Subtract(copy _2, copy _1);
+        return;
+    }
+}
+"
+    );
+    assert_eq!(
+        lower(program, "halve"),
+        r"error: lowering does not handle `//` on a type parameter yet
+  --> main.npl:10:12
+   |
+10 |     return x // 2
+   |            ^^^^^^ not lowered yet
+   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}
