@@ -46,9 +46,22 @@ impl<'db> Builder<'db> {
             return self.unsupported(node, &format!("`{}`", syntax.symbol()));
         };
         // `/` on integers gives an `f64`, so both sides convert to it; every other operator
-        // works at the type of its result.
-        let left = self.operand_as(left, ty);
-        let right = self.operand_as(right, ty);
+        // works at the type of its result. Under a `VectorSpace` bound, `h * state` scales by
+        // an `f64`, which stays an `f64`: monomorphization makes it a whole-array expression
+        // that applies it to every element.
+        let scaling = |builder: &Self, side: NodeId| {
+            generic && matches!(builder.ty(side).kind(builder.db), TypeKind::Primitive(_))
+        };
+        let left = if scaling(self, left) {
+            self.operand(left)
+        } else {
+            self.operand_as(left, ty)
+        };
+        let right = if scaling(self, right) {
+            self.operand(right)
+        } else {
+            self.operand_as(right, ty)
+        };
         self.arithmetic(place, operator, (left, right), ty, node);
     }
 

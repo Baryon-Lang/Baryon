@@ -279,3 +279,105 @@ fn outlined_bodies_are_substituted() {
         })
     );
 }
+
+/// `def step[S: VectorSpace](f: Callable[[S], S], s: S, h: f64) -> S: return h * f(s)`,
+/// instantiated with `S` a `Fixed` vector and `f` the function `lorenz` (decision 0026): the
+/// call of `f` becomes a direct call of `lorenz`, and `h * …`, scalar arithmetic on `S` in the
+/// generic body, becomes a whole-array expression for array expansion.
+#[test]
+fn callable_parameters_become_direct_calls_and_vector_arithmetic_whole_array() {
+    let database = Database::default();
+    let (file, name) = named(&database, "S");
+    let s = Type::new(&database, TypeKind::Parameter { file, name });
+    let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
+    let vector = Type::new(
+        &database,
+        TypeKind::Fixed {
+            element: f64,
+            shape: types::Shape::new(vec![3]).unwrap(),
+        },
+    );
+    let signature = |argument| {
+        Type::new(
+            &database,
+            TypeKind::Callable {
+                parameters: vec![argument],
+                returns: argument,
+            },
+        )
+    };
+    let (generic, concrete) = (signature(s), signature(vector));
+    let (lorenz_file, lorenz_name) = named(&database, "lorenz");
+    let package = Package::new(&database, vec![lorenz_file]);
+    let lorenz = Item::new(&database, package, lorenz_file, lorenz_name);
+    let function = Type::new(
+        &database,
+        TypeKind::Function {
+            item: lorenz,
+            callable: concrete,
+        },
+    );
+
+    let mut body = Body::new(s, span());
+    let parameter = |name: &str| LocalKind::Parameter {
+        name: name.into(),
+        mode: Mode::Borrow,
+    };
+    let f = body.push_local(generic, parameter("f"), span());
+    let state = body.push_local(s, parameter("s"), span());
+    let h = body.push_local(f64, parameter("h"), span());
+    let derivative = body.push_local(s, LocalKind::Temporary, span());
+    body.push_block(Terminator {
+        kind: TerminatorKind::Call {
+            callee: Callee::Value(Operand::Copy(f.into())),
+            arguments: vec![mir::Argument::Borrow(state.into())],
+            destination: derivative.into(),
+            target: BlockId::new(1),
+            error: None,
+        },
+        span: span(),
+    });
+    let scale = body.push_block(Terminator {
+        kind: TerminatorKind::Return,
+        span: span(),
+    });
+    body.blocks[scale.index()].statements = vec![Statement {
+        kind: StatementKind::Assign(
+            Local::RETURN.into(),
+            Rvalue::Binary(
+                BinaryOperator::Multiply,
+                Operand::Copy(h.into()),
+                Operand::Copy(derivative.into()),
+            ),
+        ),
+        span: span(),
+    }];
+
+    let instance = instantiate(&database, &body, &[s, generic], &[vector, function]);
+    assert!(matches!(
+        instance.locals[f.index()].ty.kind(&database),
+        TypeKind::Function { item, .. } if *item == lorenz
+    ));
+    // `f`'s type is now `lorenz`'s own, which shows as its signature.
+    assert_eq!(
+        instance.display(&database).to_string(),
+        "\
+fn(_1: Callable[[Fixed[f64, (3,)]], Fixed[f64, (3,)]], _2: Fixed[f64, (3,)], _3: f64) -> Fixed[f64, (3,)] {
+    let _0: Fixed[f64, (3,)]; // return
+    let _1: Callable[[Fixed[f64, (3,)]], Fixed[f64, (3,)]]; // parameter f
+    let _2: Fixed[f64, (3,)]; // parameter s
+    let _3: f64; // parameter h
+    let _4: Fixed[f64, (3,)];
+
+    bb0: {
+        _4 = call lorenz(_2) -> [return: bb1];
+    }
+
+    bb1: {
+        _0 = elementwise Multiply(copy _3, copy _4);
+        return;
+    }
+}
+"
+    );
+}

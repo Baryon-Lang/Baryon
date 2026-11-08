@@ -153,9 +153,16 @@ impl Session {
             if arguments.is_empty() {
                 return base;
             }
+            // A function's own type shows as its signature, which two functions can share, so
+            // its symbol names the function instead.
             let shown: Vec<String> = arguments
                 .iter()
-                .map(|argument| argument.display(database).to_string())
+                .map(|argument| match argument.kind(database) {
+                    TypeKind::Function { item, .. } => {
+                        symbols.get(item).cloned().unwrap_or_default()
+                    }
+                    _ => argument.display(database).to_string(),
+                })
                 .collect();
             format!("{base}[{}]", shown.join(", "))
         };
@@ -180,7 +187,7 @@ impl Session {
                 errors.push(self.at(function.item, "`@test` goes on a top-level function"));
                 continue;
             }
-            if !signature.type_parameters.is_empty() {
+            if is_generic(database, signature) {
                 if entry && program == Program::Tests {
                     errors.push(self.at(function.item, "a test cannot have type parameters"));
                 }
@@ -434,4 +441,15 @@ fn declared<'db>(
     package: database::Package,
 ) -> impl Fn(&Nominal<'db>) -> types::Declared<'db> {
     move |nominal| checker::declared(db, package, nominal)
+}
+
+/// Whether the function `signature` declares is compiled once per call's arguments, from the
+/// calls that reach it, rather than once on its own: it has type parameters, or a `Callable`
+/// parameter, which is an implicit one (decision 0026).
+fn is_generic<'db>(database: &'db dyn TypeDb, signature: &types::Signature<'db>) -> bool {
+    !signature.type_parameters.is_empty()
+        || signature
+            .parameters
+            .iter()
+            .any(|parameter| matches!(parameter.ty.kind(database), TypeKind::Callable { .. }))
 }

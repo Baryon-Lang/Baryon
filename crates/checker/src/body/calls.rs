@@ -231,6 +231,9 @@ impl<'db> Body<'db> {
         ty: Type<'db>,
         arguments: &Arguments,
     ) -> Type<'db> {
+        if let TypeKind::Function { callable, .. } = ty.kind(self.db) {
+            return self.call_value(node, callee, *callable, arguments);
+        }
         match ty.kind(self.db) {
             TypeKind::Callable {
                 parameters,
