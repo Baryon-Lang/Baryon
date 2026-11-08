@@ -6,3 +6,6 @@
 .idea/
 .vscode/
 *.swp
+
+# Packaged VS Code extensions
+*.vsix

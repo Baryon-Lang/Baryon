@@ -132,7 +132,9 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.15 | Formatter built on the syntax tree. Dropped: existing Python formatters such as Ruff and Black format the files | 2 | 1.2 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.16 | Language server: diagnostics, go to definition, hover, completion, fixes | 4 | 1.8 | Planned | — | — |
 | 1.16.1 | `baryon lsp`: a language server over standard input and output that publishes `baryon check`'s diagnostics as the user types, from the same incremental session | 0.5 | 1.11.2 | Done | Claude | [0019](docs/decisions/0019-language-server-protocol.md), [#35](https://github.com/Baryon-Lang/Baryon/pull/35) |
-| 1.17 | VS Code extension | 1 | 1.16 | Planned | — | — |
+| 1.17 | VS Code extension | 1 | 1.16 | In progress | Claude | [0025](docs/decisions/0025-vscode-extension.md), [#92](https://github.com/Baryon-Lang/Baryon/pull/92) |
+| 1.17.1 | VS Code extension, highlighting: `.byn` files open as Baryon, highlighted by VS Code's Python grammar plus an injection for Baryon's types, `prange` and `simd`, with Python-style comments, brackets, indentation and folding | 0.25 | 1.16.1 | Done | Claude | [0025](docs/decisions/0025-vscode-extension.md), [#92](https://github.com/Baryon-Lang/Baryon/pull/92) |
+| 1.17.2 | VS Code extension, language server client: start `baryon lsp` for `.byn` files so diagnostics show as the user types, with a setting for the path to `baryon` | 0.25 | 1.17.1 | Planned | — | [0025](docs/decisions/0025-vscode-extension.md) |
 | 1.18 | Execution corpus, benchmark baselines and fuzzing in CI | 2 | 1.11 | Planned | — | — |
 
 ## Phase 2: compile speed and the edit loop
@@ -202,6 +204,7 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.13 | Class inheritance: Python-style subclassing, or classes as plain structs with methods. Decided: no inheritance; shared behavior comes from traits | — | — | Done | Collins | [0015](docs/decisions/0015-no-class-inheritance.md), [#12](https://github.com/Baryon-Lang/Baryon/pull/12) |
 | D.14 | Mid-level IR shape: static single assignment (plan) or locals and places; how `Raises`, monomorphization and whole-array expressions lower. Decided: locals and places, error edges on calls, instance query, `Elementwise` kept for fusion | — | — | Done | Collins | [0018](docs/decisions/0018-mid-level-ir.md), [#27](https://github.com/Baryon-Lang/Baryon/pull/27) |
 | D.15 | When a default parameter value that is not a literal or a `Final` constant is evaluated: at each call that leaves the argument out, once and shared as in Python, or never because only compile-time defaults are allowed | — | 0.8.2 | Planned | Collins | [reference](docs/reference/README.md#open-questions) |
+| D.16 | Publish the VS Code extension to the Visual Studio Marketplace under the `baryon-lang` publisher, or keep installing it from a `.vsix` file | — | 1.17 | Planned | Collins | [0025](docs/decisions/0025-vscode-extension.md) |
 
 ## Ideas
 
@@ -231,3 +234,5 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.20 | Reject a default on an `InOut` parameter in the checker: a call that leaves the argument out would lose what the callee writes into it. Lowering reports it as not lowered today. User-visible, so it needs Collins | — | 1.7 | Idea | — | [#77](https://github.com/Baryon-Lang/Baryon/pull/77) |
 | I.21 | A `cargo xtask` check that fails on leftover merge-conflict markers, `<<<<<<<`, `=======` or `>>>>>>>` at the start of a line, in tracked files: a merge into #76 left them in `README.md` and every other check passed | — | — | Done | Claude | [#76](https://github.com/Baryon-Lang/Baryon/pull/76), [#86](https://github.com/Baryon-Lang/Baryon/pull/86) |
 | I.22 | Sum floats pairwise in `a.sum()`, as NumPy does, so rounding error stays near constant as arrays grow; today it adds one element at a time in row-major order, fixed but less accurate. Changes the last bits of results, so it needs Collins | — | 1.9.12 | Idea | — | — |
+| I.24 | Test the VS Code grammar in CI: tokenize `docs/examples/` with `vscode-textmate` and VS Code's Python grammar and compare each Baryon name's scope to a checked-in snapshot, and check the injection's names against the reference | — | 1.17.1 | Idea | — | [0025](docs/decisions/0025-vscode-extension.md) |
+| I.25 | Semantic tokens in `baryon lsp`: color each name by what the checker resolved it to, so a user's own structs, `f64` used as a variable and imported functions are colored correctly in any editor | — | 1.17.2 | Idea | — | [0025](docs/decisions/0025-vscode-extension.md) |
