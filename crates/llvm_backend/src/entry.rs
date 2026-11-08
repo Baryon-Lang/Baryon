@@ -5,7 +5,8 @@
 //! passed an error value to write into, like any fallible call; when it fails, the C `main`
 //! reads which error it holds and prints it to standard error as `error: ParseError(position=-3)`,
 //! the error's type, then each field by name with its value as `print` writes it, a `str` quoted
-//! as Python's `repr` writes it, then returns 1. Status 1 differs from a panic's 101, so a script can tell a reported failure from a bug.
+//! as Python's `repr` writes it, then returns 1. Status 1 differs from a panic's 101, so a
+//! script can tell a reported failure from a bug.
 
 use crate::Unsupported;
 use crate::function::{Function, global};
