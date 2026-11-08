@@ -9,6 +9,7 @@
 //! script can tell a reported failure from a bug.
 
 use crate::Unsupported;
+use crate::debug::UNWIND_TABLE;
 use crate::function::{Function, global};
 use crate::print::STDERR;
 use mir::Body;
@@ -30,7 +31,7 @@ impl<'db> Function<'_, '_, 'db> {
         let callee = global(symbol);
         let mut signature = String::from("define i32 @main()");
         if let Some(scope) = self.constants.entry_subprogram() {
-            signature = format!("{signature} !dbg {scope}");
+            signature = format!("{signature} {UNWIND_TABLE} !dbg {scope}");
             self.fixed_location = Some(format!("!DILocation(line: 0, scope: {scope})"));
         }
         if errors.is_empty() {

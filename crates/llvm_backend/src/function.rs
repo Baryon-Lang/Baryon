@@ -2,6 +2,7 @@
 //! statements and terminator, and a block of its own for each check that can fail.
 
 use crate::Unsupported;
+use crate::debug::UNWIND_TABLE;
 use crate::panic::Constants;
 use crate::ty::{Repr, Types};
 use mir::{
@@ -101,7 +102,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         function.scope = function.constants.subprogram(name, body.span);
         let (mut signature, entry) = function.prologue(name)?;
         if let Some(scope) = &function.scope {
-            let _ = write!(signature, " !dbg {scope}");
+            let _ = write!(signature, " {UNWIND_TABLE} !dbg {scope}");
         }
         for (index, block) in body.blocks.iter().enumerate() {
             function.line_label(&block_label(BlockId::new(index)));
