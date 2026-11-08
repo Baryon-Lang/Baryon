@@ -247,6 +247,12 @@ pub enum Builtin {
     /// A mathematical function of floats. Every argument and the destination have one float
     /// type, `f32` or `f64`; lowering converts integer operands first. The call cannot fail.
     Math(MathFunction),
+    /// `a.sum()` of an `Array` or `Fixed` array of floats: one argument, the array, passed
+    /// `Borrow`; the destination has the element type. The elements are added in row-major
+    /// order in `NumPy`'s pairwise tree, so the result has the same bits as `numpy.sum` of the
+    /// same array and rounding error grows with the logarithm of the length, not the length.
+    /// Integer sums need no tree, since integer addition is exact, and lower to a loop.
+    Sum,
 }
 
 impl Builtin {
@@ -255,12 +261,14 @@ impl Builtin {
     /// ```
     /// assert_eq!(mir::Builtin::Print.name(), "print");
     /// assert_eq!(mir::Builtin::Math(mir::MathFunction::Sqrt).name(), "math.sqrt");
+    /// assert_eq!(mir::Builtin::Sum.name(), "sum");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             Self::Print => "print",
             Self::Math(function) => function.name(),
+            Self::Sum => "sum",
         }
     }
 }
