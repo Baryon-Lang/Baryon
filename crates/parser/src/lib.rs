@@ -30,7 +30,7 @@
 //!
 //! let mut sources = SourceMap::new();
 //! let text = "def area(r: f64) -> f64:\n    return 3.14159 * r**2\n";
-//! let file = sources.add("circle.npl", text)?;
+//! let file = sources.add("circle.byn", text)?;
 //!
 //! let parsed = parser::parse(file, text);
 //! assert!(parsed.diagnostics().is_empty());
@@ -117,7 +117,7 @@ mod tests {
     use syntax::{Role, SyntaxKind};
 
     fn parse_text(text: &str) -> Parsed {
-        let file = SourceMap::new().add("test.npl", text).unwrap();
+        let file = SourceMap::new().add("test.byn", text).unwrap();
         parse(file, text)
     }
 

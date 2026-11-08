@@ -48,13 +48,13 @@ start:
   %_2 = alloca { ptr, i64 }
   br label %bb0
 bb0:
-  store { ptr, i64 } { ptr @npl.str.0, i64 -9223372036854775804 }, ptr %_2
+  store { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775804 }, ptr %_2
   %t0 = load { ptr, i64 }, ptr %a1
   %t1 = extractvalue { ptr, i64 } %t0, 0
   %t2 = extractvalue { ptr, i64 } %t0, 1
   %t3 = and i64 %t2, 9223372036854775807
-  call void @npl_rt_print_str(i32 1, ptr %t1, i64 %t3)
-  call void @npl_rt_print_str(i32 1, ptr @npl.str.1, i64 1)
+  call void @baryon_rt_print_str(i32 1, ptr %t1, i64 %t3)
+  call void @baryon_rt_print_str(i32 1, ptr @baryon.str.1, i64 1)
   br label %bb1
 bb1:
   %t4 = getelementptr inbounds { ptr, i64 }, ptr %_2, i32 0, i32 1
@@ -63,17 +63,17 @@ bb1:
   br i1 %t6, label %c0, label %c1
 c0:
   %t7 = load ptr, ptr %_2
-  call void @npl_rt_deallocate(ptr %t7, i64 %t5, i64 1)
+  call void @baryon_rt_deallocate(ptr %t7, i64 %t5, i64 1)
   br label %c1
 c1:
   ret void
 }
 
-@npl.str.0 = private unnamed_addr constant [4 x i8] c\"heat\"
-@npl.str.1 = private unnamed_addr constant [1 x i8] c\"\\0A\"
+@baryon.str.0 = private unnamed_addr constant [4 x i8] c\"heat\"
+@baryon.str.1 = private unnamed_addr constant [1 x i8] c\"\\0A\"
 
-declare void @npl_rt_deallocate(ptr, i64, i64) nounwind
-declare void @npl_rt_print_str(i32, ptr, i64) nounwind
+declare void @baryon_rt_deallocate(ptr, i64, i64) nounwind
+declare void @baryon_rt_print_str(i32, ptr, i64) nounwind
 "
     );
 }

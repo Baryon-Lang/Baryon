@@ -61,7 +61,7 @@ impl Label {
 ///
 /// ```
 /// # let mut sources = source::SourceMap::new();
-/// # let file = sources.add("main.npl", "y = x + 1").unwrap();
+/// # let file = sources.add("main.byn", "y = x + 1").unwrap();
 /// use diagnostics::Diagnostic;
 /// use source::Span;
 ///

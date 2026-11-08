@@ -111,14 +111,14 @@ line:
 
 ```text
 panic: index 4 is out of range for dimension 0 of length 4
-  --> main.npl:2:19
+  --> main.byn:2:19
 backtrace, most recent call last:
-  main.main at /home/ada/heat/main.npl:11:11
-  main.total at /home/ada/heat/main.npl:7:12
-  main.pick at /home/ada/heat/main.npl:2:19
+  main.main at /home/ada/heat/main.byn:11:11
+  main.total at /home/ada/heat/main.byn:7:12
+  main.pick at /home/ada/heat/main.byn:2:19
 ```
 
-There is one build mode for now, and `npl build` and `npl run` always include the debug
+There is one build mode for now, and `baryon build` and `baryon run` always include the debug
 information a backtrace needs, so every panic prints one. A program without that information
 prints the message and location only.
 

@@ -24,10 +24,10 @@ fn check(files: &[(&str, &str)]) -> String {
         .join("\n\n")
 }
 
-/// Checks a package of one file, `main.npl`. The program's first newline, which only lets a
+/// Checks a package of one file, `main.byn`. The program's first newline, which only lets a
 /// test start it on its own line, is dropped.
 fn check_one(text: &str) -> String {
-    check(&[("main.npl", text.strip_prefix('\n').unwrap_or(text))])
+    check(&[("main.byn", text.strip_prefix('\n').unwrap_or(text))])
 }
 
 /// The example programs in `docs/examples` declare everything correctly.
@@ -35,24 +35,24 @@ fn check_one(text: &str) -> String {
 fn the_example_programs_check_clean() {
     let examples = [
         (
-            "conjugate_gradient.npl",
-            include_str!("../../../docs/examples/conjugate_gradient.npl"),
+            "conjugate_gradient.byn",
+            include_str!("../../../docs/examples/conjugate_gradient.byn"),
         ),
         (
-            "heat_equation.npl",
-            include_str!("../../../docs/examples/heat_equation.npl"),
+            "heat_equation.byn",
+            include_str!("../../../docs/examples/heat_equation.byn"),
         ),
         (
-            "lennard_jones.npl",
-            include_str!("../../../docs/examples/lennard_jones.npl"),
+            "lennard_jones.byn",
+            include_str!("../../../docs/examples/lennard_jones.byn"),
         ),
         (
-            "lorenz_rk4.npl",
-            include_str!("../../../docs/examples/lorenz_rk4.npl"),
+            "lorenz_rk4.byn",
+            include_str!("../../../docs/examples/lorenz_rk4.byn"),
         ),
         (
-            "monte_carlo_pi.npl",
-            include_str!("../../../docs/examples/monte_carlo_pi.npl"),
+            "monte_carlo_pi.byn",
+            include_str!("../../../docs/examples/monte_carlo_pi.byn"),
         ),
     ];
     assert_eq!(check(&examples), "");
@@ -110,7 +110,7 @@ def first[T: Copy](values: Owned[list[T]]) -> T:
 "#;
     let strip = |text: &'static str| text.strip_prefix('\n').unwrap_or(text);
     assert_eq!(
-        check(&[("physics.npl", strip(physics)), ("main.npl", strip(main))]),
+        check(&[("physics.byn", strip(physics)), ("main.byn", strip(main))]),
         ""
     );
 }
@@ -129,32 +129,32 @@ COUNT: Final = len("abc")
     assert_eq!(
         check_one(program),
         r#"error: `300` does not fit in `u8`
- --> main.npl:1:20
+ --> main.byn:1:20
   |
 1 | SMALL: Final[u8] = 300
   |                    ^^^ out of range
 
 error: this value is not of type `i32`
- --> main.npl:2:20
+ --> main.byn:2:20
   |
 2 | HALF: Final[i32] = 0.5
   |                    ^^^ wrong type for the constant
 
 error: division by zero in a constant
- --> main.npl:3:15
+ --> main.byn:3:15
   |
 3 | ZERO: Final = 1 // 0
   |               ^^^^^^ divides by zero
 
 error: this constant does not fit in `i64`
- --> main.npl:4:14
+ --> main.byn:4:14
   |
 4 | BIG: Final = 2**64
   |              ^^^^^ overflows
   = note: integers are 64-bit; use a float constant for larger numbers
 
 error: the compiler cannot compute this value
- --> main.npl:5:16
+ --> main.byn:5:16
   |
 5 | COUNT: Final = len("abc")
   |                ^^^^^^^^^^ not a constant expression
@@ -173,21 +173,21 @@ Nested = list[Nested]
     assert_eq!(
         check_one(program),
         r"error: `A` is defined in terms of itself
- --> main.npl:1:1
+ --> main.byn:1:1
   |
 1 | A: Final = B + 1
   | ^ refers back to itself
   = note: an alias or constant cannot depend on its own value
 
 error: `B` is defined in terms of itself
- --> main.npl:2:1
+ --> main.byn:2:1
   |
 2 | B: Final = A * 2
   | ^ refers back to itself
   = note: an alias or constant cannot depend on its own value
 
 error: `Nested` is defined in terms of itself
- --> main.npl:3:1
+ --> main.byn:3:1
   |
 3 | Nested = list[Nested]
   | ^^^^^^ refers back to itself
@@ -206,35 +206,35 @@ def solve(grid: Array[f64], steps, scale: f64 | i64, out: list[InOut[f64]]) -> S
     assert_eq!(
         check_one(program),
         r"error: `Array` takes 2 type arguments, found 1
- --> main.npl:1:17
+ --> main.byn:1:17
   |
 1 | def solve(grid: Array[f64], steps, scale: f64 | i64, out: list[InOut[f64]]) -> Self:
   |                 ^^^^^^^^^^ wrong number of arguments
   = note: for example `Array[f64, 1]`
 
 error: parameter `steps` needs a type
- --> main.npl:1:29
+ --> main.byn:1:29
   |
 1 | def solve(grid: Array[f64], steps, scale: f64 | i64, out: list[InOut[f64]]) -> Self:
   |                             ^^^^^ no type annotation
   = note: every parameter's type is written: `steps: f64`
 
 error: a union type can only add `None` to a type
- --> main.npl:1:43
+ --> main.byn:1:43
   |
 1 | def solve(grid: Array[f64], steps, scale: f64 | i64, out: list[InOut[f64]]) -> Self:
   |                                           ^^^^^^^^^ only `T | None` is a type
   = note: a value that may be one of several types is not supported; use separate functions, or an enum for a fixed set of choices
 
 error: `InOut` can only wrap the type of a parameter
- --> main.npl:1:64
+ --> main.byn:1:64
   |
 1 | def solve(grid: Array[f64], steps, scale: f64 | i64, out: list[InOut[f64]]) -> Self:
   |                                                                ^^^^^^^^^^ not a parameter's type
   = note: it says how an argument is passed: `def f(out: InOut[Array[f64, 1]])`
 
 error: `Self` is only a type inside a class
- --> main.npl:1:80
+ --> main.byn:1:80
   |
 1 | def solve(grid: Array[f64], steps, scale: f64 | i64, out: list[InOut[f64]]) -> Self:
   |                                                                                ^^^^ outside any class"
@@ -262,28 +262,28 @@ def fail() -> Raises[None, Boundary]:
     assert_eq!(
         check_one(program),
         r"error: a struct field has no default value
- --> main.npl:2:17
+ --> main.byn:2:17
   |
 2 |     mass: f64 = 1.0
   |                 ^^^ remove this default
   = note: every field is given when a struct is built: `Particle(position, velocity, 1.0)`
 
 error: a struct field needs a type, and no value
- --> main.npl:3:5
+ --> main.byn:3:5
   |
 3 |     charge = 0.0
   |     ^^^^^^^^^^^^ not a field
   = note: declare a field with its type: `mass: f64`
 
 error: an enum member has a value, not a type
- --> main.npl:8:5
+ --> main.byn:8:5
   |
 8 |     REFLECTING: int = 2
   |     ^^^^^^^^^^^^^^^^^^^ not an enum member
   = note: write a member as `PERIODIC = 1`
 
 error: `Boundary` is not an error type
-  --> main.npl:11:28
+  --> main.byn:11:28
    |
 11 | def fail() -> Raises[None, Boundary]:
    |                            ^^^^^^^^ expected an error type
@@ -302,14 +302,14 @@ Flat = Array[f64, 0]
     assert_eq!(
         check_one(program),
         r"error: expected a shape
- --> main.npl:2:20
+ --> main.byn:2:20
   |
 2 | Wrong = Fixed[f64, 3]
   |                    ^ not a tuple
   = note: a shape is a tuple of lengths, such as `(3,)` or `(3, 3)`
 
 error: an array's rank is a whole number of dimensions, at least 1
- --> main.npl:3:19
+ --> main.byn:3:19
   |
 3 | Flat = Array[f64, 0]
   |                   ^ not a valid rank
@@ -337,7 +337,7 @@ class SolverError(Exception):
     assert_eq!(
         check_one(program),
         r#"warning: reordering the fields of `Particle` would save 8 bytes
- --> main.npl:1:7
+ --> main.byn:1:7
   |
 1 | class Particle(Struct):
   |       ^^^^^^^^ 24 bytes as declared, 16 reordered
@@ -345,7 +345,7 @@ class SolverError(Exception):
   = note: if the order is fixed by a file format or a C library, decorate the struct `@layout("C")` to keep it without this warning
 
 warning: reordering the fields of `SolverError` would save 8 bytes
- --> main.npl:8:7
+ --> main.byn:8:7
   |
 8 | class SolverError(Exception):
   |       ^^^^^^^^^^^ 24 bytes as declared, 16 reordered
@@ -378,9 +378,9 @@ class Cell(Struct):
     count: i32
 ";
     assert_eq!(
-        check(&[("shapes.npl", shapes), ("main.npl", main)]),
+        check(&[("shapes.byn", shapes), ("main.byn", main)]),
         r#"warning: reordering the fields of `Cell` would save 8 bytes
- --> main.npl:5:7
+ --> main.byn:5:7
   |
 5 | class Cell(Struct):
   |       ^^^^ 32 bytes as declared, 24 reordered
@@ -413,7 +413,7 @@ class Broken(Struct):
     assert_eq!(
         check_one(program),
         r"error: `Array` takes 2 type arguments, found 1
-  --> main.npl:14:11
+  --> main.byn:14:11
    |
 14 |     mass: Array[f64]
    |           ^^^^^^^^^^ wrong number of arguments
@@ -441,7 +441,7 @@ class Sample(Struct):
     assert_eq!(
         check_one(program),
         r#"warning: reordering the fields of `Sample` would save 8 bytes
- --> main.npl:8:7
+ --> main.byn:8:7
   |
 8 | class Sample(Struct):
   |       ^^^^^^ 24 bytes as declared, 16 reordered

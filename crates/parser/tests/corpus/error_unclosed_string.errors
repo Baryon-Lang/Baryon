@@ -1,5 +1,5 @@
 error: this string is never closed
- --> error_unclosed_string.npl:1:11
+ --> error_unclosed_string.byn:1:11
   |
 1 | message = "never closed
   |           ^^^^^^^^^^^^^ the string starts here

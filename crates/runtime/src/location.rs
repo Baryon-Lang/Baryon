@@ -21,8 +21,8 @@ use std::fmt;
 /// ```
 /// use runtime::Location;
 ///
-/// static HERE: Location = Location::new("md.npl", 58, 13);
-/// assert_eq!(HERE.to_string(), "md.npl:58:13");
+/// static HERE: Location = Location::new("md.byn", 58, 13);
+/// assert_eq!(HERE.to_string(), "md.byn:58:13");
 /// ```
 #[repr(C)]
 #[derive(Debug)]

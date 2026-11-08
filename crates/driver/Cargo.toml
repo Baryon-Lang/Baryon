@@ -1,6 +1,6 @@
 [package]
 name = "driver"
-description = "The `npl` command: wires the compiler's stages together behind the incremental database."
+description = "The `baryon` command: wires the compiler's stages together behind the incremental database."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +12,7 @@ publish.workspace = true
 kind = "application"
 
 [[bin]]
-name = "npl"
+name = "baryon"
 path = "src/main.rs"
 
 [dependencies]

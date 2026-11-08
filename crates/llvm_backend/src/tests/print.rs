@@ -6,7 +6,7 @@ use mir::{LocalKind, TerminatorKind};
 use types::{Integer, Mode, Primitive, Type, TypeKind};
 
 /// `def show(x: u8): print("x =", x)`: the literal and the separators print through
-/// `npl_rt_print_str`, and the `u8` widens to `u64`.
+/// `baryon_rt_print_str`, and the `u8` widens to `u64`.
 #[test]
 fn print_calls_the_runtime_per_argument() {
     let database = Database::default();
@@ -44,23 +44,23 @@ start:
   store i8 %a1, ptr %_1
   br label %bb0
 bb0:
-  call void @npl_rt_print_str(i32 1, ptr @npl.str.0, i64 3)
-  call void @npl_rt_print_str(i32 1, ptr @npl.str.1, i64 1)
+  call void @baryon_rt_print_str(i32 1, ptr @baryon.str.0, i64 3)
+  call void @baryon_rt_print_str(i32 1, ptr @baryon.str.1, i64 1)
   %t0 = load i8, ptr %_1
   %t1 = zext i8 %t0 to i64
-  call void @npl_rt_print_u64(i32 1, i64 %t1)
-  call void @npl_rt_print_str(i32 1, ptr @npl.str.2, i64 1)
+  call void @baryon_rt_print_u64(i32 1, i64 %t1)
+  call void @baryon_rt_print_str(i32 1, ptr @baryon.str.2, i64 1)
   br label %bb1
 bb1:
   ret void
 }
 
-@npl.str.0 = private unnamed_addr constant [3 x i8] c\"x =\"
-@npl.str.1 = private unnamed_addr constant [1 x i8] c\" \"
-@npl.str.2 = private unnamed_addr constant [1 x i8] c\"\\0A\"
+@baryon.str.0 = private unnamed_addr constant [3 x i8] c\"x =\"
+@baryon.str.1 = private unnamed_addr constant [1 x i8] c\" \"
+@baryon.str.2 = private unnamed_addr constant [1 x i8] c\"\\0A\"
 
-declare void @npl_rt_print_str(i32, ptr, i64) nounwind
-declare void @npl_rt_print_u64(i32, i64) nounwind
+declare void @baryon_rt_print_str(i32, ptr, i64) nounwind
+declare void @baryon_rt_print_u64(i32, i64) nounwind
 "
     );
 }

@@ -7,11 +7,11 @@
 
 use driver::Session;
 
-/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// Checks `main.byn` and returns every diagnostic, rendered and joined by blank lines. An empty
 /// string means the program is clean. The program's first newline is dropped.
 fn check_one(text: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+    if let Err(error) = session.add_file("main.byn", text.strip_prefix('\n').unwrap_or(text)) {
         return error.to_string();
     }
     session
@@ -114,68 +114,68 @@ def looped(u: Array[f64, 1], n: i64) -> f64:
     assert_eq!(
         check_one(program),
         r"error: `a` was moved
-  --> main.npl:18:12
+  --> main.byn:18:12
    |
 18 |     return a.sum() + c.sum() + atoms.forces.sum() + b.sum() + x.sum()
    |            ^ read after the move
-  ::: main.npl:12:9
+  ::: main.byn:12:9
    |
 12 |     b = a
    |         - `a` moved here
    = note: to keep both, move a copy: `a.copy()`
 
 error: `c` was moved
-  --> main.npl:18:22
+  --> main.byn:18:22
    |
 18 |     return a.sum() + c.sum() + atoms.forces.sum() + b.sum() + x.sum()
    |                      ^ read after the move
-  ::: main.npl:15:17
+  ::: main.byn:15:17
    |
 15 |         consume(c)
    |                 - `c` moved here
    = note: to keep both, move a copy: `c.copy()`
 
 error: `atoms` was moved
-  --> main.npl:18:32
+  --> main.byn:18:32
    |
 18 |     return a.sum() + c.sum() + atoms.forces.sum() + b.sum() + x.sum()
    |                                ^^^^^ read after the move
-  ::: main.npl:17:9
+  ::: main.byn:17:9
    |
 17 |     x = atoms.positions
    |         --------------- `atoms` moved here
    = note: to keep both, move a copy: `atoms.positions.copy()`
 
 error: `v` is borrowed from the caller as `InOut`, so it cannot be moved
-  --> main.npl:22:9
+  --> main.byn:22:9
    |
 22 |     w = v
    |         ^ moved here
    = note: move a copy instead: `v.copy()`, or assign it a new value in place
 
 error: `u` is borrowed from the caller, so it cannot be moved
-  --> main.npl:23:12
+  --> main.byn:23:12
    |
 23 |     return u
    |            ^ moved here
    = note: move a copy instead: `u.copy()`, or take the parameter as `Owned[...]`
 
 error: a value cannot be moved out of an element
-  --> main.npl:27:13
+  --> main.byn:27:13
    |
 27 |     first = rows[0]
    |             ^^^^^^^ moved out of an element
    = note: move a copy instead: `rows[0].copy()`
 
 error: a slice of an array cannot be kept
-  --> main.npl:28:14
+  --> main.byn:28:14
    |
 28 |     column = grid[:, 0]
    |              ^^^^^^^^^^ a view of the array's memory
    = note: a slice can be passed to a call or assigned to, but to keep it, copy it: `grid[:, 0].copy()`
 
 error: `work` is moved in one pass of the loop and read in the next
-  --> main.npl:36:26
+  --> main.byn:36:26
    |
 36 |         total += consume(work)
    |                          ^^^^ moved here, inside a loop

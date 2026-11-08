@@ -1,5 +1,5 @@
 error: expected `:`, found newline
- --> error_missing_colon.npl:1:9
+ --> error_missing_colon.byn:1:9
   |
 1 | def f(x)
   |         ^ expected `:`

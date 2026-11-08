@@ -103,7 +103,7 @@ impl<'db> Builder<'db> {
                     target,
                 });
             }
-            SyntaxKind::Match => self.unsupported(statement, "`match`"),
+            SyntaxKind::Match => self.match_statement(statement),
             SyntaxKind::With => self.with_statement(statement),
             SyntaxKind::Try => self.try_statement(statement),
             _ => self.unsupported(statement, "this statement"),
@@ -209,7 +209,7 @@ impl<'db> Builder<'db> {
 
     /// The `bool` value of a condition. Owning temporaries it made are dropped before control
     /// branches on it, so a loop condition frees them on every pass.
-    fn condition(&mut self, condition: NodeId) -> Operand<'db> {
+    pub(crate) fn condition(&mut self, condition: NodeId) -> Operand<'db> {
         self.enter();
         let operand = self.operand(condition);
         self.leave(condition);

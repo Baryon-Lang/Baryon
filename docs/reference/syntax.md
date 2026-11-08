@@ -8,12 +8,12 @@ names it adds where Python has no spelling.
 
 ## Source files
 
-- A source file is UTF-8 text with `\n` line endings. `.npl` is the working file extension until
-  roadmap decision D.6 names the language.
+- A source file is UTF-8 text with `\n` line endings. Source files end in `.byn`
+  ([decision 0023](../decisions/0023-language-name-baryon.md)).
 - One file is one module. A directory of modules is a package; it needs no `__init__` file.
 - A module holds only these at its top level: imports, `Final` constants, type aliases, functions
   and classes. There is no other top-level code and there are no module-level variables. A program
-  starts at its `main` function, which takes no parameters and is defined in `main.npl` at the
+  starts at its `main` function, which takes no parameters and is defined in `main.byn` at the
   package's root. No other module may define a function named `main`.
 
   Why: top-level statements and global variables are shared mutable state, which a parallel loop
@@ -48,7 +48,7 @@ def kinetic_energy(velocities: Array[Vec3, 1]) -> f64:
     """
 ```
 
-`npl doc <directory> <output>` writes a package's documentation as Markdown: one page per module,
+`baryon doc <directory> <output>` writes a package's documentation as Markdown: one page per module,
 named after it (`physics.nbody.md`), and an `index.md` listing every module with its summary. A
 page gives the module's documentation, then each public constant, type alias, function and
 class in source order, with its signature as written and its documentation; a class's fields

@@ -52,7 +52,7 @@ fn class<'db>(database: &'db Database, name: &str, enumeration: bool) -> Type<'d
     let file = File::new(
         database,
         FileId::from_index(0),
-        SourceFile::new("a.npl", name).unwrap(),
+        SourceFile::new("a.byn", name).unwrap(),
     );
     let nominal = Nominal {
         file,
@@ -211,7 +211,7 @@ fn types_without_a_layout_say_why() {
     let file = File::new(
         &database,
         FileId::from_index(0),
-        SourceFile::new("a.npl", "T").unwrap(),
+        SourceFile::new("a.byn", "T").unwrap(),
     );
     let name = name_node(&database, file);
     let parameter = Type::new(&database, TypeKind::Parameter { file, name });

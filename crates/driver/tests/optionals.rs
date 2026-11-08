@@ -6,11 +6,11 @@
 
 use driver::Session;
 
-/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// Checks `main.byn` and returns every diagnostic, rendered and joined by blank lines. An empty
 /// string means the program is clean. The program's first newline is dropped.
 fn check_one(text: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+    if let Err(error) = session.add_file("main.byn", text.strip_prefix('\n').unwrap_or(text)) {
         return error.to_string();
     }
     session
@@ -92,35 +92,35 @@ def careless(distance: f64 | None, particle: Particle | None, flag: bool) -> f64
         check_one(program),
         "\
 error: `distance` may be `None`
-  --> main.npl:10:13
+  --> main.byn:10:13
    |
 10 |     total = distance + 1.0
    |             ^^^^^^^^ has type `f64 | None`
    = note: check it first: `if distance is not None:`
 
 error: `distance` may be `None`
-  --> main.npl:11:10
+  --> main.byn:11:10
    |
 11 |     half(distance)
    |          ^^^^^^^^ has type `f64 | None`
    = note: check it first: `if distance is not None:`
 
 error: `particle` may be `None`
-  --> main.npl:12:14
+  --> main.byn:12:14
    |
 12 |     weight = particle.mass
    |              ^^^^^^^^ has type `Particle | None`
    = note: check it first: `if particle is not None:`
 
 error: `distance` may be `None`
-  --> main.npl:18:16
+  --> main.byn:18:16
    |
 18 |         return distance
    |                ^^^^^^^^ has type `f64 | None`
    = note: check it first: `if distance is not None:`
 
 error: `distance` may be `None`
-  --> main.npl:19:12
+  --> main.byn:19:12
    |
 19 |     return distance
    |            ^^^^^^^^ has type `f64 | None`

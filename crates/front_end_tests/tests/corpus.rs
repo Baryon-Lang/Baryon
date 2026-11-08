@@ -2,7 +2,7 @@
 //! program uses only what the language supports.
 //!
 //! `tests/corpus/` holds small programs, each covering one group of constructs. Next to each
-//! `name.npl` with unsupported constructs sits `name.errors`, the syntax check's diagnostics as
+//! `name.byn` with unsupported constructs sits `name.errors`, the syntax check's diagnostics as
 //! rendered text; a program the check accepts has no `.errors` file. Every corpus program must
 //! parse without syntax errors, so each expected diagnostic comes from the syntax check alone.
 //!
@@ -23,8 +23,8 @@ use std::path::{Path, PathBuf};
 /// What a helper returns: its value, or the error that stops the test.
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// The source file extension, a working choice until roadmap decision D.6 names the language.
-const EXTENSION: &str = "npl";
+/// The source file extension, fixed by decision 0023.
+const EXTENSION: &str = "byn";
 
 /// The directory of this crate.
 fn crate_directory() -> &'static Path {

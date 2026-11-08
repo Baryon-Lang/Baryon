@@ -109,8 +109,8 @@ mod tests {
     fn collects_files_in_subdirectories_by_extension() {
         let root = workspace_root();
         let mut files = Vec::new();
-        collect_files(&root.join("docs"), "npl", &mut files).unwrap();
-        assert!(files.contains(&root.join("docs/examples/heat_equation.npl")));
-        assert!(files.iter().all(|file| file.extension().unwrap() == "npl"));
+        collect_files(&root.join("docs"), "byn", &mut files).unwrap();
+        assert!(files.contains(&root.join("docs/examples/heat_equation.byn")));
+        assert!(files.iter().all(|file| file.extension().unwrap() == "byn"));
     }
 }

@@ -1,4 +1,4 @@
-//! End-to-end tests of `npl build` (roadmap 1.11.3): packages compiled by the `npl` executable,
+//! End-to-end tests of `baryon build` (roadmap 1.11.3): packages compiled by the `baryon` executable,
 //! linked with the real runtime, and run. They check that the backend calls the runtime's
 //! functions by the names and signatures it exports (decision 0021), which no other test can,
 //! since the backend may not depend on the runtime.
@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Mutex, Once, PoisonError};
 
-/// The `npl` executable cargo built for these tests.
-const NPL: &str = env!("CARGO_BIN_EXE_npl");
+/// The `baryon` executable cargo built for these tests.
+const BARYON: &str = env!("CARGO_BIN_EXE_baryon");
 
-/// Builds the runtime archive next to `npl`, where `npl build` looks for it, once per run.
+/// Builds the runtime archive next to `baryon`, where `baryon build` looks for it, once per run.
 /// `cargo test` builds the runtime only as a Rust library, not as the static library.
 fn build_runtime() {
     static ONCE: Once = Once::new();
@@ -23,8 +23,8 @@ fn build_runtime() {
             .is_ok_and(|status| status.success());
         assert!(built, "building the runtime failed");
         assert!(
-            Path::new(NPL).with_file_name("libruntime.a").is_file(),
-            "the runtime archive is not next to `npl`"
+            Path::new(BARYON).with_file_name("libruntime.a").is_file(),
+            "the runtime archive is not next to `baryon`"
         );
     });
 }
@@ -42,7 +42,7 @@ fn package(name: &str, files: &[(&str, &str)]) -> io::Result<PathBuf> {
         .insert(name.to_owned());
     assert!(fresh, "two tests use the package name `{name}`");
     let directory =
-        std::env::temp_dir().join(format!("npl-build-test-{name}-{}", std::process::id()));
+        std::env::temp_dir().join(format!("baryon-build-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
     for (path, text) in files {
         let path = directory.join("package").join(path);
@@ -54,11 +54,11 @@ fn package(name: &str, files: &[(&str, &str)]) -> io::Result<PathBuf> {
     Ok(directory)
 }
 
-/// Runs `npl build` on the package in `directory`; its output, and the executable's path.
-fn npl_build(directory: &Path) -> io::Result<(Output, PathBuf)> {
+/// Runs `baryon build` on the package in `directory`; its output, and the executable's path.
+fn baryon_build(directory: &Path) -> io::Result<(Output, PathBuf)> {
     build_runtime();
     let program = directory.join("program");
-    let output = Command::new(NPL)
+    let output = Command::new(BARYON)
         .arg("build")
         .arg(directory.join("package"))
         .arg(&program)
@@ -72,7 +72,7 @@ fn stderr(output: &Output) -> String {
 }
 
 /// The text of standard error before a panic's backtrace: its message and location. The test
-/// `panics_print_a_backtrace_of_npl_frames` checks the backtrace itself.
+/// `panics_print_a_backtrace_of_baryon_frames` checks the backtrace itself.
 fn panic_report(output: &Output) -> String {
     let text = stderr(output);
     match text.split_once(BACKTRACE) {
@@ -92,7 +92,7 @@ fn programs_build_and_run() {
         "fibonacci",
         &[
             (
-                "numbers/fibonacci.npl",
+                "numbers/fibonacci.byn",
                 "def fibonacci(n: i64) -> i64:\n\
                  \x20   a = 0\n\
                  \x20   b = 1\n\
@@ -103,7 +103,7 @@ fn programs_build_and_run() {
                  \x20   return a\n",
             ),
             (
-                "main.npl",
+                "main.byn",
                 "from numbers.fibonacci import fibonacci\n\
                  \n\
                  \n\
@@ -114,7 +114,7 @@ fn programs_build_and_run() {
         ],
     )
     .unwrap();
-    let (output, program) = npl_build(&directory).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(ran.status.code(), Some(0), "{}", stderr(&ran));
@@ -122,53 +122,53 @@ fn programs_build_and_run() {
     let failing = package(
         "panic",
         &[(
-            "main.npl",
+            "main.byn",
             "def main():\n    n = 7\n    assert n * 6 == 41, \"arithmetic\"\n",
         )],
     )
     .unwrap();
-    let (output, program) = npl_build(&failing).unwrap();
+    let (output, program) = baryon_build(&failing).unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(ran.status.code(), Some(101));
     assert_eq!(
         panic_report(&ran),
-        "panic: assertion failed: n * 6 == 41, \"arithmetic\"\n  --> main.npl:3:5\n"
+        "panic: assertion failed: n * 6 == 41, \"arithmetic\"\n  --> main.byn:3:5\n"
     );
 }
 
-/// A package without `main.npl` builds nothing and says why, and so does one whose `main` is in
-/// another module: a program starts only at `main.npl`'s.
+/// A package without `main.byn` builds nothing and says why, and so does one whose `main` is in
+/// another module: a program starts only at `main.byn`'s.
 #[test]
-fn programs_start_at_main_npl() {
+fn programs_start_at_main_byn() {
     let directory = package(
         "no-main",
-        &[("main.npl", "def f() -> i64:\n    return 1\n")],
+        &[("main.byn", "def f() -> i64:\n    return 1\n")],
     )
     .unwrap();
-    let (output, program) = npl_build(&directory).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         stderr(&output),
         "error: the package has no `main` function to run\n \
-         = note: add `def main():` to `main.npl` at the package's root\n\n"
+         = note: add `def main():` to `main.byn` at the package's root\n\n"
     );
     assert!(!program.exists());
 
-    let elsewhere = package("main-elsewhere", &[("app.npl", "def main():\n    pass\n")]).unwrap();
-    let (output, _) = npl_build(&elsewhere).unwrap();
+    let elsewhere = package("main-elsewhere", &[("app.byn", "def main():\n    pass\n")]).unwrap();
+    let (output, _) = baryon_build(&elsewhere).unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         stderr(&output),
-        "error: only `main.npl` may define `main`\n \
-         --> app.npl:1:5\n  \
+        "error: only `main.byn` may define `main`\n \
+         --> app.byn:1:5\n  \
          |\n\
          1 | def main():\n  \
-         |     ^^^^ only `main.npl` may define `main`\n  \
-         = note: a program starts at the `main` function of the `main.npl` at the package's \
+         |     ^^^^ only `main.byn` may define `main`\n  \
+         = note: a program starts at the `main` function of the `main.byn` at the package's \
          root; rename this function\n\n\
          error: the package has no `main` function to run\n \
-         = note: add `def main():` to `main.npl` at the package's root\n\n"
+         = note: add `def main():` to `main.byn` at the package's root\n\n"
     );
 }
 
@@ -204,15 +204,15 @@ def main():
     assert v[0] + v[-1] == 4.0
     assert a[n] == 0.0
 ";
-    let directory = package("arrays", &[("main.npl", program)]).unwrap();
-    let (output, program) = npl_build(&directory).unwrap();
+    let directory = package("arrays", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(ran.status.code(), Some(101));
     assert_eq!(
         panic_report(&ran),
         "panic: index 1000 is out of range for dimension 0 of length 1000\n  \
-         --> main.npl:25:14\n"
+         --> main.byn:25:14\n"
     );
 }
 
@@ -262,13 +262,13 @@ def main():
     assert handled(400) == -200.0
     assert handled(4) == 3.0, \"last\"
 ";
-    let directory = package("errors", &[("main.npl", program)]).unwrap();
-    let (output, program) = npl_build(&directory).unwrap();
+    let directory = package("errors", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(
         panic_report(&ran),
-        "panic: assertion failed: handled(4) == 3.0, \"last\"\n  --> main.npl:39:5\n"
+        "panic: assertion failed: handled(4) == 3.0, \"last\"\n  --> main.byn:39:5\n"
     );
 }
 
@@ -290,8 +290,8 @@ def main():
     print()
     print('done')
 ";
-    let directory = package("printing", &[("main.npl", program)]).unwrap();
-    let (output, program) = npl_build(&directory).unwrap();
+    let directory = package("printing", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert!(ran.status.success(), "{}", stderr(&ran));
@@ -301,7 +301,7 @@ def main():
     );
 }
 
-/// `npl run` builds the package, runs it with the terminal's output, and exits with the
+/// `baryon run` builds the package, runs it with the terminal's output, and exits with the
 /// program's own status: the lines it printed reach standard output, then the panic of its
 /// failed `assert` exits with 101.
 #[test]
@@ -311,9 +311,9 @@ def main():
     print(\"started\")
     assert 1 > 2
 ";
-    let directory = package("run", &[("main.npl", program)]).unwrap();
+    let directory = package("run", &[("main.byn", program)]).unwrap();
     build_runtime();
-    let ran = Command::new(NPL)
+    let ran = Command::new(BARYON)
         .arg("run")
         .arg(directory.join("package"))
         .output()
@@ -322,7 +322,7 @@ def main():
     assert_eq!(ran.status.code(), Some(101));
     assert_eq!(
         panic_report(&ran),
-        "panic: assertion failed: 1 > 2\n  --> main.npl:3:5\n"
+        "panic: assertion failed: 1 > 2\n  --> main.byn:3:5\n"
     );
 }
 
@@ -355,8 +355,8 @@ def main() -> Raises[None, ConfigError | LimitError]:
     print(\"loaded\", load(12))
     print(\"unreachable\")
 ";
-    let directory = package("main_raises", &[("main.npl", program)]).unwrap();
-    let (output, program) = npl_build(&directory).unwrap();
+    let directory = package("main_raises", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&ran.stdout), "loaded 3.0\n");
@@ -407,8 +407,8 @@ def main():
     nobody: Particle | None = None
     print(scaled(four, nobody))
 ";
-    let directory = package("optionals", &[("main.npl", program)]).unwrap();
-    let (output, program) = npl_build(&directory).unwrap();
+    let directory = package("optionals", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(
@@ -418,15 +418,15 @@ def main():
     assert_eq!(
         panic_report(&ran),
         "panic: assertion failed: particle is not None, 'needs a particle'\n  \
-         --> main.npl:8:5\n"
+         --> main.byn:8:5\n"
     );
 }
 
-/// A panic ends its report with the `.npl` frames that led to it, most recent last, each with
+/// A panic ends its report with the `.byn` frames that led to it, most recent last, each with
 /// its function and source position, read from the line tables (roadmap 1.12.3). Inlined calls
 /// keep their frames, and the runtime's own frames are left out.
 #[test]
-fn panics_print_a_backtrace_of_npl_frames() {
+fn panics_print_a_backtrace_of_baryon_frames() {
     let program = "\
 def pick(values: Array[f64, 1], i: i64) -> f64:
     return values[i]
@@ -440,18 +440,18 @@ def total(n: i64) -> f64:
 def main():
     print(total(4))
 ";
-    let directory = package("backtrace", &[("main.npl", program)]).unwrap();
-    let (output, program) = npl_build(&directory).unwrap();
+    let directory = package("backtrace", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(ran.status.code(), Some(101));
     let root = directory.join("package").canonicalize().unwrap();
-    let file = root.join("main.npl").display().to_string();
+    let file = root.join("main.byn").display().to_string();
     assert_eq!(
         stderr(&ran),
         format!(
             "panic: index 4 is out of range for dimension 0 of length 4\n  \
-             --> main.npl:2:19\n\
+             --> main.byn:2:19\n\
              {BACKTRACE}  \
              main.main at {file}:11:11\n  \
              main.total at {file}:7:12\n  \
@@ -490,8 +490,8 @@ def main() -> Raises[None, MissingError]:
     show(Probe(\"energy\", 2.5))
     raise MissingError(\"pressure\")
 ";
-    let directory = package("text", &[("main.npl", program)]).unwrap();
-    let (output, program) = npl_build(&directory).unwrap();
+    let directory = package("text", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(

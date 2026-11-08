@@ -23,7 +23,7 @@ use syntax::NodeId;
 /// use types::{Key, TypedBody};
 ///
 /// let mut sources = SourceMap::new();
-/// let file = sources.add("main.npl", "pass")?;
+/// let file = sources.add("main.byn", "pass")?;
 /// let mut builder = TreeBuilder::new(file);
 /// builder.leaf(SyntaxKind::Module, Role::Root, 0, 4);
 /// let node = builder.finish().root();

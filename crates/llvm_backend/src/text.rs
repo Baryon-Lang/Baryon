@@ -51,11 +51,11 @@ impl Function<'_, '_, '_> {
         self.line_label(&free);
         let bytes = self.emit(&format!("load ptr, ptr {address}"));
         self.declare(
-            "npl_rt_deallocate",
-            "declare void @npl_rt_deallocate(ptr, i64, i64) nounwind",
+            "baryon_rt_deallocate",
+            "declare void @baryon_rt_deallocate(ptr, i64, i64) nounwind",
         );
         self.line(&format!(
-            "call void @npl_rt_deallocate(ptr {bytes}, i64 {word}, i64 1)"
+            "call void @baryon_rt_deallocate(ptr {bytes}, i64 {word}, i64 1)"
         ));
         self.line(&format!("br label %{done}"));
         self.line_label(&done);

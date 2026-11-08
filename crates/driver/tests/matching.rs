@@ -6,11 +6,11 @@
 
 use driver::Session;
 
-/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// Checks `main.byn` and returns every diagnostic, rendered and joined by blank lines. An empty
 /// string means the program is clean. The program's first newline is dropped.
 fn check_one(text: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+    if let Err(error) = session.add_file("main.byn", text.strip_prefix('\n').unwrap_or(text)) {
         return error.to_string();
     }
     session
@@ -104,47 +104,47 @@ def wrap(boundary: Boundary, index: i64, pair: tuple[i64, bool]) -> i64:
         check_one(program),
         "\
 error: this `match` does not handle `Boundary.ABSORBING`
- --> main.npl:8:11
+ --> main.byn:8:11
   |
 8 |     match boundary:
   |           ^^^^^^^^ not every value is handled
   = note: add `case Boundary.ABSORBING:`, or `case _:` for every value not matched yet; a `case` with an `if` guard may not match, so it does not count
 
 error: this `match` does not handle every value of type `i64`
-  --> main.npl:11:11
+  --> main.byn:11:11
    |
 11 |     match index:
    |           ^^^^^ not every value is handled
    = note: add `case _:` at the end; a `case` with an `if` guard may not match, so it does not count
 
 error: a pattern of type `str` cannot match a value of type `i64`
-  --> main.npl:17:14
+  --> main.byn:17:14
    |
 17 |         case 'zero':
    |              ^^^^^^ does not match the subject
 
 error: a tuple pattern of 2 items cannot match a value of type `i64`
-  --> main.npl:19:14
+  --> main.byn:19:14
    |
 19 |         case (a, b):
    |              ^^^^^^ does not match the subject
 
 error: this kind of pattern is not supported
-  --> main.npl:21:14
+  --> main.byn:21:14
    |
 21 |         case Boundary(x=1):
    |              ^^^^^^^^^^^^^ not supported
    = note: a `case` matches literals, enum members, `True`, `False`, `None`, tuples, names and `_`
 
 error: this `match` does not handle `(_, False)`
-  --> main.npl:25:11
+  --> main.byn:25:11
    |
 25 |     match pair:
    |           ^^^^ not every value is handled
    = note: add `case (_, False):`, or `case _:` for every value not matched yet; a `case` with an `if` guard may not match, so it does not count
 
 error: `<` cannot order `Boundary` values
-  --> main.npl:28:16
+  --> main.byn:28:16
    |
 28 |     if boundary < Boundary.ABSORBING:
    |                ^^^^^^^^^^^^^^^^^^^^^ no order

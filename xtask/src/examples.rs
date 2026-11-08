@@ -11,8 +11,8 @@ use std::process::Command;
 /// Where the example programs live, relative to the repository root.
 const EXAMPLES: &str = "docs/examples";
 
-/// The file extension of a program in the language. A working choice until roadmap decision D.6.
-const EXTENSION: &str = "npl";
+/// The file extension of a program in the language, fixed by decision 0023.
+const EXTENSION: &str = "byn";
 
 /// The Python script that parses each file named on its command line.
 const CHECK_SYNTAX: &str = include_str!("../python/check_syntax.py");

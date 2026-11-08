@@ -1,6 +1,6 @@
 //! The functions compiled code calls, exported with C names and the C calling convention.
 //!
-//! Every name starts with `npl_rt_`, so the runtime's symbols never collide with a program's. The
+//! Every name starts with `baryon_rt_`, so the runtime's symbols never collide with a program's. The
 //! backend declares each function with the signature written here and calls it by name; nothing
 //! else about the runtime is visible to compiled code. Each function is a thin wrapper: it turns
 //! raw pointers into references, under the promise in its `# Safety` section, and calls the safe
@@ -9,8 +9,8 @@
 mod output;
 
 pub use output::{
-    npl_rt_print_bool, npl_rt_print_f32, npl_rt_print_f64, npl_rt_print_i64, npl_rt_print_str,
-    npl_rt_print_u64,
+    baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
+    baryon_rt_print_str, baryon_rt_print_u64,
 };
 
 use crate::Location;
@@ -34,8 +34,8 @@ unsafe fn location<'a>(location: *const Location) -> Option<&'a Location> {
 /// Allocates `bytes` bytes aligned to `align`, uninitialized, for a value that lives on the heap.
 ///
 /// Returns a pointer that is never null. Zero bytes allocate nothing and return a pointer whose
-/// address is `align`, which [`npl_rt_deallocate`] accepts. Free the memory with
-/// [`npl_rt_deallocate`] and the same `bytes` and `align`.
+/// address is `align`, which [`baryon_rt_deallocate`] accepts. Free the memory with
+/// [`baryon_rt_deallocate`] and the same `bytes` and `align`.
 ///
 /// # Panics
 ///
@@ -49,18 +49,18 @@ unsafe fn location<'a>(location: *const Location) -> Option<&'a Location> {
 /// # Example
 ///
 /// ```
-/// use runtime::{npl_rt_allocate, npl_rt_deallocate};
+/// use runtime::{baryon_rt_allocate, baryon_rt_deallocate};
 ///
 /// // SAFETY: a null location is allowed; the memory is freed with the size it was allocated with.
 /// unsafe {
-///     let pointer = npl_rt_allocate(24, 8, std::ptr::null());
+///     let pointer = baryon_rt_allocate(24, 8, std::ptr::null());
 ///     pointer.cast::<[f64; 3]>().write([1.0, 2.0, 3.0]);
-///     npl_rt_deallocate(pointer, 24, 8);
+///     baryon_rt_deallocate(pointer, 24, 8);
 /// }
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn npl_rt_allocate(
+pub unsafe extern "C" fn baryon_rt_allocate(
     bytes: usize,
     align: usize,
     location: *const Location,
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn npl_rt_allocate(
 /// `align`, uninitialized. This is what an IR `NewArray` becomes.
 ///
 /// Returns a pointer that is never null; an empty array allocates nothing, as in
-/// [`npl_rt_allocate`]. Free the memory with [`npl_rt_deallocate`], passing `count` times
+/// [`baryon_rt_allocate`]. Free the memory with [`baryon_rt_deallocate`], passing `count` times
 /// `element_size` as the size, which cannot overflow once this function has returned.
 ///
 /// # Panics
@@ -91,23 +91,23 @@ pub unsafe extern "C" fn npl_rt_allocate(
 /// # Example
 ///
 /// ```
-/// use runtime::{npl_rt_allocate_array, npl_rt_deallocate};
+/// use runtime::{baryon_rt_allocate_array, baryon_rt_deallocate};
 ///
 /// let count = 1000;
 /// // SAFETY: a null location is allowed; every element is written before it is read; the
 /// // memory is freed with the size it was allocated with.
 /// unsafe {
-///     let elements = npl_rt_allocate_array(count, 8, 8, std::ptr::null()).cast::<f64>();
+///     let elements = baryon_rt_allocate_array(count, 8, 8, std::ptr::null()).cast::<f64>();
 ///     for index in 0..1000 {
 ///         elements.add(index).write(index as f64);
 ///     }
 ///     assert_eq!(elements.add(999).read(), 999.0);
-///     npl_rt_deallocate(elements.cast(), 1000 * 8, 8);
+///     baryon_rt_deallocate(elements.cast(), 1000 * 8, 8);
 /// }
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn npl_rt_allocate_array(
+pub unsafe extern "C" fn baryon_rt_allocate_array(
     count: i64,
     element_size: usize,
     align: usize,
@@ -120,34 +120,34 @@ pub unsafe extern "C" fn npl_rt_allocate_array(
     }
 }
 
-/// Frees memory from [`npl_rt_allocate`] or [`npl_rt_allocate_array`]. A null pointer does
+/// Frees memory from [`baryon_rt_allocate`] or [`baryon_rt_allocate_array`]. A null pointer does
 /// nothing, so a value that never got its memory can be dropped like any other.
 ///
 /// # Panics
 ///
 /// Ends the program with a panic when `bytes` and `align` are not a size and alignment
-/// [`npl_rt_allocate`] could have accepted, which only a compiler bug passes.
+/// [`baryon_rt_allocate`] could have accepted, which only a compiler bug passes.
 ///
 /// # Safety
 ///
-/// `pointer` is null, or came from [`npl_rt_allocate`] or [`npl_rt_allocate_array`] with this
+/// `pointer` is null, or came from [`baryon_rt_allocate`] or [`baryon_rt_allocate_array`] with this
 /// size in bytes and alignment and has not been freed since.
 ///
 /// # Example
 ///
 /// ```
-/// use runtime::{npl_rt_allocate, npl_rt_deallocate};
+/// use runtime::{baryon_rt_allocate, baryon_rt_deallocate};
 ///
 /// // SAFETY: null is always allowed; the empty allocation is freed with its own size.
 /// unsafe {
-///     npl_rt_deallocate(std::ptr::null_mut(), 64, 8);
-///     let empty = npl_rt_allocate(0, 8, std::ptr::null());
-///     npl_rt_deallocate(empty, 0, 8);
+///     baryon_rt_deallocate(std::ptr::null_mut(), 64, 8);
+///     let empty = baryon_rt_allocate(0, 8, std::ptr::null());
+///     baryon_rt_deallocate(empty, 0, 8);
 /// }
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn npl_rt_deallocate(pointer: *mut u8, bytes: usize, align: usize) {
+pub unsafe extern "C" fn baryon_rt_deallocate(pointer: *mut u8, bytes: usize, align: usize) {
     let Some(pointer) = NonNull::new(pointer) else {
         return;
     };
@@ -175,19 +175,19 @@ pub unsafe extern "C" fn npl_rt_deallocate(pointer: *mut u8, bytes: usize, align
 ///
 /// # Example
 ///
-/// What compiled code does when `assert n > 0` fails at `heat.npl:12:5`:
+/// What compiled code does when `assert n > 0` fails at `heat.byn:12:5`:
 ///
 /// ```no_run
-/// use runtime::{Location, npl_rt_panic};
+/// use runtime::{Location, baryon_rt_panic};
 ///
-/// static HERE: Location = Location::new("heat.npl", 12, 5);
+/// static HERE: Location = Location::new("heat.byn", 12, 5);
 /// let message = "assertion failed: n > 0";
 /// // SAFETY: the message and the location are constants that live as long as the program.
-/// unsafe { npl_rt_panic(message.as_ptr(), message.len(), &HERE) }
+/// unsafe { baryon_rt_panic(message.as_ptr(), message.len(), &HERE) }
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn npl_rt_panic(
+pub unsafe extern "C" fn baryon_rt_panic(
     message: *const u8,
     length: usize,
     location: *const Location,
@@ -206,7 +206,7 @@ pub unsafe extern "C" fn npl_rt_panic(
 /// an IR `IndexInBounds` check.
 ///
 /// Prints `panic: index <index> is out of range for dimension <dimension> of length <length>` and the location, as
-/// [`npl_rt_panic`] does.
+/// [`baryon_rt_panic`] does.
 ///
 /// # Safety
 ///
@@ -215,15 +215,15 @@ pub unsafe extern "C" fn npl_rt_panic(
 /// # Example
 ///
 /// ```no_run
-/// use runtime::{Location, npl_rt_panic_index};
+/// use runtime::{Location, baryon_rt_panic_index};
 ///
-/// static HERE: Location = Location::new("md.npl", 58, 13);
+/// static HERE: Location = Location::new("md.byn", 58, 13);
 /// // SAFETY: the location is a constant that lives as long as the program.
-/// unsafe { npl_rt_panic_index(10, 0, 8, &HERE) }
+/// unsafe { baryon_rt_panic_index(10, 0, 8, &HERE) }
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn npl_rt_panic_index(
+pub unsafe extern "C" fn baryon_rt_panic_index(
     index: i64,
     dimension: u32,
     length: i64,
@@ -243,7 +243,7 @@ pub unsafe extern "C" fn npl_rt_panic_index(
 /// calls it on the failing side of an IR `SameLength` check.
 ///
 /// Prints `panic: array lengths differ in dimension <dimension>: <expected> and <found>` and the
-/// location, as [`npl_rt_panic`] does.
+/// location, as [`baryon_rt_panic`] does.
 ///
 /// # Safety
 ///
@@ -252,15 +252,15 @@ pub unsafe extern "C" fn npl_rt_panic_index(
 /// # Example
 ///
 /// ```no_run
-/// use runtime::{Location, npl_rt_panic_length_mismatch};
+/// use runtime::{Location, baryon_rt_panic_length_mismatch};
 ///
-/// static HERE: Location = Location::new("heat.npl", 30, 11);
+/// static HERE: Location = Location::new("heat.byn", 30, 11);
 /// // SAFETY: the location is a constant that lives as long as the program.
-/// unsafe { npl_rt_panic_length_mismatch(0, 64, 63, &HERE) }
+/// unsafe { baryon_rt_panic_length_mismatch(0, 64, 63, &HERE) }
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn npl_rt_panic_length_mismatch(
+pub unsafe extern "C" fn baryon_rt_panic_length_mismatch(
     dimension: u32,
     expected: i64,
     found: i64,
@@ -285,15 +285,15 @@ pub unsafe extern "C" fn npl_rt_panic_length_mismatch(
 /// # Example
 ///
 /// ```
-/// use runtime::npl_rt_chunk_count;
+/// use runtime::baryon_rt_chunk_count;
 ///
-/// assert_eq!(npl_rt_chunk_count(10), 10);
-/// assert_eq!(npl_rt_chunk_count(1_000_000), 1024);
-/// assert_eq!(npl_rt_chunk_count(0), 0);
+/// assert_eq!(baryon_rt_chunk_count(10), 10);
+/// assert_eq!(baryon_rt_chunk_count(1_000_000), 1024);
+/// assert_eq!(baryon_rt_chunk_count(0), 0);
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub extern "C" fn npl_rt_chunk_count(iterations: i64) -> i64 {
+pub extern "C" fn baryon_rt_chunk_count(iterations: i64) -> i64 {
     parallel::chunk_count(iterations)
 }
 
@@ -302,7 +302,7 @@ pub extern "C" fn npl_rt_chunk_count(iterations: i64) -> i64 {
 ///
 /// Each call gets `context`, the chunk's index and its iterations as `start..end`, counted from
 /// 0; compiled code maps them onto the loop's own range. The chunks are the ones
-/// [`npl_rt_chunk_count`] counts. Chunks run in any order and at the same time, and every write a
+/// [`baryon_rt_chunk_count`] counts. Chunks run in any order and at the same time, and every write a
 /// chunk makes is visible to the caller when this returns. A loop with one chunk runs on the
 /// calling thread and starts no threads.
 ///
@@ -317,7 +317,7 @@ pub extern "C" fn npl_rt_chunk_count(iterations: i64) -> i64 {
 /// A sum over 1000 iterations, one partial result per chunk, combined in chunk order:
 ///
 /// ```
-/// use runtime::{npl_rt_chunk_count, npl_rt_parallel_for};
+/// use runtime::{baryon_rt_chunk_count, baryon_rt_parallel_for};
 /// use std::ffi::c_void;
 /// use std::sync::atomic::{AtomicI64, Ordering};
 ///
@@ -330,16 +330,16 @@ pub extern "C" fn npl_rt_chunk_count(iterations: i64) -> i64 {
 ///
 /// let iterations = 1000;
 /// let partials: Vec<AtomicI64> =
-///     (0..npl_rt_chunk_count(iterations)).map(|_| AtomicI64::new(0)).collect();
+///     (0..baryon_rt_chunk_count(iterations)).map(|_| AtomicI64::new(0)).collect();
 /// let context = std::ptr::from_ref(&partials).cast_mut().cast();
 /// // SAFETY: each chunk writes only its own atomic partial, so chunks may run at once.
-/// unsafe { npl_rt_parallel_for(iterations, body, context) };
+/// unsafe { baryon_rt_parallel_for(iterations, body, context) };
 /// let total: i64 = partials.iter().map(|partial| partial.load(Ordering::Relaxed)).sum();
 /// assert_eq!(total, 999 * 1000 / 2);
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn npl_rt_parallel_for(
+pub unsafe extern "C" fn baryon_rt_parallel_for(
     iterations: i64,
     body: ChunkBody,
     context: *mut c_void,
@@ -363,10 +363,10 @@ mod tests {
     use std::process::Command;
 
     /// Set in the environment of the child process that is meant to panic.
-    const CHILD: &str = "NPL_RUNTIME_TEST_PANIC_CHILD";
+    const CHILD: &str = "BARYON_RUNTIME_TEST_PANIC_CHILD";
 
     /// The location the child reports.
-    static HERE: Location = Location::new("md.npl", 58, 13);
+    static HERE: Location = Location::new("md.byn", 58, 13);
 
     /// A panic ends the process, so the test runs itself again as a child that panics, and checks
     /// what the child printed and how it exited.
@@ -374,7 +374,7 @@ mod tests {
     fn a_panic_prints_its_message_and_exits_with_status_101() {
         if std::env::var_os(CHILD).is_some() {
             // SAFETY: `HERE` is a static location.
-            unsafe { npl_rt_panic_index(10, 0, 8, &raw const HERE) }
+            unsafe { baryon_rt_panic_index(10, 0, 8, &raw const HERE) }
         }
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
@@ -388,14 +388,14 @@ mod tests {
         assert_eq!(output.status.code(), Some(101));
         assert_eq!(
             String::from_utf8_lossy(&output.stderr),
-            "panic: index 10 is out of range for dimension 0 of length 8\n  --> md.npl:58:13\n"
+            "panic: index 10 is out of range for dimension 0 of length 8\n  --> md.byn:58:13\n"
         );
     }
 
     #[test]
     fn allocates_and_frees_an_array_through_the_exported_functions() {
         // SAFETY: a null location is allowed.
-        let pointer = unsafe { npl_rt_allocate_array(3, 8, 8, std::ptr::null()) };
+        let pointer = unsafe { baryon_rt_allocate_array(3, 8, 8, std::ptr::null()) };
         #[allow(
             clippy::cast_ptr_alignment,
             reason = "the allocation is aligned to 8 bytes, as an `i64` needs"
@@ -407,6 +407,6 @@ mod tests {
         elements.copy_from_slice(&[0, 2, 4]);
         assert_eq!(elements, [0, 2, 4]);
         // SAFETY: freed once, with the size and alignment it was allocated with.
-        unsafe { npl_rt_deallocate(pointer.cast(), 24, 8) };
+        unsafe { baryon_rt_deallocate(pointer.cast(), 24, 8) };
     }
 }

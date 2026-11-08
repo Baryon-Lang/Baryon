@@ -63,7 +63,7 @@ fn item<'db>(database: &'db Database, name: &str) -> Item<'db> {
     let file = File::new(
         database,
         FileId::from_index(0),
-        SourceFile::new("a.npl", name).unwrap(),
+        SourceFile::new("a.byn", name).unwrap(),
     );
     let tree = database.parse(file).tree();
     let statement = tree.children(tree.root()).next().unwrap();
@@ -71,13 +71,13 @@ fn item<'db>(database: &'db Database, name: &str) -> Item<'db> {
     Item::new(database, Package::new(database, Vec::new()), file, node)
 }
 
-/// The source file the test spans point into, `heat.npl`, whose first line is an `assert`.
+/// The source file the test spans point into, `heat.byn`, whose first line is an `assert`.
 const SOURCE: &str = "assert total >= 0,\n    'total is negative'\n";
 
 /// The sources holding [`SOURCE`] as file 0.
 fn sources() -> SourceMap {
     let mut sources = SourceMap::new();
-    sources.add("heat.npl", SOURCE).unwrap();
+    sources.add("heat.byn", SOURCE).unwrap();
     sources
 }
 
@@ -177,28 +177,28 @@ const RUNTIME: &str = r#"
         if (at) printf("  --> %.*s:%u:%u\n", (int)at->length, at->file, at->line, at->column);
         exit(101);
     }
-    void npl_rt_panic(const char *message, size_t length, const Location *at) {
+    void baryon_rt_panic(const char *message, size_t length, const Location *at) {
         printf("panic: %.*s\n", (int)length, message);
         stop(at);
     }
-    void npl_rt_panic_length_mismatch(uint32_t dimension, int64_t expected, int64_t found,
+    void baryon_rt_panic_length_mismatch(uint32_t dimension, int64_t expected, int64_t found,
                                       const Location *at) {
         printf("panic: array lengths differ in dimension %u: %lld and %lld\n", dimension,
                (long long)expected, (long long)found);
         stop(at);
     }
-    void npl_rt_panic_index(int64_t index, uint32_t dimension, int64_t length,
+    void baryon_rt_panic_index(int64_t index, uint32_t dimension, int64_t length,
                             const Location *at) {
         printf("panic: index %lld is out of range for dimension %u of length %lld\n",
                (long long)index, dimension, (long long)length);
         stop(at);
     }
-    void *npl_rt_allocate_array(int64_t count, size_t size, size_t align, const Location *at) {
+    void *baryon_rt_allocate_array(int64_t count, size_t size, size_t align, const Location *at) {
         (void)align;
         (void)at;
         return malloc(count * size);
     }
-    void npl_rt_deallocate(void *pointer, size_t bytes, size_t align) {
+    void baryon_rt_deallocate(void *pointer, size_t bytes, size_t align) {
         printf("freed %zu bytes aligned to %zu\n", bytes, align);
         free(pointer);
     }
@@ -424,16 +424,16 @@ bb1:
 bb2:
   ret void
 p0:
-  call void @npl_rt_panic(ptr @npl.str.2, i64 23, ptr @npl.loc.1)
+  call void @baryon_rt_panic(ptr @baryon.str.2, i64 23, ptr @baryon.loc.1)
   unreachable
 }
 
-@npl.str.0 = private unnamed_addr constant [8 x i8] c\"heat.npl\"
-@npl.loc.1 = private unnamed_addr constant { ptr, i64, i32, i32 } { ptr @npl.str.0, i64 8, i32 1, i32 1 }
-@npl.str.2 = private unnamed_addr constant [23 x i8] c\"integer overflow in `+`\"
+@baryon.str.0 = private unnamed_addr constant [8 x i8] c\"heat.byn\"
+@baryon.loc.1 = private unnamed_addr constant { ptr, i64, i32, i32 } { ptr @baryon.str.0, i64 8, i32 1, i32 1 }
+@baryon.str.2 = private unnamed_addr constant [23 x i8] c\"integer overflow in `+`\"
 
+declare void @baryon_rt_panic(ptr, i64, ptr) cold noreturn nounwind
 declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64)
-declare void @npl_rt_panic(ptr, i64, ptr) cold noreturn nounwind
 declare void @report(i64)
 "
     );
@@ -454,7 +454,7 @@ declare void @report(i64)
     assert_eq!(run(&executable, &["37"]).as_deref(), Ok("42\n"));
     assert_eq!(
         run(&executable, &["9223372036854775807"]),
-        Err("panic: integer overflow in `+`\n  --> heat.npl:1:1\n".to_owned())
+        Err("panic: integer overflow in `+`\n  --> heat.byn:1:1\n".to_owned())
     );
 }
 

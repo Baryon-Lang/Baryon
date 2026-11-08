@@ -58,11 +58,11 @@ After a move, the old owner holds nothing. Using it is an error until a new valu
 
 ```text
 error: `a` was moved
-  --> heat.npl:12:13
+  --> heat.byn:12:13
    |
 12 |     total = a.sum()
    |             ^ read after the move
-  ::: heat.npl:11:9
+  ::: heat.byn:11:9
    |
 11 |     b = a
    |         - `a` moved here
@@ -77,7 +77,7 @@ A read-only or `InOut` parameter belongs to the caller, so it cannot be moved, r
 
 ```text
 error: `u` is borrowed from the caller, so it cannot be moved
-  --> heat.npl:23:12
+  --> heat.byn:23:12
    |
 23 |     return u
    |            ^ moved here
@@ -134,7 +134,7 @@ seeing.
 
 ```text
 error: `values` is a read-only parameter, so it cannot be changed
- --> stats.npl:3:5
+ --> stats.byn:3:5
   |
 3 |     values.append(0.0)
   |     ^^^^^^ changed here
@@ -198,7 +198,7 @@ For every call, including method calls and operators that change their left side
 
    ```text
    error: `atoms` is changed by this call and also passed to it
-    --> md.npl:40:5
+    --> md.byn:40:5
       |
    40 |     integrate(atoms, atoms.forces)
       |               -----  ^^^^^^^^^^^^ `atoms.forces` is part of `atoms`
@@ -233,11 +233,11 @@ assignment to its elements. To change elements while looping, loop over the indi
 
 ```text
 error: `values` cannot be changed while a loop goes over it
- --> stats.npl:3:9
+ --> stats.byn:3:9
   |
 3 |         values.append(v * 2.0)
   |         ^^^^^^ changed here
- ::: stats.npl:2:14
+ ::: stats.byn:2:14
   |
 2 |     for v in values:
   |              ------ the loop goes over `values` here

@@ -55,11 +55,11 @@ impl<'db> Function<'_, '_, 'db> {
         }
         let location = self.constants.location(self.span);
         self.declare(
-            "npl_rt_allocate_array",
-            "declare noalias nonnull ptr @npl_rt_allocate_array(i64, i64, i64, ptr) nounwind",
+            "baryon_rt_allocate_array",
+            "declare noalias nonnull ptr @baryon_rt_allocate_array(i64, i64, i64, ptr) nounwind",
         );
         let data = self.emit(&format!(
-            "call ptr @npl_rt_allocate_array(i64 {count}, i64 {}, i64 {}, ptr {location})",
+            "call ptr @baryon_rt_allocate_array(i64 {count}, i64 {}, i64 {}, ptr {location})",
             layout.size(),
             layout.align()
         ));
@@ -258,11 +258,11 @@ impl<'db> Function<'_, '_, 'db> {
             bytes = self.emit(&format!("mul i64 {bytes}, {length}"));
         }
         self.declare(
-            "npl_rt_deallocate",
-            "declare void @npl_rt_deallocate(ptr, i64, i64) nounwind",
+            "baryon_rt_deallocate",
+            "declare void @baryon_rt_deallocate(ptr, i64, i64) nounwind",
         );
         self.line(&format!(
-            "call void @npl_rt_deallocate(ptr {data}, i64 {bytes}, i64 {})",
+            "call void @baryon_rt_deallocate(ptr {data}, i64 {bytes}, i64 {})",
             layout.align()
         ));
         Ok(())

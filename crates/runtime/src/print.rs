@@ -3,7 +3,7 @@
 //! The language prints values as Python does (decision 0004, Python's spelling and behavior where
 //! Python has them), so a script ported from Python prints the same lines. Compiled code calls
 //! one runtime function per argument, and prints the separator and the line end with
-//! [`npl_rt_print_str`](crate::npl_rt_print_str): `print(a, b)` is four calls. Each call names
+//! [`baryon_rt_print_str`](crate::baryon_rt_print_str): `print(a, b)` is four calls. Each call names
 //! its stream: 1 for standard output, where `print` writes, or 2 for standard error, where the
 //! report of an error that ends `main` goes.
 //!

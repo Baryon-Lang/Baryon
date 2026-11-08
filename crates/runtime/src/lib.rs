@@ -15,16 +15,16 @@
 //!
 //! | Function | Job |
 //! | --- | --- |
-//! | [`npl_rt_allocate`], [`npl_rt_deallocate`] | Heap memory for a value, from the system allocator |
-//! | [`npl_rt_allocate_array`] | Memory for an array's elements, checking the length and the size; an IR `NewArray` |
-//! | [`npl_rt_panic`] | End the program with a message the compiler wrote, such as a failed `assert` |
-//! | [`npl_rt_panic_index`] | End the program for an index out of range (decision 0010) |
-//! | [`npl_rt_panic_length_mismatch`] | End the program for arrays of different lengths combined element by element |
-//! | [`npl_rt_chunk_count`], [`npl_rt_parallel_for`] | Run a `prange` loop on the thread pool, in fixed chunks |
-//! | [`npl_rt_print_i64`], [`npl_rt_print_u64`], [`npl_rt_print_f64`], [`npl_rt_print_f32`], [`npl_rt_print_bool`], [`npl_rt_print_str`] | Print one argument of `print` to standard output, or a field of an error that ends `main` to standard error, as Python writes it |
+//! | [`baryon_rt_allocate`], [`baryon_rt_deallocate`] | Heap memory for a value, from the system allocator |
+//! | [`baryon_rt_allocate_array`] | Memory for an array's elements, checking the length and the size; an IR `NewArray` |
+//! | [`baryon_rt_panic`] | End the program with a message the compiler wrote, such as a failed `assert` |
+//! | [`baryon_rt_panic_index`] | End the program for an index out of range (decision 0010) |
+//! | [`baryon_rt_panic_length_mismatch`] | End the program for arrays of different lengths combined element by element |
+//! | [`baryon_rt_chunk_count`], [`baryon_rt_parallel_for`] | Run a `prange` loop on the thread pool, in fixed chunks |
+//! | [`baryon_rt_print_i64`], [`baryon_rt_print_u64`], [`baryon_rt_print_f64`], [`baryon_rt_print_f32`], [`baryon_rt_print_bool`], [`baryon_rt_print_str`] | Print one argument of `print` to standard output, or a field of an error that ends `main` to standard error, as Python writes it |
 //!
 //! A panic prints its message, the [`Location`] of the check and, when the program has debug
-//! information, a backtrace of its `.npl` frames to standard error, then exits with status 101. Panics cannot be caught (decision 0005), so the runtime never unwinds.
+//! information, a backtrace of its `.byn` frames to standard error, then exits with status 101. Panics cannot be caught (decision 0005), so the runtime never unwinds.
 //!
 //! This crate is the one place outside a backend where `unsafe` code is allowed, under the rules
 //! decision 0021 sets: each item that uses it says why, each `unsafe` block carries a
@@ -37,25 +37,25 @@
 //! written in Rust:
 //!
 //! ```no_run
-//! use runtime::{Location, npl_rt_allocate_array, npl_rt_deallocate, npl_rt_panic_index};
+//! use runtime::{Location, baryon_rt_allocate_array, baryon_rt_deallocate, baryon_rt_panic_index};
 //!
-//! static ALLOCATION: Location = Location::new("heat.npl", 4, 9);
-//! static INDEX: Location = Location::new("heat.npl", 5, 5);
+//! static ALLOCATION: Location = Location::new("heat.byn", 4, 9);
+//! static INDEX: Location = Location::new("heat.byn", 5, 5);
 //!
 //! let (n, i) = (8_i64, 10_i64);
 //! // SAFETY: the locations are statics; the elements are written before they are read and
 //! // freed once with the size they were allocated with.
 //! unsafe {
-//!     let a = npl_rt_allocate_array(n, 8, 8, &ALLOCATION).cast::<f64>();
+//!     let a = baryon_rt_allocate_array(n, 8, 8, &ALLOCATION).cast::<f64>();
 //!     for index in 0..8 {
 //!         a.add(index).write(0.0);
 //!     }
 //!     if !(0..n).contains(&i) {
 //!         // Prints "panic: index 10 is out of range for dimension 0 of length 8" and
-//!         // "  --> heat.npl:5:5", then exits with status 101.
-//!         npl_rt_panic_index(i, 0, n, &INDEX);
+//!         // "  --> heat.byn:5:5", then exits with status 101.
+//!         baryon_rt_panic_index(i, 0, n, &INDEX);
 //!     }
-//!     npl_rt_deallocate(a.cast(), 64, 8);
+//!     baryon_rt_deallocate(a.cast(), 64, 8);
 //! }
 //! ```
 
@@ -68,9 +68,10 @@ mod parallel;
 mod print;
 
 pub use abi::{
-    npl_rt_allocate, npl_rt_allocate_array, npl_rt_chunk_count, npl_rt_deallocate, npl_rt_panic,
-    npl_rt_panic_index, npl_rt_panic_length_mismatch, npl_rt_parallel_for, npl_rt_print_bool,
-    npl_rt_print_f32, npl_rt_print_f64, npl_rt_print_i64, npl_rt_print_str, npl_rt_print_u64,
+    baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_chunk_count, baryon_rt_deallocate,
+    baryon_rt_panic, baryon_rt_panic_index, baryon_rt_panic_length_mismatch,
+    baryon_rt_parallel_for, baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64,
+    baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_u64,
 };
 pub use location::Location;
 pub use parallel::ChunkBody;

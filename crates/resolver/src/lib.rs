@@ -92,14 +92,14 @@
 //! }
 //!
 //! let database = Database::default();
-//! let source = || SourceFile::new("main.npl", "total\n");
+//! let source = || SourceFile::new("main.byn", "total\n");
 //! let file = File::new(&database, FileId::from_index(0), source()?);
 //! let package = Package::new(&database, vec![file]);
 //!
 //! let resolution = database.resolve(package, file);
 //! assert_eq!(
 //!     render(&resolution.diagnostics()[0], &Sources(source()?)).to_string(),
-//!     "error: undefined name `total`\n --> main.npl:1:1\n  |\n1 | total\n  | ^^^^^ not defined in this scope",
+//!     "error: undefined name `total`\n --> main.byn:1:1\n  |\n1 | total\n  | ^^^^^ not defined in this scope",
 //! );
 //! # Ok::<(), source::SourceError>(())
 //! ```

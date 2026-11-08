@@ -91,4 +91,21 @@ impl<'db> Builder<'db> {
             _ => None,
         }
     }
+
+    /// Whether a value of type `from` changes representation when used as a `to`, as
+    /// `coerce` does it: a number converted, or a value wrapped as a `T | None`.
+    pub(crate) fn converts(&self, from: Type<'db>, to: Type<'db>) -> bool {
+        if from == to {
+            return false;
+        }
+        if let Some(value) = self.optional_value(to)
+            && (value == from || matches!(from.kind(self.db), TypeKind::None))
+        {
+            return true;
+        }
+        matches!(
+            (from.kind(self.db), to.kind(self.db)),
+            (TypeKind::Primitive(_), TypeKind::Primitive(_))
+        )
+    }
 }

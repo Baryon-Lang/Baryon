@@ -1,10 +1,10 @@
 //! `print`: a call of [`Builtin::Print`](mir::Builtin::Print) becomes one runtime call per
 //! argument, with a space between arguments and a line end after the last.
 //!
-//! The runtime formats each value as Python does (`npl_rt_print_*`, roadmap 1.12.5). A signed
+//! The runtime formats each value as Python does (`baryon_rt_print_*`, roadmap 1.12.5). A signed
 //! integer is widened to `i64` and an unsigned one to `u64`, so two functions cover every width;
 //! a float keeps its width, so an `f32` prints its own shortest digits. A string literal, which
-//! lowering passes as a constant, becomes a byte constant printed with `npl_rt_print_str`, as
+//! lowering passes as a constant, becomes a byte constant printed with `baryon_rt_print_str`, as
 //! the separator and the line end are. A `str` value prints its bytes the same way, with the
 //! "not owned" bit masked off its length (decision 0022). Each runtime call names its stream
 //! first: 1, standard output, for `print`. Complex numbers, enums and anything else are not
@@ -88,14 +88,14 @@ impl<'db> Function<'_, '_, 'db> {
             _ => None,
         };
         let (function, parameter, value) = match number.ok_or_else(printing)? {
-            Number::Bool => ("npl_rt_print_bool", "i1 zeroext", value.to_owned()),
-            Number::Float(32) => ("npl_rt_print_f32", "float", value.to_owned()),
-            Number::Float(_) => ("npl_rt_print_f64", "double", value.to_owned()),
+            Number::Bool => ("baryon_rt_print_bool", "i1 zeroext", value.to_owned()),
+            Number::Float(32) => ("baryon_rt_print_f32", "float", value.to_owned()),
+            Number::Float(_) => ("baryon_rt_print_f64", "double", value.to_owned()),
             Number::Integer { bits, signed } => {
                 let function = if signed {
-                    "npl_rt_print_i64"
+                    "baryon_rt_print_i64"
                 } else {
-                    "npl_rt_print_u64"
+                    "baryon_rt_print_u64"
                 };
                 let value = match (bits, signed) {
                     (64, _) => value.to_owned(),
@@ -124,11 +124,11 @@ impl<'db> Function<'_, '_, 'db> {
     /// Prints the `length` bytes at `bytes` to `stream`.
     fn print_bytes(&mut self, stream: u8, bytes: &str, length: &str) {
         self.declare(
-            "npl_rt_print_str",
-            "declare void @npl_rt_print_str(i32, ptr, i64) nounwind",
+            "baryon_rt_print_str",
+            "declare void @baryon_rt_print_str(i32, ptr, i64) nounwind",
         );
         self.line(&format!(
-            "call void @npl_rt_print_str(i32 {stream}, ptr {bytes}, i64 {length})"
+            "call void @baryon_rt_print_str(i32 {stream}, ptr {bytes}, i64 {length})"
         ));
     }
 }

@@ -2,16 +2,16 @@
 //!
 //! One file is one module, and a directory is a package that needs no `__init__` file (language
 //! reference, "Syntax", "Source files"). So a file's module name
-//! is its path relative to the package root, without the `.npl` extension, with `.` in place of
-//! `/`: `physics/nbody.npl` is the module `physics.nbody`, inside the package `physics`.
+//! is its path relative to the package root, without the `.byn` extension, with `.` in place of
+//! `/`: `physics/nbody.byn` is the module `physics.nbody`, inside the package `physics`.
 
 use crate::{Db, File, Package};
 use diagnostics::Diagnostic;
 use std::collections::BTreeMap;
 use std::fmt;
 
-/// The extension every source file has, until roadmap decision D.6 names the language.
-const EXTENSION: &str = ".npl";
+/// The extension every source file has, fixed by decision 0023.
+const EXTENSION: &str = ".byn";
 
 /// Python's reserved words. A module named after one could never be imported, because
 /// `import class` is a syntax error.
@@ -86,14 +86,14 @@ impl fmt::Display for ModuleName {
 /// #     fn resolve(&self, _: database::Package, _: File) -> &database::Resolution { unreachable!() }
 /// # }
 /// let database = Database::default();
-/// let source = SourceFile::new("fluids/heat_2d.npl", "")?;
+/// let source = SourceFile::new("fluids/heat_2d.byn", "")?;
 /// let file = File::new(&database, FileId::from_index(0), source);
 /// assert_eq!(
 ///     module_name(&database, file).as_ref().ok(),
 ///     ModuleName::from_dotted("fluids.heat_2d").as_ref(),
 /// );
 ///
-/// let source = SourceFile::new("heat-2d.npl", "")?;
+/// let source = SourceFile::new("heat-2d.byn", "")?;
 /// let file = File::new(&database, FileId::from_index(1), source);
 /// assert!(module_name(&database, file).is_err());
 /// # Ok::<(), source::SourceError>(())
@@ -101,7 +101,7 @@ impl fmt::Display for ModuleName {
 ///
 /// # Errors
 ///
-/// Fails when the name does not end in `.npl`, or when a directory or the file's stem is not a
+/// Fails when the name does not end in `.byn`, or when a directory or the file's stem is not a
 /// valid module name: not a Python name, or a Python keyword.
 #[salsa::tracked(returns(ref))]
 pub fn module_name(db: &dyn Db, file: File) -> Result<ModuleName, Diagnostic> {
@@ -168,7 +168,7 @@ impl Modules {
 ///
 /// A file is left out, with an error, when its path names no module ([`module_name()`]), when
 /// an earlier file already has its name, or when its module and a package share a name, such
-/// as `physics.npl` next to a `physics/` directory: `import physics` would be ambiguous.
+/// as `physics.byn` next to a `physics/` directory: `import physics` would be ambiguous.
 ///
 /// Cost: one pass over the package's files, `O(n log n)` in the number of files.
 #[salsa::tracked(returns(ref))]
@@ -286,7 +286,7 @@ mod tests {
         let database = Database::default();
         let package = package(
             &database,
-            &["main.npl", "physics/nbody.npl", "física/α.npl"],
+            &["main.byn", "physics/nbody.byn", "física/α.byn"],
         );
         let modules = modules(&database, package);
         assert!(modules.diagnostics().is_empty());
@@ -303,10 +303,10 @@ mod tests {
             &database,
             &[
                 "notes.txt",
-                "heat-2d.npl",
-                "class/solver.npl",
-                "2d.npl",
-                ".npl",
+                "heat-2d.byn",
+                "class/solver.byn",
+                "2d.byn",
+                ".byn",
             ],
         );
         let modules = modules(&database, package);
@@ -314,16 +314,16 @@ mod tests {
         assert_eq!(
             rendered(modules.diagnostics()),
             [
-                "error: `notes.txt` is not a source file: source files end in `.npl`",
-                "error: `heat-2d.npl` cannot be imported: `heat-2d` is not a valid module name\n \
+                "error: `notes.txt` is not a source file: source files end in `.byn`",
+                "error: `heat-2d.byn` cannot be imported: `heat-2d` is not a valid module name\n \
                  = note: module names follow Python's rules for names: letters, digits and \
                  underscores, not starting with a digit",
-                "error: `class/solver.npl` cannot be imported: `class` is a Python keyword\n \
+                "error: `class/solver.byn` cannot be imported: `class` is a Python keyword\n \
                  = note: rename the file or directory",
-                "error: `2d.npl` cannot be imported: `2d` is not a valid module name\n \
+                "error: `2d.byn` cannot be imported: `2d` is not a valid module name\n \
                  = note: module names follow Python's rules for names: letters, digits and \
                  underscores, not starting with a digit",
-                "error: `.npl` cannot be imported: `` is not a valid module name\n \
+                "error: `.byn` cannot be imported: `` is not a valid module name\n \
                  = note: module names follow Python's rules for names: letters, digits and \
                  underscores, not starting with a digit",
             ]
@@ -333,13 +333,13 @@ mod tests {
     #[test]
     fn a_module_and_a_package_cannot_share_a_name() {
         let database = Database::default();
-        let package = package(&database, &["physics.npl", "physics/nbody.npl"]);
+        let package = package(&database, &["physics.byn", "physics/nbody.byn"]);
         let modules = modules(&database, package);
         assert_eq!(names(modules), ["physics.nbody"]);
         assert_eq!(
             rendered(modules.diagnostics()),
             [
-                "error: module `physics` in `physics.npl` has the same name as the package \
+                "error: module `physics` in `physics.byn` has the same name as the package \
                  `physics`\n = note: `import` could not tell them apart; rename the file or \
                  directory"
             ]
@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn the_first_of_two_files_with_one_name_wins() {
         let database = Database::default();
-        let package = package(&database, &["main.npl", "main.npl"]);
+        let package = package(&database, &["main.byn", "main.byn"]);
         let modules = modules(&database, package);
         assert_eq!(names(modules), ["main"]);
         assert_eq!(
@@ -358,18 +358,18 @@ mod tests {
         );
         assert_eq!(
             rendered(modules.diagnostics()),
-            ["error: `main.npl` and `main.npl` both define the module `main`"]
+            ["error: `main.byn` and `main.byn` both define the module `main`"]
         );
     }
 
     #[test]
     fn renaming_a_file_updates_the_map() {
         let mut database = Database::default();
-        let package = package(&database, &["old.npl"]);
+        let package = package(&database, &["old.byn"]);
         assert_eq!(names(modules(&database, package)), ["old"]);
         let file = package.files(&database)[0];
         file.set_source(&mut database)
-            .to(SourceFile::new("new.npl", "").unwrap());
+            .to(SourceFile::new("new.byn", "").unwrap());
         assert_eq!(names(modules(&database, package)), ["new"]);
     }
 

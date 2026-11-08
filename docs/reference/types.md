@@ -191,7 +191,7 @@ would save space, the compiler warns at the class name and names that order:
 
 ```text
 warning: reordering the fields of `Sample` would save 8 bytes
- --> main.npl:1:7
+ --> main.byn:1:7
   |
 1 | class Sample(Struct):
   |       ^^^^^^ 24 bytes as declared, 16 reordered
