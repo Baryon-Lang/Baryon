@@ -7,7 +7,13 @@
 //! baryon test <directory>
 //! baryon doc <directory> <output>
 //! baryon lsp
+//! baryon --version
+//! baryon --help
 //! ```
+//!
+//! `baryon --version` (or `-V`) prints `baryon` and the release, such as `baryon 0.1.0`, and
+//! `baryon --help` (or `-h`, or `help`) prints the usage line; both to standard output, with
+//! exit status 0. Any other arguments print the usage line to standard error, with status 2.
 //!
 //! `baryon check` loads every `.byn` file under the directory as one package, checks it, and prints
 //! each problem to standard error. Today checking means module naming, syntax, the constructs
@@ -70,6 +76,11 @@ fn main() -> ExitCode {
             document(Path::new(directory), Path::new(output))
         }
         [command, directory] if command == "test" => test(Path::new(directory)),
+        [flag] if flag == "--version" || flag == "-V" => {
+            // A tester's bug report starts with this line.
+            println_to_stdout(&format!("baryon {}", env!("CARGO_PKG_VERSION")))
+        }
+        [flag] if flag == "--help" || flag == "-h" || flag == "help" => println_to_stdout(USAGE),
         [command] if command == "lsp" => lsp::serve(io::stdin().lock(), io::stdout().lock())
             .map(ExitCode::from)
             .map_err(|error| format!("lsp: {error}")),
@@ -83,6 +94,16 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// Prints `line` to standard output, for `--version` and `--help`, and succeeds.
+///
+/// # Errors
+///
+/// Fails with a message when standard output cannot be written, such as a closed pipe.
+fn println_to_stdout(line: &str) -> Result<ExitCode, String> {
+    writeln!(io::stdout(), "{line}").map_err(|error| error.to_string())?;
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Loads the package rooted at `root` into a new session, and returns it with the number of
