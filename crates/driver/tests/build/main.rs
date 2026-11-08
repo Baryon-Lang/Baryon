@@ -2,12 +2,17 @@
 //! linked with the real runtime, and run. They check that the backend calls the runtime's
 //! functions by the names and signatures it exports (decision 0021), which no other test can,
 //! since the backend may not depend on the runtime.
+//!
+//! This file holds the helpers every test shares and the tests of the core language; each
+//! submodule tests one kind of value.
 
 use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Mutex, Once, PoisonError};
+
+mod text;
 
 /// The `baryon` executable cargo built for these tests.
 const BARYON: &str = env!("CARGO_BIN_EXE_baryon");
@@ -483,46 +488,4 @@ def main():
     let ran = Command::new(&program).output().unwrap();
     assert!(ran.status.success(), "{}", stderr(&ran));
     assert_eq!(String::from_utf8_lossy(&ran.stdout), "15.0 28\n");
-}
-
-/// `str` values end to end (decision 0022): literals held in variables and fields, returned,
-/// borrowed and printed, and a `str` field of an error that ends `main` in its report.
-#[test]
-fn text_values_build_and_run() {
-    let program = "\
-class Probe(Struct):
-    name: str
-    value: f64
-
-
-class MissingError(Exception):
-    name: str
-
-
-def size(n: i64) -> str:
-    if n > 2:
-        return \"big\"
-    return \"small\"
-
-
-def show(probe: Probe):
-    print(probe.name, probe.value)
-
-
-def main() -> Raises[None, MissingError]:
-    name = \"heat\"
-    print(name, size(3), size(1))
-    show(Probe(\"energy\", 2.5))
-    raise MissingError(\"pressure\")
-";
-    let directory = package("text", &[("main.byn", program)]).unwrap();
-    let (output, program) = baryon_build(&directory).unwrap();
-    assert!(output.status.success(), "{}", stderr(&output));
-    let ran = Command::new(&program).output().unwrap();
-    assert_eq!(
-        String::from_utf8_lossy(&ran.stdout),
-        "heat big small\nenergy 2.5\n"
-    );
-    assert_eq!(stderr(&ran), "error: MissingError(name='pressure')\n");
-    assert_eq!(ran.status.code(), Some(1));
 }

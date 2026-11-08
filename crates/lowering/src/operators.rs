@@ -20,6 +20,9 @@ impl<'db> Builder<'db> {
         };
         let ty = self.ty(node);
         let syntax = self.tree.node(node).operator();
+        if matches!(ty.kind(self.db), TypeKind::Str) && syntax == Operator::Add {
+            return self.joined(place, &[left, right], node);
+        }
         // On a type parameter, `+`, `-` and `*` become the instance's number arithmetic. The
         // others depend on whether the number is an integer: `//` and `%` check the divisor,
         // and `/` converts integers to `f64`.

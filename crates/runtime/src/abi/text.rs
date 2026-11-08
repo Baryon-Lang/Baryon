@@ -6,13 +6,12 @@
 //!
 //! ```
 //! use runtime::{
-//!     FormatSpec, OwnedText, baryon_rt_deallocate, baryon_rt_text_finish,
+//!     FormatSpec, baryon_rt_deallocate, baryon_rt_text_finish,
 //!     baryon_rt_text_f64, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,
 //! };
 //!
 //! static FIXED: FormatSpec = FormatSpec { presentation: b'f', precision: 6, ..FormatSpec::DEFAULT };
 //! let (step, colon) = ("step ", ": ");
-//! let mut text = OwnedText { bytes: std::ptr::null_mut(), length: 0 };
 //! // SAFETY: each pointer and length is a constant's, the builder is used once, and the text
 //! // is freed with its length.
 //! unsafe {
@@ -21,7 +20,7 @@
 //!     baryon_rt_text_i64(builder, 3, std::ptr::null());
 //!     baryon_rt_text_str(builder, colon.as_ptr(), colon.len(), std::ptr::null());
 //!     baryon_rt_text_f64(builder, 0.25, &FIXED);
-//!     baryon_rt_text_finish(builder, &mut text);
+//!     let text = baryon_rt_text_finish(builder);
 //!     let written = std::slice::from_raw_parts(text.bytes, text.length as usize);
 //!     assert_eq!(written, b"step 3: 0.250000");
 //!     baryon_rt_deallocate(text.bytes, text.length as usize, 1);
@@ -190,8 +189,9 @@ pub unsafe extern "C" fn baryon_rt_text_bool(
     unsafe { push(builder, spec, |spec| format::boolean(value, spec)) };
 }
 
-/// Ends the builder and writes the `str` it built to `text`, in memory of its own that the
-/// value owns.
+/// Ends the builder and returns the `str` it built, in memory of its own that the value owns.
+/// The two words come back in registers, as C returns a two-word struct, so compiled code
+/// declares the result `{ ptr, i64 }`.
 ///
 /// # Panics
 ///
@@ -199,11 +199,10 @@ pub unsafe extern "C" fn baryon_rt_text_bool(
 ///
 /// # Safety
 ///
-/// `builder` came from [`baryon_rt_text_new`] and has not been finished, and `text` points to
-/// writable memory for an [`OwnedText`].
+/// `builder` came from [`baryon_rt_text_new`] and has not been finished.
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn baryon_rt_text_finish(builder: *mut TextBuilder, text: *mut OwnedText) {
+pub unsafe extern "C" fn baryon_rt_text_finish(builder: *mut TextBuilder) -> OwnedText {
     // SAFETY: the caller guarantees `builder` came from `Box::into_raw` and is finished once.
     let built = unsafe { Box::from_raw(builder) }.text;
     let bytes = match memory::layout(built.len(), 1).and_then(memory::allocate) {
@@ -213,6 +212,5 @@ pub unsafe extern "C" fn baryon_rt_text_finish(builder: *mut TextBuilder, text: 
     // SAFETY: `bytes` has room for `built.len()` bytes, and the two do not overlap.
     unsafe { std::ptr::copy_nonoverlapping(built.as_ptr(), bytes, built.len()) };
     let length = u64::try_from(built.len()).unwrap_or(u64::MAX);
-    // SAFETY: the caller guarantees `text` is writable.
-    unsafe { text.write(OwnedText { bytes, length }) };
+    OwnedText { bytes, length }
 }

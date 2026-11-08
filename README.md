@@ -38,10 +38,10 @@ compiler parses source files, rejects the Python constructs the language does no
 reports syntax errors, module errors, undefined names, bad imports and type errors with `baryon
 check`. `baryon build <directory> <output>` compiles a package through LLVM into an executable that
 runs the `main` function in `main.byn`; it handles numbers, control flow, calls, structs, arrays,
-optionals, `str` values, errors, `assert` and `print` so far, with `clang` installed. `baryon run
-<directory>` builds and runs it in one step. `baryon lsp` is a language server that shows the same
-diagnostics in any editor with a Language Server Protocol client, as you type. `baryon doc` writes a
-package's documentation strings as Markdown pages.
+optionals, `str` values and f-strings, errors, `assert` and `print` so far, with `clang` installed.
+`baryon run <directory>` builds and runs it in one step. `baryon lsp` is a language server that
+shows the same diagnostics in any editor with a Language Server Protocol client, as you type.
+`baryon doc` writes a package's documentation strings as Markdown pages.
 
 [`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the
 place to add new ideas. The reasoning behind it is in the

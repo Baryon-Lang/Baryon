@@ -6,10 +6,18 @@
 //! length goes through [`length`](Function::text_length), which masks the bit off, so no other
 //! code needs to know about it.
 
+use crate::Unsupported;
 use crate::function::Function;
+use crate::ty::Number;
+use mir::{Piece, Place};
+use types::{FormatSpec, TypeKind};
 
 /// The LLVM type of a `str` value.
 pub(crate) const TEXT: &str = "{ ptr, i64 }";
+
+/// The LLVM type of the runtime's `FormatSpec`: the fill, six one-byte parts, the width and the
+/// precision.
+pub(crate) const FORMAT_SPEC: &str = "{ i32, i8, i8, i8, i8, i8, i8, i64, i64 }";
 
 /// The top bit of the length word, set when the bytes are not owned.
 const STATIC: u64 = 1 << 63;
@@ -59,5 +67,109 @@ impl Function<'_, '_, '_> {
         ));
         self.line(&format!("br label %{done}"));
         self.line_label(&done);
+    }
+}
+
+impl Function<'_, '_, '_> {
+    /// The new, owned `str` that `pieces` build, through the runtime's string builder: one call
+    /// per piece, then one that hands the bytes over (the `Format` rvalue).
+    pub(crate) fn format(&mut self, pieces: &[Piece]) -> Result<String, Unsupported> {
+        self.declare(
+            "baryon_rt_text_new",
+            "declare ptr @baryon_rt_text_new() nounwind",
+        );
+        let builder = self.emit("call ptr @baryon_rt_text_new()");
+        for piece in pieces {
+            match piece {
+                Piece::Text(text) => {
+                    let bytes = self.constants.bytes(text.as_bytes());
+                    self.append(
+                        &builder,
+                        "str",
+                        &format!("ptr {bytes}, i64 {}", text.len()),
+                        "null",
+                    );
+                }
+                Piece::Value(place, spec) => {
+                    let spec = if *spec == FormatSpec::default() {
+                        "null".to_owned()
+                    } else {
+                        self.constants.format_spec(spec)
+                    };
+                    self.append_value(&builder, place, &spec)?;
+                }
+            }
+        }
+        self.declare(
+            "baryon_rt_text_finish",
+            &format!("declare {TEXT} @baryon_rt_text_finish(ptr) nounwind"),
+        );
+        Ok(self.emit(&format!(
+            "call {TEXT} @baryon_rt_text_finish(ptr {builder})"
+        )))
+    }
+
+    /// Appends the value at `place` with the specification at `spec`, through the runtime
+    /// function for its type: a narrower integer is widened first, as for `print`.
+    fn append_value(
+        &mut self,
+        builder: &str,
+        place: &Place,
+        spec: &str,
+    ) -> Result<(), Unsupported> {
+        let (address, ty) = self.place(place)?;
+        let value = self
+            .load(&address, ty)?
+            .ok_or_else(|| Unsupported::new("`None` in an f-string"))?;
+        if matches!(ty.kind(self.types.db), TypeKind::Str) {
+            let (bytes, length) = self.text_parts(&value);
+            self.append(builder, "str", &format!("ptr {bytes}, i64 {length}"), spec);
+            return Ok(());
+        }
+        let number = match ty.kind(self.types.db) {
+            TypeKind::Primitive(_) => self.types.number(ty),
+            _ => None,
+        };
+        let (kind, argument) = match number {
+            Some(Number::Bool) => ("bool", format!("i1 zeroext {value}")),
+            Some(Number::Float(32)) => ("f32", format!("float {value}")),
+            Some(Number::Float(_)) => ("f64", format!("double {value}")),
+            Some(Number::Integer { bits, signed }) => {
+                let widened = match (bits, signed) {
+                    (64, _) => value,
+                    (_, true) => self.emit(&format!("sext i{bits} {value} to i64")),
+                    (_, false) => self.emit(&format!("zext i{bits} {value} to i64")),
+                };
+                (if signed { "i64" } else { "u64" }, format!("i64 {widened}"))
+            }
+            None => {
+                return Err(Unsupported::new(format!(
+                    "values of type `{}` in an f-string",
+                    ty.display(self.types.db)
+                )));
+            }
+        };
+        self.append(builder, kind, &argument, spec);
+        Ok(())
+    }
+
+    /// Calls `baryon_rt_text_{kind}` on `builder` with `value`, its typed argument or arguments,
+    /// and the specification `spec`.
+    fn append(&mut self, builder: &str, kind: &str, value: &str, spec: &str) {
+        let parameters = match kind {
+            "str" => "ptr, i64",
+            "bool" => "i1 zeroext",
+            "f32" => "float",
+            "f64" => "double",
+            _ => "i64",
+        };
+        let function = format!("baryon_rt_text_{kind}");
+        self.declare(
+            &function,
+            &format!("declare void @{function}(ptr, {parameters}, ptr) nounwind"),
+        );
+        self.line(&format!(
+            "call void @{function}(ptr {builder}, {value}, ptr {spec})"
+        ));
     }
 }

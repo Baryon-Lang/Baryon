@@ -215,6 +215,7 @@ mod patterns;
 mod statements;
 #[cfg(test)]
 mod tests;
+mod text;
 
 use builder::Builder;
 use diagnostics::Diagnostic;

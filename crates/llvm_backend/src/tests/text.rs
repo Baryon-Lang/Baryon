@@ -1,10 +1,11 @@
 //! `str` values (decision 0022): a literal is a constant with the "not owned" bit, printing
 //! masks the bit off, and a drop frees only when the bit is clear.
 
-use super::{Database, Module, assign, end, no_structs, parameter, sources, span, symbol_of};
+use super::{Database, Module, assign, end, module, no_structs, parameter, primitive, sources};
+use super::{span, symbol_of};
 use mir::{Argument, BlockId, Body, Builtin, Callee, Constant, ConstantValue, Operand, Rvalue};
-use mir::{LocalKind, Statement, StatementKind, TerminatorKind};
-use types::{Mode, Type, TypeKind};
+use mir::{Local, LocalKind, Piece, Statement, StatementKind, TerminatorKind};
+use types::{Float, FormatSpec, Integer, Mode, Primitive, Type, TypeKind};
 
 /// `def show(name: str): local = "heat"; print(name)`, then `local` dropped: the borrowed
 /// `name` arrives as a pointer, `local` holds the literal's bytes without copying them, and its
@@ -74,6 +75,66 @@ c1:
 
 declare void @baryon_rt_deallocate(ptr, i64, i64) nounwind
 declare void @baryon_rt_print_str(i32, ptr, i64) nounwind
+"
+    );
+}
+
+/// `def label(count: i64, energy: f64) -> str: return f"n={count} e={energy:.2f}"`: a builder,
+/// one call per piece, a null specification for the empty one and a constant for `.2f`, then
+/// the finished text stored as the result, which owns it.
+#[test]
+fn f_strings_call_the_runtime_builder() {
+    let database = Database::default();
+    let str = Type::new(&database, TypeKind::Str);
+    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
+    let f64 = primitive(&database, Primitive::Float(Float::F64));
+    let mut body = Body::new(str, span());
+    let count = body.push_local(i64, parameter("count", Mode::Borrow), span());
+    let energy = body.push_local(f64, parameter("energy", Mode::Borrow), span());
+    let fixed = FormatSpec::parse(".2f").unwrap();
+    let pieces = vec![
+        Piece::Text("n=".to_owned()),
+        Piece::Value(count.into(), FormatSpec::default()),
+        Piece::Text(" e=".to_owned()),
+        Piece::Value(energy.into(), fixed),
+    ];
+    let first = body.push_block(end(TerminatorKind::Return));
+    body.blocks[first.index()].statements = vec![assign(Local::RETURN, Rvalue::Format(pieces))];
+    assert_eq!(
+        module(&database, &[("label", body)]),
+        "\
+define { ptr, i64 } @label(i64 %a1, double %a2) {
+start:
+  %_0 = alloca { ptr, i64 }
+  %_1 = alloca i64
+  %_2 = alloca double
+  store i64 %a1, ptr %_1
+  store double %a2, ptr %_2
+  br label %bb0
+bb0:
+  %t0 = call ptr @baryon_rt_text_new()
+  call void @baryon_rt_text_str(ptr %t0, ptr @baryon.str.0, i64 2, ptr null)
+  %t1 = load i64, ptr %_1
+  call void @baryon_rt_text_i64(ptr %t0, i64 %t1, ptr null)
+  call void @baryon_rt_text_str(ptr %t0, ptr @baryon.str.1, i64 3, ptr null)
+  %t2 = load double, ptr %_2
+  call void @baryon_rt_text_f64(ptr %t0, double %t2, ptr @baryon.spec.2)
+  %t3 = call { ptr, i64 } @baryon_rt_text_finish(ptr %t0)
+  store { ptr, i64 } %t3, ptr %_0
+  %t4 = load { ptr, i64 }, ptr %_0
+  ret { ptr, i64 } %t4
+}
+
+@baryon.str.0 = private unnamed_addr constant [2 x i8] c\"n=\"
+@baryon.str.1 = private unnamed_addr constant [3 x i8] c\" e=\"
+@baryon.spec.2 = private unnamed_addr constant { i32, i8, i8, i8, i8, i8, i8, i64, i64 } \
+{ i32 32, i8 0, i8 45, i8 0, i8 0, i8 0, i8 102, i64 -1, i64 2 }
+
+declare void @baryon_rt_text_f64(ptr, double, ptr) nounwind
+declare { ptr, i64 } @baryon_rt_text_finish(ptr) nounwind
+declare void @baryon_rt_text_i64(ptr, i64, ptr) nounwind
+declare ptr @baryon_rt_text_new() nounwind
+declare void @baryon_rt_text_str(ptr, ptr, i64, ptr) nounwind
 "
     );
 }

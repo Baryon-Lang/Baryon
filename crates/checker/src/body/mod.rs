@@ -39,6 +39,7 @@ mod exclusive;
 mod exhaustive;
 mod expressions;
 mod flow;
+mod formatted;
 mod generics;
 mod loops;
 mod members;
