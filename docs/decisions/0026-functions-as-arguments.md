@@ -34,10 +34,10 @@ the same monomorphization that generics use (decision [0018](0018-mid-level-ir.m
 
 `types` gains `TypeKind::Function { item, callable }`: the type of one module-level function's
 name read as a value, such as `lorenz`. `callable` is the function's signature as a `Callable`
-type, so diagnostics can show it without reading the declaration. It takes no bytes, because the value is known when compiling. It is
-compatible with a `Callable` whose parameter types, modes and return type match the function's
-signature exactly, as Rust's function item types are. The checker reports a mismatch at the
-argument with both signatures.
+type, so diagnostics can show it without reading the declaration. It takes no bytes, because
+the value is known when compiling. It is compatible with a `Callable` whose parameter types,
+modes and return type match the function's signature exactly, as Rust's function item types
+are. The checker reports a mismatch at the argument with both signatures.
 
 A local may hold one (`f = lorenz`), and passing `f` passes `lorenz`. Two branches that assign
 different functions to one local give it two types, which is the existing "a variable keeps one
