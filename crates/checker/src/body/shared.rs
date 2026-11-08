@@ -1,5 +1,6 @@
-//! The rules for shared variables written in a `prange` or `simd` body (language reference, "Parallel
-//! and vector loops", rules 2 to 4), checked over the uses the `parallel` module collected:
+//! The rules for shared variables written in a `prange` or `simd` body (language reference,
+//! "Parallel and vector loops", rules 2 to 4), checked over the uses the `parallel` module
+//! collected:
 //!
 //! - An element of a shared array is written only where every access to that array indexes one
 //!   fixed dimension with exactly the loop variable, so each element belongs to one iteration.
