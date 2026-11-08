@@ -67,7 +67,6 @@ reference leaves the feature out.
 | How to spell an enum whose variants carry data (a sum type) | Enums are plain named constants | D.10 |
 | Whether integer overflow traps in release builds | The design plan's rule holds: overflow panics in debug builds and wraps in release builds | D.11 |
 | Whether a mutable argument is marked at the call site | No marker, per [decision 0006](../decisions/0006-parameter-passing.md) | D.3 |
-| When a [default parameter value](types.md#default-parameter-values) that is not a literal or a `Final` constant is evaluated: at each call, or once as in Python | `baryon build` reports a call that leaves such an argument out as not built yet | D.15, proposed in [0027](../decisions/0027-default-parameter-evaluation.md) |
 
 ## Not yet specified
 

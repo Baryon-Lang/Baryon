@@ -1,6 +1,6 @@
 # 0027. When a default parameter value is evaluated
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-08
 Roadmap: D.15
 
@@ -55,7 +55,7 @@ The options:
 
 ## Decision
 
-Proposed: **A**, evaluate a default at each call that leaves the argument out.
+**A**: a default is evaluated at each call that leaves the argument out.
 
 It is the only option with no shared state, so it fits the ownership model, parallel loops and the
 absence of globals without new rules. It also removes Python's surprise rather than copying it: a
@@ -78,5 +78,5 @@ caller's names or the function's other parameters (the checker already enforces 
   expression and its names.
 - Rejected B gives up exact Python compatibility for defaults. Rejected C would be simpler still,
   but forbids a fresh-array default that physics code commonly wants, such as a work buffer.
-- Collins decides. Until then the reference leaves the question open and `baryon build` keeps
-  reporting non-constant defaults as not built.
+- Collins chose A on 2026-11-08. Until lowering builds it (roadmap 1.9.13), `baryon build` keeps
+  reporting a call that leaves out a non-constant default as not built yet.

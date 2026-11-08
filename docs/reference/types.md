@@ -320,14 +320,15 @@ def main():
 - Struct fields have no defaults: a struct is built with every field, so its layout and value are
   always written out where it is made.
 
-Python evaluates a default once, when the `def` runs, and shares that one value between every call
-that leaves the argument out; a default list that a call appends to keeps the item for the next
-call. A default that is a literal or a `Final` constant has the same value whenever it is evaluated,
-so for those the question does not arise. When any other default, such as `Array.zeros(3)` or a call
-to a function, is evaluated is not decided yet; it is roadmap decision D.15, proposed in [decision
-0027](../decisions/0027-default-parameter-evaluation.md). Until it is decided, `baryon check`
-accepts such a default, but `baryon build` reports a call that leaves its argument out as not built
-yet.
+A default is evaluated at each call that leaves the argument out, so every such call gets a value
+of its own ([decision 0027](../decisions/0027-default-parameter-evaluation.md)). Python instead
+evaluates a default once, when the `def` runs, and shares that one value between every call: a
+default list that one call appends to keeps the item for the next call. Here, a default of
+`Array.zeros(3)` gives each call a fresh array of zeros. The default is evaluated after the
+arguments that were passed, in the order the parameters are declared, and it sees the names of the
+function's own module, never the caller's. A default that is a literal or a `Final` constant has the
+same value either way, and only those build today: `baryon build` reports a call that leaves out any
+other default as not built yet ([What builds today](status.md)).
 
 ## Functions as arguments
 
