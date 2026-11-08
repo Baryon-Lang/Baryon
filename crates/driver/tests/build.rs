@@ -443,7 +443,32 @@ def main():
     let directory = package("backtrace", &[("main.byn", program)]).unwrap();
     let (output, program) = baryon_build(&directory).unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
-    let ran = Command::new(&program).output().unwrap();
+    let mut command = Command::new(&program);
+    if cfg!(target_os = "macos") {
+        command.env("BARYON_RAW_BACKTRACE", "1");
+    }
+    let ran = command.output().unwrap();
+    for arguments in [
+        vec!["ls", "-la"],
+        vec!["dwarfdump", "--uuid", "program", "program.dSYM"],
+        vec!["sh", "-c", "dwarfdump --debug-line program.dSYM | head -40"],
+        vec!["sh", "-c", "dwarfdump --debug-info program.dSYM | head -60"],
+        vec!["sh", "-c", "nm program | grep -i main"],
+    ] {
+        let shown = Command::new(arguments[0])
+            .args(&arguments[1..])
+            .current_dir(&directory)
+            .output();
+        if let Ok(shown) = shown {
+            eprintln!(
+                "$ {}\n{}{}",
+                arguments.join(" "),
+                String::from_utf8_lossy(&shown.stdout),
+                String::from_utf8_lossy(&shown.stderr)
+            );
+        }
+    }
+    eprintln!("{}", stderr(&ran));
     assert_eq!(ran.status.code(), Some(101));
     let root = directory.join("package").canonicalize().unwrap();
     let file = root.join("main.byn").display().to_string();

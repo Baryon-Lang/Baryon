@@ -32,7 +32,12 @@ struct Frame<'text> {
 /// The backtrace of the calling thread, as the lines a panic report ends with, or nothing when
 /// no frame is the program's.
 pub(crate) fn capture() -> String {
-    render(&std::backtrace::Backtrace::force_capture().to_string())
+    let raw = std::backtrace::Backtrace::force_capture().to_string();
+    #[allow(clippy::print_stderr, reason = "temporary macOS diagnostic")]
+    if std::env::var_os("BARYON_RAW_BACKTRACE").is_some() {
+        eprintln!("RAW BACKTRACE:\n{raw}");
+    }
+    render(&raw)
 }
 
 /// The report's lines for the `.byn` frames of `backtrace`, the standard library's text of a
