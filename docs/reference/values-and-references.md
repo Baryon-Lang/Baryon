@@ -1,5 +1,8 @@
 # Values and references
 
+[What builds today](status.md#values-and-references) says which parts of this chapter the compiler
+builds into programs yet.
+
 This chapter is what makes the language as safe as Rust without a garbage collector, and it is the
 one with no Python equivalent. It is written as a decision procedure: a finite list of checks the
 compiler runs, each with the error it reports. The Phase 0 gate requires exactly this.

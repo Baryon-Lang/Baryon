@@ -61,6 +61,61 @@ impl<'db> Builder<'db> {
         }
     }
 
+    /// The value of the default of parameter `position` of `item`, for the call `node` that
+    /// leaves that argument out: the literal or constant the default writes, at the type the
+    /// checker gave it in `item`'s body, which is the parameter's type. A literal or constant
+    /// has the same value whenever it is evaluated, so the call can write it itself. `None`
+    /// after reporting a default that is any other expression, or belongs to a generic
+    /// function, whose types name that function's type parameters.
+    pub(crate) fn default_value(
+        &mut self,
+        item: Item<'db>,
+        position: usize,
+        node: NodeId,
+    ) -> Option<Constant<'db>> {
+        let Declaration::Function(signature) = &self.db.declaration(item).declaration else {
+            return None;
+        };
+        if !signature.type_parameters.is_empty() {
+            self.unsupported(
+                node,
+                "leaving out a defaulted argument of a generic function",
+            );
+            return None;
+        }
+        let tree = self.db.parse(item.file(self.db)).tree();
+        let (function, class) = crate::definition(tree, item.name(self.db))?;
+        let default = tree
+            .child(function, Role::Parameters)
+            .into_iter()
+            .flat_map(|parameters| tree.children(parameters))
+            .filter(|&parameter| tree.kind(parameter) == SyntaxKind::Parameter)
+            .filter(|&parameter| tree.child(parameter, Role::Name).is_some())
+            .nth(position)
+            .and_then(|parameter| tree.child(parameter, Role::Default))?;
+        let mut callee = Builder::new(
+            self.db,
+            item,
+            signature,
+            self.db.body(item),
+            function,
+            class,
+        );
+        let constant = if callee.is_literal(default) {
+            Some(callee.literal(default))
+        } else {
+            callee.named_constant(default)
+        };
+        if let (Some(constant), Ok(_)) = (constant, callee.finish()) {
+            return Some(constant);
+        }
+        self.unsupported(
+            node,
+            "leaving out an argument whose default is not a literal or a constant",
+        );
+        None
+    }
+
     /// Whether `node` is a literal: a number, possibly signed, `True`, `False`, `None` or a
     /// plain string.
     pub(crate) fn is_literal(&self, node: NodeId) -> bool {

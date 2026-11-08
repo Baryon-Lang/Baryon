@@ -216,9 +216,9 @@ body0: fn(_1: Owned[i64], _2: i64, _3: InOut[i64]) -> None {
     );
 }
 
-/// `accumulate=` (roadmap 1.12.1) and `min` and `max` reductions are reported as not lowered.
+/// `accumulate=` (roadmap 1.12.1) is reported as not lowered.
 #[test]
-fn accumulate_and_min_reductions_are_not_lowered_yet() {
+fn accumulate_is_not_lowered_yet() {
     let accumulate = "
 def histogram(bins: InOut[Array[i64, 1]], values: Array[i64, 1]):
     for i in prange(len(values), accumulate=bins):
@@ -234,6 +234,12 @@ error: lowering does not handle `accumulate=` in `prange` yet
   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
+}
+
+/// `low = min(low, xs[i])` on a shared `low` is a `Min` reduction: each iteration lowers the
+/// `min` as written, against the chunk's private `low`.
+#[test]
+fn min_is_a_reduction() {
     let smallest = "
 def smallest(xs: Array[f64, 1]) -> f64:
     low = xs[0]
@@ -244,11 +250,92 @@ def smallest(xs: Array[f64, 1]) -> f64:
     assert_eq!(
         lower(smallest, &["smallest"]),
         "\
-error: lowering does not handle `min` and `max` reductions in `prange` yet
- --> main.byn:4:9
-  |
-4 |         low = min(low, xs[i])
-  |         ^^^^^^^^^^^^^^^^^^^^^ not lowered yet
-  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+fn(_1: Array[f64, 1]) -> f64 {
+    let _0: f64; // return
+    let _1: Array[f64, 1]; // parameter xs
+    let _2: f64; // low
+    let _3: i64; // i
+    let _4: i64;
+    let _5: i64;
+    let _6: bool;
+    let _7: bool;
+    let _8: bool;
+    let _9: i64;
+    let _10: i64;
+    let _11: i64;
+    let _12: i64;
+
+    bb0: {
+        _4 = len(_1, 0);
+        _5 = 0_i64;
+        _6 = GreaterEqual(copy _5, 0_i64);
+        _7 = Less(copy _5, copy _4);
+        _8 = BitAnd(copy _6, copy _7);
+        assert(copy _8, index in bounds in dimension 0: copy _5 < copy _4) -> bb1;
+    }
+
+    bb1: {
+        _2 = copy _1[_5];
+        _9 = 0_i64;
+        _11 = len(_1, 0);
+        _10 = copy _11;
+        _12 = Subtract(copy _10, copy _9);
+        parallel_for body0(copy _12; _1, reduce Min _2) -> bb2;
+    }
+
+    bb2: {
+        _0 = copy _2;
+        return;
+    }
+}
+
+body0: fn(_1: Owned[i64], _2: Array[f64, 1], _3: InOut[f64]) -> None {
+    let _0: None; // return
+    let _1: i64; // parameter iteration
+    let _2: Array[f64, 1]; // parameter xs
+    let _3: f64; // parameter low
+    let _4: i64; // i
+    let _5: f64;
+    let _6: f64;
+    let _7: i64;
+    let _8: i64;
+    let _9: bool;
+    let _10: bool;
+    let _11: bool;
+    let _12: bool;
+
+    bb0: {
+        _4 = copy _1;
+        _5 = copy _3;
+        _7 = len(_2, 0);
+        _8 = copy _4;
+        _9 = GreaterEqual(copy _8, 0_i64);
+        _10 = Less(copy _8, copy _7);
+        _11 = BitAnd(copy _9, copy _10);
+        assert(copy _11, index in bounds in dimension 0: copy _8 < copy _7) -> bb2;
+    }
+
+    bb1: {
+        _0 = None;
+        return;
+    }
+
+    bb2: {
+        _6 = copy _2[_8];
+        _12 = Less(copy _6, copy _5);
+        branch copy _12 -> [true: bb3, false: bb4];
+    }
+
+    bb3: {
+        _5 = copy _6;
+        goto -> bb4;
+    }
+
+    bb4: {
+        _3 = copy _5;
+        goto -> bb1;
+    }
+}
+"
     );
 }

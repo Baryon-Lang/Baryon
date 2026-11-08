@@ -1,8 +1,8 @@
 //! Calls: of functions and methods, with each argument in its parameter's mode; of a struct's
-//! constructor; and of a number type, which converts.
+//! constructor; of a number type, which converts; and of the built-ins lowering handles.
 
 use crate::builder::Builder;
-use mir::{Argument, Builtin, Callee, Operand, Place, Rvalue, TerminatorKind};
+use mir::{Argument, BinaryOperator, Builtin, Callee, Operand, Place, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
 
@@ -12,18 +12,20 @@ impl<'db> Builder<'db> {
         let Some(call) = self.typed.call(node) else {
             return self.unsupported(node, "this call");
         };
-        let mut arguments = Vec::with_capacity(call.arguments.len());
-        for argument in &call.arguments {
-            match argument {
-                Some(key) => arguments.push(key.0),
-                None => return self.unsupported(node, "calls that leave out a defaulted argument"),
-            }
+        let given: Vec<Option<NodeId>> = call
+            .arguments
+            .iter()
+            .map(|argument| argument.map(|key| key.0))
+            .collect();
+        if let types::Callee::Function(item) | types::Callee::Method(item) = call.callee {
+            return self.function_call(place, item, call.type_arguments.clone(), &given, node);
         }
+        let Some(arguments) = given.into_iter().collect::<Option<Vec<NodeId>>>() else {
+            return self.unsupported(node, "calls that leave out a defaulted argument");
+        };
         let ty = self.ty(node);
         match &call.callee {
-            types::Callee::Function(item) | types::Callee::Method(item) => {
-                self.function_call(place, *item, call.type_arguments.clone(), &arguments, node);
-            }
+            types::Callee::Function(_) | types::Callee::Method(_) => {}
             types::Callee::Constructor(_) => {
                 let operands = arguments
                     .into_iter()
@@ -52,6 +54,13 @@ impl<'db> Builder<'db> {
             types::Callee::Builtin(name) => match (name.split_once('.'), arguments.as_slice()) {
                 (None, [argument]) if name == "len" => self.len(place, *argument, node),
                 (None, _) if name == "print" => self.print(place, &arguments, node),
+                (None, [first, rest @ ..])
+                    if (name == "min" || name == "max")
+                        && !rest.is_empty()
+                        && matches!(ty.kind(self.db), TypeKind::Primitive(_)) =>
+                {
+                    self.min_max(place, name == "min", *first, rest, node);
+                }
                 (Some(("Array", function @ ("zeros" | "ones" | "fill"))), _) => {
                     self.new_array(&place, function, &arguments, node);
                 }
@@ -66,14 +75,15 @@ impl<'db> Builder<'db> {
     }
 
     /// A call of the function or method `item` at `type_arguments`, with `arguments` in its
-    /// parameters' order, the receiver first for a method. A call that can fail gets an error
-    /// edge (the `errors` module).
+    /// parameters' order, the receiver first for a method, and `None` for each argument left
+    /// out, which takes its default. A call that can fail gets an error edge (the `errors`
+    /// module).
     fn function_call(
         &mut self,
         place: Place,
         item: Item<'db>,
         type_arguments: Vec<types::Type<'db>>,
-        arguments: &[NodeId],
+        arguments: &[Option<NodeId>],
         node: NodeId,
     ) {
         let Declaration::Function(signature) = &self.db.declaration(item).declaration else {
@@ -85,7 +95,25 @@ impl<'db> Builder<'db> {
             .map(|parameter| (parameter.mode, parameter.ty))
             .collect();
         let mut passed = Vec::with_capacity(arguments.len());
-        for (&argument, (mode, ty)) in arguments.iter().zip(parameters) {
+        for (position, (&argument, (mode, ty))) in arguments.iter().zip(parameters).enumerate() {
+            let Some(argument) = argument else {
+                if mode == Mode::InOut {
+                    // The callee's changes to a default would go nowhere the caller can see.
+                    return self.unsupported(node, "leaving out an `InOut` argument");
+                }
+                let Some(constant) = self.default_value(item, position, node) else {
+                    return;
+                };
+                passed.push(if mode == Mode::Owned {
+                    Argument::Owned(Operand::Constant(constant))
+                } else {
+                    let temporary = self.temporary(ty, node);
+                    let value = Rvalue::Use(Operand::Constant(constant));
+                    self.assign(Place::from(temporary), value, node);
+                    Argument::Borrow(Place::from(temporary))
+                });
+                continue;
+            };
             passed.push(match mode {
                 Mode::Borrow => match self.borrow_as(argument, ty) {
                     Some(place) => Argument::Borrow(place),
@@ -153,6 +181,62 @@ impl<'db> Builder<'db> {
             node,
         );
         self.start(next);
+    }
+
+    /// `min(first, rest…)` when `smallest`, else `max(…)`, of numbers, its result written into
+    /// `place`. As in Python, an argument replaces the best so far only when it is strictly
+    /// smaller (or larger), so the first of equal values wins and a `nan` after the first
+    /// argument is skipped.
+    fn min_max(
+        &mut self,
+        place: Place,
+        smallest: bool,
+        first: NodeId,
+        rest: &[NodeId],
+        node: NodeId,
+    ) {
+        let ty = self.ty(node);
+        let best = self.temporary(ty, node);
+        let operand = self.operand_as(first, ty);
+        self.assign(Place::from(best), Rvalue::Use(operand), node);
+        let test = if smallest {
+            BinaryOperator::Less
+        } else {
+            BinaryOperator::Greater
+        };
+        for &argument in rest {
+            let candidate = self.temporary(ty, argument);
+            let operand = self.operand_as(argument, ty);
+            self.assign(Place::from(candidate), Rvalue::Use(operand), argument);
+            let better = self.temporary(self.boolean_type(), argument);
+            self.assign(
+                Place::from(better),
+                Rvalue::Binary(
+                    test,
+                    Operand::Copy(Place::from(candidate)),
+                    Operand::Copy(Place::from(best)),
+                ),
+                argument,
+            );
+            let (replace, join) = (self.new_block(), self.new_block());
+            self.terminate(
+                TerminatorKind::Branch {
+                    condition: Operand::Copy(Place::from(better)),
+                    then: replace,
+                    otherwise: join,
+                },
+                argument,
+            );
+            self.start(replace);
+            self.assign(
+                Place::from(best),
+                Rvalue::Use(Operand::Copy(Place::from(candidate))),
+                argument,
+            );
+            self.terminate(TerminatorKind::Goto(join), argument);
+            self.start(join);
+        }
+        self.assign(place, Rvalue::Use(Operand::Copy(Place::from(best))), node);
     }
 
     /// A place holding `argument` as the parameter type `ty`, to borrow. An argument that

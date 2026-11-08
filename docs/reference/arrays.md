@@ -1,5 +1,8 @@
 # Arrays
 
+[What builds today](status.md#arrays) says which parts of this chapter the compiler builds into
+programs yet.
+
 Arrays are the language's reason to exist, so they are built in, not a library. There are two
 array types, chosen by one question: is the shape known when the code is written
 ([decision 0007](../decisions/0007-array-types.md))?

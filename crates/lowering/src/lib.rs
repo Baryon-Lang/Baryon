@@ -16,7 +16,8 @@
 //!   conditional expressions become basic blocks joined by branches.
 //! - **Moves and borrows.** A read of a copy type copies; a read of any other type in a place
 //!   that takes the value moves it. Each call argument is passed in the mode its parameter
-//!   declares (decision 0006).
+//!   declares (decision 0006). An argument left out takes its parameter's default, a literal
+//!   or constant the call writes itself.
 //! - **Drops.** Every exit from the function drops each variable and `Owned` parameter that
 //!   owns memory, and each statement drops the owning temporaries it made. In a built body a
 //!   drop of a value that was moved out does nothing; drop elaboration makes that exact.
@@ -41,7 +42,7 @@
 //! - **Parallel loops.** The body of a `prange` loop is outlined into a body of its own that runs
 //!   one iteration, and the loop becomes a [`ParallelFor`](mir::TerminatorKind::ParallelFor)
 //!   that passes it the shared variables, each borrowed or `InOut`, and the scalars it reduces
-//!   into (the `parallel` module).
+//!   into with `+=`, `-=`, `*=`, `min` or `max` (the `parallel` module).
 //! - **Conversions.** Where number mixing converts an operand (decision 0014), a
 //!   [`Convert`](mir::Rvalue::Convert) does it, and `/` on integers converts both sides to `f64`.
 //!
@@ -53,11 +54,12 @@
 //!
 //! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
 //! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, slices, indexing lists and strings,
-//! `accumulate=` and `min` and `max` reductions in `prange`, `match` captures of values that are
-//! not copy types or inside `|`, `raise ... from`, an `except` that names its error through a
-//! module, calls that leave out a defaulted argument, the built-in functions and methods other than
-//! `print`, `len` of an array and the array constructors, calls of a `Callable` value, `**`, `@`,
-//! `in`, unpacking assignment, `with` other than `with unsafe:`, and comprehensions.
+//! `accumulate=` in `prange`, `match` captures of values that are not copy types or inside `|`,
+//! `raise ... from`, an `except` that names its error through a module, calls that leave out an
+//! argument whose default is not a literal or a constant, or that belongs to a generic function,
+//! the built-in functions and methods other than `print`, `min` and `max` of numbers, `len` of an
+//! array and the array constructors, calls of a `Callable` value, `**`, `@`, `in`, unpacking
+//! assignment, `with` other than `with unsafe:`, and comprehensions.
 //!
 //! # Example
 //!
@@ -256,7 +258,7 @@ pub fn lower<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Result<Body<'db>, Vec
 
 /// The `FunctionDefinition` whose `Name` node is `name`, among the top-level statements of
 /// `tree` and the bodies of its classes, with the class for a method.
-fn definition(tree: &SyntaxTree, name: NodeId) -> Option<(NodeId, Option<NodeId>)> {
+pub(crate) fn definition(tree: &SyntaxTree, name: NodeId) -> Option<(NodeId, Option<NodeId>)> {
     let named = |statement: NodeId| {
         tree.kind(statement) == SyntaxKind::FunctionDefinition
             && tree.child(statement, Role::Name) == Some(name)

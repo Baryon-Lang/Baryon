@@ -1,5 +1,8 @@
 # Types
 
+[What builds today](status.md#types) says which parts of this chapter the compiler builds into
+programs yet.
+
 Every value has a type the compiler knows before the program runs. Function signatures say their
 types; inside a function body, the compiler works them out.
 

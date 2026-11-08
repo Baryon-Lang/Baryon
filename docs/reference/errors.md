@@ -1,5 +1,8 @@
 # Errors and panics
 
+[What builds today](status.md#errors-and-panics) says which parts of this chapter the compiler
+builds into programs yet.
+
 A program meets two kinds of failure, and the language keeps them apart:
 
 - An **error** is a failure the program expects and can handle: a solver that does not converge, a
