@@ -372,9 +372,9 @@ impl<'db> Builder<'db> {
         self.start(end);
     }
 
-    /// The start, stop and step of `range(start, stop, step)` or `prange(…)` at `iterator`: the start and
-    /// stop nodes, the start `None` when left out, and the step's value. `None` after an error
-    /// when `iterator` is not such a call.
+    /// The start, stop and step of `range(start, stop, step)` or `prange(…)` at `iterator`:
+    /// the start and stop nodes, the start `None` when left out, and the step's value. `None`
+    /// after an error when `iterator` is not such a call.
     fn range(&mut self, iterator: NodeId) -> Option<(Option<NodeId>, NodeId, i128)> {
         let arguments = self
             .typed
