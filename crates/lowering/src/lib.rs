@@ -49,6 +49,10 @@
 //!   floats, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
 //!   [`Builtin::Math`](mir::Builtin::Math) calls a backend writes. The built-in `round(x)` rounds
 //!   a float and converts it to an integer.
+//! - **Random numbers.** `Philox(seed, stream)` and `generator.uniform()` call
+//!   [`Builtin::Philox`](mir::Builtin::Philox) and [`Builtin::Uniform`](mir::Builtin::Uniform),
+//!   the generator passed `InOut` (decision 0028). `pi`, `e`, `tau`, `inf` and `nan` from `math`
+//!   are `f64` constants.
 //! - **Unpacking.** `a, b = value` computes the value into a temporary, then moves or copies each
 //!   part into its target, left to right, so `a, b = b, a` swaps two arrays without copying them.
 //! - **Parallel loops.** The body of a `prange` loop is outlined into a body of its own that runs
@@ -241,6 +245,7 @@ mod methods;
 mod operators;
 mod parallel;
 mod patterns;
+mod random;
 mod statements;
 #[cfg(test)]
 mod tests;

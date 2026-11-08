@@ -22,18 +22,19 @@ error: lowering does not handle `**` yet
 So a program that `baryon check` accepts but `baryon build` rejects is not wrong: it uses a part of
 the language that is specified and checked, but not built yet.
 
-This page was last brought up to date on 2026-11-08, when lists and `Array(values)` began to
-build. Every pull request that teaches lowering or the backend something new updates the table
-it affects, in the same pull request, as roadmap item 0.8.1 asks.
+This page was last brought up to date on 2026-11-08, when `random.Philox` and the constants of
+`math` began to build. Every pull request that teaches lowering or the backend something new
+updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
 
-Four of the five [example programs](../examples/README.md) build and run:
+All five [example programs](../examples/README.md) build and run:
 [`heat_equation.byn`](../examples/heat_equation.byn),
 [`lennard_jones.byn`](../examples/lennard_jones.byn),
-[`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) and
-[`conjugate_gradient.byn`](../examples/conjugate_gradient.byn). The other needs the features listed
-against it.
+[`lorenz_rk4.byn`](../examples/lorenz_rk4.byn),
+[`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) and
+[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn). Each is built and run by a test that
+checks what it prints.
 
 | Example | Still needs |
 | --- | --- |
@@ -41,7 +42,7 @@ against it.
 | [`lennard_jones.byn`](../examples/lennard_jones.byn) | Nothing: it builds and runs |
 | [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | Nothing: it builds and runs |
 | [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | Nothing: it builds and runs |
-| [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | the `random` module, `math.pi`, operators on structs |
+| [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | Nothing: it builds and runs |
 
 ## Syntax
 
@@ -59,7 +60,7 @@ against it.
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals; f-strings with format specifications | Complex literals such as `2j`; string literals with escapes or prefixes |
 | `+ - * / // %`, `**` on floats, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `**` on integers; `in` and `not in`; `==` on `str` |
-| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the rest of `math`, and its constants such as `math.pi` |
+| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the rest of `math` and `random` |
 | `@test` functions, with `baryon test` | |
 
 ## Types

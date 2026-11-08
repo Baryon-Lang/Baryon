@@ -7,6 +7,8 @@
 //! `f64`, as Python's `math.sqrt(2)` gives `1.4142135623730951`. `pow(x, y)` mixes its two
 //! arguments as `x ** y` does, except that two integers give an `f64`.
 //!
+//! The constants `pi`, `e`, `tau`, `inf` and `nan` are `f64`s with Python's values.
+//!
 //! Any other member of `math` stays unchecked until the standard library exists (roadmap 1.13).
 
 use super::Body;
@@ -91,6 +93,12 @@ impl<'db> Body<'db> {
             TypeKind::Primitive(Primitive::Float(float)),
         ))
     }
+}
+
+/// Whether `member` is one of the constants of `math` the compiler builds: `pi`, `e`, `tau`,
+/// `inf` and `nan`, each an `f64` with Python's value.
+pub(super) fn is_constant(member: &str) -> bool {
+    matches!(member, "pi" | "e" | "tau" | "inf" | "nan")
 }
 
 /// "1 argument", "2 arguments", or "a keyword argument" when any argument was given by keyword,

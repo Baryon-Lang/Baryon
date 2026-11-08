@@ -20,6 +20,9 @@ impl<'db> Builder<'db> {
                 value: ConstantValue::None,
             });
         }
+        if let Some(value) = self.math_constant(node) {
+            return Some(Constant::float(ty, value));
+        }
         match self.tree.kind(node) {
             SyntaxKind::Name => {
                 let &Definition::Item(file, name) = self.definition(node)? else {
@@ -268,4 +271,31 @@ pub(crate) fn string(written: &str) -> Option<String> {
         .filter(|&quote| quote == '"' || quote == '\'')?;
     let inner = written.strip_prefix(quote)?.strip_suffix(quote)?;
     (!inner.contains(quote) && !inner.contains('\\')).then(|| inner.to_owned())
+}
+
+impl Builder<'_> {
+    /// The value of `pi`, `e`, `tau`, `inf` or `nan` from `math`, when `node` names one, as
+    /// `pi` or `math.pi`: Python's values, the `f64`s nearest the mathematical constants.
+    fn math_constant(&self, node: NodeId) -> Option<f64> {
+        let name = match self.tree.kind(node) {
+            SyntaxKind::Name => node,
+            SyntaxKind::Attribute => self.tree.child(node, Role::Attribute)?,
+            _ => return None,
+        };
+        let Some(Definition::Standard {
+            module: "math",
+            member: Some(member),
+        }) = self.definition(name)
+        else {
+            return None;
+        };
+        match member.as_str() {
+            "pi" => Some(std::f64::consts::PI),
+            "e" => Some(std::f64::consts::E),
+            "tau" => Some(std::f64::consts::TAU),
+            "inf" => Some(f64::INFINITY),
+            "nan" => Some(f64::NAN),
+            _ => None,
+        }
+    }
 }

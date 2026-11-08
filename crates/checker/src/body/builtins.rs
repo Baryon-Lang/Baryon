@@ -184,6 +184,15 @@ impl<'db> Body<'db> {
             ) if !matches!(ty.kind(self.db), TypeKind::Unknown) => {
                 Callee::Builtin(format!("math.{member}"))
             }
+            (
+                _,
+                Some(Definition::Standard {
+                    module: "random",
+                    member: Some(member),
+                }),
+            ) if !matches!(ty.kind(self.db), TypeKind::Unknown) => {
+                Callee::Builtin(format!("random.{member}"))
+            }
             (_, Some(Definition::Item(..)))
                 if matches!(ty.kind(self.db), TypeKind::Fixed { .. }) =>
             {
@@ -206,6 +215,7 @@ impl<'db> Body<'db> {
                             Some(TypeKind::List(_)) => "list",
                             Some(TypeKind::Array { .. }) => "Array",
                             Some(TypeKind::Fixed { .. }) => "Fixed",
+                            Some(TypeKind::Standard(standard)) => standard.name(),
                             _ => return,
                         }
                     }

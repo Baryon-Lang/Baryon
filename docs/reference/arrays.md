@@ -209,7 +209,8 @@ parallel loops; see [reproducible reductions](parallel-loops.md#reproducible-red
 
 Mathematical functions from `math`, such as `sqrt` and `exp`, apply to numbers. Their element-wise
 forms on arrays arrive with roadmap 1.14. The compiler builds `sqrt`, `exp`, `log`, `sin`, `cos`
-and `pow` today; the rest of `math` comes with the standard library (roadmap 1.13).
+and `pow` today, and the constants `pi`, `e`, `tau`, `inf` and `nan`, each an `f64` with
+Python's value; the rest of `math` comes with the standard library (roadmap 1.13).
 
 Each returns a float. An `f32` or `f64` argument keeps its type, so `sqrt` of an `f32` is an
 `f32`, as `numpy.sqrt` gives. An integer converts to `f64` first, so `sqrt(2)` is
@@ -240,3 +241,35 @@ follows:
 
 A negative base with a whole-number exponent gives a real result, as in Python. `x ** y` on
 floats is C's `pow(x, y)`. `**` on integers needs a non-negative exponent; a negative one panics.
+
+## Random numbers
+
+`random.Philox` is a counter-based random number generator: the numbers of stream `k` of a seed
+are a fixed function of the seed, `k` and how many came before, so a run is reproducible and
+parallel streams never share state ([decision 0028](../decisions/0028-philox-random-numbers.md)).
+
+- `Philox(seed, stream=0)` makes a generator. `seed` and `stream` are `int`s; a negative one
+  panics.
+- `generator.uniform()` draws the next `f64` in `[0, 1)`. It changes the generator, so
+  `generator` must be a variable or an `InOut` parameter.
+
+A `Philox` moves; it is not a copy type, so two values can never draw the same numbers by
+accident. Give each `prange` chunk its own stream, as the
+[Monte Carlo example](../examples/monte_carlo_pi.byn) does:
+
+```python
+from random import Philox
+
+
+def mean_of_draws(seed: int, n: int) -> f64:
+    generator = Philox(seed, stream=0)
+    total = 0.0
+    for _ in range(n):
+        total += generator.uniform()
+    return total / n
+```
+
+The numbers are NumPy's, bit for bit: `Philox(seed, stream=k)` draws what
+`numpy.random.Generator(numpy.random.Philox(key=seed).jumped(k)).random()` draws. NumPy's
+`Philox(seed)` without `key=` hashes the seed first, so it draws different numbers. More
+distributions and generators come with the standard library (roadmap 1.14).

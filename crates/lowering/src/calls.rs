@@ -91,6 +91,10 @@ impl<'db> Builder<'db> {
                 }
                 (Some(("Fixed", "round")), [array]) => self.fixed_round(place, *array, node),
                 (Some(("math", member)), _) => self.math_function(place, member, &arguments, node),
+                (Some(("random", "Philox")), [seed, rest @ ..]) if rest.len() <= 1 => {
+                    self.philox(place, *seed, rest.first().copied(), node);
+                }
+                (Some(("Philox", "uniform")), [generator]) => self.uniform(place, *generator, node),
                 _ => self.unsupported(node, &format!("the built-in `{name}`")),
             },
             types::Callee::Value => self.value_call(place, &arguments, node),

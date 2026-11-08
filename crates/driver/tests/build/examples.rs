@@ -2,7 +2,7 @@
 //! an example that builds today keeps building. Roadmap item 1.9.12 adds each example here as
 //! lowering learns what it needs; `docs/reference/status.md` lists the ones still missing.
 
-use super::{baryon_build, package, stderr};
+use super::{baryon_build, package, panic_report, stderr};
 use std::io;
 use std::process::Command;
 
@@ -291,4 +291,67 @@ def main():
     print(flags[2], len(flags))
 ";
     prints("lists", program, "10 0 81 81\n3 0.5 7.0 285\n0 0\nTrue 3\n").unwrap();
+}
+
+/// Monte Carlo pi: 1,024 chunks of a `prange` loop, each drawing from its own `Philox` stream.
+/// `NumPy`, drawing from `Generator(Philox(key=2026).jumped(chunk))` for each chunk, counts the
+/// same 80,420,174 hits, so the estimate matches to every digit, on any number of cores.
+#[test]
+fn monte_carlo_pi_builds_and_runs() {
+    prints(
+        "example-monte-carlo-pi",
+        include_str!("../../../../docs/examples/monte_carlo_pi.byn"),
+        "pi is about 3.141413 (error -0.000180, expected 0.000162)\n",
+    )
+    .unwrap();
+}
+
+/// `Philox` draws the floats `NumPy`'s `Generator(Philox(key=2026))` draws, across the end of
+/// its first block of four, and stream 5 starts where `jumped(5)` does. The constants of `math`
+/// print as Python prints them.
+#[test]
+fn philox_matches_numpy() {
+    let program = "\
+import math
+from random import Philox
+
+
+def main():
+    generator = Philox(2026)
+    print(generator.uniform(), generator.uniform(), generator.uniform(), generator.uniform())
+    print(generator.uniform(), generator.uniform())
+    fifth = Philox(2026, stream=5)
+    print(fifth.uniform())
+    print(math.pi, math.e, math.tau, math.inf, -math.inf, math.nan)
+";
+    prints(
+        "philox",
+        program,
+        "0.422034180346073 0.34249750953111324 0.11181606179138992 0.956212079298963\n\
+         0.5517286838670085 0.7040319383561433\n\
+         0.1452474629941255\n\
+         3.141592653589793 2.718281828459045 6.283185307179586 inf -inf nan\n",
+    )
+    .unwrap();
+}
+
+/// A negative seed panics where `Philox` is called, as `NumPy` rejects a negative key.
+#[test]
+fn a_negative_philox_seed_panics() {
+    let directory = package(
+        "philox-negative",
+        &[(
+            "main.byn",
+            "from random import Philox\n\n\ndef main():\n    seed = -1\n    Philox(seed)\n",
+        )],
+    )
+    .unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert_eq!(
+        panic_report(&ran),
+        "panic: a `Philox` seed and stream must not be negative\n  --> main.byn:6:5\n"
+    );
 }

@@ -145,6 +145,7 @@ mod math;
 mod panic;
 mod parallel;
 mod print;
+mod random;
 mod rvalue;
 mod text;
 mod ty;

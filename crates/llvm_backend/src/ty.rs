@@ -90,6 +90,8 @@ impl<'db> Types<'_, 'db> {
             }
             TypeKind::List(_) => Ok(crate::list::HEADER.to_owned()),
             TypeKind::Optional(value) => Ok(format!("{{ {}, i1 }}", self.value(*value)?)),
+            // The runtime's `Philox`: 11 words it reads and writes through a pointer.
+            TypeKind::Standard(types::StandardType::Philox) => Ok("[11 x i64]".to_owned()),
             TypeKind::Enum(_) => {
                 let layout =
                     types::layout(self.db, ty, self.declared).map_err(|_| self.unsupported(ty))?;

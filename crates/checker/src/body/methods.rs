@@ -45,6 +45,11 @@ impl<'db> Body<'db> {
             self.untyped(arguments);
             return self.lowerer.unknown();
         }
+        if let &TypeKind::Standard(standard) = base.kind(self.db) {
+            let result = self.standard_method(node, standard, &callee, arguments);
+            self.change(value);
+            return result;
+        }
         if let Some(result) = self.container_method(node, base, &callee, arguments) {
             if matches!(base.kind(self.db), TypeKind::List(_))
                 && matches!(callee.as_str(), "append" | "pop")
