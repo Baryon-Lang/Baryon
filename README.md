@@ -71,6 +71,8 @@ cargo install --locked cargo-deny@0.20.2
 
 ## Documentation
 
+New to Baryon? Start with the [beginner's guide](docs/guide/README.md).
+
 [`docs/README.md`](docs/README.md) lists every document by reader: learning the language,
 contributing to the compiler, or integrating one of its crates.
 
