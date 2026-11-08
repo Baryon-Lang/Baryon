@@ -590,3 +590,27 @@ def axpy(a: f64, x: Array[f64, 1], y: InOut[Array[f64, 1]], n: i64):
 "
     );
 }
+
+/// A `simd` loop that sums floats is not marked, so LLVM keeps the plain loop's order (roadmap
+/// 1.9.13); one that sums integers is.
+#[test]
+fn simd_float_sums_stay_unvectorized() {
+    let program = r"
+def floats(x: Array[f64, 1], n: i64) -> f64:
+    s = 0.0
+    for i in simd(range(n)):
+        s += x[i]
+    return s
+
+
+def integers(n: i64) -> i64:
+    s = 0
+    for i in simd(range(n)):
+        s += i
+    return s
+";
+    let text = lower(program, &["floats", "integers"]);
+    assert_eq!(text.matches(" (simd): {").count(), 1, "{text}");
+    let integers = text.find("fn(_1: i64) -> i64").unwrap();
+    assert!(text[integers..].contains(" (simd): {"), "{text}");
+}

@@ -356,7 +356,7 @@ impl<'db> Builder<'db> {
         let header = self.new_block();
         self.terminate(TerminatorKind::Goto(header), statement);
         self.start(header);
-        if vectorized {
+        if vectorized && !self.reorders_floats(statement) {
             self.body.vectorized.push(header);
         }
         let test = if step > 0 {

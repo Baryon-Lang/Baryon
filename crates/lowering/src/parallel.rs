@@ -72,6 +72,26 @@ impl<'db> Builder<'db> {
             .next()
     }
 
+    /// Whether the `simd` loop `statement` sums or multiplies into a shared float or complex
+    /// variable. Vectorizing such a loop would let LLVM regroup the additions in a way that
+    /// depends on the machine, and a float sum must give the same bits everywhere (Collins,
+    /// 2026-11-08), so the loop is left unvectorized until lowering splits the sum into fixed
+    /// lanes (roadmap 1.9.13). `min` and `max` give the same result in any order.
+    pub(crate) fn reorders_floats(&mut self, statement: NodeId) -> bool {
+        let Some(shared) = self.shared(statement, &[]) else {
+            return false;
+        };
+        shared.values().any(|&(local, usage)| {
+            matches!(
+                usage,
+                Use::Reduce(ReductionOperator::Add | ReductionOperator::Multiply)
+            ) && matches!(
+                self.local_type(local).kind(self.db),
+                TypeKind::Primitive(Primitive::Float(_) | Primitive::Complex(_))
+            )
+        })
+    }
+
     /// The `prange` loop `statement` over `first..bound` by `step`, whose variable is
     /// `variable`: computes the iteration count, outlines the body, and runs it.
     pub(crate) fn parallel_for(
