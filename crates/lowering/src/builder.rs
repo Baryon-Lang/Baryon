@@ -1,6 +1,7 @@
 //! The state of lowering one function: the body being built, the block being filled, and what
 //! each name of the function became.
 
+use crate::parallel::Passed;
 use database::{Definition, File, Package, Resolution};
 use diagnostics::Diagnostic;
 use mir::{
@@ -156,6 +157,73 @@ impl<'db> Builder<'db> {
             handlers: Vec::new(),
             caught: Vec::new(),
             diagnostics: Vec::new(),
+        }
+    }
+
+    /// A builder for the outlined body of the `prange` loop `statement` in the same function,
+    /// which returns `None` and takes `parameters` in order. A parameter that stands for a
+    /// variable reads and writes that variable; each variable first bound inside the loop gets
+    /// a local of its own.
+    pub(crate) fn nested(&self, statement: NodeId, parameters: &[Passed<'db>]) -> Self {
+        let none = Type::new(self.db, TypeKind::None);
+        let span = self.tree.span(statement);
+        let mut body = Body::new(none, span);
+        let mut variables = BTreeMap::new();
+        for (name, ty, mode, binding) in parameters {
+            let kind = LocalKind::Parameter {
+                name: name.clone(),
+                mode: *mode,
+            };
+            let local = body.push_local(*ty, kind, span);
+            if let Some(binding) = binding {
+                variables.insert(*binding, local);
+            }
+        }
+        for (key, &ty) in &self.typed.locals {
+            let binding = self.tree.span(key.0);
+            if binding.start() >= span.start() && binding.end() <= span.end() {
+                let name = self.text_of(key.0).to_owned();
+                let kind = LocalKind::Variable { name };
+                variables.insert(key.0, body.push_local(ty, kind, binding));
+            }
+        }
+        let current = body.push_block(Terminator {
+            kind: TerminatorKind::Unreachable,
+            span,
+        });
+        Self {
+            db: self.db,
+            package: self.package,
+            file: self.file,
+            tree: self.tree,
+            text: self.text,
+            resolution: self.resolution,
+            typed: self.typed,
+            function: self.function,
+            class: self.class,
+            returns: none,
+            body,
+            current,
+            dead: false,
+            variables,
+            temporaries: vec![Vec::new()],
+            loops: Vec::new(),
+            handlers: Vec::new(),
+            caught: Vec::new(),
+            diagnostics: Vec::new(),
+        }
+    }
+
+    /// Adds errors found while lowering an outlined body to this body's.
+    pub(crate) fn report(&mut self, diagnostics: Vec<Diagnostic>) {
+        self.diagnostics.extend(diagnostics);
+    }
+
+    /// The name of the variable or parameter `local`; empty for any other local.
+    pub(crate) fn local_name(&self, local: Local) -> String {
+        match &self.body.locals[local.index()].kind {
+            LocalKind::Parameter { name, .. } | LocalKind::Variable { name } => name.clone(),
+            LocalKind::Return | LocalKind::Temporary => String::new(),
         }
     }
 
