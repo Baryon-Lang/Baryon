@@ -3,8 +3,9 @@
 
 use super::{Database, assign, end, primitive, span};
 use crate::{
-    Argument, BinaryOperator, BlockId, Body, Constant, Invalid, Local, LocalKind, Operand,
-    Reduction, ReductionOperator, Rvalue, TerminatorKind,
+    AccumulateOperator, Argument, BinaryOperator, BlockId, Body, Constant, Invalid, Local,
+    LocalKind, Operand, Place, Projection, Reduction, ReductionOperator, Rvalue, Statement,
+    StatementKind, TerminatorKind,
 };
 use types::{Float, Integer, Mode, Primitive, Type, TypeKind};
 
@@ -68,6 +69,7 @@ fn summing(database: &Database) -> Body<'_> {
             place: total.into(),
             operator: ReductionOperator::Add,
         }],
+        accumulations: Vec::new(),
         target: BlockId::new(1),
     }));
     body.blocks[entry.index()].statements = vec![
@@ -159,5 +161,134 @@ fn parallel_for_rules_are_reported() {
             "in outlined body 0: the body has no blocks",
             "bb0 runs outlined body 0, which does not exist",
         ]
+    );
+}
+
+/// The loop of `def count(bins: InOut[Array[i64, 1]], n: i64)`:
+///
+/// ```python
+/// for i in prange(n, accumulate=bins):
+///     bins[i] += 1
+/// ```
+///
+/// reduced to its shape, without the bounds check: the body takes the iteration, then the
+/// accumulated array, and adds into it with `Accumulate`.
+fn counting(database: &Database) -> Body<'_> {
+    let i64 = primitive(database, Primitive::Integer(Integer::I64));
+    let none = Type::new(database, TypeKind::None);
+    let array = Type::new(
+        database,
+        TypeKind::Array {
+            element: i64,
+            rank: 1,
+        },
+    );
+    let parameter = |name: &str, mode| LocalKind::Parameter {
+        name: name.into(),
+        mode,
+    };
+
+    let mut outlined = Body::new(none, span());
+    let i = outlined.push_local(i64, parameter("i", Mode::Owned), span());
+    let bins = outlined.push_local(array, parameter("bins", Mode::InOut), span());
+    let entry = outlined.push_block(end(TerminatorKind::Return));
+    outlined.blocks[entry.index()].statements.push(Statement {
+        kind: StatementKind::Accumulate {
+            place: Place::from(bins).project(Projection::Index(vec![i])),
+            operator: AccumulateOperator::Add,
+            value: Operand::Constant(Constant::integer(i64, 1)),
+        },
+        span: span(),
+    });
+
+    let mut body = Body::new(none, span());
+    let bins = body.push_local(array, parameter("bins", Mode::InOut), span());
+    let n = body.push_local(i64, parameter("n", Mode::Borrow), span());
+    body.outlined.push(outlined);
+    body.push_block(end(TerminatorKind::ParallelFor {
+        body: 0,
+        count: Operand::Copy(n.into()),
+        arguments: Vec::new(),
+        reductions: Vec::new(),
+        accumulations: vec![bins.into()],
+        target: BlockId::new(1),
+    }));
+    body.push_block(end(TerminatorKind::Return));
+    body
+}
+
+/// The text form lists each accumulated array after the reductions, and writes an
+/// `Accumulate` with its operator.
+#[test]
+fn accumulate_is_written_with_its_array() {
+    let database = Database::default();
+    let body = counting(&database);
+    assert_eq!(body.validate(&database), Vec::new());
+    assert_eq!(
+        body.display(&database).to_string(),
+        "\
+fn(_1: InOut[Array[i64, 1]], _2: i64) -> None {
+    let _0: None; // return
+    let _1: Array[i64, 1]; // parameter bins
+    let _2: i64; // parameter n
+
+    bb0: {
+        parallel_for body0(copy _2; accumulate _1) -> bb1;
+    }
+
+    bb1: {
+        return;
+    }
+}
+
+body0: fn(_1: Owned[i64], _2: InOut[Array[i64, 1]]) -> None {
+    let _0: None; // return
+    let _1: i64; // parameter i
+    let _2: Array[i64, 1]; // parameter bins
+
+    bb0: {
+        accumulate _2[_1] += 1_i64;
+        return;
+    }
+}
+"
+    );
+}
+
+/// An `Accumulate` adds only into a parameter its `ParallelFor` lists as accumulated: not into
+/// another parameter of the outlined body, and never in a function's own body.
+#[test]
+fn accumulate_outside_an_accumulated_parameter_is_reported() {
+    let database = Database::default();
+    let mut unlisted = counting(&database);
+    let TerminatorKind::ParallelFor { accumulations, .. } = &mut unlisted.blocks[0].terminator.kind
+    else {
+        unreachable!("the entry block runs the loop");
+    };
+    let bins = accumulations.remove(0);
+    let TerminatorKind::ParallelFor { arguments, .. } = &mut unlisted.blocks[0].terminator.kind
+    else {
+        unreachable!("the entry block runs the loop");
+    };
+    arguments.push(Argument::InOut(bins));
+
+    let mut outside = counting(&database);
+    let accumulate = outside.outlined[0].blocks[0].statements.remove(0);
+    outside.blocks[1].statements.push(accumulate);
+
+    let problems = [unlisted.validate(&database), outside.validate(&database)].concat();
+    assert_eq!(
+        problems,
+        vec![
+            Invalid::Outlined(
+                0,
+                Box::new(Invalid::NotAccumulated(BlockId::ENTRY, Local::new(2)))
+            ),
+            Invalid::NotAccumulated(BlockId::new(1), Local::new(2)),
+        ]
+    );
+    assert_eq!(
+        problems[1].to_string(),
+        "bb1 accumulates into _2, which is not an accumulated parameter"
     );
 }

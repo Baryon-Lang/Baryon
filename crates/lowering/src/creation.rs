@@ -42,7 +42,10 @@ impl<'db> Builder<'db> {
             return;
         };
         self.assign(place.clone(), Rvalue::NewArray(ty, lengths.clone()), node);
-        self.fill(place, &lengths, &value, &mut Vec::new(), node);
+        self.loop_nest(&lengths, &mut Vec::new(), node, &mut |builder, indices| {
+            let element = place.clone().project(Projection::Index(indices.to_vec()));
+            builder.assign(element, Rvalue::Use(value.clone()), node);
+        });
     }
 
     /// `Vec3.zeros()`, `Vec3.ones()` and `Vec3.fill(value)` into `place`: a `Fixed` array
@@ -107,20 +110,19 @@ impl<'db> Builder<'db> {
         Some(Operand::Copy(Place::from(local)))
     }
 
-    /// Sets every element of the array at `array` to `value`, one loop per dimension, the last
-    /// dimension innermost so memory is written in order (decision 0008). `counters` holds the
-    /// indices of the loops already open.
-    fn fill(
+    /// Runs `each` once for every index into an array with `lengths`, in row-major order, one
+    /// loop per dimension with the last innermost, so memory is visited in order (decision
+    /// 0008). `each` gets one index local per dimension. `counters` holds the indices of the
+    /// loops already open.
+    pub(crate) fn loop_nest(
         &mut self,
-        array: &Place,
         lengths: &[Operand<'db>],
-        value: &Operand<'db>,
         counters: &mut Vec<Local>,
         node: NodeId,
+        each: &mut dyn FnMut(&mut Self, &[Local]),
     ) {
         let Some(length) = lengths.get(counters.len()) else {
-            let element = array.clone().project(Projection::Index(counters.clone()));
-            return self.assign(element, Rvalue::Use(value.clone()), node);
+            return each(self, counters);
         };
         let int = self.int_type();
         let counter = self.temporary(int, node);
@@ -153,7 +155,7 @@ impl<'db> Builder<'db> {
         );
         self.start(body);
         counters.push(counter);
-        self.fill(array, lengths, value, counters, node);
+        self.loop_nest(lengths, counters, node, each);
         counters.pop();
         self.assign(
             Place::from(counter),

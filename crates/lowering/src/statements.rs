@@ -9,7 +9,7 @@ use mir::{
     Check, Constant, ConstantValue, Local, Operand, Place, Rvalue, StatementKind, TerminatorKind,
 };
 use syntax::{NodeId, Operator, Role, SyntaxKind};
-use types::TypeKind;
+use types::{Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// Lowers the whole function: its statements, then the return at its end when control can
@@ -142,28 +142,46 @@ impl<'db> Builder<'db> {
     /// `target = value`. The value is computed first, then the old value of a target that owns
     /// memory is dropped, then the new one moves in, so `x = f(x)` reads the old `x`.
     fn store(&mut self, target: NodeId, value: NodeId) {
-        let (place, ty) = match self.tree.kind(target) {
-            SyntaxKind::Name => match self.target_variable(target) {
-                Some(local) => (Place::from(local), self.local_type(local)),
-                None => return self.unsupported(target, "assignments to this name"),
-            },
-            SyntaxKind::Attribute | SyntaxKind::Subscript => match self.place(target) {
-                Some(place) => (place, self.ty(target)),
-                None => return,
-            },
-            _ => return self.unsupported(target, "unpacking assignments"),
+        if self.tree.kind(target) == SyntaxKind::Tuple {
+            return self.unpack(target, value);
+        }
+        let Some((place, ty)) = self.target(target) else {
+            return;
         };
         if !self.needs_drop(ty) {
             return self.write(place, ty, value);
         }
         let temporary = self.temporary(ty, value);
         self.write(Place::from(temporary), ty, value);
+        self.replace(place, Operand::Move(Place::from(temporary)), target);
+    }
+
+    /// The place the assignment target `target` names, and the type it holds: a variable, a
+    /// field or an element. `None` after an error for any other target.
+    pub(crate) fn target(&mut self, target: NodeId) -> Option<(Place, Type<'db>)> {
+        match self.tree.kind(target) {
+            SyntaxKind::Name => {
+                let Some(local) = self.target_variable(target) else {
+                    self.unsupported(target, "assignments to this name");
+                    return None;
+                };
+                Some((Place::from(local), self.local_type(local)))
+            }
+            SyntaxKind::Attribute | SyntaxKind::Subscript => {
+                Some((self.place(target)?, self.ty(target)))
+            }
+            _ => {
+                self.unsupported(target, "assignments to this target");
+                None
+            }
+        }
+    }
+
+    /// Drops the old value at `place`, which owns memory, and moves `value` in. The new value
+    /// was computed first, so a value that reads the old one sees it.
+    pub(crate) fn replace(&mut self, place: Place, value: Operand<'db>, target: NodeId) {
         self.push(StatementKind::Drop(place.clone()), target);
-        self.assign(
-            place,
-            Rvalue::Use(Operand::Move(Place::from(temporary))),
-            target,
-        );
+        self.assign(place, Rvalue::Use(value), target);
     }
 
     /// `target op= value` on a number: the value converts to the target's type, as number
@@ -187,6 +205,9 @@ impl<'db> Builder<'db> {
         let Some(place) = self.place(target) else {
             return;
         };
+        if self.accumulated.contains(&place.local) {
+            return self.accumulate(place, operator, ty, value, statement);
+        }
         if array {
             return self.augmented_array(place, ty, operator, value, statement);
         }
@@ -302,9 +323,6 @@ impl<'db> Builder<'db> {
         let Some(variable) = self.target_variable(target) else {
             return self.unsupported(target, "`for` loops that unpack");
         };
-        if self.is_prange(iterator) && self.has_keyword(iterator) {
-            return self.unsupported(iterator, "`accumulate=` in `prange`");
-        }
         let Some((first, bound, step)) = self.range(iterator) else {
             return;
         };
@@ -376,6 +394,7 @@ impl<'db> Builder<'db> {
     /// the start and stop nodes, the start `None` when left out, and the step's value. `None`
     /// after an error when `iterator` is not such a call.
     fn range(&mut self, iterator: NodeId) -> Option<(Option<NodeId>, NodeId, i128)> {
+        let keywords = self.keyword_values(iterator);
         let arguments = self
             .typed
             .call(iterator)
@@ -387,6 +406,7 @@ impl<'db> Builder<'db> {
                 call.arguments
                     .iter()
                     .map(|argument| argument.map(|key| key.0))
+                    .filter(|argument| argument.is_none_or(|node| !keywords.contains(&node)))
                     .collect::<Option<Vec<NodeId>>>()
             });
         let (first, bound, stride) = match arguments.as_deref() {

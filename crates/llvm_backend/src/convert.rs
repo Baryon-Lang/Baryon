@@ -3,7 +3,8 @@
 //! not keep the value panics.
 
 use crate::Unsupported;
-use crate::function::{Function, float};
+use crate::function::Function;
+use crate::literal::float;
 use crate::panic::Failure;
 use crate::ty::Number;
 use mir::Operand;

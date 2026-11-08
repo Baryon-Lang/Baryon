@@ -38,11 +38,13 @@ compiler parses source files, rejects the Python constructs the language does no
 reports syntax errors, module errors, undefined names, bad imports and type errors with `baryon
 check`. `baryon build <directory> <output>` compiles a package through LLVM into an executable that
 runs the `main` function in `main.byn`; it handles numbers, control flow, calls, structs, arrays,
-optionals, `str` values and f-strings, errors, `assert` and `print` so far, with `clang` installed.
-`baryon run <directory>` builds and runs it in one step, and `baryon test <directory>` runs
-every `@test` function and reports which passed. `baryon lsp` is a language server that
-shows the same diagnostics in any editor with a Language Server Protocol client, as you type.
-`baryon doc` writes a package's documentation strings as Markdown pages.
+optionals, `str` values and f-strings, `prange` loops, errors, `assert` and `print` so far, with
+`clang` installed. `baryon run <directory>` builds and runs it in one step, and
+`baryon test <directory>` runs every `@test` function and reports which passed. `baryon lsp` is a
+language server that shows the same diagnostics in any editor with a Language Server Protocol
+client, as you type; the [VS Code extension](editors/vscode/README.md) runs it for you and adds
+syntax highlighting for `.byn` files. `baryon doc` writes a package's documentation strings as
+Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
 compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
@@ -82,6 +84,7 @@ contributing to the compiler, or integrating one of its crates.
 | `crates/` | The compiler, one crate per responsibility |
 | `xtask/` | Repository automation behind `cargo xtask` |
 | `deny.toml` | Dependency rules: allowed licenses and sources, advisories, duplicate crates |
+| `editors/` | Editor integrations; `editors/vscode/` is the VS Code extension |
 | `bench/` | Baseline physics kernels in C++ and Fortran, and `cargo kernels`, which times them |
 | `docs/README.md` | Map of all documentation |
 | `docs/architecture.md` | Crate kinds and dependency rules |

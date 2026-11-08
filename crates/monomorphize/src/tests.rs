@@ -260,6 +260,7 @@ fn outlined_bodies_are_substituted() {
             count: Operand::Constant(Constant::integer(t, 4)),
             arguments: Vec::new(),
             reductions: Vec::new(),
+            accumulations: Vec::new(),
             target: BlockId::new(0),
         },
         span: span(),

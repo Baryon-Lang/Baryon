@@ -55,6 +55,9 @@ pub(crate) struct Builder<'db> {
     pub(crate) caught: Vec<Clause<'db>>,
     /// One error per construct the first slice does not lower.
     diagnostics: Vec<Diagnostic>,
+    /// In the outlined body of a `prange` loop, the parameters of the arrays it lists in
+    /// `accumulate=`, which the body only adds into (the `accumulate` module). Empty elsewhere.
+    pub(crate) accumulated: Vec<Local>,
 }
 
 /// One `try` statement whose body is being lowered.
@@ -157,6 +160,7 @@ impl<'db> Builder<'db> {
             handlers: Vec::new(),
             caught: Vec::new(),
             diagnostics: Vec::new(),
+            accumulated: Vec::new(),
         }
     }
 
@@ -211,12 +215,19 @@ impl<'db> Builder<'db> {
             handlers: Vec::new(),
             caught: Vec::new(),
             diagnostics: Vec::new(),
+            accumulated: Vec::new(),
         }
     }
 
     /// Adds errors found while lowering an outlined body to this body's.
     pub(crate) fn report(&mut self, diagnostics: Vec<Diagnostic>) {
         self.diagnostics.extend(diagnostics);
+    }
+
+    /// How many errors lowering has reported so far; a caller compares two counts to tell
+    /// whether a step it took reported one.
+    pub(crate) fn reported(&self) -> usize {
+        self.diagnostics.len()
     }
 
     /// The name of the variable or parameter `local`; empty for any other local.

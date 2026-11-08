@@ -1,0 +1,22 @@
+{
+  "scopeName": "baryon.builtins.injection",
+  "injectionSelector": "L:source.baryon -string -comment -meta.fstring",
+  "patterns": [
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#functions"
+    }
+  ],
+  "repository": {
+    "types": {
+      "match": "(?<![\\w.])(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|complex64|complex128|Array|Fixed|Struct|Enum|InOut|Owned|Copy|Final|Raises|Number|Float|VectorSpace)\\b",
+      "name": "support.type.baryon"
+    },
+    "functions": {
+      "match": "(?<![\\w.])(prange|simd)(?=\\s*\\()",
+      "name": "support.function.builtin.baryon"
+    }
+  }
+}

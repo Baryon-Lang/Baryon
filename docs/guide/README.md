@@ -38,8 +38,9 @@ def main():
     print("1 + 2 =", 1 + 2)
 ```
 
-Every Baryon file is valid Python syntax, so your editor's Python mode already highlights it. Run
-it with `baryon run` and the package's directory:
+Every Baryon file is valid Python syntax, so any editor's Python mode highlights it. In VS Code,
+the [Baryon extension](../../editors/vscode/README.md) also shows the compiler's errors as you
+type. Run the program with `baryon run` and the package's directory:
 
 ```text
 $ baryon run hello

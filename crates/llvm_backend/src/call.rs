@@ -8,7 +8,8 @@
 //! error leaves the destination as it was.
 
 use crate::Unsupported;
-use crate::function::{Function, block_label, global};
+use crate::function::{Function, block_label};
+use crate::literal::global;
 use crate::ty::Repr;
 use mir::{Argument, BlockId, Builtin, Callee, ErrorEdge, Place};
 
@@ -30,6 +31,9 @@ impl<'db> Function<'_, '_, 'db> {
                 type_arguments,
             } => (item, type_arguments),
             Callee::Builtin(Builtin::Print) => return self.print(arguments, target),
+            Callee::Builtin(Builtin::Math(function)) => {
+                return Err(Unsupported::new(format!("`{}`", function.name())));
+            }
             Callee::Value(_) => return Err(Unsupported::new("calls of `Callable` values")),
         };
         let symbol = (self.symbol)(item, type_arguments);

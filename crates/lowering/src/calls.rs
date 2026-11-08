@@ -68,6 +68,10 @@ impl<'db> Builder<'db> {
                     self.new_fixed(place, function, &arguments, node);
                 }
                 (Some(("str", "copy")), [_]) => self.joined(place, &arguments, node),
+                (Some(("Array", "copy")), [array]) => self.array_copy(place, *array, node),
+                (Some(("Array" | "Fixed", "sum")), [array]) => {
+                    self.array_sum(place, *array, node);
+                }
                 _ => self.unsupported(node, &format!("the built-in `{name}`")),
             },
             types::Callee::Value => self.unsupported(node, "calls of a function value"),

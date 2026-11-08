@@ -22,21 +22,22 @@ error: lowering does not handle `**` yet
 So a program that `baryon check` accepts but `baryon build` rejects is not wrong: it uses a part of
 the language that is specified and checked, but not built yet.
 
-This page was last brought up to date on 2026-11-08, at the commit that added it. Every pull
-request that teaches lowering or the backend something new updates the table it affects, in the
-same pull request, as roadmap item 0.8.1 asks.
+This page was last brought up to date on 2026-11-08, when `heat_equation.byn` began to build.
+Every pull request that teaches lowering or the backend something new updates the table it
+affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
 
-None of the five [example programs](../examples/README.md) builds yet. Each needs the features
-listed against it.
+One of the five [example programs](../examples/README.md) builds and runs:
+[`heat_equation.byn`](../examples/heat_equation.byn). Each of the others needs the features listed
+against it.
 
 | Example | Still needs |
 | --- | --- |
-| [`heat_equation.byn`](../examples/heat_equation.byn) | `prange`, `Array.copy`, `Array.sum`, unpacking assignment |
-| [`lennard_jones.byn`](../examples/lennard_jones.byn) | `prange`, `**`, `Fixed.dot`, `Fixed.round`, `math` functions |
-| [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | `Callable` arguments, the built-in `round`, unpacking assignment |
-| [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | `prange`, lists and `list.append`, `Array(values)`, `Array.copy`, `math` functions |
+| [`heat_equation.byn`](../examples/heat_equation.byn) | Nothing: it builds and runs |
+| [`lennard_jones.byn`](../examples/lennard_jones.byn) | `**`, `Fixed.dot`, `Fixed.round`, `math` functions |
+| [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | `Callable` arguments, the built-in `round` |
+| [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | lists and `list.append`, `Array(values)`, `Array.copy`, `math` functions |
 | [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | the `random` module, operators on structs |
 
 ## Syntax
@@ -45,7 +46,7 @@ listed against it.
 | --- | --- |
 | Packages of several modules; `import m`, `from m import x`, `as`; calling a function through its module, `physics.units.twice(x)` | Reading a constant through its module, `physics.units.C`; import it by name instead |
 | `main` in `main.byn`; `print` of numbers, `bool` and `str` | `print` with keyword arguments; `print` of `None`, `T \| None`, tuples, arrays and structs |
-| Assignment, annotated assignment, augmented assignment with every operator but `**=` | `**=`; unpacking assignment, `a, b = e` |
+| Assignment, annotated assignment, augmented assignment with every operator but `**=`; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a` | `**=`; nested unpacking, `a, (b, c) = e` |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
 | `for` over `range` with a constant step, positive or negative | `for` over arrays, lists, strings or tuples; a `range` step that is not a constant |
 | `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values) that are literals or `Final` constants | Leaving out an argument whose default is any other expression |
@@ -65,7 +66,7 @@ listed against it.
 | Every integer type, `f32`, `f64` and `bool`, with Python's number mixing, `//` and `%` | `complex64` and `complex128` |
 | Conversions that panic when the value does not fit | |
 | `str`: literals, f-strings, `+` and `s.copy()` | `==`, `!=`, `in` and `len` on `str` |
-| Tuples: building one and reading `t[0]` with a constant index | Unpacking a tuple |
+| Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
 | `T \| None`, with every narrowing rule | |
 | Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs | |
 | Enums: members, `==` and `!=`, `match` | |
@@ -87,21 +88,21 @@ out of a function, including through a `raise`.
 
 | Builds today | Not built yet |
 | --- | --- |
-| Moves, copies, `.copy()` on `str` | `.copy()` on arrays, lists and structs |
+| Moves, copies, `.copy()` on `str` and `Array` | `.copy()` on lists and structs |
 | `InOut` and `Owned` parameters, including `InOut` arrays and whole-array arithmetic on them | Slices, as views passed to a function or as the target of an assignment |
 
 ## Arrays
 
 | Builds today | Not built yet |
 | --- | --- |
-| `Array.zeros`, `Array.ones` and `Array.fill`, with the element type from context, a `dtype` or `f64` | `Array(values)`; `a.copy()` |
+| `Array.zeros`, `Array.ones` and `Array.fill`, with the element type from context, a `dtype` or `f64`; `a.copy()` | `Array(values)` |
 | Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | Slices `a[1:n]` |
 | `len(a)`; `a.shape` bound to a name, then indexed | `a.shape[0]` written directly; `a.size` |
 | `a.unchecked[i]` inside `with unsafe:` | |
-| `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, and whole-array arithmetic | Unpacking a `Fixed` array, `x, y, z = v`; `v.dot(w)`; `v.round()` |
+| `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, and whole-array arithmetic | `v.dot(w)`; `v.round()` |
 | Arrays of `Fixed` arrays and of `Copy` structs | |
 | Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b` | `@`, the matrix product |
-| | `a.sum()`, `a.min()`, `a.max()`, `a.dot(b)`, `a.round()`, `a.fill(value)`; printing an array |
+| `a.sum()` of numbers, adding the elements one at a time in row-major order | `a.min()`, `a.max()`, `a.dot(b)`, `a.round()`, `a.fill(value)`; printing an array |
 
 ## Errors and panics
 
@@ -114,7 +115,7 @@ The one exception is the overflow panic, described under [Types](#types).
 
 | Builds today | Not built yet |
 | --- | --- |
-| | `prange` in any form. Lowering handles it, except `accumulate=`; the LLVM backend does not yet (pull request [#76](https://github.com/Baryon-Lang/Baryon/pull/76)) |
+| `prange` with the same arguments as `range`, its inferred reductions and their reproducible combine; `accumulate=` of array variables, adding into elements and their lanes | `accumulate=` of an array reached through a field, such as `atoms.forces`; adding into a slice of an accumulated array |
 | | `simd(range(n))` |
 
 `baryon check` applies every rule of the chapter, so a `prange` loop that breaks one is reported

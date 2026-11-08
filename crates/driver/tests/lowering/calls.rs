@@ -284,3 +284,26 @@ error: lowering does not handle leaving out an `InOut` argument yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
 }
+
+/// An argument of `print` that names a place lowering cannot reach yet, a field of a call's
+/// result, is reported once: borrowing it does not compute the value again after the error.
+#[test]
+fn an_argument_lowering_cannot_borrow_is_reported_once() {
+    let program = "
+class V(Struct):
+    x: f64
+
+
+def show():
+    print(V(1.0).x)
+";
+    assert_eq!(
+        lower(program, "show"),
+        r"error: lowering does not handle fields of a value that is not a variable yet
+ --> main.byn:7:11
+  |
+7 |     print(V(1.0).x)
+  |           ^^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}

@@ -1,0 +1,74 @@
+{
+  "name": "baryon",
+  "displayName": "Baryon",
+  "description": "Syntax highlighting, editing support and live diagnostics for the Baryon programming language (.byn files).",
+  "version": "0.2.0",
+  "publisher": "baryon-lang",
+  "license": "Apache-2.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Baryon-Lang/Baryon.git",
+    "directory": "editors/vscode"
+  },
+  "files": [
+    "extension.js",
+    "language-configuration.json",
+    "syntaxes/*.json",
+    "README.md",
+    "node_modules/**"
+  ],
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:baryon"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "baryon",
+        "aliases": [
+          "Baryon",
+          "byn"
+        ],
+        "extensions": [
+          ".byn"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "baryon",
+        "scopeName": "source.baryon",
+        "path": "./syntaxes/baryon.tmLanguage.json"
+      },
+      {
+        "scopeName": "baryon.builtins.injection",
+        "path": "./syntaxes/baryon-builtins.tmLanguage.json",
+        "injectTo": [
+          "source.baryon"
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "Baryon",
+      "properties": {
+        "baryon.path": {
+          "type": "string",
+          "default": "baryon",
+          "markdownDescription": "The `baryon` program the extension runs as `baryon lsp`. A bare name is looked up on `PATH`; give a full path if `baryon` is not on it. Reload the window after changing it.",
+          "scope": "machine-overridable"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
+  }
+}

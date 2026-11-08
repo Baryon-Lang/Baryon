@@ -6,3 +6,9 @@
 .idea/
 .vscode/
 *.swp
+
+# Packaged VS Code extensions
+*.vsix
+
+# JavaScript packages installed for the VS Code extension
+node_modules/

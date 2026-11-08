@@ -94,8 +94,29 @@ the thread count; each chunk reduces its iterations in order; and the chunk resu
 fixed tree. A program that reduces floats in parallel gives bit-identical results on every run, on
 any number of cores.
 
+The chunks and the tree are exact. A loop of `n` iterations has `c = min(n, 1024)` chunks of
+consecutive iterations, as even as integers allow: each has `n // c` iterations, and the first
+`n % c` have one more. Each chunk starts its copy of the
+reduced variable at the operator's identity (`-0.0` or `0` for a sum, `1` for a product, the
+type's largest value or `inf` for `min`, its smallest or `-inf` for `max`) and combines its
+iterations into it in order, giving partials `p[0]` to `p[c-1]`. The partials then combine
+pairwise:
+
+```text
+stride = 1
+while stride < c:
+    for i in 0, 2*stride, 4*stride, ... while i + stride < c:
+        p[i] = p[i] ⊕ p[i + stride]
+    stride = stride * 2
+x = x ⊕ p[0]
+```
+
+The variable's value from before the loop comes in last. With 1024 chunks the tree is 10 levels
+deep, so the rounding error of a float sum grows with 10 additions, not 1023.
+
 The result can still differ from the serial loop's in the last bits, because the order of the
-additions differs. Integer reductions are exact.
+additions differs. Integer reductions are exact, and one that overflows panics, whether the
+overflow happens inside a chunk or when the partials combine.
 
 Reproducibility is the design plan's default because a simulation whose result changes with the
 machine cannot be debugged or checked against a previous run. Its cost is that chunk sizes cannot
@@ -160,11 +181,13 @@ and any number of cores, and may differ from the serial loop's in the last bits.
 are exact.
 
 **Cost.** The runtime gives each chunk private copies of only the blocks of the array it adds
-into, made when it first touches them, and the combine step sums only those blocks. For spatially
-sorted particles the extra memory is about one more copy of the array; at worst, when every chunk
-touches every block, it is one copy per chunk running at once. That cost is why an array must be
-named while a scalar, whose private copy costs a few bytes, is inferred: privatizing a whole array
-should be visible in the source.
+into, made when it first touches them, and combines two chunks' copies as soon as both are done,
+summing only the blocks they touched. For spatially sorted particles the extra memory is about one
+more copy of the array. The worst case needs every chunk to touch every block while one chunk
+stalls and the later ones finish: `threads + (threads + 1) × ceil(log2(chunks))` copies, 98 on 8
+threads with 1024 chunks ([decision 0024](../decisions/0024-compiling-accumulated-arrays.md)).
+That cost is why an array must be named while a scalar, whose private copy costs a few bytes, is
+inferred: privatizing a whole array should be visible in the source.
 
 The alternative that needs no `accumulate=` and no extra memory is to compute every pair twice, so
 iteration `i` writes only `forces[i]`. That is what the
@@ -194,6 +217,30 @@ that has no vector form, or the call it could not inline.
 The reference rules already prove that arrays never alias, so most simple loops vectorize without
 `simd`. Write `simd` where vectorization matters enough that a silent failure to vectorize should be
 an error; the error is also the quickest way to learn why a loop is slow.
+
+### What a `simd` body may do
+
+A `simd` body follows [the rules of a `prange` body](#what-a-prange-body-may-do), with the loop
+variable of the `simd` loop in place of the `prange` one: shared arrays are written only at the
+loop variable's index, shared scalars only as reductions, and the body never ends early. Running
+several iterations at once is safe exactly when running them in any order is, so one set of rules
+covers both.
+
+```python
+for i in prange(n):
+    for j in simd(range(n)):
+        grid[i, j] = grid[i, j] * factor  # both loops' rules hold: [i] for prange, [j] for simd
+```
+
+- `simd` takes exactly one `range(...)`: `simd(range(n))`, `simd(range(1, n - 1))`.
+- A `simd` loop may sit inside a `prange` body, the usual shape: threads take the rows and each
+  row is vectorized. Then both loops' rules apply to its body.
+- A `simd` body holds no `prange` and no other `simd`: only one loop is vectorized.
+
+For now these rules are the whole check. The compiler asks LLVM to vectorize every loop that
+passes them; reporting a loop LLVM still declines to vectorize, with the reason mapped back to the
+source, comes with roadmap item 3.7. The rules stay as they are then: a loop they reject would not
+vectorize safely anyway.
 
 `simd` changes speed, never results: a loop that vectorizes computes what the plain loop computes,
 except for the order of operations in a reduction, which follows the same fixed-order rule as

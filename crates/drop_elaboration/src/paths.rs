@@ -131,6 +131,7 @@ pub(crate) fn statement_effects(statement: &StatementKind<'_>) -> Vec<Effect> {
                 effects.push(Effect::Uninit(place.clone()));
             }
         }
+        StatementKind::Accumulate { value, .. } => operand_moves(value, &mut effects),
     }
     effects
 }

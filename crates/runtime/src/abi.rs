@@ -6,9 +6,14 @@
 //! raw pointers into references, under the promise in its `# Safety` section, and calls the safe
 //! code in the other modules.
 
+mod accumulate;
 mod output;
 mod text;
 
+pub use accumulate::{
+    baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
+    baryon_rt_accumulator_slot,
+};
 pub use output::{
     baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
     baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,
@@ -320,7 +325,9 @@ pub extern "C" fn baryon_rt_chunk_count(iterations: i64) -> i64 {
 ///
 /// # Example
 ///
-/// A sum over 1000 iterations, one partial result per chunk, combined in chunk order:
+/// A sum over 1000 iterations, one partial result per chunk. Compiled code combines the
+/// partials in the fixed pairwise tree the reference defines; an integer sum is exact in any
+/// order, so the example simply adds them:
 ///
 /// ```
 /// use runtime::{baryon_rt_chunk_count, baryon_rt_parallel_for};

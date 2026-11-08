@@ -26,6 +26,51 @@ pub enum StatementKind<'db> {
     /// out; drop elaboration makes every drop unconditional, guarded by `bool` flag locals where
     /// a value is moved on some paths only.
     Drop(Place),
+    /// Adds `value` into the element at `place`, in an array a `prange` loop lists in
+    /// `accumulate=` (decisions 0013 and 0024). `place` is an accumulated parameter of an
+    /// outlined body, projected by an index and possibly then into a `Fixed` element, and
+    /// `value` has that element's type.
+    ///
+    /// The statement is not a read-modify-write of shared memory: a backend adds `value` into
+    /// the running chunk's private copy of the element, and after the loop the copies combine
+    /// into the array in the reference's fixed tree, as a [`Reduction`] does. Lowering puts the
+    /// index's bounds check before it, as for any other element.
+    Accumulate {
+        /// The element added into.
+        place: Place,
+        /// Whether `value` is added or subtracted.
+        operator: AccumulateOperator,
+        /// The contribution.
+        value: Operand<'db>,
+    },
+}
+
+/// How an [`Accumulate`](StatementKind::Accumulate) statement combines its value with the
+/// element: `x += e` or `x -= e`.
+///
+/// Subtraction stays a subtraction instead of adding `-e`, so an integer `e` equal to its type's
+/// smallest value is never negated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AccumulateOperator {
+    /// `forces[j] += e`.
+    Add,
+    /// `forces[j] -= e`.
+    Subtract,
+}
+
+impl AccumulateOperator {
+    /// The operator's symbol in the text form.
+    ///
+    /// ```
+    /// assert_eq!(mir::AccumulateOperator::Subtract.symbol(), "-=");
+    /// ```
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            Self::Add => "+=",
+            Self::Subtract => "-=",
+        }
+    }
 }
 
 /// The end of a basic block, with the source it came from.
@@ -97,9 +142,10 @@ pub enum TerminatorKind<'db> {
     ///
     /// The outlined body is [`Body::outlined`](crate::Body::outlined)`[body]`. Its parameters
     /// are, in order: the iteration number, an `Owned` `i64` counted from 0; one per argument,
-    /// in that argument's mode; and one `InOut` per reduction, of the reduced place's type. It
-    /// returns `None` and cannot fail: the checker allows no `return`, `break` or `raise` in a
-    /// `prange` body, so its `continue` is a return.
+    /// in that argument's mode; one `InOut` per reduction, of the reduced place's type; and one
+    /// `InOut` per accumulation, of the accumulated array's type. It returns `None` and cannot
+    /// fail: the checker allows no `return`, `break` or `raise` in a `prange` body, so its
+    /// `continue` is a return.
     ///
     /// A backend gives each chunk of iterations (runtime, `baryon_rt_parallel_for`) a private
     /// copy of each reduced value, starting at the operator's identity, passes that copy to
@@ -118,6 +164,11 @@ pub enum TerminatorKind<'db> {
         arguments: Vec<Argument<'db>>,
         /// The shared scalars the body reduces into, such as `energy += e`.
         reductions: Vec<Reduction>,
+        /// The arrays listed in `accumulate=`, which the body only adds into, through
+        /// [`Accumulate`](StatementKind::Accumulate) statements on their parameters. A backend
+        /// gives each chunk private copies of the parts it touches and combines them into the
+        /// array after the loop, in the same fixed tree as a reduction (decision 0024).
+        accumulations: Vec<Place>,
         /// Where control goes when every iteration has finished.
         target: BlockId,
     },
@@ -193,6 +244,9 @@ pub enum Builtin {
     /// space, then a line end. Each argument is a number, a `bool` or a `str`, passed `Borrow`
     /// or `Owned`; the destination has type `None` and the call cannot fail.
     Print,
+    /// A mathematical function of floats. Every argument and the destination have one float
+    /// type, `f32` or `f64`; lowering converts integer operands first. The call cannot fail.
+    Math(MathFunction),
 }
 
 impl Builtin {
@@ -200,11 +254,73 @@ impl Builtin {
     ///
     /// ```
     /// assert_eq!(mir::Builtin::Print.name(), "print");
+    /// assert_eq!(mir::Builtin::Math(mir::MathFunction::Sqrt).name(), "math.sqrt");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             Self::Print => "print",
+            Self::Math(function) => function.name(),
+        }
+    }
+}
+
+/// A mathematical function of floats, called by [`Builtin::Math`]. Each gives the result IEEE
+/// 754 and the C library give for its argument type; none of them fails or panics. NaN and the
+/// infinities pass through as C's functions define, so `sqrt(-1.0)` is NaN, as `numpy.sqrt`
+/// gives, where Python's `math.sqrt` raises.
+///
+/// These are the functions the example programs and the most common physics formulas need; the
+/// standard library (roadmap 1.13) adds the rest of Python's `math` module.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, salsa::SalsaValue)]
+pub enum MathFunction {
+    /// `math.sqrt(x)`: the square root, correctly rounded.
+    Sqrt,
+    /// `math.exp(x)`: e to the power `x`.
+    Exp,
+    /// `math.log(x)`: the natural logarithm.
+    Log,
+    /// `math.sin(x)`, with `x` in radians.
+    Sin,
+    /// `math.cos(x)`, with `x` in radians.
+    Cos,
+    /// `x ** y` on floats, and `math.pow(x, y)`: two arguments, the base then the exponent.
+    Power,
+    /// `round` of a float to the nearest whole number, ties to even, as Python's `round` and
+    /// `numpy.round` do; the result is still a float, so `2.5` gives `2.0`.
+    RoundEven,
+}
+
+impl MathFunction {
+    /// The name the source calls it by. `**` is written `pow`, its name in `math`.
+    ///
+    /// ```
+    /// assert_eq!(mir::MathFunction::Power.name(), "math.pow");
+    /// ```
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Sqrt => "math.sqrt",
+            Self::Exp => "math.exp",
+            Self::Log => "math.log",
+            Self::Sin => "math.sin",
+            Self::Cos => "math.cos",
+            Self::Power => "math.pow",
+            Self::RoundEven => "round",
+        }
+    }
+
+    /// How many arguments it takes: 2 for [`Power`](Self::Power), 1 for the rest.
+    ///
+    /// ```
+    /// assert_eq!(mir::MathFunction::Sqrt.arity(), 1);
+    /// assert_eq!(mir::MathFunction::Power.arity(), 2);
+    /// ```
+    #[must_use]
+    pub fn arity(self) -> usize {
+        match self {
+            Self::Power => 2,
+            _ => 1,
         }
     }
 }

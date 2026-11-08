@@ -216,22 +216,127 @@ body0: fn(_1: Owned[i64], _2: i64, _3: InOut[i64]) -> None {
     );
 }
 
-/// `accumulate=` (roadmap 1.12.1) is reported as not lowered.
+/// An array listed in `accumulate=` is passed last, `InOut`, and listed as accumulated; in the
+/// body, `bins[values[i]] += 1` checks the index, then adds with `Accumulate`.
 #[test]
-fn accumulate_is_not_lowered_yet() {
-    let accumulate = "
+fn accumulate_adds_with_accumulate_statements() {
+    let program = "
 def histogram(bins: InOut[Array[i64, 1]], values: Array[i64, 1]):
     for i in prange(len(values), accumulate=bins):
         bins[values[i]] += 1
+        bins[0] -= 1
 ";
     assert_eq!(
-        lower(accumulate, &["histogram"]),
+        lower(program, &["histogram"]),
         "\
-error: lowering does not handle `accumulate=` in `prange` yet
- --> main.byn:2:14
+fn(_1: InOut[Array[i64, 1]], _2: Array[i64, 1]) -> None {
+    let _0: None; // return
+    let _1: Array[i64, 1]; // parameter bins
+    let _2: Array[i64, 1]; // parameter values
+    let _3: i64; // i
+    let _4: i64;
+    let _5: i64;
+    let _6: i64;
+    let _7: i64;
+
+    bb0: {
+        _4 = 0_i64;
+        _6 = len(_2, 0);
+        _5 = copy _6;
+        _7 = Subtract(copy _5, copy _4);
+        parallel_for body0(copy _7; _2, accumulate _1) -> bb1;
+    }
+
+    bb1: {
+        _0 = None;
+        return;
+    }
+}
+
+body0: fn(_1: Owned[i64], _2: Array[i64, 1], _3: InOut[Array[i64, 1]]) -> None {
+    let _0: None; // return
+    let _1: i64; // parameter iteration
+    let _2: Array[i64, 1]; // parameter values
+    let _3: Array[i64, 1]; // parameter bins
+    let _4: i64; // i
+    let _5: i64;
+    let _6: i64;
+    let _7: i64;
+    let _8: i64;
+    let _9: bool;
+    let _10: bool;
+    let _11: bool;
+    let _12: bool;
+    let _13: bool;
+    let _14: bool;
+    let _15: i64;
+    let _16: i64;
+    let _17: bool;
+    let _18: bool;
+    let _19: bool;
+
+    bb0: {
+        _4 = copy _1;
+        _5 = len(_3, 0);
+        _7 = len(_2, 0);
+        _8 = copy _4;
+        _9 = GreaterEqual(copy _8, 0_i64);
+        _10 = Less(copy _8, copy _7);
+        _11 = BitAnd(copy _9, copy _10);
+        assert(copy _11, index in bounds in dimension 0: copy _8 < copy _7) -> bb2;
+    }
+
+    bb1: {
+        _0 = None;
+        return;
+    }
+
+    bb2: {
+        _6 = copy _2[_8];
+        _12 = GreaterEqual(copy _6, 0_i64);
+        _13 = Less(copy _6, copy _5);
+        _14 = BitAnd(copy _12, copy _13);
+        assert(copy _14, index in bounds in dimension 0: copy _6 < copy _5) -> bb3;
+    }
+
+    bb3: {
+        accumulate _3[_6] += 1_i64;
+        _15 = len(_3, 0);
+        _16 = 0_i64;
+        _17 = GreaterEqual(copy _16, 0_i64);
+        _18 = Less(copy _16, copy _15);
+        _19 = BitAnd(copy _17, copy _18);
+        assert(copy _19, index in bounds in dimension 0: copy _16 < copy _15) -> bb4;
+    }
+
+    bb4: {
+        accumulate _3[_16] -= 1_i64;
+        goto -> bb1;
+    }
+}
+"
+    );
+}
+
+/// An array reached through a field is not lowered in `accumulate=` yet.
+#[test]
+fn accumulate_of_a_field_is_not_lowered_yet() {
+    let program = "
+class Atoms(Struct):
+    forces: Array[f64, 1]
+
+def push(atoms: InOut[Atoms], n: i64):
+    for i in prange(n, accumulate=atoms.forces):
+        atoms.forces[0] += 1.0
+";
+    assert_eq!(
+        lower(program, &["push"]),
+        "\
+error: lowering does not handle `accumulate=` of an array that is not a variable yet
+ --> main.byn:5:35
   |
-2 |     for i in prange(len(values), accumulate=bins):
-  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not lowered yet
+5 |     for i in prange(n, accumulate=atoms.forces):
+  |                                   ^^^^^^^^^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
 }

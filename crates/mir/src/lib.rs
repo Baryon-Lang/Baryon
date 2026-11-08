@@ -24,8 +24,9 @@
 //! - **Argument modes**: each call [`Argument`] is a read-only borrow, an `InOut` borrow or an
 //!   owned value, as decision 0006 defines. References never become values.
 //! - **Parallel loops**: a `prange` loop's body is a separate [outlined](Body::outlined) body,
-//!   run by a [`ParallelFor`](TerminatorKind::ParallelFor) that lists every place it shares
-//!   and every value it reduces into.
+//!   run by a [`ParallelFor`](TerminatorKind::ParallelFor) that lists every place it shares,
+//!   every value it reduces into and every array it accumulates into, which the body adds to
+//!   only through [`Accumulate`](StatementKind::Accumulate) statements.
 //!
 //! [`Body::validate`] checks the structural rules every body keeps, and [`Body::display`] writes
 //! the text form used in tests and when debugging the compiler.
@@ -100,8 +101,8 @@ pub use operand::{
 };
 pub use place::{Place, Projection};
 pub use statement::{
-    Argument, Builtin, Callee, Check, ErrorEdge, Reduction, ReductionOperator, Statement,
-    StatementKind, Terminator, TerminatorKind,
+    AccumulateOperator, Argument, Builtin, Callee, Check, ErrorEdge, MathFunction, Reduction,
+    ReductionOperator, Statement, StatementKind, Terminator, TerminatorKind,
 };
 pub use validate::Invalid;
 

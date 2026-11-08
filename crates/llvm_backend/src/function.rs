@@ -3,6 +3,7 @@
 
 use crate::Unsupported;
 use crate::debug::UNWIND_TABLE;
+use crate::literal::{float, global, wrap};
 use crate::panic::Constants;
 use crate::ty::{Repr, Types};
 use mir::{
@@ -58,6 +59,11 @@ pub(crate) struct Function<'f, 'a, 'db> {
     /// The location every instruction gets in place of its statement's, for a function written
     /// without a body, such as the C `main`.
     pub(crate) fixed_location: Option<String>,
+    /// The function's symbol, which names the functions written for its `prange` loops.
+    pub(crate) name: String,
+    /// The functions written alongside this one, such as a `prange` loop's chunk function, each
+    /// a whole definition.
+    pub(crate) helpers: Vec<String>,
 }
 
 impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
@@ -85,11 +91,14 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             calls: BTreeMap::new(),
             scope: None,
             fixed_location: None,
+            name: String::new(),
+            helpers: Vec::new(),
         }
     }
 
-    /// Writes `body` as the function `name`, and returns its text and the declarations of what
-    /// it calls.
+    /// Writes `body` as the function `name`, and returns its text, with the functions written
+    /// for its `prange` loops after it, and the declarations of what it calls. An `internal`
+    /// function is visible only inside the module, as an outlined `prange` body is.
     pub(crate) fn write(
         types: Types<'a, 'db>,
         symbol: &'f dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
@@ -97,10 +106,15 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         name: &str,
         body: &'f Body<'db>,
         errors: &'f [Type<'db>],
+        internal: bool,
     ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
         let mut function = Self::new(types, symbol, constants, body, errors);
+        name.clone_into(&mut function.name);
         function.scope = function.constants.subprogram(name, body.span);
         let (mut signature, entry) = function.prologue(name)?;
+        if internal {
+            signature = signature.replacen("define ", "define internal ", 1);
+        }
         if let Some(scope) = &function.scope {
             let _ = write!(signature, " {UNWIND_TABLE} !dbg {scope}");
         }
@@ -113,10 +127,14 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             function.span = block.terminator.span;
             function.terminator(&block.terminator)?;
         }
-        let text = format!(
+        let mut text = format!(
             "{signature} {{\nstart:\n{entry}{}{}}}\n",
             function.code, function.failures
         );
+        for helper in &function.helpers {
+            text.push('\n');
+            text.push_str(helper);
+        }
         Ok((text, function.calls))
     }
 
@@ -184,6 +202,11 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 Ok(())
             }
             StatementKind::Drop(place) => self.drop_place(place),
+            StatementKind::Accumulate {
+                place,
+                operator,
+                value,
+            } => self.accumulate(place, *operator, value),
         }
     }
 
@@ -252,9 +275,14 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             }
             TerminatorKind::Raise(error) => self.raise(error)?,
             TerminatorKind::Unreachable => self.line("unreachable"),
-            TerminatorKind::ParallelFor { .. } => {
-                return Err(Unsupported::new("`prange` loops"));
-            }
+            TerminatorKind::ParallelFor {
+                body,
+                count,
+                arguments,
+                reductions,
+                accumulations,
+                target,
+            } => self.parallel_for(*body, count, arguments, reductions, accumulations, *target)?,
         }
         Ok(())
     }
@@ -438,54 +466,4 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
 /// The label of block `block`: `bb0`, `bb1`, ….
 pub(crate) fn block_label(block: BlockId) -> String {
     format!("bb{}", block.index())
-}
-
-/// `@name` for a global, quoted when the name has characters LLVM does not allow bare.
-pub(crate) fn global(name: &str) -> String {
-    let bare = name
-        .chars()
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '$'));
-    if bare {
-        format!("@{name}")
-    } else {
-        let mut quoted = String::from("@\"");
-        for byte in name.bytes() {
-            if byte == b'"' || byte == b'\\' || !(0x20..0x7f).contains(&byte) {
-                let _ = write!(quoted, "\\{byte:02X}");
-            } else {
-                quoted.push(char::from(byte));
-            }
-        }
-        quoted.push('"');
-        quoted
-    }
-}
-
-/// `value` as an LLVM constant of an integer type `bits` wide: wrapped to the width and written
-/// signed, the form LLVM reads for every integer type.
-pub(crate) fn wrap(value: i128, bits: u32) -> i128 {
-    if bits >= 128 {
-        return value;
-    }
-    let shift = 128 - bits;
-    (value << shift) >> shift
-}
-
-/// A float constant in LLVM's exact hexadecimal form. An `f32` constant is rounded to `f32`
-/// first and written as the `f64` holding the same value, as LLVM requires.
-pub(crate) fn float(value: f64, single: bool) -> String {
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "rounding an f32 constant to f32 is the point"
-    )]
-    let value = if single {
-        f64::from(value as f32)
-    } else {
-        value
-    };
-    format!("0x{:016X}", value.to_bits())
 }

@@ -11,6 +11,7 @@
 
 mod architecture;
 mod ci;
+mod conflicts;
 mod dependencies;
 mod examples;
 mod links;
@@ -27,9 +28,10 @@ const USAGE: &str = "\
 Usage: cargo xtask <command>
 
 Commands:
-  ci                   Run every check CI runs: format, roadmap, architecture, links, examples,
-                       dependencies, lint, test, docs
+  ci                   Run every check CI runs: conflicts, format, roadmap, architecture, links,
+                       examples, dependencies, lint, test, docs
   check-architecture   Verify crate dependencies follow docs/architecture.md
+  check-conflicts      Verify no file holds a leftover merge-conflict marker
   check-dependencies   Verify external crates pass the license, advisory, ban and source rules
                        in deny.toml (needs cargo-deny)
   check-examples       Verify every example program is valid Python 3.12 syntax
@@ -37,8 +39,10 @@ Commands:
   check-roadmap        Verify ROADMAP.md is well formed and updated by the current change
   help                 Show this message";
 
-/// Directories never searched for files: version-control data and build output.
-const SKIPPED_DIRECTORIES: [&str; 2] = [".git", "target"];
+/// Directories never searched for files: version-control data, build output, and the
+/// third-party JavaScript packages `npm install` puts in `editors/vscode/node_modules/`, whose
+/// Markdown is not ours to check.
+const SKIPPED_DIRECTORIES: [&str; 3] = [".git", "target", "node_modules"];
 
 /// The result type for every xtask command.
 type Outcome = Result<(), Box<dyn Error>>;
@@ -48,6 +52,7 @@ fn main() -> ExitCode {
     let outcome = match std::env::args().nth(1).as_deref() {
         Some("ci") => ci::run(),
         Some("check-architecture") => architecture::check(),
+        Some("check-conflicts") => conflicts::check(),
         Some("check-dependencies") => dependencies::check(),
         Some("check-examples") => examples::check(),
         Some("check-links") => links::check(),
