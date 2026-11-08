@@ -15,6 +15,7 @@ use std::sync::{Mutex, Once, PoisonError};
 mod examples;
 mod guide;
 mod parallel;
+mod structs;
 mod testing;
 mod text;
 mod vector;

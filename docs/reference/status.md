@@ -99,7 +99,7 @@ out of a function, including through a `raise`.
 
 | Builds today | Not built yet |
 | --- | --- |
-| `Array.zeros`, `Array.ones` and `Array.fill`, with the element type from context, a `dtype` or `f64`; `a.copy()`; `Array(values)` of a list | |
+| `Array.zeros`, `Array.ones` and `Array.fill`, with the element type from context, a `dtype` or `f64`; `a.copy()`; `Array(values)` of a list | `Array.zeros` and `Array.ones` of an enum, whose members are not numbers; `Array.fill` with a member works |
 | Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | Slices `a[1:n]` |
 | `len(a)`; `a.shape` bound to a name, then indexed | `a.shape[0]` written directly; `a.size` |
 | `a.unchecked[i]` inside `with unsafe:` | |

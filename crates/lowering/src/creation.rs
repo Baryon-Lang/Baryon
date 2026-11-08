@@ -1,11 +1,12 @@
 //! Creating arrays (language reference, "Creating arrays"): `Array.zeros`, `Array.ones` and
 //! `Array.fill` allocate an `Array` and set each element in a loop nest; the same functions on a
-//! `Fixed` type, such as `Vec3.zeros()`, build the value from its elements.
+//! `Fixed` type, such as `Vec3.zeros()`, build the value from its elements. `zeros` of an array of
+//! `Copy` structs zeroes every field.
 
 use crate::builder::Builder;
 use mir::{BinaryOperator, Constant, Local, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Type, TypeKind};
+use types::{Declaration, Item, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// `Array.zeros(shape)`, `Array.ones(shape)` and `Array.fill(shape, value)` into `place`:
@@ -90,23 +91,47 @@ impl<'db> Builder<'db> {
                 return None;
             }
         };
-        // An array of `Fixed` elements, such as `Array.zeros(n, dtype=Vec3)`, fills each with
-        // a `Fixed` value built from the number.
-        let &TypeKind::Fixed {
-            element: inner,
-            ref shape,
-        } = element.kind(self.db)
-        else {
-            return Some(Operand::Constant(self.number_constant(element, number)));
+        self.filled(element, number, node)
+    }
+
+    /// A value of type `ty` with every number in it `number`, 0 or 1: the number itself, or a
+    /// `Fixed` array or a struct built from such values, so `Array.zeros(n, dtype=Particle)`
+    /// zeroes every field. `None` after reporting a type with no such value: an enum, whose
+    /// members are names rather than numbers, a generic struct, and `ones` of a struct.
+    fn filled(&mut self, ty: Type<'db>, number: i64, node: NodeId) -> Option<Operand<'db>> {
+        let parts = match ty.kind(self.db) {
+            TypeKind::Primitive(_) => {
+                return Some(Operand::Constant(self.number_constant(ty, number)));
+            }
+            &TypeKind::Fixed { element, ref shape } => {
+                let count = usize::try_from(shape.elements()).ok()?;
+                let value = self.filled(element, number, node)?;
+                vec![value; count]
+            }
+            TypeKind::Struct(nominal) if number == 0 && nominal.arguments.is_empty() => {
+                let item = Item::new(self.db, self.package, nominal.file, nominal.name);
+                let Declaration::Struct { fields, .. } = &self.db.declaration(item).declaration
+                else {
+                    return None;
+                };
+                let types: Vec<Type<'db>> = fields.iter().map(|field| field.ty).collect();
+                let mut values = Vec::new();
+                for field in types {
+                    values.push(self.filled(field, number, node)?);
+                }
+                values
+            }
+            _ => {
+                let function = if number == 0 { "zeros" } else { "ones" };
+                self.unsupported(
+                    node,
+                    &format!("`{function}` of an array of `{}`", ty.display(self.db)),
+                );
+                return None;
+            }
         };
-        let count = usize::try_from(shape.elements()).ok()?;
-        let constant = Operand::Constant(self.number_constant(inner, number));
-        let local = self.temporary(element, node);
-        self.assign(
-            Place::from(local),
-            Rvalue::Aggregate(element, vec![constant; count]),
-            node,
-        );
+        let local = self.temporary(ty, node);
+        self.assign(Place::from(local), Rvalue::Aggregate(ty, parts), node);
         Some(Operand::Copy(Place::from(local)))
     }
 
