@@ -8,6 +8,9 @@ This is version 0. It covers what the Phase 1 compiler must build, which is enou
 [example programs](../examples/README.md) and the simulations the MVP gate names. Anything it does
 not mention is not in the language yet; the compiler rejects it with a message, never silently.
 
+The compiler does not build all of version 0 yet. [What builds today](status.md) says, chapter by
+chapter, which features `baryon build` compiles into a working program and which it still rejects.
+
 ## How it relates to the other documents
 
 - The [decision records](../decisions/README.md) settle the large choices. This reference applies
@@ -30,6 +33,9 @@ not mention is not in the language yet; the compiler rejects it with a message, 
 | [Parallel and vector loops](parallel-loops.md) | `prange`, reductions, the disjoint-write rule, adding into shared arrays with `accumulate=`, and `simd` |
 | [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |
 | [Differences from Python](differences-from-python.md) | Every place a Python programmer will be surprised, with the reason |
+| [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |
+| [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |
+| [What builds today](status.md) | Which of the above the compiler builds into a working program today, and what it still rejects |
 
 A reader who knows Python should start with [Differences from Python](differences-from-python.md),
 then read [Values and references](values-and-references.md), the one chapter with no Python
@@ -61,6 +67,7 @@ reference leaves the feature out.
 | How to spell an enum whose variants carry data (a sum type) | Enums are plain named constants | D.10 |
 | Whether integer overflow traps in release builds | The design plan's rule holds: overflow panics in debug builds and wraps in release builds | D.11 |
 | Whether a mutable argument is marked at the call site | No marker, per [decision 0006](../decisions/0006-parameter-passing.md) | D.3 |
+| When a [default parameter value](types.md#default-parameter-values) that is not a literal or a `Final` constant is evaluated: at each call, or once as in Python | `baryon build` reports a call that leaves such an argument out as not built yet | D.15 |
 
 ## Not yet specified
 

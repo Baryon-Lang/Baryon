@@ -36,6 +36,10 @@
 //! - **Line tables, when asked for.** With [`Module::debug_info`], each function and each
 //!   instruction points back to its source line and column (the `debug` module), so `gdb`,
 //!   `lldb` and profilers show `.byn` lines.
+//! - **`prange` loops run on the runtime's thread pool.** The outlined body becomes a function
+//!   of its own, and a chunk function the runtime calls runs a chunk of iterations through it,
+//!   each reduction into a private copy; the copies combine in a fixed pairwise tree after the
+//!   loop, so a float sum gives the same bits on any number of threads (the `parallel` module).
 //! - **`print` calls the runtime once per argument**, which writes the value as Python does;
 //!   the space between arguments and the line end are byte constants it prints too.
 //!
@@ -123,7 +127,9 @@ mod debug;
 mod entry;
 mod errors;
 mod function;
+mod literal;
 mod panic;
+mod parallel;
 mod print;
 mod rvalue;
 mod text;
@@ -181,6 +187,9 @@ impl<'a, 'db> Module<'a, 'db> {
     /// [`Ready`](mir::Phase::Ready) and valid. `errors` are the error types its `Raises` lists,
     /// in order, or none when it cannot fail; a function that can fail takes a pointer to where
     /// it writes its error, after its parameters, and returns a failure flag beside its value.
+    /// Each of the body's outlined `prange` bodies becomes an internal function
+    /// `symbol.body0`, `symbol.body1`, …, beside the chunk function `symbol.chunk0`, … that runs
+    /// it (the `parallel` module).
     ///
     /// Cost: one pass over the body, writing text proportional to its size.
     ///
@@ -195,16 +204,28 @@ impl<'a, 'db> Module<'a, 'db> {
         errors: &[Type<'db>],
     ) -> Result<(), Unsupported> {
         let mark = self.constants.mark();
-        let (text, calls) = function::Function::write(
-            self.types,
-            self.symbol,
-            &mut self.constants,
-            symbol,
-            body,
-            errors,
-        )
-        .inspect_err(|_| self.constants.roll_back(mark))?;
-        self.definitions.push(text);
+        let mut written = Vec::new();
+        let mut calls = BTreeMap::new();
+        let bodies = std::iter::once((symbol.to_owned(), body, errors, false)).chain(
+            body.outlined.iter().enumerate().map(|(index, outlined)| {
+                (format!("{symbol}.body{index}"), outlined, &[][..], true)
+            }),
+        );
+        for (name, body, errors, internal) in bodies {
+            let (text, called) = function::Function::write(
+                self.types,
+                self.symbol,
+                &mut self.constants,
+                &name,
+                body,
+                errors,
+                internal,
+            )
+            .inspect_err(|_| self.constants.roll_back(mark))?;
+            written.push(text);
+            calls.extend(called);
+        }
+        self.definitions.extend(written);
         self.defined.insert(symbol.to_owned());
         self.declarations.extend(calls);
         Ok(())

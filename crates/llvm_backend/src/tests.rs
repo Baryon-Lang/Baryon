@@ -8,6 +8,7 @@ mod arrays;
 mod debug;
 mod errors;
 mod panics;
+mod parallel;
 mod print;
 mod text;
 

@@ -1,5 +1,8 @@
 # Tests
 
+[What builds today](status.md#tests) says which parts of this chapter the compiler builds into
+programs yet.
+
 A test is a function the compiler runs for you, to check that the code it calls still gives the
 answers it should. `baryon test <directory>` finds every test in the package, runs each, and
 reports which passed.
