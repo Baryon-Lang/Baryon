@@ -62,7 +62,9 @@ documentation is unfinished, and unfinished code is not merged.
   that touches large data, and the decision record behind a non-obvious choice.
 - **Docs change with the code.** A pull request that changes behavior updates every document it
   affects: rustdoc, `docs/`, the README and, once it exists, the language reference. A language
-  feature ships with its reference entry and a worked example in the same pull request.
+  feature ships with its reference entry and a worked example in the same pull request, and a
+  change that teaches lowering or a backend to build a feature updates
+  [What builds today](docs/reference/status.md).
 - **Links stay alive.** `cargo xtask check-links` fails on any relative link in the Markdown
   documentation that points nowhere.
 - **Write for a learner.** Plain words, short sentences, and a definition the first time a term

@@ -8,6 +8,9 @@ This is version 0. It covers what the Phase 1 compiler must build, which is enou
 [example programs](../examples/README.md) and the simulations the MVP gate names. Anything it does
 not mention is not in the language yet; the compiler rejects it with a message, never silently.
 
+The compiler does not build all of version 0 yet. [What builds today](status.md) says, chapter by
+chapter, which features `baryon build` compiles into a working program and which it still rejects.
+
 ## How it relates to the other documents
 
 - The [decision records](../decisions/README.md) settle the large choices. This reference applies
@@ -30,6 +33,7 @@ not mention is not in the language yet; the compiler rejects it with a message, 
 | [Parallel and vector loops](parallel-loops.md) | `prange`, reductions, the disjoint-write rule, adding into shared arrays with `accumulate=`, and `simd` |
 | [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |
 | [Differences from Python](differences-from-python.md) | Every place a Python programmer will be surprised, with the reason |
+| [What builds today](status.md) | Which of the above the compiler builds into a working program today, and what it still rejects |
 
 A reader who knows Python should start with [Differences from Python](differences-from-python.md),
 then read [Values and references](values-and-references.md), the one chapter with no Python

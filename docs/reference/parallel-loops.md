@@ -1,5 +1,8 @@
 # Parallel and vector loops
 
+[What builds today](status.md#parallel-and-vector-loops) says which parts of this chapter the
+compiler builds into programs yet.
+
 Two loop forms ask for more speed than a plain `for`: `prange` runs iterations on several cores,
 and `simd` runs them several at a time on one core. Both are checked: a loop the compiler cannot
 prove safe is a compile error, never a wrong answer.

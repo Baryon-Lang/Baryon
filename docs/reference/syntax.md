@@ -1,5 +1,8 @@
 # Syntax
 
+[What builds today](status.md#syntax) says which parts of this chapter the compiler builds into
+programs yet.
+
 Every program is valid Python 3.12 syntax ([decision 0004](../decisions/0004-python-syntax.md)).
 The grammar is Python's own, published as the
 [Python 3.12 grammar](https://docs.python.org/3.12/reference/grammar.html); this chapter does not
