@@ -34,9 +34,7 @@ impl<'db> Function<'_, '_, 'db> {
             Callee::Builtin(Builtin::Math(function)) => {
                 return self.math(*function, arguments, destination, target);
             }
-            Callee::Builtin(Builtin::Append) => {
-                return Err(Unsupported::new("`list.append`"));
-            }
+            Callee::Builtin(Builtin::Append) => return self.list_append(arguments, target),
             Callee::Builtin(Builtin::Sum) => return self.sum(arguments, destination, target),
             Callee::Value(_) => return Err(Unsupported::new("calls of `Callable` values")),
         };

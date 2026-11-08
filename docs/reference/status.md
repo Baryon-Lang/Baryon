@@ -22,16 +22,17 @@ error: lowering does not handle `**` yet
 So a program that `baryon check` accepts but `baryon build` rejects is not wrong: it uses a part of
 the language that is specified and checked, but not built yet.
 
-This page was last brought up to date on 2026-11-08, when functions passed as arguments began
-to build. Every pull request that teaches lowering or the backend something new updates the table
+This page was last brought up to date on 2026-11-08, when lists and `Array(values)` began to
+build. Every pull request that teaches lowering or the backend something new updates the table
 it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
 
-Three of the five [example programs](../examples/README.md) build and run:
+Four of the five [example programs](../examples/README.md) build and run:
 [`heat_equation.byn`](../examples/heat_equation.byn),
-[`lennard_jones.byn`](../examples/lennard_jones.byn) and
-[`lorenz_rk4.byn`](../examples/lorenz_rk4.byn). Each of the others needs the features listed
+[`lennard_jones.byn`](../examples/lennard_jones.byn),
+[`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) and
+[`conjugate_gradient.byn`](../examples/conjugate_gradient.byn). The other needs the features listed
 against it.
 
 | Example | Still needs |
@@ -39,7 +40,7 @@ against it.
 | [`heat_equation.byn`](../examples/heat_equation.byn) | Nothing: it builds and runs |
 | [`lennard_jones.byn`](../examples/lennard_jones.byn) | Nothing: it builds and runs |
 | [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | Nothing: it builds and runs |
-| [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | lists and `list.append`, `Array(values)` |
+| [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | Nothing: it builds and runs |
 | [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | the `random` module, `math.pi`, operators on structs |
 
 ## Syntax
@@ -58,7 +59,7 @@ against it.
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals; f-strings with format specifications | Complex literals such as `2j`; string literals with escapes or prefixes |
 | `+ - * / // %`, `**` on floats, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `**` on integers; `in` and `not in`; `==` on `str` |
-| `min`, `max`, `len` of arrays, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`; `round(x)` | `abs`, `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str` and lists; the rest of `math`, and its constants such as `math.pi` |
+| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`; `round(x)` | `abs`, `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the rest of `math`, and its constants such as `math.pi` |
 | `@test` functions, with `baryon test` | |
 
 ## Types
@@ -76,7 +77,7 @@ against it.
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
 | Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors | |
 | [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026) | Passing on a `Callable` parameter to another call; copying a `Callable` parameter into a local when another `Callable` parameter of the same signature received a different function |
-| | Lists, `list[T]`, in any form |
+| Lists of copy types, such as `list[f64]`: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing | Lists of other types, such as `list[str]`; `pop`, slices, `in` and comprehensions |
 
 Integer overflow: there is one build mode today, and arithmetic that overflows an integer wraps
 around, as the release-build rule says. The panic the debug-build rule promises is not built yet;
@@ -98,7 +99,7 @@ out of a function, including through a `raise`.
 
 | Builds today | Not built yet |
 | --- | --- |
-| `Array.zeros`, `Array.ones` and `Array.fill`, with the element type from context, a `dtype` or `f64`; `a.copy()` | `Array(values)` |
+| `Array.zeros`, `Array.ones` and `Array.fill`, with the element type from context, a `dtype` or `f64`; `a.copy()`; `Array(values)` of a list | |
 | Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | Slices `a[1:n]` |
 | `len(a)`; `a.shape` bound to a name, then indexed | `a.shape[0]` written directly; `a.size` |
 | `a.unchecked[i]` inside `with unsafe:` | |

@@ -93,9 +93,13 @@ impl<'db> Function<'_, '_, 'db> {
         self.emit(&format!("extractvalue {{ i64, i1 }} {pair}, 0"))
     }
 
-    /// The length of `dimension` of the array at `place`, an `i64`.
+    /// The length of `dimension` of the array at `place`, or the number of elements of the list
+    /// there, an `i64`.
     pub(crate) fn length(&mut self, place: &Place, dimension: u32) -> Result<String, Unsupported> {
         let (address, ty) = self.place(place)?;
+        if matches!(ty.kind(self.types.db), TypeKind::List(_)) {
+            return Ok(self.list_length(&address));
+        }
         let header = self.types.value(ty)?;
         let field = self.emit(&format!(
             "getelementptr inbounds {header}, ptr {address}, i32 0, i32 1, i32 {dimension}"
@@ -105,8 +109,9 @@ impl<'db> Function<'_, '_, 'db> {
 
     /// The address of the element at `indices` of the array of type `ty` at `address`, and the
     /// element type. A `Fixed` array holds its elements in place, so that is one
-    /// `getelementptr` through its nested LLVM arrays; an `Array` goes through its header. Each
-    /// index local holds an integer of any width; it is widened to `i64`.
+    /// `getelementptr` through its nested LLVM arrays; an `Array` or a list goes through its
+    /// header (the `list` module). Each index local holds an integer of any width; it is
+    /// widened to `i64`.
     pub(crate) fn element(
         &mut self,
         address: &str,
@@ -129,6 +134,9 @@ impl<'db> Function<'_, '_, 'db> {
                 steps.join(", ")
             ));
             return Ok((address, *element));
+        }
+        if matches!(ty.kind(self.types.db), TypeKind::List(_)) {
+            return self.list_element(address, ty, indices);
         }
         let (element, rank) = self.array(ty)?;
         if indices.len() != rank as usize {
@@ -188,6 +196,7 @@ impl<'db> Function<'_, '_, 'db> {
     fn drop_value(&mut self, address: &str, ty: Type<'db>) -> Result<(), Unsupported> {
         match ty.kind(self.types.db) {
             TypeKind::Array { .. } => self.free_array(address, ty),
+            TypeKind::List(_) => self.free_list(address, ty),
             TypeKind::Str => {
                 self.free_text(address);
                 Ok(())
@@ -227,11 +236,11 @@ impl<'db> Function<'_, '_, 'db> {
         }
     }
 
-    /// Whether a value of `ty` owns memory a drop frees: an array or a `str`, or a tuple,
-    /// struct or optional holding one.
+    /// Whether a value of `ty` owns memory a drop frees: an array, a list or a `str`, or a
+    /// tuple, struct or optional holding one.
     fn owns_memory(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.types.db) {
-            TypeKind::Array { .. } | TypeKind::Str => true,
+            TypeKind::Array { .. } | TypeKind::List(_) | TypeKind::Str => true,
             TypeKind::Optional(value) => self.owns_memory(*value),
             TypeKind::Tuple(_) | TypeKind::Struct(_) => (0..)
                 .map_while(|position| self.field(ty, position).ok())

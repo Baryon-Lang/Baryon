@@ -45,7 +45,7 @@ impl<'db> Builder<'db> {
                 let operands = items.into_iter().map(|item| self.operand(item)).collect();
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
-            SyntaxKind::List => self.unsupported(node, "list displays"),
+            SyntaxKind::List => self.list_display(place, node),
             SyntaxKind::FormattedString => self.formatted(place, node),
             SyntaxKind::ListComprehension => self.unsupported(node, "comprehensions"),
             _ => self.unsupported(node, "this expression"),

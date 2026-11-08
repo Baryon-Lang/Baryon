@@ -55,6 +55,7 @@ impl<'db> Builder<'db> {
                 (None, [argument]) if name == "len" => self.len(place, *argument, node),
                 (None, [argument]) if name == "round" => self.round(place, *argument, node),
                 (None, _) if name == "print" => self.print(place, &arguments, node),
+                (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
                 (None, [first, rest @ ..])
                     if (name == "min" || name == "max")
                         && !rest.is_empty()
@@ -69,6 +70,9 @@ impl<'db> Builder<'db> {
                     self.new_fixed(place, function, &arguments, node);
                 }
                 (Some(("str", "copy")), [_]) => self.joined(place, &arguments, node),
+                (Some(("list", "append")), [list, value]) => {
+                    self.list_append(place, *list, *value, node);
+                }
                 (Some(("Array", "copy")), [array]) => self.array_copy(place, *array, node),
                 (Some(("Array" | "Fixed", "sum")), [array]) => {
                     self.array_sum(place, *array, node);
