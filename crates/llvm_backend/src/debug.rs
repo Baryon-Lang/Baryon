@@ -15,6 +15,16 @@
 use source::{FileId, Sources, Span};
 use std::fmt::Write as _;
 
+/// The attribute a function with debug information carries so its frames can be walked: an
+/// unwind table, which tells the unwinder where the caller's return address and frame are.
+///
+/// A backtrace walks the stack from the runtime's panic up through the program's frames. LLVM
+/// marks a function that calls only `nounwind` functions `nounwind` too, and gives it no unwind
+/// table, and the macOS unwinder stops at the first frame without one, so the panic's backtrace
+/// would end inside the runtime. The table is data beside the code, read only when a stack is
+/// walked, so it costs no time while the program runs.
+pub(crate) const UNWIND_TABLE: &str = "uwtable";
+
 /// The number of the first subprogram's node: `!0` is the compile unit and `!1` and `!2` the
 /// module flags.
 const FIRST_SUBPROGRAM: usize = 3;
