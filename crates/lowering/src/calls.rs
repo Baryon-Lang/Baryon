@@ -58,6 +58,7 @@ impl<'db> Builder<'db> {
                 (Some(("Fixed", function @ ("zeros" | "ones" | "fill"))), _) => {
                     self.new_fixed(place, function, &arguments, node);
                 }
+                (Some(("str", "copy")), [_]) => self.joined(place, &arguments, node),
                 _ => self.unsupported(node, &format!("the built-in `{name}`")),
             },
             types::Callee::Value => self.unsupported(node, "calls of a function value"),

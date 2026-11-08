@@ -208,6 +208,7 @@ mod facts;
 mod operators;
 mod patterns;
 mod statements;
+mod text;
 #[cfg(test)]
 mod tests;
 

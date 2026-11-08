@@ -46,7 +46,7 @@ impl<'db> Builder<'db> {
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
             SyntaxKind::List => self.unsupported(node, "list displays"),
-            SyntaxKind::FormattedString => self.unsupported(node, "f-strings"),
+            SyntaxKind::FormattedString => self.formatted(place, node),
             SyntaxKind::ListComprehension => self.unsupported(node, "comprehensions"),
             _ => self.unsupported(node, "this expression"),
         }
