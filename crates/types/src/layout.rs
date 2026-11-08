@@ -20,8 +20,9 @@
 //! - **`T | None`** is a `T` followed by a one-byte flag, as a record.
 //! - **Enums** are the smallest unsigned integer that numbers their variants.
 //! - **`Raises[T, E]`** is a one-byte tag followed by room for the largest of `T` and the errors.
-//! - **`Callable`** takes no bytes: the function passed is known when compiling, and the callee
-//!   is compiled once per function (language reference, "Types", "Functions as arguments").
+//! - **`Callable`** and a function's own type take no bytes: the function passed is known when
+//!   compiling, and the callee is compiled once per function (language reference, "Types",
+//!   "Functions as arguments", and decision 0026).
 
 use crate::{Nominal, Primitive, Type, TypeKind};
 use std::error::Error;
@@ -215,7 +216,9 @@ impl<'db> Layouter<'_, 'db> {
             TypeKind::Primitive(primitive) => Ok(primitive_layout(*primitive)),
             TypeKind::Str => WORD.repeat(2).ok_or(too_large),
             TypeKind::List(_) => WORD.repeat(3).ok_or(too_large),
-            TypeKind::None | TypeKind::Callable { .. } => Ok(Layout::EMPTY),
+            TypeKind::None | TypeKind::Callable { .. } | TypeKind::Function { .. } => {
+                Ok(Layout::EMPTY)
+            }
             TypeKind::Tuple(items) => {
                 let fields = self.all(items)?;
                 Ok(Layout::record(fields).ok_or(too_large)?.layout())

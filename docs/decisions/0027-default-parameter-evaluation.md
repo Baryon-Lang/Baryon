@@ -38,7 +38,8 @@ Three facts about this language bear on the choice:
    without a copy, and an `InOut` parameter would write into it, which is exactly Python's
    surprise (roadmap idea I.20 asks whether an `InOut` default should be allowed at all).
 3. **Parallel loops may call any function**
-   ([Parallel and vector loops](../reference/parallel-loops.md)). A default evaluated once and shared would be shared between threads.
+   ([Parallel and vector loops](../reference/parallel-loops.md)). A default evaluated once and
+   shared would be shared between threads.
 
 The options:
 

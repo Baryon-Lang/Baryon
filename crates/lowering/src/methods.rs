@@ -2,14 +2,16 @@
 //! and `v.dot(w)` and `v.round()` on `Fixed` arrays.
 //!
 //! `a.copy()` is the whole-array expression whose only leaf is `a`, so array expansion allocates
-//! the new array and copies each element in the same loop nest as `a + b`. `a.sum()` and
-//! `v.dot(w)` add into an accumulator in a loop nest of their own. `v.round()` builds a new
+//! the new array and copies each element in the same loop nest as `a + b`. `a.sum()` of floats
+//! calls the runtime's pairwise sum; of integers, it and `v.dot(w)` add into an accumulator in a
+//! loop nest of their own. `v.round()` builds a new
 //! `Fixed` value from each element rounded, with one call per element, since a `Fixed` array is
 //! small and its length is known when compiling.
 
 use crate::builder::Builder;
 use mir::{
-    BinaryOperator, Constant, Elementwise, MathFunction, Operand, Place, Projection, Rvalue,
+    Argument, BinaryOperator, Builtin, Callee, Constant, Elementwise, MathFunction, Operand, Place,
+    Projection, Rvalue, TerminatorKind,
 };
 use syntax::NodeId;
 use types::TypeKind;
@@ -22,13 +24,13 @@ impl<'db> Builder<'db> {
         self.assign(place, Rvalue::Elementwise(Box::new(tree)), node);
     }
 
-    /// `a.sum()` on an `Array` or `Fixed` array of numbers, into `place`: 0, then each element
-    /// added in row-major order (decision 0008), one at a time.
+    /// `a.sum()` on an `Array` or `Fixed` array of numbers, into `place`.
     ///
-    /// The order is fixed, so a float sum is the same on every run. It is not the most accurate
-    /// order: rounding error grows with the element count, where a pairwise sum would keep it
-    /// near constant. An empty array sums to 0. Integer sums wrap on overflow, as integer `+`
-    /// does until decision D.11.
+    /// Floats are added in `NumPy`'s pairwise tree, by a call of [`Builtin::Sum`], so the result
+    /// has the same bits as `numpy.sum` and rounding error grows only with the logarithm of the
+    /// length (Collins, 2026-11-08, roadmap I.22). Integers are added in a loop nest from 0 in
+    /// row-major order (decision 0008), since integer addition is exact in any order; they wrap
+    /// on overflow, as integer `+` does until decision D.11. An empty array sums to 0.
     pub(crate) fn array_sum(&mut self, place: Place, array: NodeId, node: NodeId) {
         let ty = self.ty(array);
         let element = self.element(ty);
@@ -36,6 +38,24 @@ impl<'db> Builder<'db> {
             return self.unsupported(node, "`sum` of an array whose elements are not numbers");
         }
         let source = self.borrow(array);
+        let result = self.ty(node);
+        if self.is_float(element) {
+            let total = self.temporary(element, node);
+            let next = self.new_block();
+            self.terminate(
+                TerminatorKind::Call {
+                    callee: Callee::Builtin(Builtin::Sum),
+                    arguments: vec![Argument::Borrow(source)],
+                    destination: Place::from(total),
+                    target: next,
+                    error: None,
+                },
+                node,
+            );
+            self.start(next);
+            let rvalue = self.coerce(Operand::Copy(Place::from(total)), element, result);
+            return self.assign(place, rvalue, node);
+        }
         let lengths: Vec<Operand<'db>> = (0..self.rank(ty))
             .map(|dimension| self.length(&source, ty, dimension, node))
             .collect();
@@ -54,7 +74,6 @@ impl<'db> Builder<'db> {
                 node,
             );
         });
-        let result = self.ty(node);
         let rvalue = self.coerce(Operand::Copy(Place::from(total)), element, result);
         self.assign(place, rvalue, node);
     }

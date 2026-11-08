@@ -31,10 +31,10 @@ impl<'db> Function<'_, '_, 'db> {
                 type_arguments,
             } => (item, type_arguments),
             Callee::Builtin(Builtin::Print) => return self.print(arguments, target),
-            Callee::Builtin(Builtin::Sum) => return Err(Unsupported::new("`sum` of floats")),
             Callee::Builtin(Builtin::Math(function)) => {
                 return self.math(*function, arguments, destination, target);
             }
+            Callee::Builtin(Builtin::Sum) => return self.sum(arguments, destination, target),
             Callee::Value(_) => return Err(Unsupported::new("calls of `Callable` values")),
         };
         let symbol = (self.symbol)(item, type_arguments);

@@ -286,7 +286,11 @@ fn has_parameter(db: &dyn Db, ty: Type<'_>) -> bool {
     let any = |types: &[Type<'_>]| types.iter().any(|&ty| has_parameter(db, ty));
     match ty.kind(db) {
         TypeKind::Parameter { .. } => true,
-        TypeKind::Primitive(_) | TypeKind::Str | TypeKind::None | TypeKind::Unknown => false,
+        TypeKind::Primitive(_)
+        | TypeKind::Str
+        | TypeKind::None
+        | TypeKind::Function { .. }
+        | TypeKind::Unknown => false,
         TypeKind::Tuple(items) => any(items),
         TypeKind::List(item) | TypeKind::Optional(item) => has_parameter(db, *item),
         TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {

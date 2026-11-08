@@ -58,4 +58,5 @@ What becomes easier, what becomes harder, and what we give up.
 | [0023. The language is named Baryon, its files end in `.byn`, and its tool is `baryon`](0023-language-name-baryon.md) | Accepted |
 | [0024. Accumulated arrays compile to an `Accumulate` statement over lazily made private blocks](0024-compiling-accumulated-arrays.md) | Accepted |
 | [0025. The VS Code extension lives in `editors/vscode/` and highlights with Python's grammar](0025-vscode-extension.md) | Accepted |
+| [0026. A function passed as an argument is a compile-time argument, compiled once per function](0026-functions-as-arguments.md) | Accepted |
 | [0027. When a default parameter value is evaluated](0027-default-parameter-evaluation.md) | Accepted |

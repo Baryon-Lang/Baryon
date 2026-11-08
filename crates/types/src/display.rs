@@ -62,6 +62,7 @@ impl fmt::Display for Displayed<'_> {
                 list(parameters).join(", "),
                 show(*returns)
             ),
+            TypeKind::Function { callable, .. } => write!(formatter, "{}", show(*callable)),
             TypeKind::Fallible { value, errors } => {
                 write!(
                     formatter,

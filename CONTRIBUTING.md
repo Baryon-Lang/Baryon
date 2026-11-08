@@ -137,13 +137,17 @@ A choice that is hard to reverse, or that affects more than one crate, gets a de
 4. Make one logical change. Keep the pull request small enough to review in one sitting.
 5. Update the documentation the change affects.
 6. Mark the item `Done` when the work is complete.
-7. Run `cargo xtask ci` and make it pass. CI runs the same command on macOS (Apple silicon) and
-   Linux.
+7. Run `cargo xtask ci` and make it pass. CI runs the same command on Linux for every push, and
+   on macOS (Apple silicon) too once the pull request carries the `ready-to-merge` label and on
+   every push to `main`. A macOS minute costs ten Linux minutes, so CI saves it for the run that
+   decides the merge. A change to Markdown alone, outside `docs/guide/`, runs only the conflict,
+   roadmap and link checks.
 8. Write commits as [Conventional Commits](https://www.conventionalcommits.org/):
    `type(scope): summary`, imperative mood, at most 72 characters, with a body that explains why.
    Types: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, `chore`.
-9. Mark the pull request ready for review. `main` always passes CI; pull requests are
-   squash-merged.
+9. Mark the pull request ready for review and add the `ready-to-merge` label, which starts the
+   macOS run. A pull request merges only when every job, macOS included, is green on its last
+   commit. `main` always passes CI; pull requests are squash-merged.
 
 The Rust toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml) and `Cargo.lock` is
 committed, so every machine builds the same thing.
