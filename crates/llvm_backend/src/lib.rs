@@ -120,6 +120,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+mod accumulate;
 mod array;
 mod call;
 mod convert;
