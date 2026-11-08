@@ -78,20 +78,23 @@ impl<'db> Builder<'db> {
         let Declaration::Function(signature) = &self.db.declaration(item).declaration else {
             return self.unsupported(node, "this call");
         };
-        let modes: Vec<Mode> = signature
+        let parameters: Vec<(Mode, types::Type<'db>)> = signature
             .parameters
             .iter()
-            .map(|parameter| parameter.mode)
+            .map(|parameter| (parameter.mode, parameter.ty))
             .collect();
         let mut passed = Vec::with_capacity(arguments.len());
-        for (&argument, mode) in arguments.iter().zip(modes) {
+        for (&argument, (mode, ty)) in arguments.iter().zip(parameters) {
             passed.push(match mode {
-                Mode::Borrow => Argument::Borrow(self.borrow(argument)),
+                Mode::Borrow => match self.borrow_as(argument, ty) {
+                    Some(place) => Argument::Borrow(place),
+                    None => return,
+                },
                 Mode::InOut => match self.place(argument) {
                     Some(place) => Argument::InOut(place),
                     None => return,
                 },
-                Mode::Owned => Argument::Owned(self.operand(argument)),
+                Mode::Owned => Argument::Owned(self.operand_as(argument, ty)),
             });
         }
         let errors = self.typed.errors(node);
@@ -149,6 +152,27 @@ impl<'db> Builder<'db> {
             node,
         );
         self.start(next);
+    }
+
+    /// A place holding `argument` as the parameter type `ty`, to borrow. An argument that
+    /// changes representation, such as an `f64` passed where `f64 | None` is borrowed, is
+    /// converted into a temporary first. `None` after reporting an argument of a type that is
+    /// not a copy type, since wrapping it would move or copy the caller's value.
+    fn borrow_as(&mut self, argument: NodeId, ty: types::Type<'db>) -> Option<Place> {
+        let from = self.ty(argument);
+        if !self.converts(from, ty) {
+            return Some(self.borrow(argument));
+        }
+        if !self.is_copy(from) {
+            self.unsupported(
+                argument,
+                "borrowing a value that is not a copy type as an optional",
+            );
+            return None;
+        }
+        let temporary = self.temporary(ty, argument);
+        self.write(Place::from(temporary), ty, argument);
+        Some(Place::from(temporary))
     }
 
     /// The elements of a `Fixed` array that `node` writes, in row-major order, onto
