@@ -98,3 +98,42 @@ fn(_1: Fixed[f64, (2,)]) -> f64 {
 "
     );
 }
+
+/// `sqrt(n)` on an integer converts `n` to `f64` first, and `math.pow` on an `f32` calls the
+/// `f32` function, with its literal exponent written as an `f32`, as `x ** 3` does.
+#[test]
+fn math_functions_convert_their_arguments() {
+    let program = "\
+        import math\n\
+        from math import sqrt\n\
+        \n\
+        \n\
+        def roots(n: int, x: f32) -> f32:\n\
+        \x20   r = sqrt(n)\n\
+        \x20   return math.pow(x, 3)\n";
+    assert_eq!(
+        lower(program, "roots"),
+        "\
+fn(_1: i64, _2: f32) -> f32 {
+    let _0: f32; // return
+    let _1: i64; // parameter n
+    let _2: f32; // parameter x
+    let _3: f64; // r
+    let _4: f64;
+
+    bb0: {
+        _4 = f64(copy _1);
+        _3 = call math.sqrt(owned copy _4) -> [return: bb1];
+    }
+
+    bb1: {
+        _0 = call math.pow(owned copy _2, owned 3.0_f32) -> [return: bb2];
+    }
+
+    bb2: {
+        return;
+    }
+}
+"
+    );
+}

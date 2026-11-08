@@ -41,8 +41,10 @@
 //!   its elements in row-major order. `a.copy()` is a whole-array expression of `a` alone,
 //!   `a.sum()` and `v.dot(w)` add in a loop nest, and `v.round()` on a `Fixed` array rounds each
 //!   element.
-//! - **Math.** `**` and `**=` on floats call [`MathFunction::Power`](mir::MathFunction), and
-//!   rounding calls `RoundEven`, as [`Builtin::Math`](mir::Builtin::Math) calls a backend writes.
+//! - **Math.** `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` from `math`, and `**` and `**=` on
+//!   floats, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
+//!   [`Builtin::Math`](mir::Builtin::Math) calls a backend writes. The built-in `round(x)` rounds
+//!   a float and converts it to an integer.
 //! - **Unpacking.** `a, b = value` computes the value into a temporary, then moves or copies each
 //!   part into its target, left to right, so `a, b = b, a` swaps two arrays without copying them.
 //! - **Parallel loops.** The body of a `prange` loop is outlined into a body of its own that runs
@@ -65,9 +67,10 @@
 //! types or inside `|`, `raise ... from`, an `except` that names its error through a module, calls
 //! that leave out an argument whose default is not a literal or a constant, or that belongs to a
 //! generic function, the built-in functions and methods other than `print`, `min` and `max` of
-//! numbers, `len` of an array, the array constructors, `a.copy()`, `a.sum()`, and `dot` and
-//! `round` of a `Fixed` array, calls of a `Callable` value, `**` on integers, `@`, `in`, nested
-//! unpacking, `with` other than `with unsafe:`, and comprehensions.
+//! numbers, `len` of an array, `round` with one argument, the `math` functions above, the array
+//! constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a `Fixed` array, calls of a
+//! `Callable` value, `**` on integers, `@`, `in`, nested unpacking, `with` other than
+//! `with unsafe:`, and comprehensions.
 //!
 //! # Example
 //!
