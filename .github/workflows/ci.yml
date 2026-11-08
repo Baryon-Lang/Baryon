@@ -1,15 +1,24 @@
 name: CI
 
+# Actions minutes are billed per job, rounded up to the minute, and a macOS minute costs ten
+# Linux minutes. So a pull request runs on Linux only until it carries the `ready-to-merge` label;
+# then, and on every push to main, it runs on macOS too. A change that touches only Markdown runs
+# the conflict, roadmap and link checks and skips the build. The benchmark kernels have their own
+# workflow, kernels.yml, which runs only when they change.
+
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Adding the label starts a macOS-only run, which must not cancel the Linux run of the same
+  # commit; a new push cancels both.
+  group: ci-${{ github.ref }}-${{ github.event.action == 'labeled' && 'label' || 'push' }}
   cancel-in-progress: true
 
 env:
@@ -18,49 +27,57 @@ env:
 jobs:
   check:
     name: cargo xtask ci (${{ matrix.os }})
+    # Any other label changes nothing, so it runs nothing.
+    if: github.event.action != 'labeled' || github.event.label.name == 'ready-to-merge'
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, ubuntu-24.04]
+        os: >-
+          ${{ fromJSON(
+            github.event.action == 'labeled' && '["macos-15"]'
+            || (github.event_name == 'push'
+                || contains(github.event.pull_request.labels.*.name, 'ready-to-merge'))
+               && '["macos-15", "ubuntu-24.04"]'
+            || '["ubuntu-24.04"]'
+          ) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
         with:
           # Full history, so the roadmap check can compare the change with origin/main.
           fetch-depth: 0
+      - name: Find out whether the change touches only Markdown
+        id: scope
+        if: github.event_name == 'pull_request'
+        # The guide's Markdown is run by a driver test, so a change to it builds everything.
+        run: |
+          changed=$(git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD")
+          code=$(printf '%s\n' "$changed" | grep -Ev '\.md$|^$|^docs/guide/' || true)
+          guide=$(printf '%s\n' "$changed" | grep '^docs/guide/' || true)
+          if [ -z "$code$guide" ]; then
+            echo "markdown_only=true" >> "$GITHUB_OUTPUT"
+            echo "Only Markdown changed: running the conflict, roadmap and link checks."
+          fi
       - name: Install the pinned toolchain
         run: rustup toolchain install
+      - name: Check Markdown, conflict markers and the roadmap
+        if: steps.scope.outputs.markdown_only == 'true'
+        run: |
+          cargo xtask check-conflicts
+          cargo xtask check-roadmap
+          cargo xtask check-links
+      - name: Restore the build cache
+        if: steps.scope.outputs.markdown_only != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # Only main saves, so pull requests cannot evict the cache they all start from.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install cargo-deny, which checks dependencies
+        if: steps.scope.outputs.markdown_only != 'true'
         # The version must match CARGO_DENY_VERSION in xtask/src/dependencies.rs.
         uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: cargo-deny@0.20.2
       - name: Run every check
+        if: steps.scope.outputs.markdown_only != 'true'
         run: cargo xtask ci
-
-  kernels:
-    name: cargo kernels --size smoke (${{ matrix.os }})
-    # Builds every baseline kernel in C++ and Fortran and fails if the two languages disagree.
-    # Times on shared runners are too noisy to gate on; see docs/decisions/0003-benchmark-suite.md.
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            fortran: gfortran-14
-          - os: ubuntu-24.04
-            fortran: gfortran
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install the pinned toolchain
-        run: rustup toolchain install
-      - name: Show the compilers
-        run: |
-          clang++ --version
-          ${{ matrix.fortran }} --version
-      - name: Build, run and verify every kernel
-        run: cargo kernels --size smoke
-        env:
-          CXX: clang++
-          FC: ${{ matrix.fortran }}
