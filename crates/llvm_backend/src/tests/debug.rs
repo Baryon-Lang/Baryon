@@ -4,8 +4,9 @@ use super::{Database, Module, binary, no_structs, primitive, sources, symbol_of}
 use mir::BinaryOperator;
 use types::{Float, Primitive};
 
-/// With debug information on, `define` names the function's subprogram, every instruction
-/// written from a statement carries its line and column, and the metadata closes the module.
+/// With debug information on, `define` names the function's subprogram and asks for an unwind
+/// table, so a backtrace can walk through it, every instruction written from a statement
+/// carries its line and column, and the metadata closes the module.
 /// The C `main` gets an artificial subprogram, so `main` inlined into it keeps its lines.
 #[test]
 fn instructions_carry_their_source_location() {
@@ -24,7 +25,7 @@ fn instructions_carry_their_source_location() {
         module.finish(),
         format!(
             "\
-define double @scale(double %a1, double %a2) !dbg !3 {{
+define double @scale(double %a1, double %a2) uwtable !dbg !3 {{
 start:
   %_0 = alloca double
   %_1 = alloca double
@@ -41,7 +42,7 @@ bb0:
   ret double %t3, !dbg {location}
 }}
 
-define i32 @main() !dbg !4 {{
+define i32 @main() uwtable !dbg !4 {{
 start:
   call void @scale(), !dbg !DILocation(line: 0, scope: !4)
   ret i32 0, !dbg !DILocation(line: 0, scope: !4)
