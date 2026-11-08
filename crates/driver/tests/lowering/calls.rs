@@ -261,7 +261,6 @@ error: lowering does not handle leaving out an argument whose default is not a l
     );
 }
 
-
 /// An `InOut` parameter with a default is reported when its argument is left out: whatever the
 /// callee wrote into the default would go nowhere the caller can see.
 #[test]
