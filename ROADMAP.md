@@ -133,7 +133,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.16 | Language server: diagnostics, go to definition, hover, completion, fixes | 4 | 1.8 | Planned | — | — |
 | 1.16.1 | `baryon lsp`: a language server over standard input and output that publishes `baryon check`'s diagnostics as the user types, from the same incremental session | 0.5 | 1.11.2 | Done | Claude | [0019](docs/decisions/0019-language-server-protocol.md), [#35](https://github.com/Baryon-Lang/Baryon/pull/35) |
 | 1.17 | VS Code extension | 1 | 1.16 | In progress | Claude | [0025](docs/decisions/0025-vscode-extension.md) |
-| 1.17.1 | VS Code extension, highlighting: `.byn` files open as Baryon, highlighted by VS Code's Python grammar plus an injection for Baryon's types, `prange` and `simd`, with Python-style comments, brackets, indentation and folding | 0.25 | 1.16.1 | Done | Claude | [0025](docs/decisions/0025-vscode-extension.md), [#PR](https://github.com/Baryon-Lang/Baryon/pull/PR) |
+| 1.17.1 | VS Code extension, highlighting: `.byn` files open as Baryon, highlighted by VS Code's Python grammar plus an injection for Baryon's types, `prange` and `simd`, with Python-style comments, brackets, indentation and folding | 0.25 | 1.16.1 | Done | Claude | [0025](docs/decisions/0025-vscode-extension.md), [#92](https://github.com/Baryon-Lang/Baryon/pull/92) |
 | 1.17.2 | VS Code extension, language server client: start `baryon lsp` for `.byn` files so diagnostics show as the user types, with a setting for the path to `baryon` | 0.25 | 1.17.1 | Planned | — | [0025](docs/decisions/0025-vscode-extension.md) |
 | 1.18 | Execution corpus, benchmark baselines and fuzzing in CI | 2 | 1.11 | Planned | — | — |
 
