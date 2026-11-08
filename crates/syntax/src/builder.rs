@@ -6,8 +6,40 @@ use source::FileId;
 /// Builds a [`SyntaxTree`] in preorder: open a node, add its children, close it.
 ///
 /// Misusing the builder, by closing more nodes than were opened or finishing with nodes still
-/// open, is a bug in the parser, so those methods panic instead of returning errors. See the
-/// crate documentation for an example.
+/// open, is a bug in the parser, so those methods panic instead of returning errors.
+///
+/// The tree of `(x + 1) * 2`, whose inner sum is parenthesized:
+///
+/// ```
+/// use source::FileId;
+/// use syntax::{Flags, Operator, Role, SyntaxKind, TreeBuilder};
+///
+/// let text = "(x + 1) * 2";
+/// let mut builder = TreeBuilder::new(FileId::from_index(0));
+/// builder.open(SyntaxKind::Module, Role::Root, 0, 11);
+/// builder.open(SyntaxKind::ExpressionStatement, Role::Body, 0, 11);
+/// builder.open(SyntaxKind::BinaryOperation, Role::Value, 0, 11);
+/// builder.set_operator(Operator::Multiply);
+/// builder.open(SyntaxKind::BinaryOperation, Role::Left, 1, 6);
+/// builder.set_operator(Operator::Add);
+/// builder.set_flags(Flags::PARENTHESIZED);
+/// builder.leaf(SyntaxKind::Name, Role::Left, 1, 2);
+/// builder.leaf(SyntaxKind::Integer, Role::Right, 5, 6);
+/// builder.close();
+/// builder.leaf(SyntaxKind::Integer, Role::Right, 10, 11);
+/// builder.close();
+/// builder.close();
+/// builder.close();
+/// let tree = builder.finish();
+///
+/// assert_eq!(tree.len(), 7);
+/// assert_eq!(
+///     tree.display(text).to_string(),
+///     "Module 0..11\n  ExpressionStatement @Body 0..11\n    BinaryOperation @Value * 0..11\n      \
+///      BinaryOperation @Left + parenthesized 1..6\n        Name @Left 1..2 \"x\"\n        \
+///      Integer @Right 5..6 \"1\"\n      Integer @Right 10..11 \"2\"\n",
+/// );
+/// ```
 #[derive(Debug)]
 pub struct TreeBuilder {
     /// The file the tree is for.

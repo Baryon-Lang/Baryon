@@ -14,6 +14,34 @@ use std::fmt;
 /// The role is left out when it is `Item` or `Root`, and the operator and flags when the node
 /// has none. Leaf text is printed as a Rust string literal, so newlines and quotes stay on one
 /// line.
+///
+/// ```
+/// use source::FileId;
+/// use syntax::{Role, SyntaxKind, TreeBuilder};
+///
+/// let text = "print(\"hi\")";
+/// let mut builder = TreeBuilder::new(FileId::from_index(0));
+/// builder.open(SyntaxKind::Module, Role::Root, 0, 11);
+/// builder.open(SyntaxKind::ExpressionStatement, Role::Body, 0, 11);
+/// builder.open(SyntaxKind::Call, Role::Value, 0, 11);
+/// builder.leaf(SyntaxKind::Name, Role::Function, 0, 5);
+/// builder.open(SyntaxKind::Arguments, Role::Arguments, 5, 11);
+/// builder.leaf(SyntaxKind::StringLiteral, Role::Item, 6, 10);
+/// builder.close();
+/// builder.close();
+/// builder.close();
+/// builder.close();
+/// let tree = builder.finish();
+///
+/// // The `Item` role is left out, and the string's quotes are escaped.
+/// let printed = tree.display(text).to_string();
+/// assert_eq!(
+///     printed,
+///     "Module 0..11\n  ExpressionStatement @Body 0..11\n    Call @Value 0..11\n      \
+///      Name @Function 0..5 \"print\"\n      Arguments @Arguments 5..11\n        \
+///      StringLiteral 6..10 \"\\\"hi\\\"\"\n",
+/// );
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct Display<'a> {
     /// The tree to print.

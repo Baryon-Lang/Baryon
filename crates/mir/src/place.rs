@@ -19,6 +19,17 @@ pub struct Place {
 
 impl Place {
     /// This place, one step further in.
+    ///
+    /// ```
+    /// use mir::{Local, Place, Projection};
+    ///
+    /// // `particles[i].velocity`, with `particles` in local 1 and `i` in local 2.
+    /// let velocity = Place::from(Local::new(1))
+    ///     .project(Projection::Index(vec![Local::new(2)]))
+    ///     .project(Projection::Field(1));
+    /// assert_eq!(velocity.local, Local::new(1));
+    /// assert_eq!(velocity.projections.len(), 2);
+    /// ```
     #[must_use]
     pub fn project(mut self, projection: Projection) -> Self {
         self.projections.push(projection);

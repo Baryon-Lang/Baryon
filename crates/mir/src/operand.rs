@@ -26,6 +26,29 @@ pub struct Constant<'db> {
 
 impl<'db> Constant<'db> {
     /// The float `value` of type `ty`, which must be a float type.
+    ///
+    /// ```
+    /// use mir::{Constant, ConstantValue};
+    /// use types::{Float, Primitive, Type, TypeKind};
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// # let database = Database::default();
+    /// let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
+    ///
+    /// // Floats are stored by their bits, so a constant can be compared and hashed.
+    /// let half = Constant::float(f64, 0.5);
+    /// assert_eq!(half.value, ConstantValue::Float(0.5_f64.to_bits()));
+    /// ```
     #[must_use]
     pub fn float(ty: Type<'db>, value: f64) -> Self {
         Self {
@@ -35,6 +58,27 @@ impl<'db> Constant<'db> {
     }
 
     /// The integer `value` of type `ty`, which must be an integer type.
+    ///
+    /// ```
+    /// use mir::{Constant, ConstantValue};
+    /// use types::{Integer, Primitive, Type, TypeKind};
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// # let database = Database::default();
+    /// let i64 = Type::new(&database, TypeKind::Primitive(Primitive::Integer(Integer::I64)));
+    ///
+    /// assert_eq!(Constant::integer(i64, -7).value, ConstantValue::Integer(-7));
+    /// ```
     #[must_use]
     pub fn integer(ty: Type<'db>, value: i128) -> Self {
         Self {
