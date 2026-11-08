@@ -27,6 +27,8 @@
 //!   run by a [`ParallelFor`](TerminatorKind::ParallelFor) that lists every place it shares,
 //!   every value it reduces into and every array it accumulates into, which the body adds to
 //!   only through [`Accumulate`](StatementKind::Accumulate) statements.
+//! - **Vector loops**: a `simd` loop stays an ordinary loop whose header block is listed in
+//!   [`Body::vectorized`], for the backend to vectorize.
 //!
 //! [`Body::validate`] checks the structural rules every body keeps, and [`Body::display`] writes
 //! the text form used in tests and when debugging the compiler.
@@ -131,6 +133,12 @@ pub struct Body<'db> {
     /// Empty in a function with no `prange`, and in an outlined body itself, since `prange`
     /// loops do not nest.
     pub outlined: Vec<Body<'db>>,
+    /// The header block of each `simd` loop, in the order lowering wrote them: the block whose
+    /// test decides whether another iteration runs. The loop stays an ordinary loop (decision
+    /// 0018); the mark asks the backend to vectorize it, and the checker has already proved
+    /// that running its iterations several at a time is safe (decision 0011). Passes that add
+    /// blocks keep every existing block's id, so the marks stay on their headers.
+    pub vectorized: Vec<BlockId>,
 }
 
 impl<'db> Body<'db> {
@@ -174,6 +182,7 @@ impl<'db> Body<'db> {
             blocks: Vec::new(),
             span,
             outlined: Vec::new(),
+            vectorized: Vec::new(),
         }
     }
 
