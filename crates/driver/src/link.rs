@@ -26,31 +26,58 @@ const SYSTEM_LIBRARIES: &[&str] = if cfg!(target_os = "macos") {
 };
 
 /// Compiles the LLVM module `module` at `-O2` and links it with the runtime into the executable
-/// `output`. `-g` keeps the module's line tables in the executable; on macOS it also runs
-/// `dsymutil`, since the object file that holds them is deleted with the scratch directory.
+/// `output`, keeping the module's line tables (`-g`) so debuggers and panic backtraces show
+/// `.byn` lines.
+///
+/// The module is compiled to an object file in a scratch directory, then linked. On Linux the
+/// line tables are copied into the executable. On macOS the linker leaves them in the object file
+/// and records where it was, so `dsymutil` collects them into `output.dSYM` beside the
+/// executable before the scratch directory, and the object file with it, is removed. `clang`
+/// runs `dsymutil` itself only for source files it compiles, not for an LLVM module.
 pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
     let runtime = runtime()?;
     let scratch = env::temp_dir().join(format!("baryon-build-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let source = scratch.join("module.ll");
+    let object = scratch.join("module.o");
     let result = fs::write(&source, module)
         .map_err(|error| format!("{}: {error}", source.display()))
-        .and_then(|()| clang(&source, &runtime, output));
+        .and_then(|()| {
+            clang(|command| {
+                command
+                    .args(["-O2", "-g", "-Wno-override-module", "-c"])
+                    .arg(&source)
+                    .arg("-o")
+                    .arg(&object);
+            })
+        })
+        .and_then(|()| {
+            clang(|command| {
+                command
+                    .arg("-g")
+                    .arg(&object)
+                    .arg(&runtime)
+                    .args(SYSTEM_LIBRARIES)
+                    .arg("-o")
+                    .arg(output);
+            })
+        })
+        .and_then(|()| {
+            if cfg!(target_os = "macos") {
+                dsymutil(output)
+            } else {
+                Ok(())
+            }
+        });
     let _ = fs::remove_dir_all(&scratch);
     result
 }
 
-/// Runs `clang` on the module `source` and the archive `runtime`, writing `output`.
-fn clang(source: &Path, runtime: &Path, output: &Path) -> Result<(), String> {
-    let result = Command::new("clang")
-        .args(["-O2", "-g", "-Wno-override-module"])
-        .arg(source)
-        .arg(runtime)
-        .args(SYSTEM_LIBRARIES)
-        .arg("-o")
-        .arg(output)
-        .output();
-    match result {
+/// Runs `clang` with the arguments `arguments` adds.
+fn clang(arguments: impl FnOnce(&mut Command)) -> Result<(), String> {
+    let mut command = Command::new("clang");
+    arguments(&mut command);
+    match command.output() {
         Ok(finished) if finished.status.success() => Ok(()),
         Ok(finished) => Err(format!(
             "clang could not compile the program, which is a bug in baryon:\n{}",
@@ -62,6 +89,20 @@ fn clang(source: &Path, runtime: &Path, output: &Path) -> Result<(), String> {
                 .to_owned(),
         ),
         Err(error) => Err(format!("clang: {error}")),
+    }
+}
+
+/// Collects the line tables of the executable `output` into `output.dSYM`, on macOS.
+fn dsymutil(output: &Path) -> Result<(), String> {
+    match Command::new("dsymutil").arg(output).output() {
+        Ok(finished) if finished.status.success() => Ok(()),
+        Ok(finished) => Err(format!(
+            "dsymutil could not collect the debug information, which is a bug in baryon:\n{}",
+            String::from_utf8_lossy(&finished.stderr)
+        )),
+        Err(error) => Err(format!(
+            "dsymutil: {error}; it comes with the command line tools, `xcode-select --install`"
+        )),
     }
 }
 
