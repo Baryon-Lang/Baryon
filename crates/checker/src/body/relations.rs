@@ -47,7 +47,8 @@ fn contains<'db>(db: &'db dyn TypeDb, ty: Type<'db>, test: &dyn Fn(Type<'db>) ->
         | TypeKind::Parameter { .. }
         | TypeKind::Primitive(_)
         | TypeKind::Str
-        | TypeKind::None => false,
+        | TypeKind::None
+        | TypeKind::Function { .. } => false,
         TypeKind::Tuple(items) => all(items),
         TypeKind::List(item) | TypeKind::Optional(item) => contains(db, *item, test),
         TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
@@ -91,6 +92,7 @@ pub(crate) fn substitute<'db>(
         | TypeKind::Str
         | TypeKind::None
         | TypeKind::Parameter { .. }
+        | TypeKind::Function { .. }
         | TypeKind::Unknown => return ty,
         TypeKind::Tuple(items) => TypeKind::Tuple(all(items)),
         TypeKind::List(item) => TypeKind::List(map(*item)),
