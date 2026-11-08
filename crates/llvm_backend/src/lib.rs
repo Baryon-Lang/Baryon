@@ -33,6 +33,9 @@
 //!   [`types::layout`] describes: the data pointer, each length and each stride. A new array is
 //!   allocated by the runtime, an element is found through the strides, and a drop frees the
 //!   elements with the size they were allocated with.
+//! - **Lists are a header and a growable buffer.** A `list[T]` is `{ ptr, i64, i64 }`: the
+//!   data pointer, the length and the capacity. An append into a full buffer moves the elements
+//!   to one twice as large, at least 4 elements (the `list` module).
 //! - **Line tables, when asked for.** With [`Module::debug_info`], each function and each
 //!   instruction points back to its source line and column (the `debug` module), so `gdb`,
 //!   `lldb` and profilers show `.byn` lines.
@@ -55,9 +58,10 @@
 //!   whose bit is clear.
 //!
 //! The backend so far (roadmap 1.10.1 to 1.10.10) covers numbers, `bool`, enums without data,
-//! tuples and structs, `Array` and `Fixed`, optionals, `str` values, control flow, direct calls,
-//! errors, checks, line tables, `print` and the math functions. A body that uses anything else,
-//! such as a list, gets an [`Unsupported`] error naming it.
+//! tuples and structs, `Array` and `Fixed`, lists of copy types, optionals, `str` values, control
+//! flow, direct calls, errors, checks, line tables, `print` and the math functions. A body that
+//! uses anything else, such as a call of a `Callable` value, gets an [`Unsupported`] error
+//! naming it.
 //!
 //! # Example
 //!
@@ -135,6 +139,7 @@ mod debug;
 mod entry;
 mod errors;
 mod function;
+mod list;
 mod literal;
 mod math;
 mod panic;
@@ -418,9 +423,9 @@ impl<'a, 'db> Module<'a, 'db> {
     }
 }
 
-/// A form of the mid-level IR this slice of the backend does not translate yet, such as values
-/// of a list type. Roadmap 1.10 adds them slice by slice; a type-checked program reaches this
-/// only through features the backend has not caught up with.
+/// A form of the mid-level IR this slice of the backend does not translate yet, such as a call
+/// of a `Callable` value. Roadmap 1.10 adds them slice by slice; a type-checked program reaches
+/// this only through features the backend has not caught up with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unsupported {
     /// What is not supported, as a phrase: "values of type `Array[f64, 1]`".

@@ -315,6 +315,9 @@ impl<'db> Function<'_, '_, 'db> {
         ty: Type<'db>,
         operands: &[Operand<'db>],
     ) -> Result<String, Unsupported> {
+        if matches!(ty.kind(self.types.db), TypeKind::List(_)) {
+            return self.new_list(ty, operands);
+        }
         let llvm = self.types.value(ty)?;
         // A `Fixed` array's operands are its elements in row-major order; each goes at the
         // indices that position unravels to. A tuple's or struct's go at their own position.
