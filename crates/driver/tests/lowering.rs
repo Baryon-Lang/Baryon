@@ -634,7 +634,7 @@ def array_caller(a: Array[f64, 1]) -> f64:
     assert_eq!(
         lower(program, "array_caller"),
         r"error: lowering does not handle borrowing a value that is not a copy type as an optional yet
-  --> main.npl:19:14
+  --> main.byn:19:14
    |
 19 |     return g(a)
    |              ^ not lowered yet

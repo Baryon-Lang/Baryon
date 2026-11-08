@@ -10,7 +10,7 @@ use driver::Session;
 fn lower(program: &str, names: &[&str]) -> String {
     let mut session = Session::new();
     let program = program.strip_prefix('\n').unwrap_or(program);
-    if let Err(error) = session.add_file("main.npl", program) {
+    if let Err(error) = session.add_file("main.byn", program) {
         return error.to_string();
     }
     let mut errors = session.check();
@@ -252,7 +252,7 @@ def first(names: tuple[str, i64]) -> i64:
     assert_eq!(
         lower(program, &["first"]),
         r"error: lowering does not handle capturing a value that is not a copy type yet
- --> main.npl:3:15
+ --> main.byn:3:15
   |
 3 |         case (name, count):
   |               ^^^^ not lowered yet
