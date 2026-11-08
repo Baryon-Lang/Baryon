@@ -8,6 +8,7 @@
 
 mod accumulate;
 mod output;
+mod sum;
 mod text;
 
 pub use accumulate::{
@@ -18,6 +19,7 @@ pub use output::{
     baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
     baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,
 };
+pub use sum::{baryon_rt_sum_f32, baryon_rt_sum_f64};
 pub use text::{
     OwnedText, TextBuilder, baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64,
     baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,
