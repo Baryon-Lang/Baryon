@@ -16,6 +16,7 @@
 //! written only at the loop variable's index, shared scalars only as reductions, and nothing leaves
 //! the loop early. Lowering relies on that and does not check it again.
 
+use crate::accumulate::{Listed, pass_accumulated};
 use crate::builder::Builder;
 use crate::operators::arithmetic;
 use database::Definition;
@@ -81,7 +82,7 @@ impl<'db> Builder<'db> {
         let Some(accumulated) = self.accumulated_arrays(iterator) else {
             return;
         };
-        let Some(shared) = self.shared(statement) else {
+        let Some(shared) = self.shared(statement, &accumulated) else {
             return;
         };
         let start = self.temporary(ty, iterator);
@@ -105,7 +106,10 @@ impl<'db> Builder<'db> {
         let mut reductions = Vec::new();
         let mut reduced = Vec::new();
         for (&binding, &(local, usage)) in &shared {
-            if accumulated.iter().any(|&(listed, _)| listed == binding) {
+            if accumulated
+                .iter()
+                .any(|listed| listed.binding == binding && listed.fields.is_empty())
+            {
                 continue;
             }
             let name = self.local_name(local);
@@ -129,16 +133,10 @@ impl<'db> Builder<'db> {
             }
         }
         passed.extend(reduced);
-        let first_accumulated = passed.len() + 1;
-        let mut accumulations = Vec::new();
-        for &(binding, local) in &accumulated {
-            let name = self.local_name(local);
-            passed.push((name, self.local_type(local), Mode::InOut, Some(binding)));
-            accumulations.push(Place::from(local));
-        }
+        let (accumulations, targets) = pass_accumulated(accumulated, &mut passed);
 
         let mut nested = self.nested(statement, &passed);
-        nested.accumulated = (first_accumulated..=passed.len()).map(Local::new).collect();
+        nested.accumulated = targets;
         nested.iteration(statement, offset.then_some(step));
         let body = match nested.finish() {
             Ok(body) => body,
@@ -256,7 +254,11 @@ impl<'db> Builder<'db> {
     /// The shared variables the body of the `prange` loop `statement` uses, by binding, with
     /// their locals and how the body uses them. `None` after reporting a use lowering does not
     /// handle.
-    fn shared(&mut self, statement: NodeId) -> Option<BTreeMap<NodeId, (Local, Use)>> {
+    fn shared(
+        &mut self,
+        statement: NodeId,
+        accumulated: &[Listed<'db>],
+    ) -> Option<BTreeMap<NodeId, (Local, Use)>> {
         let loop_start = self.tree.span(statement).start();
         let mut shared = BTreeMap::new();
         let mut nodes = Vec::new();
@@ -278,6 +280,9 @@ impl<'db> Builder<'db> {
             }
         }
         for &node in &nodes {
+            if self.adds_into(node, accumulated) {
+                continue;
+            }
             for (binding, usage) in self.writes(node)? {
                 if let Some((_, current)) = shared.get_mut(&binding) {
                     *current = match (*current, usage) {
@@ -374,6 +379,29 @@ impl<'db> Builder<'db> {
             _ => {}
         }
         Some(writes)
+    }
+
+    /// Whether `node` is an in-place operator on an element of an array the loop lists in
+    /// `accumulate=`, by its variable and field names: an add the accumulator takes, not a
+    /// write to the variable.
+    fn adds_into(&self, node: NodeId, accumulated: &[Listed<'db>]) -> bool {
+        if self.tree.kind(node) != SyntaxKind::AugmentedAssign {
+            return false;
+        }
+        let Some(mut target) = self.tree.child(node, Role::Target) else {
+            return false;
+        };
+        while self.tree.kind(target) == SyntaxKind::Subscript {
+            match self.tree.child(target, Role::Value) {
+                Some(value) => target = value,
+                None => return false,
+            }
+        }
+        self.field_path(target).is_some_and(|(binding, fields)| {
+            accumulated
+                .iter()
+                .any(|listed| listed.binding == binding && listed.fields == fields)
+        })
     }
 
     /// The reduction `x = min(x, …)` or `x = max(x, …)` makes, from the assignment

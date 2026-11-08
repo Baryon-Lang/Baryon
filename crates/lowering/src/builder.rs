@@ -55,9 +55,10 @@ pub(crate) struct Builder<'db> {
     pub(crate) caught: Vec<Clause<'db>>,
     /// One error per construct the first slice does not lower.
     diagnostics: Vec<Diagnostic>,
-    /// In the outlined body of a `prange` loop, the parameters of the arrays it lists in
-    /// `accumulate=`, which the body only adds into (the `accumulate` module). Empty elsewhere.
-    pub(crate) accumulated: Vec<Local>,
+    /// In the outlined body of a `prange` loop, one entry per array it lists in `accumulate=`:
+    /// the array's place in the body, then the parameter that adds into the running chunk's
+    /// copy of it (the `accumulate` module). Empty elsewhere.
+    pub(crate) accumulated: Vec<(Place, Local)>,
 }
 
 /// One `try` statement whose body is being lowered.
