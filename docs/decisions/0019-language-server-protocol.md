@@ -1,4 +1,4 @@
-# 0019. The language server is `npl lsp`, speaking the protocol over `serde_json`
+# 0019. The language server is `baryon lsp`, speaking the protocol over `serde_json`
 
 Status: Accepted
 Date: 2026-11-07
@@ -8,7 +8,7 @@ Roadmap: 1.16
 
 Roadmap item 1.16 is the language server: diagnostics as the user types first, then go to
 definition, hover, completion and fixes. The design plan says it is "the compiler's query engine
-behind the Language Server Protocol", so it must hold the same `driver::Session` that `npl check`
+behind the Language Server Protocol", so it must hold the same `driver::Session` that `baryon check`
 uses, and every feature becomes a thin translation of a query result.
 
 Two choices are hard to reverse once the server grows, which is why they get a record
@@ -34,8 +34,8 @@ Two choices are hard to reverse once the server grows, which is why they get a r
 
 ## Decision
 
-- **The server is a subcommand of the `npl` binary: `npl lsp`.** Its code is a private module
-  of the `driver` crate's binary (`crates/driver/src/lsp/`), next to `npl check`, so both share
+- **The server is a subcommand of the `baryon` binary: `baryon lsp`.** Its code is a private module
+  of the `driver` crate's binary (`crates/driver/src/lsp/`), next to `baryon check`, so both share
   one `Session` and one way of finding a package's files. This is the layout of `ruff server`
   and `deno lsp`: one executable to install, and an editor extension only has to run it.
 - **The protocol is written by hand over `serde_json::Value`.** The server reads and writes
@@ -61,7 +61,7 @@ Two choices are hard to reverse once the server grows, which is why they get a r
 - A slow query will block the editor until it finishes. When one does (type-checking every file
   of a large package on each keystroke is the likely first), the fix is a reader thread and
   cancellation through salsa, not a framework.
-- `npl lsp` grows the `driver` crate's binary, not its library: the library API gains only
+- `baryon lsp` grows the `driver` crate's binary, not its library: the library API gains only
   `Session::file_id`. If a second program ever needs the server, it moves to its own crate
   together with the wiring it needs, which is a change to `docs/architecture.md` and its own
   record.

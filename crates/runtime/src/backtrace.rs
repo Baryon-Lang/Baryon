@@ -2,19 +2,19 @@
 //! programmer wrote.
 //!
 //! The backend writes DWARF line tables (roadmap 1.10.9) and the driver links with them, so the
-//! standard library's backtrace can name each frame of compiled code and its `.npl` line, inlined
+//! standard library's backtrace can name each frame of compiled code and its `.byn` line, inlined
 //! calls included. The capture also holds frames that are not the program's: the runtime's own
-//! functions, the C `main` and the C library. Only the frames whose location is a `.npl` file are
+//! functions, the C `main` and the C library. Only the frames whose location is a `.byn` file are
 //! the programmer's, so the report keeps those, most recent call last as Python's traceback
 //! lists them (decision 0004):
 //!
 //! ```text
 //! backtrace, most recent call last:
-//!   main.main at /home/ada/heat/main.npl:11:11
-//!   main.pick at /home/ada/heat/main.npl:2:19
+//!   main.main at /home/ada/heat/main.byn:11:11
+//!   main.pick at /home/ada/heat/main.byn:2:19
 //! ```
 //!
-//! A program built without debug information has no `.npl` frames, and its report has no
+//! A program built without debug information has no `.byn` frames, and its report has no
 //! backtrace. Capturing and resolving one reads the program's debug information from disk, which
 //! takes milliseconds; it happens once, as the program ends.
 
@@ -25,7 +25,7 @@ use std::fmt::Write as _;
 struct Frame<'text> {
     /// The function's symbol, such as `main.pick`.
     function: &'text str,
-    /// The file, line and column, such as `/home/ada/heat/main.npl:2:19`.
+    /// The file, line and column, such as `/home/ada/heat/main.byn:2:19`.
     location: &'text str,
 }
 
@@ -35,11 +35,11 @@ pub(crate) fn capture() -> String {
     render(&std::backtrace::Backtrace::force_capture().to_string())
 }
 
-/// The report's lines for the `.npl` frames of `backtrace`, the standard library's text of a
+/// The report's lines for the `.byn` frames of `backtrace`, the standard library's text of a
 /// captured backtrace, or nothing when there are none.
 ///
 /// That text gives each frame's function on one line, `  2: main.pick`, and its location on the
-/// next, `             at /home/ada/heat/main.npl:2:19`. A function inlined into another is a
+/// next, `             at /home/ada/heat/main.byn:2:19`. A function inlined into another is a
 /// line of its own, with or without a number, so every function line is read the same way.
 fn render(backtrace: &str) -> String {
     let frames = frames(backtrace);
@@ -53,7 +53,7 @@ fn render(backtrace: &str) -> String {
     text
 }
 
-/// Each frame of `backtrace` whose location is in a `.npl` file, in order.
+/// Each frame of `backtrace` whose location is in a `.byn` file, in order.
 fn frames(backtrace: &str) -> Vec<Frame<'_>> {
     let mut frames = Vec::new();
     let mut function = None;
@@ -75,7 +75,7 @@ fn frames(backtrace: &str) -> Vec<Frame<'_>> {
     frames
 }
 
-/// Whether `location`, written `file:line:column`, is in a `.npl` file.
+/// Whether `location`, written `file:line:column`, is in a `.byn` file.
 fn is_source(location: &str) -> bool {
     let mut parts = location.rsplitn(3, ':');
     let (Some(_column), Some(_line), Some(file)) = (parts.next(), parts.next(), parts.next())
@@ -84,7 +84,7 @@ fn is_source(location: &str) -> bool {
     };
     std::path::Path::new(file)
         .extension()
-        .is_some_and(|extension| extension == "npl")
+        .is_some_and(|extension| extension == "byn")
 }
 
 #[cfg(test)]
@@ -95,26 +95,26 @@ mod tests {
     /// which was inlined into `main.main`.
     const CAPTURED: &str = "   0: runtime::panic::panic
              at ./crates/runtime/src/panic.rs:138:36
-   1: npl_rt_panic_index
+   1: baryon_rt_panic_index
              at ./crates/runtime/src/abi.rs:238:5
    2: main.pick
-             at /home/ada/heat/main.npl:2:19
+             at /home/ada/heat/main.byn:2:19
       main.total
-             at /home/ada/heat/main.npl:7:12
+             at /home/ada/heat/main.byn:7:12
    3: main.main
-             at /home/ada/heat/main.npl:11:11
+             at /home/ada/heat/main.byn:11:11
    4: main
    5: __libc_start_main
 ";
 
     #[test]
-    fn keeps_the_frames_of_npl_source_most_recent_last() {
+    fn keeps_the_frames_of_baryon_source_most_recent_last() {
         assert_eq!(
             render(CAPTURED),
             "backtrace, most recent call last:\n  \
-             main.main at /home/ada/heat/main.npl:11:11\n  \
-             main.total at /home/ada/heat/main.npl:7:12\n  \
-             main.pick at /home/ada/heat/main.npl:2:19\n"
+             main.main at /home/ada/heat/main.byn:11:11\n  \
+             main.total at /home/ada/heat/main.byn:7:12\n  \
+             main.pick at /home/ada/heat/main.byn:2:19\n"
         );
     }
 
@@ -126,20 +126,20 @@ mod tests {
 
     #[test]
     fn a_location_needs_a_line_and_a_column() {
-        assert!(is_source("main.npl:2:19"));
-        assert!(is_source("C:/heat/main.npl:2:19"));
-        assert!(!is_source("main.npl"));
+        assert!(is_source("main.byn:2:19"));
+        assert!(is_source("C:/heat/main.byn:2:19"));
+        assert!(!is_source("main.byn"));
         assert!(!is_source("./crates/runtime/src/panic.rs:138:36"));
     }
 
     #[test]
     fn a_frame_without_a_location_is_not_given_the_next_one() {
-        let text = "   0: npl_rt_panic\n   1: main\n             at /heat/main.npl:3:1\n";
+        let text = "   0: baryon_rt_panic\n   1: main\n             at /heat/main.byn:3:1\n";
         assert_eq!(
             frames(text),
             [Frame {
                 function: "main",
-                location: "/heat/main.npl:3:1"
+                location: "/heat/main.byn:3:1"
             }]
         );
     }

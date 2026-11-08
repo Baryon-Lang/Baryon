@@ -6,12 +6,12 @@
 
 use driver::Session;
 
-/// The page of `main.npl` holding `text`, or the rendered problems that stopped it. The
+/// The page of `main.byn` holding `text`, or the rendered problems that stopped it. The
 /// program's first newline, which only lets a test start it on its own line, is dropped.
 fn page(text: &str) -> String {
     let mut session = Session::new();
     let text = text.strip_prefix('\n').unwrap_or(text);
-    if let Err(error) = session.add_file("main.npl", text) {
+    if let Err(error) = session.add_file("main.byn", text) {
         return error.to_string();
     }
     match session.document() {
@@ -148,7 +148,7 @@ fn a_module_without_documentation_is_only_its_items() {
 fn a_syntax_error_stops_documentation() {
     assert_eq!(
         page("def area(r: f64 -> f64:\n    return r\n"),
-        "error: expected `)`, found `->`\n --> main.npl:1:17\n  |\n1 | def area(r: f64 -> f64:\n  |                 ^^ expected `)`",
+        "error: expected `)`, found `->`\n --> main.byn:1:17\n  |\n1 | def area(r: f64 -> f64:\n  |                 ^^ expected `)`",
     );
 }
 
@@ -158,24 +158,24 @@ fn the_example_programs_document() {
     let mut session = Session::new();
     for (path, text) in [
         (
-            "conjugate_gradient.npl",
-            include_str!("../../../docs/examples/conjugate_gradient.npl"),
+            "conjugate_gradient.byn",
+            include_str!("../../../docs/examples/conjugate_gradient.byn"),
         ),
         (
-            "heat_equation.npl",
-            include_str!("../../../docs/examples/heat_equation.npl"),
+            "heat_equation.byn",
+            include_str!("../../../docs/examples/heat_equation.byn"),
         ),
         (
-            "lennard_jones.npl",
-            include_str!("../../../docs/examples/lennard_jones.npl"),
+            "lennard_jones.byn",
+            include_str!("../../../docs/examples/lennard_jones.byn"),
         ),
         (
-            "lorenz_rk4.npl",
-            include_str!("../../../docs/examples/lorenz_rk4.npl"),
+            "lorenz_rk4.byn",
+            include_str!("../../../docs/examples/lorenz_rk4.byn"),
         ),
         (
-            "monte_carlo_pi.npl",
-            include_str!("../../../docs/examples/monte_carlo_pi.npl"),
+            "monte_carlo_pi.byn",
+            include_str!("../../../docs/examples/monte_carlo_pi.byn"),
         ),
     ] {
         assert!(session.add_file(path, text).is_ok());

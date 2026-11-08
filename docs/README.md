@@ -11,8 +11,8 @@ definition and from examples. A beginner's guide will follow the first compiler 
 runs programs.
 
 To see the same diagnostics in an editor as you type, point its Language Server Protocol client
-at `npl lsp` for `.npl` files: build it with `cargo build --package driver` and run
-`target/debug/npl lsp`. A VS Code extension that does this for you is roadmap item 1.17.
+at `baryon lsp` for `.byn` files: build it with `cargo build --package driver` and run
+`target/debug/baryon lsp`. A VS Code extension that does this for you is roadmap item 1.17.
 
 To read a package's documentation strings as pages, run
 `cargo run --package driver -- doc <directory> <output>`: it writes one Markdown page per module
@@ -36,7 +36,7 @@ and an `index.md` listing them. What it reads is in the
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | The binding rules: modularity, documentation, roadmap, cleanliness, tests, dependencies, workflow |
 | [`AGENTS.md`](../AGENTS.md) | Extra rules for AI coding agents |
 | [`architecture.md`](architecture.md) | Crate kinds, what may depend on what, and how stages connect |
-| [`bench/README.md`](../bench/README.md) | The baseline benchmark suite: the kernels, how to run and record them, and the numbers NPL must match |
+| [`bench/README.md`](../bench/README.md) | The baseline benchmark suite: the kernels, how to run and record them, and the numbers Baryon must match |
 | [`decisions/`](decisions/README.md) | Every hard-to-reverse choice, why it was made, and what it costs |
 | [`design/language-design-plan.md`](design/language-design-plan.md) | Goals, language design, compiler architecture, roadmap and open questions |
 

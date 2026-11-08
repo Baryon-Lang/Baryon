@@ -23,7 +23,7 @@ changes what a user writes.
    that the body may be shared. The question is how to allow it without weakening the rule for
    every other crate.
 2. **Where the runtime sits in the crate architecture.** It is not part of the compiler: it ends
-   up in the user's program, not in `npl`. None of the five kinds in
+   up in the user's program, not in `baryon`. None of the five kinds in
    [`docs/architecture.md`](../architecture.md) fits. A `foundation` crate may be used by every
    compiler crate, so the compiler could come to depend on the runtime, and the runtime could
    come to depend on `source` or `diagnostics`, putting compiler code into every program.
@@ -45,17 +45,17 @@ changes what a user writes.
 The runtime is the crate `runtime`, built as a static library (`libruntime.a`) as well as a Rust
 library for its own tests. The driver links the archive into each program (1.11). Compiled code
 calls it only through functions exported with C names and the C calling convention, every name
-starting `npl_rt_`; the backend declares each with the signature the crate documents and calls
+starting `baryon_rt_`; the backend declares each with the signature the crate documents and calls
 it by name. The first set:
 
 | Function | Job |
 | --- | --- |
-| `npl_rt_allocate(bytes, align, location)`, `npl_rt_deallocate(pointer, bytes, align)` | Heap memory from the system allocator. Zero bytes allocate nothing |
-| `npl_rt_allocate_array(count, element_size, align, location)` | An IR `NewArray`: checks the length is not negative and the size fits, then allocates |
-| `npl_rt_panic(message, length, location)` | A panic whose message compiled code wrote: overflow, division by zero, a failed `assert` |
-| `npl_rt_panic_index(index, dimension, length, location)` | An `IndexInBounds` check that failed (decision 0010) |
-| `npl_rt_panic_length_mismatch(dimension, expected, found, location)` | A `SameLength` check that failed |
-| `npl_rt_chunk_count(iterations)`, `npl_rt_parallel_for(iterations, body, context)` | A `prange` loop on the thread pool, in fixed chunks |
+| `baryon_rt_allocate(bytes, align, location)`, `baryon_rt_deallocate(pointer, bytes, align)` | Heap memory from the system allocator. Zero bytes allocate nothing |
+| `baryon_rt_allocate_array(count, element_size, align, location)` | An IR `NewArray`: checks the length is not negative and the size fits, then allocates |
+| `baryon_rt_panic(message, length, location)` | A panic whose message compiled code wrote: overflow, division by zero, a failed `assert` |
+| `baryon_rt_panic_index(index, dimension, length, location)` | An `IndexInBounds` check that failed (decision 0010) |
+| `baryon_rt_panic_length_mismatch(dimension, expected, found, location)` | A `SameLength` check that failed |
+| `baryon_rt_chunk_count(iterations)`, `baryon_rt_parallel_for(iterations, body, context)` | A `prange` loop on the thread pool, in fixed chunks |
 
 A `location` is a pointer to a constant the backend emits per check: file name, line and column,
 in C layout. The success path of a check carries no location work.

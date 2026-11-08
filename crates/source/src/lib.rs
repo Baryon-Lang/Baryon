@@ -12,7 +12,7 @@
 //! use source::{Position, SourceMap, Span};
 //!
 //! let mut sources = SourceMap::new();
-//! let file = sources.add("orbit.npl", "mass = 5.97e24\nradius = 6.37e6\n")?;
+//! let file = sources.add("orbit.byn", "mass = 5.97e24\nradius = 6.37e6\n")?;
 //!
 //! // The span of `radius` on the second line: bytes 15 to 21.
 //! let radius = Span::new(file, 15, 21);
@@ -127,7 +127,7 @@ impl SourceFile {
     /// ```
     /// use source::SourceFile;
     ///
-    /// let file = SourceFile::new("heat.npl", "alpha = 0.1\nsteps = 100\n")?;
+    /// let file = SourceFile::new("heat.byn", "alpha = 0.1\nsteps = 100\n")?;
     /// assert_eq!(file.line(2), Some("steps = 100"));
     /// # Ok::<(), source::SourceError>(())
     /// ```
@@ -250,8 +250,8 @@ impl Sources for SourceMap {
 /// use source::{SourceMap, Sources};
 ///
 /// let mut sources = SourceMap::new();
-/// let file = sources.add("main.npl", "x = 1\n")?;
-/// assert_eq!(sources.file(file).name(), "main.npl");
+/// let file = sources.add("main.byn", "x = 1\n")?;
+/// assert_eq!(sources.file(file).name(), "main.byn");
 /// # Ok::<(), source::SourceError>(())
 /// ```
 pub trait Sources: fmt::Debug {
@@ -299,7 +299,7 @@ mod tests {
 
     fn single_file(text: &str) -> (SourceMap, FileId) {
         let mut sources = SourceMap::new();
-        let id = sources.add("test.npl", text).unwrap();
+        let id = sources.add("test.byn", text).unwrap();
         (sources, id)
     }
 
@@ -340,10 +340,10 @@ mod tests {
     #[test]
     fn files_get_distinct_ids() {
         let mut sources = SourceMap::new();
-        let first = sources.add("a.npl", "a").unwrap();
-        let second = sources.add("b.npl", "b").unwrap();
+        let first = sources.add("a.byn", "a").unwrap();
+        let second = sources.add("b.byn", "b").unwrap();
         assert_ne!(first, second);
-        assert_eq!(sources.get(second).name(), "b.npl");
+        assert_eq!(sources.get(second).name(), "b.byn");
     }
 
     #[test]

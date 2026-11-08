@@ -5,11 +5,11 @@
 //!
 //! ```text
 //! error: `values` cannot be changed while a loop goes over it
-//!  --> stats.npl:3:9
+//!  --> stats.byn:3:9
 //!   |
 //! 3 |         values.append(v * 2.0)
 //!   |         ^^^^^^ changed here
-//!  ::: stats.npl:2:14
+//!  ::: stats.byn:2:14
 //!   |
 //! 2 |     for v in values:
 //!   |              ------ the loop goes over `values` here

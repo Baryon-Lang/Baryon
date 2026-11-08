@@ -66,11 +66,11 @@ the rule. The most common one:
 
 ```text
 error: iterations of this parallel loop may write the same element of `forces`
-  --> md.npl:58:13
+  --> md.byn:58:13
    |
 58 |             forces[j] -= force
    |             ^^^^^^^^^ indexed by `j`, not by the loop variable `i`
-  ::: md.npl:51:14
+  ::: md.byn:51:14
    |
 51 |     for i in prange(N):
    |              --------- iterations run in parallel
@@ -165,7 +165,7 @@ should be visible in the source.
 
 The alternative that needs no `accumulate=` and no extra memory is to compute every pair twice, so
 iteration `i` writes only `forces[i]`. That is what the
-[Lennard-Jones example](../examples/lennard_jones.npl) does today, at twice the arithmetic.
+[Lennard-Jones example](../examples/lennard_jones.byn) does today, at twice the arithmetic.
 Molecular dynamics codes such as LAMMPS find the add-into form faster on CPUs; a benchmark
 decides for a given kernel.
 
@@ -173,7 +173,7 @@ decides for a given kernel.
 
 A shared random number generator would be a shared variable written by every iteration, which rule
 3 rejects. Use a counter-based generator with one stream per iteration or chunk instead, as in the
-[Monte Carlo example](../examples/monte_carlo_pi.npl): `Philox(SEED, stream=chunk)`. The results are
+[Monte Carlo example](../examples/monte_carlo_pi.byn): `Philox(SEED, stream=chunk)`. The results are
 then reproducible from one seed, whatever the thread count.
 
 ## `simd`

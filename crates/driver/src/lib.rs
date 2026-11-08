@@ -9,9 +9,9 @@
 //! changing the one function here that calls it. A [`Session`] holds that database with one
 //! package loaded into it.
 //!
-//! The `npl` executable (`src/main.rs`) is a thin command line over this library:
-//! `npl check <directory>` loads every source file under the directory, checks the package, and
-//! prints its diagnostics; `npl doc <directory> <output>` writes its documentation pages.
+//! The `baryon` executable (`src/main.rs`) is a thin command line over this library:
+//! `baryon check <directory>` loads every source file under the directory, checks the package, and
+//! prints its diagnostics; `baryon doc <directory> <output>` writes its documentation pages.
 //!
 //! # Example
 //!
@@ -19,14 +19,14 @@
 //! use driver::Session;
 //!
 //! let mut session = Session::new();
-//! let file = session.add_file("main.npl", "STEPS: Final = 100\n")?;
+//! let file = session.add_file("main.byn", "STEPS: Final = 100\n")?;
 //! assert!(session.check().is_empty());
 //!
 //! // An edit: only this file is parsed again.
 //! session.set_text(file, "STEPS: Final = \n")?;
 //! let problems = session.check();
 //! assert_eq!(problems.len(), 1);
-//! assert!(diagnostics::render(&problems[0], &session).to_string().contains("main.npl:1:16"));
+//! assert!(diagnostics::render(&problems[0], &session).to_string().contains("main.byn:1:16"));
 //! # Ok::<(), source::SourceError>(())
 //! ```
 
@@ -83,7 +83,7 @@ impl Session {
     /// Adds a source file to the package and returns it.
     ///
     /// `name` is the file's path relative to the package root, with `/` between directories,
-    /// such as `physics/nbody.npl`; it decides the module name.
+    /// such as `physics/nbody.byn`; it decides the module name.
     ///
     /// # Errors
     ///
@@ -123,8 +123,8 @@ impl Session {
     /// use source::Sources;
     ///
     /// let mut session = Session::new();
-    /// let file = session.add_file("heat.npl", "ALPHA: Final = 0.1\n")?;
-    /// assert_eq!(session.file(session.file_id(file)).name(), "heat.npl");
+    /// let file = session.add_file("heat.byn", "ALPHA: Final = 0.1\n")?;
+    /// assert_eq!(session.file(session.file_id(file)).name(), "heat.byn");
     /// # Ok::<(), source::SourceError>(())
     /// ```
     #[must_use]
@@ -151,12 +151,12 @@ impl Session {
     /// use driver::Session;
     ///
     /// let mut session = Session::new();
-    /// session.add_file("ode/rk4.npl", "\"Runge-Kutta integrators.\"\n")?;
+    /// session.add_file("ode/rk4.byn", "\"Runge-Kutta integrators.\"\n")?;
     /// let modules = session.document().unwrap();
     /// assert_eq!(modules[0].name(), "ode.rk4");
     /// assert_eq!(modules[0].summary(), Some("Runge-Kutta integrators."));
     ///
-    /// session.add_file("broken.npl", "def f(:\n")?;
+    /// session.add_file("broken.byn", "def f(:\n")?;
     /// assert!(session.document().is_err());
     /// # Ok::<(), source::SourceError>(())
     /// ```

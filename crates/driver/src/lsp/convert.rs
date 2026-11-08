@@ -13,7 +13,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// What the editor shows as the origin of every diagnostic.
-const SOURCE: &str = "npl";
+const SOURCE: &str = "baryon";
 
 /// The bytes a URI path keeps as they are; every other byte is percent-encoded. These are the
 /// unreserved characters of RFC 3986, plus `/` between path segments.
@@ -21,7 +21,7 @@ fn kept(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/')
 }
 
-/// The `file:` URI of an absolute path, such as `file:///work/sim/main.npl`.
+/// The `file:` URI of an absolute path, such as `file:///work/sim/main.byn`.
 pub(super) fn uri(path: &Path) -> String {
     let mut uri = String::from("file://");
     for &byte in path.to_string_lossy().as_bytes() {
@@ -79,7 +79,7 @@ fn range(sources: &dyn Sources, span: Span) -> Value {
 /// The protocol's diagnostic object for `diagnostic`, whose primary span must be present.
 ///
 /// The message is the diagnostic's summary, then the primary label and each note on lines of
-/// their own, so the editor's hover shows what `npl check` would print. Secondary labels become
+/// their own, so the editor's hover shows what `baryon check` would print. Secondary labels become
 /// related information, which editors show as links to each location. `uri_of` gives the URI
 /// of each file a secondary label points into.
 pub(super) fn diagnostic(
@@ -138,26 +138,26 @@ mod tests {
 
     #[test]
     fn paths_and_uris_round_trip() {
-        let path = Path::new("/work/my sim/ψ.npl");
+        let path = Path::new("/work/my sim/ψ.byn");
         let uri = uri(path);
-        assert_eq!(uri, "file:///work/my%20sim/%CF%88.npl");
+        assert_eq!(uri, "file:///work/my%20sim/%CF%88.byn");
         assert_eq!(super::path(&uri).as_deref(), Some(path));
     }
 
     #[test]
     fn uris_with_other_schemes_or_bad_escapes_name_no_path() {
         assert_eq!(path("untitled:Untitled-1"), None);
-        assert_eq!(path("file:///work/%ZZ.npl"), None);
-        assert_eq!(path("file:///work/%FF.npl"), None);
+        assert_eq!(path("file:///work/%ZZ.byn"), None);
+        assert_eq!(path("file:///work/%FF.byn"), None);
         assert_eq!(
-            path("file://localhost/work/main.npl").as_deref(),
-            Some(Path::new("/work/main.npl"))
+            path("file://localhost/work/main.byn").as_deref(),
+            Some(Path::new("/work/main.byn"))
         );
     }
 
     #[test]
     fn characters_count_utf16_code_units() {
-        let file = SourceFile::new("main.npl", "x = 1\nψ = 𝜓 + y\n").unwrap();
+        let file = SourceFile::new("main.byn", "x = 1\nψ = 𝜓 + y\n").unwrap();
         let at = |offset| position(&file, offset);
         assert_eq!(at(4), json!({"line": 0, "character": 4}));
         assert_eq!(at(6), json!({"line": 1, "character": 0}));
@@ -171,8 +171,8 @@ mod tests {
     #[test]
     fn a_diagnostic_carries_its_labels_and_notes() {
         let mut sources = SourceMap::new();
-        let main = sources.add("main.npl", "y = x + 1\n").unwrap();
-        let other = sources.add("other.npl", "x = 2\n").unwrap();
+        let main = sources.add("main.byn", "y = x + 1\n").unwrap();
+        let other = sources.add("other.byn", "x = 2\n").unwrap();
         let problem = Diagnostic::error("undefined name `x`")
             .with_primary(Span::new(main, 4, 5), "not defined in this scope")
             .with_secondary(Span::new(other, 0, 1), "a different `x`")
@@ -188,12 +188,12 @@ mod tests {
                     "end": {"line": 0, "character": 5},
                 },
                 "severity": 1,
-                "source": "npl",
+                "source": "baryon",
                 "message": "undefined name `x`\nnot defined in this scope\n\
                             note: names must be assigned before they are used",
                 "relatedInformation": [{
                     "location": {
-                        "uri": "file:///other.npl",
+                        "uri": "file:///other.byn",
                         "range": {
                             "start": {"line": 0, "character": 0},
                             "end": {"line": 0, "character": 1},

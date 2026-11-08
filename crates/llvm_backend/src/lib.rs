@@ -35,7 +35,7 @@
 //!   elements with the size they were allocated with.
 //! - **Line tables, when asked for.** With [`Module::debug_info`], each function and each
 //!   instruction points back to its source line and column (the `debug` module), so `gdb`,
-//!   `lldb` and profilers show `.npl` lines.
+//!   `lldb` and profilers show `.byn` lines.
 //! - **`print` calls the runtime once per argument**, which writes the value as Python does;
 //!   the space between arguments and the line end are byte constants it prints too.
 //!
@@ -69,7 +69,7 @@
 //! let database = Database::default();
 //! let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
 //! let mut sources = SourceMap::new();
-//! let file = sources.add("double.npl", "def double(x: f64) -> f64: return x * 2.0")?;
+//! let file = sources.add("double.byn", "def double(x: f64) -> f64: return x * 2.0")?;
 //! let span = Span::new(file, 0, 40);
 //!
 //! let mut body = Body::new(f64, span);

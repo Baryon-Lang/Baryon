@@ -1,18 +1,18 @@
-//! `npl lsp`: the language server, which gives an editor the compiler's diagnostics as the user
+//! `baryon lsp`: the language server, which gives an editor the compiler's diagnostics as the user
 //! types.
 //!
-//! An editor starts `npl lsp` and talks to it over standard input and output in the Language
+//! An editor starts `baryon lsp` and talks to it over standard input and output in the Language
 //! Server Protocol (<https://microsoft.github.io/language-server-protocol/>), version 3.17.
-//! The server holds one [`Session`], the same incremental database `npl check` uses, so the
+//! The server holds one [`Session`], the same incremental database `baryon check` uses, so the
 //! editor and the command line report exactly the same problems, and an edit reruns only the
 //! queries that read the edited file. Decision 0019 records why the protocol is written here,
-//! over `serde_json`, rather than taken from a framework, and why the server lives in the `npl`
+//! over `serde_json`, rather than taken from a framework, and why the server lives in the `baryon`
 //! binary.
 //!
 //! # What it does today
 //!
-//! - **On `initialize`**, it loads every `.npl` file under the workspace root as one package, so
-//!   imports between files resolve exactly as in `npl check <root>`.
+//! - **On `initialize`**, it loads every `.byn` file under the workspace root as one package, so
+//!   imports between files resolve exactly as in `baryon check <root>`.
 //! - **On `didOpen` and `didChange`**, the editor's text replaces the file's text. The whole
 //!   text is sent on each change (full synchronization), which keeps the server simple; the
 //!   query database, not the transfer, decides what is recomputed.
@@ -217,7 +217,7 @@ impl Server {
         if handled.is_none() {
             self.show(
                 Severity::Warning,
-                &format!("npl: ignored a malformed `{method}`"),
+                &format!("baryon: ignored a malformed `{method}`"),
             );
         }
         self.publish();
@@ -238,11 +238,11 @@ impl Server {
                 "positionEncoding": "utf-16",
                 "textDocumentSync": {"openClose": true, "change": 1},
             },
-            "serverInfo": {"name": "npl", "version": env!("CARGO_PKG_VERSION")},
+            "serverInfo": {"name": "baryon", "version": env!("CARGO_PKG_VERSION")},
         })
     }
 
-    /// Adds every `.npl` file under `root` to the session. A file that cannot be read is
+    /// Adds every `.byn` file under `root` to the session. A file that cannot be read is
     /// reported and left out, so one bad file does not stop the editor working on the rest.
     fn load(&mut self, root: &Path) {
         let paths = match package::files(root) {
@@ -250,7 +250,7 @@ impl Server {
             Err(error) => {
                 self.show(
                     Severity::Error,
-                    &format!("npl: {}: {error}", root.display()),
+                    &format!("baryon: {}: {error}", root.display()),
                 );
                 return;
             }
@@ -261,14 +261,14 @@ impl Server {
                 Err(error) => {
                     self.show(
                         Severity::Error,
-                        &format!("npl: {}: {error}", path.display()),
+                        &format!("baryon: {}: {error}", path.display()),
                     );
                 }
             }
         }
     }
 
-    /// Adds a file to the session under the name `npl check` would give it: its path relative
+    /// Adds a file to the session under the name `baryon check` would give it: its path relative
     /// to the root, or its file name when it lies outside the root.
     fn add(&mut self, uri: String, path: Option<PathBuf>, text: impl Into<String>) {
         let name = match (&path, &self.root) {
@@ -285,7 +285,7 @@ impl Server {
                 uri,
                 published: Vec::new(),
             }),
-            Err(error) => self.show(Severity::Error, &format!("npl: {error}")),
+            Err(error) => self.show(Severity::Error, &format!("baryon: {error}")),
         }
     }
 
@@ -338,7 +338,7 @@ impl Server {
     /// Replaces the text of document `index`.
     fn set_text(&mut self, index: usize, text: &str) {
         if let Err(error) = self.session.set_text(self.documents[index].file, text) {
-            self.show(Severity::Error, &format!("npl: {error}"));
+            self.show(Severity::Error, &format!("baryon: {error}"));
         }
     }
 

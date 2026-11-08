@@ -1,6 +1,6 @@
-//! Finding a package's files on disk, for `npl check` and `npl lsp` alike.
+//! Finding a package's files on disk, for `baryon check` and `baryon lsp` alike.
 //!
-//! A package is every `.npl` file under one root directory, at any depth. Each file's name in
+//! A package is every `.byn` file under one root directory, at any depth. Each file's name in
 //! the [`Session`](driver::Session) is its path relative to that root, which decides its module
 //! name, so both commands must name files the same way.
 
@@ -9,9 +9,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// The extension of a source file.
-pub(crate) const EXTENSION: &str = "npl";
+pub(crate) const EXTENSION: &str = "byn";
 
-/// Every `.npl` file under `root`, at any depth, sorted so the order is the same on every
+/// Every `.byn` file under `root`, at any depth, sorted so the order is the same on every
 /// machine.
 ///
 /// # Errors
@@ -24,7 +24,7 @@ pub(crate) fn files(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-/// Appends every `.npl` file under `directory`, at any depth, to `paths`.
+/// Appends every `.byn` file under `directory`, at any depth, to `paths`.
 ///
 /// # Errors
 ///
@@ -62,8 +62,8 @@ mod tests {
     #[test]
     fn module_paths_are_relative_with_forward_slashes() {
         let root = Path::new("/work/sim");
-        let path = root.join("physics").join("nbody.npl");
-        assert_eq!(module_path(root, &path), "physics/nbody.npl");
+        let path = root.join("physics").join("nbody.byn");
+        assert_eq!(module_path(root, &path), "physics/nbody.byn");
     }
 
     #[test]
@@ -74,6 +74,6 @@ mod tests {
             .iter()
             .map(|path| module_path(&root, path))
             .collect();
-        assert_eq!(names, ["main.npl", "physics/nbody.npl"]);
+        assert_eq!(names, ["main.byn", "physics/nbody.byn"]);
     }
 }

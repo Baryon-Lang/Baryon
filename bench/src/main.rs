@@ -1,9 +1,9 @@
 //! `cargo kernels`: the Phase 0 baseline benchmark suite.
 //!
-//! NPL must run numeric code within 5% of `gfortran -O3`. This tool measures what "within 5%"
+//! Baryon must run numeric code within 5% of `gfortran -O3`. This tool measures what "within 5%"
 //! means: it builds eight physics kernels written in C++ and in Fortran, runs them, checks that
 //! both languages computed the same answer, and prints the times. With `--record` it saves them as
-//! the machine's baseline in `bench/baselines/`, the numbers the NPL compiler must later match.
+//! the machine's baseline in `bench/baselines/`, the numbers the Baryon compiler must later match.
 //!
 //! ```text
 //! cargo kernels                    # reference size, 5 runs each, print a table

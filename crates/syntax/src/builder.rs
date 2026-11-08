@@ -127,7 +127,7 @@ mod tests {
     use source::SourceMap;
 
     fn file() -> FileId {
-        SourceMap::new().add("test.npl", "").unwrap()
+        SourceMap::new().add("test.byn", "").unwrap()
     }
 
     #[test]

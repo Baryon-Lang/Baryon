@@ -2,8 +2,8 @@
 // and the report every kernel prints. `support.f90` is the Fortran twin of this file; the two
 // must stay identical in behavior, because the harness checks that both languages agree.
 
-#ifndef NPL_BENCH_SUPPORT_HPP
-#define NPL_BENCH_SUPPORT_HPP
+#ifndef BARYON_BENCH_SUPPORT_HPP
+#define BARYON_BENCH_SUPPORT_HPP
 
 #include <chrono>
 #include <cstdint>
@@ -64,4 +64,4 @@ inline void report(double checksum, double elapsed) {
 
 }  // namespace support
 
-#endif  // NPL_BENCH_SUPPORT_HPP
+#endif  // BARYON_BENCH_SUPPORT_HPP

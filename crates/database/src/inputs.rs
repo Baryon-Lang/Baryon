@@ -13,7 +13,7 @@ use source::{FileId, SourceFile};
 /// One source file: an input to the database.
 ///
 /// Its name is its path relative to the package root, with `/` between directories, such as
-/// `physics/nbody.npl`; the name decides the file's [`ModuleName`](crate::ModuleName). The
+/// `physics/nbody.byn`; the name decides the file's [`ModuleName`](crate::ModuleName). The
 /// application loads the file and creates this input with `File::new`; an editor changes the
 /// text with `set_source`. The `id` never changes once the file exists, because spans in cached
 /// results carry it.

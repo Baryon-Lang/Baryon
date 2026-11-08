@@ -24,9 +24,9 @@ fn check(files: &[(&str, &str)]) -> String {
         .join("\n\n")
 }
 
-/// Checks a package of one file, `main.npl`.
+/// Checks a package of one file, `main.byn`.
 fn check_one(text: &str) -> String {
-    check(&[("main.npl", text)])
+    check(&[("main.byn", text)])
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn an_undefined_name_is_reported_where_it_is_read() {
     let program = "def area(radius: f64) -> f64:\n    return PI * radius**2\n";
     assert_eq!(
         check_one(program),
-        "error: undefined name `PI`\n --> main.npl:2:12\n  |\n2 |     return PI * radius**2\n  |            ^^ not defined in this scope"
+        "error: undefined name `PI`\n --> main.byn:2:12\n  |\n2 |     return PI * radius**2\n  |            ^^ not defined in this scope"
     );
 }
 
@@ -88,7 +88,7 @@ fn a_method_does_not_see_its_class_body() {
     let program = "class Box(Struct):\n    size: f64\n\n    def volume(self) -> f64:\n        return size**3\n";
     assert_eq!(
         check_one(program),
-        "error: undefined name `size`\n --> main.npl:5:16\n  |\n5 |         return size**3\n  |                ^^^^ not defined in this scope"
+        "error: undefined name `size`\n --> main.byn:5:16\n  |\n5 |         return size**3\n  |                ^^^^ not defined in this scope"
     );
 }
 
@@ -97,7 +97,7 @@ fn a_comprehension_variable_stays_in_the_comprehension() {
     let program = "def squares() -> int:\n    values = [k * k for k in range(4)]\n    return k\n";
     assert_eq!(
         check_one(program),
-        "error: undefined name `k`\n --> main.npl:3:12\n  |\n3 |     return k\n  |            ^ not defined in this scope"
+        "error: undefined name `k`\n --> main.byn:3:12\n  |\n3 |     return k\n  |            ^ not defined in this scope"
     );
 }
 
@@ -106,7 +106,7 @@ fn names_resolve_across_modules() {
     let nbody = "G: Final = 6.674e-11\n\n\ndef step(dt: f64) -> f64:\n    return dt * G\n";
     let main = "import physics.nbody\nimport physics.nbody as nb\nfrom physics.nbody import step, G\nfrom physics import nbody\n\n\ndef main():\n    print(physics.nbody.step(0.1), nb.G, step(G), nbody.step(1.0))\n";
     assert_eq!(
-        check(&[("physics/nbody.npl", nbody), ("main.npl", main)]),
+        check(&[("physics/nbody.byn", nbody), ("main.byn", main)]),
         ""
     );
 }
@@ -118,11 +118,11 @@ fn a_missing_module_or_member_is_reported() {
         "def step(dt: f64) -> f64:\n    return dt\n\n\ndef _kick() -> f64:\n    return 1.0\n";
     let main = "import physics.nbdy\nfrom physics.nbody import stepp\nfrom physics.nbody import _kick\n\n\ndef main():\n    print(physics.nbody.leap(1.0))\n";
     assert_eq!(
-        check(&[("physics/nbody.npl", nbody), ("main.npl", main)]),
+        check(&[("physics/nbody.byn", nbody), ("main.byn", main)]),
         [
-            "error: no module named `physics.nbdy`\n --> main.npl:1:8\n  |\n1 | import physics.nbdy\n  |        ^^^^^^^^^^^^ no such module",
-            "error: module `physics.nbody` has no `stepp`\n --> main.npl:2:27\n  |\n2 | from physics.nbody import stepp\n  |                           ^^^^^ not defined there",
-            "error: `_kick` is private to module `physics.nbody`\n --> main.npl:3:27\n  |\n3 | from physics.nbody import _kick\n  |                           ^^^^^ private name\n  = note: a name starting with `_` can only be used in its own module",
+            "error: no module named `physics.nbdy`\n --> main.byn:1:8\n  |\n1 | import physics.nbdy\n  |        ^^^^^^^^^^^^ no such module",
+            "error: module `physics.nbody` has no `stepp`\n --> main.byn:2:27\n  |\n2 | from physics.nbody import stepp\n  |                           ^^^^^ not defined there",
+            "error: `_kick` is private to module `physics.nbody`\n --> main.byn:3:27\n  |\n3 | from physics.nbody import _kick\n  |                           ^^^^^ private name\n  = note: a name starting with `_` can only be used in its own module",
         ]
         .join("\n\n")
     );
@@ -133,8 +133,8 @@ fn a_member_read_through_a_module_is_checked() {
     let nbody = "def step(dt: f64) -> f64:\n    return dt\n";
     let main = "import physics.nbody as nb\n\n\ndef main():\n    print(nb.leap(1.0))\n";
     assert_eq!(
-        check(&[("physics/nbody.npl", nbody), ("main.npl", main)]),
-        "error: module `physics.nbody` has no `leap`\n --> main.npl:5:14\n  |\n5 |     print(nb.leap(1.0))\n  |              ^^^^ not defined there"
+        check(&[("physics/nbody.byn", nbody), ("main.byn", main)]),
+        "error: module `physics.nbody` has no `leap`\n --> main.byn:5:14\n  |\n5 |     print(nb.leap(1.0))\n  |              ^^^^ not defined there"
     );
 }
 
@@ -145,9 +145,9 @@ fn a_name_imported_twice_over_resolves_to_its_definition() {
     let main = "from units import C\n\n\ndef main():\n    print(C)\n";
     assert_eq!(
         check(&[
-            ("constants.npl", constants),
-            ("units.npl", units),
-            ("main.npl", main)
+            ("constants.byn", constants),
+            ("units.byn", units),
+            ("main.byn", main)
         ]),
         ""
     );
@@ -157,7 +157,7 @@ fn a_name_imported_twice_over_resolves_to_its_definition() {
 fn imports_in_a_circle_are_reported() {
     let first = "from second import x\n";
     let second = "from first import x\n";
-    let rendered = check(&[("first.npl", first), ("second.npl", second)]);
+    let rendered = check(&[("first.byn", first), ("second.byn", second)]);
     assert!(
         rendered.contains("error: module `second` imports `x`, but that import fails"),
         "{rendered}"
@@ -171,11 +171,11 @@ fn standard_library_modules_are_accepted_by_name() {
     let program = "import math\nimport random\nfrom math import sqrt\nimport math.special\nimport physics.nbody\nimport physics.forces\n\n\ndef main():\n    print(math.pi, sqrt(2.0), random.Philox, physics.forces.total())\n";
     assert_eq!(
         check(&[
-            ("physics/nbody.npl", nbody),
-            ("physics/forces.npl", forces),
-            ("main.npl", program)
+            ("physics/nbody.byn", nbody),
+            ("physics/forces.byn", forces),
+            ("main.byn", program)
         ]),
-        "error: the standard library module `math` has no submodules\n --> main.npl:4:8\n  |\n4 | import math.special\n  |        ^^^^^^^^^^^^ no such module"
+        "error: the standard library module `math` has no submodules\n --> main.byn:4:8\n  |\n4 | import math.special\n  |        ^^^^^^^^^^^^ no such module"
     );
 }
 
@@ -184,7 +184,7 @@ fn a_relative_import_is_reported() {
     let program = "from . import helpers\n";
     assert_eq!(
         check_one(program),
-        "error: relative imports are not supported\n --> main.npl:1:15\n  |\n1 | from . import helpers\n  |               ^^^^^^^ imported relative to this module\n  = note: write the module's full name from the package root, such as `from physics.nbody import step`"
+        "error: relative imports are not supported\n --> main.byn:1:15\n  |\n1 | from . import helpers\n  |               ^^^^^^^ imported relative to this module\n  = note: write the module's full name from the package root, such as `from physics.nbody import step`"
     );
 }
 
@@ -193,7 +193,7 @@ fn a_top_level_name_defined_twice_is_reported() {
     let program = "def step() -> f64:\n    return 1.0\n\n\ndef step() -> f64:\n    return 2.0\n";
     assert_eq!(
         check_one(program),
-        "error: `step` is defined twice in this module\n --> main.npl:5:5\n  |\n5 | def step() -> f64:\n  |     ^^^^ defined again here\n ::: main.npl:1:5\n  |\n1 | def step() -> f64:\n  |     ---- first defined here\n  = note: one name means one thing in a module; rename one of them"
+        "error: `step` is defined twice in this module\n --> main.byn:5:5\n  |\n5 | def step() -> f64:\n  |     ^^^^ defined again here\n ::: main.byn:1:5\n  |\n1 | def step() -> f64:\n  |     ---- first defined here\n  = note: one name means one thing in a module; rename one of them"
     );
 }
 
@@ -218,7 +218,7 @@ fn every_example_program_resolves() {
     let mut count = 0;
     for entry in std::fs::read_dir(directory).unwrap() {
         let path = entry.unwrap().path();
-        if path.extension().is_some_and(|extension| extension == "npl") {
+        if path.extension().is_some_and(|extension| extension == "byn") {
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
             session
                 .add_file(name, std::fs::read_to_string(&path).unwrap())

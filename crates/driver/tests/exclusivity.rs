@@ -7,11 +7,11 @@
 
 use driver::Session;
 
-/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// Checks `main.byn` and returns every diagnostic, rendered and joined by blank lines. An empty
 /// string means the program is clean. The program's first newline is dropped.
 fn check_one(text: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+    if let Err(error) = session.add_file("main.byn", text.strip_prefix('\n').unwrap_or(text)) {
         return error.to_string();
     }
     session
@@ -105,44 +105,44 @@ def calls(atoms: InOut[Atoms], u: InOut[Array[f64, 1]]):
     assert_eq!(
         check_one(program),
         r"error: `atoms` is changed by this call and also passed to it
-  --> main.npl:23:22
+  --> main.byn:23:22
    |
 23 |     integrate(atoms, atoms.forces)
    |                      ^^^^^^^^^^^^ `atoms.forces` is part of `atoms`
-  ::: main.npl:23:15
+  ::: main.byn:23:15
    |
 23 |     integrate(atoms, atoms.forces)
    |               ----- `atoms` is passed as `InOut`
    = note: a value this call changes cannot also be read through another argument; pass a copy: `atoms.forces.copy()`
 
 error: `u` is changed by this call and also passed to it
-  --> main.npl:24:13
+  --> main.byn:24:13
    |
 24 |     axpy(u, u)
    |             ^ `u` again
-  ::: main.npl:24:10
+  ::: main.byn:24:10
    |
 24 |     axpy(u, u)
    |          - `u` is passed as `InOut`
    = note: a value this call changes cannot also be read through another argument; pass a copy: `u.copy()`
 
 error: `u[0]` is changed by this call and also passed to it
-  --> main.npl:25:16
+  --> main.byn:25:16
    |
 25 |     swap(u[0], u[1])
    |                ^^^^ `u[1]` may be the same as `u[0]`: indices are not compared
-  ::: main.npl:25:10
+  ::: main.byn:25:10
    |
 25 |     swap(u[0], u[1])
    |          ---- `u[0]` is passed as `InOut`
    = note: a value this call changes cannot also be read through another argument; read it into a variable first: `value = u[1]`
 
 error: `work` is moved by this call and also passed to it
-  --> main.npl:27:16
+  --> main.byn:27:16
    |
 27 |     keep(work, work)
    |                ^^^^ `work` again
-  ::: main.npl:27:10
+  ::: main.byn:27:10
    |
 27 |     keep(work, work)
    |          ---- `work` is passed as `Owned`
@@ -182,49 +182,49 @@ def changes(u: Array[f64, 1], values: list[f64], atoms: Atoms):
     assert_eq!(
         check_one(program),
         r"error: `self` is a read-only parameter, so it cannot be changed
- --> main.npl:9:9
+ --> main.byn:9:9
   |
 9 |         self.forces[0] = 1.0
   |         ^^^^^^^^^^^^^^ changed here
   = note: to change the struct, declare the method's first parameter `self: InOut[Self]`
 
 error: `u` is a read-only parameter, so it cannot be changed
-  --> main.npl:18:5
+  --> main.byn:18:5
    |
 18 |     u[0] = 1.0
    |     ^^^^ changed here
    = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = u.copy()`
 
 error: `u` is a read-only parameter, so it cannot be changed
-  --> main.npl:19:5
+  --> main.byn:19:5
    |
 19 |     u += 1.0
    |     ^ changed here
    = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = u.copy()`
 
 error: `u` is a read-only parameter, so it cannot be changed
-  --> main.npl:20:10
+  --> main.byn:20:10
    |
 20 |     axpy(u, u.copy())
    |          ^ changed here
    = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = u.copy()`
 
 error: `values` is a read-only parameter, so it cannot be changed
-  --> main.npl:21:5
+  --> main.byn:21:5
    |
 21 |     values.append(1.0)
    |     ^^^^^^ changed here
    = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = values.copy()`
 
 error: `atoms` is a read-only parameter, so it cannot be changed
-  --> main.npl:22:5
+  --> main.byn:22:5
    |
 22 |     atoms.clear()
    |     ^^^^^ changed here
    = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = atoms.copy()`
 
 error: `u` is a read-only parameter, so it cannot be changed
-  --> main.npl:23:5
+  --> main.byn:23:5
    |
 23 |     u = Array(values)
    |     ^ changed here
@@ -285,58 +285,58 @@ def run(rows: InOut[list[Array[f64, 1]]], values: InOut[list[f64]]):
     assert_eq!(
         check_one(program),
         r"error: `values` cannot be changed while a loop goes over it
- --> main.npl:7:9
+ --> main.byn:7:9
   |
 7 |         values.append(v * 2.0)
   |         ^^^^^^ changed here
- ::: main.npl:6:14
+ ::: main.byn:6:14
   |
 6 |     for v in values:
   |              ------ the loop goes over `values` here
   = note: loop over the indices instead: `for i in range(len(values)):`
 
 error: `values` cannot be changed while a loop goes over it
- --> main.npl:8:9
+ --> main.byn:8:9
   |
 8 |         values[0] = 1.0
   |         ^^^^^^^^^ changed here
- ::: main.npl:6:14
+ ::: main.byn:6:14
   |
 6 |     for v in values:
   |              ------ the loop goes over `values` here
   = note: loop over the indices instead: `for i in range(len(values)):`
 
 error: `rows` cannot be changed while a loop goes over it
-  --> main.npl:11:13
+  --> main.byn:11:13
    |
 11 |             rows.append(row.copy())
    |             ^^^^ changed here
-  ::: main.npl:9:16
+  ::: main.byn:9:16
    |
  9 |     for row in rows:
    |                ---- the loop goes over `rows` here
    = note: loop over the indices instead: `for i in range(len(rows)):`
 
 error: `row` borrows an element of `rows`, so it cannot be changed
-  --> main.npl:12:9
+  --> main.byn:12:9
    |
 12 |         row[0] = 1.0
    |         ^^^^^^ changed here
    = note: work on a copy, `row.copy()`, or loop over the indices to change the element: `for i in range(len(rows)):`
 
 error: `row` borrows an element of `rows`, so it cannot be moved
-  --> main.npl:13:16
+  --> main.byn:13:16
    |
 13 |         kept = row
    |                ^^^ moved here
    = note: to keep the element, keep a copy: `row.copy()`
 
 error: `rows` cannot be moved while a loop goes over it
-  --> main.npl:15:14
+  --> main.byn:15:14
    |
 15 |         keep(rows)
    |              ^^^^ moved here
-  ::: main.npl:14:16
+  ::: main.byn:14:16
    |
 14 |     for row in rows:
    |                ---- the loop goes over `rows` here

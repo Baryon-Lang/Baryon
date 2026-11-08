@@ -194,7 +194,7 @@ fn shapes_too_large_for_memory_panic() {
     assert_eq!(
         run(&executable, &["4294967296", "4294967296"]),
         Err(
-            "panic: the array's shape has too many elements for memory\n  --> heat.npl:1:1\n"
+            "panic: the array's shape has too many elements for memory\n  --> heat.byn:1:1\n"
                 .to_owned()
         )
     );

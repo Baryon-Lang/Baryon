@@ -19,7 +19,7 @@ fn instructions_carry_their_source_location() {
     module.define("scale", &body, &[]).unwrap();
     module.entry("scale", &[]).unwrap();
     let location = "!DILocation(line: 1, column: 1, scope: !3)";
-    let file = "!DIFile(filename: \"heat.npl\", directory: \"/home/ada/heat\")";
+    let file = "!DIFile(filename: \"heat.byn\", directory: \"/home/ada/heat\")";
     assert_eq!(
         module.finish(),
         format!(
@@ -49,7 +49,7 @@ start:
 
 !llvm.dbg.cu = !{{!0}}
 !llvm.module.flags = !{{!1, !2}}
-!0 = distinct !DICompileUnit(language: DW_LANG_Python, file: {file}, producer: \"npl\", \
+!0 = distinct !DICompileUnit(language: DW_LANG_Python, file: {file}, producer: \"baryon\", \
 isOptimized: true, runtimeVersion: 0, emissionKind: LineTablesOnly)
 !1 = !{{i32 7, !\"Dwarf Version\", i32 4}}
 !2 = !{{i32 2, !\"Debug Info Version\", i32 3}}
