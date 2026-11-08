@@ -30,7 +30,7 @@ impl<'db> Function<'_, '_, 'db> {
             Rvalue::Elementwise(_) => return Err(Unsupported::new("whole-array operations")),
             Rvalue::IsPresent(place) => self.is_present(place)?,
             Rvalue::ErrorIndex(place) => self.error_index(place)?,
-            Rvalue::Format(_) => return Err(Unsupported::new("f-strings")),
+            Rvalue::Format(pieces) => self.format(pieces)?,
         };
         Ok(Some(value))
     }

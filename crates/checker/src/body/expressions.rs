@@ -167,25 +167,6 @@ impl<'db> Body<'db> {
         }
     }
 
-    /// Types the values interpolated into an f-string.
-    fn interpolations(&mut self, node: NodeId) {
-        let parts: Vec<NodeId> = self.tree.children(node).collect();
-        for part in parts {
-            match self.tree.kind(part) {
-                SyntaxKind::Interpolation => {
-                    if let Some(value) = self.tree.child(part, Role::Value) {
-                        self.expression(value, None);
-                    }
-                    if let Some(format) = self.tree.child(part, Role::Format) {
-                        self.interpolations(format);
-                    }
-                }
-                SyntaxKind::FormatSpecification => self.interpolations(part),
-                _ => {}
-            }
-        }
-    }
-
     /// The type of a name read as a value.
     pub(super) fn name(&mut self, node: NodeId) -> Type<'db> {
         match self.lowerer.definition(node) {
