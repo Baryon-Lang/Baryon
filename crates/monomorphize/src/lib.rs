@@ -154,7 +154,11 @@ impl<'db> Substitution<'_, 'db> {
                     .position(|&parameter| parameter == ty)
                     .map_or(ty, |position| self.arguments[position]);
             }
-            TypeKind::Primitive(_) | TypeKind::Str | TypeKind::None | TypeKind::Unknown => {
+            TypeKind::Primitive(_)
+            | TypeKind::Str
+            | TypeKind::None
+            | TypeKind::Function { .. }
+            | TypeKind::Unknown => {
                 return ty;
             }
             TypeKind::Tuple(items) => TypeKind::Tuple(list(items)),

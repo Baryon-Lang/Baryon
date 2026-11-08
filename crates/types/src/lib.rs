@@ -107,6 +107,18 @@ pub enum TypeKind<'db> {
         /// The return type.
         returns: Type<'db>,
     },
+    /// One module-level function's name read as a value, such as `lorenz` in
+    /// `rk4_step(lorenz, t, state, h)`: a type of its own for each function, which takes no bytes
+    /// because the function is known when compiling. It matches a [`Callable`](Self::Callable)
+    /// with the function's signature. A `Callable` parameter is compiled once per function
+    /// passed to it, so the call is direct and can be inlined (decision 0026).
+    Function {
+        /// The function.
+        item: Item<'db>,
+        /// Its signature as a [`Callable`](Self::Callable), which diagnostics show in place of
+        /// a type the program cannot spell.
+        callable: Type<'db>,
+    },
     /// `Raises[T, E]`: what a function that can fail returns, a `T` or one of the errors.
     Fallible {
         /// The type returned on success.
