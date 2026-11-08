@@ -34,6 +34,14 @@ impl<'db> Builder<'db> {
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
             types::Callee::Conversion(to) => match (to.kind(self.db), arguments.as_slice()) {
+                (TypeKind::Primitive(_), [argument])
+                    if !matches!(self.ty(*argument).kind(self.db), TypeKind::Primitive(_)) =>
+                {
+                    // `float("nan")` parses text, which no backend does yet.
+                    let from = self.ty(*argument).display(self.db);
+                    let to = to.display(self.db);
+                    self.unsupported(node, &format!("converting a `{from}` to `{to}`"));
+                }
                 (TypeKind::Primitive(_), [argument]) => {
                     let operand = self.operand_as(*argument, *to);
                     self.assign(place, Rvalue::Use(operand), node);
@@ -54,6 +62,7 @@ impl<'db> Builder<'db> {
             types::Callee::Builtin(name) => match (name.split_once('.'), arguments.as_slice()) {
                 (None, [argument]) if name == "len" => self.len(place, *argument, node),
                 (None, [argument]) if name == "round" => self.round(place, *argument, node),
+                (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
                 (None, _) if name == "print" => self.print(place, &arguments, node),
                 (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
                 (None, [first, rest @ ..])

@@ -241,6 +241,30 @@ error: `Self` is only a type inside a class
     );
 }
 
+/// `N = 10`, a Python habit, is reported once, as a variable that needs `Final`. Before this
+/// it was also taken as a type alias and reported as "this is not a type". A use of `N` adds
+/// no error of its own.
+#[test]
+fn a_number_assigned_at_the_top_level_needs_final() {
+    let program = r"
+N = 10
+
+
+def twice() -> i64:
+    return 2 * N
+";
+    assert_eq!(
+        check_one(program),
+        r"error: module-level variables are not supported
+ --> main.byn:1:1
+  |
+1 | N = 10
+  | ^^^^^^ a variable at the top level of a module
+  = note: a module-level variable is shared mutable state, which a parallel loop could race on
+  = note: mark a constant with `Final`: `N: Final = ...`"
+    );
+}
+
 /// A struct field with a default, an assignment that is not a field, an annotated enum member,
 /// and an enum used as an error type.
 #[test]
