@@ -93,9 +93,9 @@ def report(step: i64, name: str, energy: f64) -> str:
 `#`, `0`, width, `,` and `_` grouping, precision and the type letters `d b o x X e E f F g G %`
 and `s` all work as in Python, and a value with no specification is written as `print` writes it.
 The compiler checks each specification against its value's type, so `{name:+}` on a `str` is a
-compile error rather than a run-time one. Not supported yet: the `z`, `n` and `c` type letters,
-`!r`, `{value=}`, backslash escapes such as `\n` in an f-string's text, and a specification
-built from other values, such as `{x:{width}}`.
+compile error rather than a run-time one. Not supported yet: the `z` flag, the `n` and `c` type
+letters, `!r`, `{value=}`, backslash escapes such as `\n` in an f-string's text, and a
+specification built from other values, such as `{x:{width}}`.
 
 A `str` is a pointer and a length. A literal points at the program's own copy of its text and is
 never copied ([decision 0022](../decisions/0022-str-values.md)); an f-string, `+` and `s.copy()`
