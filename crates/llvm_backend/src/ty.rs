@@ -37,7 +37,8 @@ pub(crate) struct Types<'a, 'db> {
 /// The LLVM representation of a language type.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Repr {
-    /// A type with no value to store: `None`.
+    /// A type with no value to store: `None`, or a function passed as an argument, whose type
+    /// already names it.
     Empty,
     /// A type LLVM holds in a register or memory, written as LLVM writes it, such as `double`.
     Value(String),
@@ -47,7 +48,10 @@ impl<'db> Types<'_, 'db> {
     /// The representation of `ty`, or what is not supported yet.
     pub(crate) fn repr(&self, ty: Type<'db>) -> Result<Repr, Unsupported> {
         match ty.kind(self.db) {
-            TypeKind::None => Ok(Repr::Empty),
+            // A function value takes no bytes: its type names the function (decision 0026).
+            TypeKind::None | TypeKind::Callable { .. } | TypeKind::Function { .. } => {
+                Ok(Repr::Empty)
+            }
             _ => self.value(ty).map(Repr::Value),
         }
     }
@@ -133,7 +137,11 @@ impl<'db> Types<'_, 'db> {
     /// language reference "Copy types") a read-only borrow cannot tell apart from a copy.
     pub(crate) fn by_value(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.db) {
-            TypeKind::Primitive(_) | TypeKind::None | TypeKind::Enum(_) => true,
+            TypeKind::Primitive(_)
+            | TypeKind::None
+            | TypeKind::Enum(_)
+            | TypeKind::Callable { .. }
+            | TypeKind::Function { .. } => true,
             TypeKind::Tuple(items) => items.iter().all(|&item| self.by_value(item)),
             TypeKind::Fixed { element, .. } | TypeKind::Optional(element) => {
                 self.by_value(*element)

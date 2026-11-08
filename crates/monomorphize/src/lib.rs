@@ -81,6 +81,10 @@ use types::{Nominal, Primitive, Type, TypeKind};
 /// `arguments`, in every type the body and its outlined `prange` bodies mention. The phase is
 /// unchanged; drop elaboration and array expansion still follow.
 ///
+/// A `Callable` parameter is an implicit type parameter (decision 0026): `parameters` may end
+/// with its `Callable` type and `arguments` with the function's own type that the instance
+/// received. A call of the parameter then becomes a direct call of that function.
+///
 /// Cost: one visit of every type in the body. Types are interned, so a type that mentions no
 /// parameter is returned as it is, and rebuilding one that does costs one intern per node.
 ///
@@ -107,7 +111,70 @@ pub fn instantiate<'db>(
     };
     let mut body = generic.clone();
     substitution.body(&mut body);
+    direct_calls(db, &mut body);
+    whole_array_arithmetic(db, &mut body);
     body
+}
+
+/// Turns arithmetic whose result is now an array into a whole-array expression, in `body` and
+/// its outlined `prange` bodies. Under a `VectorSpace` bound, `state + h * k` on a type
+/// parameter lowers to scalar operators; once `S` is `Fixed[f64, (3,)]` or an `Array`, array
+/// expansion must loop over the elements, as it does for the same expression written on
+/// arrays. A scalar operand, such as `h`, is a leaf that every element uses.
+fn whole_array_arithmetic<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
+    for outlined in &mut body.outlined {
+        whole_array_arithmetic(db, outlined);
+    }
+    for block in &mut body.blocks {
+        for statement in &mut block.statements {
+            let StatementKind::Assign(place, rvalue) = &mut statement.kind else {
+                continue;
+            };
+            if !place.projections.is_empty() {
+                continue;
+            }
+            let ty = body.locals[place.local.index()].ty;
+            if !matches!(ty.kind(db), TypeKind::Fixed { .. } | TypeKind::Array { .. }) {
+                continue;
+            }
+            let leaf = |operand: &Operand<'db>| Box::new(Elementwise::Leaf(operand.clone()));
+            let tree = match rvalue {
+                Rvalue::Binary(operator, left, right) => {
+                    Elementwise::Binary(*operator, leaf(left), leaf(right))
+                }
+                Rvalue::Unary(operator, operand) => Elementwise::Unary(*operator, leaf(operand)),
+                _ => continue,
+            };
+            *rvalue = Rvalue::Elementwise(Box::new(tree));
+        }
+    }
+}
+
+/// Turns each call of a local whose type is now one function's own type into a direct call of
+/// that function, in `body` and its outlined `prange` bodies. After substitution, a `Callable`
+/// parameter holds the function this instance received (decision 0026), so the call needs no
+/// function value and the backend can inline it.
+fn direct_calls<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
+    for outlined in &mut body.outlined {
+        direct_calls(db, outlined);
+    }
+    for block in &mut body.blocks {
+        let TerminatorKind::Call { callee, .. } = &mut block.terminator.kind else {
+            continue;
+        };
+        let Callee::Value(Operand::Copy(place) | Operand::Move(place)) = callee else {
+            continue;
+        };
+        if !place.projections.is_empty() {
+            continue;
+        }
+        if let TypeKind::Function { item, .. } = body.locals[place.local.index()].ty.kind(db) {
+            *callee = Callee::Function {
+                item: *item,
+                type_arguments: Vec::new(),
+            };
+        }
+    }
 }
 
 impl<'db> Substitution<'_, 'db> {
@@ -146,14 +213,15 @@ impl<'db> Substitution<'_, 'db> {
     /// `ty` with every parameter replaced, interned.
     fn ty(&self, ty: Type<'db>) -> Type<'db> {
         let list = |types: &[Type<'db>]| types.iter().map(|&ty| self.ty(ty)).collect::<Vec<_>>();
+        if let Some(position) = self
+            .parameters
+            .iter()
+            .position(|&parameter| parameter == ty)
+        {
+            return self.arguments[position];
+        }
         let kind = match ty.kind(self.db) {
-            TypeKind::Parameter { .. } => {
-                return self
-                    .parameters
-                    .iter()
-                    .position(|&parameter| parameter == ty)
-                    .map_or(ty, |position| self.arguments[position]);
-            }
+            TypeKind::Parameter { .. } => return ty,
             TypeKind::Primitive(_)
             | TypeKind::Str
             | TypeKind::None

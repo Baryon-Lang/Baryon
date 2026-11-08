@@ -80,7 +80,7 @@ impl<'db> Builder<'db> {
                 (Some(("math", member)), _) => self.math_function(place, member, &arguments, node),
                 _ => self.unsupported(node, &format!("the built-in `{name}`")),
             },
-            types::Callee::Value => self.unsupported(node, "calls of a function value"),
+            types::Callee::Value => self.value_call(place, &arguments, node),
         }
     }
 
@@ -104,6 +104,21 @@ impl<'db> Builder<'db> {
             .iter()
             .map(|parameter| (parameter.mode, parameter.ty))
             .collect();
+        // Each `Callable` parameter is an implicit type parameter after the written ones, and
+        // its argument is the type of the function passed (decision 0026).
+        let mut type_arguments = type_arguments;
+        for (&argument, (_, ty)) in arguments.iter().zip(&parameters) {
+            if matches!(ty.kind(self.db), TypeKind::Callable { .. }) {
+                let Some(argument) = argument else {
+                    return self.unsupported(node, "a default for a `Callable` parameter");
+                };
+                let function = self.ty(argument);
+                if !matches!(function.kind(self.db), TypeKind::Function { .. }) {
+                    return self.unsupported(argument, "passing on a `Callable` parameter");
+                }
+                type_arguments.push(function);
+            }
+        }
         let mut passed = Vec::with_capacity(arguments.len());
         for (position, (&argument, (mode, ty))) in arguments.iter().zip(parameters).enumerate() {
             let Some(argument) = argument else {
@@ -155,6 +170,33 @@ impl<'db> Builder<'db> {
         if let Some(edge) = edge {
             self.dispatch(&edge, errors, node);
         }
+        self.start(next);
+    }
+
+    /// A call of a `Callable` value, such as the parameter `derivative` in
+    /// `derivative(t, state)`, into `place`. Each argument is borrowed, the mode a `Callable`
+    /// gives every parameter. Monomorphization turns it into a direct call of the function the
+    /// instance received (decision 0026).
+    fn value_call(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
+        let Some(function) = self.tree.child(node, Role::Function) else {
+            return self.unsupported(node, "this call");
+        };
+        let callee = self.operand(function);
+        let passed = arguments
+            .iter()
+            .map(|&argument| Argument::Borrow(self.borrow(argument)))
+            .collect();
+        let next = self.new_block();
+        self.terminate(
+            TerminatorKind::Call {
+                callee: Callee::Value(callee),
+                arguments: passed,
+                destination: place,
+                target: next,
+                error: None,
+            },
+            node,
+        );
         self.start(next);
     }
 

@@ -22,22 +22,23 @@ error: lowering does not handle `**` yet
 So a program that `baryon check` accepts but `baryon build` rejects is not wrong: it uses a part of
 the language that is specified and checked, but not built yet.
 
-This page was last brought up to date on 2026-11-08, when the pairwise float `sum` began to
-build. Every pull request that teaches lowering or the backend something new updates the table
+This page was last brought up to date on 2026-11-08, when functions passed as arguments began
+to build. Every pull request that teaches lowering or the backend something new updates the table
 it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
 
-Two of the five [example programs](../examples/README.md) build and run:
-[`heat_equation.byn`](../examples/heat_equation.byn) and
-[`lennard_jones.byn`](../examples/lennard_jones.byn). Each of the others needs the features listed
+Three of the five [example programs](../examples/README.md) build and run:
+[`heat_equation.byn`](../examples/heat_equation.byn),
+[`lennard_jones.byn`](../examples/lennard_jones.byn) and
+[`lorenz_rk4.byn`](../examples/lorenz_rk4.byn). Each of the others needs the features listed
 against it.
 
 | Example | Still needs |
 | --- | --- |
 | [`heat_equation.byn`](../examples/heat_equation.byn) | Nothing: it builds and runs |
 | [`lennard_jones.byn`](../examples/lennard_jones.byn) | Nothing: it builds and runs |
-| [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | `Callable` arguments |
+| [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | Nothing: it builds and runs |
 | [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | lists and `list.append`, `Array(values)` |
 | [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | the `random` module, `math.pi`, operators on structs |
 
@@ -73,8 +74,9 @@ against it.
 | Enums: members, `==` and `!=`, `match` | |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
-| Generic functions, compiled once per type they are called at | |
-| | Lists, `list[T]`, in any form; `Callable` arguments |
+| Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors | |
+| [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026) | Passing on a `Callable` parameter to another call |
+| | Lists, `list[T]`, in any form |
 
 Integer overflow: there is one build mode today, and arithmetic that overflows an integer wraps
 around, as the release-build rule says. The panic the debug-build rule promises is not built yet;
