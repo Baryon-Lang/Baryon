@@ -168,7 +168,22 @@ set.
 ## Math functions
 
 Mathematical functions from `math`, such as `sqrt` and `exp`, apply to numbers. Their element-wise
-forms on arrays arrive with roadmap 1.14.
+forms on arrays arrive with roadmap 1.14. The compiler builds `sqrt`, `exp`, `log`, `sin`, `cos`
+and `pow` today; the rest of `math` comes with the standard library (roadmap 1.13).
+
+Each returns a float. An `f32` or `f64` argument keeps its type, so `sqrt` of an `f32` is an
+`f32`, as `numpy.sqrt` gives. An integer converts to `f64` first, so `sqrt(2)` is
+`1.4142135623730951`, as in Python. `pow(x, y)` mixes its arguments as `x ** y` does, so
+`pow(x, 0.5)` on an `f32` stays `f32`, and `pow` of an `f32` and an `f64` is an error that asks for
+a conversion:
+
+```python
+from math import sqrt
+
+
+def rms(total: f64, n: int) -> f64:
+    return sqrt(total / n)
+```
 
 They and float `**` follow IEEE 754 and the C math library, as NumPy does, never raising and never
 returning a complex number. This is the rule [float division by zero](types.md#numbers) already

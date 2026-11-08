@@ -93,3 +93,56 @@ def main():
     )
     .unwrap();
 }
+
+/// Lennard-Jones molecular dynamics: `Fixed` vector arithmetic, `dot`, `round`, a `prange`
+/// force loop and `math.sqrt`. An independent `NumPy` run of the same steps prints the same
+/// energies, and the total stays constant to four digits, the standard check of the integrator.
+#[test]
+fn lennard_jones_builds_and_runs() {
+    prints(
+        "example-lennard-jones",
+        include_str!("../../../../docs/examples/lennard_jones.byn"),
+        "\
+step   50  kinetic    10.8151  potential -1991.7744  total -1980.9594  temperature 0.0141  rms speed 0.2055
+step  100  kinetic     3.6545  potential -1984.6125  total -1980.9581  temperature 0.0048  rms speed 0.1195
+step  150  kinetic     7.8174  potential -1988.7601  total -1980.9426  temperature 0.0102  rms speed 0.1747
+step  200  kinetic     6.0588  potential -1987.0009  total -1980.9420  temperature 0.0079  rms speed 0.1538
+",
+    )
+    .unwrap();
+}
+
+/// The `math` functions, called as `math.exp` and imported as `sqrt`, give the bits Python's
+/// `math` module gives. An integer argument converts to `f64`, and an `f32` stays an `f32`.
+#[test]
+fn math_functions_build_and_run() {
+    let program = "\
+import math
+from math import sqrt
+
+
+def main():
+    n = 2
+    x: f32 = 2.0
+    print(sqrt(n), math.exp(1.0), math.log(10), math.sin(0.5), math.cos(0.5))
+    print(math.pow(2, 10), math.pow(x, 0.5), sqrt(x), math.log(0.0), math.sqrt(-1.0))
+";
+    prints(
+        "math-functions",
+        program,
+        "1.4142135623730951 2.718281828459045 2.302585092994046 0.479425538604203 \
+         0.8775825618903728\n1024.0 1.4142135 1.4142135 -inf nan\n",
+    )
+    .unwrap();
+}
+
+/// The built-in `round` gives an `int`, rounding ties to even as Python does, so 2.5 gives 2
+/// and -0.5 gives 0. An integer is returned as it is.
+#[test]
+fn round_builds_and_runs() {
+    let program = "\
+def main():
+    print(round(2.5), round(3.5), round(-0.5), round(-1.5), round(7), round(10.0 / 0.001))
+";
+    prints("round", program, "2 4 0 -2 7 10000\n").unwrap();
+}

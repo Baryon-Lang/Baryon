@@ -22,23 +22,24 @@ error: lowering does not handle `**` yet
 So a program that `baryon check` accepts but `baryon build` rejects is not wrong: it uses a part of
 the language that is specified and checked, but not built yet.
 
-This page was last brought up to date on 2026-11-08, when `**`, `dot` and `round` began to
-build. Every pull request that teaches lowering or the backend something new updates the table
+This page was last brought up to date on 2026-11-08, when the `math` functions and `round` began
+to build. Every pull request that teaches lowering or the backend something new updates the table
 it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
 
-One of the five [example programs](../examples/README.md) builds and runs:
-[`heat_equation.byn`](../examples/heat_equation.byn). Each of the others needs the features listed
+Two of the five [example programs](../examples/README.md) build and run:
+[`heat_equation.byn`](../examples/heat_equation.byn) and
+[`lennard_jones.byn`](../examples/lennard_jones.byn). Each of the others needs the features listed
 against it.
 
 | Example | Still needs |
 | --- | --- |
 | [`heat_equation.byn`](../examples/heat_equation.byn) | Nothing: it builds and runs |
-| [`lennard_jones.byn`](../examples/lennard_jones.byn) | `math.sqrt`; with `sqrt(y)` written `y ** 0.5` it builds and runs today |
-| [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | `Callable` arguments, the built-in `round` |
-| [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | lists and `list.append`, `Array(values)`, `Array.copy`, `math` functions |
-| [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | the `random` module, operators on structs |
+| [`lennard_jones.byn`](../examples/lennard_jones.byn) | Nothing: it builds and runs |
+| [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | `Callable` arguments |
+| [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | lists and `list.append`, `Array(values)` |
+| [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | the `random` module, `math.pi`, operators on structs |
 
 ## Syntax
 
@@ -56,7 +57,7 @@ against it.
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals; f-strings with format specifications | Complex literals such as `2j`; string literals with escapes or prefixes |
 | `+ - * / // %`, `**` on floats, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `**` on integers; `in` and `not in`; `==` on `str` |
-| `min`, `max`, `len` of arrays, `int`, `float` and the number conversions such as `f64(n)` | `abs`, `round`, `sum`, `enumerate`, `zip`; `len` of `str` and lists; the `math` module |
+| `min`, `max`, `len` of arrays, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`; `round(x)` | `abs`, `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str` and lists; the rest of `math`, and its constants such as `math.pi` |
 | `@test` functions, with `baryon test` | |
 
 ## Types

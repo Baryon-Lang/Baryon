@@ -53,6 +53,7 @@ impl<'db> Builder<'db> {
             },
             types::Callee::Builtin(name) => match (name.split_once('.'), arguments.as_slice()) {
                 (None, [argument]) if name == "len" => self.len(place, *argument, node),
+                (None, [argument]) if name == "round" => self.round(place, *argument, node),
                 (None, _) if name == "print" => self.print(place, &arguments, node),
                 (None, [first, rest @ ..])
                     if (name == "min" || name == "max")
@@ -76,6 +77,7 @@ impl<'db> Builder<'db> {
                     self.fixed_dot(place, (*left, *right), node);
                 }
                 (Some(("Fixed", "round")), [array]) => self.fixed_round(place, *array, node),
+                (Some(("math", member)), _) => self.math_function(place, member, &arguments, node),
                 _ => self.unsupported(node, &format!("the built-in `{name}`")),
             },
             types::Callee::Value => self.unsupported(node, "calls of a function value"),
