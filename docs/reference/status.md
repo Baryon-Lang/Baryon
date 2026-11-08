@@ -71,7 +71,7 @@ against it.
 | `str`: literals, f-strings, `+` and `s.copy()` | `==`, `!=`, `in` and `len` on `str` |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
 | `T \| None`, with every narrowing rule | |
-| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs | |
+| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs | Methods of a generic struct: an error says they are not compiled yet |
 | Enums: members, `==` and `!=`, `match` | |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
