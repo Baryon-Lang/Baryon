@@ -136,6 +136,32 @@ impl Body<'_> {
     ///
     /// It does not check types: lowering builds bodies from type-checked code, and a type check
     /// of the IR is a separate pass if bugs show one is needed.
+    ///
+    /// ```
+    /// use mir::{Body, Invalid};
+    /// use source::{FileId, Span};
+    /// use types::{Float, Primitive, Type, TypeKind};
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// # let database = Database::default();
+    /// let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
+    ///
+    /// // A body with no blocks has nowhere to start.
+    /// let body = Body::new(f64, Span::new(FileId::from_index(0), 0, 10));
+    /// let problems = body.validate(&database);
+    /// assert_eq!(problems, [Invalid::NoBlocks]);
+    /// assert_eq!(problems[0].to_string(), "the body has no blocks");
+    /// ```
     #[must_use]
     pub fn validate(&self, db: &dyn Db) -> Vec<Invalid> {
         self.check(db, &[])

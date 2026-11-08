@@ -58,6 +58,14 @@ impl FileId {
 /// A byte range `start..end` within one source file.
 ///
 /// Offsets are `u32`, which limits a single file to 4 GiB and keeps a span at 12 bytes.
+///
+/// ```
+/// use source::{FileId, Span};
+///
+/// // `Span` is a value: copying it is free, and it holds no reference to the text.
+/// let span = Span::new(FileId::from_index(0), 4, 9);
+/// assert_eq!((span.file(), span.start(), span.end()), (FileId::from_index(0), 4, 9));
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
     /// The file the span points into.
@@ -74,6 +82,14 @@ impl Span {
     /// # Panics
     ///
     /// Panics if `start > end`, which is always a bug in the caller.
+    ///
+    /// ```
+    /// use source::{FileId, Span};
+    ///
+    /// // An empty span marks a point, such as where a missing token belongs.
+    /// let point = Span::new(FileId::from_index(0), 7, 7);
+    /// assert_eq!(point.start(), point.end());
+    /// ```
     #[must_use]
     pub fn new(file: FileId, start: u32, end: u32) -> Self {
         assert!(start <= end, "span start {start} is after its end {end}");
@@ -102,6 +118,15 @@ impl Span {
 /// A human-readable location: 1-based line and 1-based column.
 ///
 /// Columns count Unicode scalar values, not bytes, so they match what an editor shows.
+///
+/// ```
+/// use source::{Position, SourceFile};
+///
+/// // `μ` is two bytes in UTF-8 but one column: `=` starts at byte 3 and column 3.
+/// let file = SourceFile::new("main.byn", "μ = 1.0\n")?;
+/// assert_eq!(file.position(3), Position { line: 1, column: 3 });
+/// # Ok::<(), source::SourceError>(())
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Position {
     /// Line number, starting at 1.
@@ -154,18 +179,45 @@ impl SourceFile {
     }
 
     /// The name the file was loaded under, usually its path.
+    ///
+    /// ```
+    /// use source::SourceFile;
+    ///
+    /// let file = SourceFile::new("physics/nbody.byn", "")?;
+    /// assert_eq!(file.name(), "physics/nbody.byn");
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// The full text of the file.
+    ///
+    /// ```
+    /// use source::SourceFile;
+    ///
+    /// let file = SourceFile::new("main.byn", "x = 1\n")?;
+    /// assert_eq!(file.text(), "x = 1\n");
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
 
     /// Converts a byte offset to a line and column. Offsets past the end clamp to the end.
+    ///
+    /// Cost: a binary search over the line starts, then a walk along one line.
+    ///
+    /// ```
+    /// use source::{Position, SourceFile};
+    ///
+    /// let file = SourceFile::new("main.byn", "def f():\n    return 1\n")?;
+    /// // Byte 13 is the `r` of `return`.
+    /// assert_eq!(file.position(13), Position { line: 2, column: 5 });
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn position(&self, offset: u32) -> Position {
         let offset = offset.min(offset_of(self.text.len()));
@@ -182,6 +234,15 @@ impl SourceFile {
     }
 
     /// The text of a 1-based line, without its line ending, or `None` past the last line.
+    ///
+    /// ```
+    /// use source::SourceFile;
+    ///
+    /// let file = SourceFile::new("main.byn", "a = 1\r\nb = 2\n")?;
+    /// assert_eq!(file.line(1), Some("a = 1"));
+    /// assert_eq!(file.line(0), None);
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn line(&self, line: u32) -> Option<&str> {
         let index = usize::try_from(line).ok()?.checked_sub(1)?;
@@ -205,6 +266,15 @@ pub struct SourceMap {
 
 impl SourceMap {
     /// Creates an empty map.
+    ///
+    /// ```
+    /// use source::SourceMap;
+    ///
+    /// let mut sources = SourceMap::new();
+    /// let file = sources.add("main.byn", "")?;
+    /// assert_eq!(file.index(), 0);
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -215,6 +285,16 @@ impl SourceMap {
     /// # Errors
     ///
     /// Fails if the text is 4 GiB or larger, or if the map already holds `u32::MAX` files.
+    ///
+    /// ```
+    /// use source::SourceMap;
+    ///
+    /// let mut sources = SourceMap::new();
+    /// let first = sources.add("a.byn", "a = 1\n")?;
+    /// let second = sources.add("b.byn", "b = 2\n")?;
+    /// assert_ne!(first, second);
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     pub fn add(
         &mut self,
         name: impl Into<String>,
@@ -230,6 +310,15 @@ impl SourceMap {
     /// # Panics
     ///
     /// Panics if `id` was issued by a different `SourceMap`.
+    ///
+    /// ```
+    /// use source::SourceMap;
+    ///
+    /// let mut sources = SourceMap::new();
+    /// let file = sources.add("main.byn", "x = 1\n")?;
+    /// assert_eq!(sources.get(file).line(1), Some("x = 1"));
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn get(&self, id: FileId) -> &SourceFile {
         &self.files[id.0 as usize]
@@ -264,6 +353,15 @@ pub trait Sources: fmt::Debug {
 }
 
 /// Why a source file could not be built or added to a [`SourceMap`].
+///
+/// Its `Display` text is a sentence a person can read:
+///
+/// ```
+/// use source::SourceError;
+///
+/// let error = SourceError::FileTooLarge { name: "grid.byn".to_owned() };
+/// assert_eq!(error.to_string(), "source file `grid.byn` is 4 GiB or larger");
+/// ```
 #[derive(Debug, PartialEq, Eq)]
 pub enum SourceError {
     /// The file is 4 GiB or larger.

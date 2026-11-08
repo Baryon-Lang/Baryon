@@ -16,6 +16,34 @@ use types::{Mode, Type};
 impl<'db> Body<'db> {
     /// A value that writes the body's text form. The database is needed to write types and the
     /// names of called functions.
+    ///
+    /// ```
+    /// use mir::{Body, Terminator, TerminatorKind};
+    /// use source::{FileId, Span};
+    /// use types::{Float, Primitive, Type, TypeKind};
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// # let database = Database::default();
+    /// let none = Type::new(&database, TypeKind::None);
+    /// let span = Span::new(FileId::from_index(0), 0, 10);
+    /// let mut body = Body::new(none, span);
+    /// body.push_block(Terminator { kind: TerminatorKind::Return, span });
+    ///
+    /// assert_eq!(
+    ///     body.display(&database).to_string(),
+    ///     "fn() -> None {\n    let _0: None; // return\n\n    bb0: {\n        return;\n    }\n}\n",
+    /// );
+    /// ```
     #[must_use]
     pub fn display<'a>(&'a self, db: &'a dyn Db) -> DisplayedBody<'a, 'db> {
         DisplayedBody { db, body: self }
