@@ -22,9 +22,9 @@ error: lowering does not handle `**` yet
 So a program that `baryon check` accepts but `baryon build` rejects is not wrong: it uses a part of
 the language that is specified and checked, but not built yet.
 
-This page was last brought up to date on 2026-11-08, when `heat_equation.byn` began to build. Every pull
-request that teaches lowering or the backend something new updates the table it affects, in the
-same pull request, as roadmap item 0.8.1 asks.
+This page was last brought up to date on 2026-11-08, when `heat_equation.byn` began to build.
+Every pull request that teaches lowering or the backend something new updates the table it
+affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
 
