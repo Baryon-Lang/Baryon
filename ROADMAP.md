@@ -55,7 +55,7 @@ procedure on paper.
 | 0.8.5 | Tested rustdoc examples for the public items callers use directly in `mir` (1 of 15 items rustdoc counts have one), `syntax` (5 of 29), `source` (4 of 23), `diagnostics` (2 of 17) and `documentation` (2 of 15) | 0.5 | — | Done | Claude | [#95](https://github.com/Baryon-Lang/Baryon/pull/95) |
 | 0.8.6 | Bring the design plan up to date with decisions 0019 (language server) and 0022 (`str` values), which it does not cite | 0.1 | 0.7 | Done | Claude | [#81](https://github.com/Baryon-Lang/Baryon/pull/81) |
 | 0.9 | Cut CI's Actions minutes without weakening the merge gate: macOS only with the `ready-to-merge` label and on `main`, the build skipped for Markdown-only changes, a build cache, and the benchmark kernels only when they change | — | 0.4 | Done | Claude | [#98](https://github.com/Baryon-Lang/Baryon/pull/98) |
-| 0.9.1 | One CI concurrency group per pull request, so a push after the `ready-to-merge` label cancels the macOS run of the commit before it; the label's run covers both systems so no commit keeps a cancelled check | — | 0.9 | In progress | Claude | — |
+| 0.9.1 | One CI concurrency group per pull request, so a push after the `ready-to-merge` label cancels the macOS run of the commit before it; the label's run covers both systems so no commit keeps a cancelled check | — | 0.9 | Done | Claude | [#101](https://github.com/Baryon-Lang/Baryon/pull/101) |
 
 ## Phase 1: MVP compiler
 
