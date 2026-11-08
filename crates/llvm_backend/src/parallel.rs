@@ -13,10 +13,10 @@
 //!   partial result.
 //!
 //! The runtime's chunks depend only on the iteration count (decision 0021), and the partials
-//! combine in chunk order, a fixed tree that never depends on the thread count, so a float
-//! reduction gives the same bits on every run and every machine (the reference, "Reproducible
-//! reductions"). The partials live on the stack of `f`, one per chunk, at most 1024 per
-//! reduction, and are released when the loop ends.
+//! combine in a fixed pairwise tree that depends only on the chunk count, never on the thread
+//! count, so a float reduction gives the same bits on every run and every machine (the
+//! reference, "Reproducible reductions"). The partials live on the stack of `f`, one per chunk,
+//! at most 1024 per reduction, and are released when the loop ends.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -119,11 +119,20 @@ impl<'db> Function<'_, '_, 'db> {
             )))
         };
         let mut partials = Vec::new();
-        for (position, reduction) in reduced.iter().enumerate() {
-            let chunks = chunks.as_deref().unwrap_or("0");
-            let partial = self.emit(&format!("alloca {}, i64 {chunks}", reduction.llvm));
-            self.store_slot(&context, slots, arguments.len() + position, &partial);
-            partials.push(partial);
+        if let Some(chunks) = &chunks {
+            // One more than the chunks, so a loop with none still has partial 0: the identity,
+            // which chunk 0 overwrites when it runs.
+            let room = self.emit(&format!("add i64 {chunks}, 1"));
+            for (position, reduction) in reduced.iter().enumerate() {
+                let llvm = &reduction.llvm;
+                let partial = self.emit(&format!("alloca {llvm}, i64 {room}"));
+                self.line(&format!(
+                    "store {llvm} {}, ptr {partial}",
+                    reduction.identity
+                ));
+                self.store_slot(&context, slots, arguments.len() + position, &partial);
+                partials.push(partial);
+            }
         }
         self.line(&format!(
             "call void @baryon_rt_parallel_for(i64 {iterations}, ptr {}, ptr {context})",
@@ -193,8 +202,14 @@ impl<'db> Function<'_, '_, 'db> {
         self.line(&format!("store ptr {address}, ptr {slot}"));
     }
 
-    /// Combines the `chunks` partial results of `reduction` at `partial` in chunk order,
-    /// starting from the operator's identity, then combines the result into the reduced place.
+    /// Combines the `chunks` partial results of `reduction` at `partial` in the fixed pairwise
+    /// tree, then combines the result into the reduced place.
+    ///
+    /// The tree (the reference, "Reproducible reductions"): for a stride of 1, 2, 4, … while it
+    /// is below the chunk count, each partial `i` at a multiple of twice the stride becomes
+    /// `p[i] ⊕ p[i + stride]` when `i + stride` is a chunk. Partial 0 then holds the result, from
+    /// at most 11 levels for 1024 chunks, so a float sum's rounding error grows with the tree's
+    /// depth rather than the chunk count. The tree depends only on the chunk count.
     fn combine_partials(
         &mut self,
         reduction: &Reduced<'db>,
@@ -207,32 +222,49 @@ impl<'db> Function<'_, '_, 'db> {
             ty,
             number,
             llvm,
-            identity,
+            ..
         } = reduction;
         let (operator, number, ty) = (*operator, *number, *ty);
-        let total = self.emit(&format!("alloca {llvm}"));
-        let position = self.emit("alloca i64");
-        self.line(&format!("store {llvm} {identity}, ptr {total}"));
-        self.line(&format!("store i64 0, ptr {position}"));
-        let (test, step, done) = (self.fresh_block(), self.fresh_block(), self.fresh_block());
-        self.line(&format!("br label %{test}"));
-        self.line_label(&test);
-        let chunk = self.emit(&format!("load i64, ptr {position}"));
-        let more = self.emit(&format!("icmp slt i64 {chunk}, {chunks}"));
-        self.line(&format!("br i1 {more}, label %{step}, label %{done}"));
-        self.line_label(&step);
-        let element = self.emit(&format!(
-            "getelementptr inbounds {llvm}, ptr {partial}, i64 {chunk}"
+        let stride_slot = self.emit("alloca i64");
+        let index_slot = self.emit("alloca i64");
+        self.line(&format!("store i64 1, ptr {stride_slot}"));
+        let [level, pairs, pair, combine, next_level, done] =
+            std::array::from_fn(|_| self.fresh_block());
+        self.line(&format!("br label %{level}"));
+        self.line_label(&level);
+        let stride = self.emit(&format!("load i64, ptr {stride_slot}"));
+        let deeper = self.emit(&format!("icmp slt i64 {stride}, {chunks}"));
+        self.line(&format!("br i1 {deeper}, label %{pairs}, label %{done}"));
+        self.line_label(&pairs);
+        let twice = self.emit(&format!("shl i64 {stride}, 1"));
+        self.line(&format!("store i64 0, ptr {index_slot}"));
+        self.line(&format!("br label %{pair}"));
+        self.line_label(&pair);
+        let left = self.emit(&format!("load i64, ptr {index_slot}"));
+        let right = self.emit(&format!("add i64 {left}, {stride}"));
+        let present = self.emit(&format!("icmp slt i64 {right}, {chunks}"));
+        self.line(&format!(
+            "br i1 {present}, label %{combine}, label %{next_level}"
         ));
-        let value = self.emit(&format!("load {llvm}, ptr {element}"));
-        let so_far = self.emit(&format!("load {llvm}, ptr {total}"));
-        let combined = self.combine(operator, number, llvm, &so_far, &value)?;
-        self.line(&format!("store {llvm} {combined}, ptr {total}"));
-        let next = self.emit(&format!("add i64 {chunk}, 1"));
-        self.line(&format!("store i64 {next}, ptr {position}"));
-        self.line(&format!("br label %{test}"));
+        self.line_label(&combine);
+        let left_address = self.emit(&format!(
+            "getelementptr inbounds {llvm}, ptr {partial}, i64 {left}"
+        ));
+        let right_address = self.emit(&format!(
+            "getelementptr inbounds {llvm}, ptr {partial}, i64 {right}"
+        ));
+        let a = self.emit(&format!("load {llvm}, ptr {left_address}"));
+        let b = self.emit(&format!("load {llvm}, ptr {right_address}"));
+        let combined = self.combine(operator, number, llvm, &a, &b)?;
+        self.line(&format!("store {llvm} {combined}, ptr {left_address}"));
+        let following = self.emit(&format!("add i64 {left}, {twice}"));
+        self.line(&format!("store i64 {following}, ptr {index_slot}"));
+        self.line(&format!("br label %{pair}"));
+        self.line_label(&next_level);
+        self.line(&format!("store i64 {twice}, ptr {stride_slot}"));
+        self.line(&format!("br label %{level}"));
         self.line_label(&done);
-        let reduced = self.emit(&format!("load {llvm}, ptr {total}"));
+        let reduced = self.emit(&format!("load {llvm}, ptr {partial}"));
         let before = self
             .load(address, ty)?
             .ok_or_else(|| self.types.unsupported(ty))?;
@@ -337,7 +369,9 @@ fn identity(
     let single = llvm == "float";
     Ok(match (operator, number) {
         (_, Number::Bool) => return Err(Unsupported::new("a `prange` reduction of a `bool`")),
-        (ReductionOperator::Add, Number::Float(_)) => float(0.0, single),
+        // -0.0, not 0.0: `-0.0 + x` is `x` for every `x`, `-0.0` included, so an empty loop
+        // leaves a negative zero as it was.
+        (ReductionOperator::Add, Number::Float(_)) => float(-0.0, single),
         (ReductionOperator::Multiply, Number::Float(_)) => float(1.0, single),
         (ReductionOperator::Min, Number::Float(_)) => float(f64::INFINITY, single),
         (ReductionOperator::Max, Number::Float(_)) => float(f64::NEG_INFINITY, single),

@@ -1,8 +1,8 @@
 //! `prange` loops: the parent packs its shared places into a context, a chunk function runs
 //! each chunk's iterations through the outlined body with private reduction copies, and the
-//! parent combines the partials in chunk order. The C stand-in for the runtime splits a loop
-//! into at most three chunks and runs them last first, so a result that depended on the order
-//! chunks run in would show.
+//! parent combines the partials in the fixed pairwise tree. The C stand-in for the runtime
+//! splits a loop into at most five chunks and runs them last first, so a result that depended
+//! on the order chunks run in would show.
 
 use super::{Database, assign, build, end, module, parameter, primitive, run, span};
 use mir::{Argument, BinaryOperator, Body, Constant, ConstantValue, Local, LocalKind, Operand};
@@ -10,11 +10,12 @@ use mir::{BlockId, Reduction, ReductionOperator, Rvalue, TerminatorKind};
 use types::{Float, Integer, Mode, Primitive, Type, TypeKind};
 
 /// `baryon_rt_chunk_count` and `baryon_rt_parallel_for` as the runtime defines them (decision
-/// 0021), but with at most three chunks, run on one thread from the last to the first.
+/// 0021), but with at most five chunks, enough for three levels of the combining tree, run on
+/// one thread from the last to the first.
 const POOL: &str = r"
     #include <stdint.h>
     typedef void (*Chunk)(void *, int64_t, int64_t, int64_t);
-    int64_t baryon_rt_chunk_count(int64_t n) { return n <= 0 ? 0 : n < 3 ? n : 3; }
+    int64_t baryon_rt_chunk_count(int64_t n) { return n <= 0 ? 0 : n < 5 ? n : 5; }
     void baryon_rt_parallel_for(int64_t n, Chunk body, void *context) {
         int64_t chunks = baryon_rt_chunk_count(n);
         for (int64_t c = chunks - 1; c >= 0; c--) {
@@ -92,48 +93,62 @@ bb0:
   %t3 = getelementptr inbounds [2 x ptr], ptr %t2, i64 0, i64 0
   store ptr %_2, ptr %t3
   %t4 = call i64 @baryon_rt_chunk_count(i64 %t0)
-  %t5 = alloca i64, i64 %t4
-  %t6 = getelementptr inbounds [2 x ptr], ptr %t2, i64 0, i64 1
-  store ptr %t5, ptr %t6
+  %t5 = add i64 %t4, 1
+  %t6 = alloca i64, i64 %t5
+  store i64 0, ptr %t6
+  %t7 = getelementptr inbounds [2 x ptr], ptr %t2, i64 0, i64 1
+  store ptr %t6, ptr %t7
   call void @baryon_rt_parallel_for(i64 %t0, ptr @total.chunk0, ptr %t2)
-  %t7 = alloca i64
   %t8 = alloca i64
-  store i64 0, ptr %t7
-  store i64 0, ptr %t8
+  %t9 = alloca i64
+  store i64 1, ptr %t8
   br label %c0
 c0:
-  %t9 = load i64, ptr %t8
-  %t10 = icmp slt i64 %t9, %t4
-  br i1 %t10, label %c1, label %c2
+  %t10 = load i64, ptr %t8
+  %t11 = icmp slt i64 %t10, %t4
+  br i1 %t11, label %c1, label %c5
 c1:
-  %t11 = getelementptr inbounds i64, ptr %t5, i64 %t9
-  %t12 = load i64, ptr %t11
-  %t13 = load i64, ptr %t7
-  %t14 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t13, i64 %t12)
-  %t15 = extractvalue { i64, i1 } %t14, 1
-  br i1 %t15, label %p0, label %c3
-c3:
-  %t16 = extractvalue { i64, i1 } %t14, 0
-  store i64 %t16, ptr %t7
-  %t17 = add i64 %t9, 1
-  store i64 %t17, ptr %t8
-  br label %c0
+  %t12 = shl i64 %t10, 1
+  store i64 0, ptr %t9
+  br label %c2
 c2:
-  %t18 = load i64, ptr %t7
-  %t19 = load i64, ptr %_3
-  %t20 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t19, i64 %t18)
+  %t13 = load i64, ptr %t9
+  %t14 = add i64 %t13, %t10
+  %t15 = icmp slt i64 %t14, %t4
+  br i1 %t15, label %c3, label %c4
+c3:
+  %t16 = getelementptr inbounds i64, ptr %t6, i64 %t13
+  %t17 = getelementptr inbounds i64, ptr %t6, i64 %t14
+  %t18 = load i64, ptr %t16
+  %t19 = load i64, ptr %t17
+  %t20 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t18, i64 %t19)
   %t21 = extractvalue { i64, i1 } %t20, 1
-  br i1 %t21, label %p1, label %c4
-c4:
+  br i1 %t21, label %p0, label %c6
+c6:
   %t22 = extractvalue { i64, i1 } %t20, 0
-  store i64 %t22, ptr %_3
+  store i64 %t22, ptr %t16
+  %t23 = add i64 %t13, %t12
+  store i64 %t23, ptr %t9
+  br label %c2
+c4:
+  store i64 %t12, ptr %t8
+  br label %c0
+c5:
+  %t24 = load i64, ptr %t6
+  %t25 = load i64, ptr %_3
+  %t26 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t25, i64 %t24)
+  %t27 = extractvalue { i64, i1 } %t26, 1
+  br i1 %t27, label %p1, label %c7
+c7:
+  %t28 = extractvalue { i64, i1 } %t26, 0
+  store i64 %t28, ptr %_3
   call void @llvm.stackrestore(ptr %t1)
   br label %bb1
 bb1:
-  %t23 = load i64, ptr %_3
-  store i64 %t23, ptr %_0
-  %t24 = load i64, ptr %_0
-  ret i64 %t24
+  %t29 = load i64, ptr %_3
+  store i64 %t29, ptr %_0
+  %t30 = load i64, ptr %_0
+  ret i64 %t30
 p0:
   call void @baryon_rt_panic(ptr @baryon.str.2, i64 23, ptr @baryon.loc.1)
   unreachable
@@ -196,7 +211,7 @@ declare ptr @llvm.stacksave()
 ";
 
 /// The parent stores a pointer to `step` and to the partials in the context, runs the loop,
-/// sums the partials in chunk order from 0 with an overflow check, and adds the result into
+/// sums the partials pairwise, stride 1, 2, 4, …, with an overflow check, and adds the result into
 /// `total`; the chunk function loads `step` once and passes each iteration a private `total`.
 #[test]
 fn a_prange_loop_runs_chunks_and_combines_partials_in_order() {

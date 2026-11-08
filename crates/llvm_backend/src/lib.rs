@@ -38,8 +38,8 @@
 //!   `lldb` and profilers show `.byn` lines.
 //! - **`prange` loops run on the runtime's thread pool.** The outlined body becomes a function
 //!   of its own, and a chunk function the runtime calls runs a chunk of iterations through it,
-//!   each reduction into a private copy; the copies combine in chunk order after the loop, so
-//!   a float sum gives the same bits on any number of threads (the `parallel` module).
+//!   each reduction into a private copy; the copies combine in a fixed pairwise tree after the
+//!   loop, so a float sum gives the same bits on any number of threads (the `parallel` module).
 //! - **`print` calls the runtime once per argument**, which writes the value as Python does;
 //!   the space between arguments and the line end are byte constants it prints too.
 //!

@@ -320,7 +320,9 @@ pub extern "C" fn baryon_rt_chunk_count(iterations: i64) -> i64 {
 ///
 /// # Example
 ///
-/// A sum over 1000 iterations, one partial result per chunk, combined in chunk order:
+/// A sum over 1000 iterations, one partial result per chunk. Compiled code combines the
+/// partials in the fixed pairwise tree the reference defines; an integer sum is exact in any
+/// order, so the example simply adds them:
 ///
 /// ```
 /// use runtime::{baryon_rt_chunk_count, baryon_rt_parallel_for};
