@@ -23,6 +23,9 @@
 //!   [`Raise`](TerminatorKind::Raise) (decision 0005).
 //! - **Argument modes**: each call [`Argument`] is a read-only borrow, an `InOut` borrow or an
 //!   owned value, as decision 0006 defines. References never become values.
+//! - **Parallel loops**: a `prange` loop's body is a separate [outlined](Body::outlined) body,
+//!   run by a [`ParallelFor`](TerminatorKind::ParallelFor) that lists every place it shares
+//!   and every value it reduces into.
 //!
 //! [`Body::validate`] checks the structural rules every body keeps, and [`Body::display`] writes
 //! the text form used in tests and when debugging the compiler.
@@ -97,7 +100,7 @@ pub use operand::{
 };
 pub use place::{Place, Projection};
 pub use statement::{
-    Argument, Builtin, Callee, Check, ErrorEdge, Statement, StatementKind, Terminator,
+    Argument, Builtin, Callee, Check, ErrorEdge, Reduction, Statement, StatementKind, Terminator,
     TerminatorKind,
 };
 pub use validate::Invalid;
@@ -121,6 +124,12 @@ pub struct Body<'db> {
     pub blocks: Vec<BasicBlock<'db>>,
     /// The whole function in the source, for debug information.
     pub span: Span,
+    /// The bodies of the function's `prange` loops, each called by a
+    /// [`ParallelFor`](TerminatorKind::ParallelFor) that names its position here. They share
+    /// the function's phase and type parameters, and pass over them as the function does.
+    /// Empty in a function with no `prange`, and in an outlined body itself, since `prange`
+    /// loops do not nest.
+    pub outlined: Vec<Body<'db>>,
 }
 
 impl<'db> Body<'db> {
@@ -139,6 +148,7 @@ impl<'db> Body<'db> {
             parameter_count: 0,
             blocks: Vec::new(),
             span,
+            outlined: Vec::new(),
         }
     }
 

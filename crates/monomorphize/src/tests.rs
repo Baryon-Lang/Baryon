@@ -240,3 +240,41 @@ fn literals_take_the_instance_number_type() {
         }
     );
 }
+
+/// The body of a `prange` loop in a generic function is instantiated with the function: its
+/// locals and the loop's count take the instance's types.
+#[test]
+fn outlined_bodies_are_substituted() {
+    let database = Database::default();
+    let (file, name) = named(&database, "T");
+    let t = Type::new(&database, TypeKind::Parameter { file, name });
+    let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
+    let none = Type::new(&database, TypeKind::None);
+    let mut outlined = Body::new(none, span());
+    outlined.push_local(t, LocalKind::Temporary, span());
+    let mut body = Body::new(t, span());
+    body.outlined.push(outlined);
+    body.push_block(Terminator {
+        kind: TerminatorKind::ParallelFor {
+            body: 0,
+            count: Operand::Constant(Constant::integer(t, 4)),
+            arguments: Vec::new(),
+            reductions: Vec::new(),
+            target: BlockId::new(0),
+        },
+        span: span(),
+    });
+
+    let instance = instantiate(&database, &body, &[t], &[f64]);
+    assert_eq!(instance.outlined[0].locals[1].ty, f64);
+    let TerminatorKind::ParallelFor { count, .. } = &instance.blocks[0].terminator.kind else {
+        panic!("the loop is kept");
+    };
+    assert_eq!(
+        count,
+        &Operand::Constant(Constant {
+            ty: f64,
+            value: ConstantValue::Float(4.0_f64.to_bits()),
+        })
+    );
+}

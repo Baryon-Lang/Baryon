@@ -2,7 +2,8 @@
 //!
 //! The form follows Rust's MIR dumps, so it reads familiarly to anyone who has seen one: locals
 //! are `_0`, `_1` and so on, blocks are `bb0`, `bb1`, and each operation names its operator in
-//! full. It is for people, not a format another stage parses.
+//! full. Each outlined `prange` body follows the function, as `body0: fn(…)`, `body1` and so on.
+//! It is for people, not a format another stage parses.
 
 use crate::{
     Argument, BinaryOperator, Body, Callee, Check, ConstantValue, Elementwise, LocalKind, Operand,
@@ -95,7 +96,11 @@ impl fmt::Display for DisplayedBody<'_, '_> {
             )?;
             writeln!(formatter, "    }}")?;
         }
-        writeln!(formatter, "}}")
+        writeln!(formatter, "}}")?;
+        for (position, outlined) in body.outlined.iter().enumerate() {
+            write!(formatter, "\nbody{position}: {}", outlined.display(self.db))?;
+        }
+        Ok(())
     }
 }
 
@@ -238,14 +243,7 @@ impl Writer<'_> {
                 target,
                 error,
             } => {
-                let arguments = arguments
-                    .iter()
-                    .map(|argument| match argument {
-                        Argument::Borrow(place) => place_text(place),
-                        Argument::InOut(place) => format!("inout {}", place_text(place)),
-                        Argument::Owned(operand) => format!("owned {}", self.operand(operand)),
-                    })
-                    .collect::<Vec<_>>();
+                let arguments = self.arguments(arguments);
                 let error = error.as_ref().map_or_else(String::new, |edge| {
                     format!(", error _{}: bb{}", edge.error.index(), edge.target.index())
                 });
@@ -254,6 +252,25 @@ impl Writer<'_> {
                     place_text(destination),
                     self.callee(callee),
                     arguments.join(", "),
+                    target.index()
+                )
+            }
+            TerminatorKind::ParallelFor {
+                body,
+                count,
+                arguments,
+                reductions,
+                target,
+            } => {
+                let mut values = self.arguments(arguments);
+                values.extend(reductions.iter().map(|reduction| {
+                    let operator = binary_name(reduction.operator);
+                    format!("reduce {operator} {}", place_text(&reduction.place))
+                }));
+                format!(
+                    "parallel_for body{body}({}; {}) -> bb{}",
+                    self.operand(count),
+                    values.join(", "),
                     target.index()
                 )
             }
@@ -269,6 +286,18 @@ impl Writer<'_> {
             ),
             TerminatorKind::Unreachable => "unreachable".to_owned(),
         }
+    }
+
+    /// Call arguments, each marked with its mode: `_1`, `inout _2`, `owned copy _3`.
+    fn arguments(self, arguments: &[Argument<'_>]) -> Vec<String> {
+        arguments
+            .iter()
+            .map(|argument| match argument {
+                Argument::Borrow(place) => place_text(place),
+                Argument::InOut(place) => format!("inout {}", place_text(place)),
+                Argument::Owned(operand) => format!("owned {}", self.operand(operand)),
+            })
+            .collect()
     }
 
     /// The function a call calls: its name and type arguments, the operand holding it, or a
