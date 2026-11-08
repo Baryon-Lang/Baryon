@@ -8,9 +8,18 @@ use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::{Declaration, Item, Primitive, Type, TypeKind, Value};
 
 impl<'db> Builder<'db> {
-    /// The constant `node` names: a `Final` constant, or an enum member such as `Side.LEFT`.
+    /// The constant `node` names: a `Final` constant, an enum member such as `Side.LEFT`, or a
+    /// module-level function read as a value, such as `lorenz` passed to a `Callable`
+    /// parameter. A function's value takes no bytes, since its type names the function
+    /// (decision 0026), so it is written as `None` at that type.
     pub(crate) fn named_constant(&mut self, node: NodeId) -> Option<Constant<'db>> {
         let ty = self.ty(node);
+        if matches!(ty.kind(self.db), TypeKind::Function { .. }) {
+            return Some(Constant {
+                ty,
+                value: ConstantValue::None,
+            });
+        }
         match self.tree.kind(node) {
             SyntaxKind::Name => {
                 let &Definition::Item(file, name) = self.definition(node)? else {

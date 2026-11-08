@@ -2,12 +2,13 @@
 //!
 //! The form follows Rust's MIR dumps, so it reads familiarly to anyone who has seen one: locals
 //! are `_0`, `_1` and so on, blocks are `bb0`, `bb1`, and each operation names its operator in
-//! full. Each outlined `prange` body follows the function, as `body0: fn(…)`, `body1` and so on.
+//! full. The header block of a `simd` loop reads `bb2 (simd):`. Each outlined `prange` body
+//! follows the function, as `body0: fn(…)`, `body1` and so on.
 //! It is for people, not a format another stage parses.
 
 use crate::{
-    Argument, BinaryOperator, Body, Callee, Check, ConstantValue, Elementwise, LocalKind, Operand,
-    Piece, Place, Projection, Rvalue, StatementKind, TerminatorKind, UnaryOperator,
+    Argument, BinaryOperator, BlockId, Body, Callee, Check, ConstantValue, Elementwise, LocalKind,
+    Operand, Piece, Place, Projection, Rvalue, StatementKind, TerminatorKind, UnaryOperator,
 };
 use database::Db;
 use std::fmt::{self, Write};
@@ -107,7 +108,12 @@ impl fmt::Display for DisplayedBody<'_, '_> {
             )?;
         }
         for (index, block) in body.blocks.iter().enumerate() {
-            writeln!(formatter, "\n    bb{index}: {{")?;
+            let mark = if body.vectorized.contains(&BlockId::new(index)) {
+                " (simd)"
+            } else {
+                ""
+            };
+            writeln!(formatter, "\n    bb{index}{mark}: {{")?;
             for statement in &block.statements {
                 let text = match &statement.kind {
                     StatementKind::Assign(place, rvalue) => {

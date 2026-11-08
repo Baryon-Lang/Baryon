@@ -10,7 +10,8 @@ use types::{Nominal, Type, TypeDb, TypeKind};
 /// Equal types match. A type that contains an unknown type, from an error already reported,
 /// matches anything, so one mistake gives one message. A type parameter is rigid: inside a
 /// generic body, `T` matches only `T`. `None` and a `T` match `T | None`; a `T | None` does not
-/// match `T` until a `None` check narrows it (the `flow` module).
+/// match `T` until a `None` check narrows it (the `flow` module). A function's own type matches
+/// a `Callable` with its signature (decision 0026).
 pub(crate) fn compatible<'db>(db: &'db dyn TypeDb, expected: Type<'db>, found: Type<'db>) -> bool {
     let unknown = |ty: Type<'db>| matches!(ty.kind(db), TypeKind::Unknown);
     if expected == found || contains(db, expected, &unknown) || contains(db, found, &unknown) {
@@ -19,6 +20,9 @@ pub(crate) fn compatible<'db>(db: &'db dyn TypeDb, expected: Type<'db>, found: T
     match (expected.kind(db), found.kind(db)) {
         (TypeKind::Optional(_), TypeKind::None) => true,
         (TypeKind::Optional(value), _) => compatible(db, *value, found),
+        (TypeKind::Callable { .. }, TypeKind::Function { callable, .. }) => {
+            compatible(db, expected, *callable)
+        }
         _ => false,
     }
 }
