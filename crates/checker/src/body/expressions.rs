@@ -186,8 +186,8 @@ impl<'db> Body<'db> {
     }
 
     /// The type of a module-level definition read as a value: a constant's type, or a
-    /// function's own type, which matches a `Callable` with its signature (decision 0026). A class or alias read as a value, which only a later
-    /// slice gives a type, is unknown.
+    /// function's own type, which matches a `Callable` with its signature (decision 0026). A
+    /// class or alias read as a value, which only a later slice gives a type, is unknown.
     fn item_value(&mut self, file: database::File, name: NodeId) -> Type<'db> {
         let kind = outline(self.db, file)
             .get(name)

@@ -71,8 +71,8 @@
 //! ```
 
 use mir::{
-    Argument, Body, Callee, Constant, ConstantValue, Elementwise, Operand, Rvalue, StatementKind,
-    TerminatorKind,
+    Argument, Body, Callee, Constant, ConstantValue, Elementwise, LocalKind, Operand, Rvalue,
+    StatementKind, TerminatorKind,
 };
 use types::{Nominal, Primitive, Type, TypeKind};
 
@@ -82,8 +82,12 @@ use types::{Nominal, Primitive, Type, TypeKind};
 /// unchanged; drop elaboration and array expansion still follow.
 ///
 /// A `Callable` parameter is an implicit type parameter (decision 0026): `parameters` may end
-/// with its `Callable` type and `arguments` with the function's own type that the instance
-/// received. A call of the parameter then becomes a direct call of that function.
+/// with one `Callable` type per `Callable` parameter, in the order the signature lists them, and
+/// `arguments` with the function's own type that the instance received for each. A call of the
+/// parameter then becomes a direct call of that function. Two `Callable` parameters of one
+/// signature have the same type, so each parameter's local takes its own function's type
+/// directly; the `Callable` type itself is replaced elsewhere in the body only when every
+/// parameter of that type received the same function.
 ///
 /// Cost: one visit of every type in the body. Types are interned, so a type that mentions no
 /// parameter is returned as it is, and rebuilding one that does costs one intern per node.
@@ -104,16 +108,57 @@ pub fn instantiate<'db>(
         arguments.len(),
         "one type argument per type parameter"
     );
+    // A `Callable` type that received two different functions names neither; it stays as it
+    // is, and only the parameters' own locals learn which function each one holds.
+    let (listed, replacing): (Vec<Type<'db>>, Vec<Type<'db>>) = parameters
+        .iter()
+        .zip(arguments)
+        .filter(|&(&parameter, &argument)| {
+            !matches!(parameter.kind(db), TypeKind::Callable { .. })
+                || parameters
+                    .iter()
+                    .zip(arguments)
+                    .all(|(&other, &received)| other != parameter || received == argument)
+        })
+        .map(|(&parameter, &argument)| (parameter, argument))
+        .unzip();
     let substitution = Substitution {
         db,
-        parameters,
-        arguments,
+        parameters: &listed,
+        arguments: &replacing,
     };
     let mut body = generic.clone();
     substitution.body(&mut body);
+    let received = parameters
+        .iter()
+        .zip(arguments)
+        .filter(|(parameter, _)| matches!(parameter.kind(db), TypeKind::Callable { .. }))
+        .map(|(_, &argument)| argument);
+    callable_parameters(db, &mut body, received);
     direct_calls(db, &mut body);
     whole_array_arithmetic(db, &mut body);
     body
+}
+
+/// Gives each `Callable` parameter's local of `body`, in order, the type of the function it
+/// `received`, so a call of it becomes a direct call of that function even when another
+/// `Callable` parameter shares its signature.
+fn callable_parameters<'db>(
+    db: &'db dyn salsa::Database,
+    body: &mut Body<'db>,
+    mut received: impl Iterator<Item = Type<'db>>,
+) {
+    for local in &mut body.locals {
+        if matches!(local.kind, LocalKind::Parameter { .. })
+            && matches!(
+                local.ty.kind(db),
+                TypeKind::Callable { .. } | TypeKind::Function { .. }
+            )
+            && let Some(function) = received.next()
+        {
+            local.ty = function;
+        }
+    }
 }
 
 /// Turns arithmetic whose result is now an array into a whole-array expression, in `body` and

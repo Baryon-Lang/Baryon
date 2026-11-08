@@ -213,6 +213,29 @@ def main():
     prints("functions-as-arguments", program, "81.0 512.0 4.5\n").unwrap();
 }
 
+/// Two `Callable` parameters of one signature each call the function passed to them, not both
+/// the first: the instances for `(square, half)` and `(half, square)` are distinct functions.
+#[test]
+fn callable_parameters_of_one_signature_stay_apart() {
+    let program = "\
+def square(x: f64) -> f64:
+    return x * x
+
+
+def half(x: f64) -> f64:
+    return x / 2.0
+
+
+def compose(f: Callable[[f64], f64], g: Callable[[f64], f64], x: f64) -> f64:
+    return g(f(x))
+
+
+def main():
+    print(compose(square, half, 3.0), compose(half, square, 3.0))
+";
+    prints("callables-of-one-signature", program, "4.5 2.25\n").unwrap();
+}
+
 /// A `VectorSpace` function at a `Fixed` vector and at `f64`: scaling by an `f64` applies to
 /// every element of the vector, as `NumPy` broadcasting does.
 #[test]
