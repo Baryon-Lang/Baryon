@@ -27,6 +27,8 @@
 //!   `raise`, goes to the innermost `except` that names the error, or else drops what the
 //!   function owns and [`Raise`](mir::TerminatorKind::Raise)s it to the caller. A bare `raise`
 //!   raises the caught error again.
+//! - **`match`.** Each case tests its pattern part by part, branching to the next case at the
+//!   first part that does not match, then assigns its captures and tests its guard.
 //! - **Arrays.** `a[i, j]` is a place with one index local per dimension, and a negative literal
 //!   counts back from the length. Whole-array arithmetic stays one
 //!   [`Elementwise`](mir::Rvalue::Elementwise) expression for array expansion to loop over.
@@ -43,11 +45,11 @@
 //! # What it does not lower yet
 //!
 //! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
-//! 1.9.3, and no body: slices, indexing lists and strings, `prange`, `match`, `raise ... from`,
-//! an `except` that names its error through a module, calls that leave out a defaulted argument,
-//! the built-in functions and methods other than `len` of an array and the array constructors,
-//! calls of a `Callable` value, `**`, `@`, `in`, unpacking assignment, `with` other than
-//! `with unsafe:`, and comprehensions.
+//! 1.9.3, and no body: slices, indexing lists and strings, `prange`, `match` captures of values
+//! that are not copy types or inside `|`, `raise ... from`, an `except` that names its error
+//! through a module, calls that leave out a defaulted argument, the built-in functions and
+//! methods other than `len` of an array and the array constructors, calls of a `Callable` value,
+//! `**`, `@`, `in`, unpacking assignment, `with` other than `with unsafe:`, and comprehensions.
 //!
 //! # Example
 //!
@@ -199,6 +201,7 @@ mod creation;
 mod errors;
 mod expressions;
 mod facts;
+mod patterns;
 mod statements;
 #[cfg(test)]
 mod tests;

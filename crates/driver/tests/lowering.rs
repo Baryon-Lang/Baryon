@@ -581,3 +581,63 @@ fn(_1: i64) -> i64 {
 "
     );
 }
+
+/// An argument passed where its parameter wants an optional or another number type is converted
+/// first, into a temporary when the parameter is borrowed, so the callee reads the layout it
+/// expects. A value that owns memory cannot be wrapped without moving it, so borrowing one as an
+/// optional is not lowered yet.
+#[test]
+fn arguments_take_their_parameters_type() {
+    let program = r"class Particle(Struct, Copy):
+    mass: f64
+
+
+def f(particle: Particle | None, d: f64 | None, n: Owned[i64 | None]) -> f64:
+    return 0.0
+
+
+def g(values: Array[f64, 1] | None) -> f64:
+    return 0.0
+
+
+def caller() -> f64:
+    p = Particle(2.0)
+    return f(p, 1.0, 3)
+
+
+def array_caller(a: Array[f64, 1]) -> f64:
+    return g(a)
+";
+    assert_eq!(
+        lower(program, "caller"),
+        r"fn() -> f64 {
+    let _0: f64; // return
+    let _1: Particle; // p
+    let _2: Particle | None;
+    let _3: f64 | None;
+    let _4: i64 | None;
+
+    bb0: {
+        _1 = Particle(2.0_f64);
+        _2 = Particle | None(copy _1);
+        _3 = f64 | None(1.0_f64);
+        _4 = i64 | None(3_i64);
+        _0 = call f(_2, _3, owned copy _4) -> [return: bb1];
+    }
+
+    bb1: {
+        return;
+    }
+}
+"
+    );
+    assert_eq!(
+        lower(program, "array_caller"),
+        r"error: lowering does not handle borrowing a value that is not a copy type as an optional yet
+  --> main.npl:19:14
+   |
+19 |     return g(a)
+   |              ^ not lowered yet
+   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}
