@@ -40,7 +40,8 @@ def main():
 
 Every Baryon file is valid Python syntax, so any editor's Python mode highlights it. In VS Code,
 the [Baryon extension](../../editors/vscode/README.md) also shows the compiler's errors as you
-type. Run the program with `baryon run` and the package's directory:
+type; [Coding Baryon in VS Code](vscode.md) sets it up. Run the program with `baryon run` and the
+package's directory:
 
 ```text
 $ baryon run hello
@@ -457,6 +458,8 @@ it as it is. [Tests](../reference/tests.md) has the details.
 
 ## Where to go next
 
+- [Coding Baryon in VS Code](vscode.md) sets up the editor, with errors underlined as you type and
+  tasks that run and test a package.
 - [Differences from Python](../reference/differences-from-python.md) lists every place a Python
   programmer will be surprised, with the reason.
 - [Values and references](../reference/values-and-references.md) explains borrowing, `InOut`

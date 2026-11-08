@@ -20,7 +20,9 @@ error: lowering does not handle `**` yet
 ```
 
 So a program that `baryon check` accepts but `baryon build` rejects is not wrong: it uses a part of
-the language that is specified and checked, but not built yet.
+the language that is specified and checked, but not built yet. The editor sees the same split:
+[Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
+type, while `baryon run` builds only what this page lists.
 
 This page was last brought up to date on 2026-11-08, when the pairwise float `sum` began to
 build. Every pull request that teaches lowering or the backend something new updates the table

@@ -48,6 +48,9 @@ Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
 compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
+Release 0.1.0, a review release for people trying the language and reviewing its documentation,
+code and design, is being prepared; [`CHANGELOG.md`](CHANGELOG.md) says what it holds.
+
 [`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the
 place to add new ideas. The reasoning behind it is in the
 [design plan](docs/design/language-design-plan.md).
@@ -71,7 +74,10 @@ cargo install --locked cargo-deny@0.20.2
 
 ## Documentation
 
-New to Baryon? Start with the [beginner's guide](docs/guide/README.md).
+New to Baryon? Start with the [beginner's guide](docs/guide/README.md). To try it in an editor,
+[Coding Baryon in VS Code](docs/guide/vscode.md) sets up VS Code, from building `baryon` to
+running and testing a first program. [`CHANGELOG.md`](CHANGELOG.md) says what each release
+holds.
 
 [`docs/README.md`](docs/README.md) lists every document by reader: learning the language,
 contributing to the compiler, or integrating one of its crates.
@@ -81,6 +87,7 @@ contributing to the compiler, or integrating one of its crates.
 | Path | Contents |
 | --- | --- |
 | `ROADMAP.md` | Phases, work items, decisions and ideas: the source of truth |
+| `CHANGELOG.md` | Release notes: what each release holds |
 | `crates/` | The compiler, one crate per responsibility |
 | `xtask/` | Repository automation behind `cargo xtask` |
 | `deny.toml` | Dependency rules: allowed licenses and sources, advisories, duplicate crates |
@@ -90,6 +97,7 @@ contributing to the compiler, or integrating one of its crates.
 | `docs/architecture.md` | Crate kinds and dependency rules |
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan |
+| `docs/guide/` | The beginner's guide and the VS Code setup guide, both run in CI as written |
 | `docs/examples/` | Example programs written in the language |
 | `docs/reference/` | The language reference: what a program may say and what it means |
 | `.github/` | CI workflow and pull request template |

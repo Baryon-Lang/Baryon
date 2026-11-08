@@ -184,6 +184,20 @@ registry and a standalone IDE are candidates, each added here when it is planned
 | 3.17 | Python interop with zero-copy arrays | 3 | 1.10 | Planned | — | — |
 | 4.1 | C++ interop: header import, templates by instantiation, exceptions at the boundary | 12+ | 3.5 | Planned | — | — |
 
+## Releases
+
+A release is a tag on `main` that people outside the project can try. Each release is one item
+here, with one row per step; [`CHANGELOG.md`](CHANGELOG.md) says what it holds.
+
+| ID | Item | Weeks | Depends on | Status | Owner | Link |
+| --- | --- | --- | --- | --- | --- | --- |
+| R.1 | Release 0.1.0, a review release: everything on `main` that passes CI, documented so that testers can install it, write and run programs, and review the documentation, code and design | — | — | In progress | Claude | [CHANGELOG](CHANGELOG.md) |
+| R.1.1 | A setup guide for testers, run in CI as written: build `baryon`, install the VS Code extension, set `baryon.path`, open a package, see errors as you type, run, test, editor tasks and troubleshooting | 0.1 | 1.17 | Done | Claude | [#PR](https://github.com/Baryon-Lang/Baryon/pull/PR) |
+| R.1.2 | Release notes for 0.1.0 in `CHANGELOG.md`, and the workspace version set to 0.1.0 | 0.1 | — | Done | Claude | [#PR](https://github.com/Baryon-Lang/Baryon/pull/PR) |
+| R.1.3 | Check the README, documentation map and guides against What builds today, and fix what is stale | 0.1 | — | Done | Claude | [#PR](https://github.com/Baryon-Lang/Baryon/pull/PR) |
+| R.1.4 | Merge the pull requests queued when the release was planned, then bring `CHANGELOG.md`, What builds today and the README's status up to date with `main` | 0.1 | R.1.2 | Planned | — | — |
+| R.1.5 | Collins approves the release; tag `v0.1.0` on `main` and publish a GitHub release with the notes and `baryon-0.2.0.vsix` attached | — | R.1.4 | Planned | — | — |
+
 ## Decisions needed
 
 Open questions from the design plan and its review. A decision is `Done` once it is recorded in
