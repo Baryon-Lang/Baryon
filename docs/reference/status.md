@@ -48,7 +48,7 @@ listed against it.
 | Assignment, annotated assignment, augmented assignment with every operator but `**=` | `**=`; unpacking assignment, `a, b = e` |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
 | `for` over `range` with a constant step, positive or negative | `for` over arrays, lists, strings or tuples; a `range` step that is not a constant |
-| `def` at module level and methods; keyword arguments; default parameter values that are literals or `Final` constants | Leaving out an argument whose default is any other expression |
+| `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values) that are literals or `Final` constants | Leaving out an argument whose default is any other expression |
 | `class` with `Struct`, `Copy`, `Exception` and `Enum` bases; `@layout("C")` | |
 | `raise` and `try`/`except`, including bare `raise` | `raise ... from` |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |

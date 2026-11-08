@@ -1,7 +1,7 @@
 # Building a New Compiled Language: Technical Plan
 
 First written Nov 4, 2026 by Collins Simpson. Brought up to date with decision records 0004 to
-0016 on Nov 6, 2026.
+0016 on Nov 6, 2026, and with records 0017 to 0023 on Nov 8, 2026.
 
 This plan explains why the language and its compiler are shaped the way they are. It is not where
 work is tracked:
@@ -427,7 +427,7 @@ The MVP standard library is deliberately narrow so the compiler team is not also
 
 | Module | Contents |
 | --- | --- |
-| `core` | numbers, `bool`, `str`, optionals, tuples, iteration |
+| `core` | numbers, `bool`, `str` (a pointer and a length; a literal is never copied, [0022](../decisions/0022-str-values.md)), optionals, tuples, iteration |
 | `array` | `Array` and `Fixed`, views, element-wise operations, reductions, `prange` and `simd` support, `matmul` through Accelerate on macOS and OpenBLAS elsewhere |
 | `collections` | `list`, `str` (UTF-8), a hash map |
 | `io` | standard streams, files, `print` with f-strings |
@@ -439,11 +439,12 @@ There is no `ffi` module ([0012](../decisions/0012-no-ffi-in-mvp.md)). Phase 3 a
 `fft` over LAPACK and FFTW or Accelerate, `data` (DataFrame), file formats, `plot`, `stats` and the
 REPL; Phase 4 adds `py` for Python interop.
 
-Tooling ships in the one `baryon` executable, as in Go and Zig: `check` (exists today: syntax,
-module and name errors), `build`, `run`, `test` with a built-in runner for `@test` functions, `bench` for
-`@bench` functions against a stored baseline, and `doc` (exists today: Markdown pages from the
-documentation strings). There is no `fmt`: Ruff and
-Black already format the files.
+Tooling ships in the one `baryon` executable, as in Go and Zig: `check`, `build`, `run`, `test`
+with a built-in runner for `@test` functions, `doc` for Markdown pages from the documentation
+strings, and `lsp`, the language server ([0019](../decisions/0019-language-server-protocol.md)),
+all of which exist today as prototypes, and `bench` for `@bench` functions against a stored
+baseline, which does not yet. [The `baryon` command](../reference/commands.md) documents each.
+There is no `fmt`: Ruff and Black already format the files.
 
 Testing the compiler needs four suites from the start: a parser corpus (exists), a type-checker
 corpus with expected diagnostics, an execution corpus that compiles, runs and compares output, and
@@ -454,7 +455,9 @@ front end accepts the full language (roadmap 1.18).
 
 A language server first, a VS Code extension second, and a standalone IDE only if real users need
 one. The language server is the compiler's query engine behind the Language Server Protocol, so
-every feature is nearly free once its query exists.
+every feature is nearly free once its query exists. It is `baryon lsp`, in the `baryon` executable,
+and speaks the protocol over `serde_json` rather than through a framework
+([0019](../decisions/0019-language-server-protocol.md)).
 
 | Feature | Phase | Query it uses |
 | --- | --- | --- |
@@ -560,6 +563,12 @@ Where this plan pushes back on the brief:
 | Parallel loops add into shared arrays they list in `accumulate=` | [0013](../decisions/0013-parallel-accumulation.md) |
 | Classes have no inheritance | [0015](../decisions/0015-no-class-inheritance.md) |
 | Incremental queries run on `salsa` | [0016](../decisions/0016-salsa-query-engine.md) |
+| `@layout("C")` pins a struct's declared layout and silences the padding warning | [0017](../decisions/0017-layout-decorator.md) |
+| The mid-level IR is basic blocks over typed locals and places | [0018](../decisions/0018-mid-level-ir.md) |
+| The language server is `baryon lsp`, speaking the protocol over `serde_json` | [0019](../decisions/0019-language-server-protocol.md) |
+| The first LLVM backend writes textual IR and hands it to `clang` | [0020](../decisions/0020-llvm-backend-emits-text.md) |
+| The runtime is one Rust crate of its own kind, allowed `unsafe` | [0021](../decisions/0021-runtime-crate-and-unsafe-code.md) |
+| A `str` is a pointer and a length, and a literal is never copied | [0022](../decisions/0022-str-values.md) |
 | The language is Baryon: files end in `.byn`, the tool is `baryon` | [0023](../decisions/0023-language-name-baryon.md) |
 
 Platform for the MVP: macOS on Apple silicon, because the development machines are Macs; Linux
