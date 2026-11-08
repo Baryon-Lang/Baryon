@@ -219,6 +219,12 @@ impl<'db> Builder<'db> {
         self.diagnostics.extend(diagnostics);
     }
 
+    /// How many errors lowering has reported so far; a caller compares two counts to tell
+    /// whether a step it took reported one.
+    pub(crate) fn reported(&self) -> usize {
+        self.diagnostics.len()
+    }
+
     /// The name of the variable or parameter `local`; empty for any other local.
     pub(crate) fn local_name(&self, local: Local) -> String {
         match &self.body.locals[local.index()].kind {
