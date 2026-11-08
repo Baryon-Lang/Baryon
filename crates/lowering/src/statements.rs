@@ -131,7 +131,7 @@ impl<'db> Builder<'db> {
     }
 
     /// `_0 = None`, for a `return` without a value.
-    fn return_none(&mut self, node: NodeId) {
+    pub(crate) fn return_none(&mut self, node: NodeId) {
         let nothing = Operand::Constant(Constant {
             ty: self.returns,
             value: ConstantValue::None,
@@ -302,9 +302,15 @@ impl<'db> Builder<'db> {
         let Some(variable) = self.target_variable(target) else {
             return self.unsupported(target, "`for` loops that unpack");
         };
+        if self.is_prange(iterator) && self.has_keyword(iterator) {
+            return self.unsupported(iterator, "`accumulate=` in `prange`");
+        }
         let Some((first, bound, step)) = self.range(iterator) else {
             return;
         };
+        if self.is_prange(iterator) {
+            return self.parallel_for(statement, variable, first, bound, step);
+        }
         let ty = self.local_type(variable);
         let counter = self.temporary(ty, iterator);
         match first {
@@ -366,14 +372,16 @@ impl<'db> Builder<'db> {
         self.start(end);
     }
 
-    /// The start, stop and step of `range(start, stop, step)` at `iterator`: the start and
+    /// The start, stop and step of `range(start, stop, step)` or `prange(…)` at `iterator`: the start and
     /// stop nodes, the start `None` when left out, and the step's value. `None` after an error
     /// when `iterator` is not such a call.
     fn range(&mut self, iterator: NodeId) -> Option<(Option<NodeId>, NodeId, i128)> {
         let arguments = self
             .typed
             .call(iterator)
-            .filter(|call| matches!(&call.callee, types::Callee::Builtin(name) if name == "range"))
+            .filter(|call| {
+                matches!(&call.callee, types::Callee::Builtin(name) if name == "range" || name == "prange")
+            })
             .and_then(|call| {
                 call.arguments
                     .iter()

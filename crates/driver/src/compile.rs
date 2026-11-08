@@ -332,9 +332,12 @@ impl<'db> Instances<'db> {
         Some(instance)
     }
 
-    /// Adds each instance of a generic function that `body` calls and is not yet found. The body
-    /// is an instance's, so its type arguments are concrete.
+    /// Adds each instance of a generic function that `body` or one of its `prange` bodies calls
+    /// and is not yet found. The body is an instance's, so its type arguments are concrete.
     fn follow(&mut self, body: &Body<'db>) {
+        for outlined in &body.outlined {
+            self.follow(outlined);
+        }
         for block in &body.blocks {
             if let TerminatorKind::Call {
                 callee:
