@@ -50,6 +50,7 @@ mod numbers;
 mod operators;
 mod parallel;
 mod patterns;
+mod random;
 mod relations;
 mod shared;
 

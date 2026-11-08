@@ -181,6 +181,12 @@ impl<'db> Body<'db> {
                     .unwrap_or_else(|| self.lowerer.unknown())
             }
             Some(&Definition::Item(file, name)) => self.item_value(file, name),
+            Some(Definition::Standard {
+                module: "math",
+                member: Some(member),
+            }) if super::math::is_constant(member) => {
+                Type::new(self.db, TypeKind::Primitive(Primitive::Float(Float::F64)))
+            }
             _ => self.lowerer.unknown(),
         }
     }

@@ -71,6 +71,7 @@ mod location;
 mod memory;
 mod panic;
 mod parallel;
+mod philox;
 mod print;
 mod sum;
 
@@ -79,13 +80,14 @@ pub use abi::{
     baryon_rt_accumulator_new, baryon_rt_accumulator_slot, baryon_rt_allocate,
     baryon_rt_allocate_array, baryon_rt_chunk_count, baryon_rt_deallocate, baryon_rt_panic,
     baryon_rt_panic_index, baryon_rt_panic_length_mismatch, baryon_rt_parallel_for,
-    baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
-    baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64, baryon_rt_sum_f32,
-    baryon_rt_sum_f64, baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64,
-    baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,
-    baryon_rt_text_u64,
+    baryon_rt_philox_new, baryon_rt_philox_uniform, baryon_rt_print_bool, baryon_rt_print_f32,
+    baryon_rt_print_f64, baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted,
+    baryon_rt_print_u64, baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_text_bool,
+    baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish, baryon_rt_text_i64,
+    baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
 };
 pub use accumulate::Accumulator;
 pub use format::FormatSpec;
 pub use location::Location;
 pub use parallel::ChunkBody;
+pub use philox::Philox;

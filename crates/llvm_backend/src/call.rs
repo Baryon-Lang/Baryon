@@ -30,14 +30,8 @@ impl<'db> Function<'_, '_, 'db> {
                 item,
                 type_arguments,
             } => (item, type_arguments),
-            Callee::Builtin(Builtin::Print) => return self.print(arguments, target),
-            Callee::Builtin(Builtin::Math(function)) => {
-                return self.math(*function, arguments, destination, target);
-            }
-            Callee::Builtin(Builtin::Append) => return self.list_append(arguments, target),
-            Callee::Builtin(Builtin::Sum) => return self.sum(arguments, destination, target),
-            Callee::Builtin(Builtin::Philox | Builtin::Uniform) => {
-                return Err(Unsupported::new("`random.Philox`"));
+            Callee::Builtin(builtin) => {
+                return self.builtin(*builtin, arguments, destination, target);
             }
             Callee::Value(_) => return Err(Unsupported::new("calls of `Callable` values")),
         };
@@ -123,5 +117,24 @@ impl<'db> Function<'_, '_, 'db> {
         }
         self.line(&format!("br label %{target}"));
         Ok(())
+    }
+
+    /// Writes a call of the built-in function `builtin`, each of which the backend expands in
+    /// place or turns into a call of the runtime, rather than a call of a compiled function.
+    fn builtin(
+        &mut self,
+        builtin: Builtin,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+        target: BlockId,
+    ) -> Result<(), Unsupported> {
+        match builtin {
+            Builtin::Print => self.print(arguments, target),
+            Builtin::Math(function) => self.math(function, arguments, destination, target),
+            Builtin::Append => self.list_append(arguments, target),
+            Builtin::Sum => self.sum(arguments, destination, target),
+            Builtin::Philox => self.philox(arguments, destination, target),
+            Builtin::Uniform => self.uniform(arguments, destination, target),
+        }
     }
 }
