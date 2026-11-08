@@ -188,6 +188,10 @@ impl<'db> Function<'_, '_, 'db> {
     fn drop_value(&mut self, address: &str, ty: Type<'db>) -> Result<(), Unsupported> {
         match ty.kind(self.types.db) {
             TypeKind::Array { .. } => self.free_array(address, ty),
+            TypeKind::Str => {
+                self.free_text(address);
+                Ok(())
+            }
             TypeKind::Tuple(_) | TypeKind::Struct(_) => {
                 let container = self.types.value(ty)?;
                 let mut position = 0;
@@ -223,11 +227,11 @@ impl<'db> Function<'_, '_, 'db> {
         }
     }
 
-    /// Whether a value of `ty` owns memory a drop frees: an array, or a tuple, struct or
-    /// optional holding one.
+    /// Whether a value of `ty` owns memory a drop frees: an array or a `str`, or a tuple,
+    /// struct or optional holding one.
     fn owns_memory(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.types.db) {
-            TypeKind::Array { .. } => true,
+            TypeKind::Array { .. } | TypeKind::Str => true,
             TypeKind::Optional(value) => self.owns_memory(*value),
             TypeKind::Tuple(_) | TypeKind::Struct(_) => (0..)
                 .map_while(|position| self.field(ty, position).ok())

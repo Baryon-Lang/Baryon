@@ -1,6 +1,6 @@
 # 0022. A `str` is a pointer and a length, and a literal is never copied
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-07
 Roadmap: 1.10.8
 

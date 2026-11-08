@@ -39,10 +39,14 @@
 //! - **`print` calls the runtime once per argument**, which writes the value as Python does;
 //!   the space between arguments and the line end are byte constants it prints too.
 //!
+//! - **A `str` is its bytes and a length** (decision 0022). A literal's bytes are a constant
+//!   that is never copied; the top bit of its length says so, and a drop frees only a string
+//!   whose bit is clear.
+//!
 //! The backend so far (roadmap 1.10.1 to 1.10.10) covers numbers, `bool`, enums without data,
-//! tuples and structs, `Array` and `Fixed`, optionals, control flow, direct calls, errors,
-//! checks, line tables and `print` of numbers, `bool` and string literals. A body that uses
-//! anything else, such as a string value or a list, gets an [`Unsupported`] error naming it.
+//! tuples and structs, `Array` and `Fixed`, optionals, `str` values, control flow, direct calls,
+//! errors, checks, line tables and `print`. A body that uses anything else, such as an f-string
+//! or a list, gets an [`Unsupported`] error naming it.
 //!
 //! # Example
 //!
@@ -122,6 +126,7 @@ mod function;
 mod panic;
 mod print;
 mod rvalue;
+mod text;
 mod ty;
 
 use mir::Body;
