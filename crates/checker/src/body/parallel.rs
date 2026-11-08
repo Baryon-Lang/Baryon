@@ -14,6 +14,11 @@
 //!   `raise` in it can fail with is caught by a `try` inside it (the `errors` module).
 //! - The body holds no other `prange`.
 //!
+//! A `simd` loop, `for i in simd(range(n)):`, runs several iterations at once on one core, so
+//! its body follows the same rules (decision 0011; the check of LLVM's own verdict comes with
+//! roadmap 3.7). It may sit inside a `prange` body, where both loops' rules apply, but holds no
+//! `prange` and no other `simd`.
+//!
 //! Arrays named in `accumulate=` follow their own rule, in the `accumulate` module.
 //!
 //! Each use of a shared variable is found by walking the body from the top, so a place such
@@ -26,9 +31,11 @@ use diagnostics::Diagnostic;
 use std::collections::BTreeSet;
 use syntax::{NodeId, Operator, Role, SyntaxKind};
 
-/// A `prange` loop whose body is being checked.
+/// A `prange` or `simd` loop whose body is being checked.
 pub(super) struct Parallel {
-    /// The `prange(...)` call.
+    /// Which of the two it is.
+    pub(super) kind: Kind,
+    /// The `prange(...)` or `simd(...)` call.
     pub(super) call: NodeId,
     /// The loop variable, by its binding.
     pub(super) variable: Option<NodeId>,
@@ -41,6 +48,33 @@ pub(super) struct Parallel {
     /// How many `try` frames were open when the loop started: only those opened inside it
     /// handle its errors (the `errors` module).
     pub(super) handled: usize,
+}
+
+/// The two kinds of loop whose iterations may run together.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Kind {
+    /// `prange`: iterations on several threads.
+    Parallel,
+    /// `simd`: several iterations at once on one core.
+    Vector,
+}
+
+impl Kind {
+    /// The loop's name in a message: "parallel loop" or "vector loop".
+    pub(super) fn noun(self) -> &'static str {
+        match self {
+            Kind::Parallel => "parallel loop",
+            Kind::Vector => "vector loop",
+        }
+    }
+
+    /// The label at the loop's call in a message.
+    pub(super) fn together(self) -> &'static str {
+        match self {
+            Kind::Parallel => "iterations run in parallel",
+            Kind::Vector => "iterations run several at a time",
+        }
+    }
 }
 
 /// A place's steps after its variable: a field's name, or `None` for any `[...]`.
@@ -85,28 +119,68 @@ pub(super) enum Reduction {
 impl Body<'_> {
     /// Whether `iterator` is a call to `prange`.
     pub(super) fn is_prange(&self, iterator: NodeId) -> bool {
-        self.tree.kind(iterator) == SyntaxKind::Call
+        self.calls_builtin(iterator, "prange")
+    }
+
+    /// The kind of loop `iterator` makes, when it is a call to `prange` or `simd`.
+    pub(super) fn loop_kind(&self, iterator: NodeId) -> Option<Kind> {
+        if self.is_prange(iterator) {
+            Some(Kind::Parallel)
+        } else if self.calls_builtin(iterator, "simd") {
+            Some(Kind::Vector)
+        } else {
+            None
+        }
+    }
+
+    /// Whether `node` is a call to the built-in function `name`.
+    pub(super) fn calls_builtin(&self, node: NodeId, name: &str) -> bool {
+        self.tree.kind(node) == SyntaxKind::Call
             && self
                 .tree
-                .child(iterator, Role::Function)
+                .child(node, Role::Function)
                 .is_some_and(|function| {
                     matches!(
                         self.lowerer.definition(function),
-                        Some(Definition::Builtin("prange"))
+                        Some(Definition::Builtin(builtin)) if *builtin == name
                     )
                 })
     }
 
-    /// Starts checking the `prange` loop `statement` over `call`, before its body: returns
-    /// whether it did, or reports it nested in another parallel loop.
-    pub(super) fn enter_parallel(&mut self, statement: NodeId, call: NodeId) -> bool {
-        if let Some(outer) = self.parallel.last() {
-            let diagnostic = Diagnostic::error("a parallel loop cannot run inside another")
-                .with_primary(self.tree.span(call), "inside a parallel loop")
-                .with_secondary(self.tree.span(outer.call), "the outer parallel loop")
-                .with_note(
+    /// Starts checking the `kind` loop `statement` over `call`, before its body: returns
+    /// whether it did, or reports it nested where it may not be. A `simd` loop may sit inside a
+    /// `prange` loop; every other nesting is an error.
+    pub(super) fn enter_parallel(&mut self, statement: NodeId, call: NodeId, kind: Kind) -> bool {
+        let outer = self
+            .parallel
+            .iter()
+            .rev()
+            .find(|outer| kind == Kind::Parallel || outer.kind == Kind::Vector);
+        if let Some(outer) = outer {
+            let (message, note) = match (kind, outer.kind) {
+                (Kind::Parallel, Kind::Parallel) => (
+                    "a parallel loop cannot run inside another",
                     "use `range` for the inner loop: nested parallel loops would oversubscribe the cores",
-                );
+                ),
+                (Kind::Parallel, Kind::Vector) => (
+                    "a parallel loop cannot run inside a vector loop",
+                    "swap them: put the `prange` loop outside and the `simd` loop inside",
+                ),
+                (Kind::Vector, _) => (
+                    "a vector loop cannot run inside another",
+                    "use `range` for one of them: only one loop is vectorized",
+                ),
+            };
+            let diagnostic = Diagnostic::error(message)
+                .with_primary(
+                    self.tree.span(call),
+                    format!("inside a {}", outer.kind.noun()),
+                )
+                .with_secondary(
+                    self.tree.span(outer.call),
+                    format!("the outer {}", outer.kind.noun()),
+                )
+                .with_note(note);
             self.lowerer.diagnostics.push(diagnostic);
             self.accumulate.clear();
             return false;
@@ -122,6 +196,7 @@ impl Body<'_> {
             shared.remove(&variable);
         }
         self.parallel.push(Parallel {
+            kind,
             call,
             variable,
             shared,
@@ -132,7 +207,7 @@ impl Body<'_> {
         true
     }
 
-    /// Finishes checking the `prange` loop `statement`, after its body.
+    /// Finishes checking the `prange` or `simd` loop `statement`, after its body.
     pub(super) fn leave_parallel(&mut self, statement: NodeId) {
         let Some(parallel) = self.parallel.pop() else {
             return;
@@ -164,9 +239,10 @@ impl Body<'_> {
                 _ => None,
             };
             if let Some(label) = label {
-                let diagnostic = Diagnostic::error("a parallel loop cannot end early")
+                let message = format!("a {} cannot end early", parallel.kind.noun());
+                let diagnostic = Diagnostic::error(message)
                     .with_primary(self.tree.span(child), label)
-                    .with_secondary(self.tree.span(parallel.call), "iterations run in parallel")
+                    .with_secondary(self.tree.span(parallel.call), parallel.kind.together())
                     .with_note(
                         "every iteration runs; skip the rest of one with `continue`, or use `range` for a loop that stops early",
                     );

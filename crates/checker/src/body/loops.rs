@@ -33,7 +33,7 @@ pub(super) struct Loop {
 impl Body<'_> {
     /// `for target in iterator:` and its `else`: the body runs any number of times, with the
     /// collection and, for elements that are not copy types, the element borrowed. A loop
-    /// over `prange` is also checked as a parallel loop (the `parallel` module).
+    /// over `prange` or `simd` is also checked as a parallel or vector loop (the `parallel` module).
     pub(super) fn for_statement(&mut self, statement: NodeId) {
         let iterator = self.tree.child(statement, Role::Iterator);
         let element = match iterator {
@@ -42,7 +42,8 @@ impl Body<'_> {
         };
         let collection = iterator.filter(|&iterator| self.place_root(iterator).is_some());
         let parallel = iterator.is_some_and(|iterator| {
-            self.is_prange(iterator) && self.enter_parallel(statement, iterator)
+            self.loop_kind(iterator)
+                .is_some_and(|kind| self.enter_parallel(statement, iterator, kind))
         });
         self.repeated(statement, iterator.unwrap_or(statement), |body| {
             let target = body.tree.child(statement, Role::Target);

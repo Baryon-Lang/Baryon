@@ -1,4 +1,4 @@
-//! The rules for shared variables written in a `prange` body (language reference, "Parallel
+//! The rules for shared variables written in a `prange` or `simd` body (language reference, "Parallel
 //! and vector loops", rules 2 to 4), checked over the uses the `parallel` module collected:
 //!
 //! - An element of a shared array is written only where every access to that array indexes one
@@ -134,17 +134,18 @@ impl Body<'_> {
             ),
             None => format!("indexed by `{index}`, not by a single loop variable"),
         };
+        let noun = parallel.kind.noun();
         let mut diagnostic = if access.usage == Usage::Read {
             Diagnostic::error(format!(
-                "an iteration of this parallel loop may read an element of `{name}` that another iteration writes"
+                "an iteration of this {noun} may read an element of `{name}` that another iteration writes"
             ))
         } else {
             Diagnostic::error(format!(
-                "iterations of this parallel loop may write the same element of `{name}`"
+                "iterations of this {noun} may write the same element of `{name}`"
             ))
         }
         .with_primary(self.tree.span(access.node), label)
-        .with_secondary(self.tree.span(parallel.call), "iterations run in parallel");
+        .with_secondary(self.tree.span(parallel.call), parallel.kind.together());
         if access.usage == Usage::Read {
             diagnostic = diagnostic.with_note(
                 "an array the loop writes may be read only at the loop variable's index; read a copy made before the loop instead",
@@ -170,11 +171,12 @@ impl Body<'_> {
     /// Reports `access` using the array `name`, which the loop writes element by element,
     /// without indexing it.
     fn used_whole(&mut self, parallel: &Parallel, access: &Access, name: &str) {
+        let noun = parallel.kind.noun();
         let diagnostic = Diagnostic::error(format!(
-            "`{name}` is written element by element in this parallel loop, so the body cannot use it whole"
+            "`{name}` is written element by element in this {noun}, so the body cannot use it whole"
         ))
         .with_primary(self.tree.span(access.node), "used whole here")
-        .with_secondary(self.tree.span(parallel.call), "iterations run in parallel")
+        .with_secondary(self.tree.span(parallel.call), parallel.kind.together())
         .with_note(
             "use single elements at the loop variable's index, or use `range` for this loop",
         );
@@ -189,6 +191,7 @@ impl Body<'_> {
         accesses: &[Access],
         arrays: &[(NodeId, Path)],
     ) {
+        let noun = parallel.kind.noun();
         let mut scalars: Vec<(NodeId, Path)> = Vec::new();
         for access in accesses {
             let covered = arrays
@@ -211,7 +214,7 @@ impl Body<'_> {
                     Usage::Reduce(reduction) if access.path == *path => match first {
                         None => first = Some((access.node, reduction)),
                         Some((_, known)) if known == reduction => {}
-                        Some((site, _)) => self.mixed_reduction(access, site),
+                        Some((site, _)) => self.mixed_reduction(access, site, noun),
                     },
                     Usage::Reduce(_) | Usage::Write => self.not_a_reduction(parallel, access),
                 }
@@ -223,7 +226,7 @@ impl Body<'_> {
                 if access.usage == Usage::Read {
                     let name = self.tree.text(site, self.text);
                     let diagnostic = Diagnostic::error(format!(
-                        "`{name}` is a reduction in this parallel loop, so the body cannot read it"
+                        "`{name}` is a reduction in this {noun}, so the body cannot read it"
                     ))
                     .with_primary(self.tree.span(access.node), "read here")
                     .with_secondary(self.tree.span(site), "reduced here")
@@ -236,24 +239,26 @@ impl Body<'_> {
 
     /// Reports `access`, a write to a shared variable that is not a reduction.
     fn not_a_reduction(&mut self, parallel: &Parallel, access: &Access) {
+        let noun = parallel.kind.noun();
         let name = self.tree.text(access.node, self.text);
         let diagnostic = Diagnostic::error(format!(
-            "iterations of this parallel loop all write `{name}`"
+            "iterations of this {noun} all write `{name}`"
         ))
         .with_primary(self.tree.span(access.node), "not a reduction")
-        .with_secondary(self.tree.span(parallel.call), "iterations run in parallel")
-        .with_note(
-            "a shared variable is written in a parallel loop only as a reduction: `x += e`, `x -= e`, `x *= e`, `x = min(x, e)` or `x = max(x, e)`",
-        )
+        .with_secondary(self.tree.span(parallel.call), parallel.kind.together())
+        .with_note(format!(
+            "a shared variable is written in a {noun} only as a reduction: `x += e`, `x -= e`, `x *= e`, `x = min(x, e)` or `x = max(x, e)`",
+        ))
         .with_note("to keep a value for one iteration, assign a new variable inside the loop");
         self.lowerer.diagnostics.push(diagnostic);
     }
 
-    /// Reports `access`, a reduction of another kind than the first one, at `site`.
-    fn mixed_reduction(&mut self, access: &Access, site: NodeId) {
+    /// Reports `access`, a reduction of another kind than the first one, at `site`, in a
+    /// loop named `noun`.
+    fn mixed_reduction(&mut self, access: &Access, site: NodeId, noun: &str) {
         let name = self.tree.text(access.node, self.text);
         let diagnostic = Diagnostic::error(format!(
-            "`{name}` is reduced two ways in this parallel loop"
+            "`{name}` is reduced two ways in this {noun}"
         ))
         .with_primary(self.tree.span(access.node), "a different reduction")
         .with_secondary(self.tree.span(site), "first reduced here")

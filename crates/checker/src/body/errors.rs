@@ -181,10 +181,13 @@ impl<'db> Body<'db> {
             }
             let shown = self.show(error);
             if parallel.is_some() {
-                let message =
-                    format!("{what} `{shown}`, which is not handled inside this parallel loop");
+                let noun = self
+                    .parallel
+                    .last()
+                    .map_or("", |parallel| parallel.kind.noun());
+                let message = format!("{what} `{shown}`, which is not handled inside this {noun}");
                 let hint = format!(
-                    "catch it with `try:` and `except {shown}:` inside the loop body: an error cannot leave a parallel loop"
+                    "catch it with `try:` and `except {shown}:` inside the loop body: an error cannot leave a {noun}"
                 );
                 let label = format!("can fail with `{shown}`");
                 self.lowerer.error(node, &message, &label, Some(&hint));
