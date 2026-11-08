@@ -164,3 +164,93 @@ def main():
 ";
     prints("float-sums", program, "7.485470860550345 6.282665\n").unwrap();
 }
+
+/// The Lorenz system with fourth-order Runge-Kutta: a function passed as an argument, compiled
+/// into one copy of the generic step per function (decision 0026), and `VectorSpace`
+/// arithmetic on a `Fixed` vector. The trajectory is chaotic, so it amplifies any difference in
+/// rounding; a `NumPy` run of the same steps in the same order prints the same digits.
+#[test]
+fn lorenz_rk4_builds_and_runs() {
+    prints(
+        "example-lorenz-rk4",
+        include_str!("../../../../docs/examples/lorenz_rk4.byn"),
+        "\
+t =  10.0  x =   -4.9027  y =   -3.7439  z =   24.6909
+t =  20.0  x =   13.7932  y =   12.9518  z =   34.9016
+t =  30.0  x =    6.6853  y =    1.3161  z =   31.1718
+t =  40.0  x =    5.2599  y =    1.7159  z =   28.1218
+",
+    )
+    .unwrap();
+}
+
+/// Functions passed as arguments: by name, through a local that holds one, and to a generic
+/// function. The LLVM backend refuses a call through a function value, so building at all shows
+/// each call became a direct one.
+#[test]
+fn functions_as_arguments_build_and_run() {
+    let program = "\
+def square(x: f64) -> f64:
+    return x * x
+
+
+def cube(x: f64) -> f64:
+    return x * x * x
+
+
+def apply_twice(f: Callable[[f64], f64], x: f64) -> f64:
+    return f(f(x))
+
+
+def scaled[T: Float](f: Callable[[T], T], x: T, k: T) -> T:
+    return k * f(x)
+
+
+def main():
+    g = cube
+    print(apply_twice(square, 3.0), apply_twice(g, 2.0), scaled(square, 3.0, 0.5))
+";
+    prints("functions-as-arguments", program, "81.0 512.0 4.5\n").unwrap();
+}
+
+/// Two `Callable` parameters of one signature each call the function passed to them, not both
+/// the first: the instances for `(square, half)` and `(half, square)` are distinct functions.
+#[test]
+fn callable_parameters_of_one_signature_stay_apart() {
+    let program = "\
+def square(x: f64) -> f64:
+    return x * x
+
+
+def half(x: f64) -> f64:
+    return x / 2.0
+
+
+def compose(f: Callable[[f64], f64], g: Callable[[f64], f64], x: f64) -> f64:
+    return g(f(x))
+
+
+def main():
+    print(compose(square, half, 3.0), compose(half, square, 3.0))
+";
+    prints("callables-of-one-signature", program, "4.5 2.25\n").unwrap();
+}
+
+/// A `VectorSpace` function at a `Fixed` vector and at `f64`: scaling by an `f64` applies to
+/// every element of the vector, as `NumPy` broadcasting does.
+#[test]
+fn vector_space_arithmetic_builds_and_runs() {
+    let program = "\
+Vec3 = Fixed[f64, (3,)]
+
+
+def step[S: VectorSpace](state: S, h: f64) -> S:
+    return state + h / 2 * state - state
+
+
+def main():
+    v = step(Vec3(1.0, 2.0, 3.0), 0.5)
+    print(v[0], v[1], v[2], step(2.0, 0.5))
+";
+    prints("vector-space", program, "0.25 0.5 0.75 0.5\n").unwrap();
+}

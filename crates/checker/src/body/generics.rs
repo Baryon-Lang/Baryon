@@ -182,6 +182,9 @@ impl<'db> Body<'db> {
         let db = self.db;
         match (declared.kind(db), found.kind(db)) {
             (_, TypeKind::Unknown) => {}
+            (_, TypeKind::Function { callable, .. }) => {
+                self.unify(declared, *callable, names, bindings);
+            }
             (TypeKind::Parameter { file, name }, _) => {
                 if let Some(index) = names.iter().position(|entry| *entry == (*file, *name))
                     && bindings[index].is_none()

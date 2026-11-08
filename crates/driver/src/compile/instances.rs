@@ -87,15 +87,28 @@ pub(crate) fn ready<'db>(
         let Declaration::Function(signature) = &db.declaration(instance.item).declaration else {
             return Err(Vec::new());
         };
-        if signature.type_parameters.len() != instance.arguments.len() {
+        // Each `Callable` parameter is an implicit type parameter after the written ones
+        // (decision 0026).
+        let parameters: Vec<types::Type<'db>> = signature
+            .type_parameters
+            .iter()
+            .copied()
+            .chain(
+                signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.ty)
+                    .filter(|ty| matches!(ty.kind(db), types::TypeKind::Callable { .. })),
+            )
+            .collect();
+        if parameters.len() != instance.arguments.len() {
             return Err(vec![
                 Diagnostic::error("methods of generic classes are not compiled yet")
                     .with_primary(body.span, "a method of a generic class")
                     .with_note("collecting a class's type arguments comes after roadmap 1.9.5"),
             ]);
         }
-        body =
-            monomorphize::instantiate(db, &body, &signature.type_parameters, &instance.arguments);
+        body = monomorphize::instantiate(db, &body, &parameters, &instance.arguments);
     }
     drop_elaboration::elaborate(db, &mut body, declared);
     array_expansion::expand(db, &mut body, declared);
