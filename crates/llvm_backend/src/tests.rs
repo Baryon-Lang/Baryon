@@ -11,6 +11,7 @@ mod panics;
 mod parallel;
 mod print;
 mod text;
+mod vector;
 
 use crate::{Module, Unsupported};
 use database::{Db, File, Package, ParsedFile, Resolution};

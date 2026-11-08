@@ -253,6 +253,12 @@ pub enum Builtin {
     /// same array and rounding error grows with the logarithm of the length, not the length.
     /// Integer sums need no tree, since integer addition is exact, and lower to a loop.
     Sum,
+    /// `xs.append(value)` on a `list`: two arguments, the list passed `InOut` and the value
+    /// passed `Owned`, of the list's element type; the destination has type `None`. When the
+    /// buffer is full it grows to twice its capacity, at least 4 elements, so a run of appends
+    /// costs amortized constant time per element, as Python's and Rust's do. Running out of
+    /// memory panics; the call cannot fail otherwise.
+    Append,
 }
 
 impl Builtin {
@@ -262,6 +268,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Print.name(), "print");
     /// assert_eq!(mir::Builtin::Math(mir::MathFunction::Sqrt).name(), "math.sqrt");
     /// assert_eq!(mir::Builtin::Sum.name(), "sum");
+    /// assert_eq!(mir::Builtin::Append.name(), "list.append");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -269,6 +276,7 @@ impl Builtin {
             Self::Print => "print",
             Self::Math(function) => function.name(),
             Self::Sum => "sum",
+            Self::Append => "list.append",
         }
     }
 }

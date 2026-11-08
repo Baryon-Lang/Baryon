@@ -494,3 +494,123 @@ body0: fn(_1: Owned[i64], _2: Array[f64, 1], _3: InOut[f64]) -> None {
 "
     );
 }
+
+/// A `simd` loop lowers as the `range` loop inside it, with its header block marked.
+#[test]
+fn simd_loops_mark_their_header() {
+    let program = r"
+def axpy(a: f64, x: Array[f64, 1], y: InOut[Array[f64, 1]], n: i64):
+    for i in simd(range(n)):
+        y[i] = a * x[i] + y[i]
+";
+    assert_eq!(
+        lower(program, &["axpy"]),
+        "fn(_1: f64, _2: Array[f64, 1], _3: InOut[Array[f64, 1]], _4: i64) -> None {
+    let _0: None; // return
+    let _1: f64; // parameter a
+    let _2: Array[f64, 1]; // parameter x
+    let _3: Array[f64, 1]; // parameter y
+    let _4: i64; // parameter n
+    let _5: i64; // i
+    let _6: i64;
+    let _7: i64;
+    let _8: bool;
+    let _9: i64;
+    let _10: i64;
+    let _11: bool;
+    let _12: bool;
+    let _13: bool;
+    let _14: f64;
+    let _15: i64;
+    let _16: i64;
+    let _17: bool;
+    let _18: bool;
+    let _19: bool;
+    let _20: i64;
+    let _21: i64;
+    let _22: bool;
+    let _23: bool;
+    let _24: bool;
+
+    bb0: {
+        _6 = 0_i64;
+        _7 = copy _4;
+        goto -> bb1;
+    }
+
+    bb1 (simd): {
+        _8 = Less(copy _6, copy _7);
+        branch copy _8 -> [true: bb2, false: bb4];
+    }
+
+    bb2: {
+        _5 = copy _6;
+        _9 = len(_3, 0);
+        _10 = copy _5;
+        _11 = GreaterEqual(copy _10, 0_i64);
+        _12 = Less(copy _10, copy _9);
+        _13 = BitAnd(copy _11, copy _12);
+        assert(copy _13, index in bounds in dimension 0: copy _10 < copy _9) -> bb5;
+    }
+
+    bb3: {
+        _6 = Add(copy _6, 1_i64);
+        goto -> bb1;
+    }
+
+    bb4: {
+        _0 = None;
+        return;
+    }
+
+    bb5: {
+        _15 = len(_2, 0);
+        _16 = copy _5;
+        _17 = GreaterEqual(copy _16, 0_i64);
+        _18 = Less(copy _16, copy _15);
+        _19 = BitAnd(copy _17, copy _18);
+        assert(copy _19, index in bounds in dimension 0: copy _16 < copy _15) -> bb6;
+    }
+
+    bb6: {
+        _14 = Multiply(copy _1, copy _2[_16]);
+        _20 = len(_3, 0);
+        _21 = copy _5;
+        _22 = GreaterEqual(copy _21, 0_i64);
+        _23 = Less(copy _21, copy _20);
+        _24 = BitAnd(copy _22, copy _23);
+        assert(copy _24, index in bounds in dimension 0: copy _21 < copy _20) -> bb7;
+    }
+
+    bb7: {
+        _3[_10] = Add(copy _14, copy _3[_21]);
+        goto -> bb3;
+    }
+}
+"
+    );
+}
+
+/// A `simd` loop that sums floats is not marked, so LLVM keeps the plain loop's order (roadmap
+/// 1.9.14); one that sums integers is.
+#[test]
+fn simd_float_sums_stay_unvectorized() {
+    let program = r"
+def floats(x: Array[f64, 1], n: i64) -> f64:
+    s = 0.0
+    for i in simd(range(n)):
+        s += x[i]
+    return s
+
+
+def integers(n: i64) -> i64:
+    s = 0
+    for i in simd(range(n)):
+        s += i
+    return s
+";
+    let text = lower(program, &["floats", "integers"]);
+    assert_eq!(text.matches(" (simd): {").count(), 1, "{text}");
+    let integers = text.find("fn(_1: i64) -> i64").unwrap();
+    assert!(text[integers..].contains(" (simd): {"), "{text}");
+}

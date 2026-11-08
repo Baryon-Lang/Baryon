@@ -40,6 +40,10 @@
 //!   of its own, and a chunk function the runtime calls runs a chunk of iterations through it,
 //!   each reduction into a private copy; the copies combine in a fixed pairwise tree after the
 //!   loop, so a float sum gives the same bits on any number of threads (the `parallel` module).
+//! - **`simd` loops ask LLVM to vectorize them.** The back edge to a loop header the body marks
+//!   in [`vectorized`](mir::Body::vectorized) carries `llvm.loop.vectorize.enable` metadata,
+//!   which overrides LLVM's cost model. A loop LLVM still declines, such as one whose bounds
+//!   checks it cannot hoist, runs unvectorized for now; reporting it is roadmap 3.7.
 //! - **`print` calls the runtime once per argument**, which writes the value as Python does;
 //!   the space between arguments and the line end are byte constants it prints too.
 //! - **Math functions are LLVM intrinsics.** A [`Builtin::Math`](mir::Builtin::Math) call, such

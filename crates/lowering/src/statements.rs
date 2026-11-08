@@ -330,6 +330,10 @@ impl<'db> Builder<'db> {
         let Some(variable) = self.target_variable(target) else {
             return self.unsupported(target, "`for` loops that unpack");
         };
+        let (iterator, vectorized) = match self.simd_range(iterator) {
+            Some(range) => (range, true),
+            None => (iterator, false),
+        };
         let Some((first, bound, step)) = self.range(iterator) else {
             return;
         };
@@ -352,6 +356,9 @@ impl<'db> Builder<'db> {
         let header = self.new_block();
         self.terminate(TerminatorKind::Goto(header), statement);
         self.start(header);
+        if vectorized && !self.reorders_floats(statement) {
+            self.body.vectorized.push(header);
+        }
         let test = if step > 0 {
             mir::BinaryOperator::Less
         } else {
