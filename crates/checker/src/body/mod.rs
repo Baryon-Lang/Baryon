@@ -24,8 +24,8 @@
 //! the body changes neither the collection nor the element it borrows (1.8.4, the `loops`
 //! module); and parallel loops: a `prange` body writes shared arrays only at the loop
 //! variable's index and shared scalars only as reductions, never ends early, and only adds
-//! into the arrays it lists in `accumulate=` (1.8.5 and 1.8.1, the `parallel`, `shared` and
-//! `accumulate` modules).
+//! into the arrays it lists in `accumulate=`, and a `simd(range(...))` body follows the same
+//! rules (1.8.5, 1.8.1 and 1.9.7, the `parallel`, `shared` and `accumulate` modules).
 
 mod accumulate;
 mod arrays;
@@ -139,7 +139,8 @@ struct Body<'db> {
     modes: BTreeMap<NodeId, types::Mode>,
     /// The enclosing `for` loops over collections, innermost last (the `loops` module).
     loops: Vec<loops::Loop>,
-    /// The enclosing `prange` loop, if any; never more than one (the `parallel` module).
+    /// The enclosing `prange` and `simd` loops, innermost last: at most one of each, the
+    /// `simd` loop inside the `prange` one (the `parallel` module).
     parallel: Vec<parallel::Parallel>,
     /// The valid entries of the `accumulate=` argument of the `prange` call just checked,
     /// waiting for its loop to start (the `accumulate` module).
