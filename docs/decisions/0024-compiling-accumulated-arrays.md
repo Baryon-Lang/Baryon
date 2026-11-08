@@ -1,6 +1,6 @@
 # 0024. Accumulated arrays compile to an `Accumulate` statement over lazily made private blocks
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-08
 Roadmap: 1.12.1
 

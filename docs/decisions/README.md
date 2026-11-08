@@ -56,4 +56,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0021. The runtime is one Rust crate of its own kind, the only one outside a backend allowed `unsafe`](0021-runtime-crate-and-unsafe-code.md) | Accepted |
 | [0022. A `str` is a pointer and a length, and a literal is never copied](0022-str-values.md) | Accepted |
 | [0023. The language is named Baryon, its files end in `.byn`, and its tool is `baryon`](0023-language-name-baryon.md) | Accepted |
-| [0024. Accumulated arrays compile to an `Accumulate` statement over lazily made private blocks](0024-compiling-accumulated-arrays.md) | Proposed |
+| [0024. Accumulated arrays compile to an `Accumulate` statement over lazily made private blocks](0024-compiling-accumulated-arrays.md) | Accepted |
