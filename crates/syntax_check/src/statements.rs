@@ -2,7 +2,7 @@
 //! the kinds it accepts, and where each kind may appear.
 
 use crate::{Checker, Scope};
-use syntax::{Flags, NodeId, Role, SyntaxKind};
+use syntax::{Flags, NodeId, Operator, Role, SyntaxKind};
 
 impl Checker<'_> {
     /// Checks the statement `id`, a child of `parent` in a block of `scope`, after the statement
@@ -64,7 +64,8 @@ impl Checker<'_> {
     /// Checks a statement at the top level of a module, which may only define things.
     fn top_level(&mut self, id: NodeId, previous: Option<NodeId>) {
         let span = self.tree.span(id);
-        match self.tree.kind(id) {
+        let kind = self.tree.kind(id);
+        match kind {
             SyntaxKind::Import
             | SyntaxKind::ImportFrom
             | SyntaxKind::FunctionDefinition
@@ -80,8 +81,10 @@ impl Checker<'_> {
                 "documentation goes first in the module, or right after the constant or type \
                  alias it documents",
             ),
-            SyntaxKind::Assign if self.is_type_alias(id) => {}
-            SyntaxKind::AnnotatedAssign => {
+            SyntaxKind::Assign if self.assigns_one_name(id) && self.is_typelike(id) => {}
+            SyntaxKind::Assign | SyntaxKind::AnnotatedAssign
+                if kind == SyntaxKind::AnnotatedAssign || self.assigns_one_name(id) =>
+            {
                 let annotation = self.tree.child(id, Role::Annotation);
                 if !annotation.is_some_and(|annotation| self.is_final(annotation)) {
                     let target = self.tree.child(id, Role::Target);
@@ -169,13 +172,29 @@ impl Checker<'_> {
         );
     }
 
-    /// Whether `id`, a top-level assignment, can be a type alias: one name assigned once.
-    /// Whether its value really is a type is for the type checker to say.
-    fn is_type_alias(&self, id: NodeId) -> bool {
+    /// Whether `id`, a top-level assignment, assigns one name once, as a type alias does.
+    fn assigns_one_name(&self, id: NodeId) -> bool {
         let mut targets = self.tree.children_with(id, Role::Target);
         let first = targets.next();
         targets.next().is_none()
             && first.is_some_and(|target| self.tree.kind(target) == SyntaxKind::Name)
+    }
+
+    /// Whether the value of the top-level assignment `id` is shaped like a type, so the
+    /// assignment can be a type alias: a name, `a.b`, `T[...]`, `None` or `A | B`. Whether it
+    /// really is a type is for the type checker to say. A value of any other shape, such as
+    /// `N = 10`, makes a module-level variable, reported as one rather than as a bad type.
+    fn is_typelike(&self, id: NodeId) -> bool {
+        self.tree
+            .child(id, Role::Value)
+            .is_some_and(|value| match self.tree.kind(value) {
+                SyntaxKind::Name
+                | SyntaxKind::Attribute
+                | SyntaxKind::Subscript
+                | SyntaxKind::None => true,
+                SyntaxKind::BinaryOperation => self.tree.node(value).operator() == Operator::BitOr,
+                _ => false,
+            })
     }
 
     /// Whether `annotation` is `Final` or `Final[T]`.
@@ -213,9 +232,7 @@ impl Checker<'_> {
                 .tree
                 .children_with(value, Role::Item)
                 .next()
-                .is_some_and(|comparator| {
-                    self.tree.node(comparator).operator() == syntax::Operator::Equal
-                });
+                .is_some_and(|comparator| self.tree.node(comparator).operator() == Operator::Equal);
         if kind == SyntaxKind::StringLiteral {
             self.stray_string(id, "documentation goes first in the function");
             return;

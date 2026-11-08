@@ -60,7 +60,7 @@ checks what it prints.
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals; f-strings with format specifications | Complex literals such as `2j`; string literals with escapes or prefixes |
 | `+ - * / // %`, `**` on floats, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `**` on integers; `in` and `not in`; `==` on `str` |
-| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)` | `abs`, `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the rest of `math` and `random` |
+| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the rest of `math` and `random` |
 | `@test` functions, with `baryon test` | |
 
 ## Types
@@ -72,7 +72,7 @@ checks what it prints.
 | `str`: literals, f-strings, `+` and `s.copy()` | `==`, `!=`, `in` and `len` on `str` |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
 | `T \| None`, with every narrowing rule | |
-| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs | |
+| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs | Methods of a generic struct: an error says they are not compiled yet |
 | Enums: members, `==` and `!=`, `match` | |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
@@ -102,7 +102,7 @@ out of a function, including through a `raise`.
 | --- | --- |
 | `Array.zeros`, `Array.ones` and `Array.fill`, with the element type from context, a `dtype` or `f64`; `a.copy()`; `Array(values)` of a list | `Array.zeros` and `Array.ones` of an enum, whose members are not numbers; `Array.fill` with a member works |
 | Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | Slices `a[1:n]` |
-| `len(a)`; `a.shape` bound to a name, then indexed | `a.shape[0]` written directly; `a.size` |
+| `len(a)`, `a.shape`, `a.shape[k]` and `a.size`, of `Array` and `Fixed` arrays | `print(a.shape)`, since `print` of a tuple is not built |
 | `a.unchecked[i]` inside `with unsafe:` | |
 | `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, `v.dot(w)`, `v.round()`, and whole-array arithmetic | |
 | Arrays of `Fixed` arrays and of `Copy` structs | |

@@ -7,7 +7,7 @@
 //! that struct's declaration, so structs that refer to each other are not a cycle.
 
 use database::{Db, File};
-use syntax::{NodeId, Role, SyntaxKind, SyntaxTree};
+use syntax::{NodeId, Operator, Role, SyntaxKind, SyntaxTree};
 
 /// Every definition in one file that has a declaration: top-level functions, classes, type
 /// aliases and constants, and the methods of each class.
@@ -55,7 +55,8 @@ pub(crate) enum Kind {
     Alias,
     /// `Name: Final = value` at the top level.
     Constant,
-    /// A `type` statement, which the syntax check already reports.
+    /// A `type` statement, or `Name = value` whose value cannot be a type, such as `N = 10`:
+    /// both are reported by the syntax check, so the name is left unknown.
     Unsupported,
 }
 
@@ -95,9 +96,9 @@ pub(crate) fn outline(db: &dyn Db, file: File) -> Outline {
         let kind = match tree.kind(statement) {
             SyntaxKind::FunctionDefinition => Kind::Function,
             SyntaxKind::ClassDefinition => Kind::Class(class(tree, text, statement)),
-            SyntaxKind::Assign => Kind::Alias,
+            SyntaxKind::Assign if typelike(tree, statement) => Kind::Alias,
             SyntaxKind::AnnotatedAssign => Kind::Constant,
-            SyntaxKind::TypeAlias => Kind::Unsupported,
+            SyntaxKind::Assign | SyntaxKind::TypeAlias => Kind::Unsupported,
             _ => continue,
         };
         let role = match kind {
@@ -180,4 +181,18 @@ fn methods(tree: &SyntaxTree, class: NodeId, class_name: NodeId) -> Vec<Entry> {
             })
         })
         .collect()
+}
+
+/// Whether the value of the top-level assignment `statement` is shaped like a type: a name,
+/// `a.b`, `T[...]`, `None` or `A | B`. The syntax check reports any other value as a
+/// module-level variable, which needs `Final`.
+fn typelike(tree: &SyntaxTree, statement: NodeId) -> bool {
+    tree.child(statement, Role::Value)
+        .is_some_and(|value| match tree.kind(value) {
+            SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript | SyntaxKind::None => {
+                true
+            }
+            SyntaxKind::BinaryOperation => tree.node(value).operator() == Operator::BitOr,
+            _ => false,
+        })
 }

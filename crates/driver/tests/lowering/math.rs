@@ -1,4 +1,5 @@
-//! Lowering of `**` on floats and of `dot` and `round` on `Fixed` vectors.
+//! Lowering of `**` on floats, of `dot` and `round` on `Fixed` vectors, of `abs`, and of
+//! number conversions.
 
 use crate::lower;
 
@@ -135,5 +136,88 @@ fn(_1: i64, _2: f32) -> f32 {
     }
 }
 "
+    );
+}
+
+/// `abs` of a float negates at zero too, so `abs(-0.0)` is `0.0`, and keeps everything else;
+/// `abs` of an integer negates only below zero.
+#[test]
+fn abs_negates_below_zero() {
+    let program = "\
+        def size(x: f64, n: i32) -> f64:\n\
+        \x20   return abs(x) + abs(n)\n";
+    assert_eq!(
+        lower(program, "size"),
+        "\
+fn(_1: f64, _2: i32) -> f64 {
+    let _0: f64; // return
+    let _1: f64; // parameter x
+    let _2: i32; // parameter n
+    let _3: f64;
+    let _4: f64;
+    let _5: bool;
+    let _6: i32;
+    let _7: i32;
+    let _8: bool;
+    let _9: f64;
+
+    bb0: {
+        _4 = copy _1;
+        _5 = LessEqual(copy _4, 0.0_f64);
+        branch copy _5 -> [true: bb1, false: bb2];
+    }
+
+    bb1: {
+        _3 = Subtract(0.0_f64, copy _4);
+        goto -> bb3;
+    }
+
+    bb2: {
+        _3 = copy _4;
+        goto -> bb3;
+    }
+
+    bb3: {
+        _7 = copy _2;
+        _8 = Less(copy _7, 0_i32);
+        branch copy _8 -> [true: bb4, false: bb5];
+    }
+
+    bb4: {
+        _6 = Subtract(0_i32, copy _7);
+        goto -> bb6;
+    }
+
+    bb5: {
+        _6 = copy _7;
+        goto -> bb6;
+    }
+
+    bb6: {
+        _9 = f64(copy _6);
+        _0 = Add(copy _3, copy _9);
+        return;
+    }
+}
+"
+    );
+}
+
+/// `float(text)` parses a string, which no backend does yet, so it is reported. Before this,
+/// the string constant was stored into the float, and clang refused the program.
+#[test]
+fn a_string_converted_to_a_number_is_reported() {
+    let program = "\
+        def parse() -> f64:\n\
+        \x20   return float(\"nan\")\n";
+    assert_eq!(
+        lower(program, "parse"),
+        "\
+error: lowering does not handle converting a `str` to `f64` yet
+ --> main.byn:2:12
+  |
+2 |     return float(\"nan\")
+  |            ^^^^^^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
 }
