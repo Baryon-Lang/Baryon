@@ -202,15 +202,33 @@ impl<'db> Function<'_, '_, 'db> {
                 }
                 Ok(())
             }
+            TypeKind::Optional(value) if self.owns_memory(*value) => {
+                let container = self.types.value(ty)?;
+                let flag = self.emit(&format!(
+                    "getelementptr inbounds {container}, ptr {address}, i32 0, i32 1"
+                ));
+                let present = self.emit(&format!("load i1, ptr {flag}"));
+                let (drop, done) = (self.fresh_block(), self.fresh_block());
+                self.line(&format!("br i1 {present}, label %{drop}, label %{done}"));
+                self.line_label(&drop);
+                let inside = self.emit(&format!(
+                    "getelementptr inbounds {container}, ptr {address}, i32 0, i32 0"
+                ));
+                self.drop_value(&inside, *value)?;
+                self.line(&format!("br label %{done}"));
+                self.line_label(&done);
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
 
-    /// Whether a value of `ty` owns memory a drop frees: an array, or a tuple or struct holding
-    /// one.
+    /// Whether a value of `ty` owns memory a drop frees: an array, or a tuple, struct or
+    /// optional holding one.
     fn owns_memory(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.types.db) {
             TypeKind::Array { .. } => true,
+            TypeKind::Optional(value) => self.owns_memory(*value),
             TypeKind::Tuple(_) | TypeKind::Struct(_) => (0..)
                 .map_while(|position| self.field(ty, position).ok())
                 .any(|field| self.owns_memory(field)),

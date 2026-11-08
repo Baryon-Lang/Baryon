@@ -3,9 +3,9 @@
 //! A panic is how a compiled program stops when it finds a bug: an index out of range, arrays of
 //! different lengths combined element by element, an `assert` that does not hold, running out of
 //! memory. Panics cannot be caught (decision 0005), so ending the process is the whole job: print
-//! the message and where it happened, then exit with [`EXIT_STATUS`].
+//! the message, where it happened and the calls that led there, then exit with [`EXIT_STATUS`].
 
-use crate::Location;
+use crate::{Location, backtrace};
 use std::fmt;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -123,7 +123,8 @@ pub(crate) fn report(failure: Failure<'_>, location: Option<&Location>) -> Strin
 /// and the process exits once.
 static PANICKING: AtomicBool = AtomicBool::new(false);
 
-/// Prints the panic's [`report`] to standard error and ends the process with [`EXIT_STATUS`].
+/// Prints the panic's [`report`] and the [`backtrace`] of the calling thread to standard error,
+/// and ends the process with [`EXIT_STATUS`].
 ///
 /// This is the runtime's one place that prints and exits: it is the job the language reference
 /// gives a panic. When threads of a parallel loop panic at once, the first one reports and the
@@ -134,7 +135,7 @@ pub(crate) fn panic(failure: Failure<'_>, location: Option<&Location>) -> ! {
             std::thread::park();
         }
     }
-    let text = report(failure, location);
+    let text = report(failure, location) + &backtrace::capture();
     // A failed write cannot be reported anywhere; the exit status still says what happened.
     let _ = std::io::stderr().lock().write_all(text.as_bytes());
     std::process::exit(EXIT_STATUS)

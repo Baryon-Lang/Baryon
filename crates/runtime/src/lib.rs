@@ -23,8 +23,8 @@
 //! | [`npl_rt_chunk_count`], [`npl_rt_parallel_for`] | Run a `prange` loop on the thread pool, in fixed chunks |
 //! | [`npl_rt_print_i64`], [`npl_rt_print_u64`], [`npl_rt_print_f64`], [`npl_rt_print_f32`], [`npl_rt_print_bool`], [`npl_rt_print_str`] | Print one argument of `print` to standard output, or a field of an error that ends `main` to standard error, as Python writes it |
 //!
-//! A panic prints its message and the [`Location`] of the check to standard error, then exits
-//! with status 101. Panics cannot be caught (decision 0005), so the runtime never unwinds.
+//! A panic prints its message, the [`Location`] of the check and, when the program has debug
+//! information, a backtrace of its `.npl` frames to standard error, then exits with status 101. Panics cannot be caught (decision 0005), so the runtime never unwinds.
 //!
 //! This crate is the one place outside a backend where `unsafe` code is allowed, under the rules
 //! decision 0021 sets: each item that uses it says why, each `unsafe` block carries a
@@ -60,6 +60,7 @@
 //! ```
 
 mod abi;
+mod backtrace;
 mod location;
 mod memory;
 mod panic;

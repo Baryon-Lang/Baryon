@@ -3,10 +3,11 @@
 //! functions by the names and signatures it exports (decision 0021), which no other test can,
 //! since the backend may not depend on the runtime.
 
+use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::Once;
+use std::sync::{Mutex, Once, PoisonError};
 
 /// The `npl` executable cargo built for these tests.
 const NPL: &str = env!("CARGO_BIN_EXE_npl");
@@ -29,7 +30,17 @@ fn build_runtime() {
 }
 
 /// A new directory holding the package `files`, each a path and its text, for the test `name`.
+///
+/// The tests run in parallel and each name is one directory, which this function first empties,
+/// so two tests sharing a name would delete each other's files. A name used twice panics, so
+/// that mistake fails every run instead of one run in a few.
 fn package(name: &str, files: &[(&str, &str)]) -> io::Result<PathBuf> {
+    static NAMES: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+    let fresh = NAMES
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(name.to_owned());
+    assert!(fresh, "two tests use the package name `{name}`");
     let directory =
         std::env::temp_dir().join(format!("npl-build-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
@@ -60,12 +71,25 @@ fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
+/// The text of standard error before a panic's backtrace: its message and location. The test
+/// `panics_print_a_backtrace_of_npl_frames` checks the backtrace itself.
+fn panic_report(output: &Output) -> String {
+    let text = stderr(output);
+    match text.split_once(BACKTRACE) {
+        Some((report, _)) => report.to_owned(),
+        None => text,
+    }
+}
+
+/// The line a panic's backtrace starts with.
+const BACKTRACE: &str = "backtrace, most recent call last:\n";
+
 /// A program across two modules compiles, calls between them, and runs to the end; a failed
 /// `assert` prints its source and location through the runtime and exits with status 101.
 #[test]
 fn programs_build_and_run() {
     let directory = package(
-        "run",
+        "fibonacci",
         &[
             (
                 "numbers/fibonacci.npl",
@@ -108,7 +132,7 @@ fn programs_build_and_run() {
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(ran.status.code(), Some(101));
     assert_eq!(
-        stderr(&ran),
+        panic_report(&ran),
         "panic: assertion failed: n * 6 == 41, \"arithmetic\"\n  --> main.npl:3:5\n"
     );
 }
@@ -186,7 +210,7 @@ def main():
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(ran.status.code(), Some(101));
     assert_eq!(
-        stderr(&ran),
+        panic_report(&ran),
         "panic: index 1000 is out of range for dimension 0 of length 1000\n  \
          --> main.npl:25:14\n"
     );
@@ -243,7 +267,7 @@ def main():
     assert!(output.status.success(), "{}", stderr(&output));
     let ran = Command::new(&program).output().unwrap();
     assert_eq!(
-        stderr(&ran),
+        panic_report(&ran),
         "panic: assertion failed: handled(4) == 3.0, \"last\"\n  --> main.npl:39:5\n"
     );
 }
@@ -297,7 +321,7 @@ def main():
     assert_eq!(String::from_utf8_lossy(&ran.stdout), "started\n");
     assert_eq!(ran.status.code(), Some(101));
     assert_eq!(
-        stderr(&ran),
+        panic_report(&ran),
         "panic: assertion failed: 1 > 2\n  --> main.npl:3:5\n"
     );
 }
@@ -338,4 +362,100 @@ def main() -> Raises[None, ConfigError | LimitError]:
     assert_eq!(String::from_utf8_lossy(&ran.stdout), "loaded 3.0\n");
     assert_eq!(stderr(&ran), "error: LimitError(code=12, limit=10.0)\n");
     assert_eq!(ran.status.code(), Some(1));
+}
+
+/// Optional values end to end: absent and present values passed on, narrowed by `is None` and
+/// `is not None`, given a default, and holding an array, which is freed only when present.
+/// Each argument is a variable already of the parameter's `T | None` type.
+#[test]
+fn optional_values_build_and_run() {
+    let program = "\
+class Particle(Struct):
+    mass: f64
+
+
+def scaled(distance: f64 | None, particle: Particle | None) -> f64:
+    if distance is None:
+        distance = 1.0
+    assert particle is not None, 'needs a particle'
+    return distance * particle.mass
+
+
+def nearest(distance: f64 | None, limit: f64) -> f64:
+    if distance is not None and distance < limit:
+        return distance
+    return limit
+
+
+def size(values: Array[f64, 1] | None) -> i64:
+    if values is not None:
+        return len(values)
+    return -1
+
+
+def main():
+    p: Particle | None = Particle(2.5)
+    absent: f64 | None = None
+    four: f64 | None = 4.0
+    print(scaled(absent, p), scaled(four, p))
+    near: f64 | None = 1.5
+    far: f64 | None = 7.0
+    print(nearest(absent, 3.0), nearest(near, 3.0), nearest(far, 3.0))
+    none: Array[f64, 1] | None = None
+    ones: Array[f64, 1] | None = Array.ones(4)
+    print(size(none), size(ones))
+    nobody: Particle | None = None
+    print(scaled(four, nobody))
+";
+    let directory = package("optionals", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "2.5 10.0\n3.0 1.5 3.0\n-1 4\n"
+    );
+    assert_eq!(
+        panic_report(&ran),
+        "panic: assertion failed: particle is not None, 'needs a particle'\n  \
+         --> main.npl:8:5\n"
+    );
+}
+
+/// A panic ends its report with the `.npl` frames that led to it, most recent last, each with
+/// its function and source position, read from the line tables (roadmap 1.12.3). Inlined calls
+/// keep their frames, and the runtime's own frames are left out.
+#[test]
+fn panics_print_a_backtrace_of_npl_frames() {
+    let program = "\
+def pick(values: Array[f64, 1], i: i64) -> f64:
+    return values[i]
+
+
+def total(n: i64) -> f64:
+    values: Array[f64, 1] = Array.zeros(n)
+    return pick(values, n)
+
+
+def main():
+    print(total(4))
+";
+    let directory = package("backtrace", &[("main.npl", program)]).unwrap();
+    let (output, program) = npl_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    let root = directory.join("package").canonicalize().unwrap();
+    let file = root.join("main.npl").display().to_string();
+    assert_eq!(
+        stderr(&ran),
+        format!(
+            "panic: index 4 is out of range for dimension 0 of length 4\n  \
+             --> main.npl:2:19\n\
+             {BACKTRACE}  \
+             main.main at {file}:11:11\n  \
+             main.total at {file}:7:12\n  \
+             main.pick at {file}:2:19\n"
+        )
+    );
 }

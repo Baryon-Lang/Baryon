@@ -1,4 +1,4 @@
-# NPL: New Programming Language
+# Baryon: A new language for math and physics
 
 A compiled language that reads like Python and runs like Rust, C and Fortran, built so that
 physics, mathematics and data science at any scale are routine work.
@@ -36,9 +36,9 @@ compiler parses source files, rejects the Python constructs the language does no
 reports syntax errors, module errors, undefined names, bad imports and type errors with
 `npl check`. `npl build <directory> <output>` compiles a package through LLVM into an executable
 that runs the `main` function in `main.npl`; it handles numbers, control flow, calls, structs,
-arrays, errors, `assert` and `print` so far, with `clang` installed. `npl run <directory>` builds
-and runs it in one step. `npl lsp` is a language server that shows the same diagnostics in any
-editor with a Language Server Protocol client, as you type.
+arrays, optionals, errors, `assert` and `print` so far, with `clang` installed. `npl run
+<directory>` builds and runs it in one step. `npl lsp` is a language server that shows the same
+diagnostics in any editor with a Language Server Protocol client, as you type.
 `npl doc` writes a package's documentation strings as Markdown pages.
 
 [`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the

@@ -39,10 +39,10 @@
 //! - **`print` calls the runtime once per argument**, which writes the value as Python does;
 //!   the space between arguments and the line end are byte constants it prints too.
 //!
-//! The backend so far (roadmap 1.10.1 to 1.10.6) covers numbers, `bool`, enums without data,
-//! tuples and structs, `Array` and `Fixed`, control flow, direct calls, errors, checks and
-//! `print` of numbers, `bool` and string literals. A body that uses anything else, such as an
-//! optional or a string value, gets an [`Unsupported`] error naming it.
+//! The backend so far (roadmap 1.10.1 to 1.10.10) covers numbers, `bool`, enums without data,
+//! tuples and structs, `Array` and `Fixed`, optionals, control flow, direct calls, errors,
+//! checks, line tables and `print` of numbers, `bool` and string literals. A body that uses
+//! anything else, such as a string value or a list, gets an [`Unsupported`] error naming it.
 //!
 //! # Example
 //!
@@ -326,7 +326,7 @@ impl<'a, 'db> Module<'a, 'db> {
 }
 
 /// A form of the mid-level IR this slice of the backend does not translate yet, such as values
-/// of an optional type. Roadmap 1.10 adds them slice by slice; a type-checked program reaches this
+/// of a list type. Roadmap 1.10 adds them slice by slice; a type-checked program reaches this
 /// only through features the backend has not caught up with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unsupported {
