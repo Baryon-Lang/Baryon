@@ -4,6 +4,7 @@
 //! baryon check <directory>
 //! baryon build <directory> <output>
 //! baryon run <directory>
+//! baryon test <directory>
 //! baryon doc <directory> <output>
 //! baryon lsp
 //! ```
@@ -27,6 +28,12 @@
 //! status: 0 when it ran to its end, 101 when a check failed. A package that does not build
 //! exits as `baryon build` does, with nothing run.
 //!
+//! `baryon test` builds the package the same way, but as a test program ([`runner`]): it runs
+//! every top-level function decorated `@test`, each in its own process so a failed check ends
+//! only its own test, and reports each as `ok` or `FAILED`, with a failed test's output after
+//! the list. The package needs no `main`. The exit status is 0 when every test passed, 1 when
+//! one failed or the package does not build. This is a prototype (roadmap 1.11.6).
+//!
 //! `baryon doc` loads the package the same way and writes its documentation as Markdown into the
 //! output directory, creating it if needed: one page per module, named after the module, such
 //! as `physics.nbody.md`, and an `index.md` listing them. A package with syntax or module naming
@@ -39,8 +46,9 @@
 mod link;
 mod lsp;
 mod package;
+mod runner;
 
-use diagnostics::Severity;
+use diagnostics::{Diagnostic, Severity};
 use driver::Session;
 use std::io::{self, Write as _};
 use std::path::Path;
@@ -48,7 +56,7 @@ use std::process::{Command, ExitCode};
 use std::{env, fs};
 
 /// How to call the command, printed when the arguments are wrong.
-const USAGE: &str = "usage: baryon check <directory> | baryon build <directory> <output> | baryon run <directory> | baryon doc <directory> <output> | baryon lsp";
+const USAGE: &str = "usage: baryon check <directory> | baryon build <directory> <output> | baryon run <directory> | baryon test <directory> | baryon doc <directory> <output> | baryon lsp";
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = env::args().skip(1).collect();
@@ -61,6 +69,7 @@ fn main() -> ExitCode {
         [command, directory, output] if command == "doc" => {
             document(Path::new(directory), Path::new(output))
         }
+        [command, directory] if command == "test" => test(Path::new(directory)),
         [command] if command == "lsp" => lsp::serve(io::stdin().lock(), io::stdout().lock())
             .map(ExitCode::from)
             .map_err(|error| format!("lsp: {error}")),
@@ -127,8 +136,12 @@ fn check(root: &Path) -> Result<ExitCode, String> {
 /// Fails with a message when a file cannot be read, or when `clang` or the runtime archive is
 /// missing or the link fails.
 fn build(root: &Path, output: &Path) -> Result<ExitCode, String> {
-    let files = match compile(root, output)? {
-        Ok(files) => files,
+    let files = match compile(root, output, |session, directory| {
+        session
+            .compile(directory)
+            .map(|module| (module, Vec::new()))
+    })? {
+        Ok((files, _)) => files,
         Err(code) => return Ok(code),
     };
     writeln!(
@@ -151,7 +164,12 @@ fn run(root: &Path) -> Result<ExitCode, String> {
     let scratch = env::temp_dir().join(format!("baryon-run-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("program");
-    let ran = compile(root, &program).and_then(|built| match built {
+    let built = compile(root, &program, |session, directory| {
+        session
+            .compile(directory)
+            .map(|module| (module, Vec::new()))
+    });
+    let ran = built.and_then(|built| match built {
         Ok(_) => Command::new(&program)
             .status()
             .map(|status| {
@@ -165,20 +183,45 @@ fn run(root: &Path) -> Result<ExitCode, String> {
     ran
 }
 
-/// Compiles the package rooted at `root` and links it into the executable `output`. Returns
-/// the number of files compiled, or, when the package has errors, prints them and returns the
-/// exit status 1.
+/// Runs `baryon test` on the package rooted at `root`: builds its test program into a scratch
+/// directory and runs each test ([`runner::run`]).
+///
+/// # Errors
+///
+/// Fails with a message when the package cannot be built for the reasons [`build`] gives, the
+/// program cannot be started, or the report cannot be written.
+fn test(root: &Path) -> Result<ExitCode, String> {
+    let scratch = env::temp_dir().join(format!("baryon-test-{}", std::process::id()));
+    fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
+    let program = scratch.join("tests");
+    let built = compile(root, &program, Session::compile_tests);
+    let ran = built.and_then(|built| match built {
+        Ok((_, tests)) => runner::run(&program, &tests, &mut io::stdout().lock()),
+        Err(code) => Ok(code),
+    });
+    let _ = fs::remove_dir_all(&scratch);
+    ran
+}
+
+/// Compiles the package rooted at `root` with `program`, one of [`Session::compile`] and
+/// [`Session::compile_tests`] giving a module and its test names, and links the module into the
+/// executable `output`. Returns the number of files compiled and the test names, or, when the
+/// package has errors, prints them and returns the exit status 1.
 ///
 /// # Errors
 ///
 /// Fails with a message when a file cannot be read, or when `clang` or the runtime archive is
 /// missing or the link fails.
-fn compile(root: &Path, output: &Path) -> Result<Result<usize, ExitCode>, String> {
+fn compile(
+    root: &Path,
+    output: &Path,
+    program: impl FnOnce(&Session, Option<&str>) -> Result<(String, Vec<String>), Vec<Diagnostic>>,
+) -> Result<Result<(usize, Vec<String>), ExitCode>, String> {
     let (session, files) = load(root)?;
     let directory =
         fs::canonicalize(root).map_err(|error| format!("{}: {error}", root.display()))?;
-    let module = match session.compile(Some(&directory.to_string_lossy())) {
-        Ok(module) => module,
+    let (module, tests) = match program(&session, Some(&directory.to_string_lossy())) {
+        Ok(compiled) => compiled,
         Err(problems) => {
             let mut stderr = io::stderr().lock();
             problems
@@ -191,7 +234,7 @@ fn compile(root: &Path, output: &Path) -> Result<Result<usize, ExitCode>, String
         }
     };
     link::link(&module, output)?;
-    Ok(Ok(files))
+    Ok(Ok((files, tests)))
 }
 
 /// Runs `baryon doc` on the package rooted at `root`, writing its pages into `output`.

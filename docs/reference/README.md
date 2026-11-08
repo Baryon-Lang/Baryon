@@ -28,6 +28,7 @@ not mention is not in the language yet; the compiler rejects it with a message, 
 | [Arrays](arrays.md) | `Array` and `Fixed`: construction, layout, indexing, slicing, whole-array arithmetic |
 | [Errors and panics](errors.md) | `Raises`, `raise`, `try`/`except`, and failures that stop the program |
 | [Parallel and vector loops](parallel-loops.md) | `prange`, reductions, the disjoint-write rule, adding into shared arrays with `accumulate=`, and `simd` |
+| [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |
 | [Differences from Python](differences-from-python.md) | Every place a Python programmer will be surprised, with the reason |
 
 A reader who knows Python should start with [Differences from Python](differences-from-python.md),

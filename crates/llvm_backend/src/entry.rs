@@ -1,5 +1,6 @@
 //! The program's entry point: a C `main` that calls the package's `main` function and turns how
-//! it ended into the exit status.
+//! it ended into the exit status. A test program's C `main` does the same for the one `@test`
+//! function its command-line argument chooses.
 //!
 //! A `main` that cannot fail returns 0. A `main` that can fail (the reference, "Errors") is
 //! passed an error value to write into, like any fallible call; when it fails, the C `main`
@@ -28,17 +29,73 @@ impl<'db> Function<'_, '_, 'db> {
         symbol: &str,
         errors: &[Reported<'db>],
     ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
-        let callee = global(symbol);
-        let mut signature = String::from("define i32 @main()");
-        if let Some(scope) = self.constants.entry_subprogram() {
-            signature = format!("{signature} {UNWIND_TABLE} !dbg {scope}");
-            self.fixed_location = Some(format!("!DILocation(line: 0, scope: {scope})"));
+        let signature = self.entry_signature("define i32 @main()");
+        self.run(symbol, errors, "")?;
+        let text = format!("{signature} {{\nstart:\n{}}}\n", self.code);
+        Ok((text, self.calls))
+    }
+
+    /// The C `main` of a test program, as text, with the declarations of what it calls: it runs
+    /// the one test of `tests` whose position its first command-line argument names, counting
+    /// from 0, and exits as [`entry`](Self::entry)'s `main` would for that function. Without an
+    /// argument, or with one that names no test, it returns 2.
+    ///
+    /// One test per process keeps a panic, which ends the process, from ending the other tests.
+    pub(crate) fn tests(
+        mut self,
+        tests: &[crate::Test<'_, 'db>],
+    ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
+        let signature = self.entry_signature("define i32 @main(i32 %count, ptr %arguments)");
+        self.declare("atoi", "declare i32 @atoi(ptr)");
+        let given = self.emit("icmp sge i32 %count, 2");
+        self.line(&format!("br i1 {given}, label %chosen, label %unknown"));
+        self.line_label("chosen");
+        let slot = self.emit("getelementptr inbounds ptr, ptr %arguments, i64 1");
+        let text = self.emit(&format!("load ptr, ptr {slot}"));
+        let position = self.emit(&format!("call i32 @atoi(ptr {text})"));
+        let cases: Vec<String> = (0..tests.len())
+            .map(|test| format!("i32 {test}, label %test{test}"))
+            .collect();
+        self.line(&format!(
+            "switch i32 {position}, label %unknown [{}]",
+            cases.join(" ")
+        ));
+        for (test, (symbol, errors)) in tests.iter().enumerate() {
+            self.line_label(&format!("test{test}"));
+            self.run(symbol, errors, &format!("test{test}."))?;
         }
+        self.line_label("unknown");
+        self.line("ret i32 2");
+        let text = format!("{signature} {{\nstart:\n{}}}\n", self.code);
+        Ok((text, self.calls))
+    }
+
+    /// `signature` with the artificial subprogram of a C `main` added when line tables are on,
+    /// which also becomes the location of every instruction written after.
+    fn entry_signature(&mut self, signature: &str) -> String {
+        match self.constants.entry_subprogram() {
+            Some(scope) => {
+                self.fixed_location = Some(format!("!DILocation(line: 0, scope: {scope})"));
+                format!("{signature} {UNWIND_TABLE} !dbg {scope}")
+            }
+            None => signature.to_owned(),
+        }
+    }
+
+    /// Calls the function `symbol`, which raises `errors`, then returns the exit status from the
+    /// C `main`: 0, or 1 after reporting the error it raised. `prefix` starts every label and
+    /// local name written, so several runs fit in one function.
+    fn run(
+        &mut self,
+        symbol: &str,
+        errors: &[Reported<'db>],
+        prefix: &str,
+    ) -> Result<(), Unsupported> {
+        let callee = global(symbol);
         if errors.is_empty() {
             self.line(&format!("call void {callee}()"));
             self.line("ret i32 0");
-            let text = format!("{signature} {{\nstart:\n{}}}\n", self.code);
-            return Ok((text, self.calls));
+            return Ok(());
         }
         let none = Type::new(self.types.db, TypeKind::None);
         let fallible = Type::new(
@@ -49,30 +106,32 @@ impl<'db> Function<'_, '_, 'db> {
             },
         );
         let llvm = self.types.value(fallible)?;
-        self.line(&format!("%error = alloca {llvm}"));
-        let failed = self.emit(&format!("call i1 {callee}(ptr %error)"));
-        self.line(&format!("br i1 {failed}, label %failed, label %done"));
-        self.line_label("done");
+        let error = format!("%{prefix}error");
+        self.line(&format!("{error} = alloca {llvm}"));
+        let failed = self.emit(&format!("call i1 {callee}(ptr {error})"));
+        self.line(&format!(
+            "br i1 {failed}, label %{prefix}failed, label %{prefix}done"
+        ));
+        self.line_label(&format!("{prefix}done"));
         self.line("ret i32 0");
-        self.line_label("failed");
-        let index = self.error_tag("%error", fallible)?;
+        self.line_label(&format!("{prefix}failed"));
+        let index = self.error_tag(&error, fallible)?;
         let cases: Vec<String> = (1..errors.len())
-            .map(|position| format!("i8 {position}, label %e{position}"))
+            .map(|position| format!("i8 {position}, label %{prefix}e{position}"))
             .collect();
         self.line(&format!(
-            "switch i8 {index}, label %e0 [{}]",
+            "switch i8 {index}, label %{prefix}e0 [{}]",
             cases.join(" ")
         ));
         for (position, (ty, fields)) in errors.iter().enumerate() {
-            self.line_label(&format!("e{position}"));
+            self.line_label(&format!("{prefix}e{position}"));
             let position = u32::try_from(position)
-                .map_err(|_| Unsupported::new("a `main` that raises this many errors"))?;
-            let (payload, _) = self.error_payload("%error", fallible, position)?;
+                .map_err(|_| Unsupported::new("a function that raises this many errors"))?;
+            let (payload, _) = self.error_payload(&error, fallible, position)?;
             self.report(&payload, *ty, fields)?;
             self.line("ret i32 1");
         }
-        let text = format!("{signature} {{\nstart:\n{}}}\n", self.code);
-        Ok((text, self.calls))
+        Ok(())
     }
 
     /// Prints the error of type `ty` at `address`, whose fields are named `fields`, to standard
