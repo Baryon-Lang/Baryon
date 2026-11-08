@@ -5,17 +5,20 @@ missing or unclear, that is a bug: open an issue.
 
 ## Learning the language
 
+Start with the [beginner's guide](guide/README.md): it installs `baryon`, runs a first program,
+writes tests and simulates a mass on a spring, using only what builds today. CI runs every step of
+it as written.
+
 The compiler is a prototype. `baryon check <directory>` reports every error the checker finds,
 but `baryon build`, `baryon run` and `baryon test` compile only part of the language so far, and
 none of the [example programs](examples/README.md) builds yet;
-[What builds today](reference/status.md) lists, chapter by chapter, what does. Until the
-beginner's guide (roadmap item 0.8.3) is written, the language is learned from its definition and
-from the examples.
+[What builds today](reference/status.md) lists, chapter by chapter, what does.
 
 [The `baryon` command](reference/commands.md) says how to build the tool and what each of its
 commands does, including `baryon lsp`, which shows the same diagnostics in any editor with a
 Language Server Protocol client, and `baryon doc`, which writes a package's documentation strings
-as Markdown pages.
+as Markdown pages. The [VS Code extension](../editors/vscode/README.md) highlights `.byn` files
+and runs `baryon lsp` for you.
 
 - The [language reference](reference/README.md) defines what a program may say and what it means.
   Python programmers should start with its

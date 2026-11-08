@@ -18,6 +18,7 @@ impl<'db> Builder<'db> {
             | TypeKind::Enum(_)
             | TypeKind::Fixed { .. }
             | TypeKind::Callable { .. }
+            | TypeKind::Function { .. }
             | TypeKind::Unknown => true,
             TypeKind::Str | TypeKind::List(_) | TypeKind::Array { .. } => false,
             TypeKind::Tuple(items) => items.iter().all(|&item| self.is_copy(item)),

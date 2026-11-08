@@ -39,6 +39,16 @@ impl<'db> Body<'db> {
             }
             Some(Definition::Builtin("Array")) => self.array_from_list(node, &arguments, expected),
             Some(Definition::Builtin(builtin)) => self.builtin(node, builtin, &arguments),
+            Some(Definition::Standard {
+                module: "math",
+                member: Some(member),
+            }) => {
+                let member = member.clone();
+                match self.math(node, &member, &arguments) {
+                    Some(ty) => ty,
+                    None => self.untyped(&arguments),
+                }
+            }
             Some(Definition::Local(_)) => {
                 let ty = self.expression(function, None);
                 self.call_value(node, &callee, ty, &arguments)

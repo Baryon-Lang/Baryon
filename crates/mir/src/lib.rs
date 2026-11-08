@@ -137,6 +137,30 @@ impl<'db> Body<'db> {
     /// An empty body in phase [`Phase::Built`] that returns a `returns`, with only the return
     /// local. Add parameters with [`push_local`](Self::push_local) before any other local, then
     /// the blocks, the entry block first.
+    ///
+    /// ```
+    /// use mir::{Body, Local, LocalKind};
+    /// use source::{FileId, Span};
+    /// use types::{Float, Primitive, Type, TypeKind};
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// # let database = Database::default();
+    /// let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
+    /// let body = Body::new(f64, Span::new(FileId::from_index(0), 0, 10));
+    /// assert_eq!(body.locals.len(), 1);
+    /// assert_eq!(body.locals[Local::RETURN.index()].kind, LocalKind::Return);
+    /// assert!(body.blocks.is_empty());
+    /// ```
     #[must_use]
     pub fn new(returns: Type<'db>, span: Span) -> Self {
         Self {
@@ -156,6 +180,33 @@ impl<'db> Body<'db> {
     /// Adds a local of type `ty` and returns it. A parameter also counts toward
     /// [`parameter_count`](Self::parameter_count); add parameters before any other local, or
     /// [`validate`](Self::validate) reports the body.
+    ///
+    /// ```
+    /// use mir::{Body, LocalKind};
+    /// use source::{FileId, Span};
+    /// use types::{Float, Primitive, Type, TypeKind};
+    /// use types::Mode;
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// # let database = Database::default();
+    /// let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
+    /// let span = Span::new(FileId::from_index(0), 0, 10);
+    /// let mut body = Body::new(f64, span);
+    /// let x = body.push_local(f64, LocalKind::Parameter { name: "x".into(), mode: Mode::Borrow }, span);
+    /// let t = body.push_local(f64, LocalKind::Temporary, span);
+    /// assert_eq!((x.index(), t.index()), (1, 2));
+    /// assert_eq!(body.parameter_count, 1);
+    /// ```
     pub fn push_local(&mut self, ty: Type<'db>, kind: LocalKind, span: Span) -> Local {
         if matches!(kind, LocalKind::Parameter { .. }) {
             self.parameter_count += 1;
@@ -165,6 +216,31 @@ impl<'db> Body<'db> {
     }
 
     /// Adds a block with no statements that ends in `terminator`, and returns it.
+    ///
+    /// ```
+    /// use mir::{BlockId, Body, Terminator, TerminatorKind};
+    /// use source::{FileId, Span};
+    /// use types::{Float, Primitive, Type, TypeKind};
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// # let database = Database::default();
+    /// let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
+    /// let span = Span::new(FileId::from_index(0), 0, 10);
+    /// let mut body = Body::new(f64, span);
+    /// let entry = body.push_block(Terminator { kind: TerminatorKind::Return, span });
+    /// assert_eq!(entry, BlockId::ENTRY);
+    /// assert!(body.blocks[entry.index()].statements.is_empty());
+    /// ```
     pub fn push_block(&mut self, terminator: Terminator<'db>) -> BlockId {
         self.blocks.push(BasicBlock {
             statements: Vec::new(),
@@ -201,6 +277,13 @@ impl Local {
     /// # Panics
     ///
     /// If `index` does not fit in a `u32`. A body that large is a compiler bug.
+    ///
+    /// ```
+    /// use mir::Local;
+    ///
+    /// assert_eq!(Local::new(0), Local::RETURN);
+    /// assert_eq!(Local::new(3).index(), 3);
+    /// ```
     #[must_use]
     pub fn new(index: usize) -> Self {
         Self(to_u32(index))
@@ -259,6 +342,13 @@ impl BlockId {
     /// # Panics
     ///
     /// If `index` does not fit in a `u32`. A body that large is a compiler bug.
+    ///
+    /// ```
+    /// use mir::BlockId;
+    ///
+    /// assert_eq!(BlockId::new(0), BlockId::ENTRY);
+    /// assert_eq!(BlockId::new(2).index(), 2);
+    /// ```
     #[must_use]
     pub fn new(index: usize) -> Self {
         Self(to_u32(index))

@@ -334,7 +334,7 @@ out as not built yet.
 A parameter of type `Callable[[f64, Vec3], Vec3]` takes a function with that signature. In version
 0, the argument must be the name of a module-level function, not a closure. The compiler generates
 one copy of the receiving function per function passed to it, so the passed function is inlined
-and the call costs nothing.
+and the call costs nothing ([decision 0026](../decisions/0026-functions-as-arguments.md)).
 
 ## Generics
 

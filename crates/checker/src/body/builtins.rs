@@ -152,9 +152,10 @@ impl<'db> Body<'db> {
 
     /// Records the call `node` of `function` for the stages after the checker, when it calls
     /// something the language provides rather than a declared function: a conversion such as
-    /// `f64(x)` or `Vec3(1.0, 0.0, 0.0)`, which builds `ty`, a built-in function, an `Array`
-    /// or `Fixed` function, or a method of a list or array, whose receiver comes first. A call
-    /// the checker could not resolve, after an error, is not recorded.
+    /// `f64(x)` or `Vec3(1.0, 0.0, 0.0)`, which builds `ty`, a built-in function, a `math`
+    /// function such as `math.sqrt`, an `Array` or `Fixed` function, or a method of a list or
+    /// array, whose receiver comes first. A call the checker could not resolve, after an error,
+    /// is not recorded.
     pub(super) fn record_builtin(
         &mut self,
         node: NodeId,
@@ -168,6 +169,15 @@ impl<'db> Body<'db> {
                 Callee::Conversion(ty)
             }
             (_, Some(Definition::Builtin(name))) => Callee::Builtin((*name).to_owned()),
+            (
+                _,
+                Some(Definition::Standard {
+                    module: "math",
+                    member: Some(member),
+                }),
+            ) if !matches!(ty.kind(self.db), TypeKind::Unknown) => {
+                Callee::Builtin(format!("math.{member}"))
+            }
             (_, Some(Definition::Item(..)))
                 if matches!(ty.kind(self.db), TypeKind::Fixed { .. }) =>
             {

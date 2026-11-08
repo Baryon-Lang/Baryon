@@ -252,3 +252,32 @@ fn records_pad_between_and_after_fields() {
     assert_eq!(record.layout().size(), 16);
     assert_eq!(Layout::record([]).unwrap().layout(), Layout::EMPTY);
 }
+
+/// A function's own type, `lorenz` read as a value, shows as its signature, which is what a
+/// program can spell, and takes no bytes, as a `Callable` does (decision 0026).
+#[test]
+fn a_function_type_shows_its_signature_and_takes_no_bytes() {
+    let database = Database::default();
+    let file = File::new(
+        &database,
+        FileId::from_index(0),
+        SourceFile::new("a.byn", "lorenz").unwrap(),
+    );
+    let package = Package::new(&database, vec![file]);
+    let item = crate::Item::new(&database, package, file, name_node(&database, file));
+    let f64 = primitive(&database, "f64");
+    let callable = Type::new(
+        &database,
+        TypeKind::Callable {
+            parameters: vec![f64],
+            returns: f64,
+        },
+    );
+    let function = Type::new(&database, TypeKind::Function { item, callable });
+    assert_ne!(function, callable);
+    assert_eq!(
+        function.display(&database).to_string(),
+        "Callable[[f64], f64]"
+    );
+    assert_eq!(layout_of(&database, function), Ok((0, 1)));
+}

@@ -338,3 +338,48 @@ error: this function returns `i64`, so `return` needs a value
   |     ^^^^^^ no value"
     );
 }
+
+/// A `math` function given the wrong number of arguments, a keyword argument, a value that is
+/// not a real number, or two floats of different widths.
+#[test]
+fn math_functions_are_checked() {
+    let program = r"
+import math
+from math import sqrt
+
+
+def f(a: f32, b: f64, s: str) -> f64:
+    c = sqrt(a, b)
+    d = math.exp(x=b)
+    e = math.sin(s)
+    g = math.pow(a, b)
+    return b
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `sqrt` takes one number
+ --> main.byn:6:9
+  |
+6 |     c = sqrt(a, b)
+  |         ^^^^^^^^^^ found 2 arguments
+
+error: `exp` takes one number
+ --> main.byn:7:9
+  |
+7 |     d = math.exp(x=b)
+  |         ^^^^^^^^^^^^^ found a keyword argument
+
+error: `sin` takes a real number, not `str`
+ --> main.byn:8:18
+  |
+8 |     e = math.sin(s)
+  |                  ^ not an integer or a float
+
+error: `pow` cannot mix `f32` and `f64`
+ --> main.byn:9:9
+  |
+9 |     g = math.pow(a, b)
+  |         ^^^^^^^^^^^^^^ different number types
+  = note: convert one side so both are the same type, such as `f64(x)`"
+    );
+}

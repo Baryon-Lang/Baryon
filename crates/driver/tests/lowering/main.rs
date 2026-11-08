@@ -9,6 +9,7 @@
 use driver::Session;
 
 mod calls;
+mod math;
 mod unpacking;
 mod values;
 
@@ -201,13 +202,14 @@ fn(_1: i64, _2: i64) -> f64 {
     );
 }
 
-/// A construct outside the first slice is an error that names it, and gives no body.
+/// A construct outside the first slice is an error that names it, and gives no body. `**` is
+/// lowered on floats, not yet on integers.
 #[test]
 fn constructs_not_lowered_yet_are_errors() {
     let program = "\
-        def power(x: f64) -> f64:\n\
+        def power(x: f64, n: i64) -> i64:\n\
         \x20   ys = [x]\n\
-        \x20   return x ** 2.0\n";
+        \x20   return n ** 2\n";
     assert_eq!(
         lower(program, "power"),
         "\
@@ -221,8 +223,8 @@ error: lowering does not handle list displays yet
 error: lowering does not handle `**` yet
  --> main.byn:3:12
   |
-3 |     return x ** 2.0
-  |            ^^^^^^^^ not lowered yet
+3 |     return n ** 2
+  |            ^^^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
 }

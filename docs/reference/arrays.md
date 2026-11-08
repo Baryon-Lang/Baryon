@@ -165,5 +165,78 @@ set.
 | `a.round()` | A new array with each element rounded to the nearest whole number, ties to even |
 | `a.fill(value)` | Sets every element to `value`; `a` must be changeable |
 
+### The order `sum` adds in
+
+Floating-point addition is not associative, so the order a sum adds in changes its last bits and
+how much rounding error it collects. `a.sum()` of floats fixes the order: NumPy's pairwise tree,
+so the result has the same bits as `numpy.sum` of the same array. Rounding error grows with the
+logarithm of the length rather than the length, at the same cost as adding one element at a time.
+
+The elements are taken in row-major order (decision 0008) as one run of `n` values, and summed by
+this tree, written in Python:
+
+```python
+def pairwise(v):
+    n = len(v)
+    if n < 8:
+        total = -0.0
+        for x in v:
+            total += x
+        return total
+    if n <= 128:
+        t = list(v[:8])
+        whole = n - n % 8
+        for i in range(8, whole, 8):
+            for lane in range(8):
+                t[lane] += v[i + lane]
+        total = ((t[0] + t[1]) + (t[2] + t[3])) + ((t[4] + t[5]) + (t[6] + t[7]))
+        for x in v[whole:]:
+            total += x
+        return total
+    half = n // 2
+    split = half - half % 8
+    return pairwise(v[:split]) + pairwise(v[split:])
+
+a_sum = 0.0 + pairwise(elements)
+```
+
+The `0.0` added last is the identity of `+`, so an empty array sums to `0.0`. An `f32` array adds
+in `f32` throughout, as NumPy does. Integer sums add one element at a time: integer addition is
+exact, so the order cannot change the result. The same reasoning fixes the order of reductions in
+parallel loops; see [reproducible reductions](parallel-loops.md#reproducible-reductions).
+
+## Math functions
+
 Mathematical functions from `math`, such as `sqrt` and `exp`, apply to numbers. Their element-wise
-forms on arrays arrive with roadmap 1.14.
+forms on arrays arrive with roadmap 1.14. The compiler builds `sqrt`, `exp`, `log`, `sin`, `cos`
+and `pow` today; the rest of `math` comes with the standard library (roadmap 1.13).
+
+Each returns a float. An `f32` or `f64` argument keeps its type, so `sqrt` of an `f32` is an
+`f32`, as `numpy.sqrt` gives. An integer converts to `f64` first, so `sqrt(2)` is
+`1.4142135623730951`, as in Python. `pow(x, y)` mixes its arguments as `x ** y` does, so
+`pow(x, 0.5)` on an `f32` stays `f32`, and `pow` of an `f32` and an `f64` is an error that asks for
+a conversion:
+
+```python
+from math import sqrt
+
+
+def rms(total: f64, n: int) -> f64:
+    return sqrt(total / n)
+```
+
+They and float `**` follow IEEE 754 and the C math library, as NumPy does, never raising and never
+returning a complex number. This is the rule [float division by zero](types.md#numbers) already
+follows:
+
+| Expression | Python | Here |
+| --- | --- | --- |
+| `sqrt(-1.0)` | `ValueError` | `nan` |
+| `log(0.0)` | `ValueError` | `-inf` |
+| `log(-1.0)` | `ValueError` | `nan` |
+| `(-8.0) ** (1 / 3)` | a complex number | `nan` |
+| `(-8.0) ** 3.0` | `-512.0` | `-512.0` |
+| `0.0 ** -1.0` | `ZeroDivisionError` | `inf` |
+
+A negative base with a whole-number exponent gives a real result, as in Python. `x ** y` on
+floats is C's `pow(x, y)`. `**` on integers needs a non-negative exponent; a negative one panics.

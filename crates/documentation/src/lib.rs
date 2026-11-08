@@ -82,7 +82,41 @@ use syntax::SyntaxTree;
 /// Cost: one pass over the module's top-level statements and its classes' bodies. Function
 /// bodies are never entered past their first statement.
 ///
-/// See the crate documentation for an example.
+/// A module of one documented struct:
+///
+/// ```
+/// # use source::SourceMap;
+/// # use syntax::{Role, SyntaxKind, TreeBuilder};
+/// let text = "class Atoms(Struct):\n    \"\"\"Particles.\"\"\"\n\n    n: i64\n    \"\"\"How many.\"\"\"\n";
+/// # let mut sources = SourceMap::new();
+/// # let mut builder = TreeBuilder::new(sources.add("atoms.byn", text)?);
+/// # builder.open(SyntaxKind::Module, Role::Root, 0, 74);
+/// # builder.open(SyntaxKind::ClassDefinition, Role::Body, 0, 73);
+/// # builder.leaf(SyntaxKind::Name, Role::Name, 6, 11);
+/// # builder.open(SyntaxKind::Arguments, Role::Arguments, 11, 19);
+/// # builder.leaf(SyntaxKind::Name, Role::Item, 12, 18);
+/// # builder.close();
+/// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 25, 41);
+/// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 25, 41);
+/// # builder.close();
+/// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 53);
+/// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 48);
+/// # builder.leaf(SyntaxKind::Name, Role::Annotation, 50, 53);
+/// # builder.close();
+/// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 58, 73);
+/// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 58, 73);
+/// # builder.close();
+/// # builder.close();
+/// # builder.close();
+/// let module = documentation::document(&builder.finish(), text, "atoms");
+///
+/// assert_eq!(module.name(), "atoms");
+/// assert_eq!(module.text(), None);
+/// let atoms = &module.items()[0];
+/// assert_eq!(atoms.signature(), "class Atoms(Struct)");
+/// assert_eq!(atoms.members()[0].text(), Some("How many."));
+/// # Ok::<(), source::SourceError>(())
+/// ```
 #[must_use]
 pub fn document(tree: &SyntaxTree, source: &str, name: &str) -> ModuleDocumentation {
     extract::Extractor::new(tree, source).module(name)
@@ -132,6 +166,31 @@ pub struct ModuleDocumentation {
 
 impl ModuleDocumentation {
     /// The module's dotted name, such as `physics.nbody`.
+    ///
+    /// ```
+    /// # use source::SourceMap;
+    /// # use syntax::{Role, SyntaxKind, TreeBuilder};
+    /// let text = "\"\"\"Heat flow.\n\nExplicit finite differences.\"\"\"\nALPHA: Final = 0.1\n\"\"\"Diffusivity.\"\"\"\n";
+    /// # let mut sources = SourceMap::new();
+    /// # let mut builder = TreeBuilder::new(sources.add("physics/heat.byn", text)?);
+    /// # builder.open(SyntaxKind::Module, Role::Root, 0, 85);
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 0, 46);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 0, 46);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 65);
+    /// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 52);
+    /// # builder.leaf(SyntaxKind::Name, Role::Annotation, 54, 59);
+    /// # builder.leaf(SyntaxKind::Float, Role::Value, 62, 65);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 66, 84);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 66, 84);
+    /// # builder.close();
+    /// # builder.close();
+    /// let module = documentation::document(&builder.finish(), text, "physics.heat");
+    ///
+    /// assert_eq!(module.name(), "physics.heat");
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -139,6 +198,32 @@ impl ModuleDocumentation {
 
     /// The module's documentation, cleaned of its source indentation; `None` when the module
     /// has no documentation string.
+    ///
+    /// ```
+    /// # use source::SourceMap;
+    /// # use syntax::{Role, SyntaxKind, TreeBuilder};
+    /// let text = "\"\"\"Heat flow.\n\nExplicit finite differences.\"\"\"\nALPHA: Final = 0.1\n\"\"\"Diffusivity.\"\"\"\n";
+    /// # let mut sources = SourceMap::new();
+    /// # let mut builder = TreeBuilder::new(sources.add("physics/heat.byn", text)?);
+    /// # builder.open(SyntaxKind::Module, Role::Root, 0, 85);
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 0, 46);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 0, 46);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 65);
+    /// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 52);
+    /// # builder.leaf(SyntaxKind::Name, Role::Annotation, 54, 59);
+    /// # builder.leaf(SyntaxKind::Float, Role::Value, 62, 65);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 66, 84);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 66, 84);
+    /// # builder.close();
+    /// # builder.close();
+    /// let module = documentation::document(&builder.finish(), text, "physics.heat");
+    ///
+    /// // The quotes are gone; the Markdown is kept as written.
+    /// assert_eq!(module.text(), Some("Heat flow.\n\nExplicit finite differences."));
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn text(&self) -> Option<&str> {
         self.text.as_deref()
@@ -146,12 +231,63 @@ impl ModuleDocumentation {
 
     /// The first line of the module's documentation, its one-line summary; `None` when it has
     /// none.
+    ///
+    /// ```
+    /// # use source::SourceMap;
+    /// # use syntax::{Role, SyntaxKind, TreeBuilder};
+    /// let text = "\"\"\"Heat flow.\n\nExplicit finite differences.\"\"\"\nALPHA: Final = 0.1\n\"\"\"Diffusivity.\"\"\"\n";
+    /// # let mut sources = SourceMap::new();
+    /// # let mut builder = TreeBuilder::new(sources.add("physics/heat.byn", text)?);
+    /// # builder.open(SyntaxKind::Module, Role::Root, 0, 85);
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 0, 46);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 0, 46);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 65);
+    /// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 52);
+    /// # builder.leaf(SyntaxKind::Name, Role::Annotation, 54, 59);
+    /// # builder.leaf(SyntaxKind::Float, Role::Value, 62, 65);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 66, 84);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 66, 84);
+    /// # builder.close();
+    /// # builder.close();
+    /// let module = documentation::document(&builder.finish(), text, "physics.heat");
+    ///
+    /// assert_eq!(module.summary(), Some("Heat flow."));
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn summary(&self) -> Option<&str> {
         self.text()?.lines().next().filter(|line| !line.is_empty())
     }
 
     /// The module's public constants, type aliases, functions and classes, in source order.
+    ///
+    /// ```
+    /// # use source::SourceMap;
+    /// # use syntax::{Role, SyntaxKind, TreeBuilder};
+    /// let text = "\"\"\"Heat flow.\n\nExplicit finite differences.\"\"\"\nALPHA: Final = 0.1\n\"\"\"Diffusivity.\"\"\"\n";
+    /// # let mut sources = SourceMap::new();
+    /// # let mut builder = TreeBuilder::new(sources.add("physics/heat.byn", text)?);
+    /// # builder.open(SyntaxKind::Module, Role::Root, 0, 85);
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 0, 46);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 0, 46);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 65);
+    /// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 52);
+    /// # builder.leaf(SyntaxKind::Name, Role::Annotation, 54, 59);
+    /// # builder.leaf(SyntaxKind::Float, Role::Value, 62, 65);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 66, 84);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 66, 84);
+    /// # builder.close();
+    /// # builder.close();
+    /// let module = documentation::document(&builder.finish(), text, "physics.heat");
+    ///
+    /// let names: Vec<&str> = module.items().iter().map(|item| item.name()).collect();
+    /// assert_eq!(names, ["ALPHA"]);
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn items(&self) -> &[Item] {
         &self.items
@@ -160,6 +296,31 @@ impl ModuleDocumentation {
     /// The name of the module's page: its dotted name with `.md` added, such as
     /// `physics.nbody.md`. Every page sits in one directory, so pages link to each other by
     /// file name alone.
+    ///
+    /// ```
+    /// # use source::SourceMap;
+    /// # use syntax::{Role, SyntaxKind, TreeBuilder};
+    /// let text = "\"\"\"Heat flow.\n\nExplicit finite differences.\"\"\"\nALPHA: Final = 0.1\n\"\"\"Diffusivity.\"\"\"\n";
+    /// # let mut sources = SourceMap::new();
+    /// # let mut builder = TreeBuilder::new(sources.add("physics/heat.byn", text)?);
+    /// # builder.open(SyntaxKind::Module, Role::Root, 0, 85);
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 0, 46);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 0, 46);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 65);
+    /// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 52);
+    /// # builder.leaf(SyntaxKind::Name, Role::Annotation, 54, 59);
+    /// # builder.leaf(SyntaxKind::Float, Role::Value, 62, 65);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 66, 84);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 66, 84);
+    /// # builder.close();
+    /// # builder.close();
+    /// let module = documentation::document(&builder.finish(), text, "physics.heat");
+    ///
+    /// assert_eq!(module.file_name(), "physics.heat.md");
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn file_name(&self) -> String {
         format!("{}.md", self.name)
@@ -173,7 +334,39 @@ impl ModuleDocumentation {
     /// documentation. A class's fields and methods follow the class under third-level headings
     /// such as `Atoms.positions`.
     ///
-    /// See the crate documentation for an example.
+    /// ```
+    /// # use source::SourceMap;
+    /// # use syntax::{Role, SyntaxKind, TreeBuilder};
+    /// let text = "class Atoms(Struct):\n    \"\"\"Particles.\"\"\"\n\n    n: i64\n    \"\"\"How many.\"\"\"\n";
+    /// # let mut sources = SourceMap::new();
+    /// # let mut builder = TreeBuilder::new(sources.add("atoms.byn", text)?);
+    /// # builder.open(SyntaxKind::Module, Role::Root, 0, 74);
+    /// # builder.open(SyntaxKind::ClassDefinition, Role::Body, 0, 73);
+    /// # builder.leaf(SyntaxKind::Name, Role::Name, 6, 11);
+    /// # builder.open(SyntaxKind::Arguments, Role::Arguments, 11, 19);
+    /// # builder.leaf(SyntaxKind::Name, Role::Item, 12, 18);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 25, 41);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 25, 41);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 53);
+    /// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 48);
+    /// # builder.leaf(SyntaxKind::Name, Role::Annotation, 50, 53);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 58, 73);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 58, 73);
+    /// # builder.close();
+    /// # builder.close();
+    /// # builder.close();
+    /// let module = documentation::document(&builder.finish(), text, "atoms");
+    ///
+    /// assert_eq!(
+    ///     module.markdown(),
+    ///     "# `atoms`\n\n## `Atoms`\n\n```python\nclass Atoms(Struct)\n```\n\nParticles.\n\n### \
+    ///      `Atoms.n`\n\n```python\nn: i64\n```\n\nHow many.\n",
+    /// );
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn markdown(&self) -> String {
         let mut page = String::new();
@@ -199,6 +392,37 @@ pub struct Item {
 
 impl Item {
     /// The name it is declared with.
+    ///
+    /// ```
+    /// # use source::SourceMap;
+    /// # use syntax::{Role, SyntaxKind, TreeBuilder};
+    /// let text = "class Atoms(Struct):\n    \"\"\"Particles.\"\"\"\n\n    n: i64\n    \"\"\"How many.\"\"\"\n";
+    /// # let mut sources = SourceMap::new();
+    /// # let mut builder = TreeBuilder::new(sources.add("atoms.byn", text)?);
+    /// # builder.open(SyntaxKind::Module, Role::Root, 0, 74);
+    /// # builder.open(SyntaxKind::ClassDefinition, Role::Body, 0, 73);
+    /// # builder.leaf(SyntaxKind::Name, Role::Name, 6, 11);
+    /// # builder.open(SyntaxKind::Arguments, Role::Arguments, 11, 19);
+    /// # builder.leaf(SyntaxKind::Name, Role::Item, 12, 18);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 25, 41);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 25, 41);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 53);
+    /// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 48);
+    /// # builder.leaf(SyntaxKind::Name, Role::Annotation, 50, 53);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 58, 73);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 58, 73);
+    /// # builder.close();
+    /// # builder.close();
+    /// # builder.close();
+    /// let module = documentation::document(&builder.finish(), text, "atoms");
+    ///
+    /// assert_eq!(module.items()[0].name(), "Atoms");
+    /// assert_eq!(module.items()[0].members()[0].name(), "n");
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -209,18 +433,107 @@ impl Item {
     /// type alias or field. Comments, the closing colon and the trailing comma of a parameter
     /// list written one parameter per line are left out. A definition's decorators come first,
     /// each on its own line.
+    ///
+    /// ```
+    /// # use source::SourceMap;
+    /// # use syntax::{Role, SyntaxKind, TreeBuilder};
+    /// let text = "\"\"\"Heat flow.\n\nExplicit finite differences.\"\"\"\nALPHA: Final = 0.1\n\"\"\"Diffusivity.\"\"\"\n";
+    /// # let mut sources = SourceMap::new();
+    /// # let mut builder = TreeBuilder::new(sources.add("physics/heat.byn", text)?);
+    /// # builder.open(SyntaxKind::Module, Role::Root, 0, 85);
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 0, 46);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 0, 46);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 65);
+    /// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 52);
+    /// # builder.leaf(SyntaxKind::Name, Role::Annotation, 54, 59);
+    /// # builder.leaf(SyntaxKind::Float, Role::Value, 62, 65);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 66, 84);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 66, 84);
+    /// # builder.close();
+    /// # builder.close();
+    /// let module = documentation::document(&builder.finish(), text, "physics.heat");
+    ///
+    /// assert_eq!(module.items()[0].signature(), "ALPHA: Final = 0.1");
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn signature(&self) -> &str {
         &self.signature
     }
 
     /// Its documentation, cleaned of its source indentation; `None` when it has none.
+    ///
+    /// ```
+    /// # use source::SourceMap;
+    /// # use syntax::{Role, SyntaxKind, TreeBuilder};
+    /// let text = "class Atoms(Struct):\n    \"\"\"Particles.\"\"\"\n\n    n: i64\n    \"\"\"How many.\"\"\"\n";
+    /// # let mut sources = SourceMap::new();
+    /// # let mut builder = TreeBuilder::new(sources.add("atoms.byn", text)?);
+    /// # builder.open(SyntaxKind::Module, Role::Root, 0, 74);
+    /// # builder.open(SyntaxKind::ClassDefinition, Role::Body, 0, 73);
+    /// # builder.leaf(SyntaxKind::Name, Role::Name, 6, 11);
+    /// # builder.open(SyntaxKind::Arguments, Role::Arguments, 11, 19);
+    /// # builder.leaf(SyntaxKind::Name, Role::Item, 12, 18);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 25, 41);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 25, 41);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 53);
+    /// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 48);
+    /// # builder.leaf(SyntaxKind::Name, Role::Annotation, 50, 53);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 58, 73);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 58, 73);
+    /// # builder.close();
+    /// # builder.close();
+    /// # builder.close();
+    /// let module = documentation::document(&builder.finish(), text, "atoms");
+    ///
+    /// // The documentation string inside the class body documents the class.
+    /// assert_eq!(module.items()[0].text(), Some("Particles."));
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn text(&self) -> Option<&str> {
         self.text.as_deref()
     }
 
     /// A class's public fields and methods, in source order; empty for anything else.
+    ///
+    /// ```
+    /// # use source::SourceMap;
+    /// # use syntax::{Role, SyntaxKind, TreeBuilder};
+    /// let text = "class Atoms(Struct):\n    \"\"\"Particles.\"\"\"\n\n    n: i64\n    \"\"\"How many.\"\"\"\n";
+    /// # let mut sources = SourceMap::new();
+    /// # let mut builder = TreeBuilder::new(sources.add("atoms.byn", text)?);
+    /// # builder.open(SyntaxKind::Module, Role::Root, 0, 74);
+    /// # builder.open(SyntaxKind::ClassDefinition, Role::Body, 0, 73);
+    /// # builder.leaf(SyntaxKind::Name, Role::Name, 6, 11);
+    /// # builder.open(SyntaxKind::Arguments, Role::Arguments, 11, 19);
+    /// # builder.leaf(SyntaxKind::Name, Role::Item, 12, 18);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 25, 41);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 25, 41);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::AnnotatedAssign, Role::Body, 47, 53);
+    /// # builder.leaf(SyntaxKind::Name, Role::Target, 47, 48);
+    /// # builder.leaf(SyntaxKind::Name, Role::Annotation, 50, 53);
+    /// # builder.close();
+    /// # builder.open(SyntaxKind::ExpressionStatement, Role::Body, 58, 73);
+    /// # builder.leaf(SyntaxKind::StringLiteral, Role::Value, 58, 73);
+    /// # builder.close();
+    /// # builder.close();
+    /// # builder.close();
+    /// let module = documentation::document(&builder.finish(), text, "atoms");
+    ///
+    /// let atoms = &module.items()[0];
+    /// assert_eq!(atoms.members().len(), 1);
+    /// assert_eq!(atoms.members()[0].signature(), "n: i64");
+    /// assert!(atoms.members()[0].members().is_empty());
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
     #[must_use]
     pub fn members(&self) -> &[Item] {
         &self.members

@@ -75,8 +75,8 @@ fn(_1: Fixed[f64, (2,)]) -> f64 {
     );
 }
 
-/// `a.copy()` is a whole-array expression with one leaf, and `a.sum()` adds every element in
-/// a loop nest, in row-major order.
+/// `a.copy()` is a whole-array expression with one leaf, and `a.sum()` of floats calls the
+/// pairwise `sum` built-in on it.
 #[test]
 fn copy_and_sum_of_an_array() {
     let program = "\
@@ -91,55 +91,19 @@ fn(_1: Array[f64, 2]) -> f64 {
     let _1: Array[f64, 2]; // parameter a
     let _2: Array[f64, 2]; // b
     let _3: Array[f64, 2];
-    let _4: i64;
-    let _5: i64;
-    let _6: f64;
-    let _7: i64;
-    let _8: bool;
-    let _9: i64;
-    let _10: bool;
+    let _4: f64;
 
     bb0: {
         _3 = elementwise copy _1;
         drop(_2);
         _2 = move _3;
-        _4 = len(_2, 0);
-        _5 = len(_2, 1);
-        _6 = 0.0_f64;
-        _7 = 0_i64;
-        goto -> bb1;
+        _4 = call sum(_2) -> [return: bb1];
     }
 
     bb1: {
-        _8 = Less(copy _7, copy _4);
-        branch copy _8 -> [true: bb2, false: bb3];
-    }
-
-    bb2: {
-        _9 = 0_i64;
-        goto -> bb4;
-    }
-
-    bb3: {
-        _0 = copy _6;
+        _0 = copy _4;
         drop(_2);
         return;
-    }
-
-    bb4: {
-        _10 = Less(copy _9, copy _5);
-        branch copy _10 -> [true: bb5, false: bb6];
-    }
-
-    bb5: {
-        _6 = Add(copy _6, copy _2[_7, _9]);
-        _9 = Add(copy _9, 1_i64);
-        goto -> bb4;
-    }
-
-    bb6: {
-        _7 = Add(copy _7, 1_i64);
-        goto -> bb1;
     }
 }
 "

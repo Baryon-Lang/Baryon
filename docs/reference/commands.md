@@ -175,6 +175,6 @@ the editor's workspace root as one package and reports the same errors and warni
 1.16).
 
 To use it, point your editor's Language Server Protocol client at `baryon lsp` for `.byn` files.
-A VS Code extension that does this for you is roadmap item 1.17. It exits with 0 after the editor
-sends `shutdown` and then `exit`, and with 1 if the editor exits or closes the connection without
-`shutdown` first, as the protocol asks.
+In VS Code, the [Baryon extension](../../editors/vscode/README.md) does this for you. It exits
+with 0 after the editor sends `shutdown` and then `exit`, and with 1 if the editor exits or closes
+the connection without `shutdown` first, as the protocol asks.
