@@ -115,7 +115,13 @@ impl<'db> Body<'db> {
                     _ => None,
                 };
                 if let Some(range) = range {
-                    return self.builtin_iteration(range);
+                    // The inner `range` call is recorded too, for lowering to read its bounds.
+                    let element = self.builtin_iteration(range)?;
+                    if let Some(function) = self.tree.child(range, Role::Function) {
+                        let inner = self.arguments(range);
+                        self.record_builtin(range, function, &inner, element);
+                    }
+                    return Some(element);
                 }
                 for &argument in &arguments.positional {
                     self.expression(argument, None);

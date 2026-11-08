@@ -118,14 +118,34 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         if let Some(scope) = &function.scope {
             let _ = write!(signature, " {UNWIND_TABLE} !dbg {scope}");
         }
+        // The loop metadata of each `simd` loop, by its header block, made at its first
+        // back edge.
+        let mut loops: BTreeMap<BlockId, String> = BTreeMap::new();
         for (index, block) in body.blocks.iter().enumerate() {
-            function.line_label(&block_label(BlockId::new(index)));
+            let id = BlockId::new(index);
+            function.line_label(&block_label(id));
             for statement in &block.statements {
                 function.span = statement.span;
                 function.statement(statement)?;
             }
             function.span = block.terminator.span;
-            function.terminator(&block.terminator)?;
+            match block.terminator.kind {
+                // A jump back to a `simd` loop's header, from a block after it, is the loop's
+                // back edge, where LLVM reads the request to vectorize.
+                TerminatorKind::Goto(header)
+                    if header <= id && body.vectorized.contains(&header) =>
+                {
+                    let metadata = loops
+                        .entry(header)
+                        .or_insert_with(|| function.constants.vectorize());
+                    let metadata = metadata.clone();
+                    function.line(&format!(
+                        "br label %{}, !llvm.loop {metadata}",
+                        block_label(header)
+                    ));
+                }
+                _ => function.terminator(&block.terminator)?,
+            }
         }
         let mut text = format!(
             "{signature} {{\nstart:\n{entry}{}{}}}\n",
