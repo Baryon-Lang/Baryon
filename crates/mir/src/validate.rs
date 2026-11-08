@@ -231,9 +231,10 @@ impl Body<'_> {
         }
     }
 
-    /// The parameters of outlined body `position` that the [`ParallelFor`](TerminatorKind::ParallelFor)
-    /// running it accumulates into: the last ones, after the iteration, the arguments and the
-    /// reductions. Empty when no `ParallelFor` runs it.
+    /// The parameters of outlined body `position` that the
+    /// [`ParallelFor`](TerminatorKind::ParallelFor) running it accumulates into: the last ones,
+    /// after the iteration, the arguments and the reductions. Empty when no `ParallelFor` runs
+    /// it.
     fn accumulated(&self, position: u32) -> Vec<Local> {
         let mut accumulated = Vec::new();
         for block in &self.blocks {

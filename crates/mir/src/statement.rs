@@ -143,9 +143,9 @@ pub enum TerminatorKind<'db> {
     /// The outlined body is [`Body::outlined`](crate::Body::outlined)`[body]`. Its parameters
     /// are, in order: the iteration number, an `Owned` `i64` counted from 0; one per argument,
     /// in that argument's mode; one `InOut` per reduction, of the reduced place's type; and one
-    /// `InOut` per accumulation, of the accumulated array's type. It
-    /// returns `None` and cannot fail: the checker allows no `return`, `break` or `raise` in a
-    /// `prange` body, so its `continue` is a return.
+    /// `InOut` per accumulation, of the accumulated array's type. It returns `None` and cannot
+    /// fail: the checker allows no `return`, `break` or `raise` in a `prange` body, so its
+    /// `continue` is a return.
     ///
     /// A backend gives each chunk of iterations (runtime, `baryon_rt_parallel_for`) a private
     /// copy of each reduced value, starting at the operator's identity, passes that copy to
