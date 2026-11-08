@@ -193,6 +193,9 @@ pub enum Builtin {
     /// space, then a line end. Each argument is a number, a `bool` or a `str`, passed `Borrow`
     /// or `Owned`; the destination has type `None` and the call cannot fail.
     Print,
+    /// A mathematical function of floats. Every argument and the destination have one float
+    /// type, `f32` or `f64`; lowering converts integer operands first. The call cannot fail.
+    Math(MathFunction),
 }
 
 impl Builtin {
@@ -200,11 +203,73 @@ impl Builtin {
     ///
     /// ```
     /// assert_eq!(mir::Builtin::Print.name(), "print");
+    /// assert_eq!(mir::Builtin::Math(mir::MathFunction::Sqrt).name(), "math.sqrt");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             Self::Print => "print",
+            Self::Math(function) => function.name(),
+        }
+    }
+}
+
+/// A mathematical function of floats, called by [`Builtin::Math`]. Each gives the result IEEE
+/// 754 and the C library give for its argument type; none of them fails or panics. NaN and the
+/// infinities pass through as C's functions define, so `sqrt(-1.0)` is NaN, as `numpy.sqrt`
+/// gives, where Python's `math.sqrt` raises.
+///
+/// These are the functions the example programs and the most common physics formulas need; the
+/// standard library (roadmap 1.13) adds the rest of Python's `math` module.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, salsa::SalsaValue)]
+pub enum MathFunction {
+    /// `math.sqrt(x)`: the square root, correctly rounded.
+    Sqrt,
+    /// `math.exp(x)`: e to the power `x`.
+    Exp,
+    /// `math.log(x)`: the natural logarithm.
+    Log,
+    /// `math.sin(x)`, with `x` in radians.
+    Sin,
+    /// `math.cos(x)`, with `x` in radians.
+    Cos,
+    /// `x ** y` on floats, and `math.pow(x, y)`: two arguments, the base then the exponent.
+    Power,
+    /// `round` of a float to the nearest whole number, ties to even, as Python's `round` and
+    /// `numpy.round` do; the result is still a float, so `2.5` gives `2.0`.
+    RoundEven,
+}
+
+impl MathFunction {
+    /// The name the source calls it by. `**` is written `pow`, its name in `math`.
+    ///
+    /// ```
+    /// assert_eq!(mir::MathFunction::Power.name(), "math.pow");
+    /// ```
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Sqrt => "math.sqrt",
+            Self::Exp => "math.exp",
+            Self::Log => "math.log",
+            Self::Sin => "math.sin",
+            Self::Cos => "math.cos",
+            Self::Power => "math.pow",
+            Self::RoundEven => "round",
+        }
+    }
+
+    /// How many arguments it takes: 2 for [`Power`](Self::Power), 1 for the rest.
+    ///
+    /// ```
+    /// assert_eq!(mir::MathFunction::Sqrt.arity(), 1);
+    /// assert_eq!(mir::MathFunction::Power.arity(), 2);
+    /// ```
+    #[must_use]
+    pub fn arity(self) -> usize {
+        match self {
+            Self::Power => 2,
+            _ => 1,
         }
     }
 }

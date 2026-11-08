@@ -109,7 +109,12 @@ impl<'db> Builder<'db> {
 
     /// The rvalue that turns `operand`, of type `from`, into a value of type `to`: `None` or a
     /// `T` into a `T | None`, or a number into another number type.
-    fn coerce(&self, operand: Operand<'db>, from: Type<'db>, to: Type<'db>) -> Rvalue<'db> {
+    pub(crate) fn coerce(
+        &self,
+        operand: Operand<'db>,
+        from: Type<'db>,
+        to: Type<'db>,
+    ) -> Rvalue<'db> {
         if from == to {
             return Rvalue::Use(operand);
         }
