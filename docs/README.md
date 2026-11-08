@@ -5,10 +5,12 @@ missing or unclear, that is a bug: open an issue.
 
 ## Learning the language
 
-The compiler only checks syntax, supported constructs, module names and names so far
-(`cargo run --package driver -- check <directory>`), so the language is learned from its
-definition and from examples. A beginner's guide will follow the first compiler prototype that
-runs programs.
+The compiler is a prototype. `baryon check <directory>` reports every error the checker finds,
+but `baryon build`, `baryon run` and `baryon test` compile only part of the language so far, and
+none of the [example programs](examples/README.md) builds yet; the [README](../README.md#status)
+lists what does. Until the beginner's guide (roadmap item 0.8.3) is written, the language is
+learned from its definition and from the examples. Build the tool with
+`cargo build --package driver` and run it as `target/debug/baryon`.
 
 To see the same diagnostics in an editor as you type, point its Language Server Protocol client
 at `baryon lsp` for `.byn` files: build it with `cargo build --package driver` and run
