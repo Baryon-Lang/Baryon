@@ -1,6 +1,8 @@
 //! `cargo xtask ci`: every check, cheapest first, stopping at the first failure.
 
-use crate::{Outcome, architecture, cargo, dependencies, examples, links, roadmap, workspace_root};
+use crate::{
+    Outcome, architecture, cargo, conflicts, dependencies, examples, links, roadmap, workspace_root,
+};
 use std::process::Command;
 
 /// One check in the CI sequence.
@@ -14,6 +16,8 @@ enum Check {
         /// Extra environment variables for the invocation.
         environment: &'static [(&'static str, &'static str)],
     },
+    /// No file holds a leftover merge-conflict marker.
+    Conflicts,
     /// The crate dependency rules in `docs/architecture.md`.
     Architecture,
     /// Every relative link in the Markdown documentation resolves.
@@ -27,7 +31,10 @@ enum Check {
 }
 
 /// The checks `cargo xtask ci` runs, in order. Fast checks come first so failures surface early.
+/// Conflict markers come first of all: a marker in a Rust file would otherwise surface as a
+/// confusing format or parse error.
 const CHECKS: &[Check] = &[
+    Check::Conflicts,
     Check::Cargo {
         name: "format",
         arguments: &["fmt", "--all", "--check"],
@@ -84,6 +91,7 @@ impl Check {
     fn name(&self) -> &'static str {
         match self {
             Self::Cargo { name, .. } => name,
+            Self::Conflicts => "conflicts",
             Self::Architecture => "architecture",
             Self::Links => "links",
             Self::Roadmap => "roadmap",
@@ -111,6 +119,7 @@ impl Check {
                     Err(format!("check `{name}` failed ({status})").into())
                 }
             }
+            Self::Conflicts => conflicts::check(),
             Self::Architecture => architecture::check(),
             Self::Links => links::check(),
             Self::Roadmap => roadmap::check(),

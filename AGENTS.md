@@ -44,6 +44,7 @@ undocumented code is unfinished code.
 | Crate dependency rules only | `cargo xtask check-architecture` |
 | External dependency licenses, advisories, duplicates and sources only | `cargo xtask check-dependencies` |
 | Documentation links only | `cargo xtask check-links` |
+| Leftover merge-conflict markers only | `cargo xtask check-conflicts` |
 | Example programs parse as Python only | `cargo xtask check-examples` |
 | Roadmap only | `cargo xtask check-roadmap` |
 | Build and open the API docs | `cargo doc --workspace --no-deps --open` |
