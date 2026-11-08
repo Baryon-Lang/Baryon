@@ -318,9 +318,10 @@ body0: fn(_1: Owned[i64], _2: Array[i64, 1], _3: InOut[Array[i64, 1]]) -> None {
     );
 }
 
-/// An array reached through a field is not lowered in `accumulate=` yet.
+/// `accumulate=atoms.forces`: the body reaches `atoms` through its own borrowed parameter, for
+/// the bounds check's length, and the add goes to the accumulated parameter `_3`.
 #[test]
-fn accumulate_of_a_field_is_not_lowered_yet() {
+fn accumulate_of_a_field_adds_through_its_own_parameter() {
     let program = "
 class Atoms(Struct):
     forces: Array[f64, 1]
@@ -332,12 +333,61 @@ def push(atoms: InOut[Atoms], n: i64):
     assert_eq!(
         lower(program, &["push"]),
         "\
-error: lowering does not handle `accumulate=` of an array that is not a variable yet
- --> main.byn:5:35
-  |
-5 |     for i in prange(n, accumulate=atoms.forces):
-  |                                   ^^^^^^^^^^^^ not lowered yet
-  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+fn(_1: InOut[Atoms], _2: i64) -> None {
+    let _0: None; // return
+    let _1: Atoms; // parameter atoms
+    let _2: i64; // parameter n
+    let _3: i64; // i
+    let _4: i64;
+    let _5: i64;
+    let _6: i64;
+
+    bb0: {
+        _4 = 0_i64;
+        _5 = copy _2;
+        _6 = Subtract(copy _5, copy _4);
+        parallel_for body0(copy _6; _1, accumulate _1.0) -> bb1;
+    }
+
+    bb1: {
+        _0 = None;
+        return;
+    }
+}
+
+body0: fn(_1: Owned[i64], _2: Atoms, _3: InOut[Array[f64, 1]]) -> None {
+    let _0: None; // return
+    let _1: i64; // parameter iteration
+    let _2: Atoms; // parameter atoms
+    let _3: Array[f64, 1]; // parameter atoms.forces
+    let _4: i64; // i
+    let _5: i64;
+    let _6: i64;
+    let _7: bool;
+    let _8: bool;
+    let _9: bool;
+
+    bb0: {
+        _4 = copy _1;
+        _5 = len(_2.0, 0);
+        _6 = 0_i64;
+        _7 = GreaterEqual(copy _6, 0_i64);
+        _8 = Less(copy _6, copy _5);
+        _9 = BitAnd(copy _7, copy _8);
+        assert(copy _9, index in bounds in dimension 0: copy _6 < copy _5) -> bb2;
+    }
+
+    bb1: {
+        _0 = None;
+        return;
+    }
+
+    bb2: {
+        accumulate _3[_6] += 1.0_f64;
+        goto -> bb1;
+    }
+}
+"
     );
 }
 

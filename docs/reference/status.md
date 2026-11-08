@@ -118,7 +118,7 @@ The one exception is the overflow panic, described under [Types](#types).
 
 | Builds today | Not built yet |
 | --- | --- |
-| `prange` with the same arguments as `range`, its inferred reductions and their reproducible combine; `accumulate=` of array variables, adding into elements and their lanes | `accumulate=` of an array reached through a field, such as `atoms.forces`; adding into a slice of an accumulated array |
+| `prange` with the same arguments as `range`, its inferred reductions and their reproducible combine; `accumulate=` of array variables and of struct fields such as `atoms.forces`, adding into elements and their lanes | Adding into a slice of an accumulated array |
 | | `simd(range(n))` |
 
 `baryon check` applies every rule of the chapter, so a `prange` loop that breaks one is reported
