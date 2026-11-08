@@ -139,7 +139,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.17.1 | VS Code extension, highlighting: `.byn` files open as Baryon, highlighted by VS Code's Python grammar plus an injection for Baryon's types, `prange` and `simd`, with Python-style comments, brackets, indentation and folding | 0.25 | 1.16.1 | Done | Claude | [0025](docs/decisions/0025-vscode-extension.md), [#92](https://github.com/Baryon-Lang/Baryon/pull/92) |
 | 1.17.2 | VS Code extension, language server client: start `baryon lsp` for `.byn` files so diagnostics show as the user types, with a setting for the path to `baryon` | 0.25 | 1.17.1 | Done | Claude | [0025](docs/decisions/0025-vscode-extension.md), [#93](https://github.com/Baryon-Lang/Baryon/pull/93) |
 | 1.18 | Execution corpus, benchmark baselines and fuzzing in CI | 2 | 1.11 | Planned | — | — |
-| 1.18.1 | Mutation test of the whole compiler: deterministic random edits of the example programs and the front-end corpus, run through check, lowering and the LLVM backend, must never panic; 300 edits per run, more with `BARYON_MUTATIONS` | — | 1.11.3 | In progress | Claude | — |
+| 1.18.1 | Mutation test of the whole compiler: deterministic random edits of the example programs and the front-end corpus, run through check, lowering and the LLVM backend, must never panic; 300 edits per run, more with `BARYON_MUTATIONS` | — | 1.11.3 | Done | Claude | [#107](https://github.com/Baryon-Lang/Baryon/pull/107) |
 
 ## Phase 2: compile speed and the edit loop
 
