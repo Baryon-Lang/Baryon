@@ -150,11 +150,13 @@ pub(crate) fn terminator_effects(terminator: &TerminatorKind<'_>) -> Vec<Effect>
             if let Callee::Value(function) = callee {
                 operand_moves(function, &mut effects);
             }
-            for argument in arguments {
-                if let Argument::Owned(operand) = argument {
-                    operand_moves(operand, &mut effects);
-                }
-            }
+            argument_moves(arguments, &mut effects);
+        }
+        TerminatorKind::ParallelFor {
+            count, arguments, ..
+        } => {
+            operand_moves(count, &mut effects);
+            argument_moves(arguments, &mut effects);
         }
         TerminatorKind::Assert {
             condition, check, ..
@@ -172,9 +174,9 @@ pub(crate) fn terminator_effects(terminator: &TerminatorKind<'_>) -> Vec<Effect>
 /// fills its destination on success and its error local on failure.
 pub(crate) fn successors(terminator: &TerminatorKind<'_>) -> Vec<(BlockId, Vec<Effect>)> {
     match terminator {
-        TerminatorKind::Goto(target) | TerminatorKind::Assert { target, .. } => {
-            vec![(*target, Vec::new())]
-        }
+        TerminatorKind::Goto(target)
+        | TerminatorKind::Assert { target, .. }
+        | TerminatorKind::ParallelFor { target, .. } => vec![(*target, Vec::new())],
         TerminatorKind::Branch {
             then, otherwise, ..
         } => vec![(*then, Vec::new()), (*otherwise, Vec::new())],
@@ -204,6 +206,15 @@ pub(crate) fn successors(terminator: &TerminatorKind<'_>) -> Vec<(BlockId, Vec<E
                 edges.push((edge.target, vec![Effect::Init(Place::from(edge.error))]));
             }
             edges
+        }
+    }
+}
+
+/// The moves call arguments make: each `Owned` one moves its operand, in order.
+fn argument_moves(arguments: &[Argument<'_>], effects: &mut Vec<Effect>) {
+    for argument in arguments {
+        if let Argument::Owned(operand) = argument {
+            operand_moves(operand, effects);
         }
     }
 }

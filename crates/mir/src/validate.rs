@@ -4,8 +4,8 @@
 //! mistake is made, not in a backend three stages later.
 
 use crate::{
-    Argument, BasicBlock, BlockId, Body, Callee, Elementwise, Local, LocalKind, Operand, Phase,
-    Piece, Place, Projection, Rvalue, StatementKind, TerminatorKind,
+    Argument, BasicBlock, BinaryOperator, BlockId, Body, Callee, Elementwise, Local, LocalKind,
+    Operand, Phase, Piece, Place, Projection, Rvalue, StatementKind, TerminatorKind,
 };
 use database::Db;
 use std::fmt;
@@ -30,6 +30,18 @@ pub enum Invalid {
     NotExpanded(BlockId),
     /// A local of a [`Phase::Ready`] body has a type that contains a type parameter.
     NotMonomorphic(Local),
+    /// A block's [`ParallelFor`](TerminatorKind::ParallelFor) names an outlined body the body
+    /// does not have.
+    UnknownOutlined(BlockId, u32),
+    /// A block's [`ParallelFor`](TerminatorKind::ParallelFor) passes a different number of
+    /// values than its outlined body has parameters: the iteration, the arguments and the
+    /// reductions.
+    OutlinedParameters(BlockId),
+    /// A block's [`ParallelFor`](TerminatorKind::ParallelFor) reduces with an operator other
+    /// than `Add` or `Multiply`.
+    ReductionOperator(BlockId),
+    /// The outlined body at this position breaks a rule.
+    Outlined(u32, Box<Invalid>),
 }
 
 impl fmt::Display for Invalid {
@@ -76,6 +88,30 @@ impl fmt::Display for Invalid {
                     local.index()
                 )
             }
+            Self::UnknownOutlined(block, body) => {
+                write!(
+                    formatter,
+                    "bb{} runs outlined body {body}, which does not exist",
+                    block.index()
+                )
+            }
+            Self::OutlinedParameters(block) => {
+                write!(
+                    formatter,
+                    "bb{} passes its outlined body the wrong number of values",
+                    block.index()
+                )
+            }
+            Self::ReductionOperator(block) => {
+                write!(
+                    formatter,
+                    "bb{} reduces with an operator other than Add or Multiply",
+                    block.index()
+                )
+            }
+            Self::Outlined(body, problem) => {
+                write!(formatter, "in outlined body {body}: {problem}")
+            }
         }
     }
 }
@@ -88,7 +124,10 @@ impl Body<'_> {
     /// - local 0 is the return local, and the parameters are exactly locals
     ///   `1..=parameter_count`;
     /// - every local a statement or terminator names exists;
-    /// - a [`Phase::Ready`] body has no whole-array expressions and no type parameters.
+    /// - a [`Phase::Ready`] body has no whole-array expressions and no type parameters;
+    /// - a [`ParallelFor`](TerminatorKind::ParallelFor) names an outlined body that exists,
+    ///   passes it one value per parameter, and reduces only with `Add` or `Multiply`;
+    /// - each outlined body keeps these rules too.
     ///
     /// It does not check types: lowering builds bodies from type-checked code, and a type check
     /// of the IR is a separate pass if bugs show one is needed.
@@ -137,8 +176,47 @@ impl Body<'_> {
             if self.phase == Phase::Ready && uses.elementwise {
                 problems.push(Invalid::NotExpanded(id));
             }
+            self.parallel_for(id, &block.terminator.kind, &mut problems);
+        }
+        for (position, outlined) in (0..).zip(&self.outlined) {
+            let inside = outlined.validate(db).into_iter();
+            problems.extend(inside.map(|problem| Invalid::Outlined(position, Box::new(problem))));
         }
         problems
+    }
+
+    /// The rules a [`ParallelFor`](TerminatorKind::ParallelFor) in block `id` breaks.
+    fn parallel_for(
+        &self,
+        id: BlockId,
+        terminator: &TerminatorKind<'_>,
+        problems: &mut Vec<Invalid>,
+    ) {
+        let TerminatorKind::ParallelFor {
+            body,
+            arguments,
+            reductions,
+            ..
+        } = terminator
+        else {
+            return;
+        };
+        match self.outlined.get(*body as usize) {
+            None => problems.push(Invalid::UnknownOutlined(id, *body)),
+            Some(outlined) => {
+                if outlined.parameter_count as usize != 1 + arguments.len() + reductions.len() {
+                    problems.push(Invalid::OutlinedParameters(id));
+                }
+            }
+        }
+        if reductions.iter().any(|reduction| {
+            !matches!(
+                reduction.operator,
+                BinaryOperator::Add | BinaryOperator::Multiply
+            )
+        }) {
+            problems.push(Invalid::ReductionOperator(id));
+        }
     }
 }
 
@@ -217,12 +295,7 @@ impl Uses {
                 if let Callee::Value(function) = callee {
                     self.operand(function);
                 }
-                for argument in arguments {
-                    match argument {
-                        Argument::Borrow(place) | Argument::InOut(place) => self.place(place),
-                        Argument::Owned(operand) => self.operand(operand),
-                    }
-                }
+                self.arguments(arguments);
                 self.place(destination);
                 self.blocks.push(*target);
                 if let Some(edge) = error {
@@ -240,6 +313,30 @@ impl Uses {
                     self.operand(operand);
                 }
                 self.blocks.push(*target);
+            }
+            TerminatorKind::ParallelFor {
+                count,
+                arguments,
+                reductions,
+                target,
+                ..
+            } => {
+                self.operand(count);
+                self.arguments(arguments);
+                for reduction in reductions {
+                    self.place(&reduction.place);
+                }
+                self.blocks.push(*target);
+            }
+        }
+    }
+
+    /// Records the locals call arguments name.
+    fn arguments(&mut self, arguments: &[Argument<'_>]) {
+        for argument in arguments {
+            match argument {
+                Argument::Borrow(place) | Argument::InOut(place) => self.place(place),
+                Argument::Owned(operand) => self.operand(operand),
             }
         }
     }
