@@ -121,6 +121,18 @@ impl<'db> Function<'_, '_, 'db> {
         self.print_bytes(stream, &constant, &text.len().to_string());
     }
 
+    /// Prints the `str` value `value` to `stream` quoted, as Python's `repr` writes it.
+    pub(crate) fn print_quoted(&mut self, stream: u8, value: &str) {
+        let (bytes, length) = self.text_parts(value);
+        self.declare(
+            "baryon_rt_print_str_quoted",
+            "declare void @baryon_rt_print_str_quoted(i32, ptr, i64) nounwind",
+        );
+        self.line(&format!(
+            "call void @baryon_rt_print_str_quoted(i32 {stream}, ptr {bytes}, i64 {length})"
+        ));
+    }
+
     /// Prints the `length` bytes at `bytes` to `stream`.
     fn print_bytes(&mut self, stream: u8, bytes: &str, length: &str) {
         self.declare(

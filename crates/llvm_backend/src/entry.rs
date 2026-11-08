@@ -4,8 +4,8 @@
 //! A `main` that cannot fail returns 0. A `main` that can fail (the reference, "Errors") is
 //! passed an error value to write into, like any fallible call; when it fails, the C `main`
 //! reads which error it holds and prints it to standard error as `error: ParseError(position=-3)`,
-//! the error's type, then each field by name with its value as `print` writes it, then returns
-//! 1. Status 1 differs from a panic's 101, so a script can tell a reported failure from a bug.
+//! the error's type, then each field by name with its value as `print` writes it, a `str` quoted
+//! as Python's `repr` writes it, then returns 1. Status 1 differs from a panic's 101, so a script can tell a reported failure from a bug.
 
 use crate::Unsupported;
 use crate::function::{Function, global};
@@ -96,7 +96,11 @@ impl<'db> Function<'_, '_, 'db> {
             let value = self
                 .load(&field_address, field_ty)?
                 .ok_or_else(|| Unsupported::new("printing `None`"))?;
-            self.print_value(STDERR, &value, field_ty)?;
+            if matches!(field_ty.kind(self.types.db), TypeKind::Str) {
+                self.print_quoted(STDERR, &value);
+            } else {
+                self.print_value(STDERR, &value, field_ty)?;
+            }
         }
         self.print_text(STDERR, b")\n");
         Ok(())

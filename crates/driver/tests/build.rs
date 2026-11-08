@@ -498,6 +498,6 @@ def main() -> Raises[None, MissingError]:
         String::from_utf8_lossy(&ran.stdout),
         "heat big small\nenergy 2.5\n"
     );
-    assert_eq!(stderr(&ran), "error: MissingError(name=pressure)\n");
+    assert_eq!(stderr(&ran), "error: MissingError(name='pressure')\n");
     assert_eq!(ran.status.code(), Some(1));
 }
