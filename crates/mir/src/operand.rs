@@ -145,8 +145,8 @@ pub enum UnaryOperator {
 }
 
 /// A two-operand operation on two values of one type. The source's `and` and `or` are not here:
-/// they skip their right side, so they lower to branches. Neither is `**`, which lowers to a call
-/// to the standard library.
+/// they skip their right side, so they lower to branches. Neither is `**` on floats, which lowers
+/// to a call of [`MathFunction::Power`](crate::MathFunction::Power).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryOperator {
     /// `+`.

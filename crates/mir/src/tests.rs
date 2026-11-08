@@ -3,8 +3,8 @@
 
 use crate::{
     Argument, BasicBlock, BinaryOperator, BlockId, Body, Builtin, Callee, Check, Constant,
-    Elementwise, ErrorEdge, Invalid, Local, LocalKind, Operand, Phase, Place, Projection, Rvalue,
-    Statement, StatementKind, Terminator, TerminatorKind,
+    Elementwise, ErrorEdge, Invalid, Local, LocalKind, MathFunction, Operand, Phase, Place,
+    Projection, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
 };
 use database::{Db, File, Package, ParsedFile, Resolution};
 use source::{FileId, SourceFile, Span};
@@ -493,6 +493,42 @@ fn builtins_are_called_by_name() {
         body.display(&database)
             .to_string()
             .contains("_2 = call print(_1, owned 2.0_f64) -> [return: bb1];"),
+        "{}",
+        body.display(&database)
+    );
+}
+
+/// `x ** 3.0` on floats is a call of the math built-in `pow`, written by its `math` name.
+#[test]
+fn math_builtins_are_called_by_their_math_names() {
+    let database = Database::default();
+    let f64 = primitive(&database, Primitive::Float(Float::F64));
+    let mut body = Body::new(f64, span());
+    let x = body.push_local(
+        f64,
+        LocalKind::Parameter {
+            name: "x".into(),
+            mode: Mode::Borrow,
+        },
+        span(),
+    );
+    body.push_block(end(TerminatorKind::Call {
+        callee: Callee::Builtin(Builtin::Math(MathFunction::Power)),
+        arguments: vec![
+            Argument::Owned(Operand::Copy(x.into())),
+            Argument::Owned(Operand::Constant(Constant::float(f64, 3.0))),
+        ],
+        destination: Local::RETURN.into(),
+        target: BlockId::new(1),
+        error: None,
+    }));
+    body.push_block(end(TerminatorKind::Return));
+
+    assert_eq!(body.validate(&database), Vec::new());
+    assert!(
+        body.display(&database)
+            .to_string()
+            .contains("_0 = call math.pow(owned copy _1, owned 3.0_f64) -> [return: bb1];"),
         "{}",
         body.display(&database)
     );

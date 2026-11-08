@@ -31,6 +31,9 @@ impl<'db> Function<'_, '_, 'db> {
                 type_arguments,
             } => (item, type_arguments),
             Callee::Builtin(Builtin::Print) => return self.print(arguments, target),
+            Callee::Builtin(Builtin::Math(function)) => {
+                return Err(Unsupported::new(format!("`{}`", function.name())));
+            }
             Callee::Value(_) => return Err(Unsupported::new("calls of `Callable` values")),
         };
         let symbol = (self.symbol)(item, type_arguments);
