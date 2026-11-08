@@ -91,6 +91,8 @@ use types::{Declared, Nominal};
 /// struct declares, with its type arguments substituted; it is called only for structs a field was
 /// moved out of.
 ///
+/// The bodies of the function's `prange` loops are elaborated too, each on its own.
+///
 /// Run it once per body. The analysis does not read flag values, so a second run would see a
 /// guarded drop as still conditional and guard it again: correct, but slower.
 ///
@@ -101,6 +103,9 @@ pub fn elaborate<'db>(
     body: &mut mir::Body<'db>,
     declared: &dyn Fn(&Nominal<'db>) -> Declared<'db>,
 ) {
+    for outlined in &mut body.outlined {
+        elaborate(db, outlined, declared);
+    }
     let paths = Paths::collect(&body.blocks);
     if paths.is_empty() {
         return;

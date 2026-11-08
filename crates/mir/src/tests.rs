@@ -528,3 +528,5 @@ fn format_writes_its_pieces() {
         body.display(&database)
     );
 }
+
+mod parallel;

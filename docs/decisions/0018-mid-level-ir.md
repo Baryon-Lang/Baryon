@@ -137,7 +137,10 @@ target depends on: an edit re-lowers one body and re-instantiates only the insta
   vectorizer.
 
 `ParallelFor` and the `simd` mark join the IR with the roadmap item that lowers them; they are
-recorded here so that item does not reopen the shape.
+recorded here so that item does not reopen the shape. `ParallelFor` joined with roadmap 1.9.7:
+the outlined bodies live in their function's body, and each runs one iteration. A shared scalar
+the loop reduces into, such as `energy += e`, is listed with its operator, and the backend gives
+each chunk a private copy and combines the copies in chunk order.
 
 ### One interface crate, one query per stage
 
@@ -159,9 +162,11 @@ each function, and the instance body of each instance.
   until hoisting (3.2) runs. That is the cost of making each check visible and removable.
 - An error edge per fallible call makes the control-flow graph larger than Rust's `?` would, by
   one small block per propagated error type. It keeps the error representation a backend choice.
-- `Elementwise` and `ParallelFor` are high-level forms that must be expanded before a backend sees
-  them. A backend that meets one has received a body in the wrong phase, and the phase check
-  catches that.
+- `Elementwise` is a high-level form that must be expanded before a backend sees it. A backend
+  that meets one has received a body in the wrong phase, and the phase check catches that.
+- `ParallelFor` reaches the backend, since only a backend can turn the outlined body into the
+  plain function the runtime calls. (Clarified 2026-11-08 with roadmap 1.9.7: this bullet first
+  grouped it with `Elementwise`, which contradicted the outlining above.)
 - Views (slices passed as arguments) are not settled here. They will be a projection, never a
   value, because views cannot be bound to names; the shape comes with the item that lowers
   slicing.
