@@ -424,8 +424,8 @@ impl<'a, 'db> Module<'a, 'db> {
 }
 
 /// A form of the mid-level IR this slice of the backend does not translate yet, such as a call
-/// of a `Callable` value. Roadmap 1.10 adds them slice by slice; a type-checked program reaches this
-/// only through features the backend has not caught up with.
+/// of a `Callable` value. Roadmap 1.10 adds them slice by slice; a type-checked program reaches
+/// this only through features the backend has not caught up with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unsupported {
     /// What is not supported, as a phrase: "values of type `Array[f64, 1]`".
