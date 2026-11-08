@@ -17,7 +17,8 @@ permissions:
 
 concurrency:
   # Adding the label starts a macOS-only run, which must not cancel the Linux run of the same
-  # commit; a new push cancels both.
+  # commit; a new push cancels both. A pull request opened with the label gets its macOS run from
+  # the label's own event, so the opening run stays on Linux.
   group: ci-${{ github.ref }}-${{ github.event.action == 'labeled' && 'label' || 'push' }}
   cancel-in-progress: true
 
@@ -36,7 +37,8 @@ jobs:
           ${{ fromJSON(
             github.event.action == 'labeled' && '["macos-15"]'
             || (github.event_name == 'push'
-                || contains(github.event.pull_request.labels.*.name, 'ready-to-merge'))
+                || github.event.action != 'opened'
+                   && contains(github.event.pull_request.labels.*.name, 'ready-to-merge'))
                && '["macos-15", "ubuntu-24.04"]'
             || '["ubuntu-24.04"]'
           ) }}
