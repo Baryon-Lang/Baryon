@@ -452,3 +452,32 @@ error: expected `i64`, found `f64`
    |              ^^^^^^^ the annotation says `i64`"
     );
 }
+
+/// A method or attribute on a value whose type has none in version 0, such as `"abc".upper()`,
+/// is reported by the checker. Before, it was left unchecked and failed at build time as "a
+/// call lowering does not handle". `copy` on a `str` still checks.
+#[test]
+fn methods_of_strings_and_numbers_are_reported() {
+    let program = r#"
+def f(x: f64, s: str) -> str:
+    print(x.real)
+    s.copy()
+    return s.upper()
+"#;
+    assert_eq!(
+        check_one(program),
+        r"error: `f64` has no attribute `real`
+ --> main.byn:2:11
+  |
+2 |     print(x.real)
+  |           ^^^^^^ not defined on this type
+  = note: version 0 defines no methods or attributes on numbers, `bool`, enums or tuples
+
+error: `str` has no method `upper`
+ --> main.byn:4:12
+  |
+4 |     return s.upper()
+  |            ^^^^^^^ not defined on this type
+  = note: version 0 defines one method on `str`: `copy`"
+    );
+}
