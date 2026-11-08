@@ -76,7 +76,7 @@ impl<'db> Builder<'db> {
     /// variable. Vectorizing such a loop would let LLVM regroup the additions in a way that
     /// depends on the machine, and a float sum must give the same bits everywhere (Collins,
     /// 2026-11-08), so the loop is left unvectorized until lowering splits the sum into fixed
-    /// lanes (roadmap 1.9.13). `min` and `max` give the same result in any order.
+    /// lanes (roadmap 1.9.14). `min` and `max` give the same result in any order.
     pub(crate) fn reorders_floats(&mut self, statement: NodeId) -> bool {
         let Some(shared) = self.shared(statement, &[]) else {
             return false;

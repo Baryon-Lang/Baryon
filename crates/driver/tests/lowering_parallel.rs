@@ -592,7 +592,7 @@ def axpy(a: f64, x: Array[f64, 1], y: InOut[Array[f64, 1]], n: i64):
 }
 
 /// A `simd` loop that sums floats is not marked, so LLVM keeps the plain loop's order (roadmap
-/// 1.9.13); one that sums integers is.
+/// 1.9.14); one that sums integers is.
 #[test]
 fn simd_float_sums_stay_unvectorized() {
     let program = r"

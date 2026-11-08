@@ -246,6 +246,6 @@ vectorize safely anyway.
 and a float sum or product gives the same bits on every machine. The grouping of its additions
 will be fixed by the language, not by the processor's vector width: the sum splits into 8 lanes,
 iteration `i` adding into lane `i % 8`, and the lanes combine in a fixed pairwise tree, as NumPy's
-pairwise sum does (roadmap 1.9.13). Until then, a `simd` loop that sums or multiplies into a shared
+pairwise sum does (roadmap 1.9.14). Until then, a `simd` loop that sums or multiplies into a shared
 float or complex variable runs unvectorized, so it gives exactly the plain loop's result. Integer
 reductions, `min` and `max` give the same result in any order, and vectorize now.
