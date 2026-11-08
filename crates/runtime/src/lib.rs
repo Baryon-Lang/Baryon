@@ -22,6 +22,7 @@
 //! | [`baryon_rt_panic_length_mismatch`] | End the program for arrays of different lengths combined element by element |
 //! | [`baryon_rt_chunk_count`], [`baryon_rt_parallel_for`] | Run a `prange` loop on the thread pool, in fixed chunks |
 //! | [`baryon_rt_print_i64`], [`baryon_rt_print_u64`], [`baryon_rt_print_f64`], [`baryon_rt_print_f32`], [`baryon_rt_print_bool`], [`baryon_rt_print_str`] | Print one argument of `print` to standard output, or a field of an error that ends `main` to standard error, as Python writes it |
+//! | [`baryon_rt_text_new`], [`baryon_rt_text_str`], [`baryon_rt_text_i64`], [`baryon_rt_text_u64`], [`baryon_rt_text_f64`], [`baryon_rt_text_f32`], [`baryon_rt_text_bool`], [`baryon_rt_text_finish`] | Build an owned `str` from pieces, each value formatted with a [`FormatSpec`] as Python's `format` writes it: an f-string, a `copy()` or a `+` |
 //! | [`baryon_rt_print_str_quoted`] | Print a `str` field of an error that ends `main` as Python's `repr` writes it, quoted |
 //!
 //! A panic prints its message, the [`Location`] of the check and, when the program has debug
@@ -62,6 +63,7 @@
 
 mod abi;
 mod backtrace;
+mod format;
 mod location;
 mod memory;
 mod panic;
@@ -69,10 +71,13 @@ mod parallel;
 mod print;
 
 pub use abi::{
-    baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_chunk_count, baryon_rt_deallocate,
-    baryon_rt_panic, baryon_rt_panic_index, baryon_rt_panic_length_mismatch,
+    OwnedText, TextBuilder, baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_chunk_count,
+    baryon_rt_deallocate, baryon_rt_panic, baryon_rt_panic_index, baryon_rt_panic_length_mismatch,
     baryon_rt_parallel_for, baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64,
     baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,
+    baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish,
+    baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
 };
+pub use format::FormatSpec;
 pub use location::Location;
 pub use parallel::ChunkBody;
