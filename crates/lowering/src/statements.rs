@@ -380,7 +380,8 @@ impl<'db> Builder<'db> {
             .typed
             .call(iterator)
             .filter(|call| {
-                matches!(&call.callee, types::Callee::Builtin(name) if name == "range" || name == "prange")
+                matches!(&call.callee, types::Callee::Builtin(name)
+                    if name == "range" || name == "prange")
             })
             .and_then(|call| {
                 call.arguments
