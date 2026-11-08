@@ -31,8 +31,8 @@ the extension.
 
 ## What gets highlighted
 
-Every Baryon file is valid Python syntax ([decision 0004](../../docs/decisions/0004-python-syntax.md)),
-so the grammar is two small files:
+Every Baryon file is valid Python syntax
+([decision 0004](../../docs/decisions/0004-python-syntax.md)), so the grammar is two small files:
 
 | File | What it does |
 | --- | --- |
@@ -73,7 +73,7 @@ configuration, trimmed to what Baryon accepts:
 ## How it was checked
 
 There is no automated test yet; idea I.24 in the [roadmap](../../ROADMAP.md) is a check in CI.
-The grammar was checked by tokenizing every program in [`docs/examples/`](../../docs/examples/README.md)
-with `vscode-textmate`, the library VS Code itself highlights with, against VS Code's own Python
-grammar, and reading the scope of every Baryon name, including ones in comments, strings and
-f-strings.
+The grammar was checked by tokenizing every program in
+[`docs/examples/`](../../docs/examples/README.md) with `vscode-textmate`, the library VS Code
+itself highlights with, against VS Code's own Python grammar, and reading the scope of every
+Baryon name, including ones in comments, strings and f-strings.
