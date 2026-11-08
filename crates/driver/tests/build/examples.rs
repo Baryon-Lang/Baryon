@@ -146,3 +146,21 @@ def main():
 ";
     prints("round", program, "2 4 0 -2 7 10000\n").unwrap();
 }
+
+/// `a.sum()` of floats adds in `NumPy`'s pairwise tree, so it prints the bits `numpy.sum` gives:
+/// the harmonic sum to 1000 is `7.485470860550345` both ways, where adding one element at a time
+/// gives `7.485470860550343`. `f32` sums keep `f32` arithmetic, as `NumPy` does.
+#[test]
+fn float_sums_match_numpy() {
+    let program = "\
+def main():
+    a = Array.zeros((1000,))
+    b: Array[f32, 1] = Array.zeros((300,))
+    for i in range(1000):
+        a[i] = 1.0 / f64(i + 1)
+    for i in range(300):
+        b[i] = f32(1.0) / f32(i + 1)
+    print(a.sum(), b.sum())
+";
+    prints("float-sums", program, "7.485470860550345 6.282665\n").unwrap();
+}

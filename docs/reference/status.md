@@ -22,8 +22,8 @@ error: lowering does not handle `**` yet
 So a program that `baryon check` accepts but `baryon build` rejects is not wrong: it uses a part of
 the language that is specified and checked, but not built yet.
 
-This page was last brought up to date on 2026-11-08, when the `math` functions and `round` began
-to build. Every pull request that teaches lowering or the backend something new updates the table
+This page was last brought up to date on 2026-11-08, when the pairwise float `sum` began to
+build. Every pull request that teaches lowering or the backend something new updates the table
 it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
@@ -103,7 +103,7 @@ out of a function, including through a `raise`.
 | `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, `v.dot(w)`, `v.round()`, and whole-array arithmetic | |
 | Arrays of `Fixed` arrays and of `Copy` structs | |
 | Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b` | `@`, the matrix product |
-| `a.sum()` of numbers, adding the elements one at a time in row-major order | `a.min()`, `a.max()`; `a.dot(b)` and `a.round()` on an `Array`; `a.fill(value)`; printing an array |
+| `a.sum()` of numbers, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in) | `a.min()`, `a.max()`; `a.dot(b)` and `a.round()` on an `Array`; `a.fill(value)`; printing an array |
 
 ## Errors and panics
 
