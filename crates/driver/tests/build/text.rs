@@ -1,0 +1,81 @@
+//! `str` values built and run (decision 0022): literals, f-strings, `copy()` and `+`.
+
+use super::{baryon_build, package, stderr};
+use std::process::Command;
+
+/// `str` values end to end (decision 0022): literals held in variables and fields, returned,
+/// borrowed and printed, and a `str` field of an error that ends `main` in its report.
+#[test]
+fn text_values_build_and_run() {
+    let program = "\
+class Probe(Struct):
+    name: str
+    value: f64
+
+
+class MissingError(Exception):
+    name: str
+
+
+def size(n: i64) -> str:
+    if n > 2:
+        return \"big\"
+    return \"small\"
+
+
+def show(probe: Probe):
+    print(probe.name, probe.value)
+
+
+def main() -> Raises[None, MissingError]:
+    name = \"heat\"
+    print(name, size(3), size(1))
+    show(Probe(\"energy\", 2.5))
+    raise MissingError(\"pressure\")
+";
+    let directory = package("text", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "heat big small\nenergy 2.5\n"
+    );
+    assert_eq!(stderr(&ran), "error: MissingError(name='pressure')\n");
+    assert_eq!(ran.status.code(), Some(1));
+}
+
+/// f-strings, `copy()` and `+` build their text through the runtime's string builder and print
+/// what Python prints for the same program, and every text they build is freed.
+#[test]
+fn f_strings_format_as_python_does() {
+    let program = "\
+def describe(step: i64, name: str, energy: f64) -> str:
+    return f\"step {step:4d}: {name} = {energy:10.4f} {{ok}}\"
+
+
+def main():
+    line = describe(7, \"argon\", -1.25)
+    print(line)
+    copied = line.copy()
+    print(copied + \"!\")
+    flag = True
+    small: f32 = 0.1
+    count = 255
+    print(f\"{flag} {flag:>3} {small} {count:#x} {1234567:,} {-0.5:+.2%} {'mid':^7}|\")
+";
+    let directory = package("f-strings", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "\
+step    7: argon =    -1.2500 {ok}
+step    7: argon =    -1.2500 {ok}!
+True   1 0.1 0xff 1,234,567 -50.00%   mid  |
+"
+    );
+    assert_eq!(ran.status.code(), Some(0));
+}

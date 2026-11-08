@@ -19,10 +19,12 @@
 use crate::Unsupported;
 use crate::debug::Debug;
 use crate::function::Function;
+use crate::text::FORMAT_SPEC;
 use mir::Check;
 use source::{FileId, Sources, Span};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use types::{Align, FormatSpec, Sign};
 
 /// Why a check fails, with the values its message reports, each an LLVM operand already written.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,6 +56,8 @@ pub(crate) enum Failure {
 enum Key {
     /// The bytes of a message or file name.
     Bytes(Vec<u8>),
+    /// A format specification, by its text.
+    Spec(String),
     /// The location of the byte at `offset` in `file`.
     Location {
         /// The file.
@@ -149,6 +153,45 @@ impl<'a> Constants<'a> {
             .as_ref()
             .map(|debug| debug.finish(self.sources))
             .unwrap_or_default()
+    }
+
+    /// The constant holding the parts of `spec` as the runtime's `FormatSpec` lays them out, as
+    /// `@baryon.spec.N`, made the first time it is asked for: the fill's code point, the
+    /// alignment, sign, `#`, `0`, grouping and type as bytes, 0 where left out, then the width
+    /// and precision, -1 where left out.
+    pub(crate) fn format_spec(&mut self, spec: &FormatSpec) -> String {
+        let key = Key::Spec(spec.to_string());
+        if let Some(&number) = self.numbers.get(&key) {
+            return format!("@baryon.spec.{number}");
+        }
+        let name = format!("@baryon.spec.{}", self.definitions.len());
+        let align = match spec.align {
+            None => 0,
+            Some(Align::Left) => b'<',
+            Some(Align::Right) => b'>',
+            Some(Align::Center) => b'^',
+            Some(Align::AfterSign) => b'=',
+        };
+        let sign = match spec.sign {
+            Sign::Negative => b'-',
+            Sign::Always => b'+',
+            Sign::Space => b' ',
+        };
+        let byte = |character: Option<char>| character.map_or(0, |character| character as u32);
+        let number = |value: Option<u32>| value.map_or(-1, i64::from);
+        let definition = format!(
+            "{name} = private unnamed_addr constant {FORMAT_SPEC} {{ i32 {}, i8 {align}, i8 {sign}, \
+             i8 {}, i8 {}, i8 {}, i8 {}, i64 {}, i64 {} }}",
+            u32::from(spec.fill),
+            u8::from(spec.alternate),
+            u8::from(spec.zero),
+            byte(spec.grouping),
+            byte(spec.presentation.letter()),
+            number(spec.width),
+            number(spec.precision),
+        );
+        self.push(key, definition);
+        name
     }
 
     /// The constant holding `bytes`, as `@baryon.str.N`, made the first time it is asked for.
