@@ -6,7 +6,7 @@
 
 use crate::{
     Argument, BinaryOperator, Body, Callee, Check, ConstantValue, Elementwise, LocalKind, Operand,
-    Place, Projection, Rvalue, StatementKind, TerminatorKind, UnaryOperator,
+    Piece, Place, Projection, Rvalue, StatementKind, TerminatorKind, UnaryOperator,
 };
 use database::Db;
 use std::fmt::{self, Write};
@@ -172,6 +172,18 @@ impl Writer<'_> {
             Rvalue::IsPresent(place) => format!("is_present({})", place_text(place)),
             Rvalue::ErrorIndex(place) => format!("error_index({})", place_text(place)),
             Rvalue::Elementwise(tree) => format!("elementwise {}", self.elementwise(tree)),
+            Rvalue::Format(pieces) => {
+                let pieces: Vec<String> = pieces
+                    .iter()
+                    .map(|piece| match piece {
+                        Piece::Text(text) => format!("{text:?}"),
+                        Piece::Value(place, spec) => {
+                            format!("{{{}:{spec}}}", place_text(place))
+                        }
+                    })
+                    .collect();
+                format!("format({})", pieces.join(", "))
+            }
         }
     }
 

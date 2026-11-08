@@ -1,7 +1,7 @@
 //! Operands and rvalues: the values a statement computes from.
 
 use crate::Place;
-use types::Type;
+use types::{FormatSpec, Type};
 
 /// A value used by an rvalue, a call or a terminator.
 #[derive(Clone, Debug, PartialEq, Eq, salsa::SalsaValue)]
@@ -103,6 +103,22 @@ pub enum Rvalue<'db> {
     /// A whole-array expression, such as `a + b * c` over arrays, kept as one tree so array
     /// fusion can see it (decision 0018). Only in [`Phase::Built`](crate::Phase) bodies.
     Elementwise(Box<Elementwise<'db>>),
+    /// A new, owned `str` written from its pieces in order: an f-string such as
+    /// `f"step {i}: {energy:.6f}"`, a `copy()` of a `str`, which is one piece with the default
+    /// specification, or `a + b` of two. Each value is read where it is, as a borrow, and its
+    /// specification has been checked against its type (decision 0022).
+    Format(Vec<Piece>),
+}
+
+/// One piece of a [`Format`](Rvalue::Format): literal text, or a value written with its format
+/// specification.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, salsa::SalsaValue)]
+pub enum Piece {
+    /// Text written as it is.
+    Text(String),
+    /// The number, `bool` or `str` at the place, written as the specification says; the
+    /// default specification writes it as `print` does.
+    Value(Place, FormatSpec),
 }
 
 /// One node of a whole-array expression. Leaves are arrays, all of one shape, or scalars that

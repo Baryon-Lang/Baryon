@@ -12,6 +12,8 @@
 //! - [`Shape`]: the compile-time dimension lengths of a `Fixed` array.
 //! - [`Layout`] and [`layout()`]: the size and alignment of a value of a type in memory, and
 //!   the field offsets of a record.
+//! - [`FormatSpec`]: a parsed f-string format specification, such as `.6f`, and the check of
+//!   it against the kind of value it formats.
 //! - [`Item`], [`Declaration`] and the [`TypeDb`] trait: what each definition declares in
 //!   types, which the type checker computes and later stages read.
 //!
@@ -47,6 +49,7 @@
 mod body;
 mod declaration;
 mod display;
+mod format;
 mod interned;
 mod layout;
 mod primitive;
@@ -55,6 +58,7 @@ mod shape;
 pub use body::{Call, Callee, Key, TypedBody};
 pub use declaration::{Checked, Declaration, Field, Mode, Parameter, Signature, TypeDb, Value};
 pub use display::Displayed;
+pub use format::{Align, FormatClass, FormatError, FormatSpec, Presentation, Sign};
 pub use interned::{Item, Type};
 pub use layout::{Declared, Layout, LayoutError, Record, layout};
 pub use primitive::{Complex, Float, Integer, Primitive};
