@@ -93,7 +93,7 @@ mod validate;
 
 pub use display::DisplayedBody;
 pub use operand::{
-    BinaryOperator, Constant, ConstantValue, Elementwise, Operand, Rvalue, UnaryOperator,
+    BinaryOperator, Constant, ConstantValue, Elementwise, Operand, Piece, Rvalue, UnaryOperator,
 };
 pub use place::{Place, Projection};
 pub use statement::{

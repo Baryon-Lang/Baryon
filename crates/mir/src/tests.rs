@@ -497,3 +497,34 @@ fn builtins_are_called_by_name() {
         body.display(&database)
     );
 }
+
+/// An f-string's pieces are written in order, each value with its specification.
+#[test]
+fn format_writes_its_pieces() {
+    let database = Database::default();
+    let f64 = primitive(&database, Primitive::Float(Float::F64));
+    let str = Type::new(&database, TypeKind::Str);
+    let mut body = Body::new(str, span());
+    let energy = body.push_local(
+        f64,
+        LocalKind::Parameter {
+            name: "energy".into(),
+            mode: Mode::Borrow,
+        },
+        span(),
+    );
+    let pieces = vec![
+        crate::Piece::Text("energy ".to_owned()),
+        crate::Piece::Value(energy.into(), types::FormatSpec::parse(">10.4f").unwrap()),
+    ];
+    body.push_block(end(TerminatorKind::Return));
+    body.blocks[0].statements = vec![assign(Local::RETURN, Rvalue::Format(pieces))];
+    assert_eq!(body.validate(&database), Vec::new());
+    assert!(
+        body.display(&database)
+            .to_string()
+            .contains("_0 = format(\"energy \", {_1: >10.4f});"),
+        "{}",
+        body.display(&database)
+    );
+}

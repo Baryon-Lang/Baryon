@@ -5,7 +5,7 @@
 
 use crate::{
     Argument, BasicBlock, BlockId, Body, Callee, Elementwise, Local, LocalKind, Operand, Phase,
-    Place, Projection, Rvalue, StatementKind, TerminatorKind,
+    Piece, Place, Projection, Rvalue, StatementKind, TerminatorKind,
 };
 use database::Db;
 use std::fmt;
@@ -283,6 +283,13 @@ impl Uses {
             Rvalue::Elementwise(tree) => {
                 self.elementwise = true;
                 self.elementwise(tree);
+            }
+            Rvalue::Format(pieces) => {
+                for piece in pieces {
+                    if let Piece::Value(place, _) = piece {
+                        self.place(place);
+                    }
+                }
             }
         }
     }

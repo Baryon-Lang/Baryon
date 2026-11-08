@@ -223,7 +223,7 @@ fn rvalue_moves(rvalue: &Rvalue<'_>, effects: &mut Vec<Effect>) {
                 operand_moves(operand, effects);
             }
         }
-        Rvalue::Length(..) | Rvalue::IsPresent(_) | Rvalue::ErrorIndex(_) => {}
+        Rvalue::Length(..) | Rvalue::IsPresent(_) | Rvalue::ErrorIndex(_) | Rvalue::Format(_) => {}
         Rvalue::Elementwise(tree) => elementwise_moves(tree, effects),
     }
 }
