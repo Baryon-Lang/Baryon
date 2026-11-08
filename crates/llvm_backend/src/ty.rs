@@ -88,6 +88,7 @@ impl<'db> Types<'_, 'db> {
             TypeKind::Array { rank, .. } => {
                 Ok(format!("{{ ptr, [{rank} x i64], [{rank} x i64] }}"))
             }
+            TypeKind::List(_) => Ok(crate::list::HEADER.to_owned()),
             TypeKind::Optional(value) => Ok(format!("{{ {}, i1 }}", self.value(*value)?)),
             TypeKind::Enum(_) => {
                 let layout =

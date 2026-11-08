@@ -9,6 +9,7 @@
 use driver::Session;
 
 mod calls;
+mod lists;
 mod math;
 mod unpacking;
 mod values;
@@ -203,21 +204,21 @@ fn(_1: i64, _2: i64) -> f64 {
 }
 
 /// A construct outside the first slice is an error that names it, and gives no body. `**` is
-/// lowered on floats, not yet on integers.
+/// lowered on floats, not yet on integers, and lists only of copy types.
 #[test]
 fn constructs_not_lowered_yet_are_errors() {
     let program = "\
         def power(x: f64, n: i64) -> i64:\n\
-        \x20   ys = [x]\n\
+        \x20   ys = [str(x)]\n\
         \x20   return n ** 2\n";
     assert_eq!(
         lower(program, "power"),
         "\
-error: lowering does not handle list displays yet
+error: lowering does not handle lists whose elements are not a copy type yet
  --> main.byn:2:10
   |
-2 |     ys = [x]
-  |          ^^^ not lowered yet
+2 |     ys = [str(x)]
+  |          ^^^^^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
 
 error: lowering does not handle `**` yet

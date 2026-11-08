@@ -30,7 +30,9 @@ impl<'db> Types<'_, 'db> {
                 }
                 (
                     Projection::Index(_),
-                    TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. },
+                    TypeKind::Array { element, .. }
+                    | TypeKind::Fixed { element, .. }
+                    | TypeKind::List(element),
                 ) => *element,
                 (Projection::Value, TypeKind::Optional(value)) => *value,
                 (Projection::Error(position), TypeKind::Fallible { errors, .. }) => {

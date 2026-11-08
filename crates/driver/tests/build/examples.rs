@@ -254,3 +254,41 @@ def main():
 ";
     prints("vector-space", program, "0.25 0.5 0.75 0.5\n").unwrap();
 }
+
+/// Conjugate gradient on the 5-point Laplacian of a 64 x 64 grid: a matrix built from lists in
+/// compressed sparse row form, a struct method with a `prange` loop, and a function that can
+/// raise. A `NumPy` run of the same steps converges after 142 iterations to the same value.
+#[test]
+fn conjugate_gradient_builds_and_runs() {
+    prints(
+        "example-conjugate-gradient",
+        include_str!("../../../../docs/examples/conjugate_gradient.byn"),
+        "converged; value at the centre: 311.078468\n",
+    )
+    .unwrap();
+}
+
+/// Lists: `append` grows the buffer past its first 4 elements, a display converts its items
+/// to the element type, an element can be read from the end and written in place, and
+/// `Array(xs)` copies a list, an empty one too, into an array.
+#[test]
+fn lists_build_and_run() {
+    let program = "\
+def main():
+    squares: list[i64] = []
+    for i in range(10):
+        squares.append(i * i)
+    print(len(squares), squares[0], squares[9], squares[-1])
+    weights: list[f64] = [1, 2.5]
+    weights.append(4)
+    weights[0] = 0.5
+    total = Array(weights).sum()
+    print(len(weights), weights[0], total, Array(squares).sum())
+    empty: list[f32] = []
+    print(len(empty), len(Array(empty)))
+    flags = [True, False]
+    flags.append(True)
+    print(flags[2], len(flags))
+";
+    prints("lists", program, "10 0 81 81\n3 0.5 7.0 285\n0 0\nTrue 3\n").unwrap();
+}

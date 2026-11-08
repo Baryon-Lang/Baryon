@@ -56,7 +56,7 @@ impl<'db> Builder<'db> {
                 let base = self.borrow(value);
                 Some(base.project(Projection::Field(u32::try_from(position).ok()?)))
             }
-            TypeKind::Array { .. } | TypeKind::Fixed { .. } => {
+            TypeKind::Array { .. } | TypeKind::Fixed { .. } | TypeKind::List(_) => {
                 let base = self.borrow(array);
                 let mut locals = Vec::with_capacity(indices.len());
                 for (dimension, index) in indices.into_iter().enumerate() {
@@ -66,7 +66,7 @@ impl<'db> Builder<'db> {
                 Some(base.project(Projection::Index(locals)))
             }
             _ => {
-                self.unsupported(node, "indexing lists and strings");
+                self.unsupported(node, "indexing strings");
                 None
             }
         }
@@ -392,11 +392,12 @@ impl<'db> Builder<'db> {
         self.assign(place, Rvalue::Use(length), node);
     }
 
-    /// `len(a)`: the length of an array's first dimension, into `place`.
+    /// `len(a)`: the length of an array's first dimension, or a list's number of elements,
+    /// into `place`.
     pub(crate) fn len(&mut self, place: Place, argument: NodeId, node: NodeId) {
         let ty = self.ty(argument);
-        if !self.is_array(ty) {
-            return self.unsupported(node, "`len` of lists and strings");
+        if !self.is_array(ty) && !matches!(ty.kind(self.db), TypeKind::List(_)) {
+            return self.unsupported(node, "`len` of strings");
         }
         let array = self.borrow(argument);
         let length = self.length(&array, ty, 0, node);

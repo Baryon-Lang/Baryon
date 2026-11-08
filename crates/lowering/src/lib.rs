@@ -41,6 +41,10 @@
 //!   its elements in row-major order. `a.copy()` is a whole-array expression of `a` alone,
 //!   `a.sum()` and `v.dot(w)` add in a loop nest, and `v.round()` on a `Fixed` array rounds each
 //!   element.
+//! - **Lists.** A display `[a, b]` is an [`Aggregate`](mir::Rvalue::Aggregate) of a list type,
+//!   `xs.append(value)` calls [`Builtin::Append`](mir::Builtin::Append), `len(xs)` and `xs[i]`
+//!   read it as a one-dimensional array, and `Array(xs)` copies it into a new array. Only lists
+//!   of copy types, such as `list[f64]`, are built so far.
 //! - **Math.** `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` from `math`, and `**` and `**=` on
 //!   floats, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
 //!   [`Builtin::Math`](mir::Builtin::Math) calls a backend writes. The built-in `round(x)` rounds
@@ -231,6 +235,7 @@ mod creation;
 mod errors;
 mod expressions;
 mod facts;
+mod lists;
 mod math;
 mod methods;
 mod operators;
