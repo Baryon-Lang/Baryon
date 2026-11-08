@@ -212,7 +212,7 @@ impl<'db> Builder<'db> {
         let Some(place) = self.place(target) else {
             return;
         };
-        if self.accumulated.contains(&place.local) {
+        if let Some(place) = self.accumulated_place(&place) {
             return self.accumulate(place, operator, ty, value, statement);
         }
         if array {

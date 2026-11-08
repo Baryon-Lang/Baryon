@@ -105,3 +105,50 @@ def main():
         assert_eq!(again.stdout, first.stdout);
     }
 }
+
+/// `accumulate=` of a struct field (decision 0024): the same pair loop as
+/// `accumulated_arrays_build_and_run`, with positions and forces held in one struct, gives the
+/// same bits as that loop on every run.
+#[test]
+fn accumulated_fields_build_and_run() {
+    let program = "\
+Vec3 = Fixed[f64, (3,)]
+
+
+class Atoms(Struct):
+    positions: Array[Vec3, 1]
+    forces: Array[Vec3, 1]
+
+
+def pairs(atoms: InOut[Atoms], n: i64):
+    for i in prange(n, accumulate=atoms.forces):
+        for j in range(i + 1, n):
+            force = (atoms.positions[i] - atoms.positions[j]) / float(j - i)
+            atoms.forces[i] += force
+            atoms.forces[j] -= force
+            atoms.forces[j][2] += 0.5
+
+
+def main():
+    n = 2000
+    atoms = Atoms(Array.zeros(n, dtype=Vec3), Array.zeros(n, dtype=Vec3))
+    for k in range(n):
+        atoms.positions[k][0] = float(k)
+        atoms.positions[k][1] = 1.0 / float(k + 1)
+    pairs(atoms, n)
+    print(atoms.forces[0][0], atoms.forces[0][1], atoms.forces[n - 1][1], atoms.forces[n - 1][2])
+";
+    let directory = package("accumulate_field", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let first = Command::new(&program).output().unwrap();
+    assert_eq!(stderr(&first), "");
+    assert_eq!(
+        String::from_utf8_lossy(&first.stdout),
+        "-1999.0 7.178368103610292 -0.004088934051805141 999.5\n"
+    );
+    for _ in 0..5 {
+        let again = Command::new(&program).output().unwrap();
+        assert_eq!(again.stdout, first.stdout);
+    }
+}
