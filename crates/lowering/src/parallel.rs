@@ -1,22 +1,21 @@
-//! `for i in prange(start, stop, step):` (language reference, "Parallel and vector loops";
-//! decision 0018). The loop body becomes its own body, [outlined](mir::Body::outlined), that runs
-//! one iteration; the loop becomes a [`ParallelFor`](mir::TerminatorKind::ParallelFor) that runs
-//! it once per iteration on the runtime's threads.
+//! `for i in prange(start, stop, step):` (language reference, "Parallel and vector loops"; decision
+//! 0018). The loop body becomes its own body, [outlined](mir::Body::outlined), that runs one
+//! iteration; the loop becomes a [`ParallelFor`](mir::TerminatorKind::ParallelFor) that runs it
+//! once per iteration on the runtime's threads.
 //!
 //! The outlined body takes, in order: the iteration number, counted from 0; the loop's start, when
 //! the loop does not start at 0 with step 1; each *shared* variable the body uses, one assigned
 //! before the loop, borrowed when the body only reads it and `InOut` when it writes into it; and
-//! each shared scalar the body reduces into, such as `total += x`. The loop variable is computed
-//! from the iteration number as `start + iteration * step`. Variables first assigned in the body
-//! are private: they are the outlined body's own, and are dropped when the iteration ends, so
-//! `continue` returns.
+//! each shared scalar the body reduces into, such as `total += x` or `low = min(low, x)`. The loop
+//! variable is computed from the iteration number as `start + iteration * step`. Variables first
+//! assigned in the body are private: they are the outlined body's own, and are dropped when the
+//! iteration ends, so `continue` returns.
 //!
 //! The checker proved the body safe to run this way (its `parallel` module): shared arrays are
-//! written only at the loop variable's index, shared scalars only as reductions, and nothing
-//! leaves the loop early. Lowering relies on that and does not check it again.
+//! written only at the loop variable's index, shared scalars only as reductions, and nothing leaves
+//! the loop early. Lowering relies on that and does not check it again.
 //!
-//! Not lowered yet: `accumulate=` (roadmap 1.12.1), and the `min` and `max` reductions, which
-//! wait for lowering of `min` and `max`.
+//! Not lowered yet: `accumulate=` (roadmap 1.12.1).
 
 use crate::builder::Builder;
 use crate::operators::arithmetic;
@@ -311,8 +310,16 @@ impl<'db> Builder<'db> {
                         && number
                         && self.is_shared_name(target, node)
                     {
-                        self.unsupported(node, "`min` and `max` reductions in `prange`");
-                        return None;
+                        // The checker allows only `x = min(x, e)` and `x = max(x, e)` here.
+                        let Some(operator) = self.min_max_reduction(node) else {
+                            self.unsupported(node, "this write to a shared variable");
+                            return None;
+                        };
+                        writes.extend(
+                            self.root(target)
+                                .map(|binding| (binding, Use::Reduce(operator))),
+                        );
+                        continue;
                     }
                     writes.extend(self.root(target).map(|binding| (binding, Use::Write)));
                 }
@@ -362,6 +369,18 @@ impl<'db> Builder<'db> {
             _ => {}
         }
         Some(writes)
+    }
+
+    /// The reduction `x = min(x, …)` or `x = max(x, …)` makes, from the assignment
+    /// `statement`; `None` when its value is not a call of `min` or `max`.
+    fn min_max_reduction(&self, statement: NodeId) -> Option<ReductionOperator> {
+        let value = self.tree.child(statement, Role::Value)?;
+        let function = self.tree.child(value, Role::Function)?;
+        match self.definition(function)? {
+            Definition::Builtin("min") => Some(ReductionOperator::Min),
+            Definition::Builtin("max") => Some(ReductionOperator::Max),
+            _ => None,
+        }
     }
 
     /// Whether the name `target`, assigned by `statement`, names a variable bound before

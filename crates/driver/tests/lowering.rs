@@ -688,3 +688,77 @@ def halve[T: Number](x: T) -> T:
    = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
 }
+
+/// `min` and `max` of numbers convert every argument to the result type, then keep the first
+/// best value: a later argument replaces it only when strictly smaller, or larger, as in Python.
+#[test]
+fn min_and_max_keep_the_first_best_value() {
+    let program = "
+def clamp(x: f64, n: i64) -> f64:
+    return max(0, min(x, n, 10.5))
+";
+    assert_eq!(
+        lower(program, "clamp"),
+        "\
+fn(_1: f64, _2: i64) -> f64 {
+    let _0: f64; // return
+    let _1: f64; // parameter x
+    let _2: i64; // parameter n
+    let _3: f64;
+    let _4: f64;
+    let _5: f64;
+    let _6: f64;
+    let _7: f64;
+    let _8: f64;
+    let _9: f64;
+    let _10: bool;
+    let _11: f64;
+    let _12: bool;
+    let _13: bool;
+
+    bb0: {
+        _4 = f64(0_i64);
+        _3 = copy _4;
+        _7 = copy _1;
+        _9 = f64(copy _2);
+        _8 = copy _9;
+        _10 = Less(copy _8, copy _7);
+        branch copy _10 -> [true: bb1, false: bb2];
+    }
+
+    bb1: {
+        _7 = copy _8;
+        goto -> bb2;
+    }
+
+    bb2: {
+        _11 = 10.5_f64;
+        _12 = Less(copy _11, copy _7);
+        branch copy _12 -> [true: bb3, false: bb4];
+    }
+
+    bb3: {
+        _7 = copy _11;
+        goto -> bb4;
+    }
+
+    bb4: {
+        _6 = copy _7;
+        _5 = copy _6;
+        _13 = Greater(copy _5, copy _3);
+        branch copy _13 -> [true: bb5, false: bb6];
+    }
+
+    bb5: {
+        _3 = copy _5;
+        goto -> bb6;
+    }
+
+    bb6: {
+        _0 = copy _3;
+        return;
+    }
+}
+"
+    );
+}
