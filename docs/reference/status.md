@@ -48,7 +48,7 @@ checks what it prints.
 
 | Builds today | Not built yet |
 | --- | --- |
-| Packages of several modules; `import m`, `from m import x`, `as`; calling a function through its module, `physics.units.twice(x)` | Reading a constant through its module, `physics.units.C`; import it by name instead |
+| Packages of several modules; `import m`, `from m import x`, `as`; calling a function, reading a constant and naming an enum member through its module, `physics.units.twice(x)`, `units.C`, `units.Phase.GAS` | |
 | `main` in `main.byn`; `print` of numbers, `bool` and `str` | `print` with keyword arguments; `print` of `None`, `T \| None`, tuples, arrays and structs |
 | Assignment, annotated assignment, augmented assignment, `**=` on floats only; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a` | `**=` on integers; nested unpacking, `a, (b, c) = e` |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
@@ -58,7 +58,7 @@ checks what it prints.
 | `raise` and `try`/`except`, including bare `raise` | `raise ... from` |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
 | `with unsafe:` | |
-| Number, string, `True`, `False` and `None` literals; f-strings with format specifications | Complex literals such as `2j`; string literals with escapes or prefixes |
+| Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications | Complex literals such as `2j`; `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
 | `+ - * / // %`, `**` on floats, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `**` on integers; `in` and `not in`; `==` on `str` |
 | `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the rest of `math` and `random` |
 | `@test` functions, with `baryon test` | |

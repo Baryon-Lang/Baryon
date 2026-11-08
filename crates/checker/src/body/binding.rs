@@ -13,6 +13,21 @@ impl<'db> Body<'db> {
         let Some(value) = self.tree.child(statement, Role::Value) else {
             return;
         };
+        if let [target] = targets[..]
+            && matches!(
+                self.tree.kind(target),
+                SyntaxKind::Attribute | SyntaxKind::Subscript
+            )
+        {
+            // The place's type is the value's context, so `p.mass = 2` on an `f32` field
+            // makes `2` an `f32`, as `x: f32 = 2` does.
+            self.change(target);
+            let held = self.expression(target, None);
+            let ty = self.expression(value, Some(held));
+            self.consume(value, ty);
+            self.expect(value, held, ty, "the target holds");
+            return;
+        }
         let expected = match targets.as_slice() {
             [target] => self.declared(*target),
             _ => None,

@@ -160,3 +160,33 @@ error: `falls` can reach its end without returning a value
    = note: add a `return` at the end, or make every branch end in `return` or `raise`"
     );
 }
+
+/// A number literal assigned to a field or an element takes the place's type, as it does for
+/// an annotated variable: `p.count = 5` on an `i32` field is an `i32`. Before this, the literal
+/// kept its default type, and `p.w = 1.5` on an `f32` field was "expected `f32`, found `f64`".
+/// A value of the wrong kind is still reported.
+#[test]
+fn literals_assigned_to_fields_and_elements_take_their_type() {
+    let program = "
+class P(Struct, Copy):
+    count: i32
+    w: f32
+
+
+def fill(p: InOut[P], xs: InOut[Array[i32, 1]], fs: InOut[Array[f32, 1]]):
+    p.count = 5
+    p.w = 1.5
+    xs[1] = -9
+    fs[1] = 2
+    p.count = 0.5
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: expected `i32`, found `f64`
+  --> main.byn:11:15
+   |
+11 |     p.count = 0.5
+   |               ^^^ the target holds `i32`"
+    );
+}

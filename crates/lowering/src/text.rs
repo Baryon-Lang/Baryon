@@ -3,7 +3,7 @@
 //! read in place, each with its format specification.
 
 use crate::builder::Builder;
-use crate::constants::string;
+use crate::escapes::{self, string};
 use mir::{Piece, Place, Rvalue};
 use syntax::{Flags, NodeId, Role, SyntaxKind};
 use types::FormatSpec;
@@ -13,18 +13,24 @@ impl Builder<'_> {
     /// its specification, which the checker has checked against the value's type.
     pub(crate) fn formatted(&mut self, place: Place, node: NodeId) {
         let mut pieces = Vec::new();
+        let raw = self
+            .text_of(node)
+            .chars()
+            .take_while(|&letter| letter != '"' && letter != '\'')
+            .any(|letter| letter.eq_ignore_ascii_case(&'r'));
         let items: Vec<NodeId> = self.tree.children(node).collect();
         for item in items {
             match self.tree.kind(item) {
                 SyntaxKind::StringLiteral => match string(self.text_of(item)) {
                     Some(text) => pieces.push(Piece::Text(text)),
                     None => {
-                        return self.unsupported(item, "strings with escapes or prefixes");
+                        return self
+                            .unsupported(item, "strings with `\\N{…}` escapes or a `b` prefix");
                     }
                 },
-                SyntaxKind::FormattedText => match self.formatted_text(item) {
+                SyntaxKind::FormattedText => match escapes::formatted(self.text_of(item), raw) {
                     Some(text) => pieces.push(Piece::Text(text)),
-                    None => return self.unsupported(item, "f-string text with escapes"),
+                    None => return self.unsupported(item, "f-string text with `\\N{…}` escapes"),
                 },
                 SyntaxKind::Interpolation => {
                     let flags = self.tree.node(item).flags();
@@ -73,12 +79,5 @@ impl Builder<'_> {
         }
         // The checker reported a specification that does not parse.
         FormatSpec::parse(&text).ok()
-    }
-
-    /// The text of the f-string text `node`, with `{{` and `}}` read as one brace, or `None` for
-    /// text with a backslash escape, which this slice does not read yet.
-    fn formatted_text(&self, node: NodeId) -> Option<String> {
-        let written = self.text_of(node);
-        (!written.contains('\\')).then(|| written.replace("{{", "{").replace("}}", "}"))
     }
 }

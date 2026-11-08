@@ -1,4 +1,5 @@
-//! `str` values built and run (decision 0022): literals, f-strings, `copy()` and `+`.
+//! `str` values built and run (decision 0022): literals and their escapes, f-strings, `copy()`
+//! and `+`.
 
 use super::{baryon_build, package, stderr};
 use std::process::Command;
@@ -78,4 +79,26 @@ True   1 0.1 0xff 1,234,567 -50.00%   mid  |
 "
     );
     assert_eq!(ran.status.code(), Some(0));
+}
+
+/// Backslash escapes in strings and f-string text, read as Python reads them, and a raw string
+/// that keeps them. Before this, any backslash was reported as not lowered.
+#[test]
+fn escapes_build_and_run() {
+    let program = r#"
+def main():
+    print("a\tb|\"q\"|\\|\x41\u00e9|\d")
+    x = 2.5
+    print(f"x =\t{x:.1f}\n{{x}}")
+    print(r"C:\new", """say "hi" """)
+"#;
+    let directory = package("escapes", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "a\tb|\"q\"|\\|A\u{e9}|\\d\nx =\t2.5\n{x}\nC:\\new say \"hi\" \n"
+    );
 }
