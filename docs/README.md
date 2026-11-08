@@ -8,8 +8,9 @@ missing or unclear, that is a bug: open an issue.
 The compiler is a prototype. `baryon check <directory>` reports every error the checker finds,
 but `baryon build`, `baryon run` and `baryon test` compile only part of the language so far, and
 none of the [example programs](examples/README.md) builds yet;
-[What builds today](reference/status.md) lists, chapter by chapter, what does. Until the beginner's guide (roadmap item 0.8.3) is written, the language is
-learned from its definition and from the examples. Build the tool with
+[What builds today](reference/status.md) lists, chapter by chapter, what does. Until the
+beginner's guide (roadmap item 0.8.3) is written, the language is learned from its definition and
+from the examples. Build the tool with
 `cargo build --package driver` and run it as `target/debug/baryon`.
 
 To see the same diagnostics in an editor as you type, point its Language Server Protocol client
