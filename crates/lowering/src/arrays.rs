@@ -3,7 +3,7 @@
 //! `ones` and `fill`.
 
 use crate::builder::Builder;
-use crate::expressions::arithmetic;
+use crate::operators::arithmetic;
 use mir::{
     BinaryOperator, Check, Constant, ConstantValue, Elementwise, Local, Operand, Place, Projection,
     Rvalue, TerminatorKind, UnaryOperator,

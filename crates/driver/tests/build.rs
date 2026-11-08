@@ -460,6 +460,31 @@ def main():
     );
 }
 
+/// A generic function compiles once per type it is called at (roadmap 1.9.5): `twice` and the
+/// `square` it calls each at `f64` and at `i64`, with the literal `2` an `f64` in one and an
+/// `i64` in the other.
+#[test]
+fn generic_functions_build_at_each_type() {
+    let program = "\
+def square[T: Number](x: T) -> T:
+    return x * x
+
+
+def twice[T: Number](x: T) -> T:
+    return square(x) * 2 - x
+
+
+def main():
+    print(twice(3.0), twice(4))
+";
+    let directory = package("generics", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), "15.0 28\n");
+}
+
 /// `str` values end to end (decision 0022): literals held in variables and fields, returned,
 /// borrowed and printed, and a `str` field of an error that ends `main` in its report.
 #[test]
