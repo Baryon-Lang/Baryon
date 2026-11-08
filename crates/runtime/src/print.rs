@@ -34,6 +34,37 @@ pub(crate) fn write(stream: i32, text: &str) {
 /// output; the report of an error that ends `main` writes to 2.
 const STDERR: i32 = 2;
 
+/// `text` as Python's `repr` writes a `str`: in single quotes, or in double quotes when it holds
+/// a single quote and no double quote, with the backslash, that quote, and each control
+/// character escaped as `\n`, `\r`, `\t` or `\xNN`. Other characters, accented letters
+/// included, are written as they are.
+pub(crate) fn quoted(text: &str) -> String {
+    let quote = if text.contains('\'') && !text.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut written = String::from(quote);
+    for character in text.chars() {
+        match character {
+            '\\' => written.push_str("\\\\"),
+            '\n' => written.push_str("\\n"),
+            '\r' => written.push_str("\\r"),
+            '\t' => written.push_str("\\t"),
+            _ if character == quote => {
+                written.push('\\');
+                written.push(character);
+            }
+            _ if character.is_ascii_control() || ('\u{80}'..='\u{9f}').contains(&character) => {
+                let _ = write!(written, "\\x{:02x}", u32::from(character));
+            }
+            _ => written.push(character),
+        }
+    }
+    written.push(quote);
+    written
+}
+
 /// `value` as Python writes a `bool`: `True` or `False`.
 pub(crate) fn bool(value: bool) -> &'static str {
     if value { "True" } else { "False" }
@@ -94,11 +125,26 @@ pub(crate) fn float(shortest: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{bool, float};
+    use super::{bool, float, quoted};
 
     /// Python's `repr` of the same value, for `f64`.
     fn repr(value: f64) -> String {
         float(&format!("{value:e}"))
+    }
+
+    #[test]
+    fn text_is_quoted_as_python_repr_writes_it() {
+        assert_eq!(quoted("pressure"), "'pressure'");
+        assert_eq!(quoted(""), "''");
+        assert_eq!(quoted("it's"), "\"it's\"");
+        assert_eq!(quoted("say \"hi\""), "'say \"hi\"'");
+        assert_eq!(quoted("both ' and \""), "'both \\' and \"'");
+        assert_eq!(quoted("a\\b"), "'a\\\\b'");
+        assert_eq!(quoted("one\ntwo\tthree\r"), "'one\\ntwo\\tthree\\r'");
+        assert_eq!(quoted("bell\u{7}"), "'bell\\x07'");
+        assert_eq!(quoted("\u{7f}\u{85}"), "'\\x7f\\x85'");
+        assert_eq!(quoted("Ångström"), "'Ångström'");
+        assert_eq!(quoted("a, b=1"), "'a, b=1'");
     }
 
     #[test]

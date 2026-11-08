@@ -86,6 +86,33 @@ pub extern "C" fn baryon_rt_print_bool(stream: i32, value: bool) {
     print::write(stream, print::bool(value));
 }
 
+/// Prints `length` bytes of UTF-8 text at `text` as Python's `repr` writes a `str`: quoted, with
+/// the quote, the backslash and control characters escaped, as `'it\\'s'`. The report of an
+/// error that ends `main` writes its `str` fields this way, so a field holding `", b=1"` cannot
+/// be mistaken for another field. Bytes that are not UTF-8, which only a compiler bug passes,
+/// print as replacement characters.
+///
+/// # Safety
+///
+/// `text` points to `length` readable bytes.
+///
+/// # Example
+///
+/// ```
+/// use runtime::baryon_rt_print_str_quoted;
+///
+/// let name = "pressure";
+/// // SAFETY: the pointer and length are the constant's. Prints `'pressure'`.
+/// unsafe { baryon_rt_print_str_quoted(2, name.as_ptr(), name.len()) }
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_print_str_quoted(stream: i32, text: *const u8, length: usize) {
+    // SAFETY: the caller guarantees `text` points to `length` readable bytes.
+    let bytes = unsafe { std::slice::from_raw_parts(text, length) };
+    print::write(stream, &print::quoted(&String::from_utf8_lossy(bytes)));
+}
+
 /// Prints `length` bytes of UTF-8 text at `text` as they are: a `str` argument, and the space
 /// between arguments and the line end that compiled code writes itself. Bytes that are not UTF-8,
 /// which only a compiler bug passes, print as replacement characters.
