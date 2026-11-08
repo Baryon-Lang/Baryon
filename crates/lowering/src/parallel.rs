@@ -22,7 +22,8 @@ use crate::builder::Builder;
 use crate::operators::arithmetic;
 use database::Definition;
 use mir::{
-    Argument, BinaryOperator, Constant, Local, Operand, Place, Reduction, Rvalue, TerminatorKind,
+    Argument, BinaryOperator, Constant, Local, Operand, Place, Reduction, ReductionOperator,
+    Rvalue, TerminatorKind,
 };
 use std::collections::BTreeMap;
 use syntax::{NodeId, Role, SyntaxKind};
@@ -36,7 +37,7 @@ enum Use {
     /// Writes into it, at the loop variable's elements.
     Write,
     /// Reduces into it with this operator.
-    Reduce(BinaryOperator),
+    Reduce(ReductionOperator),
 }
 
 /// One value passed to an outlined body: its name, type and mode there, and the variable it
@@ -323,8 +324,10 @@ impl<'db> Builder<'db> {
                 };
                 if self.tree.kind(target) == SyntaxKind::Name && self.is_number(target) {
                     let operator = match arithmetic(self.tree.node(node).operator()) {
-                        Some(BinaryOperator::Add | BinaryOperator::Subtract) => BinaryOperator::Add,
-                        Some(BinaryOperator::Multiply) => BinaryOperator::Multiply,
+                        Some(BinaryOperator::Add | BinaryOperator::Subtract) => {
+                            ReductionOperator::Add
+                        }
+                        Some(BinaryOperator::Multiply) => ReductionOperator::Multiply,
                         _ => {
                             self.unsupported(node, "this reduction");
                             return None;

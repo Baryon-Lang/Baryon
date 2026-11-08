@@ -4,7 +4,7 @@
 use super::{Database, assign, end, primitive, span};
 use crate::{
     Argument, BinaryOperator, BlockId, Body, Constant, Invalid, Local, LocalKind, Operand,
-    Reduction, Rvalue, TerminatorKind,
+    Reduction, ReductionOperator, Rvalue, TerminatorKind,
 };
 use types::{Float, Integer, Mode, Primitive, Type, TypeKind};
 
@@ -66,7 +66,7 @@ fn summing(database: &Database) -> Body<'_> {
         arguments: vec![Argument::Borrow(xs.into())],
         reductions: vec![Reduction {
             place: total.into(),
-            operator: BinaryOperator::Add,
+            operator: ReductionOperator::Add,
         }],
         target: BlockId::new(1),
     }));
@@ -128,23 +128,16 @@ body0: fn(_1: Owned[i64], _2: Array[f64, 1], _3: InOut[f64]) -> None {
     );
 }
 
-/// A `ParallelFor` must name an outlined body that exists, pass it one value per parameter, and
-/// reduce only with `Add` or `Multiply`; a rule broken inside an outlined body is reported with
-/// its position.
+/// A `ParallelFor` must name an outlined body that exists and pass it one value per parameter;
+/// a rule broken inside an outlined body is reported with its position.
 #[test]
 fn parallel_for_rules_are_reported() {
     let database = Database::default();
     let mut body = summing(&database);
-    let TerminatorKind::ParallelFor {
-        arguments,
-        reductions,
-        ..
-    } = &mut body.blocks[0].terminator.kind
-    else {
+    let TerminatorKind::ParallelFor { arguments, .. } = &mut body.blocks[0].terminator.kind else {
         unreachable!("the entry block runs the loop");
     };
     arguments.clear();
-    reductions[0].operator = BinaryOperator::Subtract;
     body.outlined[0].blocks.clear();
     let mut missing = summing(&database);
     missing.outlined.clear();
@@ -154,7 +147,6 @@ fn parallel_for_rules_are_reported() {
         problems,
         vec![
             Invalid::OutlinedParameters(BlockId::ENTRY),
-            Invalid::ReductionOperator(BlockId::ENTRY),
             Invalid::Outlined(0, Box::new(Invalid::NoBlocks)),
             Invalid::UnknownOutlined(BlockId::ENTRY, 0),
         ]
@@ -164,7 +156,6 @@ fn parallel_for_rules_are_reported() {
         messages,
         [
             "bb0 passes its outlined body the wrong number of values",
-            "bb0 reduces with an operator other than Add or Multiply",
             "in outlined body 0: the body has no blocks",
             "bb0 runs outlined body 0, which does not exist",
         ]

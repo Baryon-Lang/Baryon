@@ -4,8 +4,8 @@
 //! mistake is made, not in a backend three stages later.
 
 use crate::{
-    Argument, BasicBlock, BinaryOperator, BlockId, Body, Callee, Elementwise, Local, LocalKind,
-    Operand, Phase, Piece, Place, Projection, Rvalue, StatementKind, TerminatorKind,
+    Argument, BasicBlock, BlockId, Body, Callee, Elementwise, Local, LocalKind, Operand, Phase,
+    Piece, Place, Projection, Rvalue, StatementKind, TerminatorKind,
 };
 use database::Db;
 use std::fmt;
@@ -37,9 +37,6 @@ pub enum Invalid {
     /// values than its outlined body has parameters: the iteration, the arguments and the
     /// reductions.
     OutlinedParameters(BlockId),
-    /// A block's [`ParallelFor`](TerminatorKind::ParallelFor) reduces with an operator other
-    /// than `Add` or `Multiply`.
-    ReductionOperator(BlockId),
     /// The outlined body at this position breaks a rule.
     Outlined(u32, Box<Invalid>),
 }
@@ -102,13 +99,6 @@ impl fmt::Display for Invalid {
                     block.index()
                 )
             }
-            Self::ReductionOperator(block) => {
-                write!(
-                    formatter,
-                    "bb{} reduces with an operator other than Add or Multiply",
-                    block.index()
-                )
-            }
             Self::Outlined(body, problem) => {
                 write!(formatter, "in outlined body {body}: {problem}")
             }
@@ -126,7 +116,7 @@ impl Body<'_> {
     /// - every local a statement or terminator names exists;
     /// - a [`Phase::Ready`] body has no whole-array expressions and no type parameters;
     /// - a [`ParallelFor`](TerminatorKind::ParallelFor) names an outlined body that exists,
-    ///   passes it one value per parameter, and reduces only with `Add` or `Multiply`;
+    ///   and passes it one value per parameter;
     /// - each outlined body keeps these rules too.
     ///
     /// It does not check types: lowering builds bodies from type-checked code, and a type check
@@ -208,14 +198,6 @@ impl Body<'_> {
                     problems.push(Invalid::OutlinedParameters(id));
                 }
             }
-        }
-        if reductions.iter().any(|reduction| {
-            !matches!(
-                reduction.operator,
-                BinaryOperator::Add | BinaryOperator::Multiply
-            )
-        }) {
-            problems.push(Invalid::ReductionOperator(id));
         }
     }
 }
