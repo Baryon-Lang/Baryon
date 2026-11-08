@@ -165,5 +165,23 @@ set.
 | `a.round()` | A new array with each element rounded to the nearest whole number, ties to even |
 | `a.fill(value)` | Sets every element to `value`; `a` must be changeable |
 
+## Math functions
+
 Mathematical functions from `math`, such as `sqrt` and `exp`, apply to numbers. Their element-wise
 forms on arrays arrive with roadmap 1.14.
+
+They and float `**` follow IEEE 754 and the C math library, as NumPy does, never raising and never
+returning a complex number. This is the rule [float division by zero](types.md#numbers) already
+follows:
+
+| Expression | Python | Here |
+| --- | --- | --- |
+| `sqrt(-1.0)` | `ValueError` | `nan` |
+| `log(0.0)` | `ValueError` | `-inf` |
+| `log(-1.0)` | `ValueError` | `nan` |
+| `(-8.0) ** (1 / 3)` | a complex number | `nan` |
+| `(-8.0) ** 3.0` | `-512.0` | `-512.0` |
+| `0.0 ** -1.0` | `ZeroDivisionError` | `inf` |
+
+A negative base with a whole-number exponent gives a real result, as in Python. `x ** y` on
+floats is C's `pow(x, y)`. `**` on integers needs a non-negative exponent; a negative one panics.
