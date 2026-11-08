@@ -33,10 +33,10 @@ listed against it.
 
 | Example | Still needs |
 | --- | --- |
-| [`heat_equation.byn`](../examples/heat_equation.byn) | `prange`, `Array.copy`, `Array.sum`, unpacking assignment |
-| [`lennard_jones.byn`](../examples/lennard_jones.byn) | `prange`, `**`, `Fixed.dot`, `Fixed.round`, `math` functions |
+| [`heat_equation.byn`](../examples/heat_equation.byn) | `Array.copy`, `Array.sum`, unpacking assignment |
+| [`lennard_jones.byn`](../examples/lennard_jones.byn) | `**`, `Fixed.dot`, `Fixed.round`, `math` functions |
 | [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | `Callable` arguments, the built-in `round`, unpacking assignment |
-| [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | `prange`, lists and `list.append`, `Array(values)`, `Array.copy`, `math` functions |
+| [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | lists and `list.append`, `Array(values)`, `Array.copy`, `math` functions |
 | [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | the `random` module, operators on structs |
 
 ## Syntax
@@ -114,7 +114,7 @@ The one exception is the overflow panic, described under [Types](#types).
 
 | Builds today | Not built yet |
 | --- | --- |
-| | `prange` in any form. Lowering handles it, except `accumulate=`; the LLVM backend does not yet (pull request [#76](https://github.com/Baryon-Lang/Baryon/pull/76)) |
+| `prange` with the same arguments as `range`, its inferred reductions and their reproducible combine | `prange` with `accumulate=` |
 | | `simd(range(n))` |
 
 `baryon check` applies every rule of the chapter, so a `prange` loop that breaks one is reported
