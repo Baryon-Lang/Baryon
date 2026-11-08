@@ -140,7 +140,8 @@ target depends on: an edit re-lowers one body and re-instantiates only the insta
 recorded here so that item does not reopen the shape. `ParallelFor` joined with roadmap 1.9.7:
 the outlined bodies live in their function's body, and each runs one iteration. A shared scalar
 the loop reduces into, such as `energy += e`, is listed with its operator, and the backend gives
-each chunk a private copy and combines the copies in chunk order.
+each chunk a private copy and combines the copies in the fixed tree of decision
+[0021](0021-runtime-crate-and-unsafe-code.md).
 
 ### One interface crate, one query per stage
 

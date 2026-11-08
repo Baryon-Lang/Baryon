@@ -104,8 +104,8 @@ pub enum TerminatorKind<'db> {
     /// A backend gives each chunk of iterations (runtime, `baryon_rt_parallel_for`) a private
     /// copy of each reduced value, starting at the operator's identity, passes that copy to
     /// the chunk's iterations in order, and after the loop combines the copies into the place
-    /// in chunk order. The chunks depend only on `count`, so the result is the same on any
-    /// number of threads.
+    /// in the fixed tree of decision 0021. The chunks and the tree depend only on `count`, so
+    /// the result is the same on any number of threads.
     ParallelFor {
         /// The outlined body's position in [`Body::outlined`](crate::Body::outlined).
         body: u32,
