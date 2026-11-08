@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Mutex, Once, PoisonError};
 
+mod testing;
 mod text;
 
 /// The `baryon` executable cargo built for these tests.

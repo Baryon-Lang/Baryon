@@ -39,7 +39,8 @@ reports syntax errors, module errors, undefined names, bad imports and type erro
 check`. `baryon build <directory> <output>` compiles a package through LLVM into an executable that
 runs the `main` function in `main.byn`; it handles numbers, control flow, calls, structs, arrays,
 optionals, `str` values and f-strings, errors, `assert` and `print` so far, with `clang` installed.
-`baryon run <directory>` builds and runs it in one step. `baryon lsp` is a language server that
+`baryon run <directory>` builds and runs it in one step, and `baryon test <directory>` runs
+every `@test` function and reports which passed. `baryon lsp` is a language server that
 shows the same diagnostics in any editor with a Language Server Protocol client, as you type.
 `baryon doc` writes a package's documentation strings as Markdown pages.
 

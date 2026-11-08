@@ -9,10 +9,12 @@
 //! An instance's symbol is its function's with the type arguments after it: `main.square[f64]`.
 //! A function lowering or the backend cannot handle yet is reported once, at its name.
 
+mod instances;
+
 use crate::Session;
 use database::Db;
 use diagnostics::{Diagnostic, Severity};
-use mir::{Body, Callee, Phase, TerminatorKind};
+use instances::{Instance, Instances, ready};
 use std::collections::HashMap;
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Nominal, TypeDb, TypeKind};
@@ -28,6 +30,29 @@ struct Function<'db> {
     /// Whether its module is the package's `main`, from `main.byn` at the root: the only module
     /// whose `main` function a program starts at.
     in_main_module: bool,
+    /// Whether it is decorated `@test`, and where.
+    test: Test,
+}
+
+/// Whether a function is decorated `@test`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Test {
+    /// It is not a test.
+    No,
+    /// A top-level function decorated `@test`: a test.
+    Function,
+    /// A method decorated `@test`, which is an error, since nothing gives the runner a value to
+    /// call it on.
+    Method,
+}
+
+/// What a compiled program starts at.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Program {
+    /// The `main` function of the package's `main.byn`: `baryon build`.
+    Main,
+    /// One `@test` function per run, chosen by the command line: `baryon test`.
+    Tests,
 }
 
 impl Session {
@@ -63,6 +88,52 @@ impl Session {
     /// module defines one, or when it takes parameters or returns a value. `main` may raise; an
     /// error that reaches its end is printed and the program exits with status 1.
     pub fn compile(&self, root: Option<&str>) -> Result<String, Vec<Diagnostic>> {
+        self.program(root, Program::Main).map(|(module, _)| module)
+    }
+
+    /// The package as one LLVM module for `baryon test`, with the name of each `@test` function
+    /// in it, as `module.function`, in file and source order. The module's C `main` runs the test
+    /// at the position its first command-line argument names, counting from 0, and exits with
+    /// status 0 when the test returns, 1 after printing an error the test raised, and 101 when a
+    /// check in it fails ([`llvm_backend::Module::tests`]). Running each test in its own process
+    /// keeps a panic in one from stopping the rest.
+    ///
+    /// A test is a top-level function decorated `@test` that takes no parameters and returns
+    /// `None`; it may raise. The package needs no `main` function; every function is compiled as
+    /// it is for [`compile`](Self::compile), and `root` means the same.
+    ///
+    /// ```
+    /// use driver::Session;
+    ///
+    /// let mut session = Session::new();
+    /// session.add_file("heat.byn", "@test\ndef test_flux():\n    assert 2 + 2 == 4\n")?;
+    /// let (module, tests) = session.compile_tests(None).unwrap();
+    /// assert_eq!(tests, ["heat.test_flux"]);
+    /// assert!(module.contains("define i32 @main(i32 %count, ptr %arguments)"), "{module}");
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
+    ///
+    /// Cost: the same as [`compile`](Self::compile).
+    ///
+    /// # Errors
+    ///
+    /// The package's errors when it does not check; otherwise one error per function that
+    /// cannot be compiled yet, and one per `@test` that is a method, has type parameters, takes
+    /// parameters or returns a value.
+    pub fn compile_tests(
+        &self,
+        root: Option<&str>,
+    ) -> Result<(String, Vec<String>), Vec<Diagnostic>> {
+        self.program(root, Program::Tests)
+    }
+
+    /// The package as one LLVM module whose C `main` starts `program`, with the names of the
+    /// tests it runs, which are none for [`Program::Main`].
+    fn program(
+        &self,
+        root: Option<&str>,
+        program: Program,
+    ) -> Result<(String, Vec<String>), Vec<Diagnostic>> {
         let errors: Vec<Diagnostic> = self
             .check()
             .into_iter()
@@ -101,7 +172,18 @@ impl Session {
             else {
                 continue;
             };
+            let entry = match program {
+                Program::Main => function.main,
+                Program::Tests => function.test == Test::Function,
+            };
+            if function.test == Test::Method && program == Program::Tests {
+                errors.push(self.at(function.item, "`@test` goes on a top-level function"));
+                continue;
+            }
             if !signature.type_parameters.is_empty() {
+                if entry && program == Program::Tests {
+                    errors.push(self.at(function.item, "a test cannot have type parameters"));
+                }
                 continue;
             }
             if function.main && !function.in_main_module {
@@ -114,7 +196,7 @@ impl Session {
                 );
                 continue;
             }
-            if function.main {
+            if entry {
                 let returns_none = match signature.returns.kind(database) {
                     TypeKind::None => true,
                     TypeKind::Fallible { value, .. } => {
@@ -125,10 +207,11 @@ impl Session {
                 if signature.parameters.is_empty() && returns_none {
                     entries.push((function, signature.returns));
                 } else {
-                    errors.push(self.at(
-                        function.item,
-                        "`main` must take no parameters and return `None`",
-                    ));
+                    let message = match program {
+                        Program::Main => "`main` must take no parameters and return `None`",
+                        Program::Tests => "a test must take no parameters and return `None`",
+                    };
+                    errors.push(self.at(function.item, message));
                     continue;
                 }
             }
@@ -138,23 +221,61 @@ impl Session {
             });
         }
         errors.extend(self.define(&mut module, roots, &declared, &symbol));
-        // `main.byn` defines `main` at most once: a second top-level definition is a check error.
-        match entries.first() {
-            Some((main, returns)) => {
-                let reported = self.reported(*returns);
-                if let Err(unsupported) = module.entry(&main.symbol, &reported) {
-                    errors.push(self.at(main.item, unsupported.to_string()));
-                }
-            }
-            None => errors.push(
-                Diagnostic::error("the package has no `main` function to run")
-                    .with_note("add `def main():` to `main.byn` at the package's root"),
-            ),
-        }
+        let tests = self.start(&mut module, program, &entries, &mut errors);
         if errors.is_empty() {
-            Ok(module.finish())
+            Ok((module.finish(), tests))
         } else {
             Err(errors)
+        }
+    }
+
+    /// Adds to `module` the C `main` that starts `program` at `entries`, the functions it may
+    /// start at with their return types, and returns the names of the tests it runs, which are
+    /// none for [`Program::Main`]. Adds an error to `errors` when there is no `main` to start
+    /// at, or when the backend cannot write the C `main`.
+    fn start<'db>(
+        &'db self,
+        module: &mut llvm_backend::Module<'_, 'db>,
+        program: Program,
+        entries: &[(&Function<'db>, types::Type<'db>)],
+        errors: &mut Vec<Diagnostic>,
+    ) -> Vec<String> {
+        match program {
+            // `main.byn` defines `main` at most once: a second top-level definition is a check
+            // error.
+            Program::Main => {
+                match entries.first() {
+                    Some((main, returns)) => {
+                        let reported = self.reported(*returns);
+                        if let Err(unsupported) = module.entry(&main.symbol, &reported) {
+                            errors.push(self.at(main.item, unsupported.to_string()));
+                        }
+                    }
+                    None => errors.push(
+                        Diagnostic::error("the package has no `main` function to run")
+                            .with_note("add `def main():` to `main.byn` at the package's root"),
+                    ),
+                }
+                Vec::new()
+            }
+            Program::Tests => {
+                let reported: Vec<_> = entries
+                    .iter()
+                    .map(|(_, returns)| self.reported(*returns))
+                    .collect();
+                let runs: Vec<llvm_backend::Test<'_, 'db>> = entries
+                    .iter()
+                    .zip(&reported)
+                    .map(|((test, _), reported)| (test.symbol.as_str(), reported.as_slice()))
+                    .collect();
+                if let Err(unsupported) = module.tests(&runs) {
+                    errors.push(Diagnostic::error(unsupported.to_string()));
+                }
+                entries
+                    .iter()
+                    .map(|(test, _)| test.symbol.clone())
+                    .collect()
+            }
         }
     }
 
@@ -214,14 +335,29 @@ impl Session {
                     .filter(|&name| tree.kind(name) == SyntaxKind::Name)
             };
             let in_main_module = module == "main";
-            let mut push = |node: NodeId, symbol: String, main: bool| {
-                functions.push(Function {
-                    item: Item::new(database, self.package, file, node),
-                    symbol,
-                    main,
-                    in_main_module,
-                });
+            let is_test = |statement: NodeId| {
+                tree.children_with(statement, Role::Decorator)
+                    .any(|decorator| {
+                        tree.child(decorator, Role::Value).is_some_and(|value| {
+                            tree.kind(value) == SyntaxKind::Name && tree.text(value, text) == "test"
+                        })
+                    })
             };
+            let mut push =
+                |statement: NodeId, node: NodeId, symbol: String, main: bool, method: bool| {
+                    let decorated = match (is_test(statement), method) {
+                        (false, _) => Test::No,
+                        (true, false) => Test::Function,
+                        (true, true) => Test::Method,
+                    };
+                    functions.push(Function {
+                        item: Item::new(database, self.package, file, node),
+                        symbol,
+                        main,
+                        in_main_module,
+                        test: decorated,
+                    });
+                };
             for statement in tree.children_with(tree.root(), Role::Body) {
                 let Some(node) = name(statement) else {
                     continue;
@@ -229,7 +365,13 @@ impl Session {
                 let own = tree.text(node, text);
                 match tree.kind(statement) {
                     SyntaxKind::FunctionDefinition => {
-                        push(node, format!("{module}.{own}"), own == "main");
+                        push(
+                            statement,
+                            node,
+                            format!("{module}.{own}"),
+                            own == "main",
+                            false,
+                        );
                     }
                     SyntaxKind::ClassDefinition => {
                         for method in tree.children_with(statement, Role::Body) {
@@ -239,7 +381,7 @@ impl Session {
                             if let Some(method_name) = name(method) {
                                 let symbol =
                                     format!("{module}.{own}.{}", tree.text(method_name, text));
-                                push(method_name, symbol, false);
+                                push(method, method_name, symbol, false, true);
                             }
                         }
                     }
@@ -292,101 +434,4 @@ fn declared<'db>(
     package: database::Package,
 ) -> impl Fn(&Nominal<'db>) -> types::Declared<'db> {
     move |nominal| checker::declared(db, package, nominal)
-}
-
-/// A function and the type arguments it is compiled at: none for a function that is not
-/// generic (decision 0018).
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct Instance<'db> {
-    /// The function or method.
-    item: Item<'db>,
-    /// One concrete type per type parameter, in the order the signature lists them.
-    arguments: Vec<types::Type<'db>>,
-}
-
-/// The instances a program needs, collected as they are found: the roots first, then each
-/// instance of a generic function that a collected body calls, once.
-struct Instances<'db> {
-    /// Every instance found so far, in the order found.
-    found: Vec<Instance<'db>>,
-    /// The same instances, to find a repeat in constant time.
-    seen: std::collections::HashSet<Instance<'db>>,
-    /// How many of `found` [`next`](Self::next) has handed out.
-    handed: usize,
-}
-
-impl<'db> Instances<'db> {
-    /// Starts from `roots`, each compiled whether or not anything calls it.
-    fn new(roots: Vec<Instance<'db>>) -> Self {
-        Self {
-            seen: roots.iter().cloned().collect(),
-            found: roots,
-            handed: 0,
-        }
-    }
-
-    /// The next instance to compile, or `None` when every instance found so far has been.
-    fn next(&mut self) -> Option<Instance<'db>> {
-        let instance = self.found.get(self.handed)?.clone();
-        self.handed += 1;
-        Some(instance)
-    }
-
-    /// Adds each instance of a generic function that `body` or one of its `prange` bodies calls
-    /// and is not yet found. The body is an instance's, so its type arguments are concrete.
-    fn follow(&mut self, body: &Body<'db>) {
-        for outlined in &body.outlined {
-            self.follow(outlined);
-        }
-        for block in &body.blocks {
-            if let TerminatorKind::Call {
-                callee:
-                    Callee::Function {
-                        item,
-                        type_arguments,
-                    },
-                ..
-            } = &block.terminator.kind
-                && !type_arguments.is_empty()
-            {
-                let instance = Instance {
-                    item: *item,
-                    arguments: type_arguments.clone(),
-                };
-                if self.seen.insert(instance.clone()) {
-                    self.found.push(instance);
-                }
-            }
-        }
-    }
-}
-
-/// The body of `instance`, ready for a backend: lowered, its type parameters replaced by the
-/// instance's arguments, its drops elaborated and its whole-array expressions expanded. Errors
-/// for what lowering cannot handle yet, and for a generic method of a generic class, whose
-/// class's type parameters are not collected yet.
-fn ready<'db>(
-    db: &'db dyn TypeDb,
-    instance: &Instance<'db>,
-    declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
-) -> Result<Body<'db>, Vec<Diagnostic>> {
-    let mut body = lowering::lower(db, instance.item)?;
-    if !instance.arguments.is_empty() {
-        let Declaration::Function(signature) = &db.declaration(instance.item).declaration else {
-            return Err(Vec::new());
-        };
-        if signature.type_parameters.len() != instance.arguments.len() {
-            return Err(vec![
-                Diagnostic::error("methods of generic classes are not compiled yet")
-                    .with_primary(body.span, "a method of a generic class")
-                    .with_note("collecting a class's type arguments comes after roadmap 1.9.5"),
-            ]);
-        }
-        body =
-            monomorphize::instantiate(db, &body, &signature.type_parameters, &instance.arguments);
-    }
-    drop_elaboration::elaborate(db, &mut body, declared);
-    array_expansion::expand(db, &mut body, declared);
-    body.phase = Phase::Ready;
-    Ok(body)
 }

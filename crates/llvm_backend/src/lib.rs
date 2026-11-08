@@ -134,6 +134,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use types::{Declared, Item, Nominal, Type};
 
+/// One test of a test program, as [`Module::tests`] takes it: the symbol of its function, and the
+/// error types the function can raise, each with its fields' names in declaration order.
+pub type Test<'a, 'db> = (&'a str, &'a [(Type<'db>, Vec<String>)]);
+
 /// One LLVM module being written: the functions defined so far, and a declaration for each
 /// function they call that the module does not define.
 pub struct Module<'a, 'db> {
@@ -257,6 +261,60 @@ impl<'a, 'db> Module<'a, 'db> {
             function::Function::new(self.types, self.symbol, &mut self.constants, &body, &[]);
         let (text, calls) = function
             .entry(symbol, errors)
+            .inspect_err(|_| self.constants.roll_back(mark))?;
+        self.definitions.push(text);
+        self.defined.insert("main".to_owned());
+        self.declarations.extend(calls);
+        Ok(())
+    }
+
+    /// Makes the module a test program: adds a C `main` that runs one function of `tests`, the
+    /// one at the position its first command-line argument names, counting from 0, and exits as
+    /// the C `main` of [`entry`](Self::entry) would for that function: 0 when it returns, 1 after
+    /// printing an error it raised, 101 when a check inside it fails. It returns 2 when the
+    /// argument is missing or names no test.
+    ///
+    /// Each test is a function's symbol and the errors it can raise, as `entry` takes them. A
+    /// test runner starts the program once per test, so a panic, which ends the process, fails
+    /// only its own test.
+    ///
+    /// # Errors
+    ///
+    /// [`Unsupported`] when an error has a field this slice of the backend cannot print; the
+    /// module is left as it was.
+    ///
+    /// ```
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// let database = Database::default();
+    /// let sources = source::SourceMap::new();
+    /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
+    /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
+    /// let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
+    /// module.tests(&[("heat.test_flux", &[]), ("heat.test_energy", &[])])?;
+    /// let text = module.finish();
+    /// assert!(text.starts_with("define i32 @main(i32 %count, ptr %arguments) {"), "{text}");
+    /// assert!(text.contains("test1:\n  call void @heat.test_energy()\n  ret i32 0\n"), "{text}");
+    /// assert!(text.ends_with("declare i32 @atoi(ptr)\n"), "{text}");
+    /// # Ok::<(), llvm_backend::Unsupported>(())
+    /// ```
+    pub fn tests(&mut self, tests: &[Test<'_, 'db>]) -> Result<(), Unsupported> {
+        let mark = self.constants.mark();
+        let body = entry::no_body(self.types.db);
+        let function =
+            function::Function::new(self.types, self.symbol, &mut self.constants, &body, &[]);
+        let (text, calls) = function
+            .tests(tests)
             .inspect_err(|_| self.constants.roll_back(mark))?;
         self.definitions.push(text);
         self.defined.insert("main".to_owned());
