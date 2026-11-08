@@ -1,8 +1,8 @@
 {
   "name": "baryon",
   "displayName": "Baryon",
-  "description": "Syntax highlighting and editing support for the Baryon programming language (.byn files).",
-  "version": "0.1.0",
+  "description": "Syntax highlighting, editing support and live diagnostics for the Baryon programming language (.byn files).",
+  "version": "0.2.0",
   "publisher": "baryon-lang",
   "license": "Apache-2.0",
   "private": true,
@@ -12,15 +12,21 @@
     "directory": "editors/vscode"
   },
   "files": [
+    "extension.js",
     "language-configuration.json",
     "syntaxes/*.json",
-    "README.md"
+    "README.md",
+    "node_modules/**"
   ],
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.82.0"
   },
   "categories": [
     "Programming Languages"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:baryon"
   ],
   "contributes": {
     "languages": [
@@ -49,6 +55,20 @@
           "source.baryon"
         ]
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Baryon",
+      "properties": {
+        "baryon.path": {
+          "type": "string",
+          "default": "baryon",
+          "markdownDescription": "The `baryon` program the extension runs as `baryon lsp`. A bare name is looked up on `PATH`; give a full path if `baryon` is not on it. Reload the window after changing it.",
+          "scope": "machine-overridable"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
   }
 }

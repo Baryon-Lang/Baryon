@@ -15,7 +15,8 @@ from the examples.
 [The `baryon` command](reference/commands.md) says how to build the tool and what each of its
 commands does, including `baryon lsp`, which shows the same diagnostics in any editor with a
 Language Server Protocol client, and `baryon doc`, which writes a package's documentation strings
-as Markdown pages. The [VS Code extension](../editors/vscode/README.md) highlights `.byn` files.
+as Markdown pages. The [VS Code extension](../editors/vscode/README.md) highlights `.byn` files
+and runs `baryon lsp` for you.
 
 - The [language reference](reference/README.md) defines what a program may say and what it means.
   Python programmers should start with its

@@ -39,8 +39,10 @@ Commands:
   check-roadmap        Verify ROADMAP.md is well formed and updated by the current change
   help                 Show this message";
 
-/// Directories never searched for files: version-control data and build output.
-const SKIPPED_DIRECTORIES: [&str; 2] = [".git", "target"];
+/// Directories never searched for files: version-control data, build output, and the
+/// third-party JavaScript packages `npm install` puts in `editors/vscode/node_modules/`, whose
+/// Markdown is not ours to check.
+const SKIPPED_DIRECTORIES: [&str; 3] = [".git", "target", "node_modules"];
 
 /// The result type for every xtask command.
 type Outcome = Result<(), Box<dyn Error>>;
