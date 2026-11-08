@@ -200,7 +200,10 @@ impl<'db> Substitution<'_, 'db> {
                     self.operand(operand);
                 }
             }
-            Rvalue::Length(..) | Rvalue::IsPresent(_) | Rvalue::ErrorIndex(_) => {}
+            Rvalue::Length(..)
+            | Rvalue::IsPresent(_)
+            | Rvalue::ErrorIndex(_)
+            | Rvalue::Format(_) => {}
             Rvalue::Elementwise(tree) => self.elementwise(tree),
         }
     }
