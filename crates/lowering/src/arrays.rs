@@ -161,7 +161,7 @@ impl<'db> Builder<'db> {
 
     /// The length of dimension `dimension` of the array at `array` of type `ty`, as an `i64`
     /// operand: a constant for a `Fixed` array, read into a temporary for an `Array`.
-    fn length(
+    pub(crate) fn length(
         &mut self,
         array: &Place,
         ty: Type<'db>,
@@ -201,7 +201,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The number of dimensions of an array type, or 0 for anything else.
-    fn rank(&self, ty: Type<'db>) -> u32 {
+    pub(crate) fn rank(&self, ty: Type<'db>) -> u32 {
         match ty.kind(self.db) {
             TypeKind::Array { rank, .. } => *rank,
             TypeKind::Fixed { shape, .. } => u32::try_from(shape.rank()).unwrap_or(0),
