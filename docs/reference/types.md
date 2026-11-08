@@ -322,12 +322,12 @@ def main():
 
 Python evaluates a default once, when the `def` runs, and shares that one value between every call
 that leaves the argument out; a default list that a call appends to keeps the item for the next
-call. A default that is a literal or a `Final` constant has the same value whenever it is
-evaluated, so for those the question does not arise. When any other default, such as
-`Array.zeros(3)` or a call to a function, is evaluated is not decided yet; it is roadmap decision
-D.15, listed under [open questions](README.md#open-questions). Until it is decided,
-`baryon check` accepts such a default, but `baryon build` reports a call that leaves its argument
-out as not built yet.
+call. A default that is a literal or a `Final` constant has the same value whenever it is evaluated,
+so for those the question does not arise. When any other default, such as `Array.zeros(3)` or a call
+to a function, is evaluated is not decided yet; it is roadmap decision D.15, proposed in [decision
+0027](../decisions/0027-default-parameter-evaluation.md). Until it is decided, `baryon check`
+accepts such a default, but `baryon build` reports a call that leaves its argument out as not built
+yet.
 
 ## Functions as arguments
 
