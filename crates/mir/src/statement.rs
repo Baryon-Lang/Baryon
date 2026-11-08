@@ -130,10 +130,41 @@ pub enum TerminatorKind<'db> {
 pub struct Reduction {
     /// The scalar reduced into, outside the loop.
     pub place: Place,
-    /// How contributions combine: [`Add`](BinaryOperator::Add), whose identity is 0, for
-    /// `x += e` and `x -= e`, or [`Multiply`](BinaryOperator::Multiply), whose identity is 1,
-    /// for `x *= e`.
-    pub operator: BinaryOperator,
+    /// How contributions combine.
+    pub operator: ReductionOperator,
+}
+
+/// How a [`Reduction`] combines contributions, each with the identity a chunk's private copy
+/// starts at (language reference, "What a `prange` body may do", rule 3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ReductionOperator {
+    /// `x += e` and `x -= e`, which may be mixed: addition, from 0.
+    Add,
+    /// `x *= e`: multiplication, from 1.
+    Multiply,
+    /// `x = min(x, e)`: the smaller, from the type's largest value (`inf` for floats). As
+    /// Python's `min` does, `min(a, b)` is `b` only when `b < a`.
+    Min,
+    /// `x = max(x, e)`: the larger, from the type's smallest value (`-inf` for floats). As
+    /// Python's `max` does, `max(a, b)` is `b` only when `b > a`.
+    Max,
+}
+
+impl ReductionOperator {
+    /// The operator's name in the text form.
+    ///
+    /// ```
+    /// assert_eq!(mir::ReductionOperator::Min.name(), "Min");
+    /// ```
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Add => "Add",
+            Self::Multiply => "Multiply",
+            Self::Min => "Min",
+            Self::Max => "Max",
+        }
+    }
 }
 
 /// The function a [`Call`](TerminatorKind::Call) calls.
