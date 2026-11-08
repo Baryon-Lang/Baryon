@@ -33,6 +33,8 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Parallel and vector loops](parallel-loops.md) | `prange`, reductions, the disjoint-write rule, adding into shared arrays with `accumulate=`, and `simd` |
 | [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |
 | [Differences from Python](differences-from-python.md) | Every place a Python programmer will be surprised, with the reason |
+| [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |
+| [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |
 | [What builds today](status.md) | Which of the above the compiler builds into a working program today, and what it still rejects |
 
 A reader who knows Python should start with [Differences from Python](differences-from-python.md),

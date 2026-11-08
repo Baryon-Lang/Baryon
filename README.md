@@ -44,7 +44,7 @@ every `@test` function and reports which passed. `baryon lsp` is a language serv
 shows the same diagnostics in any editor with a Language Server Protocol client, as you type.
 `baryon doc` writes a package's documentation strings as Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
-compiles so far.
+compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
 [`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the
 place to add new ideas. The reasoning behind it is in the
