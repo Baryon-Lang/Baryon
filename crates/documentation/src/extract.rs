@@ -4,7 +4,7 @@
 //! reference: a string first in a module, class or function documents it, and a string right
 //! after a constant, type alias or field documents that.
 //!
-//! [syntax chapter]: https://github.com/csimpson1964/New-Programming-Language/blob/main/docs/reference/syntax.md
+//! [syntax chapter]: https://github.com/Baryon-Lang/Baryon/blob/main/docs/reference/syntax.md
 
 use crate::{Item, ModuleDocumentation, docstring};
 use syntax::{NodeId, Role, SyntaxKind, SyntaxTree};

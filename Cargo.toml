@@ -7,7 +7,7 @@ version = "0.0.0"
 edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
-repository = "https://github.com/csimpson1964/New-Programming-Language"
+repository = "https://github.com/Baryon-Lang/Baryon"
 publish = false
 
 # Every external dependency is declared here, once, with its version.

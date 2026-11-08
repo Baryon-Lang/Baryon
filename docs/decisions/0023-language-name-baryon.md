@@ -42,15 +42,18 @@ Casimir.
   `baryon doc` and `baryon lsp`.
 - Names inside the compiler follow: the runtime's C entry points are `baryon_rt_*`, and the
   backend's private globals start with `baryon.`.
-- Accepted decision records and finished roadmap rows keep the name they were written with, NPL,
-  because they are history. Everything else says Baryon.
+- Every reference to the old name changes, including in accepted decision records and finished
+  roadmap rows, so a reader never meets two names for one language. Only this record's context
+  names NPL, to say what was renamed.
+- The repository is `Baryon-Lang/Baryon`. Links to the old `csimpson1964/New-Programming-Language`
+  address redirect, but the tree uses the new one.
 
 ## Consequences
 
-- One pull request renames everything at once, so there is never a mix of `npl` and `baryon` in
+- One pull request renames everything at once, so there is never a mix of the old and new names in
   the tree. Open branches that touch the same lines need a merge of `main` after it lands.
-- `.npl` files are no longer packages' sources: `baryon check` and `baryon build` look for
-  `.byn` only. Nothing outside this repository uses the language yet, so nothing breaks.
+- Files ending in the old extension are no longer packages' sources: `baryon check` and
+  `baryon build` look for `.byn` only. Nothing outside this repository uses the language yet, so nothing breaks.
 - The VS Code extension (1.17) is unblocked and registers the language id `baryon` for `.byn`.
-- Before the name is announced, the GitHub organization, a domain and a formal trademark search
-  still need checking. The checks above were web searches and registry lookups only.
+- The `Baryon-Lang` GitHub organization now holds the repository. Before the name is announced, a
+  domain and a formal trademark search still need checking. The checks above were web searches and registry lookups only.

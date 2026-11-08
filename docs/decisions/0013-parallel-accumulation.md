@@ -102,7 +102,7 @@ so:
 
 ```text
 error: iterations of this parallel loop may write the same element of `forces`
- --> md.npl:58:13
+ --> md.byn:58:13
    |
 51 |     for i in prange(N):
    |              --------- iterations run in parallel

@@ -31,7 +31,7 @@
 //! `X = ...` is really a type, or whether a `raise` is in a function declared to fail. Those
 //! belong to name resolution and the type checker.
 //!
-//! [syntax chapter]: https://github.com/csimpson1964/New-Programming-Language/blob/main/docs/reference/syntax.md
+//! [syntax chapter]: https://github.com/Baryon-Lang/Baryon/blob/main/docs/reference/syntax.md
 //!
 //! # Example
 //!

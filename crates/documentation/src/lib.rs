@@ -26,7 +26,7 @@
 //! they are Markdown: backticks for code, `-` for lists. Their first line is the summary the
 //! index shows.
 //!
-//! [syntax chapter]: https://github.com/csimpson1964/New-Programming-Language/blob/main/docs/reference/syntax.md
+//! [syntax chapter]: https://github.com/Baryon-Lang/Baryon/blob/main/docs/reference/syntax.md
 //!
 //! # Example
 //!

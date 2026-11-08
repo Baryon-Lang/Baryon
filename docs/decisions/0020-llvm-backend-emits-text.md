@@ -55,7 +55,7 @@ There are two ways for a Rust program to drive LLVM:
 
 - The backend lands with no dependency added, builds on any machine Rust builds on, and its
   tests run in the time the rest of the compiler's take.
-- `clang` becomes a requirement of `npl build`, alongside its role as the linker. The
+- `clang` becomes a requirement of `baryon build`, alongside its role as the linker. The
   driver reports a missing `clang` with the command that installs it.
 - The backend's tests compile each module with `clang`, link it with a small C program and run
   it, so they check what the code computes, Python's rounding for `//` and `%` included.
