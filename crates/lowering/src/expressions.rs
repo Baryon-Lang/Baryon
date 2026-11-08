@@ -177,8 +177,10 @@ impl<'db> Builder<'db> {
     }
 
     /// A place holding the value of `node`, for a borrow: the place it names, or a temporary
-    /// it is computed into, dropped when the statement ends.
+    /// it is computed into, dropped when the statement ends. When `node` names a place this
+    /// slice cannot lower, the error is reported once, and the value is not computed again.
     pub(crate) fn borrow(&mut self, node: NodeId) -> Place {
+        let reported = self.reported();
         if !self.is_literal(node)
             && self.named_constant(node).is_none()
             && let Some(place) = self.place(node)
@@ -187,6 +189,9 @@ impl<'db> Builder<'db> {
         }
         let ty = self.ty(node);
         let temporary = self.temporary(ty, node);
+        if self.reported() > reported {
+            return Place::from(temporary);
+        }
         self.write(Place::from(temporary), ty, node);
         self.drop_later(temporary);
         Place::from(temporary)
