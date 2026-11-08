@@ -6,11 +6,11 @@
 
 use driver::Session;
 
-/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// Checks `main.byn` and returns every diagnostic, rendered and joined by blank lines. An empty
 /// string means the program is clean. The program's first newline is dropped.
 fn check_one(text: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+    if let Err(error) = session.add_file("main.byn", text.strip_prefix('\n').unwrap_or(text)) {
         return error.to_string();
     }
     session
@@ -75,42 +75,42 @@ def arrays(grid: Array[f64, 2], names: Array[list[f64], 1], small: Array[f32, 1]
     assert_eq!(
         check_one(program),
         r"error: an array's elements must be a copy type, found `list[f64]`
- --> main.npl:6:46
+ --> main.byn:6:46
   |
 6 | def arrays(grid: Array[f64, 2], names: Array[list[f64], 1], small: Array[f32, 1]):
   |                                              ^^^^^^^^^ not a copy type
   = note: a copy type is a number, `bool`, a `Fixed` array, an enum, or a struct declared `Copy`; use a `list` for other values
 
 error: `Array[f64, 2]` takes 2 indices, found 1
- --> main.npl:7:9
+ --> main.byn:7:9
   |
 7 |     a = grid[1]
   |         ^^^^^^^ one index per dimension
   = note: take a row or column with a slice, such as `a[i, :]`
 
 error: `+` cannot combine `Array[f64, 2]` and `Array[f32, 1]`
- --> main.npl:8:9
+ --> main.byn:8:9
   |
 8 |     b = grid + small
   |         ^^^^^^^^^^^^ shapes do not match
   = note: both arrays need the same rank, or the same shape for `Fixed` arrays, or one side a single number
 
 error: `Vec3` needs its elements in the shape `(3,)`
-  --> main.npl:10:9
+  --> main.byn:10:9
    |
 10 |     d = Vec3(1.0, 2.0)
    |         ^^^^^^^^^^^^^^ wrong number of elements
    = note: for example `Vec3(0.0, 0.0, 0.0)`
 
 error: `+` cannot combine `Fixed[f64, (3,)]` and `Fixed[f64, (2,)]`
-  --> main.npl:11:9
+  --> main.byn:11:9
    |
 11 |     e = Vec3(1.0, 2.0, 3.0) + Vec2(1.0, 2.0)
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ shapes do not match
    = note: both arrays need the same rank, or the same shape for `Fixed` arrays, or one side a single number
 
 error: `Mat3` needs its elements in the shape `(3, 3)`
-  --> main.npl:12:9
+  --> main.byn:12:9
    |
 12 |     f = Mat3((1.0, 0.0, 0.0), (0.0, 1.0))
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong number of elements
@@ -137,55 +137,55 @@ def methods(grid: Array[f64, 2], counts: InOut[list[i64]]):
     assert_eq!(
         check_one(program),
         r#"error: `dot` needs a vector, found `Array[f64, 2]`
- --> main.npl:2:9
+ --> main.byn:2:9
   |
 2 |     g = grid.dot(grid)
   |         ^^^^^^^^^^^^^^ not rank 1
   = note: for a matrix product, use `@`
 
 error: `Array[f64, 2]` has no method `mean` taking these arguments
- --> main.npl:3:9
+ --> main.byn:3:9
   |
 3 |     h = grid.mean()
   |         ^^^^^^^^^^^ not defined
   = note: version 0 defines `copy`, `sum`, `min`, `max`, `dot`, `round` and `fill`
 
 error: a shape's lengths are integers, found `f64`
- --> main.npl:4:22
+ --> main.byn:4:22
   |
 4 |     k = Array.zeros((2.5,))
   |                      ^^^ not an integer
   = note: a shape is a tuple of integers written out, such as `(nx, ny)`
 
 error: an array's elements must be a copy type, found `str`
- --> main.npl:5:26
+ --> main.byn:5:26
   |
 5 |     m = Array.fill((3,), "x")
   |                          ^^^ not a copy type
   = note: a copy type is a number, `bool`, a `Fixed` array, an enum, or a struct declared `Copy`; use a `list` for other values
 
 error: expected `i64`, found `f64`
- --> main.npl:6:19
+ --> main.byn:6:19
   |
 6 |     counts.append(1.5)
   |                   ^^^ the list holds `i64`
 
 error: `list[i64]` has no method `push`
- --> main.npl:7:5
+ --> main.byn:7:5
   |
 7 |     counts.push(2)
   |     ^^^^^^^^^^^^^^ not defined
   = note: a list has `append`, `pop` and `copy`, and works with `len`, indexing, slicing, `in` and loops
 
 error: `Array[f64, 2]` has no attribute `length`
- --> main.npl:8:9
+ --> main.byn:8:9
   |
 8 |     n = grid.length
   |         ^^^^^^^^^^^ not defined
   = note: an array has `shape` and `size`
 
 error: expected `f64`, found `f32`
-  --> main.npl:10:14
+  --> main.byn:10:14
    |
 10 |     q: f64 = p.sum()
    |              ^^^^^^^ the annotation says `f64`"#
@@ -204,7 +204,7 @@ def negate(a: Array[f64, 1], flags: Array[bool, 1]) -> Array[f64, 1]:
     assert_eq!(
         check_one(program),
         r"error: `-` does not apply to `Array[bool, 1]`
- --> main.npl:2:9
+ --> main.byn:2:9
   |
 2 |     b = -flags
   |         ^^^^^^ its elements are not numbers"

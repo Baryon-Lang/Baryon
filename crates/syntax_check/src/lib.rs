@@ -31,7 +31,7 @@
 //! `X = ...` is really a type, or whether a `raise` is in a function declared to fail. Those
 //! belong to name resolution and the type checker.
 //!
-//! [syntax chapter]: https://github.com/csimpson1964/New-Programming-Language/blob/main/docs/reference/syntax.md
+//! [syntax chapter]: https://github.com/Baryon-Lang/Baryon/blob/main/docs/reference/syntax.md
 //!
 //! # Example
 //!
@@ -43,7 +43,7 @@
 //!
 //! let mut sources = SourceMap::new();
 //! let text = "del x\n";
-//! let file = sources.add("main.npl", text)?;
+//! let file = sources.add("main.byn", text)?;
 //!
 //! let mut builder = TreeBuilder::new(file);
 //! builder.open(SyntaxKind::Module, Role::Root, 0, 6);
@@ -242,7 +242,7 @@ mod tests {
 
     /// Checks a tree built by `build` over `text`, returning each diagnostic's message.
     fn messages(text: &str, build: impl FnOnce(&mut TreeBuilder)) -> Vec<String> {
-        let file = SourceMap::new().add("test.npl", text).unwrap();
+        let file = SourceMap::new().add("test.byn", text).unwrap();
         let mut builder = TreeBuilder::new(file);
         build(&mut builder);
         let tree = builder.finish();
@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn a_keyword_is_found_only_at_the_start_of_a_line() {
         let text = "x = 1  # else\n  else:\n";
-        let file = SourceMap::new().add("test.npl", text).unwrap();
+        let file = SourceMap::new().add("test.byn", text).unwrap();
         let mut builder = TreeBuilder::new(file);
         builder.leaf(SyntaxKind::Module, Role::Root, 0, 22);
         let tree = builder.finish();

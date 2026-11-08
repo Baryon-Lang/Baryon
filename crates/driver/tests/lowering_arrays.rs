@@ -11,7 +11,7 @@ use driver::Session;
 fn lower(program: &str, names: &[&str]) -> String {
     let mut session = Session::new();
     let program = program.strip_prefix('\n').unwrap_or(program);
-    if let Err(error) = session.add_file("main.npl", program) {
+    if let Err(error) = session.add_file("main.byn", program) {
         return error.to_string();
     }
     let mut errors = session.check();

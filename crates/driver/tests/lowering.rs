@@ -10,7 +10,7 @@ use driver::Session;
 /// shows what went wrong.
 fn lower(program: &str, name: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", program) {
+    if let Err(error) = session.add_file("main.byn", program) {
         return error.to_string();
     }
     let mut errors = session.check();
@@ -501,14 +501,14 @@ fn constructs_not_lowered_yet_are_errors() {
         lower(program, "power"),
         "\
 error: lowering does not handle list displays yet
- --> main.npl:2:10
+ --> main.byn:2:10
   |
 2 |     ys = [x]
   |          ^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
 
 error: lowering does not handle `**` yet
- --> main.npl:3:12
+ --> main.byn:3:12
   |
 3 |     return x ** 2.0
   |            ^^^^^^^^ not lowered yet
@@ -634,7 +634,7 @@ def array_caller(a: Array[f64, 1]) -> f64:
     assert_eq!(
         lower(program, "array_caller"),
         r"error: lowering does not handle borrowing a value that is not a copy type as an optional yet
-  --> main.npl:19:14
+  --> main.byn:19:14
    |
 19 |     return g(a)
    |              ^ not lowered yet
@@ -681,7 +681,7 @@ def halve[T: Number](x: T) -> T:
     assert_eq!(
         lower(program, "halve"),
         r"error: lowering does not handle `//` on a type parameter yet
-  --> main.npl:10:12
+  --> main.byn:10:12
    |
 10 |     return x // 2
    |            ^^^^^^ not lowered yet

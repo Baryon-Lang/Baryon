@@ -1,12 +1,12 @@
 # Baseline benchmark suite
 
-NPL's performance goal is concrete: numeric code within 5% of `gfortran -O3`. This directory holds
+Baryon's performance goal is concrete: numeric code within 5% of `gfortran -O3`. This directory holds
 the yardstick. Eight physics and math kernels are written twice, once in C++ and once in Fortran,
 with the same algorithm, the same input data and the same order of floating-point operations. A
 harness builds them, runs them, checks that both languages computed the same answer, and records
 the times as a per-machine baseline.
 
-When the NPL compiler can build these kernels, an NPL version of each joins the suite, and the
+When the Baryon compiler can build these kernels, an Baryon version of each joins the suite, and the
 baselines here are the numbers it must match. Roadmap item 1.18 turns that comparison into a CI
 gate. The reasoning behind the suite's shape is in
 [decision record 0003](../docs/decisions/0003-benchmark-suite.md).
@@ -102,7 +102,7 @@ follow them too.
   layout and walks memory contiguously in its innermost loop (row-major `i, k, j` in C++,
   column-major `j, k, i` in Fortran for `matmul`).
 - **Plain code, no libraries.** No BLAS, FFTW, `matmul` intrinsic, OpenMP or hand-written SIMD.
-  The suite measures what a compiler does with straightforward code, which is what NPL's compiler
+  The suite measures what a compiler does with straightforward code, which is what Baryon's compiler
   will be judged on. Library comparisons belong to roadmap item 3.10.
 - **Same input in both languages.** Inputs come from one generator, xorshift64 with a fixed seed,
   implemented in [`support.hpp`](kernels/support/support.hpp) and
@@ -118,14 +118,14 @@ follow them too.
 
 ### Known asymmetries
 
-Two differences between the languages are left in on purpose, because they are exactly what NPL
+Two differences between the languages are left in on purpose, because they are exactly what Baryon
 is designed to win on:
 
 - **Aliasing.** Fortran assumes array arguments never overlap; C++ must assume they might, so
   before vectorizing a loop like `heat_stencil`'s the C++ compiler has to prove, or check at run
-  time, that input and output are separate. NPL arrays never alias, so NPL should match Fortran
+  time, that input and output are separate. Baryon arrays never alias, so Baryon should match Fortran
   here.
-- **Bounds checks.** Neither baseline checks array bounds. NPL plans to keep bounds checks in
+- **Bounds checks.** Neither baseline checks array bounds. Baryon plans to keep bounds checks in
   release builds and hoist them out of loops (roadmap 3.2, idea I.4), so these kernels show what
   that must cost: nothing measurable.
 
@@ -150,7 +150,7 @@ seconds 7.06986239999991994e-01
 ```
 
 Any spacing and either exponent letter is accepted (Fortran prints `E+000`). A wrong argument
-prints a usage line to standard error and exits with status 2. The NPL kernels will follow the same
+prints a usage line to standard error and exits with status 2. The Baryon kernels will follow the same
 protocol, so the harness needs no change to measure them.
 
 ## Baseline files

@@ -39,14 +39,14 @@ machine form, and that is hard to change once the backend, the runtime and the p
   bits of the length word are the byte count. The top bit is set when the bytes are not owned,
   as for a literal.
 - A literal is a byte constant with the top bit set, never copied. Drop frees the bytes through
-  `npl_rt_deallocate` only when the bit is clear. `copy()` always allocates and makes an owned
+  `baryon_rt_deallocate` only when the bit is clear. `copy()` always allocates and makes an owned
   string, so a copy outlives nothing it points into.
 - An f-string compiles to calls of a runtime string builder: start a buffer, append each
   literal piece and each formatted value with its format spec, then finish into an owned `str`.
   Values are formatted by the same code that formats `print`'s arguments, so `f"{x}"` and
   `print(x)` write the same text. A format spec such as `.6f` is checked at compile time, and the
   runtime gets its parts.
-- `print` of a `str` value writes its bytes with `npl_rt_print_str`, masking the bit off.
+- `print` of a `str` value writes its bytes with `baryon_rt_print_str`, masking the bit off.
 
 ## Consequences
 

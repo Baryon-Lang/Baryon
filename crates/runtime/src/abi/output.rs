@@ -5,14 +5,14 @@
 //! unsigned ones to `u64`. `print(a, b)` with an `i32` and an `f64` compiles to these calls:
 //!
 //! ```
-//! use runtime::{npl_rt_print_f64, npl_rt_print_i64, npl_rt_print_str};
+//! use runtime::{baryon_rt_print_f64, baryon_rt_print_i64, baryon_rt_print_str};
 //!
 //! // SAFETY: each pointer and length is a string constant's.
 //! unsafe {
-//!     npl_rt_print_i64(1, 7);
-//!     npl_rt_print_str(1, " ".as_ptr(), 1);
-//!     npl_rt_print_f64(1, 0.5);
-//!     npl_rt_print_str(1, "\n".as_ptr(), 1);
+//!     baryon_rt_print_i64(1, 7);
+//!     baryon_rt_print_str(1, " ".as_ptr(), 1);
+//!     baryon_rt_print_f64(1, 0.5);
+//!     baryon_rt_print_str(1, "\n".as_ptr(), 1);
 //! }
 //! ```
 //!
@@ -25,11 +25,11 @@ use crate::print;
 /// # Example
 ///
 /// ```
-/// runtime::npl_rt_print_i64(1, -12);
+/// runtime::baryon_rt_print_i64(1, -12);
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub extern "C" fn npl_rt_print_i64(stream: i32, value: i64) {
+pub extern "C" fn baryon_rt_print_i64(stream: i32, value: i64) {
     print::write(stream, &value.to_string());
 }
 
@@ -38,11 +38,11 @@ pub extern "C" fn npl_rt_print_i64(stream: i32, value: i64) {
 /// # Example
 ///
 /// ```
-/// runtime::npl_rt_print_u64(1, u64::MAX);
+/// runtime::baryon_rt_print_u64(1, u64::MAX);
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub extern "C" fn npl_rt_print_u64(stream: i32, value: u64) {
+pub extern "C" fn baryon_rt_print_u64(stream: i32, value: u64) {
     print::write(stream, &value.to_string());
 }
 
@@ -51,11 +51,11 @@ pub extern "C" fn npl_rt_print_u64(stream: i32, value: u64) {
 /// # Example
 ///
 /// ```
-/// runtime::npl_rt_print_f64(1, 0.1 + 0.2); // 0.30000000000000004
+/// runtime::baryon_rt_print_f64(1, 0.1 + 0.2); // 0.30000000000000004
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub extern "C" fn npl_rt_print_f64(stream: i32, value: f64) {
+pub extern "C" fn baryon_rt_print_f64(stream: i32, value: f64) {
     print::write(stream, &print::float(&format!("{value:e}")));
 }
 
@@ -65,11 +65,11 @@ pub extern "C" fn npl_rt_print_f64(stream: i32, value: f64) {
 /// # Example
 ///
 /// ```
-/// runtime::npl_rt_print_f32(1, 0.1);
+/// runtime::baryon_rt_print_f32(1, 0.1);
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub extern "C" fn npl_rt_print_f32(stream: i32, value: f32) {
+pub extern "C" fn baryon_rt_print_f32(stream: i32, value: f32) {
     print::write(stream, &print::float(&format!("{value:e}")));
 }
 
@@ -78,11 +78,11 @@ pub extern "C" fn npl_rt_print_f32(stream: i32, value: f32) {
 /// # Example
 ///
 /// ```
-/// runtime::npl_rt_print_bool(1, true);
+/// runtime::baryon_rt_print_bool(1, true);
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub extern "C" fn npl_rt_print_bool(stream: i32, value: bool) {
+pub extern "C" fn baryon_rt_print_bool(stream: i32, value: bool) {
     print::write(stream, print::bool(value));
 }
 
@@ -97,15 +97,15 @@ pub extern "C" fn npl_rt_print_bool(stream: i32, value: bool) {
 /// # Example
 ///
 /// ```
-/// use runtime::npl_rt_print_str;
+/// use runtime::baryon_rt_print_str;
 ///
 /// let line = "converged\n";
 /// // SAFETY: the pointer and length are the constant's.
-/// unsafe { npl_rt_print_str(1, line.as_ptr(), line.len()) }
+/// unsafe { baryon_rt_print_str(1, line.as_ptr(), line.len()) }
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn npl_rt_print_str(stream: i32, text: *const u8, length: usize) {
+pub unsafe extern "C" fn baryon_rt_print_str(stream: i32, text: *const u8, length: usize) {
     // SAFETY: the caller guarantees `text` points to `length` readable bytes.
     let bytes = unsafe { std::slice::from_raw_parts(text, length) };
     print::write(stream, &String::from_utf8_lossy(bytes));

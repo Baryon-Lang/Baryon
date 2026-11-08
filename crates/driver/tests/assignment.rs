@@ -6,11 +6,11 @@
 
 use driver::Session;
 
-/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// Checks `main.byn` and returns every diagnostic, rendered and joined by blank lines. An empty
 /// string means the program is clean. The program's first newline is dropped.
 fn check_one(text: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+    if let Err(error) = session.add_file("main.byn", text.strip_prefix('\n').unwrap_or(text)) {
         return error.to_string();
     }
     session
@@ -119,41 +119,41 @@ def falls(n: i64) -> i64:
         check_one(program),
         "\
 error: `label` may not be assigned here
- --> main.npl:4:12
+ --> main.byn:4:12
   |
 4 |     return label
   |            ^^^^^ read here
- ::: main.npl:2:8
+ ::: main.byn:2:8
   |
 2 |     if energy < 0.0:
   |        ------------ not assigned when this is false
   = note: give it a value before the branch or loop, or assign it on every path that reaches this read
 
 error: `last` may not be assigned here
-  --> main.npl:10:12
+  --> main.byn:10:12
    |
 10 |     return last
    |            ^^^^ read here
-  ::: main.npl:8:17
+  ::: main.byn:8:17
    |
  8 |     for step in range(n):
    |                 -------- not assigned if the loop runs zero times
    = note: give it a value before the branch or loop, or assign it on every path that reaches this read
 
 error: `count` is read before it is assigned
-  --> main.npl:14:13
+  --> main.byn:14:13
    |
 14 |     total = count + n
    |             ^^^^^ read here
 
 error: `width` is read before it is assigned
-  --> main.npl:17:20
+  --> main.byn:17:20
    |
 17 |     return total + width
    |                    ^^^^^ read here
 
 error: `falls` can reach its end without returning a value
-  --> main.npl:20:5
+  --> main.byn:20:5
    |
 20 | def falls(n: i64) -> i64:
    |     ^^^^^ returns `i64`

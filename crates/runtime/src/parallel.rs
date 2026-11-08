@@ -30,7 +30,7 @@ pub(crate) const MAX_CHUNKS: i64 = 1024;
 
 /// The compiled body of a `prange` loop, called once per chunk.
 ///
-/// It receives the context pointer given to [`npl_rt_parallel_for`](crate::npl_rt_parallel_for),
+/// It receives the context pointer given to [`baryon_rt_parallel_for`](crate::baryon_rt_parallel_for),
 /// the chunk's index, and the chunk's iterations as the half-open range `start..end`, counted
 /// from 0. It runs those iterations in order. The compiler outlines the loop body into this
 /// function (roadmap 1.9.7) and passes the loop's shared variables through the context.
@@ -85,7 +85,7 @@ pub(crate) struct Task {
 )]
 // SAFETY: a `Task` is two pointers and a count. The runtime never reads through either pointer;
 // it only passes them to `body`, whose caller promised that calling it from any thread, for
-// different chunks at once, is sound (`npl_rt_parallel_for`'s `# Safety`).
+// different chunks at once, is sound (`baryon_rt_parallel_for`'s `# Safety`).
 unsafe impl Send for Task {}
 
 #[allow(
@@ -127,7 +127,7 @@ impl Job {
     /// # Safety
     ///
     /// Calling the task's body for any of its chunks, on this thread, while other threads run
-    /// other chunks, is sound: the promise `npl_rt_parallel_for`'s caller makes.
+    /// other chunks, is sound: the promise `baryon_rt_parallel_for`'s caller makes.
     #[allow(unsafe_code, reason = "calls the compiled loop body")]
     unsafe fn work(&self) {
         let mut ran = 0;
@@ -221,7 +221,7 @@ impl Pool {
         for number in 1..cores {
             let shared = Arc::clone(&shared);
             let thread = std::thread::Builder::new()
-                .name(format!("npl-worker-{number}"))
+                .name(format!("baryon-worker-{number}"))
                 .spawn(move || work_forever(&shared));
             started += usize::from(thread.is_ok());
         }

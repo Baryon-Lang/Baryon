@@ -6,12 +6,12 @@
 
 use driver::Session;
 
-/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// Checks `main.byn` and returns every diagnostic, rendered and joined by blank lines. An empty
 /// string means the program is clean. The program's first newline, which only lets a test start
 /// it on its own line, is dropped.
 fn check_one(text: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+    if let Err(error) = session.add_file("main.byn", text.strip_prefix('\n').unwrap_or(text)) {
         return error.to_string();
     }
     session
@@ -94,42 +94,42 @@ def mix(a: f32, b: f64, n: i32, m: i64, u: u32) -> f64:
     assert_eq!(
         check_one(program),
         r"error: `+` cannot mix `f32` and `f64`
- --> main.npl:2:9
+ --> main.byn:2:9
   |
 2 |     c = a + b
   |         ^^^^^ different number types
   = note: convert one side so both are the same type, such as `f64(x)`
 
 error: `*` cannot mix `i32` and `i64`
- --> main.npl:3:9
+ --> main.byn:3:9
   |
 3 |     d = n * m
   |         ^^^^^ different number types
   = note: convert one side so both are the same type, such as `i64(x)`
 
 error: `+` cannot mix `i64` and `u32`
- --> main.npl:4:9
+ --> main.byn:4:9
   |
 4 |     e = m + u
   |         ^^^^^ different number types
   = note: convert one side so both are the same type, such as `i64(x)`
 
 error: `+` cannot mix `i64` and `bool`
- --> main.npl:5:9
+ --> main.byn:5:9
   |
 5 |     f = 1 + True
   |         ^^^^^^^^ `bool` is not a number
   = note: convert one side so both are the same type, such as `i64(x)`
 
 error: `<` cannot mix `f32` and `f64`
- --> main.npl:6:10
+ --> main.byn:6:10
   |
 6 |     g = a < b
   |          ^^^^ different number types
   = note: convert one side so both are the same type, such as `f64(x)`
 
 error: `300` does not fit in `u8`
- --> main.npl:7:17
+ --> main.byn:7:17
   |
 7 |     small: u8 = 300
   |                 ^^^ out of range"
@@ -154,34 +154,34 @@ def walk(steps: int) -> f64:
     assert_eq!(
         check_one(program),
         r#"error: `total` has type `f64`, so it cannot hold `str`
- --> main.npl:3:13
+ --> main.byn:3:13
   |
 3 |     total = "done"
   |             ^^^^^^ type `str`
   = note: a variable keeps one type for its whole scope; give this value a new name
 
 error: `+=` gives `f64`, but the target has type `i64`
- --> main.npl:5:5
+ --> main.byn:5:5
   |
 5 |     count += 0.5
   |     ^^^^^^^^^^^^ would change the target's type
   = note: a variable keeps one type for its whole scope; convert the value, or use a new name
 
 error: a value of type `f64` cannot be unpacked into 2 names
- --> main.npl:6:5
+ --> main.byn:6:5
   |
 6 |     x, y = 1.0
   |     ^^^^ does not match the value
 
 error: an empty list needs its type written
- --> main.npl:7:13
+ --> main.byn:7:13
   |
 7 |     empty = []
   |             ^^ the item type is unknown
   = note: for example `values: list[f64] = []`
 
 error: list items must share one type, found `i64` and `str`
- --> main.npl:8:17
+ --> main.byn:8:17
   |
 8 |     items = [1, "a"]
   |                 ^^^ a different type"#
@@ -204,27 +204,27 @@ def decide(dt: f64, steps: int) -> bool:
     assert_eq!(
         check_one(program),
         r#"error: a condition must be a `bool`, found `i64`
- --> main.npl:2:8
+ --> main.byn:2:8
   |
 2 |     if steps:
   |        ^^^^^ not a `bool`
   = note: compare explicitly, such as `n != 0` or `x is not None`
 
 error: `and` needs `bool` operands, found `f64`
- --> main.npl:4:11
+ --> main.byn:4:11
   |
 4 |     while dt and steps > 0:
   |           ^^ not a `bool`
   = note: compare explicitly, such as `n != 0` or `x is not None`
 
 error: `not` does not apply to `i64`
- --> main.npl:6:12
+ --> main.byn:6:12
   |
 6 |     flag = not steps
   |            ^^^^^^^^^ no such operation
 
 error: both branches must have one type, found `f64` and `str`
- --> main.npl:7:12
+ --> main.byn:7:12
   |
 7 |     return 2.0 if dt > 0.0 else "no"
   |            ^^^^^^^^^^^^^^^^^^^^^^^^^ branches differ"#
@@ -261,49 +261,49 @@ def step(dt: f64, steps: int = 10) -> f64:
     assert_eq!(
         check_one(program),
         r#"error: `Particle` is missing the argument `speed`
-  --> main.npl:14:9
+  --> main.byn:14:9
    |
 14 |     p = Particle(1.0)
    |         ^^^^^^^^^^^^^ missing arguments
 
 error: `mass` is given twice
-  --> main.npl:15:28
+  --> main.byn:15:28
    |
 15 |     q = Particle(1.0, 2.0, mass=3.0)
    |                            ^^^^ already given by position
 
 error: `energy` takes 1 argument, found 2
-  --> main.npl:16:5
+  --> main.byn:16:5
    |
 16 |     q.energy(1.0, 2.0)
    |     ^^^^^^^^^^^^^^^^^^ too many arguments
 
 error: `scale` has type `f64`, found `str`
-  --> main.npl:17:20
+  --> main.byn:17:20
    |
 17 |     q.energy(scale="x")
    |                    ^^^ type `str`
 
 error: `Particle` has no field or method `charge`
-  --> main.npl:18:14
+  --> main.byn:18:14
    |
 18 |     charge = q.charge
    |              ^^^^^^^^ not defined on this struct
 
 error: `Boundary` has no member `CLOSED`
-  --> main.npl:19:12
+  --> main.byn:19:12
    |
 19 |     side = Boundary.CLOSED
    |            ^^^^^^^^^^^^^^^ not a member
 
 error: `step` has no parameter `extra`
-  --> main.npl:20:24
+  --> main.byn:20:24
    |
 20 |     step(1.0, steps=5, extra=1)
    |                        ^^^^^ unknown parameter
 
 error: a value of type `f64` cannot be indexed
-  --> main.npl:21:12
+  --> main.byn:21:12
    |
 21 |     return dt[0]
    |            ^^^^^ not a sequence"#
@@ -325,14 +325,14 @@ def count() -> int:
     assert_eq!(
         check_one(program),
         r"error: this function has no return type, so it cannot return `i64`
- --> main.npl:2:12
+ --> main.byn:2:12
   |
 2 |     return 1
   |            ^ returns a value
   = note: declare what it returns: `-> i64`
 
 error: this function returns `i64`, so `return` needs a value
- --> main.npl:6:5
+ --> main.byn:6:5
   |
 6 |     return
   |     ^^^^^^ no value"

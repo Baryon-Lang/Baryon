@@ -16,7 +16,7 @@ impl Session {
     /// use driver::Session;
     ///
     /// let mut session = Session::new();
-    /// session.add_file("main.npl", "def half(x: f64) -> f64:\n    return x / 2\n")?;
+    /// session.add_file("main.byn", "def half(x: f64) -> f64:\n    return x / 2\n")?;
     /// assert!(session.check().is_empty());
     /// let text = session.mir("half").unwrap().unwrap();
     /// assert!(text.contains("_0 = Divide(copy _1, 2.0_f64);"), "{text}");

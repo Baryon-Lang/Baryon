@@ -27,7 +27,7 @@
 //!
 //! let mut sources = SourceMap::new();
 //! let text = "x = 1";
-//! let file = sources.add("main.npl", text)?;
+//! let file = sources.add("main.byn", text)?;
 //!
 //! let mut builder = TreeBuilder::new(file);
 //! builder.open(SyntaxKind::Module, Role::Root, 0, 5);
@@ -277,7 +277,7 @@ mod tests {
     /// `a + b` as a module holding one expression statement.
     fn addition() -> SyntaxTree {
         let mut sources = SourceMap::new();
-        let file = sources.add("test.npl", "a + b").unwrap();
+        let file = sources.add("test.byn", "a + b").unwrap();
         let mut builder = TreeBuilder::new(file);
         builder.open(SyntaxKind::Module, Role::Root, 0, 5);
         builder.open(SyntaxKind::ExpressionStatement, Role::Body, 0, 5);

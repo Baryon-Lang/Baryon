@@ -7,11 +7,11 @@
 
 use driver::Session;
 
-/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// Checks `main.byn` and returns every diagnostic, rendered and joined by blank lines. An empty
 /// string means the program is clean. The program's first newline is dropped.
 fn check_one(text: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+    if let Err(error) = session.add_file("main.byn", text.strip_prefix('\n').unwrap_or(text)) {
         return error.to_string();
     }
     session
@@ -99,41 +99,41 @@ def use_them(flag: bool, x: f64, n: i64) -> f64:
         check_one(program),
         "\
 error: a number literal cannot have the type `T`
- --> main.npl:4:16
+ --> main.byn:4:16
   |
 4 |     return b * 0.5
   |                ^^^ not allowed by the bound
   = note: `T` may be an integer type; bound it by `Float` to use this literal
 
 error: `<` cannot order `T` values
- --> main.npl:8:13
+ --> main.byn:8:13
   |
 8 |     if value < other:
   |             ^^^^^^^^ no order
   = note: bound the type parameter by `Number` or `Float`: `[T: Number]`
 
 error: `+` is not allowed between `T` and `T`
- --> main.npl:9:16
+ --> main.byn:9:16
   |
 9 |         return value + other
   |                ^^^^^^^^^^^^^ the type parameter's bound does not allow it
   = note: a `Number` or `Float` type parameter combines with itself and literals; a `VectorSpace` one adds to itself and scales by an `f64`
 
 error: `Real` is not a trait
-  --> main.npl:17:12
+  --> main.byn:17:12
    |
 17 | def odd[T: Real](value: T) -> T:
    |            ^^^^ expected a trait
    = note: a type parameter is bounded by `Number`, `Float`, `VectorSpace` or `Copy`
 
 error: `largest` needs `T` to be a `Number`, found `bool`
-  --> main.npl:22:5
+  --> main.byn:22:5
    |
 22 |     largest(flag, flag)
    |     ^^^^^^^^^^^^^^^^^^^ bound not satisfied
 
 error: `b` has type `f64` here, found `i64`
-  --> main.npl:23:23
+  --> main.byn:23:23
    |
 23 |     return largest(x, n)
    |                       ^ type `i64`"

@@ -1,6 +1,6 @@
-//! Compiling a package to one LLVM module, for `npl build`: each function lowered, made ready
+//! Compiling a package to one LLVM module, for `baryon build`: each function lowered, made ready
 //! for a backend, and written as LLVM IR text, with a C `main` that calls the `main` function of
-//! the package's `main.npl`.
+//! the package's `main.byn`.
 //!
 //! This is the prototype of roadmap 1.11.3. It compiles every function and method that has no
 //! type parameters, then collects the instances of generic functions they call (roadmap 1.9.5,
@@ -25,14 +25,14 @@ struct Function<'db> {
     symbol: String,
     /// Whether it is a top-level function named `main`.
     main: bool,
-    /// Whether its module is the package's `main`, from `main.npl` at the root: the only module
+    /// Whether its module is the package's `main`, from `main.byn` at the root: the only module
     /// whose `main` function a program starts at.
     in_main_module: bool,
 }
 
 impl Session {
     /// The package as one LLVM module, in LLVM's textual IR (decision 0020), with a C `main` that
-    /// runs the `main` function of the package's `main.npl`. `clang` compiles and links it with the runtime.
+    /// runs the `main` function of the package's `main.byn`. `clang` compiles and links it with the runtime.
     ///
     /// Each function's symbol is its module's name and its own, joined by dots, with a method's
     /// class between them: `physics.nbody.step`, `physics.nbody.Body.energy`. Dots keep them
@@ -46,7 +46,7 @@ impl Session {
     /// use driver::Session;
     ///
     /// let mut session = Session::new();
-    /// session.add_file("main.npl", "def main():\n    assert 6 * 7 == 42\n")?;
+    /// session.add_file("main.byn", "def main():\n    assert 6 * 7 == 42\n")?;
     /// let module = session.compile(None).unwrap();
     /// assert!(module.contains("define void @main.main()"), "{module}");
     /// assert!(module.contains("define i32 @main()"), "{module}");
@@ -59,7 +59,7 @@ impl Session {
     /// # Errors
     ///
     /// The package's errors when it does not check; otherwise one error per function that
-    /// cannot be compiled yet, and an error when `main.npl` has no `main` function, when another
+    /// cannot be compiled yet, and an error when `main.byn` has no `main` function, when another
     /// module defines one, or when it takes parameters or returns a value. `main` may raise; an
     /// error that reaches its end is printed and the program exits with status 1.
     pub fn compile(&self, root: Option<&str>) -> Result<String, Vec<Diagnostic>> {
@@ -106,9 +106,9 @@ impl Session {
             }
             if function.main && !function.in_main_module {
                 errors.push(
-                    self.at(function.item, "only `main.npl` may define `main`")
+                    self.at(function.item, "only `main.byn` may define `main`")
                         .with_note(
-                            "a program starts at the `main` function of the `main.npl` at the \
+                            "a program starts at the `main` function of the `main.byn` at the \
                              package's root; rename this function",
                         ),
                 );
@@ -138,7 +138,7 @@ impl Session {
             });
         }
         errors.extend(self.define(&mut module, roots, &declared, &symbol));
-        // `main.npl` defines `main` at most once: a second top-level definition is a check error.
+        // `main.byn` defines `main` at most once: a second top-level definition is a check error.
         match entries.first() {
             Some((main, returns)) => {
                 let reported = self.reported(*returns);
@@ -148,7 +148,7 @@ impl Session {
             }
             None => errors.push(
                 Diagnostic::error("the package has no `main` function to run")
-                    .with_note("add `def main():` to `main.npl` at the package's root"),
+                    .with_note("add `def main():` to `main.byn` at the package's root"),
             ),
         }
         if errors.is_empty() {

@@ -1,39 +1,39 @@
-//! `npl`, the compiler's command line.
+//! `baryon`, the compiler's command line.
 //!
 //! ```text
-//! npl check <directory>
-//! npl build <directory> <output>
-//! npl run <directory>
-//! npl doc <directory> <output>
-//! npl lsp
+//! baryon check <directory>
+//! baryon build <directory> <output>
+//! baryon run <directory>
+//! baryon doc <directory> <output>
+//! baryon lsp
 //! ```
 //!
-//! `npl check` loads every `.npl` file under the directory as one package, checks it, and prints
+//! `baryon check` loads every `.byn` file under the directory as one package, checks it, and prints
 //! each problem to standard error. Today checking means module naming, syntax, the constructs
 //! the language supports, names that refer to nothing, and type errors; each new stage adds its
 //! diagnostics here. The exit status is 0 when there are no errors, 1 when there are, and 2 when
 //! the command itself is wrong or a file cannot be read.
 //!
-//! `npl build` checks the package the same way, compiles it, and links the executable `output`
+//! `baryon build` checks the package the same way, compiles it, and links the executable `output`
 //! with `clang` and the runtime ([`link`]). Running it runs the package's one `main` function;
 //! a failed check in it prints a panic with its location and exits with status 101. A package
 //! that does not check, or uses what the compiler cannot build yet, gets its errors printed and
 //! the exit status 1. The executable carries line tables, so `gdb` and `lldb` stop at and show
-//! `.npl` lines. This is a prototype (roadmap 1.11.3); a generic function is compiled once per
+//! `.byn` lines. This is a prototype (roadmap 1.11.3); a generic function is compiled once per
 //! type it is called at (roadmap 1.9.5).
 //!
-//! `npl run` builds the package the same way into a scratch directory, runs the program with
+//! `baryon run` builds the package the same way into a scratch directory, runs the program with
 //! the terminal's standard input and output, removes it, and exits with the program's own exit
 //! status: 0 when it ran to its end, 101 when a check failed. A package that does not build
-//! exits as `npl build` does, with nothing run.
+//! exits as `baryon build` does, with nothing run.
 //!
-//! `npl doc` loads the package the same way and writes its documentation as Markdown into the
+//! `baryon doc` loads the package the same way and writes its documentation as Markdown into the
 //! output directory, creating it if needed: one page per module, named after the module, such
 //! as `physics.nbody.md`, and an `index.md` listing them. A package with syntax or module naming
 //! errors gets no pages; its errors are printed and the exit status is 1.
 //!
-//! `npl lsp` runs the language server, which an editor starts and talks to over standard input
-//! and output ([`lsp`], decision 0019). It reports the same diagnostics as `npl check`, as the
+//! `baryon lsp` runs the language server, which an editor starts and talks to over standard input
+//! and output ([`lsp`], decision 0019). It reports the same diagnostics as `baryon check`, as the
 //! user types.
 
 mod link;
@@ -48,7 +48,7 @@ use std::process::{Command, ExitCode};
 use std::{env, fs};
 
 /// How to call the command, printed when the arguments are wrong.
-const USAGE: &str = "usage: npl check <directory> | npl build <directory> <output> | npl run <directory> | npl doc <directory> <output> | npl lsp";
+const USAGE: &str = "usage: baryon check <directory> | baryon build <directory> <output> | baryon run <directory> | baryon doc <directory> <output> | baryon lsp";
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = env::args().skip(1).collect();
@@ -70,7 +70,7 @@ fn main() -> ExitCode {
         Ok(code) => code,
         Err(message) => {
             // Nothing more can be reported if standard error itself fails.
-            let _ = writeln!(io::stderr(), "npl: {message}");
+            let _ = writeln!(io::stderr(), "baryon: {message}");
             ExitCode::from(2)
         }
     }
@@ -95,7 +95,7 @@ fn load(root: &Path) -> Result<(Session, usize), String> {
     Ok((session, paths.len()))
 }
 
-/// Runs `npl check` on the package rooted at `root`.
+/// Runs `baryon check` on the package rooted at `root`.
 ///
 /// # Errors
 ///
@@ -120,7 +120,7 @@ fn check(root: &Path) -> Result<ExitCode, String> {
     })
 }
 
-/// Runs `npl build` on the package rooted at `root`, writing the executable `output`.
+/// Runs `baryon build` on the package rooted at `root`, writing the executable `output`.
 ///
 /// # Errors
 ///
@@ -140,7 +140,7 @@ fn build(root: &Path, output: &Path) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Runs `npl run` on the package rooted at `root`: builds it into a scratch directory, runs it,
+/// Runs `baryon run` on the package rooted at `root`: builds it into a scratch directory, runs it,
 /// and returns its exit status. A program ended by a signal, which has no status, gives 1.
 ///
 /// # Errors
@@ -148,7 +148,7 @@ fn build(root: &Path, output: &Path) -> Result<ExitCode, String> {
 /// Fails with a message when the package cannot be built for the reasons [`build`] gives, or
 /// the program cannot be started.
 fn run(root: &Path) -> Result<ExitCode, String> {
-    let scratch = env::temp_dir().join(format!("npl-run-{}", std::process::id()));
+    let scratch = env::temp_dir().join(format!("baryon-run-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("program");
     let ran = compile(root, &program).and_then(|built| match built {
@@ -194,7 +194,7 @@ fn compile(root: &Path, output: &Path) -> Result<Result<usize, ExitCode>, String
     Ok(Ok(files))
 }
 
-/// Runs `npl doc` on the package rooted at `root`, writing its pages into `output`.
+/// Runs `baryon doc` on the package rooted at `root`, writing its pages into `output`.
 ///
 /// # Errors
 ///

@@ -82,7 +82,7 @@ fn assertions_print_their_source() {
     assert_eq!(
         run(&executable, &["-1", "0"]),
         Err(
-            "panic: assertion failed: total >= 0, 'total is negative'\n  --> heat.npl:1:1\n"
+            "panic: assertion failed: total >= 0, 'total is negative'\n  --> heat.byn:1:1\n"
                 .to_owned()
         )
     );
@@ -110,7 +110,7 @@ fn length_checks_report_both_lengths() {
     assert_eq!(
         run(&executable, &["64", "63"]),
         Err(
-            "panic: array lengths differ in dimension 1: 64 and 63\n  --> heat.npl:2:5\n"
+            "panic: array lengths differ in dimension 1: 64 and 63\n  --> heat.byn:2:5\n"
                 .to_owned()
         )
     );
@@ -132,7 +132,7 @@ fn index_checks_report_the_dimension() {
     assert_eq!(
         run(&executable, &["8", "8"]),
         Err(
-            "panic: index 8 is out of range for dimension 2 of length 8\n  --> heat.npl:1:1\n"
+            "panic: index 8 is out of range for dimension 2 of length 8\n  --> heat.byn:1:1\n"
                 .to_owned()
         )
     );
@@ -202,7 +202,7 @@ fn conversions_check_their_range() {
     assert_eq!(convert("float", "127.99").as_deref(), Ok("127\n"));
     let lost = |to: &str| {
         Err(format!(
-            "panic: the value does not fit in `{to}`\n  --> heat.npl:1:1\n"
+            "panic: the value does not fit in `{to}`\n  --> heat.byn:1:1\n"
         ))
     };
     assert_eq!(convert("float", "128"), lost("i8"));

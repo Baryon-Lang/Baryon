@@ -55,7 +55,7 @@ fn initialized_reply() -> Value {
                 "positionEncoding": "utf-16",
                 "textDocumentSync": {"openClose": true, "change": 1},
             },
-            "serverInfo": {"name": "npl", "version": env!("CARGO_PKG_VERSION")},
+            "serverInfo": {"name": "baryon", "version": env!("CARGO_PKG_VERSION")},
         },
     })
 }
@@ -77,7 +77,7 @@ fn goodbye_reply(id: u32) -> Value {
 fn open(uri: &str, text: &str) -> Value {
     notification(
         "textDocument/didOpen",
-        &json!({"textDocument": {"uri": uri, "languageId": "npl", "version": 1, "text": text}}),
+        &json!({"textDocument": {"uri": uri, "languageId": "baryon", "version": 1, "text": text}}),
     )
 }
 
@@ -105,14 +105,14 @@ fn missing_expression(character: u32) -> Value {
             "end": {"line": 1, "character": 0},
         },
         "severity": 1,
-        "source": "npl",
+        "source": "baryon",
         "message": "expected an expression\nan expression should be here",
     }])
 }
 
 #[test]
 fn an_edit_publishes_new_diagnostics_and_a_fix_clears_them() {
-    let uri = "file:///scratch/main.npl";
+    let uri = "file:///scratch/main.byn";
     let [shutdown, exit] = goodbye(2);
     let (status, replies) = session(&[
         initialize(None),
@@ -138,7 +138,7 @@ fn an_edit_publishes_new_diagnostics_and_a_fix_clears_them() {
 #[test]
 fn the_workspace_is_loaded_so_imports_resolve() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/package");
-    let main = convert::uri(&root.join("main.npl"));
+    let main = convert::uri(&root.join("main.byn"));
     let [shutdown, exit] = goodbye(2);
     let (status, replies) = session(&[
         initialize(Some(&root)),
@@ -169,7 +169,7 @@ fn the_workspace_is_loaded_so_imports_resolve() {
 
 #[test]
 fn diagnostics_without_a_location_are_shown_once() {
-    let uri = "file:///scratch/bad-name.npl";
+    let uri = "file:///scratch/bad-name.byn";
     let [shutdown, exit] = goodbye(2);
     let (_, replies) = session(&[
         initialize(None),
@@ -185,7 +185,7 @@ fn diagnostics_without_a_location_are_shown_once() {
                 "window/showMessage",
                 &json!({
                     "type": 1,
-                    "message": "error: `bad-name.npl` cannot be imported: `bad-name` is not a \
+                    "message": "error: `bad-name.byn` cannot be imported: `bad-name` is not a \
                                 valid module name\n = note: module names follow Python's rules \
                                 for names: letters, digits and underscores, not starting with a \
                                 digit",
@@ -268,7 +268,7 @@ fn a_malformed_notification_is_reported() {
         replies[1],
         notification(
             "window/showMessage",
-            &json!({"type": 2, "message": "npl: ignored a malformed `textDocument/didOpen`"}),
+            &json!({"type": 2, "message": "baryon: ignored a malformed `textDocument/didOpen`"}),
         )
     );
 }

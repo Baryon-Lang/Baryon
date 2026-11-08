@@ -51,7 +51,8 @@ What becomes easier, what becomes harder, and what we give up.
 | [0016. Incremental queries run on the `salsa` crate](0016-salsa-query-engine.md) | Accepted |
 | [0017. `@layout("C")` pins a struct's layout and silences the padding warning](0017-layout-decorator.md) | Accepted |
 | [0018. The mid-level IR is basic blocks over typed locals and places](0018-mid-level-ir.md) | Accepted |
-| [0019. The language server is `npl lsp`, speaking the protocol over `serde_json`](0019-language-server-protocol.md) | Accepted |
+| [0019. The language server is `baryon lsp`, speaking the protocol over `serde_json`](0019-language-server-protocol.md) | Accepted |
 | [0020. The first LLVM backend writes textual IR and hands it to `clang`](0020-llvm-backend-emits-text.md) | Accepted |
 | [0021. The runtime is one Rust crate of its own kind, the only one outside a backend allowed `unsafe`](0021-runtime-crate-and-unsafe-code.md) | Accepted |
 | [0022. A `str` is a pointer and a length, and a literal is never copied](0022-str-values.md) | Proposed |
+| [0023. The language is named Baryon, its files end in `.byn`, and its tool is `baryon`](0023-language-name-baryon.md) | Accepted |

@@ -6,11 +6,11 @@
 
 use driver::Session;
 
-/// Checks `main.npl` and returns every diagnostic, rendered and joined by blank lines. An empty
+/// Checks `main.byn` and returns every diagnostic, rendered and joined by blank lines. An empty
 /// string means the program is clean. The program's first newline is dropped.
 fn check_one(text: &str) -> String {
     let mut session = Session::new();
-    if let Err(error) = session.add_file("main.npl", text.strip_prefix('\n').unwrap_or(text)) {
+    if let Err(error) = session.add_file("main.byn", text.strip_prefix('\n').unwrap_or(text)) {
         return error.to_string();
     }
     session
@@ -106,35 +106,35 @@ def main():
         check_one(program),
         "\
 error: `f64` is not an error type
-  --> main.npl:16:12
+  --> main.byn:16:12
    |
 16 |     except f64:
    |            ^^^ expected an error type
    = note: an error type is a class with the base `Exception`
 
 error: `solve` can fail with `ConvergenceError`, which is not handled here
-  --> main.npl:15:13
+  --> main.byn:15:13
    |
 15 |         x = solve(n)
    |             ^^^^^^^^ can fail with `ConvergenceError`
    = note: catch it with `try:` and `except ConvergenceError:`, or let it pass on by declaring `-> Raises[f64, ShapeError | ConvergenceError]`
 
 error: this `raise` fails with `ConvergenceError`, which is not handled here
-  --> main.npl:19:15
+  --> main.byn:19:15
    |
 19 |         raise ConvergenceError(n)
    |               ^^^^^^^^^^^^^^^^^^^ can fail with `ConvergenceError`
    = note: catch it with `try:` and `except ConvergenceError:`, or let it pass on by declaring `-> Raises[f64, ShapeError | ConvergenceError]`
 
 error: `raise` needs an error, found `i64`
-  --> main.npl:24:11
+  --> main.byn:24:11
    |
 24 |     raise 3
    |           ^ not an error type
    = note: an error type is a class with the base `Exception`
 
 error: a bare `raise` must be inside an `except` block
-  --> main.npl:25:5
+  --> main.byn:25:5
    |
 25 |     raise
    |     ^^^^^ nothing to raise again

@@ -1,33 +1,33 @@
 error: `*args` parameters are not supported
- --> definitions.npl:1:14
+ --> definitions.byn:1:14
   |
 1 | def variadic(*values: f64, **options: f64) -> f64:
   |              ^^^^^^^^^^^^
   = note: declare each parameter, or take a `list[T]` or an `Array`
 
 error: `**kwargs` parameters are not supported
- --> definitions.npl:1:28
+ --> definitions.byn:1:28
   |
 1 | def variadic(*values: f64, **options: f64) -> f64:
   |                            ^^^^^^^^^^^^^^
   = note: declare each parameter by name; one with a default value is optional
 
 error: this decorator is not supported
- --> definitions.npl:5:1
+ --> definitions.byn:5:1
   |
 5 | @staticmethod
   | ^^^^^^^^^^^^^
   = note: the only function decorators are `@test` and `@bench`, which mark test and benchmark functions
 
 error: this decorator is not supported
-  --> definitions.npl:11:1
+  --> definitions.byn:11:1
    |
 11 | @timed(10)
    | ^^^^^^^^^^
    = note: the only function decorators are `@test` and `@bench`, which mark test and benchmark functions
 
 error: a class needs a base: `Struct`, `Exception` or `Enum`
-  --> definitions.npl:16:7
+  --> definitions.byn:16:7
    |
 16 | class Plain:
    |       ^^^^^ no base
@@ -35,7 +35,7 @@ error: a class needs a base: `Struct`, `Exception` or `Enum`
    = note: for a struct, write `class Plain(Struct):`
 
 error: a class cannot inherit from `Particle`
-  --> definitions.npl:20:13
+  --> definitions.byn:20:13
    |
 20 | class Child(Particle):
    |             ^^^^^^^^ not one of `Struct`, `Copy`, `Exception` or `Enum`
@@ -43,56 +43,56 @@ error: a class cannot inherit from `Particle`
    = note: share behavior through traits, and data by holding the other struct in a field
 
 error: class keyword `metaclass=Meta` is not supported
-  --> definitions.npl:24:21
+  --> definitions.byn:24:21
    |
 24 | class Point(Struct, metaclass=Meta):
    |                     ^^^^^^^^^^^^^^
    = note: metaclasses and class keywords are not in version 0
 
 error: these bases cannot be combined
-  --> definitions.npl:28:12
+  --> definitions.byn:28:12
    |
 28 | class Mixed(Struct, Enum):
    |            ^^^^^^^^^^^^^^
    = note: a class's bases are `Struct`, `Struct, Copy`, `Exception` or `Enum`
 
 error: these bases cannot be combined
-  --> definitions.npl:32:13
+  --> definitions.byn:32:13
    |
 32 | class Copied(Copy):
    |             ^^^^^^
    = note: a class's bases are `Struct`, `Struct, Copy`, `Exception` or `Enum`
 
 error: this decorator is not supported
-  --> definitions.npl:36:1
+  --> definitions.byn:36:1
    |
 36 | @dataclass
    | ^^^^^^^^^^
    = note: the only class decorator is `@layout("C")`, which keeps a struct's fields in the order written without the padding warning
 
 error: `@layout` takes one argument, `"C"`
-  --> definitions.npl:41:1
+  --> definitions.byn:41:1
    |
 41 | @layout("packed")
    | ^^^^^^^^^^^^^^^^^
    = note: C layout is the only one: fields in the order written, each at the next offset its alignment allows
 
 error: `@layout` takes one argument, `"C"`
-  --> definitions.npl:46:1
+  --> definitions.byn:46:1
    |
 46 | @layout
    | ^^^^^^^
    = note: C layout is the only one: fields in the order written, each at the next offset its alignment allows
 
 error: `@layout` applies only to structs
-  --> definitions.npl:51:1
+  --> definitions.byn:51:1
    |
 51 | @layout("C")
    | ^^^^^^^^^^^^
    = note: enums and error types are never shared with other programs byte for byte, so their layout is the compiler's
 
 error: this decorator is not supported
-  --> definitions.npl:56:1
+  --> definitions.byn:56:1
    |
 56 | @layout("C")
    | ^^^^^^^^^^^^

@@ -62,7 +62,7 @@ baseline benchmark suite. The language reference is at version 0 and five exampl
 written. The compiler has started: the front end parses source files into a flat syntax tree,
 rejects the Python constructs the language does not support, loads a package into the incremental
 query database, resolves every name through scopes, modules and imports, and reports all of it
-through `npl check`. Type representation (roadmap 1.6) is next on the critical path.
+through `baryon check`. Type representation (roadmap 1.6) is next on the critical path.
 
 The [roadmap](../../ROADMAP.md) has the item-by-item status.
 
@@ -310,7 +310,7 @@ optional from the start, not a sentinel.
 
 ## Compiler architecture
 
-The compiler is one Rust binary, `npl`, that parses, checks, optimizes, generates code, links and
+The compiler is one Rust binary, `baryon`, that parses, checks, optimizes, generates code, links and
 orchestrates builds. Every stage up to the backends runs as a cached query in one incremental
 database, so the language server and the batch compiler share one engine.
 
@@ -322,7 +322,7 @@ lower to IR → monomorphize → IR passes → backend (Cranelift for debug, LLV
 Each stage is its own crate, and each crate has a kind that limits what it may depend on
 ([0001](../decisions/0001-modular-crate-architecture.md)). Implementation crates never depend on
 each other; they exchange data only through interface crates, and only application crates such as
-the `npl` driver wire them together. A stage reads another stage's result through the database's
+the `baryon` driver wire them together. A stage reads another stage's result through the database's
 `Db` trait, never through that stage's crate ([0016](../decisions/0016-salsa-query-engine.md)).
 So any stage can be replaced without touching the rest. [`architecture.md`](../architecture.md)
 lists the crates and `cargo xtask check-architecture` enforces the rules.
@@ -439,7 +439,7 @@ There is no `ffi` module ([0012](../decisions/0012-no-ffi-in-mvp.md)). Phase 3 a
 `fft` over LAPACK and FFTW or Accelerate, `data` (DataFrame), file formats, `plot`, `stats` and the
 REPL; Phase 4 adds `py` for Python interop.
 
-Tooling ships in the one `npl` executable, as in Go and Zig: `check` (exists today: syntax,
+Tooling ships in the one `baryon` executable, as in Go and Zig: `check` (exists today: syntax,
 module and name errors), `build`, `run`, `test` with a built-in runner for `@test` functions, `bench` for
 `@bench` functions against a stored baseline, and `doc` (exists today: Markdown pages from the
 documentation strings). There is no `fmt`: Ruff and
@@ -560,6 +560,7 @@ Where this plan pushes back on the brief:
 | Parallel loops add into shared arrays they list in `accumulate=` | [0013](../decisions/0013-parallel-accumulation.md) |
 | Classes have no inheritance | [0015](../decisions/0015-no-class-inheritance.md) |
 | Incremental queries run on `salsa` | [0016](../decisions/0016-salsa-query-engine.md) |
+| The language is Baryon: files end in `.byn`, the tool is `baryon` | [0023](../decisions/0023-language-name-baryon.md) |
 
 Platform for the MVP: macOS on Apple silicon, because the development machines are Macs; Linux
 x86-64 is the first Phase 2 target, so vectorization is validated on AVX as well as NEON.
@@ -575,7 +576,6 @@ Each open decision is a row in the roadmap's
 | D.2 | Target workload for the Phase 3 gate (Lennard-Jones MD is suggested) | The Phase 3 gate |
 | D.3 | Mark `InOut` at the call site as well as the signature | Revisited after the example programs |
 | D.5 | C++ interop: full, a C-shaped subset, or dropped | Roadmap 4.1, the largest single item |
-| D.6 | Language name and file extension (`.npl` until then) | The VS Code extension (1.17) |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | Outside contributions |
 | D.9 | How user code declares a trait and implements it: structurally like Python's `Protocol`, or by naming it like Rust | User-defined trait bounds in the type checker (1.7) |
 | D.10 | How to spell an enum whose variants carry data, in valid Python syntax | Sum types and exhaustive `match` (1.7) |
