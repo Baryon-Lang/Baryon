@@ -1,0 +1,54 @@
+{
+  "name": "baryon",
+  "displayName": "Baryon",
+  "description": "Syntax highlighting and editing support for the Baryon programming language (.byn files).",
+  "version": "0.1.0",
+  "publisher": "baryon-lang",
+  "license": "Apache-2.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Baryon-Lang/Baryon.git",
+    "directory": "editors/vscode"
+  },
+  "files": [
+    "language-configuration.json",
+    "syntaxes/*.json",
+    "README.md"
+  ],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "baryon",
+        "aliases": [
+          "Baryon",
+          "byn"
+        ],
+        "extensions": [
+          ".byn"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "baryon",
+        "scopeName": "source.baryon",
+        "path": "./syntaxes/baryon.tmLanguage.json"
+      },
+      {
+        "scopeName": "baryon.builtins.injection",
+        "path": "./syntaxes/baryon-builtins.tmLanguage.json",
+        "injectTo": [
+          "source.baryon"
+        ]
+      }
+    ]
+  }
+}

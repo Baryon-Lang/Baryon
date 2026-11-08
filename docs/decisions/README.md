@@ -57,3 +57,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0022. A `str` is a pointer and a length, and a literal is never copied](0022-str-values.md) | Accepted |
 | [0023. The language is named Baryon, its files end in `.byn`, and its tool is `baryon`](0023-language-name-baryon.md) | Accepted |
 | [0024. Accumulated arrays compile to an `Accumulate` statement over lazily made private blocks](0024-compiling-accumulated-arrays.md) | Accepted |
+| [0025. The VS Code extension lives in `editors/vscode/` and highlights with Python's grammar](0025-vscode-extension.md) | Accepted |
