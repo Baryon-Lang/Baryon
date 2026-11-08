@@ -70,7 +70,7 @@ impl Function<'_, '_, '_> {
     }
 }
 
-impl<'db> Function<'_, '_, 'db> {
+impl Function<'_, '_, '_> {
     /// The new, owned `str` that `pieces` build, through the runtime's string builder: one call
     /// per piece, then one that hands the bytes over (the `Format` rvalue).
     pub(crate) fn format(&mut self, pieces: &[Piece]) -> Result<String, Unsupported> {

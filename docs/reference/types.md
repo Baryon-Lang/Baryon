@@ -81,6 +81,26 @@ on a rule the reader has to remember.
 `==` and `!=`, `in`, `len`, which counts characters as Python does, and `print`. Text processing
 beyond that arrives with the standard library (roadmap 1.13).
 
+An f-string formats each value with a specification from Python's format mini-language, and
+writes what Python writes:
+
+```python
+def report(step: i64, name: str, energy: f64) -> str:
+    return f"step {step:4d}: {name} = {energy:10.4f} {{ok}}"
+```
+
+`report(7, "argon", -1.25)` returns `step    7: argon =    -1.2500 {ok}`. Fill, alignment, sign,
+`#`, `0`, width, `,` and `_` grouping, precision and the type letters `d b o x X e E f F g G %`
+and `s` all work as in Python, and a value with no specification is written as `print` writes it.
+The compiler checks each specification against its value's type, so `{name:+}` on a `str` is a
+compile error rather than a run-time one. Not supported yet: the `z`, `n` and `c` type letters,
+`!r`, `{value=}`, backslash escapes such as `\n` in an f-string's text, and a specification
+built from other values, such as `{x:{width}}`.
+
+A `str` is a pointer and a length. A literal points at the program's own copy of its text and is
+never copied ([decision 0022](../decisions/0022-str-values.md)); an f-string, `+` and `s.copy()`
+build new text, which the value owns and frees when it is dropped.
+
 ## Tuples
 
 `(a, b, c)` is a tuple: a fixed number of values, each with its own type, written `tuple[int, f64]`.
