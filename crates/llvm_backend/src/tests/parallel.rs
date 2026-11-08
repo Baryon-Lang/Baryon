@@ -59,6 +59,7 @@ fn total(database: &Database) -> Body<'_> {
             place: sum.into(),
             operator: ReductionOperator::Add,
         }],
+        accumulations: Vec::new(),
         target: BlockId::new(1),
     }));
     body.blocks[first.index()].statements = vec![assign(
@@ -304,6 +305,7 @@ fn a_min_reduction_starts_at_infinity() {
             place: low.into(),
             operator: ReductionOperator::Min,
         }],
+        accumulations: Vec::new(),
         target: BlockId::new(1),
     }));
     body.blocks[first.index()].statements =

@@ -35,8 +35,13 @@ pub enum Invalid {
     UnknownOutlined(BlockId, u32),
     /// A block's [`ParallelFor`](TerminatorKind::ParallelFor) passes a different number of
     /// values than its outlined body has parameters: the iteration, the arguments and the
-    /// reductions.
+    /// reductions and the accumulations.
     OutlinedParameters(BlockId),
+    /// A block's [`Accumulate`](StatementKind::Accumulate) adds into a place whose local is
+    /// not an accumulated parameter: one the [`ParallelFor`](TerminatorKind::ParallelFor) that
+    /// runs this outlined body lists in its accumulations. An `Accumulate` outside an outlined
+    /// body is always this.
+    NotAccumulated(BlockId, Local),
     /// The outlined body at this position breaks a rule.
     Outlined(u32, Box<Invalid>),
 }
@@ -99,6 +104,14 @@ impl fmt::Display for Invalid {
                     block.index()
                 )
             }
+            Self::NotAccumulated(block, local) => {
+                write!(
+                    formatter,
+                    "bb{} accumulates into _{}, which is not an accumulated parameter",
+                    block.index(),
+                    local.index()
+                )
+            }
             Self::Outlined(body, problem) => {
                 write!(formatter, "in outlined body {body}: {problem}")
             }
@@ -117,12 +130,21 @@ impl Body<'_> {
     /// - a [`Phase::Ready`] body has no whole-array expressions and no type parameters;
     /// - a [`ParallelFor`](TerminatorKind::ParallelFor) names an outlined body that exists,
     ///   and passes it one value per parameter;
+    /// - an [`Accumulate`](StatementKind::Accumulate) adds only into an accumulated parameter
+    ///   of an outlined body, so never in a function's own body;
     /// - each outlined body keeps these rules too.
     ///
     /// It does not check types: lowering builds bodies from type-checked code, and a type check
     /// of the IR is a separate pass if bugs show one is needed.
     #[must_use]
     pub fn validate(&self, db: &dyn Db) -> Vec<Invalid> {
+        self.check(db, &[])
+    }
+
+    /// The rules this body breaks, where `accumulated` holds the parameters its
+    /// [`ParallelFor`](TerminatorKind::ParallelFor) accumulates into: none for a function's own
+    /// body.
+    fn check(&self, db: &dyn Db, accumulated: &[Local]) -> Vec<Invalid> {
         let mut problems = Vec::new();
         for (index, local) in self.locals.iter().enumerate() {
             let id = Local::new(index);
@@ -166,10 +188,16 @@ impl Body<'_> {
             if self.phase == Phase::Ready && uses.elementwise {
                 problems.push(Invalid::NotExpanded(id));
             }
+            for local in uses.accumulated {
+                if !accumulated.contains(&local) {
+                    problems.push(Invalid::NotAccumulated(id, local));
+                }
+            }
             self.parallel_for(id, &block.terminator.kind, &mut problems);
         }
         for (position, outlined) in (0..).zip(&self.outlined) {
-            let inside = outlined.validate(db).into_iter();
+            let accumulated = self.accumulated(position);
+            let inside = outlined.check(db, &accumulated).into_iter();
             problems.extend(inside.map(|problem| Invalid::Outlined(position, Box::new(problem))));
         }
         problems
@@ -186,6 +214,7 @@ impl Body<'_> {
             body,
             arguments,
             reductions,
+            accumulations,
             ..
         } = terminator
         else {
@@ -194,11 +223,34 @@ impl Body<'_> {
         match self.outlined.get(*body as usize) {
             None => problems.push(Invalid::UnknownOutlined(id, *body)),
             Some(outlined) => {
-                if outlined.parameter_count as usize != 1 + arguments.len() + reductions.len() {
+                let values = 1 + arguments.len() + reductions.len() + accumulations.len();
+                if outlined.parameter_count as usize != values {
                     problems.push(Invalid::OutlinedParameters(id));
                 }
             }
         }
+    }
+
+    /// The parameters of outlined body `position` that the [`ParallelFor`](TerminatorKind::ParallelFor)
+    /// running it accumulates into: the last ones, after the iteration, the arguments and the
+    /// reductions. Empty when no `ParallelFor` runs it.
+    fn accumulated(&self, position: u32) -> Vec<Local> {
+        let mut accumulated = Vec::new();
+        for block in &self.blocks {
+            if let TerminatorKind::ParallelFor {
+                body,
+                arguments,
+                reductions,
+                accumulations,
+                ..
+            } = &block.terminator.kind
+                && *body == position
+            {
+                let first = 2 + arguments.len() + reductions.len();
+                accumulated.extend((first..first + accumulations.len()).map(Local::new));
+            }
+        }
+        accumulated
     }
 }
 
@@ -230,6 +282,8 @@ struct Uses {
     locals: Vec<Local>,
     /// Every block named, in order, with repeats.
     blocks: Vec<BlockId>,
+    /// The local of every place an [`Accumulate`](StatementKind::Accumulate) adds into.
+    accumulated: Vec<Local>,
     /// Whether an [`Rvalue::Elementwise`] appears.
     elementwise: bool,
 }
@@ -244,6 +298,11 @@ impl Uses {
                     self.rvalue(rvalue);
                 }
                 StatementKind::Drop(place) => self.place(place),
+                StatementKind::Accumulate { place, value, .. } => {
+                    self.place(place);
+                    self.operand(value);
+                    self.accumulated.push(place.local);
+                }
             }
         }
         match &block.terminator.kind {
@@ -300,6 +359,7 @@ impl Uses {
                 count,
                 arguments,
                 reductions,
+                accumulations,
                 target,
                 ..
             } => {
@@ -307,6 +367,9 @@ impl Uses {
                 self.arguments(arguments);
                 for reduction in reductions {
                     self.place(&reduction.place);
+                }
+                for accumulation in accumulations {
+                    self.place(accumulation);
                 }
                 self.blocks.push(*target);
             }

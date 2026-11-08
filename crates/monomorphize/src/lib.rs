@@ -121,8 +121,10 @@ impl<'db> Substitution<'_, 'db> {
         }
         for block in &mut body.blocks {
             for statement in &mut block.statements {
-                if let StatementKind::Assign(_, rvalue) = &mut statement.kind {
-                    self.rvalue(rvalue);
+                match &mut statement.kind {
+                    StatementKind::Assign(_, rvalue) => self.rvalue(rvalue),
+                    StatementKind::Accumulate { value, .. } => self.operand(value),
+                    StatementKind::Drop(_) => {}
                 }
             }
             self.terminator(&mut block.terminator.kind);

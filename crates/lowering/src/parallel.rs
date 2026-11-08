@@ -147,6 +147,7 @@ impl<'db> Builder<'db> {
             count: Operand::Copy(Place::from(count)),
             arguments,
             reductions,
+            accumulations: Vec::new(),
             target,
         });
     }

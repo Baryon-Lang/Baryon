@@ -26,6 +26,51 @@ pub enum StatementKind<'db> {
     /// out; drop elaboration makes every drop unconditional, guarded by `bool` flag locals where
     /// a value is moved on some paths only.
     Drop(Place),
+    /// Adds `value` into the element at `place`, in an array a `prange` loop lists in
+    /// `accumulate=` (decisions 0013 and 0024). `place` is an accumulated parameter of an
+    /// outlined body, projected by an index and possibly then into a `Fixed` element, and
+    /// `value` has that element's type.
+    ///
+    /// The statement is not a read-modify-write of shared memory: a backend adds `value` into
+    /// the running chunk's private copy of the element, and after the loop the copies combine
+    /// into the array in the reference's fixed tree, as a [`Reduction`] does. Lowering puts the
+    /// index's bounds check before it, as for any other element.
+    Accumulate {
+        /// The element added into.
+        place: Place,
+        /// Whether `value` is added or subtracted.
+        operator: AccumulateOperator,
+        /// The contribution.
+        value: Operand<'db>,
+    },
+}
+
+/// How an [`Accumulate`](StatementKind::Accumulate) statement combines its value with the
+/// element: `x += e` or `x -= e`.
+///
+/// Subtraction stays a subtraction instead of adding `-e`, so an integer `e` equal to its type's
+/// smallest value is never negated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AccumulateOperator {
+    /// `forces[j] += e`.
+    Add,
+    /// `forces[j] -= e`.
+    Subtract,
+}
+
+impl AccumulateOperator {
+    /// The operator's symbol in the text form.
+    ///
+    /// ```
+    /// assert_eq!(mir::AccumulateOperator::Subtract.symbol(), "-=");
+    /// ```
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            Self::Add => "+=",
+            Self::Subtract => "-=",
+        }
+    }
 }
 
 /// The end of a basic block, with the source it came from.
@@ -97,7 +142,8 @@ pub enum TerminatorKind<'db> {
     ///
     /// The outlined body is [`Body::outlined`](crate::Body::outlined)`[body]`. Its parameters
     /// are, in order: the iteration number, an `Owned` `i64` counted from 0; one per argument,
-    /// in that argument's mode; and one `InOut` per reduction, of the reduced place's type. It
+    /// in that argument's mode; one `InOut` per reduction, of the reduced place's type; and one
+    /// `InOut` per accumulation, of the accumulated array's type. It
     /// returns `None` and cannot fail: the checker allows no `return`, `break` or `raise` in a
     /// `prange` body, so its `continue` is a return.
     ///
@@ -118,6 +164,11 @@ pub enum TerminatorKind<'db> {
         arguments: Vec<Argument<'db>>,
         /// The shared scalars the body reduces into, such as `energy += e`.
         reductions: Vec<Reduction>,
+        /// The arrays listed in `accumulate=`, which the body only adds into, through
+        /// [`Accumulate`](StatementKind::Accumulate) statements on their parameters. A backend
+        /// gives each chunk private copies of the parts it touches and combines them into the
+        /// array after the loop, in the same fixed tree as a reduction (decision 0024).
+        accumulations: Vec<Place>,
         /// Where control goes when every iteration has finished.
         target: BlockId,
     },
