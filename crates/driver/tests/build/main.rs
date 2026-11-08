@@ -17,6 +17,7 @@ mod guide;
 mod parallel;
 mod testing;
 mod text;
+mod vector;
 
 /// The `baryon` executable cargo built for these tests.
 const BARYON: &str = env!("CARGO_BIN_EXE_baryon");

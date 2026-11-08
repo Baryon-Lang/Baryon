@@ -78,6 +78,9 @@ pub(crate) struct Constants<'a> {
     numbers: BTreeMap<Key, usize>,
     /// The module's debug information, when the driver asked for it.
     pub(crate) debug: Option<Debug>,
+    /// The loop metadata node of each `simd` loop, in the order they were made. They share
+    /// the numbering of the debug information's nodes, after which they are written.
+    loops: Vec<String>,
 }
 
 /// How many constants and subprograms there were, to roll back to.
@@ -87,6 +90,8 @@ pub(crate) struct Mark {
     constants: usize,
     /// The number of subprograms.
     subprograms: usize,
+    /// The number of loop metadata nodes.
+    loops: usize,
 }
 
 impl<'a> Constants<'a> {
@@ -97,6 +102,7 @@ impl<'a> Constants<'a> {
             definitions: Vec::new(),
             numbers: BTreeMap::new(),
             debug: None,
+            loops: Vec::new(),
         }
     }
 
@@ -105,6 +111,7 @@ impl<'a> Constants<'a> {
         Mark {
             constants: self.definitions.len(),
             subprograms: self.debug.as_ref().map_or(0, Debug::mark),
+            loops: self.loops.len(),
         }
     }
 
@@ -117,21 +124,35 @@ impl<'a> Constants<'a> {
         if let Some(debug) = &mut self.debug {
             debug.roll_back(mark.subprograms);
         }
+        self.loops.truncate(mark.loops);
     }
 
     /// A subprogram for the function `name` starting at `span`, as `!N`, or `None` without
     /// debug information.
     pub(crate) fn subprogram(&mut self, name: &str, span: Span) -> Option<String> {
         let sources = self.sources;
+        let loops = self.loops.len();
         self.debug
             .as_mut()
-            .map(|debug| debug.subprogram(sources, name, span))
+            .map(|debug| debug.subprogram(sources, name, span, loops))
     }
 
     /// The subprogram of the C `main`, as `!N`, or `None` without debug information.
     pub(crate) fn entry_subprogram(&mut self) -> Option<String> {
         let sources = self.sources;
-        self.debug.as_mut().map(|debug| debug.entry(sources))
+        let loops = self.loops.len();
+        self.debug.as_mut().map(|debug| debug.entry(sources, loops))
+    }
+
+    /// A new loop metadata node asking LLVM to vectorize the loop, as `!N`, for the back edge
+    /// of a `simd` loop (decision 0011). LLVM wants each loop's node distinct and naming itself
+    /// first.
+    pub(crate) fn vectorize(&mut self) -> String {
+        let number = self.debug.as_ref().map_or(0, Debug::next_number) + self.loops.len();
+        self.loops.push(format!(
+            "!{number} = distinct !{{!{number}, !{{!\"llvm.loop.vectorize.enable\", i1 true}}}}"
+        ));
+        format!("!{number}")
     }
 
     /// The `!dbg` location of `span` in the subprogram `scope`.
@@ -147,12 +168,18 @@ impl<'a> Constants<'a> {
             .collect()
     }
 
-    /// The debug information's metadata, or nothing when it is off.
+    /// The debug information's metadata, when it is on, then each loop metadata node.
     pub(crate) fn metadata(&self) -> String {
-        self.debug
+        let mut text = self
+            .debug
             .as_ref()
             .map(|debug| debug.finish(self.sources))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        for node in &self.loops {
+            text.push_str(node);
+            text.push('\n');
+        }
+        text
     }
 
     /// The constant holding the parts of `spec` as the runtime's `FormatSpec` lays them out, as

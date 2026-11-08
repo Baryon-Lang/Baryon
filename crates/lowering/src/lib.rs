@@ -52,6 +52,8 @@
 //!   that passes it the shared variables, each borrowed or `InOut`, the scalars it reduces
 //!   into with `+=`, `-=`, `*=`, `min` or `max` (the `parallel` module), and the arrays listed
 //!   in `accumulate=`, which it adds into with `Accumulate` statements (the `accumulate` module).
+//!   A `simd(range(...))` loop lowers as the `range` loop inside it, with its header block
+//!   listed in [`vectorized`](mir::Body::vectorized).
 //! - **Functions as arguments.** A module-level function read as a value is a constant of its
 //!   own zero-sized type, a call passes that type as an extra type argument for each `Callable`
 //!   parameter, and a call of a `Callable` value is a [`Callee::Value`](mir::Callee::Value),

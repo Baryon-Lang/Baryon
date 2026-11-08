@@ -64,9 +64,22 @@ impl Debug {
         }
     }
 
+    /// The number the next subprogram would take before any loop metadata node: the nodes
+    /// this module numbers come first, then the loop nodes, which share the numbering.
+    pub(crate) fn next_number(&self) -> usize {
+        FIRST_SUBPROGRAM + self.subprograms.len()
+    }
+
     /// A new subprogram for the function `name`, whose definition starts at `span`, as `!N`.
-    pub(crate) fn subprogram(&mut self, sources: &dyn Sources, name: &str, span: Span) -> String {
-        let number = FIRST_SUBPROGRAM + self.subprograms.len();
+    /// `loops` loop metadata nodes made so far take numbers too, so this one comes after them.
+    pub(crate) fn subprogram(
+        &mut self,
+        sources: &dyn Sources,
+        name: &str,
+        span: Span,
+        loops: usize,
+    ) -> String {
+        let number = self.next_number() + loops;
         let line = sources.file(span.file()).position(span.start()).line;
         let file = self.file(sources, span.file());
         self.first_file.get_or_insert(span.file());
@@ -82,8 +95,9 @@ impl Debug {
     /// A new subprogram for the C `main` the module's entry point is, as `!N`. It has no source
     /// of its own, so it is artificial and sits at line 0 of the first function's file. Without
     /// it, the package's `main` inlined into it would lose its line table.
-    pub(crate) fn entry(&mut self, sources: &dyn Sources) -> String {
-        let number = FIRST_SUBPROGRAM + self.subprograms.len();
+    /// `loops` loop metadata nodes made so far take numbers too, so this one comes after them.
+    pub(crate) fn entry(&mut self, sources: &dyn Sources, loops: usize) -> String {
+        let number = self.next_number() + loops;
         let file = self.unit_file(sources);
         self.subprograms.push(format!(
             "!{number} = distinct !DISubprogram(name: \"main\", scope: {file}, file: {file}, \

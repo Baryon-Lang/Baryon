@@ -58,6 +58,20 @@ impl<'db> Builder<'db> {
                 })
     }
 
+    /// The `range(...)` call inside `simd(range(...))` at `iterator`, or `None` when
+    /// `iterator` is not a `simd` call. The checker accepts `simd` only around one `range`.
+    pub(crate) fn simd_range(&self, iterator: NodeId) -> Option<NodeId> {
+        let function = self.tree.child(iterator, Role::Function)?;
+        if self.tree.kind(iterator) != SyntaxKind::Call
+            || !matches!(self.definition(function), Some(Definition::Builtin("simd")))
+        {
+            return None;
+        }
+        self.tree
+            .children_with(self.tree.child(iterator, Role::Arguments)?, Role::Item)
+            .next()
+    }
+
     /// The `prange` loop `statement` over `first..bound` by `step`, whose variable is
     /// `variable`: computes the iteration count, outlines the body, and runs it.
     pub(crate) fn parallel_for(
