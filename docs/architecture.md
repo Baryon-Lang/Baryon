@@ -86,7 +86,7 @@ Nothing else changes.
 | [`driver`](../crates/driver) | `application` | The `baryon` command: owns the concrete database, wires the parser, the syntax check, the resolver, the checker, lowering, the passes after it and the LLVM backend into it, and runs `baryon check`, `baryon build`, which links with `clang` and the `runtime` archive, `baryon run`, which builds and runs, `baryon test`, which builds and runs each `@test` function, the documentation generator, `baryon doc`, and the language server, `baryon lsp` ([0019](decisions/0019-language-server-protocol.md)) |
 | [`runtime`](../crates/runtime) | `runtime` | The runtime linked into every compiled program: heap memory from the system allocator, panics that print their message and location, and the thread pool that runs `prange` loops in fixed chunks; the only crate outside a backend allowed `unsafe` ([0021](decisions/0021-runtime-crate-and-unsafe-code.md)) |
 | [`bench`](../bench) | `tooling` | `cargo kernels`: builds, verifies and times the C++ and Fortran baseline kernels |
-| [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules, the documentation link check, the roadmap check, the example syntax check and the external dependency check |
+| [`xtask`](../xtask) | `tooling` | `cargo xtask`: the CI checks, including this document's rules, the merge-conflict marker check, the documentation link check, the roadmap check, the example syntax check and the external dependency check |
 
 A crate is created when it has code to hold, never as a placeholder.
 
