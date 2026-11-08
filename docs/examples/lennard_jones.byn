@@ -1,9 +1,9 @@
 """Molecular dynamics: argon-like atoms in a periodic box, integrated with velocity Verlet.
 
 512 atoms start at rest, each a little off a site of a cubic lattice, and interact through the
-Lennard-Jones potential.
-The program prints the kinetic, potential and total energy every 50 steps; the total should stay
-constant to about four digits, which is the standard check that the integrator is correct.
+Lennard-Jones potential. The program prints the kinetic, potential and total energy every 50
+steps; the total should stay constant to about four digits, which is the standard check that the
+integrator is correct.
 
 Units are reduced Lennard-Jones units: length sigma, energy epsilon and mass are all 1.
 
