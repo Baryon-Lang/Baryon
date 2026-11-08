@@ -97,17 +97,20 @@ impl<'db> Builder<'db> {
         let mut passed = Vec::with_capacity(arguments.len());
         for (position, (&argument, (mode, ty))) in arguments.iter().zip(parameters).enumerate() {
             let Some(argument) = argument else {
+                if mode == Mode::InOut {
+                    // The callee's changes to a default would go nowhere the caller can see.
+                    return self.unsupported(node, "leaving out an `InOut` argument");
+                }
                 let Some(constant) = self.default_value(item, position, node) else {
                     return;
                 };
-                passed.push(match mode {
-                    Mode::Owned => Argument::Owned(Operand::Constant(constant)),
-                    Mode::Borrow | Mode::InOut => {
-                        let temporary = self.temporary(ty, node);
-                        let value = Rvalue::Use(Operand::Constant(constant));
-                        self.assign(Place::from(temporary), value, node);
-                        Argument::Borrow(Place::from(temporary))
-                    }
+                passed.push(if mode == Mode::Owned {
+                    Argument::Owned(Operand::Constant(constant))
+                } else {
+                    let temporary = self.temporary(ty, node);
+                    let value = Rvalue::Use(Operand::Constant(constant));
+                    self.assign(Place::from(temporary), value, node);
+                    Argument::Borrow(Place::from(temporary))
                 });
                 continue;
             };

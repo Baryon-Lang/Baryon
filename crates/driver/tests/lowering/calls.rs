@@ -260,3 +260,28 @@ error: lowering does not handle leaving out an argument whose default is not a l
    = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
 }
+
+
+/// An `InOut` parameter with a default is reported when its argument is left out: whatever the
+/// callee wrote into the default would go nowhere the caller can see.
+#[test]
+fn a_left_out_inout_argument_is_not_lowered() {
+    let program = "\
+def bump(x: InOut[f64] = 1.0):
+    x += 1.0
+
+
+def caller():
+    bump()
+";
+    assert_eq!(
+        lower(program, "caller"),
+        "\
+error: lowering does not handle leaving out an `InOut` argument yet
+ --> main.byn:6:5
+  |
+6 |     bump()
+  |     ^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}
