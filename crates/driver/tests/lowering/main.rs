@@ -11,6 +11,7 @@ use driver::Session;
 mod calls;
 mod lists;
 mod math;
+mod random;
 mod unpacking;
 mod values;
 

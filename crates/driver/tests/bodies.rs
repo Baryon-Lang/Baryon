@@ -383,3 +383,72 @@ error: `pow` cannot mix `f32` and `f64`
   = note: convert one side so both are the same type, such as `f64(x)`"
     );
 }
+
+/// `Philox` takes a seed and an optional stream, both `int`; it has `uniform()` and nothing
+/// else; and it moves, so a generator given to another name cannot draw again. `math.pi` and
+/// the other constants are `f64`s.
+#[test]
+fn philox_and_math_constants_are_checked() {
+    let program = r"
+import math
+from random import Philox
+
+
+def f(seed: int) -> f64:
+    a = Philox(seed, stream=2)
+    b = Philox(stream=2)
+    c = Philox(seed, 1.5)
+    x = a.normal()
+    y = a.uniform(1.0)
+    d = a
+    z = a.uniform()
+    n: i64 = math.pi
+    return d.uniform() + math.tau + math.e
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `Philox` takes a seed and an optional stream
+ --> main.byn:7:9
+  |
+7 |     b = Philox(stream=2)
+  |         ^^^^^^^^^^^^^^^^ wrong arguments
+  = note: for example `Philox(2026)` or `Philox(2026, stream=chunk)`
+
+error: expected `i64`, found `f64`
+ --> main.byn:8:22
+  |
+8 |     c = Philox(seed, 1.5)
+  |                      ^^^ a seed or stream is `i64`
+
+error: `Philox` has no method `normal`
+ --> main.byn:9:9
+  |
+9 |     x = a.normal()
+  |         ^^^^^^^^^^ not defined
+  = note: a `Philox` has `uniform()` so far
+
+error: `uniform` takes no arguments
+  --> main.byn:10:9
+   |
+10 |     y = a.uniform(1.0)
+   |         ^^^^^^^^^^^^^^ wrong arguments
+   = note: it draws a float in `[0, 1)`; scale it for another range
+
+error: `a` was moved
+  --> main.byn:12:9
+   |
+12 |     z = a.uniform()
+   |         ^ read after the move
+  ::: main.byn:11:9
+   |
+11 |     d = a
+   |         - `a` moved here
+   = note: a generator cannot be copied, so no two draw the same numbers; make another with its own `stream`
+
+error: expected `i64`, found `f64`
+  --> main.byn:13:14
+   |
+13 |     n: i64 = math.pi
+   |              ^^^^^^^ the annotation says `i64`"
+    );
+}

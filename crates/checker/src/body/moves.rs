@@ -33,7 +33,9 @@ impl<'db> Body<'db> {
     /// Whether a value of `ty` moves when it is used as a value, rather than being copied.
     pub(super) fn moves(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.db) {
-            TypeKind::Str | TypeKind::List(_) | TypeKind::Array { .. } => true,
+            TypeKind::Str | TypeKind::List(_) | TypeKind::Array { .. } | TypeKind::Standard(_) => {
+                true
+            }
             TypeKind::Tuple(items) => items.iter().any(|&item| self.moves(item)),
             TypeKind::Optional(value) => self.moves(*value),
             TypeKind::Struct(_) => !crate::forms::is_copy(self.db, ty),
@@ -157,13 +159,25 @@ impl<'db> Body<'db> {
             return;
         };
         let name = self.tree.text(node, self.text);
+        // A generator has no copy: two copies would draw the same numbers (decision 0028).
+        let generator = self
+            .locals
+            .get(&binding)
+            .is_some_and(|ty| matches!(ty.kind(self.db), TypeKind::Standard(_)));
+        let advice = if generator {
+            "a generator cannot be copied, so no two draw the same numbers; make another with its \
+             own `stream`"
+                .to_owned()
+        } else {
+            format!(
+                "to keep both, move a copy: `{}.copy()`",
+                self.tree.text(site, self.text)
+            )
+        };
         let diagnostic = Diagnostic::error(format!("`{name}` was moved"))
             .with_primary(self.tree.span(node), "read after the move")
             .with_secondary(self.tree.span(site), format!("`{name}` moved here"))
-            .with_note(format!(
-                "to keep both, move a copy: `{}.copy()`",
-                self.tree.text(site, self.text)
-            ));
+            .with_note(advice);
         self.lowerer.diagnostics.push(diagnostic);
     }
 

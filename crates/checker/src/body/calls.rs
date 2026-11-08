@@ -49,6 +49,10 @@ impl<'db> Body<'db> {
                     None => self.untyped(&arguments),
                 }
             }
+            Some(Definition::Standard {
+                module: "random",
+                member: Some(member),
+            }) if member == "Philox" => self.philox(node, &arguments),
             Some(Definition::Local(_)) => {
                 let ty = self.expression(function, None);
                 self.call_value(node, &callee, ty, &arguments)
