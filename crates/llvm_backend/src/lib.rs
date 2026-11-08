@@ -52,8 +52,8 @@
 //!
 //! The backend so far (roadmap 1.10.1 to 1.10.10) covers numbers, `bool`, enums without data,
 //! tuples and structs, `Array` and `Fixed`, optionals, `str` values, control flow, direct calls,
-//! errors, checks, line tables, `print` and the math functions. A body that uses anything else, such as an f-string
-//! or a list, gets an [`Unsupported`] error naming it.
+//! errors, checks, line tables, `print` and the math functions. A body that uses anything else,
+//! such as a list, gets an [`Unsupported`] error naming it.
 //!
 //! # Example
 //!
