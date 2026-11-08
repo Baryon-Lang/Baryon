@@ -1,4 +1,4 @@
-# NPL: New Programming Language
+# Baryon: A new language for math and physics
 
 A compiled language that reads like Python and runs like Rust, C and Fortran, built so that
 physics, mathematics and data science at any scale are routine work.
