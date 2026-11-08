@@ -22,9 +22,9 @@ error: lowering does not handle `**` yet
 So a program that `baryon check` accepts but `baryon build` rejects is not wrong: it uses a part of
 the language that is specified and checked, but not built yet.
 
-This page was last brought up to date on 2026-11-08, when `heat_equation.byn` began to build.
-Every pull request that teaches lowering or the backend something new updates the table it
-affects, in the same pull request, as roadmap item 0.8.1 asks.
+This page was last brought up to date on 2026-11-08, when `**`, `dot` and `round` began to
+build. Every pull request that teaches lowering or the backend something new updates the table
+it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
 
@@ -35,7 +35,7 @@ against it.
 | Example | Still needs |
 | --- | --- |
 | [`heat_equation.byn`](../examples/heat_equation.byn) | Nothing: it builds and runs |
-| [`lennard_jones.byn`](../examples/lennard_jones.byn) | `**`, `Fixed.dot`, `Fixed.round`, `math` functions |
+| [`lennard_jones.byn`](../examples/lennard_jones.byn) | `math.sqrt`; with `sqrt(y)` written `y ** 0.5` it builds and runs today |
 | [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | `Callable` arguments, the built-in `round` |
 | [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | lists and `list.append`, `Array(values)`, `Array.copy`, `math` functions |
 | [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | the `random` module, operators on structs |
@@ -46,7 +46,7 @@ against it.
 | --- | --- |
 | Packages of several modules; `import m`, `from m import x`, `as`; calling a function through its module, `physics.units.twice(x)` | Reading a constant through its module, `physics.units.C`; import it by name instead |
 | `main` in `main.byn`; `print` of numbers, `bool` and `str` | `print` with keyword arguments; `print` of `None`, `T \| None`, tuples, arrays and structs |
-| Assignment, annotated assignment, augmented assignment with every operator but `**=`; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a` | `**=`; nested unpacking, `a, (b, c) = e` |
+| Assignment, annotated assignment, augmented assignment, `**=` on floats only; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a` | `**=` on integers; nested unpacking, `a, (b, c) = e` |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
 | `for` over `range` with a constant step, positive or negative | `for` over arrays, lists, strings or tuples; a `range` step that is not a constant |
 | `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values) that are literals or `Final` constants | Leaving out an argument whose default is any other expression |
@@ -55,7 +55,7 @@ against it.
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals; f-strings with format specifications | Complex literals such as `2j`; string literals with escapes or prefixes |
-| `+ - * / // %`, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `**`; `in` and `not in`; `==` on `str` |
+| `+ - * / // %`, `**` on floats, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `**` on integers; `in` and `not in`; `==` on `str` |
 | `min`, `max`, `len` of arrays, `int`, `float` and the number conversions such as `f64(n)` | `abs`, `round`, `sum`, `enumerate`, `zip`; `len` of `str` and lists; the `math` module |
 | `@test` functions, with `baryon test` | |
 
@@ -99,10 +99,10 @@ out of a function, including through a `raise`.
 | Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | Slices `a[1:n]` |
 | `len(a)`; `a.shape` bound to a name, then indexed | `a.shape[0]` written directly; `a.size` |
 | `a.unchecked[i]` inside `with unsafe:` | |
-| `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, and whole-array arithmetic | `v.dot(w)`; `v.round()` |
+| `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, `v.dot(w)`, `v.round()`, and whole-array arithmetic | |
 | Arrays of `Fixed` arrays and of `Copy` structs | |
 | Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b` | `@`, the matrix product |
-| `a.sum()` of numbers, adding the elements one at a time in row-major order | `a.min()`, `a.max()`, `a.dot(b)`, `a.round()`, `a.fill(value)`; printing an array |
+| `a.sum()` of numbers, adding the elements one at a time in row-major order | `a.min()`, `a.max()`; `a.dot(b)` and `a.round()` on an `Array`; `a.fill(value)`; printing an array |
 
 ## Errors and panics
 

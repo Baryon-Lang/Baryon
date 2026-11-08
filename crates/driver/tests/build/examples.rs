@@ -69,3 +69,27 @@ def main():
     )
     .unwrap();
 }
+
+/// `**` on floats, `**=`, and `dot` and `round` of a `Fixed` vector, through `llvm.pow` and
+/// `llvm.roundeven`: ties round to even, so -1.25 gives -1.0 and 0.75 gives 1.0.
+#[test]
+fn powers_dot_and_round_build_and_run() {
+    let program = "\
+Vec3 = Fixed[f64, (3,)]
+
+
+def main():
+    v = Vec3(1.5, -2.5, 3.0)
+    w = (v / 2.0).round()
+    x = 2.0
+    print(x ** 3, 2.0 ** 0.5, v.dot(v), w[0], w[1], w[2], Vec3(2.5, 3.5, -0.5).round()[0])
+    x **= 2.0
+    print(x)
+";
+    prints(
+        "powers-dot-round",
+        program,
+        "8.0 1.4142135623730951 17.5 1.0 -1.0 2.0 2.0\n4.0\n",
+    )
+    .unwrap();
+}

@@ -14,6 +14,7 @@ reason in a line.
 | `int` has no size limit | `int` is a 64-bit integer; sized types such as `i32` and `u8` exist | Fixed widths are what fit in a register. [Numbers](types.md#numbers) |
 | `float32` and `float64` mix silently in NumPy | Mixing widths is an error until converted with `f64(x)` | Precision never changes without a visible conversion. [Number mixing](types.md#number-mixing) |
 | `1.0 / 0.0` raises `ZeroDivisionError` | `1.0 / 0.0` is infinity, as in IEEE 754 and NumPy | Numeric code expects IEEE results. [Numbers](types.md#numbers) |
+| `(-8.0) ** (1 / 3)` is a complex number, and `math.sqrt(-1.0)` and `math.log(0.0)` raise `ValueError` | Float `**` and the `math` functions give IEEE 754 results, as NumPy does: `(-8.0) ** (1 / 3)` and `sqrt(-1.0)` are NaN, `log(0.0)` is `-inf` | The same rule as float division by zero: numeric code expects IEEE results, and a float never turns into a complex number. [Math functions](arrays.md#math-functions) |
 | `True + 1` is `2` | `bool` is not a number; that is an error | [bool](types.md#bool) |
 | Any value can be a condition: `if items:` | Conditions must be `bool`: `if len(items) > 0:` | A condition should not depend on a rule the reader has to remember. [bool](types.md#bool) |
 | A variable can change type: `x = 1` then `x = "one"` | A variable keeps the type of its first value | One name meaning two things is a common bug in long code. [Type inference](types.md#type-inference) |

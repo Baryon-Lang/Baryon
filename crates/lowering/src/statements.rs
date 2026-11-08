@@ -199,6 +199,13 @@ impl<'db> Builder<'db> {
             return self.unsupported(statement, "in-place operators on values other than numbers");
         }
         let syntax = self.tree.node(statement).operator();
+        if syntax == Operator::Power && self.is_float(ty) {
+            let Some(place) = self.place(target) else {
+                return;
+            };
+            let operands = vec![Operand::Copy(place.clone()), self.operand_as(value, ty)];
+            return self.math_call(place, mir::MathFunction::Power, operands, statement);
+        }
         let Some(operator) = arithmetic(syntax) else {
             return self.unsupported(statement, &format!("`{}=`", syntax.symbol()));
         };

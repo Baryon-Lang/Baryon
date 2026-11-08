@@ -72,6 +72,10 @@ impl<'db> Builder<'db> {
                 (Some(("Array" | "Fixed", "sum")), [array]) => {
                     self.array_sum(place, *array, node);
                 }
+                (Some(("Fixed", "dot")), [left, right]) => {
+                    self.fixed_dot(place, (*left, *right), node);
+                }
+                (Some(("Fixed", "round")), [array]) => self.fixed_round(place, *array, node),
                 _ => self.unsupported(node, &format!("the built-in `{name}`")),
             },
             types::Callee::Value => self.unsupported(node, "calls of a function value"),

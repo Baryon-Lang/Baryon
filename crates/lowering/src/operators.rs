@@ -3,8 +3,8 @@
 
 use crate::builder::Builder;
 use mir::{
-    BinaryOperator, Check, Constant, ConstantValue, Operand, Place, Rvalue, TerminatorKind,
-    UnaryOperator,
+    BinaryOperator, Check, Constant, ConstantValue, MathFunction, Operand, Place, Rvalue,
+    TerminatorKind, UnaryOperator,
 };
 use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::{Type, TypeKind};
@@ -37,6 +37,10 @@ impl<'db> Builder<'db> {
         }
         if !generic && !matches!(ty.kind(self.db), TypeKind::Primitive(_)) {
             return self.unsupported(node, "operators on values other than numbers");
+        }
+        if syntax == Operator::Power && self.is_float(ty) {
+            let operands = vec![self.operand_as(left, ty), self.operand_as(right, ty)];
+            return self.math_call(place, MathFunction::Power, operands, node);
         }
         let Some(operator) = arithmetic(syntax) else {
             return self.unsupported(node, &format!("`{}`", syntax.symbol()));

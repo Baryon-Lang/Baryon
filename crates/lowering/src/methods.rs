@@ -1,11 +1,16 @@
-//! Array methods (language reference, "Methods" in the arrays chapter): `a.copy()` and `a.sum()`.
+//! Array methods (language reference, "Methods" in the arrays chapter): `a.copy()`, `a.sum()`,
+//! and `v.dot(w)` and `v.round()` on `Fixed` arrays.
 //!
 //! `a.copy()` is the whole-array expression whose only leaf is `a`, so array expansion allocates
-//! the new array and copies each element in the same loop nest as `a + b`. `a.sum()` adds every
-//! element into an accumulator in one loop nest of its own.
+//! the new array and copies each element in the same loop nest as `a + b`. `a.sum()` and
+//! `v.dot(w)` add into an accumulator in a loop nest of their own. `v.round()` builds a new
+//! `Fixed` value from each element rounded, with one call per element, since a `Fixed` array is
+//! small and its length is known when compiling.
 
 use crate::builder::Builder;
-use mir::{BinaryOperator, Elementwise, Operand, Place, Projection, Rvalue};
+use mir::{
+    BinaryOperator, Constant, Elementwise, MathFunction, Operand, Place, Projection, Rvalue,
+};
 use syntax::NodeId;
 use types::TypeKind;
 
@@ -52,5 +57,101 @@ impl<'db> Builder<'db> {
         let result = self.ty(node);
         let rvalue = self.coerce(Operand::Copy(Place::from(total)), element, result);
         self.assign(place, rvalue, node);
+    }
+
+    /// `v.dot(w)` on two rank-1 `Fixed` arrays of numbers, into `place`: the products of the
+    /// elements at each index, added in order from index 0. `Array.dot` waits on the length
+    /// check two `Array` operands need.
+    pub(crate) fn fixed_dot(
+        &mut self,
+        place: Place,
+        (left, right): (NodeId, NodeId),
+        node: NodeId,
+    ) {
+        let ty = self.ty(left);
+        let element = self.element(ty);
+        if !matches!(element.kind(self.db), TypeKind::Primitive(_)) {
+            return self.unsupported(node, "`dot` of vectors whose elements are not numbers");
+        }
+        let (left, right) = (self.borrow(left), self.borrow(right));
+        let length = self.length(&left, ty, 0, node);
+        let total = self.temporary(element, node);
+        let zero = Operand::Constant(self.number_constant(element, 0));
+        self.assign(Place::from(total), Rvalue::Use(zero), node);
+        let product = self.temporary(element, node);
+        self.loop_nest(&[length], &mut Vec::new(), node, &mut |builder, indices| {
+            let at = |place: &Place| {
+                Operand::Copy(place.clone().project(Projection::Index(indices.to_vec())))
+            };
+            builder.assign(
+                Place::from(product),
+                Rvalue::Binary(BinaryOperator::Multiply, at(&left), at(&right)),
+                node,
+            );
+            builder.assign(
+                Place::from(total),
+                Rvalue::Binary(
+                    BinaryOperator::Add,
+                    Operand::Copy(Place::from(total)),
+                    Operand::Copy(Place::from(product)),
+                ),
+                node,
+            );
+        });
+        self.assign(place, Rvalue::Use(Operand::Copy(Place::from(total))), node);
+    }
+
+    /// `v.round()` on a `Fixed` array of floats, into `place`: each element rounded to the
+    /// nearest whole number, ties to even, still a float. On integers it is a copy.
+    pub(crate) fn fixed_round(&mut self, place: Place, array: NodeId, node: NodeId) {
+        let ty = self.ty(array);
+        let TypeKind::Fixed { element, shape } = ty.kind(self.db) else {
+            return self.unsupported(node, "`round` of this array");
+        };
+        let (element, lengths) = (*element, shape.lengths().to_vec());
+        let source = self.borrow(array);
+        if !self.is_float(element) {
+            return self.assign(place, Rvalue::Use(Operand::Copy(source)), node);
+        }
+        let int = self.int_type();
+        let mut rounded = Vec::new();
+        let mut position = vec![0u64; lengths.len()];
+        while position
+            .iter()
+            .zip(&lengths)
+            .all(|(index, length)| index < length)
+        {
+            let indices = position
+                .iter()
+                .map(|&index| {
+                    let local = self.temporary(int, node);
+                    let constant = Constant::integer(int, i128::from(index));
+                    self.assign(
+                        Place::from(local),
+                        Rvalue::Use(Operand::Constant(constant)),
+                        node,
+                    );
+                    local
+                })
+                .collect();
+            let value = Operand::Copy(source.clone().project(Projection::Index(indices)));
+            let result = self.temporary(element, node);
+            self.math_call(
+                Place::from(result),
+                MathFunction::RoundEven,
+                vec![value],
+                node,
+            );
+            rounded.push(Operand::Copy(Place::from(result)));
+            // The next index in row-major order: the last dimension counts fastest.
+            for dimension in (0..lengths.len()).rev() {
+                position[dimension] += 1;
+                if position[dimension] < lengths[dimension] || dimension == 0 {
+                    break;
+                }
+                position[dimension] = 0;
+            }
+        }
+        self.assign(place, Rvalue::Aggregate(ty, rounded), node);
     }
 }

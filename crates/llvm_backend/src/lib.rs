@@ -42,6 +42,9 @@
 //!   loop, so a float sum gives the same bits on any number of threads (the `parallel` module).
 //! - **`print` calls the runtime once per argument**, which writes the value as Python does;
 //!   the space between arguments and the line end are byte constants it prints too.
+//! - **Math functions are LLVM intrinsics.** A [`Builtin::Math`](mir::Builtin::Math) call, such
+//!   as `x ** y` on floats, becomes `llvm.pow.f64`, which LLVM folds, turns into one instruction
+//!   where the target has one, or calls the C math library for.
 //!
 //! - **A `str` is its bytes and a length** (decision 0022). A literal's bytes are a constant
 //!   that is never copied; the top bit of its length says so, and a drop frees only a string
@@ -49,7 +52,7 @@
 //!
 //! The backend so far (roadmap 1.10.1 to 1.10.10) covers numbers, `bool`, enums without data,
 //! tuples and structs, `Array` and `Fixed`, optionals, `str` values, control flow, direct calls,
-//! errors, checks, line tables and `print`. A body that uses anything else, such as an f-string
+//! errors, checks, line tables, `print` and the math functions. A body that uses anything else, such as an f-string
 //! or a list, gets an [`Unsupported`] error naming it.
 //!
 //! # Example
@@ -128,6 +131,7 @@ mod entry;
 mod errors;
 mod function;
 mod literal;
+mod math;
 mod panic;
 mod parallel;
 mod print;
