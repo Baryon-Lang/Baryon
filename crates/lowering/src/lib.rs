@@ -237,6 +237,7 @@ mod calls;
 mod constants;
 mod creation;
 mod errors;
+mod escapes;
 mod expressions;
 mod facts;
 mod lists;

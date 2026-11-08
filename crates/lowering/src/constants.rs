@@ -8,7 +8,8 @@ use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::{Declaration, Item, Primitive, Type, TypeKind, Value};
 
 impl<'db> Builder<'db> {
-    /// The constant `node` names: a `Final` constant, an enum member such as `Side.LEFT`, or a
+    /// The constant `node` names: a `Final` constant, by its name or through its module as in
+    /// `units.G`, an enum member such as `Side.LEFT`, or a
     /// module-level function read as a value, such as `lorenz` passed to a `Callable`
     /// parameter. A function's value takes no bytes, since its type names the function
     /// (decision 0026), so it is written as `None` at that type.
@@ -24,37 +25,29 @@ impl<'db> Builder<'db> {
             return Some(Constant::float(ty, value));
         }
         match self.tree.kind(node) {
-            SyntaxKind::Name => {
-                let &Definition::Item(file, name) = self.definition(node)? else {
-                    return None;
-                };
-                let item = Item::new(self.db, self.package, file, name);
-                let Declaration::Constant { value, .. } = &self.db.declaration(item).declaration
-                else {
-                    return None;
-                };
-                let value = match value {
-                    Some(Value::Integer(value)) if self.is_integer(ty) => {
-                        ConstantValue::Integer(i128::from(*value))
-                    }
-                    #[expect(clippy::cast_precision_loss, reason = "a constant as a float")]
-                    Some(Value::Integer(value)) => ConstantValue::Float((*value as f64).to_bits()),
-                    Some(Value::Float(bits)) => ConstantValue::Float(*bits),
-                    None => {
-                        self.unsupported(node, "constants whose value is not a number");
-                        ConstantValue::None
-                    }
-                };
-                Some(Constant { ty, value })
+            SyntaxKind::Name => self.final_constant(node, node, ty),
+            SyntaxKind::Attribute
+                if self.tree.child(node, Role::Attribute).is_some_and(|name| {
+                    matches!(self.definition(name), Some(Definition::Item(..)))
+                }) =>
+            {
+                // `units.G` or `physics.units.G`: a constant of another module, named
+                // through the module.
+                let name = self.tree.child(node, Role::Attribute)?;
+                self.final_constant(name, node, ty)
             }
             SyntaxKind::Attribute => {
                 let TypeKind::Enum(nominal) = ty.kind(self.db) else {
                     return None;
                 };
                 let value = self.tree.child(node, Role::Value)?;
-                if self.tree.kind(value) != SyntaxKind::Name
-                    || !matches!(self.definition(value), Some(Definition::Item(..)))
-                {
+                // `Side.LEFT`, or `units.Side.LEFT` through the enum's module.
+                let class = match self.tree.kind(value) {
+                    SyntaxKind::Name => value,
+                    SyntaxKind::Attribute => self.tree.child(value, Role::Attribute)?,
+                    _ => return None,
+                };
+                if !matches!(self.definition(class), Some(Definition::Item(..))) {
                     return None;
                 }
                 let name = self.tree.child(node, Role::Attribute)?;
@@ -71,6 +64,37 @@ impl<'db> Builder<'db> {
             }
             _ => None,
         }
+    }
+
+    /// The `Final` constant the name `name` resolves to, as a constant of type `ty`, or `None`
+    /// when it names anything else. A constant whose value is not a number is reported at
+    /// `node`, the whole expression.
+    fn final_constant(
+        &mut self,
+        name: NodeId,
+        node: NodeId,
+        ty: Type<'db>,
+    ) -> Option<Constant<'db>> {
+        let &Definition::Item(file, name) = self.definition(name)? else {
+            return None;
+        };
+        let item = Item::new(self.db, self.package, file, name);
+        let Declaration::Constant { value, .. } = &self.db.declaration(item).declaration else {
+            return None;
+        };
+        let value = match value {
+            Some(Value::Integer(value)) if self.is_integer(ty) => {
+                ConstantValue::Integer(i128::from(*value))
+            }
+            #[expect(clippy::cast_precision_loss, reason = "a constant as a float")]
+            Some(Value::Integer(value)) => ConstantValue::Float((*value as f64).to_bits()),
+            Some(Value::Float(bits)) => ConstantValue::Float(*bits),
+            None => {
+                self.unsupported(node, "constants whose value is not a number");
+                ConstantValue::None
+            }
+        };
+        Some(Constant { ty, value })
     }
 
     /// The value of the default of parameter `position` of `item`, for the call `node` that
@@ -163,10 +187,13 @@ impl<'db> Builder<'db> {
             SyntaxKind::False => ConstantValue::Bool(false),
             SyntaxKind::None => ConstantValue::None,
             SyntaxKind::StringLiteral => {
-                if let Some(text) = string(self.text_of(node)) {
+                if let Some(text) = crate::escapes::string(self.text_of(node)) {
                     ConstantValue::Str(text)
                 } else {
-                    self.unsupported(node, "strings with escapes, prefixes or several parts");
+                    self.unsupported(
+                        node,
+                        "strings with `\\N{…}` escapes, a `b` prefix or several parts",
+                    );
                     ConstantValue::None
                 }
             }
@@ -260,17 +287,6 @@ pub(crate) fn integer(written: &str) -> Option<i128> {
         .find_map(|(prefix, radix)| written.strip_prefix(prefix).map(|rest| (radix, rest)))
         .unwrap_or((10, written));
     i128::from_str_radix(digits, radix).ok()
-}
-
-/// The text of a string literal with one pair of plain quotes and no escapes, such as `"done"`
-/// or `'x'`; `None` for anything else, which a later slice decodes.
-pub(crate) fn string(written: &str) -> Option<String> {
-    let quote = written
-        .chars()
-        .next()
-        .filter(|&quote| quote == '"' || quote == '\'')?;
-    let inner = written.strip_prefix(quote)?.strip_suffix(quote)?;
-    (!inner.contains(quote) && !inner.contains('\\')).then(|| inner.to_owned())
 }
 
 impl Builder<'_> {
