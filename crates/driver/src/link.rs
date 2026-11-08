@@ -25,6 +25,16 @@ const SYSTEM_LIBRARIES: &[&str] = if cfg!(target_os = "macos") {
     ]
 };
 
+/// The linker flag that drops every function and constant nothing reaches. The runtime is a
+/// Rust static library with the whole standard library inside it, and most of it is never
+/// called: dropping it takes a program that prints a number from 5.2 MB to 4.3 MB on Linux
+/// (roadmap 1.12.4), and what is kept keeps its line tables.
+const DROP_UNUSED: &str = if cfg!(target_os = "macos") {
+    "-Wl,-dead_strip"
+} else {
+    "-Wl,--gc-sections"
+};
+
 /// Compiles the LLVM module `module` at `-O2` and links it with the runtime into the executable
 /// `output`, keeping the module's line tables (`-g`) so debuggers and panic backtraces show
 /// `.byn` lines.
@@ -58,6 +68,7 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
                     .arg(&object)
                     .arg(&runtime)
                     .args(SYSTEM_LIBRARIES)
+                    .arg(DROP_UNUSED)
                     .arg("-o")
                     .arg(output);
             })
