@@ -3,7 +3,7 @@
 
 use crate::builder::{Builder, Loop};
 use crate::constants::integer;
-use crate::expressions::arithmetic;
+use crate::operators::arithmetic;
 use database::Definition;
 use mir::{
     Check, Constant, ConstantValue, Local, Operand, Place, Rvalue, StatementKind, TerminatorKind,

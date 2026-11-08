@@ -224,6 +224,7 @@ dependencies = [
  "llvm_backend",
  "lowering",
  "mir",
+ "monomorphize",
  "parser",
  "resolver",
  "salsa",
