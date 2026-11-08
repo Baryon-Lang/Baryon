@@ -181,11 +181,13 @@ and any number of cores, and may differ from the serial loop's in the last bits.
 are exact.
 
 **Cost.** The runtime gives each chunk private copies of only the blocks of the array it adds
-into, made when it first touches them, and the combine step sums only those blocks. For spatially
-sorted particles the extra memory is about one more copy of the array; at worst, when every chunk
-touches every block, it is one copy per chunk running at once. That cost is why an array must be
-named while a scalar, whose private copy costs a few bytes, is inferred: privatizing a whole array
-should be visible in the source.
+into, made when it first touches them, and combines two chunks' copies as soon as both are done,
+summing only the blocks they touched. For spatially sorted particles the extra memory is about one
+more copy of the array. The worst case needs every chunk to touch every block while one chunk
+stalls and the later ones finish: `threads + (threads + 1) × ceil(log2(chunks))` copies, 98 on 8
+threads with 1024 chunks ([decision 0024](../decisions/0024-compiling-accumulated-arrays.md)).
+That cost is why an array must be named while a scalar, whose private copy costs a few bytes, is
+inferred: privatizing a whole array should be visible in the source.
 
 The alternative that needs no `accumulate=` and no extra memory is to compute every pair twice, so
 iteration `i` writes only `forces[i]`. That is what the

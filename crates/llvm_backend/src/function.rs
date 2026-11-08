@@ -202,7 +202,11 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 Ok(())
             }
             StatementKind::Drop(place) => self.drop_place(place),
-            StatementKind::Accumulate { .. } => Err(Unsupported::new("`accumulate=` in `prange`")),
+            StatementKind::Accumulate {
+                place,
+                operator,
+                value,
+            } => self.accumulate(place, *operator, value),
         }
     }
 
@@ -278,12 +282,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 reductions,
                 accumulations,
                 target,
-            } => {
-                if !accumulations.is_empty() {
-                    return Err(Unsupported::new("`accumulate=` in `prange`"));
-                }
-                self.parallel_for(*body, count, arguments, reductions, *target)?;
-            }
+            } => self.parallel_for(*body, count, arguments, reductions, accumulations, *target)?,
         }
         Ok(())
     }

@@ -19,11 +19,12 @@
 //! at most 1024 per reduction, and are released when the loop ends.
 
 use crate::Unsupported;
+use crate::accumulate;
 use crate::function::{Function, block_label};
 use crate::literal::{float, global};
 use crate::ty::Number;
 use mir::ReductionOperator;
-use mir::{Argument, BinaryOperator, BlockId, Body, Check, LocalKind, Operand, Reduction};
+use mir::{Argument, BinaryOperator, BlockId, Body, Check, LocalKind, Operand, Place, Reduction};
 use std::fmt::Write as _;
 use types::{Mode, Type};
 
@@ -67,14 +68,15 @@ struct Reduced<'db> {
 
 impl<'db> Function<'_, '_, 'db> {
     /// Writes a `prange` loop: the outlined body `index` run `count` times with `arguments`,
-    /// reducing into `reductions`, then a jump to `target`. The chunk function goes into
-    /// [`helpers`](Function::helpers).
+    /// reducing into `reductions` and accumulating into `accumulations`, then a jump to
+    /// `target`. The chunk function goes into [`helpers`](Function::helpers).
     pub(crate) fn parallel_for(
         &mut self,
         index: u32,
         count: &Operand<'db>,
         arguments: &[Argument<'db>],
         reductions: &[Reduction],
+        accumulations: &[Place],
         target: BlockId,
     ) -> Result<(), Unsupported> {
         let outlined = self
@@ -103,12 +105,21 @@ impl<'db> Function<'_, '_, 'db> {
         self.declare("llvm.stacksave", STACK_SAVE);
         self.declare("llvm.stackrestore", STACK_RESTORE);
         self.declare("baryon_rt_parallel_for", PARALLEL_FOR);
+        let accumulated = self.start_accumulators(accumulations, &iterations)?;
         let saved = self.emit("call ptr @llvm.stacksave()");
-        let slots = arguments.len() + reductions.len();
+        let slots = arguments.len() + reductions.len() + 2 * accumulated.len();
         let context = self.emit(&format!("alloca [{slots} x ptr]"));
         for (position, argument) in arguments.iter().enumerate() {
             let address = self.argument_address(argument)?;
             self.store_slot(&context, slots, position, &address);
+        }
+        let first = arguments.len() + reductions.len();
+        for (index, array) in accumulated.iter().enumerate() {
+            self.store_slot(&context, slots, first + 2 * index, &array.address);
+            self.store_slot(&context, slots, first + 2 * index + 1, &array.accumulator);
+        }
+        if !accumulated.is_empty() {
+            accumulate::declare_chunk_done(self);
         }
         let chunks = if reductions.is_empty() {
             None
@@ -143,17 +154,20 @@ impl<'db> Function<'_, '_, 'db> {
                 self.combine_partials(reduction, partial, chunks)?;
             }
         }
+        self.finish_accumulators(&accumulated);
         self.line(&format!("call void @llvm.stackrestore(ptr {saved})"));
         self.line(&format!("br label %{}", block_label(target)));
         let reductions: Vec<(String, String)> = reduced
             .into_iter()
             .map(|reduction| (reduction.llvm, reduction.identity))
             .collect();
+        let headers: Vec<String> = accumulated.into_iter().map(|array| array.header).collect();
         self.helpers.push(chunk_function(
             &chunk_symbol,
             &body_symbol,
             &passed,
             &reductions,
+            &headers,
         ));
         Ok(())
     }
@@ -393,14 +407,16 @@ fn identity(
 /// loads each argument from the context as `passed` says, starts each reduction's private copy
 /// at its identity, calls `body` for iterations `first..last` in order, and stores each copy
 /// in the chunk's place among the reduction's partials. `reductions` holds each reduced
-/// value's LLVM type and identity.
+/// value's LLVM type and identity, and `accumulated` each accumulated array's header type: the
+/// body gets a view of each array, and the runtime hears when the chunk is done.
 fn chunk_function(
     symbol: &str,
     body: &str,
     passed: &[Passed],
     reductions: &[(String, String)],
+    accumulated: &[String],
 ) -> String {
-    let slots = passed.len() + reductions.len();
+    let slots = passed.len() + reductions.len() + 2 * accumulated.len();
     let mut entry = String::new();
     let mut arguments = vec!["i64 %iteration".to_owned()];
     let slot = |entry: &mut String, position: usize| {
@@ -436,6 +452,13 @@ fn chunk_function(
              store {llvm} %f{index}, ptr %e{index}"
         );
     }
+    let [views, viewed, done] =
+        accumulate::chunk_views(accumulated, passed.len() + reductions.len(), slots);
+    entry.push_str(&views);
+    if !viewed.is_empty() {
+        arguments.push(viewed);
+    }
+    finish.push_str(&done);
     format!(
         "define internal void {}(ptr %context, i64 %chunk, i64 %first, i64 %last) {{\n\
          entry:\n{entry}  br label %test\n\

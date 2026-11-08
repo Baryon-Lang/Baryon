@@ -5,17 +5,16 @@
 //!
 //! The outlined body takes, in order: the iteration number, counted from 0; the loop's start, when
 //! the loop does not start at 0 with step 1; each *shared* variable the body uses, one assigned
-//! before the loop, borrowed when the body only reads it and `InOut` when it writes into it; and
-//! each shared scalar the body reduces into, such as `total += x` or `low = min(low, x)`. The loop
-//! variable is computed from the iteration number as `start + iteration * step`. Variables first
-//! assigned in the body are private: they are the outlined body's own, and are dropped when the
-//! iteration ends, so `continue` returns.
+//! before the loop, borrowed when the body only reads it and `InOut` when it writes into it; each
+//! shared scalar the body reduces into, such as `total += x` or `low = min(low, x)`; and each
+//! array listed in `accumulate=`, `InOut`, which the body only adds into (the `accumulate`
+//! module). The loop variable is computed from the iteration number as `start + iteration *
+//! step`. Variables first assigned in the body are private: they are the outlined body's own, and
+//! are dropped when the iteration ends, so `continue` returns.
 //!
 //! The checker proved the body safe to run this way (its `parallel` module): shared arrays are
 //! written only at the loop variable's index, shared scalars only as reductions, and nothing leaves
 //! the loop early. Lowering relies on that and does not check it again.
-//!
-//! Not lowered yet: `accumulate=` (roadmap 1.12.1).
 
 use crate::builder::Builder;
 use crate::operators::arithmetic;
@@ -58,15 +57,6 @@ impl<'db> Builder<'db> {
                 })
     }
 
-    /// Whether the call `node` passes a keyword argument, such as `accumulate=`.
-    pub(crate) fn has_keyword(&self, node: NodeId) -> bool {
-        self.tree
-            .child(node, Role::Arguments)
-            .into_iter()
-            .flat_map(|list| self.tree.children_with(list, Role::Item))
-            .any(|item| self.tree.kind(item) == SyntaxKind::Keyword)
-    }
-
     /// The `prange` loop `statement` over `first..bound` by `step`, whose variable is
     /// `variable`: computes the iteration count, outlines the body, and runs it.
     pub(crate) fn parallel_for(
@@ -88,6 +78,9 @@ impl<'db> Builder<'db> {
         if ty != i64 {
             return self.unsupported(iterator, "`prange` over integers other than `i64`");
         }
+        let Some(accumulated) = self.accumulated_arrays(iterator) else {
+            return;
+        };
         let Some(shared) = self.shared(statement) else {
             return;
         };
@@ -112,6 +105,9 @@ impl<'db> Builder<'db> {
         let mut reductions = Vec::new();
         let mut reduced = Vec::new();
         for (&binding, &(local, usage)) in &shared {
+            if accumulated.iter().any(|&(listed, _)| listed == binding) {
+                continue;
+            }
             let name = self.local_name(local);
             let local_ty = self.local_type(local);
             match usage {
@@ -133,8 +129,16 @@ impl<'db> Builder<'db> {
             }
         }
         passed.extend(reduced);
+        let first_accumulated = passed.len() + 1;
+        let mut accumulations = Vec::new();
+        for &(binding, local) in &accumulated {
+            let name = self.local_name(local);
+            passed.push((name, self.local_type(local), Mode::InOut, Some(binding)));
+            accumulations.push(Place::from(local));
+        }
 
         let mut nested = self.nested(statement, &passed);
+        nested.accumulated = (first_accumulated..=passed.len()).map(Local::new).collect();
         nested.iteration(statement, offset.then_some(step));
         let body = match nested.finish() {
             Ok(body) => body,
@@ -147,7 +151,7 @@ impl<'db> Builder<'db> {
             count: Operand::Copy(Place::from(count)),
             arguments,
             reductions,
-            accumulations: Vec::new(),
+            accumulations,
             target,
         });
     }

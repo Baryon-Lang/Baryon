@@ -205,6 +205,9 @@ impl<'db> Builder<'db> {
         let Some(place) = self.place(target) else {
             return;
         };
+        if self.accumulated.contains(&place.local) {
+            return self.accumulate(place, operator, ty, value, statement);
+        }
         if array {
             return self.augmented_array(place, ty, operator, value, statement);
         }
@@ -320,9 +323,6 @@ impl<'db> Builder<'db> {
         let Some(variable) = self.target_variable(target) else {
             return self.unsupported(target, "`for` loops that unpack");
         };
-        if self.is_prange(iterator) && self.has_keyword(iterator) {
-            return self.unsupported(iterator, "`accumulate=` in `prange`");
-        }
         let Some((first, bound, step)) = self.range(iterator) else {
             return;
         };
@@ -394,6 +394,7 @@ impl<'db> Builder<'db> {
     /// the start and stop nodes, the start `None` when left out, and the step's value. `None`
     /// after an error when `iterator` is not such a call.
     fn range(&mut self, iterator: NodeId) -> Option<(Option<NodeId>, NodeId, i128)> {
+        let keywords = self.keyword_values(iterator);
         let arguments = self
             .typed
             .call(iterator)
@@ -405,6 +406,7 @@ impl<'db> Builder<'db> {
                 call.arguments
                     .iter()
                     .map(|argument| argument.map(|key| key.0))
+                    .filter(|argument| argument.is_none_or(|node| !keywords.contains(&node)))
                     .collect::<Option<Vec<NodeId>>>()
             });
         let (first, bound, stride) = match arguments.as_deref() {
