@@ -264,7 +264,7 @@ impl Writer<'_> {
             } => {
                 let mut values = self.arguments(arguments);
                 values.extend(reductions.iter().map(|reduction| {
-                    let operator = binary_name(reduction.operator);
+                    let operator = reduction.operator.name();
                     format!("reduce {operator} {}", place_text(&reduction.place))
                 }));
                 format!(

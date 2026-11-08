@@ -100,8 +100,8 @@ pub use operand::{
 };
 pub use place::{Place, Projection};
 pub use statement::{
-    Argument, Builtin, Callee, Check, ErrorEdge, Reduction, Statement, StatementKind, Terminator,
-    TerminatorKind,
+    Argument, Builtin, Callee, Check, ErrorEdge, Reduction, ReductionOperator, Statement,
+    StatementKind, Terminator, TerminatorKind,
 };
 pub use validate::Invalid;
 
