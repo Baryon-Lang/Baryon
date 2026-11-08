@@ -8,7 +8,8 @@
 //! error leaves the destination as it was.
 
 use crate::Unsupported;
-use crate::function::{Function, block_label, global};
+use crate::function::{Function, block_label};
+use crate::literal::global;
 use crate::ty::Repr;
 use mir::{Argument, BlockId, Builtin, Callee, ErrorEdge, Place};
 

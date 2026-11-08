@@ -10,7 +10,8 @@
 
 use crate::Unsupported;
 use crate::debug::UNWIND_TABLE;
-use crate::function::{Function, global};
+use crate::function::Function;
+use crate::literal::global;
 use crate::print::STDERR;
 use mir::Body;
 use std::collections::BTreeMap;
