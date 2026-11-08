@@ -259,6 +259,15 @@ pub enum Builtin {
     /// costs amortized constant time per element, as Python's and Rust's do. Running out of
     /// memory panics; the call cannot fail otherwise.
     Append,
+    /// `random.Philox(seed, stream)`: two arguments, the seed and the stream, each an `i64`
+    /// passed `Owned`; the destination has type `Philox`. It makes the generator whose numbers
+    /// match `NumPy`'s `Generator(Philox(key=seed).jumped(stream))` (decision 0028). A negative
+    /// seed or stream panics; the call cannot fail otherwise.
+    Philox,
+    /// `generator.uniform()`: one argument, a `Philox` passed `InOut`; the destination has type
+    /// `f64`. It draws the generator's next 64-bit output `u` and gives `(u >> 11) * 2**-53`, a
+    /// float in `[0, 1)`, as `NumPy`'s `Generator.random()` does. The call cannot fail.
+    Uniform,
 }
 
 impl Builtin {
@@ -269,6 +278,8 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Math(mir::MathFunction::Sqrt).name(), "math.sqrt");
     /// assert_eq!(mir::Builtin::Sum.name(), "sum");
     /// assert_eq!(mir::Builtin::Append.name(), "list.append");
+    /// assert_eq!(mir::Builtin::Philox.name(), "random.Philox");
+    /// assert_eq!(mir::Builtin::Uniform.name(), "Philox.uniform");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -277,6 +288,8 @@ impl Builtin {
             Self::Math(function) => function.name(),
             Self::Sum => "sum",
             Self::Append => "list.append",
+            Self::Philox => "random.Philox",
+            Self::Uniform => "Philox.uniform",
         }
     }
 }

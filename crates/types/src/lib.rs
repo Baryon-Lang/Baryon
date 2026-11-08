@@ -67,6 +67,44 @@ pub use shape::Shape;
 use database::File;
 use syntax::NodeId;
 
+/// A type of the standard library that the compiler knows by name (decision 0028). Each one has
+/// a fixed layout and owns no heap memory; the checker types its operations, and lowering and the
+/// backend build them as built-in calls rather than Baryon code.
+///
+/// ```
+/// assert_eq!(types::StandardType::Philox.name(), "Philox");
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, salsa::SalsaValue)]
+pub enum StandardType {
+    /// `random.Philox`: a Philox4x64-10 counter-based random number generator whose numbers match
+    /// `numpy.random.Philox` bit for bit. 88 bytes: the key (2 words), the counter (4 words), the
+    /// current block's outputs (4 words) and how many of them are used (1 word). It moves rather
+    /// than copies, so a copy can never repeat its original's numbers by accident.
+    Philox,
+}
+
+impl StandardType {
+    /// The name a program writes the type by.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Philox => "Philox",
+        }
+    }
+
+    /// The module of the standard library that defines it.
+    ///
+    /// ```
+    /// assert_eq!(types::StandardType::Philox.module(), "random");
+    /// ```
+    #[must_use]
+    pub fn module(self) -> &'static str {
+        match self {
+            Self::Philox => "random",
+        }
+    }
+}
+
 /// What a [`Type`] is.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, salsa::SalsaValue)]
 pub enum TypeKind<'db> {
@@ -119,6 +157,9 @@ pub enum TypeKind<'db> {
         /// a type the program cannot spell.
         callable: Type<'db>,
     },
+    /// A type of the standard library that the compiler builds in until the library can define
+    /// it in Baryon (decision 0028), such as `random.Philox`.
+    Standard(StandardType),
     /// `Raises[T, E]`: what a function that can fail returns, a `T` or one of the errors.
     Fallible {
         /// The type returned on success.

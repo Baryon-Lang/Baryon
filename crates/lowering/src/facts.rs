@@ -20,7 +20,9 @@ impl<'db> Builder<'db> {
             | TypeKind::Callable { .. }
             | TypeKind::Function { .. }
             | TypeKind::Unknown => true,
-            TypeKind::Str | TypeKind::List(_) | TypeKind::Array { .. } => false,
+            TypeKind::Str | TypeKind::List(_) | TypeKind::Array { .. } | TypeKind::Standard(_) => {
+                false
+            }
             TypeKind::Tuple(items) => items.iter().all(|&item| self.is_copy(item)),
             TypeKind::Optional(value) => self.is_copy(*value),
             TypeKind::Fallible { value, errors } => {

@@ -271,6 +271,7 @@ impl<'db> Substitution<'_, 'db> {
             | TypeKind::Str
             | TypeKind::None
             | TypeKind::Function { .. }
+            | TypeKind::Standard(_)
             | TypeKind::Unknown => {
                 return ty;
             }

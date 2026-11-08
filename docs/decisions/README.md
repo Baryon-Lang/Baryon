@@ -60,4 +60,5 @@ What becomes easier, what becomes harder, and what we give up.
 | [0025. The VS Code extension lives in `editors/vscode/` and highlights with Python's grammar](0025-vscode-extension.md) | Accepted |
 | [0026. A function passed as an argument is a compile-time argument, compiled once per function](0026-functions-as-arguments.md) | Accepted |
 | [0027. When a default parameter value is evaluated](0027-default-parameter-evaluation.md) | Accepted |
+| [0028. `random.Philox` gives the same numbers as NumPy's Philox, and the compiler builds it in](0028-philox-random-numbers.md) | Accepted |
 | [0029. The runtime keeps the standard library; programs drop unused code, not `std`](0029-runtime-size.md) | Accepted |
