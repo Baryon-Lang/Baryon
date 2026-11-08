@@ -341,7 +341,8 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                         f64::from_bits(*bits),
                         self.types.value(constant.ty)? == "float",
                     ),
-                    ConstantValue::Complex { .. } | ConstantValue::Str(_) => {
+                    ConstantValue::Str(text) => self.text_constant(text),
+                    ConstantValue::Complex { .. } => {
                         return Err(self.types.unsupported(constant.ty));
                     }
                 };

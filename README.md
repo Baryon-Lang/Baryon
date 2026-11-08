@@ -36,7 +36,7 @@ compiler parses source files, rejects the Python constructs the language does no
 reports syntax errors, module errors, undefined names, bad imports and type errors with
 `npl check`. `npl build <directory> <output>` compiles a package through LLVM into an executable
 that runs the `main` function in `main.npl`; it handles numbers, control flow, calls, structs,
-arrays, optionals, errors, `assert` and `print` so far, with `clang` installed. `npl run
+arrays, optionals, `str` values, errors, `assert` and `print` so far, with `clang` installed. `npl run
 <directory>` builds and runs it in one step. `npl lsp` is a language server that shows the same
 diagnostics in any editor with a Language Server Protocol client, as you type.
 `npl doc` writes a package's documentation strings as Markdown pages.

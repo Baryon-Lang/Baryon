@@ -9,6 +9,7 @@ mod debug;
 mod errors;
 mod panics;
 mod print;
+mod text;
 
 use crate::{Module, Unsupported};
 use database::{Db, File, Package, ParsedFile, Resolution};

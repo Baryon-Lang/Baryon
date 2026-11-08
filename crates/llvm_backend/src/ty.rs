@@ -15,11 +15,13 @@
 //! | `Raises[T, E1 \| E2]` | `{ i8, [n x iA] }`: the tag, then room for the largest of `T` and the errors |
 //! | `Array[T, rank]` | its header `{ ptr, [rank x i64], [rank x i64] }`: the elements, each length, each stride |
 //! | `T \| None` | `{ T, i1 }`: the value, then whether it is present; `None` is all zeros |
+//! | `str` | `{ ptr, i64 }`: the bytes, then the length with a "not owned" top bit (decision 0022) |
 //!
-//! The other types (complex numbers, strings and lists) are
+//! The other types (complex numbers and lists) are
 //! [`Unsupported`] until the slices of roadmap 1.10 that add them.
 
 use crate::Unsupported;
+use crate::text::TEXT;
 use types::{Declared, Float, Nominal, Primitive, Type, TypeKind};
 
 /// What representing a type needs: the database types are read from, and what each struct and
@@ -57,6 +59,7 @@ impl<'db> Types<'_, 'db> {
             TypeKind::Primitive(Primitive::Integer(integer)) => Ok(format!("i{}", integer.bits())),
             TypeKind::Primitive(Primitive::Float(Float::F32)) => Ok("float".to_owned()),
             TypeKind::Primitive(Primitive::Float(Float::F64)) => Ok("double".to_owned()),
+            TypeKind::Str => Ok(TEXT.to_owned()),
             TypeKind::Tuple(items) => self.structure(items),
             TypeKind::Struct(nominal) => match (self.declared)(nominal) {
                 Declared::Struct(fields) => self.structure(&fields),
