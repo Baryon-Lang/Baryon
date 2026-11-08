@@ -52,10 +52,10 @@ impl From<Local> for Place {
 pub enum Projection {
     /// A field of a struct or an item of a tuple, by its position in declaration order.
     Field(u32),
-    /// One element of an `Array` or `Fixed`, at one index per dimension, each held in a local
-    /// of an integer type. The step itself is unchecked: lowering puts a bounds
-    /// [`Check`](crate::Check) before it unless the program wrote `a.unchecked[i]`
-    /// (decision 0010).
+    /// One element of an `Array` or `Fixed`, at one index per dimension, or of a `list`, at
+    /// one index, each held in a local of an integer type. The step itself is unchecked:
+    /// lowering puts a bounds [`Check`](crate::Check) before it unless the program wrote
+    /// `a.unchecked[i]` (decision 0010).
     Index(Vec<Local>),
     /// The value inside a `T | None`. Valid only where the value is known to be present.
     Value,
