@@ -7,8 +7,8 @@ use crate::literal::{float, global, wrap};
 use crate::panic::Constants;
 use crate::ty::{Repr, Types};
 use mir::{
-    BlockId, Body, Check, ConstantValue, LocalKind, Operand, Place, Projection, Statement,
-    StatementKind, Terminator, TerminatorKind,
+    BlockId, Body, ConstantValue, LocalKind, Operand, Place, Projection, Statement, StatementKind,
+    Terminator, TerminatorKind,
 };
 use source::Span;
 use std::collections::BTreeMap;
@@ -289,7 +289,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 check,
                 target,
             } => {
-                if self.constants.wraps && matches!(check, Check::NoOverflow(_)) {
+                if self.constants.wraps && check.is_overflow() {
                     // A release build keeps the wrapped result and drops the check.
                     self.line(&format!("br label %{}", block_label(*target)));
                     return Ok(());

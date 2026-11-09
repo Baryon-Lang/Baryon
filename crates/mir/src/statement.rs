@@ -501,8 +501,22 @@ pub enum Check<'db> {
     },
     /// An integer operation did not overflow.
     NoOverflow(BinaryOperator),
+    /// An integer `**` did not overflow. Lowering writes integer `x ** n` as repeated squaring,
+    /// whose multiplications each carry this check, so the panic names the `**` the program
+    /// wrote rather than a `*` it did not.
+    NoPowerOverflow,
     /// A divisor is not zero.
     NonZeroDivisor,
+    /// The step of a `range` is not zero, which Python reports as a `ValueError`. Lowering
+    /// writes it only for a step that is not a constant; a constant zero is reported when
+    /// building.
+    NonZeroStep,
+    /// The exponent of an integer `**` is zero or more: a negative exponent would need a
+    /// fraction, which an integer cannot hold (language reference, "Errors and panics").
+    NonNegativeExponent {
+        /// The exponent, which the panic message names.
+        exponent: Operand<'db>,
+    },
     /// Two arrays combined element by element have the same length in one dimension, as
     /// whole-array arithmetic requires until broadcasting (roadmap 3.9).
     SameLength {
@@ -527,8 +541,30 @@ impl<'db> Check<'db> {
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
-            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::Assertion => Vec::new(),
+            Self::NonNegativeExponent { exponent } => vec![exponent],
+            Self::NoOverflow(_)
+            | Self::NoPowerOverflow
+            | Self::NonZeroDivisor
+            | Self::NonZeroStep
+            | Self::Assertion => Vec::new(),
         }
+    }
+
+    /// Whether the check is an integer overflow check, which a release build leaves out so the
+    /// result wraps (decision 0030).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mir::{BinaryOperator, Check};
+    ///
+    /// assert!(Check::NoOverflow(BinaryOperator::Add).is_overflow());
+    /// assert!(Check::NoPowerOverflow.is_overflow());
+    /// assert!(!Check::NonZeroStep.is_overflow());
+    /// ```
+    #[must_use]
+    pub fn is_overflow(&self) -> bool {
+        matches!(self, Self::NoOverflow(_) | Self::NoPowerOverflow)
     }
 
     /// The operands the check reports, to change in place, in the order of
@@ -539,7 +575,12 @@ impl<'db> Check<'db> {
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
-            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::Assertion => Vec::new(),
+            Self::NonNegativeExponent { exponent } => vec![exponent],
+            Self::NoOverflow(_)
+            | Self::NoPowerOverflow
+            | Self::NonZeroDivisor
+            | Self::NonZeroStep
+            | Self::Assertion => Vec::new(),
         }
     }
 }
