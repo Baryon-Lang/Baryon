@@ -72,6 +72,11 @@ impl<'db> Builder<'db> {
                 {
                     self.min_max(place, name == "min", *first, rest, node);
                 }
+                (Some(("Array" | "Fixed", "fill")), [array, value])
+                    if matches!(ty.kind(self.db), TypeKind::None) =>
+                {
+                    self.array_fill(place, (*array, *value), node);
+                }
                 (Some(("Array", function @ ("zeros" | "ones" | "fill"))), _) => {
                     self.new_array(&place, function, &arguments, node);
                 }
@@ -86,9 +91,13 @@ impl<'db> Builder<'db> {
                 (Some(("Array" | "Fixed", "sum")), [array]) => {
                     self.array_sum(place, *array, node);
                 }
-                (Some(("Fixed", "dot")), [left, right]) => {
-                    self.fixed_dot(place, (*left, *right), node);
+                (Some(("Array" | "Fixed", function @ ("min" | "max"))), [array]) => {
+                    self.array_extreme(place, function == "min", *array, node);
                 }
+                (Some(("Array" | "Fixed", "dot")), [left, right]) => {
+                    self.array_dot(place, (*left, *right), node);
+                }
+                (Some(("Array", "round")), [array]) => self.array_round(place, *array, node),
                 (Some(("Fixed", "round")), [array]) => self.fixed_round(place, *array, node),
                 (Some(("math", member)), _) => self.math_function(place, member, &arguments, node),
                 (Some(("random", "Philox")), [seed, rest @ ..]) if rest.len() <= 1 => {

@@ -98,7 +98,12 @@ impl<'db> Builder<'db> {
     /// `Fixed` array or a struct built from such values, so `Array.zeros(n, dtype=Particle)`
     /// zeroes every field. `None` after reporting a type with no such value: an enum, whose
     /// members are names rather than numbers, a generic struct, and `ones` of a struct.
-    fn filled(&mut self, ty: Type<'db>, number: i64, node: NodeId) -> Option<Operand<'db>> {
+    pub(crate) fn filled(
+        &mut self,
+        ty: Type<'db>,
+        number: i64,
+        node: NodeId,
+    ) -> Option<Operand<'db>> {
         let parts = match ty.kind(self.db) {
             TypeKind::Primitive(_) => {
                 return Some(Operand::Constant(self.number_constant(ty, number)));
