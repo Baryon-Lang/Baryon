@@ -8,6 +8,9 @@ its shape are in [decision 0025](../../docs/decisions/0025-vscode-extension.md).
 
 ## Install
 
+[Coding Baryon in VS Code](../../docs/guide/vscode.md) is the step-by-step setup for testers,
+from building `baryon` to running a first program; this section is the short version.
+
 The extension is not on the Visual Studio Marketplace yet. Install it from a `.vsix` file, a
 packaged extension:
 
