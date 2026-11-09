@@ -29,10 +29,15 @@ impl<'db> Builder<'db> {
         let ty = self.ty(node);
         match &call.callee {
             types::Callee::Function(_) | types::Callee::Method(_) => {}
-            types::Callee::Constructor(_) => {
+            types::Callee::Constructor(item) => {
+                let fields = self.field_types(*item);
                 let operands = arguments
                     .into_iter()
-                    .map(|argument| self.operand(argument))
+                    .enumerate()
+                    .map(|(position, argument)| match fields.get(position) {
+                        Some(&field) if !self.is_generic(field) => self.operand_as(argument, field),
+                        _ => self.operand(argument),
+                    })
                     .collect();
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
@@ -253,6 +258,15 @@ impl<'db> Builder<'db> {
             node,
         );
         self.start(next);
+    }
+
+    /// The declared types of the fields of the struct `item`, in declaration order; empty when
+    /// `item` is not a struct. A generic struct's fields keep their type parameters.
+    fn field_types(&self, item: Item<'db>) -> Vec<types::Type<'db>> {
+        match &self.db.declaration(item).declaration {
+            Declaration::Struct { fields, .. } => fields.iter().map(|field| field.ty).collect(),
+            _ => Vec::new(),
+        }
     }
 
     /// `print(arguments…, sep=…, end=…)`, its `None` result written into `place`. The call
