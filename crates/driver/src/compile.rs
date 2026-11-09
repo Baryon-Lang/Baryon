@@ -4,8 +4,10 @@
 //!
 //! This is the prototype of roadmap 1.11.3. It compiles every function and method that has no
 //! type parameters, then collects the instances of generic functions and of methods of generic
-//! classes they call (roadmap 1.9.5 and 1.9.18, decision 0018): each call of a generic function at concrete types adds that instance, whose
-//! body is the generic body with the types substituted, and whose own calls are followed in turn.
+//! classes they call (roadmap 1.9.5 and 1.9.18, decision 0018): each call of a generic function
+//! at concrete types adds that instance, whose body is the generic body with the types
+//! substituted, and whose own calls are followed in turn. It also compiles the function that
+//! computes each default a call leaves out, when that call is found (decision 0027).
 //! An instance's symbol is its function's with the type arguments after it: `main.square[f64]`.
 //! A function lowering or the backend cannot handle yet is reported once, at its name.
 
