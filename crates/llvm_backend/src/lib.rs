@@ -430,7 +430,8 @@ impl<'a, 'db> Module<'a, 'db> {
 
     /// Makes integer overflow wrap around instead of panicking, as a release build does
     /// (decision 0030): every [`Assert`](mir::TerminatorKind::Assert) of
-    /// [`NoOverflow`](mir::Check::NoOverflow) is left out, so the
+    /// [`NoOverflow`](mir::Check::NoOverflow) or [`NoPowerOverflow`](mir::Check::NoPowerOverflow)
+    /// is left out ([`Check::is_overflow`](mir::Check::is_overflow)), so the
     /// [`CheckedBinary`](mir::Rvalue::CheckedBinary) before it keeps its wrapped result, and
     /// `prange` reductions of integers combine with wrapping `add` and `mul`. Every other check,
     /// such as bounds and division by zero, stays. Call it before [`define`](Self::define).
