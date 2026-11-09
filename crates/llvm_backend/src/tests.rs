@@ -7,6 +7,7 @@
 mod arrays;
 mod debug;
 mod errors;
+mod math;
 mod panics;
 mod parallel;
 mod print;

@@ -79,7 +79,7 @@ pub enum Projection {
     ///
     /// The step itself is unchecked, like [`Index`](Projection::Index): lowering puts a
     /// [`SliceInBounds`](crate::Check::SliceInBounds) check and, for a step that is not a
-    /// constant, a [`NonZeroStep`](crate::Check::NonZeroStep) check before it.
+    /// constant, a [`NonZeroStep`](crate::Check::NonZeroStep) check with `slice: true` before it.
     Slice(Vec<SliceIndex>),
     /// The value inside a `T | None`. Valid only where the value is known to be present.
     Value,

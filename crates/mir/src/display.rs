@@ -400,9 +400,14 @@ impl Writer<'_> {
                 self.operand(stop),
                 self.operand(length)
             ),
-            Check::NonZeroStep => "non-zero step".to_owned(),
             Check::NoOverflow(operator) => format!("no overflow: {}", binary_name(*operator)),
+            Check::NoPowerOverflow => "no overflow: power".to_owned(),
             Check::NonZeroDivisor => "non-zero divisor".to_owned(),
+            Check::NonZeroStep { slice: false } => "non-zero step".to_owned(),
+            Check::NonZeroStep { slice: true } => "non-zero slice step".to_owned(),
+            Check::NonNegativeExponent { exponent } => {
+                format!("non-negative exponent: {}", self.operand(exponent))
+            }
             Check::SameLength {
                 dimension,
                 expected,

@@ -176,7 +176,7 @@ fn slice_checks_report_the_range() {
         length: Operand::Copy(Local::new(4).into()),
     };
     assert_eq!(check.operands().len(), 3);
-    assert!(Check::NonZeroStep.operands().is_empty());
+    assert!(Check::NonZeroStep { slice: true }.operands().is_empty());
     body.push_block(end(TerminatorKind::Assert {
         condition: Operand::Copy(inside.into()),
         check,
@@ -184,7 +184,7 @@ fn slice_checks_report_the_range() {
     }));
     body.push_block(end(TerminatorKind::Assert {
         condition: Operand::Copy(inside.into()),
-        check: Check::NonZeroStep,
+        check: Check::NonZeroStep { slice: true },
         target: BlockId::new(2),
     }));
     body.push_block(end(TerminatorKind::Return));
@@ -194,5 +194,5 @@ fn slice_checks_report_the_range() {
     assert!(text.contains(
         "assert(copy _6, slice in bounds in dimension 1: copy _2:copy _3 within copy _4) -> bb1;"
     ));
-    assert!(text.contains("assert(copy _6, non-zero step) -> bb2;"));
+    assert!(text.contains("assert(copy _6, non-zero slice step) -> bb2;"));
 }

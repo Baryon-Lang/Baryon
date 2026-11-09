@@ -5,9 +5,9 @@
 //! [basic blocks](BasicBlock). Each block runs its [statements](Statement) in order and ends in
 //! one [`Terminator`], the only place control flow branches. Memory is read and written through
 //! [places](Place): a local followed by field, element, slice and value steps, such as
-//! `particles[i].velocity` or the view `grid[:, k]`. Decision 0018 explains why the IR has this shape rather than static
-//! single assignment form: the reference rules, `noalias` metadata and drops are all stated over
-//! places.
+//! `particles[i].velocity` or the view `grid[:, k]`. Decision 0018 explains why the IR has this
+//! shape rather than static single assignment form: the reference rules, `noalias` metadata and
+//! drops are all stated over places.
 //!
 //! Where it sits: lowering (an implementation crate) builds one body per function from the typed
 //! syntax tree. Drop elaboration, monomorphization and the optimizations rewrite bodies, and the
