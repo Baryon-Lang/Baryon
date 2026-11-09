@@ -163,7 +163,7 @@ def main():
         .add_file("main.byn", program.strip_prefix('\n').unwrap())
         .unwrap();
     assert_eq!(check_one(program), "");
-    let errors = session.compile(None).unwrap_err();
+    let errors = session.compile(None, driver::Profile::Debug).unwrap_err();
     let rendered: Vec<String> = errors
         .iter()
         .map(|error| diagnostics::render(error, &session).to_string())

@@ -115,8 +115,10 @@ The variable's value from before the loop comes in last. With 1024 chunks the tr
 deep, so the rounding error of a float sum grows with 10 additions, not 1023.
 
 The result can still differ from the serial loop's in the last bits, because the order of the
-additions differs. Integer reductions are exact, and one that overflows panics, whether the
-overflow happens inside a chunk or when the partials combine.
+additions differs. Integer reductions are exact. In a debug build one that overflows panics,
+whether the overflow happens inside a chunk or when the partials combine; a release build wraps
+both, which gives the same bits on any number of threads
+([Integer overflow](types.md#integer-overflow)).
 
 Reproducibility is the design plan's default because a simulation whose result changes with the
 machine cannot be debugged or checked against a previous run. Its cost is that chunk sizes cannot

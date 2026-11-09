@@ -39,7 +39,7 @@ pub(crate) fn lower(program: &str, name: &str) -> String {
 }
 
 /// A `for` over `range` keeps a hidden counter, `or` tests its right side only when the left is
-/// false, and `+=` adds in place.
+/// false, and `+=` adds in place; `n + 1` and `+=` check for overflow (decision 0030).
 #[test]
 fn loops_and_conditions_become_blocks() {
     let program = "\
@@ -59,57 +59,73 @@ fn(_1: i64) -> i64 {
     let _3: i64; // i
     let _4: i64;
     let _5: i64;
-    let _6: bool;
+    let _6: tuple[i64, bool];
     let _7: bool;
-    let _8: i64;
-    let _9: i64;
+    let _8: bool;
+    let _9: bool;
+    let _10: i64;
+    let _11: i64;
+    let _12: tuple[i64, bool];
+    let _13: bool;
 
     bb0: {
         _2 = 0_i64;
         _4 = 1_i64;
-        _5 = Add(copy _1, 1_i64);
-        goto -> bb1;
+        _6 = CheckedAdd(copy _1, 1_i64);
+        _7 = Not(copy _6.1);
+        assert(copy _7, no overflow: Add) -> bb1;
     }
 
     bb1: {
-        _6 = Less(copy _4, copy _5);
-        branch copy _6 -> [true: bb2, false: bb4];
+        _5 = copy _6.0;
+        goto -> bb2;
     }
 
     bb2: {
-        _3 = copy _4;
-        _8 = Remainder(copy _3, 3_i64);
-        _7 = Equal(copy _8, 0_i64);
-        branch copy _7 -> [true: bb6, false: bb5];
+        _8 = Less(copy _4, copy _5);
+        branch copy _8 -> [true: bb3, false: bb5];
     }
 
     bb3: {
-        _4 = Add(copy _4, 1_i64);
-        goto -> bb1;
+        _3 = copy _4;
+        _10 = Remainder(copy _3, 3_i64);
+        _9 = Equal(copy _10, 0_i64);
+        branch copy _9 -> [true: bb7, false: bb6];
     }
 
     bb4: {
+        _4 = Add(copy _4, 1_i64);
+        goto -> bb2;
+    }
+
+    bb5: {
         _0 = copy _2;
         return;
     }
 
-    bb5: {
-        _9 = Remainder(copy _3, 5_i64);
-        _7 = Equal(copy _9, 0_i64);
-        goto -> bb6;
-    }
-
     bb6: {
-        branch copy _7 -> [true: bb7, false: bb8];
+        _11 = Remainder(copy _3, 5_i64);
+        _9 = Equal(copy _11, 0_i64);
+        goto -> bb7;
     }
 
     bb7: {
-        _2 = Add(copy _2, copy _3);
-        goto -> bb8;
+        branch copy _9 -> [true: bb8, false: bb9];
     }
 
     bb8: {
-        goto -> bb3;
+        _12 = CheckedAdd(copy _2, copy _3);
+        _13 = Not(copy _12.1);
+        assert(copy _13, no overflow: Add) -> bb10;
+    }
+
+    bb9: {
+        goto -> bb4;
+    }
+
+    bb10: {
+        _2 = copy _12.0;
+        goto -> bb9;
     }
 }
 "

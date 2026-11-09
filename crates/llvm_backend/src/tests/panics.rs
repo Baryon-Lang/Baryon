@@ -2,7 +2,7 @@
 
 use super::{
     Database, Module, SOURCE, build, conversion, end, no_structs, parameter, primitive, run,
-    sources, span, symbol_of,
+    sources, span, step_body, symbol_of,
 };
 use mir::{
     BinaryOperator, BlockId, Body, Callee, Check, Local, LocalKind, Operand, Rvalue, Statement,
@@ -211,4 +211,41 @@ fn conversions_check_their_range() {
     assert_eq!(convert("integer", "255").as_deref(), Ok("255\n"));
     assert_eq!(convert("integer", "256"), lost("u8"));
     assert_eq!(convert("integer", "-1"), lost("u8"));
+}
+
+/// After [`Module::wrap_on_overflow`], as in a release build (decision 0030), the overflow
+/// `Assert` becomes a jump and the sum wraps around instead of panicking.
+#[test]
+fn release_builds_wrap_on_overflow() {
+    let database = Database::default();
+    let body = step_body(&database);
+    let symbol = symbol_of(&database);
+    let sources = sources();
+    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    module.wrap_on_overflow();
+    module.define("step", &body, &[]).unwrap();
+    let text = module.finish();
+    assert!(
+        text.contains("  store i1 %t5, ptr %_4\n  br label %bb1\nbb1:"),
+        "{text}"
+    );
+    assert!(!text.contains("baryon_rt_panic"), "{text}");
+    let main = r#"
+        #include <stdio.h>
+        #include <stdint.h>
+        #include <stdlib.h>
+        void step(int64_t *, int64_t);
+        void report(int64_t total) { printf("%lld\n", (long long)total); }
+        int main(int count, char **arguments) {
+            (void)count;
+            int64_t total = strtoll(arguments[1], NULL, 10);
+            step(&total, 5);
+            return 0;
+        }
+    "#;
+    let executable = build("step-release", &text, main);
+    assert_eq!(
+        run(&executable, &["9223372036854775807"]).as_deref(),
+        Ok("-9223372036854775804\n")
+    );
 }

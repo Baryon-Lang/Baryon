@@ -2,15 +2,15 @@
 
 `baryon` is the one tool for a Baryon program: it checks, builds, runs, tests and documents a
 package, and serves an editor. This chapter lists every command, what it needs, what it prints and
-the exit status it ends with. It is a prototype (roadmap 1.11): arguments are positional, and there
-are no options yet.
+the exit status it ends with. It is a prototype (roadmap 1.11): arguments are positional, and the
+one option is `--release`.
 
 | Command | What it does |
 | --- | --- |
 | [`baryon check <directory>`](#baryon-check) | Reports every error and warning in the package |
-| [`baryon build <directory> <output>`](#baryon-build) | Compiles the package into the executable `output` |
-| [`baryon run <directory>`](#baryon-run) | Builds the package and runs it |
-| [`baryon test <directory>`](#baryon-test) | Builds and runs every `@test` function |
+| [`baryon build [--release] <directory> <output>`](#baryon-build) | Compiles the package into the executable `output` |
+| [`baryon run [--release] <directory>`](#baryon-run) | Builds the package and runs it |
+| [`baryon test [--release] <directory>`](#baryon-test) | Builds and runs every `@test` function |
 | [`baryon doc <directory> <output>`](#baryon-doc) | Writes the package's documentation as Markdown |
 | [`baryon lsp`](#baryon-lsp) | Runs the language server an editor talks to |
 | `baryon --version` | Prints the release, such as `baryon 0.1.0`; put it in a bug report |
@@ -62,7 +62,7 @@ standard output and exit with 0. Called with no arguments or wrong ones, `baryon
 line to standard error and exits with 2:
 
 ```text
-baryon: usage: baryon check <directory> | baryon build <directory> <output> | baryon run <directory> | baryon test <directory> | baryon doc <directory> <output> | baryon lsp
+baryon: usage: baryon check <directory> | baryon build [--release] <directory> <output> | baryon run [--release] <directory> | baryon test [--release] <directory> | baryon doc <directory> <output> | baryon lsp
 ```
 
 ## `baryon check`
@@ -97,7 +97,7 @@ that checks may still use a feature `build` cannot compile yet; see
 ## `baryon build`
 
 ```text
-baryon build <directory> <output>
+baryon build [--release] <directory> <output>
 ```
 
 Checks the package as `check` does, compiles it, and writes the executable `output`, linked with
@@ -108,7 +108,21 @@ errors printed and exits with 1, with nothing written. Warnings are shown only b
 The program is optimized (`clang -O2`) and keeps its line tables, so a panic prints a backtrace of
 `.byn` lines and `gdb` and `lldb` stop at and show them. On macOS the line tables are written to
 `<output>.dSYM` beside the executable; keep it with the executable for backtraces to name lines.
-There is one build mode for now; debug and release builds come later.
+
+### Debug and release builds
+
+`build` makes a *debug build* unless given `--release`, anywhere after the command; `run` and
+`test` take the same flag. Both builds are optimized and keep their line tables. They differ in one
+thing ([decision 0030](../decisions/0030-integer-overflow.md)):
+
+| Build | Integer arithmetic that overflows |
+| --- | --- |
+| Debug, the default | Panics with the operator and its location: ``panic: integer overflow in `+` `` |
+| Release, `--release` | Wraps around in two's complement, and the check costs nothing |
+
+Develop and test in a debug build, where an overflow stops at the line that caused it. Time and
+ship a release build: a debug build cannot vectorize a loop that adds integers. Every other check,
+such as array bounds, stays on in both ([Integer overflow](types.md#integer-overflow)).
 
 Running the executable runs `main`. It exits with:
 
@@ -121,7 +135,7 @@ Running the executable runs `main`. It exits with:
 ## `baryon run`
 
 ```text
-baryon run <directory>
+baryon run [--release] <directory>
 ```
 
 Builds the package as `build` does, into a scratch directory, runs it with the terminal's standard
@@ -138,7 +152,7 @@ hello, world
 ## `baryon test`
 
 ```text
-baryon test <directory>
+baryon test [--release] <directory>
 ```
 
 Builds every top-level function decorated `@test` into one test program and runs each test in its

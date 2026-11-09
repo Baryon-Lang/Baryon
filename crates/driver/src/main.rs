@@ -2,9 +2,9 @@
 //!
 //! ```text
 //! baryon check <directory>
-//! baryon build <directory> <output>
-//! baryon run <directory>
-//! baryon test <directory>
+//! baryon build [--release] <directory> <output>
+//! baryon run [--release] <directory>
+//! baryon test [--release] <directory>
 //! baryon doc <directory> <output>
 //! baryon lsp
 //! baryon --version
@@ -28,6 +28,10 @@
 //! the exit status 1. The executable carries line tables, so `gdb` and `lldb` stop at and show
 //! `.byn` lines. This is a prototype (roadmap 1.11.3); a generic function is compiled once per
 //! type it is called at (roadmap 1.9.5).
+//!
+//! `build`, `run` and `test` make a debug build unless given `--release`, anywhere after the
+//! command. Both are optimized and carry line tables; in a debug build, integer arithmetic that
+//! overflows panics, and in a release build it wraps around ([`Profile`], decision 0030).
 //!
 //! `baryon run` builds the package the same way into a scratch directory, runs the program with
 //! the terminal's standard input and output, removes it, and exits with the program's own exit
@@ -55,27 +59,39 @@ mod package;
 mod runner;
 
 use diagnostics::{Diagnostic, Severity};
-use driver::Session;
+use driver::{Profile, Session};
 use std::io::{self, Write as _};
 use std::path::Path;
 use std::process::{Command, ExitCode};
 use std::{env, fs};
 
 /// How to call the command, printed when the arguments are wrong.
-const USAGE: &str = "usage: baryon check <directory> | baryon build <directory> <output> | baryon run <directory> | baryon test <directory> | baryon doc <directory> <output> | baryon lsp";
+const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] <directory> <output> | baryon run [--release] <directory> | baryon test [--release] <directory> | baryon doc <directory> <output> | baryon lsp";
+
+/// The flag that makes `build`, `run` and `test` compile a release build.
+const RELEASE: &str = "--release";
 
 fn main() -> ExitCode {
-    let arguments: Vec<String> = env::args().skip(1).collect();
+    let mut arguments: Vec<String> = env::args().skip(1).collect();
+    let builds = arguments
+        .first()
+        .is_some_and(|command| ["build", "run", "test"].contains(&command.as_str()));
+    let profile = if builds && arguments.iter().any(|argument| argument == RELEASE) {
+        arguments.retain(|argument| argument != RELEASE);
+        Profile::Release
+    } else {
+        Profile::Debug
+    };
     let outcome = match arguments.as_slice() {
         [command, directory] if command == "check" => check(Path::new(directory)),
         [command, directory, output] if command == "build" => {
-            build(Path::new(directory), Path::new(output))
+            build(Path::new(directory), Path::new(output), profile)
         }
-        [command, directory] if command == "run" => run(Path::new(directory)),
+        [command, directory] if command == "run" => run(Path::new(directory), profile),
         [command, directory, output] if command == "doc" => {
             document(Path::new(directory), Path::new(output))
         }
-        [command, directory] if command == "test" => test(Path::new(directory)),
+        [command, directory] if command == "test" => test(Path::new(directory), profile),
         [flag] if flag == "--version" || flag == "-V" => {
             // A tester's bug report starts with this line.
             println_to_stdout(&format!("baryon {}", env!("CARGO_PKG_VERSION")))
@@ -150,16 +166,17 @@ fn check(root: &Path) -> Result<ExitCode, String> {
     })
 }
 
-/// Runs `baryon build` on the package rooted at `root`, writing the executable `output`.
+/// Runs `baryon build` on the package rooted at `root`, writing the executable `output` built
+/// for `profile`.
 ///
 /// # Errors
 ///
 /// Fails with a message when a file cannot be read, or when `clang` or the runtime archive is
 /// missing or the link fails.
-fn build(root: &Path, output: &Path) -> Result<ExitCode, String> {
+fn build(root: &Path, output: &Path, profile: Profile) -> Result<ExitCode, String> {
     let files = match compile(root, output, |session, directory| {
         session
-            .compile(directory)
+            .compile(directory, profile)
             .map(|module| (module, Vec::new()))
     })? {
         Ok((files, _)) => files,
@@ -174,20 +191,21 @@ fn build(root: &Path, output: &Path) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Runs `baryon run` on the package rooted at `root`: builds it into a scratch directory, runs it,
-/// and returns its exit status. A program ended by a signal, which has no status, gives 1.
+/// Runs `baryon run` on the package rooted at `root`: builds it for `profile` into a scratch
+/// directory, runs it, and returns its exit status. A program ended by a signal, which has no
+/// status, gives 1.
 ///
 /// # Errors
 ///
 /// Fails with a message when the package cannot be built for the reasons [`build`] gives, or
 /// the program cannot be started.
-fn run(root: &Path) -> Result<ExitCode, String> {
+fn run(root: &Path, profile: Profile) -> Result<ExitCode, String> {
     let scratch = env::temp_dir().join(format!("baryon-run-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("program");
     let built = compile(root, &program, |session, directory| {
         session
-            .compile(directory)
+            .compile(directory, profile)
             .map(|module| (module, Vec::new()))
     });
     let ran = built.and_then(|built| match built {
@@ -204,18 +222,20 @@ fn run(root: &Path) -> Result<ExitCode, String> {
     ran
 }
 
-/// Runs `baryon test` on the package rooted at `root`: builds its test program into a scratch
-/// directory and runs each test ([`runner::run`]).
+/// Runs `baryon test` on the package rooted at `root`: builds its test program for `profile` into
+/// a scratch directory and runs each test ([`runner::run`]).
 ///
 /// # Errors
 ///
 /// Fails with a message when the package cannot be built for the reasons [`build`] gives, the
 /// program cannot be started, or the report cannot be written.
-fn test(root: &Path) -> Result<ExitCode, String> {
+fn test(root: &Path, profile: Profile) -> Result<ExitCode, String> {
     let scratch = env::temp_dir().join(format!("baryon-test-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("tests");
-    let built = compile(root, &program, Session::compile_tests);
+    let built = compile(root, &program, |session, directory| {
+        session.compile_tests(directory, profile)
+    });
     let ran = built.and_then(|built| match built {
         Ok((_, tests)) => runner::run(&program, &tests, &mut io::stdout().lock()),
         Err(code) => Ok(code),

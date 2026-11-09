@@ -331,7 +331,8 @@ impl<'db> Function<'_, '_, 'db> {
         })
     }
 
-    /// `a` plus or times `b`, integers, with a panic on overflow.
+    /// `a` plus or times `b`, integers, with a panic on overflow; wrapping instead in a release
+    /// build, as the loop body's own arithmetic does there (decision 0030).
     fn checked(
         &mut self,
         operator: BinaryOperator,
@@ -345,6 +346,9 @@ impl<'db> Function<'_, '_, 'db> {
         } else {
             "mul"
         };
+        if self.constants.wraps {
+            return self.emit(&format!("{operation} {llvm} {a}, {b}"));
+        }
         let sign = if signed { 's' } else { 'u' };
         let name = format!("llvm.{sign}{operation}.with.overflow.{llvm}");
         self.declare(

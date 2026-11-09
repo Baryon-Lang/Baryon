@@ -34,9 +34,9 @@ Linux.
 | Command | What it does |
 | --- | --- |
 | `baryon check <directory>` | Reports every syntax, module, name, type, ownership and parallel-loop error in a package, with Rust-style messages |
-| `baryon build <directory> <output>` | Compiles a package through LLVM and `clang` into a native executable that starts at `main` in `main.byn` |
-| `baryon run <directory>` | Builds and runs a package in one step |
-| `baryon test <directory>` | Runs every `@test` function and reports which passed, cargo-style |
+| `baryon build [--release] <directory> <output>` | Compiles a package through LLVM and `clang` into a native executable that starts at `main` in `main.byn` |
+| `baryon run [--release] <directory>` | Builds and runs a package in one step |
+| `baryon test [--release] <directory>` | Runs every `@test` function and reports which passed, cargo-style |
 | `baryon doc <directory> <output>` | Writes the package's documentation strings as Markdown pages |
 | `baryon lsp` | A language server that publishes `baryon check`'s diagnostics as the user types |
 
@@ -73,7 +73,11 @@ Protocol client can run `baryon lsp` directly.
   the `random` module, `==` and `in` on `str`, `**` on integers, and the rest that
   [What builds today](docs/reference/status.md) lists. Each is reported as "not lowered yet" or
   "not built yet", never miscompiled.
-- One build mode: integer overflow wraps instead of panicking, pending roadmap decision D.11.
+- Integer overflow panics in a debug build, the default, and wraps around with `--release`
+  ([decision 0030](docs/decisions/0030-integer-overflow.md)). Some operations are not checked
+  yet and wrap in both, such as arithmetic in generic functions and integer `a.sum()`; the panic
+  names the operator but not its operands. [What builds today](docs/reference/status.md) lists
+  them.
 - The language server reports diagnostics only: no go to definition, hover or completion yet
   (roadmap 1.16).
 - Speed is not yet compared with the C++ and Fortran baselines in [`bench/`](bench/README.md).

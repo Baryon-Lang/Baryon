@@ -20,6 +20,10 @@
 //!   of its own that calls the runtime's panic function (decision 0021) with the message and the
 //!   file, line and column, so the program prints what failed and where, and exits with status
 //!   101. The program links the `runtime` library for them.
+//! - **Integer overflow panics, or wraps in a release build.** A
+//!   [`CheckedBinary`](mir::Rvalue::CheckedBinary) is LLVM's `with.overflow` intrinsic, and the
+//!   `Assert` on its flag panics with "integer overflow in `+`". After
+//!   [`Module::wrap_on_overflow`] those asserts are left out (decision 0030).
 //! - **Integer arithmetic wraps**, as [`Binary`](mir::Rvalue::Binary) defines, and never reaches
 //!   LLVM's undefined cases: `x // -1` and `x % -1` are computed without `sdiv`'s overflow, and a
 //!   shift by the width or more gives what shifting one bit at a time would.
@@ -421,6 +425,40 @@ impl<'a, 'db> Module<'a, 'db> {
     /// ```
     pub fn debug_info(&mut self, directory: &str) {
         self.constants.debug = Some(debug::Debug::new(directory));
+    }
+
+    /// Makes integer overflow wrap around instead of panicking, as a release build does
+    /// (decision 0030): every [`Assert`](mir::TerminatorKind::Assert) of
+    /// [`NoOverflow`](mir::Check::NoOverflow) is left out, so the
+    /// [`CheckedBinary`](mir::Rvalue::CheckedBinary) before it keeps its wrapped result, and
+    /// `prange` reductions of integers combine with wrapping `add` and `mul`. Every other check,
+    /// such as bounds and division by zero, stays. Call it before [`define`](Self::define).
+    ///
+    /// Cost: none at run time; LLVM folds the unused overflow flag into a plain `add`.
+    ///
+    /// ```
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// let database = Database::default();
+    /// let sources = source::SourceMap::new();
+    /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
+    /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
+    /// let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
+    /// module.wrap_on_overflow();
+    /// assert!(!module.finish().contains("baryon_rt_panic"));
+    /// ```
+    pub fn wrap_on_overflow(&mut self) {
+        self.constants.wraps = true;
     }
 }
 

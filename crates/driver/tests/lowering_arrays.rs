@@ -164,21 +164,37 @@ def sizes(a: Array[f64, 2]) -> i64:
     let _4: i64;
     let _5: i64;
     let _6: i64;
-    let _7: i64;
-    let _8: i64;
+    let _7: tuple[i64, bool];
+    let _8: bool;
     let _9: i64;
+    let _10: i64;
+    let _11: i64;
+    let _12: tuple[i64, bool];
+    let _13: bool;
 
     bb0: {
         _4 = len(_1, 0);
         _3 = copy _4;
         _6 = len(_1, 1);
         _5 = copy _6;
-        _2 = Add(copy _3, copy _5);
-        _8 = len(_1, 0);
-        _9 = len(_1, 1);
-        _7 = copy _8;
-        _7 = Multiply(copy _7, copy _9);
-        _0 = Add(copy _2, copy _7);
+        _7 = CheckedAdd(copy _3, copy _5);
+        _8 = Not(copy _7.1);
+        assert(copy _8, no overflow: Add) -> bb1;
+    }
+
+    bb1: {
+        _2 = copy _7.0;
+        _10 = len(_1, 0);
+        _11 = len(_1, 1);
+        _9 = copy _10;
+        _9 = Multiply(copy _9, copy _11);
+        _12 = CheckedAdd(copy _2, copy _9);
+        _13 = Not(copy _12.1);
+        assert(copy _13, no overflow: Add) -> bb2;
+    }
+
+    bb2: {
+        _0 = copy _12.0;
         return;
     }
 }

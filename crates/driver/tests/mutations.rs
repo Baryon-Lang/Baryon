@@ -178,7 +178,7 @@ fn compile(text: &str) {
             let _ = session.mir(&name);
         }
     }
-    let _ = session.compile(None);
+    let _ = session.compile(None, driver::Profile::Debug);
 }
 
 /// Every `.byn` file directly in `directory`, read in name order.

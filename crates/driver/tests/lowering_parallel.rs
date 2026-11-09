@@ -190,6 +190,8 @@ body0: fn(_1: Owned[i64], _2: i64, _3: InOut[i64]) -> None {
     let _4: i64; // i
     let _5: i64;
     let _6: bool;
+    let _7: tuple[i64, bool];
+    let _8: bool;
 
     bb0: {
         _5 = Multiply(copy _1, 2_i64);
@@ -208,7 +210,13 @@ body0: fn(_1: Owned[i64], _2: i64, _3: InOut[i64]) -> None {
     }
 
     bb3: {
-        _3 = Multiply(copy _3, copy _4);
+        _7 = CheckedMultiply(copy _3, copy _4);
+        _8 = Not(copy _7.1);
+        assert(copy _8, no overflow: Multiply) -> bb4;
+    }
+
+    bb4: {
+        _3 = copy _7.0;
         goto -> bb1;
     }
 }
