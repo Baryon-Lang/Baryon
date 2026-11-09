@@ -122,8 +122,8 @@ backtrace, most recent call last:
   main.pick at /home/ada/heat/main.byn:2:19
 ```
 
-There is one build mode for now, and `baryon build` and `baryon run` always include the debug
-information a backtrace needs, so every panic prints one. A program without that information
+Debug and release builds both include the debug information a backtrace needs
+([`baryon build`](commands.md#debug-and-release-builds)), so every panic prints one. A program without that information
 prints the message and location only.
 
 Panics cannot be caught, by `try` or anything else. A bug that could be caught would be a bug that

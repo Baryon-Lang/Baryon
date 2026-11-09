@@ -466,7 +466,7 @@ it as it is. [Tests](../reference/tests.md) has the details.
   and moves, the one part of Baryon with no Python equivalent.
 - [Arrays](../reference/arrays.md) covers `Array` and `Fixed`, the types numeric code is built
   on.
-- The [example programs](../examples/README.md) show where the language is going: molecular
-  dynamics, a heat equation solver, conjugate gradient, Runge-Kutta and Monte Carlo. They use
-  features that do not build yet; [What builds today](../reference/status.md) says which.
+- The [example programs](../examples/README.md) are larger programs that build and run today:
+  molecular dynamics, a heat equation solver, conjugate gradient, Runge-Kutta and Monte Carlo.
+  [What builds today](../reference/status.md) says what else the compiler builds.
 - The [language reference](../reference/README.md) defines everything else.
