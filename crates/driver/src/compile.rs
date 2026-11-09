@@ -32,6 +32,11 @@ struct Function<'db> {
     in_main_module: bool,
     /// Whether it is decorated `@test`, and where.
     test: Test,
+    /// The function that computes each default of a parameter, named by the parameter's
+    /// `Name` node, with its symbol: the function's own with the
+    /// parameter's name after a colon, `main.drift:buffer`, which no name can spell (decision
+    /// 0027).
+    defaults: Vec<(Item<'db>, String)>,
 }
 
 /// Whether a function is decorated `@test`.
@@ -158,7 +163,10 @@ impl Session {
         let functions = self.functions();
         let symbols: HashMap<Item<'_>, String> = functions
             .iter()
-            .map(|function| (function.item, function.symbol.clone()))
+            .flat_map(|function| {
+                std::iter::once((function.item, function.symbol.clone()))
+                    .chain(function.defaults.iter().cloned())
+            })
             .collect();
         let symbol = |item: &Item<'_>, arguments: &[types::Type<'_>]| {
             let base = symbols.get(item).cloned().unwrap_or_default();
@@ -236,7 +244,8 @@ impl Session {
                 arguments: Vec::new(),
             });
         }
-        errors.extend(self.define(&mut module, roots, &declared, &symbol));
+        let owners = owners(&functions);
+        errors.extend(self.define(&mut module, roots, &declared, &symbol, &owners));
         let tests = self.start(&mut module, program, &entries, &mut errors);
         if errors.is_empty() {
             Ok((module.finish(), tests))
@@ -296,14 +305,16 @@ impl Session {
     }
 
     /// Defines in `module` each instance a program needs: `roots`, then each instance of a
-    /// generic function that a defined body calls. Returns one error per function lowering or the
-    /// backend cannot handle yet.
+    /// generic function, and each default's function, that a defined body calls. `owners`
+    /// maps each default's function to the function it belongs to, whose errors it raises.
+    /// Returns one error per function lowering or the backend cannot handle yet.
     fn define<'db>(
         &'db self,
         module: &mut llvm_backend::Module<'_, 'db>,
         roots: Vec<Instance<'db>>,
         declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
         symbol: &dyn Fn(&Item<'db>, &[types::Type<'db>]) -> String,
+        owners: &HashMap<Item<'db>, Item<'db>>,
     ) -> Vec<Diagnostic> {
         let database = &self.database;
         let mut errors = Vec::new();
@@ -314,13 +325,15 @@ impl Session {
             match ready(database, &instance, declared) {
                 Ok(body) => {
                     instances.follow(&body);
-                    let Declaration::Function(signature) =
-                        &database.declaration(instance.item).declaration
-                    else {
-                        continue;
-                    };
-                    let raises = match signature.returns.kind(database) {
-                        TypeKind::Fallible { errors, .. } => errors.as_slice(),
+                    // A default's function raises what the function it belongs to declares.
+                    let owner = owners.get(&instance.item).unwrap_or(&instance.item);
+                    let raises = match &database.declaration(*owner).declaration {
+                        Declaration::Function(signature) => {
+                            match signature.returns.kind(database) {
+                                TypeKind::Fallible { errors, .. } => errors.as_slice(),
+                                _ => &[],
+                            }
+                        }
                         _ => &[],
                     };
                     let name = symbol(&instance.item, &instance.arguments);
@@ -366,12 +379,19 @@ impl Session {
                         (true, false) => Test::Function,
                         (true, true) => Test::Method,
                     };
+                    let defaults = defaulted(tree, statement)
+                        .map(|name| {
+                            let item = Item::new(database, self.package, file, name);
+                            (item, format!("{symbol}:{}", tree.text(name, text)))
+                        })
+                        .collect();
                     functions.push(Function {
                         item: Item::new(database, self.package, file, node),
                         symbol,
                         main,
                         in_main_module,
                         test: decorated,
+                        defaults,
                     });
                 };
             for statement in tree.children_with(tree.root(), Role::Body) {
@@ -442,6 +462,30 @@ impl Session {
         Diagnostic::error(message.clone())
             .with_primary(tree.span(item.name(&self.database)), message)
     }
+}
+
+/// The function each default's function in `functions` belongs to.
+fn owners<'db>(functions: &[Function<'db>]) -> HashMap<Item<'db>, Item<'db>> {
+    functions
+        .iter()
+        .flat_map(|function| {
+            function
+                .defaults
+                .iter()
+                .map(|(default, _)| (*default, function.item))
+        })
+        .collect()
+}
+
+/// The `Name` node of each parameter of the function `function` declares that has a default,
+/// which names the function that computes it.
+fn defaulted(tree: &syntax::SyntaxTree, function: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+    tree.child(function, Role::Parameters)
+        .into_iter()
+        .flat_map(|parameters| tree.children(parameters))
+        .filter(|&parameter| tree.kind(parameter) == SyntaxKind::Parameter)
+        .filter(|&parameter| tree.child(parameter, Role::Default).is_some())
+        .filter_map(|parameter| tree.child(parameter, Role::Name))
 }
 
 /// What each struct or enum of `package` declares, as layouts, the passes and the backend read it.
