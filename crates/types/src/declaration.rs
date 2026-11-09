@@ -1,6 +1,7 @@
 //! What a definition declares, in types: a function's signature, a struct's fields, an enum's
-//! variants, a trait's methods, an alias's type, a constant's type and value. The type checker computes these from
-//! annotations; every stage after it reads them through [`TypeDb::declaration`].
+//! variants, a trait's methods, an alias's type, a constant's type and value. The type checker
+//! computes these from annotations; every stage after it reads them through
+//! [`TypeDb::declaration`].
 
 use crate::{Item, Type, TypedBody};
 use diagnostics::Diagnostic;

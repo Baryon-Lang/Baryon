@@ -64,6 +64,9 @@ pub(crate) struct Function<'f, 'a, 'db> {
     /// The functions written alongside this one, such as a `prange` loop's chunk function, each
     /// a whole definition.
     pub(crate) helpers: Vec<String>,
+    /// Stack slots instructions need beyond the locals', such as the sign `lgamma_r` writes,
+    /// written in the entry block so a call inside a loop does not grow the stack each time.
+    pub(crate) slots: String,
 }
 
 impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
@@ -93,6 +96,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             fixed_location: None,
             name: String::new(),
             helpers: Vec::new(),
+            slots: String::new(),
         }
     }
 
@@ -148,8 +152,8 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             }
         }
         let mut text = format!(
-            "{signature} {{\nstart:\n{entry}{}{}}}\n",
-            function.code, function.failures
+            "{signature} {{\nstart:\n{}{entry}{}{}}}\n",
+            function.slots, function.code, function.failures
         );
         for helper in &function.helpers {
             text.push('\n');
