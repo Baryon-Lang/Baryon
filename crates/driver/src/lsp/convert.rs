@@ -173,6 +173,7 @@ pub(super) fn completion(completion: &Completion) -> Value {
         CompletionKind::Field => 5,
         CompletionKind::Variable => 6,
         CompletionKind::Class => 7,
+        CompletionKind::Trait => 8,
         CompletionKind::Module => 9,
         CompletionKind::Builtin => 14,
         CompletionKind::EnumMember => 20,

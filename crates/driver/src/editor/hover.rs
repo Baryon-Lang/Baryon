@@ -103,7 +103,7 @@ pub(super) fn signature(db: &dyn TypeDb, item: Item<'_>) -> String {
     let name = tree.text(item.name(db), text);
     match &db.declaration(item).declaration {
         Declaration::Function(signature) => function(db, name, signature),
-        Declaration::Struct { .. } | Declaration::Enum { .. } => {
+        Declaration::Struct { .. } | Declaration::Enum { .. } | Declaration::Trait { .. } => {
             outline::statement_of(tree, item.name(db)).map_or_else(
                 || format!("class {name}"),
                 |class| outline::class_header(tree, text, class),
@@ -176,6 +176,10 @@ pub(super) fn member_signature(db: &dyn TypeDb, class: Item<'_>, name: &str) -> 
                 .find(|method| tree.text(method.name(db), text) == name)
                 .map(|&method| signature(db, method))
         }
+        Declaration::Trait { methods, .. } => methods
+            .iter()
+            .find(|method| tree.text(method.name(db), text) == name)
+            .map(|&method| signature(db, method)),
         Declaration::Enum { variants } => variants
             .iter()
             .any(|variant| variant == name)

@@ -33,6 +33,8 @@ pub enum CompletionKind {
     Field,
     /// A class or a type alias.
     Class,
+    /// A trait: a class with the base `Protocol` (decision 0031).
+    Trait,
     /// A member of an enum.
     EnumMember,
     /// A `Final` constant.
@@ -252,6 +254,7 @@ fn completion_of(db: &dyn TypeDb, item: Item<'_>, label: String) -> Completion {
         Declaration::Struct { .. } | Declaration::Enum { .. } | Declaration::Alias(_) => {
             CompletionKind::Class
         }
+        Declaration::Trait { .. } => CompletionKind::Trait,
         Declaration::Constant { .. } => CompletionKind::Constant,
     };
     Completion {
