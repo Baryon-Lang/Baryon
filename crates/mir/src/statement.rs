@@ -284,6 +284,21 @@ pub enum Builtin {
     /// `f64`. It draws the generator's next 64-bit output `u` and gives `(u >> 11) * 2**-53`, a
     /// float in `[0, 1)`, as `NumPy`'s `Generator.random()` does. The call cannot fail.
     Uniform,
+    /// Compares two `str`s as Python orders them, by code point with a prefix first: two
+    /// arguments, each a `str` passed `Borrow`, or `Owned` for a literal; the destination has type
+    /// `i64` and gets -1 when the first comes first, 0 when they are equal and 1 when the second
+    /// comes first. Lowering compares that with 0 for `==`, `!=`, `<`, `<=`, `>` and `>=`. It
+    /// reads both strings, so it costs time linear in the shorter. The call cannot fail.
+    CompareStr,
+    /// `needle in haystack` on two `str`s: two arguments, the haystack then the needle, each
+    /// passed `Borrow`, or `Owned` for a literal; the destination has type `bool`. The empty
+    /// string is in every string. The search takes time linear in the two lengths. The call
+    /// cannot fail.
+    ContainsStr,
+    /// `len(text)` of a `str`: one argument passed `Borrow`, or `Owned` for a literal; the
+    /// destination has type `i64`. It counts characters, code points, as Python does, not bytes,
+    /// so it reads the whole string. The call cannot fail.
+    LengthStr,
 }
 
 impl Builtin {
@@ -297,6 +312,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Append.name(), "list.append");
     /// assert_eq!(mir::Builtin::Philox.name(), "random.Philox");
     /// assert_eq!(mir::Builtin::Uniform.name(), "Philox.uniform");
+    /// assert_eq!(mir::Builtin::ContainsStr.name(), "str in");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -308,6 +324,9 @@ impl Builtin {
             Self::Append => "list.append",
             Self::Philox => "random.Philox",
             Self::Uniform => "Philox.uniform",
+            Self::CompareStr => "str comparison",
+            Self::ContainsStr => "str in",
+            Self::LengthStr => "len of str",
         }
     }
 }
