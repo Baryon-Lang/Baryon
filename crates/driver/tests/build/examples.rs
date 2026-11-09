@@ -293,6 +293,51 @@ def main():
     prints("lists", program, "10 0 81 81\n3 0.5 7.0 285\n0 0\nTrue 3\n").unwrap();
 }
 
+/// Lists of values that own memory (roadmap 1.13.3): `str`s, structs holding a `str` and an
+/// array, arrays and lists, built by a display or `append`, returned from a function, read by
+/// index, and written in place, which drops the element replaced. Dropping a list drops each
+/// element; a leak checker such as Valgrind finds nothing lost.
+#[test]
+fn lists_of_owned_values_build_and_run() {
+    let program = r#"
+class Sample(Struct):
+    name: str
+    values: Array[f64, 1]
+
+
+def names(n: int) -> list[str]:
+    result: list[str] = []
+    for i in range(n):
+        result.append(f"probe{i}")
+    return result
+
+
+def main():
+    xs = names(3)
+    print(len(xs), xs[0], xs[2])
+    xs[1] = "replaced"
+    print(xs[1], len(xs[1]))
+    words = ["alpha", "beta"]
+    words.append(xs[0].copy())
+    print(words[2], len(words))
+    samples: list[Sample] = []
+    samples.append(Sample("a", Array.zeros(4)))
+    samples.append(Sample("b", Array.ones(2)))
+    print(samples[1].name, samples[1].values.sum(), samples[0].values[3])
+    grid = [Array.ones(3), Array.zeros(5)]
+    print(grid[0].sum(), len(grid[1]))
+    nested = [[1, 2], [3]]
+    nested[1].append(4)
+    print(nested[1][1], len(nested))
+"#;
+    prints(
+        "owned-lists",
+        program,
+        "3 probe0 probe2\nreplaced 8\nprobe0 3\nb 2.0 0.0\n3.0 5\n4 2\n",
+    )
+    .unwrap();
+}
+
 /// Monte Carlo pi: 1,024 chunks of a `prange` loop, each drawing from its own `Philox` stream.
 /// `NumPy`, drawing from `Generator(Philox(key=2026).jumped(chunk))` for each chunk, counts the
 /// same 80,420,174 hits, so the estimate matches to every digit, on any number of cores.

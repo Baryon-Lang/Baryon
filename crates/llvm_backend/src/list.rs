@@ -9,7 +9,11 @@
 //!
 //! An append into a full buffer allocates one twice as large, at least 4 elements, copies the
 //! elements across with `llvm.memcpy` and frees the old one, so a run of appends costs
-//! amortized constant time per element. The runtime panics when memory runs out.
+//! amortized constant time per element. The runtime panics when memory runs out. Moving the
+//! elements byte for byte is sound for any element type, since a value never points into itself.
+//!
+//! Freeing a list whose elements own memory, such as `str`s or other lists, drops each element
+//! first, in order.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -131,17 +135,58 @@ impl<'db> Function<'_, '_, 'db> {
         Ok((at, element))
     }
 
-    /// Frees the buffer of the list of type `ty` at `address`, with the size it was allocated
-    /// with: the capacity times the element size. Its elements are copy types and own nothing.
+    /// Frees the list of type `ty` at `address`: first what each element owns, in order, when
+    /// the elements own memory, such as `str`s or arrays; then the buffer, with the size it was
+    /// allocated with, the capacity times the element size.
+    ///
+    /// Cost: one pass over the elements when they own memory, none otherwise.
     pub(crate) fn free_list(&mut self, address: &str, ty: Type<'db>) -> Result<(), Unsupported> {
-        let (_, layout) = self.list(ty)?;
+        let (element, layout) = self.list(ty)?;
         let data = self.emit(&format!("load ptr, ptr {address}"));
+        if self.owns_memory(element) {
+            self.drop_elements(address, &data, element)?;
+        }
         let field = self.emit(&format!(
             "getelementptr inbounds {HEADER}, ptr {address}, i32 0, i32 2"
         ));
         let capacity = self.emit(&format!("load i64, ptr {field}"));
         let bytes = self.emit(&format!("mul i64 {capacity}, {}", layout.size()));
         self.deallocate(&data, &bytes, layout);
+        Ok(())
+    }
+
+    /// Drops each of the elements of the list at `address`, whose buffer is `data`, in order.
+    /// The loop enters from a block of its own and steps in one, so the counter's `phi` names
+    /// its two predecessors whatever blocks dropping an element adds in between.
+    fn drop_elements(
+        &mut self,
+        address: &str,
+        data: &str,
+        element: Type<'db>,
+    ) -> Result<(), Unsupported> {
+        let llvm = self.types.value(element)?;
+        let length = self.list_length(address);
+        let [enter, test, body, step, done] = [(); 5].map(|()| self.fresh_block());
+        let (index, next) = (self.fresh(), self.fresh());
+        self.line(&format!("br label %{enter}"));
+        self.line_label(&enter);
+        self.line(&format!("br label %{test}"));
+        self.line_label(&test);
+        self.line(&format!(
+            "{index} = phi i64 [ 0, %{enter} ], [ {next}, %{step} ]"
+        ));
+        let more = self.emit(&format!("icmp slt i64 {index}, {length}"));
+        self.line(&format!("br i1 {more}, label %{body}, label %{done}"));
+        self.line_label(&body);
+        let at = self.emit(&format!(
+            "getelementptr inbounds {llvm}, ptr {data}, i64 {index}"
+        ));
+        self.drop_value(&at, element)?;
+        self.line(&format!("br label %{step}"));
+        self.line_label(&step);
+        self.line(&format!("{next} = add i64 {index}, 1"));
+        self.line(&format!("br label %{test}"));
+        self.line_label(&done);
         Ok(())
     }
 

@@ -220,8 +220,8 @@ fn(_1: i64, _2: i64) -> f64 {
     );
 }
 
-/// A construct outside the first slice is an error that names it, and gives no body. Lists are
-/// lowered only of copy types, and `in` not yet.
+/// A construct outside the first slice is an error that names it, and gives no body. `str(x)`
+/// is not lowered at all, and `in` on a list not yet; a list of `str`s is.
 #[test]
 fn constructs_not_lowered_yet_are_errors() {
     let program = "\
@@ -231,11 +231,11 @@ fn constructs_not_lowered_yet_are_errors() {
     assert_eq!(
         lower(program, "power"),
         "\
-error: lowering does not handle lists whose elements are not a copy type yet
- --> main.byn:2:10
+error: lowering does not handle the built-in `str` yet
+ --> main.byn:2:11
   |
 2 |     ys = [str(x)]
-  |          ^^^^^^^^ not lowered yet
+  |           ^^^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
 
 error: lowering does not handle `in` yet

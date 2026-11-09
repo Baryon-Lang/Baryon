@@ -1,10 +1,10 @@
 //! Lists (language reference, "Lists"): a display `[a, b]` builds one, `xs.append(value)`
 //! grows one, `len(xs)` and `xs[i]` read one, and `Array(xs)` copies one into a new array.
 //!
-//! Lowering builds lists whose elements are copy types, such as `list[f64]` and `list[i64]`,
-//! the lists a program fills before converting to an `Array`. A list of strings, arrays or other
-//! lists would own its elements, and dropping it would have to drop each one; that is not
-//! lowered yet.
+//! The elements can be of any type. A list of `str`s, arrays, structs or other lists owns its
+//! elements: a display or `append` moves each value in, writing `xs[i] = v` drops the element
+//! it replaces, and dropping the list drops every element. An element is read in place, as a
+//! borrow, since the checker rejects moving one out.
 
 use crate::builder::Builder;
 use mir::{Argument, Builtin, Callee, Operand, Place, Projection, Rvalue, TerminatorKind};
@@ -77,17 +77,13 @@ impl<'db> Builder<'db> {
         });
     }
 
-    /// The element type of the list type `ty`, or `None` after reporting a list whose elements
-    /// are not a copy type, which lowering does not build yet.
+    /// The element type of the list type `ty`, or `None` after reporting a type that is not a
+    /// list.
     fn list_element(&mut self, ty: Type<'db>, node: NodeId) -> Option<Type<'db>> {
         let &TypeKind::List(element) = ty.kind(self.db) else {
             self.unsupported(node, "this list");
             return None;
         };
-        if !self.is_copy(element) {
-            self.unsupported(node, "lists whose elements are not a copy type");
-            return None;
-        }
         Some(element)
     }
 }
