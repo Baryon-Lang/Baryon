@@ -51,8 +51,9 @@
 //!   in [`vectorized`](mir::Body::vectorized) carries `llvm.loop.vectorize.enable` metadata,
 //!   which overrides LLVM's cost model. A loop LLVM still declines, such as one whose bounds
 //!   checks it cannot hoist, runs unvectorized for now; reporting it is roadmap 3.7.
-//! - **`print` calls the runtime once per argument**, which writes the value as Python does;
-//!   the space between arguments and the line end are byte constants it prints too.
+//! - **`print` calls the runtime once per argument**, which writes the value as Python does.
+//!   Lowering passes the space between arguments and the line end as `str` constants, which
+//!   become byte constants.
 //! - **Math functions are LLVM intrinsics.** A [`Builtin::Math`](mir::Builtin::Math) call, such
 //!   as `x ** y` on floats, becomes `llvm.pow.f64`, which LLVM folds, turns into one instruction
 //!   where the target has one, or calls the C math library for.

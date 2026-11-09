@@ -2,7 +2,10 @@
 //! constructor; of a number type, which converts; and of the built-ins lowering handles.
 
 use crate::builder::Builder;
-use mir::{Argument, BinaryOperator, Builtin, Callee, Operand, Place, Rvalue, TerminatorKind};
+use mir::{
+    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Operand, Place, Rvalue,
+    TerminatorKind,
+};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
 
@@ -217,7 +220,9 @@ impl<'db> Builder<'db> {
         self.start(next);
     }
 
-    /// `print(arguments…)`, its `None` result written into `place`. A literal is passed as its
+    /// `print(arguments…)`, its `None` result written into `place`. The call writes its
+    /// arguments with nothing between them ([`Builtin::Print`]), so the separator, a space,
+    /// goes between each pair and the line end after the last. A literal is passed as its
     /// constant, so a backend can print a string literal without a `str` value; anything else
     /// is borrowed, since printing does not consume it.
     fn print(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
@@ -230,14 +235,18 @@ impl<'db> Builder<'db> {
         if keyword {
             return self.unsupported(node, "keyword arguments of `print`");
         }
-        let mut passed = Vec::with_capacity(arguments.len());
-        for &argument in arguments {
+        let mut passed = Vec::with_capacity(2 * arguments.len() + 1);
+        for (position, &argument) in arguments.iter().enumerate() {
+            if position > 0 {
+                passed.push(self.text(" "));
+            }
             passed.push(if self.is_literal(argument) {
                 Argument::Owned(Operand::Constant(self.literal(argument)))
             } else {
                 Argument::Borrow(self.borrow(argument))
             });
         }
+        passed.push(self.text("\n"));
         let next = self.new_block();
         self.terminate(
             TerminatorKind::Call {
@@ -250,6 +259,14 @@ impl<'db> Builder<'db> {
             node,
         );
         self.start(next);
+    }
+
+    /// The `str` constant `text`, passed `Owned`, as `print` takes its separator and line end.
+    fn text(&self, text: &str) -> Argument<'db> {
+        Argument::Owned(Operand::Constant(Constant {
+            ty: types::Type::new(self.db, TypeKind::Str),
+            value: ConstantValue::Str(text.to_owned()),
+        }))
     }
 
     /// `min(first, rest…)` when `smallest`, else `max(…)`, of numbers, its result written into

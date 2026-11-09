@@ -460,7 +460,7 @@ fn same_length_check_reports_both_lengths() {
     );
 }
 
-/// `print(x, 2.0)` calls the built-in by name, with no item and no type arguments.
+/// A call of the built-in `print` names it, with no item and no type arguments.
 #[test]
 fn builtins_are_called_by_name() {
     let database = Database::default();
