@@ -249,7 +249,7 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.14 | Mid-level IR shape: static single assignment (plan) or locals and places; how `Raises`, monomorphization and whole-array expressions lower. Decided: locals and places, error edges on calls, instance query, `Elementwise` kept for fusion | — | — | Done | Collins | [0018](docs/decisions/0018-mid-level-ir.md), [#27](https://github.com/Baryon-Lang/Baryon/pull/27) |
 | D.15 | When a default parameter value that is not a literal or a `Final` constant is evaluated: at each call that leaves the argument out, once and shared as in Python, or never because only compile-time defaults are allowed. Decided: at each call | — | 0.8.2 | Done | Collins | [0027](docs/decisions/0027-default-parameter-evaluation.md), [#99](https://github.com/Baryon-Lang/Baryon/pull/99) |
 | D.16 | Publish the VS Code extension to the Visual Studio Marketplace under the `baryon-lang` publisher, or keep installing it from a `.vsix` file | — | 1.17 | Planned | Collins | [0025](docs/decisions/0025-vscode-extension.md) |
-| D.17 | How `print` writes an array: NumPy's form, `[1. 2. 3.]` with rows on their own lines, or Python's list form, `[1.0, 2.0, 3.0]`; 1.10.12 proposes it in a record. Proposed: NumPy's form, byte for byte | — | — | Planned | Collins | [0032](docs/decisions/0032-printing-arrays.md) |
+| D.17 | How `print` writes an array: NumPy's form, `[1. 2. 3.]` with rows on their own lines, or Python's list form, `[1.0, 2.0, 3.0]`; 1.10.12 proposes it in a record. Proposed: NumPy's form, byte for byte | — | — | Planned | Collins | [0033](docs/decisions/0033-printing-arrays.md) |
 
 ## Ideas
 

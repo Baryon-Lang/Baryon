@@ -65,4 +65,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0030. Integer overflow panics in debug builds and wraps in release builds](0030-integer-overflow.md) | Accepted |
 | [0031. A trait is a `Protocol` class, and a type implements it by naming it as a base](0031-traits-are-protocols.md) | Accepted |
 | [0032. A value that is one of several kinds is a union of structs, taken apart with `match`](0032-sum-types-are-unions-of-structs.md) | Accepted |
-| [0032. `print` writes an array as NumPy does](0032-printing-arrays.md) | Proposed |
+| [0033. `print` writes an array as NumPy does](0033-printing-arrays.md) | Proposed |

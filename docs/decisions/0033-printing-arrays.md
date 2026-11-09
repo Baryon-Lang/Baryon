@@ -1,4 +1,4 @@
-# 0032. `print` writes an array as NumPy does
+# 0033. `print` writes an array as NumPy does
 
 Status: Proposed
 Date: 2026-11-09
