@@ -389,7 +389,12 @@ impl Writer<'_> {
                 self.operand(length)
             ),
             Check::NoOverflow(operator) => format!("no overflow: {}", binary_name(*operator)),
+            Check::NoPowerOverflow => "no overflow: power".to_owned(),
             Check::NonZeroDivisor => "non-zero divisor".to_owned(),
+            Check::NonZeroStep => "non-zero step".to_owned(),
+            Check::NonNegativeExponent { exponent } => {
+                format!("non-negative exponent: {}", self.operand(exponent))
+            }
             Check::SameLength {
                 dimension,
                 expected,
