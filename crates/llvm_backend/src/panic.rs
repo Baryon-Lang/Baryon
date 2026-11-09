@@ -8,6 +8,7 @@
 //! | --- | --- | --- |
 //! | An index in bounds | `baryon_rt_panic_index` | The index, the dimension and its length |
 //! | Two arrays of the same length | `baryon_rt_panic_length_mismatch` | The dimension and both lengths |
+//! | A non-negative exponent of integer `**` | `baryon_rt_panic_exponent` | The exponent |
 //! | Everything else | `baryon_rt_panic` | A message the backend writes as a constant |
 //!
 //! Each call passes a pointer to a `Location` constant, the runtime's `#[repr(C)]` structure
@@ -48,6 +49,11 @@ pub(crate) enum Failure {
         expected: String,
         /// The other array's length, an `i64` operand.
         found: String,
+    },
+    /// Integer `**` with a negative exponent.
+    Exponent {
+        /// The exponent, an `i64` operand.
+        exponent: String,
     },
 }
 
@@ -325,10 +331,13 @@ impl<'db> Function<'_, '_, 'db> {
                 Failure::Message(format!("integer overflow in `{}`", symbol(*operator)))
             }
             Check::NonZeroDivisor => Failure::Message("integer division by zero".to_owned()),
-            Check::NoPowerOverflow | Check::NonZeroStep | Check::NonNegativeExponent { .. } => {
-                return Err(Unsupported::new(
-                    "the checks of integer `**` and `range` steps",
-                ));
+            Check::NoPowerOverflow => Failure::Message("integer overflow in `**`".to_owned()),
+            Check::NonZeroStep => Failure::Message("`range` step is zero".to_owned()),
+            Check::NonNegativeExponent { exponent } => {
+                let (exponent, ty) = self.value(exponent)?;
+                Failure::Exponent {
+                    exponent: self.widen(&exponent, ty)?,
+                }
             }
             Check::Assertion => {
                 let source = self.constants.source(self.span);
@@ -402,6 +411,11 @@ pub(crate) fn call(
             ),
             "baryon_rt_panic_length_mismatch",
             "declare void @baryon_rt_panic_length_mismatch(i32, i64, i64, ptr) cold noreturn nounwind",
+        ),
+        Failure::Exponent { exponent } => (
+            format!("call void @baryon_rt_panic_exponent(i64 {exponent}, ptr {location})"),
+            "baryon_rt_panic_exponent",
+            "declare void @baryon_rt_panic_exponent(i64, ptr) cold noreturn nounwind",
         ),
     }
 }

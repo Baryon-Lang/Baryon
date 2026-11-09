@@ -12,8 +12,10 @@
 //!
 //! - **Locals.** Local 0 is the return value, then one local per parameter, then one per
 //!   variable the function names, in source order, then the temporaries it needs.
-//! - **Control flow.** `if`, `while`, `for` over `range`, `and`, `or`, chained comparisons and
-//!   conditional expressions become basic blocks joined by branches.
+//! - **Control flow.** `if`, `while`, `for` over `range`, over a rank-1 array and over a tuple,
+//!   `and`, `or`, chained comparisons and conditional expressions become basic blocks joined by
+//!   branches. A `range` step computed at run time is asserted non-zero, and its sign picks the
+//!   loop test.
 //! - **Moves and borrows.** A read of a copy type copies; a read of any other type in a place
 //!   that takes the value moves it. Each call argument is passed in the mode its parameter
 //!   declares (decision 0006). An argument left out takes its parameter's default, a literal
@@ -48,13 +50,16 @@
 //! - **Math.** `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` from `math`, and `**` and `**=` on
 //!   floats, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
 //!   [`Builtin::Math`](mir::Builtin::Math) calls a backend writes. The built-in `round(x)` rounds
-//!   a float and converts it to an integer.
+//!   a float and converts it to an integer. `**` and `**=` on integers are repeated squaring,
+//!   with a [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each
+//!   multiplication checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
 //! - **Random numbers.** `Philox(seed, stream)` and `generator.uniform()` call
 //!   [`Builtin::Philox`](mir::Builtin::Philox) and [`Builtin::Uniform`](mir::Builtin::Uniform),
 //!   the generator passed `InOut` (decision 0028). `pi`, `e`, `tau`, `inf` and `nan` from `math`
 //!   are `f64` constants.
 //! - **Unpacking.** `a, b = value` computes the value into a temporary, then moves or copies each
 //!   part into its target, left to right, so `a, b = b, a` swaps two arrays without copying them.
+//!   A target that is itself a tuple, `a, (b, c) = value`, unpacks its part in turn.
 //! - **Parallel loops.** The body of a `prange` loop is outlined into a body of its own that runs
 //!   one iteration, and the loop becomes a [`ParallelFor`](mir::TerminatorKind::ParallelFor)
 //!   that passes it the shared variables, each borrowed or `InOut`, the scalars it reduces
@@ -242,6 +247,7 @@ mod escapes;
 mod expressions;
 mod facts;
 mod lists;
+mod loops;
 mod math;
 mod methods;
 mod operators;

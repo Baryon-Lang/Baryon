@@ -220,14 +220,14 @@ fn(_1: i64, _2: i64) -> f64 {
     );
 }
 
-/// A construct outside the first slice is an error that names it, and gives no body. `**` is
-/// lowered on floats, not yet on integers, and lists only of copy types.
+/// A construct outside the first slice is an error that names it, and gives no body. Lists are
+/// lowered only of copy types, and `in` not yet.
 #[test]
 fn constructs_not_lowered_yet_are_errors() {
     let program = "\
         def power(x: f64, n: i64) -> i64:\n\
         \x20   ys = [str(x)]\n\
-        \x20   return n ** 2\n";
+        \x20   return n ** 2 if n in [1] else n\n";
     assert_eq!(
         lower(program, "power"),
         "\
@@ -238,11 +238,11 @@ error: lowering does not handle lists whose elements are not a copy type yet
   |          ^^^^^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
 
-error: lowering does not handle `**` yet
- --> main.byn:3:12
+error: lowering does not handle `in` yet
+ --> main.byn:3:23
   |
-3 |     return n ** 2
-  |            ^^^^^^ not lowered yet
+3 |     return n ** 2 if n in [1] else n
+  |                       ^^^^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
 }

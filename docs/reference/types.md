@@ -79,8 +79,8 @@ def double(n: i64) -> i64:
 ```
 
 `double(9223372036854775807)` panics with ``integer overflow in `+` `` in a debug build and returns
-`-2` in a release build. `+`, `-`, `*`, their in-place forms `+=`, `-=`, `*=`, and `-x` on a signed
-integer are checked. A result that differs between the two builds is an overflow the debug build
+`-2` in a release build. `+`, `-`, `*`, `**`, their in-place forms `+=`, `-=`, `*=`, `**=`, and `-x`
+on a signed integer are checked. A result that differs between the two builds is an overflow the debug build
 would have reported, so test in a debug build and time in a release build.
 
 ## bool
