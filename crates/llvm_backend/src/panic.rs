@@ -325,6 +325,11 @@ impl<'db> Function<'_, '_, 'db> {
                 Failure::Message(format!("integer overflow in `{}`", symbol(*operator)))
             }
             Check::NonZeroDivisor => Failure::Message("integer division by zero".to_owned()),
+            Check::NoPowerOverflow | Check::NonZeroStep | Check::NonNegativeExponent { .. } => {
+                return Err(Unsupported::new(
+                    "the checks of integer `**` and `range` steps",
+                ));
+            }
             Check::Assertion => {
                 let source = self.constants.source(self.span);
                 let condition = source.strip_prefix("assert ").unwrap_or(&source);

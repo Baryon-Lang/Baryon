@@ -1,12 +1,13 @@
 //! Mathematical functions: a call of [`Builtin::Math`](mir::Builtin::Math) becomes a call of the
-//! LLVM intrinsic for the function, such as `llvm.sqrt.f64`, with the result stored at the
-//! destination.
+//! LLVM intrinsic for the function, such as `llvm.sqrt.f64`, or, for a function LLVM 18 has no
+//! intrinsic for, such as `tan`, of the C math library's own `tan` or `tanf`, with the result
+//! stored at the destination.
 //!
 //! The intrinsics are LLVM's own names for the C library's functions: LLVM turns `llvm.sqrt` into
 //! one square-root instruction, folds them on constants, and calls `libm` for the rest, which the
-//! driver links with `-lm` (decision 0020). [`MathFunction::Hypot`] has no intrinsic, so it calls
-//! C's `hypot` or `hypotf` from `libm` by name. Since none of them can fail, the call needs no
-//! error edge and no check. Every operand and the result share one float type, as `mir` requires.
+//! driver links with `-lm` (decision 0020). Either way the result is the C library's, so it can
+//! differ in the last bit between platforms, as `NumPy`'s does. Since none of them can fail, the call needs no error
+//! edge and no check. Every operand and the result share one float type, as `mir` requires.
 //!
 //! A [`Builtin::Sum`](mir::Builtin::Sum) of floats calls the runtime's pairwise sum,
 //! `baryon_rt_sum_f64` or `baryon_rt_sum_f32`, with the address of the first element and the
@@ -47,14 +48,40 @@ impl<'db> Function<'_, '_, 'db> {
             };
             values.push(format!("{llvm} {value}"));
         }
-        let callee = match function {
-            MathFunction::Hypot if suffix == "f32" => "hypotf".to_owned(),
-            MathFunction::Hypot => "hypot".to_owned(),
-            _ => format!("llvm.{}.{suffix}", intrinsic(function)),
+        let result = match routine(function) {
+            Routine::Intrinsic(name) => {
+                let intrinsic = format!("llvm.{name}.{suffix}");
+                let parameters = vec![llvm; function.arity()].join(", ");
+                self.declare(
+                    &intrinsic,
+                    &format!("declare {llvm} @{intrinsic}({parameters})"),
+                );
+                self.emit(&format!("call {llvm} @{intrinsic}({})", values.join(", ")))
+            }
+            Routine::Library(name) => {
+                let symbol = library_symbol(name, suffix);
+                let parameters = vec![llvm; function.arity()].join(", ");
+                self.declare(
+                    &symbol,
+                    &format!("declare {llvm} @{symbol}({parameters}) nounwind"),
+                );
+                self.emit(&format!("call {llvm} @{symbol}({})", values.join(", ")))
+            }
+            Routine::LogGamma => {
+                // `lgamma_r` writes the sign of gamma through its pointer instead of into C's
+                // global `signgam`, so calls in parallel loops never race.
+                let symbol = library_symbol("lgamma", suffix) + "_r";
+                self.declare(
+                    &symbol,
+                    &format!("declare {llvm} @{symbol}({llvm}, ptr) nounwind"),
+                );
+                let sign = self.slot("i32");
+                self.emit(&format!(
+                    "call {llvm} @{symbol}({}, ptr {sign})",
+                    values.join(", ")
+                ))
+            }
         };
-        let parameters = vec![llvm; function.arity()].join(", ");
-        self.declare(&callee, &format!("declare {llvm} @{callee}({parameters})"));
-        let result = self.emit(&format!("call {llvm} @{callee}({})", values.join(", ")));
         self.line(&format!("store {llvm} {result}, ptr {address}"));
         self.line(&format!("br label %{}", block_label(target)));
         Ok(())
@@ -104,17 +131,67 @@ impl<'db> Function<'_, '_, 'db> {
     }
 }
 
-/// The name of the LLVM intrinsic for `function`, without its `llvm.` prefix and type suffix.
-/// [`MathFunction::Hypot`] has none; its name here is the C function's.
-fn intrinsic(function: MathFunction) -> &'static str {
+/// How the backend computes a [`MathFunction`].
+enum Routine {
+    /// An LLVM intrinsic, named without its `llvm.` prefix and type suffix. LLVM folds these on
+    /// constants and turns the ones the target has an instruction for, such as `sqrt` and
+    /// `floor`, into that instruction.
+    Intrinsic(&'static str),
+    /// A function of the C math library, named by its `f64` form: `tan`, whose `f32` form is
+    /// `tanf`.
+    Library(&'static str),
+    /// `lgamma_r` or `lgammaf_r`, which take a pointer for the sign of gamma.
+    LogGamma,
+}
+
+/// How `function` is computed. Intrinsics cover the functions LLVM 18, the oldest the driver
+/// supports, has one for; the C library covers the rest.
+fn routine(function: MathFunction) -> Routine {
     match function {
-        MathFunction::Sqrt => "sqrt",
-        MathFunction::Exp => "exp",
-        MathFunction::Log => "log",
-        MathFunction::Sin => "sin",
-        MathFunction::Cos => "cos",
-        MathFunction::Power => "pow",
-        MathFunction::Hypot => "hypot",
-        MathFunction::RoundEven => "roundeven",
+        MathFunction::Sqrt => Routine::Intrinsic("sqrt"),
+        MathFunction::Exp => Routine::Intrinsic("exp"),
+        MathFunction::Exp2 => Routine::Intrinsic("exp2"),
+        MathFunction::Log => Routine::Intrinsic("log"),
+        MathFunction::Log2 => Routine::Intrinsic("log2"),
+        MathFunction::Log10 => Routine::Intrinsic("log10"),
+        MathFunction::Sin => Routine::Intrinsic("sin"),
+        MathFunction::Cos => Routine::Intrinsic("cos"),
+        MathFunction::Power => Routine::Intrinsic("pow"),
+        MathFunction::Fabs => Routine::Intrinsic("fabs"),
+        MathFunction::CopySign => Routine::Intrinsic("copysign"),
+        MathFunction::FusedMultiplyAdd => Routine::Intrinsic("fma"),
+        MathFunction::Floor => Routine::Intrinsic("floor"),
+        MathFunction::Ceil => Routine::Intrinsic("ceil"),
+        MathFunction::Truncate => Routine::Intrinsic("trunc"),
+        MathFunction::RoundEven => Routine::Intrinsic("roundeven"),
+        MathFunction::Cbrt => Routine::Library("cbrt"),
+        MathFunction::ExpMinusOne => Routine::Library("expm1"),
+        MathFunction::LogOnePlus => Routine::Library("log1p"),
+        MathFunction::Tan => Routine::Library("tan"),
+        MathFunction::Asin => Routine::Library("asin"),
+        MathFunction::Acos => Routine::Library("acos"),
+        MathFunction::Atan => Routine::Library("atan"),
+        MathFunction::Atan2 => Routine::Library("atan2"),
+        MathFunction::Sinh => Routine::Library("sinh"),
+        MathFunction::Cosh => Routine::Library("cosh"),
+        MathFunction::Tanh => Routine::Library("tanh"),
+        MathFunction::Asinh => Routine::Library("asinh"),
+        MathFunction::Acosh => Routine::Library("acosh"),
+        MathFunction::Atanh => Routine::Library("atanh"),
+        MathFunction::Erf => Routine::Library("erf"),
+        MathFunction::Erfc => Routine::Library("erfc"),
+        MathFunction::Gamma => Routine::Library("tgamma"),
+        MathFunction::Hypot => Routine::Library("hypot"),
+        MathFunction::TruncatedRemainder => Routine::Library("fmod"),
+        MathFunction::LogGamma => Routine::LogGamma,
+    }
+}
+
+/// The C library's name for `name` at the float type `suffix`: `name` itself for `f64`, and
+/// `name` with `f` after it for `f32`, as C names `tanf`.
+fn library_symbol(name: &str, suffix: &str) -> String {
+    match suffix {
+        "f32" => format!("{name}f"),
+        _ => name.to_owned(),
     }
 }
