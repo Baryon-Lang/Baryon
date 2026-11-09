@@ -37,14 +37,15 @@ Phase 0, specification and foundation, is nearly done, and the Phase 1 compiler 
 compiler parses source files, rejects the Python constructs the language does not support, and
 reports syntax errors, module errors, undefined names, bad imports and type errors with `baryon
 check`. `baryon build <directory> <output>` compiles a package through LLVM into an executable that
-runs the `main` function in `main.byn`; it handles numbers, control flow, calls, structs, arrays,
-optionals, `str` values and f-strings, `prange` loops, errors, `assert` and `print` so far, with
-`clang` installed. `baryon run <directory>` builds and runs it in one step, and
-`baryon test <directory>` runs every `@test` function and reports which passed. `baryon lsp` is a
-language server that shows the same diagnostics in any editor with a Language Server Protocol
-client, as you type; the [VS Code extension](editors/vscode/README.md) runs it for you and adds
-syntax highlighting for `.byn` files. `baryon doc` writes a package's documentation strings as
-Markdown pages.
+runs the `main` function in `main.byn`; it handles numbers, control flow, calls, generic functions
+and functions as arguments, structs, arrays, lists, optionals, `str` values and f-strings,
+`prange` and `simd` loops, errors, `math`, `random.Philox`, `assert` and `print` so far, with
+`clang` installed, and all five example programs build and run. `baryon run <directory>` builds
+and runs it in one step, and `baryon test <directory>` runs every `@test` function and reports
+which passed. `baryon lsp` is a language server that shows the same diagnostics in any editor with
+a Language Server Protocol client, as you type; the [VS Code extension](editors/vscode/README.md)
+runs it for you and adds syntax highlighting for `.byn` files. `baryon doc` writes a package's
+documentation strings as Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
 compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
