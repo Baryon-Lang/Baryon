@@ -21,7 +21,16 @@
 //!   whose diagnostics changed. A diagnostic with no location, such as a file name that is not a
 //!   valid module name, is shown once as a message when it first appears.
 //!
-//! Go to definition, hover, completion and fixes are later roadmap items (1.16).
+//! - **On `textDocument/hover`**, it shows the type or signature of the name under the cursor
+//!   and the documentation string of what it names ([`Session::hover`]).
+//! - **On `textDocument/definition`**, it goes to where the name is defined, in whichever of the
+//!   package's files that is ([`Session::definition`]).
+//! - **On `textDocument/completion`**, it offers the names in scope, or after a dot the members
+//!   of a module, an enum or a struct value ([`Session::complete`]). A dot asks for completion
+//!   without a keystroke.
+//!
+//! Each of the three reads the session's cached query results, so it answers from the same
+//! check that published the diagnostics. Fixes are a later roadmap item (1.16).
 //!
 //! # Example
 //!
@@ -44,6 +53,7 @@ use database::File;
 use diagnostics::{Diagnostic, Severity};
 use driver::Session;
 use serde_json::{Value, json};
+use source::Sources;
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -52,6 +62,8 @@ use std::path::{Path, PathBuf};
 const PARSE_ERROR: i64 = -32700;
 /// JSON-RPC error: the request is not valid in the server's current state.
 const INVALID_REQUEST: i64 = -32600;
+/// JSON-RPC error: the request's parameters are not what the method needs.
+const INVALID_PARAMS: i64 = -32602;
 /// JSON-RPC error: the server does not support the requested method.
 const METHOD_NOT_FOUND: i64 = -32601;
 /// LSP error: a request arrived before `initialize`.
@@ -181,6 +193,10 @@ impl Server {
                 INVALID_REQUEST,
                 "the server is already initialized".to_owned(),
             )),
+            (
+                Phase::Running,
+                "textDocument/hover" | "textDocument/definition" | "textDocument/completion",
+            ) => self.query(method, params),
             (Phase::Running, _) => Err((METHOD_NOT_FOUND, format!("`{method}` is not supported"))),
             (Phase::ShutDown, _) => {
                 Err((INVALID_REQUEST, "the server is shutting down".to_owned()))
@@ -224,6 +240,59 @@ impl Server {
         None
     }
 
+    /// Answers a question about a place in a document: hover, go to definition or completion.
+    /// A document the server does not know gets an empty answer, as one with nothing at the
+    /// place would.
+    fn query(&self, method: &str, params: &Value) -> Result<Value, (i64, String)> {
+        let malformed = || {
+            (
+                INVALID_PARAMS,
+                format!("`{method}` needs a document and a position"),
+            )
+        };
+        let uri = params["textDocument"]["uri"]
+            .as_str()
+            .ok_or_else(malformed)?;
+        let line = params["position"]["line"].as_u64().ok_or_else(malformed)?;
+        let character = params["position"]["character"]
+            .as_u64()
+            .ok_or_else(malformed)?;
+        let Some(index) = self.find(uri) else {
+            return Ok(Value::Null);
+        };
+        let file = self.documents[index].file;
+        let source = self.session.file(self.session.file_id(file));
+        let offset = convert::offset(source, line, character);
+        Ok(match method {
+            "textDocument/hover" => self
+                .session
+                .hover(file, offset)
+                .map_or(Value::Null, |hover| {
+                    json!({
+                        "contents": {"kind": "markdown", "value": convert::markdown(&hover)},
+                        "range": convert::range(&self.session, hover.span),
+                    })
+                }),
+            "textDocument/definition" => {
+                self.session
+                    .definition(file, offset)
+                    .map_or(Value::Null, |span| {
+                        json!({
+                            "uri": self.documents[span.file().index() as usize].uri,
+                            "range": convert::range(&self.session, span),
+                        })
+                    })
+            }
+            _ => Value::Array(
+                self.session
+                    .complete(file, offset)
+                    .iter()
+                    .map(convert::completion)
+                    .collect(),
+            ),
+        })
+    }
+
     /// Loads the workspace's package and returns the server's capabilities.
     fn initialize(&mut self, params: &Value) -> Value {
         let root_uri = params["rootUri"]
@@ -237,6 +306,9 @@ impl Server {
             "capabilities": {
                 "positionEncoding": "utf-16",
                 "textDocumentSync": {"openClose": true, "change": 1},
+                "hoverProvider": true,
+                "definitionProvider": true,
+                "completionProvider": {"triggerCharacters": ["."]},
             },
             "serverInfo": {"name": "baryon", "version": env!("CARGO_PKG_VERSION")},
         })
