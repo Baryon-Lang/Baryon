@@ -3,7 +3,7 @@
 
 use database::File;
 use syntax::NodeId;
-use types::{Nominal, Type, TypeDb, TypeKind};
+use types::{Nominal, Parameter, Signature, Type, TypeDb, TypeKind};
 
 /// Whether a value of type `found` may stand where `expected` is needed.
 ///
@@ -33,6 +33,11 @@ pub(crate) fn is_open<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
     contains(db, ty, &|ty| {
         matches!(ty.kind(db), TypeKind::Unknown | TypeKind::Parameter { .. })
     })
+}
+
+/// Whether `ty` contains an unknown type anywhere, from an error already reported.
+pub(crate) fn is_unknown<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
+    contains(db, ty, &|ty| matches!(ty.kind(db), TypeKind::Unknown))
 }
 
 /// Whether `ty` contains `parameter` anywhere, so `list[T]` mentions `T`.
@@ -132,4 +137,29 @@ pub(crate) fn substitute<'db>(
         },
     };
     Type::new(db, kind)
+}
+
+/// `signature` with [`substitute`] applied to each parameter's type and the return type: a
+/// method of `Pair[T]` called on a `Pair[f64]`, or a trait's method with `Self` replaced by the
+/// type that implements it.
+pub(crate) fn substitute_signature<'db>(
+    db: &'db dyn TypeDb,
+    signature: &Signature<'db>,
+    file: File,
+    parameters: &[NodeId],
+    arguments: &[Type<'db>],
+) -> Signature<'db> {
+    let map = |ty| substitute(db, ty, file, parameters, arguments);
+    Signature {
+        type_parameters: signature.type_parameters.clone(),
+        parameters: signature
+            .parameters
+            .iter()
+            .map(|parameter| Parameter {
+                ty: map(parameter.ty),
+                ..parameter.clone()
+            })
+            .collect(),
+        returns: map(signature.returns),
+    }
 }

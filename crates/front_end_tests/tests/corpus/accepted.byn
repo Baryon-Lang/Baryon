@@ -32,6 +32,21 @@ class Header(Struct, Copy):
     length: u64
 
 
+class Body(Protocol):
+    """A trait: methods only, each with the body `...`."""
+
+    def energy(self) -> f64: ...
+
+
+class ChargedBody(Body, physics.Charged, Protocol):
+    pass
+
+
+class Ion(Struct, Copy, ChargedBody):
+    particle: Embed[Particle]
+    q: f64
+
+
 class Boundary(Enum):
     PERIODIC = 1
     REFLECTING = 2

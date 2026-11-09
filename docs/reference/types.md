@@ -380,10 +380,8 @@ operations its bound allows apply to it. A number literal takes the type `T` und
 
 ### Traits
 
-A trait names a set of operations a type supports. Version 0 has only the standard library's
-traits. User code will declare its own as `class Body(Protocol)` and implement one by naming it as
-a base ([decision 0031](../decisions/0031-traits-are-protocols.md)); the checker does not accept
-them yet (roadmap 1.7.10).
+A trait names a set of operations a type supports. The standard library has four, and user code
+declares its own ([decision 0031](../decisions/0031-traits-are-protocols.md)).
 
 | Trait | A type satisfies it if it supports | Satisfied by |
 | --- | --- | --- |
@@ -391,6 +389,115 @@ them yet (roadmap 1.7.10).
 | `Float` | `Number`, plus the `math` functions | `f32`, `f64` |
 | `VectorSpace` | `+` and `-` with itself, and `*` by an `f64` on either side | `f64`, `Fixed[f64, ...]`, `Array[f64, ...]` |
 | `Copy` | Copying on assignment | See [copy types](values-and-references.md#copy-types) |
+
+### Declaring a trait
+
+A trait is a class whose last base is `Protocol`. It lists methods, each with the body `...`, and
+nothing else: no fields and no type parameters. `Self` in a method stands for the type that
+implements the trait.
+
+```python
+class Body(Protocol):
+    """A point mass that knows its own energy."""
+
+    def energy(self) -> f64: ...
+
+    def mass(self) -> f64: ...
+
+
+class Charged(Protocol):
+    def charge(self) -> f64: ...
+
+
+class ChargedBody(Body, Charged, Protocol):
+    """Requires `Body` and `Charged`: a type that has it has all three methods."""
+```
+
+The traits before `Protocol` are the ones it *requires*. A trait cannot require itself, and two
+traits it is made of cannot both list a method of the same name.
+
+A trait is not a type: `x: Body` is an error. To accept any type that has a trait, bound a type
+parameter by it. A value that may be one of several such types, `Dyn[Body]`, is reserved for
+roadmap item 3.5 and is an error until then.
+
+### Implementing a trait
+
+A struct or error type implements a trait by naming it among its bases. This is not inheritance:
+the trait adds no fields and no code. It is a promise, checked at the class, that the struct
+defines every method the trait lists, and every method of the traits it requires, with the same
+parameters, modes and return type, `Self` read as the struct.
+
+```python
+class Particle(Struct, Copy, Body):
+    v: f64
+    m: f64
+
+    def energy(self) -> f64:
+        return 0.5 * self.m * self.v * self.v
+
+    def mass(self) -> f64:
+        return self.m
+```
+
+A missing method, or one with another signature, is an error at the base that names the trait,
+showing both signatures. A struct that has the methods but does not name the trait does not have
+it, unlike Python's `Protocol`. Naming a class that is not a trait is the inheritance error of
+[decision 0015](../decisions/0015-no-class-inheritance.md). An enum cannot implement a trait in
+version 0, since enums have no methods yet.
+
+### Using a trait as a bound
+
+A bound is written as for the standard traits, one per type parameter:
+
+```python
+def total_energy[T: Body](bodies: list[T]) -> f64:
+    total = 0.0
+    for body in bodies:
+        total += body.energy()
+    return total
+```
+
+Inside the function, a `T` has the methods its bound lists and those of the traits the bound
+requires, and nothing else: `body.m` is an error even when every caller's type has a field `m`.
+A call passes the bound when its type argument names the trait, or a trait that requires it.
+The function is compiled once for each type it is called with, so `body.energy()` becomes a direct
+call of `Particle.energy`, which the compiler can inline: no slower than writing the function for
+`Particle` by hand.
+
+To ask for two traits, declare a trait that requires both and bound by it. `[T: (Body, Charged)]`
+is an error, because in Python it means `T` is exactly `Body` or exactly `Charged`.
+
+### Embedded structs
+
+A field written `Embed[T]`, where `T` is a struct, is stored exactly like a field of type `T`. The
+fields and methods of `T` can also be reached directly through the outer struct:
+
+```python
+class Ion(Struct, Copy, ChargedBody):
+    particle: Embed[Particle]
+    q: f64
+
+    def charge(self) -> f64:
+        return self.q
+
+
+ion = Ion(Particle(2.0, 39.9), 1.0)
+ion.m           # ion.particle.m
+ion.energy()    # ion.particle.energy()
+```
+
+- The layout is the same as a plain field: `ion.m` is the same offset as `ion.particle.m`, so
+  embedding costs nothing at run time.
+- A name the outer struct defines itself hides an embedded one. A name two embedded structs
+  provide at the same depth is an error at the class. An embedded struct's own embedded fields are
+  reached too, one depth further.
+- A promoted method satisfies a trait the outer struct names, as `energy` and `mass` do for `Ion`
+  above. Embedding alone implements nothing: the trait must be named.
+- A promoted method receives the embedded struct as `self`, not the outer one, so it cannot call
+  a method the outer struct defines. One that takes `self` as `Owned` must be called on the field
+  by name, which moves the whole struct, and does not satisfy a trait for the outer struct.
+- A struct cannot embed itself, directly or through another struct, and only structs can be
+  embedded.
 
 ## Type inference
 

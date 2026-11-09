@@ -136,6 +136,9 @@ in scope, with no import.
 | `layout` | Decorator that pins a struct's field order: `@layout("C")` | [Types](types.md#field-layout) |
 | `Callable` | The type of a function passed as an argument | [Types](types.md#functions-as-arguments) |
 | `Number`, `Float`, `VectorSpace` | Standard traits that bound a type parameter, as in `def rk4_step[S: VectorSpace](...)` | [Types](types.md#traits) |
+| `Protocol` | Base that makes a class a trait: `class Body(Protocol)` | [Types](types.md#declaring-a-trait) |
+| `Embed` | A struct field whose fields and methods the outer struct reaches: `particle: Embed[Particle]` | [Types](types.md#embedded-structs) |
+| `Dyn` | Reserved for a value of any type with a trait, `Dyn[Body]`; an error until roadmap 3.5 | [Types](types.md#declaring-a-trait) |
 
 Python's own built-in names that the language keeps, with their Python meaning where it applies:
 `print`, `len`, `range`, `round`, `abs`, `min`, `max`, `sum`, `enumerate`, `zip`, `int`, `float`,

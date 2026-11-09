@@ -56,7 +56,7 @@ checks what it prints.
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
 | `for` over `range` with a constant step, positive or negative | `for` over arrays, lists, strings or tuples; a `range` step that is not a constant |
 | `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values) that are literals or `Final` constants | Leaving out an argument whose default is any other expression |
-| `class` with `Struct`, `Copy`, `Exception` and `Enum` bases; `@layout("C")` | |
+| `class` with `Struct`, `Copy`, `Exception` and `Enum` bases; `@layout("C")` | Traits, `class Body(Protocol)`, and the structs that name them: checked, not built yet |
 | `raise` and `try`/`except`, including bare `raise` | `raise ... from` |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
 | `with unsafe:` | |
@@ -78,7 +78,8 @@ checks what it prints.
 | Enums: members, `==` and `!=`, `match` | |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
-| Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors | |
+| Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors | Bounds by a user trait, `[T: Body]`, and calls of its methods: checked, not built yet |
+| | [Embedded structs](types.md#embedded-structs), `Embed[T]` fields: checked, not built yet |
 | [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026) | Passing on a `Callable` parameter to another call; copying a `Callable` parameter into a local when another `Callable` parameter of the same signature received a different function |
 | Lists of copy types, such as `list[f64]`: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing | Lists of other types, such as `list[str]`; `pop`, slices, `in` and comprehensions |
 

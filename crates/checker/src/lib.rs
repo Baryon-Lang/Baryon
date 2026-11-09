@@ -25,6 +25,13 @@
 //! - **Definite assignment** (roadmap 1.7.9): a variable is read only where every path has
 //!   assigned it, with the error pointing at the path that skips it, and a function that
 //!   returns a value cannot reach its end. See the `body` module for how each is checked.
+//! - **Traits** (roadmap 1.7.10, decision 0031): traits declared as `class Body(Protocol)`
+//!   (the `bases` module), a struct's promise to define the methods of each trait it names,
+//!   checked at the class (the `classes` and `conformance` modules), and bounds by a trait,
+//!   whose methods a generic body may call (the `traits` module and `body::methods`).
+//! - **Embedded structs** (roadmap 1.7.12): `Embed[T]` fields whose names the outer struct
+//!   reaches, with a name two embedded structs provide at one depth reported at the class (the
+//!   `embed` and `classes` modules).
 //!
 //! It is an implementation crate. It reads trees and names only through the `database`
 //! interface and publishes its results through the `types` interface, whose
@@ -33,7 +40,7 @@
 //!
 //! # The rules
 //!
-//! - **Annotations** lower to [`Type`](types::Type)s by what their names resolve to: the
+//! - **Annotations** lower to [`Type`]s by what their names resolve to: the
 //!   language's type names (`f64`, `int`, `str`, `list`, `Array`, `Fixed` and the rest), classes
 //!   and aliases from any module, and type parameters in scope. `T | None` is the only union;
 //!   `InOut[T]` and `Owned[T]` wrap only a parameter's type and set its mode.
@@ -145,9 +152,13 @@
 //! # Ok::<(), source::SourceError>(())
 //! ```
 
+mod bases;
 mod body;
+mod classes;
+mod conformance;
 mod constant;
 mod declare;
+mod embed;
 mod forms;
 mod lower;
 mod outline;
@@ -158,7 +169,7 @@ use database::{File, Package};
 use diagnostics::Diagnostic;
 use lower::Lowerer;
 use outline::Kind;
-use types::{Checked, Declaration, Declared, Item, Nominal, TypeDb, TypedBody};
+use types::{Checked, Declaration, Declared, Item, Nominal, Type, TypeDb, TypeKind, TypedBody};
 
 /// What `item` declares, and the errors found reading its annotations and computing its value.
 ///
@@ -204,7 +215,8 @@ pub fn cycle<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Checked<'db> {
 }
 
 /// The checked body of the function or method `item`: the type of every expression, what each
-/// call calls, and the errors in the body (see the `body` module). Empty for any other item.
+/// call calls, and the errors in the body (see the `body` module). Empty for any other item, and
+/// for a trait's method, whose body is `...`.
 ///
 /// The application calls this from its implementation of [`TypeDb::body`], inside a
 /// `#[salsa::tracked]` function, so each body is checked once per revision and both
@@ -212,7 +224,16 @@ pub fn cycle<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Checked<'db> {
 #[must_use]
 pub fn body<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> TypedBody<'db> {
     let (package, file, name) = (item.package(db), item.file(db), item.name(db));
-    match outline::outline(db, file).get(name) {
+    let outline = outline::outline(db, file);
+    match outline.get(name) {
+        // A trait's method has the body `...`, which the `classes` module checks.
+        Some(entry)
+            if entry
+                .class
+                .is_some_and(|class| traits::is_trait(db, file, class)) =>
+        {
+            TypedBody::default()
+        }
         Some(entry) if entry.kind == Kind::Function => body::check(db, package, file, entry),
         _ => TypedBody::default(),
     }
@@ -233,10 +254,49 @@ pub fn declared<'db>(
     padding::declared(db, package, nominal)
 }
 
+/// The method that implements the trait method `method` for the type `implementor`, as each
+/// instance of a generic function calls it (decision 0031): the method itself, the positions of
+/// the embedded fields its receiver is reached through, outermost first, and the type arguments
+/// of its class, which a generic struct's method is compiled at. `None` when `method` is not a
+/// trait's method, or `implementor` is not a struct that has it, which the checker reports
+/// before any instance is made. The application passes it, closed over its database and
+/// package, to monomorphization.
+///
+/// Cost: one lookup of the method's name on the struct and the structs it embeds.
+#[must_use]
+pub fn implementation<'db>(
+    db: &'db dyn TypeDb,
+    package: Package,
+    method: Item<'db>,
+    implementor: Type<'db>,
+) -> Option<(Item<'db>, Vec<u32>, Vec<Type<'db>>)> {
+    let file = method.file(db);
+    let class = outline::outline(db, file).get(method.name(db))?.class?;
+    if !traits::is_trait(db, file, class) {
+        return None;
+    }
+    let TypeKind::Struct(nominal) = implementor.kind(db) else {
+        return None;
+    };
+    let name = db
+        .parse(file)
+        .tree()
+        .text(method.name(db), file.source(db).text());
+    match embed::lookup(db, package, nominal, name) {
+        embed::Lookup::Found {
+            path,
+            owner,
+            member: embed::Own::Method { item, .. },
+        } => Some((item, path, owner.arguments)),
+        _ => None,
+    }
+}
+
 /// Every type error and warning in `file`, a file of `package`: the errors of each definition's
 /// declaration and, for a function, of its body, in source order, methods after their class,
-/// then a warning for each struct whose fields would take fewer bytes in another order (see
-/// the `padding` module).
+/// then the errors that compare classes, such as a struct missing a method of a trait it names
+/// (the `classes` module), then a warning for each struct whose fields would take fewer bytes in
+/// another order (the `padding` module).
 ///
 /// The application caches this per file in a tracked function. See the crate example.
 #[must_use]
@@ -252,6 +312,7 @@ pub fn check_file(db: &dyn TypeDb, package: Package, file: File) -> Vec<Diagnost
             }
             diagnostics
         })
+        .chain(classes::check(db, package, file))
         .chain(padding::padding(db, package, file))
         .collect()
 }

@@ -124,7 +124,7 @@ error: `Real` is not a trait
    |
 17 | def odd[T: Real](value: T) -> T:
    |            ^^^^ expected a trait
-   = note: a type parameter is bounded by `Number`, `Float`, `VectorSpace` or `Copy`
+   = note: a type parameter is bounded by `Number`, `Float`, `VectorSpace`, `Copy`, or a trait declared as `class Body(Protocol)`
 
 error: `largest` needs `T` to be a `Number`, found `bool`
   --> main.byn:22:5

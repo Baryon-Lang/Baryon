@@ -222,6 +222,7 @@ impl Checker<'_> {
         ) && previous.is_none();
         let accepted = kind == SyntaxKind::Call
             || (kind == SyntaxKind::StringLiteral && is_block_start)
+            || (kind == SyntaxKind::Ellipsis && self.is_trait_method(parent))
             || Self::is_rejected_expression(kind)
             || kind == SyntaxKind::Missing;
         if accepted {
@@ -250,6 +251,30 @@ impl Checker<'_> {
             "computed, then thrown away",
             &[hint],
         );
+    }
+
+    /// Whether `function` is a method of a trait, a class with the base `Protocol`, whose body
+    /// is `...` (decision 0031). The type checker checks that the body is nothing else.
+    ///
+    /// Cost: a look at each top-level class's statements; a module has tens of them.
+    fn is_trait_method(&self, function: NodeId) -> bool {
+        self.tree
+            .children_with(self.tree.root(), Role::Body)
+            .filter(|&statement| self.tree.kind(statement) == SyntaxKind::ClassDefinition)
+            .filter(|&class| {
+                self.tree
+                    .child(class, Role::Arguments)
+                    .into_iter()
+                    .flat_map(|arguments| self.tree.children(arguments))
+                    .any(|base| {
+                        self.tree.kind(base) == SyntaxKind::Name && self.text(base) == "Protocol"
+                    })
+            })
+            .any(|class| {
+                self.tree
+                    .children_with(class, Role::Body)
+                    .any(|method| method == function)
+            })
     }
 
     /// Checks a `for` loop: no `async for`, no `else`.

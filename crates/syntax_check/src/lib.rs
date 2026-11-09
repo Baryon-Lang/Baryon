@@ -20,9 +20,11 @@
 //! - Expressions: `lambda`, `await`, `yield`, dictionary and set literals and comprehensions,
 //!   generator expressions, `:=`, `*` and `**` unpacking, and `is` with anything but `None`.
 //! - Definitions: `*args` and `**kwargs` parameters, function decorators other than `@test`
-//!   and `@bench`, class decorators other than `@layout("C")` on a struct, and class bases
-//!   other than `Struct`, `Struct, Copy`, `Exception` and `Enum`: there is no class inheritance
-//!   (decision 0015).
+//!   and `@bench`, class decorators other than `@layout("C")` on a struct, class bases that
+//!   combine `Struct`, `Copy`, `Exception`, `Enum` and `Protocol` in any way but one of them or
+//!   `Struct, Copy` (there is no class inheritance, decision 0015), and `Protocol` before the
+//!   traits a trait requires. Other names among the bases are traits a class implements
+//!   (decision 0031); whether each one is a trait is the type checker's to say.
 //! - Placement: top-level statements other than imports, `Final` constants, type aliases,
 //!   functions, classes and documentation strings; class bodies holding anything but fields,
 //!   methods and documentation; and an expression on its own line that is not a call.

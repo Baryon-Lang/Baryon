@@ -17,7 +17,7 @@ class Plain:
     x: f64
 
 
-class Child(Particle):
+class Child(Particle[f64]):
     y: f64
 
 
@@ -31,6 +31,18 @@ class Mixed(Struct, Enum):
 
 class Copied(Copy):
     x: f64
+
+
+class Backwards(Protocol, Body):
+    def energy(self) -> f64: ...
+
+
+class Both(Struct, Protocol):
+    x: f64
+
+
+def not_a_method() -> f64:
+    ...
 
 
 @dataclass
