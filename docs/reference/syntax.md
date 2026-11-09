@@ -170,8 +170,9 @@ Inside a tuple or a struct, each item or field is written as Python's `repr` wri
 no double quote is quoted with double quotes, `"it's"`, as in Python. A generic struct prints
 without its type arguments, `Pair(first=1, second=2)`, and an enum member prints `Phase.GAS`
 everywhere, where Python's `repr` inside a container would write `<Phase.GAS: 3>`
-([Differences from Python](differences-from-python.md)). Printing an array is not decided yet
-(roadmap D.17).
+([Differences from Python](differences-from-python.md)). An array will print as NumPy prints an
+`ndarray`, `[1. 2. 3.]` with rows on their own lines
+([decision 0033](../decisions/0033-printing-arrays.md)); that is not built yet (roadmap 1.10.15).
 
 Printing costs one call into the runtime per number, `bool` or `str` it writes; a struct of ten
 fields is ten calls and its punctuation, all chosen when the program is compiled.

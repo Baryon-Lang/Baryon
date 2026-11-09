@@ -1,8 +1,8 @@
 # 0033. `print` writes an array as NumPy does
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-09
-Roadmap: D.17
+Roadmap: D.17, 1.10.15
 
 ## Context
 
@@ -46,7 +46,9 @@ What bears on the choice:
 
 ## Decision
 
-Recommended: **`print` writes an `Array` or `Fixed` array exactly as NumPy's `print` writes an
+Collins chose this on 2026-11-09.
+
+**`print` writes an `Array` or `Fixed` array exactly as NumPy's `print` writes an
 `ndarray` with the default print options**, byte for byte:
 
 - Floats with up to 8 significant digits, trailing zeros dropped (`1.`, `2.5`), one notation
@@ -80,5 +82,4 @@ matches neither and is not proposed.
 - The runtime gains a formatter of a few hundred lines that tracks NumPy's defaults. If NumPy
   ever changes them, as NumPy 2.0 did for scalars' `repr`, this follows the version the record
   names, until a new record says otherwise.
-- Once accepted, building it becomes a roadmap item of its own, after release 0.2.0 unless
-  Collins says otherwise (roadmap R.2).
+- Building it is roadmap item 1.10.15, after release 0.2.0 (roadmap R.2).
