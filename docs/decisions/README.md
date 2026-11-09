@@ -64,3 +64,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0029. The runtime keeps the standard library; programs drop unused code, not `std`](0029-runtime-size.md) | Accepted |
 | [0030. Integer overflow panics in debug builds and wraps in release builds](0030-integer-overflow.md) | Accepted |
 | [0031. A trait is a `Protocol` class, and a type implements it by naming it as a base](0031-traits-are-protocols.md) | Accepted |
+| [0032. A value that is one of several kinds is a union of structs, taken apart with `match`](0032-sum-types-are-unions-of-structs.md) | Accepted |

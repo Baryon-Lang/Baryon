@@ -12,9 +12,11 @@ use diagnostics::Diagnostic;
 use syntax::NodeId;
 
 /// The names every module can use without an import: the names the language adds and the
-/// Python built-ins it keeps (language reference, "Syntax", "Names the language adds"), and the
-/// standard traits (language reference, "Types", "Traits").
-pub const BUILTINS: [&str; 50] = [
+/// Python built-ins it keeps (language reference, "Syntax", "Names the language adds"), the
+/// standard traits (language reference, "Types", "Traits"), and the names decision 0031 adds:
+/// `Protocol`, the base of a user trait, `Embed`, which embeds a struct in another, and `Dyn`,
+/// reserved for trait objects (roadmap 3.5).
+pub const BUILTINS: [&str; 53] = [
     "f64",
     "f32",
     "i64",
@@ -65,6 +67,9 @@ pub const BUILTINS: [&str; 50] = [
     "Number",
     "Float",
     "VectorSpace",
+    "Protocol",
+    "Embed",
+    "Dyn",
 ];
 
 /// The standard library's modules. Until the standard library is written (roadmap 1.13),

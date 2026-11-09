@@ -164,10 +164,16 @@ impl<'db> Body<'db> {
             };
             result = relations::substitute(self.db, result, file, &[name], &[argument]);
         }
-        let unresolved = names.iter().any(|&(file, name)| {
-            let parameter = Type::new(self.db, TypeKind::Parameter { file, name });
-            relations::mentions(self.db, result, parameter)
-        });
+        // A parameter bound to itself is resolved: inside a method of `Pair[T]`, the
+        // constructor call `Pair(self.b, self.a)` binds the class's `T` to that same `T`.
+        let unresolved = names
+            .iter()
+            .zip(bindings)
+            .filter(|(_, binding)| binding.is_none())
+            .any(|(&(file, name), _)| {
+                let parameter = Type::new(self.db, TypeKind::Parameter { file, name });
+                relations::mentions(self.db, result, parameter)
+            });
         (!unresolved).then_some(result)
     }
 
