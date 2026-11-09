@@ -221,13 +221,13 @@ fn(_1: i64, _2: i64) -> f64 {
 }
 
 /// A construct outside the first slice is an error that names it, and gives no body. `str(x)`
-/// is not lowered at all, and `in` on a list not yet; a list of `str`s is.
+/// is not lowered at all, and `in` on a tuple not yet; a list of `str`s is.
 #[test]
 fn constructs_not_lowered_yet_are_errors() {
     let program = "\
         def power(x: f64, n: i64) -> i64:\n\
         \x20   ys = [str(x)]\n\
-        \x20   return n ** 2 if n in [1] else n\n";
+        \x20   return n ** 2 if n in (1, 2) else n\n";
     assert_eq!(
         lower(program, "power"),
         "\
@@ -241,8 +241,8 @@ error: lowering does not handle the built-in `str` yet
 error: lowering does not handle `in` yet
  --> main.byn:3:23
   |
-3 |     return n ** 2 if n in [1] else n
-  |                       ^^^^^^^ not lowered yet
+3 |     return n ** 2 if n in (1, 2) else n
+  |                       ^^^^^^^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
 }

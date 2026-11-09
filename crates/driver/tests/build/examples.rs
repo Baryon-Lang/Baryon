@@ -338,6 +338,39 @@ def main():
     .unwrap();
 }
 
+/// `in`, `not in` and `copy()` on lists (roadmap 1.13.3): `in` converts the value to the element
+/// type, so `2 in xs` finds `2.0`, and works on numbers, `str`s and enums; a copy is a new list,
+/// so changing one leaves the other alone. Python prints the same lines.
+#[test]
+fn list_membership_and_copies_build_and_run() {
+    let program = r#"
+
+class Phase(Enum):
+    SOLID = 1
+    GAS = 2
+
+
+def main():
+    xs = [1.0, 2.0, 3.0]
+    ys = xs.copy()
+    ys[0] = 9.0
+    print(2 in xs, 5.0 not in ys, 9.0 in xs, 9.0 in ys, xs[0], len(ys))
+    names = ["argon", "neon"]
+    copies = names.copy()
+    names[0] = "xenon"
+    print("neon" in names, "argon" in names, "argon" in copies, "krypton" not in copies)
+    phases = [Phase.SOLID]
+    empty: list[int] = []
+    print(Phase.GAS in phases, Phase.SOLID in phases, 0 in empty, len(empty.copy()))
+"#;
+    prints(
+        "list-membership",
+        program,
+        "True True False True 1.0 3\nTrue False True True\nFalse True False 0\n",
+    )
+    .unwrap();
+}
+
 /// Monte Carlo pi: 1,024 chunks of a `prange` loop, each drawing from its own `Philox` stream.
 /// `NumPy`, drawing from `Generator(Philox(key=2026).jumped(chunk))` for each chunk, counts the
 /// same 80,420,174 hits, so the estimate matches to every digit, on any number of cores.
