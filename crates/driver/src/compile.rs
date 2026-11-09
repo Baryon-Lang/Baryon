@@ -321,10 +321,14 @@ impl Session {
         let database = &self.database;
         let mut errors = Vec::new();
         let mut instances = Instances::new(roots);
+        let package = self.package;
+        let implementation = move |method: Item<'db>, implementor: types::Type<'db>| {
+            checker::implementation(database, package, method, implementor)
+        };
         // Each function's lowering errors once, however many instances of it there are.
         let mut reported = std::collections::HashSet::new();
         while let Some(instance) = instances.next() {
-            match ready(database, &instance, declared) {
+            match ready(database, &instance, declared, &implementation) {
                 Ok(body) => {
                     instances.follow(&body);
                     // A default's function raises what the function it belongs to declares.
@@ -412,6 +416,15 @@ impl Session {
                         );
                     }
                     SyntaxKind::ClassDefinition => {
+                        // A trait's methods have no bodies: each instance of a generic function
+                        // calls the implementing type's method instead (decision 0031).
+                        let class = Item::new(database, self.package, file, node);
+                        if matches!(
+                            database.declaration(class).declaration,
+                            Declaration::Trait { .. }
+                        ) {
+                            continue;
+                        }
                         for method in tree.children_with(statement, Role::Body) {
                             if tree.kind(method) != SyntaxKind::FunctionDefinition {
                                 continue;
