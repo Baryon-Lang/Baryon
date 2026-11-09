@@ -197,9 +197,10 @@ marked `InOut`. Both produce a one-line error with a fix. The reference chapter
 - **Enums** are `class Color(Enum):`. Enums whose variants carry data (sum types) wait on decision
   [D.10](../../ROADMAP.md#decisions-needed), the spelling in valid Python syntax.
 - **Generics** use Python 3.12's `def f[T](x: T)` and are monomorphized. Constraints are trait
-  bounds with static dispatch only in the MVP; trait objects come in Phase 3 (roadmap 3.5). How
-  user code declares a trait is decision [D.9](../../ROADMAP.md#decisions-needed); until then only
-  the standard library's traits can be bounds.
+  bounds with static dispatch only in the MVP; trait objects come in Phase 3 (roadmap 3.5). A user
+  trait is a `class Body(Protocol)` that a type implements by naming it as a base, and `Embed[T]`
+  fields reuse another struct's fields ([0031](../decisions/0031-traits-are-protocols.md)); until
+  the checker builds them (roadmap 1.7.10) only the standard library's traits can be bounds.
 - **Inference** is local: inside a function body, never across functions. Signatures are
   mandatory, which keeps checking decidable, fast and parallel, and keeps errors local.
 - **No implicit nulls.** `T | None` is an optional value that must be checked before use.
@@ -586,6 +587,6 @@ Each open decision is a row in the roadmap's
 | D.3 | Mark `InOut` at the call site as well as the signature | Revisited after the example programs |
 | D.5 | C++ interop: full, a C-shaped subset, or dropped | Roadmap 4.1, the largest single item |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | Outside contributions |
-| D.9 | How user code declares a trait and implements it: structurally like Python's `Protocol`, or by naming it like Rust. Proposed: a `Protocol` class named as a base ([0031](../decisions/0031-traits-are-protocols.md)) | User-defined trait bounds in the type checker (1.7) |
+| D.9 | How user code declares a trait and implements it: structurally like Python's `Protocol`, or by naming it like Rust. Decided: a `Protocol` class named as a base ([0031](../decisions/0031-traits-are-protocols.md)) | User-defined trait bounds in the type checker (1.7) |
 | D.10 | How to spell an enum whose variants carry data, in valid Python syntax | Sum types and exhaustive `match` (1.7) |
 | D.11 | Integer overflow in release builds: wrap or panic. Decided: wrap ([0030](../decisions/0030-integer-overflow.md)) | The runtime's overflow traps (1.12) and the reference's arithmetic rules |

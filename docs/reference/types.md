@@ -379,7 +379,9 @@ operations its bound allows apply to it. A number literal takes the type `T` und
 ### Traits
 
 A trait names a set of operations a type supports. Version 0 has only the standard library's
-traits; how user code declares new ones is roadmap decision D.9.
+traits. User code will declare its own as `class Body(Protocol)` and implement one by naming it as
+a base ([decision 0031](../decisions/0031-traits-are-protocols.md)); the checker does not accept
+them yet (roadmap 1.7.10).
 
 | Trait | A type satisfies it if it supports | Satisfied by |
 | --- | --- | --- |

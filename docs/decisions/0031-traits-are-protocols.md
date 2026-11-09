@@ -1,6 +1,6 @@
 # 0031. A trait is a `Protocol` class, and a type implements it by naming it as a base
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-09
 Roadmap: D.9
 
