@@ -325,6 +325,8 @@ impl<'db> Function<'_, '_, 'db> {
                 Failure::Message(format!("integer overflow in `{}`", symbol(*operator)))
             }
             Check::NonZeroDivisor => Failure::Message("integer division by zero".to_owned()),
+            Check::NonZeroStep => Failure::Message("slice step cannot be zero".to_owned()),
+            Check::SliceInBounds { .. } => return Err(Unsupported::new("slices of arrays")),
             Check::Assertion => {
                 let source = self.constants.source(self.span);
                 let condition = source.strip_prefix("assert ").unwrap_or(&source);

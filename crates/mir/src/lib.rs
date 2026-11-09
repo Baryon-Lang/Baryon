@@ -4,8 +4,8 @@
 //! A [`Body`] is a list of typed [locals](LocalDeclaration) and a list of
 //! [basic blocks](BasicBlock). Each block runs its [statements](Statement) in order and ends in
 //! one [`Terminator`], the only place control flow branches. Memory is read and written through
-//! [places](Place): a local followed by field, element and value steps, such as
-//! `particles[i].velocity`. Decision 0018 explains why the IR has this shape rather than static
+//! [places](Place): a local followed by field, element, slice and value steps, such as
+//! `particles[i].velocity` or the view `grid[:, k]`. Decision 0018 explains why the IR has this shape rather than static
 //! single assignment form: the reference rules, `noalias` metadata and drops are all stated over
 //! places.
 //!
@@ -17,8 +17,11 @@
 //! What the IR makes explicit, so no later stage guesses:
 //!
 //! - **Drops**: a [`Drop`](StatementKind::Drop) statement ends each owned value.
-//! - **Checks**: an [`Assert`](TerminatorKind::Assert) before each array index (decision 0010),
-//!   each division and each checked operation.
+//! - **Checks**: an [`Assert`](TerminatorKind::Assert) before each array index and slice
+//!   (decision 0010), each division and each checked operation.
+//! - **Views**: a slice of an array is a place ending in a [`Slice`](Projection::Slice) step,
+//!   never a value, because a view is a borrow and cannot be bound to a name (language
+//!   reference, "Slices").
 //! - **Errors**: a call to a function that can fail has an [`ErrorEdge`]; a body fails with
 //!   [`Raise`](TerminatorKind::Raise) (decision 0005).
 //! - **Argument modes**: each call [`Argument`] is a read-only borrow, an `InOut` borrow or an
@@ -101,7 +104,7 @@ pub use display::DisplayedBody;
 pub use operand::{
     BinaryOperator, Constant, ConstantValue, Elementwise, Operand, Piece, Rvalue, UnaryOperator,
 };
-pub use place::{Place, Projection};
+pub use place::{Place, Projection, SliceIndex};
 pub use statement::{
     AccumulateOperator, Argument, Builtin, Callee, Check, ErrorEdge, MathFunction, Reduction,
     ReductionOperator, Statement, StatementKind, Terminator, TerminatorKind,

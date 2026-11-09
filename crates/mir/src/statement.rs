@@ -390,6 +390,23 @@ pub enum Check<'db> {
         /// The dimension's length.
         length: Operand<'db>,
     },
+    /// A slice's range lies within its dimension (language reference, "Arrays", "Slicing"):
+    /// `start` and `stop` are each from 0 to the length, and when the range takes any element
+    /// its first, at `start`, is below the length. Python shortens such a slice; here it is
+    /// the bug it usually is.
+    SliceInBounds {
+        /// The dimension sliced, 0 for the outermost, so the panic message can name it.
+        dimension: u32,
+        /// Where the range starts, as the program wrote it or its default.
+        start: Operand<'db>,
+        /// Where the range stops, as the program wrote it or its default.
+        stop: Operand<'db>,
+        /// The dimension's length.
+        length: Operand<'db>,
+    },
+    /// A slice's step is not 0, which Python reports as `ValueError: slice step cannot be
+    /// zero`.
+    NonZeroStep,
     /// An integer operation did not overflow.
     NoOverflow(BinaryOperator),
     /// A divisor is not zero.
@@ -415,10 +432,18 @@ impl<'db> Check<'db> {
     pub fn operands(&self) -> Vec<&Operand<'db>> {
         match self {
             Self::IndexInBounds { index, length, .. } => vec![index, length],
+            Self::SliceInBounds {
+                start,
+                stop,
+                length,
+                ..
+            } => vec![start, stop, length],
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
-            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::Assertion => Vec::new(),
+            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::NonZeroStep | Self::Assertion => {
+                Vec::new()
+            }
         }
     }
 
@@ -427,10 +452,18 @@ impl<'db> Check<'db> {
     pub fn operands_mut(&mut self) -> Vec<&mut Operand<'db>> {
         match self {
             Self::IndexInBounds { index, length, .. } => vec![index, length],
+            Self::SliceInBounds {
+                start,
+                stop,
+                length,
+                ..
+            } => vec![start, stop, length],
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
-            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::Assertion => Vec::new(),
+            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::NonZeroStep | Self::Assertion => {
+                Vec::new()
+            }
         }
     }
 }

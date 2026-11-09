@@ -567,3 +567,5 @@ fn format_writes_its_pieces() {
 
 mod parallel;
 mod vector;
+
+mod slices;

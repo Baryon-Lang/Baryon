@@ -331,6 +331,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     (address, ty) = self.error_payload(&address, ty, *position)?;
                     continue;
                 }
+                Projection::Slice(_) => return Err(Unsupported::new("slices of arrays")),
                 Projection::Value => {
                     let TypeKind::Optional(value) = ty.kind(self.types.db) else {
                         return Err(self.types.unsupported(ty));
