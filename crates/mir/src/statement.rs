@@ -253,6 +253,13 @@ pub enum Builtin {
     /// same array and rounding error grows with the logarithm of the length, not the length.
     /// Integer sums need no tree, since integer addition is exact, and lower to a loop.
     Sum,
+    /// `a.dot(b)` of two rank-1 `Array` or `Fixed` arrays of floats: two arguments, the arrays,
+    /// each passed `Borrow`, of one element type and the same length, which lowering checks
+    /// first; the destination has the element type. Each product is rounded to the element
+    /// type, and the products are added in [`Sum`](Self::Sum)'s pairwise order, so `a.dot(b)`
+    /// has the same bits as `(a * b).sum()` without building `a * b`. A multiply and an add are
+    /// never fused into one rounding. Integer dot products lower to a loop, as integer sums do.
+    Dot,
     /// `xs.append(value)` on a `list`: two arguments, the list passed `InOut` and the value
     /// passed `Owned`, of the list's element type; the destination has type `None`. When the
     /// buffer is full it grows to twice its capacity, at least 4 elements, so a run of appends
@@ -277,6 +284,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Print.name(), "print");
     /// assert_eq!(mir::Builtin::Math(mir::MathFunction::Sqrt).name(), "math.sqrt");
     /// assert_eq!(mir::Builtin::Sum.name(), "sum");
+    /// assert_eq!(mir::Builtin::Dot.name(), "dot");
     /// assert_eq!(mir::Builtin::Append.name(), "list.append");
     /// assert_eq!(mir::Builtin::Philox.name(), "random.Philox");
     /// assert_eq!(mir::Builtin::Uniform.name(), "Philox.uniform");
@@ -287,6 +295,7 @@ impl Builtin {
             Self::Print => "print",
             Self::Math(function) => function.name(),
             Self::Sum => "sum",
+            Self::Dot => "dot",
             Self::Append => "list.append",
             Self::Philox => "random.Philox",
             Self::Uniform => "Philox.uniform",
@@ -406,6 +415,9 @@ pub enum Check<'db> {
     },
     /// A program's `assert` statement holds.
     Assertion,
+    /// An array reduced by `a.min()` or `a.max()` has at least one element, since there is no
+    /// smallest or largest of none. The panic message quotes the call from the source.
+    NotEmpty,
 }
 
 impl<'db> Check<'db> {
@@ -418,7 +430,9 @@ impl<'db> Check<'db> {
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
-            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::Assertion => Vec::new(),
+            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::Assertion | Self::NotEmpty => {
+                Vec::new()
+            }
         }
     }
 
@@ -430,7 +444,9 @@ impl<'db> Check<'db> {
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
-            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::Assertion => Vec::new(),
+            Self::NoOverflow(_) | Self::NonZeroDivisor | Self::Assertion | Self::NotEmpty => {
+                Vec::new()
+            }
         }
     }
 }
