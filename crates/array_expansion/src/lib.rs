@@ -11,7 +11,9 @@
 //! 3. allocates the result with [`NewArray`](mir::Rvalue::NewArray), for an `Array` result;
 //! 4. loops over every index in row-major order (decision 0008), the last dimension innermost,
 //!    computing each element into temporaries and storing it; the reads need no bounds checks,
-//!    since each index is below a length every array was checked to have;
+//!    since each index is below a length every array was checked to have; integer `+`, `-`, `*`
+//!    and `-x` on elements are checked for overflow as lowering checks them on two integers,
+//!    so a debug build panics and a release build wraps (decision 0030);
 //! 5. moves the result into the destination, and drops each array the expression moved.
 //!
 //! The result goes to a new temporary and moves into the destination only after the loop, so

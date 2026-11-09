@@ -75,9 +75,10 @@ impl<'db> Builder<'db> {
 
     /// `abs(x)` of an integer or a float, into `place`: `0 - x` when `x` is below zero, else
     /// `x`. A float takes `0.0 - x` at zero too, so `abs(-0.0)` is `0.0` as in Python, and a
-    /// `nan` stays `nan`. The absolute value of the most negative integer does not fit; it
-    /// wraps around to itself, as integer overflow does today. A complex number, whose `abs`
-    /// is its modulus, is reported as not lowered yet.
+    /// `nan` stays `nan`. The absolute value of the most negative integer does not fit, so
+    /// the integer `0 - x` is checked as `-x` is: a debug build panics with
+    /// ``integer overflow in `-` `` and a release build wraps it around to itself (decision
+    /// 0030). A complex number, whose `abs` is its modulus, is reported as not lowered yet.
     pub(crate) fn absolute(&mut self, place: Place, argument: NodeId, node: NodeId) {
         let ty = self.ty(node);
         let below = if self.is_float(ty) {
@@ -107,12 +108,8 @@ impl<'db> Builder<'db> {
             node,
         );
         self.start(negate);
-        let negated = Rvalue::Binary(
-            BinaryOperator::Subtract,
-            zero,
-            Operand::Copy(Place::from(value)),
-        );
-        self.assign(place.clone(), negated, node);
+        let negated = (zero, Operand::Copy(Place::from(value)));
+        self.arithmetic(place.clone(), BinaryOperator::Subtract, negated, ty, node);
         self.terminate(TerminatorKind::Goto(join), node);
         self.start(keep);
         self.assign(place, Rvalue::Use(Operand::Copy(Place::from(value))), node);

@@ -83,10 +83,10 @@ checks what it prints.
 | Lists of copy types, such as `list[f64]`: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing | Lists of other types, such as `list[str]`; `pop`, slices, `in` and comprehensions |
 
 Integer overflow ([decision 0030](../decisions/0030-integer-overflow.md)): a debug build panics
-on `+`, `-`, `*`, `+=`, `-=`, `*=` and `-x` that overflow, and `--release` wraps. Not checked yet,
-so they wrap in both builds: arithmetic in a generic function whose type parameter is an integer,
-`abs` of the type's minimum, whole-array arithmetic on integer arrays, and integer `a.sum()` and
-`v.dot(w)` (roadmap idea I.29).
+on `+`, `-`, `*`, `+=`, `-=`, `*=` and `-x` that overflow, and `--release` wraps. That includes
+arithmetic in a generic function whose type parameter is an integer, `abs` of the type's minimum,
+whole-array arithmetic on integer arrays, and integer `a.sum()` and `v.dot(w)` (roadmap 1.11.8).
+Indices the compiler computes itself, such as a `range` loop's counter, are not checked.
 
 ## Values and references
 
