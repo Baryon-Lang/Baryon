@@ -50,7 +50,9 @@ impl From<Local> for Place {
 /// One step from a value into a part of it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Projection {
-    /// A field of a struct or an item of a tuple, by its position in declaration order.
+    /// A field of a struct or an item of a tuple, by its position in declaration order; or a
+    /// part of a complex number, a float of its parts' width: 0 is the real part and 1 the
+    /// imaginary part, the order `types::layout` stores them in.
     Field(u32),
     /// One element of an `Array` or `Fixed`, at one index per dimension, or of a `list`, at
     /// one index, each held in a local of an integer type. The step itself is unchecked:

@@ -245,7 +245,9 @@ pub enum Builtin {
     /// or `Owned`; the destination has type `None` and the call cannot fail.
     Print,
     /// A mathematical function of floats. Every argument and the destination have one float
-    /// type, `f32` or `f64`; lowering converts integer operands first. The call cannot fail.
+    /// type, `f32` or `f64`; lowering converts integer operands first. The one exception is
+    /// [`Power`](MathFunction::Power) of complex numbers, where every argument and the
+    /// destination have one complex type instead. The call cannot fail.
     Math(MathFunction),
     /// `a.sum()` of an `Array` or `Fixed` array of floats: one argument, the array, passed
     /// `Borrow`; the destination has the element type. The elements are added in row-major
@@ -314,7 +316,18 @@ pub enum MathFunction {
     /// `math.cos(x)`, with `x` in radians.
     Cos,
     /// `x ** y` on floats, and `math.pow(x, y)`: two arguments, the base then the exponent.
+    ///
+    /// Also `x ** y` on two complex numbers of one type, `complex64` or `complex128`, computed
+    /// as Python's `complex.__pow__` computes it: by repeated squaring for a whole exponent of
+    /// at most 100 in size, through polar form otherwise. Where Python raises
+    /// `ZeroDivisionError`, zero to a negative or complex power, the result is `nan+nanj`, as
+    /// `NumPy` gives; where it raises `OverflowError`, the parts are infinite.
     Power,
+    /// `math.hypot(x, y)`: the length `sqrt(x * x + y * y)` of the vector `(x, y)`, without the
+    /// overflow or underflow of squaring first, as C's `hypot` computes it. An infinite
+    /// argument gives an infinity even when the other is NaN. Two arguments. `abs` of a complex
+    /// number is `hypot` of its parts, as Python computes it.
+    Hypot,
     /// `round` of a float to the nearest whole number, ties to even, as Python's `round` and
     /// `numpy.round` do; the result is still a float, so `2.5` gives `2.0`.
     RoundEven,
@@ -335,20 +348,23 @@ impl MathFunction {
             Self::Sin => "math.sin",
             Self::Cos => "math.cos",
             Self::Power => "math.pow",
+            Self::Hypot => "math.hypot",
             Self::RoundEven => "round",
         }
     }
 
-    /// How many arguments it takes: 2 for [`Power`](Self::Power), 1 for the rest.
+    /// How many arguments it takes: 2 for [`Power`](Self::Power) and [`Hypot`](Self::Hypot), 1
+    /// for the rest.
     ///
     /// ```
     /// assert_eq!(mir::MathFunction::Sqrt.arity(), 1);
     /// assert_eq!(mir::MathFunction::Power.arity(), 2);
+    /// assert_eq!(mir::MathFunction::Hypot.arity(), 2);
     /// ```
     #[must_use]
     pub fn arity(self) -> usize {
         match self {
-            Self::Power => 2,
+            Self::Power | Self::Hypot => 2,
             _ => 1,
         }
     }

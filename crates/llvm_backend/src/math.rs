@@ -4,8 +4,9 @@
 //!
 //! The intrinsics are LLVM's own names for the C library's functions: LLVM turns `llvm.sqrt` into
 //! one square-root instruction, folds them on constants, and calls `libm` for the rest, which the
-//! driver links with `-lm` (decision 0020). Since none of them can fail, the call needs no error
-//! edge and no check. Every operand and the result share one float type, as `mir` requires.
+//! driver links with `-lm` (decision 0020). [`MathFunction::Hypot`] has no intrinsic, so it calls
+//! C's `hypot` or `hypotf` from `libm` by name. Since none of them can fail, the call needs no
+//! error edge and no check. Every operand and the result share one float type, as `mir` requires.
 //!
 //! A [`Builtin::Sum`](mir::Builtin::Sum) of floats calls the runtime's pairwise sum,
 //! `baryon_rt_sum_f64` or `baryon_rt_sum_f32`, with the address of the first element and the
@@ -46,13 +47,14 @@ impl<'db> Function<'_, '_, 'db> {
             };
             values.push(format!("{llvm} {value}"));
         }
-        let intrinsic = format!("llvm.{}.{suffix}", intrinsic(function));
+        let callee = match function {
+            MathFunction::Hypot if suffix == "f32" => "hypotf".to_owned(),
+            MathFunction::Hypot => "hypot".to_owned(),
+            _ => format!("llvm.{}.{suffix}", intrinsic(function)),
+        };
         let parameters = vec![llvm; function.arity()].join(", ");
-        self.declare(
-            &intrinsic,
-            &format!("declare {llvm} @{intrinsic}({parameters})"),
-        );
-        let result = self.emit(&format!("call {llvm} @{intrinsic}({})", values.join(", ")));
+        self.declare(&callee, &format!("declare {llvm} @{callee}({parameters})"));
+        let result = self.emit(&format!("call {llvm} @{callee}({})", values.join(", ")));
         self.line(&format!("store {llvm} {result}, ptr {address}"));
         self.line(&format!("br label %{}", block_label(target)));
         Ok(())
@@ -103,6 +105,7 @@ impl<'db> Function<'_, '_, 'db> {
 }
 
 /// The name of the LLVM intrinsic for `function`, without its `llvm.` prefix and type suffix.
+/// [`MathFunction::Hypot`] has none; its name here is the C function's.
 fn intrinsic(function: MathFunction) -> &'static str {
     match function {
         MathFunction::Sqrt => "sqrt",
@@ -111,6 +114,7 @@ fn intrinsic(function: MathFunction) -> &'static str {
         MathFunction::Sin => "sin",
         MathFunction::Cos => "cos",
         MathFunction::Power => "pow",
+        MathFunction::Hypot => "hypot",
         MathFunction::RoundEven => "roundeven",
     }
 }
