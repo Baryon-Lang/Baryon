@@ -194,8 +194,9 @@ marked `InOut`. Both produce a one-line error with a fix. The reference chapter
 - **Structs** are classes with the base `Struct`. They have value semantics and move on
   assignment unless they also have the base `Copy`. There is no inheritance
   ([0015](../decisions/0015-no-class-inheritance.md)).
-- **Enums** are `class Color(Enum):`. Enums whose variants carry data (sum types) wait on decision
-  [D.10](../../ROADMAP.md#decisions-needed), the spelling in valid Python syntax.
+- **Enums** are `class Color(Enum):`. A value that is one of several kinds, each
+  with its own data (a sum type), is a union of structs, `Boundary = Periodic | Dirichlet`, taken
+  apart with `match` ([0032](../decisions/0032-sum-types-are-unions-of-structs.md)).
 - **Generics** use Python 3.12's `def f[T](x: T)` and are monomorphized. Constraints are trait
   bounds with static dispatch only in the MVP; trait objects come in Phase 3 (roadmap 3.5). A user
   trait is a `class Body(Protocol)` that a type implements by naming it as a base, and `Embed[T]`
@@ -588,5 +589,5 @@ Each open decision is a row in the roadmap's
 | D.5 | C++ interop: full, a C-shaped subset, or dropped | Roadmap 4.1, the largest single item |
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | Outside contributions |
 | D.9 | How user code declares a trait and implements it: structurally like Python's `Protocol`, or by naming it like Rust. Decided: a `Protocol` class named as a base ([0031](../decisions/0031-traits-are-protocols.md)) | User-defined trait bounds in the type checker (1.7) |
-| D.10 | How to spell an enum whose variants carry data, in valid Python syntax | Sum types and exhaustive `match` (1.7) |
+| D.10 | How to spell an enum whose variants carry data, in valid Python syntax. Decided: a union of structs ([0032](../decisions/0032-sum-types-are-unions-of-structs.md)) | Sum types and exhaustive `match` (1.7) |
 | D.11 | Integer overflow in release builds: wrap or panic. Decided: wrap ([0030](../decisions/0030-integer-overflow.md)) | The runtime's overflow traps (1.12) and the reference's arithmetic rules |

@@ -13,6 +13,7 @@ use std::process::{Command, Output};
 use std::sync::{Mutex, Once, PoisonError};
 
 mod examples;
+mod generic_methods;
 mod guide;
 mod modules;
 mod overflow;

@@ -263,8 +263,10 @@ class Boundary(Enum):
 ```
 
 A class with the base `Enum` is an enumeration of named constants, as in Python. Enums are `Copy`
-and can be compared with `==` and `!=`, but not ordered with `<`. Enums whose variants carry data
-wait on roadmap decision D.10.
+and can be compared with `==` and `!=`, but not ordered with `<`. A value that is one of several
+kinds, each with its own data, is a union of structs instead
+([decision 0032](../decisions/0032-sum-types-are-unions-of-structs.md)); the compiler does not
+accept it yet (roadmap 1.7.13).
 
 A `match` must handle every value of its subject. Over an enum, that means a `case` for each
 member or a final `case _:`; the compiler names a member that is missing, so adding a member to an
@@ -348,6 +350,9 @@ A parameter of type `Callable[[f64, Vec3], Vec3]` takes a function with that sig
 0, the argument must be the name of a module-level function, not a closure. The compiler generates
 one copy of the receiving function per function passed to it, so the passed function is inlined
 and the call costs nothing ([decision 0026](../decisions/0026-functions-as-arguments.md)).
+The receiving function may pass the parameter on to another `Callable` parameter or copy it into
+a local. Which function a name holds must be known when compiling, so a local that holds one of
+two different functions depending on a branch is reported when building.
 
 ## Generics
 
