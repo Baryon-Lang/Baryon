@@ -65,8 +65,9 @@ def array_caller(a: Array[f64, 1]) -> f64:
 
 /// A generic body keeps its type parameters: `+`, `-` and `*` on `T` are the instance's
 /// arithmetic, computed into a local of type `T` that monomorphization checks for overflow
-/// when `T` is an integer, a literal of type `T` keeps the value written, and a call of a generic function
-/// names its type arguments. `//` depends on whether `T` is an integer, so it waits.
+/// when `T` is an integer, a literal of type `T` keeps the value written, and a call of a
+/// generic function names its type arguments. `//` depends on whether `T` is an integer, so it
+/// waits.
 #[test]
 fn generic_bodies_keep_their_type_parameters() {
     let program = r"def square[T: Number](x: T) -> T:
