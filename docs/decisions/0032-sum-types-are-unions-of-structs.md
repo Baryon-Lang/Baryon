@@ -1,6 +1,6 @@
 # 0032. A value that is one of several kinds is a union of structs, taken apart with `match`
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-09
 Roadmap: D.10
 
@@ -43,7 +43,7 @@ several error types ([Errors](../reference/errors.md)). Both are sum types alrea
 
 ## Decision
 
-Recommended: **option A, a union of structs**. Each kind is an ordinary struct. The sum type is the
+**A union of structs** (option A, chosen by Collins on 2026-11-09). Each kind is an ordinary struct. The sum type is the
 union of those structs, written with `|` and usually named with a type alias. A value is taken apart
 with `match` and Python's class patterns.
 
