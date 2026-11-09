@@ -64,7 +64,7 @@ reference leaves the feature out.
 | Question | What is missing until it is decided | Roadmap |
 | --- | --- | --- |
 | How user code declares a trait and how a type implements it. Decided in [decision 0031](../decisions/0031-traits-are-protocols.md); the checker does not implement it yet (roadmap 1.7.10) | Only the standard library's traits, such as `VectorSpace`, can be used as bounds | D.9 |
-| How to spell an enum whose variants carry data (a sum type) | Enums are plain named constants | D.10 |
+| How to spell an enum whose variants carry data (a sum type). Proposed in [decision 0032](../decisions/0032-sum-types-are-unions-of-structs.md), a union of structs; not yet decided | Enums are plain named constants | D.10 |
 | Whether a mutable argument is marked at the call site | No marker, per [decision 0006](../decisions/0006-parameter-passing.md) | D.3 |
 
 ## Not yet specified
