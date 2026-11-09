@@ -52,12 +52,50 @@ impl<'db> Body<'db> {
             return ty;
         }
         let TypeKind::Struct(nominal) = base.kind(self.db) else {
+            if self.has_no_members(base) {
+                return self.no_member(node, base, name, false);
+            }
             return self.lowerer.unknown();
         };
         match self.member(node, nominal, base, attribute) {
             Some(Member::Field(ty)) => ty,
             _ => self.lowerer.unknown(),
         }
+    }
+
+    /// Whether a value of type `ty` has no fields or methods at all in version 0, so any name
+    /// after a dot is an error: a `str` (other than `copy`, which the caller handles), a number,
+    /// `bool`, an enum value, a tuple or `None`. `Array`, `Fixed`, `list`, structs and the
+    /// standard library's types have their own.
+    pub(super) fn has_no_members(&self, ty: Type<'db>) -> bool {
+        matches!(
+            ty.kind(self.db),
+            TypeKind::Str
+                | TypeKind::Primitive(_)
+                | TypeKind::Enum(_)
+                | TypeKind::Tuple(_)
+                | TypeKind::None
+        )
+    }
+
+    /// Reports `base.name`, or the call `base.name(...)` when `call`, on a value whose type
+    /// has no fields or methods in version 0, such as `"abc".upper()` or `x.real`. Before,
+    /// these were left unchecked and failed later as a call lowering does not handle.
+    pub(super) fn no_member(
+        &mut self,
+        node: NodeId,
+        base: Type<'db>,
+        name: &str,
+        call: bool,
+    ) -> Type<'db> {
+        let what = if call { "method" } else { "attribute" };
+        let message = format!("`{}` has no {what} `{name}`", self.show(base));
+        let advice = match base.kind(self.db) {
+            TypeKind::Str => "version 0 defines one method on `str`: `copy`",
+            _ => "version 0 defines no methods or attributes on numbers, `bool`, enums or tuples",
+        };
+        self.lowerer
+            .error(node, &message, "not defined on this type", Some(advice))
     }
 
     /// `Class.name`: an enum member, checked to exist. Anything else on a class, such as

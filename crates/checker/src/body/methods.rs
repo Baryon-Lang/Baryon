@@ -59,16 +59,7 @@ impl<'db> Body<'db> {
             return result;
         }
         // `copy` on a `str` or a struct that does not define its own: a built-in method.
-        let copy = Signature {
-            type_parameters: Vec::new(),
-            parameters: vec![Parameter {
-                name: "self".to_owned(),
-                ty: base,
-                mode: types::Mode::Borrow,
-                default: false,
-            }],
-            returns: base,
-        };
+        let copy = copy_signature(base);
         let receiver = Passed {
             node: value,
             mode: types::Mode::Borrow,
@@ -80,6 +71,9 @@ impl<'db> Body<'db> {
                 return self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments);
             }
             TypeKind::Struct(nominal) => nominal.clone(),
+            _ if self.has_no_members(base) => {
+                return self.no_method(function, base, &callee, arguments);
+            }
             _ => return self.untyped(arguments),
         };
         match self.member(function, &nominal, base, attribute) {
@@ -121,5 +115,33 @@ impl<'db> Body<'db> {
             }
             None => self.untyped(arguments),
         }
+    }
+
+    /// Checks the arguments of the call of `name` on `base`, a type with no methods, then
+    /// reports the call.
+    fn no_method(
+        &mut self,
+        function: NodeId,
+        base: Type<'db>,
+        name: &str,
+        arguments: &Arguments,
+    ) -> Type<'db> {
+        self.untyped(arguments);
+        self.no_member(function, base, name, true)
+    }
+}
+
+/// The signature of the built-in `copy` of a `str` or a struct of type `base`: it borrows the
+/// value and returns a new one of the same type.
+fn copy_signature(base: Type<'_>) -> Signature<'_> {
+    Signature {
+        type_parameters: Vec::new(),
+        parameters: vec![Parameter {
+            name: "self".to_owned(),
+            ty: base,
+            mode: types::Mode::Borrow,
+            default: false,
+        }],
+        returns: base,
     }
 }

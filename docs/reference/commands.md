@@ -13,6 +13,8 @@ are no options yet.
 | [`baryon test <directory>`](#baryon-test) | Builds and runs every `@test` function |
 | [`baryon doc <directory> <output>`](#baryon-doc) | Writes the package's documentation as Markdown |
 | [`baryon lsp`](#baryon-lsp) | Runs the language server an editor talks to |
+| `baryon --version` | Prints the release, such as `baryon 0.1.0`; put it in a bug report |
+| `baryon --help` | Prints the usage line |
 
 ## Installing
 
@@ -55,8 +57,9 @@ Every command uses the same exit statuses for its own outcome:
 | 2 | The command was called wrongly, or a file or directory could not be read |
 
 `baryon run` is the exception: once the program starts, it exits with the program's own status, as
-described under [`baryon run`](#baryon-run). Called with no arguments or wrong ones, `baryon` prints
-the usage line and exits with 2:
+described under [`baryon run`](#baryon-run). `baryon --version` and `baryon --help` print to
+standard output and exit with 0. Called with no arguments or wrong ones, `baryon` prints the usage
+line to standard error and exits with 2:
 
 ```text
 baryon: usage: baryon check <directory> | baryon build <directory> <output> | baryon run <directory> | baryon test <directory> | baryon doc <directory> <output> | baryon lsp
