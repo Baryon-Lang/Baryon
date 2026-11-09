@@ -135,6 +135,8 @@ pub(crate) fn panic(failure: Failure<'_>, location: Option<&Location>) -> ! {
             std::thread::park();
         }
     }
+    // What the program printed before the panic comes first, its unended line included.
+    crate::print::flush();
     let text = report(failure, location) + &backtrace::capture();
     // A failed write cannot be reported anywhere; the exit status still says what happened.
     let _ = std::io::stderr().lock().write_all(text.as_bytes());

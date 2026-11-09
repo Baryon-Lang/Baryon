@@ -1,10 +1,12 @@
 //! `print`: one runtime call per argument; the separator and line end lowering passes become
 //! byte constants.
 
-use super::{Database, Module, end, no_structs, parameter, primitive, sources, span, symbol_of};
+use super::{
+    Database, Module, end, no_names, no_structs, parameter, primitive, sources, span, symbol_of,
+};
 use mir::{Argument, BlockId, Body, Builtin, Callee, Constant, ConstantValue, Operand};
 use mir::{LocalKind, TerminatorKind};
-use types::{Integer, Mode, Primitive, Type, TypeKind};
+use types::{Float, Integer, Mode, Primitive, Type, TypeKind};
 
 /// `def show(x: u8): print("x =", x)`: the literal, the separator and the line end print through
 /// `baryon_rt_print_str`, and the `u8` widens to `u64`.
@@ -36,7 +38,7 @@ fn print_calls_the_runtime_per_argument() {
     body.push_block(end(TerminatorKind::Return));
     let symbol = symbol_of(&database);
     let sources = sources();
-    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    let mut module = Module::new(&database, &sources, &no_structs, &no_names, &symbol);
     module.define("show", &body, &[]).unwrap();
     assert_eq!(
         module.finish(),
@@ -75,11 +77,18 @@ fn unprintable_values_are_named() {
     let none = Type::new(&database, TypeKind::None);
     let mut body = Body::new(none, span());
     let printed = body.push_local(none, LocalKind::Temporary, span());
-    let unit = Type::new(&database, TypeKind::Tuple(Vec::new()));
-    let empty = body.push_local(unit, LocalKind::Temporary, span());
+    let f64 = primitive(&database, Primitive::Float(Float::F64));
+    let array = Type::new(
+        &database,
+        TypeKind::Array {
+            element: f64,
+            rank: 1,
+        },
+    );
+    let values = body.push_local(array, LocalKind::Temporary, span());
     body.push_block(end(TerminatorKind::Call {
         callee: Callee::Builtin(Builtin::Print),
-        arguments: vec![Argument::Borrow(empty.into())],
+        arguments: vec![Argument::Borrow(values.into())],
         destination: printed.into(),
         target: BlockId::new(1),
         error: None,
@@ -87,12 +96,15 @@ fn unprintable_values_are_named() {
     body.push_block(end(TerminatorKind::Return));
     let symbol = symbol_of(&database);
     let sources = sources();
-    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    let mut module = Module::new(&database, &sources, &no_structs, &no_names, &symbol);
     assert_eq!(
         module
             .define("show", &body, &[])
             .map_err(|error| error.to_string()),
-        Err("the LLVM backend does not compile printing values of type `tuple[]` yet".to_owned())
+        Err(
+            "the LLVM backend does not compile printing values of type `Array[f64, 1]` yet"
+                .to_owned()
+        )
     );
 }
 
