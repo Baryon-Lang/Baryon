@@ -14,6 +14,7 @@ use std::sync::{Mutex, Once, PoisonError};
 
 mod examples;
 mod guide;
+mod math;
 mod modules;
 mod overflow;
 mod parallel;
