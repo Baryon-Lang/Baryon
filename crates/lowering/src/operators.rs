@@ -3,11 +3,11 @@
 
 use crate::builder::Builder;
 use mir::{
-    BinaryOperator, Check, Constant, ConstantValue, MathFunction, Operand, Place, Rvalue,
-    TerminatorKind, UnaryOperator,
+    BinaryOperator, Check, Constant, ConstantValue, MathFunction, Operand, Place, Projection,
+    Rvalue, TerminatorKind, UnaryOperator,
 };
 use syntax::{NodeId, Operator, Role, SyntaxKind};
-use types::{Type, TypeKind};
+use types::{Primitive, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// `left op right` on numbers, into `place`.
@@ -97,7 +97,51 @@ impl<'db> Builder<'db> {
                 target,
             });
         }
+        let overflows = matches!(
+            operator,
+            BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
+        );
+        if overflows && self.is_integer(ty) {
+            return self.checked(place, operator, (left, right), ty, node);
+        }
         self.assign(place, Rvalue::Binary(operator, left, right), node);
+    }
+
+    /// `place = left op right` for integer `+`, `-` or `*`, with an overflow check: a
+    /// [`CheckedBinary`](Rvalue::CheckedBinary) into a `tuple[T, bool]` temporary, an `Assert`
+    /// that its flag is `False`, then its result. A debug build panics there; a release build's
+    /// backend drops the check and keeps the wrapped result (decision 0030).
+    fn checked(
+        &mut self,
+        place: Place,
+        operator: BinaryOperator,
+        (left, right): (Operand<'db>, Operand<'db>),
+        ty: Type<'db>,
+        node: NodeId,
+    ) {
+        let boolean = self.boolean_type();
+        let pair = self.temporary(Type::new(self.db, TypeKind::Tuple(vec![ty, boolean])), node);
+        self.assign(
+            Place::from(pair),
+            Rvalue::CheckedBinary(operator, left, right),
+            node,
+        );
+        let fits = self.temporary(boolean, node);
+        self.assign(
+            Place::from(fits),
+            Rvalue::Unary(
+                UnaryOperator::Not,
+                Operand::Copy(Place::from(pair).project(Projection::Field(1))),
+            ),
+            node,
+        );
+        self.then(node, |target| TerminatorKind::Assert {
+            condition: Operand::Copy(Place::from(fits)),
+            check: Check::NoOverflow(operator),
+            target,
+        });
+        let result = Operand::Copy(Place::from(pair).project(Projection::Field(0)));
+        self.assign(place, Rvalue::Use(result), node);
     }
 
     /// `-x`, `+x`, `~x` and `not x`, into `place`.
@@ -113,8 +157,19 @@ impl<'db> Builder<'db> {
         if !generic && !matches!(self.ty(node).kind(self.db), TypeKind::Primitive(_)) {
             return self.unsupported(node, "operators on values other than numbers");
         }
+        let ty = self.ty(node);
+        let operator = self.tree.node(node).operator();
+        if operator == Operator::Negate
+            && let TypeKind::Primitive(Primitive::Integer(integer)) = ty.kind(self.db)
+            && integer.is_signed()
+        {
+            // `-x` is `0 - x`, which overflows only for the type's minimum, as `-i64::MIN`.
+            let zero = Operand::Constant(Constant::integer(ty, 0));
+            let operand = self.operand(value);
+            return self.checked(place, BinaryOperator::Subtract, (zero, operand), ty, node);
+        }
         let operand = self.operand(value);
-        let rvalue = match self.tree.node(node).operator() {
+        let rvalue = match operator {
             Operator::Negate => Rvalue::Unary(UnaryOperator::Negate, operand),
             Operator::Not => Rvalue::Unary(UnaryOperator::Not, operand),
             Operator::Invert => Rvalue::Unary(UnaryOperator::BitNot, operand),

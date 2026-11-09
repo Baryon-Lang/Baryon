@@ -26,9 +26,11 @@ fn(_1: f64) -> f64 {
     let _7: i64;
     let _8: i64;
     let _9: i64;
-    let _10: bool;
+    let _10: tuple[i64, bool];
     let _11: bool;
     let _12: bool;
+    let _13: bool;
+    let _14: bool;
 
     bb0: {
         _3 = list[f64](1.0_f64, copy _1);
@@ -41,15 +43,21 @@ fn(_1: f64) -> f64 {
         _5 = len(_2, 0);
         _9 = len(_2, 0);
         _8 = copy _9;
-        _7 = Subtract(copy _8, 1_i64);
-        _6 = copy _7;
-        _10 = GreaterEqual(copy _6, 0_i64);
-        _11 = Less(copy _6, copy _5);
-        _12 = BitAnd(copy _10, copy _11);
-        assert(copy _12, index in bounds in dimension 0: copy _6 < copy _5) -> bb2;
+        _10 = CheckedSubtract(copy _8, 1_i64);
+        _11 = Not(copy _10.1);
+        assert(copy _11, no overflow: Subtract) -> bb2;
     }
 
     bb2: {
+        _7 = copy _10.0;
+        _6 = copy _7;
+        _12 = GreaterEqual(copy _6, 0_i64);
+        _13 = Less(copy _6, copy _5);
+        _14 = BitAnd(copy _12, copy _13);
+        assert(copy _14, index in bounds in dimension 0: copy _6 < copy _5) -> bb3;
+    }
+
+    bb3: {
         _0 = copy _2[_6];
         drop(_2);
         return;

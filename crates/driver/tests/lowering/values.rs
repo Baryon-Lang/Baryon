@@ -264,7 +264,9 @@ fn(_1: i64) -> None {
     let _1: i64; // parameter n
     let _2: i64; // k
     let _3: bool;
-    let _4: bool;
+    let _4: tuple[i64, bool];
+    let _5: bool;
+    let _6: bool;
 
     bb0: {
         _2 = copy _1;
@@ -277,9 +279,9 @@ fn(_1: i64) -> None {
     }
 
     bb2: {
-        _2 = Subtract(copy _2, 1_i64);
-        _4 = Equal(copy _2, 100_i64);
-        branch copy _4 -> [true: bb4, false: bb5];
+        _4 = CheckedSubtract(copy _2, 1_i64);
+        _5 = Not(copy _4.1);
+        assert(copy _5, no overflow: Subtract) -> bb4;
     }
 
     bb3: {
@@ -288,10 +290,16 @@ fn(_1: i64) -> None {
     }
 
     bb4: {
-        goto -> bb1;
+        _2 = copy _4.0;
+        _6 = Equal(copy _2, 100_i64);
+        branch copy _6 -> [true: bb5, false: bb6];
     }
 
     bb5: {
+        goto -> bb1;
+    }
+
+    bb6: {
         goto -> bb1;
     }
 }

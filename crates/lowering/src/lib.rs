@@ -70,10 +70,11 @@
 //!   which monomorphization turns into a direct call (decision 0026).
 //! - **Conversions.** Where number mixing converts an operand (decision 0014), a
 //!   [`Convert`](mir::Rvalue::Convert) does it, and `/` on integers converts both sides to `f64`.
-//!
-//! Integer `+`, `-` and `*` lower to wrapping [`Binary`](mir::Rvalue::Binary) operations until
-//! decision D.11 settles overflow; the IR's [`CheckedBinary`](mir::Rvalue::CheckedBinary) is
-//! ready for whichever answer it gives.
+//! - **Integer overflow.** Integer `+`, `-` and `*`, their in-place forms and `-x` on a signed
+//!   integer lower to a [`CheckedBinary`](mir::Rvalue::CheckedBinary) and an `Assert` of
+//!   [`NoOverflow`](mir::Check::NoOverflow) on its flag, in every build; a release build's
+//!   backend leaves the asserts out (decision 0030). On a type parameter they stay a wrapping
+//!   [`Binary`](mir::Rvalue::Binary), since lowering does not know the type is an integer.
 //!
 //! # What it does not lower yet
 //!

@@ -62,3 +62,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0027. When a default parameter value is evaluated](0027-default-parameter-evaluation.md) | Accepted |
 | [0028. `random.Philox` gives the same numbers as NumPy's Philox, and the compiler builds it in](0028-philox-random-numbers.md) | Accepted |
 | [0029. The runtime keeps the standard library; programs drop unused code, not `std`](0029-runtime-size.md) | Accepted |
+| [0030. Integer overflow panics in debug builds and wraps in release builds](0030-integer-overflow.md) | Accepted |

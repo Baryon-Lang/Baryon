@@ -305,5 +305,32 @@ fn check(db: &dyn TypeDb, package: Package) -> Vec<Diagnostic> {
     problems
 }
 
+/// Which kind of build to compile: what happens when integer arithmetic overflows (decision
+/// 0030). Both are optimized and carry line tables; only the overflow check differs.
+///
+/// ```
+/// use driver::{Profile, Session};
+///
+/// let mut session = Session::new();
+/// session.add_file("main.byn", "def main():\n    n = 7\n    print(n * 6)\n")?;
+/// let debug = session.compile(None, Profile::Debug).unwrap();
+/// assert!(debug.contains("integer overflow in `*`"), "{debug}");
+/// let release = session.compile(None, Profile::Release).unwrap();
+/// assert!(!release.contains("integer overflow"), "{release}");
+/// # Ok::<(), source::SourceError>(())
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Profile {
+    /// The default, as `baryon build` with no flag: integer `+`, `-`, `*` and negation that
+    /// overflow panic with the operator and the source location, so a wrong answer stops the
+    /// program instead of flowing into the results.
+    #[default]
+    Debug,
+    /// `baryon build --release`: overflowing integer arithmetic wraps around in two's
+    /// complement, as C and Fortran compilers in practice and Rust's release builds do, and the
+    /// checks cost nothing. Every other check, such as array bounds, stays.
+    Release,
+}
+
 #[cfg(test)]
 mod tests;

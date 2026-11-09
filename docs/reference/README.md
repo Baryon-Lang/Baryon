@@ -65,7 +65,6 @@ reference leaves the feature out.
 | --- | --- | --- |
 | How user code declares a trait and how a type implements it | Only the standard library's traits, such as `VectorSpace`, can be used as bounds | D.9 |
 | How to spell an enum whose variants carry data (a sum type) | Enums are plain named constants | D.10 |
-| Whether integer overflow traps in release builds | The design plan's rule holds: overflow panics in debug builds and wraps in release builds | D.11 |
 | Whether a mutable argument is marked at the call site | No marker, per [decision 0006](../decisions/0006-parameter-passing.md) | D.3 |
 
 ## Not yet specified

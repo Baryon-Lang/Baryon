@@ -78,6 +78,10 @@ pub(crate) struct Constants<'a> {
     numbers: BTreeMap<Key, usize>,
     /// The module's debug information, when the driver asked for it.
     pub(crate) debug: Option<Debug>,
+    /// Whether integer overflow wraps, as in a release build, instead of panicking: overflow
+    /// [`Assert`](mir::TerminatorKind::Assert)s are not written, and `prange` reductions
+    /// combine with wrapping arithmetic (decision 0030).
+    pub(crate) wraps: bool,
     /// The loop metadata node of each `simd` loop, in the order they were made. They share
     /// the numbering of the debug information's nodes, after which they are written.
     loops: Vec<String>,
@@ -102,6 +106,7 @@ impl<'a> Constants<'a> {
             definitions: Vec::new(),
             numbers: BTreeMap::new(),
             debug: None,
+            wraps: false,
             loops: Vec::new(),
         }
     }

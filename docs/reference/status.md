@@ -82,9 +82,11 @@ checks what it prints.
 | [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026) | Passing on a `Callable` parameter to another call; copying a `Callable` parameter into a local when another `Callable` parameter of the same signature received a different function |
 | Lists of copy types, such as `list[f64]`: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing | Lists of other types, such as `list[str]`; `pop`, slices, `in` and comprehensions |
 
-Integer overflow: there is one build mode today, and arithmetic that overflows an integer wraps
-around, as the release-build rule says. The panic the debug-build rule promises is not built yet;
-roadmap decision D.11 may change both.
+Integer overflow ([decision 0030](../decisions/0030-integer-overflow.md)): a debug build panics
+on `+`, `-`, `*`, `+=`, `-=`, `*=` and `-x` that overflow, and `--release` wraps. Not checked yet,
+so they wrap in both builds: arithmetic in a generic function whose type parameter is an integer,
+`abs` of the type's minimum, whole-array arithmetic on integer arrays, and integer `a.sum()` and
+`v.dot(w)` (roadmap idea I.29).
 
 ## Values and references
 
@@ -116,7 +118,8 @@ out of a function, including through a `raise`.
 Everything in this chapter builds: error types, `Raises`, `raise`, errors passed on through
 callers, `try` with `except` naming one type or a tuple of them, `as`, bare `raise`, `main`
 ending with an error, and every panic in the table, with its message, location and backtrace.
-The one exception is the overflow panic, described under [Types](#types).
+The one exception is the overflow panic: it names the operator but not yet its operands (roadmap
+idea I.18), and [Types](#types) lists the operations it does not check yet.
 
 ## Parallel and vector loops
 

@@ -11,7 +11,7 @@
 
 mod instances;
 
-use crate::Session;
+use crate::{Profile, Session};
 use database::Db;
 use diagnostics::{Diagnostic, Severity};
 use instances::{Instance, Instances, ready};
@@ -65,14 +65,14 @@ impl Session {
     ///
     /// `root` is the package's directory, absolute, when the module should carry line tables
     /// that point debuggers, profilers and backtraces back to the source files under it; `None`
-    /// leaves them out.
+    /// leaves them out. `profile` says whether integer overflow panics or wraps ([`Profile`]).
     ///
     /// ```
-    /// use driver::Session;
+    /// use driver::{Profile, Session};
     ///
     /// let mut session = Session::new();
     /// session.add_file("main.byn", "def main():\n    assert 6 * 7 == 42\n")?;
-    /// let module = session.compile(None).unwrap();
+    /// let module = session.compile(None, Profile::Debug).unwrap();
     /// assert!(module.contains("define void @main.main()"), "{module}");
     /// assert!(module.contains("define i32 @main()"), "{module}");
     /// # Ok::<(), source::SourceError>(())
@@ -87,8 +87,9 @@ impl Session {
     /// cannot be compiled yet, and an error when `main.byn` has no `main` function, when another
     /// module defines one, or when it takes parameters or returns a value. `main` may raise; an
     /// error that reaches its end is printed and the program exits with status 1.
-    pub fn compile(&self, root: Option<&str>) -> Result<String, Vec<Diagnostic>> {
-        self.program(root, Program::Main).map(|(module, _)| module)
+    pub fn compile(&self, root: Option<&str>, profile: Profile) -> Result<String, Vec<Diagnostic>> {
+        self.program(root, profile, Program::Main)
+            .map(|(module, _)| module)
     }
 
     /// The package as one LLVM module for `baryon test`, with the name of each `@test` function
@@ -100,14 +101,14 @@ impl Session {
     ///
     /// A test is a top-level function decorated `@test` that takes no parameters and returns
     /// `None`; it may raise. The package needs no `main` function; every function is compiled as
-    /// it is for [`compile`](Self::compile), and `root` means the same.
+    /// it is for [`compile`](Self::compile), and `root` and `profile` mean the same.
     ///
     /// ```
-    /// use driver::Session;
+    /// use driver::{Profile, Session};
     ///
     /// let mut session = Session::new();
     /// session.add_file("heat.byn", "@test\ndef test_flux():\n    assert 2 + 2 == 4\n")?;
-    /// let (module, tests) = session.compile_tests(None).unwrap();
+    /// let (module, tests) = session.compile_tests(None, Profile::Debug).unwrap();
     /// assert_eq!(tests, ["heat.test_flux"]);
     /// assert!(module.contains("define i32 @main(i32 %count, ptr %arguments)"), "{module}");
     /// # Ok::<(), source::SourceError>(())
@@ -123,8 +124,9 @@ impl Session {
     pub fn compile_tests(
         &self,
         root: Option<&str>,
+        profile: Profile,
     ) -> Result<(String, Vec<String>), Vec<Diagnostic>> {
-        self.program(root, Program::Tests)
+        self.program(root, profile, Program::Tests)
     }
 
     /// The error for a `main` function outside the package's `main.byn`.
@@ -150,11 +152,12 @@ impl Session {
         })
     }
 
-    /// The package as one LLVM module whose C `main` starts `program`, with the names of the
-    /// tests it runs, which are none for [`Program::Main`].
+    /// The package as one LLVM module whose C `main` starts `program`, built for `profile`, with
+    /// the names of the tests it runs, which are none for [`Program::Main`].
     fn program(
         &self,
         root: Option<&str>,
+        profile: Profile,
         program: Program,
     ) -> Result<(String, Vec<String>), Vec<Diagnostic>> {
         let errors: Vec<Diagnostic> = self
@@ -193,6 +196,9 @@ impl Session {
         let mut module = llvm_backend::Module::new(database, self, &declared, &symbol);
         if let Some(root) = root {
             module.debug_info(root);
+        }
+        if profile == Profile::Release {
+            module.wrap_on_overflow();
         }
         let mut errors = Vec::new();
         let mut entries = Vec::new();

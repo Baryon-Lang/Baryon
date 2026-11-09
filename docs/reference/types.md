@@ -68,8 +68,20 @@ a simulation is a wrong answer with no error.
 
 ### Integer overflow
 
-Until roadmap decision D.11 is made, the design plan's rule holds: arithmetic that overflows an
-integer type panics in debug builds and wraps around in release builds.
+Arithmetic whose exact result does not fit its integer type *overflows*. A debug build, the
+default for `baryon build`, `run` and `test`, stops the program with a panic that names the
+operator and the line; a release build, `--release`, wraps around in two's complement, as C and
+Rust's release builds do ([decision 0030](../decisions/0030-integer-overflow.md)):
+
+```python
+def double(n: i64) -> i64:
+    return n + n
+```
+
+`double(9223372036854775807)` panics with ``integer overflow in `+` `` in a debug build and returns
+`-2` in a release build. `+`, `-`, `*`, their in-place forms `+=`, `-=`, `*=`, and `-x` on a signed
+integer are checked. A result that differs between the two builds is an overflow the debug build
+would have reported, so test in a debug build and time in a release build.
 
 ## bool
 

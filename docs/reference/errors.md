@@ -101,7 +101,7 @@ These panic:
 | `assert` with a false condition | The condition's source and the message, if given |
 | Integer division or `%` by zero | The operation |
 | A conversion that cannot hold the value, such as `u8(300)` | The value and the target type |
-| Integer overflow, in debug builds | The operation and its operands |
+| Integer overflow, in debug builds ([Types](types.md#integer-overflow)) | The operation and its operands |
 | A negative exponent in integer `**` | The exponent |
 
 A panic prints its message and the source location, with a backtrace in debug builds, and ends the
@@ -122,8 +122,8 @@ backtrace, most recent call last:
   main.pick at /home/ada/heat/main.byn:2:19
 ```
 
-There is one build mode for now, and `baryon build` and `baryon run` always include the debug
-information a backtrace needs, so every panic prints one. A program without that information
+Debug and release builds both include the debug information a backtrace needs
+([`baryon build`](commands.md#debug-and-release-builds)), so every panic prints one. A program without that information
 prints the message and location only.
 
 Panics cannot be caught, by `try` or anything else. A bug that could be caught would be a bug that

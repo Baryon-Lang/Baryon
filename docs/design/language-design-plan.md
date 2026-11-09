@@ -250,8 +250,8 @@ What it does not cover, and the escape hatches:
 - **Bounds checks** stay on in every build mode; `a.unchecked[i]` inside `with unsafe:` opts out
   ([0010](../decisions/0010-bounds-checks.md)).
 - **Floating point** is strict IEEE except inside a `with fastmath:` block, never a global flag.
-- **Integer overflow** panics in debug builds. Whether it wraps or panics in release builds is
-  decision [D.11](../../ROADMAP.md#decisions-needed).
+- **Integer overflow** panics in debug builds and wraps in release builds
+  ([0030](../decisions/0030-integer-overflow.md), decision D.11).
 
 ### Physics simulation and mathematical modeling (the core purpose)
 
@@ -588,4 +588,4 @@ Each open decision is a row in the roadmap's
 | D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | Outside contributions |
 | D.9 | How user code declares a trait and implements it: structurally like Python's `Protocol`, or by naming it like Rust | User-defined trait bounds in the type checker (1.7) |
 | D.10 | How to spell an enum whose variants carry data, in valid Python syntax | Sum types and exhaustive `match` (1.7) |
-| D.11 | Integer overflow in release builds: wrap or panic | The runtime's overflow traps (1.12) and the reference's arithmetic rules |
+| D.11 | Integer overflow in release builds: wrap or panic. Decided: wrap ([0030](../decisions/0030-integer-overflow.md)) | The runtime's overflow traps (1.12) and the reference's arithmetic rules |
