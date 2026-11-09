@@ -4,9 +4,9 @@
 //! `a.copy()` is the whole-array expression whose only leaf is `a`, so array expansion allocates
 //! the new array and copies each element in the same loop nest as `a + b`. `a.sum()` of floats
 //! calls the runtime's pairwise sum; of integers, it and `v.dot(w)` add into an accumulator in a
-//! loop nest of their own, with each integer `+` and `*` checked for overflow as the operators are. `v.round()` builds a new
-//! `Fixed` value from each element rounded, with one call per element, since a `Fixed` array is
-//! small and its length is known when compiling.
+//! loop nest of their own, with each integer `+` and `*` checked for overflow as the operators
+//! are. `v.round()` builds a new `Fixed` value from each element rounded, with one call per
+//! element, since a `Fixed` array is small and its length is known when compiling.
 
 use crate::builder::Builder;
 use mir::{
