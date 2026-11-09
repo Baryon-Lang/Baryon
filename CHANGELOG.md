@@ -66,9 +66,33 @@ Linux.
   in a fixed order, so results are reproducible; `accumulate=` for loops that add into shared
   arrays, including struct fields such as `atoms.forces`; and `simd` loops, which ask LLVM to
   vectorize.
-- All five [example programs](docs/examples/README.md) build and run, and a test checks what each
-  prints: a heat equation solver, Lennard-Jones molecular dynamics, the Lorenz system with
-  Runge-Kutta, conjugate gradient, and Monte Carlo estimation of pi.
+- All five [example programs](docs/examples/README.md) build and run: a heat equation solver,
+  Lennard-Jones molecular dynamics, the Lorenz system with Runge-Kutta, conjugate gradient, and
+  Monte Carlo estimation of pi. A test checks what each prints against an independent NumPy run
+  of the same steps, and they agree to every printed digit.
+
+### Fixed during review testing
+
+Testing the release before the tag turned up these, all fixed (roadmap 1.9.15):
+
+- `baryon --version` (or `-V`) and `baryon --help` (or `-h`, `help`) print the release and the
+  usage line, with exit status 0 (#116).
+- Clearer checker errors: a method or member that does not exist on `str`, a number or a tuple
+  is reported by `baryon check` instead of failing at build, and `y = None` followed by `y = 3`
+  suggests declaring `y` optional (#116).
+- A module-level `N = 10` gets the module-level variable error with a note to write `Final`
+  (#114).
+- `abs` builds, with Python's results for `-0.0` and `nan`; `a.size` and `a.shape[k]` build
+  (#114).
+- Methods of a generic struct and `float("nan")` are reported as not built yet instead of failing
+  inside the backend or `clang` (#114).
+- `Array.zeros` of a `Copy` struct zeroes every field; `zeros` and `ones` of an enum, whose
+  members are not numbers, are reported instead of picking a member (#112).
+- String literals and f-string text take Python's backslash escapes and raw strings (#115).
+- A literal assigned to a field or element takes that place's type, so `p.w = 1.5` works on an
+  `f32` field (#115).
+- Constants and enum members read through their module, `units.G` and `units.Phase.GAS`, build
+  (#115).
 
 ### Editor support
 
@@ -85,7 +109,9 @@ Protocol client can run `baryon lsp` directly.
   integers, lists of non-copy types such as `list[str]`, methods of generic structs, and
   `print` of tuples, arrays and structs. [What builds today](docs/reference/status.md) has the
   full list. Each is reported as an error that says it is not built yet, never miscompiled.
-- One build mode: integer overflow wraps instead of panicking, pending roadmap decision D.11.
+- Integer overflow wraps around silently. The reference promises a panic in debug builds, but
+  there is one build mode so far and it follows the release-build rule; roadmap decision D.11
+  may change both.
 - The language server reports diagnostics only: no go to definition, hover or completion yet
   (roadmap 1.16).
 - Speed is not yet compared with the C++ and Fortran baselines in [`bench/`](bench/README.md).
