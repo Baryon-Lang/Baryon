@@ -136,7 +136,11 @@ impl<'db> Lowerer<'db> {
                             Some("every field is given when a struct is built: `Particle(position, velocity, 1.0)`"),
                         );
                     }
-                    fields.push(Field { name, ty });
+                    fields.push(Field {
+                        name,
+                        ty,
+                        embedded: false,
+                    });
                 }
                 SyntaxKind::Assign => {
                     self.error(
@@ -159,6 +163,7 @@ impl<'db> Lowerer<'db> {
             copy,
             error: base == Base::Error,
             methods,
+            traits: Vec::new(),
         }
     }
 

@@ -31,6 +31,7 @@ use syntax::NodeId;
 /// let mut body = TypedBody::default();
 /// body.patterns.insert(Key(node), 1);
 /// assert_eq!(body.pattern(node), Some(1));
+/// assert!(body.promotion(node).is_empty());
 /// assert_eq!(body.expression(node), None);
 /// assert!(body.errors(node).is_empty());
 /// # Ok::<(), source::SourceError>(())
@@ -62,6 +63,13 @@ pub struct TypedBody<'db> {
     /// For each `case` pattern that names an enum member, the member's position in its enum,
     /// counting from zero in declaration order.
     pub patterns: BTreeMap<Key, u32>,
+    /// For each `Attribute` node `value.name` whose name is found through embedded fields
+    /// (decision 0031), the position of each embedded field passed through, outermost first.
+    /// `ion.m`, with `particle: Embed[Particle]` the first field of `Ion`, records `[0]`: it
+    /// reads `ion.particle.m`. For a method call, the `Attribute` node is the call's function,
+    /// and the method receives the innermost embedded struct as `self`. A name found on the
+    /// struct itself has no entry.
+    pub promotions: BTreeMap<Key, Vec<u32>>,
     /// The errors and warnings found in the body, in source order.
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -97,6 +105,13 @@ impl<'db> TypedBody<'db> {
     pub fn pattern(&self, node: NodeId) -> Option<u32> {
         self.patterns.get(&Key(node)).copied()
     }
+
+    /// The embedded fields the `Attribute` node `node` passes through, outermost first; empty
+    /// when its name is the struct's own.
+    #[must_use]
+    pub fn promotion(&self, node: NodeId) -> &[u32] {
+        self.promotions.get(&Key(node)).map_or(&[], Vec::as_slice)
+    }
 }
 
 /// A syntax node as a map key in a [`TypedBody`]. It wraps [`NodeId`] because the database
@@ -126,7 +141,9 @@ pub struct Call<'db> {
 pub enum Callee<'db> {
     /// A module-level function.
     Function(Item<'db>),
-    /// A method of a struct; the receiver is the first argument.
+    /// A method of a struct; the receiver is the first argument. Inside a generic function,
+    /// a method of a trait (decision 0031) when the receiver's type is a type parameter
+    /// bounded by it: each instance calls the method of the type the parameter stands for.
     Method(Item<'db>),
     /// A struct's constructor, which takes its fields in declaration order.
     Constructor(Item<'db>),
