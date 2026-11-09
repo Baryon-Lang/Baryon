@@ -32,20 +32,21 @@ The constraints:
 3. `match` must stay exhaustive: adding a kind must point at every `match` that does not handle it,
    as adding an enum member does today.
 4. It must fit decision 0031's traits. 0031 sends a closed set of types known in advance to "an enum
-   with data and a `match`" rather than to `Dyn`, so a sum type of types that implement `Body` should
-   be usable where a `Body` is expected, without a table of methods.
+   with data and a `match`" rather than to `Dyn`, so a sum type of types that implement `Body`
+   should be usable where a `Body` is expected, without a table of methods.
 5. A sum type should be a plain value: storable contiguously in an `Array`, `Copy` when its parts
    are, and with no allocation.
 
 The language already has two unions written with `|`: `T | None` for optional values
 ([Optional values](../reference/types.md#optional-values)) and `Raises[T, ParseError | IOError]` for
-several error types ([Errors](../reference/errors.md)). Both are sum types already, of a narrow kind.
+several error types ([Errors](../reference/errors.md)). Both are sum types already, of a narrow
+kind.
 
 ## Decision
 
-**A union of structs** (option A, chosen by Collins on 2026-11-09). Each kind is an ordinary struct. The sum type is the
-union of those structs, written with `|` and usually named with a type alias. A value is taken apart
-with `match` and Python's class patterns.
+**A union of structs** (option A, chosen by Collins on 2026-11-09). Each kind is an ordinary
+struct. The sum type is the union of those structs, written with `|` and usually named with a type
+alias. A value is taken apart with `match` and Python's class patterns.
 
 ### Declaring
 

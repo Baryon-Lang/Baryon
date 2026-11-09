@@ -263,8 +263,8 @@ class Boundary(Enum):
 ```
 
 A class with the base `Enum` is an enumeration of named constants, as in Python. Enums are `Copy`
-and can be compared with `==` and `!=`, but not ordered with `<`. A value that is one of several kinds,
-each with its own data, is a union of structs instead
+and can be compared with `==` and `!=`, but not ordered with `<`. A value that is one of several
+kinds, each with its own data, is a union of structs instead
 ([decision 0032](../decisions/0032-sum-types-are-unions-of-structs.md)); the compiler does not
 accept it yet (roadmap 1.7.13).
 
