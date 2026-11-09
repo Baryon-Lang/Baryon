@@ -126,7 +126,9 @@ pub struct Call<'db> {
     /// What is called.
     pub callee: Callee<'db>,
     /// The type arguments of a generic callee, in the order of its type parameters; empty
-    /// for anything else.
+    /// for anything else. A trait's method (decision 0031) is generic in the type that
+    /// implements it: its one type argument is the receiver's type, which monomorphization
+    /// uses to find the implementing method.
     pub type_arguments: Vec<Type<'db>>,
     /// The argument expression for each parameter, in parameter order: keyword arguments in
     /// their parameter's place, and `None` where the parameter's default is used. A method's
