@@ -4,7 +4,7 @@ What each release of Baryon holds, newest first. A release is a tag on `main`; n
 published to a package registry yet. [`ROADMAP.md`](ROADMAP.md#releases) tracks the steps of the
 release in progress.
 
-## 0.1.0: review release (not tagged yet)
+## 0.1.0: review release, 2026-11-09
 
 The first release, made so that people outside the project can try the language and review its
 documentation, code and design. It is a prototype: `baryon check` knows the whole of version 0 of
