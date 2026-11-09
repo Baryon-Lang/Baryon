@@ -209,9 +209,12 @@ impl<'db> Builder<'db> {
         let Some(operator) = arithmetic(syntax) else {
             return self.unsupported(statement, &format!("`{}=`", syntax.symbol()));
         };
-        let Some(place) = self.place(target) else {
+        let Some(mut place) = self.place(target) else {
             return;
         };
+        if let Some(lane) = self.lane(&place) {
+            place = lane;
+        }
         if let Some(place) = self.accumulated_place(&place) {
             return self.accumulate(place, operator, ty, value, statement);
         }
@@ -340,6 +343,23 @@ impl<'db> Builder<'db> {
         if self.is_prange(iterator) {
             return self.parallel_for(statement, variable, first, bound, step);
         }
+        let mut vectorized = vectorized;
+        if vectorized {
+            let reductions = self.float_reductions(statement);
+            let complex = reductions
+                .iter()
+                .any(|&(local, _)| !self.is_float(self.local_type(local)));
+            if !reductions.is_empty() {
+                if complex || self.local_type(variable) != self.int_type() {
+                    // A complex sum, or a counter other than `i64`, keeps the plain loop's
+                    // order, unvectorized, until complex numbers build (roadmap 1.10.13).
+                    vectorized = false;
+                } else {
+                    let range = (first, bound, step);
+                    return self.laned_for(statement, variable, range, &reductions);
+                }
+            }
+        }
         let ty = self.local_type(variable);
         let counter = self.temporary(ty, iterator);
         match first {
@@ -356,7 +376,7 @@ impl<'db> Builder<'db> {
         let header = self.new_block();
         self.terminate(TerminatorKind::Goto(header), statement);
         self.start(header);
-        if vectorized && !self.reorders_floats(statement) {
+        if vectorized {
             self.body.vectorized.push(header);
         }
         let test = if step > 0 {
@@ -407,7 +427,7 @@ impl<'db> Builder<'db> {
     /// The start, stop and step of `range(start, stop, step)` or `prange(…)` at `iterator`:
     /// the start and stop nodes, the start `None` when left out, and the step's value. `None`
     /// after an error when `iterator` is not such a call.
-    fn range(&mut self, iterator: NodeId) -> Option<(Option<NodeId>, NodeId, i128)> {
+    pub(crate) fn range(&mut self, iterator: NodeId) -> Option<(Option<NodeId>, NodeId, i128)> {
         let keywords = self.keyword_values(iterator);
         let arguments = self
             .typed
@@ -446,7 +466,7 @@ impl<'db> Builder<'db> {
 
     /// The body of the loop `statement`, from the current block: `continue` and the end of the
     /// body go to `next`, `break` to `end`.
-    fn repeat(&mut self, statement: NodeId, next: mir::BlockId, end: mir::BlockId) {
+    pub(crate) fn repeat(&mut self, statement: NodeId, next: mir::BlockId, end: mir::BlockId) {
         self.loops.push(Loop { next, end });
         self.block(statement, Role::Body);
         self.loops.pop();

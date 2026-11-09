@@ -72,24 +72,34 @@ impl<'db> Builder<'db> {
             .next()
     }
 
-    /// Whether the `simd` loop `statement` sums or multiplies into a shared float or complex
-    /// variable. Vectorizing such a loop would let LLVM regroup the additions in a way that
-    /// depends on the machine, and a float sum must give the same bits everywhere (Collins,
-    /// 2026-11-08), so the loop is left unvectorized until lowering splits the sum into fixed
-    /// lanes (roadmap 1.9.14). `min` and `max` give the same result in any order.
-    pub(crate) fn reorders_floats(&mut self, statement: NodeId) -> bool {
+    /// The shared float variables the `simd` loop `statement` sums or multiplies into, with
+    /// the operator. Vectorizing such a loop as it stands would let LLVM regroup the additions
+    /// in a way that depends on the machine, and a float sum must give the same bits
+    /// everywhere (Collins, 2026-11-08), so these loops add into fixed lanes instead (the
+    /// `lanes` module). `min` and `max` give the same result in any order, and complex sums
+    /// stay as written, unvectorized, until complex numbers build (roadmap 1.10.13).
+    pub(crate) fn float_reductions(
+        &mut self,
+        statement: NodeId,
+    ) -> Vec<(Local, ReductionOperator)> {
         let Some(shared) = self.shared(statement, &[]) else {
-            return false;
+            return Vec::new();
         };
-        shared.values().any(|&(local, usage)| {
-            matches!(
-                usage,
-                Use::Reduce(ReductionOperator::Add | ReductionOperator::Multiply)
-            ) && matches!(
-                self.local_type(local).kind(self.db),
-                TypeKind::Primitive(Primitive::Float(_) | Primitive::Complex(_))
-            )
-        })
+        shared
+            .values()
+            .filter_map(|&(local, usage)| match usage {
+                Use::Reduce(operator @ (ReductionOperator::Add | ReductionOperator::Multiply)) => {
+                    Some((local, operator))
+                }
+                _ => None,
+            })
+            .filter(|&(local, _)| {
+                matches!(
+                    self.local_type(local).kind(self.db),
+                    TypeKind::Primitive(Primitive::Float(_) | Primitive::Complex(_))
+                )
+            })
+            .collect()
     }
 
     /// The `prange` loop `statement` over `first..bound` by `step`, whose variable is
@@ -191,7 +201,7 @@ impl<'db> Builder<'db> {
     /// The number of iterations of a loop from `start` to `bound` by the constant `step`, in a
     /// new `i64` temporary: the distance covered in the step's direction, divided by the step
     /// and rounded up. It is 0 or less when the loop runs no iteration.
-    fn count(&mut self, start: Local, bound: NodeId, step: i128, node: NodeId) -> Local {
+    pub(crate) fn count(&mut self, start: Local, bound: NodeId, step: i128, node: NodeId) -> Local {
         let ty = self.local_type(start);
         let limit = self.temporary(ty, bound);
         self.write(Place::from(limit), ty, bound);

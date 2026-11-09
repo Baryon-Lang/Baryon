@@ -126,7 +126,7 @@ idea I.18), and [Types](#types) lists the operations it does not check yet.
 | Builds today | Not built yet |
 | --- | --- |
 | `prange` with the same arguments as `range`, its inferred reductions and their reproducible combine; `accumulate=` of array variables and of struct fields such as `atoms.forces`, adding into elements and their lanes | Adding into a slice of an accumulated array |
-| `simd(range(...))`, which asks LLVM to vectorize the loop | A `simd` loop that sums or multiplies floats into a shared variable runs unvectorized until its 8 fixed lanes are built (roadmap 1.9.14); an error when LLVM cannot vectorize a `simd` loop, such as one whose bounds checks it cannot move out of the loop (roadmap 3.7); until then such a loop runs unvectorized |
+| `simd(range(...))`, which asks LLVM to vectorize the loop; a float sum or product in one adds into 8 fixed lanes, so it gives the same bits on every machine | A `simd` loop that sums complex numbers runs unvectorized (roadmap 1.10.13); an error when LLVM cannot vectorize a `simd` loop, such as one whose bounds checks it cannot move out of the loop (roadmap 3.7); until then such a loop runs unvectorized |
 
 `baryon check` applies every rule of the chapter, so a `prange` loop that breaks one is reported
 today, before it can be built.
