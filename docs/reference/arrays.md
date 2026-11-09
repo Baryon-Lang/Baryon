@@ -299,9 +299,10 @@ Most return a float. An `f32` or `f64` argument keeps its type, so `sqrt` of an 
 `f32`, as `numpy.sqrt` gives. An integer converts to `f64` first, so `sqrt(2)` is
 `1.4142135623730951`, as in Python. `pow(x, y)` mixes its arguments as `x ** y` does, so
 `pow(x, 0.5)` on an `f32` stays `f32`, and `pow` of an `f32` and an `f64` is an error that asks for
-a conversion. `fma` and the other functions of two or three numbers mix the same way. `floor`, `ceil` and
-`trunc` return an `int`, as in Python, and panic when the result does not fit in one, as every
-conversion of a float to an integer does; `isnan`, `isinf` and `isfinite` return a `bool`:
+a conversion. `fma` and the other functions of two or three numbers mix the same way. `floor`,
+`ceil` and `trunc` return an `int`, as in Python, and panic when the result does not fit in one,
+as every conversion of a float to an integer does; `isnan`, `isinf` and `isfinite` return a
+`bool`:
 
 ```python
 from math import atan2, degrees, floor, sqrt

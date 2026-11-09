@@ -96,8 +96,16 @@ on a rule the reader has to remember.
 ## Strings
 
 `str` is immutable UTF-8 text. Version 0 supports string literals, f-strings, `+` to concatenate,
-`==` and `!=`, `in`, `len`, which counts characters as Python does, and `print`. Text processing
-beyond that arrives with the standard library (roadmap 1.13).
+`==` and `!=`, `in`, `len`, which counts characters as Python does, and `print`. `<`, `<=`, `>` and
+`>=` order strings as Python does, character by character by code point, with a string before any
+longer string it starts: `"Z" < "a"`, `"ab" < "abc"`. Comparing, `in` and `len` each read the
+string, so they take time in proportion to its length. Text processing beyond that arrives with
+the standard library (roadmap 1.13).
+
+```python
+def is_noble(element: str) -> bool:
+    return element in "He Ne Ar Kr Xe Rn" and len(element) == 2
+```
 
 An f-string formats each value with a specification from Python's format mini-language, and
 writes what Python writes:
