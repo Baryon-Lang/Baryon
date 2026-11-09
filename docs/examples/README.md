@@ -2,9 +2,9 @@
 
 Five small physics and mathematics programs written in the language as currently designed. They
 are roadmap item 0.2: the way to test the design on real code before any compiler exists. The
-compiler now builds some of them; [What builds today](../reference/status.md#the-example-programs)
-says which, and what each of the others still needs. `baryon run` runs a program from a directory
-holding it as `main.byn`.
+compiler now builds and runs all five, and a test checks what each prints;
+[What builds today](../reference/status.md#the-example-programs) says so. `baryon run` runs a
+program from a directory holding it as `main.byn`.
 
 The syntax follows decisions [0004](../decisions/0004-python-syntax.md) to
 [0012](../decisions/0012-no-ffi-in-mvp.md). If a decision changes, these programs change with it.

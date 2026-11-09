@@ -200,7 +200,7 @@ here, with one row per step; [`CHANGELOG.md`](CHANGELOG.md) says what it holds.
 | R.1.1 | A setup guide for testers, run in CI as written: build `baryon`, install the VS Code extension, set `baryon.path`, open a package, see errors as you type, run, test, editor tasks and troubleshooting | 0.1 | 1.17 | Done | Claude | [#105](https://github.com/Baryon-Lang/Baryon/pull/105) |
 | R.1.2 | Release notes for 0.1.0 in `CHANGELOG.md`, and the workspace version set to 0.1.0 | 0.1 | — | Done | Claude | [#105](https://github.com/Baryon-Lang/Baryon/pull/105) |
 | R.1.3 | Check the README, documentation map and guides against What builds today, and fix what is stale | 0.1 | — | Done | Claude | [#105](https://github.com/Baryon-Lang/Baryon/pull/105) |
-| R.1.4 | Merge the pull requests queued when the release was planned, then bring `CHANGELOG.md`, What builds today and the README's status up to date with `main` | 0.1 | R.1.2 | Planned | — | — |
+| R.1.4 | Merge the pull requests queued when the release was planned, then bring `CHANGELOG.md`, What builds today and the README's status up to date with `main` | 0.1 | R.1.2 | Done | Claude | [#PR](https://github.com/Baryon-Lang/Baryon/pull/PR) |
 | R.1.5 | Collins approves the release; tag `v0.1.0` on `main` and publish a GitHub release with the notes and `baryon-0.2.0.vsix` attached | — | R.1.4 | Planned | — | — |
 
 ## Decisions needed
