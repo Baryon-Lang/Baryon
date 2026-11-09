@@ -263,8 +263,10 @@ class Boundary(Enum):
 ```
 
 A class with the base `Enum` is an enumeration of named constants, as in Python. Enums are `Copy`
-and can be compared with `==` and `!=`, but not ordered with `<`. Enums whose variants carry data
-wait on roadmap decision D.10.
+and can be compared with `==` and `!=`, but not ordered with `<`. A value that is one of several
+kinds, each with its own data, is a union of structs instead
+([decision 0032](../decisions/0032-sum-types-are-unions-of-structs.md)); the compiler does not
+accept it yet (roadmap 1.7.13).
 
 A `match` must handle every value of its subject. Over an enum, that means a `case` for each
 member or a final `case _:`; the compiler names a member that is missing, so adding a member to an

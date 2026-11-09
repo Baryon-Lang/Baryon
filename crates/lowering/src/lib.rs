@@ -90,8 +90,8 @@
 //! that leave out an argument whose default is not a literal or a constant, or that belongs to a
 //! generic function, the built-in functions and methods other than `print`, `min` and `max` of
 //! numbers, `len` of an array, `round` with one argument, the `math` functions above, the array
-//! constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a `Fixed` array, `**` on integers, `@`, `in`, nested unpacking, `with`
-//! other than `with unsafe:`, and comprehensions.
+//! constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a `Fixed` array, `**` on
+//! integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`, and comprehensions.
 //!
 //! # Example
 //!

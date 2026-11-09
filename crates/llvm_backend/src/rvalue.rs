@@ -6,6 +6,7 @@ use crate::Unsupported;
 use crate::function::Function;
 use crate::ty::Number;
 use mir::{BinaryOperator, Operand, Place, Rvalue, UnaryOperator};
+use std::fmt::Write as _;
 use types::{Type, TypeKind};
 
 impl<'db> Function<'_, '_, 'db> {
@@ -48,6 +49,13 @@ impl<'db> Function<'_, '_, 'db> {
     pub(crate) fn emit(&mut self, instruction: &str) -> String {
         let result = self.fresh();
         self.line(&format!("{result} = {instruction}"));
+        result
+    }
+
+    /// A new stack slot of LLVM type `ty`, allocated once in the entry block, and its address.
+    pub(crate) fn slot(&mut self, ty: &str) -> String {
+        let result = self.fresh();
+        let _ = writeln!(self.slots, "  {result} = alloca {ty}");
         result
     }
 
