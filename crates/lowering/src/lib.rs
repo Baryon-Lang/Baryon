@@ -294,6 +294,7 @@ mod statements;
 #[cfg(test)]
 mod tests;
 mod text;
+mod unions;
 mod unpacking;
 
 use builder::Builder;

@@ -16,6 +16,7 @@
 //! | `Raises[T, E1 \| E2]` | `{ i8, [n x iA] }`: the tag, then room for the largest of `T` and the errors |
 //! | `Array[T, rank]` | its header `{ ptr, [rank x i64], [rank x i64] }`: the elements, each length, each stride |
 //! | `T \| None` | `{ T, i1 }`: the value, then whether it is present; `None` is all zeros |
+//! | `A \| B \| C`, a union (decision 0032) | `{ iT, [n x iA] }`: the tag, then room for the largest member (the `unions` module) |
 //! | `str` | `{ ptr, i64 }`: the bytes, then the length with a "not owned" top bit (decision 0022) |
 //!
 //! A list is the header `crate::list::HEADER`. Any other type is [`Unsupported`].
@@ -93,6 +94,7 @@ impl<'db> Types<'_, 'db> {
             TypeKind::Array { rank, .. } => {
                 Ok(format!("{{ ptr, [{rank} x i64], [{rank} x i64] }}"))
             }
+            TypeKind::Union(_) => self.union(ty),
             TypeKind::List(_) => Ok(crate::list::HEADER.to_owned()),
             // A pointer to the runtime's table, null while empty (the `dict` module).
             TypeKind::Dict { .. } => Ok("ptr".to_owned()),

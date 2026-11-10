@@ -124,6 +124,7 @@ impl<'db> Function<'_, '_, 'db> {
                 self.print_struct(stream, value, ty, nominal, &fields)?;
             }
             TypeKind::Enum(nominal) => self.print_enum(stream, value, ty, nominal)?,
+            TypeKind::Union(_) => self.print_union(stream, value, ty, form)?,
             TypeKind::Primitive(_) => self.print_number(stream, value, ty)?,
             TypeKind::List(element) => self.print_list(stream, value, *element)?,
             TypeKind::Dict { .. } => self.print_dict(stream, value, ty)?,

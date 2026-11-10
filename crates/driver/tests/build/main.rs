@@ -33,6 +33,7 @@ mod structs;
 mod testing;
 mod text;
 mod traits;
+mod unions;
 mod vector;
 
 /// The `baryon` executable cargo built for these tests.
