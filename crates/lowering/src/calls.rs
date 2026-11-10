@@ -105,10 +105,9 @@ impl<'db> Builder<'db> {
                     self.array_method(place, method, &arguments, node);
                 }
                 (Some(("math", member)), _) => self.math_function(place, member, &arguments, node),
-                (Some(("random", "Philox")), [seed, rest @ ..]) if rest.len() <= 1 => {
-                    self.philox(place, *seed, rest.first().copied(), node);
+                (Some((owner @ ("random" | "Philox" | "sys" | "os"), member)), _) => {
+                    self.standard_call(place, (owner, member), &arguments, node);
                 }
-                (Some(("Philox", "uniform")), [generator]) => self.uniform(place, *generator, node),
                 _ => self.unsupported(node, &format!("the built-in `{name}`")),
             },
             types::Callee::Value => self.value_call(place, &arguments, node),

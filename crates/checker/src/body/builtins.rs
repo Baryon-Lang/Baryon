@@ -223,11 +223,11 @@ impl<'db> Body<'db> {
             (
                 _,
                 Some(Definition::Standard {
-                    module: "random",
+                    module: module @ ("random" | "sys" | "os"),
                     member: Some(member),
                 }),
             ) if !matches!(ty.kind(self.db), TypeKind::Unknown) => {
-                Callee::Builtin(format!("random.{member}"))
+                Callee::Builtin(format!("{module}.{member}"))
             }
             (_, Some(Definition::Item(..)))
                 if matches!(ty.kind(self.db), TypeKind::Fixed { .. }) =>

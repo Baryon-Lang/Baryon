@@ -53,9 +53,23 @@ impl<'db> Body<'db> {
                 module: "random",
                 member: Some(member),
             }) if member == "Philox" => self.philox(node, &arguments),
+            Some(Definition::Standard {
+                module: module @ ("sys" | "os"),
+                member: Some(member),
+            }) => {
+                let (module, member) = (*module, member.clone());
+                self.process_call(node, module, &member, &arguments)
+            }
             Some(Definition::Local(_)) => {
                 let ty = self.expression(function, None);
                 self.call_value(node, &callee, ty, &arguments)
+            }
+            None if self.environ_value(function) => {
+                let method = self.tree.child(function, Role::Attribute);
+                let method = method.map_or("", |method| self.tree.text(method, self.text));
+                let ty = self.environ_method(node, method, &arguments);
+                self.record_environ(node, &arguments, ty);
+                ty
             }
             None if self.tree.kind(function) == SyntaxKind::Attribute => {
                 self.method_call(node, function, &arguments, expected)

@@ -53,6 +53,7 @@ mod numbers;
 mod operators;
 mod parallel;
 mod patterns;
+mod process;
 mod random;
 pub(crate) mod relations;
 mod shared;
