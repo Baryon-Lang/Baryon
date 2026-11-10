@@ -1,0 +1,19 @@
+"""The names every module can use without an import that are written in Baryon (decision 0038).
+
+The rest, such as `print`, `len` and `Exception`, are built into the compiler.
+"""
+
+from os import ErrorKind
+
+
+class OSError(Exception):
+    """The one error every operation on files, the environment and processes raises
+    (decision 0036, part 2). Test `kind` to tell one failure from another.
+
+    The runtime writes this error into memory field by field, so the fields' order is fixed.
+    """
+
+    kind: ErrorKind  # what went wrong, for a program to test
+    errno: i32  # the operating system's error number, 0 when there is none
+    strerror: str  # the operating system's message, such as "No such file or directory"
+    filename: str  # the path involved, or "" when there is none

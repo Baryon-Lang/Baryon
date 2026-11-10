@@ -65,6 +65,9 @@
 //!   loop over a list reads each element at a hidden counter, borrowing one that is not
 //!   copied; one over a `str` borrows each character in turn through
 //!   [`Builtin::CharacterStr`](mir::Builtin::CharacterStr); and a list comprehension is the loops it reads as, appending to a new list.
+//! - **Text.** `str`'s methods, `text[i]` and `text[i:j:k]` call
+//!   [`Builtin::Text`](mir::Builtin::Text); an index or range is checked against the text's
+//!   length in characters as an array's is (the `text_methods` module).
 //! - **Math.** The functions of `math` for real numbers, and `**` and `**=` on floats and complex numbers, call a
 //!   [`MathFunction`](mir::MathFunction), as [`Builtin::Math`](mir::Builtin::Math) calls a
 //!   backend writes; `floor`, `ceil`, `trunc` and the built-in `round(x)` round and then convert
@@ -297,6 +300,7 @@ mod statements;
 #[cfg(test)]
 mod tests;
 mod text;
+mod text_methods;
 mod unions;
 mod unpacking;
 

@@ -25,8 +25,11 @@
 //! are visible throughout the module, whatever their order, because a module holds only
 //! definitions.
 //!
-//! The standard library modules (`math`, `random`) are accepted by name until the standard
-//! library is written (roadmap 1.13); their members are not checked yet.
+//! The standard library modules (`math`, `random`, `sys`, `os`) are accepted by name. A member
+//! that the library's own source file for the module defines, such as `os.ErrorKind` in
+//! `<std>/os.byn`, resolves to that definition, and a name every module can use that
+//! `<std>/builtins.byn` defines, such as `OSError`, resolves to its definition there (decision
+//! 0038). Any other member is built into the compiler and checked by the type checker.
 //!
 //! What it does not do: resolve attributes of values, such as `particle.mass`, which needs the
 //! value's type, or check that a variable is assigned before it is read, which needs the

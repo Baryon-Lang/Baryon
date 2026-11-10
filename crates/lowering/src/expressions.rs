@@ -33,6 +33,9 @@ impl<'db> Builder<'db> {
             SyntaxKind::Name | SyntaxKind::Attribute if self.is_argv(node) => {
                 self.argv(&place, node);
             }
+            SyntaxKind::Subscript if self.is_text_subscript(node) => {
+                self.text_subscript(place, node);
+            }
             SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript => {
                 let operand = self.operand(node);
                 self.assign(place, Rvalue::Use(operand), node);
@@ -71,6 +74,7 @@ impl<'db> Builder<'db> {
         let ty = self.ty(node);
         if !self.is_array_attribute(node)
             && !self.is_list_slice(node)
+            && !self.is_text_subscript(node)
             && let Some(place) = self.place(node)
         {
             if place.is_view() {
@@ -86,6 +90,7 @@ impl<'db> Builder<'db> {
         ) && !self.is_array_attribute(node)
             && !self.is_list_slice(node)
             && !self.is_argv(node)
+            && !self.is_text_subscript(node)
         {
             // A name of something lowering does not handle, already reported by `place`.
             return Operand::Constant(Constant {
@@ -232,6 +237,7 @@ impl<'db> Builder<'db> {
             && self.named_constant(node).is_none()
             && !self.is_array_attribute(node)
             && !self.is_list_slice(node)
+            && !self.is_text_subscript(node)
             && let Some(place) = self.place(node)
         {
             return place;

@@ -35,6 +35,7 @@ mod statements;
 mod structs;
 mod testing;
 mod text;
+mod text_methods;
 mod traits;
 mod unions;
 mod vector;

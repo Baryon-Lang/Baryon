@@ -32,7 +32,8 @@ fn an_edit_reparses_only_the_edited_file() {
     let first = session.add_file("first.byn", "X: Final = 1\n").unwrap();
     session.add_file("second.byn", "Y: Final = 2\n").unwrap();
     assert!(session.check().is_empty());
-    assert_eq!(parses(&log), 2);
+    // The two files, and the standard library's files, which every package has.
+    assert_eq!(parses(&log), 2 + LIBRARY.len());
 
     session.set_text(first, "X: Final = 3\n").unwrap();
     assert!(session.check().is_empty());

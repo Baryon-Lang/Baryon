@@ -58,6 +58,7 @@ mod random;
 mod reductions;
 pub(crate) mod relations;
 mod shared;
+mod text;
 mod union_methods;
 
 use crate::lower::Lowerer;

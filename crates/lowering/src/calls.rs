@@ -103,7 +103,7 @@ impl<'db> Builder<'db> {
                     self.new_fixed(place, function, arguments, node);
                 }
             }
-            (Some(("str", "copy")), [_]) => self.joined(place, arguments, node),
+            (Some(("str", method)), _) => self.text_method(place, method, arguments, node),
             (Some(("complex", "conjugate")), [value]) => self.conjugate(place, *value, node),
             (Some(("list", "append")), [list, value]) => {
                 self.list_append(place, *list, *value, node);

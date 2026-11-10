@@ -1,0 +1,24 @@
+"""The parts of the `os` module written in Baryon (decision 0038).
+
+The rest of `os`, such as `os.getenv` and `os.environ`, is built into the compiler and the
+runtime, which read the operating system's state (decision 0036).
+"""
+
+
+class ErrorKind(Enum):
+    """What went wrong in an operation on the operating system: the `kind` of an `OSError`.
+
+    The members are named after Python's `OSError` subclasses (decision 0036, part 2). The
+    runtime reports each by its position in this list, so their order is fixed.
+    """
+
+    FILE_NOT_FOUND = 0
+    FILE_EXISTS = 1
+    PERMISSION = 2
+    IS_A_DIRECTORY = 3
+    NOT_A_DIRECTORY = 4
+    BROKEN_PIPE = 5
+    INTERRUPTED = 6
+    TIMEOUT = 7
+    INVALID_DATA = 8
+    OTHER = 9
