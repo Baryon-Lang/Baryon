@@ -235,7 +235,11 @@ fn rvalue_moves(rvalue: &Rvalue<'_>, effects: &mut Vec<Effect>) {
                 operand_moves(operand, effects);
             }
         }
-        Rvalue::Length(..) | Rvalue::IsPresent(_) | Rvalue::ErrorIndex(_) | Rvalue::Format(_) => {}
+        Rvalue::Length(..)
+        | Rvalue::IsPresent(_)
+        | Rvalue::ErrorIndex(_)
+        | Rvalue::MemberIndex(_)
+        | Rvalue::Format(_) => {}
         Rvalue::Elementwise(tree) => elementwise_moves(tree, effects),
     }
 }
@@ -266,7 +270,7 @@ fn operand_moves(operand: &Operand<'_>, effects: &mut Vec<Effect>) {
     for projection in &place.projections {
         match projection {
             Projection::Field(_) => path.projections.push(projection.clone()),
-            Projection::Value | Projection::Error(_) => break,
+            Projection::Value | Projection::Error(_) | Projection::Member(_) => break,
             Projection::Index(_) | Projection::Slice(_) => return,
         }
     }

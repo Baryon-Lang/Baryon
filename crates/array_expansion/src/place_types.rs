@@ -63,6 +63,9 @@ impl<'db> Types<'_, 'db> {
                 (Projection::Error(position), TypeKind::Fallible { errors, .. }) => {
                     *errors.get(*position as usize)?
                 }
+                (Projection::Member(position), TypeKind::Union(members)) => {
+                    *members.get(*position as usize)?
+                }
                 _ => return None,
             };
         }

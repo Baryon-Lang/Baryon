@@ -340,6 +340,8 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     (address, ty) = self.view(&address, ty, dimensions)?;
                     continue;
                 }
+                // Unions are built after lowering learns them (roadmap 1.7.13).
+                Projection::Member(_) => return Err(self.types.unsupported(ty)),
                 Projection::Value => {
                     let TypeKind::Optional(value) = ty.kind(self.types.db) else {
                         return Err(self.types.unsupported(ty));
