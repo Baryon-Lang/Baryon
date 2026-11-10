@@ -432,3 +432,39 @@ error: a value cannot be moved out of an element
    = note: move a copy instead: `words[0].copy()`"
     );
 }
+
+/// `a if c else b` keeps whichever branch runs, so each branch is moved as an assignment would
+/// move it: an element read by index cannot be moved out, and a variable moved in either branch
+/// cannot be read after. Before, neither branch moved, so the result and the original both owned
+/// one string and it was freed twice.
+#[test]
+fn conditional_expressions_move_their_branches() {
+    let program = r"
+def run(words: list[str], fallback: str) -> str:
+    first = words[0] if len(words) > 0 else fallback.copy()
+    name = words[1].copy()
+    other = name if len(words) > 1 else first
+    print(name)
+    return other
+";
+    assert_eq!(
+        check_one(program),
+        "error: a value cannot be moved out of an element
+ --> main.byn:2:13
+  |
+2 |     first = words[0] if len(words) > 0 else fallback.copy()
+  |             ^^^^^^^^ moved out of an element
+  = note: move a copy instead: `words[0].copy()`
+
+error: `name` was moved
+ --> main.byn:5:11
+  |
+5 |     print(name)
+  |           ^^^^ read after the move
+ ::: main.byn:4:13
+  |
+4 |     other = name if len(words) > 1 else first
+  |             ---- `name` moved here
+  = note: to keep both, move a copy: `name.copy()`"
+    );
+}

@@ -68,6 +68,15 @@ impl<'db> Body<'db> {
                     self.move_variable(root, node);
                 }
             }
+            // `a if c else b` keeps whichever branch runs, so each branch is moved: a borrowed
+            // element or a variable in either one is the same error as moving it directly.
+            SyntaxKind::Conditional => {
+                for role in [Role::Value, Role::Else] {
+                    if let Some(branch) = self.tree.child(node, role) {
+                        self.consume(branch, ty);
+                    }
+                }
+            }
             // A slice of a list is a new list, as in Python, so keeping it moves nothing.
             SyntaxKind::Subscript
                 if self.is_view(node) && matches!(ty.kind(self.db), TypeKind::List(_)) => {}

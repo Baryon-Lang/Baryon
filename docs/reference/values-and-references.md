@@ -57,6 +57,9 @@ A value of any other type (an `Array`, a `list`, a `str`, a struct without `Copy
 - returned from a function;
 - placed in a struct, tuple or list being built: `Atoms(positions, velocities, forces)`.
 
+A conditional expression passes its move on to each branch: `b = x if ok else y` moves `x` or
+`y`, so both count as moved after it, as on the two branches of an `if`.
+
 After a move, the old owner holds nothing. Using it is an error until a new value is assigned:
 
 ```text
