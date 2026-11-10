@@ -23,6 +23,7 @@ impl<'db> Body<'db> {
             // makes `2` an `f32`, as `x: f32 = 2` does.
             self.change(target);
             let held = self.expression(target, None);
+            self.assigned_complex_part(target);
             // A slice takes a number for every element, `a[1:n] = 0.0` (reference, "Slices").
             let filled = match held.kind(self.db) {
                 TypeKind::Array { element, .. } if self.is_view(target) => Some(*element),
@@ -87,6 +88,7 @@ impl<'db> Body<'db> {
         let operator = self.tree.node(statement).operator();
         self.change(target);
         let current = self.expression(target, None);
+        self.assigned_complex_part(target);
         if self.maybe_none(target, current) {
             self.expression(value, None);
             return;
@@ -189,6 +191,7 @@ impl<'db> Body<'db> {
             SyntaxKind::Attribute | SyntaxKind::Subscript => {
                 self.change(target);
                 let held = self.expression(target, None);
+                self.assigned_complex_part(target);
                 self.expect(value.unwrap_or(target), held, ty, "the target holds");
             }
             _ => {}

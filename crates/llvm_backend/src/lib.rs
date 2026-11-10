@@ -61,12 +61,17 @@
 //! - **Math functions are LLVM intrinsics.** A [`Builtin::Math`](mir::Builtin::Math) call, such
 //!   as `x ** y` on floats, becomes `llvm.pow.f64`, which LLVM folds, turns into one instruction
 //!   where the target has one, or calls the C math library for.
+//! - **Complex numbers are a pair of floats.** A `complex128` is `{ double, double }`, the real
+//!   part then the imaginary part. `+`, `-`, `*`, `/` and `==` work on the parts inline, with
+//!   CPython's formulas, so results have Python's bits; `**` and `print` call the runtime (the
+//!   `complex` module).
 //!
 //! - **A `str` is its bytes and a length** (decision 0022). A literal's bytes are a constant
 //!   that is never copied; the top bit of its length says so, and a drop frees only a string
 //!   whose bit is clear.
 //!
-//! The backend so far (roadmap 1.10.1 to 1.10.10) covers numbers, `bool`, enums without data,
+//! The backend so far (roadmap 1.10.1 to 1.10.10, and 1.10.13) covers numbers, complex numbers
+//! included, `bool`, enums without data,
 //! tuples and structs, `Array` and `Fixed`, lists of copy types, optionals, `str` values, control
 //! flow, direct calls, errors, checks, line tables, `print` and the math functions. A body that
 //! uses anything else, such as a call of a `Callable` value, gets an [`Unsupported`] error
@@ -144,6 +149,7 @@
 mod accumulate;
 mod array;
 mod call;
+mod complex;
 mod convert;
 mod debug;
 mod dict;

@@ -38,7 +38,7 @@ impl<'db> Builder<'db> {
         if !generic && !matches!(ty.kind(self.db), TypeKind::Primitive(_)) {
             return self.unsupported(node, "operators on values other than numbers");
         }
-        if syntax == Operator::Power && self.is_float(ty) {
+        if syntax == Operator::Power && (self.is_float(ty) || self.is_complex(ty)) {
             let operands = vec![self.operand_as(left, ty), self.operand_as(right, ty)];
             return self.math_call(place, MathFunction::Power, operands, node);
         }

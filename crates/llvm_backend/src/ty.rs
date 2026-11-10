@@ -8,6 +8,7 @@
 //! | `bool` | `i1` in registers, which LLVM stores as one byte |
 //! | `i8` … `i64`, `u8` … `u64` | `i8` … `i64`; LLVM integers carry no sign, the operations do |
 //! | `f32`, `f64` | `float`, `double` |
+//! | `complex64`, `complex128` | `{ float, float }`, `{ double, double }`: the real part, then the imaginary part |
 //! | an enum without data | the unsigned integer its layout gives it, such as `i8` |
 //! | a tuple, or a struct | a literal structure of its items or fields in declaration order |
 //! | `None` | nothing: a `None` value is never stored, and a function returning it returns `void` |
@@ -17,8 +18,7 @@
 //! | `T \| None` | `{ T, i1 }`: the value, then whether it is present; `None` is all zeros |
 //! | `str` | `{ ptr, i64 }`: the bytes, then the length with a "not owned" top bit (decision 0022) |
 //!
-//! The other types (complex numbers and lists) are
-//! [`Unsupported`] until the slices of roadmap 1.10 that add them.
+//! A list is the header `crate::list::HEADER`. Any other type is [`Unsupported`].
 
 use crate::text::TEXT;
 use crate::{ClassNames, Unsupported};
@@ -65,6 +65,9 @@ impl<'db> Types<'_, 'db> {
             TypeKind::Primitive(Primitive::Integer(integer)) => Ok(format!("i{}", integer.bits())),
             TypeKind::Primitive(Primitive::Float(Float::F32)) => Ok("float".to_owned()),
             TypeKind::Primitive(Primitive::Float(Float::F64)) => Ok("double".to_owned()),
+            TypeKind::Primitive(Primitive::Complex(complex)) => {
+                Ok(crate::complex::structure(complex.part()))
+            }
             TypeKind::Str => Ok(TEXT.to_owned()),
             TypeKind::Tuple(items) => self.structure(items),
             TypeKind::Struct(nominal) => match (self.declared)(nominal) {

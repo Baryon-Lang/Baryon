@@ -66,6 +66,9 @@ impl<'db> Function<'_, '_, 'db> {
         operand: &Operand<'db>,
     ) -> Result<String, Unsupported> {
         let (value, ty) = self.value(operand)?;
+        if let Some(part) = self.complex_part(ty) {
+            return self.complex_unary(operator, part, &value);
+        }
         let (number, llvm) = self.scalar(ty)?;
         let instruction = match (operator, number) {
             (UnaryOperator::Negate, Number::Float(_)) => format!("fneg {llvm} {value}"),
@@ -86,6 +89,9 @@ impl<'db> Function<'_, '_, 'db> {
     ) -> Result<String, Unsupported> {
         let (a, ty) = self.value(left)?;
         let (b, _) = self.value(right)?;
+        if let Some(part) = self.complex_part(ty) {
+            return self.complex_binary(operator, part, &a, &b);
+        }
         let (number, llvm) = self.scalar(ty)?;
         let simple = |instruction: &str| Some(format!("{instruction} {llvm} {a}, {b}"));
         let instruction = match (number, operator) {

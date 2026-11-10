@@ -63,13 +63,16 @@
 //!   a new array. Elements may be of any type; the backend drops them with the list. A `for`
 //!   loop over a list reads each element at a hidden counter, borrowing one that is not
 //!   copied, and a list comprehension is the loops it reads as, appending to a new list.
-//! - **Math.** The functions of `math` for real numbers, and `**` and `**=` on floats, call a
+//! - **Math.** The functions of `math` for real numbers, and `**` and `**=` on floats and complex numbers, call a
 //!   [`MathFunction`](mir::MathFunction), as [`Builtin::Math`](mir::Builtin::Math) calls a
 //!   backend writes; `floor`, `ceil`, `trunc` and the built-in `round(x)` round and then convert
 //!   to an integer, `isnan`, `isinf` and `isfinite` compare, and `degrees`, `radians` and
 //!   `log(x, base)` are arithmetic. `**` and `**=` on integers are repeated squaring, with a
 //!   [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each multiplication
 //!   checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
+//! - **Complex numbers.** `z.real` and `z.imag` are fields 0 and 1 of the number's place,
+//!   `complex(re, im)` writes both, `z.conjugate()` negates a copy's imaginary part, and `abs(z)`
+//!   calls [`MathFunction::Hypot`](mir::MathFunction::Hypot) of the parts (the `complex` module).
 //! - **Random numbers.** `Philox(seed, stream)` and `generator.uniform()` call
 //!   [`Builtin::Philox`](mir::Builtin::Philox) and [`Builtin::Uniform`](mir::Builtin::Uniform),
 //!   the generator passed `InOut` (decision 0028). `pi`, `e`, `tau`, `inf` and `nan` from `math`
@@ -263,6 +266,7 @@ mod accumulate;
 mod arrays;
 mod builder;
 mod calls;
+mod complex;
 mod comprehensions;
 mod constants;
 mod creation;

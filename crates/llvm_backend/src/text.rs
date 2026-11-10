@@ -20,7 +20,7 @@ pub(crate) const TEXT: &str = "{ ptr, i64 }";
 pub(crate) const FORMAT_SPEC: &str = "{ i32, i8, i8, i8, i8, i8, i8, i64, i64 }";
 
 /// The top bit of the length word, set when the bytes are not owned.
-const STATIC: u64 = 1 << 63;
+pub(crate) const STATIC: u64 = 1 << 63;
 
 impl Function<'_, '_, '_> {
     /// The `str` value of the literal `text`, as an LLVM constant of type [`TEXT`]: its bytes,

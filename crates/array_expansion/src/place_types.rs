@@ -1,7 +1,7 @@
 //! The type of a place, worked out from its local's type and its projections.
 
 use mir::{Place, Projection, SliceIndex};
-use types::{Declared, Nominal, Type, TypeKind};
+use types::{Declared, Nominal, Primitive, Type, TypeKind};
 
 /// What working out a place's type needs: the database, the body's locals and what each struct
 /// declares.
@@ -22,6 +22,13 @@ impl<'db> Types<'_, 'db> {
             ty = match (projection, ty.kind(self.db)) {
                 (Projection::Field(position), TypeKind::Tuple(items)) => {
                     *items.get(*position as usize)?
+                }
+                // A complex number's real part, 0, or imaginary part, 1: a float as wide.
+                (Projection::Field(0 | 1), TypeKind::Primitive(Primitive::Complex(complex))) => {
+                    Type::new(
+                        self.db,
+                        TypeKind::Primitive(Primitive::Float(complex.part())),
+                    )
                 }
                 (Projection::Field(position), TypeKind::Struct(nominal)) => {
                     match (self.declared)(nominal) {
