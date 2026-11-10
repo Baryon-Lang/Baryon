@@ -166,6 +166,7 @@ mod parallel;
 mod print;
 mod print_array;
 mod print_collections;
+mod process;
 mod random;
 mod rvalue;
 mod strings;

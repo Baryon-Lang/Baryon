@@ -12,6 +12,7 @@ mod dict;
 mod output;
 mod philox;
 mod print_array;
+mod process;
 mod strings;
 mod sum;
 mod text;
@@ -37,6 +38,9 @@ pub use print_array::{
     ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128, ELEMENT_F32, ELEMENT_F64, ELEMENT_I8,
     ELEMENT_I16, ELEMENT_I32, ELEMENT_I64, ELEMENT_U8, ELEMENT_U16, ELEMENT_U32, ELEMENT_U64,
     baryon_rt_print_array,
+};
+pub use process::{
+    baryon_rt_argument, baryon_rt_argument_count, baryon_rt_environment_get, baryon_rt_exit,
 };
 pub use strings::{baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_length};
 pub use sum::{
