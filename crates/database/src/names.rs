@@ -74,8 +74,9 @@ pub const BUILTINS: [&str; 54] = [
 ];
 
 /// The standard library's modules. Until the standard library is written (roadmap 1.13),
-/// importing one of these is accepted and its members are not checked.
-pub const STANDARD_MODULES: [&str; 2] = ["math", "random"];
+/// importing one of these is accepted and its members are not checked. `sys` and `os` are
+/// decision 0036's: the command-line arguments, the exit status and the environment.
+pub const STANDARD_MODULES: [&str; 4] = ["math", "random", "sys", "os"];
 
 /// What a name refers to.
 #[derive(Clone, Debug, PartialEq, Eq)]
