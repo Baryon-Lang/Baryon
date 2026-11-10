@@ -142,8 +142,9 @@ in scope, with no import.
 | `Dyn` | Reserved for a value of any type with a trait, `Dyn[Body]`; an error until roadmap 3.5 | [Types](types.md#declaring-a-trait) |
 
 Python's own built-in names that the language keeps, with their Python meaning where it applies:
-`print`, `len`, `range`, `round`, `abs`, `min`, `max`, `sum`, `enumerate`, `zip`, `int`, `float`,
-`complex`, `bool`, `str`, `list`, `tuple`, `True`, `False`, `None`, `Exception` and `Enum`.
+`print`, `len`, `range`, `round`, `abs`, `min`, `max`, `sum`, `enumerate`, `zip`, `sorted`,
+`reversed`, `int`, `float`, `complex`, `bool`, `str`, `list`, `tuple`, `True`, `False`, `None`,
+`Exception` and `Enum`.
 
 `print(a, b, ...)` writes its arguments to standard output as Python does: separated by one space,
 followed by a line end. A float prints as Python's `repr` writes it, with the fewest digits that
