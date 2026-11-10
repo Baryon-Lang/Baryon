@@ -38,6 +38,11 @@ pub(crate) enum Failure<'text> {
         /// The length the other array has.
         found: i64,
     },
+    /// Integer `**` with a negative exponent, whose result would be a fraction.
+    NegativeExponent {
+        /// The exponent.
+        exponent: i64,
+    },
     /// An array asked for a negative number of elements.
     NegativeLength {
         /// The number asked for.
@@ -88,6 +93,9 @@ impl fmt::Display for Failure<'_> {
                 formatter,
                 "array lengths differ in dimension {dimension}: {expected} and {found}"
             ),
+            Self::NegativeExponent { exponent } => {
+                write!(formatter, "negative exponent {exponent} in integer `**`")
+            }
             Self::NegativeLength { count } => {
                 write!(formatter, "array length {count} is negative")
             }
@@ -177,6 +185,10 @@ mod tests {
                     found: 63,
                 },
                 "array lengths differ in dimension 1: 64 and 63",
+            ),
+            (
+                Failure::NegativeExponent { exponent: -2 },
+                "negative exponent -2 in integer `**`",
             ),
             (
                 Failure::NegativeLength { count: -3 },

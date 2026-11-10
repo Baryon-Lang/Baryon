@@ -290,6 +290,37 @@ pub unsafe extern "C" fn baryon_rt_panic_length_mismatch(
     panic(failure, unsafe { self::location(location) })
 }
 
+/// Ends the program with a panic for integer `**` with a negative `exponent`, whose result would
+/// be a fraction (language reference, "Errors and panics"). Compiled code calls it on the failing
+/// side of an IR `NonNegativeExponent` check.
+///
+/// Prints ``panic: negative exponent <exponent> in integer `**` `` and the location, as
+/// [`baryon_rt_panic`] does.
+///
+/// # Safety
+///
+/// `location` is null or points to a valid [`Location`] that lives as long as the program.
+///
+/// # Example
+///
+/// What compiled code does for `2 ** n` with `n` equal to -1:
+///
+/// ```no_run
+/// use runtime::{Location, baryon_rt_panic_exponent};
+///
+/// static HERE: Location = Location::new("main.byn", 4, 11);
+/// // SAFETY: the location is a constant that lives as long as the program.
+/// unsafe { baryon_rt_panic_exponent(-1, &HERE) }
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_panic_exponent(exponent: i64, location: *const Location) -> ! {
+    // SAFETY: the caller's promise about `location`, passed on.
+    panic(Failure::NegativeExponent { exponent }, unsafe {
+        self::location(location)
+    })
+}
+
 /// How many chunks a `prange` loop of `iterations` iterations is split into: one per iteration,
 /// up to 1024, and 0 for an empty loop.
 ///
