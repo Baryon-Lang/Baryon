@@ -1,5 +1,5 @@
 //! End-to-end tests of lowering `match` (roadmap 1.9.3): enum members, literals, guards,
-//! `None`, tuples and `|`. Each program is parsed, resolved and checked, then each named
+//! `None`, tuples, `|` and unions taken apart by class patterns. Each program is parsed, resolved and checked, then each named
 //! function is lowered and compared by its full IR text.
 
 use driver::Session;
@@ -257,5 +257,96 @@ def first(names: tuple[str, i64]) -> i64:
 3 |         case (name, count):
   |               ^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}
+
+/// A case on a union reads the member it holds, switches to the next case unless it is the one
+/// the class pattern names, then tests and captures fields of that member; a member becomes the
+/// union through an aggregate of the union type.
+#[test]
+fn union_cases_switch_on_the_member() {
+    let program = r"
+class Periodic(Struct, Copy):
+    pass
+
+
+class Dirichlet(Struct, Copy):
+    value: f64
+
+
+def ghost(boundary: Periodic | Dirichlet, inside: f64) -> f64:
+    match boundary:
+        case Dirichlet(value=v):
+            return 2.0 * v - inside
+        case Periodic():
+            return inside
+
+
+def main() -> None:
+    print(ghost(Dirichlet(1.0), 0.5))
+";
+    assert_eq!(
+        lower(program, &["ghost", "main"]),
+        r#"fn(_1: Dirichlet | Periodic, _2: f64) -> f64 {
+    let _0: f64; // return
+    let _1: Dirichlet | Periodic; // parameter boundary
+    let _2: f64; // parameter inside
+    let _3: f64; // v
+    let _4: i64;
+    let _5: f64;
+    let _6: i64;
+
+    bb0: {
+        _4 = member_index(_1);
+        switch copy _4 -> [0: bb2, otherwise: bb1];
+    }
+
+    bb1: {
+        _6 = member_index(_1);
+        switch copy _6 -> [1: bb4, otherwise: bb3];
+    }
+
+    bb2: {
+        _3 = copy _1.member[0].0;
+        _5 = Multiply(2.0_f64, copy _3);
+        _0 = Subtract(copy _5, copy _2);
+        return;
+    }
+
+    bb3: {
+        unreachable;
+    }
+
+    bb4: {
+        _0 = copy _2;
+        return;
+    }
+}
+
+fn() -> None {
+    let _0: None; // return
+    let _1: None;
+    let _2: f64;
+    let _3: Dirichlet | Periodic;
+    let _4: Dirichlet;
+    let _5: f64;
+
+    bb0: {
+        _4 = Dirichlet(1.0_f64);
+        _3 = Dirichlet | Periodic(copy _4);
+        _5 = 0.5_f64;
+        _2 = call ghost(_3, _5) -> [return: bb1];
+    }
+
+    bb1: {
+        _1 = call print(_2, owned "\n") -> [return: bb2];
+    }
+
+    bb2: {
+        _0 = None;
+        return;
+    }
+}
+"#
     );
 }

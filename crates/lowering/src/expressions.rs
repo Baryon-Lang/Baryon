@@ -52,6 +52,7 @@ impl<'db> Builder<'db> {
             }
             SyntaxKind::List => self.list_display(place, node),
             SyntaxKind::Dictionary => self.dict_display(&place, node),
+            SyntaxKind::DictionaryComprehension => self.dict_comprehension(&place, node),
             SyntaxKind::FormattedString => self.formatted(place, node),
             SyntaxKind::ListComprehension => self.list_comprehension(&place, node),
             _ => self.unsupported(node, "this expression"),
@@ -122,7 +123,8 @@ impl<'db> Builder<'db> {
     }
 
     /// The rvalue that turns `operand`, of type `from`, into a value of type `to`: `None` or a
-    /// `T` into a `T | None`, or a number into another number type.
+    /// `T` into a `T | None`, a member into its union (decision 0032), or a number into another
+    /// number type.
     pub(crate) fn coerce(
         &self,
         operand: Operand<'db>,
@@ -142,6 +144,12 @@ impl<'db> Builder<'db> {
             if value == from {
                 return Rvalue::Aggregate(to, vec![operand]);
             }
+        }
+        if self
+            .union_members(to)
+            .is_some_and(|members| members.contains(&from))
+        {
+            return Rvalue::Aggregate(to, vec![operand]);
         }
         match (from.kind(self.db), to.kind(self.db)) {
             (TypeKind::Primitive(_), TypeKind::Primitive(_)) => Rvalue::Convert(operand, to),
@@ -272,7 +280,10 @@ impl<'db> Builder<'db> {
 
     /// The fields of the struct declared by the class whose `Name` node is `class.1` in the
     /// file `class.0`.
-    fn fields(&self, class: (database::File, NodeId)) -> Option<&'db [types::Field<'db>]> {
+    pub(crate) fn fields(
+        &self,
+        class: (database::File, NodeId),
+    ) -> Option<&'db [types::Field<'db>]> {
         let item = Item::new(self.db, self.package, class.0, class.1);
         match &self.db.declaration(item).declaration {
             Declaration::Struct { fields, .. } => Some(fields),

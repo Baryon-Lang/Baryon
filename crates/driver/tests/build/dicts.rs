@@ -1,6 +1,7 @@
-//! Dictionaries (decision 0035, roadmap 1.13.4), built and run: displays, `d[k]` read, written
-//! and updated, `in`, `len`, `get`, `pop`, `copy`, loops in insertion order, and the panic for
-//! a missing key. Python prints the same lines for every program here.
+//! Dictionaries (decision 0035, roadmap 1.13.4 and 1.13.14), built and run: displays, `d[k]`
+//! read, written and updated, `in`, `len`, `get`, `pop`, `setdefault`, `update`, `clear`, `copy`,
+//! `del d[k]`, dict comprehensions, loops in insertion order, and the panic for a missing key.
+//! Python prints the same lines for every program here.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -148,6 +149,55 @@ def main():
     assert_eq!(status, Some(0));
 }
 
+/// The 0.3.0 operations (roadmap 1.13.14): `setdefault`, `update`, `clear` and `del d[k]`,
+/// dict comprehensions with one and two clauses and a condition, a comprehension whose key is
+/// read again by its value, and loops and list comprehensions that borrow `list` values.
+#[test]
+fn dict_follow_ups_build_and_run() {
+    let program = r#"
+def main():
+    counts: dict[str, int] = {}
+    for w in ["a", "b", "a", "c", "a"]:
+        counts[w] = counts.setdefault(w, 0) + 1
+    print(counts.setdefault("a", 100), counts.setdefault("z", 7), len(counts))
+    more: dict[str, int] = {"b": 20, "y": 9}
+    counts.update(more)
+    for k, v in counts.items():
+        print(k, v)
+    del counts["a"]
+    print("a" in counts, len(counts))
+    counts.clear()
+    print(len(counts))
+    counts["q"] = 1
+    print(counts["q"])
+    squares = {i: i * i for i in range(5) if i != 2}
+    for n, sq in squares.items():
+        print(n, sq)
+    pairs = {(i, j): i * 10 + j for i in range(2) for j in range(2)}
+    print(pairs[(1, 0)], len(pairs))
+    names: dict[int, str] = {1: "H", 2: "He"}
+    inverse = {sq: n for n, sq in squares.items()}
+    print(inverse[9])
+    lengths = {name: len(name) for name in ["Ar", "Ne", "Kr"]}
+    print(lengths)
+    lists: dict[str, list[f64]] = {"a": [1.0, 2.0], "b": [3.0]}
+    for key, values in lists.items():
+        print(key, len(values))
+    for values in lists.values():
+        print(values[0])
+    sizes = [len(v) for v in lists.values()]
+    print(sizes)
+    print([len(n) for n in names.values()])
+"#;
+    let (printed, status, report) = run("dict-follow-ups", program).unwrap();
+    assert_eq!(report, "");
+    assert_eq!(
+        printed,
+        "3 7 4\na 3\nb 20\nc 1\nz 7\ny 9\nFalse 4\n0\n1\n0 0\n1 1\n3 9\n4 16\n10 4\n3\n{'Ar': 2, 'Ne': 2, 'Kr': 2}\na 2\nb 1\n1.0\n3.0\n[2, 1]\n[1, 2]\n"
+    );
+    assert_eq!(status, Some(0));
+}
+
 /// A missing key panics, naming the key the way Python's `repr` writes it: a `str` quoted, a
 /// tuple in parentheses, an enum member by its class and name.
 #[test]
@@ -168,6 +218,10 @@ fn a_missing_key_panics_naming_the_key() {
         (
             "    d: dict[int, str] = {}\n    print(d.pop(-4))\n",
             "panic: key -4 is not in the dict\n  --> main.byn:8:11\n",
+        ),
+        (
+            "    d: dict[str, int] = {\"a\": 1}\n    del d[\"zz\"]\n",
+            "panic: key 'zz' is not in the dict\n  --> main.byn:8:9\n",
         ),
     ];
     for (index, (body, expected)) in cases.into_iter().enumerate() {

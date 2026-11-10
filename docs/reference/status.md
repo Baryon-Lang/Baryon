@@ -24,8 +24,9 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-10, when `sys.argv`, `sys.exit` and
-`os.getenv` began to build. Every pull request that teaches lowering or the backend something new
+This page was last brought up to date on 2026-11-10, when unions of structs began to build.
+Before that, the same day, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull
+request that teaches lowering or the backend something new
 updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
@@ -77,14 +78,14 @@ checks what it prints.
 | `T \| None`, with every narrowing rule | |
 | Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs and their methods, each method compiled once per type its struct is used at | |
 | Enums: members, `==` and `!=`, `match` | |
-| | [Unions of structs](types.md#unions-of-structs) and class patterns in `match` (roadmap 1.7.13): `baryon check` checks them, and the build reports them as not built yet |
+| [Unions](types.md#unions-of-structs) of structs, enums, error types and `None`: a member passed, assigned or returned where its union is expected, `match` with class patterns by position and keyword, `print`, and members that own memory, freed by the member they hold | Shared method calls and trait bounds on a union (roadmap 1.7.13); `Array.zeros` of a union; class patterns on generic structs; a capture of a field that is not a copy type |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
 | Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors, and bounds by a [user trait](types.md#using-a-trait-as-a-bound), `[T: Body]`, whose method calls go straight to each type's own method | |
 | [Embedded structs](types.md#embedded-structs): `Embed[T]` fields, and their fields and methods reached through the outer struct | Calling a method that an embedded generic struct provides |
 | [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026); a `Callable` parameter passed on to another call or copied into a local | A local that holds one of two different functions depending on a branch, which needs a function value at run time: the build reports it |
 | Lists of any type, such as `list[f64]`, `list[str]` or lists of structs, arrays and lists: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing; dropping a list drops its elements; `xs.pop()`, which panics on an empty list; `value in xs` and `not in` on lists of numbers, `bool`s, enums and `str`s; `xs.copy()` and slices `xs[i:j:k]`, each a new list, of lists of copy types and `str`s; list comprehensions `[f(x) for x in xs if p(x)]`, with any number of `for` clauses and conditions, over what `for` loops over, and over `simd(range(…))`, which runs as its plain range | Comprehensions over `prange` (roadmap 1.13.10); `in`, `copy()` and slices on lists of other types; assigning into a slice of a list |
-| [Dictionaries](types.md#dictionaries) with integer, `bool`, `str`, enum and tuple keys and values of any type: displays, `d[k]` read, written and updated in place, with the missing-key panic; `in`, `len`, `get`, `pop` with and without a default; `copy()` and `for` loops over the dict, `keys()`, `values()` and `items()`, in insertion order, where keys and values are copy types or `str`; dropping a dict drops its keys and values | `copy()` and loops over keys and values that are not copy types or `str`, such as tuple keys holding a `str` or `list` values |
+| [Dictionaries](types.md#dictionaries) with integer, `bool`, `str`, enum and tuple keys and values of any type: displays, `d[k]` read, written and updated in place, with the missing-key panic; `in`, `len`, `get`, `pop` with and without a default, `setdefault`, `update`, `clear` and `del d[k]`; dict comprehensions; `for` loops and list comprehensions over the dict, `keys()`, `values()` and `items()`, in insertion order, borrowing keys and values that do not copy; `copy()` and `update` where keys and values are copy types or `str`; dropping a dict drops its keys and values | `copy()` and `update` of keys and values that are not copy types or `str`, such as tuple keys holding a `str` or `list` values; `get` and `setdefault` of values that do not copy |
 
 Integer overflow ([decision 0030](../decisions/0030-integer-overflow.md)): a debug build panics
 on `+`, `-`, `*`, `**`, `+=`, `-=`, `*=`, `**=` and `-x` that overflow, and `--release` wraps. That includes

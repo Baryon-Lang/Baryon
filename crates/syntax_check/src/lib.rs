@@ -14,10 +14,10 @@
 //! # What it rejects
 //!
 //! - Statements: star targets `a, *rest = e`, `else` on `for` and `while`, functions nested in
-//!   functions, `del`, `global`, `nonlocal`, `async`, the `type` statement, `from m import *`,
-//!   bare `except:`, `except*`, `try` with `else` or `finally`, `raise ... from`, and `with`
-//!   other than `with unsafe:`.
-//! - Expressions: `lambda`, `await`, `yield`, dictionary and set literals and comprehensions,
+//!   functions, `del` of anything but one subscript, `global`, `nonlocal`, `async`, the `type`
+//!   statement, `from m import *`, bare `except:`, `except*`, `try` with `else` or `finally`,
+//!   `raise ... from`, and `with` other than `with unsafe:`.
+//! - Expressions: `lambda`, `await`, `yield`, set literals and comprehensions,
 //!   generator expressions, `:=`, `*` and `**` unpacking, and `is` with anything but `None`.
 //! - Definitions: `*args` and `**kwargs` parameters, function decorators other than `@test`
 //!   and `@bench`, class decorators other than `@layout("C")` on a struct, class bases that
@@ -57,7 +57,7 @@
 //!
 //! let diagnostics = syntax_check::check(&tree, text);
 //! assert_eq!(diagnostics.len(), 1);
-//! assert_eq!(diagnostics[0].message(), "`del` is not supported");
+//! assert_eq!(diagnostics[0].message(), "`del` is supported only on a dict entry");
 //! # Ok::<(), source::SourceError>(())
 //! ```
 

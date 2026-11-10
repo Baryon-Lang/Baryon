@@ -1,8 +1,8 @@
 //! `for` loops over a `dict`, `d.keys()`, `d.values()` or `d.items()`, in insertion order.
 
-use super::entry;
 use crate::builder::Builder;
-use mir::{BinaryOperator, Constant, Operand, Place, Rvalue, TerminatorKind};
+use crate::loops::Pass;
+use mir::{BinaryOperator, Constant, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Type, TypeKind};
 
@@ -14,13 +14,21 @@ impl<'db> Builder<'db> {
     }
 
     /// `for target in d`, or over `d.keys()`, `d.values()` or `d.items()`: steps through the
-    /// entries in insertion order with [`Builtin::DictNext`](mir::Builtin::DictNext), copying the key, the value or
-    /// both into `target` each pass. The `dict` is borrowed for the whole loop, so the body
-    /// cannot change it (the checker's loop rule), and the positions stay valid.
+    /// entries in insertion order with [`Builtin::DictNext`](mir::Builtin::DictNext), binding
+    /// `target` to the key, the value or the `(key, value)` entry each pass, and runs `pass`.
+    /// The `dict` is borrowed for the whole loop, so the body cannot change it (the checker's
+    /// loop rule), and the positions stay valid.
     ///
-    /// Keys and values are copied, a `str` with a new string, so the loop variables never alias
-    /// the table. Values of other types that do not copy are not built yet.
-    pub(crate) fn dict_loop(&mut self, statement: NodeId, target: NodeId, iterator: NodeId) {
+    /// A key or value of a copy type is copied into the variable; one that is not copied, such
+    /// as a `str` or a `list`, is borrowed in place, as a list loop's element is (the
+    /// `collections` module), so the loop never copies or drops what the table holds.
+    pub(crate) fn dict_loop(
+        &mut self,
+        statement: NodeId,
+        target: NodeId,
+        iterator: NodeId,
+        pass: Pass<'_, 'db>,
+    ) {
         let Some((dict, part)) = self.dict_view(iterator) else {
             return;
         };
@@ -28,27 +36,16 @@ impl<'db> Builder<'db> {
         let Some((key, value)) = self.dict_types(ty, iterator) else {
             return;
         };
-        let parts: Vec<(u32, Type<'db>)> = match part {
-            View::Keys => vec![(0, key)],
-            View::Values => vec![(1, value)],
-            View::Items => vec![(0, key), (1, value)],
+        let element = match part {
+            View::Keys => key,
+            View::Values => value,
+            View::Items => Type::new(self.db, TypeKind::Tuple(vec![key, value])),
         };
-        for &(_, part) in &parts {
-            if !self.is_copy(part) && !matches!(part.kind(self.db), TypeKind::Str) {
-                let shown = part.display(self.db);
-                return self.unsupported(iterator, &format!("loops over a dict of `{shown}`"));
-            }
-        }
-        let targets: Vec<NodeId> = if parts.len() == 2 {
-            if self.tree.kind(target) != SyntaxKind::Tuple {
-                return self.unsupported(target, "a loop over `items()` into one name");
-            }
-            self.tree.children_with(target, Role::Item).collect()
-        } else {
-            vec![target]
-        };
-        if targets.len() != parts.len() {
-            return self.unsupported(target, "this loop target");
+        if !self.is_copy(element) && !self.confined(statement, target) {
+            return self.unsupported(
+                target,
+                "a loop variable that borrows an element and is also used outside the loop",
+            );
         }
         let base = self.borrow(dict);
         let int = self.int_type();
@@ -66,12 +63,16 @@ impl<'db> Builder<'db> {
         let more = self.at_least_zero(position, iterator);
         self.branch(more, (body, end), iterator);
         self.start(body);
-        for (&target, &(field, part)) in targets.iter().zip(&parts) {
-            let source = entry(base.clone(), position, field);
-            let source = self.copied(source, part, iterator);
-            self.assign_part(target, source, part);
-        }
-        self.repeat(statement, next, end);
+        let pair = base.clone().project(Projection::Index(vec![position]));
+        let place = match part {
+            View::Keys => pair.project(Projection::Field(0)),
+            View::Values => pair.project(Projection::Field(1)),
+            View::Items => pair,
+        };
+        let aliases = self.aliases.clone();
+        self.bind_element(target, place, element);
+        pass(self, next, end);
+        self.aliases = aliases;
         self.start(next);
         let after = Rvalue::Binary(
             BinaryOperator::Add,

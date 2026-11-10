@@ -1,15 +1,16 @@
-//! The methods of a `dict` and `in`: `get`, `pop`, `copy`, and `k in d`.
+//! The methods of a `dict` and `in`: `get`, `pop`, `setdefault`, `update`, `clear`, `copy`, and
+//! `k in d`.
 
 use super::entry;
 use crate::builder::Builder;
 use mir::{
     Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Local, Operand, Place,
-    Rvalue, TerminatorKind,
+    Rvalue, StatementKind, TerminatorKind,
 };
 use syntax::{NodeId, Operator};
-use types::TypeKind;
+use types::{Type, TypeKind};
 
-impl Builder<'_> {
+impl<'db> Builder<'db> {
     /// `key in d` or `key not in d` on a `dict`, into the `bool` at `place`.
     pub(crate) fn dict_contains(
         &mut self,
@@ -35,8 +36,8 @@ impl Builder<'_> {
         );
     }
 
-    /// A method of a `dict`, `d.get(k)`, `d.pop(k, default)` or `d.copy()`, with `arguments`,
-    /// the receiver first, into `place`.
+    /// A method of a `dict`, such as `d.get(k)`, `d.pop(k, default)` or `d.update(other)`, with
+    /// `arguments`, the receiver first, into `place`.
     pub(crate) fn dict_method(
         &mut self,
         place: Place,
@@ -52,6 +53,11 @@ impl Builder<'_> {
                 self.dict_pop(place, (*dict, *key, rest.first().copied()), node);
             }
             ("copy", [dict]) => self.dict_copy(&place, *dict, node),
+            ("setdefault", [dict, key, default]) => {
+                self.dict_setdefault(place, (*dict, *key, *default), node);
+            }
+            ("update", [dict, other]) => self.dict_update(*dict, *other, node),
+            ("clear", [dict]) => self.dict_clear(*dict, node),
             _ => self.unsupported(node, &format!("the dict method `{method}`")),
         }
     }
@@ -141,21 +147,147 @@ impl Builder<'_> {
     /// Cost: one pass over the entries, and the new table's amortized growth.
     fn dict_copy(&mut self, place: &Place, dict: NodeId, node: NodeId) {
         let ty = self.ty(dict);
-        let Some((key, value)) = self.dict_types(ty, node) else {
+        let Some((key, value)) = self.copyable_parts(ty, "copy", node) else {
             return;
         };
-        for part in [key, value] {
-            if !self.is_copy(part) && !matches!(part.kind(self.db), TypeKind::Str) {
-                let shown = part.display(self.db);
-                return self.unsupported(node, &format!("`copy` of a dict of `{shown}`"));
-            }
-        }
         let base = self.borrow(dict);
         self.assign(place.clone(), Rvalue::Aggregate(ty, Vec::new()), node);
         let int = self.int_type();
+        self.each_entry(&base, node, &mut |builder, position| {
+            let key_copy = builder.copied(entry(base.clone(), position, 0), key, node);
+            let value_copy = builder.copied(entry(base.clone(), position, 1), value, node);
+            let added = builder.temporary(int, node);
+            builder.then(node, |next| TerminatorKind::Call {
+                callee: Callee::Builtin(Builtin::DictInsert),
+                arguments: vec![
+                    Argument::InOut(place.clone()),
+                    Argument::Owned(Operand::Move(key_copy)),
+                ],
+                destination: Place::from(added),
+                target: next,
+                error: None,
+            });
+            builder.assign(
+                entry(place.clone(), added, 1),
+                Rvalue::Use(Operand::Move(value_copy)),
+                node,
+            );
+        });
+    }
+
+    /// `d.update(other)`: sets each key of `other` in `d` to a copy of its value, in `other`'s
+    /// order, so a key already in `d` keeps its place and takes the new value, and a new key
+    /// goes last, as in Python. `other` is borrowed; the checker rejects `d.update(d)`.
+    ///
+    /// Cost: one lookup per entry of `other`.
+    fn dict_update(&mut self, dict: NodeId, other: NodeId, node: NodeId) {
+        let ty = self.ty(dict);
+        let Some((key, value)) = self.copyable_parts(ty, "update", node) else {
+            return;
+        };
+        let Some(target) = self.place(dict) else {
+            return;
+        };
+        let source = self.borrow(other);
+        self.each_entry(&source, node, &mut |builder, position| {
+            let key_copy = builder.copied(entry(source.clone(), position, 0), key, node);
+            let owned = builder.temporary(key, node);
+            builder.assign(
+                Place::from(owned),
+                Rvalue::Use(Operand::Move(key_copy)),
+                node,
+            );
+            let value_copy = builder.copied(entry(source.clone(), position, 1), value, node);
+            builder.set_entry(&target, owned, Operand::Move(value_copy), node);
+            if builder.needs_drop(key) {
+                // The key moved into a new entry, or is dropped here when the entry was there.
+                builder.push(StatementKind::Drop(Place::from(owned)), node);
+            }
+        });
+    }
+
+    /// `d.setdefault(k, default)` into `place`: the value for `k`, after adding `k` with the
+    /// value `default` when it is missing. The key and then the default are computed once,
+    /// before the lookup, as Python passes them. The checker allows `setdefault` only on values
+    /// that copy, so an unused default needs no drop.
+    fn dict_setdefault(
+        &mut self,
+        place: Place,
+        (dict, key, default): (NodeId, NodeId, NodeId),
+        node: NodeId,
+    ) {
+        let ty = self.ty(dict);
+        let Some((_, held)) = self.dict_types(ty, node) else {
+            return;
+        };
+        let Some(base) = self.place(dict) else {
+            return;
+        };
+        let owned = self.stored_key(ty, key);
+        let value = self.owned_value(held, default);
+        let position = self.lookup(&base, &Place::from(owned), node);
+        let (found, missing) = (self.new_block(), self.new_block());
+        let present = self.at_least_zero(position, node);
+        self.branch(present, (found, missing), node);
+        self.start(missing);
+        self.then(node, |next| TerminatorKind::Call {
+            callee: Callee::Builtin(Builtin::DictInsert),
+            arguments: vec![
+                Argument::InOut(base.clone()),
+                Argument::Owned(Operand::Move(Place::from(owned))),
+            ],
+            destination: Place::from(position),
+            target: next,
+            error: None,
+        });
+        self.assign(entry(base.clone(), position, 1), Rvalue::Use(value), node);
+        self.terminate(TerminatorKind::Goto(found), node);
+        self.start(found);
+        self.assign(
+            place,
+            Rvalue::Use(Operand::Copy(entry(base, position, 1))),
+            node,
+        );
+    }
+
+    /// `d.clear()`: drops every key and value and leaves `d` empty, as a new empty `dict`
+    /// replacing the old one.
+    fn dict_clear(&mut self, dict: NodeId, node: NodeId) {
+        let ty = self.ty(dict);
+        let Some(base) = self.place(dict) else {
+            return;
+        };
+        let empty = self.temporary(ty, node);
+        self.assign(Place::from(empty), Rvalue::Aggregate(ty, Vec::new()), node);
+        self.replace(base, Operand::Move(Place::from(empty)), node);
+    }
+
+    /// The key and value types of the `dict` type `ty`, when both are copy types or `str`, which
+    /// `method` copies; otherwise reports `method` as not built for them.
+    fn copyable_parts(
+        &mut self,
+        ty: Type<'db>,
+        method: &str,
+        node: NodeId,
+    ) -> Option<(Type<'db>, Type<'db>)> {
+        let (key, value) = self.dict_types(ty, node)?;
+        for part in [key, value] {
+            if !self.is_copy(part) && !matches!(part.kind(self.db), TypeKind::Str) {
+                let shown = part.display(self.db);
+                self.unsupported(node, &format!("`{method}` of a dict of `{shown}`"));
+                return None;
+            }
+        }
+        Some((key, value))
+    }
+
+    /// Runs `visit` with the position of each entry of the `dict` at `dict`, in insertion order.
+    /// The `dict` must not change while it runs.
+    fn each_entry(&mut self, dict: &Place, node: NodeId, visit: &mut dyn FnMut(&mut Self, Local)) {
+        let int = self.int_type();
         let position = self.temporary(int, node);
         self.next_entry(
-            &base,
+            dict,
             position,
             Operand::Constant(Constant::integer(int, 0)),
             node,
@@ -166,24 +298,7 @@ impl Builder<'_> {
         let more = self.at_least_zero(position, node);
         self.branch(more, (body, end), node);
         self.start(body);
-        let key_copy = self.copied(entry(base.clone(), position, 0), key, node);
-        let value_copy = self.copied(entry(base.clone(), position, 1), value, node);
-        let added = self.temporary(int, node);
-        self.then(node, |next| TerminatorKind::Call {
-            callee: Callee::Builtin(Builtin::DictInsert),
-            arguments: vec![
-                Argument::InOut(place.clone()),
-                Argument::Owned(Operand::Move(key_copy)),
-            ],
-            destination: Place::from(added),
-            target: next,
-            error: None,
-        });
-        self.assign(
-            entry(place.clone(), added, 1),
-            Rvalue::Use(Operand::Move(value_copy)),
-            node,
-        );
+        visit(self, position);
         let after = Rvalue::Binary(
             BinaryOperator::Add,
             Operand::Copy(Place::from(position)),
@@ -191,13 +306,13 @@ impl Builder<'_> {
         );
         let from = self.temporary(int, node);
         self.assign(Place::from(from), after, node);
-        self.next_entry(&base, position, Operand::Copy(Place::from(from)), node);
+        self.next_entry(dict, position, Operand::Copy(Place::from(from)), node);
         self.terminate(TerminatorKind::Goto(header), node);
         self.start(end);
     }
 
     /// Moves the value of the entry at `position` out into `place` and removes the entry.
-    fn remove(&mut self, dict: &Place, position: Local, place: Place, node: NodeId) {
+    pub(super) fn remove(&mut self, dict: &Place, position: Local, place: Place, node: NodeId) {
         self.then(node, |next| TerminatorKind::Call {
             callee: Callee::Builtin(Builtin::DictRemove),
             arguments: vec![

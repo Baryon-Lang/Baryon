@@ -174,6 +174,7 @@ mod string_methods;
 mod strings;
 mod text;
 mod ty;
+mod unions;
 mod view;
 
 use std::fmt;

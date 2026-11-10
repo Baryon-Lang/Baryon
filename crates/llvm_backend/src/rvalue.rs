@@ -31,11 +31,7 @@ impl<'db> Function<'_, '_, 'db> {
             Rvalue::Elementwise(_) => return Err(Unsupported::new("whole-array operations")),
             Rvalue::IsPresent(place) => self.is_present(place)?,
             Rvalue::ErrorIndex(place) => self.error_index(place)?,
-            // Unions are built after lowering learns them (roadmap 1.7.13).
-            Rvalue::MemberIndex(place) => {
-                let (_, union) = self.place(place)?;
-                return Err(self.types.unsupported(union));
-            }
+            Rvalue::MemberIndex(place) => self.member_index(place)?,
             Rvalue::Format(pieces) => self.format(pieces)?,
         };
         Ok(Some(value))

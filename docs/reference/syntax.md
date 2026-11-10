@@ -84,7 +84,7 @@ the spelling to use instead.
 | `with unsafe:` | yes | The only `with` form in version 0 |
 | `match` | yes | Literal, enum, tuple, [class](types.md#unions-of-structs) and wildcard patterns; must be exhaustive |
 | `assert cond, message` | yes | Checked in every build; a false condition panics |
-| `del` | no | A value is destroyed when its owner goes out of scope |
+| `del d[k]` | yes | Removes one dict entry; see [Dictionaries](types.md#dictionaries). `del x` is an error: a value is destroyed when its owner goes out of scope |
 | `global`, `nonlocal` | no | There are no module-level variables |
 | `lambda` | no | Pass a named function instead |
 | `async`, `await`, `yield` | no | |
@@ -112,7 +112,8 @@ out of scope, on every path out of a function.
 | Tuples and lists `(a, b)`, `[a, b]` | yes | |
 | List comprehensions `[f(x) for x in xs if p(x)]` | yes | Produce a `list` |
 | Dict displays `{k: v}` | yes | Produce a `dict`. See [Dictionaries](types.md#dictionaries) |
-| Set displays, dict and set comprehensions, generator expressions | no | Not in version 0 |
+| Dict comprehensions `{k: v for x in e if c}` | yes | Produce a `dict`. See [Dictionaries](types.md#dictionaries) |
+| Set displays, set comprehensions, generator expressions | no | Not in version 0 |
 | Assignment expressions `x := e` | no | |
 | `lambda` | no | |
 
@@ -166,6 +167,7 @@ def main():
 | A `str` | Its characters, without quotes |
 | `None` | `None` |
 | A `T \| None` | The `T` when there is one, else `None` |
+| A [union](types.md#unions-of-structs) | The member it holds, as that member prints: `Dirichlet(value=300.0)` |
 | A tuple | `(1, 2.5)`; one item keeps its comma, `(1,)`; the empty tuple is `()` |
 | An enum member | The enum's name and the member's: `Phase.GAS` |
 | A struct or an error | The type's name, then each field by name, in declaration order: `Point(x=1.0, y=2.0)`, as a Python dataclass prints |

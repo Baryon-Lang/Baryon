@@ -218,6 +218,13 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         match &statement.kind {
             StatementKind::Assign(place, rvalue) => {
                 let (address, ty) = self.place(place)?;
+                // A union is written in parts: its tag, then its member in the payload.
+                if let (mir::Rvalue::Aggregate(_, operands), TypeKind::Union(_)) =
+                    (rvalue, ty.kind(self.types.db))
+                    && let [operand] = operands.as_slice()
+                {
+                    return self.store_union(&address, ty, operand);
+                }
                 let Repr::Value(llvm) = self.types.repr(ty)? else {
                     return Ok(());
                 };
@@ -340,8 +347,10 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     (address, ty) = self.view(&address, ty, dimensions)?;
                     continue;
                 }
-                // Unions are built after lowering learns them (roadmap 1.7.13).
-                Projection::Member(_) => return Err(self.types.unsupported(ty)),
+                Projection::Member(position) => {
+                    (address, ty) = self.member_payload(&address, ty, *position)?;
+                    continue;
+                }
                 Projection::Value => {
                     let TypeKind::Optional(value) = ty.kind(self.types.db) else {
                         return Err(self.types.unsupported(ty));
