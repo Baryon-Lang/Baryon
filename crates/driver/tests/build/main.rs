@@ -21,6 +21,7 @@ mod dicts;
 mod examples;
 mod generic_methods;
 mod guide;
+mod list_slices;
 mod math;
 mod modules;
 mod overflow;
