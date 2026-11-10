@@ -18,7 +18,11 @@ one option is `--release`.
 
 ## Installing
 
-`baryon` is built from this repository with the pinned Rust toolchain
+From release 0.2.0, each release has prebuilt archives for Linux on x86_64 and macOS on Apple
+silicon, holding `baryon` and `libruntime.a` together; the
+[beginner's guide](../guide/README.md#download-a-prebuilt-baryon) says how to download, check and
+install one. On any other system, or to follow `main`, `baryon` is built from this repository
+with the pinned Rust toolchain
 ([rustup](https://rustup.rs) installs it on first use):
 
 ```sh
