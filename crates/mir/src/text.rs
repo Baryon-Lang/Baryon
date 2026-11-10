@@ -1,6 +1,7 @@
 //! The methods of `str` a [`Builtin::Text`](crate::Builtin::Text) call performs (roadmap
 //! 1.13.12): taking characters by position, splitting, stripping, joining, searching, replacing
-//! and changing case, each as Python's method of the same name.
+//! and changing case, each as Python's method of the same name, and reading a number from text
+//! for `int(text)` and `float(text)`.
 
 /// A method of `str`, called by [`Builtin::Text`](crate::Builtin::Text).
 ///
@@ -54,6 +55,19 @@ pub enum TextMethod {
     /// `text.upper()`: one argument; the destination is a `str`, by Unicode's full case mapping,
     /// so `"ß"` becomes `"SS"`. The call cannot fail.
     Upper,
+    /// `int(text)` (decision 0037): one argument; the destination is an `i64`, the integer the
+    /// text writes as Python's `int(text)` reads it, with whitespace around it, a sign, and
+    /// ASCII digits with single underscores between them. Text that is not such an integer, or
+    /// one outside `i64`'s range, fails: the call has an error edge whose local is a
+    /// `Raises[None, ValueError]`, with `ValueError` the class of the standard library's own
+    /// source (decision 0038), and a backend writes the failure there as a compiled function that
+    /// raises does. The destination is written only on success.
+    ParseInt,
+    /// `float(text)` (decision 0037): one argument; the destination is an `f64`, the nearest to
+    /// the number the text writes as Python's `float(text)` reads it, including `inf`,
+    /// `infinity` and `nan` in any case. Text that is not a number fails as
+    /// [`ParseInt`](Self::ParseInt) does, with the same error edge.
+    ParseFloat,
 }
 
 impl TextMethod {
@@ -63,6 +77,7 @@ impl TextMethod {
     /// assert_eq!(mir::TextMethod::Take.name(), "str slice");
     /// assert_eq!(mir::TextMethod::SplitWhitespace.name(), "str.split");
     /// assert_eq!(mir::TextMethod::StripEnd.name(), "str.rstrip");
+    /// assert_eq!(mir::TextMethod::ParseFloat.name(), "float");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -79,6 +94,8 @@ impl TextMethod {
             Self::Replace => "str.replace",
             Self::Lower => "str.lower",
             Self::Upper => "str.upper",
+            Self::ParseInt => "int",
+            Self::ParseFloat => "float",
         }
     }
 }

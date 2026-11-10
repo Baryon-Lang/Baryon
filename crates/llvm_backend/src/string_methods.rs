@@ -130,6 +130,9 @@ impl<'db> Function<'_, '_, 'db> {
                 };
                 (symbol, Returns::Text, self.text_values(arguments)?)
             }
+            TextMethod::ParseInt | TextMethod::ParseFloat => {
+                return Err(Unsupported::new(format!("`{}` of a `str`", method.name())));
+            }
         };
         self.runtime_text_call(symbol, returns, values, destination)?;
         self.line(&format!("br label %{}", block_label(target)));
