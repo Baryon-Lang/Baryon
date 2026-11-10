@@ -150,6 +150,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.13.3 | Lists of any type, such as `list[str]` and lists of structs; `pop`, `in`, slices and comprehensions | 0.5 | 1.9.12 | In progress | Claude | [#150](https://github.com/Baryon-Lang/Baryon/pull/150) |
 | 1.13.4 | `dict`, a hash map from integers, `bool`, `str`, enums and tuples of them to any type, as decision 0035 settles: Python's operations, insertion order, a missing key panics, no float keys | 0.5 | 1.13.3 | Planned | — | [0035](docs/decisions/0035-dict.md) |
 | 1.13.5 | List comprehensions, `[f(x) for x in xs if p(x)]`, split from 1.13.3 because they need 1.9.17's `for` over collections | 0.25 | 1.13.3, 1.9.17 | Planned | — | — |
+| 1.13.6 | Files and processes: read and write text and binary files and whole arrays, list a directory, read command-line arguments and environment variables, and run another program and read its output and exit status. Errors are `Raises` values. The API is user-visible, so a decision record proposes it first | 0.5 | 1.13.2 | Planned | — | — |
 | 1.14 | Standard library: N-dimensional arrays, views, stencil, simd and parallel loops, random numbers, BLAS | 5 | 1.13 | Planned | — | — |
 | 1.14.1 | Half-list Lennard-Jones with `accumulate=` in the examples, and a threaded half-list OpenMP baseline in the benchmark suite to compare against | — | 1.14 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.14.2 | `Array` methods `a.min()`, `a.max()`, `a.dot(b)`, `a.round()` and `a.fill(value)`, and the matrix product `@` on rank-1 and rank-2 arrays as loop nests; BLAS comes with 3.10. Done: `Builtin::Dot`, float dot products in the pairwise order of `sum`, and `Check::NotEmpty`, for `min` and `max` of an empty array, in `mir`; the runtime's pairwise dot product, the methods on `Array` and `Fixed` arrays, and `@` of a matrix and a matrix, a matrix and a vector, or a vector and a matrix, in the checker, lowering and the LLVM backend | 0.5 | 1.9.6 | Done | Claude | [arrays](docs/reference/arrays.md), [#129](https://github.com/Baryon-Lang/Baryon/pull/129), [#139](https://github.com/Baryon-Lang/Baryon/pull/139) |
@@ -215,6 +216,11 @@ registry and a standalone IDE are candidates, each added here when it is planned
 A release is a tag on `main` that people outside the project can try. Each release is one item
 here, with one row per step; [`CHANGELOG.md`](CHANGELOG.md) says what it holds.
 
+Every release up to 1.0 puts working functionality for users first: a feature someone needs to
+write, run or ship a real program comes before internal rework (Collins, 2026-11-10). A
+self-hosted compiler stays a non-goal, as the [design plan](docs/design/language-design-plan.md)
+says.
+
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
 | R.1 | Release 0.1.0, a review release: everything on `main` that passes CI, documented so that testers can install it, write and run programs, and review the documentation, code and design | — | — | In progress | Claude | [CHANGELOG](CHANGELOG.md), [#105](https://github.com/Baryon-Lang/Baryon/pull/105) |
@@ -232,6 +238,7 @@ here, with one row per step; [`CHANGELOG.md`](CHANGELOG.md) says what it holds.
 | R.2.6 | Release workflow: on a `v*` tag, and by hand for a dry run, build `baryon` and `libruntime.a` with `--release` on `ubuntu-22.04` (x86_64, so the binary runs on glibc 2.35 and newer) and `macos-15` (arm64, deployment target 11.0), pack each as `baryon-<version>-<target>.tar.gz` with a SHA-256 file, and attach them to a draft GitHub release. No installers, signing or package managers in 0.2.0 | 0.25 | — | Planned | — | — |
 | R.2.7 | Clean-machine test in the release workflow, before anything is attached: on a fresh runner per platform with no Rust toolchain on `PATH`, unpack the archive, run `baryon --version`, `build`, `run` and `test` on the five examples and the guide's first program, in debug and `--release`, and check that `baryon build` without `clang` on `PATH` fails with the message that says how to install it | 0.25 | R.2.6 | Planned | — | — |
 | R.2.8 | Install from a download: a section in the beginner's guide and the release notes that says what each platform needs (`clang` from `xcode-select --install` on macOS, the `clang` package on Linux), how to download with `curl` so macOS does not quarantine the binary, unpack, put `baryon` on `PATH` with `libruntime.a` beside it, and check the SHA-256; building from source stays as the other way. Run in CI as the guide already is | 0.1 | R.2.6 | Planned | — | — |
+| R.3 | Release 0.3.0, in order of value to users: reading and writing files and running programs (1.13.6), `dict` if it moved out of 0.2.0 (1.13.4), sum types (1.7.13) and printing arrays (1.10.15). Its steps are added when 0.3.0 is planned | — | R.2 | Planned | — | — |
 | R.4 | Release 0.4.0: Windows (x86_64) joins Linux and macOS as a supported platform: `baryon` and the runtime build, link and run there, with CI and a prebuilt archive like R.2.6's (Collins, 2026-11-10). Its steps are added when 0.4.0 is planned | — | R.2 | Planned | — | — |
 
 ## Decisions needed
