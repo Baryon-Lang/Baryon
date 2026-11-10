@@ -62,9 +62,9 @@ The [beginner's guide](docs/guide/README.md#1-install-baryon) shows both ways:
 - **Generics**: methods of generic structs, a `Callable` parameter passed on to another call or
   kept in a local, and default parameter values computed at each call
   ([decision 0027](docs/decisions/0027-default-parameter-evaluation.md)).
-- **`print` of every value** except arrays: `None`, optional values, tuples, enum members as
-  `Phase.GAS`, and structs as `Type(field=value, ...)`, with the `sep=` and `end=` keywords.
-  Output is flushed at exit and before a panic.
+- **`print` of more values**: `None`, optional values, tuples, enum members as `Phase.GAS`, and
+  structs as `Type(field=value, ...)`, with the `sep=` and `end=` keywords. Output is flushed at
+  exit and before a panic. Arrays, lists and dicts do not print yet.
 - **Reproducible `simd` sums**: float sums and products in a `simd` loop vectorize in 8 fixed
   lanes, so they run faster and give the same bits on every machine.
 - **Integer overflow checks** in debug builds now also cover generic code, `abs` of the minimum,
@@ -77,7 +77,8 @@ The [beginner's guide](docs/guide/README.md#1-install-baryon) shows both ways:
   `gamma`, `lgamma`, `fma`, `floor`, `ceil` and `isnan`.
 - **`str`**: `len`, `==`, `!=`, ordering, and `in`.
 - **Lists of any type**, such as `list[str]` and lists of structs, with `in`, `not in`,
-  `copy()`, `pop()`, slices `xs[a:b]`, list comprehensions, and `for` over them.
+  `copy()`, `pop()`, slices `xs[a:b]`, list comprehensions, and `for` over them. Dict
+  comprehensions are not built yet.
 - **`dict`** ([decision 0035](docs/decisions/0035-dict.md)): Python's dict, with integer, `bool`,
   `str`, enum and tuple keys, insertion order, and a panic on a missing key; float keys are
   rejected.
@@ -98,8 +99,8 @@ change; version 0.2.0 from release 0.1.0 still works.
 
 ### Known limits
 
-- Not built yet, though `baryon check` accepts them: `print` of an array or a dict, `for` over a
-  string, indexing, slicing and methods such as `split` on `str`, `match` on `str`, and complex
+- Not built yet, though `baryon check` accepts them: `print` of an array, a list or a dict; dict
+  comprehensions; `for` over a string; indexing, slicing and methods such as `split` on `str`, `match` on `str`, and complex
   numbers in f-strings and in `a.sum()`. [What builds today](docs/reference/status.md) has the
   full list. Each is reported as an error that says it is not built yet, never miscompiled.
 - No reading or writing of files, command-line arguments or running other programs yet: that
