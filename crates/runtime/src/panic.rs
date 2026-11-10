@@ -49,6 +49,11 @@ pub(crate) enum Failure<'text> {
         /// The length the other array has.
         found: i64,
     },
+    /// `d[k]` or `d.pop(k)` of a key that is not in the `dict` (decision 0035).
+    MissingKey {
+        /// The key, as Python's `repr` writes it.
+        key: &'text str,
+    },
     /// Integer `**` with a negative exponent, whose result would be a fraction.
     NegativeExponent {
         /// The exponent.
@@ -113,6 +118,7 @@ impl fmt::Display for Failure<'_> {
                 formatter,
                 "array lengths differ in dimension {dimension}: {expected} and {found}"
             ),
+            Self::MissingKey { key } => write!(formatter, "key {key} is not in the dict"),
             Self::NegativeExponent { exponent } => {
                 write!(formatter, "negative exponent {exponent} in integer `**`")
             }

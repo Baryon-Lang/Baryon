@@ -326,6 +326,12 @@ impl<'db> Function<'_, '_, 'db> {
         if matches!(ty.kind(self.types.db), TypeKind::List(_)) {
             return self.new_list(ty, operands);
         }
+        if matches!(ty.kind(self.types.db), TypeKind::Dict { .. }) {
+            if !operands.is_empty() {
+                return Err(Unsupported::new("a `dict` aggregate with entries"));
+            }
+            return Ok("null".to_owned());
+        }
         let llvm = self.types.value(ty)?;
         // A `Fixed` array's operands are its elements in row-major order; each goes at the
         // indices that position unravels to. A tuple's or struct's go at their own position.
