@@ -72,14 +72,21 @@
 //! - **Functions as arguments.** A module-level function read as a value is a constant of its
 //!   own zero-sized type, a call passes that type as an extra type argument for each `Callable`
 //!   parameter, and a call of a `Callable` value is a [`Callee::Value`](mir::Callee::Value),
-//!   which monomorphization turns into a direct call (decision 0026).
+//!   which monomorphization turns into a direct call (decision 0026). A `Callable` parameter
+//!   passed on to another call passes its own `Callable` type, which monomorphization replaces
+//!   by the function the instance received.
+//! - **Methods of generic structs.** A call of a method of a generic class passes the
+//!   receiver's type arguments first, `[f64]` for `p.total()` on a `Pair[f64]`, so the method is
+//!   compiled once per type its class is used at (roadmap 1.9.18).
 //! - **Conversions.** Where number mixing converts an operand (decision 0014), a
 //!   [`Convert`](mir::Rvalue::Convert) does it, and `/` on integers converts both sides to `f64`.
 //! - **Integer overflow.** Integer `+`, `-` and `*`, their in-place forms and `-x` on a signed
 //!   integer lower to a [`CheckedBinary`](mir::Rvalue::CheckedBinary) and an `Assert` of
 //!   [`NoOverflow`](mir::Check::NoOverflow) on its flag, in every build; a release build's
-//!   backend leaves the asserts out (decision 0030). On a type parameter they stay a wrapping
-//!   [`Binary`](mir::Rvalue::Binary), since lowering does not know the type is an integer.
+//!   backend leaves the asserts out (decision 0030). So do `abs` of an integer and each
+//!   addition and product of integer `a.sum()` and `v.dot(w)`. On a type parameter they are a
+//!   [`Binary`](mir::Rvalue::Binary) into a local of the parameter's type, since lowering does
+//!   not know the type is an integer; monomorphization checks it in an integer instance.
 //!
 //! # What it does not lower yet
 //!
@@ -90,9 +97,8 @@
 //! that leave out an argument whose default is not a literal or a constant, or that belongs to a
 //! generic function, the built-in functions and methods other than `print`, `min` and `max` of
 //! numbers, `len` of an array, `round` with one argument, the `math` functions above, the array
-//! constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a `Fixed` array, passing on a
-//! `Callable` parameter to another call, `**` on integers, `@`, `in`, nested unpacking, `with`
-//! other than `with unsafe:`, and comprehensions.
+//! constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a `Fixed` array, `**` on
+//! integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`, and comprehensions.
 //!
 //! # Example
 //!

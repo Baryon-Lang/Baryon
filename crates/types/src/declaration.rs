@@ -1,6 +1,7 @@
 //! What a definition declares, in types: a function's signature, a struct's fields, an enum's
-//! variants, an alias's type, a constant's type and value. The type checker computes these from
-//! annotations; every stage after it reads them through [`TypeDb::declaration`].
+//! variants, a trait's methods, an alias's type, a constant's type and value. The type checker
+//! computes these from annotations; every stage after it reads them through
+//! [`TypeDb::declaration`].
 
 use crate::{Item, Type, TypedBody};
 use diagnostics::Diagnostic;
@@ -45,6 +46,23 @@ pub enum Declaration<'db> {
         /// Whether it is an error type, a class with the base `Exception`.
         error: bool,
         /// The methods, in source order.
+        methods: Vec<Item<'db>>,
+        /// The traits it names among its bases, in the order written: `Body` in
+        /// `class Particle(Struct, Copy, Body)` (decision 0031). Each is the [`Item`] of a class
+        /// that declares a [`Trait`](Self::Trait). Naming a trait promises its methods; it adds
+        /// no fields and no code.
+        traits: Vec<Item<'db>>,
+    },
+    /// A trait, `class Body(Protocol)` (decision 0031): the methods a type that names it must
+    /// define, and the traits it requires.
+    Trait {
+        /// The traits listed before `Protocol`, in the order written: `Body` and `Charged` in
+        /// `class ChargedBody(Body, Charged, Protocol)`. A type that names this trait implements
+        /// them too.
+        requires: Vec<Item<'db>>,
+        /// The methods, in source order. Each is a [`Function`](Self::Function) whose body is
+        /// `...`; `Self` in its signature is a [`TypeKind::Parameter`](crate::TypeKind) named by
+        /// the trait's own `Name` node, which stands for the implementing type.
         methods: Vec<Item<'db>>,
     },
     /// An enum: the names of its variants, in order.
@@ -104,8 +122,12 @@ pub enum Mode {
 pub struct Field<'db> {
     /// The field's name.
     pub name: String,
-    /// Its type.
+    /// Its type: for an embedded field, the struct inside `Embed[...]`.
     pub ty: Type<'db>,
+    /// Whether the field is written `Embed[T]` (decision 0031): stored exactly like a field of
+    /// type `T`, and the fields and methods of `T` can also be reached through the outer
+    /// struct, `ion.m` for `ion.particle.m`.
+    pub embedded: bool,
 }
 
 /// A number the compiler computed: the value of a `Final` constant.

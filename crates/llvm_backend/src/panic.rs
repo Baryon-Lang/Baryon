@@ -344,6 +344,10 @@ impl<'db> Function<'_, '_, 'db> {
                 let condition = source.strip_prefix("assert ").unwrap_or(&source);
                 Failure::Message(format!("assertion failed: {condition}"))
             }
+            Check::NotEmpty => {
+                let call = self.constants.source(self.span);
+                Failure::Message(format!("`{call}` of an empty array"))
+            }
             Check::SameLength {
                 dimension,
                 expected,

@@ -384,6 +384,66 @@ error: `pow` cannot mix `f32` and `f64`
     );
 }
 
+/// The rest of `math`: `fma` takes three numbers and `log` one or two, `floor` gives an `int`
+/// and `isnan` a `bool`, and the three numbers of `fma` mix as arithmetic does, a literal taking
+/// the type of the first.
+#[test]
+fn more_math_functions_are_checked() {
+    let program = r"
+import math
+
+
+def f(a: f32, b: f64, s: str) -> f64:
+    c = math.fma(a, a)
+    d = math.log(b, 2.0, 3.0)
+    e = math.isnan(s)
+    g: f64 = math.floor(b)
+    h: int = math.isinf(b)
+    k = math.fma(a, a, b)
+    m: f32 = math.fma(a, a, 1.0)
+    return b
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `fma` takes three numbers
+ --> main.byn:5:9
+  |
+5 |     c = math.fma(a, a)
+  |         ^^^^^^^^^^^^^^ found 2 arguments
+
+error: `log` takes one or two numbers
+ --> main.byn:6:9
+  |
+6 |     d = math.log(b, 2.0, 3.0)
+  |         ^^^^^^^^^^^^^^^^^^^^^ found 3 arguments
+
+error: `isnan` takes a real number, not `str`
+ --> main.byn:7:20
+  |
+7 |     e = math.isnan(s)
+  |                    ^ not an integer or a float
+
+error: expected `f64`, found `i64`
+ --> main.byn:8:14
+  |
+8 |     g: f64 = math.floor(b)
+  |              ^^^^^^^^^^^^^ the annotation says `f64`
+
+error: expected `i64`, found `bool`
+ --> main.byn:9:14
+  |
+9 |     h: int = math.isinf(b)
+  |              ^^^^^^^^^^^^^ the annotation says `i64`
+
+error: `fma` cannot mix `f32` and `f64`
+  --> main.byn:10:9
+   |
+10 |     k = math.fma(a, a, b)
+   |         ^^^^^^^^^^^^^^^^^ different number types
+   = note: convert one side so both are the same type, such as `f64(x)`"
+    );
+}
+
 /// `Philox` takes a seed and an optional stream, both `int`; it has `uniform()` and nothing
 /// else; and it moves, so a generator given to another name cannot draw again. `math.pi` and
 /// the other constants are `f64`s.

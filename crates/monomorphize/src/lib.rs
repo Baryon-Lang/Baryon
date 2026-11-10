@@ -5,15 +5,26 @@
 //! An *instance* is a function and the types it is called with; this crate turns the generic body
 //! into the instance's body by substituting each type parameter with its argument everywhere a
 //! type appears: in every local, constant, conversion, aggregate, and the type arguments of every
-//! call (decision 0018). Arithmetic on `T` needs no rewriting: once `T` is `f64`, `Multiply` on
+//! call (decision 0018). Arithmetic on `T` needs little rewriting: once `T` is `f64`, `Multiply` on
 //! two `f64` locals is primitive arithmetic, and traits are standard and statically dispatched in
-//! the MVP, so no trait calls remain to resolve.
+//! the MVP, so no trait calls remain to resolve. Once `T` is an integer, `+`, `-`, `*` and `-x`
+//! on it gain the overflow check lowering writes for integers (decision 0030), and once it is an
+//! array they become whole-array expressions.
 //!
 //! The instance query runs [`instantiate`], then drop elaboration and array expansion, and marks
 //! the result [`Phase::Ready`](mir::Phase). The driver collects which instances a program needs
 //! (roadmap 1.9.5): it starts from the functions that are not generic and follows each call of a
 //! generic function at concrete types, since that needs both lowering and this crate, and only an
 //! application crate may depend on two implementations.
+//!
+//! A method of a generic class, such as `Pair[T]`'s, is generic in the class's type parameters,
+//! which come first in its instance's type arguments, then the method's own (roadmap 1.9.18).
+//!
+//! A `Callable` parameter is an implicit type parameter (decision 0026). When two of one
+//! signature receive different functions, their shared `Callable` type names neither, so
+//! [`instantiate`] gives each parameter's local, and each local copied from it, its function's
+//! own type, and [`forward_callables`] gives each call that passes such a local on the type
+//! argument of that function.
 //!
 //! A number literal in a generic body, `2` in `x * 2` for `T: Number`, keeps the value written
 //! until substitution gives `T` a number type, then is written at that type: `2.0` for `f64`.
@@ -70,11 +81,15 @@
 //! assert!(instance.display(&database).to_string().starts_with("fn(_1: f64) -> f64 {"));
 //! ```
 
+mod callables;
+
+pub use callables::forward_callables;
 use mir::{
-    Argument, Body, Callee, Constant, ConstantValue, Elementwise, LocalKind, Operand, Rvalue,
-    StatementKind, TerminatorKind,
+    Argument, BinaryOperator, Body, Callee, Check, Constant, ConstantValue, Elementwise,
+    LocalDeclaration, LocalKind, Operand, Place, Projection, Rvalue, Statement, StatementKind,
+    Terminator, TerminatorKind, UnaryOperator,
 };
-use types::{Nominal, Primitive, Type, TypeKind};
+use types::{Integer, Nominal, Primitive, Type, TypeKind};
 
 /// The body of `generic` at concrete types: each of `parameters`, the function's type parameters
 /// in order as its signature lists them, replaced by the argument at the same position in
@@ -128,6 +143,15 @@ pub fn instantiate<'db>(
         arguments: &replacing,
     };
     let mut body = generic.clone();
+    let integers: Vec<(Type<'db>, Integer)> = parameters
+        .iter()
+        .zip(arguments)
+        .filter_map(|(&parameter, argument)| match argument.kind(db) {
+            TypeKind::Primitive(Primitive::Integer(integer)) => Some((parameter, *integer)),
+            _ => None,
+        })
+        .collect();
+    checked_arithmetic(db, &mut body, &integers);
     substitution.body(&mut body);
     let received = parameters
         .iter()
@@ -135,9 +159,125 @@ pub fn instantiate<'db>(
         .filter(|(parameter, _)| matches!(parameter.kind(db), TypeKind::Callable { .. }))
         .map(|(_, &argument)| argument);
     callable_parameters(db, &mut body, received);
+    callables::copied(db, &mut body);
     direct_calls(db, &mut body);
     whole_array_arithmetic(db, &mut body);
     body
+}
+
+/// Checks for overflow the arithmetic of `body` and its outlined `prange` bodies whose type
+/// parameter this instance makes an integer, as lowering checks the same arithmetic written on
+/// an integer type (decision 0030). `integers` lists those parameters and their integer types.
+///
+/// Lowering writes `+`, `-` and `*` on a type parameter, and `-x` on one, into a local of the
+/// parameter's type, so the destination names the arithmetic to check. Each becomes the form
+/// lowering writes for an integer: a [`CheckedBinary`](Rvalue::CheckedBinary) into a
+/// `tuple[T, bool]` local, an `Assert` that its flag is `False`, and the result, in a new block
+/// that continues the rest of the old one. `-x` is `0 - x`, checked only for a signed integer,
+/// as lowering does. The rewrite runs before substitution, so the new locals name the parameter
+/// and substitution gives them the instance's types with the rest.
+fn checked_arithmetic<'db>(
+    db: &'db dyn salsa::Database,
+    body: &mut Body<'db>,
+    integers: &[(Type<'db>, Integer)],
+) {
+    if integers.is_empty() {
+        return;
+    }
+    for outlined in &mut body.outlined {
+        checked_arithmetic(db, outlined, integers);
+    }
+    let boolean = Type::new(db, TypeKind::Primitive(Primitive::Bool));
+    let mut block = 0;
+    while block < body.blocks.len() {
+        let found =
+            body.blocks[block]
+                .statements
+                .iter()
+                .enumerate()
+                .find_map(|(index, statement)| {
+                    checked_operation(&body.locals, integers, &statement.kind)
+                        .map(|operation| (index, operation, statement.span))
+                });
+        let Some((index, (place, operator, (left, right), ty), span)) = found else {
+            block += 1;
+            continue;
+        };
+        let rest = body.blocks[block].statements.split_off(index + 1);
+        body.blocks[block].statements.pop();
+        let pair = body.push_local(
+            Type::new(db, TypeKind::Tuple(vec![ty, boolean])),
+            LocalKind::Temporary,
+            span,
+        );
+        let fits = body.push_local(boolean, LocalKind::Temporary, span);
+        let flag = Operand::Copy(Place::from(pair).project(Projection::Field(1)));
+        let result = Operand::Copy(Place::from(pair).project(Projection::Field(0)));
+        let checks = [
+            (
+                Place::from(pair),
+                Rvalue::CheckedBinary(operator, left, right),
+            ),
+            (Place::from(fits), Rvalue::Unary(UnaryOperator::Not, flag)),
+        ];
+        let assign = |(place, rvalue)| Statement {
+            kind: StatementKind::Assign(place, rvalue),
+            span,
+        };
+        body.blocks[block].statements.extend(checks.map(assign));
+        let next = body.push_block(body.blocks[block].terminator.clone());
+        body.blocks[next.index()].statements =
+            std::iter::once(assign((place, Rvalue::Use(result))))
+                .chain(rest)
+                .collect();
+        body.blocks[block].terminator = Terminator {
+            kind: TerminatorKind::Assert {
+                condition: Operand::Copy(Place::from(fits)),
+                check: Check::NoOverflow(operator),
+                target: next,
+            },
+            span,
+        };
+        block += 1;
+    }
+}
+
+/// An integer `+`, `-`, `*` or `-x` of a type parameter in `integers` that `statement` computes
+/// without a check: its destination, operator, operands and type. `-x` is `0 - x`.
+fn checked_operation<'db>(
+    locals: &[LocalDeclaration<'db>],
+    integers: &[(Type<'db>, Integer)],
+    statement: &StatementKind<'db>,
+) -> Option<(
+    Place,
+    BinaryOperator,
+    (Operand<'db>, Operand<'db>),
+    Type<'db>,
+)> {
+    let StatementKind::Assign(place, rvalue) = statement else {
+        return None;
+    };
+    if !place.projections.is_empty() {
+        return None;
+    }
+    let ty = locals.get(place.local.index())?.ty;
+    let &(_, integer) = integers.iter().find(|(parameter, _)| *parameter == ty)?;
+    let (operator, operands) = match rvalue {
+        Rvalue::Binary(
+            operator @ (BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply),
+            left,
+            right,
+        ) => (*operator, (left.clone(), right.clone())),
+        Rvalue::Unary(UnaryOperator::Negate, operand) if integer.is_signed() => {
+            let zero = Operand::Constant(Constant {
+                ty,
+                value: ConstantValue::Integer(0),
+            });
+            (BinaryOperator::Subtract, (zero, operand.clone()))
+        }
+        _ => return None,
+    };
+    Some((place.clone(), operator, operands, ty))
 }
 
 /// Gives each `Callable` parameter's local of `body`, in order, the type of the function it
