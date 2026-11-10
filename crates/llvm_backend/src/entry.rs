@@ -4,23 +4,21 @@
 //!
 //! A `main` that cannot fail returns 0. A `main` that can fail (the reference, "Errors") is
 //! passed an error value to write into, like any fallible call; when it fails, the C `main`
-//! reads which error it holds and prints it to standard error as `error: ParseError(position=-3)`,
-//! the error's type, then each field by name with its value as `print` writes it, a `str` quoted
-//! as Python's `repr` writes it, then returns 1. Status 1 differs from a panic's 101, so a
-//! script can tell a reported failure from a bug.
+//! reads which error it holds and prints it to standard error as `error: ParseError(position=-3)`:
+//! the error as `print` writes a struct, each field by name with its value as Python's `repr`
+//! writes it, so a `str` is quoted, then returns 1. Status 1 differs from a panic's 101, so a
+//! script can tell a reported failure from a bug. Before any return, the C `main` has the
+//! runtime write out a line `print(..., end="")` left unended, since returning from C skips the
+//! clean-up that would.
 
 use crate::Unsupported;
 use crate::debug::UNWIND_TABLE;
 use crate::function::Function;
 use crate::literal::global;
-use crate::print::STDERR;
+use crate::print::{Form, STDERR};
 use mir::Body;
 use std::collections::BTreeMap;
 use types::{Type, TypeKind};
-
-/// An error type `main` can raise, with its fields' names in declaration order, for the report
-/// of an error that ends the program.
-pub(crate) type Reported<'db> = (Type<'db>, Vec<String>);
 
 impl<'db> Function<'_, '_, 'db> {
     /// The C `main` that runs the function `symbol`, which raises `errors`, as text, with the
@@ -28,7 +26,7 @@ impl<'db> Function<'_, '_, 'db> {
     pub(crate) fn entry(
         mut self,
         symbol: &str,
-        errors: &[Reported<'db>],
+        errors: &[Type<'db>],
     ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
         let signature = self.entry_signature("define i32 @main()");
         self.run(symbol, errors, "")?;
@@ -66,7 +64,7 @@ impl<'db> Function<'_, '_, 'db> {
             self.run(symbol, errors, &format!("test{test}."))?;
         }
         self.line_label("unknown");
-        self.line("ret i32 2");
+        self.exit(2);
         let text = format!("{signature} {{\nstart:\n{}}}\n", self.code);
         Ok((text, self.calls))
     }
@@ -86,16 +84,11 @@ impl<'db> Function<'_, '_, 'db> {
     /// Calls the function `symbol`, which raises `errors`, then returns the exit status from the
     /// C `main`: 0, or 1 after reporting the error it raised. `prefix` starts every label and
     /// local name written, so several runs fit in one function.
-    fn run(
-        &mut self,
-        symbol: &str,
-        errors: &[Reported<'db>],
-        prefix: &str,
-    ) -> Result<(), Unsupported> {
+    fn run(&mut self, symbol: &str, errors: &[Type<'db>], prefix: &str) -> Result<(), Unsupported> {
         let callee = global(symbol);
         if errors.is_empty() {
             self.line(&format!("call void {callee}()"));
-            self.line("ret i32 0");
+            self.exit(0);
             return Ok(());
         }
         let none = Type::new(self.types.db, TypeKind::None);
@@ -103,7 +96,7 @@ impl<'db> Function<'_, '_, 'db> {
             self.types.db,
             TypeKind::Fallible {
                 value: none,
-                errors: errors.iter().map(|(ty, _)| *ty).collect(),
+                errors: errors.to_vec(),
             },
         );
         let llvm = self.types.value(fallible)?;
@@ -114,7 +107,7 @@ impl<'db> Function<'_, '_, 'db> {
             "br i1 {failed}, label %{prefix}failed, label %{prefix}done"
         ));
         self.line_label(&format!("{prefix}done"));
-        self.line("ret i32 0");
+        self.exit(0);
         self.line_label(&format!("{prefix}failed"));
         let index = self.error_tag(&error, fallible)?;
         let cases: Vec<String> = (1..errors.len())
@@ -124,47 +117,37 @@ impl<'db> Function<'_, '_, 'db> {
             "switch i8 {index}, label %{prefix}e0 [{}]",
             cases.join(" ")
         ));
-        for (position, (ty, fields)) in errors.iter().enumerate() {
+        for (position, &ty) in errors.iter().enumerate() {
             self.line_label(&format!("{prefix}e{position}"));
             let position = u32::try_from(position)
                 .map_err(|_| Unsupported::new("a function that raises this many errors"))?;
             let (payload, _) = self.error_payload(&error, fallible, position)?;
-            self.report(&payload, *ty, fields)?;
-            self.line("ret i32 1");
+            self.report(&payload, ty)?;
+            self.exit(1);
         }
         Ok(())
     }
 
-    /// Prints the error of type `ty` at `address`, whose fields are named `fields`, to standard
-    /// error, as `error: Name(first=1, second=2.5)` and a line end.
-    fn report(
-        &mut self,
-        address: &str,
-        ty: Type<'db>,
-        fields: &[String],
-    ) -> Result<(), Unsupported> {
-        let name = ty.display(self.types.db).to_string();
-        self.print_text(STDERR, format!("error: {name}(").as_bytes());
-        let llvm = self.types.value(ty)?;
-        for (position, field) in fields.iter().enumerate() {
-            let separator = if position == 0 { "" } else { ", " };
-            self.print_text(STDERR, format!("{separator}{field}=").as_bytes());
-            let position = u32::try_from(position)
-                .map_err(|_| Unsupported::new("an error with this many fields"))?;
-            let field_ty = self.field(ty, position)?;
-            let field_address = self.emit(&format!(
-                "getelementptr inbounds {llvm}, ptr {address}, i32 0, i32 {position}"
-            ));
-            let value = self
-                .load(&field_address, field_ty)?
-                .ok_or_else(|| Unsupported::new("printing `None`"))?;
-            if matches!(field_ty.kind(self.types.db), TypeKind::Str) {
-                self.print_quoted(STDERR, &value);
-            } else {
-                self.print_value(STDERR, &value, field_ty)?;
-            }
-        }
-        self.print_text(STDERR, b")\n");
+    /// Returns `status` from the C `main`, after writing out a line `print(..., end="")` left
+    /// unended: returning from C ends the process without Rust's clean-up, which would.
+    fn exit(&mut self, status: u8) {
+        self.declare(
+            "baryon_rt_flush",
+            "declare void @baryon_rt_flush() nounwind",
+        );
+        self.line("call void @baryon_rt_flush()");
+        self.line(&format!("ret i32 {status}"));
+    }
+
+    /// Prints the error of type `ty` at `address` to standard error, as
+    /// `error: Name(first=1, second='text')` and a line end.
+    fn report(&mut self, address: &str, ty: Type<'db>) -> Result<(), Unsupported> {
+        let value = self
+            .load(address, ty)?
+            .ok_or_else(|| Unsupported::new("printing an error with no value"))?;
+        self.print_text(STDERR, b"error: ");
+        self.print_value(STDERR, &value, ty, Form::Repr)?;
+        self.print_text(STDERR, b"\n");
         Ok(())
     }
 }

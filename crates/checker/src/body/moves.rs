@@ -41,7 +41,7 @@ impl<'db> Body<'db> {
             TypeKind::Struct(_) => !crate::forms::is_copy(self.db, ty),
             // A bound that is not a trait has had its error; its values count as copies.
             TypeKind::Parameter { file, name } => !matches!(
-                crate::traits::written_bound(self.db, *file, *name),
+                crate::traits::written_bound(self.db, self.lowerer.package, *file, *name),
                 Some(Bound::Other | Bound::Trait(Trait::Copy | Trait::Number | Trait::Float))
             ),
             _ => false,

@@ -4,8 +4,10 @@
 //!
 //! This is the prototype of roadmap 1.11.3. It compiles every function and method that has no
 //! type parameters, then collects the instances of generic functions and of methods of generic
-//! classes they call (roadmap 1.9.5 and 1.9.18, decision 0018): each call of a generic function at concrete types adds that instance, whose
-//! body is the generic body with the types substituted, and whose own calls are followed in turn.
+//! classes they call (roadmap 1.9.5 and 1.9.18, decision 0018): each call of a generic function
+//! at concrete types adds that instance, whose body is the generic body with the types
+//! substituted, and whose own calls are followed in turn. It also compiles the function that
+//! computes each default a call leaves out, when that call is found (decision 0027).
 //! An instance's symbol is its function's with the type arguments after it: `main.square[f64]`.
 //! A function lowering or the backend cannot handle yet is reported once, at its name.
 
@@ -32,6 +34,11 @@ struct Function<'db> {
     in_main_module: bool,
     /// Whether it is decorated `@test`, and where.
     test: Test,
+    /// The function that computes each default of a parameter, named by the parameter's
+    /// `Name` node, with its symbol: the function's own with the
+    /// parameter's name after a colon, `main.drift:buffer`, which no name can spell (decision
+    /// 0027).
+    defaults: Vec<(Item<'db>, String)>,
 }
 
 /// Whether a function is decorated `@test`.
@@ -158,7 +165,10 @@ impl Session {
         let functions = self.functions();
         let symbols: HashMap<Item<'_>, String> = functions
             .iter()
-            .map(|function| (function.item, function.symbol.clone()))
+            .flat_map(|function| {
+                std::iter::once((function.item, function.symbol.clone()))
+                    .chain(function.defaults.iter().cloned())
+            })
             .collect();
         let symbol = |item: &Item<'_>, arguments: &[types::Type<'_>]| {
             let base = symbols.get(item).cloned().unwrap_or_default();
@@ -179,7 +189,8 @@ impl Session {
             format!("{base}[{}]", shown.join(", "))
         };
         let declared = declared(database, self.package);
-        let mut module = llvm_backend::Module::new(database, self, &declared, &symbol);
+        let names = names(database, self.package);
+        let mut module = llvm_backend::Module::new(database, self, &declared, &names, &symbol);
         if let Some(root) = root {
             module.debug_info(root);
         }
@@ -236,7 +247,8 @@ impl Session {
                 arguments: Vec::new(),
             });
         }
-        errors.extend(self.define(&mut module, roots, &declared, &symbol));
+        let owners = owners(&functions);
+        errors.extend(self.define(&mut module, roots, &declared, &symbol, &owners));
         let tests = self.start(&mut module, program, &entries, &mut errors);
         if errors.is_empty() {
             Ok((module.finish(), tests))
@@ -296,31 +308,39 @@ impl Session {
     }
 
     /// Defines in `module` each instance a program needs: `roots`, then each instance of a
-    /// generic function that a defined body calls. Returns one error per function lowering or the
-    /// backend cannot handle yet.
+    /// generic function, and each default's function, that a defined body calls. `owners`
+    /// maps each default's function to the function it belongs to, whose errors it raises.
+    /// Returns one error per function lowering or the backend cannot handle yet.
     fn define<'db>(
         &'db self,
         module: &mut llvm_backend::Module<'_, 'db>,
         roots: Vec<Instance<'db>>,
         declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
         symbol: &dyn Fn(&Item<'db>, &[types::Type<'db>]) -> String,
+        owners: &HashMap<Item<'db>, Item<'db>>,
     ) -> Vec<Diagnostic> {
         let database = &self.database;
         let mut errors = Vec::new();
         let mut instances = Instances::new(roots);
+        let package = self.package;
+        let implementation = move |method: Item<'db>, implementor: types::Type<'db>| {
+            checker::implementation(database, package, method, implementor)
+        };
         // Each function's lowering errors once, however many instances of it there are.
         let mut reported = std::collections::HashSet::new();
         while let Some(instance) = instances.next() {
-            match ready(database, &instance, declared) {
+            match ready(database, &instance, declared, &implementation) {
                 Ok(body) => {
                     instances.follow(&body);
-                    let Declaration::Function(signature) =
-                        &database.declaration(instance.item).declaration
-                    else {
-                        continue;
-                    };
-                    let raises = match signature.returns.kind(database) {
-                        TypeKind::Fallible { errors, .. } => errors.as_slice(),
+                    // A default's function raises what the function it belongs to declares.
+                    let owner = owners.get(&instance.item).unwrap_or(&instance.item);
+                    let raises = match &database.declaration(*owner).declaration {
+                        Declaration::Function(signature) => {
+                            match signature.returns.kind(database) {
+                                TypeKind::Fallible { errors, .. } => errors.as_slice(),
+                                _ => &[],
+                            }
+                        }
                         _ => &[],
                     };
                     let name = symbol(&instance.item, &instance.arguments);
@@ -366,12 +386,19 @@ impl Session {
                         (true, false) => Test::Function,
                         (true, true) => Test::Method,
                     };
+                    let defaults = defaulted(tree, statement)
+                        .map(|name| {
+                            let item = Item::new(database, self.package, file, name);
+                            (item, format!("{symbol}:{}", tree.text(name, text)))
+                        })
+                        .collect();
                     functions.push(Function {
                         item: Item::new(database, self.package, file, node),
                         symbol,
                         main,
                         in_main_module,
                         test: decorated,
+                        defaults,
                     });
                 };
             for statement in tree.children_with(tree.root(), Role::Body) {
@@ -390,6 +417,15 @@ impl Session {
                         );
                     }
                     SyntaxKind::ClassDefinition => {
+                        // A trait's methods have no bodies: each instance of a generic function
+                        // calls the implementing type's method instead (decision 0031).
+                        let class = Item::new(database, self.package, file, node);
+                        if matches!(
+                            database.declaration(class).declaration,
+                            Declaration::Trait { .. }
+                        ) {
+                            continue;
+                        }
                         for method in tree.children_with(statement, Role::Body) {
                             if tree.kind(method) != SyntaxKind::FunctionDefinition {
                                 continue;
@@ -408,31 +444,13 @@ impl Session {
         functions
     }
 
-    /// The error types a `main` returning `returns` can raise, each with its fields' names,
-    /// for the report of an error that ends the program; empty when it cannot fail.
-    fn reported<'db>(&'db self, returns: types::Type<'db>) -> Vec<(types::Type<'db>, Vec<String>)> {
-        let database = &self.database;
-        let TypeKind::Fallible { errors, .. } = returns.kind(database) else {
-            return Vec::new();
-        };
-        errors
-            .iter()
-            .map(|&error| {
-                let fields = match error.kind(database) {
-                    TypeKind::Struct(nominal) => {
-                        let item = Item::new(database, self.package, nominal.file, nominal.name);
-                        match &database.declaration(item).declaration {
-                            Declaration::Struct { fields, .. } => {
-                                fields.iter().map(|field| field.name.clone()).collect()
-                            }
-                            _ => Vec::new(),
-                        }
-                    }
-                    _ => Vec::new(),
-                };
-                (error, fields)
-            })
-            .collect()
+    /// The error types a `main` returning `returns` can raise, for the report of an error that
+    /// ends the program; empty when it cannot fail.
+    fn reported<'db>(&'db self, returns: types::Type<'db>) -> Vec<types::Type<'db>> {
+        match returns.kind(&self.database) {
+            TypeKind::Fallible { errors, .. } => errors.clone(),
+            _ => Vec::new(),
+        }
     }
 
     /// An error at the name of `item`.
@@ -444,12 +462,64 @@ impl Session {
     }
 }
 
+/// The function each default's function in `functions` belongs to.
+fn owners<'db>(functions: &[Function<'db>]) -> HashMap<Item<'db>, Item<'db>> {
+    functions
+        .iter()
+        .flat_map(|function| {
+            function
+                .defaults
+                .iter()
+                .map(|(default, _)| (*default, function.item))
+        })
+        .collect()
+}
+
+/// The `Name` node of each parameter of the function `function` declares that has a default,
+/// which names the function that computes it.
+fn defaulted(tree: &syntax::SyntaxTree, function: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+    tree.child(function, Role::Parameters)
+        .into_iter()
+        .flat_map(|parameters| tree.children(parameters))
+        .filter(|&parameter| tree.kind(parameter) == SyntaxKind::Parameter)
+        .filter(|&parameter| tree.child(parameter, Role::Default).is_some())
+        .filter_map(|parameter| tree.child(parameter, Role::Name))
+}
+
 /// What each struct or enum of `package` declares, as layouts, the passes and the backend read it.
 fn declared<'db>(
     db: &'db dyn TypeDb,
     package: database::Package,
 ) -> impl Fn(&Nominal<'db>) -> types::Declared<'db> {
     move |nominal| checker::declared(db, package, nominal)
+}
+
+/// The names `print` writes for each struct or enum of `package`: the class's name, then its
+/// fields' or members' names in declaration order.
+fn names<'db>(
+    db: &'db dyn TypeDb,
+    package: database::Package,
+) -> impl Fn(&Nominal<'db>) -> llvm_backend::ClassNames {
+    move |nominal| {
+        let bare = Nominal {
+            arguments: Vec::new(),
+            ..nominal.clone()
+        };
+        let item = Item::new(db, package, nominal.file, nominal.name);
+        let members = match &db.declaration(item).declaration {
+            Declaration::Struct { fields, .. } => {
+                fields.iter().map(|field| field.name.clone()).collect()
+            }
+            Declaration::Enum { variants } => variants.clone(),
+            _ => Vec::new(),
+        };
+        llvm_backend::ClassNames {
+            class: types::Type::new(db, TypeKind::Struct(bare))
+                .display(db)
+                .to_string(),
+            members,
+        }
+    }
 }
 
 /// Whether the function `item`, whose signature is `signature`, is compiled once per call's

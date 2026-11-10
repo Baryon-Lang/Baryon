@@ -75,16 +75,19 @@ impl<'db> Lowerer<'db> {
                 name: class,
                 arguments,
             };
-            let enumeration = matches!(
-                entry.map(|entry| &entry.kind),
-                Some(Kind::Class(class)) if class.base == Base::Enum
-            );
+            let base = match entry.map(|entry| &entry.kind) {
+                Some(Kind::Class(class)) => class.base,
+                _ => Base::Struct,
+            };
             Type::new(
                 db,
-                if enumeration {
-                    TypeKind::Enum(nominal)
-                } else {
-                    TypeKind::Struct(nominal)
+                match base {
+                    Base::Enum => TypeKind::Enum(nominal),
+                    // In a trait, `Self` stands for the type that implements it: a type
+                    // parameter named by the trait itself, replaced by that type wherever the
+                    // trait's methods are compared or called (decision 0031).
+                    Base::Protocol => TypeKind::Parameter { file, name: class },
+                    Base::Struct | Base::Error => TypeKind::Struct(nominal),
                 },
             )
         });
@@ -274,6 +277,18 @@ impl<'db> Lowerer<'db> {
                 None => self.self_type(),
             };
         }
+        if name == "Dyn" {
+            return self.error(
+                node,
+                "`Dyn` is not available yet",
+                "trait objects are not in version 0",
+                Some(
+                    "a value of any type with a trait, `Dyn[Body]`, comes with roadmap item 3.5 \
+                     (decision 0031); a generic function `def f[T: Body](x: T)` takes one such \
+                     type at a time, compiled for each",
+                ),
+            );
+        }
         let Some(&(_, example)) = GENERIC_BUILTINS
             .iter()
             .find(|(generic, _)| *generic == name)
@@ -284,7 +299,13 @@ impl<'db> Lowerer<'db> {
                 "Number" | "Float" | "VectorSpace" | "Copy" => {
                     "a trait bounds a type parameter: `def f[T: Number](x: T)`"
                 }
-                "Struct" | "Enum" | "Exception" => "it is a base of a class, not a type",
+                "Struct" | "Enum" | "Exception" | "Protocol" => {
+                    "it is a base of a class, not a type"
+                }
+                "Embed" => {
+                    "`Embed` marks a struct field whose fields and methods the struct reaches \
+                     directly: `particle: Embed[Particle]`"
+                }
                 _ => "it is a function or a name the language provides",
             };
             return self.error(node, &message, "expected a type", Some(hint));
@@ -336,6 +357,15 @@ impl<'db> Lowerer<'db> {
             return self.unknown();
         };
         match &entry.kind {
+            Kind::Class(class) if class.base == Base::Protocol => {
+                let message = format!("`{written}` is a trait, not a type");
+                let hint = format!(
+                    "bound a type parameter by it, `def f[T: {written}](x: T)`, to accept any \
+                     type that implements it; a value that may be one of several such types, \
+                     `Dyn[{written}]`, comes with roadmap item 3.5"
+                );
+                self.error(node, &message, "expected a type", Some(&hint))
+            }
             Kind::Class(class) => {
                 let expected = class.type_parameters.len();
                 let arguments = subscript.map(|subscript| self.arguments(subscript));

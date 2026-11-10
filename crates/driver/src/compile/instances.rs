@@ -18,7 +18,8 @@ pub(crate) struct Instance<'db> {
 }
 
 /// The instances a program needs, collected as they are found: the roots first, then each
-/// instance of a generic function that a collected body calls, once.
+/// instance that a collected body calls, once: an instance of a generic function, or the
+/// function that computes a default (decision 0027), which is never a root.
 pub(crate) struct Instances<'db> {
     /// Every instance found so far, in the order found.
     found: Vec<Instance<'db>>,
@@ -45,8 +46,10 @@ impl<'db> Instances<'db> {
         Some(instance)
     }
 
-    /// Adds each instance of a generic function that `body` or one of its `prange` bodies calls
-    /// and is not yet found. The body is an instance's, so its type arguments are concrete.
+    /// Adds each instance that `body` or one of its `prange` bodies calls and is not yet found.
+    /// The body is an instance's, so its type arguments are concrete. A call of a function
+    /// that is not generic finds its root, already found, unless the function is one the roots
+    /// leave out, such as a default's.
     pub(crate) fn follow(&mut self, body: &Body<'db>) {
         for outlined in &body.outlined {
             self.follow(outlined);
@@ -60,7 +63,6 @@ impl<'db> Instances<'db> {
                     },
                 ..
             } = &block.terminator.kind
-                && !type_arguments.is_empty()
             {
                 let instance = Instance {
                     item: *item,
@@ -75,8 +77,9 @@ impl<'db> Instances<'db> {
 }
 
 /// The body of `instance`, ready for a backend: lowered, its type parameters replaced by the
-/// instance's arguments, its drops elaborated and its whole-array expressions expanded. Errors
-/// for what lowering cannot handle yet.
+/// instance's arguments, each call of a trait's method sent to the method that implements it
+/// (`implementation`, decision 0031), its drops elaborated and its whole-array expressions
+/// expanded. Errors for what lowering cannot handle yet.
 ///
 /// A method of a generic class, such as `Pair[T]`'s `total`, is generic in its class's type
 /// parameters: they come first, before the method's own and its `Callable` ones, as lowering
@@ -85,6 +88,7 @@ pub(crate) fn ready<'db>(
     db: &'db dyn TypeDb,
     instance: &Instance<'db>,
     declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
+    implementation: &monomorphize::Implementation<'_, 'db>,
 ) -> Result<Body<'db>, Vec<Diagnostic>> {
     let mut body = lowering::lower(db, instance.item)?;
     if !instance.arguments.is_empty() {
@@ -113,6 +117,7 @@ pub(crate) fn ready<'db>(
         }
         body = monomorphize::instantiate(db, &body, &parameters, &instance.arguments);
         monomorphize::forward_callables(db, &mut body, &|item| callable_positions(db, item));
+        monomorphize::trait_calls(&mut body, implementation);
     }
     drop_elaboration::elaborate(db, &mut body, declared);
     array_expansion::expand(db, &mut body, declared);

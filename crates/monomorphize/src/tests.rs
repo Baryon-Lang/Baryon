@@ -382,6 +382,88 @@ fn(_1: Callable[[Fixed[f64, (3,)]], Fixed[f64, (3,)]], _2: Fixed[f64, (3,)], _3:
     );
 }
 
+/// `def twice[T: Number](x: T) -> T: return x + x`, where lowering writes `x + x` into a local
+/// of type `T`: at `i32` the addition is checked for overflow as integer `+` is (decision 0030),
+/// with the result in a new block after the `Assert`; at `f64` it stays plain arithmetic.
+#[test]
+fn integer_instances_check_overflow() {
+    let database = Database::default();
+    let (file, name) = named(&database, "T");
+    let t = Type::new(&database, TypeKind::Parameter { file, name });
+    let primitive = |primitive| Type::new(&database, TypeKind::Primitive(primitive));
+    let mut body = Body::new(t, span());
+    let x = body.push_local(
+        t,
+        LocalKind::Parameter {
+            name: "x".into(),
+            mode: Mode::Borrow,
+        },
+        span(),
+    );
+    let sum = body.push_local(t, LocalKind::Temporary, span());
+    let entry = body.push_block(Terminator {
+        kind: TerminatorKind::Return,
+        span: span(),
+    });
+    let assign = |place: Local, rvalue| Statement {
+        kind: StatementKind::Assign(place.into(), rvalue),
+        span: span(),
+    };
+    body.blocks[entry.index()].statements = vec![
+        assign(
+            sum,
+            Rvalue::Binary(
+                BinaryOperator::Add,
+                Operand::Copy(x.into()),
+                Operand::Copy(x.into()),
+            ),
+        ),
+        assign(Local::RETURN, Rvalue::Use(Operand::Copy(sum.into()))),
+    ];
+
+    let integer = instantiate(
+        &database,
+        &body,
+        &[t],
+        &[primitive(Primitive::Integer(Integer::I32))],
+    );
+    assert_eq!(
+        integer.display(&database).to_string(),
+        "\
+fn(_1: i32) -> i32 {
+    let _0: i32; // return
+    let _1: i32; // parameter x
+    let _2: i32;
+    let _3: tuple[i32, bool];
+    let _4: bool;
+
+    bb0: {
+        _3 = CheckedAdd(copy _1, copy _1);
+        _4 = Not(copy _3.1);
+        assert(copy _4, no overflow: Add) -> bb1;
+    }
+
+    bb1: {
+        _2 = copy _3.0;
+        _0 = copy _2;
+        return;
+    }
+}
+"
+    );
+    let float = instantiate(
+        &database,
+        &body,
+        &[t],
+        &[primitive(Primitive::Float(Float::F64))],
+    );
+    assert_eq!(float.blocks.len(), 1);
+    assert!(matches!(
+        float.blocks[0].statements[0].kind,
+        StatementKind::Assign(_, Rvalue::Binary(BinaryOperator::Add, ..))
+    ));
+}
+
 /// `def both(f: Callable[[f64], f64], g: Callable[[f64], f64])` with `h = g`, `apply(g)` and
 /// `h()`, instantiated with `f` the function `square` and `g` the function `cube`. The two
 /// parameters share one `Callable` type, so substitution alone cannot tell them apart: the copy

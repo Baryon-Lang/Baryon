@@ -2,7 +2,10 @@
 //! constructor; of a number type, which converts; and of the built-ins lowering handles.
 
 use crate::builder::Builder;
-use mir::{Argument, BinaryOperator, Builtin, Callee, Operand, Place, Rvalue, TerminatorKind};
+use mir::{
+    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Operand, Place, Projection,
+    Rvalue, TerminatorKind,
+};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
 
@@ -26,10 +29,15 @@ impl<'db> Builder<'db> {
         let ty = self.ty(node);
         match &call.callee {
             types::Callee::Function(_) | types::Callee::Method(_) => {}
-            types::Callee::Constructor(_) => {
+            types::Callee::Constructor(item) => {
+                let fields = self.field_types(*item);
                 let operands = arguments
                     .into_iter()
-                    .map(|argument| self.operand(argument))
+                    .enumerate()
+                    .map(|(position, argument)| match fields.get(position) {
+                        Some(&field) if !self.is_generic(field) => self.operand_as(argument, field),
+                        _ => self.operand(argument),
+                    })
                     .collect();
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
@@ -140,27 +148,21 @@ impl<'db> Builder<'db> {
                 type_arguments.push(self.ty(argument));
             }
         }
+        // The arguments passed come first, then each default left out, in parameter order
+        // (decision 0027).
         let mut passed = Vec::with_capacity(arguments.len());
-        for (position, (&argument, (mode, ty))) in arguments.iter().zip(parameters).enumerate() {
+        for (position, (&argument, &(mode, ty))) in arguments.iter().zip(&parameters).enumerate() {
             let Some(argument) = argument else {
-                if mode == Mode::InOut {
-                    // The callee's changes to a default would go nowhere the caller can see.
-                    return self.unsupported(node, "leaving out an `InOut` argument");
-                }
-                let Some(constant) = self.default_value(item, position, node) else {
-                    return;
-                };
-                passed.push(if mode == Mode::Owned {
-                    Argument::Owned(Operand::Constant(constant))
-                } else {
-                    let temporary = self.temporary(ty, node);
-                    let value = Rvalue::Use(Operand::Constant(constant));
-                    self.assign(Place::from(temporary), value, node);
-                    Argument::Borrow(Place::from(temporary))
-                });
+                passed.push(None);
                 continue;
             };
-            passed.push(match mode {
+            if position == 0
+                && let Some(receiver) = self.promoted_receiver(argument, mode, node)
+            {
+                passed.push(Some(receiver));
+                continue;
+            }
+            passed.push(Some(match mode {
                 Mode::Borrow => match self.borrow_as(argument, ty) {
                     Some(place) => Argument::Borrow(place),
                     None => return,
@@ -170,8 +172,19 @@ impl<'db> Builder<'db> {
                     None => return,
                 },
                 Mode::Owned => Argument::Owned(self.operand_as(argument, ty)),
+            }));
+        }
+        let mut complete = Vec::with_capacity(passed.len());
+        for (position, (argument, parameter)) in passed.into_iter().zip(parameters).enumerate() {
+            complete.push(match argument {
+                Some(argument) => argument,
+                None => match self.default_argument(item, position, parameter, node) {
+                    Some(argument) => argument,
+                    None => return,
+                },
             });
         }
+        let passed = complete;
         let errors = self.typed.errors(node);
         let edge = self.error_edge(errors, node);
         let next = self.new_block();
@@ -198,8 +211,8 @@ impl<'db> Builder<'db> {
     /// first of `arguments`: `[f64]` for `p.total()` with `p: Pair[f64]`, or `[T]` inside
     /// another generic body, which monomorphization replaces. Empty for a function and for a
     /// method of a class with no type parameters. `None` when the class has type parameters
-    /// but the receiver is not a struct of that class, such as a method an embedded struct
-    /// provides (decision 0031), which is not built yet.
+    /// but the receiver is not a struct of that class, such as a method an embedded generic
+    /// struct provides (decision 0031), which is not built yet.
     fn class_arguments(
         &self,
         item: Item<'db>,
@@ -224,6 +237,36 @@ impl<'db> Builder<'db> {
             }
             _ => None,
         }
+    }
+
+    /// The receiver of the method call `node` when the checker found the method through
+    /// embedded fields (decision 0031): the receiver `argument`'s place, stepped into each
+    /// embedded field, so `ion.energy()` passes `ion.particle` as `self`. `None` for any other
+    /// call. The checker rejects a promoted method that takes `self` as `Owned`.
+    fn promoted_receiver(
+        &mut self,
+        argument: NodeId,
+        mode: Mode,
+        node: NodeId,
+    ) -> Option<Argument<'db>> {
+        let function = self.tree.child(node, Role::Function)?;
+        let path = self.typed.promotion(function).to_vec();
+        if path.is_empty() {
+            return None;
+        }
+        let project = |base: Place| {
+            path.iter().fold(base, |place, &field| {
+                place.project(Projection::Field(field))
+            })
+        };
+        Some(match mode {
+            Mode::Borrow => Argument::Borrow(project(self.borrow(argument))),
+            Mode::InOut => Argument::InOut(project(self.place(argument)?)),
+            Mode::Owned => {
+                self.unsupported(argument, "moving an embedded field out of its struct");
+                return None;
+            }
+        })
     }
 
     /// A call of a `Callable` value, such as the parameter `derivative` in
@@ -253,27 +296,68 @@ impl<'db> Builder<'db> {
         self.start(next);
     }
 
-    /// `print(arguments…)`, its `None` result written into `place`. A literal is passed as its
-    /// constant, so a backend can print a string literal without a `str` value; anything else
-    /// is borrowed, since printing does not consume it.
+    /// The declared types of the fields of the struct `item`, in declaration order; empty when
+    /// `item` is not a struct. A generic struct's fields keep their type parameters.
+    fn field_types(&self, item: Item<'db>) -> Vec<types::Type<'db>> {
+        match &self.db.declaration(item).declaration {
+            Declaration::Struct { fields, .. } => fields.iter().map(|field| field.ty).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// `print(arguments…, sep=…, end=…)`, its `None` result written into `place`. The call
+    /// writes its arguments with nothing between them ([`Builtin::Print`]), so the separator
+    /// goes between each pair of values and the line end after the last: a space and `"\n"`
+    /// unless `sep=` or `end=` gives another `str`, and also when it gives `None`, as in Python.
+    ///
+    /// Arguments are evaluated as written, the values then the keywords, each once: a separator
+    /// that is not a literal is borrowed once and passed at every gap. A literal is passed as
+    /// its constant, so a backend can print a string literal without a `str` value; anything
+    /// else is borrowed, since printing does not consume it.
     fn print(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
-        let keyword = self
+        let keywords: Vec<NodeId> = self
             .tree
             .child(node, Role::Arguments)
             .into_iter()
             .flat_map(|list| self.tree.children_with(list, Role::Item))
-            .any(|item| self.tree.kind(item) == SyntaxKind::Keyword);
-        if keyword {
-            return self.unsupported(node, "keyword arguments of `print`");
-        }
-        let mut passed = Vec::with_capacity(arguments.len());
-        for &argument in arguments {
-            passed.push(if self.is_literal(argument) {
-                Argument::Owned(Operand::Constant(self.literal(argument)))
+            .filter(|&item| self.tree.kind(item) == SyntaxKind::Keyword)
+            .collect();
+        let values = &arguments[..arguments.len().saturating_sub(keywords.len())];
+        let values: Vec<Argument<'db>> = values
+            .iter()
+            .map(|&argument| self.print_argument(argument))
+            .collect();
+        let (mut separator, mut end) = (self.text(" "), self.text("\n"));
+        for keyword in keywords {
+            let (Some(name), Some(value)) = (
+                self.tree.child(keyword, Role::Name),
+                self.tree.child(keyword, Role::Value),
+            ) else {
+                return self.unsupported(keyword, "this keyword argument");
+            };
+            let given = if matches!(self.ty(value).kind(self.db), TypeKind::None) {
+                if !self.is_literal(value) {
+                    self.borrow(value);
+                }
+                None
             } else {
-                Argument::Borrow(self.borrow(argument))
-            });
+                Some(self.print_argument(value))
+            };
+            match (self.text_of(name), given) {
+                ("sep", Some(given)) => separator = given,
+                ("end", Some(given)) => end = given,
+                ("sep" | "end", None) => {}
+                _ => return self.unsupported(keyword, "this keyword argument of `print`"),
+            }
         }
+        let mut passed = Vec::with_capacity(2 * values.len() + 1);
+        for (position, value) in values.into_iter().enumerate() {
+            if position > 0 {
+                passed.push(separator.clone());
+            }
+            passed.push(value);
+        }
+        passed.push(end);
         let next = self.new_block();
         self.terminate(
             TerminatorKind::Call {
@@ -286,6 +370,23 @@ impl<'db> Builder<'db> {
             node,
         );
         self.start(next);
+    }
+
+    /// One value `print` writes: a literal as its constant, anything else borrowed.
+    fn print_argument(&mut self, argument: NodeId) -> Argument<'db> {
+        if self.is_literal(argument) {
+            Argument::Owned(Operand::Constant(self.literal(argument)))
+        } else {
+            Argument::Borrow(self.borrow(argument))
+        }
+    }
+
+    /// The `str` constant `text`, passed `Owned`, as `print` takes its separator and line end.
+    fn text(&self, text: &str) -> Argument<'db> {
+        Argument::Owned(Operand::Constant(Constant {
+            ty: types::Type::new(self.db, TypeKind::Str),
+            value: ConstantValue::Str(text.to_owned()),
+        }))
     }
 
     /// `min(first, rest…)` when `smallest`, else `max(…)`, of numbers, its result written into

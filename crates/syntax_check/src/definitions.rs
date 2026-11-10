@@ -4,6 +4,10 @@
 use crate::{Checker, Scope};
 use syntax::{Flags, NodeId, Role, SyntaxKind};
 
+/// The bases that say what a class is: a struct, a copy struct, an error type, an enum or a
+/// trait.
+const KIND_BASES: [&str; 5] = ["Struct", "Copy", "Exception", "Enum", "Protocol"];
+
 /// The function decorators the language has, both marking functions for the test runner.
 const DECORATORS: [&str; 2] = ["test", "bench"];
 
@@ -60,8 +64,10 @@ impl Checker<'_> {
     }
 
     /// Checks a class definition: its bases and its decorators. A class takes exactly one of
-    /// the bases `Struct`, `Struct, Copy`, `Exception` and `Enum`: there is no inheritance
-    /// (decision 0015).
+    /// the bases `Struct`, `Struct, Copy`, `Exception`, `Enum` and `Protocol`: there is no
+    /// inheritance (decision 0015). Any other name among the bases must be a trait, which only
+    /// the type checker can tell, since it needs to know what the name refers to (decision
+    /// 0031); `Protocol` goes last, as Python requires.
     pub(crate) fn class(&mut self, id: NodeId) {
         self.class_decorators(id);
         let name = self
@@ -75,28 +81,31 @@ impl Checker<'_> {
                 .map_or_else(|| self.tree.span(id), |name| self.tree.span(name));
             let suggestion = format!("for a struct, write `class {name}(Struct):`");
             self.error(
-                "a class needs a base: `Struct`, `Exception` or `Enum`",
+                "a class needs a base: `Struct`, `Exception`, `Enum` or `Protocol`",
                 span,
                 "no base",
                 &[
-                    "the base says what the class is: a struct, an error type or an enum",
+                    "the base says what the class is: a struct, an error type, an enum or a trait",
                     &suggestion,
                 ],
             );
             return;
         };
         let mut bases = Vec::new();
+        let mut others = false;
         let mut valid = true;
         let items: Vec<NodeId> = self.tree.children(arguments).collect();
-        for base in items {
+        for &base in &items {
             let text = self.text(base);
-            let is_known = self.tree.kind(base) == SyntaxKind::Name
-                && ["Struct", "Copy", "Exception", "Enum"].contains(&text);
-            if is_known {
+            let kind = self.tree.kind(base);
+            if kind == SyntaxKind::Name && KIND_BASES.contains(&text) {
                 bases.push(text);
+            } else if matches!(kind, SyntaxKind::Name | SyntaxKind::Attribute) {
+                // A trait, or a class the type checker reports as inheritance.
+                others = true;
             } else {
                 valid = false;
-                if self.tree.kind(base) == SyntaxKind::Keyword {
+                if kind == SyntaxKind::Keyword {
                     self.error(
                         format!("class keyword `{text}` is not supported"),
                         self.tree.span(base),
@@ -107,23 +116,48 @@ impl Checker<'_> {
                     self.error(
                         format!("a class cannot inherit from `{text}`"),
                         self.tree.span(base),
-                        "not one of `Struct`, `Copy`, `Exception` or `Enum`",
+                        "not a name",
                         &[
                             "there is no class inheritance (decision 0015)",
-                            "share behavior through traits, and data by holding the other \
-                             struct in a field",
+                            "a class's bases say what it is, and name the traits it implements",
                         ],
                     );
                 }
             }
         }
-        let allowed: [&[&str]; 4] = [&["Struct"], &["Struct", "Copy"], &["Exception"], &["Enum"]];
-        if valid && !allowed.contains(&bases.as_slice()) {
+        let allowed: [&[&str]; 5] = [
+            &["Struct"],
+            &["Struct", "Copy"],
+            &["Exception"],
+            &["Enum"],
+            &["Protocol"],
+        ];
+        // With no base of its own beside trait names, the type checker says what is missing.
+        let unnamed = bases.is_empty() && others;
+        if valid && !unnamed && !allowed.contains(&bases.as_slice()) {
             self.error(
                 "these bases cannot be combined",
                 self.tree.span(arguments),
                 "",
-                &["a class's bases are `Struct`, `Struct, Copy`, `Exception` or `Enum`"],
+                &[
+                    "a class's bases are `Struct`, `Struct, Copy`, `Exception`, `Enum` or \
+                     `Protocol`, and the traits it implements",
+                ],
+            );
+        }
+        let last = items.last().copied();
+        if bases == ["Protocol"]
+            && last.is_some_and(|last| self.text(last) != "Protocol")
+            && let Some(protocol) = items.iter().find(|&&base| self.text(base) == "Protocol")
+        {
+            self.error(
+                "`Protocol` goes after the traits a trait requires",
+                self.tree.span(*protocol),
+                "move it to the end",
+                &[&format!(
+                    "for example `class {name}(Body, Charged, Protocol)`, the order Python \
+                     requires (decision 0031)"
+                )],
             );
         }
     }

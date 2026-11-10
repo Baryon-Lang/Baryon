@@ -127,3 +127,91 @@ fn release_is_only_for_building_commands() {
     assert_eq!(checked.status.code(), Some(2));
     assert!(stderr(&checked).starts_with("baryon: usage: baryon check"));
 }
+
+/// The arithmetic decision 0030 first left unchecked (roadmap 1.11.8): `+` and `-x` in a generic
+/// function instantiated with an integer, `abs` of the minimum, whole-array arithmetic on a
+/// `Fixed` and an `Array` of integers, and integer `a.sum()` and `v.dot(w)`. `main` runs each
+/// once without overflow, then the lines after it overflow one by one.
+const LEFTOVERS: &str = "\
+Pair = Fixed[i64, (2,)]
+
+
+def double[T: Number](x: T) -> T:
+    return x + x
+
+
+def flip[T: Number](x: T) -> T:
+    return -x
+
+
+def main():
+    big = 9223372036854775807
+    small = -big - 1
+    v = Pair(big, 1)
+    w = Pair(1, 1)
+    items: list[i64] = [big, 1]
+    print(double(i32(5)), flip(big), abs(-big), (v - w)[0], (Array(items) * 1)[0])
+    print(w.sum(), Pair(3, 4).dot(Pair(5, 6)))
+    print(double(big))
+    print(double(i32(1073741824)))
+    print(flip(small))
+    print(abs(small))
+    print((v + w)[0])
+    print((Array(items) * 2)[0])
+    print((-Array([small]))[0])
+    print(Array(items).sum())
+    print(v.dot(w))
+";
+
+/// The first output line of [`LEFTOVERS`], which every build prints before the first overflow.
+const LEFTOVERS_FIRST: &str =
+    "10 -9223372036854775807 9223372036854775807 9223372036854775806 9223372036854775807\n2 39\n";
+
+/// Each line after the first two of `main` in [`LEFTOVERS`] panics in a debug build with its
+/// operator and location: the generic `+` at both `i64` and `i32`, the generic `-x`, `abs`,
+/// whole-array `+`, `*` and `-x`, and the `+` inside `sum` and `dot`.
+#[test]
+fn generic_array_and_method_arithmetic_is_checked() {
+    let cases = [
+        ("`+`", "main.byn:5:12"),
+        ("`+`", "main.byn:5:12"),
+        ("`-`", "main.byn:9:12"),
+        ("`-`", "main.byn:20:11"),
+        ("`+`", "main.byn:20:12"),
+        ("`*`", "main.byn:20:12"),
+        ("`-`", "main.byn:20:12"),
+        ("`+`", "main.byn:20:11"),
+        ("`+`", "main.byn:20:11"),
+    ];
+    let (head, tail) = LEFTOVERS.split_at(LEFTOVERS.find("    print(double(big))").unwrap());
+    let lines: Vec<&str> = tail.lines().collect();
+    for (index, (operator, location)) in cases.iter().enumerate() {
+        let program = format!("{head}{}\n", lines[index]);
+        let name = format!("overflow-leftover-{index}");
+        let directory = package(&name, &[("main.byn", &program)]).unwrap();
+        let ran = baryon(&["run"], &directory).unwrap();
+        assert_eq!(String::from_utf8_lossy(&ran.stdout), LEFTOVERS_FIRST);
+        assert_eq!(ran.status.code(), Some(101), "{index}: {}", stderr(&ran));
+        assert_eq!(
+            panic_report(&ran),
+            format!("panic: integer overflow in {operator}\n  --> {location}\n"),
+            "{index}"
+        );
+    }
+}
+
+/// `--release` wraps every one of them around, as it wraps `+` on two integers.
+#[test]
+fn release_builds_wrap_generic_array_and_method_arithmetic() {
+    let directory = package("overflow-leftovers-release", &[("main.byn", LEFTOVERS)]).unwrap();
+    let ran = baryon(&["run", "--release"], &directory).unwrap();
+    assert_eq!(ran.status.code(), Some(0), "{}", stderr(&ran));
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        format!(
+            "{LEFTOVERS_FIRST}-2\n-2147483648\n-9223372036854775808\n-9223372036854775808\n\
+             -9223372036854775808\n-2\n-9223372036854775808\n-9223372036854775808\n\
+             -9223372036854775808\n"
+        )
+    );
+}

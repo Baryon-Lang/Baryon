@@ -188,7 +188,25 @@ Runs the language server: an editor starts it and talks to it over standard inpu
 the Language Server Protocol, version 3.17
 ([decision 0019](../decisions/0019-language-server-protocol.md)). It loads every `.byn` file under
 the editor's workspace root as one package and reports the same errors and warnings as
-`baryon check`, updated as you type. Go to definition, hover and completion come later (roadmap
+`baryon check`, updated as you type. It also answers three questions about the place the cursor
+is, from the same checked package:
+
+- **Hover**: what the name under the cursor is, as one line of code, and the documentation string
+  of what it names, as `baryon doc` writes it. A variable shows the type the compiler inferred for
+  it (`energy: f64`), a function its signature (`def step(dt: f64) -> None`), a constant its type
+  and value (`G: Final[f64] = 9.81`), and a field, method or enum member what its class declares.
+- **Go to definition**: the definition of a variable, function, class, constant, field, method or
+  enum member, in whichever file of the package it is; a module goes to the start of its file.
+  Names the language and the standard library provide have no source to go to.
+- **Completion**: after `m.`, a module's public definitions and, for a package, its modules;
+  after a struct value and a dot, its fields and methods; after an enum's name and a dot, its
+  members; anywhere else, the names in scope: the function's variables bound on earlier lines,
+  the module's definitions and imports, and the language's names. A dot asks for completion by
+  itself. Names starting with `_` are offered only inside their own module. Methods of arrays,
+  lists and `str` are not offered yet.
+
+Answers come from the parts of the file that parse and check, so code half typed still gets them
+where it can, and gets nothing rather than an error where it cannot. Fixes come later (roadmap
 1.16).
 
 To use it, point your editor's Language Server Protocol client at `baryon lsp` for `.byn` files.
