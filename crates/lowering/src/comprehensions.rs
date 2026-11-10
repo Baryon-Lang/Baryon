@@ -34,8 +34,18 @@ impl<'db> Builder<'db> {
         self.clauses(place, ty, &clauses, node);
     }
 
+    /// The dict comprehension `{k: v for ...}` into `place`: an empty `dict`, then, inside the
+    /// innermost loop, the entry for each key and value set as `d[k] = v` sets it, so a key
+    /// produced twice keeps its first place and its last value, as in Python.
+    pub(crate) fn dict_comprehension(&mut self, place: &Place, node: NodeId) {
+        let ty = self.ty(node);
+        self.assign(place.clone(), Rvalue::Aggregate(ty, Vec::new()), node);
+        let clauses: Vec<NodeId> = self.tree.children_with(node, Role::Item).collect();
+        self.clauses(place, ty, &clauses, node);
+    }
+
     /// The loops of `clauses`, the `for` clauses of the comprehension `node` from the current
-    /// one in, appending to the list at `place`, of type `ty`, inside the innermost.
+    /// one in, adding to the list or `dict` at `place`, of type `ty`, inside the innermost.
     fn clauses(&mut self, place: &Place, ty: Type<'db>, clauses: &[NodeId], node: NodeId) {
         let Some((&clause, rest)) = clauses.split_first() else {
             return self.append_value(place, ty, node);
@@ -70,14 +80,20 @@ impl<'db> Builder<'db> {
         };
         if self.is_range(iterator) {
             self.range_loop(clause, target, iterator, pass);
+        } else if self.is_dict_loop(iterator) {
+            self.dict_loop(clause, target, iterator, pass);
         } else {
             self.collection_loop(clause, target, iterator, pass);
         }
     }
 
     /// Appends the value of the comprehension `node`, converted to the element type of `ty`, to
-    /// the list at `place`: [`Builtin::Append`] with the list `InOut` and the value `Owned`.
+    /// the list at `place`: [`Builtin::Append`] with the list `InOut` and the value `Owned`. For
+    /// a dict comprehension, sets the entry for its key and value instead.
     fn append_value(&mut self, place: &Place, ty: Type<'db>, node: NodeId) {
+        if matches!(ty.kind(self.db), TypeKind::Dict { .. }) {
+            return self.dict_comprehension_entry(place, node);
+        }
         let (Some(value), &TypeKind::List(element)) =
             (self.tree.child(node, Role::Value), ty.kind(self.db))
         else {

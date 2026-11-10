@@ -224,7 +224,7 @@ impl<'db> Builder<'db> {
     /// of a copy type into it, and makes each name that would hold a value that is not copied
     /// borrow its part of the element in place, until the loop ends. A target that unpacks
     /// does this for each part, so `for name, mass in species` borrows `name` and copies `mass`.
-    fn bind_element(&mut self, target: NodeId, place: Place, ty: Type<'db>) {
+    pub(crate) fn bind_element(&mut self, target: NodeId, place: Place, ty: Type<'db>) {
         if self.is_copy(ty) {
             return self.assign_part(target, place, ty);
         }
@@ -251,7 +251,7 @@ impl<'db> Builder<'db> {
     /// before any read in it. Two loops that reuse a name, `for c in a:` then `for c in b:`,
     /// are confined; a read after the loop, or an assignment outside one, is not. A
     /// comprehension's variables belong to the comprehension alone, so they always are.
-    fn confined(&self, statement: NodeId, target: NodeId) -> bool {
+    pub(crate) fn confined(&self, statement: NodeId, target: NodeId) -> bool {
         if self.tree.kind(statement) != SyntaxKind::For {
             return true;
         }

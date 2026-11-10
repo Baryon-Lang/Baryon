@@ -231,6 +231,7 @@ impl<'db> Body<'db> {
                 }
                 return self.block(statement, Role::Body);
             }
+            SyntaxKind::Delete => self.delete(statement),
             SyntaxKind::Match => return self.match_statement(statement),
             SyntaxKind::Try => return self.try_statement(statement),
             SyntaxKind::Assert => {
