@@ -19,6 +19,14 @@
 //! The result goes to a new temporary and moves into the destination only after the loop, so
 //! `a = a * 2.0`, which reads the array it replaces, is correct.
 //!
+//! A destination that is a view, `a[1:n] = b + c` or `a[1:n] += b`, is written in place
+//! instead: the view's own lengths set the shape, every `Array` leaf is checked against them,
+//! and nothing is allocated. The one exception is a leaf that may overlap the view, a place
+//! of the same variable other than the view itself, as in `a[1:n] = a[0:n - 1]`: writing in
+//! place would read elements already overwritten, so the result goes to a new array first and
+//! is copied into the view after, as `NumPy` does.  A leaf that is the view itself, as `+=`
+//! makes, reads each element just before writing it, so it needs no copy.
+//!
 //! It runs in the instance query after drop elaboration, so types are concrete. It is one
 //! replaceable implementation (decision 0001): it reads and writes only `mir` types, and asks what
 //! a struct declares through a callback, as [`types::layout`] does.
@@ -87,7 +95,8 @@ use mir::{BlockId, Body, Rvalue, StatementKind, Terminator, TerminatorKind};
 ///
 /// The bodies of the function's `prange` loops are expanded too.
 ///
-/// An expression with no array leaf, or whose destination is not an array, is left as it is;
+/// An expression with no array leaf and a destination that is not a view, or whose destination
+/// is not an array, is left as it is;
 /// a type-checked body has neither, and [`Body::validate`] reports what is left in a ready body.
 ///
 /// Cost: a scan of every statement, and for each expanded statement IR proportional to the size
@@ -166,7 +175,9 @@ fn next_expandable<'db>(
             let result_type = types.of(local, destination)?;
             types.array(result_type)?;
             let leaves = array_leaves(types, &body.locals, tree);
-            (!leaves.is_empty()).then_some((position, leaves, result_type))
+            // A view takes a number alone, `a[1:n] = 0.0`; anything else needs an array leaf
+            // for its shape.
+            (!leaves.is_empty() || destination.is_view()).then_some((position, leaves, result_type))
         })
 }
 

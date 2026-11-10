@@ -21,7 +21,9 @@ pub use output::{
     baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,
 };
 pub use philox::{baryon_rt_philox_new, baryon_rt_philox_uniform};
-pub use sum::{baryon_rt_sum_f32, baryon_rt_sum_f64};
+pub use sum::{
+    baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64,
+};
 pub use text::{
     OwnedText, TextBuilder, baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64,
     baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,
@@ -246,6 +248,46 @@ pub unsafe extern "C" fn baryon_rt_panic_index(
 ) -> ! {
     let failure = Failure::IndexOutOfRange {
         index,
+        dimension,
+        length,
+    };
+    // SAFETY: the caller's promise about `location`, passed on.
+    panic(failure, unsafe { self::location(location) })
+}
+
+/// Ends the program with a panic for a slice whose range does not lie within its dimension:
+/// `start` or `stop` is negative or above the `length` of `dimension`, 0 for the outermost, or
+/// the range takes an element and `start` is not below the length (language reference,
+/// "Slicing"). Compiled code calls it on the failing side of an IR `SliceInBounds` check.
+///
+/// Prints `panic: slice <start>:<stop> is out of range for dimension <dimension> of length
+/// <length>` and the location, as [`baryon_rt_panic`] does.
+///
+/// # Safety
+///
+/// `location` is null or points to a valid [`Location`] that lives as long as the program.
+///
+/// # Example
+///
+/// ```no_run
+/// use runtime::{Location, baryon_rt_panic_slice};
+///
+/// static HERE: Location = Location::new("heat.byn", 21, 9);
+/// // SAFETY: the location is a constant that lives as long as the program.
+/// unsafe { baryon_rt_panic_slice(2, 12, 0, 10, &HERE) }
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_panic_slice(
+    start: i64,
+    stop: i64,
+    dimension: u32,
+    length: i64,
+    location: *const Location,
+) -> ! {
+    let failure = Failure::SliceOutOfRange {
+        start,
+        stop,
         dimension,
         length,
     };

@@ -155,6 +155,7 @@ mod random;
 mod rvalue;
 mod text;
 mod ty;
+mod view;
 
 use mir::Body;
 use std::collections::{BTreeMap, BTreeSet};

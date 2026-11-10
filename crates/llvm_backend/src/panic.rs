@@ -7,6 +7,7 @@
 //! | Check | Runtime function | What it prints |
 //! | --- | --- | --- |
 //! | An index in bounds | `baryon_rt_panic_index` | The index, the dimension and its length |
+//! | A slice in bounds | `baryon_rt_panic_slice` | The start and stop, the dimension and its length |
 //! | Two arrays of the same length | `baryon_rt_panic_length_mismatch` | The dimension and both lengths |
 //! | A non-negative exponent of integer `**` | `baryon_rt_panic_exponent` | The exponent |
 //! | Everything else | `baryon_rt_panic` | A message the backend writes as a constant |
@@ -37,6 +38,17 @@ pub(crate) enum Failure {
         /// The index, an `i64` operand.
         index: String,
         /// The dimension indexed.
+        dimension: u32,
+        /// The dimension's length, an `i64` operand.
+        length: String,
+    },
+    /// A slice whose range does not lie within its dimension.
+    Slice {
+        /// Where the range starts, an `i64` operand.
+        start: String,
+        /// Where the range stops, an `i64` operand.
+        stop: String,
+        /// The dimension sliced.
         dimension: u32,
         /// The dimension's length, an `i64` operand.
         length: String,
@@ -334,7 +346,17 @@ impl<'db> Function<'_, '_, 'db> {
             Check::NonZeroStep { slice: true } => {
                 Failure::Message("slice step cannot be zero".to_owned())
             }
-            Check::SliceInBounds { .. } => return Err(Unsupported::new("slices of arrays")),
+            Check::SliceInBounds {
+                dimension,
+                start,
+                stop,
+                length,
+            } => Failure::Slice {
+                start: self.value(start)?.0,
+                stop: self.value(stop)?.0,
+                dimension: *dimension,
+                length: self.value(length)?.0,
+            },
             Check::NoPowerOverflow => Failure::Message("integer overflow in `**`".to_owned()),
             Check::NonZeroStep { slice: false } => {
                 Failure::Message("`range` step is zero".to_owned())
@@ -409,6 +431,19 @@ pub(crate) fn call(
             ),
             "baryon_rt_panic_index",
             "declare void @baryon_rt_panic_index(i64, i32, i64, ptr) cold noreturn nounwind",
+        ),
+        Failure::Slice {
+            start,
+            stop,
+            dimension,
+            length,
+        } => (
+            format!(
+                "call void @baryon_rt_panic_slice(i64 {start}, i64 {stop}, i32 {dimension}, \
+                 i64 {length}, ptr {location})"
+            ),
+            "baryon_rt_panic_slice",
+            "declare void @baryon_rt_panic_slice(i64, i64, i32, i64, ptr) cold noreturn nounwind",
         ),
         Failure::Length {
             dimension,

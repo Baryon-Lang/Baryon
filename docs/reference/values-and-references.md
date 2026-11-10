@@ -260,6 +260,16 @@ copies nothing. A view is a borrow, so in version 0 it can be used only where a 
 - as the target of an assignment or compound assignment: `a[1:n] = 0.0`, `a[1:n] += b[0:n - 1]`;
 - inside an array expression that builds a new array: `c = a[1:n] - a[0:n - 1]`.
 
+Assigning into a view writes the array's own elements. When the right side reads the same array
+in another place, as in `a[1:n] = a[0:n - 1]`, every element is read before any is written, as
+NumPy does, so the result is the shifted array rather than one value smeared along it.
+
+A view passed as an `InOut` argument behaves as the array's own memory: the function's changes
+reach those elements. A function may also give an `InOut` parameter a whole new array; a view
+cannot take one of another shape, so that panics, as whole-array arithmetic on arrays of different
+lengths does. Today the compiler passes such a view as a copy that it writes back after the call,
+which costs one pass over the view each way; roadmap idea I.34 removes the copy.
+
 Binding a view to a name, `edge = grid[:, 0]`, is an error that suggests `.copy()`. Python
 programmers expect the name to share memory with the array (NumPy's rule), and silently copying
 would break that expectation; allowing the name would make the view a stored borrow, which the

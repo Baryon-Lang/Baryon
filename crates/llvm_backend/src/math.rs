@@ -9,11 +9,12 @@
 //! differ in the last bit between platforms, as `NumPy`'s does. Since none of them can fail, the call needs no error
 //! edge and no check. Every operand and the result share one float type, as `mir` requires.
 //!
-//! A [`Builtin::Sum`](mir::Builtin::Sum) of floats calls the runtime's pairwise sum,
-//! `baryon_rt_sum_f64` or `baryon_rt_sum_f32`, with the address of the first element and the
-//! element count. That relies on the elements being one contiguous run in row-major order, which
-//! every `Array` is today (decision 0008) and a `Fixed` array always is; array views, once slices
-//! build, will need their strides checked first.
+//! A [`Builtin::Sum`](mir::Builtin::Sum) of floats calls the runtime's pairwise sum. A `Fixed`
+//! array is one contiguous run in row-major order, so it passes the address of the first element
+//! and the element count to `baryon_rt_sum_f64` or `baryon_rt_sum_f32`. An `Array` may be a
+//! view, a slice that skips elements or walks backwards, so it passes its element pointer,
+//! rank, lengths and strides to `baryon_rt_sum_strided_f64` or `baryon_rt_sum_strided_f32`,
+//! which sum a contiguous array where it lies and gather any other first.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -101,30 +102,42 @@ impl<'db> Function<'_, '_, 'db> {
             ));
         };
         let (address, ty) = self.place(destination)?;
-        let (llvm, function) = match self.types.number(ty) {
-            Some(Number::Float(32)) => ("float", "baryon_rt_sum_f32"),
-            Some(Number::Float(_)) => ("double", "baryon_rt_sum_f64"),
+        let (llvm, whole_run, through_strides) = match self.types.number(ty) {
+            Some(Number::Float(32)) => ("float", "baryon_rt_sum_f32", "baryon_rt_sum_strided_f32"),
+            Some(Number::Float(_)) => ("double", "baryon_rt_sum_f64", "baryon_rt_sum_strided_f64"),
             _ => return Err(self.types.unsupported(ty)),
         };
         let (array_address, array_type) = self.place(array)?;
-        let (data, count) = match array_type.kind(self.types.db) {
-            TypeKind::Fixed { shape, .. } => (array_address, shape.elements().to_string()),
+        let result = match array_type.kind(self.types.db) {
+            TypeKind::Fixed { shape, .. } => {
+                self.declare(
+                    whole_run,
+                    &format!("declare {llvm} @{whole_run}(ptr, i64) nounwind"),
+                );
+                let count = shape.elements();
+                self.emit(&format!(
+                    "call {llvm} @{whole_run}(ptr {array_address}, i64 {count})"
+                ))
+            }
             &TypeKind::Array { rank, .. } => {
+                // Any `Array` may be a view with strides, so the runtime reads them.
+                let header = self.types.value(array_type)?;
                 let data = self.emit(&format!("load ptr, ptr {array_address}"));
-                let mut count = "1".to_owned();
-                for dimension in 0..rank {
-                    let length = self.length(array, dimension)?;
-                    count = self.emit(&format!("mul i64 {count}, {length}"));
-                }
-                (data, count)
+                let [lengths, strides] = [1, 2].map(|part| {
+                    self.emit(&format!(
+                        "getelementptr inbounds {header}, ptr {array_address}, i32 0, i32 {part}, i32 0"
+                    ))
+                });
+                self.declare(
+                    through_strides,
+                    &format!("declare {llvm} @{through_strides}(ptr, i32, ptr, ptr) nounwind"),
+                );
+                self.emit(&format!(
+                    "call {llvm} @{through_strides}(ptr {data}, i32 {rank}, ptr {lengths}, ptr {strides})"
+                ))
             }
             _ => return Err(self.types.unsupported(array_type)),
         };
-        self.declare(
-            function,
-            &format!("declare {llvm} @{function}(ptr, i64) nounwind"),
-        );
-        let result = self.emit(&format!("call {llvm} @{function}(ptr {data}, i64 {count})"));
         self.line(&format!("store {llvm} {result}, ptr {address}"));
         self.line(&format!("br label %{}", block_label(target)));
         Ok(())

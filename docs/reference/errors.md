@@ -96,7 +96,9 @@ These panic:
 
 | Failure | Message names |
 | --- | --- |
-| Index or slice out of range | The index, the dimension and its length |
+| Index out of range | The index, the dimension and its length |
+| Slice out of range | Its start and stop, the dimension and its length |
+| A slice step of zero | Nothing more: `slice step cannot be zero`, as Python says |
 | Array shapes that do not match in whole-array arithmetic | Both shapes |
 | `assert` with a false condition | The condition's source and the message, if given |
 | Integer division or `%` by zero | The operation |

@@ -38,7 +38,10 @@
 //! - **`match`.** Each case tests its pattern part by part, branching to the next case at the
 //!   first part that does not match, then assigns its captures and tests its guard.
 //! - **Arrays.** `a[i, j]` is a place with one index local per dimension, and a negative literal
-//!   counts back from the length. Whole-array arithmetic stays one
+//!   counts back from the length. A slice `a[i:j:k]` or `grid[:, k]` is a view: a place
+//!   ending in a [`Slice`](mir::Projection::Slice) step after the checks of its ranges, written
+//!   in place by `=` and `+=` and copied in and back when passed `InOut` (the `slices` module).
+//!   Whole-array arithmetic stays one
 //!   [`Elementwise`](mir::Rvalue::Elementwise) expression for array expansion to loop over.
 //!   `Array.zeros`, `ones` and `fill` allocate with [`NewArray`](mir::Rvalue::NewArray) and fill
 //!   the elements in a loop nest; a `Fixed` array is an [`Aggregate`](mir::Rvalue::Aggregate) of
@@ -93,10 +96,9 @@
 //! # What it does not lower yet
 //!
 //! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
-//! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, slices, indexing lists and strings,
-//! adding into a slice of an array in `accumulate=`, `match` captures of values that are not copy
-//! types or inside `|`, `raise ... from`, an `except` that names its error through a module, calls
-//! that leave out an argument of a generic function, the built-in functions and methods other than
+//! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, indexing and slicing lists and
+//! strings, `match` captures of values that are not copy types or inside `|`, `raise ... from`, an
+//! `except` that names its error through a module, calls that leave out an argument of a generic function, the built-in functions and methods other than
 //! `print`, `min` and `max` of numbers, `len` of an array, `round` with one argument, the `math`
 //! functions above, the array constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a
 //! `Fixed` array, `**` on integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`,
@@ -264,6 +266,7 @@ mod operators;
 mod parallel;
 mod patterns;
 mod random;
+mod slices;
 mod statements;
 #[cfg(test)]
 mod tests;

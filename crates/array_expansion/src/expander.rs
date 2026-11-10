@@ -61,10 +61,10 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
         }
     }
 
-    /// Writes `destination = tree` as a loop nest whose shape is that of `leaves[0]`, then
-    /// `after` and `terminator` in the block the nest exits to. `leaves` are the expression's
-    /// array leaves from [`array_leaves`], at least one; `result_type` is the destination's array
-    /// type.
+    /// Writes `destination = tree` as a loop nest, then `after` and `terminator` in the block
+    /// the nest exits to. `leaves` are the expression's array leaves from [`array_leaves`];
+    /// `result_type` is the destination's array type. The shape is the destination's when it is
+    /// a view, which is written in place, and otherwise that of `leaves[0]`, which must exist.
     pub(crate) fn expand(
         mut self,
         destination: &Place,
@@ -73,39 +73,53 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
         after: Vec<Statement<'db>>,
         terminator: Terminator<'db>,
     ) {
-        let reference = &leaves[0];
-        let lengths = self.lengths(reference);
-        for leaf in &leaves[1..] {
+        let in_place = destination.is_view();
+        let (lengths, checked) = if in_place {
+            let rank = match result_type.kind(self.db) {
+                TypeKind::Array { rank, .. } => *rank,
+                _ => 0,
+            };
+            (self.view_lengths(destination, rank), leaves)
+        } else {
+            (self.lengths(&leaves[0]), &leaves[1..])
+        };
+        // The view itself, as `+=` reads it, has its own lengths.
+        for leaf in checked.iter().filter(|leaf| leaf.place != *destination) {
             self.check_lengths(leaf, &lengths);
         }
-        let result = self.local(result_type);
-        if matches!(result_type.kind(self.db), TypeKind::Array { .. }) {
-            self.assign(
-                Place::from(result),
-                Rvalue::NewArray(result_type, lengths.clone()),
-            );
+        let staged = in_place
+            && leaves
+                .iter()
+                .any(|leaf| leaf.place.local == destination.local && leaf.place != *destination);
+        let target = if in_place && !staged {
+            destination.clone()
+        } else {
+            let result = self.local(result_type);
+            if matches!(result_type.kind(self.db), TypeKind::Array { .. }) {
+                self.assign(
+                    Place::from(result),
+                    Rvalue::NewArray(result_type, lengths.clone()),
+                );
+            }
+            Place::from(result)
+        };
+        self.loop_nest(&lengths, |this, indices| {
+            let (value, _) = this.element(tree, leaves, indices);
+            let element = target.clone().project(Projection::Index(indices.to_vec()));
+            this.assign(element, Rvalue::Use(value));
+        });
+        if staged {
+            self.loop_nest(&lengths, |this, indices| {
+                let from = target.clone().project(Projection::Index(indices.to_vec()));
+                let to = destination
+                    .clone()
+                    .project(Projection::Index(indices.to_vec()));
+                this.assign(to, Rvalue::Use(Operand::Copy(from)));
+            });
+            self.push(StatementKind::Drop(target));
+        } else if !in_place {
+            self.assign(destination.clone(), Rvalue::Use(Operand::Move(target)));
         }
-        let indices: Vec<Local> = lengths.iter().map(|_| self.local(self.i64)).collect();
-        let mut exits = Vec::new();
-        for (index, length) in indices.iter().zip(&lengths) {
-            exits.push(self.open_loop(*index, length.clone()));
-        }
-        let (value, _) = self.element(tree, leaves, &indices);
-        let element = Place::from(result).project(Projection::Index(indices.clone()));
-        self.assign(element, Rvalue::Use(value));
-        for (index, (header, exit)) in indices.iter().zip(exits).rev() {
-            let next = Rvalue::Binary(
-                BinaryOperator::Add,
-                Operand::Copy(Place::from(*index)),
-                Operand::Constant(Constant::integer(self.i64, 1)),
-            );
-            self.assign(Place::from(*index), next);
-            self.finish(TerminatorKind::Goto(header), exit);
-        }
-        self.assign(
-            destination.clone(),
-            Rvalue::Use(Operand::Move(Place::from(result))),
-        );
         let mut dropped: Vec<&Place> = Vec::new();
         for leaf in leaves.iter().filter(|leaf| leaf.moved) {
             if !dropped.contains(&&leaf.place) && matches!(leaf.shape, Shape::Runtime(_)) {
@@ -119,6 +133,38 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
             statements: self.statements,
             terminator,
         };
+    }
+
+    /// Writes a loop over every index below `lengths`, in row-major order with the last
+    /// dimension innermost, whose body `body` writes given the index locals; continues after
+    /// the loops.
+    fn loop_nest(&mut self, lengths: &[Operand<'db>], body: impl FnOnce(&mut Self, &[Local])) {
+        let indices: Vec<Local> = lengths.iter().map(|_| self.local(self.i64)).collect();
+        let mut exits = Vec::new();
+        for (index, length) in indices.iter().zip(lengths) {
+            exits.push(self.open_loop(*index, length.clone()));
+        }
+        body(self, &indices);
+        for (index, (header, exit)) in indices.iter().zip(exits).rev() {
+            let next = Rvalue::Binary(
+                BinaryOperator::Add,
+                Operand::Copy(Place::from(*index)),
+                Operand::Constant(Constant::integer(self.i64, 1)),
+            );
+            self.assign(Place::from(*index), next);
+            self.finish(TerminatorKind::Goto(header), exit);
+        }
+    }
+
+    /// The length of each of the `rank` dimensions of the view `view`, read into new locals.
+    fn view_lengths(&mut self, view: &Place, rank: u32) -> Vec<Operand<'db>> {
+        (0..rank)
+            .map(|dimension| {
+                let length = self.local(self.i64);
+                self.assign(Place::from(length), Rvalue::Length(view.clone(), dimension));
+                Operand::Copy(Place::from(length))
+            })
+            .collect()
     }
 
     /// The length of each dimension of `reference`: constants for a `Fixed`, otherwise read
