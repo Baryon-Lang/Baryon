@@ -4,7 +4,7 @@ What each release of Baryon holds, newest first. A release is a tag on `main`; n
 published to a package registry yet. [`ROADMAP.md`](ROADMAP.md#releases) tracks the steps of the
 release in progress.
 
-## 0.2.0: Linux and macOS, unreleased
+## 0.2.0: Linux and macOS, 2026-11-10
 
 The second release, and the first to download and use without building the compiler: prebuilt
 `baryon` archives for Linux and macOS, programs written the way the reference describes them
