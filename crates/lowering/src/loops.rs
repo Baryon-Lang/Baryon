@@ -96,6 +96,26 @@ impl<'db> Builder<'db> {
             };
             return self.parallel_for(statement, variable, first, bound, step);
         }
+        let mut vectorized = vectorized;
+        if vectorized {
+            let reductions = self.float_reductions(statement);
+            let complex = reductions
+                .iter()
+                .any(|&(local, _)| !self.is_float(self.local_type(local)));
+            if !reductions.is_empty() {
+                match step {
+                    Step::Constant(step)
+                        if !complex && self.local_type(variable) == self.int_type() =>
+                    {
+                        let range = (first, bound, step);
+                        return self.laned_for(statement, variable, range, &reductions);
+                    }
+                    // A complex sum, a counter other than `i64` or a step known only at run
+                    // time keeps the plain loop's order, unvectorized.
+                    _ => vectorized = false,
+                }
+            }
+        }
         let ty = self.local_type(variable);
         let counter = self.temporary(ty, iterator);
         match first {
@@ -116,7 +136,7 @@ impl<'db> Builder<'db> {
         let header = self.new_block();
         self.terminate(TerminatorKind::Goto(header), statement);
         self.start(header);
-        if vectorized && !self.reorders_floats(statement) {
+        if vectorized {
             self.body.vectorized.push(header);
         }
         let (body, next, end) = (self.new_block(), self.new_block(), self.new_block());

@@ -59,6 +59,10 @@ pub(crate) struct Builder<'db> {
     /// the array's place in the body, then the parameter that adds into the running chunk's
     /// copy of it (the `accumulate` module). Empty elsewhere.
     pub(crate) accumulated: Vec<(Place, Local)>,
+    /// Inside a `simd` loop that sums or multiplies floats, one entry per such variable: its
+    /// local, then the lane the current iteration adds into (the `lanes` module). Empty
+    /// elsewhere.
+    pub(crate) lanes: Vec<(Local, Place)>,
 }
 
 /// One `try` statement whose body is being lowered.
@@ -162,6 +166,7 @@ impl<'db> Builder<'db> {
             caught: Vec::new(),
             diagnostics: Vec::new(),
             accumulated: Vec::new(),
+            lanes: Vec::new(),
         }
     }
 
@@ -240,6 +245,7 @@ impl<'db> Builder<'db> {
             caught: Vec::new(),
             diagnostics: Vec::new(),
             accumulated: Vec::new(),
+            lanes: Vec::new(),
         }
     }
 

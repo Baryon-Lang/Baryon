@@ -68,9 +68,9 @@
 //!   into with `+=`, `-=`, `*=`, `min` or `max` (the `parallel` module), and the arrays listed
 //!   in `accumulate=`, which it adds into with `Accumulate` statements (the `accumulate` module).
 //!   A `simd(range(...))` loop lowers as the `range` loop inside it, with its header block
-//!   listed in [`vectorized`](mir::Body::vectorized), unless it sums or multiplies into a
-//!   shared float, which stays unvectorized until fixed lanes keep its bits the same on every
-//!   machine (roadmap 1.9.14).
+//!   listed in [`vectorized`](mir::Body::vectorized). One that sums or multiplies into a
+//!   shared float adds into 8 fixed lanes instead, combined in a pairwise tree, so it
+//!   vectorizes and gives the same bits on every machine (the `lanes` module, roadmap 1.9.14).
 //! - **Functions as arguments.** A module-level function read as a value is a constant of its
 //!   own zero-sized type, a call passes that type as an extra type argument for each `Callable`
 //!   parameter, and a call of a `Callable` value is a [`Callee::Value`](mir::Callee::Value),
@@ -255,6 +255,7 @@ mod errors;
 mod escapes;
 mod expressions;
 mod facts;
+mod lanes;
 mod lists;
 mod loops;
 mod math;
