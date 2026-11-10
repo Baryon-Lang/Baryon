@@ -9,6 +9,7 @@
 
 use crate::{Type, TypeKind};
 use database::Db;
+use syntax::NodeId;
 
 /// The union of `members`: one of them, whichever a value holds.
 ///
@@ -60,7 +61,14 @@ pub fn union<'db>(db: &'db dyn Db, members: impl IntoIterator<Item = Type<'db>>)
         return Type::new(db, TypeKind::Unknown);
     }
     flat.sort_by_cached_key(|&member| order(db, member));
-    flat.dedup();
+    // Not `dedup`: two members the order cannot tell apart may sit between repeats.
+    let mut distinct = Vec::with_capacity(flat.len());
+    for member in flat {
+        if !distinct.contains(&member) {
+            distinct.push(member);
+        }
+    }
+    let flat = distinct;
     match flat.as_slice() {
         [single] => *single,
         [value, none] if matches!(none.kind(db), TypeKind::None) => {
@@ -82,17 +90,23 @@ fn flatten<'db>(db: &'db dyn Db, member: Type<'db>, flat: &mut Vec<Type<'db>>) {
     }
 }
 
-/// Where `member` goes in a union: classes first, by the declaring file's path and then the
-/// type as written, then any other type as written, then `None`. The key depends only on the
-/// program's text, never on the order types were interned in, so it is the same in every module
-/// and every run.
-fn order(db: &dyn Db, member: Type<'_>) -> (u8, String, String) {
+/// Where `member` goes in a union: classes first, by the declaring file's path, then the type
+/// as written, then the position of the class's name in its file; then any other type as
+/// written; then `None`. The key depends only on the program's text, never on the order types
+/// were interned in, so it is the same in every module and every run. Two classes in one file
+/// never share a name, since a redefinition is an error, and no two files share a path; the
+/// name's position and the file's id still settle the order if they did, so the order never
+/// depends on how the members were written.
+fn order(db: &dyn Db, member: Type<'_>) -> (u8, String, String, Option<(NodeId, u32)>) {
     let written = member.display(db).to_string();
     match member.kind(db) {
-        TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => {
-            (0, nominal.file.source(db).name().to_owned(), written)
-        }
-        TypeKind::None => (2, String::new(), written),
-        _ => (1, String::new(), written),
+        TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => (
+            0,
+            nominal.file.source(db).name().to_owned(),
+            written,
+            Some((nominal.name, nominal.file.id(db).index())),
+        ),
+        TypeKind::None => (2, String::new(), written, None),
+        _ => (1, String::new(), written, None),
     }
 }

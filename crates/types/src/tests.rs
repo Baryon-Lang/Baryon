@@ -350,3 +350,30 @@ fn a_union_is_a_tag_then_room_for_its_largest_member() {
     );
     assert_eq!(layout_of(&database, small), Ok((24, 8)));
 }
+
+#[test]
+fn a_union_keeps_one_of_each_member_even_when_two_display_alike() {
+    let database = Database::default();
+    let periodic = class(&database, "Periodic", false);
+    // A second class named `Periodic` in a file of the same path: a redefinition the checker
+    // rejects, but `union` must still keep each type once and in one order.
+    let file = File::new(
+        &database,
+        FileId::from_index(1),
+        SourceFile::new("a.byn", "Periodic").unwrap(),
+    );
+    let twin = Type::new(
+        &database,
+        TypeKind::Struct(Nominal {
+            file,
+            name: name_node(&database, file),
+            arguments: Vec::new(),
+        }),
+    );
+    let union = crate::union(&database, [periodic, twin, periodic]);
+    let TypeKind::Union(members) = union.kind(&database) else {
+        panic!("two distinct types make a union");
+    };
+    assert_eq!(members.len(), 2);
+    assert_eq!(union, crate::union(&database, [twin, periodic, twin]));
+}
