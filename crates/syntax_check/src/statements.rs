@@ -25,6 +25,7 @@ impl Checker<'_> {
             SyntaxKind::ClassDefinition => self.class(id),
             SyntaxKind::For => self.for_loop(id),
             SyntaxKind::While => self.loop_else(id, "while"),
+            SyntaxKind::Raise => self.raise_from(id),
             SyntaxKind::With => self.with(id),
             SyntaxKind::Try => self.try_statement(id),
             SyntaxKind::ImportFrom => self.import_from(id),
@@ -304,6 +305,31 @@ impl Checker<'_> {
                 "a loop's `else` runs when the loop ends without `break`, which readers often \
                  misread",
                 "set a flag before `break` and test it after the loop",
+            ],
+        );
+    }
+
+    /// Checks a `raise`: `raise E(...) from cause` is rejected, because an error is a value that
+    /// reaches the caller alone and never carries another error (decision 0034). A cause the
+    /// program needs is kept in a field of the new error, where it is visible in the type.
+    fn raise_from(&mut self, id: NodeId) {
+        let Some(cause) = self.tree.child(id, Role::Cause) else {
+            return;
+        };
+        let span = self.clause_keyword("from", id, cause);
+        let note = if self.tree.kind(cause) == SyntaxKind::None {
+            "errors never chain, so there is nothing for `from None` to hide: remove it"
+        } else {
+            "keep the cause in a field of the new error: `raise LoadError(path, cause=error)`"
+        };
+        self.error(
+            "`raise ... from` is not supported",
+            span,
+            "errors do not chain",
+            &[
+                "an error is a value that reaches the caller on its own, without the error that \
+                 led to it",
+                note,
             ],
         );
     }

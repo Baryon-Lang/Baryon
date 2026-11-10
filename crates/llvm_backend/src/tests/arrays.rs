@@ -293,3 +293,49 @@ fn fixed_arrays_are_nested_arrays() {
     let executable = build("fixed", &text, main);
     assert_eq!(run(&executable, &[]).as_deref(), Ok("1 2 3 4\n"));
 }
+
+/// `def nest(): rows = [[1, 2], [3]]` then `rows` dropped: dropping a list whose elements own
+/// memory frees each element's buffer, in order, before its own, so a list of lists, strings
+/// or arrays leaks nothing.
+#[test]
+fn dropping_a_list_drops_its_elements() {
+    let database = Database::default();
+    let types = Types::new(&database);
+    let row = Type::new(&database, TypeKind::List(types.i64));
+    let rows = Type::new(&database, TypeKind::List(row));
+    let mut nest = body(types.none, &[], Vec::new());
+    let first = nest.push_local(row, mir::LocalKind::Temporary, span());
+    let second = nest.push_local(row, mir::LocalKind::Temporary, span());
+    let outer = nest.push_local(rows, mir::LocalKind::Temporary, span());
+    let number = |value: i128| Operand::Constant(mir::Constant::integer(types.i64, value));
+    nest.blocks[0].statements = vec![
+        assign(first, Rvalue::Aggregate(row, vec![number(1), number(2)])),
+        assign(second, Rvalue::Aggregate(row, vec![number(3)])),
+        assign(
+            outer,
+            Rvalue::Aggregate(
+                rows,
+                vec![Operand::Move(first.into()), Operand::Move(second.into())],
+            ),
+        ),
+        mir::Statement {
+            kind: StatementKind::Drop(outer.into()),
+            span: span(),
+        },
+    ];
+    let text = super::module(&database, &[("nest", nest)]);
+    let main = r"
+        void nest(void);
+        int main(void) {
+            nest();
+            return 0;
+        }
+    ";
+    let executable = build("nested-lists", &text, main);
+    assert_eq!(
+        run(&executable, &[]).as_deref(),
+        Ok(
+            "freed 16 bytes aligned to 8\nfreed 8 bytes aligned to 8\nfreed 48 bytes aligned to 8\n"
+        )
+    );
+}

@@ -79,7 +79,7 @@ the spelling to use instead.
 | `def` | yes | At module level, and as methods inside a class. Nested functions are not in version 0 |
 | `class` | yes | Only with the base `Struct` (optionally with `Copy`), `Exception` or `Enum`. No inheritance, by [decision 0015](../decisions/0015-no-class-inheritance.md); see [Types](types.md#structs) |
 | `import m`, `from m import x`, `as` | yes | No `from m import *`, no relative imports; see [Source files](#source-files) |
-| `raise E(...)` | yes | Only inside a function that declares it can fail; see [Errors](errors.md) |
+| `raise E(...)` | yes | Only inside a function that declares it can fail; see [Errors](errors.md). No `raise ... from`: errors do not chain, so keep a cause in a field ([decision 0034](../decisions/0034-no-error-chaining.md)) |
 | `try` with `except` | yes | Each `except` names the error types it handles. No bare `except:`, no `else`, no `finally` |
 | `with unsafe:` | yes | The only `with` form in version 0 |
 | `match` | yes | Literal, enum, tuple and wildcard patterns; must be exhaustive |

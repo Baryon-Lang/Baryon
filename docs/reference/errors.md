@@ -71,6 +71,9 @@ def main():
   read; give each error type its own `except` to read them.
 - A bare `raise` inside an `except` block raises the caught error again, so the function must
   declare it in its `Raises` or a `try` around the block must handle it.
+- Errors do not chain: `raise ... from` is an error. An error that needs the one that led to it
+  keeps it in a field, `raise LoadError(path, cause=error)`, where a handler can read it
+  ([decision 0034](../decisions/0034-no-error-chaining.md)).
 - A `try` handles the errors of the calls in its body; an error type no `except` names passes on to
   the caller, which must allow it.
 - `try` and `except` compile to a branch on the returned value. When no error occurs, the cost is

@@ -155,3 +155,19 @@ error: functions cannot be defined inside functions
    = note: nested functions are not in version 0
    = note: move it to the top level of the module, and pass what it uses as parameters
 
+error: `raise ... from` is not supported
+  --> statements.byn:55:31
+   |
+55 |         raise LoadError(path) from error
+   |                               ^^^^ errors do not chain
+   = note: an error is a value that reaches the caller on its own, without the error that led to it
+   = note: keep the cause in a field of the new error: `raise LoadError(path, cause=error)`
+
+error: `raise ... from` is not supported
+  --> statements.byn:59:27
+   |
+59 |     raise LoadError(path) from None
+   |                           ^^^^ errors do not chain
+   = note: an error is a value that reaches the caller on its own, without the error that led to it
+   = note: errors never chain, so there is nothing for `from None` to hide: remove it
+

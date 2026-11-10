@@ -193,7 +193,7 @@ impl<'db> Function<'_, '_, 'db> {
     }
 
     /// Frees what the value of type `ty` at `address` owns.
-    fn drop_value(&mut self, address: &str, ty: Type<'db>) -> Result<(), Unsupported> {
+    pub(crate) fn drop_value(&mut self, address: &str, ty: Type<'db>) -> Result<(), Unsupported> {
         match ty.kind(self.types.db) {
             TypeKind::Array { .. } => self.free_array(address, ty),
             TypeKind::List(_) => self.free_list(address, ty),
@@ -238,7 +238,7 @@ impl<'db> Function<'_, '_, 'db> {
 
     /// Whether a value of `ty` owns memory a drop frees: an array, a list or a `str`, or a
     /// tuple, struct or optional holding one.
-    fn owns_memory(&self, ty: Type<'db>) -> bool {
+    pub(crate) fn owns_memory(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.types.db) {
             TypeKind::Array { .. } | TypeKind::List(_) | TypeKind::Str => true,
             TypeKind::Optional(value) => self.owns_memory(*value),

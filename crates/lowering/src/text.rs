@@ -152,6 +152,20 @@ impl<'db> Builder<'db> {
         );
     }
 
+    /// Whether the two `str`s `arguments` names are equal, into the `bool` at `place`.
+    pub(crate) fn text_equal(&mut self, place: Place, arguments: Vec<Argument<'db>>, node: NodeId) {
+        let int = self.int_type();
+        let order = self.temporary(int, node);
+        self.text_call(Place::from(order), Builtin::CompareStr, arguments, node);
+        let zero = Operand::Constant(self.number_constant(int, 0));
+        let order = Operand::Copy(Place::from(order));
+        self.assign(
+            place,
+            Rvalue::Binary(BinaryOperator::Equal, order, zero),
+            node,
+        );
+    }
+
     /// `place = builtin(arguments…)`, for a built-in over `str`s, which cannot fail.
     fn text_call(
         &mut self,
