@@ -9,8 +9,8 @@
 //! Each clause loops the way the `loops` module lowers a `for` statement: over `range`, an array,
 //! a list, a tuple or a `str`, and `enumerate`, `zip` and `reversed` of them. `simd(range(…))`
 //! runs as its plain `range`, since `simd` only asks for vectorizing and a comprehension has no
-//! sum whose order it could change. `prange` is a statement's parallel loop, so a comprehension
-//! over it is reported as not lowered until roadmap 1.13.10 settles what it means. The
+//! sum whose order it could change. `prange` is a statement's parallel loop, so the checker
+//! rejects a comprehension over it and lowering never sees one. The
 //! temporaries a pass makes are dropped when the pass ends, so a pass that builds text or a list
 //! frees it before the next.
 
@@ -57,9 +57,6 @@ impl<'db> Builder<'db> {
         ) else {
             return;
         };
-        if self.is_prange(iterator) {
-            return self.unsupported(iterator, "`prange` in a comprehension");
-        }
         // `simd` only asks for a vectorized loop, and a comprehension sums into nothing, so its
         // range runs as a plain one: the same values in the same order.
         let iterator = self.simd_range(iterator).unwrap_or(iterator);

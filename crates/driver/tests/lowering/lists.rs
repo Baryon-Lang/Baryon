@@ -174,32 +174,22 @@ fn(_1: list[f64]) -> list[f64] {
     );
 }
 
-/// `prange` in a comprehension is not lowered yet: it is a statement's parallel loop. Nor is a
-/// loop variable that borrows a `str` and is also used outside the loop, since reading it as the
-/// element it borrows is exact only inside.
+/// A loop variable that borrows a `str` and is also used outside the loop is not lowered yet,
+/// since reading it as the element it borrows is exact only inside (roadmap 1.13.9).
 #[test]
-fn loops_not_lowered_yet_in_comprehensions_are_errors() {
+fn a_borrowed_loop_variable_used_after_its_loop_is_not_lowered_yet() {
     let program = "\
-        def lengths(names: list[str]) -> list[i64]:\n\
-        \x20   evens = [i for i in prange(4)]\n\
+        def lengths(names: list[str]):\n\
         \x20   name = \"none\"\n\
         \x20   for name in names:\n\
-        \x20       print(name)\n\
-        \x20   return evens\n";
+        \x20       print(name)\n";
     assert_eq!(
         lower(program, "lengths"),
         "\
-error: lowering does not handle `prange` in a comprehension yet
- --> main.byn:2:25
-  |
-2 |     evens = [i for i in prange(4)]
-  |                         ^^^^^^^^^ not lowered yet
-  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
-
 error: lowering does not handle a loop variable that borrows an element and is also used outside the loop yet
- --> main.byn:4:9
+ --> main.byn:3:9
   |
-4 |     for name in names:
+3 |     for name in names:
   |         ^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );

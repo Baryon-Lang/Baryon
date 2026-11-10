@@ -381,3 +381,32 @@ def pairs(forces: InOut[Array[f64, 1]], n: i64):
   = note: or compute each element's total in its own iteration, or use `range` for this loop"
     );
 }
+
+/// `prange` cannot drive a comprehension, at any depth (Collins, 2026-11-10): a parallel loop
+/// is a `for` statement, and the error shows that form. `simd(range(…))` and `range` can.
+#[test]
+fn prange_in_a_comprehension_is_reported() {
+    let program = "
+def table(n: i64) -> list[i64]:
+    squares = [i * i for i in prange(n)]
+    pairs = [i + j for i in range(n) for j in prange(i)]
+    fine = [i for i in simd(range(n))]
+    return fine
+";
+    assert_eq!(
+        check_one(program),
+        "error: `prange` cannot be used in a comprehension
+ --> main.byn:2:31
+  |
+2 |     squares = [i * i for i in prange(n)]
+  |                               ^^^^^^^^^ a parallel loop must be a `for` statement
+  = note: make the result first, then fill it in parallel: `for i in prange(n): out[i] = f(i)`
+
+error: `prange` cannot be used in a comprehension
+ --> main.byn:3:47
+  |
+3 |     pairs = [i + j for i in range(n) for j in prange(i)]
+  |                                               ^^^^^^^^^ a parallel loop must be a `for` statement
+  = note: make the result first, then fill it in parallel: `for i in prange(n): out[i] = f(i)`"
+    );
+}

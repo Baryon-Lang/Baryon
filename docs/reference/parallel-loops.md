@@ -24,6 +24,21 @@ with the rules below.
 The runtime splits the iterations into chunks and hands them to a thread pool sized to the
 machine's cores, started on the first parallel loop. A program with no `prange` starts no threads.
 
+`prange` drives only a `for` statement, never a comprehension. To build a list or array in
+parallel, make it first and fill it by index:
+
+```python
+def squares(n: i64) -> Array[f64, 1]:
+    out = Array.zeros(n)
+    for i in prange(n):
+        out[i] = f64(i * i)
+    return out
+```
+
+`[i * i for i in prange(n)]` is a compile error that suggests this form, so every parallel loop
+is a statement the rules below check. `simd(range(n))` may drive a comprehension; it runs as the
+plain `range`.
+
 ### What a `prange` body may do
 
 A variable assigned inside the body is **private**: each iteration has its own. A variable assigned
