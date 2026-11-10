@@ -20,9 +20,11 @@ impl<'db> Builder<'db> {
             | TypeKind::Callable { .. }
             | TypeKind::Function { .. }
             | TypeKind::Unknown => true,
-            TypeKind::Str | TypeKind::List(_) | TypeKind::Array { .. } | TypeKind::Standard(_) => {
-                false
-            }
+            TypeKind::Str
+            | TypeKind::List(_)
+            | TypeKind::Dict { .. }
+            | TypeKind::Array { .. }
+            | TypeKind::Standard(_) => false,
             TypeKind::Tuple(items) => items.iter().all(|&item| self.is_copy(item)),
             TypeKind::Optional(value) => self.is_copy(*value),
             TypeKind::Fallible { value, errors } => {
@@ -50,6 +52,7 @@ impl<'db> Builder<'db> {
             | TypeKind::Optional(element)
             | TypeKind::Array { element, .. }
             | TypeKind::Fixed { element, .. } => self.is_generic(*element),
+            TypeKind::Dict { key, value } => self.is_generic(*key) || self.is_generic(*value),
             TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => nominal
                 .arguments
                 .iter()

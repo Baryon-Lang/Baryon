@@ -104,6 +104,13 @@ fn types_display_as_programs_spell_them() {
         "Fixed[f64, (3, 3)]"
     );
     assert_eq!(shown(TypeKind::List(int)), "list[i64]");
+    assert_eq!(
+        shown(TypeKind::Dict {
+            key: int,
+            value: f64
+        }),
+        "dict[i64, f64]"
+    );
     assert_eq!(shown(TypeKind::Tuple(vec![int, f64])), "tuple[i64, f64]");
     assert_eq!(shown(TypeKind::Optional(f64)), "f64 | None");
     assert_eq!(
@@ -179,6 +186,13 @@ fn layouts_follow_the_documented_rules() {
         Ok((56, 8))
     );
     assert_eq!(of(TypeKind::List(f64)), Ok((24, 8)));
+    assert_eq!(
+        of(TypeKind::Dict {
+            key: f64,
+            value: f64
+        }),
+        Ok((8, 8))
+    );
     assert_eq!(of(TypeKind::Str), Ok((16, 8)));
     assert_eq!(of(TypeKind::Tuple(vec![byte, f64, byte])), Ok((24, 8)));
     assert_eq!(of(TypeKind::Optional(f64)), Ok((16, 8)));

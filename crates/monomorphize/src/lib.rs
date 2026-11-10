@@ -499,6 +499,10 @@ impl<'db> Substitution<'_, 'db> {
             }
             TypeKind::Tuple(items) => TypeKind::Tuple(list(items)),
             TypeKind::List(item) => TypeKind::List(self.ty(*item)),
+            TypeKind::Dict { key, value } => TypeKind::Dict {
+                key: self.ty(*key),
+                value: self.ty(*value),
+            },
             TypeKind::Optional(value) => TypeKind::Optional(self.ty(*value)),
             TypeKind::Array { element, rank } => TypeKind::Array {
                 element: self.ty(*element),

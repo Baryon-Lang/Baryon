@@ -201,6 +201,10 @@ impl<'db> Substitution<'_, 'db> {
             }
             TypeKind::Tuple(items) => TypeKind::Tuple(all(items)),
             TypeKind::List(item) => TypeKind::List(self.apply(db, *item)),
+            TypeKind::Dict { key, value } => TypeKind::Dict {
+                key: self.apply(db, *key),
+                value: self.apply(db, *value),
+            },
             TypeKind::Optional(value) => TypeKind::Optional(self.apply(db, *value)),
             TypeKind::Array { element, rank } => TypeKind::Array {
                 element: self.apply(db, *element),
