@@ -190,6 +190,10 @@ const RUNTIME: &str = r#"
                (long long)expected, (long long)found);
         stop(at);
     }
+    void baryon_rt_panic_exponent(int64_t exponent, const Location *at) {
+        printf("panic: negative exponent %lld in integer `**`\n", (long long)exponent);
+        stop(at);
+    }
     void baryon_rt_panic_index(int64_t index, uint32_t dimension, int64_t length,
                             const Location *at) {
         printf("panic: index %lld is out of range for dimension %u of length %lld\n",

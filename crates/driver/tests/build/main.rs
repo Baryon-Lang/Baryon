@@ -21,6 +21,7 @@ mod modules;
 mod overflow;
 mod parallel;
 mod shapes;
+mod statements;
 mod structs;
 mod testing;
 mod text;

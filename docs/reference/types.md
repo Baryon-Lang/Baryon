@@ -79,8 +79,8 @@ def double(n: i64) -> i64:
 ```
 
 `double(9223372036854775807)` panics with ``integer overflow in `+` `` in a debug build and returns
-`-2` in a release build. `+`, `-`, `*`, their in-place forms `+=`, `-=`, `*=`, and `-x` on a signed
-integer are checked, wherever they appear: in a generic function called with an integer type,
+`-2` in a release build. `+`, `-`, `*`, `**`, their in-place forms `+=`, `-=`, `*=`, `**=`, and `-x`
+on a signed integer are checked, wherever they appear: in a generic function called with an integer type,
 element by element in whole-array arithmetic such as `a + b` on integer arrays, and inside
 integer `a.sum()` and `v.dot(w)`. `abs` of the type's minimum, `abs(-9223372036854775808)`, does
 not fit either and panics with ``integer overflow in `-` ``. A result that differs between the two builds is an overflow the debug build
