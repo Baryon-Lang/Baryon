@@ -55,6 +55,7 @@ it by name. The first set:
 | `baryon_rt_panic(message, length, location)` | A panic whose message compiled code wrote: overflow, division by zero, a failed `assert` |
 | `baryon_rt_panic_index(index, dimension, length, location)` | An `IndexInBounds` check that failed (decision 0010) |
 | `baryon_rt_panic_length_mismatch(dimension, expected, found, location)` | A `SameLength` check that failed |
+| `baryon_rt_panic_slice(start, stop, dimension, length, location)` | A `SliceInBounds` check that failed (added 2026-11-09 with roadmap 1.9.16) |
 | `baryon_rt_chunk_count(iterations)`, `baryon_rt_parallel_for(iterations, body, context)` | A `prange` loop on the thread pool, in fixed chunks |
 
 A `location` is a pointer to a constant the backend emits per check: file name, line and column,

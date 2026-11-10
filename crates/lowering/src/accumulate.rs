@@ -11,14 +11,25 @@
 //! the struct through its own parameter, for every other field and for the array's lengths, and
 //! an add whose target starts with `atoms.forces` goes to the accumulated parameter instead.
 //!
+//! A slice of the array, `forces[a:b] += v` or `forces[j, :] += f` (roadmap 1.12.7), becomes a
+//! loop nest over the slice with one `Accumulate` per element, at the array's own index
+//! `start + k * step` in each range dimension, so the backend sees only elements, as it does
+//! for `forces[j] += f`. The slice's ranges are checked once, before the loop; an array on the
+//! right is checked to have the slice's lengths and read element by element. A right side that
+//! is neither a number nor an array variable, field or slice, such as `0.5 * f`, is computed
+//! into a new array first, which costs an allocation per add.
+//!
 //! The checker already allows nothing else on an accumulated array inside the loop: no read, no
-//! `=`, no call, and it lists only variables and their fields. Not lowered yet: a slice or a
-//! whole array as the target of the add.
+//! `=`, no call, and it lists only variables and their fields. Not lowered yet: the whole array
+//! as the target of the add.
 
 use crate::builder::Builder;
 use crate::parallel::Passed;
 use database::Definition;
-use mir::{AccumulateOperator, BinaryOperator, Local, Place, Projection, StatementKind};
+use mir::{
+    AccumulateOperator, BinaryOperator, Check, Local, Operand, Place, Projection, Rvalue,
+    SliceIndex, StatementKind, TerminatorKind,
+};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Mode, Type, TypeKind};
 
@@ -133,15 +144,15 @@ impl<'db> Builder<'db> {
                     .unsupported(statement, "this in-place operator on an accumulated array");
             }
         };
+        if place.is_view() {
+            return self.accumulate_view(place, operator, ty, value, statement);
+        }
         let indexed = place
             .projections
             .iter()
             .any(|projection| matches!(projection, Projection::Index(_)));
         if !indexed || matches!(ty.kind(self.db), TypeKind::Array { .. }) {
-            return self.unsupported(
-                statement,
-                "adding into a slice or a whole accumulated array",
-            );
+            return self.unsupported(statement, "adding into a whole accumulated array");
         }
         let value = self.operand_as(value, ty);
         self.push(
@@ -152,6 +163,136 @@ impl<'db> Builder<'db> {
             },
             statement,
         );
+    }
+}
+
+impl<'db> Builder<'db> {
+    /// `view op= value` where `view` is a slice of an accumulated array, of type `ty`: one
+    /// `Accumulate` per element of the slice, as the module documentation describes.
+    fn accumulate_view(
+        &mut self,
+        view: Place,
+        operator: AccumulateOperator,
+        ty: Type<'db>,
+        value: NodeId,
+        statement: NodeId,
+    ) {
+        let mut base = view;
+        let Some(Projection::Slice(dimensions)) = base.projections.pop() else {
+            return;
+        };
+        let element = self.element(ty);
+        let lengths: Vec<Operand<'db>> = dimensions
+            .iter()
+            .filter_map(|dimension| match dimension {
+                SliceIndex::Range { length, .. } => Some(Operand::Copy(Place::from(*length))),
+                SliceIndex::Index(_) => None,
+            })
+            .collect();
+        let right_type = self.ty(value);
+        let right = self.accumulated_value(value, element, &lengths, statement);
+        let right_element = self.element(right_type);
+        self.loop_nest(
+            &lengths,
+            &mut Vec::new(),
+            statement,
+            &mut |builder, counters| {
+                let positions = counters.to_vec();
+                let mut counters = counters.iter();
+                let int = builder.int_type();
+                let mut indices = Vec::with_capacity(dimensions.len());
+                for dimension in &dimensions {
+                    indices.push(match dimension {
+                        SliceIndex::Index(index) => *index,
+                        SliceIndex::Range { start, step, .. } => {
+                            let Some(&counter) = counters.next() else {
+                                return;
+                            };
+                            // start + counter * step: inside the dimension, as the slice's check
+                            // proved for every counter below the range's length.
+                            let index = builder.temporary(int, statement);
+                            builder.assign(
+                                Place::from(index),
+                                Rvalue::Binary(
+                                    BinaryOperator::Multiply,
+                                    Operand::Copy(Place::from(counter)),
+                                    Operand::Copy(Place::from(*step)),
+                                ),
+                                statement,
+                            );
+                            builder.assign(
+                                Place::from(index),
+                                Rvalue::Binary(
+                                    BinaryOperator::Add,
+                                    Operand::Copy(Place::from(*start)),
+                                    Operand::Copy(Place::from(index)),
+                                ),
+                                statement,
+                            );
+                            index
+                        }
+                    });
+                }
+                let value = match &right {
+                    Ok(number) => number.clone(),
+                    Err(array) => {
+                        let at = array.clone().project(Projection::Index(positions));
+                        builder.convert(Operand::Copy(at), right_element, element, statement)
+                    }
+                };
+                builder.push(
+                    StatementKind::Accumulate {
+                        place: base.clone().project(Projection::Index(indices)),
+                        operator,
+                        value,
+                    },
+                    statement,
+                );
+            },
+        );
+    }
+
+    /// The right side `value` of an add into a slice of an accumulated array whose lengths are
+    /// `lengths`: a number, converted to `element`, or the place of an array, checked to have
+    /// those lengths. An array that is not a place is computed into a new one first.
+    fn accumulated_value(
+        &mut self,
+        value: NodeId,
+        element: Type<'db>,
+        lengths: &[Operand<'db>],
+        statement: NodeId,
+    ) -> Result<Operand<'db>, Place> {
+        let ty = self.ty(value);
+        if !self.is_array(ty) {
+            return Ok(self.operand_as(value, element));
+        }
+        let place = if let Some(place) = self.place(value) {
+            place
+        } else {
+            let copy = self.temporary(ty, value);
+            self.write(Place::from(copy), ty, value);
+            self.drop_later(copy);
+            Place::from(copy)
+        };
+        for (dimension, expected) in (0u32..).zip(lengths) {
+            let found = self.length(&place, ty, dimension, value);
+            let same = self.temporary(self.boolean_type(), value);
+            self.assign(
+                Place::from(same),
+                Rvalue::Binary(BinaryOperator::Equal, found.clone(), expected.clone()),
+                value,
+            );
+            self.then(statement, |target| TerminatorKind::Assert {
+                condition: Operand::Copy(Place::from(same)),
+                check: Check::SameLength {
+                    dimension,
+                    expected: expected.clone(),
+                    found,
+                },
+                target,
+            });
+        }
+        Err(place)
     }
 }
 

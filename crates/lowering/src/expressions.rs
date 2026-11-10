@@ -65,6 +65,11 @@ impl<'db> Builder<'db> {
         if !self.is_array_attribute(node)
             && let Some(place) = self.place(node)
         {
+            if place.is_view() {
+                // A view is a borrow: where a value is needed, its elements are copied.
+                let copy = self.copy_view(place, ty, node);
+                return Operand::Move(Place::from(copy));
+            }
             return self.take(place, ty);
         }
         if matches!(
