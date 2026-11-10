@@ -219,12 +219,12 @@ error: parameter `steps` needs a type
   |                             ^^^^^ no type annotation
   = note: every parameter's type is written: `steps: f64`
 
-error: a union type can only add `None` to a type
+error: `f64` cannot be a member of a union
  --> main.byn:1:43
   |
 1 | def solve(grid: Array[f64], steps, scale: f64 | i64, out: list[InOut[f64]]) -> Self:
-  |                                           ^^^^^^^^^ only `T | None` is a type
-  = note: a value that may be one of several types is not supported; use separate functions, or an enum for a fixed set of choices
+  |                                           ^^^ not a struct, enum or error type
+  = note: a union's members are structs, enums, error types and `None`; numbers, strings, arrays and type parameters are not supported in version 0 (decision 0032)
 
 error: `InOut` can only wrap the type of a parameter
  --> main.byn:1:64

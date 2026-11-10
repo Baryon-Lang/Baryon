@@ -379,14 +379,13 @@ class Boundary(Enum):
 
 A class with the base `Enum` is an enumeration of named constants, as in Python. Enums are `Copy`
 and can be compared with `==` and `!=`, but not ordered with `<`. A value that is one of several
-kinds, each with its own data, is a union of structs instead
-([decision 0032](../decisions/0032-sum-types-are-unions-of-structs.md)); the compiler does not
-accept it yet (roadmap 1.7.13).
+kinds, each with its own data, is a [union of structs](#unions-of-structs) instead.
 
 A `match` must handle every value of its subject. Over an enum, that means a `case` for each
 member or a final `case _:`; the compiler names a member that is missing, so adding a member to an
 enum points at every `match` that needs a new case. The same holds for `bool` (`True` and `False`),
-`T | None` (`None` and the values of `T`) and tuples of these, taken apart item by item. A number
+`T | None` (`None` and the values of `T`), [unions](#unions-of-structs) (each member), structs
+taken apart by class patterns, and tuples of these, taken apart item by item. A number
 or a string has too many values to list, so a `match` on one needs `case _:` or a capture. A `case`
 with an `if` guard may not match, so it does not count towards handling every value.
 
@@ -398,6 +397,95 @@ def wrap(boundary: Boundary, index: i64, n: i64) -> i64:
         case Boundary.REFLECTING | Boundary.ABSORBING:
             return min(index, n - 1)
 ```
+
+## Unions of structs
+
+A value that is exactly one of several kinds, each kind with its own data, is a *union*: each kind
+is an ordinary struct, and the union joins them with `|`, usually under a [type alias](#type-aliases)
+([decision 0032](../decisions/0032-sum-types-are-unions-of-structs.md)). Rust calls this an enum
+with data; typed Python writes it the same way as here.
+
+```python
+class Periodic(Struct, Copy):
+    pass
+
+
+class Dirichlet(Struct, Copy):
+    value: f64
+
+
+class Neumann(Struct, Copy):
+    flux: f64
+
+
+class Robin(Struct, Copy):
+    a: f64
+    b: f64
+    g: f64
+
+
+Boundary = Periodic | Dirichlet | Neumann | Robin
+```
+
+- A union's members are structs, error types, enums and `None`. A number, string, array or type
+  parameter is not a member in version 0, and neither is a generic struct used with a type
+  parameter. `T | None` with one `T` of any type is the [optional value](#optional-values) it
+  always was.
+- Order and repeats do not matter, and a union inside a union is flattened:
+  `Dirichlet | Periodic` is the same type as `Periodic | Dirichlet`, and `Hit | None` with
+  `Hit = Wall | Side` is `Wall | Side | None`.
+- A kind with no data is a struct with no fields, made with `Periodic()`.
+
+A member's value is accepted wherever its union is expected:
+
+```python
+def solve(left: Boundary, right: Boundary) -> Array[f64, 1]: ...
+
+temperature = solve(Dirichlet(300.0), Neumann(0.0))
+```
+
+The reverse needs a check: a `Boundary` is never used as a `Dirichlet` until a `match` has shown
+it is one. A union is not accepted where a wider union is expected yet, such as a
+`Periodic | Dirichlet` passed as a `Boundary`.
+
+`match` takes a union apart with class patterns. A class pattern names a struct and matches its
+fields by position, in declaration order, or by keyword; fields it does not name match anything.
+A capture binds the field's value.
+
+```python
+def ghost_value(boundary: Boundary, inside: f64, dx: f64) -> f64:
+    """The temperature one cell outside the edge that enforces `boundary`."""
+    match boundary:
+        case Periodic():
+            return inside
+        case Dirichlet(value=v):
+            return 2.0 * v - inside
+        case Neumann(flux):
+            return inside + flux * dx
+        case Robin(a, b, g):
+            return (g * dx + (b - 0.5 * a * dx) * inside) / (b + 0.5 * a * dx)
+```
+
+The `match` must have a case for each member, or a final `case _:`. Leaving out `Robin` is a
+compile error that names it, so adding a kind to `Boundary` points at every `match` that must
+handle it:
+
+```text
+error: this `match` does not handle `Robin()`
+```
+
+On a union with an enum member, `case Side.LEFT:` matches that member of the enum, and on one with
+`None`, `case None:` matches `None`. Class patterns work on a plain struct too, such as
+`match wall: case Dirichlet(value=v): ...`.
+
+A union of `Copy` members is `Copy`; otherwise it moves, as a struct does. A union value is a tag
+followed by room for its largest member, so an `Array` of a union stores every element at the
+size of the largest kind: a `Periodic` in a `Boundary` array takes 32 bytes, 24 for the fields of a
+`Robin` and 8 for the tag and its padding.
+A hot loop over millions of values of one kind is faster with its own array of that kind.
+
+`baryon check` checks unions today; building them is the next step of roadmap item 1.7.13 (see
+[What builds today](status.md#types)).
 
 ## Errors
 

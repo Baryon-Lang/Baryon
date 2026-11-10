@@ -33,6 +33,7 @@ mod assignment;
 mod binding;
 mod builtins;
 mod calls;
+mod class_patterns;
 mod complex;
 mod dicts;
 mod elementwise;

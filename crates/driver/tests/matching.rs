@@ -129,12 +129,12 @@ error: a tuple pattern of 2 items cannot match a value of type `i64`
 19 |         case (a, b):
    |              ^^^^^^ does not match the subject
 
-error: this kind of pattern is not supported
+error: `Boundary` is not a struct
   --> main.byn:21:14
    |
 21 |         case Boundary(x=1):
-   |              ^^^^^^^^^^^^^ not supported
-   = note: a `case` matches literals, enum members, `True`, `False`, `None`, tuples, names and `_`
+   |              ^^^^^^^^ expected a struct
+   = note: a class pattern names a struct or an error type, such as `case Dirichlet(value=v):`
 
 error: this `match` does not handle `(_, False)`
   --> main.byn:25:11
