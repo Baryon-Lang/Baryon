@@ -40,7 +40,7 @@ pub(crate) fn repr(real: &str, imaginary: &str, positive_zero: bool) -> String {
 
 /// One part as Python writes it in a complex number: as a float's `repr`, without the `.0` of a
 /// whole number.
-fn part(shortest: &str) -> String {
+pub(crate) fn part(shortest: &str) -> String {
     let text = print::float(shortest);
     match text.strip_suffix(".0") {
         Some(whole) => whole.to_owned(),

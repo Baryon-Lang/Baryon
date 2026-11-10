@@ -46,6 +46,7 @@ impl<'db> Body<'db> {
             TypeKind::Primitive(Primitive::Integer(_)) => FormatClass::Integer,
             TypeKind::Primitive(Primitive::Float(_)) => FormatClass::Float,
             TypeKind::Primitive(Primitive::Bool) => FormatClass::Bool,
+            TypeKind::Primitive(Primitive::Complex(_)) => FormatClass::Complex,
             TypeKind::Str => FormatClass::Text,
             _ => return,
         };

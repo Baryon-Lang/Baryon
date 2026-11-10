@@ -8,7 +8,7 @@
 //! fours for binary, octal and hexadecimal), and `g` drops trailing zeros. A value with the empty
 //! specification is written as `print` writes it, so `f"{x}"` and `print(x)` agree.
 
-use crate::print;
+use crate::{complex, print};
 
 /// A format specification's parts, laid out for C: the form the compiler passes them in, as a
 /// constant `{ i32, i8, i8, i8, i8, i8, i8, i64, i64 }`. A null pointer in its place means the
@@ -175,6 +175,74 @@ pub(crate) fn float(value: f64, single: bool, spec: &FormatSpec) -> String {
         .unwrap_or(body.len());
     let (digits, rest) = body.split_at(split);
     number(&sign, "", digits, &format!("{rest}{suffix}"), 3, spec)
+}
+
+/// The complex number `real + imaginary j` formatted with `spec`, as Python's
+/// `complex.__format__` does. `single` says the parts are `f32`s.
+///
+/// With no type letter, each part is written as `repr` writes it in a complex number, inside
+/// parentheses, or alone when the real part is `+0.0`, as `print` writes the number; a precision
+/// then means `g` with that precision, still in parentheses. With a type letter, each part is
+/// formatted with it and there are no parentheses: `f"{1+2j:.2f}"` is `1.00+2.00j`. The
+/// imaginary part always has a sign, unless it stands alone. The sign, grouping and precision
+/// apply to each part; the width, fill and alignment to the whole. The compiler has rejected
+/// `0`, `#`, `=` and `%`, as Python does.
+pub(crate) fn complex(real: f64, imaginary: f64, single: bool, spec: &FormatSpec) -> String {
+    let typed = spec.presentation != 0;
+    let alone = !typed && real == 0.0 && real.is_sign_positive();
+    let part_spec = FormatSpec {
+        fill: u32::from(b' '),
+        align: 0,
+        width: -1,
+        presentation: if typed || spec.precision < 0 {
+            spec.presentation
+        } else {
+            b'g'
+        },
+        ..*spec
+    };
+    let imaginary_spec = FormatSpec {
+        sign: if alone { spec.sign } else { b'+' },
+        ..part_spec
+    };
+    let part = |value: f64, part_spec: &FormatSpec| {
+        if part_spec.presentation != 0 {
+            return float(value, single, part_spec);
+        }
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "an `f32` part widened to `f64` narrows back exactly"
+        )]
+        let shortest = if single {
+            format!("{:e}", value.abs() as f32)
+        } else {
+            format!("{:e}", value.abs())
+        };
+        let body = complex::part(&shortest);
+        let sign = sign(value.is_sign_negative() && !value.is_nan(), part_spec);
+        let split = body
+            .find(|character: char| !character.is_ascii_digit())
+            .unwrap_or(body.len());
+        let (digits, rest) = body.split_at(split);
+        // `#` keeps a point in every finite part, as Python writes `1.e+20` and `2.j`.
+        let pointed;
+        let rest = if part_spec.alternate == 1 && value.is_finite() && !rest.starts_with('.') {
+            pointed = format!(".{rest}");
+            pointed.as_str()
+        } else {
+            rest
+        };
+        number(&sign, "", digits, rest, 3, part_spec)
+    };
+    let imaginary = format!("{}j", part(imaginary, &imaginary_spec));
+    let body = if alone {
+        imaginary
+    } else if typed {
+        format!("{}{imaginary}", part(real, &part_spec))
+    } else {
+        format!("({}{imaginary})", part(real, &part_spec))
+    };
+    pad(&body, "", spec, b'>')
 }
 
 /// `value`, not negative, in fixed point with `precision` digits after the point; a point with

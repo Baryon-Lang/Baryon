@@ -2,7 +2,8 @@
 
 use super::{FormatSpec, boolean, float, signed, text};
 
-/// What Python 3 writes for `format(value, spec)` across integers, `bool`s, floats and text.
+/// What Python 3 writes for `format(value, spec)` across integers, `bool`s, floats, text and
+/// complex numbers.
 const PYTHON: &str = include_str!("python.tsv");
 
 /// The [`FormatSpec`] of `text`, a specification the compiler would accept: a small parser for the
@@ -76,6 +77,15 @@ fn every_value_formats_as_python_formats_it() {
             "bool" => boolean(value == "true", &spec),
             "float" => float(value.parse().unwrap(), false, &spec),
             "text" => text(value, &spec),
+            "complex" => {
+                let (real, imaginary) = value.split_once(',').unwrap();
+                super::complex(
+                    real.parse().unwrap(),
+                    imaginary.parse().unwrap(),
+                    false,
+                    &spec,
+                )
+            }
             _ => panic!("an unknown kind: {kind}"),
         };
         if written != expected {
@@ -99,4 +109,7 @@ fn an_f32_keeps_its_own_shortest_digits() {
         float(f64::from(0.1_f32), false, &FormatSpec::DEFAULT),
         "0.10000000149011612"
     );
+    let (real, imaginary) = (f64::from(0.1_f32), f64::from(0.2_f32));
+    let written = super::complex(real, imaginary, true, &FormatSpec::DEFAULT);
+    assert_eq!(written, "(0.1+0.2j)");
 }

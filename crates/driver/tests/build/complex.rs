@@ -55,3 +55,28 @@ def main():
 "
     );
 }
+
+/// Complex numbers in f-strings: the empty specification as `print` writes them, a type letter
+/// on each part without parentheses, a width on the whole, `#` keeping every point, and the reference's worked example.
+/// Every line is what CPython writes for the same f-strings.
+#[test]
+fn complex_numbers_format_in_f_strings_as_python_does() {
+    let program = "\
+def impedance(resistance: f64, reactance: f64) -> str:
+    z = complex(resistance, reactance)
+    return f\"Z = {z:.1f} ohm, |Z| = {abs(z):.2f}\"
+
+
+def main():
+    z = complex(1.0, -2.5)
+    w = complex64(complex(0.1, 0.2))
+    print(f\"{z} {z:.2f} [{z:>14}] {2j} {w} {z:+.3e} {z:#} {z:#.0f}\")
+    print(impedance(3.0, -4.0))
+";
+    super::examples::prints(
+        "complex-format",
+        program,
+        "(1-2.5j) 1.00-2.50j [      (1-2.5j)] 2j (0.1+0.2j) +1.000e+00-2.500e+00j (1.-2.5j) 1.-2.j\nZ = 3.0-4.0j ohm, |Z| = 5.00\n",
+    )
+    .unwrap();
+}
