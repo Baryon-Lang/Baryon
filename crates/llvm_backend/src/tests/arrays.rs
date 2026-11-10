@@ -357,8 +357,8 @@ fn popped<'db>(types: &Types<'db>, list: Type<'db>, elements: &[i128]) -> Body<'
         xs,
         Rvalue::Aggregate(list, elements.iter().copied().map(number).collect()),
     )];
-    let last = body.push_block(end(TerminatorKind::Return));
-    body.blocks[last.index()].statements = vec![mir::Statement {
+    let end_block = body.push_block(end(TerminatorKind::Return));
+    body.blocks[end_block.index()].statements = vec![mir::Statement {
         kind: StatementKind::Drop(xs.into()),
         span: span(),
     }];

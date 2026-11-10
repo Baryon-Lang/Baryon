@@ -126,15 +126,15 @@ impl<'db> Function<'_, '_, 'db> {
         let length = self.emit(&format!("load i64, ptr {length_at}"));
         let filled = self.emit(&format!("icmp sgt i64 {length}, 0"));
         self.check(&filled, &Failure::Message("pop from empty list".to_owned()));
-        let last = self.emit(&format!("sub i64 {length}, 1"));
+        let shorter = self.emit(&format!("sub i64 {length}, 1"));
         let data = self.emit(&format!("load ptr, ptr {header}"));
         let at = self.emit(&format!(
-            "getelementptr inbounds {llvm}, ptr {data}, i64 {last}"
+            "getelementptr inbounds {llvm}, ptr {data}, i64 {shorter}"
         ));
         let value = self.emit(&format!("load {llvm}, ptr {at}"));
         let (address, _) = self.place(destination)?;
         self.line(&format!("store {llvm} {value}, ptr {address}"));
-        self.line(&format!("store i64 {last}, ptr {length_at}"));
+        self.line(&format!("store i64 {shorter}, ptr {length_at}"));
         self.line(&format!("br label %{}", block_label(target)));
         Ok(())
     }
