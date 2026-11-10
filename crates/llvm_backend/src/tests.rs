@@ -8,6 +8,7 @@ mod arrays;
 mod debug;
 mod dicts;
 mod errors;
+mod files;
 mod math;
 mod panics;
 mod parallel;
