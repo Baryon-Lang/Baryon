@@ -3,7 +3,7 @@
 This page sets up Visual Studio Code for Baryon and walks through a first program in it: build the
 compiler, install the extension, open a package, write code with errors underlined as you type,
 read types and documentation on hover, jump to definitions and complete names, then run it and
-test it. It is written for people trying the 0.1.0 review release, and takes about fifteen
+test it. It is written for people trying release 0.2.0, and takes about fifteen
 minutes.
 
 Like the [beginner's guide](README.md), every program here is built and run in CI exactly as
