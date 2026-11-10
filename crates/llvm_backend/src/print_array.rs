@@ -87,7 +87,7 @@ impl<'db> Function<'_, '_, 'db> {
 
     /// The runtime's number for arrays of `element`, one of its `ELEMENT_*` constants, or `None`
     /// for an element type it cannot print.
-    fn element_code(&self, element: Type<'db>) -> Option<u32> {
+    pub(crate) fn element_code(&self, element: Type<'db>) -> Option<u32> {
         if let Some(part) = self.complex_part(element) {
             return Some(if part == Float::F32 { 11 } else { 12 });
         }

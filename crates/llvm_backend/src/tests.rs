@@ -13,6 +13,7 @@ mod panics;
 mod parallel;
 mod print;
 mod process;
+mod sorting;
 mod string_methods;
 mod text;
 mod vector;
