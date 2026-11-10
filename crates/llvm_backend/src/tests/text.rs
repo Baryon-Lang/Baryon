@@ -1,7 +1,9 @@
 //! `str` values (decision 0022): a literal is a constant with the "not owned" bit, printing
 //! masks the bit off, and a drop frees only when the bit is clear.
 
-use super::{Database, Module, assign, end, module, no_structs, parameter, primitive, sources};
+use super::{
+    Database, Module, assign, end, module, no_names, no_structs, parameter, primitive, sources,
+};
 use super::{span, symbol_of};
 use mir::{Argument, BlockId, Body, Builtin, Callee, Constant, ConstantValue, Operand, Rvalue};
 use mir::{Local, LocalKind, Piece, Statement, StatementKind, TerminatorKind};
@@ -45,7 +47,7 @@ fn literals_are_flagged_and_drops_free_only_owned_bytes() {
     }];
     let symbol = symbol_of(&database);
     let sources = sources();
-    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    let mut module = Module::new(&database, &sources, &no_structs, &no_names, &symbol);
     module.define("show", &body, &[]).unwrap();
     assert_eq!(
         module.finish(),
@@ -141,6 +143,107 @@ declare { ptr, i64 } @baryon_rt_text_finish(ptr) nounwind
 declare void @baryon_rt_text_i64(ptr, i64, ptr) nounwind
 declare ptr @baryon_rt_text_new() nounwind
 declare void @baryon_rt_text_str(ptr, ptr, i64, ptr) nounwind
+"
+    );
+}
+
+/// `def facts(name: str) -> bool`: compares `name` with the literal `"heat"`, counts its
+/// characters and asks whether `"ea"` is in it, each through the runtime with the strings'
+/// byte pointers and lengths, the bit masked off; the comparison's C `int` widens to `i64`.
+#[test]
+fn comparisons_searches_and_lengths_call_the_runtime() {
+    let database = Database::default();
+    let str = Type::new(&database, TypeKind::Str);
+    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
+    let bool = primitive(&database, Primitive::Bool);
+    let literal = |text: &str| {
+        Argument::Owned(Operand::Constant(Constant {
+            ty: str,
+            value: ConstantValue::Str(text.to_owned()),
+        }))
+    };
+    let mut body = Body::new(bool, span());
+    let name = body.push_local(str, parameter("name", Mode::Borrow), span());
+    let order = body.push_local(i64, LocalKind::Temporary, span());
+    let length = body.push_local(i64, LocalKind::Temporary, span());
+    let calls = [
+        (
+            Builtin::CompareStr,
+            vec![Argument::Borrow(name.into()), literal("heat")],
+            order,
+        ),
+        (
+            Builtin::LengthStr,
+            vec![Argument::Borrow(name.into())],
+            length,
+        ),
+        (
+            Builtin::ContainsStr,
+            vec![Argument::Borrow(name.into()), literal("ea")],
+            Local::RETURN,
+        ),
+    ];
+    for (index, (builtin, arguments, destination)) in calls.into_iter().enumerate() {
+        body.push_block(end(TerminatorKind::Call {
+            callee: Callee::Builtin(builtin),
+            arguments,
+            destination: destination.into(),
+            target: BlockId::new(index + 1),
+            error: None,
+        }));
+    }
+    body.push_block(end(TerminatorKind::Return));
+    assert_eq!(
+        module(&database, &[("facts", body)]),
+        "\
+define i1 @facts(ptr noalias readonly %a1) {
+start:
+  %_0 = alloca i1
+  %_2 = alloca i64
+  %_3 = alloca i64
+  br label %bb0
+bb0:
+  %t0 = load { ptr, i64 }, ptr %a1
+  %t1 = extractvalue { ptr, i64 } %t0, 0
+  %t2 = extractvalue { ptr, i64 } %t0, 1
+  %t3 = and i64 %t2, 9223372036854775807
+  %t4 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775804 }, 0
+  %t5 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775804 }, 1
+  %t6 = and i64 %t5, 9223372036854775807
+  %t7 = call i32 @baryon_rt_str_compare(ptr %t1, i64 %t3, ptr %t4, i64 %t6)
+  %t8 = sext i32 %t7 to i64
+  store i64 %t8, ptr %_2
+  br label %bb1
+bb1:
+  %t9 = load { ptr, i64 }, ptr %a1
+  %t10 = extractvalue { ptr, i64 } %t9, 0
+  %t11 = extractvalue { ptr, i64 } %t9, 1
+  %t12 = and i64 %t11, 9223372036854775807
+  %t13 = call i64 @baryon_rt_str_length(ptr %t10, i64 %t12)
+  store i64 %t13, ptr %_3
+  br label %bb2
+bb2:
+  %t14 = load { ptr, i64 }, ptr %a1
+  %t15 = extractvalue { ptr, i64 } %t14, 0
+  %t16 = extractvalue { ptr, i64 } %t14, 1
+  %t17 = and i64 %t16, 9223372036854775807
+  %t18 = extractvalue { ptr, i64 } { ptr @baryon.str.1, i64 -9223372036854775806 }, 0
+  %t19 = extractvalue { ptr, i64 } { ptr @baryon.str.1, i64 -9223372036854775806 }, 1
+  %t20 = and i64 %t19, 9223372036854775807
+  %t21 = call i1 @baryon_rt_str_contains(ptr %t15, i64 %t17, ptr %t18, i64 %t20)
+  store i1 %t21, ptr %_0
+  br label %bb3
+bb3:
+  %t22 = load i1, ptr %_0
+  ret i1 %t22
+}
+
+@baryon.str.0 = private unnamed_addr constant [4 x i8] c\"heat\"
+@baryon.str.1 = private unnamed_addr constant [2 x i8] c\"ea\"
+
+declare i32 @baryon_rt_str_compare(ptr, i64, ptr, i64) nounwind
+declare zeroext i1 @baryon_rt_str_contains(ptr, i64, ptr, i64) nounwind
+declare i64 @baryon_rt_str_length(ptr, i64) nounwind
 "
     );
 }

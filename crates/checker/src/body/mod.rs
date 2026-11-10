@@ -51,7 +51,7 @@ mod operators;
 mod parallel;
 mod patterns;
 mod random;
-mod relations;
+pub(crate) mod relations;
 mod shared;
 
 use crate::lower::Lowerer;

@@ -80,7 +80,13 @@ fn loop_nodes_share_the_debug_numbering() {
     let database = Database::default();
     let symbol = super::symbol_of(&database);
     let sources = super::sources();
-    let mut module = crate::Module::new(&database, &sources, &super::no_structs, &symbol);
+    let mut module = crate::Module::new(
+        &database,
+        &sources,
+        &super::no_structs,
+        &super::no_names,
+        &symbol,
+    );
     module.debug_info("/home/ada/heat");
     module.define("first", &counting(&database), &[]).unwrap();
     module.define("second", &counting(&database), &[]).unwrap();

@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Mutex, Once, PoisonError};
 
+mod array_methods;
 mod defaults;
 mod examples;
 mod generic_methods;
@@ -20,11 +21,13 @@ mod math;
 mod modules;
 mod overflow;
 mod parallel;
+mod print;
 mod shapes;
 mod statements;
 mod structs;
 mod testing;
 mod text;
+mod traits;
 mod vector;
 
 /// The `baryon` executable cargo built for these tests.

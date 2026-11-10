@@ -113,7 +113,8 @@
 //!
 //! let declared = |_: &types::Nominal<'_>| Declared::Struct(Vec::new());
 //! let symbol = |_: &types::Item<'_>, _: &[Type<'_>]| String::new();
-//! let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
+//! let names = |_: &types::Nominal<'_>| llvm_backend::ClassNames::default();
+//! let mut module = llvm_backend::Module::new(&database, &sources, &declared, &names, &symbol);
 //! module.define("double", &body, &[])?;
 //! assert_eq!(
 //!     module.finish(),
@@ -152,6 +153,7 @@ mod parallel;
 mod print;
 mod random;
 mod rvalue;
+mod strings;
 mod text;
 mod ty;
 
@@ -161,8 +163,21 @@ use std::fmt;
 use types::{Declared, Item, Nominal, Type};
 
 /// One test of a test program, as [`Module::tests`] takes it: the symbol of its function, and the
-/// error types the function can raise, each with its fields' names in declaration order.
-pub type Test<'a, 'db> = (&'a str, &'a [(Type<'db>, Vec<String>)]);
+/// error types the function can raise.
+pub type Test<'a, 'db> = (&'a str, &'a [Type<'db>]);
+
+/// The names `print` writes for a struct or an enum, and the report of an error that ends `main`
+/// writes for an error type: `Point(x=1.0, y=2.0)`, `Phase.GAS`. The type checker knows them;
+/// the application passes them to [`Module::new`] through a callback, so this crate needs no
+/// type checker.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ClassNames {
+    /// The class's name, without type arguments: `Pair`, not `Pair[f64]`, as a Python
+    /// dataclass prints itself.
+    pub class: String,
+    /// A struct's field names, or an enum's member names, in declaration order.
+    pub members: Vec<String>,
+}
 
 /// One LLVM module being written: the functions defined so far, and a declaration for each
 /// function they call that the module does not define.
@@ -183,18 +198,23 @@ pub struct Module<'a, 'db> {
 
 impl<'a, 'db> Module<'a, 'db> {
     /// An empty module. `sources` holds the files the bodies' spans point into, for the file,
-    /// line and column a panic reports; `declared` says what each struct or enum declares, with its type
-    /// arguments substituted, as [`types::layout`] needs; `symbol` names the instance of a
-    /// function at its type arguments, the same way for every module of a program so calls
-    /// between modules link.
+    /// line and column a panic reports; `declared` says what each struct or enum declares, with
+    /// its type arguments substituted, as [`types::layout`] needs; `names` gives the names
+    /// `print` writes for each struct or enum; `symbol` names the instance of a function at its
+    /// type arguments, the same way for every module of a program so calls between modules link.
     pub fn new(
         db: &'db dyn database::Db,
         sources: &'a dyn source::Sources,
         declared: &'a dyn Fn(&Nominal<'db>) -> Declared<'db>,
+        names: &'a dyn Fn(&Nominal<'db>) -> ClassNames,
         symbol: &'a dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
     ) -> Self {
         Self {
-            types: ty::Types { db, declared },
+            types: ty::Types {
+                db,
+                declared,
+                names,
+            },
             symbol,
             definitions: Vec::new(),
             constants: panic::Constants::new(sources),
@@ -252,19 +272,19 @@ impl<'a, 'db> Module<'a, 'db> {
     }
 
     /// Makes the function `symbol` the program's entry point: adds a C `main` that calls it and
-    /// returns 0, the exit status of a program that ran to its end. `symbol` takes no arguments
-    /// and returns `None`; a failed check inside it ends the program through the runtime with
-    /// status 101 instead.
+    /// returns 0, the exit status of a program that ran to its end, after the runtime writes out
+    /// a line `print(..., end="")` left unended. `symbol` takes no arguments and returns `None`;
+    /// a failed check inside it ends the program through the runtime with status 101 instead.
     ///
-    /// `errors` are the error types `symbol` can raise, in its `Raises` order, each with its
-    /// fields' names in declaration order; empty when it cannot fail. An error that reaches the
-    /// end of `main` is printed to standard error as `error: ParseError(position=-3)` and the
-    /// program returns 1 (the reference, "Errors").
+    /// `errors` are the error types `symbol` can raise, in its `Raises` order; empty when it
+    /// cannot fail. An error that reaches the end of `main` is printed to standard error as
+    /// `error: ParseError(position=-3)`, as `print` writes a struct, and the program returns 1
+    /// (the reference, "Errors").
     ///
     /// # Errors
     ///
     /// [`Unsupported`] when an error has a field this slice of the backend cannot print, such
-    /// as a `str`; the module is left as it was.
+    /// as an array; the module is left as it was.
     ///
     /// ```
     /// # #[salsa::db]
@@ -283,19 +303,19 @@ impl<'a, 'db> Module<'a, 'db> {
     /// let sources = source::SourceMap::new();
     /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
     /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
-    /// let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
+    /// let names = |_: &types::Nominal<'_>| llvm_backend::ClassNames::default();
+    /// let mut module =
+    ///     llvm_backend::Module::new(&database, &sources, &declared, &names, &symbol);
     /// module.entry("main.main", &[])?;
     /// assert_eq!(
     ///     module.finish(),
-    ///     "define i32 @main() {\nstart:\n  call void @main.main()\n  ret i32 0\n}\n"
+    ///     "define i32 @main() {\nstart:\n  call void @main.main()\n  \
+    ///      call void @baryon_rt_flush()\n  ret i32 0\n}\n\n\
+    ///      declare void @baryon_rt_flush() nounwind\n"
     /// );
     /// # Ok::<(), llvm_backend::Unsupported>(())
     /// ```
-    pub fn entry(
-        &mut self,
-        symbol: &str,
-        errors: &[(Type<'db>, Vec<String>)],
-    ) -> Result<(), Unsupported> {
+    pub fn entry(&mut self, symbol: &str, errors: &[Type<'db>]) -> Result<(), Unsupported> {
         let mark = self.constants.mark();
         let body = entry::no_body(self.types.db);
         let function =
@@ -341,12 +361,14 @@ impl<'a, 'db> Module<'a, 'db> {
     /// let sources = source::SourceMap::new();
     /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
     /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
-    /// let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
+    /// let names = |_: &types::Nominal<'_>| llvm_backend::ClassNames::default();
+    /// let mut module =
+    ///     llvm_backend::Module::new(&database, &sources, &declared, &names, &symbol);
     /// module.tests(&[("heat.test_flux", &[]), ("heat.test_energy", &[])])?;
     /// let text = module.finish();
     /// assert!(text.starts_with("define i32 @main(i32 %count, ptr %arguments) {"), "{text}");
-    /// assert!(text.contains("test1:\n  call void @heat.test_energy()\n  ret i32 0\n"), "{text}");
-    /// assert!(text.ends_with("declare i32 @atoi(ptr)\n"), "{text}");
+    /// assert!(text.contains("test1:\n  call void @heat.test_energy()\n"), "{text}");
+    /// assert!(text.contains("declare i32 @atoi(ptr)\n"), "{text}");
     /// # Ok::<(), llvm_backend::Unsupported>(())
     /// ```
     pub fn tests(&mut self, tests: &[Test<'_, 'db>]) -> Result<(), Unsupported> {
@@ -420,7 +442,9 @@ impl<'a, 'db> Module<'a, 'db> {
     /// let sources = source::SourceMap::new();
     /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
     /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
-    /// let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
+    /// let names = |_: &types::Nominal<'_>| llvm_backend::ClassNames::default();
+    /// let mut module =
+    ///     llvm_backend::Module::new(&database, &sources, &declared, &names, &symbol);
     /// module.debug_info("/home/ada/heat");
     /// assert!(module.finish().contains("emissionKind: LineTablesOnly"));
     /// ```
@@ -455,7 +479,9 @@ impl<'a, 'db> Module<'a, 'db> {
     /// let sources = source::SourceMap::new();
     /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
     /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
-    /// let mut module = llvm_backend::Module::new(&database, &sources, &declared, &symbol);
+    /// let names = |_: &types::Nominal<'_>| llvm_backend::ClassNames::default();
+    /// let mut module =
+    ///     llvm_backend::Module::new(&database, &sources, &declared, &names, &symbol);
     /// module.wrap_on_overflow();
     /// assert!(!module.finish().contains("baryon_rt_panic"));
     /// ```

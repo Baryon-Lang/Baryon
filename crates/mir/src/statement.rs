@@ -252,7 +252,9 @@ pub enum Builtin {
     /// a type yet reports it. The destination has type `None` and the call cannot fail.
     Print,
     /// A mathematical function of floats. Every argument and the destination have one float
-    /// type, `f32` or `f64`; lowering converts integer operands first. The call cannot fail.
+    /// type, `f32` or `f64`; lowering converts integer operands first. The one exception is
+    /// [`Power`](MathFunction::Power) of complex numbers, where every argument and the
+    /// destination have one complex type instead. The call cannot fail.
     Math(MathFunction),
     /// `a.sum()` of an `Array` or `Fixed` array of floats: one argument, the array, passed
     /// `Borrow`; the destination has the element type. The elements are added in row-major
@@ -282,6 +284,21 @@ pub enum Builtin {
     /// `f64`. It draws the generator's next 64-bit output `u` and gives `(u >> 11) * 2**-53`, a
     /// float in `[0, 1)`, as `NumPy`'s `Generator.random()` does. The call cannot fail.
     Uniform,
+    /// Compares two `str`s as Python orders them, by code point with a prefix first: two
+    /// arguments, each a `str` passed `Borrow`, or `Owned` for a literal; the destination has type
+    /// `i64` and gets -1 when the first comes first, 0 when they are equal and 1 when the second
+    /// comes first. Lowering compares that with 0 for `==`, `!=`, `<`, `<=`, `>` and `>=`. It
+    /// reads both strings, so it costs time linear in the shorter. The call cannot fail.
+    CompareStr,
+    /// `needle in haystack` on two `str`s: two arguments, the haystack then the needle, each
+    /// passed `Borrow`, or `Owned` for a literal; the destination has type `bool`. The empty
+    /// string is in every string. The search takes time linear in the two lengths. The call
+    /// cannot fail.
+    ContainsStr,
+    /// `len(text)` of a `str`: one argument passed `Borrow`, or `Owned` for a literal; the
+    /// destination has type `i64`. It counts characters, code points, as Python does, not bytes,
+    /// so it reads the whole string. The call cannot fail.
+    LengthStr,
 }
 
 impl Builtin {
@@ -295,6 +312,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Append.name(), "list.append");
     /// assert_eq!(mir::Builtin::Philox.name(), "random.Philox");
     /// assert_eq!(mir::Builtin::Uniform.name(), "Philox.uniform");
+    /// assert_eq!(mir::Builtin::ContainsStr.name(), "str in");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -306,6 +324,9 @@ impl Builtin {
             Self::Append => "list.append",
             Self::Philox => "random.Philox",
             Self::Uniform => "Philox.uniform",
+            Self::CompareStr => "str comparison",
+            Self::ContainsStr => "str in",
+            Self::LengthStr => "len of str",
         }
     }
 }
@@ -380,7 +401,8 @@ pub enum MathFunction {
     /// `math.fabs(x)`: the absolute value, always a float.
     Fabs,
     /// `math.hypot(x, y)`: `sqrt(x * x + y * y)` without overflow or underflow in between; two
-    /// arguments. Python's `hypot` of more than two arguments is not here.
+    /// arguments. Python's `hypot` of more than two arguments is not here. `abs` of a complex
+    /// number is `hypot` of its parts, as Python computes it.
     Hypot,
     /// `math.copysign(x, y)`: the size of `x` with the sign of `y`; two arguments.
     CopySign,
@@ -390,6 +412,12 @@ pub enum MathFunction {
     /// `math.fma(x, y, z)`: `x * y + z` rounded once; three arguments.
     FusedMultiplyAdd,
     /// `x ** y` on floats, and `math.pow(x, y)`: two arguments, the base then the exponent.
+    ///
+    /// Also `x ** y` on two complex numbers of one type, `complex64` or `complex128`, computed
+    /// as Python's `complex.__pow__` computes it: by repeated squaring for a whole exponent of
+    /// at most 100 in size, through polar form otherwise. Where Python raises
+    /// `ZeroDivisionError`, zero to a negative or complex power, the result is `nan+nanj`, as
+    /// `NumPy` gives; where it raises `OverflowError`, the parts are infinite.
     Power,
     /// `math.floor(x)` before its conversion to an integer: the largest whole number not above
     /// `x`, still a float.
@@ -515,6 +543,20 @@ pub enum Check<'db> {
         /// The dimension's length.
         length: Operand<'db>,
     },
+    /// A slice's range lies within its dimension (language reference, "Arrays", "Slicing"):
+    /// `start` and `stop` are each from 0 to the length, and when the range takes any element
+    /// its first, at `start`, is below the length. Python shortens such a slice; here it is
+    /// the bug it usually is.
+    SliceInBounds {
+        /// The dimension sliced, 0 for the outermost, so the panic message can name it.
+        dimension: u32,
+        /// Where the range starts, as the program wrote it or its default.
+        start: Operand<'db>,
+        /// Where the range stops, as the program wrote it or its default.
+        stop: Operand<'db>,
+        /// The dimension's length.
+        length: Operand<'db>,
+    },
     /// An integer operation did not overflow.
     NoOverflow(BinaryOperator),
     /// An integer `**` did not overflow. Lowering writes integer `x ** n` as repeated squaring,
@@ -523,10 +565,14 @@ pub enum Check<'db> {
     NoPowerOverflow,
     /// A divisor is not zero.
     NonZeroDivisor,
-    /// The step of a `range` is not zero, which Python reports as a `ValueError`. Lowering
-    /// writes it only for a step that is not a constant; a constant zero is reported when
-    /// building.
-    NonZeroStep,
+    /// The step of a `range` or a slice is not zero, which Python reports as a `ValueError`:
+    /// `range() arg 3 must not be zero`, or `slice step cannot be zero`. Lowering writes it only
+    /// for a step that is not a constant; a constant zero is reported when building.
+    NonZeroStep {
+        /// Whether the step is a slice's, `a[::k]`, rather than a `range`'s, which picks the
+        /// panic message.
+        slice: bool,
+    },
     /// The exponent of an integer `**` is zero or more: a negative exponent would need a
     /// fraction, which an integer cannot hold (language reference, "Errors and panics").
     NonNegativeExponent {
@@ -557,6 +603,12 @@ impl<'db> Check<'db> {
     pub fn operands(&self) -> Vec<&Operand<'db>> {
         match self {
             Self::IndexInBounds { index, length, .. } => vec![index, length],
+            Self::SliceInBounds {
+                start,
+                stop,
+                length,
+                ..
+            } => vec![start, stop, length],
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
@@ -564,7 +616,7 @@ impl<'db> Check<'db> {
             Self::NoOverflow(_)
             | Self::NoPowerOverflow
             | Self::NonZeroDivisor
-            | Self::NonZeroStep
+            | Self::NonZeroStep { .. }
             | Self::Assertion
             | Self::NotEmpty => Vec::new(),
         }
@@ -580,7 +632,7 @@ impl<'db> Check<'db> {
     ///
     /// assert!(Check::NoOverflow(BinaryOperator::Add).is_overflow());
     /// assert!(Check::NoPowerOverflow.is_overflow());
-    /// assert!(!Check::NonZeroStep.is_overflow());
+    /// assert!(!Check::NonZeroStep { slice: false }.is_overflow());
     /// ```
     #[must_use]
     pub fn is_overflow(&self) -> bool {
@@ -592,6 +644,12 @@ impl<'db> Check<'db> {
     pub fn operands_mut(&mut self) -> Vec<&mut Operand<'db>> {
         match self {
             Self::IndexInBounds { index, length, .. } => vec![index, length],
+            Self::SliceInBounds {
+                start,
+                stop,
+                length,
+                ..
+            } => vec![start, stop, length],
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
@@ -599,7 +657,7 @@ impl<'db> Check<'db> {
             Self::NoOverflow(_)
             | Self::NoPowerOverflow
             | Self::NonZeroDivisor
-            | Self::NonZeroStep
+            | Self::NonZeroStep { .. }
             | Self::Assertion
             | Self::NotEmpty => Vec::new(),
         }

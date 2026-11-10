@@ -2,8 +2,9 @@
 //!
 //! The language prints values as Python does (decision 0004, Python's spelling and behavior where
 //! Python has them), so a script ported from Python prints the same lines. Compiled code calls
-//! one runtime function per argument, and prints the separator and the line end with
-//! [`baryon_rt_print_str`](crate::baryon_rt_print_str): `print(a, b)` is four calls. Each call names
+//! one runtime function per argument, and prints the separator and the line end, which may be
+//! `sep=` and `end=`, with [`baryon_rt_print_str`](crate::baryon_rt_print_str): `print(a, b)` is
+//! four calls. Each call names
 //! its stream: 1 for standard output, where `print` writes, or 2 for standard error, where the
 //! report of an error that ends `main` goes.
 //!
@@ -11,7 +12,8 @@
 //! value, `.0` on a whole number, and an exponent below `1e-4` and from `1e16` up.
 //!
 //! Output goes through Rust's standard output, which holds a line until it ends and then writes
-//! it, so a program that prints many lines makes one system call per line. Each argument is a
+//! it, so a program that prints many lines makes one system call per line. What is held when
+//! the program ends, a line `end=""` left open, is written by [`flush`]. Each argument is a
 //! separate call, so the pieces of lines printed by different threads of a `prange` loop can
 //! interleave. A failed write, such as to a closed pipe, is ignored: the program carries on, as
 //! one printing to `head` should.
@@ -28,6 +30,14 @@ pub(crate) fn write(stream: i32, text: &str) {
     } else {
         std::io::stdout().lock().write_all(text.as_bytes())
     };
+}
+
+/// Writes out what standard output holds back: the start of a line that `print(..., end="")`
+/// left unended. The C `main` calls it through [`baryon_rt_flush`](crate::baryon_rt_flush)
+/// before it returns, and a panic before it exits, since the process ends without running
+/// Rust's own clean-up. A failed flush is ignored, as a failed write is.
+pub(crate) fn flush() {
+    let _ = std::io::stdout().lock().flush();
 }
 
 /// The stream number of standard error, as POSIX numbers it. `print` writes to 1, standard

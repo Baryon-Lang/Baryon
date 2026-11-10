@@ -224,7 +224,12 @@ impl<'db> Builder<'db> {
 
     /// A whole-array expression, `a + b * k`, into `place` as one [`Elementwise`] tree, which
     /// array expansion turns into a loop nest after fusion has seen it (decision 0018).
+    /// The matrix product `a @ b` is not element by element; it builds its own loop nest (the
+    /// `matrix` module), and is a leaf when it appears inside a larger expression.
     pub(crate) fn elementwise(&mut self, place: Place, node: NodeId) {
+        if self.is_matrix_product(node) {
+            return self.matrix_product(place, node);
+        }
         let element = self.element(self.ty(node));
         if let Some(tree) = self.tree_of(node, element) {
             self.assign(place, Rvalue::Elementwise(Box::new(tree)), node);
@@ -237,7 +242,7 @@ impl<'db> Builder<'db> {
         let ty = self.ty(node);
         let child = |role| self.tree.child(node, role);
         match self.tree.kind(node) {
-            SyntaxKind::BinaryOperation if self.is_array(ty) => {
+            SyntaxKind::BinaryOperation if self.is_array(ty) && !self.is_matrix_product(node) => {
                 let syntax = self.tree.node(node).operator();
                 let Some(operator) = arithmetic(syntax) else {
                     self.unsupported(node, &format!("`{}` on arrays", syntax.symbol()));
@@ -270,6 +275,12 @@ impl<'db> Builder<'db> {
             }
             _ => Some(Elementwise::Leaf(self.operand_as(node, element))),
         }
+    }
+
+    /// Whether `node` is the binary operation `a @ b`.
+    fn is_matrix_product(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::BinaryOperation
+            && self.tree.node(node).operator() == Operator::MatrixMultiply
     }
 
     /// `target op= value` on an array, as `target = target op value` over every element.
@@ -392,12 +403,15 @@ impl<'db> Builder<'db> {
         self.assign(place, Rvalue::Use(length), node);
     }
 
-    /// `len(a)`: the length of an array's first dimension, or a list's number of elements,
-    /// into `place`.
+    /// `len(a)`: the length of an array's first dimension, a list's number of elements, or a
+    /// `str`'s number of characters, into `place`.
     pub(crate) fn len(&mut self, place: Place, argument: NodeId, node: NodeId) {
         let ty = self.ty(argument);
+        if matches!(ty.kind(self.db), TypeKind::Str) {
+            return self.text_length(place, argument, node);
+        }
         if !self.is_array(ty) && !matches!(ty.kind(self.db), TypeKind::List(_)) {
-            return self.unsupported(node, "`len` of strings");
+            return self.unsupported(node, "`len` of this type");
         }
         let array = self.borrow(argument);
         let length = self.length(&array, ty, 0, node);

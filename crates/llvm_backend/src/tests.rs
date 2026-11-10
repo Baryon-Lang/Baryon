@@ -145,6 +145,11 @@ fn no_structs<'db>(_: &Nominal<'db>) -> Declared<'db> {
     Declared::Struct(Vec::new())
 }
 
+/// What no test struct or enum is named.
+fn no_names(_: &Nominal<'_>) -> crate::ClassNames {
+    crate::ClassNames::default()
+}
+
 /// The symbol of a called item: the name its file holds.
 fn symbol_of<'db>(database: &'db Database) -> impl Fn(&Item<'db>, &[Type<'db>]) -> String {
     move |item, _| item.file(database).source(database).text().to_owned()
@@ -154,7 +159,7 @@ fn symbol_of<'db>(database: &'db Database) -> impl Fn(&Item<'db>, &[Type<'db>]) 
 fn module<'db>(database: &'db Database, functions: &[(&str, Body<'db>)]) -> String {
     let symbol = symbol_of(database);
     let sources = sources();
-    let mut module = Module::new(database, &sources, &no_structs, &symbol);
+    let mut module = Module::new(database, &sources, &no_structs, &no_names, &symbol);
     for (name, body) in functions {
         module.define(name, body, &[]).unwrap();
     }
@@ -473,7 +478,7 @@ fn unsupported_types_are_named() {
     let complex = primitive(&database, Primitive::Complex(types::Complex::C128));
     let symbol = symbol_of(&database);
     let sources = sources();
-    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    let mut module = Module::new(&database, &sources, &no_structs, &no_names, &symbol);
     let result = module.define("make", &Body::new(complex, span()), &[]);
     assert_eq!(
         result.map_err(|error: Unsupported| error.to_string()),

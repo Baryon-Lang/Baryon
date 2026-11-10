@@ -30,7 +30,12 @@
 //!   the checker already proved; `assert` becomes an [`Assert`](mir::TerminatorKind::Assert).
 //! - **Generic bodies.** A generic function lowers once, with its type parameters left open:
 //!   `+`, `-` and `*` on a `T: Number` and its number literals become the instance's arithmetic
-//!   and constants once monomorphization substitutes `T`.
+//!   and constants once monomorphization substitutes `T`. A call of a trait's method on a `T`
+//!   stays a call of the trait's method, with `T` as its type argument, until monomorphization
+//!   sends it to the type's own method (decision 0031).
+//! - **Embedded structs.** A name the checker found through `Embed` fields (decision 0031)
+//!   steps into each one: `ion.m` is the place `ion.particle.m`, and `ion.energy()` passes
+//!   `ion.particle` as `self`.
 //! - **Errors.** A call that can fail gets an error edge (decision 0018). The edge, and each
 //!   `raise`, goes to the innermost `except` that names the error, or else drops what the
 //!   function owns and [`Raise`](mir::TerminatorKind::Raise)s it to the caller. A bare `raise`
@@ -42,19 +47,23 @@
 //!   [`Elementwise`](mir::Rvalue::Elementwise) expression for array expansion to loop over.
 //!   `Array.zeros`, `ones` and `fill` allocate with [`NewArray`](mir::Rvalue::NewArray) and fill
 //!   the elements in a loop nest; a `Fixed` array is an [`Aggregate`](mir::Rvalue::Aggregate) of
-//!   its elements in row-major order. `a.copy()` is a whole-array expression of `a` alone,
-//!   `a.sum()` and `v.dot(w)` add in a loop nest, and `v.round()` on a `Fixed` array rounds each
-//!   element.
+//!   its elements in row-major order. `a.copy()` is a whole-array expression of `a` alone;
+//!   `a.sum()` and `a.dot(b)` of floats call [`Builtin::Sum`](mir::Builtin::Sum) and
+//!   [`Builtin::Dot`](mir::Builtin::Dot), and of integers add in a loop nest; `a.min()` and
+//!   `a.max()` scan in a loop nest after a [`NotEmpty`](mir::Check::NotEmpty) check;
+//!   `a.round()` rounds each element and `a.fill(value)` writes each one. The matrix product
+//!   `a @ b` is a loop nest over the result's entries with an inner loop that adds the products.
 //! - **Lists.** A display `[a, b]` is an [`Aggregate`](mir::Rvalue::Aggregate) of a list type,
 //!   `xs.append(value)` calls [`Builtin::Append`](mir::Builtin::Append), `len(xs)` and `xs[i]`
 //!   read it as a one-dimensional array, and `Array(xs)` copies it into a new array. Only lists
 //!   of copy types, such as `list[f64]`, are built so far.
-//! - **Math.** `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` from `math`, and `**` and `**=` on
-//!   floats, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
-//!   [`Builtin::Math`](mir::Builtin::Math) calls a backend writes. The built-in `round(x)` rounds
-//!   a float and converts it to an integer. `**` and `**=` on integers are repeated squaring,
-//!   with a [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each
-//!   multiplication checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
+//! - **Math.** The functions of `math` for real numbers, and `**` and `**=` on floats, call a
+//!   [`MathFunction`](mir::MathFunction), as [`Builtin::Math`](mir::Builtin::Math) calls a
+//!   backend writes; `floor`, `ceil`, `trunc` and the built-in `round(x)` round and then convert
+//!   to an integer, `isnan`, `isinf` and `isfinite` compare, and `degrees`, `radians` and
+//!   `log(x, base)` are arithmetic. `**` and `**=` on integers are repeated squaring, with a
+//!   [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each multiplication
+//!   checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
 //! - **Random numbers.** `Philox(seed, stream)` and `generator.uniform()` call
 //!   [`Builtin::Philox`](mir::Builtin::Philox) and [`Builtin::Uniform`](mir::Builtin::Uniform),
 //!   the generator passed `InOut` (decision 0028). `pi`, `e`, `tau`, `inf` and `nan` from `math`
@@ -68,9 +77,9 @@
 //!   into with `+=`, `-=`, `*=`, `min` or `max` (the `parallel` module), and the arrays listed
 //!   in `accumulate=`, which it adds into with `Accumulate` statements (the `accumulate` module).
 //!   A `simd(range(...))` loop lowers as the `range` loop inside it, with its header block
-//!   listed in [`vectorized`](mir::Body::vectorized), unless it sums or multiplies into a
-//!   shared float, which stays unvectorized until fixed lanes keep its bits the same on every
-//!   machine (roadmap 1.9.14).
+//!   listed in [`vectorized`](mir::Body::vectorized). One that sums or multiplies into a
+//!   shared float adds into 8 fixed lanes instead, combined in a pairwise tree, so it
+//!   vectorizes and gives the same bits on every machine (the `lanes` module, roadmap 1.9.14).
 //! - **Functions as arguments.** A module-level function read as a value is a constant of its
 //!   own zero-sized type, a call passes that type as an extra type argument for each `Callable`
 //!   parameter, and a call of a `Callable` value is a [`Callee::Value`](mir::Callee::Value),
@@ -255,9 +264,11 @@ mod errors;
 mod escapes;
 mod expressions;
 mod facts;
+mod lanes;
 mod lists;
 mod loops;
 mod math;
+mod matrix;
 mod methods;
 mod operators;
 mod parallel;

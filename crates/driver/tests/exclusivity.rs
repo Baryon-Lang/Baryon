@@ -232,6 +232,31 @@ error: `u` is a read-only parameter, so it cannot be changed
     );
 }
 
+/// `a.fill(value)` changes the array, so it needs a changeable receiver, as `append` does; an
+/// `InOut` parameter and a local are fine.
+#[test]
+fn filling_a_read_only_array_is_reported() {
+    let program = r"
+Vec3 = Fixed[f64, (3,)]
+
+
+def clear(u: InOut[Array[f64, 1]], v: Array[f64, 1]):
+    u.fill(0.0)
+    w = Vec3.zeros()
+    w.fill(1.0)
+    v.fill(0.0)
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `v` is a read-only parameter, so it cannot be changed
+ --> main.byn:8:5
+  |
+8 |     v.fill(0.0)
+  |     ^ changed here
+  = note: take it as `InOut[...]` to change the caller's value, or change a copy: `work = v.copy()`"
+    );
+}
+
 /// A loop over the indices that changes elements, a loop that reads non-copy elements and
 /// copies one to keep, a loop over one field that changes another, and a loop over a
 /// temporary.

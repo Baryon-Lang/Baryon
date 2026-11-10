@@ -150,7 +150,7 @@ direction = residual + beta * direction
   that optimization is roadmap 3.1, and it does not change the meaning.
 
 `@` is the matrix product for rank-2 arrays and `Fixed` matrices, and between a matrix and a
-vector.
+vector; see [The matrix product](#the-matrix-product).
 
 ## Methods
 
@@ -161,9 +161,35 @@ set.
 | --- | --- |
 | `a.copy()` | A new contiguous array with the same elements |
 | `a.sum()`, `a.min()`, `a.max()` | The sum, smallest and largest element |
-| `a.dot(b)` | The dot product of two rank-1 arrays or vectors |
+| `a.dot(b)` | The dot product of two rank-1 arrays or vectors of the same length |
 | `a.round()` | A new array with each element rounded to the nearest whole number, ties to even |
 | `a.fill(value)` | Sets every element to `value`; `a` must be changeable |
+
+`a.min()` and `a.max()` of an empty array panic, since there is no smallest element of none;
+NumPy raises `ValueError`. If any element is a float NaN, the result is NaN, as `numpy.min`
+gives. Python's `min(x, y)` of two numbers keeps its own rule instead: it returns `y` only when
+`y < x`.
+
+`a.dot(b)` of two `Array`s of different lengths panics, as whole-array arithmetic does:
+
+```text
+panic: array lengths differ in dimension 0: 3 and 4
+```
+
+`a.fill(value)` changes `a`, so `a` must be a local variable or an `InOut` parameter, as for
+assigning to an element. `value` converts to the element type as an assignment would.
+
+```python
+from math import sqrt
+
+
+def residual_norm(residual: Array[f64, 1]) -> f64:
+    return sqrt(residual.dot(residual))
+
+
+def reset(forces: InOut[Array[f64, 1]]):
+    forces.fill(0.0)
+```
 
 ### The order `sum` adds in
 
@@ -202,8 +228,45 @@ a_sum = 0.0 + pairwise(elements)
 
 The `0.0` added last is the identity of `+`, so an empty array sums to `0.0`. An `f32` array adds
 in `f32` throughout, as NumPy does. Integer sums add one element at a time: integer addition is
-exact, so the order cannot change the result. The same reasoning fixes the order of reductions in
+exact, so the order cannot change the result.
+
+`a.dot(b)` of floats adds its products in the same tree: each product `a[i] * b[i]` is rounded,
+never fused with the add that follows, and the products are summed as `sum` sums its elements. So
+`a.dot(b)` has the same bits as `(a * b).sum()` and as `numpy.sum(a * b)`, without building
+`a * b`. `numpy.dot` itself calls BLAS, whose order depends on the machine, so its last bits
+can differ. For fewer than 8 elements, such as a 3-vector, the tree adds in plain order. The same reasoning fixes the order of reductions in
 parallel loops; see [reproducible reductions](parallel-loops.md#reproducible-reductions).
+
+### The matrix product
+
+`a @ b` multiplies two `Array`s or two `Fixed` arrays, as NumPy's `@` does:
+
+| `a` | `b` | `a @ b` |
+| --- | --- | --- |
+| matrix, shape `(n, k)` | matrix, shape `(k, m)` | matrix, shape `(n, m)` |
+| matrix, shape `(n, k)` | vector, length `k` | vector, length `n` |
+| vector, length `k` | matrix, shape `(k, m)` | vector, length `m` |
+
+For the dot product of two vectors, use `a.dot(b)`. Entry `[i, j]` of the result is the sum over
+`p` of `a[i, p] * b[p, j]`, and the number mixing rules of [Types](types.md#number-mixing) give
+its element type. The result is a new array, so `x = m @ x` reads the old `x` throughout.
+
+The lengths that meet, `k`, must match. For `Fixed` arrays the compiler checks that; for `Array`s
+a mismatch panics when the line runs and names `a`'s last dimension:
+
+```text
+panic: array lengths differ in dimension 1: 3 and 2
+```
+
+```python
+def apply(m: Array[f64, 2], x: Array[f64, 1], b: Array[f64, 1]) -> Array[f64, 1]:
+    return b - m @ x
+```
+
+Each entry adds its products one at a time, from `p = 0`. This order is not part of the language:
+`@` will call BLAS (roadmap 3.10), which adds in an order that depends on the machine, as
+NumPy's `@` does. Where the last bits must be reproducible, use `dot` and `sum`, whose order is
+fixed.
 
 ## Math functions
 
@@ -236,9 +299,10 @@ Most return a float. An `f32` or `f64` argument keeps its type, so `sqrt` of an 
 `f32`, as `numpy.sqrt` gives. An integer converts to `f64` first, so `sqrt(2)` is
 `1.4142135623730951`, as in Python. `pow(x, y)` mixes its arguments as `x ** y` does, so
 `pow(x, 0.5)` on an `f32` stays `f32`, and `pow` of an `f32` and an `f64` is an error that asks for
-a conversion. `fma` and the other functions of two or three numbers mix the same way. `floor`, `ceil` and
-`trunc` return an `int`, as in Python, and panic when the result does not fit in one, as every
-conversion of a float to an integer does; `isnan`, `isinf` and `isfinite` return a `bool`:
+a conversion. `fma` and the other functions of two or three numbers mix the same way. `floor`,
+`ceil` and `trunc` return an `int`, as in Python, and panic when the result does not fit in one,
+as every conversion of a float to an integer does; `isnan`, `isinf` and `isfinite` return a
+`bool`:
 
 ```python
 from math import atan2, degrees, floor, sqrt

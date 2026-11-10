@@ -1,6 +1,8 @@
 //! Functions that can fail: the error pointer they take, the error they write, and the flag.
 
-use super::{Database, Module, end, no_structs, parameter, primitive, sources, span, symbol_of};
+use super::{
+    Database, Module, end, no_names, no_structs, parameter, primitive, sources, span, symbol_of,
+};
 use mir::{Body, Operand, TerminatorKind};
 use types::{Integer, Mode, Primitive, Type, TypeKind};
 
@@ -17,7 +19,7 @@ fn raising_writes_the_error_and_returns_the_flag() {
     body.push_block(end(TerminatorKind::Raise(Operand::Copy(x.into()))));
     let symbol = symbol_of(&database);
     let sources = sources();
-    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    let mut module = Module::new(&database, &sources, &no_structs, &no_names, &symbol);
     module.define("fail", &body, &[i64]).unwrap();
     assert_eq!(
         module.finish(),

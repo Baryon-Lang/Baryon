@@ -34,7 +34,10 @@ impl<'db> Body<'db> {
         let int = primitive(self.db, Primitive::Integer(Integer::I64));
         match (name, types.as_slice()) {
             ("str", [_]) => Type::new(self.db, TypeKind::Str),
-            ("print", _) => Type::new(self.db, TypeKind::None),
+            ("print", _) => {
+                self.print_keywords(arguments, &types[arguments.positional.len()..]);
+                Type::new(self.db, TypeKind::None)
+            }
             ("len", [_]) => int,
             ("round", [value]) if self.is_number(*value) => int,
             ("abs", [value]) | ("round", [value, _]) => *value,
@@ -54,6 +57,33 @@ impl<'db> Body<'db> {
                 result
             }
             _ => self.lowerer.unknown(),
+        }
+    }
+
+    /// Checks `print`'s keyword arguments, whose types are `types`: only `sep=` and `end=`, each
+    /// a `str` or `None`, as Python allows. Python's `file=` and `flush=` are not part of the
+    /// language yet: `print` always writes to standard output.
+    fn print_keywords(&mut self, arguments: &Arguments, types: &[Type<'db>]) {
+        for (&(name, value), &ty) in arguments.keywords.iter().zip(types) {
+            let written = self.tree.text(name, self.text);
+            if written != "sep" && written != "end" {
+                let message = format!("`print` has no parameter `{written}`");
+                self.lowerer.error(
+                    name,
+                    &message,
+                    "unknown parameter",
+                    Some("`print` takes the values to write, then `sep=` and `end=`"),
+                );
+                continue;
+            }
+            let text = matches!(ty.kind(self.db), TypeKind::Str | TypeKind::None);
+            if !text && !relations::is_open(self.db, ty) {
+                let message = format!(
+                    "`{written}=` takes a `str` or `None`, found `{}`",
+                    self.show(ty)
+                );
+                self.lowerer.error(value, &message, "not a `str`", None);
+            }
         }
     }
 

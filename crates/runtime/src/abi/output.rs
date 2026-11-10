@@ -87,9 +87,9 @@ pub extern "C" fn baryon_rt_print_bool(stream: i32, value: bool) {
 }
 
 /// Prints `length` bytes of UTF-8 text at `text` as Python's `repr` writes a `str`: quoted, with
-/// the quote, the backslash and control characters escaped, as `'it\\'s'`. The report of an
-/// error that ends `main` writes its `str` fields this way, so a field holding `", b=1"` cannot
-/// be mistaken for another field. Bytes that are not UTF-8, which only a compiler bug passes,
+/// the quote, the backslash and control characters escaped, as `'it\\'s'`. A `str` inside a
+/// printed tuple or struct, and a field of the report of an error that ends `main`, is written
+/// this way, so a field holding `", b=1"` cannot be mistaken for another field. Bytes that are not UTF-8, which only a compiler bug passes,
 /// print as replacement characters.
 ///
 /// # Safety
@@ -136,4 +136,24 @@ pub unsafe extern "C" fn baryon_rt_print_str(stream: i32, text: *const u8, lengt
     // SAFETY: the caller guarantees `text` points to `length` readable bytes.
     let bytes = unsafe { std::slice::from_raw_parts(text, length) };
     print::write(stream, &String::from_utf8_lossy(bytes));
+}
+
+/// Writes out what `print` left in standard output's buffer, a line not yet ended, as
+/// `print("done", end="")` leaves. The C `main` calls it before it returns, since a program's
+/// exit from C does not run Rust's clean-up, which would otherwise write it.
+///
+/// # Example
+///
+/// ```
+/// use runtime::{baryon_rt_flush, baryon_rt_print_str};
+///
+/// let text = "no line end";
+/// // SAFETY: the pointer and length are the constant's.
+/// unsafe { baryon_rt_print_str(1, text.as_ptr(), text.len()) };
+/// baryon_rt_flush();
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub extern "C" fn baryon_rt_flush() {
+    print::flush();
 }
