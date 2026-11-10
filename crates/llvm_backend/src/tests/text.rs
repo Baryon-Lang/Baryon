@@ -247,3 +247,70 @@ declare i64 @baryon_rt_str_length(ptr, i64) nounwind
 "
     );
 }
+
+/// `def first(name: str) -> str`: the character at byte 0 of `name`. Its width comes from its
+/// first byte, three comparisons with the UTF-8 lead bytes, and the result points into `name`'s
+/// own bytes with the "not owned" bit set, so it is never freed; the cursor moves past it.
+#[test]
+fn a_character_borrows_its_bytes_and_moves_the_cursor() {
+    let database = Database::default();
+    let str = Type::new(&database, TypeKind::Str);
+    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
+    let mut body = Body::new(str, span());
+    let name = body.push_local(str, parameter("name", Mode::Borrow), span());
+    let cursor = body.push_local(i64, LocalKind::Temporary, span());
+    let start = Rvalue::Use(Operand::Constant(Constant::integer(i64, 0)));
+    let first = end(TerminatorKind::Call {
+        callee: Callee::Builtin(Builtin::CharacterStr),
+        arguments: vec![
+            Argument::Borrow(name.into()),
+            Argument::InOut(cursor.into()),
+        ],
+        destination: Local::RETURN.into(),
+        target: BlockId::new(1),
+        error: None,
+    });
+    body.push_block(first);
+    body.blocks[0].statements.push(assign(cursor, start));
+    body.push_block(end(TerminatorKind::Return));
+    assert_eq!(
+        module(&database, &[("first", body)]),
+        "\
+define { ptr, i64 } @first(ptr noalias readonly %a1) {
+start:
+  %_0 = alloca { ptr, i64 }
+  %_2 = alloca i64
+  br label %bb0
+bb0:
+  store i64 0, ptr %_2
+  %t0 = load { ptr, i64 }, ptr %a1
+  %t1 = extractvalue { ptr, i64 } %t0, 0
+  %t2 = extractvalue { ptr, i64 } %t0, 1
+  %t3 = and i64 %t2, 9223372036854775807
+  %t4 = load i64, ptr %_2
+  %t5 = getelementptr inbounds i8, ptr %t1, i64 %t4
+  %t6 = load i8, ptr %t5
+  %t7 = zext i8 %t6 to i64
+  %t8 = icmp uge i64 %t7, 192
+  %t9 = zext i1 %t8 to i64
+  %t10 = add i64 1, %t9
+  %t11 = icmp uge i64 %t7, 224
+  %t12 = zext i1 %t11 to i64
+  %t13 = add i64 %t10, %t12
+  %t14 = icmp uge i64 %t7, 240
+  %t15 = zext i1 %t14 to i64
+  %t16 = add i64 %t13, %t15
+  %t17 = or i64 %t16, -9223372036854775808
+  %t18 = insertvalue { ptr, i64 } poison, ptr %t5, 0
+  %t19 = insertvalue { ptr, i64 } %t18, i64 %t17, 1
+  store { ptr, i64 } %t19, ptr %_0
+  %t20 = add i64 %t4, %t16
+  store i64 %t20, ptr %_2
+  br label %bb1
+bb1:
+  %t21 = load { ptr, i64 }, ptr %_0
+  ret { ptr, i64 } %t21
+}
+"
+    );
+}
