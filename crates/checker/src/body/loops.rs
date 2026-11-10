@@ -102,6 +102,9 @@ impl<'db> Body<'db> {
             Some(iterator) => self.iteration(iterator),
             None => self.lowerer.unknown(),
         };
+        if let Some(iterator) = iterator.filter(|&iterator| self.is_prange(iterator)) {
+            self.prange_in_comprehension(iterator);
+        }
         let collection = iterator
             .map(|iterator| self.dict_view_receiver(iterator).unwrap_or(iterator))
             .filter(|&collection| self.place_root(collection).is_some());
@@ -124,6 +127,21 @@ impl<'db> Body<'db> {
             body.loops.pop();
         });
         item
+    }
+
+    /// Reports `prange` as the iterator of a comprehension clause (Collins, 2026-11-10): a
+    /// parallel loop is a `for` statement, where the checker's sharing rules apply, so the error
+    /// shows that form. A parallel map that fills the list in order could be added later without
+    /// breaking code (roadmap idea I.41).
+    fn prange_in_comprehension(&mut self, iterator: NodeId) {
+        self.lowerer.error(
+            iterator,
+            "`prange` cannot be used in a comprehension",
+            "a parallel loop must be a `for` statement",
+            Some(
+                "make the result first, then fill it in parallel: `for i in prange(n): out[i] = f(i)`",
+            ),
+        );
     }
 
     /// The variables `target` binds that borrow their part of an element of type `element`,
