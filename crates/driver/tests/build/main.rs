@@ -63,12 +63,46 @@ fn build_runtime() {
     });
 }
 
+/// A test's scratch directory, removed when it goes out of scope unless the test is panicking,
+/// so a failed test leaves its package and executable behind to inspect.
+///
+/// Each test builds an executable of several megabytes, so without the removal every run of
+/// the suite left about 100 MB in the system's temporary directory, and a machine with a small
+/// disk filled up after a few dozen runs.
+struct Scratch(
+    /// The directory.
+    PathBuf,
+);
+
+impl std::ops::Deref for Scratch {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for Scratch {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+}
+
 /// A new directory holding the package `files`, each a path and its text, for the test `name`.
+/// It is removed when the test passes; see [`Scratch`].
 ///
 /// The tests run in parallel and each name is one directory, which this function first empties,
 /// so two tests sharing a name would delete each other's files. A name used twice panics, so
 /// that mistake fails every run instead of one run in a few.
-fn package(name: &str, files: &[(&str, &str)]) -> io::Result<PathBuf> {
+fn package(name: &str, files: &[(&str, &str)]) -> io::Result<Scratch> {
     static NAMES: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
     let fresh = NAMES
         .lock()
@@ -85,7 +119,7 @@ fn package(name: &str, files: &[(&str, &str)]) -> io::Result<PathBuf> {
         }
         std::fs::write(path, text)?;
     }
-    Ok(directory)
+    Ok(Scratch(directory))
 }
 
 /// Runs `baryon build` on the package in `directory`; its output, and the executable's path.
@@ -169,6 +203,19 @@ fn programs_build_and_run() {
         panic_report(&ran),
         "panic: assertion failed: n * 6 == 41, \"arithmetic\"\n  --> main.byn:3:5\n"
     );
+}
+
+/// A test's scratch directory, with the executable built in it, is gone once the test is done
+/// with it, so repeated runs of the suite do not fill the disk.
+#[test]
+fn scratch_directories_are_removed() {
+    let directory = package("scratch", &[("main.byn", "def main():\n    pass\n")]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(program.is_file());
+    let path = directory.to_path_buf();
+    drop(directory);
+    assert!(!path.exists(), "{} was left behind", path.display());
 }
 
 /// A package without `main.byn` builds nothing and says why, and so does one whose `main` is in
