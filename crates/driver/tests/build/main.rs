@@ -26,6 +26,7 @@ mod modules;
 mod overflow;
 mod parallel;
 mod print;
+mod process;
 mod shapes;
 mod slices;
 mod statements;

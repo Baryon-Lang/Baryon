@@ -94,6 +94,10 @@ pub enum Projection {
     /// error type at this position in the callee's `Raises` list. Valid only where
     /// [`ErrorIndex`](crate::Rvalue::ErrorIndex) said it is that error.
     Error(u32),
+    /// The value inside a union, such as `Periodic | Dirichlet` (decision 0032), as the member
+    /// at this position in the union's canonical order (`types::union`). Valid only where
+    /// [`MemberIndex`](crate::Rvalue::MemberIndex) said the union holds that member.
+    Member(u32),
 }
 
 /// One dimension of a [`Slice`](Projection::Slice).

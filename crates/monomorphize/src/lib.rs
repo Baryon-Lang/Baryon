@@ -562,6 +562,7 @@ impl<'db> Substitution<'_, 'db> {
             Rvalue::Length(..)
             | Rvalue::IsPresent(_)
             | Rvalue::ErrorIndex(_)
+            | Rvalue::MemberIndex(_)
             | Rvalue::Format(_) => {}
             Rvalue::Elementwise(tree) => self.elementwise(tree),
         }
