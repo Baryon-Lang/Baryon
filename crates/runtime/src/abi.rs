@@ -23,7 +23,7 @@ pub use output::{
 };
 pub use philox::{baryon_rt_philox_new, baryon_rt_philox_uniform};
 pub use strings::{baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_length};
-pub use sum::{baryon_rt_sum_f32, baryon_rt_sum_f64};
+pub use sum::{baryon_rt_dot_f32, baryon_rt_dot_f64, baryon_rt_sum_f32, baryon_rt_sum_f64};
 pub use text::{
     OwnedText, TextBuilder, baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64,
     baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,

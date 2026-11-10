@@ -1,5 +1,6 @@
-//! The functions compiled code calls for `a.sum()` of floats (the `sum` module): one per float
-//! width, each taking the address of the first element and the element count.
+//! The functions compiled code calls for `a.sum()` and `a.dot(b)` of floats (the `sum` module):
+//! one per float width, each taking the address of the first element of each array and the
+//! element count.
 //!
 //! An `Array` keeps its elements contiguous in row-major order (decision 0008), and a `Fixed`
 //! array is one value, so the elements are one run whatever the rank. Integer sums never call
@@ -52,6 +53,58 @@ pub unsafe extern "C" fn baryon_rt_sum_f32(values: *const f32, count: i64) -> f3
     // SAFETY: the caller guarantees `count` initialized values at `values`.
     let values = unsafe { elements(values, count) };
     sum::sum(values, 0.0, -0.0)
+}
+
+/// The dot product of the `count` `f64` values at `left` and at `right`: the products added in
+/// `NumPy`'s pairwise order, so the result has the same bits as `numpy.sum(left * right)`. Zero
+/// values give `0.0`.
+///
+/// # Safety
+///
+/// `left` and `right` each point to `count` initialized `f64` values that nothing writes during
+/// the call, or `count` is 0 or less.
+///
+/// # Example
+///
+/// ```
+/// let (left, right) = ([1.0_f64, 2.0, 3.0], [4.0_f64, 5.0, 6.0]);
+/// // SAFETY: the pointers and count are two arrays'.
+/// let product = unsafe { runtime::baryon_rt_dot_f64(left.as_ptr(), right.as_ptr(), 3) };
+/// assert_eq!(product, 32.0);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_dot_f64(left: *const f64, right: *const f64, count: i64) -> f64 {
+    // SAFETY: the caller guarantees `count` initialized values at `left`.
+    let left = unsafe { elements(left, count) };
+    // SAFETY: and at `right`.
+    let right = unsafe { elements(right, count) };
+    sum::dot(left, right, 0.0, -0.0)
+}
+
+/// The dot product of the `count` `f32` values at `left` and at `right`, in `f32` arithmetic and
+/// `NumPy`'s pairwise order, as [`baryon_rt_dot_f64`] computes it for `f64`.
+///
+/// # Safety
+///
+/// `left` and `right` each point to `count` initialized `f32` values that nothing writes during
+/// the call, or `count` is 0 or less.
+///
+/// # Example
+///
+/// ```
+/// let (left, right) = ([1.5_f32, 2.0], [2.0_f32, 0.25]);
+/// // SAFETY: the pointers and count are two arrays'.
+/// assert_eq!(unsafe { runtime::baryon_rt_dot_f32(left.as_ptr(), right.as_ptr(), 2) }, 3.5);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_dot_f32(left: *const f32, right: *const f32, count: i64) -> f32 {
+    // SAFETY: the caller guarantees `count` initialized values at `left`.
+    let left = unsafe { elements(left, count) };
+    // SAFETY: and at `right`.
+    let right = unsafe { elements(right, count) };
+    sum::dot(left, right, 0.0, -0.0)
 }
 
 /// The `count` values at `values` as a slice; empty when `count` is 0 or less.

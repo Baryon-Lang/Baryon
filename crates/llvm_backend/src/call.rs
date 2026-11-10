@@ -134,7 +134,7 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Math(function) => self.math(function, arguments, destination, target),
             Builtin::Append => self.list_append(arguments, target),
             Builtin::Sum => self.sum(arguments, destination, target),
-            Builtin::Dot => Err(Unsupported::new("`dot` of float `Array`s")),
+            Builtin::Dot => self.dot(arguments, destination, target),
             Builtin::Philox => self.philox(arguments, destination, target),
             Builtin::Uniform => self.uniform(arguments, destination, target),
             Builtin::CompareStr => self.text_builtin(&COMPARE, arguments, destination, target),

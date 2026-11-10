@@ -1,22 +1,55 @@
 //! Array methods (language reference, "Methods" in the arrays chapter): `a.copy()`, `a.sum()`,
-//! and `v.dot(w)` and `v.round()` on `Fixed` arrays.
+//! `a.min()`, `a.max()`, `a.dot(b)`, `a.round()` and `a.fill(value)` on `Array` and `Fixed`
+//! arrays.
 //!
 //! `a.copy()` is the whole-array expression whose only leaf is `a`, so array expansion allocates
-//! the new array and copies each element in the same loop nest as `a + b`. `a.sum()` of floats
-//! calls the runtime's pairwise sum; of integers, it and `v.dot(w)` add into an accumulator in a
-//! loop nest of their own, with each integer `+` and `*` checked for overflow as the operators
-//! are. `v.round()` builds a new `Fixed` value from each element rounded, with one call per
-//! element, since a `Fixed` array is small and its length is known when compiling.
+//! the new array and copies each element in the same loop nest as `a + b`. `a.sum()` and
+//! `a.dot(b)` of floats call the runtime's pairwise sum and dot product, so both add in
+//! `NumPy`'s order; of integers, they add into an accumulator in a loop nest of their own, as
+//! does `v.dot(w)` of a `Fixed` vector shorter than 8, for which the pairwise order is the plain
+//! one. Each integer `+` and `*` is checked for overflow as the operators are. `a.min()` and
+//! `a.max()` scan in row-major order after checking the array is not empty.
+//! `a.round()` copies an `Array` and rounds each element in place; on a `Fixed` array it builds
+//! the new value from each element rounded, with one call per element, since a `Fixed` array is
+//! small and its length is known when compiling. `a.fill(value)` writes every element.
 
 use crate::builder::Builder;
 use mir::{
-    Argument, BinaryOperator, Builtin, Callee, Constant, Elementwise, MathFunction, Operand, Place,
-    Projection, Rvalue, TerminatorKind,
+    Argument, BinaryOperator, Builtin, Callee, Check, Constant, ConstantValue, Elementwise, Local,
+    MathFunction, Operand, Place, Projection, Rvalue, TerminatorKind,
 };
 use syntax::NodeId;
 use types::TypeKind;
 
+/// The length below which the pairwise order of a float sum is the plain one, element by
+/// element from the first: the runtime's tree adds fewer than 8 values one at a time.
+const PAIRWISE_LANES: u64 = 8;
+
 impl<'db> Builder<'db> {
+    /// The method `method` of an `Array` or `Fixed` array, called with `arguments`, the
+    /// receiver first, into `place`. Reports any method or receiver it does not build.
+    pub(crate) fn array_method(
+        &mut self,
+        place: Place,
+        method: &str,
+        arguments: &[NodeId],
+        node: NodeId,
+    ) {
+        let fixed = arguments
+            .first()
+            .is_some_and(|&array| matches!(self.ty(array).kind(self.db), TypeKind::Fixed { .. }));
+        match (method, arguments) {
+            ("copy", [array]) if !fixed => self.array_copy(place, *array, node),
+            ("sum", [array]) => self.array_sum(place, *array, node),
+            ("min" | "max", [array]) => self.array_extreme(place, method == "min", *array, node),
+            ("dot", [left, right]) => self.array_dot(place, (*left, *right), node),
+            ("round", [array]) if fixed => self.fixed_round(place, *array, node),
+            ("round", [array]) => self.array_round(place, *array, node),
+            ("fill", [array, value]) => self.array_fill(place, (*array, *value), node),
+            _ => self.unsupported(node, &format!("the array method `{method}`")),
+        }
+    }
+
     /// `a.copy()` on an `Array`, into `place`: a new array with `a`'s lengths and elements.
     pub(crate) fn array_copy(&mut self, place: Place, array: NodeId, node: NodeId) {
         let source = self.borrow(array);
@@ -78,11 +111,17 @@ impl<'db> Builder<'db> {
         self.assign(place, rvalue, node);
     }
 
-    /// `v.dot(w)` on two rank-1 `Fixed` arrays of numbers, into `place`: the products of the
-    /// elements at each index, added in order from index 0. On integers each product and sum
-    /// is checked for overflow as `*` and `+` are (decision 0030). `Array.dot` waits on the
-    /// length check two `Array` operands need.
-    pub(crate) fn fixed_dot(
+    /// `a.dot(b)` on two rank-1 `Array` or `Fixed` arrays of numbers, into `place`: the sum of
+    /// the products of the elements at each index. Two `Array`s must have the same length, or
+    /// the program panics; two `Fixed` vectors have it by their type.
+    ///
+    /// Floats call [`Builtin::Dot`], which adds the products in the pairwise order of
+    /// [`array_sum`](Self::array_sum), so `a.dot(b)` has the bits of `(a * b).sum()`. A `Fixed`
+    /// vector shorter than 8, such as a position, adds in a loop here instead: the pairwise tree
+    /// adds fewer than 8 values one at a time, so the bits are the same and the hot loops of a
+    /// simulation make no call. Integers add in a loop, since integer addition is exact, with each
+    /// `*` and `+` checked for overflow as the operators are (decision 0030).
+    pub(crate) fn array_dot(
         &mut self,
         place: Place,
         (left, right): (NodeId, NodeId),
@@ -95,6 +134,23 @@ impl<'db> Builder<'db> {
         }
         let (left, right) = (self.borrow(left), self.borrow(right));
         let length = self.length(&left, ty, 0, node);
+        if matches!(ty.kind(self.db), TypeKind::Array { .. }) {
+            let other = self.length(&right, ty, 0, node);
+            self.same_length(0, length.clone(), other, node);
+        }
+        let short = match ty.kind(self.db) {
+            TypeKind::Fixed { shape, .. } => shape.elements() < PAIRWISE_LANES,
+            _ => false,
+        };
+        if self.is_float(element) && !short {
+            return self.then(node, |target| TerminatorKind::Call {
+                callee: Callee::Builtin(Builtin::Dot),
+                arguments: vec![Argument::Borrow(left), Argument::Borrow(right)],
+                destination: place,
+                target,
+                error: None,
+            });
+        }
         let total = self.temporary(element, node);
         let zero = Operand::Constant(self.number_constant(element, 0));
         self.assign(Place::from(total), Rvalue::Use(zero), node);
@@ -124,6 +180,216 @@ impl<'db> Builder<'db> {
             );
         });
         self.assign(place, Rvalue::Use(Operand::Copy(Place::from(total))), node);
+    }
+
+    /// Panics, through a [`Check::SameLength`], unless `expected` and `found`, two arrays'
+    /// lengths in `dimension`, are equal.
+    pub(crate) fn same_length(
+        &mut self,
+        dimension: u32,
+        expected: Operand<'db>,
+        found: Operand<'db>,
+        node: NodeId,
+    ) {
+        let equal = self.temporary(self.boolean_type(), node);
+        self.assign(
+            Place::from(equal),
+            Rvalue::Binary(BinaryOperator::Equal, expected.clone(), found.clone()),
+            node,
+        );
+        self.then(node, |target| TerminatorKind::Assert {
+            condition: Operand::Copy(Place::from(equal)),
+            check: Check::SameLength {
+                dimension,
+                expected,
+                found,
+            },
+            target,
+        });
+    }
+
+    /// `a.min()` (`smallest`) or `a.max()` on an `Array` or `Fixed` array of numbers, into
+    /// `place`: the smallest or largest element, scanning in row-major order. An empty array
+    /// panics, through a [`Check::NotEmpty`], since it has no smallest element. A float NaN
+    /// anywhere gives NaN, as `numpy.min` does: a NaN element replaces the best so far, and
+    /// nothing compares smaller or larger than a NaN to replace it.
+    pub(crate) fn array_extreme(
+        &mut self,
+        place: Place,
+        smallest: bool,
+        array: NodeId,
+        node: NodeId,
+    ) {
+        let ty = self.ty(array);
+        let element = self.element(ty);
+        if !matches!(element.kind(self.db), TypeKind::Primitive(_)) {
+            let name = if smallest { "min" } else { "max" };
+            return self.unsupported(
+                node,
+                &format!("`{name}` of an array whose elements are not numbers"),
+            );
+        }
+        let source = self.borrow(array);
+        let lengths: Vec<Operand<'db>> = (0..self.rank(ty))
+            .map(|dimension| self.length(&source, ty, dimension, node))
+            .collect();
+        if matches!(ty.kind(self.db), TypeKind::Array { .. }) {
+            self.not_empty(&lengths, node);
+        }
+        let first: Vec<Local> = lengths.iter().map(|_| self.zero_index(node)).collect();
+        let best = self.temporary(element, node);
+        let start = Operand::Copy(source.clone().project(Projection::Index(first)));
+        self.assign(Place::from(best), Rvalue::Use(start), node);
+        let test = if smallest {
+            BinaryOperator::Less
+        } else {
+            BinaryOperator::Greater
+        };
+        let float = self.is_float(element);
+        let (value, better, missing) = (
+            self.temporary(element, node),
+            self.temporary(self.boolean_type(), node),
+            self.temporary(self.boolean_type(), node),
+        );
+        self.loop_nest(&lengths, &mut Vec::new(), node, &mut |builder, indices| {
+            let at = source.clone().project(Projection::Index(indices.to_vec()));
+            builder.assign(Place::from(value), Rvalue::Use(Operand::Copy(at)), node);
+            let copy = |local: Local| Operand::Copy(Place::from(local));
+            builder.assign(
+                Place::from(better),
+                Rvalue::Binary(test, copy(value), copy(best)),
+                node,
+            );
+            if float {
+                // `x != x` holds only for NaN.
+                builder.assign(
+                    Place::from(missing),
+                    Rvalue::Binary(BinaryOperator::NotEqual, copy(value), copy(value)),
+                    node,
+                );
+                builder.assign(
+                    Place::from(better),
+                    Rvalue::Binary(BinaryOperator::BitOr, copy(better), copy(missing)),
+                    node,
+                );
+            }
+            let (replace, join) = (builder.new_block(), builder.new_block());
+            builder.terminate(
+                TerminatorKind::Branch {
+                    condition: copy(better),
+                    then: replace,
+                    otherwise: join,
+                },
+                node,
+            );
+            builder.start(replace);
+            builder.assign(Place::from(best), Rvalue::Use(copy(value)), node);
+            builder.terminate(TerminatorKind::Goto(join), node);
+            builder.start(join);
+        });
+        self.assign(place, Rvalue::Use(Operand::Copy(Place::from(best))), node);
+    }
+
+    /// Panics, through a [`Check::NotEmpty`] reported at `node`, when any of `lengths` is 0.
+    fn not_empty(&mut self, lengths: &[Operand<'db>], node: NodeId) {
+        let int = self.int_type();
+        let size = self.temporary(int, node);
+        let one = Operand::Constant(Constant::integer(int, 1));
+        self.assign(Place::from(size), Rvalue::Use(one), node);
+        for length in lengths {
+            self.assign(
+                Place::from(size),
+                Rvalue::Binary(
+                    BinaryOperator::Multiply,
+                    Operand::Copy(Place::from(size)),
+                    length.clone(),
+                ),
+                node,
+            );
+        }
+        let any = self.temporary(self.boolean_type(), node);
+        self.assign(
+            Place::from(any),
+            Rvalue::Binary(
+                BinaryOperator::Greater,
+                Operand::Copy(Place::from(size)),
+                Operand::Constant(Constant::integer(int, 0)),
+            ),
+            node,
+        );
+        self.then(node, |target| TerminatorKind::Assert {
+            condition: Operand::Copy(Place::from(any)),
+            check: Check::NotEmpty,
+            target,
+        });
+    }
+
+    /// A new `i64` local holding 0, an index into the first element of a dimension.
+    pub(crate) fn zero_index(&mut self, node: NodeId) -> Local {
+        let int = self.int_type();
+        let local = self.temporary(int, node);
+        let zero = Operand::Constant(Constant::integer(int, 0));
+        self.assign(Place::from(local), Rvalue::Use(zero), node);
+        local
+    }
+
+    /// `a.round()` on an `Array`, into `place`: a copy of `a`, then each float element rounded
+    /// in place to the nearest whole number, ties to even, still a float. Integers are already
+    /// whole, so their copy is the result.
+    pub(crate) fn array_round(&mut self, place: Place, array: NodeId, node: NodeId) {
+        let ty = self.ty(array);
+        let element = self.element(ty);
+        let copy = self.temporary(ty, node);
+        self.array_copy(Place::from(copy), array, node);
+        if self.is_float(element) {
+            let lengths: Vec<Operand<'db>> = (0..self.rank(ty))
+                .map(|dimension| self.length(&Place::from(copy), ty, dimension, node))
+                .collect();
+            self.loop_nest(&lengths, &mut Vec::new(), node, &mut |builder, indices| {
+                let at = Place::from(copy).project(Projection::Index(indices.to_vec()));
+                builder.math_call(
+                    at.clone(),
+                    MathFunction::RoundEven,
+                    vec![Operand::Copy(at)],
+                    node,
+                );
+            });
+        }
+        let moved = self.take(Place::from(copy), ty);
+        self.assign(place, Rvalue::Use(moved), node);
+    }
+
+    /// `a.fill(value)` on an `Array` or `Fixed` array that can be changed: `value`, converted
+    /// to the element type once, written to every element in row-major order. The call's own
+    /// value, `None`, goes to `place`.
+    pub(crate) fn array_fill(
+        &mut self,
+        place: Place,
+        (array, value): (NodeId, NodeId),
+        node: NodeId,
+    ) {
+        let ty = self.ty(array);
+        let element = self.element(ty);
+        let value = self.operand_as(value, element);
+        let Some(target) = self.place(array) else {
+            return;
+        };
+        let lengths: Vec<Operand<'db>> = (0..self.rank(ty))
+            .map(|dimension| self.length(&target, ty, dimension, node))
+            .collect();
+        self.loop_nest(&lengths, &mut Vec::new(), node, &mut |builder, indices| {
+            let at = target.clone().project(Projection::Index(indices.to_vec()));
+            builder.assign(at, Rvalue::Use(value.clone()), node);
+        });
+        let nothing = self.ty(node);
+        self.assign(
+            place,
+            Rvalue::Use(Operand::Constant(Constant {
+                ty: nothing,
+                value: ConstantValue::None,
+            })),
+            node,
+        );
     }
 
     /// `v.round()` on a `Fixed` array of floats, into `place`: each element rounded to the
