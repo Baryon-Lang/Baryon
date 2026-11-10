@@ -275,6 +275,12 @@ pub enum Builtin {
     /// costs amortized constant time per element, as Python's and Rust's do. Running out of
     /// memory panics; the call cannot fail otherwise.
     Append,
+    /// `xs.pop()` on a `list`: one argument, the list passed `InOut`; the destination has the
+    /// list's element type. It removes the last element and moves it to the destination, in
+    /// constant time, and keeps the buffer, so a later append does not allocate. An empty list
+    /// panics with `pop from empty list`, the message of Python's `IndexError`; the call cannot
+    /// fail otherwise.
+    Pop,
     /// `random.Philox(seed, stream)`: two arguments, the seed and the stream, each an `i64`
     /// passed `Owned`; the destination has type `Philox`. It makes the generator whose numbers
     /// match `NumPy`'s `Generator(Philox(key=seed).jumped(stream))` (decision 0028). A negative
@@ -310,6 +316,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Sum.name(), "sum");
     /// assert_eq!(mir::Builtin::Dot.name(), "dot");
     /// assert_eq!(mir::Builtin::Append.name(), "list.append");
+    /// assert_eq!(mir::Builtin::Pop.name(), "list.pop");
     /// assert_eq!(mir::Builtin::Philox.name(), "random.Philox");
     /// assert_eq!(mir::Builtin::Uniform.name(), "Philox.uniform");
     /// assert_eq!(mir::Builtin::ContainsStr.name(), "str in");
@@ -322,6 +329,7 @@ impl Builtin {
             Self::Sum => "sum",
             Self::Dot => "dot",
             Self::Append => "list.append",
+            Self::Pop => "list.pop",
             Self::Philox => "random.Philox",
             Self::Uniform => "Philox.uniform",
             Self::CompareStr => "str comparison",
