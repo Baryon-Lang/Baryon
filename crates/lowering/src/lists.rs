@@ -1,15 +1,19 @@
 //! Lists (language reference, "Lists"): a display `[a, b]` builds one, `xs.append(value)`
-//! grows one, `len(xs)` and `xs[i]` read one, and `Array(xs)` copies one into a new array.
+//! grows one, `len(xs)`, `xs[i]` and `value in xs` read one, `xs.copy()` copies one, and
+//! `Array(xs)` copies one into a new array.
 //!
-//! Lowering builds lists whose elements are copy types, such as `list[f64]` and `list[i64]`,
-//! the lists a program fills before converting to an `Array`. A list of strings, arrays or other
-//! lists would own its elements, and dropping it would have to drop each one; that is not
-//! lowered yet.
+//! The elements can be of any type. A list of `str`s, arrays, structs or other lists owns its
+//! elements: a display or `append` moves each value in, writing `xs[i] = v` drops the element
+//! it replaces, and dropping the list drops every element. An element is read in place, as a
+//! borrow, since the checker rejects moving one out.
 
 use crate::builder::Builder;
-use mir::{Argument, Builtin, Callee, Operand, Place, Projection, Rvalue, TerminatorKind};
-use syntax::{NodeId, Role};
-use types::{Type, TypeKind};
+use mir::{
+    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Operand, Piece, Place,
+    Projection, Rvalue, TerminatorKind, UnaryOperator,
+};
+use syntax::{NodeId, Operator, Role};
+use types::{FormatSpec, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// The list display `node`, such as `[0]` or `[]`, into `place`: one
@@ -77,17 +81,156 @@ impl<'db> Builder<'db> {
         });
     }
 
-    /// The element type of the list type `ty`, or `None` after reporting a list whose elements
-    /// are not a copy type, which lowering does not build yet.
+    /// The element type of the list type `ty`, or `None` after reporting a type that is not a
+    /// list.
     fn list_element(&mut self, ty: Type<'db>, node: NodeId) -> Option<Type<'db>> {
         let &TypeKind::List(element) = ty.kind(self.db) else {
             self.unsupported(node, "this list");
             return None;
         };
-        if !self.is_copy(element) {
-            self.unsupported(node, "lists whose elements are not a copy type");
-            return None;
-        }
         Some(element)
     }
+
+    /// `xs.copy()` into `place`: a new list holding a copy of each element, in order, appended
+    /// one at a time. Elements of a copy type are copied as they are and `str`s with `copy()`;
+    /// a list of any other element type is reported as not built yet.
+    ///
+    /// Cost: one pass over the elements, and the appends' amortized growth of the new buffer.
+    pub(crate) fn list_copy(&mut self, place: &Place, list: NodeId, node: NodeId) {
+        let ty = self.ty(list);
+        let Some(element) = self.list_element(ty, node) else {
+            return;
+        };
+        let is_text = matches!(element.kind(self.db), TypeKind::Str);
+        if !self.is_copy(element) && !is_text {
+            let element = element.display(self.db);
+            return self.unsupported(node, &format!("`copy` of a list of `{element}`"));
+        }
+        let source = self.borrow(list);
+        let length = self.length(&source, ty, 0, node);
+        let nothing_type = Type::new(self.db, TypeKind::None);
+        self.assign(place.clone(), Rvalue::Aggregate(ty, Vec::new()), node);
+        self.loop_nest(&[length], &mut Vec::new(), node, &mut |builder, indices| {
+            let from = source.clone().project(Projection::Index(indices.to_vec()));
+            let value = if is_text {
+                let copy = builder.temporary(element, node);
+                let piece = Piece::Value(from, FormatSpec::default());
+                builder.assign(Place::from(copy), Rvalue::Format(vec![piece]), node);
+                Operand::Move(Place::from(copy))
+            } else {
+                Operand::Copy(from)
+            };
+            let nothing = builder.temporary(nothing_type, node);
+            builder.then(node, |next| TerminatorKind::Call {
+                callee: Callee::Builtin(Builtin::Append),
+                arguments: vec![Argument::InOut(place.clone()), Argument::Owned(value)],
+                destination: Place::from(nothing),
+                target: next,
+                error: None,
+            });
+        });
+    }
+
+    /// `value in xs` or `value not in xs` on a list, into the `bool` at `place`: compares
+    /// `value` with each element in order with `==` and stops at the first that is equal, as
+    /// Python does. Elements may be numbers, `bool`s, enums or `str`s; `value` converts to the
+    /// element type first, so `2 in weights` finds `2.0`.
+    ///
+    /// Cost: up to one pass over the elements.
+    pub(crate) fn list_contains(
+        &mut self,
+        place: Place,
+        operator: Operator,
+        (value, list): (NodeId, NodeId),
+        node: NodeId,
+    ) {
+        let ty = self.ty(list);
+        let Some(element) = self.list_element(ty, node) else {
+            return;
+        };
+        let is_text = matches!(element.kind(self.db), TypeKind::Str);
+        let comparable = is_text
+            || matches!(
+                element.kind(self.db),
+                TypeKind::Primitive(_) | TypeKind::Enum(_)
+            );
+        if !comparable {
+            let element = element.display(self.db);
+            return self.unsupported(node, &format!("`in` on a list of `{element}`"));
+        }
+        let wanted = if is_text {
+            Operand::Copy(self.borrow(value))
+        } else {
+            let wanted = self.temporary(element, value);
+            let operand = self.operand_as(value, element);
+            self.assign(Place::from(wanted), Rvalue::Use(operand), value);
+            Operand::Copy(Place::from(wanted))
+        };
+        let source = self.borrow(list);
+        let int = self.int_type();
+        let boolean = self.boolean_type();
+        let length = self.length(&source, ty, 0, node);
+        let (index, found) = (self.temporary(int, node), self.temporary(boolean, node));
+        self.assign(
+            Place::from(index),
+            constant(Constant::integer(int, 0)),
+            node,
+        );
+        self.assign(
+            Place::from(found),
+            constant(Constant {
+                ty: boolean,
+                value: ConstantValue::Bool(false),
+            }),
+            node,
+        );
+        let (test, body, step, done) = (
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
+        );
+        self.terminate(TerminatorKind::Goto(test), node);
+        self.start(test);
+        let more = self.temporary(boolean, node);
+        let counter = Operand::Copy(Place::from(index));
+        let below = Rvalue::Binary(BinaryOperator::Less, counter.clone(), length);
+        self.assign(Place::from(more), below, node);
+        self.branch(Operand::Copy(Place::from(more)), (body, done), node);
+        self.start(body);
+        let at = source.project(Projection::Index(vec![index]));
+        let Operand::Copy(wanted) = wanted else {
+            return;
+        };
+        if is_text {
+            let arguments = vec![Argument::Borrow(at), Argument::Borrow(wanted)];
+            self.text_equal(Place::from(found), arguments, node);
+        } else {
+            let equal = Rvalue::Binary(
+                BinaryOperator::Equal,
+                Operand::Copy(at),
+                Operand::Copy(wanted),
+            );
+            self.assign(Place::from(found), equal, node);
+        }
+        self.branch(Operand::Copy(Place::from(found)), (done, step), node);
+        self.start(step);
+        let one = Operand::Constant(Constant::integer(int, 1));
+        let next = Rvalue::Binary(BinaryOperator::Add, counter, one);
+        self.assign(Place::from(index), next, node);
+        self.terminate(TerminatorKind::Goto(test), node);
+        self.start(done);
+        let found = Operand::Copy(Place::from(found));
+        let rvalue = if operator == Operator::NotIn {
+            Rvalue::Unary(UnaryOperator::Not, found)
+        } else {
+            Rvalue::Use(found)
+        };
+        self.assign(place, rvalue, node);
+    }
+}
+
+/// The rvalue that is the constant `constant`.
+fn constant(constant: Constant<'_>) -> Rvalue<'_> {
+    Rvalue::Use(Operand::Constant(constant))
 }

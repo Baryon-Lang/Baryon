@@ -29,6 +29,7 @@
 //! | [`baryon_rt_sum_strided_f64`], [`baryon_rt_sum_strided_f32`] | The same for an `Array` that may be a view, with any strides |
 //! | [`baryon_rt_dot_f64`], [`baryon_rt_dot_f32`] | Add the products of two float arrays' elements in the same order, for `a.dot(b)` |
 //! | [`baryon_rt_dot_strided_f64`], [`baryon_rt_dot_strided_f32`] | The same for two rank-1 `Array`s that may be views, each with its stride |
+//! | [`baryon_rt_str_compare`], [`baryon_rt_str_contains`], [`baryon_rt_str_length`] | Compare two `str`s by code point, find one inside another, and count characters, for `==`, `<`, `in` and `len` of `str` |
 //! | [`baryon_rt_print_str_quoted`] | Print a `str` inside a tuple or struct, or a field of an error that ends `main`, as Python's `repr` writes it, quoted |
 //! | [`baryon_rt_flush`] | Write out a line `print(..., end="")` left unended, before the C `main` returns |
 //!
