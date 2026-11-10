@@ -15,8 +15,10 @@
 //! The runtime's chunks depend only on the iteration count (decision 0021), and the partials
 //! combine in a fixed pairwise tree that depends only on the chunk count, never on the thread
 //! count, so a float reduction gives the same bits on every run and every machine (the
-//! reference, "Reproducible reductions"). The partials live on the stack of `f`, one per chunk,
-//! at most 1024 per reduction, and are released when the loop ends.
+//! reference, "Reproducible reductions"). The partials, one per chunk and at most 1024 per
+//! reduction, live on the heap and are freed once combined. They cannot live in the stack memory
+//! the loop releases when it ends: `clang -O2` may move the read of the combined result past
+//! `llvm.stackrestore`, which then reads stack memory already given back.
 
 use crate::Unsupported;
 use crate::accumulate;
@@ -26,7 +28,7 @@ use crate::ty::Number;
 use mir::ReductionOperator;
 use mir::{Argument, BinaryOperator, BlockId, Body, Check, LocalKind, Operand, Place, Reduction};
 use std::fmt::Write as _;
-use types::{Mode, Type};
+use types::{Layout, Mode, Type};
 
 /// The runtime functions a `prange` loop calls, as the runtime exports them (decision 0021).
 const CHUNK_COUNT: &str = "declare i64 @baryon_rt_chunk_count(i64) nounwind";
@@ -34,7 +36,7 @@ const CHUNK_COUNT: &str = "declare i64 @baryon_rt_chunk_count(i64) nounwind";
 /// See [`CHUNK_COUNT`].
 const PARALLEL_FOR: &str = "declare void @baryon_rt_parallel_for(i64, ptr, ptr)";
 
-/// The intrinsics that release the partials' stack memory when a loop ends, so a `prange`
+/// The intrinsics that release the context's stack memory when a loop ends, so a `prange`
 /// inside a serial loop does not grow the stack on every pass.
 const STACK_SAVE: &str = "declare ptr @llvm.stacksave()";
 
@@ -64,6 +66,8 @@ struct Reduced<'db> {
     llvm: String,
     /// The operator's identity for that type, which each chunk's copy starts at.
     identity: String,
+    /// The value's layout, which sizes the partials' heap memory.
+    layout: Layout,
 }
 
 impl<'db> Function<'_, '_, 'db> {
@@ -92,6 +96,8 @@ impl<'db> Function<'_, '_, 'db> {
             let (address, ty) = self.place(&reduction.place)?;
             let (number, llvm) = self.scalar(ty)?;
             let identity = identity(reduction.operator, number, &llvm)?;
+            let layout = types::layout(self.types.db, ty, self.types.declared)
+                .map_err(|_| self.types.unsupported(ty))?;
             reduced.push(Reduced {
                 operator: reduction.operator,
                 address,
@@ -99,6 +105,7 @@ impl<'db> Function<'_, '_, 'db> {
                 number,
                 llvm,
                 identity,
+                layout,
             });
         }
         let (iterations, _) = self.value(count)?;
@@ -130,13 +137,14 @@ impl<'db> Function<'_, '_, 'db> {
             )))
         };
         let mut partials = Vec::new();
+        let mut partial_count = None;
         if let Some(chunks) = &chunks {
             // One more than the chunks, so a loop with none still has partial 0: the identity,
             // which chunk 0 overwrites when it runs.
             let room = self.emit(&format!("add i64 {chunks}, 1"));
             for (position, reduction) in reduced.iter().enumerate() {
                 let llvm = &reduction.llvm;
-                let partial = self.emit(&format!("alloca {llvm}, i64 {room}"));
+                let partial = self.allocate_elements(&room, reduction.layout);
                 self.line(&format!(
                     "store {llvm} {}, ptr {partial}",
                     reduction.identity
@@ -144,6 +152,7 @@ impl<'db> Function<'_, '_, 'db> {
                 self.store_slot(&context, slots, arguments.len() + position, &partial);
                 partials.push(partial);
             }
+            partial_count = Some(room);
         }
         self.line(&format!(
             "call void @baryon_rt_parallel_for(i64 {iterations}, ptr {}, ptr {context})",
@@ -152,6 +161,13 @@ impl<'db> Function<'_, '_, 'db> {
         if let Some(chunks) = &chunks {
             for (reduction, partial) in reduced.iter().zip(&partials) {
                 self.combine_partials(reduction, partial, chunks)?;
+            }
+        }
+        if let Some(room) = &partial_count {
+            // The combined results are stored by now, so the partials can go.
+            for (reduction, partial) in reduced.iter().zip(&partials) {
+                let bytes = self.emit(&format!("mul i64 {room}, {}", reduction.layout.size()));
+                self.deallocate(partial, &bytes, reduction.layout);
             }
         }
         self.finish_accumulators(&accumulated);

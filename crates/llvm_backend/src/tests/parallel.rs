@@ -24,6 +24,15 @@ const POOL: &str = r"
     }
 ";
 
+/// What the C stand-in for `baryon_rt_deallocate` prints when a loop of five chunks frees its
+/// six partials. The partials live on the heap, not the stack: `clang -O2` moved the read of the
+/// combined result past `llvm.stackrestore` when they were a stack array, so it read memory
+/// already released.
+const FREED_SIX: &str = "freed 48 bytes aligned to 8\n";
+
+/// See [`FREED_SIX`]: a loop of no chunks still has partial 0.
+const FREED_ONE: &str = "freed 8 bytes aligned to 8\n";
+
 /// The constant `value` of type `ty`.
 fn constant(ty: Type<'_>, value: ConstantValue) -> Operand<'_> {
     Operand::Constant(Constant { ty, value })
@@ -95,7 +104,7 @@ bb0:
   store ptr %_2, ptr %t3
   %t4 = call i64 @baryon_rt_chunk_count(i64 %t0)
   %t5 = add i64 %t4, 1
-  %t6 = alloca i64, i64 %t5
+  %t6 = call ptr @baryon_rt_allocate_array(i64 %t5, i64 8, i64 8, ptr @baryon.loc.1)
   store i64 0, ptr %t6
   %t7 = getelementptr inbounds [2 x ptr], ptr %t2, i64 0, i64 1
   store ptr %t6, ptr %t7
@@ -143,13 +152,15 @@ c5:
 c7:
   %t28 = extractvalue { i64, i1 } %t26, 0
   store i64 %t28, ptr %_3
+  %t29 = mul i64 %t5, 8
+  call void @baryon_rt_deallocate(ptr %t6, i64 %t29, i64 8)
   call void @llvm.stackrestore(ptr %t1)
   br label %bb1
 bb1:
-  %t29 = load i64, ptr %_3
-  store i64 %t29, ptr %_0
-  %t30 = load i64, ptr %_0
-  ret i64 %t30
+  %t30 = load i64, ptr %_3
+  store i64 %t30, ptr %_0
+  %t31 = load i64, ptr %_0
+  ret i64 %t31
 p0:
   call void @baryon_rt_panic(ptr @baryon.str.2, i64 23, ptr @baryon.loc.1)
   unreachable
@@ -203,7 +214,9 @@ bb0:
 { ptr @baryon.str.0, i64 8, i32 1, i32 1 }
 @baryon.str.2 = private unnamed_addr constant [23 x i8] c\"integer overflow in `+`\"
 
+declare noalias nonnull ptr @baryon_rt_allocate_array(i64, i64, i64, ptr) nounwind
 declare i64 @baryon_rt_chunk_count(i64) nounwind
+declare void @baryon_rt_deallocate(ptr, i64, i64) nounwind
 declare void @baryon_rt_panic(ptr, i64, ptr) cold noreturn nounwind
 declare void @baryon_rt_parallel_for(i64, ptr, ptr)
 declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64)
@@ -238,8 +251,11 @@ fn a_reduction_gives_the_serial_result_and_checks_the_combine() {
         }
     "#;
     let executable = build("parallel-total", &text, &format!("{main}{POOL}"));
-    assert_eq!(run(&executable, &["10", "3"]), Ok("30\n".to_owned()));
-    assert_eq!(run(&executable, &["0", "3"]), Ok("0\n".to_owned()));
+    assert_eq!(
+        run(&executable, &["10", "3"]),
+        Ok(format!("{FREED_SIX}30\n").to_owned())
+    );
+    assert_eq!(run(&executable, &["0", "3"]), Ok(format!("{FREED_ONE}0\n")));
     assert_eq!(
         run(&executable, &["3", "4611686018427387904"]),
         Err("panic: integer overflow in `+`\n  --> heat.byn:1:1\n".to_owned())
@@ -330,7 +346,13 @@ fn a_min_reduction_starts_at_infinity() {
         }
     "#;
     let executable = build("parallel-min", &text, &format!("{main}{POOL}"));
-    assert_eq!(run(&executable, &["10", "100"]), Ok("0.25\n".to_owned()));
-    assert_eq!(run(&executable, &["10", "0.1"]), Ok("0.1\n".to_owned()));
-    assert_eq!(run(&executable, &["0", "7"]), Ok("7\n".to_owned()));
+    assert_eq!(
+        run(&executable, &["10", "100"]),
+        Ok(format!("{FREED_SIX}0.25\n"))
+    );
+    assert_eq!(
+        run(&executable, &["10", "0.1"]),
+        Ok(format!("{FREED_SIX}0.1\n"))
+    );
+    assert_eq!(run(&executable, &["0", "7"]), Ok(format!("{FREED_ONE}7\n")));
 }

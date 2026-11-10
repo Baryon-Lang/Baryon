@@ -227,7 +227,7 @@ impl<'db> Function<'_, '_, 'db> {
 
     /// A new uninitialized buffer of `count` elements laid out as `layout`. The runtime panics
     /// when the size does not fit in memory or memory runs out.
-    fn allocate_elements(&mut self, count: &str, layout: Layout) -> String {
+    pub(crate) fn allocate_elements(&mut self, count: &str, layout: Layout) -> String {
         let location = self.constants.location(self.span);
         self.declare(
             "baryon_rt_allocate_array",
