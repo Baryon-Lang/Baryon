@@ -240,9 +240,16 @@ pub enum Callee<'db> {
 /// lowered to rvalues instead; the ones here need code a backend or the runtime provides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, salsa::SalsaValue)]
 pub enum Builtin {
-    /// `print(a, b, …)`: writes each argument to standard output as Python does, separated by a
-    /// space, then a line end. Each argument is a number, a `bool` or a `str`, passed `Borrow`
-    /// or `Owned`; the destination has type `None` and the call cannot fail.
+    /// Writes each argument to standard output in order, as Python's `print` writes it, with
+    /// nothing between them and nothing after the last. Lowering spells out the separator and
+    /// the line end as arguments of their own, so `print(a, b)` is a call with the arguments
+    /// `a`, `" "`, `b` and `"\n"`, and the `sep=` and `end=` keywords need nothing more here.
+    ///
+    /// An argument is passed `Borrow`, or `Owned` when it is a constant. A `str` argument writes
+    /// its characters unquoted. Any other value writes as the language reference's `print`
+    /// entry says: a number, a `bool`, `None`, a `T | None`, a tuple, an enum member or a struct,
+    /// whose items and fields write as Python's `repr` writes them. A backend that cannot write
+    /// a type yet reports it. The destination has type `None` and the call cannot fail.
     Print,
     /// A mathematical function of floats. Every argument and the destination have one float
     /// type, `f32` or `f64`; lowering converts integer operands first. The call cannot fail.

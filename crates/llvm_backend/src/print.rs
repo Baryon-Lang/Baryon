@@ -1,14 +1,14 @@
 //! `print`: a call of [`Builtin::Print`](mir::Builtin::Print) becomes one runtime call per
-//! argument, with a space between arguments and a line end after the last.
+//! argument. Lowering passes the separator and the line end as arguments of their own, so this
+//! module writes nothing between them.
 //!
 //! The runtime formats each value as Python does (`baryon_rt_print_*`, roadmap 1.12.5). A signed
 //! integer is widened to `i64` and an unsigned one to `u64`, so two functions cover every width;
 //! a float keeps its width, so an `f32` prints its own shortest digits. A string literal, which
-//! lowering passes as a constant, becomes a byte constant printed with `baryon_rt_print_str`, as
-//! the separator and the line end are. A `str` value prints its bytes the same way, with the
-//! "not owned" bit masked off its length (decision 0022). Each runtime call names its stream
-//! first: 1, standard output, for `print`. Complex numbers, enums and anything else are not
-//! printed yet.
+//! lowering passes as a constant, becomes a byte constant printed with `baryon_rt_print_str`. A
+//! `str` value prints its bytes the same way, with the "not owned" bit masked off its length
+//! (decision 0022). Each runtime call names its stream first: 1, standard output, for `print`.
+//! Complex numbers, enums and anything else are not printed yet.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -30,13 +30,9 @@ impl<'db> Function<'_, '_, 'db> {
         arguments: &[Argument<'db>],
         target: BlockId,
     ) -> Result<(), Unsupported> {
-        for (position, argument) in arguments.iter().enumerate() {
-            if position > 0 {
-                self.print_text(STDOUT, b" ");
-            }
+        for argument in arguments {
             self.print_argument(argument)?;
         }
-        self.print_text(STDOUT, b"\n");
         self.line(&format!("br label %{}", block_label(target)));
         Ok(())
     }
