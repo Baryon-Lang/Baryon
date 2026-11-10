@@ -17,9 +17,47 @@ use crate::patterns::Capture;
 use database::Definition;
 use mir::{Argument, BlockId, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Type, TypeKind};
+use types::{Item, Type, TypeKind};
 
 impl<'db> Builder<'db> {
+    /// Ends the block with the call of `item` at `type_arguments`, with `call`'s arguments,
+    /// destination, target and error edge. A method called on a union calls instead the method
+    /// of the member it holds (decision 0032), one call per member behind a switch. `false`
+    /// when the call cannot be built, which has been reported.
+    pub(crate) fn call_terminator(
+        &mut self,
+        item: Item<'db>,
+        type_arguments: Vec<Type<'db>>,
+        arguments: &[Option<NodeId>],
+        call: (Vec<Argument<'db>>, Place, BlockId, Option<mir::ErrorEdge>),
+        node: NodeId,
+    ) -> bool {
+        // A method's receiver comes first; a function's first argument is not one.
+        let is_method = matches!(
+            crate::definition(self.db.parse(item.file(self.db)).tree(), item.name(self.db)),
+            Some((_, Some(_)))
+        );
+        let receiver = arguments.first().copied().flatten().filter(|_| is_method);
+        if let Some(members) = receiver.and_then(|receiver| self.union_members(self.ty(receiver))) {
+            return self.member_calls(item, members, call, node);
+        }
+        let (arguments, destination, target, error) = call;
+        self.terminate(
+            TerminatorKind::Call {
+                callee: mir::Callee::Function {
+                    item,
+                    type_arguments,
+                },
+                arguments,
+                destination,
+                target,
+                error,
+            },
+            node,
+        );
+        true
+    }
+
     /// The members of `ty` when it is a union.
     pub(crate) fn union_members(&self, ty: Type<'db>) -> Option<&'db [Type<'db>]> {
         match ty.kind(self.db) {
@@ -109,7 +147,7 @@ impl<'db> Builder<'db> {
     /// after reporting what lowering does not handle.
     pub(crate) fn member_calls(
         &mut self,
-        item: types::Item<'db>,
+        item: Item<'db>,
         members: &[Type<'db>],
         call: (Vec<Argument<'db>>, Place, BlockId, Option<mir::ErrorEdge>),
         node: NodeId,
@@ -171,11 +209,11 @@ impl<'db> Builder<'db> {
     }
 
     /// The method `name` the struct `member` declares itself.
-    fn own_method(&self, member: Type<'db>, name: &str) -> Option<types::Item<'db>> {
+    fn own_method(&self, member: Type<'db>, name: &str) -> Option<Item<'db>> {
         let TypeKind::Struct(nominal) = member.kind(self.db) else {
             return None;
         };
-        let item = types::Item::new(self.db, self.package, nominal.file, nominal.name);
+        let item = Item::new(self.db, self.package, nominal.file, nominal.name);
         let types::Declaration::Struct { methods, .. } = &self.db.declaration(item).declaration
         else {
             return None;

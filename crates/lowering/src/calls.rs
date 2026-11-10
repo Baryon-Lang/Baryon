@@ -198,33 +198,9 @@ impl<'db> Builder<'db> {
         let errors = self.typed.errors(node);
         let edge = self.error_edge(errors, node);
         let next = self.new_block();
-        // A method's receiver comes first; a function's first argument is not one.
-        let is_method = matches!(
-            crate::definition(self.db.parse(item.file(self.db)).tree(), item.name(self.db)),
-            Some((_, Some(_)))
-        );
-        let receiver = arguments.first().copied().flatten().filter(|_| is_method);
-        if let Some(members) = receiver.and_then(|receiver| self.union_members(self.ty(receiver))) {
-            // A method called on a union calls the method of the member it holds (decision
-            // 0032).
-            let call = (passed, place, next, edge.clone());
-            if !self.member_calls(item, members, call, node) {
-                return;
-            }
-        } else {
-            self.terminate(
-                TerminatorKind::Call {
-                    callee: Callee::Function {
-                        item,
-                        type_arguments,
-                    },
-                    arguments: passed,
-                    destination: place,
-                    target: next,
-                    error: edge.clone(),
-                },
-                node,
-            );
+        let call = (passed, place, next, edge.clone());
+        if !self.call_terminator(item, type_arguments, arguments, call, node) {
+            return;
         }
         if let Some(mut edge) = edge {
             if !views.is_empty() {
