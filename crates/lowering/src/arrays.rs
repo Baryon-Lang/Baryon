@@ -403,12 +403,15 @@ impl<'db> Builder<'db> {
         self.assign(place, Rvalue::Use(length), node);
     }
 
-    /// `len(a)`: the length of an array's first dimension, or a list's number of elements,
-    /// into `place`.
+    /// `len(a)`: the length of an array's first dimension, a list's number of elements, or a
+    /// `str`'s number of characters, into `place`.
     pub(crate) fn len(&mut self, place: Place, argument: NodeId, node: NodeId) {
         let ty = self.ty(argument);
+        if matches!(ty.kind(self.db), TypeKind::Str) {
+            return self.text_length(place, argument, node);
+        }
         if !self.is_array(ty) && !matches!(ty.kind(self.db), TypeKind::List(_)) {
-            return self.unsupported(node, "`len` of strings");
+            return self.unsupported(node, "`len` of this type");
         }
         let array = self.borrow(argument);
         let length = self.length(&array, ty, 0, node);

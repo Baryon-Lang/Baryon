@@ -153,6 +153,7 @@ mod parallel;
 mod print;
 mod random;
 mod rvalue;
+mod strings;
 mod text;
 mod ty;
 mod view;

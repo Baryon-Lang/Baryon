@@ -60,12 +60,13 @@
 //!   `xs.append(value)` calls [`Builtin::Append`](mir::Builtin::Append), `len(xs)` and `xs[i]`
 //!   read it as a one-dimensional array, and `Array(xs)` copies it into a new array. Only lists
 //!   of copy types, such as `list[f64]`, are built so far.
-//! - **Math.** `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` from `math`, and `**` and `**=` on
-//!   floats, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
-//!   [`Builtin::Math`](mir::Builtin::Math) calls a backend writes. The built-in `round(x)` rounds
-//!   a float and converts it to an integer. `**` and `**=` on integers are repeated squaring,
-//!   with a [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each
-//!   multiplication checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
+//! - **Math.** The functions of `math` for real numbers, and `**` and `**=` on floats, call a
+//!   [`MathFunction`](mir::MathFunction), as [`Builtin::Math`](mir::Builtin::Math) calls a
+//!   backend writes; `floor`, `ceil`, `trunc` and the built-in `round(x)` round and then convert
+//!   to an integer, `isnan`, `isinf` and `isfinite` compare, and `degrees`, `radians` and
+//!   `log(x, base)` are arithmetic. `**` and `**=` on integers are repeated squaring, with a
+//!   [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each multiplication
+//!   checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
 //! - **Random numbers.** `Philox(seed, stream)` and `generator.uniform()` call
 //!   [`Builtin::Philox`](mir::Builtin::Philox) and [`Builtin::Uniform`](mir::Builtin::Uniform),
 //!   the generator passed `InOut` (decision 0028). `pi`, `e`, `tau`, `inf` and `nan` from `math`
