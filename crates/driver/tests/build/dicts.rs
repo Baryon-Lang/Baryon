@@ -125,6 +125,29 @@ def main():
     assert_eq!(status, Some(0));
 }
 
+/// `d[k] = v` leaves the key's variable usable, as in Python: a `str` key, or a tuple holding
+/// one, read from a variable is copied into the table rather than moved, so the variable and the
+/// table each free their own string.
+#[test]
+fn storing_a_key_from_a_variable_copies_it() {
+    let program = r#"
+def main():
+    n = f"x{1}"
+    d: dict[str, int] = {}
+    d[n] = 1
+    d[n] += 1
+    pair = (f"p{2}", 3)
+    t: dict[tuple[str, int], str] = {}
+    t[pair] = "v"
+    t[pair] = "w"
+    print(n, d[n], pair[0], t[pair], len(t))
+"#;
+    let (printed, status, report) = run("dict-stored-key", program).unwrap();
+    assert_eq!(report, "");
+    assert_eq!(printed, "x1 2 p2 w 1\n");
+    assert_eq!(status, Some(0));
+}
+
 /// A missing key panics, naming the key the way Python's `repr` writes it: a `str` quoted, a
 /// tuple in parentheses, an enum member by its class and name.
 #[test]

@@ -164,6 +164,7 @@ mod module;
 mod panic;
 mod parallel;
 mod print;
+mod print_array;
 mod print_collections;
 mod process;
 mod random;

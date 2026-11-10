@@ -32,6 +32,7 @@
 //! | [`baryon_rt_print_complex128`], [`baryon_rt_print_complex64`] | Print a complex number as Python's `repr` writes it, such as `(1+2j)` |
 //! | [`baryon_rt_power_complex128`], [`baryon_rt_power_complex64`] | `z ** w` on complex numbers, as Python computes it |
 //! | [`baryon_rt_str_compare`], [`baryon_rt_str_contains`], [`baryon_rt_str_length`] | Compare two `str`s by code point, find one inside another, and count characters, for `==`, `<`, `in` and `len` of `str` |
+//! | [`baryon_rt_print_array`] | Print an array as `NumPy`'s `print` writes an `ndarray`, such as `[1.  2.5]`, its element type one of the `ELEMENT_*` constants (decision 0033) |
 //! | [`baryon_rt_print_str_quoted`] | Print a `str` inside a tuple or struct, or a field of an error that ends `main`, as Python's `repr` writes it, quoted |
 //! | [`baryon_rt_dict_find`], [`baryon_rt_dict_insert`], [`baryon_rt_dict_remove`], [`baryon_rt_dict_next`], [`baryon_rt_dict_length`], [`baryon_rt_dict_free`] | The hash table behind `dict`: find a key, add one, remove an entry, step through the entries in insertion order, count and free (decision 0035) |
 //! | [`baryon_rt_panic_key`] | End the program for `d[k]` of a key that is not in the `dict` |
@@ -86,9 +87,12 @@ mod panic;
 mod parallel;
 mod philox;
 mod print;
+mod print_array;
 mod sum;
 
 pub use abi::{
+    ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128, ELEMENT_F32, ELEMENT_F64, ELEMENT_I8,
+    ELEMENT_I16, ELEMENT_I32, ELEMENT_I64, ELEMENT_U8, ELEMENT_U16, ELEMENT_U32, ELEMENT_U64,
     OwnedText, TextBuilder, baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish,
     baryon_rt_accumulator_new, baryon_rt_accumulator_slot, baryon_rt_allocate,
     baryon_rt_allocate_array, baryon_rt_argument, baryon_rt_argument_count, baryon_rt_chunk_count,
@@ -99,13 +103,13 @@ pub use abi::{
     baryon_rt_panic_exponent, baryon_rt_panic_index, baryon_rt_panic_key,
     baryon_rt_panic_length_mismatch, baryon_rt_panic_slice, baryon_rt_parallel_for,
     baryon_rt_philox_new, baryon_rt_philox_uniform, baryon_rt_power_complex64,
-    baryon_rt_power_complex128, baryon_rt_print_bool, baryon_rt_print_complex64,
-    baryon_rt_print_complex128, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
-    baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64, baryon_rt_str_compare,
-    baryon_rt_str_contains, baryon_rt_str_length, baryon_rt_sum_f32, baryon_rt_sum_f64,
-    baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64, baryon_rt_text_bool, baryon_rt_text_f32,
-    baryon_rt_text_f64, baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new,
-    baryon_rt_text_str, baryon_rt_text_u64,
+    baryon_rt_power_complex128, baryon_rt_print_array, baryon_rt_print_bool,
+    baryon_rt_print_complex64, baryon_rt_print_complex128, baryon_rt_print_f32,
+    baryon_rt_print_f64, baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted,
+    baryon_rt_print_u64, baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_length,
+    baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64,
+    baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish,
+    baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
 };
 pub use accumulate::Accumulator;
 pub use dict::{DictLayout, KeyPart, STR_PART, Table};
