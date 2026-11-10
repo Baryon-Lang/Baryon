@@ -97,6 +97,7 @@ pub(crate) fn check<'db>(
         bound: BTreeSet::new(),
         modes: BTreeMap::new(),
         loops: Vec::new(),
+        loop_ends: BTreeSet::new(),
         parallel: Vec::new(),
         accumulate: Vec::new(),
         typed: TypedBody::default(),
@@ -150,6 +151,10 @@ struct Body<'db> {
     modes: BTreeMap<NodeId, types::Mode>,
     /// The enclosing `for` loops over collections, innermost last (the `loops` module).
     loops: Vec<loops::Loop>,
+    /// The loop targets that ended a borrow: a loop variable that borrows an element is
+    /// recorded as moved at its target when the loop ends, and a read of it before it is
+    /// assigned again is reported as a read after the loop (the `loops` module).
+    loop_ends: BTreeSet<NodeId>,
     /// The enclosing `prange` and `simd` loops, innermost last: at most one of each, the
     /// `simd` loop inside the `prange` one (the `parallel` module).
     parallel: Vec<parallel::Parallel>,

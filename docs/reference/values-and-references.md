@@ -256,6 +256,28 @@ A loop variable that borrows a non-copy element cannot be changed or moved eithe
 copy. A loop over a temporary, such as `range(n)` or a call's result,
 borrows nothing.
 
+The borrow ends with the loop. In Python, `name` still holds the last element after
+`for name in names:`; here a variable that borrowed a non-copy element holds nothing after its
+loop, so reading it before assigning it again is an error. Assigning it a new value is fine, and
+so is a loop variable of a copy type, such as `f64`, which keeps the last value as in Python. To
+keep an element, copy it inside the loop:
+
+```text
+error: `name` is read after its loop ended
+ --> roster.byn:4:11
+  |
+4 |     print(name)
+  |           ^^^^ read after the loop
+ ::: roster.byn:2:9
+  |
+2 |     for name in names:
+  |         ---- `name` borrows each element only while the loop runs
+  = note: to keep an element, copy it inside the loop: `last = name.copy()`
+```
+
+Keeping the last element would mean a hidden copy of it, a whole row in
+`for row in grid:` over a `list[list[f64]]`, so the copy is written out where it is wanted.
+
 A list comprehension loops the same way, and its value moves into the new list. So
 `[w for w in words]` over a `list[str]` is the same error as `kept = w` in a loop, with the same
 fix, `[w.copy() for w in words]`; `[len(w) for w in words]` copies nothing and needs no fix. A

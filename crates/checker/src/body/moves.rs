@@ -176,6 +176,19 @@ impl<'db> Body<'db> {
             return;
         };
         let name = self.tree.text(node, self.text);
+        if self.loop_ends.contains(&site) {
+            let diagnostic = Diagnostic::error(format!("`{name}` is read after its loop ended"))
+                .with_primary(self.tree.span(node), "read after the loop")
+                .with_secondary(
+                    self.tree.span(site),
+                    format!("`{name}` borrows each element only while the loop runs"),
+                )
+                .with_note(format!(
+                    "to keep an element, copy it inside the loop: `last = {name}.copy()`"
+                ));
+            self.lowerer.diagnostics.push(diagnostic);
+            return;
+        }
         let standard = self
             .locals
             .get(&binding)

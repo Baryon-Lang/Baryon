@@ -65,13 +65,6 @@ impl<'db> Builder<'db> {
                 return self.unsupported(iterator, "`for` loops over values of this type");
             }
         };
-        let borrowed = !self.is_copy(element);
-        if borrowed && !self.confined(statement, target) {
-            return self.unsupported(
-                target,
-                "a loop variable that borrows an element and is also used outside the loop",
-            );
-        }
         let collection = self.borrow(iterator);
         let (length, items) = self.loop_elements(&collection, ty, iterator);
         let limit = self.temporary(self.int_type(), iterator);
@@ -275,50 +268,5 @@ impl<'db> Builder<'db> {
             }
             _ => self.unsupported(target, "this loop target"),
         }
-    }
-
-    /// Whether every use of the variables `target` binds lies inside a `for` statement whose
-    /// target binds it again, `statement` or another, so reading each one as the element it
-    /// borrows is exact: such a loop gives the variable its value at the top of every pass,
-    /// before any read in it. Two loops that reuse a name, `for c in a:` then `for c in b:`,
-    /// are confined; a read after the loop, or an assignment outside one, is not. A
-    /// comprehension's variables belong to the comprehension alone, so they always are.
-    pub(crate) fn confined(&self, statement: NodeId, target: NodeId) -> bool {
-        if self.tree.kind(statement) != SyntaxKind::For {
-            return true;
-        }
-        let (mut everywhere, mut names) = (Vec::new(), Vec::new());
-        self.descendants(self.function, &mut everywhere);
-        self.descendants(target, &mut names);
-        let refers = |node: NodeId, binding: NodeId| {
-            self.definition(node) == Some(&Definition::Local(binding))
-        };
-        names.into_iter().all(|name| {
-            let Some(&Definition::Local(binding)) = self.definition(name) else {
-                return true;
-            };
-            // The spans of the `for` statements whose targets bind the variable.
-            let rebinding: Vec<_> = everywhere
-                .iter()
-                .filter(|&&node| self.tree.kind(node) == SyntaxKind::For)
-                .filter(|&&node| {
-                    let mut bound = Vec::new();
-                    if let Some(target) = self.tree.child(node, Role::Target) {
-                        self.descendants(target, &mut bound);
-                    }
-                    bound.into_iter().any(|bound| refers(bound, binding))
-                })
-                .map(|&node| self.tree.span(node))
-                .collect();
-            everywhere
-                .iter()
-                .filter(|&&node| refers(node, binding))
-                .all(|&node| {
-                    let span = self.tree.span(node);
-                    rebinding.iter().any(|loop_span| {
-                        loop_span.start() <= span.start() && span.end() <= loop_span.end()
-                    })
-                })
-        })
     }
 }

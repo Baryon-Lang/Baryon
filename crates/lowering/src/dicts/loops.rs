@@ -41,12 +41,6 @@ impl<'db> Builder<'db> {
             View::Values => value,
             View::Items => Type::new(self.db, TypeKind::Tuple(vec![key, value])),
         };
-        if !self.is_copy(element) && !self.confined(statement, target) {
-            return self.unsupported(
-                target,
-                "a loop variable that borrows an element and is also used outside the loop",
-            );
-        }
         let base = self.borrow(dict);
         let int = self.int_type();
         let position = self.temporary(int, iterator);

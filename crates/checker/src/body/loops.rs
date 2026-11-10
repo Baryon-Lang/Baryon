@@ -55,12 +55,20 @@ impl<'db> Body<'db> {
             if let Some(target) = target {
                 body.bind(target, element, None);
             }
+            let borrowed = body.borrowed_elements(target, element);
             body.loops.push(Loop {
                 collection,
-                elements: body.borrowed_elements(target, element),
+                elements: borrowed.iter().map(|&(binding, _)| binding).collect(),
             });
             body.block(statement, Role::Body);
             body.loops.pop();
+            // The borrow ends with the loop (decision card, 2026-11-10): the variable holds
+            // no element after it, so a read before a new assignment is an error, the `else`
+            // block included.
+            for (binding, name) in borrowed {
+                body.state.moved.insert(binding, name);
+                body.loop_ends.insert(name);
+            }
             body.block(statement, Role::Else);
         });
         if parallel {
@@ -116,7 +124,11 @@ impl<'db> Body<'db> {
             }
             body.loops.push(Loop {
                 collection,
-                elements: body.borrowed_elements(target, element),
+                elements: body
+                    .borrowed_elements(target, element)
+                    .into_iter()
+                    .map(|(binding, _)| binding)
+                    .collect(),
             });
             let conditions: Vec<NodeId> =
                 body.tree.children_with(clause, Role::Condition).collect();
@@ -146,8 +158,13 @@ impl<'db> Body<'db> {
 
     /// The variables `target` binds that borrow their part of an element of type `element`,
     /// rather than copy it, as lowering binds them: a name whose type is not a copy type, and,
-    /// in a tuple target such as `name, mass`, each part the same way.
-    fn borrowed_elements(&self, target: Option<NodeId>, element: Type<'db>) -> Vec<NodeId> {
+    /// in a tuple target such as `name, mass`, each part the same way. Each comes with the
+    /// `Name` node in the target that binds it.
+    fn borrowed_elements(
+        &self,
+        target: Option<NodeId>,
+        element: Type<'db>,
+    ) -> Vec<(NodeId, NodeId)> {
         let mut borrowed = Vec::new();
         if let Some(target) = target {
             self.borrowed_parts(target, element, &mut borrowed);
@@ -156,15 +173,15 @@ impl<'db> Body<'db> {
     }
 
     /// Appends to `borrowed` the variables the target `target` binds that borrow their part, of
-    /// type `ty`.
-    fn borrowed_parts(&self, target: NodeId, ty: Type<'db>, borrowed: &mut Vec<NodeId>) {
+    /// type `ty`, each with its `Name` node in the target.
+    fn borrowed_parts(&self, target: NodeId, ty: Type<'db>, borrowed: &mut Vec<(NodeId, NodeId)>) {
         if !self.moves(ty) {
             return;
         }
         match (self.tree.kind(target), ty.kind(self.db)) {
             (SyntaxKind::Name, _) => {
                 if let Some(&Definition::Local(binding)) = self.lowerer.definition(target) {
-                    borrowed.push(binding);
+                    borrowed.push((binding, target));
                 }
             }
             (SyntaxKind::Tuple, TypeKind::Tuple(items)) => {
