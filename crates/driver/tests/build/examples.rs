@@ -12,7 +12,7 @@ use std::process::Command;
 /// # Errors
 ///
 /// When writing the package or starting `baryon` or the program fails.
-fn prints(name: &str, text: &str, expected: &str) -> io::Result<()> {
+pub(super) fn prints(name: &str, text: &str, expected: &str) -> io::Result<()> {
     let directory = package(name, &[("main.byn", text)])?;
     let (output, program) = baryon_build(&directory)?;
     assert!(output.status.success(), "{}", stderr(&output));
