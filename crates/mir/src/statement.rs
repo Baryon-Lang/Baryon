@@ -305,6 +305,17 @@ pub enum Builtin {
     /// destination has type `i64`. It counts characters, code points, as Python does, not bytes,
     /// so it reads the whole string. The call cannot fail.
     LengthStr,
+    /// One character of a `str`, for `for c in text` (roadmap 1.13.8): two arguments, the `str`
+    /// passed `Borrow`, or `Owned` for a literal, and a cursor, an `i64` byte offset passed
+    /// `InOut`; the destination is a `str` that borrows the bytes of the character that starts at
+    /// the cursor, flagged as not owned (decision 0022), so it is never freed. The call moves the
+    /// cursor past the character, so a loop that starts the cursor at 0 and calls it once for each
+    /// of the [`LengthStr`](Self::LengthStr) characters visits each character in order.
+    ///
+    /// The cursor must be the first byte of a character inside the string, which that loop
+    /// guarantees, so the call checks nothing. It reads one byte to find the character's width
+    /// in UTF-8, so it takes constant time. The call cannot fail.
+    CharacterStr,
     /// Looks a key up in a `dict` (decision 0035): two arguments, the `dict` and the key, of the
     /// key type, each passed `Borrow`, so a constant key is put in a local first; the destination is an
     /// `i64`, the position of the key's entry, or -1 when the key is not there. The position
@@ -350,6 +361,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Philox.name(), "random.Philox");
     /// assert_eq!(mir::Builtin::Uniform.name(), "Philox.uniform");
     /// assert_eq!(mir::Builtin::ContainsStr.name(), "str in");
+    /// assert_eq!(mir::Builtin::CharacterStr.name(), "str character");
     /// assert_eq!(mir::Builtin::DictFind.name(), "dict lookup");
     /// ```
     #[must_use]
@@ -366,6 +378,7 @@ impl Builtin {
             Self::CompareStr => "str comparison",
             Self::ContainsStr => "str in",
             Self::LengthStr => "len of str",
+            Self::CharacterStr => "str character",
             Self::DictFind => "dict lookup",
             Self::DictInsert => "dict insert",
             Self::DictRemove => "dict remove",
