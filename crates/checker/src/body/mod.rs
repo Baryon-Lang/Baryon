@@ -41,6 +41,7 @@ mod errors;
 mod exclusive;
 mod exhaustive;
 mod expressions;
+mod files;
 mod flow;
 mod formatted;
 mod generics;
@@ -230,8 +231,19 @@ impl<'db> Body<'db> {
             SyntaxKind::With => {
                 let items: Vec<NodeId> = self.tree.children_with(statement, Role::Item).collect();
                 for item in items {
-                    if let Some(value) = self.tree.child(item, Role::Value) {
-                        self.expression(value, None);
+                    match self.tree.child(item, Role::Target) {
+                        // `with open(...) as f:`, the one `with` that binds (decision 0036).
+                        Some(target) => {
+                            if let Some(ty) = self.with_file(statement, item) {
+                                let value = self.tree.child(item, Role::Value);
+                                self.bind(target, ty, value);
+                            }
+                        }
+                        None => {
+                            if let Some(value) = self.tree.child(item, Role::Value) {
+                                self.expression(value, None);
+                            }
+                        }
                     }
                 }
                 return self.block(statement, Role::Body);

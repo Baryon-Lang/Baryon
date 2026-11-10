@@ -346,7 +346,13 @@ impl Checker<'_> {
                     self.tree.kind(value) == SyntaxKind::Name && self.text(value) == "unsafe"
                 })
         };
-        if items.len() == 1 && is_unsafe(items[0]) {
+        // `with value as name:`, which the type checker accepts for a `File` (decision 0036).
+        let binds_a_name = |item: NodeId| {
+            self.tree
+                .child(item, Role::Target)
+                .is_some_and(|target| self.tree.kind(target) == SyntaxKind::Name)
+        };
+        if items.len() == 1 && (is_unsafe(items[0]) || binds_a_name(items[0])) {
             return;
         }
         let span = match (items.first(), items.last()) {
@@ -358,11 +364,11 @@ impl Checker<'_> {
             _ => self.tree.span(id),
         };
         self.error(
-            "`with` is supported only as `with unsafe:`",
+            "`with` is supported only as `with unsafe:` and `with open(...) as f:`",
             span,
             "",
             &[
-                "context managers are not in version 0",
+                "other context managers are not in Baryon",
                 "cleanup is automatic: every value is destroyed when its owner goes out of scope",
             ],
         );

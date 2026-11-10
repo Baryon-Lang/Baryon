@@ -282,6 +282,7 @@ mod errors;
 mod escapes;
 mod expressions;
 mod facts;
+mod files;
 mod iterators;
 mod lanes;
 mod lists;

@@ -34,6 +34,17 @@ impl<'db> Body<'db> {
         value
     }
 
+    /// Records that the statement `node`, which is not a call, can fail with the errors of
+    /// `ty`, a `Raises` type, and checks that each is handled. `what` starts the message.
+    pub(super) fn fallible_at(&mut self, node: NodeId, ty: Type<'db>, what: &str) {
+        let TypeKind::Fallible { errors, .. } = ty.kind(self.db) else {
+            return;
+        };
+        let errors = errors.clone();
+        self.typed.errors.insert(Key(node), errors.clone());
+        self.propagate(node, what, &errors);
+    }
+
     /// `raise E(...)`, or a bare `raise` inside an `except`, which raises the error it caught.
     pub(super) fn raise(&mut self, statement: NodeId) {
         if let Some(cause) = self.tree.child(statement, Role::Cause) {

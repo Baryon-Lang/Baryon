@@ -45,12 +45,12 @@ error: `for` with `else` is not supported
    = note: a loop's `else` runs when the loop ends without `break`, which readers often misread
    = note: set a flag before `break` and test it after the loop
 
-error: `with` is supported only as `with unsafe:`
+error: `with` is supported only as `with unsafe:` and `with open(...) as f:`
   --> statements.byn:15:10
    |
-15 |     with open("data.txt") as handle:
-   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: context managers are not in version 0
+15 |     with lock():
+   |          ^^^^^^
+   = note: other context managers are not in Baryon
    = note: cleanup is automatic: every value is destroyed when its owner goes out of scope
 
 error: `except` must name the error types it handles
@@ -133,12 +133,12 @@ error: `async` is not supported
    |     ^^^^^
    = note: version 0 has no asynchronous code; parallel work uses `prange`
 
-error: `with` is supported only as `with unsafe:`
+error: `with` is supported only as `with unsafe:` and `with open(...) as f:`
   --> statements.byn:41:16
    |
 41 |     async with lock():
    |                ^^^^^^
-   = note: context managers are not in version 0
+   = note: other context managers are not in Baryon
    = note: cleanup is automatic: every value is destroyed when its owner goes out of scope
 
 error: `await` is not supported

@@ -226,6 +226,7 @@ impl<'db> Lowerer<'db> {
     fn builtin(&mut self, node: NodeId, name: &str, subscript: Option<NodeId>) -> Type<'db> {
         let simple = match name {
             "str" => Some(TypeKind::Str),
+            "File" => Some(TypeKind::Standard(types::StandardType::File)),
             "Self" => {
                 if self.self_type.is_none() {
                     return self.error(

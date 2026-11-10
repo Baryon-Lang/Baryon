@@ -52,8 +52,9 @@ impl<'db> Body<'db> {
     }
 
     /// `generator.method(arguments)` on a value of the built-in type `standard`, or an error for
-    /// a method it does not have. `uniform()` changes the generator, so the caller records the
-    /// receiver as changed.
+    /// a method it does not have; a `File`'s methods are the `files` module's. `uniform()`
+    /// changes the generator, as reading or writing changes a file, so the caller records the
+    /// receiver as changed, or as moved for a file's `close()`.
     pub(super) fn standard_method(
         &mut self,
         node: NodeId,
@@ -86,12 +87,7 @@ impl<'db> Body<'db> {
                     Some("a `Philox` has `uniform()` so far"),
                 )
             }
-            // Nothing makes a `File` until `open` is checked (roadmap 1.13.6).
-            (StandardType::File, _) => {
-                self.untyped(arguments);
-                let message = format!("`File.{method}` is not in Baryon yet");
-                self.lowerer.error(node, &message, "not built yet", None)
-            }
+            (StandardType::File, _) => self.file_method(node, method, arguments),
         }
     }
 }

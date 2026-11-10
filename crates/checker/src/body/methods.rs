@@ -59,7 +59,7 @@ impl<'db> Body<'db> {
         }
         if let &TypeKind::Standard(standard) = base.kind(self.db) {
             let result = self.standard_method(node, standard, &callee, arguments);
-            self.change(value);
+            self.used_receiver(value, base, &callee);
             return result;
         }
         if let &TypeKind::Dict { key, value: held } = base.kind(self.db) {

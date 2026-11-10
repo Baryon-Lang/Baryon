@@ -20,6 +20,7 @@ mod defaults;
 mod dicts;
 mod errors;
 mod examples;
+mod files;
 mod generic_methods;
 mod guide;
 mod list_slices;

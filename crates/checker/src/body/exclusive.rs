@@ -192,9 +192,19 @@ impl<'db> Body<'db> {
         }
         let name = self.tree.text(root, self.text);
         let message = format!("`{name}` is a read-only parameter, so it cannot be changed");
+        let standard = self
+            .locals
+            .get(&binding)
+            .is_some_and(|&ty| matches!(ty.kind(self.db), types::TypeKind::Standard(_)));
         let hint = if name == "self" {
             "to change the struct, declare the method's first parameter `self: InOut[Self]`"
                 .to_owned()
+        } else if standard {
+            // A file or a generator has no copy; reading, writing or drawing changes it.
+            format!(
+                "take it as `InOut[{}]` to use the caller's",
+                self.show(self.locals[&binding])
+            )
         } else {
             format!(
                 "take it as `InOut[...]` to change the caller's value, or change a copy: `work = {name}.copy()`"
