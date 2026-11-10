@@ -109,6 +109,8 @@ fn each_kind_of_value_allows_what_python_allows() {
     for (text, class) in [
         (".2f", FormatClass::Complex),
         ("+^20,.3e", FormatClass::Complex),
+        ("#", FormatClass::Complex),
+        ("#.2f", FormatClass::Complex),
         (".2f", FormatClass::Integer),
         ("_x", FormatClass::Integer),
         (",", FormatClass::Integer),

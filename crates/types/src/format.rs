@@ -418,9 +418,6 @@ impl FormatSpec {
                 if self.zero {
                     return not_for("zero padding `0`".to_owned());
                 }
-                if self.alternate {
-                    return not_for("`#`".to_owned());
-                }
                 if self.align == Some(Align::AfterSign) {
                     return not_for("`=` alignment".to_owned());
                 }
