@@ -5,13 +5,6 @@ error: `lambda` is not supported
   |              ^^^^^^^^^^^^^^^
   = note: pass a function defined with `def` at the top level of the module instead
 
-error: dictionaries are not supported yet
- --> expressions.byn:3:13
-  |
-3 |     table = {"a": 1}
-  |             ^^^^^^^^
-  = note: dictionaries are not in version 0; for named values, use a struct
-
 error: sets are not supported yet
  --> expressions.byn:4:14
   |
@@ -26,12 +19,12 @@ error: sets are not supported yet
   |               ^^^^^^^^^^^^^^^^^^^^^^
   = note: sets are not in version 0; use a `list`
 
-error: dictionaries are not supported yet
+error: dict comprehensions are not supported yet
  --> expressions.byn:6:13
   |
 6 |     names = {x: str(x) for x in items}
   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  = note: dictionaries are not in version 0; for named values, use a struct
+  = note: build the dict in a loop: `d[k] = v`
 
 error: generator expressions are not supported
  --> expressions.byn:7:17

@@ -249,6 +249,7 @@ impl<'db> Body<'db> {
                         receiver = Some(value);
                         match self.typed.expression(value).map(|ty| ty.kind(self.db)) {
                             Some(TypeKind::List(_)) => "list",
+                            Some(TypeKind::Dict { .. }) => "dict",
                             Some(TypeKind::Array { .. }) => "Array",
                             Some(TypeKind::Fixed { .. }) => "Fixed",
                             Some(TypeKind::Standard(standard)) => standard.name(),

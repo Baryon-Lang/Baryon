@@ -20,6 +20,7 @@ use super::Body;
 use database::Definition;
 use diagnostics::Diagnostic;
 use syntax::{NodeId, Role, SyntaxKind};
+use types::TypeKind;
 
 /// A `for` loop the body being checked is inside.
 pub(super) struct Loop {
@@ -41,7 +42,9 @@ impl Body<'_> {
             Some(iterator) => self.iteration(iterator),
             None => self.lowerer.unknown(),
         };
-        let collection = iterator.filter(|&iterator| self.place_root(iterator).is_some());
+        let collection = iterator
+            .map(|iterator| self.dict_view_receiver(iterator).unwrap_or(iterator))
+            .filter(|&collection| self.place_root(collection).is_some());
         let parallel = iterator.is_some_and(|iterator| {
             self.loop_kind(iterator)
                 .is_some_and(|kind| self.enter_parallel(statement, iterator, kind))
@@ -114,11 +117,21 @@ impl Body<'_> {
                 self.tree.span(collection),
                 format!("the loop goes over `{collection_name}` here"),
             )
-            .with_note(format!(
-                "loop over the indices instead: `for i in range(len({collection_name})):`"
-            ))
+            .with_note(if self.is_dict(collection) {
+                format!("loop over a copy instead: `for k in {collection_name}.copy():`")
+            } else {
+                format!("loop over the indices instead: `for i in range(len({collection_name})):`")
+            })
         };
         self.lowerer.diagnostics.push(diagnostic);
         true
+    }
+
+    /// Whether the expression `node` was typed as a `dict`, whose loops have no indices.
+    fn is_dict(&self, node: NodeId) -> bool {
+        matches!(
+            self.typed.expression(node).map(|ty| ty.kind(self.db)),
+            Some(TypeKind::Dict { .. })
+        )
     }
 }

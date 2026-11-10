@@ -275,6 +275,12 @@ pub enum Builtin {
     /// costs amortized constant time per element, as Python's and Rust's do. Running out of
     /// memory panics; the call cannot fail otherwise.
     Append,
+    /// `xs.pop()` on a `list`: one argument, the list passed `InOut`; the destination has the
+    /// list's element type. It removes the last element and moves it to the destination, in
+    /// constant time, and keeps the buffer, so a later append does not allocate. An empty list
+    /// panics with `pop from empty list`, the message of Python's `IndexError`; the call cannot
+    /// fail otherwise.
+    Pop,
     /// `random.Philox(seed, stream)`: two arguments, the seed and the stream, each an `i64`
     /// passed `Owned`; the destination has type `Philox`. It makes the generator whose numbers
     /// match `NumPy`'s `Generator(Philox(key=seed).jumped(stream))` (decision 0028). A negative
@@ -284,6 +290,51 @@ pub enum Builtin {
     /// `f64`. It draws the generator's next 64-bit output `u` and gives `(u >> 11) * 2**-53`, a
     /// float in `[0, 1)`, as `NumPy`'s `Generator.random()` does. The call cannot fail.
     Uniform,
+    /// Compares two `str`s as Python orders them, by code point with a prefix first: two
+    /// arguments, each a `str` passed `Borrow`, or `Owned` for a literal; the destination has type
+    /// `i64` and gets -1 when the first comes first, 0 when they are equal and 1 when the second
+    /// comes first. Lowering compares that with 0 for `==`, `!=`, `<`, `<=`, `>` and `>=`. It
+    /// reads both strings, so it costs time linear in the shorter. The call cannot fail.
+    CompareStr,
+    /// `needle in haystack` on two `str`s: two arguments, the haystack then the needle, each
+    /// passed `Borrow`, or `Owned` for a literal; the destination has type `bool`. The empty
+    /// string is in every string. The search takes time linear in the two lengths. The call
+    /// cannot fail.
+    ContainsStr,
+    /// `len(text)` of a `str`: one argument passed `Borrow`, or `Owned` for a literal; the
+    /// destination has type `i64`. It counts characters, code points, as Python does, not bytes,
+    /// so it reads the whole string. The call cannot fail.
+    LengthStr,
+    /// Looks a key up in a `dict` (decision 0035): two arguments, the `dict` and the key, of the
+    /// key type, each passed `Borrow`, so a constant key is put in a local first; the destination is an
+    /// `i64`, the position of the key's entry, or -1 when the key is not there. The position
+    /// names the entry with an [`Index`](crate::Projection::Index) step on the `dict`.
+    ///
+    /// It hashes the key once and compares it with the keys in its probe sequence, so it takes
+    /// constant time on average, plus the key's length for a `str`. The call cannot fail.
+    DictFind,
+    /// Adds a key that is not in a `dict` yet: two arguments, the `dict` passed `InOut` and the
+    /// key passed `Owned`, as a move or copy of a place; the destination is an `i64`, the position of the new entry, the last
+    /// in insertion order. The entry's value is not set: the stage that writes this call writes
+    /// the value with an [`Index`](crate::Projection::Index) step before anything reads the
+    /// `dict`, as lowering of `d[k] = v` does after a [`DictFind`](Self::DictFind) that gave -1.
+    ///
+    /// Adding may move every entry, so a position from before the call is stale after it. The
+    /// table grows by doubling, so a run of insertions costs amortized constant time each.
+    /// Running out of memory panics; the call cannot fail otherwise.
+    DictInsert,
+    /// Removes the entry at a position from a `dict`, as `d.pop(k)` does once it has found `k`:
+    /// two arguments, the `dict` passed `InOut` and the position, an `i64` from
+    /// [`DictFind`](Self::DictFind) that is not -1, passed `Owned`; the destination has the
+    /// value type and receives the value, moved out. The key is dropped. The entry becomes a hole
+    /// that iteration skips, so the other entries keep their positions and their order. The call
+    /// cannot fail.
+    DictRemove,
+    /// Steps through a `dict` in insertion order: two arguments, the `dict` passed `Borrow` and a
+    /// position, an `i64` of 0 or more, passed `Owned`; the destination is an `i64`, the first
+    /// position at or after the argument that holds an entry, or -1 when none does. A loop over a
+    /// `dict` starts at 0 and passes one past each position it visits. The call cannot fail.
+    DictNext,
 }
 
 impl Builtin {
@@ -295,8 +346,11 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Sum.name(), "sum");
     /// assert_eq!(mir::Builtin::Dot.name(), "dot");
     /// assert_eq!(mir::Builtin::Append.name(), "list.append");
+    /// assert_eq!(mir::Builtin::Pop.name(), "list.pop");
     /// assert_eq!(mir::Builtin::Philox.name(), "random.Philox");
     /// assert_eq!(mir::Builtin::Uniform.name(), "Philox.uniform");
+    /// assert_eq!(mir::Builtin::ContainsStr.name(), "str in");
+    /// assert_eq!(mir::Builtin::DictFind.name(), "dict lookup");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -306,8 +360,16 @@ impl Builtin {
             Self::Sum => "sum",
             Self::Dot => "dot",
             Self::Append => "list.append",
+            Self::Pop => "list.pop",
             Self::Philox => "random.Philox",
             Self::Uniform => "Philox.uniform",
+            Self::CompareStr => "str comparison",
+            Self::ContainsStr => "str in",
+            Self::LengthStr => "len of str",
+            Self::DictFind => "dict lookup",
+            Self::DictInsert => "dict insert",
+            Self::DictRemove => "dict remove",
+            Self::DictNext => "dict iteration",
         }
     }
 }
@@ -575,6 +637,14 @@ pub enum Check<'db> {
     /// An array reduced by `a.min()` or `a.max()` has at least one element, since there is no
     /// smallest or largest of none. The panic message quotes the call from the source.
     NotEmpty,
+    /// A key looked up with `d[k]` or `d.pop(k)` is in the `dict` (decision 0035). A missing key
+    /// panics rather than raising `KeyError`, as an index out of range does.
+    KeyPresent {
+        /// The key, written as Python's `repr` writes it, such as `'Ar'` or `(1, 2)`: a `str`
+        /// the panic message names. The stage that writes the check builds it only on the
+        /// failing path, so a lookup that succeeds formats nothing.
+        key: Operand<'db>,
+    },
 }
 
 impl<'db> Check<'db> {
@@ -594,6 +664,7 @@ impl<'db> Check<'db> {
                 expected, found, ..
             } => vec![expected, found],
             Self::NonNegativeExponent { exponent } => vec![exponent],
+            Self::KeyPresent { key } => vec![key],
             Self::NoOverflow(_)
             | Self::NoPowerOverflow
             | Self::NonZeroDivisor
@@ -635,6 +706,7 @@ impl<'db> Check<'db> {
                 expected, found, ..
             } => vec![expected, found],
             Self::NonNegativeExponent { exponent } => vec![exponent],
+            Self::KeyPresent { key } => vec![key],
             Self::NoOverflow(_)
             | Self::NoPowerOverflow
             | Self::NonZeroDivisor

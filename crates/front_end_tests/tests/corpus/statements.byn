@@ -46,3 +46,14 @@ def outer():
     def inner():
         pass
     inner()
+
+
+def load(path: str) -> Raises[int, LoadError]:
+    try:
+        return parse(path)
+    except ParseError as error:
+        raise LoadError(path) from error
+
+
+def quiet(path: str) -> Raises[int, LoadError]:
+    raise LoadError(path) from None

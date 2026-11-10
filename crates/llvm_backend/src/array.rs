@@ -100,6 +100,9 @@ impl<'db> Function<'_, '_, 'db> {
         if matches!(ty.kind(self.types.db), TypeKind::List(_)) {
             return Ok(self.list_length(&address));
         }
+        if matches!(ty.kind(self.types.db), TypeKind::Dict { .. }) {
+            return Ok(self.dict_length(&address));
+        }
         let header = self.types.value(ty)?;
         let field = self.emit(&format!(
             "getelementptr inbounds {header}, ptr {address}, i32 0, i32 1, i32 {dimension}"
@@ -137,6 +140,9 @@ impl<'db> Function<'_, '_, 'db> {
         }
         if matches!(ty.kind(self.types.db), TypeKind::List(_)) {
             return self.list_element(address, ty, indices);
+        }
+        if matches!(ty.kind(self.types.db), TypeKind::Dict { .. }) {
+            return self.dict_entry(address, ty, indices);
         }
         let (element, rank) = self.array(ty)?;
         if indices.len() != rank as usize {
@@ -193,10 +199,11 @@ impl<'db> Function<'_, '_, 'db> {
     }
 
     /// Frees what the value of type `ty` at `address` owns.
-    fn drop_value(&mut self, address: &str, ty: Type<'db>) -> Result<(), Unsupported> {
+    pub(crate) fn drop_value(&mut self, address: &str, ty: Type<'db>) -> Result<(), Unsupported> {
         match ty.kind(self.types.db) {
             TypeKind::Array { .. } => self.free_array(address, ty),
             TypeKind::List(_) => self.free_list(address, ty),
+            TypeKind::Dict { .. } => self.free_dict(address, ty),
             TypeKind::Str => {
                 self.free_text(address);
                 Ok(())
@@ -236,11 +243,13 @@ impl<'db> Function<'_, '_, 'db> {
         }
     }
 
-    /// Whether a value of `ty` owns memory a drop frees: an array, a list or a `str`, or a
+    /// Whether a value of `ty` owns memory a drop frees: an array, a list, a `dict` or a `str`, or a
     /// tuple, struct or optional holding one.
-    fn owns_memory(&self, ty: Type<'db>) -> bool {
+    pub(crate) fn owns_memory(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.types.db) {
-            TypeKind::Array { .. } | TypeKind::List(_) | TypeKind::Str => true,
+            TypeKind::Array { .. } | TypeKind::List(_) | TypeKind::Dict { .. } | TypeKind::Str => {
+                true
+            }
             TypeKind::Optional(value) => self.owns_memory(*value),
             TypeKind::Tuple(_) | TypeKind::Struct(_) => (0..)
                 .map_while(|position| self.field(ty, position).ok())

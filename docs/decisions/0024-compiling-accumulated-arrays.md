@@ -143,7 +143,8 @@ adds the half-list Lennard-Jones baseline).
 
 ### Not in the first version
 
-- Slices as targets: `forces[a:b] += v`.
+- Slices as targets: `forces[a:b] += v`. (Built 2026-11-09 with roadmap 1.12.7: lowering turns
+  the add into a loop over the slice with one `Accumulate` per element, so nothing here changes.)
 - Complex elements, which the backend does not represent yet.
 - Combining blocks in parallel inside `finish`.
 

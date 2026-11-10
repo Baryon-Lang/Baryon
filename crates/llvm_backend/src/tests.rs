@@ -6,6 +6,7 @@
 
 mod arrays;
 mod debug;
+mod dicts;
 mod errors;
 mod math;
 mod panics;
@@ -13,6 +14,7 @@ mod parallel;
 mod print;
 mod text;
 mod vector;
+mod views;
 
 use crate::{Module, Unsupported};
 use database::{Db, File, Package, ParsedFile, Resolution};
@@ -197,6 +199,12 @@ const RUNTIME: &str = r#"
     }
     void baryon_rt_panic_exponent(int64_t exponent, const Location *at) {
         printf("panic: negative exponent %lld in integer `**`\n", (long long)exponent);
+        stop(at);
+    }
+    void baryon_rt_panic_slice(int64_t start, int64_t end, uint32_t dimension,
+                               int64_t length, const Location *at) {
+        printf("panic: slice %lld:%lld is out of range for dimension %u of length %lld\n",
+               (long long)start, (long long)end, dimension, (long long)length);
         stop(at);
     }
     void baryon_rt_panic_index(int64_t index, uint32_t dimension, int64_t length,

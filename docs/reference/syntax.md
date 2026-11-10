@@ -79,7 +79,7 @@ the spelling to use instead.
 | `def` | yes | At module level, and as methods inside a class. Nested functions are not in version 0 |
 | `class` | yes | Only with the base `Struct` (optionally with `Copy`), `Exception` or `Enum`. No inheritance, by [decision 0015](../decisions/0015-no-class-inheritance.md); see [Types](types.md#structs) |
 | `import m`, `from m import x`, `as` | yes | No `from m import *`, no relative imports; see [Source files](#source-files) |
-| `raise E(...)` | yes | Only inside a function that declares it can fail; see [Errors](errors.md) |
+| `raise E(...)` | yes | Only inside a function that declares it can fail; see [Errors](errors.md). No `raise ... from`: errors do not chain, so keep a cause in a field ([decision 0034](../decisions/0034-no-error-chaining.md)) |
 | `try` with `except` | yes | Each `except` names the error types it handles. No bare `except:`, no `else`, no `finally` |
 | `with unsafe:` | yes | The only `with` form in version 0 |
 | `match` | yes | Literal, enum, tuple and wildcard patterns; must be exhaustive |
@@ -105,13 +105,14 @@ out of scope, on every path out of a function.
 | Comparisons, chained: `0 <= i < n` | yes | As in Python, each operand is evaluated once |
 | `and`, `or`, `not` | yes | Operands are `bool` |
 | `is None`, `is not None` | yes | `is` and `is not` compare only with `None` |
-| `in`, `not in` | yes | On lists, strings and tuples |
+| `in`, `not in` | yes | On lists, strings, tuples and dicts |
 | Conditional `a if c else b` | yes | |
 | Calls with positional and keyword arguments | yes | No `*args` or `**kwargs`, in calls or in definitions |
 | Attributes `a.b`, subscripts `a[i, j]`, slices `a[1:n, ::2]` | yes | See [Arrays](arrays.md) |
 | Tuples and lists `(a, b)`, `[a, b]` | yes | |
 | List comprehensions `[f(x) for x in xs if p(x)]` | yes | Produce a `list` |
-| Dict and set literals and comprehensions, generator expressions | no | Not in version 0 |
+| Dict displays `{k: v}` | yes | Produce a `dict`. See [Dictionaries](types.md#dictionaries) |
+| Set displays, dict and set comprehensions, generator expressions | no | Not in version 0 |
 | Assignment expressions `x := e` | no | |
 | `lambda` | no | |
 

@@ -151,8 +151,16 @@ on a rule the reader has to remember.
 ## Strings
 
 `str` is immutable UTF-8 text. Version 0 supports string literals, f-strings, `+` to concatenate,
-`==` and `!=`, `in`, `len`, which counts characters as Python does, and `print`. Text processing
-beyond that arrives with the standard library (roadmap 1.13).
+`==` and `!=`, `in`, `len`, which counts characters as Python does, and `print`. `<`, `<=`, `>` and
+`>=` order strings as Python does, character by character by code point, with a string before any
+longer string it starts: `"Z" < "a"`, `"ab" < "abc"`. Comparing, `in` and `len` each read the
+string, so they take time in proportion to its length. Text processing beyond that arrives with
+the standard library (roadmap 1.13).
+
+```python
+def is_noble(element: str) -> bool:
+    return element in "He Ne Ar Kr Xe Rn" and len(element) == 2
+```
 
 An f-string formats each value with a specification from Python's format mini-language, and
 writes what Python writes:
@@ -185,9 +193,58 @@ Tuples unpack in assignments and `for` loops: `x, y, z = position`.
 `Vec`, C++'s `std::vector`. It supports `append`, `pop`, `copy`, `len`, indexing, slicing, `in`,
 iteration and list comprehensions. `copy` makes a new list holding a copy of each element, which is
 how to keep a list and also pass it on, since a list moves
-([values and references](values-and-references.md#moves)). A list is for building up data of
+([values and references](values-and-references.md#moves)). A slice, `values[1:n]`, is a new list
+too, as in Python, unlike an array slice, which is a view; its bounds follow the rules of
+[array slicing](arrays.md#slicing), so a bound past the end panics. A list is for building up data of
 unknown length; convert it to an `Array` with `Array(values)` for numeric work. An empty list
 needs its type written: `columns: list[i64] = []`.
+
+## Dictionaries
+
+`dict[K, V]` maps keys of type `K` to values of type `V`, as Python's `dict` does: a hash table
+that keeps its entries in the order they were first added
+([decision 0035](../decisions/0035-dict.md)). A key is an integer, `bool`, `str`, enum or a tuple
+of them. A float cannot be a key, because floats are not compared exactly (`0.1 + 0.2` is not
+`0.3`), so `{0.3: "x"}[0.1 + 0.2]` would miss; bin the value to an integer first. A struct cannot
+be a key either; use a tuple of its fields.
+
+```python
+def main():
+    masses = {"Ar": 39.948, "He": 4.0026}  # dict[str, f64], from the first entry
+    masses["Ne"] = 20.180                  # a new key goes last
+    masses["He"] = 4.003                   # an existing key keeps its place
+    print(len(masses), masses["Ne"], "Xe" in masses)  # 3 20.18 False
+    print(masses.get("Kr", 83.798))        # 83.798: the default, the dict is unchanged
+    print(masses.pop("Ar"))                # 39.948, and the entry is gone
+    for name, mass in masses.items():      # He 4.003, then Ne 20.18
+        print(name, mass)
+
+    counts: dict[int, int] = {}            # an empty dict needs its type written
+    for i in range(10):
+        k = i % 3
+        if k in counts:
+            counts[k] += 1                 # updates the entry in place
+        else:
+            counts[k] = 1
+```
+
+| Operation | Meaning |
+| --- | --- |
+| `{k: v, ...}`, `{}` | A display. The types come from the annotation or the first entry |
+| `d[k]` | The value for `k`, read, written or updated in place. A missing key panics: `key 'Xe' is not in the dict` |
+| `d[k] = v` | Sets the value, adding the key last when it is missing |
+| `k in d`, `k not in d` | Whether the key is there |
+| `len(d)` | The number of entries |
+| `d.get(k)`, `d.get(k, default)` | A copy of the value, or `None` or the default when the key is missing. Values must copy; for others, ask with `in` and read `d[k]` |
+| `d.pop(k)`, `d.pop(k, default)` | Takes the entry out and gives its value; a missing key panics, or gives the default |
+| `d.copy()` | A new dict with the same entries |
+| `for k in d`, `d.keys()`, `d.values()`, `d.items()` | The keys, values or `(key, value)` pairs, in insertion order |
+
+A loop borrows the dict, so its body cannot add, set or pop entries of the same dict; loop over a
+copy, `for k in d.copy():`, to change the original. `keys()`, `values()` and `items()` are only for
+`for` loops. A dict moves like a list ([values and references](values-and-references.md#moves)).
+Lookups hash with a fixed seed, so a program behaves the same on every run. Comprehensions,
+`del d[k]` and the rest of Python's methods are not in 0.2.0.
 
 ## Optional values
 

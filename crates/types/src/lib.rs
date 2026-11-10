@@ -118,6 +118,15 @@ pub enum TypeKind<'db> {
     Tuple(Vec<Type<'db>>),
     /// `list[T]`: a growable sequence of one type, stored on the heap.
     List(Type<'db>),
+    /// `dict[K, V]`: a hash map from keys of type `K` to values of type `V`, in insertion order,
+    /// stored on the heap (decision 0035). The checker allows only keys that compare exactly:
+    /// integers, `bool`, `str`, enums without data and tuples of them.
+    Dict {
+        /// The key type.
+        key: Type<'db>,
+        /// The value type.
+        value: Type<'db>,
+    },
     /// `T | None`: a `T` or `None`.
     Optional(Type<'db>),
     /// `Array[T, rank]`: an array whose shape is known at run time, on the heap (decision 0007).

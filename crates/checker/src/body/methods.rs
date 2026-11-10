@@ -12,6 +12,16 @@ use syntax::{NodeId, Role};
 use types::{Callee, Declaration, Key, Mode, Parameter, Signature, Type, TypeKind};
 
 impl<'db> Body<'db> {
+    /// Whether the container method `callee` on a value of type `base` changes that value:
+    /// `append` and `pop` on a list, `fill` on an array.
+    fn container_method_changes(&self, base: Type<'db>, callee: &str) -> bool {
+        match base.kind(self.db) {
+            TypeKind::List(_) => matches!(callee, "append" | "pop"),
+            TypeKind::Array { .. } | TypeKind::Fixed { .. } => callee == "fill",
+            _ => false,
+        }
+    }
+
     /// `value.method(arguments)` on a struct.
     pub(super) fn method_call(
         &mut self,
@@ -52,13 +62,11 @@ impl<'db> Body<'db> {
             self.change(value);
             return result;
         }
+        if let &TypeKind::Dict { key, value: held } = base.kind(self.db) {
+            return self.dict_method(node, (value, base), (key, held), &callee, arguments);
+        }
         if let Some(result) = self.container_method(node, base, &callee, arguments) {
-            let changes = match base.kind(self.db) {
-                TypeKind::List(_) => matches!(callee.as_str(), "append" | "pop"),
-                TypeKind::Array { .. } | TypeKind::Fixed { .. } => callee == "fill",
-                _ => false,
-            };
-            if changes {
+            if self.container_method_changes(base, &callee) {
                 self.change(value);
             }
             return result;

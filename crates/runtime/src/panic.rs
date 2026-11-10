@@ -29,6 +29,17 @@ pub(crate) enum Failure<'text> {
         /// The dimension's length.
         length: i64,
     },
+    /// A slice whose range does not lie within its dimension (language reference, "Slicing").
+    SliceOutOfRange {
+        /// Where the range starts.
+        start: i64,
+        /// Where the range stops.
+        stop: i64,
+        /// The dimension sliced, 0 for the outermost.
+        dimension: u32,
+        /// The dimension's length.
+        length: i64,
+    },
     /// Two arrays combined element by element differ in one dimension's length.
     LengthMismatch {
         /// The dimension, 0 for the outermost.
@@ -37,6 +48,11 @@ pub(crate) enum Failure<'text> {
         expected: i64,
         /// The length the other array has.
         found: i64,
+    },
+    /// `d[k]` or `d.pop(k)` of a key that is not in the `dict` (decision 0035).
+    MissingKey {
+        /// The key, as Python's `repr` writes it.
+        key: &'text str,
     },
     /// Integer `**` with a negative exponent, whose result would be a fraction.
     NegativeExponent {
@@ -85,6 +101,15 @@ impl fmt::Display for Failure<'_> {
                     "index {index} is out of range for dimension {dimension} of length {length}"
                 )
             }
+            Self::SliceOutOfRange {
+                start,
+                stop,
+                dimension,
+                length,
+            } => write!(
+                formatter,
+                "slice {start}:{stop} is out of range for dimension {dimension} of length {length}"
+            ),
             Self::LengthMismatch {
                 dimension,
                 expected,
@@ -93,6 +118,7 @@ impl fmt::Display for Failure<'_> {
                 formatter,
                 "array lengths differ in dimension {dimension}: {expected} and {found}"
             ),
+            Self::MissingKey { key } => write!(formatter, "key {key} is not in the dict"),
             Self::NegativeExponent { exponent } => {
                 write!(formatter, "negative exponent {exponent} in integer `**`")
             }
@@ -189,6 +215,15 @@ mod tests {
             (
                 Failure::NegativeExponent { exponent: -2 },
                 "negative exponent -2 in integer `**`",
+            ),
+            (
+                Failure::SliceOutOfRange {
+                    start: 2,
+                    stop: 12,
+                    dimension: 0,
+                    length: 10,
+                },
+                "slice 2:12 is out of range for dimension 0 of length 10",
             ),
             (
                 Failure::NegativeLength { count: -3 },

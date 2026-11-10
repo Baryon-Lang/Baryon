@@ -33,9 +33,11 @@ impl<'db> Body<'db> {
     /// Whether a value of `ty` moves when it is used as a value, rather than being copied.
     pub(super) fn moves(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.db) {
-            TypeKind::Str | TypeKind::List(_) | TypeKind::Array { .. } | TypeKind::Standard(_) => {
-                true
-            }
+            TypeKind::Str
+            | TypeKind::List(_)
+            | TypeKind::Dict { .. }
+            | TypeKind::Array { .. }
+            | TypeKind::Standard(_) => true,
             TypeKind::Tuple(items) => items.iter().any(|&item| self.moves(item)),
             TypeKind::Optional(value) => self.moves(*value),
             TypeKind::Struct(_) => !crate::forms::is_copy(self.db, ty),
@@ -63,6 +65,9 @@ impl<'db> Body<'db> {
                     self.move_variable(root, node);
                 }
             }
+            // A slice of a list is a new list, as in Python, so keeping it moves nothing.
+            SyntaxKind::Subscript
+                if self.is_view(node) && matches!(ty.kind(self.db), TypeKind::List(_)) => {}
             SyntaxKind::Subscript if self.is_view(node) => {
                 // A view borrows the array, and a borrow cannot be stored (reference,
                 // "Slices").
@@ -95,7 +100,7 @@ impl<'db> Body<'db> {
 
     /// Whether the subscript `node` is a slice, `a[1:n]` or `grid[:, 0]`: a view of its
     /// array rather than an element.
-    fn is_view(&self, node: NodeId) -> bool {
+    pub(super) fn is_view(&self, node: NodeId) -> bool {
         let Some(index) = self.tree.child(node, Role::Index) else {
             return false;
         };

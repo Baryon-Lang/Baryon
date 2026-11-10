@@ -43,7 +43,10 @@
 //! - **`match`.** Each case tests its pattern part by part, branching to the next case at the
 //!   first part that does not match, then assigns its captures and tests its guard.
 //! - **Arrays.** `a[i, j]` is a place with one index local per dimension, and a negative literal
-//!   counts back from the length. Whole-array arithmetic stays one
+//!   counts back from the length. A slice `a[i:j:k]` or `grid[:, k]` is a view: a place
+//!   ending in a [`Slice`](mir::Projection::Slice) step after the checks of its ranges, written
+//!   in place by `=` and `+=` and copied in and back when passed `InOut` (the `slices` module).
+//!   Whole-array arithmetic stays one
 //!   [`Elementwise`](mir::Rvalue::Elementwise) expression for array expansion to loop over.
 //!   `Array.zeros`, `ones` and `fill` allocate with [`NewArray`](mir::Rvalue::NewArray) and fill
 //!   the elements in a loop nest; a `Fixed` array is an [`Aggregate`](mir::Rvalue::Aggregate) of
@@ -54,15 +57,19 @@
 //!   `a.round()` rounds each element and `a.fill(value)` writes each one. The matrix product
 //!   `a @ b` is a loop nest over the result's entries with an inner loop that adds the products.
 //! - **Lists.** A display `[a, b]` is an [`Aggregate`](mir::Rvalue::Aggregate) of a list type,
-//!   `xs.append(value)` calls [`Builtin::Append`](mir::Builtin::Append), `len(xs)` and `xs[i]`
-//!   read it as a one-dimensional array, and `Array(xs)` copies it into a new array. Only lists
-//!   of copy types, such as `list[f64]`, are built so far.
-//! - **Math.** `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` from `math`, and `**` and `**=` on
-//!   floats and complex numbers, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
-//!   [`Builtin::Math`](mir::Builtin::Math) calls a backend writes. The built-in `round(x)` rounds
-//!   a float and converts it to an integer. `**` and `**=` on integers are repeated squaring,
-//!   with a [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each
-//!   multiplication checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
+//!   `xs.append(value)` calls [`Builtin::Append`](mir::Builtin::Append) and `xs.pop()`
+//!   [`Builtin::Pop`](mir::Builtin::Pop), `len(xs)` and `xs[i]` read it as a one-dimensional
+//!   array, `value in xs` and `xs.copy()` loop over its elements, and `Array(xs)` copies it into
+//!   a new array. Elements may be of any type; the backend drops them with the list. A `for`
+//!   loop over a list reads each element at a hidden counter, borrowing one that is not
+//!   copied, and a list comprehension is the loops it reads as, appending to a new list.
+//! - **Math.** The functions of `math` for real numbers, and `**` and `**=` on floats and complex numbers, call a
+//!   [`MathFunction`](mir::MathFunction), as [`Builtin::Math`](mir::Builtin::Math) calls a
+//!   backend writes; `floor`, `ceil`, `trunc` and the built-in `round(x)` round and then convert
+//!   to an integer, `isnan`, `isinf` and `isfinite` compare, and `degrees`, `radians` and
+//!   `log(x, base)` are arithmetic. `**` and `**=` on integers are repeated squaring, with a
+//!   [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each multiplication
+//!   checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
 //! - **Complex numbers.** `z.real` and `z.imag` are fields 0 and 1 of the number's place,
 //!   `complex(re, im)` writes both, `z.conjugate()` negates a copy's imaginary part, and `abs(z)`
 //!   calls [`MathFunction::Hypot`](mir::MathFunction::Hypot) of the parts (the `complex` module).
@@ -104,14 +111,14 @@
 //! # What it does not lower yet
 //!
 //! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
-//! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, slices, indexing lists and strings,
-//! adding into a slice of an array in `accumulate=`, `match` captures of values that are not copy
-//! types or inside `|`, `raise ... from`, an `except` that names its error through a module, calls
-//! that leave out an argument of a generic function, the built-in functions and methods other than
+//! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, indexing and slicing lists and
+//! strings, `match` captures of values that are not copy types or inside `|`, `raise ... from`, an
+//! `except` that names its error through a module, calls that leave out an argument of a generic function, the built-in functions and methods other than
 //! `print`, `min` and `max` of numbers, `len` of an array, `round` with one argument, the `math`
 //! functions above, the array constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a
 //! `Fixed` array, `**` on integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`,
-//! and comprehensions.
+//! a loop variable that borrows an element and is also used outside the loop, and `dict` and
+//! `set` comprehensions.
 //!
 //! # Example
 //!
@@ -260,9 +267,11 @@ mod arrays;
 mod builder;
 mod calls;
 mod complex;
+mod comprehensions;
 mod constants;
 mod creation;
 mod defaults;
+mod dicts;
 mod errors;
 mod escapes;
 mod expressions;
@@ -277,6 +286,7 @@ mod operators;
 mod parallel;
 mod patterns;
 mod random;
+mod slices;
 mod statements;
 #[cfg(test)]
 mod tests;

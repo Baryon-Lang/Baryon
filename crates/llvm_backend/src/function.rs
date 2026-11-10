@@ -64,8 +64,9 @@ pub(crate) struct Function<'f, 'a, 'db> {
     /// The functions written alongside this one, such as a `prange` loop's chunk function, each
     /// a whole definition.
     pub(crate) helpers: Vec<String>,
-    /// Stack slots instructions need beyond the locals', such as the sign `lgamma_r` writes,
-    /// written in the entry block so a call inside a loop does not grow the stack each time.
+    /// Stack slots instructions need beyond the locals', such as the sign `lgamma_r` writes or
+    /// a view's header, written in the entry block so an instruction inside a loop does not
+    /// grow the stack each time.
     pub(crate) slots: String,
 }
 
@@ -335,7 +336,10 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                     (address, ty) = self.error_payload(&address, ty, *position)?;
                     continue;
                 }
-                Projection::Slice(_) => return Err(Unsupported::new("slices of arrays")),
+                Projection::Slice(dimensions) => {
+                    (address, ty) = self.view(&address, ty, dimensions)?;
+                    continue;
+                }
                 Projection::Value => {
                     let TypeKind::Optional(value) = ty.kind(self.types.db) else {
                         return Err(self.types.unsupported(ty));

@@ -7,8 +7,10 @@
 //! | Check | Runtime function | What it prints |
 //! | --- | --- | --- |
 //! | An index in bounds | `baryon_rt_panic_index` | The index, the dimension and its length |
+//! | A slice in bounds | `baryon_rt_panic_slice` | The start and stop, the dimension and its length |
 //! | Two arrays of the same length | `baryon_rt_panic_length_mismatch` | The dimension and both lengths |
 //! | A non-negative exponent of integer `**` | `baryon_rt_panic_exponent` | The exponent |
+//! | A key in a `dict` | `baryon_rt_panic_key` | The key, as Python's `repr` writes it |
 //! | Everything else | `baryon_rt_panic` | A message the backend writes as a constant |
 //!
 //! Each call passes a pointer to a `Location` constant, the runtime's `#[repr(C)]` structure
@@ -41,6 +43,17 @@ pub(crate) enum Failure {
         /// The dimension's length, an `i64` operand.
         length: String,
     },
+    /// A slice whose range does not lie within its dimension.
+    Slice {
+        /// Where the range starts, an `i64` operand.
+        start: String,
+        /// Where the range stops, an `i64` operand.
+        stop: String,
+        /// The dimension sliced.
+        dimension: u32,
+        /// The dimension's length, an `i64` operand.
+        length: String,
+    },
     /// Arrays combined element by element whose lengths differ in `dimension`.
     Length {
         /// The dimension, 0 for the outermost.
@@ -49,6 +62,14 @@ pub(crate) enum Failure {
         expected: String,
         /// The other array's length, an `i64` operand.
         found: String,
+    },
+    /// A key that is not in a `dict`: the key as Python's `repr` writes it, a `str`'s byte
+    /// pointer and byte count.
+    Key {
+        /// The text's bytes, a `ptr` operand.
+        bytes: String,
+        /// The number of bytes, an `i64` operand.
+        length: String,
     },
     /// Integer `**` with a negative exponent.
     Exponent {
@@ -64,6 +85,8 @@ enum Key {
     Bytes(Vec<u8>),
     /// A format specification, by its text.
     Spec(String),
+    /// A `dict` layout: the entry size, the key size, then each key part's offset and kind.
+    Dict(Vec<u64>),
     /// The location of the byte at `offset` in `file`.
     Location {
         /// The file.
@@ -232,6 +255,37 @@ impl<'a> Constants<'a> {
         name
     }
 
+    /// The layout constant of a `dict` type, as `@baryon.dict.N`, made the first time it is
+    /// asked for: the runtime's `DictLayout`, `{ i64 entry_size, i64 key_size, i64 part_count,
+    /// ptr parts }`, pointing to an array of `{ i64 offset, i64 kind }` key parts, kind 0 for a
+    /// `str` and the size in bytes for an integer.
+    pub(crate) fn dict_layout(
+        &mut self,
+        entry_size: u64,
+        key_size: u64,
+        parts: &[(u64, u64)],
+    ) -> String {
+        let mut words = vec![entry_size, key_size];
+        words.extend(parts.iter().flat_map(|&(offset, kind)| [offset, kind]));
+        let key = Key::Dict(words);
+        if let Some(&number) = self.numbers.get(&key) {
+            return format!("@baryon.dict.{number}");
+        }
+        let number = self.definitions.len();
+        let name = format!("@baryon.dict.{number}");
+        let items: Vec<String> = parts
+            .iter()
+            .map(|(offset, kind)| format!("{{ i64, i64 }} {{ i64 {offset}, i64 {kind} }}"))
+            .collect();
+        let count = parts.len();
+        let definition = format!(
+            "@baryon.dict.parts.{number} = private unnamed_addr constant [{count} x {{ i64, i64 }}]              [{}]\n{name} = private unnamed_addr constant {{ i64, i64, i64, ptr }}              {{ i64 {entry_size}, i64 {key_size}, i64 {count}, ptr @baryon.dict.parts.{number} }}",
+            items.join(", ")
+        );
+        self.push(key, definition);
+        name
+    }
+
     /// The constant holding `bytes`, as `@baryon.str.N`, made the first time it is asked for.
     pub(crate) fn bytes(&mut self, bytes: &[u8]) -> String {
         let key = Key::Bytes(bytes.to_vec());
@@ -334,7 +388,17 @@ impl<'db> Function<'_, '_, 'db> {
             Check::NonZeroStep { slice: true } => {
                 Failure::Message("slice step cannot be zero".to_owned())
             }
-            Check::SliceInBounds { .. } => return Err(Unsupported::new("slices of arrays")),
+            Check::SliceInBounds {
+                dimension,
+                start,
+                stop,
+                length,
+            } => Failure::Slice {
+                start: self.value(start)?.0,
+                stop: self.value(stop)?.0,
+                dimension: *dimension,
+                length: self.value(length)?.0,
+            },
             Check::NoPowerOverflow => Failure::Message("integer overflow in `**`".to_owned()),
             Check::NonZeroStep { slice: false } => {
                 Failure::Message("`range` step is zero".to_owned())
@@ -349,6 +413,11 @@ impl<'db> Function<'_, '_, 'db> {
                 let source = self.constants.source(self.span);
                 let condition = source.strip_prefix("assert ").unwrap_or(&source);
                 Failure::Message(format!("assertion failed: {condition}"))
+            }
+            Check::KeyPresent { key } => {
+                let (text, _) = self.value(key)?;
+                let (bytes, length) = self.text_parts(&text);
+                Failure::Key { bytes, length }
             }
             Check::NotEmpty => {
                 let call = self.constants.source(self.span);
@@ -410,6 +479,19 @@ pub(crate) fn call(
             "baryon_rt_panic_index",
             "declare void @baryon_rt_panic_index(i64, i32, i64, ptr) cold noreturn nounwind",
         ),
+        Failure::Slice {
+            start,
+            stop,
+            dimension,
+            length,
+        } => (
+            format!(
+                "call void @baryon_rt_panic_slice(i64 {start}, i64 {stop}, i32 {dimension}, \
+                 i64 {length}, ptr {location})"
+            ),
+            "baryon_rt_panic_slice",
+            "declare void @baryon_rt_panic_slice(i64, i64, i32, i64, ptr) cold noreturn nounwind",
+        ),
         Failure::Length {
             dimension,
             expected,
@@ -421,6 +503,11 @@ pub(crate) fn call(
             ),
             "baryon_rt_panic_length_mismatch",
             "declare void @baryon_rt_panic_length_mismatch(i32, i64, i64, ptr) cold noreturn nounwind",
+        ),
+        Failure::Key { bytes, length } => (
+            format!("call void @baryon_rt_panic_key(ptr {bytes}, i64 {length}, ptr {location})"),
+            "baryon_rt_panic_key",
+            "declare void @baryon_rt_panic_key(ptr, i64, ptr) cold noreturn nounwind",
         ),
         Failure::Exponent { exponent } => (
             format!("call void @baryon_rt_panic_exponent(i64 {exponent}, ptr {location})"),

@@ -13,8 +13,10 @@ use std::process::{Command, Output};
 use std::sync::{Mutex, Once, PoisonError};
 
 mod array_methods;
+mod clang;
 mod complex;
 mod defaults;
+mod dicts;
 mod examples;
 mod generic_methods;
 mod guide;
@@ -24,6 +26,7 @@ mod overflow;
 mod parallel;
 mod print;
 mod shapes;
+mod slices;
 mod statements;
 mod structs;
 mod testing;

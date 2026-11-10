@@ -71,6 +71,9 @@ def main():
   read; give each error type its own `except` to read them.
 - A bare `raise` inside an `except` block raises the caught error again, so the function must
   declare it in its `Raises` or a `try` around the block must handle it.
+- Errors do not chain: `raise ... from` is an error. An error that needs the one that led to it
+  keeps it in a field, `raise LoadError(path, cause=error)`, where a handler can read it
+  ([decision 0034](../decisions/0034-no-error-chaining.md)).
 - A `try` handles the errors of the calls in its body; an error type no `except` names passes on to
   the caller, which must allow it.
 - `try` and `except` compile to a branch on the returned value. When no error occurs, the cost is
@@ -96,7 +99,9 @@ These panic:
 
 | Failure | Message names |
 | --- | --- |
-| Index or slice out of range | The index, the dimension and its length |
+| Index out of range | The index, the dimension and its length |
+| Slice out of range | Its start and stop, the dimension and its length |
+| A slice step of zero | Nothing more: `slice step cannot be zero`, as Python says |
 | Array shapes that do not match in whole-array arithmetic | Both shapes |
 | `assert` with a false condition | The condition's source and the message, if given |
 | Integer division or `%` by zero | The operation |

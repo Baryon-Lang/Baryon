@@ -19,16 +19,22 @@
 //! | [`baryon_rt_allocate_array`] | Memory for an array's elements, checking the length and the size; an IR `NewArray` |
 //! | [`baryon_rt_panic`] | End the program with a message the compiler wrote, such as a failed `assert` |
 //! | [`baryon_rt_panic_index`] | End the program for an index out of range (decision 0010) |
+//! | [`baryon_rt_panic_slice`] | End the program for a slice out of range |
 //! | [`baryon_rt_panic_length_mismatch`] | End the program for arrays of different lengths combined element by element |
 //! | [`baryon_rt_chunk_count`], [`baryon_rt_parallel_for`] | Run a `prange` loop on the thread pool, in fixed chunks |
 //! | [`baryon_rt_accumulator_new`], [`baryon_rt_accumulator_slot`], [`baryon_rt_accumulator_chunk_done`], [`baryon_rt_accumulator_finish`] | Give each chunk of a `prange` loop private blocks of an array listed in `accumulate=`, and combine them into it in the fixed tree |
 //! | [`baryon_rt_print_i64`], [`baryon_rt_print_u64`], [`baryon_rt_print_f64`], [`baryon_rt_print_f32`], [`baryon_rt_print_bool`], [`baryon_rt_print_str`] | Print one argument of `print` to standard output, or a field of an error that ends `main` to standard error, as Python writes it |
 //! | [`baryon_rt_text_new`], [`baryon_rt_text_str`], [`baryon_rt_text_i64`], [`baryon_rt_text_u64`], [`baryon_rt_text_f64`], [`baryon_rt_text_f32`], [`baryon_rt_text_bool`], [`baryon_rt_text_finish`] | Build an owned `str` from pieces, each value formatted with a [`FormatSpec`] as Python's `format` writes it: an f-string, a `copy()` or a `+` |
 //! | [`baryon_rt_sum_f64`], [`baryon_rt_sum_f32`] | Add a float array's elements in `NumPy`'s pairwise order, for `a.sum()` |
+//! | [`baryon_rt_sum_strided_f64`], [`baryon_rt_sum_strided_f32`] | The same for an `Array` that may be a view, with any strides |
+//! | [`baryon_rt_dot_f64`], [`baryon_rt_dot_f32`] | Add the products of two float arrays' elements in the same order, for `a.dot(b)` |
+//! | [`baryon_rt_dot_strided_f64`], [`baryon_rt_dot_strided_f32`] | The same for two rank-1 `Array`s that may be views, each with its stride |
 //! | [`baryon_rt_print_complex128`], [`baryon_rt_print_complex64`] | Print a complex number as Python's `repr` writes it, such as `(1+2j)` |
 //! | [`baryon_rt_power_complex128`], [`baryon_rt_power_complex64`] | `z ** w` on complex numbers, as Python computes it |
-//! | [`baryon_rt_dot_f64`], [`baryon_rt_dot_f32`] | Add the products of two float arrays' elements in the same order, for `a.dot(b)` |
+//! | [`baryon_rt_str_compare`], [`baryon_rt_str_contains`], [`baryon_rt_str_length`] | Compare two `str`s by code point, find one inside another, and count characters, for `==`, `<`, `in` and `len` of `str` |
 //! | [`baryon_rt_print_str_quoted`] | Print a `str` inside a tuple or struct, or a field of an error that ends `main`, as Python's `repr` writes it, quoted |
+//! | [`baryon_rt_dict_find`], [`baryon_rt_dict_insert`], [`baryon_rt_dict_remove`], [`baryon_rt_dict_next`], [`baryon_rt_dict_length`], [`baryon_rt_dict_free`] | The hash table behind `dict`: find a key, add one, remove an entry, step through the entries in insertion order, count and free (decision 0035) |
+//! | [`baryon_rt_panic_key`] | End the program for `d[k]` of a key that is not in the `dict` |
 //! | [`baryon_rt_flush`] | Write out a line `print(..., end="")` left unended, before the C `main` returns |
 //!
 //! A panic prints its message, the [`Location`] of the check and, when the program has debug
@@ -71,6 +77,7 @@ mod abi;
 mod accumulate;
 mod backtrace;
 mod complex;
+mod dict;
 mod format;
 mod location;
 mod memory;
@@ -83,18 +90,22 @@ mod sum;
 pub use abi::{
     OwnedText, TextBuilder, baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish,
     baryon_rt_accumulator_new, baryon_rt_accumulator_slot, baryon_rt_allocate,
-    baryon_rt_allocate_array, baryon_rt_chunk_count, baryon_rt_deallocate, baryon_rt_dot_f32,
-    baryon_rt_dot_f64, baryon_rt_flush, baryon_rt_panic, baryon_rt_panic_exponent,
-    baryon_rt_panic_index, baryon_rt_panic_length_mismatch, baryon_rt_parallel_for,
-    baryon_rt_philox_new, baryon_rt_philox_uniform, baryon_rt_power_complex64,
-    baryon_rt_power_complex128, baryon_rt_print_bool, baryon_rt_print_complex64,
-    baryon_rt_print_complex128, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
-    baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64, baryon_rt_sum_f32,
-    baryon_rt_sum_f64, baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64,
-    baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,
-    baryon_rt_text_u64,
+    baryon_rt_allocate_array, baryon_rt_chunk_count, baryon_rt_deallocate, baryon_rt_dict_find,
+    baryon_rt_dict_free, baryon_rt_dict_insert, baryon_rt_dict_length, baryon_rt_dict_next,
+    baryon_rt_dict_remove, baryon_rt_dot_f32, baryon_rt_dot_f64, baryon_rt_dot_strided_f32,
+    baryon_rt_dot_strided_f64, baryon_rt_flush, baryon_rt_panic, baryon_rt_panic_exponent,
+    baryon_rt_panic_index, baryon_rt_panic_key, baryon_rt_panic_length_mismatch,
+    baryon_rt_panic_slice, baryon_rt_parallel_for, baryon_rt_philox_new, baryon_rt_philox_uniform,
+    baryon_rt_power_complex64, baryon_rt_power_complex128, baryon_rt_print_bool,
+    baryon_rt_print_complex64, baryon_rt_print_complex128, baryon_rt_print_f32,
+    baryon_rt_print_f64, baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted,
+    baryon_rt_print_u64, baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_length,
+    baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64,
+    baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish,
+    baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
 };
 pub use accumulate::Accumulator;
+pub use dict::{DictLayout, KeyPart, STR_PART, Table};
 pub use format::FormatSpec;
 pub use location::Location;
 pub use parallel::ChunkBody;

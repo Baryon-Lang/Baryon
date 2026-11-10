@@ -363,6 +363,7 @@ impl<'db> Decider<'_, 'db> {
             | TypeKind::Standard(_) => false,
             TypeKind::Str
             | TypeKind::List(_)
+            | TypeKind::Dict { .. }
             | TypeKind::Array { .. }
             | TypeKind::Parameter { .. }
             | TypeKind::Unknown => true,

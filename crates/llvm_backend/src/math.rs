@@ -10,13 +10,14 @@
 //! edge and no check. Every operand and the result share one float type, as `mir` requires,
 //! except `**` on complex numbers, which calls the runtime (the `complex` module).
 //!
-//! A [`Builtin::Sum`](mir::Builtin::Sum) of floats calls the runtime's pairwise sum,
-//! `baryon_rt_sum_f64` or `baryon_rt_sum_f32`, with the address of the first element and the
-//! element count; a [`Builtin::Dot`](mir::Builtin::Dot) calls `baryon_rt_dot_f64` or
-//! `baryon_rt_dot_f32` with the first element of each array and the count. That relies on the
-//! elements being one contiguous run in row-major order, which every `Array` is today (decision
-//! 0008) and a `Fixed` array always is; array views, once slices build, will need their strides
-//! checked first.
+//! A [`Builtin::Sum`](mir::Builtin::Sum) of floats calls the runtime's pairwise sum, and a
+//! [`Builtin::Dot`](mir::Builtin::Dot) its pairwise dot product. A `Fixed` array is one
+//! contiguous run in row-major order, so it passes the address of the first element and the
+//! element count to `baryon_rt_sum_f64` or `baryon_rt_dot_f64` and their `f32` forms. An `Array`
+//! may be a view, a slice that skips elements or walks backwards, so a sum of one passes its
+//! element pointer, rank, lengths and strides to `baryon_rt_sum_strided_f64`, and a dot product
+//! with one passes each element pointer and stride to `baryon_rt_dot_strided_f64`. The runtime
+//! reduces a contiguous array where it lies and gathers any other first.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -138,9 +139,14 @@ impl<'db> Function<'_, '_, 'db> {
         self.reduction("dot", &[left, right], destination, target)
     }
 
-    /// Writes `destination = baryon_rt_<name>_<float>(data…, count)`: a call of the runtime's
-    /// `sum` or `dot` with the address of the first element of each of `arrays` and the element
-    /// count of the first, and goes to `target`.
+    /// Writes `destination` as a call of the runtime's `sum` or `dot`, named `name`, over
+    /// `arrays`, and goes to `target`.
+    ///
+    /// When every operand is a `Fixed` array, each is one contiguous run, so the call is
+    /// `baryon_rt_<name>_<float>(data…, count)`. An `Array` may be a view, a slice that skips
+    /// elements or walks backwards, so when any operand is one the call goes to the `strided`
+    /// form: `sum` passes the element pointer, rank, lengths and strides, and `dot`, of two
+    /// rank-1 arrays, passes each element pointer with its stride, then the count.
     fn reduction(
         &mut self,
         name: &str,
@@ -154,20 +160,62 @@ impl<'db> Function<'_, '_, 'db> {
             Some(Number::Float(_)) => ("double", "f64"),
             _ => return Err(self.types.unsupported(ty)),
         };
-        let mut values = Vec::with_capacity(arrays.len() + 1);
-        let mut count = None;
+        let mut operands = Vec::with_capacity(arrays.len());
         for &array in arrays {
-            let (data, elements) = self.elements(array)?;
-            values.push(format!("ptr {data}"));
-            count.get_or_insert(elements);
+            operands.push(self.reduced(array)?);
         }
-        let count = count.ok_or_else(|| Unsupported::new("a reduction of no arrays"))?;
-        values.push(format!("i64 {count}"));
-        let function = format!("baryon_rt_{name}_{suffix}");
-        let parameters = vec!["ptr"; arrays.len()].join(", ");
+        let [first, ..] = operands.as_slice() else {
+            return Err(Unsupported::new("a reduction of no arrays"));
+        };
+        let count = first.count.clone();
+        let (function, parameters, values) = match (name, &operands[..]) {
+            _ if operands.iter().all(|operand| operand.header.is_none()) => {
+                let mut values: Vec<String> = operands
+                    .iter()
+                    .map(|operand| format!("ptr {}", operand.data))
+                    .collect();
+                values.push(format!("i64 {count}"));
+                let parameters = vec!["ptr"; operands.len()].join(", ") + ", i64";
+                (format!("baryon_rt_{name}_{suffix}"), parameters, values)
+            }
+            ("sum", [array]) => {
+                let (rank, lengths, strides) = array.header.clone().unwrap_or_default();
+                let values = vec![
+                    format!("ptr {}", array.data),
+                    format!("i32 {rank}"),
+                    format!("ptr {lengths}"),
+                    format!("ptr {strides}"),
+                ];
+                let parameters = "ptr, i32, ptr, ptr".to_owned();
+                (
+                    format!("baryon_rt_sum_strided_{suffix}"),
+                    parameters,
+                    values,
+                )
+            }
+            ("dot", [left, right]) => {
+                let mut values = Vec::with_capacity(5);
+                for operand in [left, right] {
+                    let stride = match &operand.header {
+                        Some((_, _, strides)) => self.emit(&format!("load i64, ptr {strides}")),
+                        None => "1".to_owned(),
+                    };
+                    values.push(format!("ptr {}", operand.data));
+                    values.push(format!("i64 {stride}"));
+                }
+                values.push(format!("i64 {count}"));
+                let parameters = "ptr, i64, ptr, i64, i64".to_owned();
+                (
+                    format!("baryon_rt_dot_strided_{suffix}"),
+                    parameters,
+                    values,
+                )
+            }
+            _ => return Err(Unsupported::new("this reduction of arrays")),
+        };
         self.declare(
             &function,
-            &format!("declare {llvm} @{function}({parameters}, i64) nounwind"),
+            &format!("declare {llvm} @{function}({parameters}) nounwind"),
         );
         let result = self.emit(&format!("call {llvm} @{function}({})", values.join(", ")));
         self.line(&format!("store {llvm} {result}, ptr {address}"));
@@ -175,24 +223,50 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(())
     }
 
-    /// The address of the first element of the `Array` or `Fixed` array at `array`, and its
-    /// element count, the product of its lengths.
-    fn elements(&mut self, array: &Place) -> Result<(String, String), Unsupported> {
+    /// The `Array` or `Fixed` array at `array` as an operand of a reduction: the address of its
+    /// first element, its element count, the product of its lengths, and, for an `Array`, which
+    /// may be strided, its rank and the addresses of its header's lengths and strides.
+    fn reduced(&mut self, array: &Place) -> Result<Reduced, Unsupported> {
         let (array_address, array_type) = self.place(array)?;
         match array_type.kind(self.types.db) {
-            TypeKind::Fixed { shape, .. } => Ok((array_address, shape.elements().to_string())),
+            TypeKind::Fixed { shape, .. } => Ok(Reduced {
+                data: array_address,
+                count: shape.elements().to_string(),
+                header: None,
+            }),
             &TypeKind::Array { rank, .. } => {
+                let header = self.types.value(array_type)?;
                 let data = self.emit(&format!("load ptr, ptr {array_address}"));
+                let [lengths, strides] = [1, 2].map(|part| {
+                    self.emit(&format!(
+                        "getelementptr inbounds {header}, ptr {array_address}, i32 0, i32 {part}, i32 0"
+                    ))
+                });
                 let mut count = "1".to_owned();
                 for dimension in 0..rank {
                     let length = self.length(array, dimension)?;
                     count = self.emit(&format!("mul i64 {count}, {length}"));
                 }
-                Ok((data, count))
+                Ok(Reduced {
+                    data,
+                    count,
+                    header: Some((rank, lengths, strides)),
+                })
             }
             _ => Err(self.types.unsupported(array_type)),
         }
     }
+}
+
+/// An array operand of a reduction, as [`Function::reduced`] reads it.
+struct Reduced {
+    /// The address of the first element.
+    data: String,
+    /// The element count, an `i64` value or constant.
+    count: String,
+    /// For an `Array`: its rank and the addresses of its header's lengths and strides, so the
+    /// runtime can walk a view. `None` for a `Fixed` array, always one contiguous run.
+    header: Option<(u32, String, String)>,
 }
 
 /// How the backend computes a [`MathFunction`].

@@ -272,6 +272,9 @@ impl<'db> Body<'db> {
             if !unchecked && !identity {
                 self.comparable(comparator, operator, left_type, right_type);
             }
+            if matches!(operator, Operator::In | Operator::NotIn) {
+                self.dict_contains(left_node, left_type, right_type);
+            }
             left = Some(right_type);
             left_node = right_node;
         }

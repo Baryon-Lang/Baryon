@@ -1,4 +1,4 @@
-//! Lowering of lists: displays, `append`, `len`, indexing and `Array(xs)`.
+//! Lowering of lists: displays, `append`, `len`, indexing, `Array(xs)` and comprehensions.
 
 use crate::lower;
 
@@ -104,6 +104,170 @@ fn(_1: list[i64]) -> Array[i64, 1] {
 
     bb3: {
         return;
+    }
+}
+"
+    );
+}
+
+/// A comprehension is the loop it reads as: an empty list, a loop over `xs` that reads each
+/// element at its counter, a branch past the append when the condition is false, and an append
+/// of the value.
+#[test]
+fn a_comprehension_is_a_loop_that_appends() {
+    let program = "\
+        def positives(xs: list[f64]) -> list[f64]:\n\
+        \x20   return [2 * x for x in xs if x > 0]\n";
+    assert_eq!(
+        lower(program, "positives"),
+        "\
+fn(_1: list[f64]) -> list[f64] {
+    let _0: list[f64]; // return
+    let _1: list[f64]; // parameter xs
+    let _2: f64; // x
+    let _3: i64;
+    let _4: i64;
+    let _5: i64;
+    let _6: bool;
+    let _7: bool;
+    let _8: f64;
+    let _9: None;
+
+    bb0: {
+        _0 = list[f64]();
+        _3 = len(_1, 0);
+        _4 = copy _3;
+        _5 = 0_i64;
+        goto -> bb1;
+    }
+
+    bb1: {
+        _6 = Less(copy _5, copy _4);
+        branch copy _6 -> [true: bb2, false: bb4];
+    }
+
+    bb2: {
+        _2 = copy _1[_5];
+        _7 = Greater(copy _2, 0.0_f64);
+        branch copy _7 -> [true: bb5, false: bb3];
+    }
+
+    bb3: {
+        _5 = Add(copy _5, 1_i64);
+        goto -> bb1;
+    }
+
+    bb4: {
+        return;
+    }
+
+    bb5: {
+        _8 = Multiply(2.0_f64, copy _2);
+        _9 = call list.append(inout _0, owned copy _8) -> [return: bb6];
+    }
+
+    bb6: {
+        goto -> bb3;
+    }
+}
+"
+    );
+}
+
+/// `prange` in a comprehension is not lowered yet: it is a statement's parallel loop. Nor is a
+/// loop variable that borrows a `str` and is also used outside the loop, since reading it as the
+/// element it borrows is exact only inside.
+#[test]
+fn loops_not_lowered_yet_in_comprehensions_are_errors() {
+    let program = "\
+        def lengths(names: list[str]) -> list[i64]:\n\
+        \x20   evens = [i for i in prange(4)]\n\
+        \x20   name = \"none\"\n\
+        \x20   for name in names:\n\
+        \x20       print(name)\n\
+        \x20   return evens\n";
+    assert_eq!(
+        lower(program, "lengths"),
+        "\
+error: lowering does not handle `prange` and `simd` in a comprehension yet
+ --> main.byn:2:25
+  |
+2 |     evens = [i for i in prange(4)]
+  |                         ^^^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
+
+error: lowering does not handle a loop variable that borrows an element and is also used outside the loop yet
+ --> main.byn:4:9
+  |
+4 |     for name in names:
+  |         ^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}
+
+/// A loop over a list of `str`s borrows each element: the loop variable gets no value of its
+/// own, and each read of it reads the element in place, so nothing is copied or dropped.
+#[test]
+fn a_loop_over_strings_borrows_each_element() {
+    let program = "\
+        def total(names: list[str]) -> i64:\n\
+        \x20   n = 0\n\
+        \x20   for name in names:\n\
+        \x20       n += len(name)\n\
+        \x20   return n\n";
+    assert_eq!(
+        lower(program, "total"),
+        "\
+fn(_1: list[str]) -> i64 {
+    let _0: i64; // return
+    let _1: list[str]; // parameter names
+    let _2: i64; // n
+    let _3: str; // name
+    let _4: i64;
+    let _5: i64;
+    let _6: i64;
+    let _7: bool;
+    let _8: i64;
+    let _9: tuple[i64, bool];
+    let _10: bool;
+
+    bb0: {
+        _2 = 0_i64;
+        _4 = len(_1, 0);
+        _5 = copy _4;
+        _6 = 0_i64;
+        goto -> bb1;
+    }
+
+    bb1: {
+        _7 = Less(copy _6, copy _5);
+        branch copy _7 -> [true: bb2, false: bb4];
+    }
+
+    bb2: {
+        _8 = call len of str(_1[_6]) -> [return: bb5];
+    }
+
+    bb3: {
+        _6 = Add(copy _6, 1_i64);
+        goto -> bb1;
+    }
+
+    bb4: {
+        _0 = copy _2;
+        drop(_3);
+        return;
+    }
+
+    bb5: {
+        _9 = CheckedAdd(copy _2, copy _8);
+        _10 = Not(copy _9.1);
+        assert(copy _10, no overflow: Add) -> bb6;
+    }
+
+    bb6: {
+        _2 = copy _9.0;
+        goto -> bb3;
     }
 }
 "

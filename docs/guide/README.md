@@ -11,19 +11,74 @@ bug: please open an issue. The compiler is a prototype and does not build the wh
 
 ## 1. Install `baryon`
 
-You need [rustup](https://rustup.rs), which installs the Rust toolchain this repository pins, and
-`clang`, which `baryon` uses to optimize and link programs. On macOS, `xcode-select --install`
-provides `clang`; on Linux, install your distribution's `clang` package. Then, from a clone of this
-repository:
+There are two ways to get `baryon`: download a prebuilt one, or build it from source. Either way
+you also need `clang` 15 or newer, which `baryon` uses to optimize and link programs. On macOS,
+`xcode-select --install` provides it. On Linux, install your distribution's `clang` package, such
+as `sudo apt install clang` on Ubuntu 24.04. Ubuntu 22.04's `clang` is version 14, too old, so
+there run `sudo apt install clang-15` as well; `baryon` finds `clang-15` by itself.
+
+### Download a prebuilt `baryon`
+
+Prebuilt archives start with release 0.2.0, for two platforms:
+
+| Platform | Archive |
+| --- | --- |
+| Linux on x86_64, with glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 and later) | `baryon-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+| macOS 13.5 or newer on Apple silicon (M1 and later), with the Command Line Tools 15 or newer for `clang` | `baryon-<version>-aarch64-apple-darwin.tar.gz` |
+
+The release is tested on Ubuntu 22.04 and macOS 15. macOS 13.5 is the oldest whose Command Line
+Tools include a new enough `clang`, but no Mac older than macOS 15 has run it yet; if yours does
+or does not, please say so in an issue. Intel Macs, Alpine and other musl Linux distributions have
+no download; build from source there.
+Windows support comes in release 0.4.0.
+
+Each archive is on the project's
+[releases page](https://github.com/Baryon-Lang/Baryon/releases), next to a `.sha256` file with
+its checksum. Download both with `curl` in a terminal rather than with a browser: macOS marks a
+file a browser downloads as quarantined, and then refuses to run `baryon` until you clear the
+mark. On Linux:
+
+```sh
+version=0.2.0
+target=x86_64-unknown-linux-gnu
+name=baryon-$version-$target
+curl -LO https://github.com/Baryon-Lang/Baryon/releases/download/v$version/$name.tar.gz
+curl -LO https://github.com/Baryon-Lang/Baryon/releases/download/v$version/$name.tar.gz.sha256
+sha256sum -c $name.tar.gz.sha256
+tar -xzf $name.tar.gz
+```
+
+On a Mac, set `target=aarch64-apple-darwin` instead, and check the download with
+`shasum -a 256 -c $name.tar.gz.sha256`. The check prints `OK` when the file is intact; if it
+says `FAILED`, download it again.
+
+The archive unpacks to one directory, such as `baryon-0.2.0-x86_64-unknown-linux-gnu`, holding
+`baryon`, the runtime library `libruntime.a` that every program is linked with, and the license.
+`baryon` looks for `libruntime.a` next to itself, so keep the two together: move the whole
+directory where you want it and put it on your `PATH`, for example in `~/.local`:
+
+```sh
+mkdir -p ~/.local
+mv $name ~/.local/baryon
+export PATH="$HOME/.local/baryon:$PATH"
+baryon --version
+```
+
+The last line prints `baryon 0.2.0`. Add the `export` line to `~/.bashrc` on Linux or `~/.zshrc`
+on macOS so new terminals find `baryon` too.
+
+### Build from source
+
+You need [rustup](https://rustup.rs), which installs the Rust toolchain this repository pins.
+Then, from a clone of this repository:
 
 ```sh
 cargo build --package driver --package runtime
 export PATH="$PWD/target/debug:$PATH"
 ```
 
-That builds `baryon` and the runtime library every program is linked with, side by side in
-`target/debug`, and puts them on your `PATH` for this terminal. [The `baryon`
-command](../reference/commands.md) has the details.
+That builds `baryon` and the runtime library side by side in `target/debug`, and puts them on your
+`PATH` for this terminal. [The `baryon` command](../reference/commands.md) has the details.
 
 ## 2. A first program
 

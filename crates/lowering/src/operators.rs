@@ -264,11 +264,28 @@ impl<'db> Builder<'db> {
             self.is_none(place, operator, left, right, node);
             return None;
         }
+        let (left_type, right_type) = (self.ty(left), self.ty(right));
+        if matches!(operator, Operator::In | Operator::NotIn) {
+            match right_type.kind(self.db) {
+                TypeKind::List(_) => {
+                    self.list_contains(place, operator, (left, right), node);
+                    return None;
+                }
+                TypeKind::Dict { .. } => {
+                    self.dict_contains(place, operator, (left, right), node);
+                    return None;
+                }
+                _ => {}
+            }
+        }
+        let is_text = |builder: &Self, ty: Type<'db>| matches!(ty.kind(builder.db), TypeKind::Str);
+        if is_text(self, left_type) && is_text(self, right_type) {
+            return self.text_comparison(place, operator, (left, right), previous, node);
+        }
         let Some(operator) = comparison(operator) else {
             self.unsupported(node, &format!("`{}`", operator.symbol()));
             return None;
         };
-        let (left_type, right_type) = (self.ty(left), self.ty(right));
         if !self.is_copy(left_type) || !self.is_copy(right_type) {
             self.unsupported(node, "comparisons of values that are not copied");
             return None;

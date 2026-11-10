@@ -487,7 +487,7 @@ impl<'db> Builder<'db> {
     }
 
     /// Every node below `node`, in source order, onto `nodes`.
-    fn descendants(&self, node: NodeId, nodes: &mut Vec<NodeId>) {
+    pub(crate) fn descendants(&self, node: NodeId, nodes: &mut Vec<NodeId>) {
         nodes.push(node);
         for child in self.tree.children(node) {
             self.descendants(child, nodes);

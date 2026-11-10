@@ -295,7 +295,7 @@ impl<'db> Builder<'db> {
     }
 
     /// Ends the current block by going to `then` when `condition` holds, else to `otherwise`.
-    fn branch(
+    pub(crate) fn branch(
         &mut self,
         condition: Operand<'db>,
         (then, otherwise): (mir::BlockId, mir::BlockId),

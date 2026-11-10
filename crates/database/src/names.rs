@@ -16,7 +16,7 @@ use syntax::NodeId;
 /// standard traits (language reference, "Types", "Traits"), and the names decision 0031 adds:
 /// `Protocol`, the base of a user trait, `Embed`, which embeds a struct in another, and `Dyn`,
 /// reserved for trait objects (roadmap 3.5).
-pub const BUILTINS: [&str; 53] = [
+pub const BUILTINS: [&str; 54] = [
     "f64",
     "f32",
     "i64",
@@ -61,6 +61,7 @@ pub const BUILTINS: [&str; 53] = [
     "bool",
     "str",
     "list",
+    "dict",
     "tuple",
     "Exception",
     "Enum",

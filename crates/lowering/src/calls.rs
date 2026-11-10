@@ -98,6 +98,9 @@ impl<'db> Builder<'db> {
                 (Some(("list", "append")), [list, value]) => {
                     self.list_append(place, *list, *value, node);
                 }
+                (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
+                (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
+                (Some(("dict", method)), _) => self.dict_method(place, method, &arguments, node),
                 (Some(("Array" | "Fixed", method)), _) => {
                     self.array_method(place, method, &arguments, node);
                 }
@@ -154,6 +157,7 @@ impl<'db> Builder<'db> {
         // The arguments passed come first, then each default left out, in parameter order
         // (decision 0027).
         let mut passed = Vec::with_capacity(arguments.len());
+        let mut views = Vec::new();
         for (position, (&argument, &(mode, ty))) in arguments.iter().zip(&parameters).enumerate() {
             let Some(argument) = argument else {
                 passed.push(None);
@@ -171,7 +175,11 @@ impl<'db> Builder<'db> {
                     None => return,
                 },
                 Mode::InOut => match self.place(argument) {
-                    Some(place) => Argument::InOut(place),
+                    Some(place) => {
+                        let (passed, view) = self.in_out(place, ty, argument);
+                        views.extend(view);
+                        passed
+                    }
                     None => return,
                 },
                 Mode::Owned => Argument::Owned(self.operand_as(argument, ty)),
@@ -204,10 +212,19 @@ impl<'db> Builder<'db> {
             },
             node,
         );
-        if let Some(edge) = edge {
+        if let Some(mut edge) = edge {
+            if !views.is_empty() {
+                // The callee's changes reach the views whether it returns or raises.
+                let dispatch = self.new_block();
+                self.start(edge.target);
+                self.copy_back(&views, node);
+                self.terminate(TerminatorKind::Goto(dispatch), node);
+                edge.target = dispatch;
+            }
             self.dispatch(&edge, errors, node);
         }
         self.start(next);
+        self.copy_back(&views, node);
     }
 
     /// The type arguments of the class that declares `item`, for a call whose receiver is the

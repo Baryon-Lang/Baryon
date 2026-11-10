@@ -34,6 +34,7 @@ mod binding;
 mod builtins;
 mod calls;
 mod complex;
+mod dicts;
 mod elementwise;
 mod errors;
 mod exclusive;
@@ -58,6 +59,7 @@ mod shared;
 use crate::lower::Lowerer;
 use crate::outline::Entry;
 use database::{Definition, File, Package};
+pub(crate) use dicts::key_error as dict_key_error;
 use std::collections::{BTreeMap, BTreeSet};
 use syntax::{NodeId, Role, SyntaxKind, SyntaxTree};
 use types::{Declaration, Item, Primitive, Signature, Type, TypeDb, TypeKind, TypedBody};
@@ -338,6 +340,8 @@ impl<'db> Body<'db> {
             TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
                 self.number_context(*element)
             }
+            // `3 in counts` looks up a key, so the literal takes the key type.
+            TypeKind::Dict { key, .. } => self.number_context(*key),
             _ => self.generic_literal(ty),
         }
     }

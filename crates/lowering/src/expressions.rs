@@ -2,6 +2,7 @@
 //! statements and, for `and`, `or`, conditionals and calls, blocks.
 
 use crate::builder::Builder;
+use database::Definition;
 use mir::{Constant, ConstantValue, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Primitive, Type, TypeKind};
@@ -28,6 +29,7 @@ impl<'db> Builder<'db> {
             SyntaxKind::Attribute | SyntaxKind::Subscript if self.is_array_attribute(node) => {
                 self.array_attribute(place, node);
             }
+            SyntaxKind::Subscript if self.is_list_slice(node) => self.list_slice(&place, node),
             SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript => {
                 let operand = self.operand(node);
                 self.assign(place, Rvalue::Use(operand), node);
@@ -46,8 +48,9 @@ impl<'db> Builder<'db> {
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
             SyntaxKind::List => self.list_display(place, node),
+            SyntaxKind::Dictionary => self.dict_display(&place, node),
             SyntaxKind::FormattedString => self.formatted(place, node),
-            SyntaxKind::ListComprehension => self.unsupported(node, "comprehensions"),
+            SyntaxKind::ListComprehension => self.list_comprehension(&place, node),
             _ => self.unsupported(node, "this expression"),
         }
     }
@@ -63,14 +66,21 @@ impl<'db> Builder<'db> {
         }
         let ty = self.ty(node);
         if !self.is_array_attribute(node)
+            && !self.is_list_slice(node)
             && let Some(place) = self.place(node)
         {
+            if place.is_view() {
+                // A view is a borrow: where a value is needed, its elements are copied.
+                let copy = self.copy_view(place, ty, node);
+                return Operand::Move(Place::from(copy));
+            }
             return self.take(place, ty);
         }
         if matches!(
             self.tree.kind(node),
             SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
         ) && !self.is_array_attribute(node)
+            && !self.is_list_slice(node)
         {
             // A name of something lowering does not handle, already reported by `place`.
             return Operand::Constant(Constant {
@@ -145,10 +155,16 @@ impl<'db> Builder<'db> {
     }
 
     /// The place `node` names: a variable or parameter, or a field of a place. A read of a
-    /// `T | None` variable the checker narrowed to `T` reads the value inside.
+    /// `T | None` variable the checker narrowed to `T` reads the value inside, and a loop
+    /// variable that borrows an element reads the element.
     pub(crate) fn place(&mut self, node: NodeId) -> Option<Place> {
         match self.tree.kind(node) {
             SyntaxKind::Name => {
+                if let Some(&Definition::Local(binding)) = self.definition(node)
+                    && let Some(element) = self.aliases.get(&binding)
+                {
+                    return Some(element.clone());
+                }
                 let Some(local) = self.variable(node) else {
                     self.unsupported(node, "names other than variables, parameters and constants");
                     return None;
@@ -199,6 +215,7 @@ impl<'db> Builder<'db> {
         if !self.is_literal(node)
             && self.named_constant(node).is_none()
             && !self.is_array_attribute(node)
+            && !self.is_list_slice(node)
             && let Some(place) = self.place(node)
         {
             return place;

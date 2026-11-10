@@ -22,7 +22,8 @@ enum Lengths<'a> {
 impl<'db> Builder<'db> {
     /// The element `a[i, j]` names, after a bounds check of each index unless the program wrote
     /// `a.unchecked[i, j]` (decision 0010). A negative literal counts from the end. Indexing a
-    /// tuple with a constant names the item.
+    /// tuple with a constant names the item. A subscript with a slice names a view (the
+    /// `slices` module).
     pub(crate) fn subscript(&mut self, node: NodeId) -> Option<Place> {
         let (value, index) = (
             self.tree.child(node, Role::Value)?,
@@ -39,8 +40,7 @@ impl<'db> Builder<'db> {
             .iter()
             .any(|&index| self.tree.kind(index) == SyntaxKind::Slice)
         {
-            self.unsupported(node, "slices");
-            return None;
+            return self.view(node, value, &indices);
         }
         let (array, unchecked) = match self.unchecked_base(value) {
             Some(array) => (array, true),
@@ -48,6 +48,7 @@ impl<'db> Builder<'db> {
         };
         let base_type = self.ty(array);
         match base_type.kind(self.db) {
+            TypeKind::Dict { .. } => self.dict_value(node),
             TypeKind::Tuple(_) => {
                 let Some(position) = self.constant_integer(index) else {
                     self.unsupported(node, "tuple indices that are not constants");
@@ -82,7 +83,7 @@ impl<'db> Builder<'db> {
 
     /// The `i64` local holding `index`, the index into dimension `dimension` of the array at
     /// `array` of type `ty`, checked to be in range unless `unchecked`.
-    fn index(
+    pub(crate) fn index(
         &mut self,
         array: &Place,
         ty: Type<'db>,
@@ -191,7 +192,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The `k` of a negative integer literal `-k`.
-    fn negative_literal(&self, node: NodeId) -> Option<i128> {
+    pub(crate) fn negative_literal(&self, node: NodeId) -> Option<i128> {
         let negated = self.tree.kind(node) == SyntaxKind::UnaryOperation
             && self.tree.node(node).operator() == Operator::Negate;
         let value = self.tree.child(node, Role::Value)?;
@@ -238,7 +239,7 @@ impl<'db> Builder<'db> {
 
     /// The [`Elementwise`] tree of `node`: operators whose result is an array become nodes,
     /// arrays and scalars leaves. A scalar converts to the arrays' element type, `element`.
-    fn tree_of(&mut self, node: NodeId, element: Type<'db>) -> Option<Elementwise<'db>> {
+    pub(crate) fn tree_of(&mut self, node: NodeId, element: Type<'db>) -> Option<Elementwise<'db>> {
         let ty = self.ty(node);
         let child = |role| self.tree.child(node, role);
         match self.tree.kind(node) {
@@ -403,12 +404,17 @@ impl<'db> Builder<'db> {
         self.assign(place, Rvalue::Use(length), node);
     }
 
-    /// `len(a)`: the length of an array's first dimension, or a list's number of elements,
-    /// into `place`.
+    /// `len(a)`: the length of an array's first dimension, a list's number of elements, or a
+    /// `str`'s number of characters, into `place`.
     pub(crate) fn len(&mut self, place: Place, argument: NodeId, node: NodeId) {
         let ty = self.ty(argument);
-        if !self.is_array(ty) && !matches!(ty.kind(self.db), TypeKind::List(_)) {
-            return self.unsupported(node, "`len` of strings");
+        if matches!(ty.kind(self.db), TypeKind::Str) {
+            return self.text_length(place, argument, node);
+        }
+        if !self.is_array(ty)
+            && !matches!(ty.kind(self.db), TypeKind::List(_) | TypeKind::Dict { .. })
+        {
+            return self.unsupported(node, "`len` of this type");
         }
         let array = self.borrow(argument);
         let length = self.length(&array, ty, 0, node);

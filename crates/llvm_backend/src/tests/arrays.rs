@@ -293,3 +293,107 @@ fn fixed_arrays_are_nested_arrays() {
     let executable = build("fixed", &text, main);
     assert_eq!(run(&executable, &[]).as_deref(), Ok("1 2 3 4\n"));
 }
+
+/// `def nest(): rows = [[1, 2], [3]]` then `rows` dropped: dropping a list whose elements own
+/// memory frees each element's buffer, in order, before its own, so a list of lists, strings
+/// or arrays leaks nothing.
+#[test]
+fn dropping_a_list_drops_its_elements() {
+    let database = Database::default();
+    let types = Types::new(&database);
+    let row = Type::new(&database, TypeKind::List(types.i64));
+    let rows = Type::new(&database, TypeKind::List(row));
+    let mut nest = body(types.none, &[], Vec::new());
+    let first = nest.push_local(row, mir::LocalKind::Temporary, span());
+    let second = nest.push_local(row, mir::LocalKind::Temporary, span());
+    let outer = nest.push_local(rows, mir::LocalKind::Temporary, span());
+    let number = |value: i128| Operand::Constant(mir::Constant::integer(types.i64, value));
+    nest.blocks[0].statements = vec![
+        assign(first, Rvalue::Aggregate(row, vec![number(1), number(2)])),
+        assign(second, Rvalue::Aggregate(row, vec![number(3)])),
+        assign(
+            outer,
+            Rvalue::Aggregate(
+                rows,
+                vec![Operand::Move(first.into()), Operand::Move(second.into())],
+            ),
+        ),
+        mir::Statement {
+            kind: StatementKind::Drop(outer.into()),
+            span: span(),
+        },
+    ];
+    let text = super::module(&database, &[("nest", nest)]);
+    let main = r"
+        void nest(void);
+        int main(void) {
+            nest();
+            return 0;
+        }
+    ";
+    let executable = build("nested-lists", &text, main);
+    assert_eq!(
+        run(&executable, &[]).as_deref(),
+        Ok(
+            "freed 16 bytes aligned to 8\nfreed 8 bytes aligned to 8\nfreed 48 bytes aligned to 8\n"
+        )
+    );
+}
+
+/// A body returning an `i64` that builds the list `elements` of `i64`s, pops it into the
+/// return value, then drops the list.
+fn popped<'db>(types: &Types<'db>, list: Type<'db>, elements: &[i128]) -> Body<'db> {
+    let mut body = Body::new(types.i64, span());
+    let xs = body.push_local(list, mir::LocalKind::Temporary, span());
+    let number = |value: i128| Operand::Constant(mir::Constant::integer(types.i64, value));
+    let first = body.push_block(end(TerminatorKind::Call {
+        callee: mir::Callee::Builtin(mir::Builtin::Pop),
+        arguments: vec![mir::Argument::InOut(xs.into())],
+        destination: Local::RETURN.into(),
+        target: mir::BlockId::new(1),
+        error: None,
+    }));
+    body.blocks[first.index()].statements = vec![assign(
+        xs,
+        Rvalue::Aggregate(list, elements.iter().copied().map(number).collect()),
+    )];
+    let end_block = body.push_block(end(TerminatorKind::Return));
+    body.blocks[end_block.index()].statements = vec![mir::Statement {
+        kind: StatementKind::Drop(xs.into()),
+        span: span(),
+    }];
+    body
+}
+
+/// `xs = [7, 9]; return xs.pop()` returns 9 and keeps the buffer of two, which the drop then
+/// frees; popping an empty list panics with Python's message.
+#[test]
+fn pop_moves_out_the_last_element() {
+    let database = Database::default();
+    let types = Types::new(&database);
+    let list = Type::new(&database, TypeKind::List(types.i64));
+    let functions = [
+        ("last", popped(&types, list, &[7, 9])),
+        ("empty", popped(&types, list, &[])),
+    ];
+    let text = super::module(&database, &functions);
+    let main = r#"
+        #include <stdio.h>
+        long long last(void);
+        long long empty(void);
+        int main(int argc, char **argv) {
+            (void)argv;
+            printf("%lld\n", argc > 1 ? empty() : last());
+            return 0;
+        }
+    "#;
+    let executable = build("list-pop", &text, main);
+    assert_eq!(
+        run(&executable, &[]).as_deref(),
+        Ok("freed 16 bytes aligned to 8\n9\n")
+    );
+    assert_eq!(
+        run(&executable, &["empty"]),
+        Err("panic: pop from empty list\n  --> heat.byn:1:1\n".to_owned())
+    );
+}

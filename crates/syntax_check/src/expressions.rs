@@ -63,7 +63,6 @@ impl Checker<'_> {
         matches!(
             kind,
             SyntaxKind::Lambda
-                | SyntaxKind::Dictionary
                 | SyntaxKind::DictionaryComprehension
                 | SyntaxKind::Set
                 | SyntaxKind::SetComprehension
@@ -86,11 +85,11 @@ impl Checker<'_> {
                 "",
                 &["pass a function defined with `def` at the top level of the module instead"],
             ),
-            SyntaxKind::Dictionary | SyntaxKind::DictionaryComprehension => self.error(
-                "dictionaries are not supported yet",
+            SyntaxKind::DictionaryComprehension => self.error(
+                "dict comprehensions are not supported yet",
                 span,
                 "",
-                &["dictionaries are not in version 0; for named values, use a struct"],
+                &["build the dict in a loop: `d[k] = v`"],
             ),
             SyntaxKind::Set | SyntaxKind::SetComprehension => self.error(
                 "sets are not supported yet",

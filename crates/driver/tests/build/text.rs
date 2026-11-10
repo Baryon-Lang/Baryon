@@ -1,5 +1,5 @@
-//! `str` values built and run (decision 0022): literals and their escapes, f-strings, `copy()`
-//! and `+`.
+//! `str` values built and run (decision 0022): literals and their escapes, f-strings, `copy()`,
+//! `+`, comparisons, `in` and `len`.
 
 use super::{baryon_build, package, stderr};
 use std::process::Command;
@@ -100,5 +100,35 @@ def main():
     assert_eq!(
         String::from_utf8_lossy(&ran.stdout),
         "a\tb|\"q\"|\\|A\u{e9}|\\d\nx =\t2.5\n{x}\nC:\\new say \"hi\" \n"
+    );
+}
+
+/// Comparisons, `in` and `len` on `str` (roadmap 1.13.2) print what CPython prints for the same
+/// program: order by code point with a prefix first, so `"z" > "Ångström"` is false; the empty
+/// string in every string; `len` counting characters, not bytes; and chains reading each string
+/// once, including ones a call returns.
+#[test]
+fn comparisons_in_and_len_of_strings_build_and_run() {
+    let program = r#"
+def label(n: int) -> str:
+    return f"run{n}"
+
+
+def main():
+    name = "argon"
+    other = name.copy()
+    print(name == other, name != "neon", name < "neon", "b" <= "a", "z" > "Ångström", "" >= "")
+    print("go" in name, "rg" in name, "" in name, "x" not in name, name in "argon gas")
+    print(len(name), len("Ångström"), len(""), len(label(42)), label(1) == "run1")
+    print("a" < "b" < "c", "a" < "c" < "b", label(2) == label(2) != "x")
+"#;
+    let directory = package("text-comparisons", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "True True True False False True\nTrue True True True True\n5 8 0 5 True\nTrue False True\n"
     );
 }

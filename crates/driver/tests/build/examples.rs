@@ -293,6 +293,269 @@ def main():
     prints("lists", program, "10 0 81 81\n3 0.5 7.0 285\n0 0\nTrue 3\n").unwrap();
 }
 
+/// Lists of values that own memory (roadmap 1.13.3): `str`s, structs holding a `str` and an
+/// array, arrays and lists, built by a display or `append`, returned from a function, read by
+/// index, and written in place, which drops the element replaced. Dropping a list drops each
+/// element; a leak checker such as Valgrind finds nothing lost.
+#[test]
+fn lists_of_owned_values_build_and_run() {
+    let program = r#"
+class Sample(Struct):
+    name: str
+    values: Array[f64, 1]
+
+
+def names(n: int) -> list[str]:
+    result: list[str] = []
+    for i in range(n):
+        result.append(f"probe{i}")
+    return result
+
+
+def main():
+    xs = names(3)
+    print(len(xs), xs[0], xs[2])
+    xs[1] = "replaced"
+    print(xs[1], len(xs[1]))
+    words = ["alpha", "beta"]
+    words.append(xs[0].copy())
+    print(words[2], len(words))
+    samples: list[Sample] = []
+    samples.append(Sample("a", Array.zeros(4)))
+    samples.append(Sample("b", Array.ones(2)))
+    print(samples[1].name, samples[1].values.sum(), samples[0].values[3])
+    grid = [Array.ones(3), Array.zeros(5)]
+    print(grid[0].sum(), len(grid[1]))
+    nested = [[1, 2], [3]]
+    nested[1].append(4)
+    print(nested[1][1], len(nested))
+"#;
+    prints(
+        "owned-lists",
+        program,
+        "3 probe0 probe2\nreplaced 8\nprobe0 3\nb 2.0 0.0\n3.0 5\n4 2\n",
+    )
+    .unwrap();
+}
+
+/// `in`, `not in` and `copy()` on lists (roadmap 1.13.3): `in` converts the value to the element
+/// type, so `2 in xs` finds `2.0`, and works on numbers, `str`s and enums; a copy is a new list,
+/// so changing one leaves the other alone. Python prints the same lines.
+#[test]
+fn list_membership_and_copies_build_and_run() {
+    let program = r#"
+
+class Phase(Enum):
+    SOLID = 1
+    GAS = 2
+
+
+def main():
+    xs = [1.0, 2.0, 3.0]
+    ys = xs.copy()
+    ys[0] = 9.0
+    print(2 in xs, 5.0 not in ys, 9.0 in xs, 9.0 in ys, xs[0], len(ys))
+    names = ["argon", "neon"]
+    copies = names.copy()
+    names[0] = "xenon"
+    print("neon" in names, "argon" in names, "argon" in copies, "krypton" not in copies)
+    phases = [Phase.SOLID]
+    empty: list[int] = []
+    print(Phase.GAS in phases, Phase.SOLID in phases, 0 in empty, len(empty.copy()))
+"#;
+    prints(
+        "list-membership",
+        program,
+        "True True False True 1.0 3\nTrue False True True\nFalse True False 0\n",
+    )
+    .unwrap();
+}
+
+/// `pop()` on lists (roadmap 1.13.3) moves out the last element, of numbers, `str`s or lists,
+/// and a popped list can grow again. Python prints the same lines.
+#[test]
+fn list_pop_builds_and_runs() {
+    let program = r#"
+def main():
+    xs = [1.0, 2.0, 3.0]
+    last = xs.pop()
+    xs.append(4.0)
+    print(last, len(xs), xs[2])
+    names = ["argon", "neon"]
+    name = names.pop()
+    print(name, len(names), names[0])
+    rows = [[1, 2], [3]]
+    row = rows.pop()
+    print(len(row), row[0], len(rows))
+"#;
+    prints("list-pop", program, "3.0 3 4.0\nneon 1 argon\n1 3 1\n").unwrap();
+}
+
+/// Popping an empty list panics with Python's message, where `pop` is called.
+#[test]
+fn popping_an_empty_list_panics() {
+    let directory = package(
+        "list-pop-empty",
+        &[(
+            "main.byn",
+            "def main():\n    xs: list[int] = []\n    xs.pop()\n",
+        )],
+    )
+    .unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert_eq!(
+        panic_report(&ran),
+        "panic: pop from empty list\n  --> main.byn:3:5\n"
+    );
+}
+
+/// A slice of a list (roadmap 1.13.3) is a new list, as in Python: changing the list after
+/// leaves the slice alone. Defaults, negative literals and steps, backwards included, take the
+/// elements Python's slices take. Python prints the same lines.
+#[test]
+fn list_slices_build_and_run() {
+    let program = r#"
+def main():
+    xs = [1.0, 2.0, 3.0, 4.0, 5.0]
+    head = xs[:2]
+    print(head[0], head[1], len(head), len(xs[1:4]), xs[1:4][2])
+    print(len(xs[::2]), xs[::2][2], xs[::-1][0], xs[-2:][0], len(xs[3:1]))
+    names = ["argon", "neon", "xenon"]
+    tail = names[1:]
+    names[1] = "krypton"
+    print(tail[0], len(tail), names[1], "xenon" in names[1:])
+    n = 2
+    print(len(xs[n:]), xs[n:n + 1][0])
+"#;
+    prints(
+        "list-slices",
+        program,
+        "1.0 2.0 2 3 4.0\n3 5.0 5.0 4.0 0\nneon 2 krypton True\n3 3.0\n",
+    )
+    .unwrap();
+}
+
+/// A slice bound past the end of a list panics, as an array slice's does, where Python would
+/// quietly take fewer elements.
+#[test]
+fn a_list_slice_past_the_end_panics() {
+    let directory = package(
+        "list-slice-past-end",
+        &[(
+            "main.byn",
+            "def main():\n    xs = [1, 2, 3]\n    n = 5\n    print(len(xs[1:n]))\n",
+        )],
+    )
+    .unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert_eq!(
+        panic_report(&ran),
+        "panic: slice 1:5 is out of range for dimension 0 of length 3\n  --> main.byn:4:18\n"
+    );
+}
+
+/// `for` over a list of numbers or tuples (roadmap 1.13.5), with `break` and unpacking. Python
+/// prints the same lines.
+#[test]
+fn for_over_a_list_builds_and_runs() {
+    let program = r"
+def main():
+    xs = [1.5, 2.5, 4.0]
+    total = 0.0
+    for x in xs:
+        total += x
+    for a, b in [(1, 2), (3, 4)]:
+        print(a + b)
+    for x in xs:
+        if x > 2.0:
+            break
+        print(x)
+    print(total)
+";
+    prints("for-over-a-list", program, "3\n7\n1.5\n8.0\n").unwrap();
+}
+
+/// List comprehensions (roadmap 1.13.5): a condition, two `for` clauses, f-string values, a
+/// comprehension that reads the list it replaces, an empty one, nested ones, and two
+/// conditions on one clause. Python prints the same lines.
+#[test]
+fn list_comprehensions_build_and_run() {
+    let program = r#"
+def main():
+    xs = [3.0, -1.0, 2.0, -4.0]
+    squares = [x * x for x in xs if x > 0]
+    print(len(squares), squares[0], squares[1])
+    pairs = [(i, j) for i in range(4) for j in range(i) if (i + j) % 2 == 1]
+    print(len(pairs), pairs[0], pairs[1])
+    labels = [f"r{n}" for n in range(3)]
+    print(labels[0], labels[2], len(labels))
+    xs = [x + 1.0 for x in xs]
+    print(xs[0], xs[3])
+    print(len([n for n in range(0)]))
+    nested = [[j for j in range(i)] for i in range(4)]
+    print(len(nested[3]), nested[3][2])
+    print(len([n for n in range(10) if n % 2 == 0 if n > 2]))
+    x = 10
+    ys = [x for x in range(3)]
+    print(x, ys[2])
+"#;
+    prints(
+        "list-comprehensions",
+        program,
+        "2 9.0 4.0\n4 (1, 0) (2, 1)\nr0 r2 3\n4.0 -3.0\n0\n3 2\n3\n10 2\n",
+    )
+    .unwrap();
+}
+
+/// Loops over lists and tuples of values that are not copied (roadmap 1.13.7) borrow each
+/// element: `str`s, unpacked tuples holding one, lists and structs, in statements and in
+/// comprehensions. Python prints the same lines.
+#[test]
+fn loops_over_strings_and_structs_build_and_run() {
+    let program = r#"
+class Particle(Struct):
+    name: str
+    mass: f64
+
+def main():
+    names = ["argon", "neon", "xenon"]
+    total = 0
+    for name in names:
+        total += len(name)
+        print(name, name == "neon", f"<{name}>")
+    print(total)
+    lengths = [len(n) for n in names if n != "neon"]
+    print(lengths[0], lengths[1], len(lengths))
+    print([f"{n}!" for n in names][2])
+    for word in ("a", "bc"):
+        print(word, len(word))
+    for symbol, mass in [("He", 4.0), ("Ar", 39.9)]:
+        mass = mass * 2.0
+        print(symbol, mass)
+    grid = [[1, 2], [3]]
+    for row in grid:
+        print(len(row), row[0])
+    print(len([x for row in grid for x in row]))
+    particles = [Particle("p", 1.0), Particle("q", 2.0)]
+    for p in particles:
+        print(p.name, p.mass)
+    print([p.name.copy() for p in particles][1])
+"#;
+    prints(
+        "loops-over-strings",
+        program,
+        "argon False <argon>\nneon True <neon>\nxenon False <xenon>\n14\n5 5 2\nxenon!\n\
+         a 1\nbc 2\nHe 8.0\nAr 79.8\n2 1\n1 3\n3\np 1.0\nq 2.0\nq\n",
+    )
+    .unwrap();
+}
+
 /// Monte Carlo pi: 1,024 chunks of a `prange` loop, each drawing from its own `Philox` stream.
 /// `NumPy`, drawing from `Generator(Philox(key=2026).jumped(chunk))` for each chunk, counts the
 /// same 80,420,174 hits, so the estimate matches to every digit, on any number of cores.
