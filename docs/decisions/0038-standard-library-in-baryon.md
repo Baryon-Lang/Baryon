@@ -1,6 +1,6 @@
 # 0038. Standard-library classes are Baryon source shipped inside the compiler
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-10
 Roadmap: 1.13.6
 
@@ -34,6 +34,8 @@ The forces:
    slow down a build measurably.
 
 ## Decision
+
+Collins accepted this on 2026-11-10, choosing the library written in Baryon over more built-in types.
 
 The compiler carries standard-library source files written in Baryon, embedded in the `driver`
 with `include_str!` and added to every package as ordinary files under the reserved root
