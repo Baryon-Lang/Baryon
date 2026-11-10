@@ -26,6 +26,7 @@
 //! | [`baryon_rt_text_new`], [`baryon_rt_text_str`], [`baryon_rt_text_i64`], [`baryon_rt_text_u64`], [`baryon_rt_text_f64`], [`baryon_rt_text_f32`], [`baryon_rt_text_bool`], [`baryon_rt_text_finish`] | Build an owned `str` from pieces, each value formatted with a [`FormatSpec`] as Python's `format` writes it: an f-string, a `copy()` or a `+` |
 //! | [`baryon_rt_sum_f64`], [`baryon_rt_sum_f32`] | Add a float array's elements in `NumPy`'s pairwise order, for `a.sum()` |
 //! | [`baryon_rt_dot_f64`], [`baryon_rt_dot_f32`] | Add the products of two float arrays' elements in the same order, for `a.dot(b)` |
+//! | [`baryon_rt_str_compare`], [`baryon_rt_str_contains`], [`baryon_rt_str_length`] | Compare two `str`s by code point, find one inside another, and count characters, for `==`, `<`, `in` and `len` of `str` |
 //! | [`baryon_rt_print_str_quoted`] | Print a `str` inside a tuple or struct, or a field of an error that ends `main`, as Python's `repr` writes it, quoted |
 //! | [`baryon_rt_flush`] | Write out a line `print(..., end="")` left unended, before the C `main` returns |
 //!
