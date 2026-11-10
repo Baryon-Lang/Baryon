@@ -32,8 +32,9 @@ in `except` as a tuple.
 ## Functions that can fail
 
 A function that can fail says so in its return type with `Raises[T, E]`: it returns a `T`, or fails
-with an `E`. Several error types are written as a union, `Raises[T, ParseError | IOError]`, and a
-function that returns nothing on success uses `Raises[None, E]`.
+with an `E`. Several error types are written as a union, `Raises[T, ParseError | IOError]`, or as
+an alias of one, `ReadErrors = ParseError | IOError`, and a function that returns nothing on
+success uses `Raises[None, E]`.
 
 ```python
 def solve(

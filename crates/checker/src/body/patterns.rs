@@ -2,8 +2,9 @@
 //! pattern is checked against the subject's type, captures are bound, and the cases must cover
 //! every value of the subject.
 //!
-//! Version 0 patterns are literals, enum members, `True`, `False` and `None`, tuples, captures,
-//! the wildcard `_`, and `a | b` of these. Class, mapping and star patterns are errors. After
+//! Version 0 patterns are literals, enum members, `True`, `False` and `None`, tuples, class
+//! patterns such as `Dirichlet(value=v)` (the `class_patterns` module, decision 0032),
+//! captures, the wildcard `_`, and `a | b` of these. Mapping and star patterns are errors. After
 //! `case None:`, the later cases of a `T | None` subject match a `T`. The
 //! `exhaustive` module decides whether the cases cover every value and names one they miss:
 //!
@@ -103,7 +104,21 @@ impl<'db> Body<'db> {
     /// Checks a pattern against the subject type `ty`, binds its captures, and reduces it for
     /// exhaustiveness. A pattern with an error counts as a wildcard, so one mistake gives one
     /// message.
-    fn pattern(&mut self, node: NodeId, ty: Type<'db>) -> Pattern {
+    pub(super) fn pattern(&mut self, node: NodeId, ty: Type<'db>) -> Pattern {
+        if let TypeKind::Union(members) = ty.kind(self.db)
+            && !matches!(
+                self.tree.kind(node),
+                SyntaxKind::PatternAs | SyntaxKind::PatternOr
+            )
+        {
+            return self.member_pattern(node, ty, members);
+        }
+        self.plain_pattern(node, ty)
+    }
+
+    /// [`pattern`](Self::pattern) on a subject that is not a union, or a capture or `a | b`
+    /// on one.
+    pub(super) fn plain_pattern(&mut self, node: NodeId, ty: Type<'db>) -> Pattern {
         match self.tree.kind(node) {
             SyntaxKind::PatternAs => {
                 if let Some(name) = self.tree.child(node, Role::Name) {
@@ -125,24 +140,21 @@ impl<'db> Body<'db> {
             }
             SyntaxKind::PatternValue => match self.tree.child(node, Role::Value) {
                 Some(value) => {
-                    let pattern = self.value_pattern(value, ty);
-                    if let Pattern::Member(index) = pattern
-                        && let Ok(index) = u32::try_from(index)
-                    {
-                        self.typed.patterns.insert(types::Key(node), index);
-                    }
+                    let (pattern, _) = self.value_pattern(value, ty);
+                    self.record_member(node, &pattern);
                     pattern
                 }
                 None => Pattern::Wild,
             },
             SyntaxKind::PatternSingleton => self.singleton_pattern(node, ty),
             SyntaxKind::PatternSequence => self.tuple_pattern(node, ty),
+            SyntaxKind::PatternClass => self.class_pattern(node, ty),
             _ => {
                 self.lowerer.error(
                     node,
                     "this kind of pattern is not supported",
                     "not supported",
-                    Some("a `case` matches literals, enum members, `True`, `False`, `None`, tuples, names and `_`"),
+                    Some("a `case` matches literals, enum members, `True`, `False`, `None`, tuples, classes, names and `_`"),
                 );
                 self.assume_captured(node);
                 Pattern::Wild
@@ -150,8 +162,18 @@ impl<'db> Body<'db> {
         }
     }
 
-    /// A literal or an enum member, such as `0`, `"x"` or `Boundary.PERIODIC`.
-    fn value_pattern(&mut self, value: NodeId, ty: Type<'db>) -> Pattern {
+    /// Records, for lowering, which enum member the value pattern `node` matches.
+    pub(super) fn record_member(&mut self, node: NodeId, pattern: &Pattern) {
+        if let Pattern::Member(index) = *pattern
+            && let Ok(index) = u32::try_from(index)
+        {
+            self.typed.patterns.insert(types::Key(node), index);
+        }
+    }
+
+    /// A literal or an enum member, such as `0`, `"x"` or `Boundary.PERIODIC`, with the type
+    /// of the value it compares against.
+    pub(super) fn value_pattern(&mut self, value: NodeId, ty: Type<'db>) -> (Pattern, Type<'db>) {
         let expected = match ty.kind(self.db) {
             TypeKind::Optional(inner) => *inner,
             _ => ty,
@@ -159,7 +181,7 @@ impl<'db> Body<'db> {
         let found = self.expression(value, Some(expected));
         if !relations::compatible(self.db, expected, found) {
             self.pattern_error(value, found, ty);
-            return Pattern::Wild;
+            return (Pattern::Wild, found);
         }
         if let TypeKind::Enum(nominal) = found.kind(self.db)
             && self.tree.kind(value) == SyntaxKind::Attribute
@@ -170,11 +192,11 @@ impl<'db> Body<'db> {
             if let Declaration::Enum { variants } = &self.db.declaration(item).declaration
                 && let Some(index) = variants.iter().position(|variant| variant == wanted)
             {
-                return Pattern::Member(index);
+                return (Pattern::Member(index), found);
             }
-            return Pattern::Wild;
+            return (Pattern::Wild, found);
         }
-        Pattern::Literal
+        (Pattern::Literal, found)
     }
 
     /// `True`, `False` or `None`.
@@ -223,7 +245,7 @@ impl<'db> Body<'db> {
 
     /// Counts the names a pattern with an error captures as assigned, so a read of one is not
     /// reported a second time.
-    fn assume_captured(&mut self, pattern: NodeId) {
+    pub(super) fn assume_captured(&mut self, pattern: NodeId) {
         let mut captured = std::collections::BTreeSet::new();
         self.pattern_names(pattern, &mut captured);
         self.state.assigned.extend(captured);
@@ -242,12 +264,29 @@ impl<'db> Body<'db> {
 
     /// What the values of `ty` can look like, for exhaustiveness.
     fn space(&self, ty: Type<'db>) -> Space {
+        self.space_within(ty, &mut Vec::new())
+    }
+
+    /// [`space`](Self::space), inside the structs in `open`. A struct inside itself, an error
+    /// the class reports, is left open rather than taken apart forever.
+    pub(super) fn space_within(&self, ty: Type<'db>, open: &mut Vec<Type<'db>>) -> Space {
         match ty.kind(self.db) {
-            TypeKind::Primitive(Primitive::Bool) => Space::Bool,
-            TypeKind::Optional(inner) => Space::Optional(Box::new(self.space(*inner))),
-            TypeKind::Tuple(items) => {
-                Space::Tuple(items.iter().map(|&item| self.space(item)).collect())
+            TypeKind::Union(members) => self.union_space(members, open),
+            TypeKind::Struct(_) if open.contains(&ty) => Space::Open,
+            TypeKind::Struct(nominal) => {
+                open.push(ty);
+                let space = self.struct_space(ty, nominal, open);
+                open.pop();
+                space
             }
+            TypeKind::Primitive(Primitive::Bool) => Space::Bool,
+            TypeKind::Optional(inner) => Space::Optional(Box::new(self.space_within(*inner, open))),
+            TypeKind::Tuple(items) => Space::Tuple(
+                items
+                    .iter()
+                    .map(|&item| self.space_within(item, open))
+                    .collect(),
+            ),
             TypeKind::Enum(nominal) => {
                 let item = Item::new(self.db, self.lowerer.package, nominal.file, nominal.name);
                 let Declaration::Enum { variants } = &self.db.declaration(item).declaration else {

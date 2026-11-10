@@ -82,7 +82,7 @@ the spelling to use instead.
 | `raise E(...)` | yes | Only inside a function that declares it can fail; see [Errors](errors.md). No `raise ... from`: errors do not chain, so keep a cause in a field ([decision 0034](../decisions/0034-no-error-chaining.md)) |
 | `try` with `except` | yes | Each `except` names the error types it handles. No bare `except:`, no `else`, no `finally` |
 | `with unsafe:` | yes | The only `with` form in version 0 |
-| `match` | yes | Literal, enum, tuple and wildcard patterns; must be exhaustive |
+| `match` | yes | Literal, enum, tuple, [class](types.md#unions-of-structs) and wildcard patterns; must be exhaustive |
 | `assert cond, message` | yes | Checked in every build; a false condition panics |
 | `del` | no | A value is destroyed when its owner goes out of scope |
 | `global`, `nonlocal` | no | There are no module-level variables |
