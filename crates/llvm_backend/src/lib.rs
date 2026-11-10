@@ -156,6 +156,7 @@ mod rvalue;
 mod strings;
 mod text;
 mod ty;
+mod view;
 
 use mir::Body;
 use std::collections::{BTreeMap, BTreeSet};

@@ -12,6 +12,7 @@ mod calls;
 mod lists;
 mod math;
 mod random;
+mod slices;
 mod unpacking;
 mod values;
 

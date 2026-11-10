@@ -100,14 +100,16 @@ out of a function, including through a `raise`.
 | Builds today | Not built yet |
 | --- | --- |
 | Moves, copies, `.copy()` on `str`, `Array` and lists of copy types or `str`s | `.copy()` on structs and on lists of other types |
-| `InOut` and `Owned` parameters, including `InOut` arrays and whole-array arithmetic on them | Slices, as views passed to a function or as the target of an assignment |
+| `InOut` and `Owned` parameters, including `InOut` arrays and whole-array arithmetic on them | |
+| [Slices](values-and-references.md#slices) passed to a read-only parameter, which borrows them in place, or to an `InOut` one, which works on a copy written back after the call; assigned into with `=` and `+=` | Binding a slice to a name, which the reference leaves to Phase 3 |
 
 ## Arrays
 
 | Builds today | Not built yet |
 | --- | --- |
 | `Array.zeros`, `Array.ones` and `Array.fill`, with the element type from context, a `dtype` or `f64`; `a.copy()`; `Array(values)` of a list | `Array.zeros` and `Array.ones` of an enum, whose members are not numbers; `Array.fill` with a member works |
-| Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | Slices `a[1:n]` |
+| Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | |
+| [Slices](arrays.md#slicing) `a[i:j]`, `a[i:j:k]`, `a[::-1]` and `grid[:, k]` of `Array` and `Fixed` arrays, with defaults, negative literals, steps known only at run time, and the out-of-range and zero-step panics; read, passed to functions, in whole-array arithmetic, and assigned into in place | Slices of lists and strings |
 | `len(a)`, `a.shape`, `a.shape[k]` and `a.size`, of `Array` and `Fixed` arrays, and `print(a.shape)` | |
 | `a.unchecked[i]` inside `with unsafe:` | |
 | `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, the methods below, and whole-array arithmetic | |
@@ -128,7 +130,7 @@ idea I.18), and [Types](#types) lists the operations it does not check yet.
 
 | Builds today | Not built yet |
 | --- | --- |
-| `prange` with the same arguments as `range`, its inferred reductions and their reproducible combine; `accumulate=` of array variables and of struct fields such as `atoms.forces`, adding into elements and their lanes | Adding into a slice of an accumulated array |
+| `prange` with the same arguments as `range`, its inferred reductions and their reproducible combine; `accumulate=` of array variables and of struct fields such as `atoms.forces`, adding into elements and their lanes, and into slices such as `forces[j, :] += f` | |
 | `simd(range(...))`, which asks LLVM to vectorize the loop; a float sum or product in one adds into 8 fixed lanes, so it gives the same bits on every machine | A `simd` loop that sums complex numbers runs unvectorized (roadmap 1.10.13); an error when LLVM cannot vectorize a `simd` loop, such as one whose bounds checks it cannot move out of the loop (roadmap 3.7); until then such a loop runs unvectorized |
 
 `baryon check` applies every rule of the chapter, so a `prange` loop that breaks one is reported
