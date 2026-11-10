@@ -15,8 +15,8 @@
 //!
 //! - Statements: star targets `a, *rest = e`, `else` on `for` and `while`, functions nested in
 //!   functions, `del`, `global`, `nonlocal`, `async`, the `type` statement, `from m import *`,
-//!   bare `except:`, `except*`, `try` with `else` or `finally`, and `with` other than
-//!   `with unsafe:`.
+//!   bare `except:`, `except*`, `try` with `else` or `finally`, `raise ... from`, and `with`
+//!   other than `with unsafe:`.
 //! - Expressions: `lambda`, `await`, `yield`, dictionary and set literals and comprehensions,
 //!   generator expressions, `:=`, `*` and `**` unpacking, and `is` with anything but `None`.
 //! - Definitions: `*args` and `**kwargs` parameters, function decorators other than `@test`
