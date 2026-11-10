@@ -2,7 +2,7 @@
 //! splitting, stripping, joining, searching, replacing and changing case, each as Python's `str`
 //! method of the same name does it.
 //!
-//! These functions are safe Rust over `&str`. The exported functions in `abi::string_methods`
+//! These functions are safe Rust over `&str`. The exported functions in `abi::string_methods` and `abi::string_lists`
 //! turn compiled code's pointers into `&str`s, call these, and hand the results back as owned
 //! text. Positions are counted in characters, code points, as Python counts them, never in
 //! bytes, so each function that takes or gives a position reads the text from its start: the

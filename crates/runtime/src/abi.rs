@@ -11,6 +11,7 @@ mod complex;
 mod dict;
 mod output;
 mod philox;
+mod string_lists;
 mod string_methods;
 mod strings;
 mod sum;
@@ -33,11 +34,13 @@ pub use output::{
     baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,
 };
 pub use philox::{baryon_rt_philox_new, baryon_rt_philox_uniform};
+pub use string_lists::{
+    OwnedList, TextValue, baryon_rt_str_join, baryon_rt_str_split, baryon_rt_str_split_whitespace,
+};
 pub use string_methods::{
-    OwnedList, TextValue, baryon_rt_str_ends_with, baryon_rt_str_find, baryon_rt_str_join,
-    baryon_rt_str_lower, baryon_rt_str_replace, baryon_rt_str_split,
-    baryon_rt_str_split_whitespace, baryon_rt_str_starts_with, baryon_rt_str_strip,
-    baryon_rt_str_strip_characters, baryon_rt_str_take, baryon_rt_str_upper,
+    baryon_rt_str_ends_with, baryon_rt_str_find, baryon_rt_str_lower, baryon_rt_str_replace,
+    baryon_rt_str_starts_with, baryon_rt_str_strip, baryon_rt_str_strip_characters,
+    baryon_rt_str_take, baryon_rt_str_upper,
 };
 pub use strings::{baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_length};
 pub use sum::{
