@@ -38,8 +38,10 @@ workstream (roadmap 1.13.12). This record relies on it and does not define parsi
 
 ## Decision
 
-Python's modules and names, a subset of each, with one error type. The proposal, with a
-recommendation on each choice Collins is asked to make:
+Python's modules and names, a subset of each, with one error type. Collins chose parts 1 to 4
+on 2026-11-10, each the recommended option: Python's names, one `OSError` with a `kind`,
+`with open(...)`, and arrays as the only binary data in 0.3.0. The rest of the record follows
+from those choices and the rules above.
 
 ### 1. Python's modules and names
 
@@ -63,7 +65,7 @@ today. A program that uses a name Python has and this table does not, such as `o
 
 **Alternative:** one Baryon module, `io`, with names of our own. It would be smaller and free of
 Python's historical splits, but every Python programmer would have to learn it, and every ported
-script would need its I/O rewritten. **Recommended: Python's names.**
+script would need its I/O rewritten. **Chosen: Python's names.**
 
 ### 2. One error type, `OSError`, with a `kind`
 
@@ -101,7 +103,7 @@ def main() -> Raises[None, OSError]:
 Without a hierarchy each would be its own type, so `open` would declare
 `Raises[File, FileNotFoundError | PermissionError | IsADirectoryError | OSError]`, every caller
 would repeat the union, and a function that adds one more failure would change every signature
-above it. **Recommended: one `OSError` with a `kind`.** A ported `except FileNotFoundError` becomes
+above it. **Chosen: one `OSError` with a `kind`.** A ported `except FileNotFoundError` becomes
 `except OSError` and a test of `kind`; the compile error says so.
 
 ### 3. Files close when their owner ends, and `with open(...)` is allowed
@@ -126,7 +128,7 @@ naming the path: a drop cannot raise, and force 4 rules out ignoring it. `with` 
 how to handle that failure as an error.
 
 **Alternative:** no `with`; files close on drop and through `close()` only. One fewer construct,
-but the most common Python I/O idiom would not compile. **Recommended: allow `with open(...)`.**
+but the most common Python I/O idiom would not compile. **Chosen: allow `with open(...)`.**
 
 ### 4. Text files are UTF-8; binary data is whole arrays
 
@@ -164,7 +166,7 @@ large block, with no per-element work (force 5). `dtype` may be any number type,
 **Alternative:** add a `bytes` type now, with `open(path, "rb")`, so any binary format can be
 read. That is a new core type with its own literals, methods and printing, and every binary format
 scientists use (raw arrays now; `.npy`, HDF5 and the rest under roadmap 3.14) is better served by
-reading arrays directly. **Recommended: arrays only in 0.3.0;** a `"b"` mode is a compile error
+reading arrays directly. **Chosen: arrays only in 0.3.0;** a `"b"` mode is a compile error
 that points to `Array.fromfile` and `tofile`, and `bytes` waits for a format that needs it.
 
 ### 5. Arguments, environment and exit status
