@@ -91,6 +91,8 @@ impl<'db> Types<'_, 'db> {
                 Ok(format!("{{ ptr, [{rank} x i64], [{rank} x i64] }}"))
             }
             TypeKind::List(_) => Ok(crate::list::HEADER.to_owned()),
+            // A pointer to the runtime's table, null while empty (the `dict` module).
+            TypeKind::Dict { .. } => Ok("ptr".to_owned()),
             TypeKind::Optional(value) => Ok(format!("{{ {}, i1 }}", self.value(*value)?)),
             // The runtime's `Philox`: 11 words it reads and writes through a pointer.
             TypeKind::Standard(types::StandardType::Philox) => Ok("[11 x i64]".to_owned()),

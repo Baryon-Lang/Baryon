@@ -40,6 +40,10 @@
 //! - **Lists are a header and a growable buffer.** A `list[T]` is `{ ptr, i64, i64 }`: the
 //!   data pointer, the length and the capacity. An append into a full buffer moves the elements
 //!   to one twice as large, at least 4 elements (the `list` module).
+//! - **Dictionaries are a pointer to the runtime's table.** A `dict[K, V]` is one `ptr`, null
+//!   while empty. Finding, adding, removing and stepping are runtime calls, given a constant that
+//!   describes the key type; an entry's key and value are read and written in place, at their
+//!   offset in the table's entries array (the `dict` module, decision 0035).
 //! - **Line tables, when asked for.** With [`Module::debug_info`], each function and each
 //!   instruction points back to its source line and column (the `debug` module), so `gdb`,
 //!   `lldb` and profilers show `.byn` lines.
@@ -142,6 +146,7 @@ mod array;
 mod call;
 mod convert;
 mod debug;
+mod dict;
 mod entry;
 mod errors;
 mod function;

@@ -111,7 +111,7 @@ pub unsafe extern "C" fn baryon_rt_str_length(text: *const u8, length: usize) ->
 /// When `length` is above 0, `pointer` points to `length` readable bytes that nothing writes
 /// while the slice lives.
 #[allow(unsafe_code, reason = "reads text compiled code points to")]
-unsafe fn bytes<'a>(pointer: *const u8, length: usize) -> &'a [u8] {
+pub(super) unsafe fn bytes<'a>(pointer: *const u8, length: usize) -> &'a [u8] {
     if length == 0 {
         return &[];
     }

@@ -141,6 +141,10 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::CompareStr => self.text_builtin(&COMPARE, arguments, destination, target),
             Builtin::ContainsStr => self.text_builtin(&CONTAINS, arguments, destination, target),
             Builtin::LengthStr => self.text_builtin(&LENGTH, arguments, destination, target),
+            Builtin::DictFind => self.dict_find(arguments, destination, target),
+            Builtin::DictInsert => self.dict_insert(arguments, destination, target),
+            Builtin::DictRemove => self.dict_remove(arguments, destination, target),
+            Builtin::DictNext => self.dict_next(arguments, destination, target),
         }
     }
 }
