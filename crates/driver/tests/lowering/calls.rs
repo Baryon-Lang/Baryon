@@ -192,7 +192,9 @@ fn(_1: f64, _2: i64) -> f64 {
 
 /// An argument left out takes its parameter's default, written by the call as a constant: a
 /// literal at the parameter's type, so `scale: f64 = 1` passes `1.0`, or a `Final` constant's
-/// value. Any other default is reported, since evaluating it belongs to the callee.
+/// value, after the arguments passed, so `scale=3.0` is written before `tolerance`. Any other
+/// default is computed by a function of its own, named by the parameter, which the call calls
+/// (decision 0027).
 #[test]
 fn defaulted_arguments_are_constants() {
     let program = "\
@@ -240,9 +242,9 @@ fn(_1: f64) -> bool {
 
     bb2: {
         _5 = 2.0_f64;
-        _6 = 1e-9_f64;
-        _7 = 3.0_f64;
-        _0 = call close(_1, _5, _6, _7) -> [return: bb4];
+        _6 = 3.0_f64;
+        _7 = 1e-9_f64;
+        _0 = call close(_1, _5, _7, _6) -> [return: bb4];
     }
 
     bb3: {
@@ -258,12 +260,24 @@ fn(_1: f64) -> bool {
     assert_eq!(
         lower(program, "shift"),
         "\
-error: lowering does not handle leaving out an argument whose default is not a literal or a constant yet
-  --> main.byn:17:12
-   |
-17 |     return offset(x)
-   |            ^^^^^^^^^ not lowered yet
-   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+fn(_1: f64) -> f64 {
+    let _0: f64; // return
+    let _1: f64; // parameter x
+    let _2: f64;
+
+    bb0: {
+        _2 = call by() -> [return: bb1];
+    }
+
+    bb1: {
+        _0 = call offset(_1, _2) -> [return: bb2];
+    }
+
+    bb2: {
+        return;
+    }
+}
+"
     );
 }
 
