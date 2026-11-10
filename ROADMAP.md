@@ -208,7 +208,7 @@ registry and a standalone IDE are candidates, each added here when it is planned
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3.17 | Python interop with zero-copy arrays | 3 | 1.10 | Planned | — | — |
+| 3.17 | Python interop with zero-copy arrays. Dropped for now: Baryon stands on its own with native libraries, and interop waits until after 1.0 (Collins, 2026-11-10) | 3 | 1.10 | Dropped | — | — |
 | 4.1 | C++ interop: header import, templates by instantiation, exceptions at the boundary | 12+ | 3.5 | Planned | — | — |
 
 ## Releases
@@ -217,9 +217,10 @@ A release is a tag on `main` that people outside the project can try. Each relea
 here, with one row per step; [`CHANGELOG.md`](CHANGELOG.md) says what it holds.
 
 Every release up to 1.0 puts working functionality for users first: a feature someone needs to
-write, run or ship a real program comes before internal rework (Collins, 2026-11-10). A
-self-hosted compiler stays a non-goal, as the [design plan](docs/design/language-design-plan.md)
-says.
+write, run or ship a real program comes before internal rework (Collins, 2026-11-10). Baryon
+stands on its own: its libraries are written in Baryon and grow alongside it, so interoperability
+with Python waits until after 1.0. A self-hosted compiler stays a non-goal, as the
+[design plan](docs/design/language-design-plan.md) says.
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -277,7 +278,7 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.2 | Before the full spec, build a small compiler that emits C and benchmark it against gfortran | 4 | 0.3 | Idea | — | — |
 | I.3 | Pass parameters as read-only borrows by default instead of moving them | — | — | Done | Collins | [0006](docs/decisions/0006-parameter-passing.md), [#2](https://github.com/Baryon-Lang/Baryon/pull/2) |
 | I.4 | Keep bounds checks on in release builds, with an `unsafe` opt-out | — | — | Done | Collins | [0010](docs/decisions/0010-bounds-checks.md), [#2](https://github.com/Baryon-Lang/Baryon/pull/2) |
-| I.5 | Export functions to Python in Phase 2; move DataFrame, file formats and plotting (3.13 to 3.16) to Phase 4 | 3 | 1.10 | Idea | — | — |
+| I.5 | Export functions to Python in Phase 2; move DataFrame, file formats and plotting (3.13 to 3.16) to Phase 4. Dropped: Python interop waits until after 1.0, and the data-science libraries are built natively (Collins, 2026-11-10) | 3 | 1.10 | Dropped | — | — |
 | I.6 | Array-valued reductions in parallel loops, needed for Lennard-Jones force accumulation. Accepted as `prange(n, accumulate=forces)` | — | 1.14 | Done | Collins | [0013](docs/decisions/0013-parallel-accumulation.md), [#8](https://github.com/Baryon-Lang/Baryon/pull/8) |
 | I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Done | Collins | [0009](docs/decisions/0009-number-mixing.md), [#2](https://github.com/Baryon-Lang/Baryon/pull/2), [0014](docs/decisions/0014-number-conversions-are-calls.md) |
 | I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Done | Collins | [0007](docs/decisions/0007-array-types.md), [#2](https://github.com/Baryon-Lang/Baryon/pull/2) |
