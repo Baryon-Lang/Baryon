@@ -96,6 +96,7 @@ impl<'db> Builder<'db> {
                 }
                 (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
                 (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
+                (Some(("dict", method)), _) => self.dict_method(place, method, &arguments, node),
                 (Some(("Array" | "Fixed", method)), _) => {
                     self.array_method(place, method, &arguments, node);
                 }

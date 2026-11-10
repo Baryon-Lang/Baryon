@@ -145,6 +145,9 @@ impl<'db> Builder<'db> {
         if self.tree.kind(target) == SyntaxKind::Tuple {
             return self.unpack(target, value);
         }
+        if self.is_dict_subscript(target) {
+            return self.dict_store(target, value);
+        }
         let Some((place, ty)) = self.target(target) else {
             return;
         };

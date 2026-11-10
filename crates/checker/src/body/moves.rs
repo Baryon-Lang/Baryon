@@ -33,9 +33,11 @@ impl<'db> Body<'db> {
     /// Whether a value of `ty` moves when it is used as a value, rather than being copied.
     pub(super) fn moves(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.db) {
-            TypeKind::Str | TypeKind::List(_) | TypeKind::Array { .. } | TypeKind::Standard(_) => {
-                true
-            }
+            TypeKind::Str
+            | TypeKind::List(_)
+            | TypeKind::Dict { .. }
+            | TypeKind::Array { .. }
+            | TypeKind::Standard(_) => true,
             TypeKind::Tuple(items) => items.iter().any(|&item| self.moves(item)),
             TypeKind::Optional(value) => self.moves(*value),
             TypeKind::Struct(_) => !crate::forms::is_copy(self.db, ty),

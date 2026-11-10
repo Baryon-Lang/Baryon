@@ -105,13 +105,14 @@ out of scope, on every path out of a function.
 | Comparisons, chained: `0 <= i < n` | yes | As in Python, each operand is evaluated once |
 | `and`, `or`, `not` | yes | Operands are `bool` |
 | `is None`, `is not None` | yes | `is` and `is not` compare only with `None` |
-| `in`, `not in` | yes | On lists, strings and tuples |
+| `in`, `not in` | yes | On lists, strings, tuples and dicts |
 | Conditional `a if c else b` | yes | |
 | Calls with positional and keyword arguments | yes | No `*args` or `**kwargs`, in calls or in definitions |
 | Attributes `a.b`, subscripts `a[i, j]`, slices `a[1:n, ::2]` | yes | See [Arrays](arrays.md) |
 | Tuples and lists `(a, b)`, `[a, b]` | yes | |
 | List comprehensions `[f(x) for x in xs if p(x)]` | yes | Produce a `list` |
-| Dict and set literals and comprehensions, generator expressions | no | Not in version 0 |
+| Dict displays `{k: v}` | yes | Produce a `dict`. See [Dictionaries](types.md#dictionaries) |
+| Set displays, dict and set comprehensions, generator expressions | no | Not in version 0 |
 | Assignment expressions `x := e` | no | |
 | `lambda` | no | |
 

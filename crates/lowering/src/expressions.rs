@@ -48,6 +48,7 @@ impl<'db> Builder<'db> {
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
             SyntaxKind::List => self.list_display(place, node),
+            SyntaxKind::Dictionary => self.dict_display(&place, node),
             SyntaxKind::FormattedString => self.formatted(place, node),
             SyntaxKind::ListComprehension => self.list_comprehension(&place, node),
             _ => self.unsupported(node, "this expression"),

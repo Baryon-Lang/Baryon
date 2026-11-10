@@ -9,6 +9,7 @@
 use driver::Session;
 
 mod calls;
+mod dicts;
 mod lists;
 mod math;
 mod random;
