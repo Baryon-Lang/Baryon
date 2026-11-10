@@ -244,10 +244,22 @@ passes them; reporting a loop LLVM still declines to vectorize, with the reason 
 source, comes with roadmap item 3.7. The rules stay as they are then: a loop they reject would not
 vectorize safely anyway.
 
-`simd` changes speed, never results: a loop that vectorizes computes what the plain loop computes,
-and a float sum or product gives the same bits on every machine. The grouping of its additions
-will be fixed by the language, not by the processor's vector width: the sum splits into 8 lanes,
-iteration `i` adding into lane `i % 8`, and the lanes combine in a fixed pairwise tree, as NumPy's
-pairwise sum does (roadmap 1.9.14). Until then, a `simd` loop that sums or multiplies into a shared
-float or complex variable runs unvectorized, so it gives exactly the plain loop's result. Integer
-reductions, `min` and `max` give the same result in any order, and vectorize now.
+`simd` never makes results depend on the machine: a float sum or product gives the same bits
+everywhere, vectorized or not, though its grouping differs from a loop without `simd`. Every other
+loop computes exactly what the plain loop computes. The grouping of a sum's additions is fixed by
+the language, not by the processor's vector width. The sum splits into 8 lanes, each
+starting at the identity (`-0.0` for a sum, `1.0` for a product); iteration `i`, counted from 0,
+adds into lane `i % 8`; and the lanes combine in a fixed pairwise tree. The variable's value from
+before the loop comes in last, as it does after the partials of a
+[`prange` reduction](#reproducible-reductions):
+
+```text
+x = x ⊕ (((l0 ⊕ l1) ⊕ (l2 ⊕ l3)) ⊕ ((l4 ⊕ l5) ⊕ (l6 ⊕ l7)))
+```
+
+The result can differ from the plain loop's in the last bits, because the order of the additions
+differs, but it is the same on every machine, vectorized or not. Eight independent sums also
+remove the wait for each addition to finish before the next can start, which is most of the
+speed-up. Integer reductions, `min` and `max` give the same result in any order and are not split.
+A `simd` loop that sums into a complex variable runs unvectorized, in the plain loop's order,
+until complex numbers build (roadmap 1.10.13).

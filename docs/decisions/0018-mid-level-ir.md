@@ -171,4 +171,7 @@ each function, and the instance body of each instance.
   grouped it with `Elementwise`, which contradicted the outlining above.)
 - Views (slices passed as arguments) are not settled here. They will be a projection, never a
   value, because views cannot be bound to names; the shape comes with the item that lowers
-  slicing.
+  slicing. (Settled 2026-11-09 with roadmap 1.9.16: the `Slice` projection holds, per dimension,
+  an index or a range as its start, length and step, each in a local; `SliceInBounds` and
+  `NonZeroStep` checks go before it; and the validator rejects a view moved, copied whole,
+  dropped or assigned anything but a whole-array expression.)

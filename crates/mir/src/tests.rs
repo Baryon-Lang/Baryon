@@ -482,7 +482,7 @@ fn exponent_check_reports_the_exponent() {
     }));
     body.push_block(end(TerminatorKind::Assert {
         condition: Operand::Copy(fits.into()),
-        check: Check::NonZeroStep,
+        check: Check::NonZeroStep { slice: false },
         target: BlockId::new(2),
     }));
     body.push_block(end(TerminatorKind::Return));
@@ -600,3 +600,5 @@ fn format_writes_its_pieces() {
 
 mod parallel;
 mod vector;
+
+mod slices;

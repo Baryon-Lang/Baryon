@@ -291,33 +291,59 @@ impl<'db> Builder<'db> {
         self.start(next);
     }
 
-    /// `print(arguments…)`, its `None` result written into `place`. The call writes its
-    /// arguments with nothing between them ([`Builtin::Print`]), so the separator, a space,
-    /// goes between each pair and the line end after the last. A literal is passed as its
-    /// constant, so a backend can print a string literal without a `str` value; anything else
-    /// is borrowed, since printing does not consume it.
+    /// `print(arguments…, sep=…, end=…)`, its `None` result written into `place`. The call
+    /// writes its arguments with nothing between them ([`Builtin::Print`]), so the separator
+    /// goes between each pair of values and the line end after the last: a space and `"\n"`
+    /// unless `sep=` or `end=` gives another `str`, and also when it gives `None`, as in Python.
+    ///
+    /// Arguments are evaluated as written, the values then the keywords, each once: a separator
+    /// that is not a literal is borrowed once and passed at every gap. A literal is passed as
+    /// its constant, so a backend can print a string literal without a `str` value; anything
+    /// else is borrowed, since printing does not consume it.
     fn print(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
-        let keyword = self
+        let keywords: Vec<NodeId> = self
             .tree
             .child(node, Role::Arguments)
             .into_iter()
             .flat_map(|list| self.tree.children_with(list, Role::Item))
-            .any(|item| self.tree.kind(item) == SyntaxKind::Keyword);
-        if keyword {
-            return self.unsupported(node, "keyword arguments of `print`");
-        }
-        let mut passed = Vec::with_capacity(2 * arguments.len() + 1);
-        for (position, &argument) in arguments.iter().enumerate() {
-            if position > 0 {
-                passed.push(self.text(" "));
-            }
-            passed.push(if self.is_literal(argument) {
-                Argument::Owned(Operand::Constant(self.literal(argument)))
+            .filter(|&item| self.tree.kind(item) == SyntaxKind::Keyword)
+            .collect();
+        let values = &arguments[..arguments.len().saturating_sub(keywords.len())];
+        let values: Vec<Argument<'db>> = values
+            .iter()
+            .map(|&argument| self.print_argument(argument))
+            .collect();
+        let (mut separator, mut end) = (self.text(" "), self.text("\n"));
+        for keyword in keywords {
+            let (Some(name), Some(value)) = (
+                self.tree.child(keyword, Role::Name),
+                self.tree.child(keyword, Role::Value),
+            ) else {
+                return self.unsupported(keyword, "this keyword argument");
+            };
+            let given = if matches!(self.ty(value).kind(self.db), TypeKind::None) {
+                if !self.is_literal(value) {
+                    self.borrow(value);
+                }
+                None
             } else {
-                Argument::Borrow(self.borrow(argument))
-            });
+                Some(self.print_argument(value))
+            };
+            match (self.text_of(name), given) {
+                ("sep", Some(given)) => separator = given,
+                ("end", Some(given)) => end = given,
+                ("sep" | "end", None) => {}
+                _ => return self.unsupported(keyword, "this keyword argument of `print`"),
+            }
         }
-        passed.push(self.text("\n"));
+        let mut passed = Vec::with_capacity(2 * values.len() + 1);
+        for (position, value) in values.into_iter().enumerate() {
+            if position > 0 {
+                passed.push(separator.clone());
+            }
+            passed.push(value);
+        }
+        passed.push(end);
         let next = self.new_block();
         self.terminate(
             TerminatorKind::Call {
@@ -330,6 +356,15 @@ impl<'db> Builder<'db> {
             node,
         );
         self.start(next);
+    }
+
+    /// One value `print` writes: a literal as its constant, anything else borrowed.
+    fn print_argument(&mut self, argument: NodeId) -> Argument<'db> {
+        if self.is_literal(argument) {
+            Argument::Owned(Operand::Constant(self.literal(argument)))
+        } else {
+            Argument::Borrow(self.borrow(argument))
+        }
     }
 
     /// The `str` constant `text`, passed `Owned`, as `print` takes its separator and line end.

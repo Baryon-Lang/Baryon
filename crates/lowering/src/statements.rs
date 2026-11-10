@@ -216,9 +216,12 @@ impl<'db> Builder<'db> {
         let Some(operator) = arithmetic(syntax) else {
             return self.unsupported(statement, &format!("`{}=`", syntax.symbol()));
         };
-        let Some(place) = self.place(target) else {
+        let Some(mut place) = self.place(target) else {
             return;
         };
+        if let Some(lane) = self.lane(&place) {
+            place = lane;
+        }
         if let Some(place) = self.accumulated_place(&place) {
             return self.accumulate(place, operator, ty, value, statement);
         }

@@ -599,10 +599,12 @@ def axpy(a: f64, x: Array[f64, 1], y: InOut[Array[f64, 1]], n: i64):
     );
 }
 
-/// A `simd` loop that sums floats is not marked, so LLVM keeps the plain loop's order (roadmap
-/// 1.9.14); one that sums integers is.
+/// A `simd` loop that sums floats adds into 8 lanes, a `Fixed[f64, (8,)]` that starts at
+/// `-0.0`: one marked loop runs whole blocks of 8 iterations and one the rest, into a copy of the
+/// lanes, which then combine in the pairwise tree (roadmap 1.9.14). One that sums integers is the
+/// plain marked loop.
 #[test]
-fn simd_float_sums_stay_unvectorized() {
+fn simd_float_sums_add_into_eight_lanes() {
     let program = r"
 def floats(x: Array[f64, 1], n: i64) -> f64:
     s = 0.0
@@ -618,7 +620,12 @@ def integers(n: i64) -> i64:
     return s
 ";
     let text = lower(program, &["floats", "integers"]);
-    assert_eq!(text.matches(" (simd): {").count(), 1, "{text}");
     let integers = text.find("fn(_1: i64) -> i64").unwrap();
-    assert!(text[integers..].contains(" (simd): {"), "{text}");
+    let (floats, integers) = text.split_at(integers);
+    assert_eq!(floats.matches(" (simd): {").count(), 2, "{text}");
+    assert_eq!(integers.matches(" (simd): {").count(), 1, "{text}");
+    assert_eq!(floats.matches(": Fixed[f64, (8,)];").count(), 2, "{text}");
+    let identity = format!("Fixed[f64, (8,)]({});", ["-0.0_f64"; 8].join(", "));
+    assert!(floats.contains(&identity), "{text}");
+    assert!(!integers.contains("Fixed"), "{text}");
 }

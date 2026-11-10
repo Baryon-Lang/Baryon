@@ -1,8 +1,8 @@
 //! What a failed check reports: the runtime function it calls, its message and its location.
 
 use super::{
-    Database, Module, SOURCE, build, conversion, end, no_structs, parameter, primitive, run,
-    sources, span, step_body, symbol_of,
+    Database, Module, SOURCE, build, conversion, end, no_names, no_structs, parameter, primitive,
+    run, sources, span, step_body, symbol_of,
 };
 use mir::{
     BinaryOperator, BlockId, Body, Callee, Check, Local, LocalKind, Operand, Rvalue, Statement,
@@ -167,7 +167,7 @@ fn rejected_bodies_leave_no_constants() {
     });
     let symbol = symbol_of(&database);
     let sources = sources();
-    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    let mut module = Module::new(&database, &sources, &no_structs, &no_names, &symbol);
     assert_eq!(
         module
             .define("check", &body, &[])
@@ -236,7 +236,7 @@ fn release_builds_wrap_on_overflow() {
     let body = step_body(&database);
     let symbol = symbol_of(&database);
     let sources = sources();
-    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    let mut module = Module::new(&database, &sources, &no_structs, &no_names, &symbol);
     module.wrap_on_overflow();
     module.define("step", &body, &[]).unwrap();
     let text = module.finish();

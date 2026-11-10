@@ -156,6 +156,53 @@ def main():
     print(1e16, 3 > 2)                 # 1e+16 True
 ```
 
+### What `print` writes for each value
+
+| Value | Printed |
+| --- | --- |
+| A number or a `bool` | As above: `1.5`, `-3`, `True` |
+| A `str` | Its characters, without quotes |
+| `None` | `None` |
+| A `T \| None` | The `T` when there is one, else `None` |
+| A tuple | `(1, 2.5)`; one item keeps its comma, `(1,)`; the empty tuple is `()` |
+| An enum member | The enum's name and the member's: `Phase.GAS` |
+| A struct or an error | The type's name, then each field by name, in declaration order: `Point(x=1.0, y=2.0)`, as a Python dataclass prints |
+
+Inside a tuple or a struct, each item or field is written as Python's `repr` writes it, so a
+`str` is quoted: `('argon', 39.95)`, `Atom(name='argon')`. A string holding a single quote and
+no double quote is quoted with double quotes, `"it's"`, as in Python. A generic struct prints
+without its type arguments, `Pair(first=1, second=2)`, and an enum member prints `Phase.GAS`
+everywhere, where Python's `repr` inside a container would write `<Phase.GAS: 3>`
+([Differences from Python](differences-from-python.md)). An array will print as NumPy prints an
+`ndarray`, `[1. 2. 3.]` with rows on their own lines
+([decision 0033](../decisions/0033-printing-arrays.md)); that is not built yet (roadmap 1.10.15).
+
+Printing costs one call into the runtime per number, `bool` or `str` it writes; a struct of ten
+fields is ten calls and its punctuation, all chosen when the program is compiled.
+
+### `sep=` and `end=`
+
+`sep=` replaces the space between values and `end=` replaces the line end, each with a `str`.
+`None` keeps the default, as in Python. Any other keyword, such as Python's `file=` or `flush=`,
+is a compile error, and so is a `sep=` or `end=` of another type.
+
+```python
+class Point(Struct, Copy):
+    x: f64
+    y: f64
+
+
+def main():
+    print(Point(1.0, 2.0))                # Point(x=1.0, y=2.0)
+    print(("argon", 39.95), None)         # ('argon', 39.95) None
+    print(1, 2, 3, sep=", ")              # 1, 2, 3
+    print("step", 4, end=": ")
+    print("done")                         # step 4: done
+```
+
+Output that `end=` leaves without a line end still appears when the program ends, and before the
+message of a panic.
+
 ## Names and style
 
 Names follow Python's rules. By convention, functions, variables and modules are `snake_case`,
