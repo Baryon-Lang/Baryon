@@ -86,9 +86,8 @@ impl<'db> Body<'db> {
             TypeKind::Primitive(types::Primitive::Complex(_)) => {
                 return self.complex_method(node, function, receiver, &callee, arguments);
             }
-            TypeKind::Str if callee == "copy" => {
-                let builtin = Callee::Builtin("str.copy".to_owned());
-                return self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments);
+            TypeKind::Str => {
+                return self.text_method(node, function, receiver, &callee, arguments);
             }
             TypeKind::Struct(nominal) => nominal.clone(),
             _ if self.has_no_members(base) => {

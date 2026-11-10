@@ -104,7 +104,7 @@ impl<'db> Body<'db> {
         let what = if call { "method" } else { "attribute" };
         let message = format!("`{}` has no {what} `{name}`", self.show(base));
         let advice = match base.kind(self.db) {
-            TypeKind::Str => "version 0 defines one method on `str`: `copy`",
+            TypeKind::Str => "a `str` has no attributes, only methods such as `split` and `strip`",
             _ => "version 0 defines no methods or attributes on numbers, `bool`, enums or tuples",
         };
         self.lowerer
