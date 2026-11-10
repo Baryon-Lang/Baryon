@@ -55,6 +55,7 @@ mod parallel;
 mod patterns;
 mod process;
 mod random;
+mod reductions;
 pub(crate) mod relations;
 mod shared;
 mod union_methods;

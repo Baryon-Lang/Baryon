@@ -27,6 +27,7 @@ mod overflow;
 mod parallel;
 mod print;
 mod process;
+mod reductions;
 mod shapes;
 mod slices;
 mod statements;

@@ -636,3 +636,54 @@ error: `reversed` takes one sequence
   |              ^^^^^^^^^^^^^^^^ wrong number of arguments"
     );
 }
+
+/// `sum` adds a list or a rank-1 array of numbers, from a number `start` given second or as
+/// `start=` (roadmap 1.13.13). `min` and `max` of a list of `str`s are accepted, as Python orders
+/// them, and are left to lowering.
+#[test]
+fn sum_checks_its_sequence_and_start() {
+    let program = "
+def main():
+    names = [\"a\", \"b\"]
+    grid = Array.zeros((2, 2))
+    print(sum(names), min(names), sum(grid), sum([1, 2], step=1), sum([1, 2], \"x\"), sum(3))
+";
+    let line = "4 |     print(sum(names), min(names), sum(grid), sum([1, 2], step=1), sum([1, 2], \"x\"), sum(3))";
+    assert_eq!(
+        check_one(program),
+        format!(
+            "\
+error: `sum` of `list[str]`, whose elements are not numbers
+ --> main.byn:4:15
+  |
+{line}
+  |               ^^^^^ not numbers
+
+error: `sum` of an array of rank 2 or more
+ --> main.byn:4:39
+  |
+{line}
+  |                                       ^^^^ not rank 1
+  = note: reduce every element with `a.sum()`
+
+error: `sum` has no parameter `step`
+ --> main.byn:4:58
+  |
+{line}
+  |                                                          ^^^^ unknown parameter
+  = note: `sum` takes the values, then `start=`
+
+error: `sum` starts from a number, found `str`
+ --> main.byn:4:79
+  |
+{line}
+  |                                                                               ^^^ not a number
+
+error: `sum` adds a list or an array of numbers, found `i64`
+ --> main.byn:4:89
+  |
+{line}
+  |                                                                                         ^ not a sequence"
+        )
+    );
+}

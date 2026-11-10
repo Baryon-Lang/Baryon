@@ -38,6 +38,11 @@ impl<'db> Body<'db> {
         if let Some(ty) = self.complex_builtin(name, &all, &types) {
             return ty;
         }
+        if matches!(name, "sum" | "min" | "max")
+            && let Some(ty) = self.reduction(node, name, arguments, &types)
+        {
+            return ty;
+        }
         let int = primitive(self.db, Primitive::Integer(Integer::I64));
         match (name, types.as_slice()) {
             ("str", [_]) => Type::new(self.db, TypeKind::Str),

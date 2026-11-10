@@ -76,12 +76,8 @@ impl<'db> Builder<'db> {
                 (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
                 (None, _) if name == "print" => self.print(place, &arguments, node),
                 (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
-                (None, [first, rest @ ..])
-                    if (name == "min" || name == "max")
-                        && !rest.is_empty()
-                        && matches!(ty.kind(self.db), TypeKind::Primitive(_)) =>
-                {
-                    self.min_max(place, name == "min", *first, rest, node);
+                (None, [values, rest @ ..]) if self.reduces(name, (*values, rest), node) => {
+                    self.reduce(place, name, (*values, rest), node);
                 }
                 (
                     Some((owner @ ("Array" | "Fixed"), function @ ("zeros" | "ones" | "fill"))),
@@ -403,7 +399,7 @@ impl<'db> Builder<'db> {
     /// `place`. As in Python, an argument replaces the best so far only when it is strictly
     /// smaller (or larger), so the first of equal values wins and a `nan` after the first
     /// argument is skipped.
-    fn min_max(
+    pub(crate) fn min_max(
         &mut self,
         place: Place,
         smallest: bool,

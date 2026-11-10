@@ -355,3 +355,30 @@ def show(x: f64):
 "#
     );
 }
+
+/// `min` and `max` of a list of `str`s check, since Python orders strings, but are not lowered
+/// yet; nor is `sum` of an array with a start, which Python adds one element at a time and
+/// `a.sum()` adds pairwise (roadmap 1.13.13).
+#[test]
+fn reductions_not_lowered_yet_are_errors() {
+    let program = r"
+def show(names: list[str], a: Array[f64, 1]):
+    print(min(names), sum(a, 1.0))
+";
+    assert_eq!(
+        lower(program, "show"),
+        r"error: lowering does not handle `min` of a list whose elements are not numbers yet
+ --> main.byn:3:11
+  |
+3 |     print(min(names), sum(a, 1.0))
+  |           ^^^^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
+
+error: lowering does not handle `sum` of an array with a start yet
+ --> main.byn:3:23
+  |
+3 |     print(min(names), sum(a, 1.0))
+  |                       ^^^^^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}

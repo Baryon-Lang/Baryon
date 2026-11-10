@@ -199,6 +199,23 @@ too, as in Python, unlike an array slice, which is a view; its bounds follow the
 unknown length; convert it to an `Array` with `Array(values)` for numeric work. An empty list
 needs its type written: `columns: list[i64] = []`.
 
+`sum(values)`, `min(values)` and `max(values)` reduce a list, or a rank-1 array, of numbers.
+`sum(values, start)`, or `sum(values, start=...)`, starts from `start`, and its type is the common
+type of the elements and the start, as `+` mixes them. A list sums as CPython 3.12 sums it, bit
+for bit: integers exactly, each `+` checked for overflow; floats with Neumaier's compensation,
+which keeps the rounding error of each addition and adds it back once at the end, so
+`sum([1e16, 1.0, -1e16])` is `1.0` and ten `0.1`s sum to `1.0`. An array sums as
+[`a.sum()`](arrays.md#the-order-sum-adds-in) does, in NumPy's pairwise order, so array code
+matches NumPy. `min` and `max` of an empty list panic, and a NaN anywhere makes them NaN, as for
+an [array](arrays.md#methods).
+
+```python
+def main():
+    energies = [0.1, 0.2, 0.3]
+    print(sum(energies), sum([1, 2, 3], 10))   # 0.6 16
+    print(min(energies), max([3, 1, 2]))       # 0.1 3
+```
+
 ## Dictionaries
 
 `dict[K, V]` maps keys of type `K` to values of type `V`, as Python's `dict` does: a hash table
