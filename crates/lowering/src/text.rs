@@ -167,7 +167,7 @@ impl<'db> Builder<'db> {
     }
 
     /// `place = builtin(arguments…)`, for a built-in over `str`s, which cannot fail.
-    fn text_call(
+    pub(crate) fn text_call(
         &mut self,
         place: Place,
         builtin: Builtin,

@@ -29,17 +29,17 @@ use mir::{Argument, BlockId, Local, Operand, Place};
 use types::{Layout, Primitive, Type, TypeKind};
 
 /// What the backend needs to know about one `dict` type.
-struct Shape<'db> {
+pub(crate) struct Shape<'db> {
     /// The type of an entry's `(K, V)` pair, `tuple[K, V]`.
-    pair: Type<'db>,
+    pub(crate) pair: Type<'db>,
     /// The type of the values.
-    value: Type<'db>,
+    pub(crate) value: Type<'db>,
     /// The type of the keys.
-    key: Type<'db>,
+    pub(crate) key: Type<'db>,
     /// The size of an entry in bytes, the record `(u64, K, V)`.
-    entry_size: u64,
+    pub(crate) entry_size: u64,
     /// The layout constant, `@baryon.dict.N`.
-    layout: String,
+    pub(crate) layout: String,
 }
 
 impl<'db> Function<'_, '_, 'db> {
@@ -281,7 +281,7 @@ impl<'db> Function<'_, '_, 'db> {
 
     /// What the backend needs to know about the `dict` type `ty`, with its layout constant made
     /// the first time it is asked for.
-    fn dict_shape(&mut self, ty: Type<'db>) -> Result<Shape<'db>, Unsupported> {
+    pub(crate) fn dict_shape(&mut self, ty: Type<'db>) -> Result<Shape<'db>, Unsupported> {
         let db = self.types.db;
         let &TypeKind::Dict { key, value } = ty.kind(db) else {
             return Err(self.types.unsupported(ty));
