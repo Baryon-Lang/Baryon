@@ -208,14 +208,10 @@ pub unsafe extern "C" fn baryon_rt_text_finish(builder: *mut TextBuilder) -> Own
     owned(&built)
 }
 
-/// A new owned `str` holding a copy of `text`, in memory the runtime allocated, so a drop frees
-/// it with [`baryon_rt_deallocate`](crate::baryon_rt_deallocate).
-///
-/// # Panics
-///
-/// Ends the program with a panic when the system has no memory left.
-#[allow(unsafe_code, reason = "copies into memory the runtime allocated")]
-pub(crate) fn owned(text: &str) -> OwnedText {
+/// A new owned `str` holding a copy of `text`, allocated as compiled code frees it: `length`
+/// bytes aligned to 1. Running out of memory panics.
+#[allow(unsafe_code, reason = "copies into memory the runtime allocates")]
+pub(super) fn owned(text: &str) -> OwnedText {
     let bytes = match memory::layout(text.len(), 1).and_then(memory::allocate) {
         Ok(pointer) => pointer.as_ptr(),
         Err(failure) => panic(failure, None),

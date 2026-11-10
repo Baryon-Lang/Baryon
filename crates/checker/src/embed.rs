@@ -130,6 +130,29 @@ pub(crate) fn own<'db>(
         })
 }
 
+/// The fields the struct `nominal` declares itself, in declaration order, each with the
+/// struct's type arguments substituted into its type: what a class pattern such as
+/// `Dirichlet(value=v)` takes apart (decision 0032). An embedded field is one field here.
+pub(crate) fn fields<'db>(
+    db: &'db dyn TypeDb,
+    package: Package,
+    nominal: &Nominal<'db>,
+) -> Vec<(String, Type<'db>)> {
+    let item = Item::new(db, package, nominal.file, nominal.name);
+    let Declaration::Struct { fields, .. } = &db.declaration(item).declaration else {
+        return Vec::new();
+    };
+    let parameters = class_parameters(db, nominal);
+    fields
+        .iter()
+        .map(|field| {
+            let ty =
+                relations::substitute(db, field.ty, nominal.file, &parameters, &nominal.arguments);
+            (field.name.clone(), ty)
+        })
+        .collect()
+}
+
 /// Every name the struct `nominal` declares itself: its fields, then its methods.
 pub(crate) fn own_names(db: &dyn TypeDb, package: Package, nominal: &Nominal<'_>) -> Vec<String> {
     let item = Item::new(db, package, nominal.file, nominal.name);

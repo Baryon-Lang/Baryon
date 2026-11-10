@@ -38,7 +38,10 @@ impl<'db> Body<'db> {
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }
             | TypeKind::Standard(_) => true,
-            TypeKind::Tuple(items) => items.iter().any(|&item| self.moves(item)),
+            // A union of `Copy` members is `Copy`; otherwise it moves (decision 0032).
+            TypeKind::Tuple(items) | TypeKind::Union(items) => {
+                items.iter().any(|&item| self.moves(item))
+            }
             TypeKind::Optional(value) => self.moves(*value),
             TypeKind::Struct(_) => !crate::forms::is_copy(self.db, ty),
             // A bound that is not a trait has had its error; its values count as copies.

@@ -77,6 +77,7 @@ checks what it prints.
 | `T \| None`, with every narrowing rule | |
 | Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs and their methods, each method compiled once per type its struct is used at | |
 | Enums: members, `==` and `!=`, `match` | |
+| | [Unions of structs](types.md#unions-of-structs) and class patterns in `match` (roadmap 1.7.13): `baryon check` checks them, and the build reports them as not built yet |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
 | Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors, and bounds by a [user trait](types.md#using-a-trait-as-a-bound), `[T: Body]`, whose method calls go straight to each type's own method | |

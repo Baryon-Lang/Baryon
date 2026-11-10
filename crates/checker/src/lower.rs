@@ -1,5 +1,5 @@
-//! Lowering annotations: turning a type as written, such as `Array[Vec3, 1]` or `f64 | None`,
-//! into the [`Type`] it means.
+//! Lowering annotations: turning a type as written, such as `Array[Vec3, 1]`, `f64 | None` or
+//! `Periodic | Dirichlet`, into the [`Type`] it means.
 //!
 //! Each name in an annotation is looked up in the file's [`Resolution`], so `Vec3` finds the
 //! alias it names wherever that alias is defined, and a name that refers to nothing has already
@@ -164,38 +164,11 @@ impl<'db> Lowerer<'db> {
                 None => self.not_a_type(node),
             },
             SyntaxKind::BinaryOperation if self.tree.node(node).operator() == Operator::BitOr => {
-                self.optional(node)
+                self.union(node)
             }
             SyntaxKind::Missing => self.unknown(),
             _ => self.not_a_type(node),
         }
-    }
-
-    /// `T | None` or `None | T`.
-    fn optional(&mut self, node: NodeId) -> Type<'db> {
-        let (Some(left), Some(right)) = (
-            self.tree.child(node, Role::Left),
-            self.tree.child(node, Role::Right),
-        ) else {
-            return self.unknown();
-        };
-        let value = match (self.tree.kind(left), self.tree.kind(right)) {
-            (_, SyntaxKind::None) => left,
-            (SyntaxKind::None, _) => right,
-            _ => {
-                return self.error(
-                    node,
-                    "a union type can only add `None` to a type",
-                    "only `T | None` is a type",
-                    Some(
-                        "a value that may be one of several types is not supported; use \
-                         separate functions, or an enum for a fixed set of choices",
-                    ),
-                );
-            }
-        };
-        let value = self.lower(value);
-        Type::new(self.db, TypeKind::Optional(value))
     }
 
     /// The `Name` node that names the type being subscripted: `Array` in `Array[f64, 1]`, or

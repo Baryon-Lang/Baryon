@@ -136,6 +136,28 @@ pub enum Builtin {
     /// position at or after the argument that holds an entry, or -1 when none does. A loop over a
     /// `dict` starts at 0 and passes one past each position it visits. The call cannot fail.
     DictNext,
+    /// `len(sys.argv)`, how many command-line arguments the program was started with, the
+    /// program itself included (decision 0036): no arguments; the destination has type `i64`.
+    /// Lowering builds `sys.argv` from it and [`Argument`](Self::Argument). The call cannot fail.
+    ArgumentCount,
+    /// One command-line argument, `sys.argv[i]` (decision 0036): one argument, the index, an
+    /// `i64` passed `Owned`, at least 0 and below [`ArgumentCount`](Self::ArgumentCount), which
+    /// lowering guarantees; the destination is a new owned `str`. Bytes that are not UTF-8 read
+    /// as U+FFFD. It copies the argument, so it costs time linear in its length. The call cannot
+    /// fail.
+    Argument,
+    /// Reads an environment variable, as `os.environ.get(name)` does (decision 0036): two
+    /// arguments, the name, a `str` passed `Borrow`, or `Owned` for a literal, and a `bool`
+    /// passed `InOut` that the call sets to whether the variable is set; the destination is a
+    /// new owned `str`, the value, or the empty string when it is not set. Lowering builds the
+    /// `str | None` of `get`, and the panic of `os.environ[name]`, from the two. A value that is
+    /// not UTF-8 reads with U+FFFD in place of each bad sequence. The call cannot fail.
+    EnvironmentGet,
+    /// `sys.exit(status)` (decision 0036): one argument, the status, an `i64` passed `Owned`;
+    /// the destination has type `None`, and the call never returns. It writes out what `print`
+    /// holds back and ends the program with the status, running nothing else on the way out. A
+    /// status outside 0 to 255 panics.
+    Exit,
 }
 
 impl Builtin {
@@ -154,6 +176,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::CharacterStr.name(), "str character");
     /// assert_eq!(mir::Builtin::Text(mir::TextMethod::Split).name(), "str.split");
     /// assert_eq!(mir::Builtin::DictFind.name(), "dict lookup");
+    /// assert_eq!(mir::Builtin::Exit.name(), "sys.exit");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -175,6 +198,10 @@ impl Builtin {
             Self::DictInsert => "dict insert",
             Self::DictRemove => "dict remove",
             Self::DictNext => "dict iteration",
+            Self::ArgumentCount => "len of sys.argv",
+            Self::Argument => "sys.argv item",
+            Self::EnvironmentGet => "os.environ.get",
+            Self::Exit => "sys.exit",
         }
     }
 }

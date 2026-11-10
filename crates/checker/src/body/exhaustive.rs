@@ -7,7 +7,8 @@
 //! looks for a value that no row matches, one column at a time:
 //!
 //! - When the column's type has finitely many shapes (an enum's members, `True` and `False`,
-//!   `None` or a value for `T | None`, or a tuple's one shape), it tries each shape in turn,
+//!   `None` or a value for `T | None`, a union's members, or the one shape of a tuple or a
+//!   struct), it tries each shape in turn,
 //!   keeping the rows that match it and replacing the column by the shape's parts.
 //! - Otherwise (numbers and strings) only a wildcard covers the column, so it keeps the rows
 //!   with a wildcard there and drops the column.
@@ -27,6 +28,18 @@ pub(crate) enum Space {
     Optional(Box<Space>),
     /// A tuple, with the space of each item.
     Tuple(Vec<Space>),
+    /// A union of structs, enums and `None` (decision 0032), with the space of each member in
+    /// the union's order.
+    Union(Vec<Space>),
+    /// A struct, taken apart by a class pattern: its name as a program writes it, and the space
+    /// of each field in declaration order. `None` as a union member is a struct space with no
+    /// name, since `case None:` covers it whole.
+    Struct {
+        /// The struct's name, such as `Dirichlet`, or empty for `None`.
+        name: String,
+        /// The space of each field.
+        fields: Vec<Space>,
+    },
     /// Numbers, strings and everything else that only a wildcard covers.
     Open,
 }
@@ -44,6 +57,12 @@ pub(crate) enum Pattern {
     None,
     /// A tuple pattern, one pattern per item.
     Tuple(Vec<Pattern>),
+    /// A pattern that matches one member of a union, by the member's position, and what it
+    /// matches of that member.
+    Variant(usize, Box<Pattern>),
+    /// A class pattern, such as `Dirichlet(value=v)`: one pattern per field in declaration
+    /// order, a wildcard for each field it does not name.
+    Class(Vec<Pattern>),
     /// A number or string literal, which covers one value of an open space.
     Literal,
     /// `a | b`: each alternative.
@@ -63,6 +82,10 @@ enum Shape {
     Some,
     /// A tuple.
     Tuple,
+    /// The union member with this position.
+    Variant(usize),
+    /// A struct.
+    Struct,
 }
 
 /// An example of a value of `space` that no row of `rows` matches, written as a program
@@ -96,7 +119,17 @@ fn uncovered(rows: &[Vec<Pattern>], spaces: &[Space]) -> Option<Vec<String>> {
             .filter_map(|row| specialize(row, shape, parts.len()))
             .collect();
         let columns: Vec<Space> = parts.iter().chain(rest).cloned().collect();
-        if let Some(mut witness) = uncovered(&specialized, &columns) {
+        // A struct no case takes apart is missing whole: `Robin()`, not `Robin(True)`.
+        let witness = if specialized.is_empty() && shape == Shape::Struct {
+            uncovered(&[], rest).map(|tail| {
+                let mut witness = vec!["_".to_owned(); parts.len()];
+                witness.extend(tail);
+                witness
+            })
+        } else {
+            uncovered(&specialized, &columns)
+        };
+        if let Some(mut witness) = witness {
             let tail = witness.split_off(parts.len());
             let mut result = vec![render(space, shape, witness)];
             result.extend(tail);
@@ -135,6 +168,8 @@ fn shapes(space: &Space) -> Option<Vec<Shape>> {
         Space::Bool => Some(vec![Shape::Bool(true), Shape::Bool(false)]),
         Space::Optional(_) => Some(vec![Shape::None, Shape::Some]),
         Space::Tuple(_) => Some(vec![Shape::Tuple]),
+        Space::Union(members) => Some((0..members.len()).map(Shape::Variant).collect()),
+        Space::Struct { .. } => Some(vec![Shape::Struct]),
         Space::Open => None,
     }
 }
@@ -144,6 +179,8 @@ fn parts(space: &Space, shape: Shape) -> Vec<Space> {
     match (space, shape) {
         (Space::Optional(value), Shape::Some) => vec![(**value).clone()],
         (Space::Tuple(items), Shape::Tuple) => items.clone(),
+        (Space::Union(members), Shape::Variant(index)) => vec![members[index].clone()],
+        (Space::Struct { fields, .. }, Shape::Struct) => fields.clone(),
         _ => Vec::new(),
     }
 }
@@ -157,6 +194,8 @@ fn specialize(row: &[Pattern], shape: Shape, arity: usize) -> Option<Vec<Pattern
         (Pattern::Bool(a), Shape::Bool(b)) if *a == b => Vec::new(),
         (Pattern::None, Shape::None) => Vec::new(),
         (Pattern::Tuple(items), Shape::Tuple) if items.len() == arity => items.clone(),
+        (Pattern::Variant(a, inner), Shape::Variant(b)) if *a == b => vec![(**inner).clone()],
+        (Pattern::Class(fields), Shape::Struct) if fields.len() == arity => fields.clone(),
         // Any pattern but `None` on a `T | None` matches a value of `T`.
         (Pattern::None, Shape::Some) => return None,
         (pattern, Shape::Some) => vec![pattern.clone()],
@@ -173,6 +212,15 @@ fn render(space: &Space, shape: Shape, mut parts: Vec<String>) -> String {
         (_, Shape::Bool(value)) => if value { "True" } else { "False" }.to_owned(),
         (_, Shape::None) => "None".to_owned(),
         (_, Shape::Some) => parts.pop().unwrap_or_else(|| "_".to_owned()),
+        (_, Shape::Variant(_)) => parts.pop().unwrap_or_else(|| "_".to_owned()),
+        (Space::Struct { name, .. }, Shape::Struct) if name.is_empty() => "None".to_owned(),
+        (Space::Struct { name, .. }, Shape::Struct) => {
+            if parts.iter().all(|part| part == "_") {
+                format!("{name}()")
+            } else {
+                format!("{name}({})", parts.join(", "))
+            }
+        }
         (_, Shape::Tuple) if parts.len() == 1 => format!("({},)", parts[0]),
         _ => format!("({})", parts.join(", ")),
     }
@@ -217,6 +265,26 @@ mod tests {
             missing(&[Pattern::Literal, Pattern::Wild], &Space::Open),
             None
         );
+    }
+
+    #[test]
+    fn unions_need_every_member() {
+        let neumann = Space::Struct {
+            name: "Neumann".to_owned(),
+            fields: vec![Space::Open],
+        };
+        let mode = Space::Struct {
+            name: "Robin".to_owned(),
+            fields: vec![Space::Bool],
+        };
+        let union = Space::Union(vec![neumann, mode]);
+        let class = |index, field| Pattern::Variant(index, Box::new(Pattern::Class(vec![field])));
+        let rows = [class(0, Pattern::Wild)];
+        assert_eq!(missing(&rows, &union).as_deref(), Some("Robin()"));
+        let rows = [class(0, Pattern::Wild), class(1, Pattern::Bool(true))];
+        assert_eq!(missing(&rows, &union).as_deref(), Some("Robin(False)"));
+        let rows = [class(1, Pattern::Wild), Pattern::Wild];
+        assert_eq!(missing(&rows, &union), None);
     }
 
     #[test]

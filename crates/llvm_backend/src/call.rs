@@ -147,6 +147,10 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::DictInsert => self.dict_insert(arguments, destination, target),
             Builtin::DictRemove => self.dict_remove(arguments, destination, target),
             Builtin::DictNext => self.dict_next(arguments, destination, target),
+            Builtin::ArgumentCount => self.argument_count(arguments, destination, target),
+            Builtin::Argument => self.argument(arguments, destination, target),
+            Builtin::EnvironmentGet => self.environment_get(arguments, destination, target),
+            Builtin::Exit => self.system_exit(arguments),
         }
     }
 }

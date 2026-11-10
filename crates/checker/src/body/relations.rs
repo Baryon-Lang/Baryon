@@ -11,7 +11,8 @@ use types::{Nominal, Parameter, Signature, Type, TypeDb, TypeKind};
 /// matches anything, so one mistake gives one message. A type parameter is rigid: inside a
 /// generic body, `T` matches only `T`. `None` and a `T` match `T | None`; a `T | None` does not
 /// match `T` until a `None` check narrows it (the `flow` module). A function's own type matches
-/// a `Callable` with its signature (decision 0026).
+/// a `Callable` with its signature (decision 0026). A member of a union, such as a `Dirichlet`,
+/// matches the union, `Periodic | Dirichlet`; the reverse needs a `match` (decision 0032).
 pub(crate) fn compatible<'db>(db: &'db dyn TypeDb, expected: Type<'db>, found: Type<'db>) -> bool {
     let unknown = |ty: Type<'db>| matches!(ty.kind(db), TypeKind::Unknown);
     if expected == found || contains(db, expected, &unknown) || contains(db, found, &unknown) {
@@ -20,6 +21,9 @@ pub(crate) fn compatible<'db>(db: &'db dyn TypeDb, expected: Type<'db>, found: T
     match (expected.kind(db), found.kind(db)) {
         (TypeKind::Optional(_), TypeKind::None) => true,
         (TypeKind::Optional(value), _) => compatible(db, *value, found),
+        // A member of a union stands where the union is expected (decision 0032). A narrower
+        // union does not yet: its tags differ, and lowering does not renumber them.
+        (TypeKind::Union(members), _) => members.contains(&found),
         (TypeKind::Callable { .. }, TypeKind::Function { callable, .. }) => {
             compatible(db, expected, *callable)
         }

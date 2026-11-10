@@ -82,7 +82,7 @@ the spelling to use instead.
 | `raise E(...)` | yes | Only inside a function that declares it can fail; see [Errors](errors.md). No `raise ... from`: errors do not chain, so keep a cause in a field ([decision 0034](../decisions/0034-no-error-chaining.md)) |
 | `try` with `except` | yes | Each `except` names the error types it handles. No bare `except:`, no `else`, no `finally` |
 | `with unsafe:` | yes | The only `with` form in version 0 |
-| `match` | yes | Literal, enum, tuple and wildcard patterns; must be exhaustive |
+| `match` | yes | Literal, enum, tuple, [class](types.md#unions-of-structs) and wildcard patterns; must be exhaustive |
 | `assert cond, message` | yes | Checked in every build; a false condition panics |
 | `del` | no | A value is destroyed when its owner goes out of scope |
 | `global`, `nonlocal` | no | There are no module-level variables |
@@ -142,8 +142,9 @@ in scope, with no import.
 | `Dyn` | Reserved for a value of any type with a trait, `Dyn[Body]`; an error until roadmap 3.5 | [Types](types.md#declaring-a-trait) |
 
 Python's own built-in names that the language keeps, with their Python meaning where it applies:
-`print`, `len`, `range`, `round`, `abs`, `min`, `max`, `sum`, `enumerate`, `zip`, `int`, `float`,
-`complex`, `bool`, `str`, `list`, `tuple`, `True`, `False`, `None`, `Exception` and `Enum`.
+`print`, `len`, `range`, `round`, `abs`, `min`, `max`, `sum`, `enumerate`, `zip`, `sorted`,
+`reversed`, `int`, `float`, `complex`, `bool`, `str`, `list`, `tuple`, `True`, `False`, `None`,
+`Exception` and `Enum`.
 
 `print(a, b, ...)` writes its arguments to standard output as Python does: separated by one space,
 followed by a line end. A float prints as Python's `repr` writes it, with the fewest digits that

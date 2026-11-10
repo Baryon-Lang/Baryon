@@ -1,5 +1,5 @@
-//! The built-in type forms that take arguments: `Array[T, rank]`, `Fixed[T, shape]`,
-//! `Callable[[A], R]` and `Raises[T, E]`, and the copy types an array may hold.
+//! The built-in type forms: `Array[T, rank]`, `Fixed[T, shape]`, `Callable[[A], R]`,
+//! `Raises[T, E]` and unions `A | B` (decision 0032), and the copy types an array may hold.
 
 use crate::lower::Lowerer;
 use crate::outline::{Base, Kind, outline};
@@ -109,6 +109,13 @@ impl<'db> Lowerer<'db> {
         let mut lowered = Vec::new();
         for node in nodes {
             let error = self.lower(node);
+            // An alias of several error types, `IOErrors = ReadError | WriteError`, lists them.
+            if let TypeKind::Union(members) = error.kind(self.db)
+                && members.iter().all(|&member| self.is_error_type(member))
+            {
+                lowered.extend_from_slice(members);
+                continue;
+            }
             if !self.is_error_type(error) {
                 let message = format!("`{}` is not an error type", error.display(self.db));
                 self.error(
@@ -129,8 +136,65 @@ impl<'db> Lowerer<'db> {
         )
     }
 
+    /// `A | B | C`: `T | None`, or a union of structs, enums, error types and `None`
+    /// (decision 0032). Nested unions and aliases of unions are flattened, order and repeats
+    /// do not matter, and [`types::union`] builds the one canonical type.
+    ///
+    /// Any type may be the `T` of `T | None`. A union with two or more members besides `None`
+    /// takes only structs, error types and enums: a number, string, array or other type, or a
+    /// type parameter, is an error at the first member that brings one in.
+    pub(crate) fn union(&mut self, node: NodeId) -> Type<'db> {
+        let mut nodes = Vec::new();
+        self.union_members(node, &mut nodes);
+        let written: Vec<(NodeId, Type<'db>)> = nodes
+            .into_iter()
+            .map(|member| (member, self.lower(member)))
+            .collect();
+        let union = types::union(self.db, written.iter().map(|&(_, ty)| ty));
+        if !matches!(union.kind(self.db), TypeKind::Union(_)) {
+            return union;
+        }
+        // The first member that cannot be in a union is reported; one mistake, one message.
+        for (member, ty) in written {
+            let parts = match ty.kind(self.db) {
+                TypeKind::Union(members) => members.clone(),
+                TypeKind::Optional(value) => vec![*value],
+                _ => vec![ty],
+            };
+            if let Some(&bad) = parts.iter().find(|&&part| !self.is_union_member(part)) {
+                let message = format!("`{}` cannot be a member of a union", bad.display(self.db));
+                self.error(
+                    member,
+                    &message,
+                    "not a struct, enum or error type",
+                    Some(
+                        "a union's members are structs, enums, error types and `None`; numbers, \
+                         strings, arrays and type parameters are not supported in version 0 \
+                         (decision 0032)",
+                    ),
+                );
+                return self.unknown();
+            }
+        }
+        union
+    }
+
+    /// Whether `ty` may be one of several members of a union: a struct or error type whose
+    /// type arguments name no type parameter, an enum, or `None`. A type with an error already
+    /// reported counts as one, so the error is not repeated.
+    fn is_union_member(&self, ty: Type<'db>) -> bool {
+        match ty.kind(self.db) {
+            TypeKind::None | TypeKind::Unknown => true,
+            TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => !nominal
+                .arguments
+                .iter()
+                .any(|&argument| crate::body::relations::is_open(self.db, argument)),
+            _ => false,
+        }
+    }
+
     /// The members of `A | B | C`, in order, into `members`.
-    fn union_members(&self, node: NodeId, members: &mut Vec<NodeId>) {
+    pub(crate) fn union_members(&self, node: NodeId, members: &mut Vec<NodeId>) {
         if self.tree.kind(node) == SyntaxKind::BinaryOperation
             && self.tree.node(node).operator() == Operator::BitOr
         {
@@ -158,7 +222,8 @@ impl<'db> Lowerer<'db> {
 }
 
 /// Whether `ty` is a copy type, one an array may hold: a number, `bool`, a `Fixed` array, an
-/// enum or a struct declared `Copy`. An unknown type or a type parameter counts as one, so an
+/// enum, a struct declared `Copy`, or a union whose members are all of these or `None`
+/// (decision 0032). An unknown type or a type parameter counts as one, so an
 /// error is reported once, where it was made.
 pub(crate) fn is_copy<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
     match ty.kind(db) {
@@ -171,6 +236,9 @@ pub(crate) fn is_copy<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
             outline(db, nominal.file).get(nominal.name).map(|entry| &entry.kind),
             Some(Kind::Class(class)) if class.copy
         ),
+        TypeKind::Union(members) => members
+            .iter()
+            .all(|&member| matches!(member.kind(db), TypeKind::None) || is_copy(db, member)),
         _ => false,
     }
 }
