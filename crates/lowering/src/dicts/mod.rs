@@ -59,7 +59,7 @@ impl<'db> Builder<'db> {
             return;
         };
         let value = self.owned_value(held, value);
-        let key = self.owned_key(ty, key);
+        let key = self.stored_key(ty, key);
         self.set_entry(&place, key, value, target);
     }
 
@@ -247,6 +247,50 @@ impl<'db> Builder<'db> {
         self.assign(Place::from(local), Rvalue::Use(operand), key);
         self.drop_later(local);
         local
+    }
+
+    /// A local owning a copy of the key `key` for `d[k] = v`, which leaves the key's
+    /// variable usable, as in Python: a key read from a variable, a field or an element is
+    /// copied, a `str` into a new string, and a key computed for the statement moves in as
+    /// [`owned_key`](Self::owned_key) moves it. Keys are small, so the copy is cheap.
+    fn stored_key(&mut self, ty: Type<'db>, key: NodeId) -> Local {
+        let Some((key_type, _)) = self.dict_types(ty, key) else {
+            return self.owned_key(ty, key);
+        };
+        let named = matches!(
+            self.tree.kind(key),
+            SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
+        );
+        if !named || !self.needs_drop(key_type) {
+            return self.owned_key(ty, key);
+        }
+        let source = self.borrowed_key(key_type, key);
+        let copy = self.key_copy(source, key_type, key);
+        let local = self.temporary(key_type, key);
+        self.assign(Place::from(local), Rvalue::Use(copy), key);
+        self.drop_later(local);
+        local
+    }
+
+    /// A new copy of the key part at `source`, of type `ty`: a `str` is copied into a new
+    /// string, a tuple part by part, and a copy type bit for bit.
+    fn key_copy(&mut self, source: Place, ty: Type<'db>, node: NodeId) -> Operand<'db> {
+        match ty.kind(self.db) {
+            TypeKind::Str => Operand::Move(self.copied(source, ty, node)),
+            TypeKind::Tuple(items) => {
+                let parts = (0u32..)
+                    .zip(items.clone())
+                    .map(|(field, item)| {
+                        let part = source.clone().project(Projection::Field(field));
+                        self.key_copy(part, item, node)
+                    })
+                    .collect();
+                let tuple = self.temporary(ty, node);
+                self.assign(Place::from(tuple), Rvalue::Aggregate(ty, parts), node);
+                Operand::Move(Place::from(tuple))
+            }
+            _ => Operand::Copy(source),
+        }
     }
 
     /// The value `value`, converted to `held`, as an operand that owns it. A value that owns
