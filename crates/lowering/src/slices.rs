@@ -79,7 +79,7 @@ impl<'db> Builder<'db> {
 
     /// The range `slice`, `start:stop:step`, of dimension `dimension` of the array at `array`
     /// of type `ty`, checked to lie within the dimension.
-    fn slice_range(
+    pub(crate) fn slice_range(
         &mut self,
         array: &Place,
         ty: Type<'db>,

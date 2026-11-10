@@ -412,6 +412,54 @@ fn popping_an_empty_list_panics() {
     );
 }
 
+/// A slice of a list (roadmap 1.13.3) is a new list, as in Python: changing the list after
+/// leaves the slice alone. Defaults, negative literals and steps, backwards included, take the
+/// elements Python's slices take. Python prints the same lines.
+#[test]
+fn list_slices_build_and_run() {
+    let program = r#"
+def main():
+    xs = [1.0, 2.0, 3.0, 4.0, 5.0]
+    head = xs[:2]
+    print(head[0], head[1], len(head), len(xs[1:4]), xs[1:4][2])
+    print(len(xs[::2]), xs[::2][2], xs[::-1][0], xs[-2:][0], len(xs[3:1]))
+    names = ["argon", "neon", "xenon"]
+    tail = names[1:]
+    names[1] = "krypton"
+    print(tail[0], len(tail), names[1], "xenon" in names[1:])
+    n = 2
+    print(len(xs[n:]), xs[n:n + 1][0])
+"#;
+    prints(
+        "list-slices",
+        program,
+        "1.0 2.0 2 3 4.0\n3 5.0 5.0 4.0 0\nneon 2 krypton True\n3 3.0\n",
+    )
+    .unwrap();
+}
+
+/// A slice bound past the end of a list panics, as an array slice's does, where Python would
+/// quietly take fewer elements.
+#[test]
+fn a_list_slice_past_the_end_panics() {
+    let directory = package(
+        "list-slice-past-end",
+        &[(
+            "main.byn",
+            "def main():\n    xs = [1, 2, 3]\n    n = 5\n    print(len(xs[1:n]))\n",
+        )],
+    )
+    .unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert_eq!(
+        panic_report(&ran),
+        "panic: slice 1:5 is out of range for dimension 0 of length 3\n  --> main.byn:4:18\n"
+    );
+}
+
 /// Monte Carlo pi: 1,024 chunks of a `prange` loop, each drawing from its own `Philox` stream.
 /// `NumPy`, drawing from `Generator(Philox(key=2026).jumped(chunk))` for each chunk, counts the
 /// same 80,420,174 hits, so the estimate matches to every digit, on any number of cores.

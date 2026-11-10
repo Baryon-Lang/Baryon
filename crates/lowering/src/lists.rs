@@ -1,6 +1,6 @@
 //! Lists (language reference, "Lists"): a display `[a, b]` builds one, `xs.append(value)`
-//! grows one, `len(xs)`, `xs[i]` and `value in xs` read one, `xs.copy()` copies one, and
-//! `Array(xs)` copies one into a new array.
+//! grows one, `len(xs)`, `xs[i]` and `value in xs` read one, `xs.copy()` and `xs[i:j:k]` copy
+//! one or part of one into a new list, and `Array(xs)` copies one into a new array.
 //!
 //! The elements can be of any type. A list of `str`s, arrays, structs or other lists owns its
 //! elements: a display or `append` moves each value in, writing `xs[i] = v` drops the element
@@ -9,10 +9,10 @@
 
 use crate::builder::Builder;
 use mir::{
-    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Operand, Piece, Place,
-    Projection, Rvalue, TerminatorKind, UnaryOperator,
+    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Local, Operand, Piece,
+    Place, Projection, Rvalue, SliceIndex, TerminatorKind, UnaryOperator,
 };
-use syntax::{NodeId, Operator, Role};
+use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::{FormatSpec, Type, TypeKind};
 
 impl<'db> Builder<'db> {
@@ -122,36 +122,113 @@ impl<'db> Builder<'db> {
     /// Cost: one pass over the elements, and the appends' amortized growth of the new buffer.
     pub(crate) fn list_copy(&mut self, place: &Place, list: NodeId, node: NodeId) {
         let ty = self.ty(list);
-        let Some(element) = self.list_element(ty, node) else {
+        if !self.copyable_elements(ty, "copy", node) {
             return;
+        }
+        let source = self.borrow(list);
+        let length = self.length(&source, ty, 0, node);
+        self.assign(place.clone(), Rvalue::Aggregate(ty, Vec::new()), node);
+        self.loop_nest(&[length], &mut Vec::new(), node, &mut |builder, indices| {
+            let from = source.clone().project(Projection::Index(indices.to_vec()));
+            builder.append_copy(place, from, ty, node);
+        });
+    }
+
+    /// Whether `xs[i:j:k]` names a slice of a list: a subscript of a list by one slice.
+    pub(crate) fn is_list_slice(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::Subscript
+            && self
+                .tree
+                .child(node, Role::Index)
+                .is_some_and(|index| self.tree.kind(index) == SyntaxKind::Slice)
+            && self
+                .tree
+                .child(node, Role::Value)
+                .is_some_and(|value| matches!(self.ty(value).kind(self.db), TypeKind::List(_)))
+    }
+
+    /// The list slice `node`, `xs[i:j:k]`, into `place`: a new list holding a copy of each
+    /// element the range takes, in order, as Python's list slice is a new list. The range
+    /// follows the rules of an array slice: the defaults, a negative literal counted from the
+    /// end, a negative step walking backwards, and a panic for a bound outside the list.
+    ///
+    /// Cost: one pass over the elements taken, with the appends that grow the new list.
+    pub(crate) fn list_slice(&mut self, place: &Place, node: NodeId) {
+        let (Some(list), Some(slice)) = (
+            self.tree.child(node, Role::Value),
+            self.tree.child(node, Role::Index),
+        ) else {
+            return;
+        };
+        let ty = self.ty(list);
+        if !self.copyable_elements(ty, "a slice", node) {
+            return;
+        }
+        let source = self.borrow(list);
+        let SliceIndex::Range {
+            start,
+            length,
+            step,
+        } = self.slice_range(&source, ty, 0, slice)
+        else {
+            return;
+        };
+        self.assign(place.clone(), Rvalue::Aggregate(ty, Vec::new()), node);
+        let int = self.int_type();
+        let copy = |local: Local| Operand::Copy(Place::from(local));
+        self.loop_nest(
+            &[copy(length)],
+            &mut Vec::new(),
+            node,
+            &mut |builder, indices| {
+                // The element at start + i * step.
+                let index = builder.temporary(int, node);
+                let offset = Rvalue::Binary(BinaryOperator::Multiply, copy(indices[0]), copy(step));
+                builder.assign(Place::from(index), offset, node);
+                let at = Rvalue::Binary(BinaryOperator::Add, copy(index), copy(start));
+                builder.assign(Place::from(index), at, node);
+                let from = source.clone().project(Projection::Index(vec![index]));
+                builder.append_copy(place, from, ty, node);
+            },
+        );
+    }
+
+    /// Whether the elements of the list type `ty` can be copied into a new list: copy types and
+    /// `str`s. Reports `operation`, such as "copy", as not lowered yet for other elements.
+    fn copyable_elements(&mut self, ty: Type<'db>, operation: &str, node: NodeId) -> bool {
+        let Some(element) = self.list_element(ty, node) else {
+            return false;
         };
         let is_text = matches!(element.kind(self.db), TypeKind::Str);
         if !self.is_copy(element) && !is_text {
             let element = element.display(self.db);
-            return self.unsupported(node, &format!("`copy` of a list of `{element}`"));
+            self.unsupported(node, &format!("`{operation}` of a list of `{element}`"));
+            return false;
         }
-        let source = self.borrow(list);
-        let length = self.length(&source, ty, 0, node);
-        let nothing_type = Type::new(self.db, TypeKind::None);
-        self.assign(place.clone(), Rvalue::Aggregate(ty, Vec::new()), node);
-        self.loop_nest(&[length], &mut Vec::new(), node, &mut |builder, indices| {
-            let from = source.clone().project(Projection::Index(indices.to_vec()));
-            let value = if is_text {
-                let copy = builder.temporary(element, node);
-                let piece = Piece::Value(from, FormatSpec::default());
-                builder.assign(Place::from(copy), Rvalue::Format(vec![piece]), node);
-                Operand::Move(Place::from(copy))
-            } else {
-                Operand::Copy(from)
-            };
-            let nothing = builder.temporary(nothing_type, node);
-            builder.then(node, |next| TerminatorKind::Call {
-                callee: Callee::Builtin(Builtin::Append),
-                arguments: vec![Argument::InOut(place.clone()), Argument::Owned(value)],
-                destination: Place::from(nothing),
-                target: next,
-                error: None,
-            });
+        true
+    }
+
+    /// Appends a copy of the element at `from` to the list at `place`, of type `ty`: the value
+    /// itself for a copy type, new text for a `str`.
+    fn append_copy(&mut self, place: &Place, from: Place, ty: Type<'db>, node: NodeId) {
+        let Some(element) = self.list_element(ty, node) else {
+            return;
+        };
+        let value = if matches!(element.kind(self.db), TypeKind::Str) {
+            let copy = self.temporary(element, node);
+            let piece = Piece::Value(from, FormatSpec::default());
+            self.assign(Place::from(copy), Rvalue::Format(vec![piece]), node);
+            Operand::Move(Place::from(copy))
+        } else {
+            Operand::Copy(from)
+        };
+        let nothing = self.temporary(Type::new(self.db, TypeKind::None), node);
+        self.then(node, |next| TerminatorKind::Call {
+            callee: Callee::Builtin(Builtin::Append),
+            arguments: vec![Argument::InOut(place.clone()), Argument::Owned(value)],
+            destination: Place::from(nothing),
+            target: next,
+            error: None,
         });
     }
 
