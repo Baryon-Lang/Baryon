@@ -305,6 +305,18 @@ fn philox_is_eleven_words() {
     assert_eq!(layout_of(&database, philox), Ok((88, 8)));
 }
 
+/// A `File` shows its name, is one pointer, and owns an open file that a drop releases, which
+/// a `Philox` does not.
+#[test]
+fn file_is_one_word_that_owns_an_open_file() {
+    let database = Database::default();
+    let file = Type::new(&database, TypeKind::Standard(crate::StandardType::File));
+    assert_eq!(file.display(&database).to_string(), "File");
+    assert_eq!(layout_of(&database, file), Ok((8, 8)));
+    assert!(crate::StandardType::File.owns_resources());
+    assert!(!crate::StandardType::Philox.owns_resources());
+}
+
 #[test]
 fn a_union_is_one_type_however_it_is_written() {
     let database = Database::default();

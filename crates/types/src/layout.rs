@@ -223,9 +223,10 @@ impl<'db> Layouter<'_, 'db> {
             TypeKind::Primitive(primitive) => Ok(primitive_layout(*primitive)),
             TypeKind::Str => WORD.repeat(2).ok_or(too_large),
             TypeKind::List(_) => WORD.repeat(3).ok_or(too_large),
-            // One pointer to the runtime's table, null while the dict is empty, so a move
-            // copies one word and an empty dict allocates nothing.
-            TypeKind::Dict { .. } => Ok(WORD),
+            // One pointer: for a dict, to the runtime's table, null while the dict is empty, so a
+            // move copies one word and an empty dict allocates nothing; for a file, to the
+            // runtime's open file.
+            TypeKind::Dict { .. } | TypeKind::Standard(StandardType::File) => Ok(WORD),
             TypeKind::Standard(StandardType::Philox) => WORD.repeat(11).ok_or(too_large),
             TypeKind::None | TypeKind::Callable { .. } | TypeKind::Function { .. } => {
                 Ok(Layout::EMPTY)

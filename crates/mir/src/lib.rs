@@ -97,6 +97,7 @@
 mod call;
 mod check;
 mod display;
+mod files;
 mod operand;
 mod place;
 mod statement;
@@ -106,6 +107,7 @@ mod validate;
 pub use call::{Argument, Builtin, Callee, MathFunction};
 pub use check::Check;
 pub use display::DisplayedBody;
+pub use files::FileMethod;
 pub use operand::{
     BinaryOperator, Constant, ConstantValue, Elementwise, Operand, Piece, Rvalue, UnaryOperator,
 };

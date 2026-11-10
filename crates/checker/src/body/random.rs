@@ -86,6 +86,12 @@ impl<'db> Body<'db> {
                     Some("a `Philox` has `uniform()` so far"),
                 )
             }
+            // Nothing makes a `File` until `open` is checked (roadmap 1.13.6).
+            (StandardType::File, _) => {
+                self.untyped(arguments);
+                let message = format!("`File.{method}` is not in Baryon yet");
+                self.lowerer.error(node, &message, "not built yet", None)
+            }
         }
     }
 }
