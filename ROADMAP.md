@@ -211,7 +211,7 @@ registry and a standalone IDE are candidates, each added here when it is planned
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3.17 | Python interop with zero-copy arrays, after Phase 3's native libraries: Baryon's own capability comes first and interop is not a way to wrap Baryon in Python (Collins, 2026-11-10) | 3 | 1.10, 3.13 | Planned | — | — |
+| 3.17 | Python interop with zero-copy arrays, after Phase 3's native libraries: Baryon's own capability comes first and interop is not a way to wrap Baryon in Python (Collins, 2026-11-10) | 3 | 1.10, 3.10, 3.13, 3.14, 3.15, 3.16 | Planned | — | — |
 | 4.1 | C++ interop: header import, templates by instantiation, exceptions at the boundary | 12+ | 3.5 | Planned | — | — |
 
 ## Releases
@@ -230,7 +230,8 @@ After 0.3.0, native capability comes before compile speed (Collins, 2026-11-10):
 compiled code (3.1, 3.2, 3.3), then broadcasting and axis reductions (3.9), linear algebra and FFT
 (3.10), statistics (3.16), file formats (3.14), DataFrame (3.13) and plotting (3.15). Phase 2's
 faster compiling follows, unless compile times start to slow users down first. Python interop
-(3.17) comes after these native libraries.
+(3.17) comes only after as many native libraries as can be built: Baryon should be a native
+language before it needs wrappers from other languages (Collins, 2026-11-10).
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
