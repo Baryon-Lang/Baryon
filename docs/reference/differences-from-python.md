@@ -23,6 +23,7 @@ reason in a line.
 | `a[0:100]` on a 10-element list gives 10 elements | A slice past the end panics | A range that does not fit is usually a bug. [Slicing](arrays.md#slicing) |
 | A slice of a list is a copy; a NumPy slice is a view | An array slice is a view, and cannot be bound to a name in version 0 | A named view would be a stored borrow. [Slices](values-and-references.md#slices) |
 | A list can hold values of different types | `list[T]` holds one type | Values of one type are stored contiguously, with no boxing. [Lists](types.md#lists) |
+| Any hashable value is a `dict` key, floats included, and `d[k]` for a missing key raises `KeyError` | Keys are integers, `bool`, `str`, enums and tuples of them; a missing key panics | A float key that misses by rounding is a silent bug. [Dictionaries](types.md#dictionaries) |
 | Exceptions unwind, and any function may raise | A function that can fail says so with `Raises[T, E]`; errors are return values | Failure is visible in signatures and costs one branch. [Errors](errors.md) |
 | Every failure is an exception and can be caught | Bugs such as an index out of range panic, and panics cannot be caught | A caught bug is an ignored bug. [Panics](errors.md#panics) |
 | `assert` is removed by `python -O` | `assert` is checked in every build | [Syntax](syntax.md#statements) |
@@ -37,7 +38,7 @@ reason in a line.
 ## What Python has that version 0 does not
 
 `lambda` and nested functions, generators and `yield`, `async`, `global` and `nonlocal`, `del`,
-`*args` and `**kwargs`, star assignment, `:=`, `dict` and `set` displays and comprehensions,
+`*args` and `**kwargs`, star assignment, `:=`, `set` displays, `dict` and `set` comprehensions,
 generator expressions, `try` with `finally` or `else`, `raise ... from`, `for` and `while` with `else`, `with` other
 than `with unsafe:`, decorators other than `@test`, `@bench` and `@layout("C")`, and the `type`
 statement. The compiler rejects each with a message; none is silently ignored. Some will come

@@ -66,6 +66,8 @@ impl<'db> Builder<'db> {
         let pass: Pass<'_, 'db> = &mut |builder, next, end| builder.repeat(statement, next, end);
         if self.is_range(iterator) || self.simd_range(iterator).is_some() {
             self.range_loop(statement, target, iterator, pass);
+        } else if self.is_dict_loop(iterator) {
+            self.dict_loop(statement, target, iterator);
         } else {
             self.collection_loop(statement, target, iterator, pass);
         }
@@ -424,7 +426,7 @@ impl<'db> Builder<'db> {
 
     /// The body of the loop `statement`, from the current block: `continue` and the end of the
     /// body go to `next`, `break` to `end`.
-    fn repeat(&mut self, statement: NodeId, next: BlockId, end: BlockId) {
+    pub(crate) fn repeat(&mut self, statement: NodeId, next: BlockId, end: BlockId) {
         self.loops.push(Loop { next, end });
         self.block(statement, Role::Body);
         self.loops.pop();

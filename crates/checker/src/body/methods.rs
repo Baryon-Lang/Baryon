@@ -52,6 +52,9 @@ impl<'db> Body<'db> {
             self.change(value);
             return result;
         }
+        if let &TypeKind::Dict { key, value: held } = base.kind(self.db) {
+            return self.dict_method(node, (value, base), (key, held), &callee, arguments);
+        }
         if let Some(result) = self.container_method(node, base, &callee, arguments) {
             let changes = match base.kind(self.db) {
                 TypeKind::List(_) => matches!(callee.as_str(), "append" | "pop"),

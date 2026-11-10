@@ -35,8 +35,9 @@ pub(crate) struct Lowerer<'db> {
 }
 
 /// The builtin types that take arguments, each with an example of how to write it.
-const GENERIC_BUILTINS: [(&str, &str); 8] = [
+const GENERIC_BUILTINS: [(&str, &str); 9] = [
     ("list", "list[f64]"),
+    ("dict", "dict[str, f64]"),
     ("tuple", "tuple[f64, i64]"),
     ("Array", "Array[f64, 1]"),
     ("Fixed", "Fixed[f64, (3,)]"),
@@ -320,6 +321,13 @@ impl<'db> Lowerer<'db> {
             ("list", &[item]) => {
                 let item = self.lower(item);
                 Type::new(self.db, TypeKind::List(item))
+            }
+            ("dict", &[key, value]) => {
+                let (key_node, key, value) = (key, self.lower(key), self.lower(value));
+                if let Some((message, label, hint)) = crate::body::dict_key_error(self.db, key) {
+                    return self.error(key_node, &message, label, Some(&hint));
+                }
+                Type::new(self.db, TypeKind::Dict { key, value })
             }
             ("tuple", items) => {
                 let items = items.iter().map(|&item| self.lower(item)).collect();

@@ -61,6 +61,7 @@ impl<'db> Body<'db> {
                 Type::new(self.db, TypeKind::Tuple(items))
             }
             SyntaxKind::List => self.list(node, expected),
+            SyntaxKind::Dictionary => self.dictionary(node, expected),
             SyntaxKind::ListComprehension => {
                 self.comprehensions(node);
                 let item = self.child_type(node, Role::Value);
@@ -236,6 +237,9 @@ impl<'db> Body<'db> {
         } else {
             vec![index]
         };
+        if let &TypeKind::Dict { key, value } = base.kind(self.db) {
+            return self.dict_subscript(node, (key, value), &indices);
+        }
         let sliced = indices
             .iter()
             .any(|&index| self.tree.kind(index) == SyntaxKind::Slice);
@@ -435,6 +439,9 @@ impl<'db> Body<'db> {
 
     /// The type of each element a `for` loop over `iterator` sees.
     pub(super) fn iteration(&mut self, iterator: NodeId) -> Type<'db> {
+        if let Some(element) = self.dict_iteration(iterator) {
+            return element;
+        }
         if let Some(element) = self.builtin_iteration(iterator) {
             if let Some(function) = self.tree.child(iterator, Role::Function) {
                 let arguments = self.arguments(iterator);
@@ -445,7 +452,7 @@ impl<'db> Body<'db> {
         let ty = self.expression(iterator, None);
         let unknown = self.lowerer.unknown();
         match ty.kind(self.db) {
-            TypeKind::List(item) => *item,
+            TypeKind::List(item) | TypeKind::Dict { key: item, .. } => *item,
             TypeKind::Str => ty,
             TypeKind::Array { element, rank: 1 } => *element,
             TypeKind::Fixed { element, shape } if shape.rank() == 1 => *element,

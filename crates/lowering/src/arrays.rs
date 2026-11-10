@@ -48,6 +48,7 @@ impl<'db> Builder<'db> {
         };
         let base_type = self.ty(array);
         match base_type.kind(self.db) {
+            TypeKind::Dict { .. } => self.dict_value(node),
             TypeKind::Tuple(_) => {
                 let Some(position) = self.constant_integer(index) else {
                     self.unsupported(node, "tuple indices that are not constants");
@@ -410,7 +411,9 @@ impl<'db> Builder<'db> {
         if matches!(ty.kind(self.db), TypeKind::Str) {
             return self.text_length(place, argument, node);
         }
-        if !self.is_array(ty) && !matches!(ty.kind(self.db), TypeKind::List(_)) {
+        if !self.is_array(ty)
+            && !matches!(ty.kind(self.db), TypeKind::List(_) | TypeKind::Dict { .. })
+        {
             return self.unsupported(node, "`len` of this type");
         }
         let array = self.borrow(argument);

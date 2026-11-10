@@ -265,11 +265,18 @@ impl<'db> Builder<'db> {
             return None;
         }
         let (left_type, right_type) = (self.ty(left), self.ty(right));
-        if matches!(operator, Operator::In | Operator::NotIn)
-            && matches!(right_type.kind(self.db), TypeKind::List(_))
-        {
-            self.list_contains(place, operator, (left, right), node);
-            return None;
+        if matches!(operator, Operator::In | Operator::NotIn) {
+            match right_type.kind(self.db) {
+                TypeKind::List(_) => {
+                    self.list_contains(place, operator, (left, right), node);
+                    return None;
+                }
+                TypeKind::Dict { .. } => {
+                    self.dict_contains(place, operator, (left, right), node);
+                    return None;
+                }
+                _ => {}
+            }
         }
         let is_text = |builder: &Self, ty: Type<'db>| matches!(ty.kind(builder.db), TypeKind::Str);
         if is_text(self, left_type) && is_text(self, right_type) {

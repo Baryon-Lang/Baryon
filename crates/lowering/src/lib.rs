@@ -267,6 +267,7 @@ mod comprehensions;
 mod constants;
 mod creation;
 mod defaults;
+mod dicts;
 mod errors;
 mod escapes;
 mod expressions;
