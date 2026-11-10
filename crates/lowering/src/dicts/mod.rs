@@ -17,7 +17,7 @@ mod text;
 use crate::builder::Builder;
 use mir::{
     Argument, BinaryOperator, Builtin, Callee, Check, Constant, Local, Operand, Piece, Place,
-    Projection, Rvalue, TerminatorKind,
+    Projection, Rvalue, StatementKind, TerminatorKind,
 };
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{FormatSpec, Type, TypeKind};
@@ -61,6 +61,49 @@ impl<'db> Builder<'db> {
         let value = self.owned_value(held, value);
         let key = self.stored_key(ty, key);
         self.set_entry(&place, key, value, target);
+    }
+
+    /// Sets the entry of the dict comprehension `node` in the `dict` at `place`: its key, then
+    /// its value, stored as `d[k] = v` stores them, so a key read from a variable is copied and
+    /// `{name: len(name) for name in names}` keeps `name` usable for the value.
+    pub(crate) fn dict_comprehension_entry(&mut self, place: &Place, node: NodeId) {
+        let (Some(key), Some(value)) = (
+            self.tree.child(node, Role::Key),
+            self.tree.child(node, Role::Value),
+        ) else {
+            return;
+        };
+        let key = self.stored_key(self.ty(node), key);
+        self.dict_set(place, key, value, node);
+    }
+
+    /// `del d[k]`: removes `k`'s entry, after the check that panics when it is missing, and
+    /// drops the key and the value. The checker allows `del` only on a `dict` entry.
+    pub(crate) fn dict_delete(&mut self, statement: NodeId) {
+        let Some(target) = self.tree.child(statement, Role::Target) else {
+            return;
+        };
+        let (Some(dict), Some(key)) = (
+            self.tree.child(target, Role::Value),
+            self.tree.child(target, Role::Index),
+        ) else {
+            return;
+        };
+        let ty = self.ty(dict);
+        let Some((_, held)) = self.dict_types(ty, target) else {
+            return;
+        };
+        let Some(base) = self.place(dict) else {
+            return;
+        };
+        let Some(position) = self.existing_entry(&base, ty, key, target) else {
+            return;
+        };
+        let value = self.temporary(held, target);
+        self.remove(&base, position, Place::from(value), target);
+        if self.needs_drop(held) {
+            self.push(StatementKind::Drop(Place::from(value)), target);
+        }
     }
 
     /// The place `d[k]` names, the value of `k`'s entry, after finding it and panicking when it
@@ -249,8 +292,9 @@ impl<'db> Builder<'db> {
         local
     }
 
-    /// A local owning a copy of the key `key` for `d[k] = v`, which leaves the key's
-    /// variable usable, as in Python: a key read from a variable, a field or an element is
+    /// A local owning a copy of the key `key` for `d[k] = v`, `setdefault` and a dict
+    /// comprehension, which leave the key's variable usable, as in Python: a key read from a
+    /// variable, a field or an element is
     /// copied, a `str` into a new string, and a key computed for the statement moves in as
     /// [`owned_key`](Self::owned_key) moves it. Keys are small, so the copy is cheap.
     fn stored_key(&mut self, ty: Type<'db>, key: NodeId) -> Local {

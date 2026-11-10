@@ -66,15 +66,14 @@ impl<'db> Body<'db> {
                 let item = self.list_comprehension(node);
                 Type::new(self.db, TypeKind::List(item))
             }
+            SyntaxKind::DictionaryComprehension => self.dict_comprehension(node, expected),
             _ => {
                 // Constructs a later slice types, or the syntax check rejects: their parts are
                 // still checked.
                 let children: Vec<NodeId> = self.tree.children(node).collect();
                 if matches!(
                     self.tree.kind(node),
-                    SyntaxKind::Generator
-                        | SyntaxKind::SetComprehension
-                        | SyntaxKind::DictionaryComprehension
+                    SyntaxKind::Generator | SyntaxKind::SetComprehension
                 ) {
                     self.comprehensions(node);
                 }

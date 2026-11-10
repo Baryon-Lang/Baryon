@@ -66,7 +66,7 @@ impl<'db> Builder<'db> {
         if self.is_range(iterator) || self.simd_range(iterator).is_some() {
             self.range_loop(statement, target, iterator, pass);
         } else if self.is_dict_loop(iterator) {
-            self.dict_loop(statement, target, iterator);
+            self.dict_loop(statement, target, iterator, pass);
         } else {
             self.collection_loop(statement, target, iterator, pass);
         }

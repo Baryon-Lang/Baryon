@@ -89,7 +89,7 @@ def main():
     for k in d.keys():
         d["x"] = [1]
     v = d.items()
-    d.clear()
+    d.sort()
     print({1.5: 2})
 "#;
     assert_eq!(
@@ -166,12 +166,12 @@ error: `items()` of a dict is only for a `for` loop
    |         ^^^^^^^^^ not in a loop
    = note: loop over it, `for k, v in d.items():`; `len(d)` counts the keys
 
-error: `dict[str, list[i64]]` has no method `clear` taking these arguments
+error: `dict[str, list[i64]]` has no method `sort` taking these arguments
   --> main.byn:18:5
    |
-18 |     d.clear()
-   |     ^^^^^^^^^ not defined
-   = note: a dict has `get`, `pop`, `copy`, and `keys`, `values` and `items` in a `for` loop
+18 |     d.sort()
+   |     ^^^^^^^^ not defined
+   = note: a dict has `get`, `pop`, `setdefault`, `update`, `clear`, `copy`, and `keys`, `values` and `items` in a `for` loop
 
 error: `f64` cannot be a dict key
   --> main.byn:19:12
@@ -179,5 +179,97 @@ error: `f64` cannot be a dict key
 19 |     print({1.5: 2})
    |            ^^^ a float key
    = note: floats are not compared exactly: `0.1 + 0.2` is not `0.3`. Bin the value to an integer first, such as `int(x / width)`"#
+    );
+}
+
+/// The errors of the 0.3.0 operations (roadmap 1.13.14): `del` of anything but a dict entry,
+/// `setdefault` of a value that does not copy, `update` from a dict of another type or from the
+/// dict itself, `clear` with an argument, a comprehension value that moves a borrowed element, a
+/// float key, and a value of the wrong type for the annotation.
+#[test]
+fn dict_follow_up_errors_are_reported() {
+    let program = r#"
+def main():
+    d: dict[str, list[int]] = {}
+    xs = [1, 2]
+    other: dict[str, int] = {}
+    words = ["a", "b"]
+    del xs[0]
+    del d
+    print(d.setdefault("a", [1]))
+    d.update(other)
+    d.update(d)
+    d.clear(1)
+    first = {w: w for w in words}
+    floats = {x * 0.5: x for x in range(3)}
+    typed: dict[str, int] = {w.copy(): 1.5 for w in words}
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: `del` is supported only on a dict entry
+ --> main.byn:7:5
+  |
+7 |     del d
+  |     ^^^^^
+  = note: a value is destroyed when its owner goes out of scope, so nothing else needs `del`
+  = note: remove one dict entry with `del d[k]`
+
+error: `del` removes a dict entry, not an element of `list[i64]`
+ --> main.byn:6:9
+  |
+6 |     del xs[0]
+  |         ^^^^^ not a dict
+  = note: a list shrinks with `xs.pop()`; an array keeps its length
+
+error: `setdefault` needs values that copy, found `list[i64]`
+ --> main.byn:8:11
+  |
+8 |     print(d.setdefault("a", [1]))
+  |           ^^^^^^^^^^^^^^^^^^^^^^ would copy the value out
+  = note: ask first, then borrow it: `if k in d:` and `d[k]`
+
+error: expected `dict[str, list[i64]]`, found `dict[str, i64]`
+ --> main.byn:9:14
+  |
+9 |     d.update(other)
+  |              ^^^^^ `update` takes a dict of the same type, `dict[str, list[i64]]`
+
+error: `d` is changed by this call and also passed to it
+  --> main.byn:10:14
+   |
+10 |     d.update(d)
+   |              ^ `d` again
+  ::: main.byn:10:5
+   |
+10 |     d.update(d)
+   |     - `d` is passed as `InOut`
+   = note: a value this call changes cannot also be read through another argument; pass a copy: `d.copy()`
+
+error: `dict[str, list[i64]]` has no method `clear` taking these arguments
+  --> main.byn:11:5
+   |
+11 |     d.clear(1)
+   |     ^^^^^^^^^^ not defined
+   = note: a dict has `get`, `pop`, `setdefault`, `update`, `clear`, `copy`, and `keys`, `values` and `items` in a `for` loop
+
+error: `w` borrows an element of `words`, so it cannot be moved
+  --> main.byn:12:17
+   |
+12 |     first = {w: w for w in words}
+   |                 ^ moved here
+   = note: to keep the element, keep a copy: `w.copy()`
+
+error: `f64` cannot be a dict key
+  --> main.byn:13:15
+   |
+13 |     floats = {x * 0.5: x for x in range(3)}
+   |               ^^^^^^^ a float key
+   = note: floats are not compared exactly: `0.1 + 0.2` is not `0.3`. Bin the value to an integer first, such as `int(x / width)`
+
+error: expected `i64`, found `f64`
+  --> main.byn:14:40
+   |
+14 |     typed: dict[str, int] = {w.copy(): 1.5 for w in words}
+   |                                        ^^^ the dict's values are `i64`"#
     );
 }

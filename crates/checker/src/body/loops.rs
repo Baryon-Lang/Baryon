@@ -76,19 +76,26 @@ impl<'db> Body<'db> {
     /// same fix as the loop's, `w.copy()`; otherwise two lists would own one string.
     pub(super) fn list_comprehension(&mut self, node: NodeId) -> Type<'db> {
         let clauses: Vec<NodeId> = self.tree.children_with(node, Role::Item).collect();
-        self.comprehension_clauses(node, &clauses)
+        self.comprehension_clauses(&clauses, &mut |body| {
+            let Some(value) = body.tree.child(node, Role::Value) else {
+                return body.lowerer.unknown();
+            };
+            let ty = body.expression(value, None);
+            body.consume(value, ty);
+            ty
+        })
     }
 
-    /// The `for` clauses `clauses` of the comprehension `node`, the first outermost, then its
-    /// value, moved into the list; returns the value's type.
-    fn comprehension_clauses(&mut self, node: NodeId, clauses: &[NodeId]) -> Type<'db> {
+    /// The `for` clauses `clauses` of a comprehension, the first outermost, then `inner`, which
+    /// checks what the comprehension builds from each pass: a list's value, or a dict's key and
+    /// value. Returns what `inner` returns.
+    pub(super) fn comprehension_clauses(
+        &mut self,
+        clauses: &[NodeId],
+        inner: &mut dyn FnMut(&mut Self) -> Type<'db>,
+    ) -> Type<'db> {
         let Some((&clause, rest)) = clauses.split_first() else {
-            let Some(value) = self.tree.child(node, Role::Value) else {
-                return self.lowerer.unknown();
-            };
-            let ty = self.expression(value, None);
-            self.consume(value, ty);
-            return ty;
+            return inner(self);
         };
         let iterator = self.tree.child(clause, Role::Iterator);
         let element = match iterator {
@@ -113,7 +120,7 @@ impl<'db> Body<'db> {
             for condition in conditions {
                 body.condition(Some(condition));
             }
-            item = body.comprehension_clauses(node, rest);
+            item = body.comprehension_clauses(rest, inner);
             body.loops.pop();
         });
         item

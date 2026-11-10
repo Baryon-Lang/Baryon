@@ -75,6 +75,7 @@ impl<'db> Builder<'db> {
                 self.drop_all(statement);
                 self.terminate(TerminatorKind::Return, statement);
             }
+            SyntaxKind::Delete => self.dict_delete(statement),
             SyntaxKind::Raise => self.raise(statement),
             SyntaxKind::If => self.if_statement(statement),
             SyntaxKind::While => self.while_statement(statement),

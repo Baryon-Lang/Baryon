@@ -40,8 +40,8 @@ reason in a line.
 
 ## What Python has that version 0 does not
 
-`lambda` and nested functions, generators and `yield`, `async`, `global` and `nonlocal`, `del`,
-`*args` and `**kwargs`, star assignment, `:=`, `set` displays, `dict` and `set` comprehensions,
+`lambda` and nested functions, generators and `yield`, `async`, `global` and `nonlocal`, `del`
+other than `del d[k]`, `*args` and `**kwargs`, star assignment, `:=`, `set` displays, `set` comprehensions,
 generator expressions, `try` with `finally` or `else`, `raise ... from`, `for` and `while` with `else`, `with` other
 than `with unsafe:`, decorators other than `@test`, `@bench` and `@layout("C")`, and the `type`
 statement. The compiler rejects each with a message; none is silently ignored. Some will come

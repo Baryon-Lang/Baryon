@@ -226,6 +226,15 @@ def main():
             counts[k] += 1                 # updates the entry in place
         else:
             counts[k] = 1
+
+    squares = {i: i * i for i in range(5) if i != 2}  # {0: 0, 1: 1, 3: 9, 4: 16}
+    lengths = {name: len(name) for name in ["Ar", "Ne"]}
+    seen: dict[str, int] = {}
+    for word in ["a", "b", "a"]:
+        seen[word] = seen.setdefault(word, 0) + 1
+    seen.update(lengths)                   # sets "Ar" and "Ne", keeps "a" and "b"
+    del seen["a"]                          # removes the entry; a missing key panics
+    seen.clear()                           # empty, and still a dict[str, int]
 ```
 
 | Operation | Meaning |
@@ -237,14 +246,22 @@ def main():
 | `len(d)` | The number of entries |
 | `d.get(k)`, `d.get(k, default)` | A copy of the value, or `None` or the default when the key is missing. Values must copy; for others, ask with `in` and read `d[k]` |
 | `d.pop(k)`, `d.pop(k, default)` | Takes the entry out and gives its value; a missing key panics, or gives the default |
+| `d.setdefault(k, default)` | A copy of the value for `k`, after adding `k` with `default` when it is missing. Values must copy |
+| `d.update(other)` | Sets each entry of `other`, a dict of the same type, in `other`'s order |
+| `d.clear()` | Removes every entry |
+| `del d[k]` | Removes the entry; a missing key panics |
 | `d.copy()` | A new dict with the same entries |
+| `{k: v for x in e if c}` | A dict comprehension: one entry per pass, a repeated key keeping its first place and its last value |
 | `for k in d`, `d.keys()`, `d.values()`, `d.items()` | The keys, values or `(key, value)` pairs, in insertion order |
 
 A loop borrows the dict, so its body cannot add, set or pop entries of the same dict; loop over a
 copy, `for k in d.copy():`, to change the original. `keys()`, `values()` and `items()` are only for
-`for` loops. A dict moves like a list ([values and references](values-and-references.md#moves)).
-Lookups hash with a fixed seed, so a program behaves the same on every run. Comprehensions,
-`del d[k]` and the rest of Python's methods are not in 0.2.0.
+`for` loops. A loop variable borrows a key or value that does not copy, such as a `list` value,
+so keep a copy to store it elsewhere: `out.append(v.copy())`. A key is copied in by `d[k] = v`,
+`setdefault` and a comprehension, so the variable it came from stays usable, as in Python. A dict
+moves like a list ([values and references](values-and-references.md#moves)). Lookups hash with a
+fixed seed, so a program behaves the same on every run. `popitem`, `fromkeys`, `|` and `**` in a
+display are not in 0.3.0.
 
 ## Optional values
 

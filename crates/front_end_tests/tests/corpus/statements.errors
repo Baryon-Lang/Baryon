@@ -5,12 +5,13 @@ error: star targets are not supported
   |            ^^^^^
   = note: unpack a fixed number of names, `a, b = pair`, or index and slice the sequence: `first = items[0]`
 
-error: `del` is not supported
+error: `del` is supported only on a dict entry
  --> statements.byn:3:5
   |
 3 |     del first
   |     ^^^^^^^^^
-  = note: a value is destroyed when its owner goes out of scope, so nothing needs `del`
+  = note: a value is destroyed when its owner goes out of scope, so nothing else needs `del`
+  = note: remove one dict entry with `del d[k]`
 
 error: `global` is not supported
  --> statements.byn:4:5

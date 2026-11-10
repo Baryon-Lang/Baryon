@@ -30,12 +30,7 @@ impl Checker<'_> {
             SyntaxKind::Try => self.try_statement(id),
             SyntaxKind::ImportFrom => self.import_from(id),
             SyntaxKind::TypeAlias => self.type_statement(id),
-            SyntaxKind::Delete => self.error(
-                "`del` is not supported",
-                self.tree.span(id),
-                "",
-                &["a value is destroyed when its owner goes out of scope, so nothing needs `del`"],
-            ),
+            SyntaxKind::Delete => self.delete(id),
             SyntaxKind::Global => self.error(
                 "`global` is not supported",
                 self.tree.span(id),
@@ -453,6 +448,27 @@ impl Checker<'_> {
                 ],
             );
         }
+    }
+
+    /// Reports a `del` statement unless it removes one subscript, `del d[k]`, which removes a
+    /// `dict` entry (the type checker rejects it on anything else). `del x` and `del a, b` have
+    /// no use: a value is destroyed when its owner goes out of scope.
+    fn delete(&mut self, id: NodeId) {
+        let targets: Vec<NodeId> = self.tree.children_with(id, Role::Target).collect();
+        if let [target] = targets.as_slice()
+            && self.tree.kind(*target) == SyntaxKind::Subscript
+        {
+            return;
+        }
+        self.error(
+            "`del` is supported only on a dict entry",
+            self.tree.span(id),
+            "",
+            &[
+                "a value is destroyed when its owner goes out of scope, so nothing else needs `del`",
+                "remove one dict entry with `del d[k]`",
+            ],
+        );
     }
 
     /// Reports the `type X = ...` statement and gives the assignment that replaces it.

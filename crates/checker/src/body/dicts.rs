@@ -16,12 +16,14 @@
 
 use super::Body;
 use super::calls::Arguments;
+use super::exclusive::Passed;
 use super::relations;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Primitive, Type, TypeDb, TypeKind};
+use types::{Mode, Primitive, Type, TypeDb, TypeKind};
 
 /// The methods a `dict` has, for the error on any other.
-const DICT_METHODS: &str = "`get`, `pop`, `copy`, and `keys`, `values` and `items` in a `for` loop";
+const DICT_METHODS: &str = "`get`, `pop`, `setdefault`, `update`, `clear`, `copy`, and `keys`, \
+     `values` and `items` in a `for` loop";
 
 impl<'db> Body<'db> {
     /// `{k: v, ...}`: a `dict` whose keys share one type and values share one type, taken from
@@ -97,6 +99,58 @@ impl<'db> Body<'db> {
         Type::new(self.db, TypeKind::Dict { key, value })
     }
 
+    /// `{k: v for ...}`: a `dict` whose key and value types come from the context or from the
+    /// key and value expressions. The value moves into each entry, so it cannot be an element a
+    /// clause borrows; the key is borrowed and copied in, as `d[k] = v` copies it, so
+    /// `{name: len(name) for name in names}` reads `name` twice. A key written twice keeps its
+    /// first place and its last value, as in Python.
+    pub(super) fn dict_comprehension(
+        &mut self,
+        node: NodeId,
+        expected: Option<Type<'db>>,
+    ) -> Type<'db> {
+        let (key, value) = match expected.map(|ty| ty.kind(self.db)) {
+            Some(&TypeKind::Dict { key, value }) => (Some(key), Some(value)),
+            _ => (None, None),
+        };
+        let unknown = self.lowerer.unknown();
+        let part = |body: &mut Self, role, hint: Option<Type<'db>>, what| {
+            let Some(child) = body.tree.child(node, role) else {
+                return hint.unwrap_or(unknown);
+            };
+            let found = body.expression(child, hint);
+            if role == Role::Value {
+                body.consume(child, found);
+            }
+            match hint {
+                Some(hint) => {
+                    body.expect(child, hint, found, what);
+                    hint
+                }
+                None => found,
+            }
+        };
+        let clauses: Vec<NodeId> = self.tree.children_with(node, Role::Item).collect();
+        let mut key_type = unknown;
+        let value_type = self.comprehension_clauses(&clauses, &mut |body| {
+            key_type = part(body, Role::Key, key, "the dict's keys are");
+            part(body, Role::Value, value, "the dict's values are")
+        });
+        if expected.is_none()
+            && let Some((message, label, hint)) = key_error(self.db, key_type)
+            && let Some(at) = self.tree.child(node, Role::Key)
+        {
+            return self.lowerer.error(at, &message, label, Some(&hint));
+        }
+        Type::new(
+            self.db,
+            TypeKind::Dict {
+                key: key_type,
+                value: value_type,
+            },
+        )
+    }
+
     /// `d[k]`, the value for the key `index` in a `dict[K, V]`: the key is checked against `K`
     /// and borrowed, and the value is `V`. A slice has no meaning on a `dict`.
     pub(super) fn dict_subscript(
@@ -129,6 +183,41 @@ impl<'db> Body<'db> {
         value
     }
 
+    /// `del d[k]`, which removes `k`'s entry from the `dict` `d` and drops its key and value; a
+    /// missing key panics, as `d[k]` does. The syntax check allows `del` only on one subscript,
+    /// and here the subscript must be of a `dict`: a list or an array keeps its length.
+    pub(super) fn delete(&mut self, statement: NodeId) {
+        let Some(target) = self.tree.child(statement, Role::Target) else {
+            return;
+        };
+        let (Some(receiver), Some(index)) = (
+            self.tree.child(target, Role::Value),
+            self.tree.child(target, Role::Index),
+        ) else {
+            return;
+        };
+        let base = self.expression(receiver, None);
+        let &TypeKind::Dict { key, .. } = base.kind(self.db) else {
+            self.expression(index, None);
+            if !matches!(base.kind(self.db), TypeKind::Unknown) {
+                let message = format!(
+                    "`del` removes a dict entry, not an element of `{}`",
+                    self.show(base)
+                );
+                self.lowerer.error(
+                    target,
+                    &message,
+                    "not a dict",
+                    Some("a list shrinks with `xs.pop()`; an array keeps its length"),
+                );
+            }
+            return;
+        };
+        let found = self.expression(index, Some(key));
+        self.expect(index, key, found, "the dict's keys are");
+        self.change(receiver);
+    }
+
     /// Checks `left in right` or `left not in right` when `right` is a `dict`: `left` must be
     /// of the key type.
     pub(super) fn dict_contains(&mut self, left: NodeId, left_type: Type<'db>, right: Type<'db>) {
@@ -137,8 +226,10 @@ impl<'db> Body<'db> {
         }
     }
 
-    /// A method call on a `dict[K, V]`, `d.get(k)` or `d.pop(k, default)`, whose receiver is the
-    /// expression `receiver` of type `base`: the result's type. `pop` changes the receiver.
+    /// A method call on a `dict[K, V]`, such as `d.get(k)` or `d.pop(k, default)`, whose
+    /// receiver is the expression `receiver` of type `base`: the result's type. `pop`,
+    /// `setdefault`, `update` and `clear` change the receiver; `update` borrows its argument, a
+    /// `dict` of the same type.
     /// `keys`, `values` and `items` are only for `for` loops, which [`dict_iteration`]
     /// handles, so here they are an error.
     ///
@@ -171,34 +262,43 @@ impl<'db> Body<'db> {
         match (name, positional) {
             ("get", [k]) => {
                 key_argument(self, *k);
-                if !crate::forms::is_copy(self.db, value) {
-                    let message = format!(
-                        "`get` with no default needs values that copy, found `{}`",
-                        self.show(value)
-                    );
-                    return self.lowerer.error(
-                        node,
-                        &message,
-                        "would copy the value out",
-                        Some("ask first, then borrow it: `if k in d:` and `d[k]`"),
-                    );
+                if let Some(error) = self.copied_out(node, "`get` with no default", value) {
+                    return error;
                 }
                 Type::new(self.db, TypeKind::Optional(value))
             }
             ("get", [k, fallback]) => {
                 key_argument(self, *k);
                 default(self, *fallback);
-                if !crate::forms::is_copy(self.db, value) {
-                    let message =
-                        format!("`get` needs values that copy, found `{}`", self.show(value));
-                    return self.lowerer.error(
-                        node,
-                        &message,
-                        "would copy the value out",
-                        Some("ask first, then borrow it: `if k in d:` and `d[k]`"),
-                    );
-                }
-                value
+                self.copied_out(node, "`get`", value).unwrap_or(value)
+            }
+            ("setdefault", [k, fallback]) => {
+                key_argument(self, *k);
+                default(self, *fallback);
+                self.change(receiver);
+                self.copied_out(node, "`setdefault`", value)
+                    .unwrap_or(value)
+            }
+            ("update", [other]) => {
+                let found = self.expression(*other, Some(base));
+                self.expect(
+                    *other,
+                    base,
+                    found,
+                    "`update` takes a dict of the same type,",
+                );
+                // `d.update(d)` would read the dict it changes, so it is an overlap.
+                let mode = |node, mode| Passed {
+                    node,
+                    mode,
+                    ty: base,
+                };
+                self.pass(&[mode(receiver, Mode::InOut), mode(*other, Mode::Borrow)]);
+                Type::new(self.db, TypeKind::None)
+            }
+            ("clear", []) => {
+                self.change(receiver);
+                Type::new(self.db, TypeKind::None)
             }
             ("pop", [k, rest @ ..]) if rest.len() <= 1 => {
                 key_argument(self, *k);
@@ -229,6 +329,25 @@ impl<'db> Body<'db> {
                     .error(node, &message, "not defined", Some(&hint))
             }
         }
+    }
+
+    /// The error for `what`, a method that copies a value of type `value` out of a `dict`, when
+    /// the value does not copy, or `None` when it does. Copying a list or an array out of a
+    /// lookup would hide a large copy, so the program asks with `in` and borrows `d[k]` instead.
+    fn copied_out(&mut self, node: NodeId, what: &str, value: Type<'db>) -> Option<Type<'db>> {
+        if crate::forms::is_copy(self.db, value) {
+            return None;
+        }
+        let message = format!(
+            "{what} needs values that copy, found `{}`",
+            self.show(value)
+        );
+        Some(self.lowerer.error(
+            node,
+            &message,
+            "would copy the value out",
+            Some("ask first, then borrow it: `if k in d:` and `d[k]`"),
+        ))
     }
 
     /// The element type of a `for` loop over `d.keys()`, `d.values()` or `d.items()`, or `None`
