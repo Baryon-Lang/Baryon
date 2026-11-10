@@ -63,6 +63,10 @@ pub(crate) struct Builder<'db> {
     /// local, then the lane the current iteration adds into (the `lanes` module). Empty
     /// elsewhere.
     pub(crate) lanes: Vec<(Local, Place)>,
+    /// While a loop over a list or tuple of values that are not copied runs, the place each of
+    /// its loop variables borrows, by binding: the element itself, which a read of the variable
+    /// reads in place (the `loops` module). Empty elsewhere.
+    pub(crate) aliases: BTreeMap<NodeId, Place>,
 }
 
 /// One `try` statement whose body is being lowered.
@@ -167,6 +171,7 @@ impl<'db> Builder<'db> {
             diagnostics: Vec::new(),
             accumulated: Vec::new(),
             lanes: Vec::new(),
+            aliases: BTreeMap::new(),
         }
     }
 
@@ -246,6 +251,7 @@ impl<'db> Builder<'db> {
             diagnostics: Vec::new(),
             accumulated: Vec::new(),
             lanes: Vec::new(),
+            aliases: BTreeMap::new(),
         }
     }
 

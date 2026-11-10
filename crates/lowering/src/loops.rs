@@ -5,15 +5,22 @@
 //! changing which pass comes next, as in Python. A loop over `prange` is a parallel loop, which
 //! the `parallel` module lowers.
 //!
+//! A loop over a list or tuple of values that are not copied, such as `list[str]`, borrows each
+//! element, as the reference's values and references chapter says: the loop variable is the
+//! element, read in place, never a copy and never dropped. Lowering makes each read of the
+//! variable a read of the element's place, which is exact while every use of the variable is
+//! inside the loop; a variable also used outside it is reported as not lowered yet.
+//!
 //! What runs on each pass is a [`Pass`]: a `for` statement's body, or the rest of a list
 //! comprehension, which the `comprehensions` module lowers with the same loops.
 
 use crate::builder::{Builder, Loop};
+use database::Definition;
 use mir::{
     BinaryOperator, BlockId, Check, Constant, Local, Operand, Place, Projection, Rvalue,
     TerminatorKind,
 };
-use syntax::{NodeId, Role};
+use syntax::{NodeId, Role, SyntaxKind};
 use types::{Type, TypeKind};
 
 /// What one pass of a loop runs, from the current block: the body of a `for` statement, or the
@@ -267,8 +274,9 @@ impl<'db> Builder<'db> {
         );
     }
 
-    /// `for target in collection: body`, over a rank-1 `Array` or `Fixed` array, a list whose
-    /// elements are of a copy type, or a tuple whose items have one copy type. The collection is computed once and borrowed for the loop, as
+    /// `for target in collection: body`, over a rank-1 `Array` or `Fixed` array, a list, or a
+    /// tuple whose items have one type. An element of a copy type is copied into `target`; one
+    /// that is not copied is borrowed (the module documentation). The collection is computed once and borrowed for the loop, as
     /// the reference's values and references chapter says, so the body cannot change it. Each
     /// pass copies the next element into `target`, which may unpack it: `for x, y in points`.
     ///
@@ -284,27 +292,20 @@ impl<'db> Builder<'db> {
     ) {
         let ty = self.ty(iterator);
         let (element, items) = match ty.kind(self.db) {
-            TypeKind::Array { element, rank: 1 } => (*element, None),
+            TypeKind::Array { element, rank: 1 } | TypeKind::List(element) => (*element, None),
             TypeKind::Fixed { element, shape } if shape.rank() == 1 => (*element, None),
-            TypeKind::List(element) if self.is_copy(*element) => (*element, None),
-            TypeKind::List(element) => {
-                let element = element.display(self.db);
-                return self
-                    .unsupported(iterator, &format!("`for` loops over a list of `{element}`"));
-            }
-            TypeKind::Tuple(items) if !items.is_empty() && self.is_copy(ty) => {
-                (items[0], Some(items.len()))
-            }
-            TypeKind::Tuple(_) => {
-                return self.unsupported(
-                    iterator,
-                    "`for` loops over a tuple of values that are not copied",
-                );
-            }
+            TypeKind::Tuple(items) if !items.is_empty() => (items[0], Some(items.len())),
             _ => {
                 return self.unsupported(iterator, "`for` loops over values of this type");
             }
         };
+        let borrowed = !self.is_copy(element);
+        if borrowed && !self.confined(statement, target) {
+            return self.unsupported(
+                target,
+                "a loop variable that borrows an element and is also used outside the loop",
+            );
+        }
         let collection = self.borrow(iterator);
         let int = self.int_type();
         let length = match items {
@@ -329,14 +330,43 @@ impl<'db> Builder<'db> {
         let (body, next, end) = (self.new_block(), self.new_block(), self.new_block());
         self.loop_test((BinaryOperator::Less, counter, limit, body, end), iterator);
         self.start(body);
+        let aliases = self.aliases.clone();
         match items {
             None => {
                 let place = collection.project(Projection::Index(vec![counter]));
-                self.assign_part(target, place, element);
+                self.bind_element(target, place, element);
             }
-            Some(count) => self.tuple_item(target, (&collection, count), counter, element),
+            Some(count) if borrowed => {
+                // The item is copied bit for bit into a temporary that is never dropped, so the
+                // switch's arms meet at one place the variable can borrow.
+                let item = self.temporary(element, target);
+                self.tuple_item(
+                    target,
+                    (&collection, count),
+                    counter,
+                    &mut |builder, place| {
+                        builder.assign(
+                            Place::from(item),
+                            Rvalue::Use(Operand::Copy(place)),
+                            target,
+                        );
+                    },
+                );
+                self.bind_element(target, Place::from(item), element);
+            }
+            Some(count) => {
+                self.tuple_item(
+                    target,
+                    (&collection, count),
+                    counter,
+                    &mut |builder, place| {
+                        builder.assign_part(target, place, element);
+                    },
+                );
+            }
         }
         pass(self, next, end);
+        self.aliases = aliases;
         self.start(next);
         self.assign(
             Place::from(counter),
@@ -351,15 +381,15 @@ impl<'db> Builder<'db> {
         self.start(end);
     }
 
-    /// Copies item number `counter` of the tuple at `tuple`, which has `count` items of type
-    /// `element`, into `target`: a switch on the counter goes to one block per item, and each
-    /// joins the rest of the loop body.
+    /// Runs `write` on item number `counter` of the tuple at `tuple`, which has `count` items,
+    /// for the loop target `target`: a switch on the counter goes to one block per item, each
+    /// writes its item, and each joins the rest of the loop body.
     fn tuple_item(
         &mut self,
         target: NodeId,
         (tuple, count): (&Place, usize),
         counter: Local,
-        element: Type<'db>,
+        write: &mut dyn FnMut(&mut Self, Place),
     ) {
         let blocks: Vec<BlockId> = (0..count).map(|_| self.new_block()).collect();
         let otherwise = self.new_block();
@@ -378,10 +408,60 @@ impl<'db> Builder<'db> {
         for (field, block) in (0u32..).zip(blocks) {
             self.start(block);
             let place = tuple.clone().project(Projection::Field(field));
-            self.assign_part(target, place, element);
+            write(self, place);
             self.jump(&mut join, target);
         }
         self.join(join);
+    }
+
+    /// Binds the loop target `target` to the element at `place`, of type `ty`: copies an element
+    /// of a copy type into it, and makes each name that would hold a value that is not copied
+    /// borrow its part of the element in place, until the loop ends. A target that unpacks
+    /// does this for each part, so `for name, mass in species` borrows `name` and copies `mass`.
+    fn bind_element(&mut self, target: NodeId, place: Place, ty: Type<'db>) {
+        if self.is_copy(ty) {
+            return self.assign_part(target, place, ty);
+        }
+        match (self.tree.kind(target), ty.kind(self.db)) {
+            (SyntaxKind::Name, _) => {
+                if let Some(&Definition::Local(binding)) = self.definition(target) {
+                    self.aliases.insert(binding, place);
+                }
+            }
+            (SyntaxKind::Tuple, TypeKind::Tuple(items)) => {
+                let parts: Vec<NodeId> = self.tree.children_with(target, Role::Item).collect();
+                for ((field, part), &item) in (0u32..).zip(parts).zip(items) {
+                    let at = place.clone().project(Projection::Field(field));
+                    self.bind_element(part, at, item);
+                }
+            }
+            _ => self.unsupported(target, "this loop target"),
+        }
+    }
+
+    /// Whether every use of the variables `target` binds lies inside `statement`, so reading
+    /// each one as the element it borrows is exact. A comprehension's variables belong to the
+    /// comprehension alone, so they always are.
+    fn confined(&self, statement: NodeId, target: NodeId) -> bool {
+        if self.tree.kind(statement) != SyntaxKind::For {
+            return true;
+        }
+        let (mut everywhere, mut inside, mut names) = (Vec::new(), Vec::new(), Vec::new());
+        self.descendants(self.function, &mut everywhere);
+        self.descendants(statement, &mut inside);
+        self.descendants(target, &mut names);
+        let uses = |nodes: &[NodeId], binding: NodeId| {
+            nodes
+                .iter()
+                .filter(|&&node| self.definition(node) == Some(&Definition::Local(binding)))
+                .count()
+        };
+        names.into_iter().all(|name| match self.definition(name) {
+            Some(&Definition::Local(binding)) => {
+                uses(&everywhere, binding) == uses(&inside, binding)
+            }
+            _ => true,
+        })
     }
 
     /// The start, stop and step of `range(start, stop, step)` or `prange(…)` at `iterator`:

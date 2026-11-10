@@ -2,6 +2,7 @@
 //! statements and, for `and`, `or`, conditionals and calls, blocks.
 
 use crate::builder::Builder;
+use database::Definition;
 use mir::{Constant, ConstantValue, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Primitive, Type, TypeKind};
@@ -153,10 +154,16 @@ impl<'db> Builder<'db> {
     }
 
     /// The place `node` names: a variable or parameter, or a field of a place. A read of a
-    /// `T | None` variable the checker narrowed to `T` reads the value inside.
+    /// `T | None` variable the checker narrowed to `T` reads the value inside, and a loop
+    /// variable that borrows an element reads the element.
     pub(crate) fn place(&mut self, node: NodeId) -> Option<Place> {
         match self.tree.kind(node) {
             SyntaxKind::Name => {
+                if let Some(&Definition::Local(binding)) = self.definition(node)
+                    && let Some(element) = self.aliases.get(&binding)
+                {
+                    return Some(element.clone());
+                }
                 let Some(local) = self.variable(node) else {
                     self.unsupported(node, "names other than variables, parameters and constants");
                     return None;
