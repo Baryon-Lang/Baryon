@@ -239,18 +239,20 @@ impl<'db> Function<'_, '_, 'db> {
                 self.line_label(&done);
                 Ok(())
             }
+            TypeKind::Union(_) if self.owns_memory(ty) => self.drop_union(address, ty),
             _ => Ok(()),
         }
     }
 
     /// Whether a value of `ty` owns memory a drop frees: an array, a list, a `dict` or a `str`, or a
-    /// tuple, struct or optional holding one.
+    /// tuple, struct, optional or union holding one.
     pub(crate) fn owns_memory(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.types.db) {
             TypeKind::Array { .. } | TypeKind::List(_) | TypeKind::Dict { .. } | TypeKind::Str => {
                 true
             }
             TypeKind::Optional(value) => self.owns_memory(*value),
+            TypeKind::Union(members) => members.iter().any(|&member| self.owns_memory(member)),
             TypeKind::Tuple(_) | TypeKind::Struct(_) => (0..)
                 .map_while(|position| self.field(ty, position).ok())
                 .any(|field| self.owns_memory(field)),

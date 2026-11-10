@@ -133,13 +133,19 @@ impl<'db> Builder<'db> {
     }
 
     /// Whether a value of type `from` changes representation when used as a `to`, as
-    /// `coerce` does it: a number converted, or a value wrapped as a `T | None`.
+    /// `coerce` does it: a number converted, or a value wrapped as a `T | None` or a union.
     pub(crate) fn converts(&self, from: Type<'db>, to: Type<'db>) -> bool {
         if from == to {
             return false;
         }
         if let Some(value) = self.optional_value(to)
             && (value == from || matches!(from.kind(self.db), TypeKind::None))
+        {
+            return true;
+        }
+        if self
+            .union_members(to)
+            .is_some_and(|members| members.contains(&from))
         {
             return true;
         }

@@ -166,6 +166,7 @@ def main():
 | A `str` | Its characters, without quotes |
 | `None` | `None` |
 | A `T \| None` | The `T` when there is one, else `None` |
+| A [union](types.md#unions-of-structs) | The member it holds, as that member prints: `Dirichlet(value=300.0)` |
 | A tuple | `(1, 2.5)`; one item keeps its comma, `(1,)`; the empty tuple is `()` |
 | An enum member | The enum's name and the member's: `Phase.GAS` |
 | A struct or an error | The type's name, then each field by name, in declaration order: `Point(x=1.0, y=2.0)`, as a Python dataclass prints |

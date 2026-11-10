@@ -484,8 +484,7 @@ size of the largest kind: a `Periodic` in a `Boundary` array takes 32 bytes, 24 
 `Robin` and 8 for the tag and its padding.
 A hot loop over millions of values of one kind is faster with its own array of that kind.
 
-`baryon check` checks unions today; building them is the next step of roadmap item 1.7.13 (see
-[What builds today](status.md#types)).
+What builds today, and what a union cannot do yet, is in [What builds today](status.md#types).
 
 ## Errors
 

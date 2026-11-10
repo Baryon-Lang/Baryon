@@ -24,8 +24,9 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-10, when `sys.argv`, `sys.exit` and
-`os.getenv` began to build. Every pull request that teaches lowering or the backend something new
+This page was last brought up to date on 2026-11-10, when unions of structs began to build.
+Before that, the same day, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull
+request that teaches lowering or the backend something new
 updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
@@ -77,7 +78,7 @@ checks what it prints.
 | `T \| None`, with every narrowing rule | |
 | Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs and their methods, each method compiled once per type its struct is used at | |
 | Enums: members, `==` and `!=`, `match` | |
-| | [Unions of structs](types.md#unions-of-structs) and class patterns in `match` (roadmap 1.7.13): `baryon check` checks them, and the build reports them as not built yet |
+| [Unions](types.md#unions-of-structs) of structs, enums, error types and `None`: a member passed, assigned or returned where its union is expected, `match` with class patterns by position and keyword, `print`, and members that own memory, freed by the member they hold | Shared method calls and trait bounds on a union (roadmap 1.7.13); `Array.zeros` of a union; class patterns on generic structs; a capture of a field that is not a copy type |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
 | Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors, and bounds by a [user trait](types.md#using-a-trait-as-a-bound), `[T: Body]`, whose method calls go straight to each type's own method | |

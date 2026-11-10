@@ -4,13 +4,13 @@
 //! Each case tests its pattern against the subject with branches that go to the next case on
 //! the first part that does not match: a [`Switch`](mir::TerminatorKind::Switch) on an enum
 //! member, an `Equal` comparison with a literal, an
-//! [`IsPresent`](mir::Rvalue::IsPresent) test for `None`, and the same tests on each item of a
-//! tuple. Only when the whole pattern matched are its captures assigned, then the guard is
+//! [`IsPresent`](mir::Rvalue::IsPresent) test for `None`, a switch on the member a union holds
+//! (the `unions` module), and the same tests on each item of a tuple or field of a struct. Only when the whole pattern matched are its captures assigned, then the guard is
 //! tested. The checker proved that the cases without a guard cover every value, so falling past
 //! the last case cannot happen.
 //!
 //! The first version handles the patterns the checker accepts (literals, enum members, `True`,
-//! `False`, `None`, tuples, captures, `_` and `a | b`), with two limits: a capture must be of a
+//! `False`, `None`, tuples, class patterns, captures, `_` and `a | b`), with two limits: a capture must be of a
 //! copy type, since moving part of the subject out needs the move rules settled for patterns,
 //! and an `a | b` pattern may not capture.
 
@@ -21,7 +21,7 @@ use types::{Type, TypeKind};
 
 /// A capture a matched pattern assigns: the name's node, and the place and type of the part of
 /// the subject it names.
-type Capture<'db> = (NodeId, Place, Type<'db>);
+pub(crate) type Capture<'db> = (NodeId, Place, Type<'db>);
 
 impl<'db> Builder<'db> {
     /// `match value:` and its cases.
@@ -67,7 +67,7 @@ impl<'db> Builder<'db> {
     /// at the first part that does not; on a match, control continues in the current block.
     /// Collects the captures to assign onto `captures`. Returns `false` after reporting a
     /// pattern lowering does not handle.
-    fn test(
+    pub(crate) fn test(
         &mut self,
         pattern: NodeId,
         place: Place,
@@ -75,6 +75,14 @@ impl<'db> Builder<'db> {
         fail: BlockId,
         captures: &mut Vec<Capture<'db>>,
     ) -> bool {
+        if let Some(members) = self.union_members(ty)
+            && !matches!(
+                self.tree.kind(pattern),
+                SyntaxKind::PatternAs | SyntaxKind::PatternOr
+            )
+        {
+            return self.member_test(pattern, place, members, fail, captures);
+        }
         match self.tree.kind(pattern) {
             SyntaxKind::PatternAs => {
                 if let Some(inner) = self.tree.child(pattern, Role::Pattern)
@@ -151,6 +159,10 @@ impl<'db> Builder<'db> {
                     }
                 }
                 true
+            }
+            SyntaxKind::PatternClass => {
+                let (place, ty) = self.present(place, ty, fail, pattern);
+                self.class_test(pattern, &place, ty, fail, captures)
             }
             _ => {
                 self.unsupported(pattern, "this pattern");
