@@ -70,7 +70,7 @@ checks what it prints.
 | Builds today | Not built yet |
 | --- | --- |
 | Every integer type, `f32`, `f64` and `bool`, with Python's number mixing, `//` and `%` | |
-| [Complex numbers](types.md#complex-numbers) `complex64` and `complex128`: arithmetic, `==`, `real`, `imag`, `conjugate()`, `abs`, `complex(re, im)` and `print` | A complex number in an f-string; `a.sum()` of a complex array; complex numbers in `prange` reductions and `accumulate=`; the `cmath` module (roadmap idea I.35) |
+| [Complex numbers](types.md#complex-numbers) `complex64` and `complex128`: arithmetic, `==`, `real`, `imag`, `conjugate()`, `abs`, `complex(re, im)` and `print` | A complex number in an f-string; `a.sum()` of a complex array; complex numbers in `prange` reductions and `accumulate=`; the `cmath` module (roadmap idea I.37) |
 | Conversions that panic when the value does not fit | |
 | `str`: literals, f-strings, `+` and `s.copy()` | `==`, `!=`, `in` and `len` on `str` |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
@@ -87,7 +87,8 @@ checks what it prints.
 Integer overflow ([decision 0030](../decisions/0030-integer-overflow.md)): a debug build panics
 on `+`, `-`, `*`, `**`, `+=`, `-=`, `*=`, `**=` and `-x` that overflow, and `--release` wraps. That includes
 arithmetic in a generic function whose type parameter is an integer, `abs` of the type's minimum,
-whole-array arithmetic on integer arrays, and integer `a.sum()` and `v.dot(w)` (roadmap 1.11.8).
+whole-array arithmetic on integer arrays, integer `a.sum()` and `a.dot(b)`, and `@` on integer
+arrays (roadmap 1.11.8).
 Indices the compiler computes itself, such as a `range` loop's counter, are not checked.
 
 ## Values and references
@@ -110,10 +111,11 @@ out of a function, including through a `raise`.
 | Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | Slices `a[1:n]` |
 | `len(a)`, `a.shape`, `a.shape[k]` and `a.size`, of `Array` and `Fixed` arrays, and `print(a.shape)` | |
 | `a.unchecked[i]` inside `with unsafe:` | |
-| `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, `v.dot(w)`, `v.round()`, and whole-array arithmetic | |
+| `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, the methods below, and whole-array arithmetic | |
 | Arrays of `Fixed` arrays and of `Copy` structs | |
-| Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b` | `@`, the matrix product |
-| `a.sum()` of numbers, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in) | `a.min()`, `a.max()`; `a.dot(b)` and `a.round()` on an `Array`; `a.fill(value)`; printing an array |
+| Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b` | |
+| [`@`, the matrix product](arrays.md#the-matrix-product), of `Array`s and of `Fixed` arrays: matrix by matrix, matrix by vector and vector by matrix, as a loop nest | `@=`; calling BLAS (roadmap 3.10) |
+| [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), `a.min()`, `a.max()`, `a.round()` and `a.fill(value)` | Printing an array |
 
 ## Errors and panics
 
@@ -128,7 +130,7 @@ idea I.18), and [Types](#types) lists the operations it does not check yet.
 | Builds today | Not built yet |
 | --- | --- |
 | `prange` with the same arguments as `range`, its inferred reductions and their reproducible combine; `accumulate=` of array variables and of struct fields such as `atoms.forces`, adding into elements and their lanes | Adding into a slice of an accumulated array |
-| `simd(range(...))`, which asks LLVM to vectorize the loop; a float sum or product in one adds into 8 fixed lanes, so it gives the same bits on every machine | A `simd` loop that sums complex numbers runs unvectorized (roadmap idea I.35); an error when LLVM cannot vectorize a `simd` loop, such as one whose bounds checks it cannot move out of the loop (roadmap 3.7); until then such a loop runs unvectorized |
+| `simd(range(...))`, which asks LLVM to vectorize the loop; a float sum or product in one adds into 8 fixed lanes, so it gives the same bits on every machine | A `simd` loop that sums complex numbers runs unvectorized (roadmap idea I.37); an error when LLVM cannot vectorize a `simd` loop, such as one whose bounds checks it cannot move out of the loop (roadmap 3.7); until then such a loop runs unvectorized |
 
 `baryon check` applies every rule of the chapter, so a `prange` loop that breaks one is reported
 today, before it can be built.

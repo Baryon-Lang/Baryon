@@ -12,9 +12,11 @@
 //!
 //! A [`Builtin::Sum`](mir::Builtin::Sum) of floats calls the runtime's pairwise sum,
 //! `baryon_rt_sum_f64` or `baryon_rt_sum_f32`, with the address of the first element and the
-//! element count. That relies on the elements being one contiguous run in row-major order, which
-//! every `Array` is today (decision 0008) and a `Fixed` array always is; array views, once slices
-//! build, will need their strides checked first.
+//! element count; a [`Builtin::Dot`](mir::Builtin::Dot) calls `baryon_rt_dot_f64` or
+//! `baryon_rt_dot_f32` with the first element of each array and the count. That relies on the
+//! elements being one contiguous run in row-major order, which every `Array` is today (decision
+//! 0008) and a `Fixed` array always is; array views, once slices build, will need their strides
+//! checked first.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -116,15 +118,69 @@ impl<'db> Function<'_, '_, 'db> {
                 "`sum` with arguments other than one borrowed array",
             ));
         };
+        self.reduction("sum", &[array], destination, target)
+    }
+
+    /// Writes `destination = left.dot(right)` for two rank-1 arrays of floats of the same
+    /// length, through the runtime's pairwise dot product, and goes to `target`. Lowering has
+    /// checked the lengths, so the count is the first array's.
+    pub(crate) fn dot(
+        &mut self,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+        target: BlockId,
+    ) -> Result<(), Unsupported> {
+        let [Argument::Borrow(left), Argument::Borrow(right)] = arguments else {
+            return Err(Unsupported::new(
+                "`dot` with arguments other than two borrowed arrays",
+            ));
+        };
+        self.reduction("dot", &[left, right], destination, target)
+    }
+
+    /// Writes `destination = baryon_rt_<name>_<float>(data…, count)`: a call of the runtime's
+    /// `sum` or `dot` with the address of the first element of each of `arrays` and the element
+    /// count of the first, and goes to `target`.
+    fn reduction(
+        &mut self,
+        name: &str,
+        arrays: &[&Place],
+        destination: &Place,
+        target: BlockId,
+    ) -> Result<(), Unsupported> {
         let (address, ty) = self.place(destination)?;
-        let (llvm, function) = match self.types.number(ty) {
-            Some(Number::Float(32)) => ("float", "baryon_rt_sum_f32"),
-            Some(Number::Float(_)) => ("double", "baryon_rt_sum_f64"),
+        let (llvm, suffix) = match self.types.number(ty) {
+            Some(Number::Float(32)) => ("float", "f32"),
+            Some(Number::Float(_)) => ("double", "f64"),
             _ => return Err(self.types.unsupported(ty)),
         };
+        let mut values = Vec::with_capacity(arrays.len() + 1);
+        let mut count = None;
+        for &array in arrays {
+            let (data, elements) = self.elements(array)?;
+            values.push(format!("ptr {data}"));
+            count.get_or_insert(elements);
+        }
+        let count = count.ok_or_else(|| Unsupported::new("a reduction of no arrays"))?;
+        values.push(format!("i64 {count}"));
+        let function = format!("baryon_rt_{name}_{suffix}");
+        let parameters = vec!["ptr"; arrays.len()].join(", ");
+        self.declare(
+            &function,
+            &format!("declare {llvm} @{function}({parameters}, i64) nounwind"),
+        );
+        let result = self.emit(&format!("call {llvm} @{function}({})", values.join(", ")));
+        self.line(&format!("store {llvm} {result}, ptr {address}"));
+        self.line(&format!("br label %{}", block_label(target)));
+        Ok(())
+    }
+
+    /// The address of the first element of the `Array` or `Fixed` array at `array`, and its
+    /// element count, the product of its lengths.
+    fn elements(&mut self, array: &Place) -> Result<(String, String), Unsupported> {
         let (array_address, array_type) = self.place(array)?;
-        let (data, count) = match array_type.kind(self.types.db) {
-            TypeKind::Fixed { shape, .. } => (array_address, shape.elements().to_string()),
+        match array_type.kind(self.types.db) {
+            TypeKind::Fixed { shape, .. } => Ok((array_address, shape.elements().to_string())),
             &TypeKind::Array { rank, .. } => {
                 let data = self.emit(&format!("load ptr, ptr {array_address}"));
                 let mut count = "1".to_owned();
@@ -132,18 +188,10 @@ impl<'db> Function<'_, '_, 'db> {
                     let length = self.length(array, dimension)?;
                     count = self.emit(&format!("mul i64 {count}, {length}"));
                 }
-                (data, count)
+                Ok((data, count))
             }
-            _ => return Err(self.types.unsupported(array_type)),
-        };
-        self.declare(
-            function,
-            &format!("declare {llvm} @{function}(ptr, i64) nounwind"),
-        );
-        let result = self.emit(&format!("call {llvm} @{function}(ptr {data}, i64 {count})"));
-        self.line(&format!("store {llvm} {result}, ptr {address}"));
-        self.line(&format!("br label %{}", block_label(target)));
-        Ok(())
+            _ => Err(self.types.unsupported(array_type)),
+        }
     }
 }
 

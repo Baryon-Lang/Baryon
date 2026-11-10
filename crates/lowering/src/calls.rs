@@ -83,25 +83,24 @@ impl<'db> Builder<'db> {
                 {
                     self.min_max(place, name == "min", *first, rest, node);
                 }
-                (Some(("Array", function @ ("zeros" | "ones" | "fill"))), _) => {
-                    self.new_array(&place, function, &arguments, node);
-                }
-                (Some(("Fixed", function @ ("zeros" | "ones" | "fill"))), _) => {
-                    self.new_fixed(place, function, &arguments, node);
+                (
+                    Some((owner @ ("Array" | "Fixed"), function @ ("zeros" | "ones" | "fill"))),
+                    _,
+                ) if !matches!(ty.kind(self.db), TypeKind::None) => {
+                    if owner == "Array" {
+                        self.new_array(&place, function, &arguments, node);
+                    } else {
+                        self.new_fixed(place, function, &arguments, node);
+                    }
                 }
                 (Some(("str", "copy")), [_]) => self.joined(place, &arguments, node),
                 (Some(("complex", "conjugate")), [value]) => self.conjugate(place, *value, node),
                 (Some(("list", "append")), [list, value]) => {
                     self.list_append(place, *list, *value, node);
                 }
-                (Some(("Array", "copy")), [array]) => self.array_copy(place, *array, node),
-                (Some(("Array" | "Fixed", "sum")), [array]) => {
-                    self.array_sum(place, *array, node);
+                (Some(("Array" | "Fixed", method)), _) => {
+                    self.array_method(place, method, &arguments, node);
                 }
-                (Some(("Fixed", "dot")), [left, right]) => {
-                    self.fixed_dot(place, (*left, *right), node);
-                }
-                (Some(("Fixed", "round")), [array]) => self.fixed_round(place, *array, node),
                 (Some(("math", member)), _) => self.math_function(place, member, &arguments, node),
                 (Some(("random", "Philox")), [seed, rest @ ..]) if rest.len() <= 1 => {
                     self.philox(place, *seed, rest.first().copied(), node);

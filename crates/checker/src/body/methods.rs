@@ -53,9 +53,12 @@ impl<'db> Body<'db> {
             return result;
         }
         if let Some(result) = self.container_method(node, base, &callee, arguments) {
-            if matches!(base.kind(self.db), TypeKind::List(_))
-                && matches!(callee.as_str(), "append" | "pop")
-            {
+            let changes = match base.kind(self.db) {
+                TypeKind::List(_) => matches!(callee.as_str(), "append" | "pop"),
+                TypeKind::Array { .. } | TypeKind::Fixed { .. } => callee == "fill",
+                _ => false,
+            };
+            if changes {
                 self.change(value);
             }
             return result;

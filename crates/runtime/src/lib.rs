@@ -27,6 +27,7 @@
 //! | [`baryon_rt_sum_f64`], [`baryon_rt_sum_f32`] | Add a float array's elements in `NumPy`'s pairwise order, for `a.sum()` |
 //! | [`baryon_rt_print_complex128`], [`baryon_rt_print_complex64`] | Print a complex number as Python's `repr` writes it, such as `(1+2j)` |
 //! | [`baryon_rt_power_complex128`], [`baryon_rt_power_complex64`] | `z ** w` on complex numbers, as Python computes it |
+//! | [`baryon_rt_dot_f64`], [`baryon_rt_dot_f32`] | Add the products of two float arrays' elements in the same order, for `a.dot(b)` |
 //! | [`baryon_rt_print_str_quoted`] | Print a `str` inside a tuple or struct, or a field of an error that ends `main`, as Python's `repr` writes it, quoted |
 //! | [`baryon_rt_flush`] | Write out a line `print(..., end="")` left unended, before the C `main` returns |
 //!
@@ -82,15 +83,16 @@ mod sum;
 pub use abi::{
     OwnedText, TextBuilder, baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish,
     baryon_rt_accumulator_new, baryon_rt_accumulator_slot, baryon_rt_allocate,
-    baryon_rt_allocate_array, baryon_rt_chunk_count, baryon_rt_deallocate, baryon_rt_flush,
-    baryon_rt_panic, baryon_rt_panic_exponent, baryon_rt_panic_index,
-    baryon_rt_panic_length_mismatch, baryon_rt_parallel_for, baryon_rt_philox_new,
-    baryon_rt_philox_uniform, baryon_rt_power_complex64, baryon_rt_power_complex128,
-    baryon_rt_print_bool, baryon_rt_print_complex64, baryon_rt_print_complex128,
-    baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64, baryon_rt_print_str,
-    baryon_rt_print_str_quoted, baryon_rt_print_u64, baryon_rt_sum_f32, baryon_rt_sum_f64,
-    baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish,
-    baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
+    baryon_rt_allocate_array, baryon_rt_chunk_count, baryon_rt_deallocate, baryon_rt_dot_f32,
+    baryon_rt_dot_f64, baryon_rt_flush, baryon_rt_panic, baryon_rt_panic_exponent,
+    baryon_rt_panic_index, baryon_rt_panic_length_mismatch, baryon_rt_parallel_for,
+    baryon_rt_philox_new, baryon_rt_philox_uniform, baryon_rt_power_complex64,
+    baryon_rt_power_complex128, baryon_rt_print_bool, baryon_rt_print_complex64,
+    baryon_rt_print_complex128, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
+    baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64, baryon_rt_sum_f32,
+    baryon_rt_sum_f64, baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64,
+    baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,
+    baryon_rt_text_u64,
 };
 pub use accumulate::Accumulator;
 pub use format::FormatSpec;
