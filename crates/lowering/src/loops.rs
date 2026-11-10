@@ -205,7 +205,7 @@ impl<'db> Builder<'db> {
         );
         self.then(node, |target| TerminatorKind::Assert {
             condition: Operand::Copy(Place::from(nonzero)),
-            check: Check::NonZeroStep,
+            check: Check::NonZeroStep { slice: false },
             target,
         });
         let positive = self.temporary(boolean, node);

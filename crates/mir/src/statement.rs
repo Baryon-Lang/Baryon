@@ -515,6 +515,20 @@ pub enum Check<'db> {
         /// The dimension's length.
         length: Operand<'db>,
     },
+    /// A slice's range lies within its dimension (language reference, "Arrays", "Slicing"):
+    /// `start` and `stop` are each from 0 to the length, and when the range takes any element
+    /// its first, at `start`, is below the length. Python shortens such a slice; here it is
+    /// the bug it usually is.
+    SliceInBounds {
+        /// The dimension sliced, 0 for the outermost, so the panic message can name it.
+        dimension: u32,
+        /// Where the range starts, as the program wrote it or its default.
+        start: Operand<'db>,
+        /// Where the range stops, as the program wrote it or its default.
+        stop: Operand<'db>,
+        /// The dimension's length.
+        length: Operand<'db>,
+    },
     /// An integer operation did not overflow.
     NoOverflow(BinaryOperator),
     /// An integer `**` did not overflow. Lowering writes integer `x ** n` as repeated squaring,
@@ -523,10 +537,14 @@ pub enum Check<'db> {
     NoPowerOverflow,
     /// A divisor is not zero.
     NonZeroDivisor,
-    /// The step of a `range` is not zero, which Python reports as a `ValueError`. Lowering
-    /// writes it only for a step that is not a constant; a constant zero is reported when
-    /// building.
-    NonZeroStep,
+    /// The step of a `range` or a slice is not zero, which Python reports as a `ValueError`:
+    /// `range() arg 3 must not be zero`, or `slice step cannot be zero`. Lowering writes it only
+    /// for a step that is not a constant; a constant zero is reported when building.
+    NonZeroStep {
+        /// Whether the step is a slice's, `a[::k]`, rather than a `range`'s, which picks the
+        /// panic message.
+        slice: bool,
+    },
     /// The exponent of an integer `**` is zero or more: a negative exponent would need a
     /// fraction, which an integer cannot hold (language reference, "Errors and panics").
     NonNegativeExponent {
@@ -557,6 +575,12 @@ impl<'db> Check<'db> {
     pub fn operands(&self) -> Vec<&Operand<'db>> {
         match self {
             Self::IndexInBounds { index, length, .. } => vec![index, length],
+            Self::SliceInBounds {
+                start,
+                stop,
+                length,
+                ..
+            } => vec![start, stop, length],
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
@@ -564,7 +588,7 @@ impl<'db> Check<'db> {
             Self::NoOverflow(_)
             | Self::NoPowerOverflow
             | Self::NonZeroDivisor
-            | Self::NonZeroStep
+            | Self::NonZeroStep { .. }
             | Self::Assertion
             | Self::NotEmpty => Vec::new(),
         }
@@ -580,7 +604,7 @@ impl<'db> Check<'db> {
     ///
     /// assert!(Check::NoOverflow(BinaryOperator::Add).is_overflow());
     /// assert!(Check::NoPowerOverflow.is_overflow());
-    /// assert!(!Check::NonZeroStep.is_overflow());
+    /// assert!(!Check::NonZeroStep { slice: false }.is_overflow());
     /// ```
     #[must_use]
     pub fn is_overflow(&self) -> bool {
@@ -592,6 +616,12 @@ impl<'db> Check<'db> {
     pub fn operands_mut(&mut self) -> Vec<&mut Operand<'db>> {
         match self {
             Self::IndexInBounds { index, length, .. } => vec![index, length],
+            Self::SliceInBounds {
+                start,
+                stop,
+                length,
+                ..
+            } => vec![start, stop, length],
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
@@ -599,7 +629,7 @@ impl<'db> Check<'db> {
             Self::NoOverflow(_)
             | Self::NoPowerOverflow
             | Self::NonZeroDivisor
-            | Self::NonZeroStep
+            | Self::NonZeroStep { .. }
             | Self::Assertion
             | Self::NotEmpty => Vec::new(),
         }

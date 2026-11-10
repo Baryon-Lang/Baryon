@@ -331,8 +331,14 @@ impl<'db> Function<'_, '_, 'db> {
                 Failure::Message(format!("integer overflow in `{}`", symbol(*operator)))
             }
             Check::NonZeroDivisor => Failure::Message("integer division by zero".to_owned()),
+            Check::NonZeroStep { slice: true } => {
+                Failure::Message("slice step cannot be zero".to_owned())
+            }
+            Check::SliceInBounds { .. } => return Err(Unsupported::new("slices of arrays")),
             Check::NoPowerOverflow => Failure::Message("integer overflow in `**`".to_owned()),
-            Check::NonZeroStep => Failure::Message("`range` step is zero".to_owned()),
+            Check::NonZeroStep { slice: false } => {
+                Failure::Message("`range` step is zero".to_owned())
+            }
             Check::NonNegativeExponent { exponent } => {
                 let (exponent, ty) = self.value(exponent)?;
                 Failure::Exponent {
