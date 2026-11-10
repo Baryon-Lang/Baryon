@@ -1,5 +1,5 @@
-//! Lists: making one from its elements, appending, reading its length and an element, and
-//! freeing one.
+//! Lists: making one from its elements, appending, popping, reading its length and an element,
+//! and freeing one.
 //!
 //! A `list[T]` value is its header, the layout [`types::layout`] gives it: a pointer to the
 //! elements, the number of elements, and the number the buffer has room for, all 64-bit. In
@@ -9,7 +9,8 @@
 //!
 //! An append into a full buffer allocates one twice as large, at least 4 elements, copies the
 //! elements across with `llvm.memcpy` and frees the old one, so a run of appends costs
-//! amortized constant time per element. The runtime panics when memory runs out. Moving the
+//! amortized constant time per element. The runtime panics when memory runs out. A pop moves the
+//! last element out and shortens the list, keeping the buffer for the next append. Moving the
 //! elements byte for byte is sound for any element type, since a value never points into itself.
 //!
 //! Freeing a list whose elements own memory, such as `str`s or other lists, drops each element
@@ -17,7 +18,8 @@
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
-use mir::{Argument, BlockId, Local, Operand};
+use crate::panic::Failure;
+use mir::{Argument, BlockId, Local, Operand, Place};
 use types::{Layout, Type, TypeKind};
 
 /// The LLVM type of every list's header.
@@ -100,6 +102,39 @@ impl<'db> Function<'_, '_, 'db> {
         self.line(&format!("store {llvm} {value}, ptr {at}"));
         let longer = self.emit(&format!("add i64 {length}, 1"));
         self.line(&format!("store i64 {longer}, ptr {length_at}"));
+        self.line(&format!("br label %{}", block_label(target)));
+        Ok(())
+    }
+
+    /// Writes `list.pop()`, the list `InOut`, moving its last element to `destination`, and goes
+    /// to `target`. An empty list panics with Python's message, `pop from empty list`.
+    pub(crate) fn list_pop(
+        &mut self,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+        target: BlockId,
+    ) -> Result<(), Unsupported> {
+        let [Argument::InOut(list)] = arguments else {
+            return Err(Unsupported::new("`list.pop` with these arguments"));
+        };
+        let (header, ty) = self.place(list)?;
+        let (element, _) = self.list(ty)?;
+        let llvm = self.types.value(element)?;
+        let length_at = self.emit(&format!(
+            "getelementptr inbounds {HEADER}, ptr {header}, i32 0, i32 1"
+        ));
+        let length = self.emit(&format!("load i64, ptr {length_at}"));
+        let filled = self.emit(&format!("icmp sgt i64 {length}, 0"));
+        self.check(&filled, &Failure::Message("pop from empty list".to_owned()));
+        let last = self.emit(&format!("sub i64 {length}, 1"));
+        let data = self.emit(&format!("load ptr, ptr {header}"));
+        let at = self.emit(&format!(
+            "getelementptr inbounds {llvm}, ptr {data}, i64 {last}"
+        ));
+        let value = self.emit(&format!("load {llvm}, ptr {at}"));
+        let (address, _) = self.place(destination)?;
+        self.line(&format!("store {llvm} {value}, ptr {address}"));
+        self.line(&format!("store i64 {last}, ptr {length_at}"));
         self.line(&format!("br label %{}", block_label(target)));
         Ok(())
     }
