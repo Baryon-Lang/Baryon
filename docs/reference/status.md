@@ -86,7 +86,8 @@ checks what it prints.
 Integer overflow ([decision 0030](../decisions/0030-integer-overflow.md)): a debug build panics
 on `+`, `-`, `*`, `**`, `+=`, `-=`, `*=`, `**=` and `-x` that overflow, and `--release` wraps. That includes
 arithmetic in a generic function whose type parameter is an integer, `abs` of the type's minimum,
-whole-array arithmetic on integer arrays, and integer `a.sum()` and `v.dot(w)` (roadmap 1.11.8).
+whole-array arithmetic on integer arrays, integer `a.sum()` and `a.dot(b)`, and `@` on integer
+arrays (roadmap 1.11.8).
 Indices the compiler computes itself, such as a `range` loop's counter, are not checked.
 
 ## Values and references
@@ -109,10 +110,11 @@ out of a function, including through a `raise`.
 | Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | Slices `a[1:n]` |
 | `len(a)`, `a.shape`, `a.shape[k]` and `a.size`, of `Array` and `Fixed` arrays, and `print(a.shape)` | |
 | `a.unchecked[i]` inside `with unsafe:` | |
-| `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, `v.dot(w)`, `v.round()`, and whole-array arithmetic | |
+| `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, the methods below, and whole-array arithmetic | |
 | Arrays of `Fixed` arrays and of `Copy` structs | |
-| Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b` | `@`, the matrix product |
-| `a.sum()` of numbers, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in) | `a.min()`, `a.max()`; `a.dot(b)` and `a.round()` on an `Array`; `a.fill(value)`; printing an array |
+| Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b` | |
+| [`@`, the matrix product](arrays.md#the-matrix-product), of `Array`s and of `Fixed` arrays: matrix by matrix, matrix by vector and vector by matrix, as a loop nest | `@=`; calling BLAS (roadmap 3.10) |
+| [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), `a.min()`, `a.max()`, `a.round()` and `a.fill(value)` | Printing an array |
 
 ## Errors and panics
 

@@ -2,7 +2,8 @@
 //!
 //! - Arithmetic works element by element on two arrays of the same rank (`Array`) or shape
 //!   (`Fixed`), or on an array and a number; the number mixing rules apply to the elements.
-//! - `a @ b` is the matrix product of two rank-2 arrays, or of a matrix and a vector.
+//! - `a @ b` is the matrix product of two rank-2 arrays, of a matrix and a vector, or of a
+//!   vector and a matrix.
 
 use super::Body;
 use syntax::{NodeId, Operator};
@@ -98,7 +99,8 @@ impl<'db> Body<'db> {
         Some(Type::new(self.db, result))
     }
 
-    /// `a @ b`: the matrix product of two matrices, or of a matrix and a vector.
+    /// `a @ b`: the matrix product of two matrices, of a matrix and a vector, or of a vector
+    /// and a matrix.
     fn matrix_product(&mut self, node: NodeId, left: Type<'db>, right: Type<'db>) -> Type<'db> {
         use TypeKind::{Array, Fixed};
         let product = match (left.kind(self.db), right.kind(self.db)) {
@@ -114,6 +116,20 @@ impl<'db> Body<'db> {
                 Some(Array { element, rank })
             }
             (
+                Array {
+                    element: a,
+                    rank: 1,
+                },
+                Array {
+                    element: b,
+                    rank: 2,
+                },
+            ) => {
+                let (a, b) = (*a, *b);
+                let element = self.combine(node, Operator::Multiply, a, b);
+                Some(Array { element, rank: 1 })
+            }
+            (
                 Fixed {
                     element: a,
                     shape: s,
@@ -122,8 +138,12 @@ impl<'db> Body<'db> {
                     element: b,
                     shape: t,
                 },
-            ) if s.rank() == 2 && t.rank() <= 2 && s.lengths()[1] == t.lengths()[0] => {
-                let mut lengths = vec![s.lengths()[0]];
+            ) if s.rank() <= 2
+                && t.rank() <= 2
+                && s.rank() + t.rank() >= 3
+                && s.lengths()[s.rank() - 1] == t.lengths()[0] =>
+            {
+                let mut lengths = s.lengths()[..s.rank() - 1].to_vec();
                 lengths.extend_from_slice(&t.lengths()[1..]);
                 let (a, b) = (*a, *b);
                 let element = self.combine(node, Operator::Multiply, a, b);
