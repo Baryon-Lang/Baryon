@@ -13,7 +13,7 @@ one option is `--release`.
 | [`baryon test [--release] <directory>`](#baryon-test) | Builds and runs every `@test` function |
 | [`baryon doc <directory> <output>`](#baryon-doc) | Writes the package's documentation as Markdown |
 | [`baryon lsp`](#baryon-lsp) | Runs the language server an editor talks to |
-| `baryon --version` | Prints the release, such as `baryon 0.1.0`; put it in a bug report |
+| `baryon --version` | Prints the release, such as `baryon 0.2.0`; put it in a bug report |
 | `baryon --help` | Prints the usage line |
 
 ## Installing

@@ -11,7 +11,7 @@
 //! baryon --help
 //! ```
 //!
-//! `baryon --version` (or `-V`) prints `baryon` and the release, such as `baryon 0.1.0`, and
+//! `baryon --version` (or `-V`) prints `baryon` and the release, such as `baryon 0.2.0`, and
 //! `baryon --help` (or `-h`, or `help`) prints the usage line; both to standard output, with
 //! exit status 0. Any other arguments print the usage line to standard error, with status 2.
 //!

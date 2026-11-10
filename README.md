@@ -38,9 +38,9 @@ compiler parses source files, rejects the Python constructs the language does no
 reports syntax errors, module errors, undefined names, bad imports and type errors with `baryon
 check`. `baryon build <directory> <output>` compiles a package through LLVM into an executable that
 runs the `main` function in `main.byn`; it handles numbers, control flow, calls, generic functions
-and functions as arguments, structs, arrays, lists, optionals, `str` values and f-strings,
-`prange` and `simd` loops, errors, `math`, `random.Philox`, `assert` and `print` so far, with
-`clang` installed, and all five example programs build and run. `baryon run <directory>` builds
+and functions as arguments, structs and traits, arrays and their slices, complex numbers, lists
+and dicts of any type, optionals, `str` values and f-strings, `prange` and `simd` loops, errors,
+`math`, `random.Philox`, `assert` and `print` so far, with `clang` 15 or newer installed, and all five example programs build and run. `baryon run <directory>` builds
 and runs it in one step, and `baryon test <directory>` runs every `@test` function and reports
 which passed. `baryon lsp` is a language server that shows the same diagnostics in any editor with
 a Language Server Protocol client, as you type, along with types and documentation on hover, go to
@@ -50,8 +50,9 @@ documentation strings as Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
 compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
-Release 0.1.0, a review release for people trying the language and reviewing its documentation,
-code and design, is being prepared; [`CHANGELOG.md`](CHANGELOG.md) says what it holds.
+Release 0.1.0, a review release, is out. Release 0.2.0, the first with prebuilt downloads for Linux
+and macOS and the basics of a standard library, is being prepared; [`CHANGELOG.md`](CHANGELOG.md)
+says what each holds.
 
 [`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the
 place to add new ideas. The reasoning behind it is in the

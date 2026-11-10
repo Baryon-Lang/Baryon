@@ -4,6 +4,109 @@ What each release of Baryon holds, newest first. A release is a tag on `main`; n
 published to a package registry yet. [`ROADMAP.md`](ROADMAP.md#releases) tracks the steps of the
 release in progress.
 
+## 0.2.0: Linux and macOS, unreleased
+
+The second release, and the first to download and use without building the compiler: prebuilt
+`baryon` archives for Linux and macOS, programs written the way the reference describes them
+without the 0.1.0 workarounds, and the basics of a standard library. `baryon check` still knows the
+whole of version 0 of the language, and the compiler now builds most of it.
+[What builds today](docs/reference/status.md) lists what it does not build yet. Please
+[open an issue](https://github.com/Baryon-Lang/Baryon/issues) for anything wrong, unclear or
+missing, with what `baryon --version` prints.
+
+### Platforms
+
+| Platform | Needs |
+| --- | --- |
+| Linux on x86_64 with glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 36 and later | `clang` 15 or newer (`sudo apt install clang-15` on Ubuntu 22.04, whose default is 14) |
+| macOS 13.5 or newer on Apple silicon | The Command Line Tools 15 or newer, from `xcode-select --install` |
+
+`clang` 15 is the floor because the LLVM backend writes opaque pointers
+([decision 0020](docs/decisions/0020-llvm-backend-emits-text.md)). Both platforms are tested in CI
+on every change. The release is tested on Ubuntu 22.04 and macOS 15; macOS 13.5 is the oldest
+version whose `clang` is new enough, but no older Mac has run this release yet. Intel Macs and
+musl Linux such as Alpine have no download and build from source. Windows comes in release 0.4.0.
+
+### Install
+
+The [beginner's guide](docs/guide/README.md#1-install-baryon) shows both ways:
+
+- **Download** `baryon-0.2.0-x86_64-unknown-linux-gnu.tar.gz` or
+  `baryon-0.2.0-aarch64-apple-darwin.tar.gz` from the release, with `curl` so macOS does not
+  quarantine it, check it against its `.sha256` file, unpack it and put the directory on your
+  `PATH`. `baryon` and the runtime library `libruntime.a` travel together in it. Before the
+  archives are attached, the release workflow unpacks each on a fresh machine without Rust and
+  builds, runs and tests the example programs and the guide's first program with it, in debug and
+  `--release`, and checks that a missing `clang` gives the message that says how to install it.
+- **Build from source** with `cargo`, as in 0.1.0.
+
+### New in the language
+
+- **Traits** ([decision 0031](docs/decisions/0031-traits-are-protocols.md)): declare one as a
+  `Protocol` class, implement it by naming it as a base, and bound a type parameter with it,
+  `[T: Body]`; calls resolve when compiling, with no run-time cost. `Embed[T]` fields reach an
+  embedded struct's fields and methods through the outer one.
+- **Array slices**: `a[i:j]`, `a[i:j:k]` and `a[:, k]` are views that copy nothing. Read them,
+  pass them to read-only and `InOut` parameters, use them in whole-array arithmetic, and assign
+  into them with `=` and `+=`, including `forces[a:b] += v` in a `prange` loop with
+  `accumulate=`.
+- **Array methods**: `a.min()`, `a.max()`, `a.dot(b)`, `a.round()`, `a.fill(value)`, and the
+  matrix product `@` on rank-1 and rank-2 arrays.
+- **Complex numbers**: `complex128` (`complex`) and `complex64`, `2j` literals, arithmetic,
+  `z.real`, `z.imag`, `z.conjugate()`, `abs(z)`, `complex(re, im)` and `print`, with CPython's
+  results bit for bit. Division by zero gives IEEE infinities and NaNs, as NumPy does, where
+  Python raises.
+- **Statements**: `for` over arrays, tuples and lists, a `range` step known only at run time,
+  `**` and `**=` on integers, and nested unpacking `a, (b, c) = e`. `raise ... from` is rejected
+  with a clear error ([decision 0034](docs/decisions/0034-no-error-chaining.md)).
+- **Generics**: methods of generic structs, a `Callable` parameter passed on to another call or
+  kept in a local, and default parameter values computed at each call
+  ([decision 0027](docs/decisions/0027-default-parameter-evaluation.md)).
+- **`print` of every value** except arrays: `None`, optional values, tuples, enum members as
+  `Phase.GAS`, and structs as `Type(field=value, ...)`, with the `sep=` and `end=` keywords.
+  Output is flushed at exit and before a panic.
+- **Reproducible `simd` sums**: float sums and products in a `simd` loop vectorize in 8 fixed
+  lanes, so they run faster and give the same bits on every machine.
+- **Integer overflow checks** in debug builds now also cover generic code, `abs` of the minimum,
+  whole-array arithmetic, and integer `sum`, `dot` and `@`.
+
+### New in the standard library
+
+- **`math`**: the rest of Python's `math` module for real numbers, such as `tan`, the inverse and
+  hyperbolic functions, `atan2`, `hypot`, `log2`, `log10`, `log1p`, `expm1`, `cbrt`, `erf`,
+  `gamma`, `lgamma`, `fma`, `floor`, `ceil` and `isnan`.
+- **`str`**: `len`, `==`, `!=`, ordering, and `in`.
+- **Lists of any type**, such as `list[str]` and lists of structs, with `in`, `not in`,
+  `copy()`, `pop()`, slices `xs[a:b]`, list comprehensions, and `for` over them.
+- **`dict`** ([decision 0035](docs/decisions/0035-dict.md)): Python's dict, with integer, `bool`,
+  `str`, enum and tuple keys, insertion order, and a panic on a missing key; float keys are
+  rejected.
+
+### Editor support
+
+`baryon lsp` now shows a name's type and documentation on hover, goes to a definition across a
+package's modules, and completes names in scope, a module's members after `m.`, and a value's
+fields and methods after `x.`. The [VS Code extension](editors/vscode/README.md) uses them with no
+change; version 0.2.0 from release 0.1.0 still works.
+
+### Decisions made for this release
+
+[Sum types as unions of structs](docs/decisions/0032-sum-types-are-unions-of-structs.md) (built in
+0.3.0), [arrays print in NumPy's form](docs/decisions/0033-printing-arrays.md) (built in 0.3.0),
+[no error chaining](docs/decisions/0034-no-error-chaining.md) and
+[`dict`](docs/decisions/0035-dict.md).
+
+### Known limits
+
+- Not built yet, though `baryon check` accepts them: `print` of an array or a dict, `for` over a
+  string, indexing, slicing and methods such as `split` on `str`, `match` on `str`, and complex
+  numbers in f-strings and in `a.sum()`. [What builds today](docs/reference/status.md) has the
+  full list. Each is reported as an error that says it is not built yet, never miscompiled.
+- No reading or writing of files, command-line arguments or running other programs yet: that
+  leads release 0.3.0 (roadmap 1.13.6).
+- Speed is not yet compared with the C++ and Fortran baselines in [`bench/`](bench/README.md).
+  Running within 5% of Fortran is the Phase 1 gate, still ahead.
+
 ## 0.1.0: review release, 2026-11-09
 
 The first release, made so that people outside the project can try the language and review its
