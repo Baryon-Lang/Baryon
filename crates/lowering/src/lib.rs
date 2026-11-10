@@ -267,6 +267,7 @@ mod accumulate;
 mod arrays;
 mod builder;
 mod calls;
+mod collections;
 mod complex;
 mod comprehensions;
 mod constants;
