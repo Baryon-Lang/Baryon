@@ -149,6 +149,8 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.13.2 | `str` operations: `len`, `==`, `!=`, ordering and `in` | 0.25 | 1.10.8 | Done | Claude | [0022](docs/decisions/0022-str-values.md), [#147](https://github.com/Baryon-Lang/Baryon/pull/147), [#149](https://github.com/Baryon-Lang/Baryon/pull/149) |
 | 1.13.3 | Lists of any type, such as `list[str]` and lists of structs; `pop`, `in`, `copy` and slices. Comprehensions are 1.13.5 | 0.5 | 1.9.12 | Done | Claude | [#150](https://github.com/Baryon-Lang/Baryon/pull/150), [#152](https://github.com/Baryon-Lang/Baryon/pull/152), [#155](https://github.com/Baryon-Lang/Baryon/pull/155) |
 | 1.13.4 | `dict`, a hash map from integers, `bool`, `str`, enums and tuples of them to any type, as decision 0035 settles: Python's operations, insertion order, a missing key panics, no float keys | 0.5 | 1.13.3 | Planned | — | [0035](docs/decisions/0035-dict.md) |
+| 1.13.5 | List comprehensions, `[f(x) for x in xs if p(x)]`, split from 1.13.3 because they need 1.9.17's `for` over collections | 0.25 | 1.13.3, 1.9.17 | Planned | — | — |
+| 1.13.6 | Files and processes: read and write text and binary files and whole arrays, list a directory, read command-line arguments and environment variables, and run another program and read its output and exit status. Errors are `Raises` values. The API is user-visible, so a decision record proposes it first | 0.5 | 1.13.2 | Planned | — | — |
 | 1.14 | Standard library: N-dimensional arrays, views, stencil, simd and parallel loops, random numbers, BLAS | 5 | 1.13 | Planned | — | — |
 | 1.14.1 | Half-list Lennard-Jones with `accumulate=` in the examples, and a threaded half-list OpenMP baseline in the benchmark suite to compare against | — | 1.14 | Planned | — | [0013](docs/decisions/0013-parallel-accumulation.md) |
 | 1.14.2 | `Array` methods `a.min()`, `a.max()`, `a.dot(b)`, `a.round()` and `a.fill(value)`, and the matrix product `@` on rank-1 and rank-2 arrays as loop nests; BLAS comes with 3.10. Done: `Builtin::Dot`, float dot products in the pairwise order of `sum`, and `Check::NotEmpty`, for `min` and `max` of an empty array, in `mir`; the runtime's pairwise dot product, the methods on `Array` and `Fixed` arrays, and `@` of a matrix and a matrix, a matrix and a vector, or a vector and a matrix, in the checker, lowering and the LLVM backend | 0.5 | 1.9.6 | Done | Claude | [arrays](docs/reference/arrays.md), [#129](https://github.com/Baryon-Lang/Baryon/pull/129), [#139](https://github.com/Baryon-Lang/Baryon/pull/139) |
@@ -167,6 +169,9 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 ## Phase 2: compile speed and the edit loop
 
 Gate: every number in the design plan's compile-speed table is met on the reference project.
+
+Comes after Phase 3's native capability work (Collins, 2026-11-10): see the order in
+[Releases](#releases).
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -191,7 +196,7 @@ the REPL, and three external users have written something real.
 | 3.7 | Optimization remarks in the editor | 2 | 3.1 | Planned | — | — |
 | 3.8 | Documentation generator: `baryon doc` writes one Markdown page per module from its documentation strings and public signatures, and an index | 1 | 1.2 | Done | Claude | [#42](https://github.com/Baryon-Lang/Baryon/pull/42) |
 | 3.9 | Broadcasting and axis reductions | 3 | 3.1 | Planned | — | — |
-| 3.10 | Linear algebra and FFT over LAPACK and FFTW or Accelerate | 2 | 1.14 | Planned | — | — |
+| 3.10 | Linear algebra and FFT with a Baryon API (Collins, 2026-11-10): matrix multiply, solve, LU, Cholesky, QR, symmetric eigenvalues and FFT written in Baryon and tested against NumPy and SciPy; LAPACK underneath only for general eigenvalues and SVD; and an opt-in that routes matrix multiply through the system BLAS or Accelerate for peak speed. Users see only Baryon. Gaps the native code finds in the compiled code's speed feed 3.1 and 3.2 | 2 | 1.14 | Planned | — | — |
 | 3.11 | REPL on the Cranelift backend with persistent values | 4 | 2.1 | Planned | — | — |
 | 3.12 | Jupyter kernel | 1 | 3.11 | Planned | — | — |
 | 3.13 | Arrow memory layout, DataFrame, group by, join | 5 | 3.9 | Planned | — | — |
@@ -206,13 +211,27 @@ registry and a standalone IDE are candidates, each added here when it is planned
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3.17 | Python interop with zero-copy arrays | 3 | 1.10 | Planned | — | — |
+| 3.17 | Python interop with zero-copy arrays, after Phase 3's native libraries: Baryon's own capability comes first and interop is not a way to wrap Baryon in Python (Collins, 2026-11-10) | 3 | 1.10, 3.10, 3.13, 3.14, 3.15, 3.16 | Planned | — | — |
 | 4.1 | C++ interop: header import, templates by instantiation, exceptions at the boundary | 12+ | 3.5 | Planned | — | — |
 
 ## Releases
 
 A release is a tag on `main` that people outside the project can try. Each release is one item
 here, with one row per step; [`CHANGELOG.md`](CHANGELOG.md) says what it holds.
+
+Every release up to 1.0 puts working functionality for users first: a feature someone needs to
+write, run or ship a real program comes before internal rework (Collins, 2026-11-10). Baryon
+stands on its own: its libraries are written in Baryon and grow alongside it, so Python
+interoperability comes in a later phase, after native language capability and native libraries,
+never as a way to wrap Baryon in Python. A self-hosted compiler stays a non-goal, as the
+[design plan](docs/design/language-design-plan.md) says.
+
+After 0.3.0, native capability comes before compile speed (Collins, 2026-11-10): speed of the
+compiled code (3.1, 3.2, 3.3), then broadcasting and axis reductions (3.9), linear algebra and FFT
+(3.10), statistics (3.16), file formats (3.14), DataFrame (3.13) and plotting (3.15). Phase 2's
+faster compiling follows, unless compile times start to slow users down first. Python interop
+(3.17) comes only after as many native libraries as can be built: Baryon should be a native
+language before it needs wrappers from other languages (Collins, 2026-11-10).
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -222,12 +241,17 @@ here, with one row per step; [`CHANGELOG.md`](CHANGELOG.md) says what it holds.
 | R.1.3 | Check the README, documentation map and guides against What builds today, and fix what is stale | 0.1 | — | Done | Claude | [#105](https://github.com/Baryon-Lang/Baryon/pull/105) |
 | R.1.4 | Merge the pull requests queued when the release was planned, then bring `CHANGELOG.md`, What builds today and the README's status up to date with `main` | 0.1 | R.1.2 | Done | Claude | [#118](https://github.com/Baryon-Lang/Baryon/pull/118) |
 | R.1.5 | Collins approves the release; tag `v0.1.0` on `main` and publish a GitHub release with the notes and `baryon-0.2.0.vsix` attached | — | R.1.4 | In progress | Claude | [#120](https://github.com/Baryon-Lang/Baryon/pull/120) |
-| R.2 | Release 0.2.0: programs written the way the reference describes, without workarounds. In scope: traits and `Embed` (1.7.10, 1.7.12), the core library and collections (1.13 and its sub-items), array slices (1.9.16, 1.12.7), the remaining statements (1.9.17), generic struct methods, `Callable` forwarding and computed defaults (1.9.18, 1.9.13), `print` of every value (1.10.12), the optional-field constructor fix (1.10.14), complex numbers (1.10.13), array methods and `@` (1.14.2), reproducible `simd` float sums (1.9.14), the rest of the overflow checks (1.11.8), and hover, go to definition and completion in the editor (1.16.2 to 1.16.4). Decisions D.10 and D.17 get proposed records; what they decide is built after 0.2.0 unless Collins says otherwise | — | R.1.5 | In progress | Claude | [#122](https://github.com/Baryon-Lang/Baryon/pull/122) |
+| R.2 | Release 0.2.0: programs written the way the reference describes, without workarounds. In scope: traits and `Embed` (1.7.10, 1.7.12), the core library and collections (1.13 and its sub-items), array slices (1.9.16, 1.12.7), the remaining statements (1.9.17), generic struct methods, `Callable` forwarding and computed defaults (1.9.18, 1.9.13), `print` of every value (1.10.12), the optional-field constructor fix (1.10.14), complex numbers (1.10.13), array methods and `@` (1.14.2), reproducible `simd` float sums (1.9.14), the rest of the overflow checks (1.11.8), and hover, go to definition and completion in the editor (1.16.2 to 1.16.4). Decisions D.10 and D.17 get proposed records; what they decide is built after 0.2.0 unless Collins says otherwise. Release bar (Collins, 2026-11-10): usable and compilable on Linux (x86_64, glibc 2.35 or newer, `clang` 15 or newer) and macOS (Apple silicon, 13.5 or newer with Command Line Tools 15, since the LLVM backend emits opaque pointers, decision 0020) with the basics of the standard library; Windows comes in 0.4.0 (R.4); Intel Macs and musl Linux such as Alpine are out. Standard library cut line: `math` (1.13.1), `str` (1.13.2), `random.Philox` (0.1.0) lists of any type with `in`, `copy`, `pop` and slices (1.13.3) and list comprehensions (1.13.5) are in; `dict` (1.13.4) is in if its own thread finishes before the rest of the release is ready, otherwise it moves to 0.3.0 under R.2.2 | — | R.1.5 | In progress | Claude | [#122](https://github.com/Baryon-Lang/Baryon/pull/122) |
 | R.2.1 | Set the 0.2.0 scope: pick the items, add the missing ones and split them into workstreams that touch separate modules | 0.1 | — | Done | Claude | [#122](https://github.com/Baryon-Lang/Baryon/pull/122) |
 | R.2.2 | Merge every item in the scope, or move it out of 0.2.0 here with the reason | — | R.2.1 | Planned | — | — |
 | R.2.3 | Release notes for 0.2.0 in `CHANGELOG.md`, the workspace version set to 0.2.0, and What builds today, the README, the guides and the VS Code setup guide checked against `main` | 0.1 | R.2.2 | Planned | — | — |
 | R.2.4 | Build the VS Code extension from `main` with the new language server features, under the next extension version | 0.1 | 1.16.4 | Planned | — | [0025](docs/decisions/0025-vscode-extension.md) |
-| R.2.5 | Collins approves the release; tag `v0.2.0` on `main` and publish a GitHub release with the notes and the extension attached | — | R.2.3, R.2.4 | Planned | — | — |
+| R.2.5 | Collins approves the release; tag `v0.2.0` on `main`, which runs R.2.6, and publish the GitHub release with the notes, the extension and both `baryon` archives attached | — | R.2.3, R.2.4, R.2.6, R.2.7, R.2.8 | Planned | — | — |
+| R.2.6 | Release workflow: on a `v*` tag, and by hand for a dry run, build `baryon` and `libruntime.a` with `--release` on `ubuntu-22.04` (x86_64, so the binary runs on glibc 2.35 and newer) and `macos-15` (arm64, deployment target 11.0), pack each as `baryon-<version>-<target>.tar.gz` with a SHA-256 file, and attach them to a draft GitHub release. No installers, signing or package managers in 0.2.0 | 0.25 | — | Planned | — | — |
+| R.2.7 | Clean-machine test in the release workflow, before anything is attached: on a fresh runner per platform with no Rust toolchain on `PATH`, unpack the archive, run `baryon --version`, `build`, `run` and `test` on the five examples and the guide's first program, in debug and `--release`, and check that `baryon build` without `clang` on `PATH` fails with the message that says how to install it | 0.25 | R.2.6 | Planned | — | — |
+| R.2.8 | Install from a download: a section in the beginner's guide and the release notes that says what each platform needs (`clang` from `xcode-select --install` on macOS, the `clang` package on Linux), how to download with `curl` so macOS does not quarantine the binary, unpack, put `baryon` on `PATH` with `libruntime.a` beside it, and check the SHA-256; building from source stays as the other way. Run in CI as the guide already is | 0.1 | R.2.6 | Planned | — | — |
+| R.3 | Release 0.3.0, in order of value to users: reading and writing files and running programs (1.13.6), `dict` if it moved out of 0.2.0 (1.13.4), sum types (1.7.13) and printing arrays (1.10.15). Its steps are added when 0.3.0 is planned | — | R.2 | Planned | — | — |
+| R.4 | Release 0.4.0: Windows (x86_64) joins Linux and macOS as a supported platform: `baryon` and the runtime build, link and run there, with CI and a prebuilt archive like R.2.6's (Collins, 2026-11-10). Its steps are added when 0.4.0 is planned | — | R.2 | Planned | — | — |
 
 ## Decisions needed
 
@@ -265,7 +289,7 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.2 | Before the full spec, build a small compiler that emits C and benchmark it against gfortran | 4 | 0.3 | Idea | — | — |
 | I.3 | Pass parameters as read-only borrows by default instead of moving them | — | — | Done | Collins | [0006](docs/decisions/0006-parameter-passing.md), [#2](https://github.com/Baryon-Lang/Baryon/pull/2) |
 | I.4 | Keep bounds checks on in release builds, with an `unsafe` opt-out | — | — | Done | Collins | [0010](docs/decisions/0010-bounds-checks.md), [#2](https://github.com/Baryon-Lang/Baryon/pull/2) |
-| I.5 | Export functions to Python in Phase 2; move DataFrame, file formats and plotting (3.13 to 3.16) to Phase 4 | 3 | 1.10 | Idea | — | — |
+| I.5 | Export functions to Python in Phase 2; move DataFrame, file formats and plotting (3.13 to 3.16) to Phase 4. Dropped: Python interop comes after the native libraries, which are built in Baryon first (Collins, 2026-11-10) | 3 | 1.10 | Dropped | — | — |
 | I.6 | Array-valued reductions in parallel loops, needed for Lennard-Jones force accumulation. Accepted as `prange(n, accumulate=forces)` | — | 1.14 | Done | Collins | [0013](docs/decisions/0013-parallel-accumulation.md), [#8](https://github.com/Baryon-Lang/Baryon/pull/8) |
 | I.7 | Python-style number mixing: `/` returns a float, literals adapt, integers promote to floats | — | — | Done | Collins | [0009](docs/decisions/0009-number-mixing.md), [#2](https://github.com/Baryon-Lang/Baryon/pull/2), [0014](docs/decisions/0014-number-conversions-are-calls.md) |
 | I.8 | One array family: `Array[T, rank]` on the heap and a fixed-shape inline type | — | — | Done | Collins | [0007](docs/decisions/0007-array-types.md), [#2](https://github.com/Baryon-Lang/Baryon/pull/2) |
