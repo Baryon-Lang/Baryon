@@ -37,6 +37,8 @@
 //! | [`baryon_rt_dict_find`], [`baryon_rt_dict_insert`], [`baryon_rt_dict_remove`], [`baryon_rt_dict_next`], [`baryon_rt_dict_length`], [`baryon_rt_dict_free`] | The hash table behind `dict`: find a key, add one, remove an entry, step through the entries in insertion order, count and free (decision 0035) |
 //! | [`baryon_rt_panic_key`] | End the program for `d[k]` of a key that is not in the `dict` |
 //! | [`baryon_rt_argument_count`], [`baryon_rt_argument`], [`baryon_rt_environment_get`], [`baryon_rt_exit`] | Read the command-line arguments and an environment variable as owned `str`s, and end the program with an exit status, for `sys.argv`, `os.environ` and `sys.exit` (decision 0036) |
+//! | [`baryon_rt_file_open`], [`baryon_rt_file_read`], [`baryon_rt_file_read_line`], [`baryon_rt_file_read_lines`], [`baryon_rt_file_write`], [`baryon_rt_file_flush`], [`baryon_rt_file_close`], [`baryon_rt_file_drop`] | Open a text file and read, write, flush and close it, each failure written as an `OSError` the way a compiled function raises one (decision 0036) |
+//! | [`baryon_rt_file_open`], [`baryon_rt_file_read`], [`baryon_rt_file_read_line`], [`baryon_rt_file_read_lines`], [`baryon_rt_file_write`], [`baryon_rt_file_flush`], [`baryon_rt_file_close`], [`baryon_rt_file_drop`] | Open a text file and read, write, flush and close it, each failure written as an `OSError` the way a compiled function raises one (decision 0036) |
 //! | [`baryon_rt_flush`] | Write out a line `print(..., end="")` left unended, before the C `main` returns |
 //!
 //! A panic prints its message, the [`Location`] of the check and, when the program has debug
@@ -80,6 +82,7 @@ mod accumulate;
 mod backtrace;
 mod complex;
 mod dict;
+mod files;
 mod format;
 mod location;
 mod memory;
@@ -94,14 +97,16 @@ mod sum;
 pub use abi::{
     ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128, ELEMENT_F32, ELEMENT_F64, ELEMENT_I8,
     ELEMENT_I16, ELEMENT_I32, ELEMENT_I64, ELEMENT_U8, ELEMENT_U16, ELEMENT_U32, ELEMENT_U64,
-    OwnedList, OwnedText, TextBuilder, TextValue, baryon_rt_accumulator_chunk_done,
-    baryon_rt_accumulator_finish, baryon_rt_accumulator_new, baryon_rt_accumulator_slot,
-    baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_argument, baryon_rt_argument_count,
-    baryon_rt_chunk_count, baryon_rt_deallocate, baryon_rt_dict_find, baryon_rt_dict_free,
-    baryon_rt_dict_insert, baryon_rt_dict_length, baryon_rt_dict_next, baryon_rt_dict_remove,
-    baryon_rt_dot_f32, baryon_rt_dot_f64, baryon_rt_dot_strided_f32, baryon_rt_dot_strided_f64,
-    baryon_rt_environment_get, baryon_rt_exit, baryon_rt_flush, baryon_rt_panic,
-    baryon_rt_panic_exponent, baryon_rt_panic_index, baryon_rt_panic_key,
+    OsError, OwnedList, OwnedText, RaisedError, TextBuilder, TextValue,
+    baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
+    baryon_rt_accumulator_slot, baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_argument,
+    baryon_rt_argument_count, baryon_rt_chunk_count, baryon_rt_deallocate, baryon_rt_dict_find,
+    baryon_rt_dict_free, baryon_rt_dict_insert, baryon_rt_dict_length, baryon_rt_dict_next,
+    baryon_rt_dict_remove, baryon_rt_dot_f32, baryon_rt_dot_f64, baryon_rt_dot_strided_f32,
+    baryon_rt_dot_strided_f64, baryon_rt_environment_get, baryon_rt_exit, baryon_rt_file_close,
+    baryon_rt_file_drop, baryon_rt_file_flush, baryon_rt_file_open, baryon_rt_file_read,
+    baryon_rt_file_read_line, baryon_rt_file_read_lines, baryon_rt_file_write, baryon_rt_flush,
+    baryon_rt_panic, baryon_rt_panic_exponent, baryon_rt_panic_index, baryon_rt_panic_key,
     baryon_rt_panic_length_mismatch, baryon_rt_panic_slice, baryon_rt_parallel_for,
     baryon_rt_philox_new, baryon_rt_philox_uniform, baryon_rt_power_complex64,
     baryon_rt_power_complex128, baryon_rt_print_array, baryon_rt_print_bool,
@@ -119,6 +124,7 @@ pub use abi::{
 };
 pub use accumulate::Accumulator;
 pub use dict::{DictLayout, KeyPart, STR_PART, Table};
+pub use files::OpenFile;
 pub use format::FormatSpec;
 pub use location::Location;
 pub use parallel::ChunkBody;
