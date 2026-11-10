@@ -7,7 +7,7 @@ use syntax::NodeId;
 
 impl<'db> Type<'db> {
     /// A value that writes the type as a program spells it: `Array[f64, 3]`,
-    /// `Fixed[f64, (3, 3)]`, `f64 | None`, `Callable[[f64], f64]`, or a class's name.
+    /// `Fixed[f64, (3, 3)]`, `f64 | None`, `Periodic | Dirichlet`, `Callable[[f64], f64]`, or a class's name.
     ///
     /// The database is needed to read class and type parameter names from their files.
     #[must_use]
@@ -46,6 +46,7 @@ impl fmt::Display for Displayed<'_> {
                 write!(formatter, "dict[{}, {}]", show(*key), show(*value))
             }
             TypeKind::Optional(value) => write!(formatter, "{} | None", show(*value)),
+            TypeKind::Union(members) => formatter.write_str(&list(members).join(" | ")),
             TypeKind::Array { element, rank } => {
                 write!(formatter, "Array[{}, {rank}]", show(*element))
             }

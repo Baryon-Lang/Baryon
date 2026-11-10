@@ -22,6 +22,10 @@
 //!   change without touching any other stage.
 //! - **`T | None`** is a `T` followed by a one-byte flag, as a record.
 //! - **Enums** are the smallest unsigned integer that numbers their variants.
+//! - **A union** `A | B | C` (decision 0032) is a tag, the smallest unsigned integer that
+//!   numbers its members, followed by room for its largest member, aligned for its most aligned
+//!   one. The tag is the member's position in the union's canonical order. A union whose members
+//!   differ in size wastes the difference in every value of a smaller member.
 //! - **`Raises[T, E]`** is a one-byte tag followed by room for the largest of `T` and the errors.
 //! - **`Callable`** and a function's own type take no bytes: the function passed is known when
 //!   compiling, and the callee is compiled once per function (language reference, "Types",
@@ -245,21 +249,36 @@ impl<'db> Layouter<'_, 'db> {
                 Declared::Enum { variants } => Ok(tag(variants)),
                 Declared::Struct(_) => Err(LayoutError::Unknown),
             },
+            TypeKind::Union(members) => {
+                let count = u64::try_from(members.len()).map_err(|_| too_large)?;
+                let payload = self.largest(members)?;
+                Ok(Layout::record([tag(count), payload])
+                    .ok_or(too_large)?
+                    .layout())
+            }
             TypeKind::Fallible { value, errors } => {
-                let mut payload = Layout::EMPTY;
-                for &option in std::iter::once(value).chain(errors) {
-                    let option = self.layout(option)?;
-                    payload = Layout {
-                        size: payload.size.max(option.size),
-                        align: payload.align.max(option.align),
-                    };
-                }
+                let mut options = vec![*value];
+                options.extend_from_slice(errors);
+                let payload = self.largest(&options)?;
                 let flag = primitive_layout(Primitive::Bool);
                 Ok(Layout::record([flag, payload]).ok_or(too_large)?.layout())
             }
             TypeKind::Parameter { .. } => Err(LayoutError::Generic),
             TypeKind::Unknown => Err(LayoutError::Unknown),
         }
+    }
+
+    /// Room for any one of `types`: the largest size and the largest alignment among them.
+    fn largest(&mut self, types: &[Type<'db>]) -> Result<Layout, LayoutError> {
+        let mut room = Layout::EMPTY;
+        for &option in types {
+            let option = self.layout(option)?;
+            room = Layout {
+                size: room.size.max(option.size),
+                align: room.align.max(option.align),
+            };
+        }
+        Ok(room)
     }
 
     /// The layouts of several types, in order.

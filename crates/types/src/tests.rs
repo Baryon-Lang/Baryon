@@ -304,3 +304,49 @@ fn philox_is_eleven_words() {
     assert_eq!(philox.display(&database).to_string(), "Philox");
     assert_eq!(layout_of(&database, philox), Ok((88, 8)));
 }
+
+#[test]
+fn a_union_is_one_type_however_it_is_written() {
+    let database = Database::default();
+    let periodic = class(&database, "Periodic", false);
+    let dirichlet = class(&database, "Dirichlet", false);
+    let none = Type::new(&database, TypeKind::None);
+    let union = crate::union(&database, [periodic, dirichlet]);
+    assert_eq!(union, crate::union(&database, [dirichlet, periodic]));
+    assert_eq!(
+        union,
+        crate::union(&database, [periodic, union, dirichlet, periodic])
+    );
+    assert_eq!(union.display(&database).to_string(), "Dirichlet | Periodic");
+    assert_eq!(
+        crate::union(&database, [none, union])
+            .display(&database)
+            .to_string(),
+        "Dirichlet | Periodic | None"
+    );
+    let optional = crate::union(&database, [periodic, none]);
+    assert_eq!(optional, Type::new(&database, TypeKind::Optional(periodic)));
+    assert_eq!(
+        crate::union(&database, [optional, dirichlet]),
+        crate::union(&database, [none, dirichlet, periodic])
+    );
+    assert_eq!(crate::union(&database, [periodic, periodic]), periodic);
+    let unknown = Type::new(&database, TypeKind::Unknown);
+    assert_eq!(crate::union(&database, [periodic, unknown]), unknown);
+}
+
+#[test]
+fn a_union_is_a_tag_then_room_for_its_largest_member() {
+    let database = Database::default();
+    let particle = class(&database, "Particle", false);
+    let boundary = class(&database, "Boundary", true);
+    let none = Type::new(&database, TypeKind::None);
+    // `Particle` is a `u8` then an `f64`, 16 bytes, after a one-byte tag padded to 8.
+    let union = crate::union(&database, [particle, boundary, none]);
+    assert_eq!(layout_of(&database, union), Ok((24, 8)));
+    let small = crate::union(
+        &database,
+        [boundary, none, Type::new(&database, TypeKind::Str)],
+    );
+    assert_eq!(layout_of(&database, small), Ok((24, 8)));
+}

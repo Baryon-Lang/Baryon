@@ -8,7 +8,8 @@ use types::{Declaration, Item, Primitive, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// Whether a value of type `ty` is copied rather than moved: numbers, `bool`, `None`,
-    /// enums, `Fixed` arrays, functions, `Copy` structs, and tuples and optionals of those.
+    /// enums, `Fixed` arrays, functions, `Copy` structs, and tuples, optionals and unions of
+    /// those.
     /// The same rule as the checker's moves (decision 0006). A type parameter copies when its
     /// bound is `Copy`, `Number` or `Float`.
     pub(crate) fn is_copy(&self, ty: Type<'db>) -> bool {
@@ -25,7 +26,9 @@ impl<'db> Builder<'db> {
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }
             | TypeKind::Standard(_) => false,
-            TypeKind::Tuple(items) => items.iter().all(|&item| self.is_copy(item)),
+            TypeKind::Tuple(items) | TypeKind::Union(items) => {
+                items.iter().all(|&item| self.is_copy(item))
+            }
             TypeKind::Optional(value) => self.is_copy(*value),
             TypeKind::Fallible { value, errors } => {
                 self.is_copy(*value) && errors.iter().all(|&error| self.is_copy(error))
