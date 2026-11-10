@@ -236,9 +236,9 @@ pub unsafe extern "C" fn baryon_rt_dot_strided_f64(
     right_stride: i64,
     count: i64,
 ) -> f64 {
-    // SAFETY: the caller's promise, passed on for each operand.
-    unsafe {
-        strided(left, 1, &raw const count, &raw const left_stride, |left| {
+    let with_right = |left: &[_]| {
+        // SAFETY: the caller guarantees `count` elements from `right`, `right_stride` apart.
+        unsafe {
             strided(
                 right,
                 1,
@@ -246,7 +246,17 @@ pub unsafe extern "C" fn baryon_rt_dot_strided_f64(
                 &raw const right_stride,
                 |right| sum::dot(left, right, 0.0, -0.0),
             )
-        })
+        }
+    };
+    // SAFETY: the caller guarantees `count` elements from `left`, `left_stride` apart.
+    unsafe {
+        strided(
+            left,
+            1,
+            &raw const count,
+            &raw const left_stride,
+            with_right,
+        )
     }
 }
 
@@ -277,9 +287,9 @@ pub unsafe extern "C" fn baryon_rt_dot_strided_f32(
     right_stride: i64,
     count: i64,
 ) -> f32 {
-    // SAFETY: the caller's promise, passed on for each operand.
-    unsafe {
-        strided(left, 1, &raw const count, &raw const left_stride, |left| {
+    let with_right = |left: &[_]| {
+        // SAFETY: the caller guarantees `count` elements from `right`, `right_stride` apart.
+        unsafe {
             strided(
                 right,
                 1,
@@ -287,7 +297,17 @@ pub unsafe extern "C" fn baryon_rt_dot_strided_f32(
                 &raw const right_stride,
                 |right| sum::dot(left, right, 0.0, -0.0),
             )
-        })
+        }
+    };
+    // SAFETY: the caller guarantees `count` elements from `left`, `left_stride` apart.
+    unsafe {
+        strided(
+            left,
+            1,
+            &raw const count,
+            &raw const left_stride,
+            with_right,
+        )
     }
 }
 
