@@ -207,7 +207,8 @@ pub(crate) fn closure(
 }
 
 /// The user traits a value of `ty` has: for a struct, those its class names and all they
-/// require; for a type parameter, its bound and all it requires. Empty for any other type.
+/// require; for a type parameter, its bound and all it requires; for a union, those every
+/// member has. Empty for any other type.
 pub(crate) fn implemented<'db>(
     db: &'db dyn TypeDb,
     package: Package,
@@ -229,6 +230,19 @@ pub(crate) fn implemented<'db>(
             Some(Trait::User(user)) => closure(db, package, [user]),
             _ => Vec::new(),
         },
+        // A union implements what every member implements (decision 0032).
+        TypeKind::Union(members) => {
+            let mut members = members.iter();
+            let Some(&first) = members.next() else {
+                return Vec::new();
+            };
+            let mut shared = implemented(db, package, first);
+            for &member in members {
+                let own = implemented(db, package, member);
+                shared.retain(|user| own.contains(user));
+            }
+            shared
+        }
         _ => Vec::new(),
     }
 }

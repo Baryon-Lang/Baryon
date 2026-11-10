@@ -82,6 +82,7 @@ impl<'db> Body<'db> {
             return self.trait_method_call(node, function, base, bound, &receiver, arguments);
         }
         let nominal = match base.kind(self.db) {
+            TypeKind::Union(_) => return self.union_method(node, function, value, base, arguments),
             TypeKind::Primitive(types::Primitive::Complex(_)) => {
                 return self.complex_method(node, function, receiver, &callee, arguments);
             }

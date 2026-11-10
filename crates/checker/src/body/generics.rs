@@ -35,8 +35,8 @@ impl<'db> Body<'db> {
     }
 
     /// Whether `ty` satisfies `bound`. A user trait is satisfied by a struct that names it, or
-    /// a trait that requires it, among its bases, and by a type parameter bounded the same way
-    /// (decision 0031).
+    /// a trait that requires it, among its bases, by a type parameter bounded the same way
+    /// (decision 0031), and by a union whose every member satisfies it (decision 0032).
     fn satisfies(&self, bound: Trait, ty: Type<'db>) -> bool {
         if let Trait::User(wanted) = bound {
             return matches!(ty.kind(self.db), TypeKind::Unknown)

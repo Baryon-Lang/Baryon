@@ -15,7 +15,7 @@
 use crate::builder::Builder;
 use crate::patterns::Capture;
 use database::Definition;
-use mir::{BlockId, Operand, Place, Projection, Rvalue, TerminatorKind};
+use mir::{Argument, BlockId, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Type, TypeKind};
 
@@ -101,6 +101,93 @@ impl<'db> Builder<'db> {
         }
     }
 
+    /// Ends the current block with a call of the method `item`, the first member's method of
+    /// its name, on a union receiver with the members `members`: a switch on the member the
+    /// union holds, then in each branch a call of that member's own method of the same name,
+    /// the receiver read as the member. `call` is the arguments, receiver first, the result's
+    /// place, the block every call returns to, and the error edge they share. Returns `false`
+    /// after reporting what lowering does not handle.
+    pub(crate) fn member_calls(
+        &mut self,
+        item: types::Item<'db>,
+        members: &[Type<'db>],
+        call: (Vec<Argument<'db>>, Place, BlockId, Option<mir::ErrorEdge>),
+        node: NodeId,
+    ) -> bool {
+        let (arguments, destination, target, error) = call;
+        let Some((receiver, rest)) = arguments.split_first() else {
+            return false;
+        };
+        let Some(base) = argument_place(receiver) else {
+            self.unsupported(node, "a method call on a union that is not in a variable");
+            return false;
+        };
+        let tree = self.db.parse(item.file(self.db)).tree();
+        let text = item.file(self.db).source(self.db).text();
+        let name = tree.text(item.name(self.db), text);
+        let mut methods = Vec::with_capacity(members.len());
+        for &member in members {
+            let Some(method) = self.own_method(member, name) else {
+                self.unsupported(node, "a method a union member gets from an embedded field");
+                return false;
+            };
+            methods.push(method);
+        }
+        let tag = self.temporary(self.int_type(), node);
+        self.assign(Place::from(tag), Rvalue::MemberIndex(base.clone()), node);
+        let blocks: Vec<BlockId> = methods.iter().map(|_| self.new_block()).collect();
+        let cases = (0..).zip(blocks.iter().copied()).collect();
+        let Some(&first) = blocks.first() else {
+            return false;
+        };
+        self.terminate(
+            TerminatorKind::Switch {
+                value: Operand::Copy(Place::from(tag)),
+                cases,
+                otherwise: first,
+            },
+            node,
+        );
+        for ((position, method), block) in (0_u32..).zip(methods).zip(blocks) {
+            self.start(block);
+            let member = base.clone().project(Projection::Member(position));
+            let mut passed = vec![with_place(receiver, member)];
+            passed.extend_from_slice(rest);
+            self.terminate(
+                TerminatorKind::Call {
+                    callee: mir::Callee::Function {
+                        item: method,
+                        type_arguments: Vec::new(),
+                    },
+                    arguments: passed,
+                    destination: destination.clone(),
+                    target,
+                    error: error.clone(),
+                },
+                node,
+            );
+        }
+        true
+    }
+
+    /// The method `name` the struct `member` declares itself.
+    fn own_method(&self, member: Type<'db>, name: &str) -> Option<types::Item<'db>> {
+        let TypeKind::Struct(nominal) = member.kind(self.db) else {
+            return None;
+        };
+        let item = types::Item::new(self.db, self.package, nominal.file, nominal.name);
+        let types::Declaration::Struct { methods, .. } = &self.db.declaration(item).declaration
+        else {
+            return None;
+        };
+        let tree = self.db.parse(nominal.file).tree();
+        let text = nominal.file.source(self.db).text();
+        methods
+            .iter()
+            .copied()
+            .find(|method| tree.text(method.name(self.db), text) == name)
+    }
+
     /// Tests the fields a class pattern names on the struct at `place`, of type `ty`, each with
     /// the test of its own pattern. The checker proved the pattern names `ty`'s class.
     pub(crate) fn class_test(
@@ -150,5 +237,25 @@ impl<'db> Builder<'db> {
             }
         }
         true
+    }
+}
+
+/// The place an argument names, or `None` for a constant.
+fn argument_place(argument: &Argument<'_>) -> Option<Place> {
+    match argument {
+        Argument::Borrow(place)
+        | Argument::InOut(place)
+        | Argument::Owned(Operand::Copy(place) | Operand::Move(place)) => Some(place.clone()),
+        Argument::Owned(Operand::Constant(_)) => None,
+    }
+}
+
+/// `argument` passed in the same way, but naming `place`.
+fn with_place<'db>(argument: &Argument<'db>, place: Place) -> Argument<'db> {
+    match argument {
+        Argument::Borrow(_) => Argument::Borrow(place),
+        Argument::InOut(_) => Argument::InOut(place),
+        Argument::Owned(Operand::Move(_)) => Argument::Owned(Operand::Move(place)),
+        Argument::Owned(_) => Argument::Owned(Operand::Copy(place)),
     }
 }

@@ -478,6 +478,40 @@ On a union with an enum member, `case Side.LEFT:` matches that member of the enu
 `None`, `case None:` matches `None`. Class patterns work on a plain struct too, such as
 `match wall: case Dirichlet(value=v): ...`.
 
+A union has no methods of its own, but it reaches its members' methods in two ways, each a
+branch on the member the union holds, never a table of functions:
+
+- **A shared method.** `x.m(...)` on a union compiles when every member defines `m` with the
+  same parameters, modes, defaults and return type, `Raises` included, and it runs the member's
+  `m`. A member without `m`, or with a different one, is an error that names it.
+- **A shared trait.** A union satisfies a bound `[T: Body]` when every member names `Body` as a
+  base. The generic function is compiled once for the union, and each `body.energy()` inside it
+  calls the method of the member each value holds.
+
+```python
+class Atom(Struct, Copy, Body):
+    m: f64
+    v: f64
+
+    def energy(self) -> f64:
+        return 0.5 * self.m * self.v * self.v
+
+
+class Dimer(Struct, Copy, Body):
+    first: Atom
+    second: Atom
+
+    def energy(self) -> f64:
+        return self.first.energy() + self.second.energy()
+
+
+Molecule = Atom | Dimer
+
+molecules: list[Molecule] = [Atom(1.0, 2.0), Dimer(Atom(1.0, 1.0), Atom(2.0, 1.0))]
+print(molecules[0].energy())        # 2.0, Atom's energy
+print(total_energy(molecules))      # 3.5, with total_energy[T: Body] from "Traits"
+```
+
 A union of `Copy` members is `Copy`; otherwise it moves, as a struct does. A union value is a tag
 followed by room for its largest member, so an `Array` of a union stores every element at the
 size of the largest kind: a `Periodic` in a `Boundary` array takes 32 bytes, 24 for the fields of a
