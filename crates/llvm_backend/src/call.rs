@@ -151,6 +151,8 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Argument => self.argument(arguments, destination, target),
             Builtin::EnvironmentGet => self.environment_get(arguments, destination, target),
             Builtin::Exit => self.system_exit(arguments),
+            Builtin::Sort => self.list_sort(arguments, target),
+            Builtin::RoundDigits => self.round_digits(arguments, destination, target),
         }
     }
 }

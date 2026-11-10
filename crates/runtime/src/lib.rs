@@ -107,14 +107,15 @@ pub use abi::{
     baryon_rt_power_complex128, baryon_rt_print_array, baryon_rt_print_bool,
     baryon_rt_print_complex64, baryon_rt_print_complex128, baryon_rt_print_f32,
     baryon_rt_print_f64, baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted,
-    baryon_rt_print_u64, baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_ends_with,
-    baryon_rt_str_find, baryon_rt_str_join, baryon_rt_str_length, baryon_rt_str_lower,
-    baryon_rt_str_replace, baryon_rt_str_split, baryon_rt_str_split_whitespace,
-    baryon_rt_str_starts_with, baryon_rt_str_strip, baryon_rt_str_strip_characters,
-    baryon_rt_str_take, baryon_rt_str_upper, baryon_rt_sum_f32, baryon_rt_sum_f64,
-    baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64, baryon_rt_text_bool, baryon_rt_text_f32,
-    baryon_rt_text_f64, baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new,
-    baryon_rt_text_str, baryon_rt_text_u64,
+    baryon_rt_print_u64, baryon_rt_round_f32, baryon_rt_round_f64, baryon_rt_round_i64,
+    baryon_rt_sort, baryon_rt_sort_str, baryon_rt_str_compare, baryon_rt_str_contains,
+    baryon_rt_str_ends_with, baryon_rt_str_find, baryon_rt_str_join, baryon_rt_str_length,
+    baryon_rt_str_lower, baryon_rt_str_replace, baryon_rt_str_split,
+    baryon_rt_str_split_whitespace, baryon_rt_str_starts_with, baryon_rt_str_strip,
+    baryon_rt_str_strip_characters, baryon_rt_str_take, baryon_rt_str_upper, baryon_rt_sum_f32,
+    baryon_rt_sum_f64, baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64, baryon_rt_text_bool,
+    baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish, baryon_rt_text_i64,
+    baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
 };
 pub use accumulate::Accumulator;
 pub use dict::{DictLayout, KeyPart, STR_PART, Table};

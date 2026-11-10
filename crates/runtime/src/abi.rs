@@ -16,6 +16,8 @@ mod parallel;
 mod philox;
 mod print_array;
 mod process;
+mod round;
+mod sort;
 mod string_lists;
 mod string_methods;
 mod strings;
@@ -53,6 +55,8 @@ pub use print_array::{
 pub use process::{
     baryon_rt_argument, baryon_rt_argument_count, baryon_rt_environment_get, baryon_rt_exit,
 };
+pub use round::{baryon_rt_round_f32, baryon_rt_round_f64, baryon_rt_round_i64};
+pub use sort::{baryon_rt_sort, baryon_rt_sort_str};
 pub use string_lists::{
     OwnedList, TextValue, baryon_rt_str_join, baryon_rt_str_split, baryon_rt_str_split_whitespace,
 };

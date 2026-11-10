@@ -253,7 +253,7 @@ impl<'db> Function<'_, '_, 'db> {
     }
 
     /// The element type of the list type `ty`, and the element's layout.
-    fn list(&self, ty: Type<'db>) -> Result<(Type<'db>, Layout), Unsupported> {
+    pub(crate) fn list(&self, ty: Type<'db>) -> Result<(Type<'db>, Layout), Unsupported> {
         let TypeKind::List(element) = ty.kind(self.types.db) else {
             return Err(self.types.unsupported(ty));
         };

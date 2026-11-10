@@ -158,6 +158,21 @@ pub enum Builtin {
     /// holds back and ends the program with the status, running nothing else on the way out. A
     /// status outside 0 to 255 panics.
     Exit,
+    /// Sorts a `list` in place, for `sorted(values)` (roadmap 1.13.13): two arguments, the list
+    /// passed `InOut` and a `bool` passed `Owned`, set to sort from the largest; the destination
+    /// has type `None`. The elements are numbers, `bool`s or `str`s, which Python orders: numbers
+    /// by value, `str`s by code point with a prefix first. The sort is stable, also from the
+    /// largest, so equal elements keep their order, as Python's does, and every float NaN goes
+    /// last either way, as `numpy.sort` puts it (Collins, 2026-11-10). It is a merge sort:
+    /// O(n log n) comparisons and a buffer of half the list. The call cannot fail.
+    Sort,
+    /// `round(x, digits)` (roadmap 1.13.13): two arguments, each passed `Owned`, the number, an
+    /// `f32`, an `f64` or an `i64`, and the digits, an `i64`; the destination has the number's
+    /// type. It gives the multiple of `10 ** -digits` nearest the number's exact value, ties to
+    /// the even multiple, as Python's `round` does, so `round(2.675, 2)` is `2.67`. An integer
+    /// with zero or more digits is itself; one whose result does not fit panics with
+    /// ``integer overflow in `round` ``. NaN and the infinities come back unchanged.
+    RoundDigits,
 }
 
 impl Builtin {
@@ -177,6 +192,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Text(mir::TextMethod::Split).name(), "str.split");
     /// assert_eq!(mir::Builtin::DictFind.name(), "dict lookup");
     /// assert_eq!(mir::Builtin::Exit.name(), "sys.exit");
+    /// assert_eq!(mir::Builtin::Sort.name(), "sorted");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -202,6 +218,8 @@ impl Builtin {
             Self::Argument => "sys.argv item",
             Self::EnvironmentGet => "os.environ.get",
             Self::Exit => "sys.exit",
+            Self::Sort => "sorted",
+            Self::RoundDigits => "round",
         }
     }
 }
