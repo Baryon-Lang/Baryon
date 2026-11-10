@@ -13,6 +13,8 @@ mod output;
 mod philox;
 mod print_array;
 mod process;
+mod string_lists;
+mod string_methods;
 mod strings;
 mod sum;
 mod text;
@@ -41,6 +43,14 @@ pub use print_array::{
 };
 pub use process::{
     baryon_rt_argument, baryon_rt_argument_count, baryon_rt_environment_get, baryon_rt_exit,
+};
+pub use string_lists::{
+    OwnedList, TextValue, baryon_rt_str_join, baryon_rt_str_split, baryon_rt_str_split_whitespace,
+};
+pub use string_methods::{
+    baryon_rt_str_ends_with, baryon_rt_str_find, baryon_rt_str_lower, baryon_rt_str_replace,
+    baryon_rt_str_starts_with, baryon_rt_str_strip, baryon_rt_str_strip_characters,
+    baryon_rt_str_take, baryon_rt_str_upper,
 };
 pub use strings::{baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_length};
 pub use sum::{
