@@ -196,7 +196,7 @@ the REPL, and three external users have written something real.
 | 3.7 | Optimization remarks in the editor | 2 | 3.1 | Planned | — | — |
 | 3.8 | Documentation generator: `baryon doc` writes one Markdown page per module from its documentation strings and public signatures, and an index | 1 | 1.2 | Done | Claude | [#42](https://github.com/Baryon-Lang/Baryon/pull/42) |
 | 3.9 | Broadcasting and axis reductions | 3 | 3.1 | Planned | — | — |
-| 3.10 | Linear algebra and FFT over LAPACK and FFTW or Accelerate: a Baryon API, with the system libraries underneath for speed and never seen by users (Collins, 2026-11-10) | 2 | 1.14 | Planned | — | — |
+| 3.10 | Linear algebra and FFT with a Baryon API (Collins, 2026-11-10): matrix multiply, solve, LU, Cholesky, QR, symmetric eigenvalues and FFT written in Baryon and tested against NumPy and SciPy; LAPACK underneath only for general eigenvalues and SVD; and an opt-in that routes matrix multiply through the system BLAS or Accelerate for peak speed. Users see only Baryon. Gaps the native code finds in the compiled code's speed feed 3.1 and 3.2 | 2 | 1.14 | Planned | — | — |
 | 3.11 | REPL on the Cranelift backend with persistent values | 4 | 2.1 | Planned | — | — |
 | 3.12 | Jupyter kernel | 1 | 3.11 | Planned | — | — |
 | 3.13 | Arrow memory layout, DataFrame, group by, join | 5 | 3.9 | Planned | — | — |
