@@ -45,6 +45,16 @@ use source::{FileId, SourceError, SourceFile, Sources};
 use std::fmt;
 use types::{Checked, Item, TypeDb, TypedBody};
 
+/// The standard library's source files (decision 0038): each file's path under
+/// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
+const LIBRARY: [(&str, &str); 2] = [
+    (
+        "<std>/builtins.byn",
+        include_str!("../library/builtins.byn"),
+    ),
+    ("<std>/os.byn", include_str!("../library/os.byn")),
+];
+
 /// The compiler's incremental database: every input and every cached query result.
 #[salsa::db]
 #[derive(Clone, Default)]
@@ -63,6 +73,9 @@ pub struct Session {
     database: Database,
     /// Every file added, indexed by its [`FileId`].
     files: Vec<File>,
+    /// The standard library's files, from [`LIBRARY`]. They take the highest file ids, counting
+    /// down from `u32::MAX`, so the files a program adds keep ids from 0.
+    library: Vec<File>,
     /// The package all the files belong to.
     package: Package,
 }
@@ -76,10 +89,19 @@ impl Session {
 
     /// An empty session over the given session.
     fn over(database: Database) -> Self {
-        let package = Package::new(&database, Vec::new());
+        let library: Vec<File> = LIBRARY
+            .iter()
+            .zip((0..=u32::MAX).rev())
+            .filter_map(|(&(name, text), index)| {
+                let source = SourceFile::new(name, text).ok()?;
+                Some(File::new(&database, FileId::from_index(index), source))
+            })
+            .collect();
+        let package = Package::new(&database, library.clone());
         Self {
             database,
             files: Vec::new(),
+            library,
             package,
         }
     }
@@ -101,9 +123,8 @@ impl Session {
         let source = SourceFile::new(name, text)?;
         let file = File::new(&self.database, FileId::from_index(index), source);
         self.files.push(file);
-        self.package
-            .set_files(&mut self.database)
-            .to(self.files.clone());
+        let files = self.library.iter().chain(&self.files).copied().collect();
+        self.package.set_files(&mut self.database).to(files);
         Ok(file)
     }
 
@@ -209,7 +230,12 @@ impl Sources for Session {
     ///
     /// Panics if `id` was issued by a different session.
     fn file(&self, id: FileId) -> &SourceFile {
-        self.files[id.index() as usize].source(&self.database)
+        let index = id.index() as usize;
+        let file = self.files.get(index).copied().unwrap_or_else(|| {
+            let from_top = u32::MAX - id.index();
+            self.library[from_top as usize]
+        });
+        file.source(&self.database)
     }
 }
 

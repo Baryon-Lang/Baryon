@@ -106,10 +106,7 @@ impl<'a> Importer<'a> {
     /// What `member` of `module` is: a submodule, or a top-level name of the module's file.
     fn member(&self, module: &str, member: &str, depth: usize) -> Result<Definition, Failure> {
         if let Some(standard) = standard(module) {
-            return Ok(Definition::Standard {
-                module: standard,
-                member: Some(member.to_owned()),
-            });
+            return Ok(self.standard_member(standard, member));
         }
         let Definition::Module(name) = self.module(module, At::Module)? else {
             return Err(Failure::new(
@@ -185,6 +182,32 @@ impl<'a> Importer<'a> {
                     None => diagnostic,
                 }
             })
+    }
+
+    /// What `member` of the standard module `module` is: the class or function the standard
+    /// library's source file for the module defines (decision 0038), such as `os.ErrorKind`,
+    /// or else a member the compiler builds in, such as `os.getenv`.
+    pub(crate) fn standard_member(&self, module: &'static str, member: &str) -> Definition {
+        self.library(module, member)
+            .unwrap_or_else(|| Definition::Standard {
+                module,
+                member: Some(member.to_owned()),
+            })
+    }
+
+    /// The definition of `name` in the standard library's source file for `module`, if the
+    /// package has that file and it defines the name at its top level. A name starting with `_`
+    /// is the library's own and is never found; neither is a name the file imports, so each
+    /// library name has one home.
+    pub(crate) fn library(&self, module: &str, name: &str) -> Option<Definition> {
+        if name.starts_with('_') {
+            return None;
+        }
+        let file = self.modules.library(module)?;
+        match module_items(self.db, file).get(name)? {
+            Binding::Defined(node) => Some(Definition::Item(file, *node)),
+            Binding::Imported(_) => None,
+        }
     }
 
     /// The definition of a name bound at the top level of `file`, the module being resolved.
