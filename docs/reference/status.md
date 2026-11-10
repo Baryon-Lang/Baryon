@@ -31,12 +31,13 @@ updates the table it affects, in the same pull request, as roadmap item 0.8.1 as
 
 ## The example programs
 
-All five [example programs](../examples/README.md) build and run:
+All six [example programs](../examples/README.md) build and run:
 [`heat_equation.byn`](../examples/heat_equation.byn),
 [`lennard_jones.byn`](../examples/lennard_jones.byn),
 [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn),
-[`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) and
-[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn). Each is built and run by a test that
+[`conjugate_gradient.byn`](../examples/conjugate_gradient.byn),
+[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) and
+[`rod_boundaries.byn`](../examples/rod_boundaries.byn). Each is built and run by a test that
 checks what it prints.
 
 | Example | Still needs |
@@ -46,6 +47,7 @@ checks what it prints.
 | [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | Nothing: it builds and runs |
 | [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | Nothing: it builds and runs |
 | [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | Nothing: it builds and runs |
+| [`rod_boundaries.byn`](../examples/rod_boundaries.byn) | Nothing: it builds and runs |
 
 ## Syntax
 

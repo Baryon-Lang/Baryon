@@ -1,0 +1,95 @@
+"""Heat flowing along a rod whose two ends meet different conditions: a sum type at work.
+
+A rod starts cold. Each time step, every cell moves toward the average of its two neighbours, an
+explicit stencil for the 1D heat equation. The cells past each end are ghost cells, filled from
+the end's boundary condition: a fixed temperature, a fixed heat flux, a convective (Robin) mix of
+the two, or periodic, where the rod's ends join into a ring. The program runs three set-ups and
+prints the mean temperature and the end temperatures of each.
+
+Language features shown:
+- a union of structs, `Boundary`, the sum type of decision 0032
+- a struct passed where its union is expected
+- `match` with class patterns that take each member apart by keyword, by position or not at all,
+  checked to handle every member
+"""
+
+
+class Periodic(Struct, Copy):
+    """The rod's ends join: the cell past one end is the cell at the other."""
+
+
+class Dirichlet(Struct, Copy):
+    """The end is held at a fixed temperature."""
+
+    value: f64
+
+
+class Neumann(Struct, Copy):
+    """A fixed heat flux crosses the end: the outward derivative of the temperature."""
+
+    flux: f64
+
+
+class Robin(Struct, Copy):
+    """`a * u + b * du/dn = g` at the end, such as convective cooling into still air."""
+
+    a: f64
+    b: f64
+    g: f64
+
+
+Boundary = Periodic | Dirichlet | Neumann | Robin
+"""Every condition an end of the rod can meet."""
+
+N: Final = 50
+"""Cells along the rod."""
+
+ALPHA: Final = 0.4
+"""Diffusion number: diffusivity times the time step over the cell size squared. Explicit
+stepping in 1D is stable only up to 1/2."""
+
+STEPS: Final = 4000
+
+
+def ghost_value(boundary: Boundary, inside: f64, far: f64, dx: f64) -> f64:
+    """The temperature of the ghost cell past an end, from the end's condition, the cell just
+    inside it and the cell at the rod's other end. The end itself sits halfway between the ghost
+    cell and the cell inside."""
+    match boundary:
+        case Periodic():
+            return far
+        case Dirichlet(value=v):
+            return 2.0 * v - inside
+        case Neumann(flux):
+            return inside + flux * dx
+        case Robin(a, b, g):
+            return (g * dx + (b - 0.5 * a * dx) * inside) / (b + 0.5 * a * dx)
+
+
+def step(u: Array[f64, 1], out: InOut[Array[f64, 1]], left: Boundary, right: Boundary):
+    """Advances the temperatures `u` by one time step, writing the result into `out`."""
+    dx = 1.0 / N
+    before = ghost_value(left, u[0], u[N - 1], dx)
+    after = ghost_value(right, u[N - 1], u[0], dx)
+    out[0] = u[0] + ALPHA * (before - 2.0 * u[0] + u[1])
+    for i in range(1, N - 1):
+        out[i] = u[i] + ALPHA * (u[i - 1] - 2.0 * u[i] + u[i + 1])
+    out[N - 1] = u[N - 1] + ALPHA * (u[N - 2] - 2.0 * u[N - 1] + after)
+
+
+def simulate(name: str, left: Boundary, right: Boundary):
+    """Runs one set-up from a rod at zero and prints where its heat ended up."""
+    u = Array.zeros((N,))
+    for i in range(N // 2 - 5, N // 2 + 5):
+        u[i] = 10.0
+    out = u.copy()
+    for _ in range(STEPS):
+        step(u, out, left, right)
+        u, out = out, u
+    print(f"{name}: mean {u.sum() / N:.6f}, ends {u[0]:.6f} and {u[N - 1]:.6f}")
+
+
+def main():
+    simulate("held at 100 and 0", Dirichlet(100.0), Dirichlet(0.0))
+    simulate("heated end, cooled end", Neumann(5.0), Robin(1.0, 0.1, 0.0))
+    simulate("a ring", Periodic(), Periodic())

@@ -40,7 +40,7 @@ check`. `baryon build <directory> <output>` compiles a package through LLVM into
 runs the `main` function in `main.byn`; it handles numbers, control flow, calls, generic functions
 and functions as arguments, structs and traits, arrays and their slices, complex numbers, lists
 and dicts of any type, optionals, `str` values and f-strings, `prange` and `simd` loops, errors,
-`math`, `random.Philox`, `assert` and `print` so far, with `clang` 15 or newer installed, and all five example programs build and run. `baryon run <directory>` builds
+`math`, `random.Philox`, `assert` and `print` so far, with `clang` 15 or newer installed, and all six example programs build and run. `baryon run <directory>` builds
 and runs it in one step, and `baryon test <directory>` runs every `@test` function and reports
 which passed. `baryon lsp` is a language server that shows the same diagnostics in any editor with
 a Language Server Protocol client, as you type, along with types and documentation on hover, go to

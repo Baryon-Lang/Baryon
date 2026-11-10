@@ -35,6 +35,20 @@ fn heat_equation_builds_and_runs() {
     .unwrap();
 }
 
+/// A rod with a different boundary condition at each end: a union of structs passed as an
+/// argument and taken apart by `match`. Python, running the same steps, prints the same numbers.
+#[test]
+fn rod_boundaries_builds_and_runs() {
+    prints(
+        "example-rod-boundaries",
+        include_str!("../../../../docs/examples/rod_boundaries.byn"),
+        "held at 100 and 0: mean 49.931500, ends 98.996621 and 0.996621\n\
+         heated end, cooled end: mean 2.677841, ends 4.985044 and 0.477661\n\
+         a ring: mean 2.000000, ends 2.000000 and 2.000000\n",
+    )
+    .unwrap();
+}
+
 /// Unpacking a tuple, a tuple display and a `Fixed` vector; a copy that changes apart from its
 /// original; and sums of a 2D array, an integer array, a `Fixed` vector and an empty array.
 #[test]

@@ -405,6 +405,9 @@ is an ordinary struct, and the union joins them with `|`, usually under a [type 
 ([decision 0032](../decisions/0032-sum-types-are-unions-of-structs.md)). Rust calls this an enum
 with data; typed Python writes it the same way as here.
 
+The example program [`rod_boundaries.byn`](../examples/rod_boundaries.byn) puts these boundary
+conditions to work on a heated rod.
+
 ```python
 class Periodic(Struct, Copy):
     pass
