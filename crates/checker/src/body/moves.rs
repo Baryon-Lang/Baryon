@@ -95,7 +95,7 @@ impl<'db> Body<'db> {
 
     /// Whether the subscript `node` is a slice, `a[1:n]` or `grid[:, 0]`: a view of its
     /// array rather than an element.
-    fn is_view(&self, node: NodeId) -> bool {
+    pub(super) fn is_view(&self, node: NodeId) -> bool {
         let Some(index) = self.tree.child(node, Role::Index) else {
             return false;
         };

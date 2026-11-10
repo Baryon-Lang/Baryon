@@ -148,6 +148,9 @@ impl<'db> Builder<'db> {
         let Some((place, ty)) = self.target(target) else {
             return;
         };
+        if place.is_view() {
+            return self.store_view(place, ty, value);
+        }
         if !self.needs_drop(ty) {
             return self.write(place, ty, value);
         }
@@ -224,6 +227,9 @@ impl<'db> Builder<'db> {
         }
         if let Some(place) = self.accumulated_place(&place) {
             return self.accumulate(place, operator, ty, value, statement);
+        }
+        if place.is_view() {
+            return self.augmented_view(place, ty, operator, value, statement);
         }
         if array {
             return self.augmented_array(place, ty, operator, value, statement);

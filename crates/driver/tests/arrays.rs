@@ -210,3 +210,26 @@ def negate(a: Array[f64, 1], flags: Array[bool, 1]) -> Array[f64, 1]:
   |         ^^^^^^ its elements are not numbers"
     );
 }
+
+/// Assigning into a slice takes an array of its rank or a number for every element, and reads
+/// a slice on the right in place without keeping it; a number of the wrong type is an error
+/// that says what each element holds.
+#[test]
+fn slices_take_arrays_and_numbers() {
+    let program = r#"
+def fill(a: InOut[Array[f64, 1]], grid: InOut[Array[f64, 2]], n: i64):
+    a[1:n] = 0.0
+    a[1:n] = a[0:n - 1]
+    grid[:, 0] = 1
+    grid[0, :] += a[0:3]
+    a[0:2] = "no"
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: expected `f64`, found `str`
+ --> main.byn:6:14
+  |
+6 |     a[0:2] = "no"
+  |              ^^^^ each element of the slice holds `f64`"#
+    );
+}

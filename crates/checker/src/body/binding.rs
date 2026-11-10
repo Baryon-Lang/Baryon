@@ -23,9 +23,22 @@ impl<'db> Body<'db> {
             // makes `2` an `f32`, as `x: f32 = 2` does.
             self.change(target);
             let held = self.expression(target, None);
-            let ty = self.expression(value, Some(held));
-            self.consume(value, ty);
-            self.expect(value, held, ty, "the target holds");
+            // A slice takes a number for every element, `a[1:n] = 0.0` (reference, "Slices").
+            let filled = match held.kind(self.db) {
+                TypeKind::Array { element, .. } if self.is_view(target) => Some(*element),
+                _ => None,
+            };
+            let ty = self.expression(value, Some(filled.unwrap_or(held)));
+            // A slice is read element by element into a slice: nothing moves, nothing is kept.
+            if filled.is_none() || !self.is_view(value) {
+                self.consume(value, ty);
+            }
+            match filled {
+                Some(element) if self.is_scalar(ty) => {
+                    self.expect(value, element, ty, "each element of the slice holds");
+                }
+                _ => self.expect(value, held, ty, "the target holds"),
+            }
             return;
         }
         let expected = match targets.as_slice() {
