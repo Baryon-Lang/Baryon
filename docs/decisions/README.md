@@ -69,3 +69,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0034. `raise ... from` is rejected; a cause is kept in a field](0034-no-error-chaining.md) | Accepted |
 | [0035. `dict` is Python's dict, with keys that compare exactly](0035-dict.md) | Accepted |
 | [0036. Files and processes use Python's names, built natively in the runtime](0036-files-and-processes.md) | Accepted |
+| [0038. Standard-library classes are Baryon source shipped inside the compiler](0038-standard-library-in-baryon.md) | Accepted |
