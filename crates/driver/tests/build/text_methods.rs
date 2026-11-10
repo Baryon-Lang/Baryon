@@ -92,3 +92,36 @@ fn text_indexes_and_separators_are_checked() {
         assert_eq!(ran.status.code(), Some(101));
     }
 }
+
+/// `ValueError`, the standard library's own class (decision 0037), is raised, caught and read
+/// like a program's error, and printed in Python's form when `main` lets one out.
+#[test]
+fn value_error_is_raised_caught_and_reported() {
+    let program = "\
+def positive(mass: f64) -> Raises[f64, ValueError]:
+    if mass <= 0.0:
+        raise ValueError(\"mass must be positive\")
+    return mass
+
+
+def main() -> Raises[None, ValueError]:
+    try:
+        positive(-1.0)
+    except ValueError as error:
+        print(error.message)
+    positive(0.0)
+";
+    let directory = package("value-error", &[("main.byn", program)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", super::stderr(&output));
+    let ran = Command::new(&executable).output().unwrap();
+    assert_eq!(ran.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "mass must be positive\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stderr),
+        "error: ValueError(message='mass must be positive')\n"
+    );
+}

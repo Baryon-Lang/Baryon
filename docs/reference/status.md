@@ -129,7 +129,8 @@ out of a function, including through a `raise`.
 Everything in this chapter builds: error types, `Raises`, `raise`, errors passed on through
 callers, `try` with `except` naming one type or a tuple of them, `as`, bare `raise`, `main`
 ending with an error, and every panic in the table, with its message, location and backtrace.
-The one exception is the overflow panic: it names the operator but not yet its operands (roadmap
+`ValueError` and `OSError` build like a program's own error types; `int(text)` and `float(text)`,
+which raise `ValueError`, are not built yet (roadmap 1.13.12). The one exception is the overflow panic: it names the operator but not yet its operands (roadmap
 idea I.18), and [Types](#types) lists the operations it does not check yet.
 
 ## Parallel and vector loops

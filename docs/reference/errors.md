@@ -29,6 +29,27 @@ is a marker, as `Struct` is, and an error type cannot have another error type as
 Python code would catch a base class, list the error types instead: in `Raises` as a union, and
 in `except` as a tuple.
 
+### Error types the language provides
+
+Two error types need no declaration or import, as in Python. Each is an ordinary class of the
+standard library's own Baryon source ([decision 0038](../decisions/0038-standard-library-in-baryon.md)),
+so it is raised, caught and read like one of the program's own.
+
+| Type | Fields | Raised by |
+| --- | --- | --- |
+| `ValueError` | `message: str` | `int(text)` and `float(text)` of text that is not a number ([decision 0037](../decisions/0037-reading-numbers-from-text.md)), and any program that raises it |
+| `OSError` | `kind`, `errno`, `strerror`, `filename` | Files, the environment and processes ([Files and processes](files-and-processes.md)) |
+
+```python
+def positive(mass: f64) -> Raises[f64, ValueError]:
+    if mass <= 0.0:
+        raise ValueError("mass must be positive")
+    return mass
+```
+
+A module that declares its own class of the same name uses its own, since the library never
+hides a program's names.
+
 ## Functions that can fail
 
 A function that can fail says so in its return type with `Raises[T, E]`: it returns a `T`, or fails
