@@ -100,6 +100,7 @@ mod display;
 mod operand;
 mod place;
 mod statement;
+mod text;
 mod validate;
 
 pub use call::{Argument, Builtin, Callee, MathFunction};
@@ -113,6 +114,7 @@ pub use statement::{
     AccumulateOperator, ErrorEdge, Reduction, ReductionOperator, Statement, StatementKind,
     Terminator, TerminatorKind,
 };
+pub use text::TextMethod;
 pub use validate::Invalid;
 
 use source::Span;

@@ -205,12 +205,23 @@ pub unsafe extern "C" fn baryon_rt_text_bool(
 pub unsafe extern "C" fn baryon_rt_text_finish(builder: *mut TextBuilder) -> OwnedText {
     // SAFETY: the caller guarantees `builder` came from `Box::into_raw` and is finished once.
     let built = unsafe { Box::from_raw(builder) }.text;
-    let bytes = match memory::layout(built.len(), 1).and_then(memory::allocate) {
+    owned(&built)
+}
+
+/// A new owned `str` holding a copy of `text`, in memory the runtime allocated, so a drop frees
+/// it with [`baryon_rt_deallocate`](crate::baryon_rt_deallocate).
+///
+/// # Panics
+///
+/// Ends the program with a panic when the system has no memory left.
+#[allow(unsafe_code, reason = "copies into memory the runtime allocated")]
+pub(crate) fn owned(text: &str) -> OwnedText {
+    let bytes = match memory::layout(text.len(), 1).and_then(memory::allocate) {
         Ok(pointer) => pointer.as_ptr(),
         Err(failure) => panic(failure, None),
     };
-    // SAFETY: `bytes` has room for `built.len()` bytes, and the two do not overlap.
-    unsafe { std::ptr::copy_nonoverlapping(built.as_ptr(), bytes, built.len()) };
-    let length = u64::try_from(built.len()).unwrap_or(u64::MAX);
+    // SAFETY: `bytes` has room for `text.len()` bytes, and the two do not overlap.
+    unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), bytes, text.len()) };
+    let length = u64::try_from(text.len()).unwrap_or(u64::MAX);
     OwnedText { bytes, length }
 }

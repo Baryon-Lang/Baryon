@@ -2,7 +2,7 @@
 //! [`Call`](crate::TerminatorKind::Call), the [`Builtin`] operations and [`MathFunction`]s the
 //! backends build inline or call the runtime for, and each [`Argument`]'s mode.
 
-use crate::{Operand, Place};
+use crate::{Operand, Place, TextMethod};
 use types::{Item, Type};
 
 /// The function a [`Call`](crate::TerminatorKind::Call) calls.
@@ -103,6 +103,9 @@ pub enum Builtin {
     /// guarantees, so the call checks nothing. It reads one byte to find the character's width
     /// in UTF-8, so it takes constant time. The call cannot fail.
     CharacterStr,
+    /// A method of `str`, such as `split` or `strip`, or indexing and slicing one (roadmap
+    /// 1.13.12). [`TextMethod`] says what each takes and gives.
+    Text(TextMethod),
     /// Looks a key up in a `dict` (decision 0035): two arguments, the `dict` and the key, of the
     /// key type, each passed `Borrow`, so a constant key is put in a local first; the destination is an
     /// `i64`, the position of the key's entry, or -1 when the key is not there. The position
@@ -149,6 +152,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Uniform.name(), "Philox.uniform");
     /// assert_eq!(mir::Builtin::ContainsStr.name(), "str in");
     /// assert_eq!(mir::Builtin::CharacterStr.name(), "str character");
+    /// assert_eq!(mir::Builtin::Text(mir::TextMethod::Split).name(), "str.split");
     /// assert_eq!(mir::Builtin::DictFind.name(), "dict lookup");
     /// ```
     #[must_use]
@@ -166,6 +170,7 @@ impl Builtin {
             Self::ContainsStr => "str in",
             Self::LengthStr => "len of str",
             Self::CharacterStr => "str character",
+            Self::Text(method) => method.name(),
             Self::DictFind => "dict lookup",
             Self::DictInsert => "dict insert",
             Self::DictRemove => "dict remove",

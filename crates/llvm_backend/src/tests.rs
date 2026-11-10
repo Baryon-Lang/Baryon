@@ -12,6 +12,7 @@ mod math;
 mod panics;
 mod parallel;
 mod print;
+mod string_methods;
 mod text;
 mod vector;
 mod views;

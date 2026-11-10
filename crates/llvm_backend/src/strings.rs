@@ -3,7 +3,8 @@
 //! ([`Builtin::ContainsStr`](mir::Builtin::ContainsStr)) and counting characters
 //! ([`Builtin::LengthStr`](mir::Builtin::LengthStr)). Taking one character
 //! ([`Builtin::CharacterStr`](mir::Builtin::CharacterStr)) needs no loop and no runtime call: it
-//! reads the character's first byte and borrows the bytes it covers.
+//! reads the character's first byte and borrows the bytes it covers. `str`'s methods are in
+//! [`string_methods`](crate::string_methods).
 //!
 //! Each `str` argument is passed to the runtime as its byte pointer and its byte count, with the
 //! "not owned" bit of decision 0022 masked off by [`text_parts`](Function::text_parts).
@@ -75,15 +76,7 @@ impl<'db> Function<'_, '_, 'db> {
         }
         let mut values = Vec::with_capacity(2 * arguments.len());
         for argument in arguments {
-            let value = match argument {
-                Argument::Owned(operand) => self.value(operand)?.0,
-                Argument::Borrow(place) | Argument::InOut(place) => {
-                    let (address, ty) = self.place(place)?;
-                    self.load(&address, ty)?
-                        .ok_or_else(|| Unsupported::new("`None` where a `str` is needed"))?
-                }
-            };
-            let (bytes, length) = self.text_parts(&value);
+            let (bytes, length) = self.text_argument(argument)?;
             values.push(format!("ptr {bytes}, i64 {length}"));
         }
         let parameters = vec!["ptr, i64"; function.arity].join(", ");
@@ -106,6 +99,23 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(())
     }
 
+    /// The byte pointer and the byte count, flag masked off, of the `str` that `argument`
+    /// passes: a borrowed place, or an owned operand such as a literal.
+    pub(crate) fn text_argument(
+        &mut self,
+        argument: &Argument<'db>,
+    ) -> Result<(String, String), Unsupported> {
+        let value = match argument {
+            Argument::Owned(operand) => self.value(operand)?.0,
+            Argument::Borrow(place) | Argument::InOut(place) => {
+                let (address, ty) = self.place(place)?;
+                self.load(&address, ty)?
+                    .ok_or_else(|| Unsupported::new("`None` where a `str` is needed"))?
+            }
+        };
+        Ok(self.text_parts(&value))
+    }
+
     /// Writes the character of a `str` that starts at a byte cursor into `destination`, as a
     /// `str` flagged as not owned that points into the string's own bytes, moves the cursor past
     /// it, and goes to `target`. The character's width in UTF-8 comes from its first byte: below
@@ -120,15 +130,7 @@ impl<'db> Function<'_, '_, 'db> {
         let [text, Argument::InOut(cursor)] = arguments else {
             return Err(Unsupported::new("`str` character with these arguments"));
         };
-        let value = match text {
-            Argument::Owned(operand) => self.value(operand)?.0,
-            Argument::Borrow(place) | Argument::InOut(place) => {
-                let (address, ty) = self.place(place)?;
-                self.load(&address, ty)?
-                    .ok_or_else(|| Unsupported::new("`None` where a `str` is needed"))?
-            }
-        };
-        let (bytes, _) = self.text_parts(&value);
+        let (bytes, _) = self.text_argument(text)?;
         let (cursor, _) = self.place(cursor)?;
         let offset = self.emit(&format!("load i64, ptr {cursor}"));
         let at = self.emit(&format!(
