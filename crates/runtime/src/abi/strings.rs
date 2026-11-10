@@ -125,7 +125,7 @@ pub(super) unsafe fn bytes<'a>(pointer: *const u8, length: usize) -> &'a [u8] {
 ///
 /// As for [`bytes`], and the bytes are UTF-8, which every `str` value holds.
 #[allow(unsafe_code, reason = "reads text compiled code points to")]
-unsafe fn text<'a>(pointer: *const u8, length: usize) -> &'a str {
+pub(super) unsafe fn text<'a>(pointer: *const u8, length: usize) -> &'a str {
     // SAFETY: the caller guarantees `length` readable bytes at `pointer`.
     let bytes = unsafe { bytes(pointer, length) };
     // SAFETY: the caller guarantees the bytes are UTF-8.

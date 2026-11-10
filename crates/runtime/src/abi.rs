@@ -9,6 +9,7 @@
 mod accumulate;
 mod complex;
 mod dict;
+mod files;
 mod memory;
 mod output;
 mod panics;
@@ -35,6 +36,11 @@ pub use complex::{
 pub use dict::{
     baryon_rt_dict_find, baryon_rt_dict_free, baryon_rt_dict_insert, baryon_rt_dict_length,
     baryon_rt_dict_next, baryon_rt_dict_remove, baryon_rt_panic_key,
+};
+pub use files::{
+    OsError, RaisedError, baryon_rt_file_close, baryon_rt_file_drop, baryon_rt_file_flush,
+    baryon_rt_file_open, baryon_rt_file_read, baryon_rt_file_read_line, baryon_rt_file_read_lines,
+    baryon_rt_file_write,
 };
 pub use memory::{baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_deallocate};
 pub use output::{

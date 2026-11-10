@@ -65,7 +65,7 @@ pub struct TextValue {
 ///
 /// `out` points to a writable [`OwnedList`].
 #[allow(unsafe_code, reason = "writes a list compiled code owns")]
-unsafe fn write_list(pieces: &[&str], out: *mut OwnedList) {
+pub(super) unsafe fn write_list(pieces: &[&str], out: *mut OwnedList) {
     let size = size_of::<OwnedText>();
     let count = i64::try_from(pieces.len()).unwrap_or(i64::MAX);
     let elements = match memory::array_layout(count, size, align_of::<OwnedText>())

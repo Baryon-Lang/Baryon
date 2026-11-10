@@ -96,7 +96,8 @@ pub unsafe extern "C" fn baryon_rt_environment_get(
 }
 
 /// Ends the program with exit status `status`: `sys.exit(status)`. It first writes out what
-/// `print` holds back, as the end of `main` does, and runs nothing else on the way out.
+/// `print` holds back, as the end of `main` does, and the buffer of every file open for writing
+/// (decision 0036, part 5), and runs nothing else on the way out.
 ///
 /// # Panics
 ///
@@ -117,6 +118,7 @@ pub unsafe extern "C" fn baryon_rt_exit(status: i64, location: *const Location) 
         });
     };
     print::flush();
+    crate::files::flush_all();
     std::process::exit(status)
 }
 
