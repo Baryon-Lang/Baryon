@@ -350,6 +350,9 @@ A parameter of type `Callable[[f64, Vec3], Vec3]` takes a function with that sig
 0, the argument must be the name of a module-level function, not a closure. The compiler generates
 one copy of the receiving function per function passed to it, so the passed function is inlined
 and the call costs nothing ([decision 0026](../decisions/0026-functions-as-arguments.md)).
+The receiving function may pass the parameter on to another `Callable` parameter or copy it into
+a local. Which function a name holds must be known when compiling, so a local that holds one of
+two different functions depending on a branch is reported when building.
 
 ## Generics
 

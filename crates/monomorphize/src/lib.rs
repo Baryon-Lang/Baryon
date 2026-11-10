@@ -15,6 +15,15 @@
 //! generic function at concrete types, since that needs both lowering and this crate, and only an
 //! application crate may depend on two implementations.
 //!
+//! A method of a generic class, such as `Pair[T]`'s, is generic in the class's type parameters,
+//! which come first in its instance's type arguments, then the method's own (roadmap 1.9.18).
+//!
+//! A `Callable` parameter is an implicit type parameter (decision 0026). When two of one
+//! signature receive different functions, their shared `Callable` type names neither, so
+//! [`instantiate`] gives each parameter's local, and each local copied from it, its function's
+//! own type, and [`forward_callables`] gives each call that passes such a local on the type
+//! argument of that function.
+//!
 //! A number literal in a generic body, `2` in `x * 2` for `T: Number`, keeps the value written
 //! until substitution gives `T` a number type, then is written at that type: `2.0` for `f64`.
 //!
@@ -70,6 +79,9 @@
 //! assert!(instance.display(&database).to_string().starts_with("fn(_1: f64) -> f64 {"));
 //! ```
 
+mod callables;
+
+pub use callables::forward_callables;
 use mir::{
     Argument, Body, Callee, Constant, ConstantValue, Elementwise, LocalKind, Operand, Rvalue,
     StatementKind, TerminatorKind,
@@ -135,6 +147,7 @@ pub fn instantiate<'db>(
         .filter(|(parameter, _)| matches!(parameter.kind(db), TypeKind::Callable { .. }))
         .map(|(_, &argument)| argument);
     callable_parameters(db, &mut body, received);
+    callables::copied(db, &mut body);
     direct_calls(db, &mut body);
     whole_array_arithmetic(db, &mut body);
     body

@@ -88,6 +88,21 @@ fn assertions_print_their_source() {
     );
 }
 
+/// A failed emptiness check quotes the call from the source, here the word `total`.
+#[test]
+fn empty_reductions_quote_the_call() {
+    let database = Database::default();
+    let start = u32::try_from(SOURCE.find("total").unwrap()).unwrap();
+    let at = Span::new(FileId::from_index(0), start, start + 5);
+    let body = assert_body(&database, BinaryOperator::Greater, Check::NotEmpty, at);
+    let executable = build("empty", &super::module(&database, &[("check", body)]), MAIN);
+    assert_eq!(run(&executable, &["3", "0"]).as_deref(), Ok("ok\n"));
+    assert_eq!(
+        run(&executable, &["0", "0"]),
+        Err("panic: `total` of an empty array\n  --> heat.byn:1:8\n".to_owned())
+    );
+}
+
 /// A length check passes both lengths and the dimension to the runtime, which names them.
 #[test]
 fn length_checks_report_both_lengths() {

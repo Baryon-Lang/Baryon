@@ -124,19 +124,23 @@ impl<'db> Builder<'db> {
             .iter()
             .map(|parameter| (parameter.mode, parameter.ty))
             .collect();
+        // A method of a generic class is generic in the class's type parameters, which come
+        // first: the receiver's type arguments (roadmap 1.9.18).
+        let mut type_arguments = match self.class_arguments(item, arguments) {
+            Some(class) => class.into_iter().chain(type_arguments).collect::<Vec<_>>(),
+            None => return self.unsupported(node, "a method call on this receiver"),
+        };
         // Each `Callable` parameter is an implicit type parameter after the written ones, and
         // its argument is the type of the function passed (decision 0026).
-        let mut type_arguments = type_arguments;
         for (&argument, (_, ty)) in arguments.iter().zip(&parameters) {
             if matches!(ty.kind(self.db), TypeKind::Callable { .. }) {
                 let Some(argument) = argument else {
                     return self.unsupported(node, "a default for a `Callable` parameter");
                 };
-                let function = self.ty(argument);
-                if !matches!(function.kind(self.db), TypeKind::Function { .. }) {
-                    return self.unsupported(argument, "passing on a `Callable` parameter");
-                }
-                type_arguments.push(function);
+                // A function's own type, or the `Callable` type of a parameter this body
+                // received and passes on, which monomorphization replaces by the function the
+                // instance received (`monomorphize::forward_callables`).
+                type_arguments.push(self.ty(argument));
             }
         }
         let mut passed = Vec::with_capacity(arguments.len());
@@ -191,6 +195,38 @@ impl<'db> Builder<'db> {
             self.dispatch(&edge, errors, node);
         }
         self.start(next);
+    }
+
+    /// The type arguments of the class that declares `item`, for a call whose receiver is the
+    /// first of `arguments`: `[f64]` for `p.total()` with `p: Pair[f64]`, or `[T]` inside
+    /// another generic body, which monomorphization replaces. Empty for a function and for a
+    /// method of a class with no type parameters. `None` when the class has type parameters
+    /// but the receiver is not a struct of that class, such as a method an embedded struct
+    /// provides (decision 0031), which is not built yet.
+    fn class_arguments(
+        &self,
+        item: Item<'db>,
+        arguments: &[Option<NodeId>],
+    ) -> Option<Vec<types::Type<'db>>> {
+        let tree = self.db.parse(item.file(self.db)).tree();
+        let Some((_, Some(class))) = crate::definition(tree, item.name(self.db)) else {
+            return Some(Vec::new());
+        };
+        let Some(parameters) = tree.child(class, Role::TypeParameters) else {
+            return Some(Vec::new());
+        };
+        let count = tree.children_with(parameters, Role::Item).count();
+        let receiver = arguments.first().copied().flatten()?;
+        match self.ty(receiver).kind(self.db) {
+            TypeKind::Struct(nominal)
+                if nominal.file == item.file(self.db)
+                    && tree.child(class, Role::Name) == Some(nominal.name)
+                    && nominal.arguments.len() == count =>
+            {
+                Some(nominal.arguments.clone())
+            }
+            _ => None,
+        }
     }
 
     /// A call of a `Callable` value, such as the parameter `derivative` in
