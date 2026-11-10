@@ -1,5 +1,5 @@
-//! Loops: `while`, and `for` over `range`, over a rank-1 `Array` or `Fixed` array, over a list
-//! of a copy type, and over a tuple whose items have one type.
+//! Loops: `while`, and `for` over `range`, over a rank-1 `Array` or `Fixed` array, over a list,
+//! over a tuple whose items have one type, and over the characters of a `str`.
 //!
 //! Every `for` loop keeps a hidden counter, so the body may assign the loop variable without
 //! changing which pass comes next, as in Python. A loop over `prange` is a parallel loop, which
@@ -9,7 +9,11 @@
 //! element, as the reference's values and references chapter says: the loop variable is the
 //! element, read in place, never a copy and never dropped. Lowering makes each read of the
 //! variable a read of the element's place, which is exact while every use of the variable is
-//! inside the loop; a variable also used outside it is reported as not lowered yet.
+//! inside a loop that binds it; a variable also used outside one is reported as not lowered yet.
+//!
+//! A loop over a `str` is one of these too: it counts the characters once with
+//! [`Builtin::LengthStr`], then each pass takes the next with [`Builtin::CharacterStr`], a
+//! one-character `str` that borrows the string's own bytes, so the loop is linear in the length.
 //!
 //! What runs on each pass is a [`Pass`]: a `for` statement's body, or the rest of a list
 //! comprehension, which the `comprehensions` module lowers with the same loops.
@@ -17,8 +21,8 @@
 use crate::builder::{Builder, Loop};
 use database::Definition;
 use mir::{
-    BinaryOperator, BlockId, Check, Constant, Local, Operand, Place, Projection, Rvalue,
-    TerminatorKind,
+    Argument, BinaryOperator, BlockId, Builtin, Check, Constant, Local, Operand, Place, Projection,
+    Rvalue, TerminatorKind,
 };
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Type, TypeKind};
@@ -27,6 +31,16 @@ use types::{Type, TypeKind};
 /// rest of a comprehension. It gets the block that starts the next pass and the block after the
 /// loop, and must end by going to one of them or to a block that cannot return.
 pub(crate) type Pass<'pass, 'db> = &'pass mut dyn FnMut(&mut Builder<'db>, BlockId, BlockId);
+
+/// How a collection loop reaches its elements.
+enum Elements {
+    /// At an index, in an array or a list.
+    Indexed,
+    /// Through a switch on the counter, in a tuple of this many items.
+    Tuple(usize),
+    /// One character at a time from a byte cursor, in a `str`.
+    Text,
+}
 
 /// The step of a `range` loop.
 enum Step {
@@ -294,9 +308,14 @@ impl<'db> Builder<'db> {
     ) {
         let ty = self.ty(iterator);
         let (element, items) = match ty.kind(self.db) {
-            TypeKind::Array { element, rank: 1 } | TypeKind::List(element) => (*element, None),
-            TypeKind::Fixed { element, shape } if shape.rank() == 1 => (*element, None),
-            TypeKind::Tuple(items) if !items.is_empty() => (items[0], Some(items.len())),
+            TypeKind::Array { element, rank: 1 } | TypeKind::List(element) => {
+                (*element, Elements::Indexed)
+            }
+            TypeKind::Fixed { element, shape } if shape.rank() == 1 => {
+                (*element, Elements::Indexed)
+            }
+            TypeKind::Tuple(items) if !items.is_empty() => (items[0], Elements::Tuple(items.len())),
+            TypeKind::Str => (ty, Elements::Text),
             _ => {
                 return self.unsupported(iterator, "`for` loops over values of this type");
             }
@@ -310,12 +329,23 @@ impl<'db> Builder<'db> {
         }
         let collection = self.borrow(iterator);
         let int = self.int_type();
-        let length = match items {
-            Some(count) => Operand::Constant(Constant::integer(
-                int,
-                i128::try_from(count).unwrap_or(i128::MAX),
-            )),
-            None => self.length(&collection, ty, 0, iterator),
+        let (length, cursor) = match items {
+            Elements::Tuple(count) => {
+                let count = i128::try_from(count).unwrap_or(i128::MAX);
+                (Operand::Constant(Constant::integer(int, count)), None)
+            }
+            Elements::Indexed => (self.length(&collection, ty, 0, iterator), None),
+            Elements::Text => {
+                // The loop runs once per character and reads each from a byte cursor, which
+                // each pass moves on.
+                let characters = self.temporary(int, iterator);
+                let text = vec![Argument::Borrow(collection.clone())];
+                self.text_call(Place::from(characters), Builtin::LengthStr, text, iterator);
+                let cursor = self.temporary(int, iterator);
+                let start = Rvalue::Use(Operand::Constant(Constant::integer(int, 0)));
+                self.assign(Place::from(cursor), start, iterator);
+                (Operand::Copy(Place::from(characters)), Some(cursor))
+            }
         };
         let limit = self.temporary(int, iterator);
         self.assign(Place::from(limit), Rvalue::Use(length), iterator);
@@ -333,40 +363,7 @@ impl<'db> Builder<'db> {
         self.loop_test((BinaryOperator::Less, counter, limit, body, end), iterator);
         self.start(body);
         let aliases = self.aliases.clone();
-        match items {
-            None => {
-                let place = collection.project(Projection::Index(vec![counter]));
-                self.bind_element(target, place, element);
-            }
-            Some(count) if borrowed => {
-                // The item is copied bit for bit into a temporary that is never dropped, so the
-                // switch's arms meet at one place the variable can borrow.
-                let item = self.temporary(element, target);
-                self.tuple_item(
-                    target,
-                    (&collection, count),
-                    counter,
-                    &mut |builder, place| {
-                        builder.assign(
-                            Place::from(item),
-                            Rvalue::Use(Operand::Copy(place)),
-                            target,
-                        );
-                    },
-                );
-                self.bind_element(target, Place::from(item), element);
-            }
-            Some(count) => {
-                self.tuple_item(
-                    target,
-                    (&collection, count),
-                    counter,
-                    &mut |builder, place| {
-                        builder.assign_part(target, place, element);
-                    },
-                );
-            }
-        }
+        self.bind_pass(target, (&collection, items, cursor), counter, element);
         pass(self, next, end);
         self.aliases = aliases;
         self.start(next);
@@ -381,6 +378,67 @@ impl<'db> Builder<'db> {
         );
         self.terminate(TerminatorKind::Goto(header), statement);
         self.start(end);
+    }
+
+    /// Binds the loop target `target` to the element of `collection` for the pass at `counter`:
+    /// the character at the cursor of a `str`, the element at the counter of an array or list,
+    /// or the item at the counter of a tuple, whose items have type `element`. An element that
+    /// is not copied is borrowed (the module documentation).
+    fn bind_pass(
+        &mut self,
+        target: NodeId,
+        (collection, items, cursor): (&Place, Elements, Option<Local>),
+        counter: Local,
+        element: Type<'db>,
+    ) {
+        let borrowed = !self.is_copy(element);
+        match (items, cursor) {
+            (_, Some(cursor)) => {
+                let character = self.temporary(element, target);
+                self.text_call(
+                    Place::from(character),
+                    Builtin::CharacterStr,
+                    vec![
+                        Argument::Borrow(collection.clone()),
+                        Argument::InOut(Place::from(cursor)),
+                    ],
+                    target,
+                );
+                self.bind_element(target, Place::from(character), element);
+            }
+            (Elements::Indexed | Elements::Text, None) => {
+                let place = collection.clone().project(Projection::Index(vec![counter]));
+                self.bind_element(target, place, element);
+            }
+            (Elements::Tuple(count), _) if borrowed => {
+                // The item is copied bit for bit into a temporary that is never dropped, so the
+                // switch's arms meet at one place the variable can borrow.
+                let item = self.temporary(element, target);
+                self.tuple_item(
+                    target,
+                    (collection, count),
+                    counter,
+                    &mut |builder, place| {
+                        builder.assign(
+                            Place::from(item),
+                            Rvalue::Use(Operand::Copy(place)),
+                            target,
+                        );
+                    },
+                );
+                self.bind_element(target, Place::from(item), element);
+            }
+            (Elements::Tuple(count), _) => {
+                self.tuple_item(
+                    target,
+                    (collection, count),
+                    counter,
+                    &mut |builder, place| {
+                        builder.assign_part(target, place, element);
+                    },
+                );
+            }
+        }
     }
 
     /// Runs `write` on item number `counter` of the tuple at `tuple`, which has `count` items,
@@ -441,28 +499,48 @@ impl<'db> Builder<'db> {
         }
     }
 
-    /// Whether every use of the variables `target` binds lies inside `statement`, so reading
-    /// each one as the element it borrows is exact. A comprehension's variables belong to the
-    /// comprehension alone, so they always are.
+    /// Whether every use of the variables `target` binds lies inside a `for` statement whose
+    /// target binds it again, `statement` or another, so reading each one as the element it
+    /// borrows is exact: such a loop gives the variable its value at the top of every pass,
+    /// before any read in it. Two loops that reuse a name, `for c in a:` then `for c in b:`,
+    /// are confined; a read after the loop, or an assignment outside one, is not. A
+    /// comprehension's variables belong to the comprehension alone, so they always are.
     fn confined(&self, statement: NodeId, target: NodeId) -> bool {
         if self.tree.kind(statement) != SyntaxKind::For {
             return true;
         }
-        let (mut everywhere, mut inside, mut names) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut everywhere, mut names) = (Vec::new(), Vec::new());
         self.descendants(self.function, &mut everywhere);
-        self.descendants(statement, &mut inside);
         self.descendants(target, &mut names);
-        let uses = |nodes: &[NodeId], binding: NodeId| {
-            nodes
-                .iter()
-                .filter(|&&node| self.definition(node) == Some(&Definition::Local(binding)))
-                .count()
+        let refers = |node: NodeId, binding: NodeId| {
+            self.definition(node) == Some(&Definition::Local(binding))
         };
-        names.into_iter().all(|name| match self.definition(name) {
-            Some(&Definition::Local(binding)) => {
-                uses(&everywhere, binding) == uses(&inside, binding)
-            }
-            _ => true,
+        names.into_iter().all(|name| {
+            let Some(&Definition::Local(binding)) = self.definition(name) else {
+                return true;
+            };
+            // The spans of the `for` statements whose targets bind the variable.
+            let rebinding: Vec<_> = everywhere
+                .iter()
+                .filter(|&&node| self.tree.kind(node) == SyntaxKind::For)
+                .filter(|&&node| {
+                    let mut bound = Vec::new();
+                    if let Some(target) = self.tree.child(node, Role::Target) {
+                        self.descendants(target, &mut bound);
+                    }
+                    bound.into_iter().any(|bound| refers(bound, binding))
+                })
+                .map(|&node| self.tree.span(node))
+                .collect();
+            everywhere
+                .iter()
+                .filter(|&&node| refers(node, binding))
+                .all(|&node| {
+                    let span = self.tree.span(node);
+                    rebinding.iter().any(|loop_span| {
+                        loop_span.start() <= span.start() && span.end() <= loop_span.end()
+                    })
+                })
         })
     }
 

@@ -273,3 +273,94 @@ fn(_1: list[str]) -> i64 {
 "
     );
 }
+
+/// A loop over a `str` counts its characters once, then each pass takes the character at a byte
+/// cursor, which the call moves on; the loop variable borrows it in place.
+#[test]
+fn a_loop_over_a_string_takes_one_character_at_a_time() {
+    let program = "\
+        def vowels(text: str) -> i64:\n\
+        \x20   n = 0\n\
+        \x20   for c in text:\n\
+        \x20       if c in \"aeiou\":\n\
+        \x20           n += 1\n\
+        \x20   return n\n";
+    assert_eq!(
+        lower(program, "vowels"),
+        "\
+fn(_1: str) -> i64 {
+    let _0: i64; // return
+    let _1: str; // parameter text
+    let _2: i64; // n
+    let _3: str; // c
+    let _4: i64;
+    let _5: i64;
+    let _6: i64;
+    let _7: i64;
+    let _8: bool;
+    let _9: str;
+    let _10: bool;
+    let _11: str;
+    let _12: tuple[i64, bool];
+    let _13: bool;
+
+    bb0: {
+        _2 = 0_i64;
+        _4 = call len of str(_1) -> [return: bb1];
+    }
+
+    bb1: {
+        _5 = 0_i64;
+        _6 = copy _4;
+        _7 = 0_i64;
+        goto -> bb2;
+    }
+
+    bb2: {
+        _8 = Less(copy _7, copy _6);
+        branch copy _8 -> [true: bb3, false: bb5];
+    }
+
+    bb3: {
+        _9 = call str character(_1, inout _5) -> [return: bb6];
+    }
+
+    bb4: {
+        _7 = Add(copy _7, 1_i64);
+        goto -> bb2;
+    }
+
+    bb5: {
+        _0 = copy _2;
+        drop(_3);
+        return;
+    }
+
+    bb6: {
+        _11 = \"aeiou\";
+        _10 = call str in(_11, _9) -> [return: bb7];
+    }
+
+    bb7: {
+        drop(_11);
+        branch copy _10 -> [true: bb8, false: bb9];
+    }
+
+    bb8: {
+        _12 = CheckedAdd(copy _2, 1_i64);
+        _13 = Not(copy _12.1);
+        assert(copy _13, no overflow: Add) -> bb10;
+    }
+
+    bb9: {
+        goto -> bb4;
+    }
+
+    bb10: {
+        _2 = copy _12.0;
+        goto -> bb9;
+    }
+}
+"
+    );
+}
