@@ -55,11 +55,14 @@
 //!   read it as a one-dimensional array, and `Array(xs)` copies it into a new array. Only lists
 //!   of copy types, such as `list[f64]`, are built so far.
 //! - **Math.** `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` from `math`, and `**` and `**=` on
-//!   floats, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
+//!   floats and complex numbers, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
 //!   [`Builtin::Math`](mir::Builtin::Math) calls a backend writes. The built-in `round(x)` rounds
 //!   a float and converts it to an integer. `**` and `**=` on integers are repeated squaring,
 //!   with a [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each
 //!   multiplication checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
+//! - **Complex numbers.** `z.real` and `z.imag` are fields 0 and 1 of the number's place,
+//!   `complex(re, im)` writes both, `z.conjugate()` negates a copy's imaginary part, and `abs(z)`
+//!   calls [`MathFunction::Hypot`](mir::MathFunction::Hypot) of the parts (the `complex` module).
 //! - **Random numbers.** `Philox(seed, stream)` and `generator.uniform()` call
 //!   [`Builtin::Philox`](mir::Builtin::Philox) and [`Builtin::Uniform`](mir::Builtin::Uniform),
 //!   the generator passed `InOut` (decision 0028). `pi`, `e`, `tau`, `inf` and `nan` from `math`
@@ -253,6 +256,7 @@ mod accumulate;
 mod arrays;
 mod builder;
 mod calls;
+mod complex;
 mod constants;
 mod creation;
 mod defaults;

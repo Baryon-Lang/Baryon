@@ -242,8 +242,9 @@ impl<'db> Builder<'db> {
         };
         if self.tree.kind(digits) == SyntaxKind::Imaginary {
             let imaginary = written.trim_end_matches('j').parse::<f64>().unwrap_or(0.0);
+            // `-2j` negates `0+2j`, so its real part is `-0.0`, as Python's `(-0-2j)` shows.
             return ConstantValue::Complex {
-                real: 0.0_f64.to_bits(),
+                real: (sign * 0.0_f64).to_bits(),
                 imaginary: (sign * imaginary).to_bits(),
             };
         }

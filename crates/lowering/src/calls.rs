@@ -50,6 +50,9 @@ impl<'db> Builder<'db> {
                     let to = to.display(self.db);
                     self.unsupported(node, &format!("converting a `{from}` to `{to}`"));
                 }
+                (TypeKind::Primitive(_), [real, imaginary]) if self.is_complex(*to) => {
+                    self.complex_from_parts(&place, *to, (*real, *imaginary), node);
+                }
                 (TypeKind::Primitive(_), [argument]) => {
                     let operand = self.operand_as(*argument, *to);
                     self.assign(place, Rvalue::Use(operand), node);
@@ -87,6 +90,7 @@ impl<'db> Builder<'db> {
                     self.new_fixed(place, function, &arguments, node);
                 }
                 (Some(("str", "copy")), [_]) => self.joined(place, &arguments, node),
+                (Some(("complex", "conjugate")), [value]) => self.conjugate(place, *value, node),
                 (Some(("list", "append")), [list, value]) => {
                     self.list_append(place, *list, *value, node);
                 }

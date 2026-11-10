@@ -166,14 +166,19 @@ impl<'db> Builder<'db> {
             SyntaxKind::Attribute => {
                 let value = self.tree.child(node, Role::Value)?;
                 let fields = self.field(value, node)?;
-                if !matches!(
+                // A part of any complex value, such as `(z * w).real`, reads the value's
+                // temporary.
+                let base = if self.is_complex(self.ty(value)) {
+                    self.borrow(value)
+                } else if matches!(
                     self.tree.kind(value),
                     SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
                 ) {
+                    self.place(value)?
+                } else {
                     self.unsupported(node, "fields of a value that is not a variable");
                     return None;
-                }
-                let base = self.place(value)?;
+                };
                 Some(
                     fields
                         .into_iter()
@@ -210,10 +215,13 @@ impl<'db> Builder<'db> {
 
     /// The positions of the fields to step through for `attribute` on the struct `value`
     /// holds: the embedded fields the checker found the name through (decision 0031), then the
-    /// field itself, so `ion.m` is `ion.particle.m`. `None` with an error when `value` is not a
-    /// struct.
+    /// field itself, so `ion.m` is `ion.particle.m`; or the part `attribute` names of a complex
+    /// number. `None` with an error when `value` is neither.
     fn field(&mut self, value: NodeId, attribute: NodeId) -> Option<Vec<u32>> {
         let name = self.tree.child(attribute, Role::Attribute)?;
+        if self.is_complex(self.ty(value)) {
+            return Self::complex_part(self.text_of(name)).map(|part| vec![part]);
+        }
         let TypeKind::Struct(nominal) = self.ty(value).kind(self.db) else {
             self.unsupported(attribute, "attributes other than struct fields");
             return None;

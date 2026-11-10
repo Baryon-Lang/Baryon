@@ -1,5 +1,5 @@
 //! Mathematical functions of floats: the `math` functions the checker types, `x ** y` and
-//! `x **= y` on floats, the built-in `round(x)`, and `round` of the elements of a `Fixed` array,
+//! `x **= y` on floats and complex numbers, the built-in `round(x)`, and `round` of the elements of a `Fixed` array,
 //! each a call of a [`Builtin::Math`] function that a backend writes itself; `floor`, `ceil` and
 //! `trunc`, such a call and a conversion to `int`; `isnan`, `isinf` and `isfinite`, comparisons;
 //! `degrees`, `radians` and `log(x, base)`, arithmetic; and the built-in `abs(x)`, a comparison
@@ -175,15 +175,19 @@ impl<'db> Builder<'db> {
     /// `nan` stays `nan`. The absolute value of the most negative integer does not fit, so
     /// the integer `0 - x` is checked as `-x` is: a debug build panics with
     /// ``integer overflow in `-` `` and a release build wraps it around to itself (decision
-    /// 0030). A complex number, whose `abs` is its modulus, is reported as not lowered yet.
+    /// 0030). A complex number's `abs` is its modulus, a call of `hypot` (the `complex`
+    /// module).
     pub(crate) fn absolute(&mut self, place: Place, argument: NodeId, node: NodeId) {
+        if self.is_complex(self.ty(argument)) {
+            return self.complex_absolute(place, argument, node);
+        }
         let ty = self.ty(node);
         let below = if self.is_float(ty) {
             BinaryOperator::LessEqual
         } else if self.is_integer(ty) {
             BinaryOperator::Less
         } else {
-            return self.unsupported(node, "`abs` of a complex number");
+            return self.unsupported(node, "`abs` of this type");
         };
         let value = self.temporary(ty, argument);
         let operand = self.operand_as(argument, ty);
@@ -307,7 +311,8 @@ impl<'db> Builder<'db> {
         );
     }
 
-    /// `place = function(operands…)`, where `place` and every operand have one float type.
+    /// `place = function(operands…)`, where `place` and every operand have one float type, or
+    /// for `**` on complex numbers, one complex type.
     pub(crate) fn math_call(
         &mut self,
         place: Place,

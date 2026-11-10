@@ -23,6 +23,9 @@ impl<'db> Body<'db> {
             .collect();
         let primitive = |db, kind| Type::new(db, TypeKind::Primitive(kind));
         if let Some(target) = Primitive::from_name(name) {
+            if let Some(ty) = self.complex_conversion(node, name, target, &all, &types) {
+                return ty;
+            }
             if types.len() != 1 {
                 let message = format!("`{name}(...)` converts one value, found {}", types.len());
                 return self
@@ -30,6 +33,9 @@ impl<'db> Body<'db> {
                     .error(node, &message, "wrong number of arguments", None);
             }
             return primitive(self.db, target);
+        }
+        if let Some(ty) = self.complex_builtin(name, &all, &types) {
+            return ty;
         }
         let int = primitive(self.db, Primitive::Integer(Integer::I64));
         match (name, types.as_slice()) {

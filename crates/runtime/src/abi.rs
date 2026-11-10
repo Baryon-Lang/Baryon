@@ -7,6 +7,7 @@
 //! code in the other modules.
 
 mod accumulate;
+mod complex;
 mod output;
 mod philox;
 mod sum;
@@ -15,6 +16,10 @@ mod text;
 pub use accumulate::{
     baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
     baryon_rt_accumulator_slot,
+};
+pub use complex::{
+    baryon_rt_power_complex64, baryon_rt_power_complex128, baryon_rt_print_complex64,
+    baryon_rt_print_complex128,
 };
 pub use output::{
     baryon_rt_flush, baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64,

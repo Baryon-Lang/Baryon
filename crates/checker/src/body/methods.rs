@@ -71,6 +71,9 @@ impl<'db> Body<'db> {
             return self.trait_method_call(node, function, base, bound, &receiver, arguments);
         }
         let nominal = match base.kind(self.db) {
+            TypeKind::Primitive(types::Primitive::Complex(_)) => {
+                return self.complex_method(node, function, receiver, &callee, arguments);
+            }
             TypeKind::Str if callee == "copy" => {
                 let builtin = Callee::Builtin("str.copy".to_owned());
                 return self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments);
@@ -213,9 +216,9 @@ impl<'db> Body<'db> {
     }
 }
 
-/// The signature of the built-in `copy` of a `str` or a struct of type `base`: it borrows the
-/// value and returns a new one of the same type.
-fn copy_signature(base: Type<'_>) -> Signature<'_> {
+/// The signature of the built-in `copy` of a `str` or a struct of type `base`, and of
+/// `conjugate` of a complex number: it borrows the value and returns a new one of the same type.
+pub(super) fn copy_signature(base: Type<'_>) -> Signature<'_> {
     Signature {
         type_parameters: Vec::new(),
         parameters: vec![Parameter {

@@ -8,7 +8,8 @@
 //! shortest digits. A string literal, which lowering passes as a constant, becomes a byte
 //! constant printed with `baryon_rt_print_str`. A `str` value prints its bytes the same way, with
 //! the "not owned" bit masked off its length (decision 0022). Each runtime call names its stream
-//! first: 1, standard output, for `print`.
+//! first: 1, standard output, for `print`. A complex number passes its two parts to
+//! `baryon_rt_print_complex64` or `baryon_rt_print_complex128`, the same in either form.
 //!
 //! Every other value is taken apart here, at compile time, into those calls and byte constants,
 //! as Python's `print` writes it (roadmap 1.10.12):
@@ -97,6 +98,10 @@ impl<'db> Function<'_, '_, 'db> {
         ty: Type<'db>,
         form: Form,
     ) -> Result<(), Unsupported> {
+        if let Some(part) = self.complex_part(ty) {
+            self.print_complex(stream, part, value);
+            return Ok(());
+        }
         match ty.kind(self.types.db) {
             TypeKind::Str if form == Form::Repr => self.print_quoted(stream, value),
             TypeKind::Str => {

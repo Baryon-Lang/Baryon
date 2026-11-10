@@ -199,7 +199,7 @@ impl<'db> Builder<'db> {
             return self.unsupported(statement, "in-place operators on values other than numbers");
         }
         let syntax = self.tree.node(statement).operator();
-        if syntax == Operator::Power && self.is_float(ty) {
+        if syntax == Operator::Power && (self.is_float(ty) || self.is_complex(ty)) {
             let Some(place) = self.place(target) else {
                 return;
             };

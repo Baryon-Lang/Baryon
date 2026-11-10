@@ -475,14 +475,14 @@ declare void @report(i64)
 #[test]
 fn unsupported_types_are_named() {
     let database = Database::default();
-    let complex = primitive(&database, Primitive::Complex(types::Complex::C128));
+    let unknown = Type::new(&database, TypeKind::Unknown);
     let symbol = symbol_of(&database);
     let sources = sources();
     let mut module = Module::new(&database, &sources, &no_structs, &no_names, &symbol);
-    let result = module.define("make", &Body::new(complex, span()), &[]);
+    let result = module.define("make", &Body::new(unknown, span()), &[]);
     assert_eq!(
         result.map_err(|error: Unsupported| error.to_string()),
-        Err("the LLVM backend does not compile values of type `complex128` yet".to_owned())
+        Err("the LLVM backend does not compile values of type `unknown` yet".to_owned())
     );
     assert_eq!(module.finish(), "");
 }
