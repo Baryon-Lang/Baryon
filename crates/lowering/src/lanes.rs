@@ -5,8 +5,8 @@
 //! multiplies into a shared float does not reduce into the variable directly. It keeps
 //! [`LANES`] private *lanes*, starting at the operator's identity, and iteration `i`, counted
 //! from 0, combines into lane `i % 8`. After the loop the lanes combine in a fixed pairwise
-//! tree, `((l0 ⊕ l1) ⊕ (l2 ⊕ l3)) ⊕ ((l4 ⊕ l5) ⊕ (l6 ⊕ l7))`, and the variable's value from
-//! before the loop comes in last, as a `prange` reduction's partials do.
+//! tree, `((l0 ⊕ l1) ⊕ (l2 ⊕ l3)) ⊕ ((l4 ⊕ l5) ⊕ (l6 ⊕ l7))`, and the variable's value
+//! from before the loop comes in last, as a `prange` reduction's partials do.
 //!
 //! The lanes are one `Fixed[T, (8,)]` local per variable, and the loop of `n` iterations runs
 //! as whole blocks of 8, then the rest:

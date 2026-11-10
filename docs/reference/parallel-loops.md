@@ -244,9 +244,10 @@ passes them; reporting a loop LLVM still declines to vectorize, with the reason 
 source, comes with roadmap item 3.7. The rules stay as they are then: a loop they reject would not
 vectorize safely anyway.
 
-`simd` changes speed, never results: a loop that vectorizes computes what the plain loop computes,
-and a float sum or product gives the same bits on every machine. The grouping of its additions is
-fixed by the language, not by the processor's vector width. The sum splits into 8 lanes, each
+`simd` never makes results depend on the machine: a float sum or product gives the same bits
+everywhere, vectorized or not, though its grouping differs from a loop without `simd`. Every other
+loop computes exactly what the plain loop computes. The grouping of a sum's additions is fixed by
+the language, not by the processor's vector width. The sum splits into 8 lanes, each
 starting at the identity (`-0.0` for a sum, `1.0` for a product); iteration `i`, counted from 0,
 adds into lane `i % 8`; and the lanes combine in a fixed pairwise tree. The variable's value from
 before the loop comes in last, as it does after the partials of a
