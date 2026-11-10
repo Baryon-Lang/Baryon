@@ -14,6 +14,8 @@
 //!   the field offsets of a record.
 //! - [`FormatSpec`]: a parsed f-string format specification, such as `.6f`, and the check of
 //!   it against the kind of value it formats.
+//! - [`union()`]: the one canonical form of a union type such as `Periodic | Dirichlet`
+//!   (decision 0032).
 //! - [`Item`], [`Declaration`] and the [`TypeDb`] trait: what each definition declares in
 //!   types, which the type checker computes and later stages read.
 //!
@@ -54,6 +56,7 @@ mod interned;
 mod layout;
 mod primitive;
 mod shape;
+mod union;
 
 pub use body::{Call, Callee, Key, TypedBody};
 pub use declaration::{Checked, Declaration, Field, Mode, Parameter, Signature, TypeDb, Value};
@@ -63,6 +66,7 @@ pub use interned::{Item, Type};
 pub use layout::{Declared, Layout, LayoutError, Record, layout};
 pub use primitive::{Complex, Float, Integer, Primitive};
 pub use shape::Shape;
+pub use union::union;
 
 use database::File;
 use syntax::NodeId;
@@ -129,6 +133,12 @@ pub enum TypeKind<'db> {
     },
     /// `T | None`: a `T` or `None`.
     Optional(Type<'db>),
+    /// `A | B | C`: a value of exactly one of the member types, such as
+    /// `Periodic | Dirichlet | Neumann` (decision 0032). Built only by [`union()`], which keeps
+    /// the members in one canonical order: at least two of them besides `None`, none of them a
+    /// union or a `T | None`, no repeats, and `None` last when it is a member. A member's
+    /// position in this list is its tag.
+    Union(Vec<Type<'db>>),
     /// `Array[T, rank]`: an array whose shape is known at run time, on the heap (decision 0007).
     Array {
         /// The element type, always a copy type.

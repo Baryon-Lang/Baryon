@@ -189,7 +189,7 @@ fn loops_not_lowered_yet_in_comprehensions_are_errors() {
     assert_eq!(
         lower(program, "lengths"),
         "\
-error: lowering does not handle `prange` and `simd` in a comprehension yet
+error: lowering does not handle `prange` in a comprehension yet
  --> main.byn:2:25
   |
 2 |     evens = [i for i in prange(4)]

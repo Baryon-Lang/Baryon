@@ -63,8 +63,7 @@ impl<'db> Body<'db> {
             SyntaxKind::List => self.list(node, expected),
             SyntaxKind::Dictionary => self.dictionary(node, expected),
             SyntaxKind::ListComprehension => {
-                self.comprehensions(node);
-                let item = self.child_type(node, Role::Value);
+                let item = self.list_comprehension(node);
                 Type::new(self.db, TypeKind::List(item))
             }
             _ => {

@@ -20,18 +20,19 @@ use super::Body;
 use database::Definition;
 use diagnostics::Diagnostic;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::TypeKind;
+use types::{Type, TypeKind};
 
 /// A `for` loop the body being checked is inside.
 pub(super) struct Loop {
     /// The collection it goes over, when that is a place such as `atoms.forces`; a loop over
     /// a temporary, such as `range(n)`, borrows nothing.
     collection: Option<NodeId>,
-    /// Its loop variable, when that borrows an element that is not a copy type.
-    element: Option<NodeId>,
+    /// The loop variables that borrow an element, or a part of one, that is not a copy type:
+    /// `v` in `for v in names:`, `name` in `for name, mass in species:`.
+    elements: Vec<NodeId>,
 }
 
-impl Body<'_> {
+impl<'db> Body<'db> {
     /// `for target in iterator:` and its `else`: the body runs any number of times, with the
     /// collection and, for elements that are not copy types, the element borrowed. A loop
     /// over `prange` or `simd` is also checked as a parallel or vector loop (the `parallel`
@@ -54,15 +55,9 @@ impl Body<'_> {
             if let Some(target) = target {
                 body.bind(target, element, None);
             }
-            let borrowed = target
-                .filter(|&target| body.tree.kind(target) == SyntaxKind::Name && body.moves(element))
-                .and_then(|target| match body.lowerer.definition(target) {
-                    Some(&Definition::Local(binding)) => Some(binding),
-                    _ => None,
-                });
             body.loops.push(Loop {
                 collection,
-                element: borrowed,
+                elements: body.borrowed_elements(target, element),
             });
             body.block(statement, Role::Body);
             body.loops.pop();
@@ -70,6 +65,90 @@ impl Body<'_> {
         });
         if parallel {
             self.leave_parallel(statement);
+        }
+    }
+
+    /// The list comprehension `node`, `[value for target in iterator if condition ...]`, and
+    /// the type of its elements. Each `for` clause is checked as a `for` statement over its
+    /// collection: the collection and a borrowed element stay borrowed for the clauses and the
+    /// value inside it, and the passes repeat. The value is moved into the new list, so an
+    /// element that is borrowed, `[w for w in words]` over a `list[str]`, is an error with the
+    /// same fix as the loop's, `w.copy()`; otherwise two lists would own one string.
+    pub(super) fn list_comprehension(&mut self, node: NodeId) -> Type<'db> {
+        let clauses: Vec<NodeId> = self.tree.children_with(node, Role::Item).collect();
+        self.comprehension_clauses(node, &clauses)
+    }
+
+    /// The `for` clauses `clauses` of the comprehension `node`, the first outermost, then its
+    /// value, moved into the list; returns the value's type.
+    fn comprehension_clauses(&mut self, node: NodeId, clauses: &[NodeId]) -> Type<'db> {
+        let Some((&clause, rest)) = clauses.split_first() else {
+            let Some(value) = self.tree.child(node, Role::Value) else {
+                return self.lowerer.unknown();
+            };
+            let ty = self.expression(value, None);
+            self.consume(value, ty);
+            return ty;
+        };
+        let iterator = self.tree.child(clause, Role::Iterator);
+        let element = match iterator {
+            Some(iterator) => self.iteration(iterator),
+            None => self.lowerer.unknown(),
+        };
+        let collection = iterator
+            .map(|iterator| self.dict_view_receiver(iterator).unwrap_or(iterator))
+            .filter(|&collection| self.place_root(collection).is_some());
+        let mut item = self.lowerer.unknown();
+        self.repeated(clause, iterator.unwrap_or(clause), |body| {
+            let target = body.tree.child(clause, Role::Target);
+            if let Some(target) = target {
+                body.bind(target, element, None);
+            }
+            body.loops.push(Loop {
+                collection,
+                elements: body.borrowed_elements(target, element),
+            });
+            let conditions: Vec<NodeId> =
+                body.tree.children_with(clause, Role::Condition).collect();
+            for condition in conditions {
+                body.condition(Some(condition));
+            }
+            item = body.comprehension_clauses(node, rest);
+            body.loops.pop();
+        });
+        item
+    }
+
+    /// The variables `target` binds that borrow their part of an element of type `element`,
+    /// rather than copy it, as lowering binds them: a name whose type is not a copy type, and,
+    /// in a tuple target such as `name, mass`, each part the same way.
+    fn borrowed_elements(&self, target: Option<NodeId>, element: Type<'db>) -> Vec<NodeId> {
+        let mut borrowed = Vec::new();
+        if let Some(target) = target {
+            self.borrowed_parts(target, element, &mut borrowed);
+        }
+        borrowed
+    }
+
+    /// Appends to `borrowed` the variables the target `target` binds that borrow their part, of
+    /// type `ty`.
+    fn borrowed_parts(&self, target: NodeId, ty: Type<'db>, borrowed: &mut Vec<NodeId>) {
+        if !self.moves(ty) {
+            return;
+        }
+        match (self.tree.kind(target), ty.kind(self.db)) {
+            (SyntaxKind::Name, _) => {
+                if let Some(&Definition::Local(binding)) = self.lowerer.definition(target) {
+                    borrowed.push(binding);
+                }
+            }
+            (SyntaxKind::Tuple, TypeKind::Tuple(items)) => {
+                let parts: Vec<NodeId> = self.tree.children_with(target, Role::Item).collect();
+                for (part, &item) in parts.into_iter().zip(items) {
+                    self.borrowed_parts(part, item, borrowed);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -85,7 +164,7 @@ impl Body<'_> {
         };
         let found = self.loops.iter().rev().find_map(|found| {
             let collection = found.collection?;
-            if binding.is_some() && found.element == binding {
+            if binding.is_some_and(|binding| found.elements.contains(&binding)) {
                 return Some((collection, true));
             }
             self.overlaps(node, collection)

@@ -268,6 +268,54 @@ Each entry adds its products one at a time, from `p = 0`. This order is not part
 NumPy's `@` does. Where the last bits must be reproducible, use `dot` and `sum`, whose order is
 fixed.
 
+## Printing
+
+`print` writes an `Array` or a `Fixed` array exactly as NumPy's `print` writes an `ndarray` with
+its default options, so a script ported from NumPy prints the same lines
+([decision 0033](../decisions/0033-printing-arrays.md)):
+
+```python
+def main():
+    a = Array([1.0, 2.5, 0.1 + 0.2])
+    print(a)
+    grid = Array.zeros((2, 3))
+    grid[1, 2] = -7.0
+    print(grid)
+    print(Array.fill(2000, 1.5))
+```
+
+prints
+
+```text
+[1.  2.5 0.3]
+[[ 0.  0.  0.]
+ [ 0.  0. -7.]]
+[1.5 1.5 1.5 ... 1.5 1.5 1.5]
+```
+
+The rules are NumPy's:
+
+- **One format per array.** All elements share one width, so columns line up. Floats show
+  their fewest digits, at most 8 after the point, so `0.1 + 0.2` prints `0.3`; a whole number
+  keeps its point, `1.`. Floats switch to scientific notation, `1.e-05`, when the largest
+  magnitude reaches 10⁸ (10⁶ for `f32`), the smallest is below 10⁻⁴, or the largest is more
+  than 1000 times the smallest. Integers print plain, `[1 2 3]`; `bool` as `[ True False]`; a
+  complex number as `1.+2.j`.
+- **Rows on their own lines.** Each row of a matrix starts a line, and a rank-3 array leaves a
+  blank line between its blocks. A row too long for 75 characters wraps.
+- **Huge arrays are summarized.** An array of more than 1000 elements shows only the first and
+  last 3 positions along each dimension, with `...` between, however large it is.
+- **An empty array** prints `[]`, whatever its shape.
+
+Inside a tuple or a struct an array prints the same way, `Grid(cells=[1. 2. 3.])`, not as
+NumPy's `repr` writes it. A `list` keeps Python's form, `[1.0, 2.5]`. A view prints the elements
+it sees: `print(a[::-1])` writes them reversed. To see every digit of an element, print the
+element itself: `print(a[2])` writes `0.30000000000000004`. Arrays of `bool`, integers, floats
+and complex numbers print; an array of `str` or of structs does not build yet.
+
+Cost: one call into the runtime, which reads and formats at most 1000 elements, however large
+the array.
+
 ## Math functions
 
 Mathematical functions from `math`, such as `sqrt` and `exp`, apply to numbers. Their element-wise
