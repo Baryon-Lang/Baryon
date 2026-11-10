@@ -170,6 +170,9 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 
 Gate: every number in the design plan's compile-speed table is met on the reference project.
 
+Comes after Phase 3's native capability work (Collins, 2026-11-10): see the order in
+[Releases](#releases).
+
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2.1 | Cranelift debug backend | 4 | 1.9 | Planned | — | — |
@@ -222,6 +225,12 @@ stands on its own: its libraries are written in Baryon and grow alongside it, so
 interoperability comes in a later phase, after native language capability and native libraries,
 never as a way to wrap Baryon in Python. A self-hosted compiler stays a non-goal, as the
 [design plan](docs/design/language-design-plan.md) says.
+
+After 0.3.0, native capability comes before compile speed (Collins, 2026-11-10): speed of the
+compiled code (3.1, 3.2, 3.3), then broadcasting and axis reductions (3.9), linear algebra and FFT
+(3.10), statistics (3.16), file formats (3.14), DataFrame (3.13) and plotting (3.15). Phase 2's
+faster compiling follows, unless compile times start to slow users down first. Python interop
+(3.17) comes after these native libraries.
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
