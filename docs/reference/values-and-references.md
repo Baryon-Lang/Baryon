@@ -248,8 +248,16 @@ error: `values` cannot be changed while a loop goes over it
 ```
 
 A loop variable that borrows a non-copy element cannot be changed or moved either; keep a copy,
-`v.copy()`, to hold on to one. A loop over a temporary, such as `range(n)` or a call's result,
+`v.copy()`, to hold on to one. A tuple target borrows each part the same way: in
+`for name, mass in species:` over a `list[tuple[str, f64]]`, `name` is a borrow and `mass` a
+copy. A loop over a temporary, such as `range(n)` or a call's result,
 borrows nothing.
+
+A list comprehension loops the same way, and its value moves into the new list. So
+`[w for w in words]` over a `list[str]` is the same error as `kept = w` in a loop, with the same
+fix, `[w.copy() for w in words]`; `[len(w) for w in words]` copies nothing and needs no fix. A
+variable from outside the comprehension, `[name for _ in range(n)]`, would move on every pass,
+so it needs `name.copy()` too.
 
 ## Slices
 
