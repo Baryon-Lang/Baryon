@@ -57,7 +57,7 @@ checks what it prints.
 | `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a tuple of one copy type, such as `(2, 3, 5)`; with a target that unpacks, `for x, y in points` | `for` over lists and strings; over a tuple of `str` or other values that are not copied; a `prange` step that is not a constant |
 | `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values), each evaluated at every call that leaves its argument out | Leaving out an argument of a generic function |
 | `class` with `Struct`, `Copy`, `Exception`, `Enum` and `Protocol` bases, and the traits a struct names; `@layout("C")` | |
-| `raise` and `try`/`except`, including bare `raise` | `raise ... from` |
+| `raise` and `try`/`except`, including bare `raise` | |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications | Complex literals such as `2j`; `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
@@ -81,7 +81,7 @@ checks what it prints.
 | Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors, and bounds by a [user trait](types.md#using-a-trait-as-a-bound), `[T: Body]`, whose method calls go straight to each type's own method | |
 | [Embedded structs](types.md#embedded-structs): `Embed[T]` fields, and their fields and methods reached through the outer struct | Calling a method that an embedded generic struct provides |
 | [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026); a `Callable` parameter passed on to another call or copied into a local | A local that holds one of two different functions depending on a branch, which needs a function value at run time: the build reports it |
-| Lists of any type, such as `list[f64]`, `list[str]` or lists of structs, arrays and lists: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing; dropping a list drops its elements; `value in xs` and `not in` on lists of numbers, `bool`s, enums and `str`s; `xs.copy()` of lists of copy types and `str`s | `pop`, slices and comprehensions; `in` and `copy()` on lists of other types |
+| Lists of any type, such as `list[f64]`, `list[str]` or lists of structs, arrays and lists: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing; dropping a list drops its elements; `xs.pop()`, which panics on an empty list; `value in xs` and `not in` on lists of numbers, `bool`s, enums and `str`s; `xs.copy()` and slices `xs[i:j:k]`, each a new list, of lists of copy types and `str`s | Comprehensions; `in`, `copy()` and slices on lists of other types; assigning into a slice of a list |
 
 Integer overflow ([decision 0030](../decisions/0030-integer-overflow.md)): a debug build panics
 on `+`, `-`, `*`, `**`, `+=`, `-=`, `*=`, `**=` and `-x` that overflow, and `--release` wraps. That includes
