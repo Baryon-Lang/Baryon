@@ -1,4 +1,4 @@
-//! Arrays of `Copy` structs built and run.
+//! Structs built and run: arrays of `Copy` structs, and constructors with optional fields.
 
 use super::{baryon_build, package, stderr};
 use std::process::Command;
@@ -36,4 +36,30 @@ def main():
         String::from_utf8_lossy(&run.stdout),
         "0.0 0.0 0\n2.0 5 6.0\n7.0 0.0\n"
     );
+}
+
+/// A constructor's arguments take their fields' types, as a call's arguments take their
+/// parameters': a `T` or `None` given for a `T | None` field is wrapped first. Before this, the
+/// `f64` went into the field unwrapped, which `clang` rejected, and `None` was not built.
+#[test]
+fn constructors_wrap_values_for_optional_fields() {
+    let program = "\
+class Sample(Struct, Copy):
+    weight: f64 | None
+    count: i64
+
+
+def main():
+    given = Sample(0.5, 2)
+    missing = Sample(None, 3)
+    narrow: f32 = 1.5
+    converted = Sample(f64(narrow), 4)
+    print(given.weight, missing.weight, converted.weight)
+";
+    let directory = package("optional-fields", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let run = Command::new(&program).output().unwrap();
+    assert_eq!(stderr(&run), "");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "0.5 None 1.5\n");
 }

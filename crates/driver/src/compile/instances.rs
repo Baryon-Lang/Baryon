@@ -77,8 +77,9 @@ impl<'db> Instances<'db> {
 }
 
 /// The body of `instance`, ready for a backend: lowered, its type parameters replaced by the
-/// instance's arguments, its drops elaborated and its whole-array expressions expanded. Errors
-/// for what lowering cannot handle yet.
+/// instance's arguments, each call of a trait's method sent to the method that implements it
+/// (`implementation`, decision 0031), its drops elaborated and its whole-array expressions
+/// expanded. Errors for what lowering cannot handle yet.
 ///
 /// A method of a generic class, such as `Pair[T]`'s `total`, is generic in its class's type
 /// parameters: they come first, before the method's own and its `Callable` ones, as lowering
@@ -87,6 +88,7 @@ pub(crate) fn ready<'db>(
     db: &'db dyn TypeDb,
     instance: &Instance<'db>,
     declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
+    implementation: &monomorphize::Implementation<'_, 'db>,
 ) -> Result<Body<'db>, Vec<Diagnostic>> {
     let mut body = lowering::lower(db, instance.item)?;
     if !instance.arguments.is_empty() {
@@ -115,6 +117,7 @@ pub(crate) fn ready<'db>(
         }
         body = monomorphize::instantiate(db, &body, &parameters, &instance.arguments);
         monomorphize::forward_callables(db, &mut body, &|item| callable_positions(db, item));
+        monomorphize::trait_calls(&mut body, implementation);
     }
     drop_elaboration::elaborate(db, &mut body, declared);
     array_expansion::expand(db, &mut body, declared);
