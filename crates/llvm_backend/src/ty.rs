@@ -96,8 +96,11 @@ impl<'db> Types<'_, 'db> {
             }
             TypeKind::Union(_) => self.union(ty),
             TypeKind::List(_) => Ok(crate::list::HEADER.to_owned()),
-            // A pointer to the runtime's table, null while empty (the `dict` module).
-            TypeKind::Dict { .. } => Ok("ptr".to_owned()),
+            // A pointer to the runtime's table, null while empty (the `dict` module), or to the
+            // runtime's open file.
+            TypeKind::Dict { .. } | TypeKind::Standard(types::StandardType::File) => {
+                Ok("ptr".to_owned())
+            }
             TypeKind::Optional(value) => Ok(format!("{{ {}, i1 }}", self.value(*value)?)),
             // The runtime's `Philox`: 11 words it reads and writes through a pointer.
             TypeKind::Standard(types::StandardType::Philox) => Ok("[11 x i64]".to_owned()),

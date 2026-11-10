@@ -153,6 +153,7 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Exit => self.system_exit(arguments),
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
+            Builtin::File(method) => Err(Unsupported::new(method.name())),
         }
     }
 }

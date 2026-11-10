@@ -71,12 +71,15 @@ pub use union::union;
 use database::File;
 use syntax::NodeId;
 
-/// A type of the standard library that the compiler knows by name (decision 0028). Each one has
-/// a fixed layout and owns no heap memory; the checker types its operations, and lowering and the
-/// backend build them as built-in calls rather than Baryon code.
+/// A type of the standard library that the compiler knows by name (decision 0028): one whose
+/// value is runtime state a Baryon class cannot describe yet. Each one has a fixed layout; the
+/// checker types its operations, and lowering and the backend build them as built-in calls rather
+/// than Baryon code. A standard type that is plain data, such as `OSError`, is a class in the
+/// library's own Baryon source instead (decision 0038).
 ///
 /// ```
 /// assert_eq!(types::StandardType::Philox.name(), "Philox");
+/// assert!(types::StandardType::File.owns_resources());
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, salsa::SalsaValue)]
 pub enum StandardType {
@@ -85,6 +88,11 @@ pub enum StandardType {
     /// current block's outputs (4 words) and how many of them are used (1 word). It moves rather
     /// than copies, so a copy can never repeat its original's numbers by accident.
     Philox,
+    /// A text file `open` returned (decision 0036, part 3): one word, a pointer to the runtime's
+    /// open file, which holds the file and its 64 KiB buffer. It moves rather than copies, and
+    /// a drop that is not a `close()` or the end of a `with` block writes out the buffer and
+    /// closes the file, panicking if that last write fails.
+    File,
 }
 
 impl StandardType {
@@ -93,6 +101,7 @@ impl StandardType {
     pub fn name(self) -> &'static str {
         match self {
             Self::Philox => "Philox",
+            Self::File => "File",
         }
     }
 
@@ -105,6 +114,17 @@ impl StandardType {
     pub fn module(self) -> &'static str {
         match self {
             Self::Philox => "random",
+            Self::File => "builtins",
+        }
+    }
+
+    /// Whether a value of the type holds something a drop must release: `File` holds an open
+    /// file, while `Philox` is only numbers.
+    #[must_use]
+    pub fn owns_resources(self) -> bool {
+        match self {
+            Self::Philox => false,
+            Self::File => true,
         }
     }
 }

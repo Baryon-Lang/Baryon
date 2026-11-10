@@ -2,7 +2,7 @@
 //! [`Call`](crate::TerminatorKind::Call), the [`Builtin`] operations and [`MathFunction`]s the
 //! backends build inline or call the runtime for, and each [`Argument`]'s mode.
 
-use crate::{Operand, Place, TextMethod};
+use crate::{FileMethod, Operand, Place, TextMethod};
 use types::{Item, Type};
 
 /// The function a [`Call`](crate::TerminatorKind::Call) calls.
@@ -173,6 +173,9 @@ pub enum Builtin {
     /// with zero or more digits is itself; one whose result does not fit panics with
     /// ``integer overflow in `round` ``. NaN and the infinities come back unchanged.
     RoundDigits,
+    /// `open` or a method of the `File` it returns (decision 0036). [`FileMethod`] says what each
+    /// takes and gives. Unlike every other built-in, each can fail: its call has an error edge.
+    File(FileMethod),
 }
 
 impl Builtin {
@@ -193,6 +196,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::DictFind.name(), "dict lookup");
     /// assert_eq!(mir::Builtin::Exit.name(), "sys.exit");
     /// assert_eq!(mir::Builtin::Sort.name(), "sorted");
+    /// assert_eq!(mir::Builtin::File(mir::FileMethod::Write).name(), "File.write");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -220,6 +224,7 @@ impl Builtin {
             Self::Exit => "sys.exit",
             Self::Sort => "sorted",
             Self::RoundDigits => "round",
+            Self::File(method) => method.name(),
         }
     }
 }
