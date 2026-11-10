@@ -493,7 +493,7 @@ fn exponent_check_reports_the_exponent() {
     assert!(text.contains("assert(copy _2, non-zero step) -> bb2;"));
 }
 
-/// `print(x, 2.0)` calls the built-in by name, with no item and no type arguments.
+/// A call of the built-in `print` names it, with no item and no type arguments.
 #[test]
 fn builtins_are_called_by_name() {
     let database = Database::default();

@@ -418,6 +418,7 @@ impl Writer<'_> {
                 self.operand(expected)
             ),
             Check::Assertion => "assertion".to_owned(),
+            Check::NotEmpty => "not empty".to_owned(),
         }
     }
 }

@@ -2,7 +2,10 @@
 //! constructor; of a number type, which converts; and of the built-ins lowering handles.
 
 use crate::builder::Builder;
-use mir::{Argument, BinaryOperator, Builtin, Callee, Operand, Place, Rvalue, TerminatorKind};
+use mir::{
+    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Operand, Place, Rvalue,
+    TerminatorKind,
+};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
 
@@ -121,42 +124,34 @@ impl<'db> Builder<'db> {
             .iter()
             .map(|parameter| (parameter.mode, parameter.ty))
             .collect();
+        // A method of a generic class is generic in the class's type parameters, which come
+        // first: the receiver's type arguments (roadmap 1.9.18).
+        let mut type_arguments = match self.class_arguments(item, arguments) {
+            Some(class) => class.into_iter().chain(type_arguments).collect::<Vec<_>>(),
+            None => return self.unsupported(node, "a method call on this receiver"),
+        };
         // Each `Callable` parameter is an implicit type parameter after the written ones, and
         // its argument is the type of the function passed (decision 0026).
-        let mut type_arguments = type_arguments;
         for (&argument, (_, ty)) in arguments.iter().zip(&parameters) {
             if matches!(ty.kind(self.db), TypeKind::Callable { .. }) {
                 let Some(argument) = argument else {
                     return self.unsupported(node, "a default for a `Callable` parameter");
                 };
-                let function = self.ty(argument);
-                if !matches!(function.kind(self.db), TypeKind::Function { .. }) {
-                    return self.unsupported(argument, "passing on a `Callable` parameter");
-                }
-                type_arguments.push(function);
+                // A function's own type, or the `Callable` type of a parameter this body
+                // received and passes on, which monomorphization replaces by the function the
+                // instance received (`monomorphize::forward_callables`).
+                type_arguments.push(self.ty(argument));
             }
         }
+        // The arguments passed come first, then each default left out, in parameter order
+        // (decision 0027).
         let mut passed = Vec::with_capacity(arguments.len());
-        for (position, (&argument, (mode, ty))) in arguments.iter().zip(parameters).enumerate() {
+        for (&argument, &(mode, ty)) in arguments.iter().zip(&parameters) {
             let Some(argument) = argument else {
-                if mode == Mode::InOut {
-                    // The callee's changes to a default would go nowhere the caller can see.
-                    return self.unsupported(node, "leaving out an `InOut` argument");
-                }
-                let Some(constant) = self.default_value(item, position, node) else {
-                    return;
-                };
-                passed.push(if mode == Mode::Owned {
-                    Argument::Owned(Operand::Constant(constant))
-                } else {
-                    let temporary = self.temporary(ty, node);
-                    let value = Rvalue::Use(Operand::Constant(constant));
-                    self.assign(Place::from(temporary), value, node);
-                    Argument::Borrow(Place::from(temporary))
-                });
+                passed.push(None);
                 continue;
             };
-            passed.push(match mode {
+            passed.push(Some(match mode {
                 Mode::Borrow => match self.borrow_as(argument, ty) {
                     Some(place) => Argument::Borrow(place),
                     None => return,
@@ -166,8 +161,19 @@ impl<'db> Builder<'db> {
                     None => return,
                 },
                 Mode::Owned => Argument::Owned(self.operand_as(argument, ty)),
+            }));
+        }
+        let mut complete = Vec::with_capacity(passed.len());
+        for (position, (argument, parameter)) in passed.into_iter().zip(parameters).enumerate() {
+            complete.push(match argument {
+                Some(argument) => argument,
+                None => match self.default_argument(item, position, parameter, node) {
+                    Some(argument) => argument,
+                    None => return,
+                },
             });
         }
+        let passed = complete;
         let errors = self.typed.errors(node);
         let edge = self.error_edge(errors, node);
         let next = self.new_block();
@@ -188,6 +194,38 @@ impl<'db> Builder<'db> {
             self.dispatch(&edge, errors, node);
         }
         self.start(next);
+    }
+
+    /// The type arguments of the class that declares `item`, for a call whose receiver is the
+    /// first of `arguments`: `[f64]` for `p.total()` with `p: Pair[f64]`, or `[T]` inside
+    /// another generic body, which monomorphization replaces. Empty for a function and for a
+    /// method of a class with no type parameters. `None` when the class has type parameters
+    /// but the receiver is not a struct of that class, such as a method an embedded struct
+    /// provides (decision 0031), which is not built yet.
+    fn class_arguments(
+        &self,
+        item: Item<'db>,
+        arguments: &[Option<NodeId>],
+    ) -> Option<Vec<types::Type<'db>>> {
+        let tree = self.db.parse(item.file(self.db)).tree();
+        let Some((_, Some(class))) = crate::definition(tree, item.name(self.db)) else {
+            return Some(Vec::new());
+        };
+        let Some(parameters) = tree.child(class, Role::TypeParameters) else {
+            return Some(Vec::new());
+        };
+        let count = tree.children_with(parameters, Role::Item).count();
+        let receiver = arguments.first().copied().flatten()?;
+        match self.ty(receiver).kind(self.db) {
+            TypeKind::Struct(nominal)
+                if nominal.file == item.file(self.db)
+                    && tree.child(class, Role::Name) == Some(nominal.name)
+                    && nominal.arguments.len() == count =>
+            {
+                Some(nominal.arguments.clone())
+            }
+            _ => None,
+        }
     }
 
     /// A call of a `Callable` value, such as the parameter `derivative` in
@@ -217,7 +255,9 @@ impl<'db> Builder<'db> {
         self.start(next);
     }
 
-    /// `print(arguments…)`, its `None` result written into `place`. A literal is passed as its
+    /// `print(arguments…)`, its `None` result written into `place`. The call writes its
+    /// arguments with nothing between them ([`Builtin::Print`]), so the separator, a space,
+    /// goes between each pair and the line end after the last. A literal is passed as its
     /// constant, so a backend can print a string literal without a `str` value; anything else
     /// is borrowed, since printing does not consume it.
     fn print(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
@@ -230,14 +270,18 @@ impl<'db> Builder<'db> {
         if keyword {
             return self.unsupported(node, "keyword arguments of `print`");
         }
-        let mut passed = Vec::with_capacity(arguments.len());
-        for &argument in arguments {
+        let mut passed = Vec::with_capacity(2 * arguments.len() + 1);
+        for (position, &argument) in arguments.iter().enumerate() {
+            if position > 0 {
+                passed.push(self.text(" "));
+            }
             passed.push(if self.is_literal(argument) {
                 Argument::Owned(Operand::Constant(self.literal(argument)))
             } else {
                 Argument::Borrow(self.borrow(argument))
             });
         }
+        passed.push(self.text("\n"));
         let next = self.new_block();
         self.terminate(
             TerminatorKind::Call {
@@ -250,6 +294,14 @@ impl<'db> Builder<'db> {
             node,
         );
         self.start(next);
+    }
+
+    /// The `str` constant `text`, passed `Owned`, as `print` takes its separator and line end.
+    fn text(&self, text: &str) -> Argument<'db> {
+        Argument::Owned(Operand::Constant(Constant {
+            ty: types::Type::new(self.db, TypeKind::Str),
+            value: ConstantValue::Str(text.to_owned()),
+        }))
     }
 
     /// `min(first, rest…)` when `smallest`, else `max(…)`, of numbers, its result written into

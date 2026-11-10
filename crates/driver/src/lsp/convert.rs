@@ -1,12 +1,13 @@
 //! Translating between the compiler's terms and the protocol's: file paths and `file:` URIs,
-//! byte offsets and line-and-character positions, and [`Diagnostic`]s and the protocol's
-//! diagnostic objects.
+//! byte offsets and line-and-character positions, [`Diagnostic`]s and the protocol's
+//! diagnostic objects, and hovers and completions.
 //!
 //! The protocol counts a position's character in UTF-16 code units, the default encoding every
 //! client supports. The compiler counts bytes. So `ö` is one character to the editor, two bytes
 //! to the compiler, and `𝜓` is two characters to the editor and four bytes to the compiler.
 
 use diagnostics::{Diagnostic, Severity};
+use driver::{Completion, CompletionKind, Hover};
 use serde_json::{Value, json};
 use source::{SourceFile, Sources, Span};
 use std::fmt::Write as _;
@@ -70,8 +71,38 @@ fn position(file: &SourceFile, offset: u32) -> Value {
     json!({"line": line, "character": character})
 }
 
+/// The byte offset of the protocol position `line` and `character`, counted in UTF-16 code
+/// units, in `file`: the inverse of [`position`]. A line past the end clamps to the end of the
+/// text, a character past the end of its line to the line's end, and one inside a character
+/// that takes two code units to that character's start.
+pub(super) fn offset(file: &SourceFile, line: u64, character: u64) -> u32 {
+    let text = file.text();
+    let mut start = 0;
+    for _ in 0..line {
+        let Some(newline) = text[start..].find('\n') else {
+            start = text.len();
+            break;
+        };
+        start += newline + 1;
+    }
+    let end = text[start..]
+        .find('\n')
+        .map_or(text.len(), |newline| start + newline);
+    let mut units = 0;
+    let mut found = end;
+    for (index, letter) in text[start..end].char_indices() {
+        units += letter.len_utf16() as u64;
+        if units > character {
+            found = start + index;
+            break;
+        }
+    }
+    // A source file is smaller than 4 GiB, so its offsets fit.
+    u32::try_from(found).unwrap_or(u32::MAX)
+}
+
 /// The protocol range that `span` covers.
-fn range(sources: &dyn Sources, span: Span) -> Value {
+pub(super) fn range(sources: &dyn Sources, span: Span) -> Value {
     let file = sources.file(span.file());
     json!({"start": position(file, span.start()), "end": position(file, span.end())})
 }
@@ -122,6 +153,39 @@ pub(super) fn diagnostic(
     object
 }
 
+/// A hover's text in Markdown: the signature as a code block, then the documentation string,
+/// which is Markdown already.
+pub(super) fn markdown(hover: &Hover) -> String {
+    let mut text = format!("```baryon\n{}\n```", hover.signature);
+    if let Some(documentation) = &hover.documentation {
+        text.push_str("\n\n");
+        text.push_str(documentation);
+    }
+    text
+}
+
+/// The protocol's completion item for `completion`.
+pub(super) fn completion(completion: &Completion) -> Value {
+    // The protocol's numbers for each kind of completion item.
+    let kind = match completion.kind {
+        CompletionKind::Method => 2,
+        CompletionKind::Function => 3,
+        CompletionKind::Field => 5,
+        CompletionKind::Variable => 6,
+        CompletionKind::Class => 7,
+        CompletionKind::Trait => 8,
+        CompletionKind::Module => 9,
+        CompletionKind::Builtin => 14,
+        CompletionKind::EnumMember => 20,
+        CompletionKind::Constant => 21,
+    };
+    let mut item = json!({"label": completion.label, "kind": kind});
+    if let Some(detail) = &completion.detail {
+        item["detail"] = Value::from(detail.as_str());
+    }
+    item
+}
+
 /// The protocol's number for a severity: 1 is an error, 2 a warning, 3 information.
 fn severity(severity: Severity) -> u8 {
     match severity {
@@ -166,6 +230,57 @@ mod tests {
         // An offset inside `𝜓` moves back to its start.
         assert_eq!(at(13), json!({"line": 1, "character": 4}));
         assert_eq!(at(1000), json!({"line": 2, "character": 0}));
+    }
+
+    #[test]
+    fn offsets_invert_positions() {
+        let file = SourceFile::new("main.byn", "x = 1\nψ = 𝜓 + y\n").unwrap();
+        for byte in [0, 4, 6, 8, 11, 15, 17] {
+            let at = position(&file, byte);
+            let line = at["line"].as_u64().unwrap();
+            let character = at["character"].as_u64().unwrap();
+            assert_eq!(offset(&file, line, character), byte, "{at}");
+        }
+        // Inside `𝜓`, past a line's end, and past the last line.
+        assert_eq!(offset(&file, 1, 5), 11);
+        assert_eq!(offset(&file, 0, 99), 5);
+        assert_eq!(offset(&file, 9, 0), 20);
+    }
+
+    #[test]
+    fn a_hover_is_a_code_block_then_its_documentation() {
+        let mut sources = SourceMap::new();
+        let main = sources.add("main.byn", "x").unwrap();
+        let hover = |documentation: Option<&str>| Hover {
+            span: Span::new(main, 0, 1),
+            signature: "x: f64".to_owned(),
+            documentation: documentation.map(str::to_owned),
+        };
+        assert_eq!(markdown(&hover(None)), "```baryon\nx: f64\n```");
+        assert_eq!(
+            markdown(&hover(Some("Metres."))),
+            "```baryon\nx: f64\n```\n\nMetres."
+        );
+    }
+
+    #[test]
+    fn a_completion_carries_its_kind_and_detail() {
+        let item = |kind, detail: Option<&str>| Completion {
+            label: "step".to_owned(),
+            kind,
+            detail: detail.map(str::to_owned),
+        };
+        assert_eq!(
+            completion(&item(
+                CompletionKind::Method,
+                Some("def step(self) -> None")
+            )),
+            json!({"label": "step", "kind": 2, "detail": "def step(self) -> None"})
+        );
+        assert_eq!(
+            completion(&item(CompletionKind::Builtin, None)),
+            json!({"label": "step", "kind": 14})
+        );
     }
 
     #[test]

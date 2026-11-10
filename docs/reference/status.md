@@ -11,11 +11,11 @@ code (roadmap 1.10). Each grows one feature at a time. A feature either stage ca
 is reported as an error that names it and the stage, never miscompiled:
 
 ```text
-error: lowering does not handle `**` yet
- --> main.byn:3:11
+error: lowering does not handle `in` yet
+ --> main.byn:3:12
   |
-3 |     print(2 ** n)
-  |           ^^^^^^ not lowered yet
+3 |     print(n in [1, 2])
+  |            ^^^^^^^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
 ```
 
@@ -24,8 +24,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-08, when `random.Philox` and the constants of
-`math` began to build. Every pull request that teaches lowering or the backend something new
+This page was last brought up to date on 2026-11-09, when `for` over arrays and tuples, a
+`range` step computed at run time, integer `**` and nested unpacking began to build. Every pull request that teaches lowering or the backend something new
 updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
@@ -52,17 +52,17 @@ checks what it prints.
 | --- | --- |
 | Packages of several modules; `import m`, `from m import x`, `as`; calling a function, reading a constant and naming an enum member through its module, `physics.units.twice(x)`, `units.C`, `units.Phase.GAS` | |
 | `main` in `main.byn`; `print` of numbers, `bool` and `str` | `print` with keyword arguments; `print` of `None`, `T \| None`, tuples, arrays and structs |
-| Assignment, annotated assignment, augmented assignment, `**=` on floats only; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a` | `**=` on integers; nested unpacking, `a, (b, c) = e` |
+| Assignment, annotated assignment, augmented assignment including `**=`; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a`, and nested unpacking, `a, (b, c) = e` | |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
-| `for` over `range` with a constant step, positive or negative | `for` over arrays, lists, strings or tuples; a `range` step that is not a constant |
-| `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values) that are literals or `Final` constants | Leaving out an argument whose default is any other expression |
+| `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a tuple of one copy type, such as `(2, 3, 5)`; with a target that unpacks, `for x, y in points` | `for` over lists and strings; over a tuple of `str` or other values that are not copied; a `prange` step that is not a constant |
+| `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values), each evaluated at every call that leaves its argument out | Leaving out an argument of a generic function |
 | `class` with `Struct`, `Copy`, `Exception` and `Enum` bases; `@layout("C")` | |
 | `raise` and `try`/`except`, including bare `raise` | `raise ... from` |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications | Complex literals such as `2j`; `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
-| `+ - * / // %`, `**` on floats, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `**` on integers; `in` and `not in`; `==` on `str` |
-| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the rest of `math` and `random` |
+| `+ - * / // % **`, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `in` and `not in`; `==` on `str` |
+| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the integer and sequence functions of `math`, such as `gcd` and `fsum`; the rest of `random` |
 | `@test` functions, with `baryon test` | |
 
 ## Types
@@ -74,19 +74,19 @@ checks what it prints.
 | `str`: literals, f-strings, `+` and `s.copy()` | `==`, `!=`, `in` and `len` on `str` |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
 | `T \| None`, with every narrowing rule | |
-| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs | Methods of a generic struct: an error says they are not compiled yet |
+| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs and their methods, each method compiled once per type its struct is used at | |
 | Enums: members, `==` and `!=`, `match` | |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
 | Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors | |
-| [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026) | Passing on a `Callable` parameter to another call; copying a `Callable` parameter into a local when another `Callable` parameter of the same signature received a different function |
+| [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026); a `Callable` parameter passed on to another call or copied into a local | A local that holds one of two different functions depending on a branch, which needs a function value at run time: the build reports it |
 | Lists of copy types, such as `list[f64]`: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing | Lists of other types, such as `list[str]`; `pop`, slices, `in` and comprehensions |
 
 Integer overflow ([decision 0030](../decisions/0030-integer-overflow.md)): a debug build panics
-on `+`, `-`, `*`, `+=`, `-=`, `*=` and `-x` that overflow, and `--release` wraps. Not checked yet,
-so they wrap in both builds: arithmetic in a generic function whose type parameter is an integer,
-`abs` of the type's minimum, whole-array arithmetic on integer arrays, and integer `a.sum()` and
-`v.dot(w)` (roadmap idea I.29).
+on `+`, `-`, `*`, `**`, `+=`, `-=`, `*=`, `**=` and `-x` that overflow, and `--release` wraps. That includes
+arithmetic in a generic function whose type parameter is an integer, `abs` of the type's minimum,
+whole-array arithmetic on integer arrays, and integer `a.sum()` and `v.dot(w)` (roadmap 1.11.8).
+Indices the compiler computes itself, such as a `range` loop's counter, are not checked.
 
 ## Values and references
 

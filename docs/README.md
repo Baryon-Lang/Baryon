@@ -16,8 +16,8 @@ all five [example programs](examples/README.md) build and run;
 [What builds today](reference/status.md) lists, chapter by chapter, what builds.
 
 [The `baryon` command](reference/commands.md) says how to build the tool and what each of its
-commands does, including `baryon lsp`, which shows the same diagnostics in any editor with a
-Language Server Protocol client, and `baryon doc`, which writes a package's documentation strings
+commands does, including `baryon lsp`, which shows the same diagnostics, types and documentation on
+hover, go to definition and completion in any editor with a Language Server Protocol client, and `baryon doc`, which writes a package's documentation strings
 as Markdown pages. The [VS Code extension](../editors/vscode/README.md) highlights `.byn` files
 and runs `baryon lsp` for you. The [release notes](../CHANGELOG.md) say what each release holds.
 
