@@ -7,7 +7,7 @@ use mir::{
     Statement, StatementKind, Terminator, TerminatorKind,
 };
 use source::{FileId, Span};
-use types::{Declared, Float, Mode, Nominal, Primitive, Shape, Type, TypeKind};
+use types::{Declared, Float, Integer, Mode, Nominal, Primitive, Shape, Type, TypeKind};
 
 /// A database with no files: expansion never reads a name.
 #[salsa::db]
@@ -254,4 +254,42 @@ fn moved_arrays_are_dropped_after_the_loop() {
         text.contains("        _0 = move _3;\n        drop(_1);\n        return;"),
         "{text}"
     );
+}
+
+/// `v * 2` over a `Fixed[i64, (2,)]` checks each element's product for overflow as integer `*`
+/// is (decision 0030): a `CheckedMultiply` and an `Assert` inside the loop, with the wrapped
+/// result stored only after the check.
+#[test]
+fn integer_arithmetic_is_checked_for_overflow() {
+    let database = Database::default();
+    let i64 = Type::new(
+        &database,
+        TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+    );
+    let pair = Type::new(
+        &database,
+        TypeKind::Fixed {
+            element: i64,
+            shape: Shape::new(vec![2]).unwrap(),
+        },
+    );
+    let body = body_with(pair, &[("v", pair, Mode::Borrow)], |locals| {
+        Elementwise::Binary(
+            BinaryOperator::Multiply,
+            Box::new(leaf(Operand::Copy(locals[0].into()))),
+            Box::new(leaf(Operand::Constant(Constant::integer(i64, 2)))),
+        )
+    });
+
+    let text = expanded(&database, body);
+    assert!(
+        text.contains("_5 = CheckedMultiply(copy _1[_3], 2_i64);"),
+        "{text}"
+    );
+    assert!(text.contains("_6 = Not(copy _5.1);"), "{text}");
+    assert!(
+        text.contains("assert(copy _6, no overflow: Multiply) -> bb4;"),
+        "{text}"
+    );
+    assert!(text.contains("_2[_3] = copy _5.0;"), "{text}");
 }

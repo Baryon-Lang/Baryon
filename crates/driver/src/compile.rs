@@ -3,8 +3,8 @@
 //! the package's `main.byn`.
 //!
 //! This is the prototype of roadmap 1.11.3. It compiles every function and method that has no
-//! type parameters, then collects the instances of generic functions they call (roadmap 1.9.5,
-//! decision 0018): each call of a generic function at concrete types adds that instance, whose
+//! type parameters, then collects the instances of generic functions and of methods of generic
+//! classes they call (roadmap 1.9.5 and 1.9.18, decision 0018): each call of a generic function at concrete types adds that instance, whose
 //! body is the generic body with the types substituted, and whose own calls are followed in turn.
 //! An instance's symbol is its function's with the type arguments after it: `main.square[f64]`.
 //! A function lowering or the backend cannot handle yet is reported once, at its name.
@@ -138,20 +138,6 @@ impl Session {
             )
     }
 
-    /// The error for a method of a generic class, such as `Pair[T]`'s: its signature names
-    /// its class's type parameters but has none of its own, so it can be neither compiled once
-    /// nor collected per call yet. `None` for any other function.
-    fn generic_method(
-        &self,
-        item: Item<'_>,
-        signature: &types::Signature<'_>,
-    ) -> Option<Diagnostic> {
-        mentions_type_parameter(&self.database, signature).then(|| {
-            self.at(item, "methods of generic classes are not compiled yet")
-                .with_note("collecting a class's type arguments comes after roadmap 1.9.5")
-        })
-    }
-
     /// The package as one LLVM module whose C `main` starts `program`, built for `profile`, with
     /// the names of the tests it runs, which are none for [`Program::Main`].
     fn program(
@@ -216,14 +202,10 @@ impl Session {
                 errors.push(self.at(function.item, "`@test` goes on a top-level function"));
                 continue;
             }
-            if is_generic(database, signature) {
+            if is_generic(database, function.item, signature) {
                 if entry && program == Program::Tests {
                     errors.push(self.at(function.item, "a test cannot have type parameters"));
                 }
-                continue;
-            }
-            if let Some(error) = self.generic_method(function.item, signature) {
-                errors.push(error);
                 continue;
             }
             if function.main && !function.in_main_module {
@@ -470,45 +452,17 @@ fn declared<'db>(
     move |nominal| checker::declared(db, package, nominal)
 }
 
-/// Whether the signature of a function that is not generic itself still names a type
-/// parameter: the parameter of its class, as `Pair[T]`'s methods do.
-fn mentions_type_parameter<'db>(
+/// Whether the function `item`, whose signature is `signature`, is compiled once per call's
+/// arguments, from the calls that reach it, rather than once on its own: it has type
+/// parameters, it is a method of a class that has them (roadmap 1.9.18), or it has a
+/// `Callable` parameter, which is an implicit one (decision 0026).
+fn is_generic<'db>(
     database: &'db dyn TypeDb,
+    item: Item<'db>,
     signature: &types::Signature<'db>,
 ) -> bool {
-    signature
-        .parameters
-        .iter()
-        .map(|parameter| parameter.ty)
-        .chain([signature.returns])
-        .any(|ty| names_parameter(database, ty))
-}
-
-/// Whether `ty` is or contains a type parameter.
-fn names_parameter<'db>(database: &'db dyn TypeDb, ty: types::Type<'db>) -> bool {
-    let any = |types: &[types::Type<'db>]| types.iter().any(|&ty| names_parameter(database, ty));
-    match ty.kind(database) {
-        TypeKind::Parameter { .. } => true,
-        TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => any(&nominal.arguments),
-        TypeKind::Tuple(items) => any(items),
-        TypeKind::List(inner) | TypeKind::Optional(inner) => names_parameter(database, *inner),
-        TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
-            names_parameter(database, *element)
-        }
-        TypeKind::Fallible { value, errors } => names_parameter(database, *value) || any(errors),
-        TypeKind::Callable {
-            parameters,
-            returns,
-        } => names_parameter(database, *returns) || any(parameters),
-        _ => false,
-    }
-}
-
-/// Whether the function `signature` declares is compiled once per call's arguments, from the
-/// calls that reach it, rather than once on its own: it has type parameters, or a `Callable`
-/// parameter, which is an implicit one (decision 0026).
-fn is_generic<'db>(database: &'db dyn TypeDb, signature: &types::Signature<'db>) -> bool {
     !signature.type_parameters.is_empty()
+        || !instances::class_parameters(database, item).is_empty()
         || signature
             .parameters
             .iter()

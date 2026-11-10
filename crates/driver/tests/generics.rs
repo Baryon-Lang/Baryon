@@ -140,11 +140,10 @@ error: `b` has type `f64` here, found `i64`
     );
 }
 
-/// A method of a generic class is reported where it is declared, with its own message. Before,
-/// the build compiled it once as if it were not generic, and the LLVM backend failed on the
-/// class's type parameter `T`.
+/// A method of a generic class compiles once per type its class is used at, its symbol naming
+/// the class's type argument. Before roadmap 1.9.18 it was reported as not compiled yet.
 #[test]
-fn methods_of_generic_classes_are_reported() {
+fn methods_of_generic_classes_compile_per_instance() {
     let program = "
 class Pair[T: Number](Struct, Copy):
     a: T
@@ -156,26 +155,13 @@ class Pair[T: Number](Struct, Copy):
 
 def main():
     pair = Pair(1.5, 2.5)
-    print(pair.a)
+    print(pair.total())
 ";
     let mut session = Session::new();
     session
         .add_file("main.byn", program.strip_prefix('\n').unwrap())
         .unwrap();
     assert_eq!(check_one(program), "");
-    let errors = session.compile(None, driver::Profile::Debug).unwrap_err();
-    let rendered: Vec<String> = errors
-        .iter()
-        .map(|error| diagnostics::render(error, &session).to_string())
-        .collect();
-    assert_eq!(
-        rendered.join("\n\n"),
-        "\
-error: methods of generic classes are not compiled yet
- --> main.byn:5:9
-  |
-5 |     def total(self) -> T:
-  |         ^^^^^ methods of generic classes are not compiled yet
-  = note: collecting a class's type arguments comes after roadmap 1.9.5"
-    );
+    let module = session.compile(None, driver::Profile::Debug).unwrap();
+    assert!(module.contains("@\"main.Pair.total[f64]\""), "{module}");
 }

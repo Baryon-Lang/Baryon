@@ -80,7 +80,10 @@ def double(n: i64) -> i64:
 
 `double(9223372036854775807)` panics with ``integer overflow in `+` `` in a debug build and returns
 `-2` in a release build. `+`, `-`, `*`, their in-place forms `+=`, `-=`, `*=`, and `-x` on a signed
-integer are checked. A result that differs between the two builds is an overflow the debug build
+integer are checked, wherever they appear: in a generic function called with an integer type,
+element by element in whole-array arithmetic such as `a + b` on integer arrays, and inside
+integer `a.sum()` and `v.dot(w)`. `abs` of the type's minimum, `abs(-9223372036854775808)`, does
+not fit either and panics with ``integer overflow in `-` ``. A result that differs between the two builds is an overflow the debug build
 would have reported, so test in a debug build and time in a release build.
 
 ## bool
@@ -350,6 +353,9 @@ A parameter of type `Callable[[f64, Vec3], Vec3]` takes a function with that sig
 0, the argument must be the name of a module-level function, not a closure. The compiler generates
 one copy of the receiving function per function passed to it, so the passed function is inlined
 and the call costs nothing ([decision 0026](../decisions/0026-functions-as-arguments.md)).
+The receiving function may pass the parameter on to another `Callable` parameter or copy it into
+a local. Which function a name holds must be known when compiling, so a local that holds one of
+two different functions depending on a branch is reported when building.
 
 ## Generics
 

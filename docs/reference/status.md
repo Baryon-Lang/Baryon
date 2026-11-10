@@ -24,8 +24,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-08, when `random.Philox` and the constants of
-`math` began to build. Every pull request that teaches lowering or the backend something new
+This page was last brought up to date on 2026-11-09, when the rest of `math` for real numbers
+began to build. Every pull request that teaches lowering or the backend something new
 updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
@@ -62,7 +62,7 @@ checks what it prints.
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications | Complex literals such as `2j`; `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
 | `+ - * / // %`, `**` on floats, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `**` on integers; `in` and `not in`; `==` on `str` |
-| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the rest of `math` and `random` |
+| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the integer and sequence functions of `math`, such as `gcd` and `fsum`; the rest of `random` |
 | `@test` functions, with `baryon test` | |
 
 ## Types
@@ -74,20 +74,20 @@ checks what it prints.
 | `str`: literals, f-strings, `+` and `s.copy()` | `==`, `!=`, `in` and `len` on `str` |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
 | `T \| None`, with every narrowing rule | |
-| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs | Methods of a generic struct: an error says they are not compiled yet |
+| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs and their methods, each method compiled once per type its struct is used at | |
 | Enums: members, `==` and `!=`, `match` | |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
 | Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors | Bounds by a user trait, `[T: Body]`, and calls of its methods: checked, not built yet |
 | | [Embedded structs](types.md#embedded-structs), `Embed[T]` fields: checked, not built yet |
-| [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026) | Passing on a `Callable` parameter to another call; copying a `Callable` parameter into a local when another `Callable` parameter of the same signature received a different function |
+| [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026); a `Callable` parameter passed on to another call or copied into a local | A local that holds one of two different functions depending on a branch, which needs a function value at run time: the build reports it |
 | Lists of copy types, such as `list[f64]`: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing | Lists of other types, such as `list[str]`; `pop`, slices, `in` and comprehensions |
 
 Integer overflow ([decision 0030](../decisions/0030-integer-overflow.md)): a debug build panics
-on `+`, `-`, `*`, `+=`, `-=`, `*=` and `-x` that overflow, and `--release` wraps. Not checked yet,
-so they wrap in both builds: arithmetic in a generic function whose type parameter is an integer,
-`abs` of the type's minimum, whole-array arithmetic on integer arrays, and integer `a.sum()` and
-`v.dot(w)` (roadmap idea I.29).
+on `+`, `-`, `*`, `+=`, `-=`, `*=` and `-x` that overflow, and `--release` wraps. That includes
+arithmetic in a generic function whose type parameter is an integer, `abs` of the type's minimum,
+whole-array arithmetic on integer arrays, and integer `a.sum()` and `v.dot(w)` (roadmap 1.11.8).
+Indices the compiler computes itself, such as a `range` loop's counter, are not checked.
 
 ## Values and references
 
