@@ -1,7 +1,7 @@
 # 0034. `raise ... from` is rejected; a cause is kept in a field
 
-Status: Proposed
-Date: 2026-11-09
+Status: Accepted
+Date: 2026-11-10
 Roadmap: D.18, 1.9.17
 
 ## Context
@@ -33,7 +33,7 @@ to be built. There are three ways to read it:
 
 ## Decision
 
-Recommended: option 1, reject it. Collins decides.
+Option 1, reject it. Collins chose this on 2026-11-10.
 
 - The syntax check reports `raise ... from` as not supported, at the `from` keyword, labelled
   "errors do not chain", with two notes: that an error reaches the caller without the error that
