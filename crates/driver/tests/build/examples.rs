@@ -513,6 +513,49 @@ def main():
     .unwrap();
 }
 
+/// Loops over lists and tuples of values that are not copied (roadmap 1.13.7) borrow each
+/// element: `str`s, unpacked tuples holding one, lists and structs, in statements and in
+/// comprehensions. Python prints the same lines.
+#[test]
+fn loops_over_strings_and_structs_build_and_run() {
+    let program = r#"
+class Particle(Struct):
+    name: str
+    mass: f64
+
+def main():
+    names = ["argon", "neon", "xenon"]
+    total = 0
+    for name in names:
+        total += len(name)
+        print(name, name == "neon", f"<{name}>")
+    print(total)
+    lengths = [len(n) for n in names if n != "neon"]
+    print(lengths[0], lengths[1], len(lengths))
+    print([f"{n}!" for n in names][2])
+    for word in ("a", "bc"):
+        print(word, len(word))
+    for symbol, mass in [("He", 4.0), ("Ar", 39.9)]:
+        mass = mass * 2.0
+        print(symbol, mass)
+    grid = [[1, 2], [3]]
+    for row in grid:
+        print(len(row), row[0])
+    print(len([x for row in grid for x in row]))
+    particles = [Particle("p", 1.0), Particle("q", 2.0)]
+    for p in particles:
+        print(p.name, p.mass)
+    print([p.name.copy() for p in particles][1])
+"#;
+    prints(
+        "loops-over-strings",
+        program,
+        "argon False <argon>\nneon True <neon>\nxenon False <xenon>\n14\n5 5 2\nxenon!\n\
+         a 1\nbc 2\nHe 8.0\nAr 79.8\n2 1\n1 3\n3\np 1.0\nq 2.0\nq\n",
+    )
+    .unwrap();
+}
+
 /// Monte Carlo pi: 1,024 chunks of a `prange` loop, each drawing from its own `Philox` stream.
 /// `NumPy`, drawing from `Generator(Philox(key=2026).jumped(chunk))` for each chunk, counts the
 /// same 80,420,174 hits, so the estimate matches to every digit, on any number of cores.
