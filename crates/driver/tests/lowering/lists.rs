@@ -205,6 +205,46 @@ error: lowering does not handle a loop variable that borrows an element and is a
     );
 }
 
+/// `enumerate`, `zip` and `reversed` keep a plain loop's limits (roadmap 1.13.13): a borrowed
+/// element's variable used outside its loop, `reversed` of a `str`, which is read forward one
+/// character at a time, and a `range` step known only at run time are not lowered yet.
+#[test]
+fn iterators_not_lowered_yet_are_errors() {
+    let program = "\
+        def show(names: list[str]):\n\
+        \x20   name = \"none\"\n\
+        \x20   for i, name in enumerate(names):\n\
+        \x20       print(i)\n\
+        \x20   for c in reversed(\"ab\"):\n\
+        \x20       print(c)\n\
+        \x20   for k in zip(range(0, 9, len(names)), names):\n\
+        \x20       print(k)\n";
+    assert_eq!(
+        lower(program, "show"),
+        "\
+error: lowering does not handle a loop variable that borrows an element and is also used outside the loop yet
+ --> main.byn:3:9
+  |
+3 |     for i, name in enumerate(names):
+  |         ^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
+
+error: lowering does not handle `reversed` of a `str` yet
+ --> main.byn:5:23
+  |
+5 |     for c in reversed(\"ab\"):
+  |                       ^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
+
+error: lowering does not handle a `range` step that is not a constant inside `enumerate`, `zip` or `reversed` yet
+ --> main.byn:7:18
+  |
+7 |     for k in zip(range(0, 9, len(names)), names):
+  |                  ^^^^^^^^^^^^^^^^^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}
+
 /// A loop over a list of `str`s borrows each element: the loop variable gets no value of its
 /// own, and each read of it reads the element in place, so nothing is copied or dropped.
 #[test]
