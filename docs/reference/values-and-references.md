@@ -268,7 +268,7 @@ A view passed as an `InOut` argument behaves as the array's own memory: the func
 reach those elements. A function may also give an `InOut` parameter a whole new array; a view
 cannot take one of another shape, so that panics, as whole-array arithmetic on arrays of different
 lengths does. Today the compiler passes such a view as a copy that it writes back after the call,
-which costs one pass over the view each way; roadmap idea I.34 removes the copy.
+which costs one pass over the view each way; roadmap idea I.35 removes the copy.
 
 Binding a view to a name, `edge = grid[:, 0]`, is an error that suggests `.copy()`. Python
 programmers expect the name to share memory with the array (NumPy's rule), and silently copying

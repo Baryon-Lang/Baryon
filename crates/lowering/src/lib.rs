@@ -30,7 +30,12 @@
 //!   the checker already proved; `assert` becomes an [`Assert`](mir::TerminatorKind::Assert).
 //! - **Generic bodies.** A generic function lowers once, with its type parameters left open:
 //!   `+`, `-` and `*` on a `T: Number` and its number literals become the instance's arithmetic
-//!   and constants once monomorphization substitutes `T`.
+//!   and constants once monomorphization substitutes `T`. A call of a trait's method on a `T`
+//!   stays a call of the trait's method, with `T` as its type argument, until monomorphization
+//!   sends it to the type's own method (decision 0031).
+//! - **Embedded structs.** A name the checker found through `Embed` fields (decision 0031)
+//!   steps into each one: `ion.m` is the place `ion.particle.m`, and `ion.energy()` passes
+//!   `ion.particle` as `self`.
 //! - **Errors.** A call that can fail gets an error edge (decision 0018). The edge, and each
 //!   `raise`, goes to the innermost `except` that names the error, or else drops what the
 //!   function owns and [`Raise`](mir::TerminatorKind::Raise)s it to the caller. A bare `raise`

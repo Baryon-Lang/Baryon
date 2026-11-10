@@ -39,6 +39,37 @@ impl<'db> Builder<'db> {
         }
     }
 
+    /// Whether `ty` names a type parameter anywhere inside it, as a generic struct's field
+    /// `T | None` does. Such a type means nothing in a body that is not generic, so a value is
+    /// not converted to it.
+    pub(crate) fn is_generic(&self, ty: Type<'db>) -> bool {
+        match ty.kind(self.db) {
+            TypeKind::Parameter { .. } => true,
+            TypeKind::Tuple(items) => items.iter().any(|&item| self.is_generic(item)),
+            TypeKind::List(element)
+            | TypeKind::Optional(element)
+            | TypeKind::Array { element, .. }
+            | TypeKind::Fixed { element, .. } => self.is_generic(*element),
+            TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => nominal
+                .arguments
+                .iter()
+                .any(|&argument| self.is_generic(argument)),
+            TypeKind::Callable {
+                parameters,
+                returns,
+            } => {
+                parameters
+                    .iter()
+                    .any(|&parameter| self.is_generic(parameter))
+                    || self.is_generic(*returns)
+            }
+            TypeKind::Fallible { value, errors } => {
+                self.is_generic(*value) || errors.iter().any(|&error| self.is_generic(error))
+            }
+            _ => false,
+        }
+    }
+
     /// Whether a value of type `ty` owns memory that a drop frees. Every type that moves does.
     pub(crate) fn needs_drop(&self, ty: Type<'db>) -> bool {
         !self.is_copy(ty)
