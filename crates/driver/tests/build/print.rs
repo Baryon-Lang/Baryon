@@ -1,5 +1,6 @@
-//! `print` of every value built and run: `None`, optional values, tuples, enum members and
-//! structs as Python writes them, and the `sep=` and `end=` keywords (roadmap 1.10.12).
+//! `print` of every value built and run: `None`, optional values, tuples, enum members,
+//! structs, lists and dicts as Python writes them, and the `sep=` and `end=` keywords (roadmap
+//! 1.10.12, 1.13.11).
 
 use super::{baryon_build, package, stderr};
 use std::io;
@@ -96,5 +97,52 @@ def main():
     assert_eq!(
         printed("separators", program).unwrap(),
         "1, 2, 3\nab|c\nx-y!"
+    );
+}
+
+/// A list prints as `[1, 2, 3]` and a dict as `{'a': 1}`, as Python's `print` writes them, with
+/// each element, key and value written as Python's `repr` writes it: a `str` quoted, a nested
+/// list or tuple the same way. A dict lists its entries in insertion order, so a key popped and
+/// one added later print where Python prints them.
+#[test]
+fn lists_and_dicts_print_as_python_does() {
+    let program = "\
+class Point(Struct, Copy):
+    x: f64
+    y: f64
+
+
+def main():
+    print([1, 2, 3], [\"a\", \"it's\"])
+    print([[1.5, 2.0], [], [3.25]])
+    empty: list[i64] = []
+    print(empty, [True, False], [(1, \"z\")], [Point(1.0, 2.0)])
+    names = [\"argon\"]
+    names.append(\"neon\")
+    print(names, len(names))
+    masses = {\"Ar\": 39.948, \"He\": 4.0026}
+    print(masses)
+    series: dict[str, list[f64]] = {}
+    print(series)
+    series[\"x\"] = [0.1, 1e20]
+    series[\"y\"] = []
+    print(series)
+    counts = {1: \"one\", 2: \"two\"}
+    counts.pop(1)
+    counts[3] = \"three\"
+    print(counts)
+";
+    assert_eq!(
+        printed("collections", program).unwrap(),
+        "\
+[1, 2, 3] ['a', \"it's\"]
+[[1.5, 2.0], [], [3.25]]
+[] [True, False] [(1, 'z')] [Point(x=1.0, y=2.0)]
+['argon', 'neon'] 2
+{'Ar': 39.948, 'He': 4.0026}
+{}
+{'x': [0.1, 1e+20], 'y': []}
+{2: 'two', 3: 'three'}
+"
     );
 }

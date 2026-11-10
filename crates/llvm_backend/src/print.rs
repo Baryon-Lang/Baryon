@@ -22,12 +22,16 @@
 //! | an enum member | `Phase.GAS` | the same |
 //! | a struct | `Point(x=1.0, y=2.0)` | the same |
 //! | a `str` | its characters | quoted, as Python's `repr` writes it: `'heat'` |
+//! | a list | `[1, 2, 3]`, `[]` | the same |
+//! | a dict | `{'a': 1}`, `{}` | the same |
 //!
-//! A tuple's items and a struct's fields print as Python's `repr` writes them, which differs from
+//! A tuple's items, a struct's fields and a list's or dict's elements, keys and values print as Python's `repr` writes them, which differs from
 //! `print` only for a `str`. An enum member prints `Phase.GAS` everywhere, where Python's `repr`
 //! inside a container would write `<Phase.GAS: 1>`; the compiler does not keep an enum member's
 //! value, only its position. The code grows with the type, not the value: a struct of ten fields
-//! is ten runtime calls, and an enum is one `switch`. Arrays and lists wait on decision D.17.
+//! is ten runtime calls, and an enum is one `switch`. A list or a dict is a loop, in the
+//! `print_collections` module, since its length is known only at run time. Arrays wait on
+//! roadmap 1.10.15 (decision 0033).
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -119,6 +123,8 @@ impl<'db> Function<'_, '_, 'db> {
             }
             TypeKind::Enum(nominal) => self.print_enum(stream, value, ty, nominal)?,
             TypeKind::Primitive(_) => self.print_number(stream, value, ty)?,
+            TypeKind::List(element) => self.print_list(stream, value, *element)?,
+            TypeKind::Dict { .. } => self.print_dict(stream, value, ty)?,
             _ => return Err(self.printing(ty)),
         }
         Ok(())
