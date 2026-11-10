@@ -57,6 +57,7 @@ mod process;
 mod random;
 pub(crate) mod relations;
 mod shared;
+mod union_methods;
 
 use crate::lower::Lowerer;
 use crate::outline::Entry;

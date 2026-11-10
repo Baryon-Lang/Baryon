@@ -265,3 +265,50 @@ def main() -> None:
 ";
     assert_eq!(check_one(program), "");
 }
+
+/// A method called on a union must be defined by every member, the same way in each.
+#[test]
+fn a_method_on_a_union_must_be_shared() {
+    let program = r"
+class Atom(Struct, Copy):
+    m: f64
+
+    def energy(self) -> f64:
+        return self.m
+
+    def mass(self) -> f64:
+        return self.m
+
+
+class Dimer(Struct, Copy):
+    m: f64
+
+    def energy(self) -> f32:
+        return f32(self.m)
+
+
+Molecule = Atom | Dimer
+
+
+def main() -> None:
+    molecule: Molecule = Atom(1.0)
+    print(molecule.energy())
+    print(molecule.mass())
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `energy` differs between `Atom` and `Dimer`
+  --> main.byn:23:11
+   |
+23 |     print(molecule.energy())
+   |           ^^^^^^^^^^^^^^^ not the same method on every member
+   = note: a method called on a union must have the same parameters, modes, defaults and return type in every member (decision 0032)
+
+error: `Dimer`, a member of `Atom | Dimer`, has no method `mass`
+  --> main.byn:24:11
+   |
+24 |     print(molecule.mass())
+   |           ^^^^^^^^^^^^^ not defined on every member
+   = note: a method called on a union must be defined by every member (decision 0032); match on the union to call it on some members"
+    );
+}

@@ -31,12 +31,13 @@ updates the table it affects, in the same pull request, as roadmap item 0.8.1 as
 
 ## The example programs
 
-All five [example programs](../examples/README.md) build and run:
+All six [example programs](../examples/README.md) build and run:
 [`heat_equation.byn`](../examples/heat_equation.byn),
 [`lennard_jones.byn`](../examples/lennard_jones.byn),
 [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn),
-[`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) and
-[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn). Each is built and run by a test that
+[`conjugate_gradient.byn`](../examples/conjugate_gradient.byn),
+[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) and
+[`rod_boundaries.byn`](../examples/rod_boundaries.byn). Each is built and run by a test that
 checks what it prints.
 
 | Example | Still needs |
@@ -46,6 +47,7 @@ checks what it prints.
 | [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn) | Nothing: it builds and runs |
 | [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | Nothing: it builds and runs |
 | [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | Nothing: it builds and runs |
+| [`rod_boundaries.byn`](../examples/rod_boundaries.byn) | Nothing: it builds and runs |
 
 ## Syntax
 
@@ -78,7 +80,7 @@ checks what it prints.
 | `T \| None`, with every narrowing rule | |
 | Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs and their methods, each method compiled once per type its struct is used at | |
 | Enums: members, `==` and `!=`, `match` | |
-| [Unions](types.md#unions-of-structs) of structs, enums, error types and `None`: a member passed, assigned or returned where its union is expected, `match` with class patterns by position and keyword, `print`, and members that own memory, freed by the member they hold | Shared method calls and trait bounds on a union (roadmap 1.7.13); `Array.zeros` of a union; class patterns on generic structs; a capture of a field that is not a copy type |
+| [Unions](types.md#unions-of-structs) of structs, enums, error types and `None`: a member passed, assigned or returned where its union is expected, `match` with class patterns by position and keyword, `print`, members that own memory, freed by the member they hold, shared methods called on a union, and unions as the type of a trait-bounded parameter | A shared method that a member gets from an embedded field; `Array.zeros` of a union; class patterns on generic structs; a capture of a field that is not a copy type |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
 | Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors, and bounds by a [user trait](types.md#using-a-trait-as-a-bound), `[T: Body]`, whose method calls go straight to each type's own method | |

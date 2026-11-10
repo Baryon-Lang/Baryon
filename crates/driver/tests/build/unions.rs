@@ -151,3 +151,58 @@ def main():
         (printed.to_owned(), String::new())
     );
 }
+
+/// Decision 0032's molecules: a method every member shares, called on the union, and a union
+/// whose members all name `Body` passed where a `T: Body` is expected; both run the method of
+/// the member each value holds.
+#[test]
+fn shared_methods_and_trait_bounds_dispatch_on_the_member() {
+    let program = "\
+class Body(Protocol):
+    def energy(self) -> f64: ...
+
+
+class Atom(Struct, Copy, Body):
+    m: f64
+    v: f64
+
+    def energy(self) -> f64:
+        return 0.5 * self.m * self.v * self.v
+
+    def scaled(self, factor: f64) -> f64:
+        return factor * self.m
+
+
+class Dimer(Struct, Copy, Body):
+    first: Atom
+    second: Atom
+
+    def energy(self) -> f64:
+        return self.first.energy() + self.second.energy()
+
+    def scaled(self, factor: f64) -> f64:
+        return factor * (self.first.m + self.second.m)
+
+
+Molecule = Atom | Dimer
+
+
+def total_energy[T: Body](bodies: list[T]) -> f64:
+    total = 0.0
+    for body in bodies:
+        total += body.energy()
+    return total
+
+
+def main():
+    molecules: list[Molecule] = [Atom(1.0, 2.0), Dimer(Atom(1.0, 1.0), Atom(2.0, 1.0))]
+    for molecule in molecules:
+        print(molecule.energy(), molecule.scaled(factor=2.0))
+    print(total_energy(molecules))
+";
+    let printed = "2.0 2.0\n1.5 6.0\n3.5\n";
+    assert_eq!(
+        run("unions-methods", program).unwrap(),
+        (printed.to_owned(), String::new())
+    );
+}

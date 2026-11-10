@@ -54,6 +54,10 @@ fn the_example_programs_check_clean() {
             "monte_carlo_pi.byn",
             include_str!("../../../docs/examples/monte_carlo_pi.byn"),
         ),
+        (
+            "rod_boundaries.byn",
+            include_str!("../../../docs/examples/rod_boundaries.byn"),
+        ),
     ];
     assert_eq!(check(&examples), "");
 }

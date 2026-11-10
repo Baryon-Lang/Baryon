@@ -198,19 +198,10 @@ impl<'db> Builder<'db> {
         let errors = self.typed.errors(node);
         let edge = self.error_edge(errors, node);
         let next = self.new_block();
-        self.terminate(
-            TerminatorKind::Call {
-                callee: Callee::Function {
-                    item,
-                    type_arguments,
-                },
-                arguments: passed,
-                destination: place,
-                target: next,
-                error: edge.clone(),
-            },
-            node,
-        );
+        let call = (passed, place, next, edge.clone());
+        if !self.call_terminator(item, type_arguments, arguments, call, node) {
+            return;
+        }
         if let Some(mut edge) = edge {
             if !views.is_empty() {
                 // The callee's changes reach the views whether it returns or raises.

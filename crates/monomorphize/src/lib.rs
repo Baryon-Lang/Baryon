@@ -83,6 +83,7 @@
 //! ```
 
 mod callables;
+mod unions;
 
 pub use callables::forward_callables;
 use mir::{
@@ -297,9 +298,12 @@ pub type Implementation<'a, 'db> =
 /// one type argument, `T`. Once `T` is `Particle`, `implementation` names `Particle.energy`,
 /// and the call goes there directly, so the backend can inline it: a trait costs nothing at run
 /// time. When the method comes from an embedded struct, the receiver steps into the embedded
-/// fields, so `Ion` passes its `particle` as `self`.
+/// fields, so `Ion` passes its `particle` as `self`. When `T` is a union of types that each
+/// implement the trait (decision 0032), the call becomes a switch on the member the union
+/// holds and one direct call per member, a branch rather than an indirect call.
 ///
-/// Cost: one call of `implementation` per call in the body with one type argument.
+/// Cost: one call of `implementation` per call in the body with one type argument, one per
+/// member for a union receiver. `db` interns the `i64` type of a union's tag.
 ///
 /// ```
 /// use mir::{Body, Terminator, TerminatorKind};
@@ -319,46 +323,54 @@ pub type Implementation<'a, 'db> =
 ///
 /// // A body without trait calls is left as it is.
 /// let before = body.clone();
-/// monomorphize::trait_calls(&mut body, &|_, _| None);
+/// monomorphize::trait_calls(&database, &mut body, &|_, _| None);
 /// assert_eq!(body, before);
 /// ```
-pub fn trait_calls<'db>(body: &mut Body<'db>, implementation: &Implementation<'_, 'db>) {
+pub fn trait_calls<'db>(
+    db: &'db dyn salsa::Database,
+    body: &mut Body<'db>,
+    implementation: &Implementation<'_, 'db>,
+) {
     for outlined in &mut body.outlined {
-        trait_calls(outlined, implementation);
+        trait_calls(db, outlined, implementation);
     }
-    for block in &mut body.blocks {
+    for index in 0..body.blocks.len() {
         let TerminatorKind::Call {
             callee:
                 Callee::Function {
                     item,
                     type_arguments,
                 },
-            arguments,
             ..
-        } = &mut block.terminator.kind
+        } = &body.blocks[index].terminator.kind
         else {
             continue;
         };
-        let [receiver_type] = type_arguments.as_slice() else {
+        let (item, [receiver_type]) = (*item, type_arguments.as_slice()) else {
             continue;
         };
-        let Some((method, path, method_arguments)) = implementation(*item, *receiver_type) else {
+        if let TypeKind::Union(members) = receiver_type.kind(db) {
+            unions::member_calls(db, body, index, (item, members), implementation);
+            continue;
+        }
+        let Some((method, path, method_arguments)) = implementation(item, *receiver_type) else {
             continue;
         };
-        *item = method;
-        *type_arguments = method_arguments;
-        let Some(receiver) = arguments.first_mut() else {
+        let TerminatorKind::Call {
+            callee, arguments, ..
+        } = &mut body.blocks[index].terminator.kind
+        else {
             continue;
         };
-        let place = match receiver {
-            Argument::Borrow(place)
-            | Argument::InOut(place)
-            | Argument::Owned(Operand::Copy(place) | Operand::Move(place)) => place,
-            Argument::Owned(Operand::Constant(_)) => continue,
+        *callee = Callee::Function {
+            item: method,
+            type_arguments: method_arguments,
         };
-        place
-            .projections
-            .extend(path.into_iter().map(Projection::Field));
+        if let Some(receiver) = arguments.first_mut().and_then(unions::argument_place) {
+            receiver
+                .projections
+                .extend(path.into_iter().map(Projection::Field));
+        }
     }
 }
 

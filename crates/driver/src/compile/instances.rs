@@ -117,7 +117,7 @@ pub(crate) fn ready<'db>(
         }
         body = monomorphize::instantiate(db, &body, &parameters, &instance.arguments);
         monomorphize::forward_callables(db, &mut body, &|item| callable_positions(db, item));
-        monomorphize::trait_calls(&mut body, implementation);
+        monomorphize::trait_calls(db, &mut body, implementation);
     }
     drop_elaboration::elaborate(db, &mut body, declared);
     array_expansion::expand(db, &mut body, declared);

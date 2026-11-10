@@ -177,11 +177,15 @@ fn the_example_programs_document() {
             "monte_carlo_pi.byn",
             include_str!("../../../docs/examples/monte_carlo_pi.byn"),
         ),
+        (
+            "rod_boundaries.byn",
+            include_str!("../../../docs/examples/rod_boundaries.byn"),
+        ),
     ] {
         assert!(session.add_file(path, text).is_ok());
     }
     let modules = session.document().unwrap();
-    assert_eq!(modules.len(), 5);
+    assert_eq!(modules.len(), 6);
     assert!(modules.iter().all(|module| module.summary().is_some()));
     assert!(documentation::index(&modules).contains(
         "| [`lennard_jones`](lennard_jones.md) | Molecular dynamics: argon-like atoms in a \
