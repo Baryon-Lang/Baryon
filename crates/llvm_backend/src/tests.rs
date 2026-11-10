@@ -6,6 +6,7 @@
 
 mod arrays;
 mod debug;
+mod dicts;
 mod errors;
 mod math;
 mod panics;

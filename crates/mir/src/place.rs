@@ -65,6 +65,11 @@ pub enum Projection {
     /// one index, each held in a local of an integer type. The step itself is unchecked:
     /// lowering puts a bounds [`Check`](crate::Check) before it unless the program wrote
     /// `a.unchecked[i]` (decision 0010).
+    ///
+    /// On a `dict[K, V]` it is one `i64` position that [`DictFind`](crate::Builtin::DictFind),
+    /// [`DictInsert`](crate::Builtin::DictInsert) or [`DictNext`](crate::Builtin::DictNext)
+    /// gave, and names that entry as a `tuple[K, V]`: field 0 is the key and field 1 the value.
+    /// The key is only read; the value is read, or written in place by `d[k] = v`.
     Index(Vec<Local>),
     /// A view of part of an `Array` or `Fixed`: one [`SliceIndex`] per dimension, at least one
     /// of them a range (language reference, "Arrays", "Slicing"). The view is an `Array` whose

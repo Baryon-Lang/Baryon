@@ -7,6 +7,7 @@
 //! code in the other modules.
 
 mod accumulate;
+mod dict;
 mod output;
 mod philox;
 mod strings;
@@ -16,6 +17,10 @@ mod text;
 pub use accumulate::{
     baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
     baryon_rt_accumulator_slot,
+};
+pub use dict::{
+    baryon_rt_dict_find, baryon_rt_dict_free, baryon_rt_dict_insert, baryon_rt_dict_length,
+    baryon_rt_dict_next, baryon_rt_dict_remove, baryon_rt_panic_key,
 };
 pub use output::{
     baryon_rt_flush, baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64,

@@ -130,7 +130,9 @@ pub enum Rvalue<'db> {
     /// array's elements in row-major order, the one value of a present `T | None`, or a new
     /// `list` holding its elements in order, as the display `[a, b, c]` writes it. A list's
     /// buffer is allocated on the heap with room for exactly its elements, none for `[]`, and
-    /// running out of memory panics; the place it is assigned to owns and drops it.
+    /// running out of memory panics; the place it is assigned to owns and drops it. A `dict`
+    /// aggregate has no operands and is the empty `dict`, which allocates nothing; a display
+    /// `{k: v}` lowers to it followed by insertions.
     Aggregate(Type<'db>, Vec<Operand<'db>>),
     /// A new `Array` of the given type, with one `i64` length per dimension, outermost first,
     /// allocated on the heap. Its elements are not set: the stage that writes this rvalue writes
@@ -140,7 +142,8 @@ pub enum Rvalue<'db> {
     /// The array is owned by the place it is assigned to, which drops it like any other array.
     NewArray(Type<'db>, Vec<Operand<'db>>),
     /// The length of one dimension of the array at the place, as an `i64`; dimension 0 is the
-    /// outermost. For a list, dimension 0 is its number of elements.
+    /// outermost. For a list, dimension 0 is its number of elements, and for a `dict` its number
+    /// of keys.
     Length(Place, u32),
     /// Whether the `T | None` at the place holds a value, as a `bool`.
     IsPresent(Place),
