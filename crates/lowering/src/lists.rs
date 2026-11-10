@@ -1,6 +1,7 @@
 //! Lists (language reference, "Lists"): a display `[a, b]` builds one, `xs.append(value)`
 //! grows one, `len(xs)`, `xs[i]` and `value in xs` read one, `xs.copy()` and `xs[i:j:k]` copy
-//! one or part of one into a new list, and `Array(xs)` copies one into a new array.
+//! one or part of one into a new list, `xs[i:j] = ys` replaces part of one, and `Array(xs)`
+//! copies one into a new array.
 //!
 //! The elements can be of any type. A list of `str`s, arrays, structs or other lists owns its
 //! elements: a display or `append` moves each value in, writing `xs[i] = v` drops the element
@@ -245,6 +246,89 @@ impl<'db> Builder<'db> {
                 builder.append_copy(place, from, ty, node);
             },
         );
+    }
+
+    /// `xs[i:j] = values`, the assignment into the list slice `target`: the elements in the
+    /// range are replaced by copies of those of `values`, a list of the same type, which may be
+    /// longer or shorter, so the list grows or shrinks as Python's does. The range follows the
+    /// rules of a list slice read, [`Self::list_slice`]; an empty one, such as `xs[2:2]`,
+    /// inserts at its start. A slice with a step, `xs[::2] = values`, is not lowered yet.
+    ///
+    /// The new contents are built in a new list, from the elements before the range, the
+    /// values, and the elements after it, which then replaces the old one, dropping it. Reading
+    /// everything before writing anything makes `xs[1:2] = xs` correct.
+    ///
+    /// Cost: one pass over the list and the values, with the appends that grow the new list.
+    pub(crate) fn list_slice_store(&mut self, target: NodeId, values: NodeId) {
+        let (Some(list), Some(slice)) = (
+            self.tree.child(target, Role::Value),
+            self.tree.child(target, Role::Index),
+        ) else {
+            return;
+        };
+        if self.tree.child(slice, Role::Step).is_some() {
+            return self.unsupported(target, "assigning into a list slice with a step");
+        }
+        let ty = self.ty(list);
+        let Some(element) = self.list_element(ty, target) else {
+            return;
+        };
+        if !self.is_copy(element) && !matches!(element.kind(self.db), TypeKind::Str) {
+            let element = element.display(self.db);
+            let what = format!("assigning into a slice of a list of `{element}`");
+            return self.unsupported(target, &what);
+        }
+        let source = self.borrow(values);
+        let Some(destination) = self.place(list) else {
+            return;
+        };
+        let SliceIndex::Range { start, length, .. } = self.slice_range(&destination, ty, 0, slice)
+        else {
+            return;
+        };
+        let int = self.int_type();
+        let copy = |local: Local| Operand::Copy(Place::from(local));
+        // The first index after the range, and how many elements follow it.
+        let (after, rest) = (self.temporary(int, target), self.temporary(int, target));
+        let end = Rvalue::Binary(BinaryOperator::Add, copy(start), copy(length));
+        self.assign(Place::from(after), end, target);
+        let total = self.length(&destination, ty, 0, target);
+        let remaining = Rvalue::Binary(BinaryOperator::Subtract, total, copy(after));
+        self.assign(Place::from(rest), remaining, target);
+        let count = self.length(&source, ty, 0, target);
+        let result = self.temporary(ty, target);
+        self.assign(
+            Place::from(result),
+            Rvalue::Aggregate(ty, Vec::new()),
+            target,
+        );
+        let parts = [
+            (destination.clone(), None, copy(start)),
+            (source, None, count),
+            (destination.clone(), Some(after), copy(rest)),
+        ];
+        for (from, offset, count) in parts {
+            self.loop_nest(
+                &[count],
+                &mut Vec::new(),
+                target,
+                &mut |builder, indices| {
+                    let index = match offset {
+                        Some(offset) => {
+                            let index = builder.temporary(int, target);
+                            let at =
+                                Rvalue::Binary(BinaryOperator::Add, copy(indices[0]), copy(offset));
+                            builder.assign(Place::from(index), at, target);
+                            index
+                        }
+                        None => indices[0],
+                    };
+                    let element = from.clone().project(Projection::Index(vec![index]));
+                    builder.append_copy(&Place::from(result), element, ty, target);
+                },
+            );
+        }
+        self.replace(destination, Operand::Move(Place::from(result)), target);
     }
 
     /// Whether the elements of the list type `ty` can be copied into a new list: copy types and

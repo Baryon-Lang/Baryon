@@ -149,6 +149,9 @@ impl<'db> Builder<'db> {
         if self.is_dict_subscript(target) {
             return self.dict_store(target, value);
         }
+        if self.is_list_slice(target) {
+            return self.list_slice_store(target, value);
+        }
         let Some((place, ty)) = self.target(target) else {
             return;
         };

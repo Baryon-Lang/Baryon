@@ -246,9 +246,21 @@ iteration and list comprehensions. `copy` makes a new list holding a copy of eac
 how to keep a list and also pass it on, since a list moves
 ([values and references](values-and-references.md#moves)). A slice, `values[1:n]`, is a new list
 too, as in Python, unlike an array slice, which is a view; its bounds follow the rules of
-[array slicing](arrays.md#slicing), so a bound past the end panics. A list is for building up data of
+[array slicing](arrays.md#slicing), so a bound past the end panics. Assigning to a slice,
+`values[i:j] = more`, replaces the elements in the range with copies of those of the list `more`,
+which may be longer or shorter, so the list grows or shrinks as in Python; `values[i:i] = more`
+inserts at `i`, and `more` stays as it was. It rebuilds the list, one pass over both. A slice
+with a step, `values[::2] = more`, cannot be assigned to yet. A list is for building up data of
 unknown length; convert it to an `Array` with `Array(values)` for numeric work. An empty list
 needs its type written: `columns: list[i64] = []`.
+
+```python
+def main():
+    levels = [1, 2, 3, 4, 5]
+    levels[1:3] = [9, 8, 7]
+    levels[0:0] = [0]
+    print(levels)  # [0, 1, 9, 8, 7, 4, 5]
+```
 
 `sum(values)`, `min(values)` and `max(values)` reduce a list, or a rank-1 array, of numbers.
 `sum(values, start)`, or `sum(values, start=...)`, starts from `start`, and its type is the common
