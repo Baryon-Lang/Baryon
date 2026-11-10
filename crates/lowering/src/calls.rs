@@ -3,8 +3,8 @@
 
 use crate::builder::Builder;
 use mir::{
-    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Operand, Place, Projection,
-    Rvalue, TerminatorKind,
+    Argument, Builtin, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue,
+    TerminatorKind,
 };
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
@@ -70,47 +70,55 @@ impl<'db> Builder<'db> {
                 }
                 _ => self.unsupported(node, "this conversion"),
             },
-            types::Callee::Builtin(name) => match (name.split_once('.'), arguments.as_slice()) {
-                (None, [argument]) if name == "len" => self.len(place, *argument, node),
-                (None, [argument]) if name == "round" => self.round(place, *argument, node),
-                (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
-                (None, _) if name == "print" => self.print(place, &arguments, node),
-                (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
-                (None, [first, rest @ ..])
-                    if (name == "min" || name == "max")
-                        && !rest.is_empty()
-                        && matches!(ty.kind(self.db), TypeKind::Primitive(_)) =>
-                {
-                    self.min_max(place, name == "min", *first, rest, node);
-                }
-                (
-                    Some((owner @ ("Array" | "Fixed"), function @ ("zeros" | "ones" | "fill"))),
-                    _,
-                ) if !matches!(ty.kind(self.db), TypeKind::None) => {
-                    if owner == "Array" {
-                        self.new_array(&place, function, &arguments, node);
-                    } else {
-                        self.new_fixed(place, function, &arguments, node);
-                    }
-                }
-                (Some(("str", method)), _) => self.text_method(place, method, &arguments, node),
-                (Some(("complex", "conjugate")), [value]) => self.conjugate(place, *value, node),
-                (Some(("list", "append")), [list, value]) => {
-                    self.list_append(place, *list, *value, node);
-                }
-                (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
-                (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
-                (Some(("dict", method)), _) => self.dict_method(place, method, &arguments, node),
-                (Some(("Array" | "Fixed", method)), _) => {
-                    self.array_method(place, method, &arguments, node);
-                }
-                (Some(("math", member)), _) => self.math_function(place, member, &arguments, node),
-                (Some((owner @ ("random" | "Philox" | "sys" | "os"), member)), _) => {
-                    self.standard_call(place, (owner, member), &arguments, node);
-                }
-                _ => self.unsupported(node, &format!("the built-in `{name}`")),
-            },
+            types::Callee::Builtin(name) => self.named_builtin(place, name, &arguments, node),
             types::Callee::Value => self.value_call(place, &arguments, node),
+        }
+    }
+
+    /// The call `node` of the built-in `name`, such as `len` or `list.append`, with
+    /// `arguments`, the receiver first for a method, its result written into `place`.
+    fn named_builtin(&mut self, place: Place, name: &str, arguments: &[NodeId], node: NodeId) {
+        let ty = self.ty(node);
+        match (name.split_once('.'), arguments) {
+            (None, [argument]) if name == "len" => self.len(place, *argument, node),
+            (None, [value]) if name == "round" => self.round(place, *value, node),
+            (None, [value, digits]) if name == "round" => {
+                self.round_digits(place, (*value, *digits), node);
+            }
+            (None, [list, rest @ ..]) if name == "sorted" && rest.len() <= 1 => {
+                self.sorted(&place, *list, rest.first().copied(), node);
+            }
+            (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
+            (None, _) if name == "print" => self.print(place, arguments, node),
+            (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
+            (None, [values, rest @ ..]) if self.reduces(name, (*values, rest), node) => {
+                self.reduce(place, name, (*values, rest), node);
+            }
+            (Some((owner @ ("Array" | "Fixed"), function @ ("zeros" | "ones" | "fill"))), _)
+                if !matches!(ty.kind(self.db), TypeKind::None) =>
+            {
+                if owner == "Array" {
+                    self.new_array(&place, function, arguments, node);
+                } else {
+                    self.new_fixed(place, function, arguments, node);
+                }
+            }
+            (Some(("str", method)), _) => self.text_method(place, method, arguments, node),
+            (Some(("complex", "conjugate")), [value]) => self.conjugate(place, *value, node),
+            (Some(("list", "append")), [list, value]) => {
+                self.list_append(place, *list, *value, node);
+            }
+            (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
+            (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
+            (Some(("dict", method)), _) => self.dict_method(place, method, arguments, node),
+            (Some(("Array" | "Fixed", method)), _) => {
+                self.array_method(place, method, arguments, node);
+            }
+            (Some(("math", member)), _) => self.math_function(place, member, arguments, node),
+            (Some((owner @ ("random" | "Philox" | "sys" | "os"), member)), _) => {
+                self.standard_call(place, (owner, member), arguments, node);
+            }
+            _ => self.unsupported(node, &format!("the built-in `{name}`")),
         }
     }
 
@@ -397,62 +405,6 @@ impl<'db> Builder<'db> {
             ty: types::Type::new(self.db, TypeKind::Str),
             value: ConstantValue::Str(text.to_owned()),
         }))
-    }
-
-    /// `min(first, rest…)` when `smallest`, else `max(…)`, of numbers, its result written into
-    /// `place`. As in Python, an argument replaces the best so far only when it is strictly
-    /// smaller (or larger), so the first of equal values wins and a `nan` after the first
-    /// argument is skipped.
-    fn min_max(
-        &mut self,
-        place: Place,
-        smallest: bool,
-        first: NodeId,
-        rest: &[NodeId],
-        node: NodeId,
-    ) {
-        let ty = self.ty(node);
-        let best = self.temporary(ty, node);
-        let operand = self.operand_as(first, ty);
-        self.assign(Place::from(best), Rvalue::Use(operand), node);
-        let test = if smallest {
-            BinaryOperator::Less
-        } else {
-            BinaryOperator::Greater
-        };
-        for &argument in rest {
-            let candidate = self.temporary(ty, argument);
-            let operand = self.operand_as(argument, ty);
-            self.assign(Place::from(candidate), Rvalue::Use(operand), argument);
-            let better = self.temporary(self.boolean_type(), argument);
-            self.assign(
-                Place::from(better),
-                Rvalue::Binary(
-                    test,
-                    Operand::Copy(Place::from(candidate)),
-                    Operand::Copy(Place::from(best)),
-                ),
-                argument,
-            );
-            let (replace, join) = (self.new_block(), self.new_block());
-            self.terminate(
-                TerminatorKind::Branch {
-                    condition: Operand::Copy(Place::from(better)),
-                    then: replace,
-                    otherwise: join,
-                },
-                argument,
-            );
-            self.start(replace);
-            self.assign(
-                Place::from(best),
-                Rvalue::Use(Operand::Copy(Place::from(candidate))),
-                argument,
-            );
-            self.terminate(TerminatorKind::Goto(join), argument);
-            self.start(join);
-        }
-        self.assign(place, Rvalue::Use(Operand::Copy(Place::from(best))), node);
     }
 
     /// A place holding `argument` as the parameter type `ty`, to borrow. An argument that
