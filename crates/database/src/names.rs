@@ -16,7 +16,7 @@ use syntax::NodeId;
 /// standard traits (language reference, "Types", "Traits"), and the names decision 0031 adds:
 /// `Protocol`, the base of a user trait, `Embed`, which embeds a struct in another, and `Dyn`,
 /// reserved for trait objects (roadmap 3.5).
-pub const BUILTINS: [&str; 54] = [
+pub const BUILTINS: [&str; 56] = [
     "f64",
     "f32",
     "i64",
@@ -55,6 +55,8 @@ pub const BUILTINS: [&str; 54] = [
     "sum",
     "enumerate",
     "zip",
+    "sorted",
+    "reversed",
     "int",
     "float",
     "complex",
@@ -74,8 +76,9 @@ pub const BUILTINS: [&str; 54] = [
 ];
 
 /// The standard library's modules. Until the standard library is written (roadmap 1.13),
-/// importing one of these is accepted and its members are not checked.
-pub const STANDARD_MODULES: [&str; 2] = ["math", "random"];
+/// importing one of these is accepted and its members are not checked. `sys` and `os` are
+/// decision 0036's: the command-line arguments, the exit status and the environment.
+pub const STANDARD_MODULES: [&str; 4] = ["math", "random", "sys", "os"];
 
 /// What a name refers to.
 #[derive(Clone, Debug, PartialEq, Eq)]

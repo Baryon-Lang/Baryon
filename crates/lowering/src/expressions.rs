@@ -30,6 +30,9 @@ impl<'db> Builder<'db> {
                 self.array_attribute(place, node);
             }
             SyntaxKind::Subscript if self.is_list_slice(node) => self.list_slice(&place, node),
+            SyntaxKind::Name | SyntaxKind::Attribute if self.is_argv(node) => {
+                self.argv(&place, node);
+            }
             SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript => {
                 let operand = self.operand(node);
                 self.assign(place, Rvalue::Use(operand), node);
@@ -82,6 +85,7 @@ impl<'db> Builder<'db> {
             SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
         ) && !self.is_array_attribute(node)
             && !self.is_list_slice(node)
+            && !self.is_argv(node)
         {
             // A name of something lowering does not handle, already reported by `place`.
             return Operand::Constant(Constant {
@@ -159,6 +163,10 @@ impl<'db> Builder<'db> {
     /// `T | None` variable the checker narrowed to `T` reads the value inside, and a loop
     /// variable that borrows an element reads the element.
     pub(crate) fn place(&mut self, node: NodeId) -> Option<Place> {
+        if self.is_argv(node) {
+            // `sys.argv` names no place: each read builds a new list.
+            return None;
+        }
         match self.tree.kind(node) {
             SyntaxKind::Name => {
                 if let Some(&Definition::Local(binding)) = self.definition(node)

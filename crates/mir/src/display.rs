@@ -221,6 +221,7 @@ impl Writer<'_> {
             Rvalue::Length(place, dimension) => format!("len({}, {dimension})", place_text(place)),
             Rvalue::IsPresent(place) => format!("is_present({})", place_text(place)),
             Rvalue::ErrorIndex(place) => format!("error_index({})", place_text(place)),
+            Rvalue::MemberIndex(place) => format!("member_index({})", place_text(place)),
             Rvalue::Elementwise(tree) => format!("elementwise {}", self.elementwise(tree)),
             Rvalue::Format(pieces) => {
                 let pieces: Vec<String> = pieces
@@ -454,6 +455,7 @@ fn place_text(place: &Place) -> String {
             }
             Projection::Value => write!(text, ".value"),
             Projection::Error(position) => write!(text, ".error[{position}]"),
+            Projection::Member(position) => write!(text, ".member[{position}]"),
         };
     }
     text

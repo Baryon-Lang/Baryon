@@ -2,7 +2,7 @@
 //! [`Call`](crate::TerminatorKind::Call), the [`Builtin`] operations and [`MathFunction`]s the
 //! backends build inline or call the runtime for, and each [`Argument`]'s mode.
 
-use crate::{Operand, Place};
+use crate::{Operand, Place, TextMethod};
 use types::{Item, Type};
 
 /// The function a [`Call`](crate::TerminatorKind::Call) calls.
@@ -103,6 +103,9 @@ pub enum Builtin {
     /// guarantees, so the call checks nothing. It reads one byte to find the character's width
     /// in UTF-8, so it takes constant time. The call cannot fail.
     CharacterStr,
+    /// A method of `str`, such as `split` or `strip`, or indexing and slicing one (roadmap
+    /// 1.13.12). [`TextMethod`] says what each takes and gives.
+    Text(TextMethod),
     /// Looks a key up in a `dict` (decision 0035): two arguments, the `dict` and the key, of the
     /// key type, each passed `Borrow`, so a constant key is put in a local first; the destination is an
     /// `i64`, the position of the key's entry, or -1 when the key is not there. The position
@@ -133,6 +136,28 @@ pub enum Builtin {
     /// position at or after the argument that holds an entry, or -1 when none does. A loop over a
     /// `dict` starts at 0 and passes one past each position it visits. The call cannot fail.
     DictNext,
+    /// `len(sys.argv)`, how many command-line arguments the program was started with, the
+    /// program itself included (decision 0036): no arguments; the destination has type `i64`.
+    /// Lowering builds `sys.argv` from it and [`Argument`](Self::Argument). The call cannot fail.
+    ArgumentCount,
+    /// One command-line argument, `sys.argv[i]` (decision 0036): one argument, the index, an
+    /// `i64` passed `Owned`, at least 0 and below [`ArgumentCount`](Self::ArgumentCount), which
+    /// lowering guarantees; the destination is a new owned `str`. Bytes that are not UTF-8 read
+    /// as U+FFFD. It copies the argument, so it costs time linear in its length. The call cannot
+    /// fail.
+    Argument,
+    /// Reads an environment variable, as `os.environ.get(name)` does (decision 0036): two
+    /// arguments, the name, a `str` passed `Borrow`, or `Owned` for a literal, and a `bool`
+    /// passed `InOut` that the call sets to whether the variable is set; the destination is a
+    /// new owned `str`, the value, or the empty string when it is not set. Lowering builds the
+    /// `str | None` of `get`, and the panic of `os.environ[name]`, from the two. A value that is
+    /// not UTF-8 reads with U+FFFD in place of each bad sequence. The call cannot fail.
+    EnvironmentGet,
+    /// `sys.exit(status)` (decision 0036): one argument, the status, an `i64` passed `Owned`;
+    /// the destination has type `None`, and the call never returns. It writes out what `print`
+    /// holds back and ends the program with the status, running nothing else on the way out. A
+    /// status outside 0 to 255 panics.
+    Exit,
 }
 
 impl Builtin {
@@ -149,7 +174,9 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Uniform.name(), "Philox.uniform");
     /// assert_eq!(mir::Builtin::ContainsStr.name(), "str in");
     /// assert_eq!(mir::Builtin::CharacterStr.name(), "str character");
+    /// assert_eq!(mir::Builtin::Text(mir::TextMethod::Split).name(), "str.split");
     /// assert_eq!(mir::Builtin::DictFind.name(), "dict lookup");
+    /// assert_eq!(mir::Builtin::Exit.name(), "sys.exit");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -166,10 +193,15 @@ impl Builtin {
             Self::ContainsStr => "str in",
             Self::LengthStr => "len of str",
             Self::CharacterStr => "str character",
+            Self::Text(method) => method.name(),
             Self::DictFind => "dict lookup",
             Self::DictInsert => "dict insert",
             Self::DictRemove => "dict remove",
             Self::DictNext => "dict iteration",
+            Self::ArgumentCount => "len of sys.argv",
+            Self::Argument => "sys.argv item",
+            Self::EnvironmentGet => "os.environ.get",
+            Self::Exit => "sys.exit",
         }
     }
 }

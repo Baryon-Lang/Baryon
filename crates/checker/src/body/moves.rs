@@ -38,7 +38,10 @@ impl<'db> Body<'db> {
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }
             | TypeKind::Standard(_) => true,
-            TypeKind::Tuple(items) => items.iter().any(|&item| self.moves(item)),
+            // A union of `Copy` members is `Copy`; otherwise it moves (decision 0032).
+            TypeKind::Tuple(items) | TypeKind::Union(items) => {
+                items.iter().any(|&item| self.moves(item))
+            }
             TypeKind::Optional(value) => self.moves(*value),
             TypeKind::Struct(_) => !crate::forms::is_copy(self.db, ty),
             // A bound that is not a trait has had its error; its values count as copies.
@@ -63,6 +66,15 @@ impl<'db> Body<'db> {
                 // Moving a field out moves the whole struct: one with a hole cannot be used.
                 if let Some(root) = self.place_root(node) {
                     self.move_variable(root, node);
+                }
+            }
+            // `a if c else b` keeps whichever branch runs, so each branch is moved: a borrowed
+            // element or a variable in either one is the same error as moving it directly.
+            SyntaxKind::Conditional => {
+                for role in [Role::Value, Role::Else] {
+                    if let Some(branch) = self.tree.child(node, role) {
+                        self.consume(branch, ty);
+                    }
                 }
             }
             // A slice of a list is a new list, as in Python, so keeping it moves nothing.

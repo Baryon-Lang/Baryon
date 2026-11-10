@@ -84,6 +84,12 @@ fn an_undefined_name_is_reported_where_it_is_read() {
 }
 
 #[test]
+fn sorted_and_reversed_are_built_in_names() {
+    let program = "def main():\n    xs = [3, 1, 2]\n    ys = sorted(xs)\n    for x in reversed(xs):\n        print(x)\n";
+    assert_eq!(check_one(program), "");
+}
+
+#[test]
 fn a_method_does_not_see_its_class_body() {
     let program = "class Box(Struct):\n    size: f64\n\n    def volume(self) -> f64:\n        return size**3\n";
     assert_eq!(
