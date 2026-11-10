@@ -287,6 +287,7 @@ mod methods;
 mod operators;
 mod parallel;
 mod patterns;
+mod process;
 mod random;
 mod slices;
 mod statements;

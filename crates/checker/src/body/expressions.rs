@@ -187,6 +187,17 @@ impl<'db> Body<'db> {
             }) if super::math::is_constant(member) => {
                 Type::new(self.db, TypeKind::Primitive(Primitive::Float(Float::F64)))
             }
+            Some(Definition::Standard {
+                module: "sys",
+                member: Some(member),
+            }) if member == "argv" => self.argv(),
+            Some(Definition::Standard {
+                module: module @ ("sys" | "os"),
+                member: Some(member),
+            }) => {
+                let (module, member) = (*module, member.clone());
+                self.not_built(node, module, &member)
+            }
             _ => self.lowerer.unknown(),
         }
     }
