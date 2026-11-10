@@ -88,7 +88,7 @@ mod module_map;
 mod names;
 
 pub use inputs::{File, Package};
-pub use module_map::{ModuleName, Modules, module_name, modules};
+pub use module_map::{LIBRARY_ROOT, ModuleName, Modules, library_module, module_name, modules};
 pub use names::{BUILTINS, Definition, Resolution, STANDARD_MODULES};
 
 use diagnostics::Diagnostic;

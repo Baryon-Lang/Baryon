@@ -13,6 +13,23 @@ use std::fmt;
 /// The extension every source file has, fixed by decision 0023.
 const EXTENSION: &str = ".byn";
 
+/// The directory the standard library's own source files sit in (decision 0038), such as
+/// `<std>/os.byn`. The name cannot be a module path, so no user file can be imported from it or
+/// clash with it.
+pub const LIBRARY_ROOT: &str = "<std>/";
+
+/// The standard library module a library file holds, such as `os` for `<std>/os.byn`, or `None`
+/// for any other path. `builtins` holds the names every module can use without an import.
+///
+/// ```
+/// assert_eq!(database::library_module("<std>/os.byn"), Some("os"));
+/// assert_eq!(database::library_module("os.byn"), None);
+/// ```
+#[must_use]
+pub fn library_module(path: &str) -> Option<&str> {
+    path.strip_prefix(LIBRARY_ROOT)?.strip_suffix(EXTENSION)
+}
+
 /// Python's reserved words. A module named after one could never be imported, because
 /// `import class` is a syntax error.
 const KEYWORDS: [&str; 35] = [
@@ -138,6 +155,8 @@ pub fn module_name(db: &dyn Db, file: File) -> Result<ModuleName, Diagnostic> {
 pub struct Modules {
     /// Each importable module and its file.
     by_name: BTreeMap<ModuleName, File>,
+    /// The standard library's source files (decision 0038), by the module each holds.
+    library: BTreeMap<String, File>,
     /// One error per file that names no module or clashes with another, in file order.
     diagnostics: Vec<Diagnostic>,
 }
@@ -147,6 +166,14 @@ impl Modules {
     #[must_use]
     pub fn get(&self, name: &ModuleName) -> Option<File> {
         self.by_name.get(name).copied()
+    }
+
+    /// The standard library's source file for the standard module `module`, such as `os`, or
+    /// `builtins` for the names every module can use without an import (decision 0038). A
+    /// library file is never one of the program's modules: `import` cannot name it.
+    #[must_use]
+    pub fn library(&self, module: &str) -> Option<File> {
+        self.library.get(module).copied()
     }
 
     /// Every module and its file, sorted by name.
@@ -168,7 +195,8 @@ impl Modules {
 ///
 /// A file is left out, with an error, when its path names no module ([`module_name()`]), when
 /// an earlier file already has its name, or when its module and a package share a name, such
-/// as `physics.byn` next to a `physics/` directory: `import physics` would be ambiguous.
+/// as `physics.byn` next to a `physics/` directory: `import physics` would be ambiguous. A
+/// standard library file, under [`LIBRARY_ROOT`], is listed by [`Modules::library`] instead.
 ///
 /// Cost: one pass over the package's files, `O(n log n)` in the number of files.
 #[salsa::tracked(returns(ref))]
@@ -176,7 +204,12 @@ pub fn modules(db: &dyn Db, package: Package) -> Modules {
     let mut by_name = BTreeMap::new();
     let mut diagnostics = Vec::new();
     let mut named = Vec::new();
+    let mut library = BTreeMap::new();
     for &file in package.files(db) {
+        if let Some(module) = library_module(file.source(db).name()) {
+            library.insert(module.to_owned(), file);
+            continue;
+        }
         match module_name(db, file) {
             Ok(name) => named.push((name.clone(), file)),
             Err(diagnostic) => diagnostics.push(diagnostic.clone()),
@@ -207,6 +240,7 @@ pub fn modules(db: &dyn Db, package: Package) -> Modules {
     }
     Modules {
         by_name,
+        library,
         diagnostics,
     }
 }
@@ -294,6 +328,18 @@ mod tests {
         let first = package.files(&database)[1];
         let name = ModuleName::from_dotted("physics.nbody").unwrap();
         assert_eq!(modules.get(&name), Some(first));
+    }
+
+    #[test]
+    fn library_files_are_listed_apart_from_modules() {
+        let database = Database::default();
+        let package = package(&database, &["<std>/os.byn", "main.byn", "os.byn"]);
+        let modules = modules(&database, package);
+        assert!(modules.diagnostics().is_empty());
+        assert_eq!(names(modules), ["main", "os"]);
+        let library = package.files(&database)[0];
+        assert_eq!(modules.library("os"), Some(library));
+        assert_eq!(modules.library("sys"), None);
     }
 
     #[test]
