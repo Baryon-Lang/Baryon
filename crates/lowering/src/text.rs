@@ -1,14 +1,19 @@
-//! Building `str` values (decision 0022): an f-string, a `copy()` of a `str` and `a + b` all
-//! lower to one [`Format`](Rvalue::Format) rvalue, whose pieces are literal text and values
-//! read in place, each with its format specification.
+//! `str` values (decision 0022). Building one: an f-string, a `copy()` of a `str` and `a + b`
+//! all lower to one [`Format`](Rvalue::Format) rvalue, whose pieces are literal text and values
+//! read in place, each with its format specification. Reading one: comparisons, `in` and `len`
+//! call the runtime through [`Builtin::CompareStr`], [`Builtin::ContainsStr`] and
+//! [`Builtin::LengthStr`], with each string borrowed where it is (roadmap 1.13.2).
 
 use crate::builder::Builder;
 use crate::escapes::{self, string};
-use mir::{Piece, Place, Rvalue};
-use syntax::{Flags, NodeId, Role, SyntaxKind};
+use mir::{
+    Argument, BinaryOperator, Builtin, Callee, Operand, Piece, Place, Rvalue, TerminatorKind,
+    UnaryOperator,
+};
+use syntax::{Flags, NodeId, Operator, Role, SyntaxKind};
 use types::FormatSpec;
 
-impl Builder<'_> {
+impl<'db> Builder<'db> {
     /// Writes the f-string `node` into `place`: its literal text and each interpolated value with
     /// its specification, which the checker has checked against the value's type.
     pub(crate) fn formatted(&mut self, place: Place, node: NodeId) {
@@ -79,5 +84,93 @@ impl Builder<'_> {
         }
         // The checker reported a specification that does not parse.
         FormatSpec::parse(&text).ok()
+    }
+
+    /// One link of a comparison chain between two `str`s, `left op right`, into the `bool` at
+    /// `place`. `==`, `!=`, `<`, `<=`, `>` and `>=` compare the three-way order
+    /// [`Builtin::CompareStr`] gives with 0; `in` and `not in` ask [`Builtin::ContainsStr`]
+    /// whether `left` occurs in `right`. `previous` is the left string when the link before
+    /// borrowed it, so a chain reads each operand once. Returns the right string, for the next
+    /// link.
+    pub(crate) fn text_comparison(
+        &mut self,
+        place: Place,
+        operator: Operator,
+        (left, right): (NodeId, NodeId),
+        previous: Option<Operand<'db>>,
+        node: NodeId,
+    ) -> Option<Operand<'db>> {
+        let left = match previous {
+            Some(Operand::Copy(place)) => place,
+            _ => self.borrow(left),
+        };
+        let right = self.borrow(right);
+        let returned = Some(Operand::Copy(right.clone()));
+        if matches!(operator, Operator::In | Operator::NotIn) {
+            let arguments = vec![Argument::Borrow(right), Argument::Borrow(left)];
+            if operator == Operator::In {
+                self.text_call(place, Builtin::ContainsStr, arguments, node);
+            } else {
+                let found = self.temporary(self.boolean_type(), node);
+                self.text_call(Place::from(found), Builtin::ContainsStr, arguments, node);
+                let found = Operand::Copy(Place::from(found));
+                self.assign(place, Rvalue::Unary(UnaryOperator::Not, found), node);
+            }
+            return returned;
+        }
+        let compared = match operator {
+            Operator::Equal => BinaryOperator::Equal,
+            Operator::NotEqual => BinaryOperator::NotEqual,
+            Operator::Less => BinaryOperator::Less,
+            Operator::LessEqual => BinaryOperator::LessEqual,
+            Operator::Greater => BinaryOperator::Greater,
+            Operator::GreaterEqual => BinaryOperator::GreaterEqual,
+            _ => {
+                self.unsupported(node, &format!("`{}` on strings", operator.symbol()));
+                return None;
+            }
+        };
+        let int = self.int_type();
+        let order = self.temporary(int, node);
+        let arguments = vec![Argument::Borrow(left), Argument::Borrow(right)];
+        self.text_call(Place::from(order), Builtin::CompareStr, arguments, node);
+        let zero = Operand::Constant(self.number_constant(int, 0));
+        let order = Operand::Copy(Place::from(order));
+        self.assign(place, Rvalue::Binary(compared, order, zero), node);
+        returned
+    }
+
+    /// `len(text)` of a `str` into `place`: its number of characters, through
+    /// [`Builtin::LengthStr`].
+    pub(crate) fn text_length(&mut self, place: Place, text: NodeId, node: NodeId) {
+        let text = self.borrow(text);
+        self.text_call(
+            place,
+            Builtin::LengthStr,
+            vec![Argument::Borrow(text)],
+            node,
+        );
+    }
+
+    /// `place = builtin(arguments…)`, for a built-in over `str`s, which cannot fail.
+    fn text_call(
+        &mut self,
+        place: Place,
+        builtin: Builtin,
+        arguments: Vec<Argument<'db>>,
+        node: NodeId,
+    ) {
+        let next = self.new_block();
+        self.terminate(
+            TerminatorKind::Call {
+                callee: Callee::Builtin(builtin),
+                arguments,
+                destination: place,
+                target: next,
+                error: None,
+            },
+            node,
+        );
+        self.start(next);
     }
 }
