@@ -368,3 +368,67 @@ error: `rows` cannot be moved while a loop goes over it
    = note: loop over the indices instead: `for i in range(len(rows)):`"
     );
 }
+
+/// A list comprehension moves its value into the new list, and each `for` clause borrows its
+/// collection and element as a `for` statement does. So keeping a borrowed `str` element is the
+/// loop's error, with its `.copy()` fix, rather than two lists owning one string; a variable
+/// from outside moved on every pass is the loop's error too; and a copy, or a value computed
+/// from the element, is fine. A tuple target borrows each part that is not a copy type, in a
+/// loop or a comprehension, and copies the rest. An element read by index, `xs[0]`, cannot be
+/// moved out into the new list either.
+#[test]
+fn comprehensions_move_their_value_into_the_list() {
+    let program = r"
+def run(words: list[str]) -> list[str]:
+    again = [w for w in words]
+    name = words[0].copy()
+    many = [name for _ in range(2)]
+    copies = [w.copy() for w in words if len(w) > 1]
+    lengths = [len(w) for w in words]
+    species = [(w.copy(), 1.0) for w in words]
+    total = 0.0
+    for name, mass in species:
+        copies.append(name)
+        total += mass
+    kept = [n for n, m in species if m > total]
+    twice = [words[0] for _ in range(2)]
+    return copies
+";
+    assert_eq!(
+        check_one(program),
+        "error: `w` borrows an element of `words`, so it cannot be moved
+ --> main.byn:2:14
+  |
+2 |     again = [w for w in words]
+  |              ^ moved here
+  = note: to keep the element, keep a copy: `w.copy()`
+
+error: `name` is moved in one pass of the loop and read in the next
+ --> main.byn:4:13
+  |
+4 |     many = [name for _ in range(2)]
+  |             ^^^^ moved here, inside a loop
+  = note: move a copy, `.copy()`, or assign the variable a new value later in the loop
+
+error: `name` borrows an element of `species`, so it cannot be moved
+  --> main.byn:10:23
+   |
+10 |         copies.append(name)
+   |                       ^^^^ moved here
+   = note: to keep the element, keep a copy: `name.copy()`
+
+error: `n` borrows an element of `species`, so it cannot be moved
+  --> main.byn:12:13
+   |
+12 |     kept = [n for n, m in species if m > total]
+   |             ^ moved here
+   = note: to keep the element, keep a copy: `n.copy()`
+
+error: a value cannot be moved out of an element
+  --> main.byn:13:14
+   |
+13 |     twice = [words[0] for _ in range(2)]
+   |              ^^^^^^^^ moved out of an element
+   = note: move a copy instead: `words[0].copy()`"
+    );
+}
