@@ -11,6 +11,7 @@ mod complex;
 mod dict;
 mod output;
 mod philox;
+mod print_array;
 mod strings;
 mod sum;
 mod text;
@@ -32,6 +33,11 @@ pub use output::{
     baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,
 };
 pub use philox::{baryon_rt_philox_new, baryon_rt_philox_uniform};
+pub use print_array::{
+    ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128, ELEMENT_F32, ELEMENT_F64, ELEMENT_I8,
+    ELEMENT_I16, ELEMENT_I32, ELEMENT_I64, ELEMENT_U8, ELEMENT_U16, ELEMENT_U32, ELEMENT_U64,
+    baryon_rt_print_array,
+};
 pub use strings::{baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_length};
 pub use sum::{
     baryon_rt_dot_f32, baryon_rt_dot_f64, baryon_rt_dot_strided_f32, baryon_rt_dot_strided_f64,
