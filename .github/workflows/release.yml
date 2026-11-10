@@ -132,13 +132,22 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Create the draft, or add to the release already there
+      - name: Create the draft, or add to the draft already there
+        # Only ever a draft. A release already published, for example one made and published in
+        # the GitHub UI, which also pushes the tag, is never changed: its downloads may already be
+        # in users' hands, and replacing them would change files people checked against a
+        # published SHA-256. The job fails instead, and says how to proceed.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           tag="$GITHUB_REF_NAME"
-          if ! gh release view "$tag" > /dev/null 2>&1; then
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" != true ]; then
+              echo "::error::release $tag is already published; the workflow uploads only to a draft. Attach the archives of this run by hand, or turn the release back into a draft and re-run this job."
+              exit 1
+            fi
+          else
             gh release create "$tag" --draft --verify-tag --title "Baryon ${tag#v}" \
               --notes "Draft made by the release workflow. The release notes are in CHANGELOG.md; paste them here before publishing."
           fi

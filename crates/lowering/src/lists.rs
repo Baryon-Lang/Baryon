@@ -107,7 +107,7 @@ impl<'db> Builder<'db> {
 
     /// The element type of the list type `ty`, or `None` after reporting a type that is not a
     /// list.
-    fn list_element(&mut self, ty: Type<'db>, node: NodeId) -> Option<Type<'db>> {
+    pub(crate) fn list_element(&mut self, ty: Type<'db>, node: NodeId) -> Option<Type<'db>> {
         let &TypeKind::List(element) = ty.kind(self.db) else {
             self.unsupported(node, "this list");
             return None;

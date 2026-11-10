@@ -48,7 +48,7 @@ impl<'db> Builder<'db> {
             }
             SyntaxKind::List => self.list_display(place, node),
             SyntaxKind::FormattedString => self.formatted(place, node),
-            SyntaxKind::ListComprehension => self.unsupported(node, "comprehensions"),
+            SyntaxKind::ListComprehension => self.list_comprehension(&place, node),
             _ => self.unsupported(node, "this expression"),
         }
     }

@@ -1,9 +1,12 @@
-//! Loops: `while`, and `for` over `range`, over a rank-1 `Array` or `Fixed` array, and over a
-//! tuple whose items have one type.
+//! Loops: `while`, and `for` over `range`, over a rank-1 `Array` or `Fixed` array, over a list
+//! of a copy type, and over a tuple whose items have one type.
 //!
 //! Every `for` loop keeps a hidden counter, so the body may assign the loop variable without
 //! changing which pass comes next, as in Python. A loop over `prange` is a parallel loop, which
 //! the `parallel` module lowers.
+//!
+//! What runs on each pass is a [`Pass`]: a `for` statement's body, or the rest of a list
+//! comprehension, which the `comprehensions` module lowers with the same loops.
 
 use crate::builder::{Builder, Loop};
 use mir::{
@@ -12,6 +15,11 @@ use mir::{
 };
 use syntax::{NodeId, Role};
 use types::{Type, TypeKind};
+
+/// What one pass of a loop runs, from the current block: the body of a `for` statement, or the
+/// rest of a comprehension. It gets the block that starts the next pass and the block after the
+/// loop, and must end by going to one of them or to a block that cannot return.
+pub(crate) type Pass<'pass, 'db> = &'pass mut dyn FnMut(&mut Builder<'db>, BlockId, BlockId);
 
 /// The step of a `range` loop.
 enum Step {
@@ -55,15 +63,16 @@ impl<'db> Builder<'db> {
         ) else {
             return;
         };
+        let pass: Pass<'_, 'db> = &mut |builder, next, end| builder.repeat(statement, next, end);
         if self.is_range(iterator) || self.simd_range(iterator).is_some() {
-            self.range_loop(statement, target, iterator);
+            self.range_loop(statement, target, iterator, pass);
         } else {
-            self.collection_loop(statement, target, iterator);
+            self.collection_loop(statement, target, iterator, pass);
         }
     }
 
     /// Whether `iterator` is a call of the built-in `range` or `prange`.
-    fn is_range(&self, iterator: NodeId) -> bool {
+    pub(crate) fn is_range(&self, iterator: NodeId) -> bool {
         self.typed.call(iterator).is_some_and(|call| {
             matches!(&call.callee, types::Callee::Builtin(name)
                 if name == "range" || name == "prange")
@@ -79,7 +88,17 @@ impl<'db> Builder<'db> {
     /// time is checked to be non-zero, a panic where Python raises `ValueError`, and its sign
     /// picks the test on each pass, a branch LLVM moves out of the loop. Adding the step can wrap
     /// only when `stop` is within one step of the counter type's limit.
-    fn range_loop(&mut self, statement: NodeId, target: NodeId, iterator: NodeId) {
+    ///
+    /// `statement` is the `for` statement, or a comprehension's `for` clause, which never reaches
+    /// the `prange` and `simd` paths: those need a statement whose body they can outline or
+    /// vectorize.
+    pub(crate) fn range_loop(
+        &mut self,
+        statement: NodeId,
+        target: NodeId,
+        iterator: NodeId,
+        pass: Pass<'_, 'db>,
+    ) {
         let Some(variable) = self.target_variable(target) else {
             return self.unsupported(target, "`for` loops over `range` that unpack");
         };
@@ -166,7 +185,7 @@ impl<'db> Builder<'db> {
             Rvalue::Use(Operand::Copy(Place::from(counter))),
             target,
         );
-        self.repeat(statement, next, end);
+        pass(self, next, end);
         self.start(next);
         let step = match step {
             Err(constant) => Operand::Constant(Constant::integer(ty, constant)),
@@ -248,19 +267,31 @@ impl<'db> Builder<'db> {
         );
     }
 
-    /// `for target in collection: body`, over a rank-1 `Array` or `Fixed` array or a tuple whose
-    /// items have one copy type. The collection is computed once and borrowed for the loop, as
+    /// `for target in collection: body`, over a rank-1 `Array` or `Fixed` array, a list whose
+    /// elements are of a copy type, or a tuple whose items have one copy type. The collection is computed once and borrowed for the loop, as
     /// the reference's values and references chapter says, so the body cannot change it. Each
     /// pass copies the next element into `target`, which may unpack it: `for x, y in points`.
     ///
-    /// An array's element is read at the counter without a bounds check, since the counter
-    /// stays below the length. A tuple's items have no index to read at, so each pass switches
+    /// An array's or list's element is read at the counter without a bounds check, since the
+    /// counter stays below the length, which cannot change while the loop borrows the collection. A tuple's items have no index to read at, so each pass switches
     /// on the counter to the block that copies its item; LLVM unrolls the short loop.
-    fn collection_loop(&mut self, statement: NodeId, target: NodeId, iterator: NodeId) {
+    pub(crate) fn collection_loop(
+        &mut self,
+        statement: NodeId,
+        target: NodeId,
+        iterator: NodeId,
+        pass: Pass<'_, 'db>,
+    ) {
         let ty = self.ty(iterator);
         let (element, items) = match ty.kind(self.db) {
             TypeKind::Array { element, rank: 1 } => (*element, None),
             TypeKind::Fixed { element, shape } if shape.rank() == 1 => (*element, None),
+            TypeKind::List(element) if self.is_copy(*element) => (*element, None),
+            TypeKind::List(element) => {
+                let element = element.display(self.db);
+                return self
+                    .unsupported(iterator, &format!("`for` loops over a list of `{element}`"));
+            }
             TypeKind::Tuple(items) if !items.is_empty() && self.is_copy(ty) => {
                 (items[0], Some(items.len()))
             }
@@ -305,7 +336,7 @@ impl<'db> Builder<'db> {
             }
             Some(count) => self.tuple_item(target, (&collection, count), counter, element),
         }
-        self.repeat(statement, next, end);
+        pass(self, next, end);
         self.start(next);
         self.assign(
             Place::from(counter),
