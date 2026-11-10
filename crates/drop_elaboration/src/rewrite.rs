@@ -368,7 +368,9 @@ impl<'db> Decider<'_, 'db> {
             | TypeKind::Parameter { .. }
             | TypeKind::Unknown => true,
             TypeKind::Optional(value) => self.owns_memory(*value, open),
-            TypeKind::Tuple(items) => items.iter().any(|&item| self.owns_memory(item, open)),
+            TypeKind::Tuple(items) | TypeKind::Union(items) => {
+                items.iter().any(|&item| self.owns_memory(item, open))
+            }
             TypeKind::Fallible { value, errors } => {
                 self.owns_memory(*value, open)
                     || errors.iter().any(|&error| self.owns_memory(error, open))

@@ -488,7 +488,10 @@ impl<'db> Substitution<'_, 'db> {
             return self.arguments[position];
         }
         let kind = match ty.kind(self.db) {
-            TypeKind::Parameter { .. } => return ty,
+            // Version 0 has no generic unions (decision 0032): the checker rejects a member
+            // that mentions a type parameter, so a union has nothing to replace, and rebuilding
+            // its list here could break the order `types::union` keeps.
+            TypeKind::Parameter { .. } | TypeKind::Union(_) => return ty,
             TypeKind::Primitive(_)
             | TypeKind::Str
             | TypeKind::None

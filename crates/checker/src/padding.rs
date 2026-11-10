@@ -206,6 +206,8 @@ impl<'db> Substitution<'_, 'db> {
                 value: self.apply(db, *value),
             },
             TypeKind::Optional(value) => TypeKind::Optional(self.apply(db, *value)),
+            // Rebuilt through `types::union`, since two members may become one type.
+            TypeKind::Union(members) => return types::union(db, all(members)),
             TypeKind::Array { element, rank } => TypeKind::Array {
                 element: self.apply(db, *element),
                 rank: *rank,

@@ -59,7 +59,7 @@ fn contains<'db>(db: &'db dyn TypeDb, ty: Type<'db>, test: &dyn Fn(Type<'db>) ->
         | TypeKind::None
         | TypeKind::Function { .. }
         | TypeKind::Standard(_) => false,
-        TypeKind::Tuple(items) => all(items),
+        TypeKind::Tuple(items) | TypeKind::Union(items) => all(items),
         TypeKind::List(item) | TypeKind::Optional(item) => contains(db, *item, test),
         TypeKind::Dict { key, value } => contains(db, *key, test) || contains(db, *value, test),
         TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
@@ -113,6 +113,8 @@ pub(crate) fn substitute<'db>(
             value: map(*value),
         },
         TypeKind::Optional(value) => TypeKind::Optional(map(*value)),
+        // Rebuilt through `types::union`, since two members may become one type.
+        TypeKind::Union(members) => return types::union(db, all(members)),
         TypeKind::Array { element, rank } => TypeKind::Array {
             element: map(*element),
             rank: *rank,
