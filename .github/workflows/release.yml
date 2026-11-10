@@ -1,0 +1,145 @@
+name: Release
+
+# Builds the prebuilt `baryon` archives a user downloads instead of building from source (roadmap
+# R.2.6), tests each on a fresh machine with no Rust toolchain (R.2.7), and, for a version tag,
+# attaches them to a draft GitHub release. Nothing is ever published: a person reads the draft
+# and publishes it (R.2.5).
+#
+# - A `v*` tag, such as `v0.2.0`, runs everything and fills the draft release for that tag.
+# - Run by hand (Actions, Release, Run workflow) for a dry run: the archives are built and tested
+#   and kept as workflow artifacts, and no release is touched.
+# - A pull request that changes this workflow or its script runs the dry run too, so a broken
+#   release is found before the tag, not after.
+#
+# Targets: Linux x86_64 built on ubuntu-22.04, so it runs on glibc 2.35 and newer, and macOS on
+# Apple silicon built for macOS 11 and newer. `baryon` finds `libruntime.a` next to itself
+# (crates/driver/src/link.rs), so each archive holds both.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/release/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      # The oldest macOS the binary and the runtime's objects are built for. Without it they are
+      # built for the runner's own version, and linking a program on an older Mac warns.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: Build baryon and the runtime
+        run: cargo build --release --locked --package driver --package runtime
+      - name: Find the version
+        id: version
+        # The version is the one `baryon --version` reports, so the archive's name cannot
+        # disagree with the binary inside it. A tag must name the same version.
+        run: |
+          version=$(target/release/baryon --version | cut -d' ' -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match baryon $version: set the workspace version first"
+            exit 1
+          fi
+      - name: Pack the archive
+        # One directory, so unpacking never scatters files: baryon, libruntime.a and the license.
+        run: |
+          name="baryon-${{ steps.version.outputs.version }}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp target/release/baryon target/release/libruntime.a LICENSE "dist/$name/"
+          cd dist
+          tar -czf "$name.tar.gz" "$name"
+          shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          cat "$name.tar.gz.sha256"
+          ls -l "$name.tar.gz"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          if-no-files-found: error
+
+  clean-machine:
+    name: clean machine (${{ matrix.target }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Only for the example programs and the test script; nothing is built from it.
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v6
+        with:
+          name: ${{ matrix.target }}
+          path: dist
+      - name: Install clang-15, as the guide tells an Ubuntu 22.04 user to
+        # The backend needs clang 15 or newer (decision 0020), and Ubuntu 22.04's plain `clang`
+        # is 14. `baryon` finds `clang-15` itself, so the old `clang` stays on PATH: the test
+        # also checks that it is passed over.
+        if: runner.os == 'Linux'
+        run: command -v clang-15 || { sudo apt-get update && sudo apt-get install -y clang-15; }
+      - name: Test the archive without Rust
+        # The runner images come with Rust; drop it from PATH so the test sees what a user sees.
+        run: |
+          PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v -e '\.cargo' -e rustup | paste -sd: -)
+          export PATH
+          clang --version
+          sh .github/release/clean-machine-test.sh dist/*.tar.gz .
+
+  release:
+    name: attach to the draft release
+    needs: clean-machine
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      # To create the draft release and upload to it.
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the draft, or add to the release already there
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if ! gh release view "$tag" > /dev/null 2>&1; then
+            gh release create "$tag" --draft --verify-tag --title "Baryon ${tag#v}" \
+              --notes "Draft made by the release workflow. The release notes are in CHANGELOG.md; paste them here before publishing."
+          fi
+          gh release upload "$tag" dist/* --clobber
