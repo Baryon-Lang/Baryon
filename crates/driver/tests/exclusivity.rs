@@ -374,7 +374,8 @@ error: `rows` cannot be moved while a loop goes over it
 /// loop's error, with its `.copy()` fix, rather than two lists owning one string; a variable
 /// from outside moved on every pass is the loop's error too; and a copy, or a value computed
 /// from the element, is fine. A tuple target borrows each part that is not a copy type, in a
-/// loop or a comprehension, and copies the rest.
+/// loop or a comprehension, and copies the rest. An element read by index, `xs[0]`, cannot be
+/// moved out into the new list either.
 #[test]
 fn comprehensions_move_their_value_into_the_list() {
     let program = r"
@@ -390,6 +391,7 @@ def run(words: list[str]) -> list[str]:
         copies.append(name)
         total += mass
     kept = [n for n, m in species if m > total]
+    twice = [words[0] for _ in range(2)]
     return copies
 ";
     assert_eq!(
@@ -420,6 +422,13 @@ error: `n` borrows an element of `species`, so it cannot be moved
    |
 12 |     kept = [n for n, m in species if m > total]
    |             ^ moved here
-   = note: to keep the element, keep a copy: `n.copy()`"
+   = note: to keep the element, keep a copy: `n.copy()`
+
+error: a value cannot be moved out of an element
+  --> main.byn:13:14
+   |
+13 |     twice = [words[0] for _ in range(2)]
+   |              ^^^^^^^^ moved out of an element
+   = note: move a copy instead: `words[0].copy()`"
     );
 }
