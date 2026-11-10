@@ -3,8 +3,8 @@
 
 use crate::builder::Builder;
 use mir::{
-    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Operand, Place, Projection,
-    Rvalue, TerminatorKind,
+    Argument, Builtin, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue,
+    TerminatorKind,
 };
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
@@ -405,62 +405,6 @@ impl<'db> Builder<'db> {
             ty: types::Type::new(self.db, TypeKind::Str),
             value: ConstantValue::Str(text.to_owned()),
         }))
-    }
-
-    /// `min(first, rest…)` when `smallest`, else `max(…)`, of numbers, its result written into
-    /// `place`. As in Python, an argument replaces the best so far only when it is strictly
-    /// smaller (or larger), so the first of equal values wins and a `nan` after the first
-    /// argument is skipped.
-    pub(crate) fn min_max(
-        &mut self,
-        place: Place,
-        smallest: bool,
-        first: NodeId,
-        rest: &[NodeId],
-        node: NodeId,
-    ) {
-        let ty = self.ty(node);
-        let best = self.temporary(ty, node);
-        let operand = self.operand_as(first, ty);
-        self.assign(Place::from(best), Rvalue::Use(operand), node);
-        let test = if smallest {
-            BinaryOperator::Less
-        } else {
-            BinaryOperator::Greater
-        };
-        for &argument in rest {
-            let candidate = self.temporary(ty, argument);
-            let operand = self.operand_as(argument, ty);
-            self.assign(Place::from(candidate), Rvalue::Use(operand), argument);
-            let better = self.temporary(self.boolean_type(), argument);
-            self.assign(
-                Place::from(better),
-                Rvalue::Binary(
-                    test,
-                    Operand::Copy(Place::from(candidate)),
-                    Operand::Copy(Place::from(best)),
-                ),
-                argument,
-            );
-            let (replace, join) = (self.new_block(), self.new_block());
-            self.terminate(
-                TerminatorKind::Branch {
-                    condition: Operand::Copy(Place::from(better)),
-                    then: replace,
-                    otherwise: join,
-                },
-                argument,
-            );
-            self.start(replace);
-            self.assign(
-                Place::from(best),
-                Rvalue::Use(Operand::Copy(Place::from(candidate))),
-                argument,
-            );
-            self.terminate(TerminatorKind::Goto(join), argument);
-            self.start(join);
-        }
-        self.assign(place, Rvalue::Use(Operand::Copy(Place::from(best))), node);
     }
 
     /// A place holding `argument` as the parameter type `ty`, to borrow. An argument that

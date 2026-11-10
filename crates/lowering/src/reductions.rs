@@ -1,6 +1,6 @@
 //! `sum(values)` and `sum(values, start)` of a list or a rank-1 array (roadmap 1.13.13), and
-//! where `min` and `max` go: of one sequence, to the `methods` module's scan, shared with
-//! `a.min()`; of two or more numbers, to the `calls` module's comparisons.
+//! `min` and `max`: of one sequence through the `methods` module's scan, shared with `a.min()`;
+//! of two or more numbers by comparing each in turn.
 //!
 //! A list sums as CPython 3.12 sums it, so a program ported from Python gets the same bits
 //! (Collins, 2026-11-10):
@@ -292,6 +292,62 @@ impl<'db> Builder<'db> {
         );
         self.terminate(TerminatorKind::Goto(join), node);
         self.start(join);
+    }
+
+    /// `min(first, rest…)` when `smallest`, else `max(…)`, of numbers, its result written into
+    /// `place`. As in Python, an argument replaces the best so far only when it is strictly
+    /// smaller (or larger), so the first of equal values wins and a `nan` after the first
+    /// argument is skipped.
+    fn min_max(
+        &mut self,
+        place: Place,
+        smallest: bool,
+        first: NodeId,
+        rest: &[NodeId],
+        node: NodeId,
+    ) {
+        let ty = self.ty(node);
+        let best = self.temporary(ty, node);
+        let operand = self.operand_as(first, ty);
+        self.assign(Place::from(best), Rvalue::Use(operand), node);
+        let test = if smallest {
+            BinaryOperator::Less
+        } else {
+            BinaryOperator::Greater
+        };
+        for &argument in rest {
+            let candidate = self.temporary(ty, argument);
+            let operand = self.operand_as(argument, ty);
+            self.assign(Place::from(candidate), Rvalue::Use(operand), argument);
+            let better = self.temporary(self.boolean_type(), argument);
+            self.assign(
+                Place::from(better),
+                Rvalue::Binary(
+                    test,
+                    Operand::Copy(Place::from(candidate)),
+                    Operand::Copy(Place::from(best)),
+                ),
+                argument,
+            );
+            let (replace, join) = (self.new_block(), self.new_block());
+            self.terminate(
+                TerminatorKind::Branch {
+                    condition: Operand::Copy(Place::from(better)),
+                    then: replace,
+                    otherwise: join,
+                },
+                argument,
+            );
+            self.start(replace);
+            self.assign(
+                Place::from(best),
+                Rvalue::Use(Operand::Copy(Place::from(candidate))),
+                argument,
+            );
+            self.terminate(TerminatorKind::Goto(join), argument);
+            self.start(join);
+        }
+        self.assign(place, Rvalue::Use(Operand::Copy(Place::from(best))), node);
     }
 
     /// A loop that runs `body` with an `i64` index from `first` up to `length`, exclusive.
