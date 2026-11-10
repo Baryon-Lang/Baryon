@@ -460,6 +460,59 @@ fn a_list_slice_past_the_end_panics() {
     );
 }
 
+/// `for` over a list of numbers or tuples (roadmap 1.13.5), with `break` and unpacking. Python
+/// prints the same lines.
+#[test]
+fn for_over_a_list_builds_and_runs() {
+    let program = r"
+def main():
+    xs = [1.5, 2.5, 4.0]
+    total = 0.0
+    for x in xs:
+        total += x
+    for a, b in [(1, 2), (3, 4)]:
+        print(a + b)
+    for x in xs:
+        if x > 2.0:
+            break
+        print(x)
+    print(total)
+";
+    prints("for-over-a-list", program, "3\n7\n1.5\n8.0\n").unwrap();
+}
+
+/// List comprehensions (roadmap 1.13.5): a condition, two `for` clauses, f-string values, a
+/// comprehension that reads the list it replaces, an empty one, nested ones, and two
+/// conditions on one clause. Python prints the same lines.
+#[test]
+fn list_comprehensions_build_and_run() {
+    let program = r#"
+def main():
+    xs = [3.0, -1.0, 2.0, -4.0]
+    squares = [x * x for x in xs if x > 0]
+    print(len(squares), squares[0], squares[1])
+    pairs = [(i, j) for i in range(4) for j in range(i) if (i + j) % 2 == 1]
+    print(len(pairs), pairs[0], pairs[1])
+    labels = [f"r{n}" for n in range(3)]
+    print(labels[0], labels[2], len(labels))
+    xs = [x + 1.0 for x in xs]
+    print(xs[0], xs[3])
+    print(len([n for n in range(0)]))
+    nested = [[j for j in range(i)] for i in range(4)]
+    print(len(nested[3]), nested[3][2])
+    print(len([n for n in range(10) if n % 2 == 0 if n > 2]))
+    x = 10
+    ys = [x for x in range(3)]
+    print(x, ys[2])
+"#;
+    prints(
+        "list-comprehensions",
+        program,
+        "2 9.0 4.0\n4 (1, 0) (2, 1)\nr0 r2 3\n4.0 -3.0\n0\n3 2\n3\n10 2\n",
+    )
+    .unwrap();
+}
+
 /// Monte Carlo pi: 1,024 chunks of a `prange` loop, each drawing from its own `Philox` stream.
 /// `NumPy`, drawing from `Generator(Philox(key=2026).jumped(chunk))` for each chunk, counts the
 /// same 80,420,174 hits, so the estimate matches to every digit, on any number of cores.
