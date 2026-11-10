@@ -24,8 +24,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-08, when `random.Philox` and the constants of
-`math` began to build. Every pull request that teaches lowering or the backend something new
+This page was last brought up to date on 2026-11-09, when the rest of `math` for real numbers
+began to build. Every pull request that teaches lowering or the backend something new
 updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
@@ -55,14 +55,14 @@ checks what it prints.
 | Assignment, annotated assignment, augmented assignment, `**=` on floats only; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a` | `**=` on integers; nested unpacking, `a, (b, c) = e` |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
 | `for` over `range` with a constant step, positive or negative | `for` over arrays, lists, strings or tuples; a `range` step that is not a constant |
-| `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values) that are literals or `Final` constants | Leaving out an argument whose default is any other expression |
+| `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values), each evaluated at every call that leaves its argument out | Leaving out an argument of a generic function |
 | `class` with `Struct`, `Copy`, `Exception` and `Enum` bases; `@layout("C")` | |
 | `raise` and `try`/`except`, including bare `raise` | `raise ... from` |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications | Complex literals such as `2j`; `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
 | `+ - * / // %`, `**` on floats, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions | `**` on integers; `in` and `not in`; `==` on `str` |
-| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; [`math`](arrays.md#math-functions) `sqrt`, `exp`, `log`, `sin`, `cos` and `pow`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the rest of `math` and `random` |
+| `min`, `max`, `len` of arrays and lists, `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; `len` of `str`; the integer and sequence functions of `math`, such as `gcd` and `fsum`; the rest of `random` |
 | `@test` functions, with `baryon test` | |
 
 ## Types
@@ -83,10 +83,11 @@ checks what it prints.
 | Lists of copy types, such as `list[f64]`: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing | Lists of other types, such as `list[str]`; `pop`, slices, `in` and comprehensions |
 
 Integer overflow ([decision 0030](../decisions/0030-integer-overflow.md)): a debug build panics
-on `+`, `-`, `*`, `+=`, `-=`, `*=` and `-x` that overflow, and `--release` wraps. Not checked yet,
-so they wrap in both builds: arithmetic in a generic function whose type parameter is an integer,
-`abs` of the type's minimum, whole-array arithmetic on integer arrays, integer `a.sum()` and
-`v.dot(w)`, and `@` on integer arrays (roadmap idea I.29).
+on `+`, `-`, `*`, `+=`, `-=`, `*=` and `-x` that overflow, and `--release` wraps. That includes
+arithmetic in a generic function whose type parameter is an integer, `abs` of the type's minimum,
+whole-array arithmetic on integer arrays, integer `a.sum()` and `a.dot(b)`, and `@` on integer
+arrays (roadmap 1.11.8).
+Indices the compiler computes itself, such as a `range` loop's counter, are not checked.
 
 ## Values and references
 

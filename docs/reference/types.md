@@ -80,7 +80,10 @@ def double(n: i64) -> i64:
 
 `double(9223372036854775807)` panics with ``integer overflow in `+` `` in a debug build and returns
 `-2` in a release build. `+`, `-`, `*`, their in-place forms `+=`, `-=`, `*=`, and `-x` on a signed
-integer are checked. A result that differs between the two builds is an overflow the debug build
+integer are checked, wherever they appear: in a generic function called with an integer type,
+element by element in whole-array arithmetic such as `a + b` on integer arrays, and inside
+integer `a.sum()` and `v.dot(w)`. `abs` of the type's minimum, `abs(-9223372036854775808)`, does
+not fit either and panics with ``integer overflow in `-` ``. A result that differs between the two builds is an overflow the debug build
 would have reported, so test in a debug build and time in a release build.
 
 ## bool
@@ -340,9 +343,9 @@ evaluates a default once, when the `def` runs, and shares that one value between
 default list that one call appends to keeps the item for the next call. Here, a default of
 `Array.zeros(3)` gives each call a fresh array of zeros. The default is evaluated after the
 arguments that were passed, in the order the parameters are declared, and it sees the names of the
-function's own module, never the caller's. A default that is a literal or a `Final` constant has the
-same value either way, and only those build today: `baryon build` reports a call that leaves out any
-other default as not built yet ([What builds today](status.md)).
+function's own module, never the caller's: a default may call a private `_helper` of its module
+even when the caller cannot name it. A default that can raise raises from the call, so the function
+declares the error in its `Raises[...]` and the caller handles it as one the call raised.
 
 ## Functions as arguments
 

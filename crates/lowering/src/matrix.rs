@@ -4,7 +4,8 @@
 //! giving `(n, m)`; a matrix times a vector, `(n, k) @ (k,)` giving `(n,)`; or a vector times a
 //! matrix, `(k,) @ (k, m)` giving `(m,)`. Each entry of the result is the sum over `p` of
 //! `a[…, p] * b[p, …]`, added one product at a time from `p = 0`, with the elements converted to
-//! the result's element type first. For two `Array`s the inner lengths must match, or the
+//! the result's element type first; integer `*` and `+` are checked for overflow as the
+//! operators are (decision 0030). For two `Array`s the inner lengths must match, or the
 //! program panics, as whole-array arithmetic does; for `Fixed` arrays the checker proved it.
 //!
 //! The loops run over the result's rows, then its columns, then `p`. That is the textbook order,
@@ -84,14 +85,18 @@ impl Builder<'_> {
                     read(builder, a, &left, row, left_element);
                     read(builder, b, &right, column, right_element);
                     let copy = |local: Local| Operand::Copy(Place::from(local));
-                    builder.assign(
+                    builder.arithmetic(
                         Place::from(product),
-                        Rvalue::Binary(BinaryOperator::Multiply, copy(a), copy(b)),
+                        BinaryOperator::Multiply,
+                        (copy(a), copy(b)),
+                        element,
                         node,
                     );
-                    builder.assign(
+                    builder.arithmetic(
                         Place::from(total),
-                        Rvalue::Binary(BinaryOperator::Add, copy(total), copy(product)),
+                        BinaryOperator::Add,
+                        (copy(total), copy(product)),
+                        element,
                         node,
                     );
                 },

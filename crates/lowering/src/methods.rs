@@ -7,7 +7,8 @@
 //! `a.dot(b)` of floats call the runtime's pairwise sum and dot product, so both add in
 //! `NumPy`'s order; of integers, they add into an accumulator in a loop nest of their own, as
 //! does `v.dot(w)` of a `Fixed` vector shorter than 8, for which the pairwise order is the plain
-//! one. `a.min()` and `a.max()` scan in row-major order after checking the array is not empty.
+//! one. Each integer `+` and `*` is checked for overflow as the operators are. `a.min()` and
+//! `a.max()` scan in row-major order after checking the array is not empty.
 //! `a.round()` copies an `Array` and rounds each element in place; on a `Fixed` array it builds
 //! the new value from each element rounded, with one call per element, since a `Fixed` array is
 //! small and its length is known when compiling. `a.fill(value)` writes every element.
@@ -37,8 +38,9 @@ impl<'db> Builder<'db> {
     /// Floats are added in `NumPy`'s pairwise tree, by a call of [`Builtin::Sum`], so the result
     /// has the same bits as `numpy.sum` and rounding error grows only with the logarithm of the
     /// length (Collins, 2026-11-08, roadmap I.22). Integers are added in a loop nest from 0 in
-    /// row-major order (decision 0008), since integer addition is exact in any order; they wrap
-    /// on overflow, as integer `+` does until decision D.11. An empty array sums to 0.
+    /// row-major order (decision 0008), since integer addition is exact in any order; each
+    /// addition is checked for overflow as `+` is, so a debug build panics and a release build
+    /// wraps (decision 0030). An empty array sums to 0.
     pub(crate) fn array_sum(&mut self, place: Place, array: NodeId, node: NodeId) {
         let ty = self.ty(array);
         let element = self.element(ty);
@@ -72,13 +74,12 @@ impl<'db> Builder<'db> {
         self.assign(Place::from(total), Rvalue::Use(zero), node);
         self.loop_nest(&lengths, &mut Vec::new(), node, &mut |builder, indices| {
             let value = source.clone().project(Projection::Index(indices.to_vec()));
-            builder.assign(
+            let operands = (Operand::Copy(Place::from(total)), Operand::Copy(value));
+            builder.arithmetic(
                 Place::from(total),
-                Rvalue::Binary(
-                    BinaryOperator::Add,
-                    Operand::Copy(Place::from(total)),
-                    Operand::Copy(value),
-                ),
+                BinaryOperator::Add,
+                operands,
+                element,
                 node,
             );
         });
@@ -94,7 +95,8 @@ impl<'db> Builder<'db> {
     /// [`array_sum`](Self::array_sum), so `a.dot(b)` has the bits of `(a * b).sum()`. A `Fixed`
     /// vector shorter than 8, such as a position, adds in a loop here instead: the pairwise tree
     /// adds fewer than 8 values one at a time, so the bits are the same and the hot loops of a
-    /// simulation make no call. Integers add in a loop, since integer addition is exact.
+    /// simulation make no call. Integers add in a loop, since integer addition is exact, with each
+    /// `*` and `+` checked for overflow as the operators are (decision 0030).
     pub(crate) fn array_dot(
         &mut self,
         place: Place,
@@ -133,18 +135,23 @@ impl<'db> Builder<'db> {
             let at = |place: &Place| {
                 Operand::Copy(place.clone().project(Projection::Index(indices.to_vec())))
             };
-            builder.assign(
+            let factors = (at(&left), at(&right));
+            builder.arithmetic(
                 Place::from(product),
-                Rvalue::Binary(BinaryOperator::Multiply, at(&left), at(&right)),
+                BinaryOperator::Multiply,
+                factors,
+                element,
                 node,
             );
-            builder.assign(
+            let terms = (
+                Operand::Copy(Place::from(total)),
+                Operand::Copy(Place::from(product)),
+            );
+            builder.arithmetic(
                 Place::from(total),
-                Rvalue::Binary(
-                    BinaryOperator::Add,
-                    Operand::Copy(Place::from(total)),
-                    Operand::Copy(Place::from(product)),
-                ),
+                BinaryOperator::Add,
+                terms,
+                element,
                 node,
             );
         });

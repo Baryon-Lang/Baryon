@@ -271,22 +271,52 @@ fixed.
 ## Math functions
 
 Mathematical functions from `math`, such as `sqrt` and `exp`, apply to numbers. Their element-wise
-forms on arrays arrive with roadmap 1.14. The compiler builds `sqrt`, `exp`, `log`, `sin`, `cos`
-and `pow` today, and the constants `pi`, `e`, `tau`, `inf` and `nan`, each an `f64` with
-Python's value; the rest of `math` comes with the standard library (roadmap 1.13).
+forms on arrays arrive with roadmap 1.14. These are the functions of Python's `math` module for
+real numbers, with Python's names:
 
-Each returns a float. An `f32` or `f64` argument keeps its type, so `sqrt` of an `f32` is an
+| Kind | Functions |
+| --- | --- |
+| Powers and roots | `sqrt(x)`, `cbrt(x)`, `pow(x, y)`, `hypot(x, y)` |
+| Exponentials and logarithms | `exp(x)`, `exp2(x)`, `expm1(x)`, `log(x)`, `log(x, base)`, `log2(x)`, `log10(x)`, `log1p(x)` |
+| Trigonometry, in radians | `sin(x)`, `cos(x)`, `tan(x)`, `asin(x)`, `acos(x)`, `atan(x)`, `atan2(y, x)`, `degrees(x)`, `radians(x)` |
+| Hyperbolic functions | `sinh(x)`, `cosh(x)`, `tanh(x)`, `asinh(x)`, `acosh(x)`, `atanh(x)` |
+| Special functions | `erf(x)`, `erfc(x)`, `gamma(x)`, `lgamma(x)` |
+| Sign, remainder and fused multiply-add | `fabs(x)`, `copysign(x, y)`, `fmod(x, y)`, `fma(x, y, z)` |
+| Rounding to an `int` | `floor(x)`, `ceil(x)`, `trunc(x)` |
+| Tests, giving a `bool` | `isnan(x)`, `isinf(x)`, `isfinite(x)` |
+
+`expm1(x)` and `log1p(x)` stay accurate when `x` is close to zero, where `exp(x) - 1` and
+`log(1 + x)` lose every digit. `fma(x, y, z)` is `x * y + z` rounded once. `fmod(x, y)` keeps the
+sign of `x`, as C's does, where `x % y` takes the sign of `y`, as Python's does: `fmod(-7.5, 2.0)`
+is `-1.5` and `-7.5 % 2.0` is `0.5`. `lgamma` is safe to call from a `prange` loop.
+
+The functions of integers alone, such as `gcd`, `factorial` and `isqrt`, and those of
+sequences, such as `fsum` and `prod`, come later in the standard library (roadmap 1.13).
+
+The constants `pi`, `e`, `tau`, `inf` and `nan` are each an `f64` with Python's value.
+
+Most return a float. An `f32` or `f64` argument keeps its type, so `sqrt` of an `f32` is an
 `f32`, as `numpy.sqrt` gives. An integer converts to `f64` first, so `sqrt(2)` is
 `1.4142135623730951`, as in Python. `pow(x, y)` mixes its arguments as `x ** y` does, so
 `pow(x, 0.5)` on an `f32` stays `f32`, and `pow` of an `f32` and an `f64` is an error that asks for
-a conversion:
+a conversion. `fma` and the other functions of two or three numbers mix the same way. `floor`, `ceil` and
+`trunc` return an `int`, as in Python, and panic when the result does not fit in one, as every
+conversion of a float to an integer does; `isnan`, `isinf` and `isfinite` return a `bool`:
 
 ```python
-from math import sqrt
+from math import atan2, degrees, floor, sqrt
 
 
 def rms(total: f64, n: int) -> f64:
     return sqrt(total / n)
+
+
+def bearing(dx: f64, dy: f64) -> f64:
+    return degrees(atan2(dy, dx))
+
+
+def cell(x: f64, width: f64) -> int:
+    return floor(x / width)
 ```
 
 They and float `**` follow IEEE 754 and the C math library, as NumPy does, never raising and never
@@ -297,6 +327,8 @@ follows:
 | --- | --- | --- |
 | `sqrt(-1.0)` | `ValueError` | `nan` |
 | `log(0.0)` | `ValueError` | `-inf` |
+| `atanh(1.0)` | `ValueError` | `inf` |
+| `fmod(1.0, 0.0)` | `ValueError` | `nan` |
 | `log(-1.0)` | `ValueError` | `nan` |
 | `(-8.0) ** (1 / 3)` | a complex number | `nan` |
 | `(-8.0) ** 3.0` | `-512.0` | `-512.0` |

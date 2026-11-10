@@ -62,6 +62,14 @@ impl<'db> Builder<'db> {
         } else {
             self.operand_as(right, ty)
         };
+        if generic {
+            // Into a local of the parameter's type, so monomorphization can tell the
+            // instance's integer arithmetic by its destination and check it for overflow.
+            let result = self.temporary(ty, node);
+            self.arithmetic(Place::from(result), operator, (left, right), ty, node);
+            let result = Operand::Copy(Place::from(result));
+            return self.assign(place, Rvalue::Use(result), node);
+        }
         self.arithmetic(place, operator, (left, right), ty, node);
     }
 
@@ -169,6 +177,15 @@ impl<'db> Builder<'db> {
             return self.checked(place, BinaryOperator::Subtract, (zero, operand), ty, node);
         }
         let operand = self.operand(value);
+        if generic && operator == Operator::Negate {
+            // As for `+`, `-` and `*` on a parameter: a local of its type, which
+            // monomorphization checks when the instance's type is a signed integer.
+            let result = self.temporary(ty, node);
+            let negated = Rvalue::Unary(UnaryOperator::Negate, operand);
+            self.assign(Place::from(result), negated, node);
+            let result = Operand::Copy(Place::from(result));
+            return self.assign(place, Rvalue::Use(result), node);
+        }
         let rvalue = match operator {
             Operator::Negate => Rvalue::Unary(UnaryOperator::Negate, operand),
             Operator::Not => Rvalue::Unary(UnaryOperator::Not, operand),

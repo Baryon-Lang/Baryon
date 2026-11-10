@@ -146,7 +146,8 @@ def main():
 
 /// Each array method or product that cannot give a value panics with what went wrong and
 /// where: `min` of an empty array, a dot product of different lengths, and `@` of a matrix
-/// whose columns do not match the vector's length.
+/// whose columns do not match the vector's length; and, in a debug build, an integer `@`
+/// whose product overflows (decision 0030).
 #[test]
 fn empty_arrays_and_mismatched_lengths_panic() {
     let cases = [
@@ -161,6 +162,10 @@ fn empty_arrays_and_mismatched_lengths_panic() {
         (
             "    print((Array.ones((2, 3)) @ Array.ones((2,)))[0])\n",
             "panic: array lengths differ in dimension 1: 3 and 2\n  --> main.byn:2:12\n",
+        ),
+        (
+            "    print((Array.fill((1, 1), 4611686018427387904) @ Array.fill((1,), 4))[0])\n",
+            "panic: integer overflow in `*`\n  --> main.byn:2:12\n",
         ),
     ];
     for (index, (line, expected)) in cases.into_iter().enumerate() {
