@@ -77,9 +77,9 @@ pub use sum::{
     baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64,
 };
 pub use text::{
-    OwnedText, TextBuilder, baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64,
-    baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,
-    baryon_rt_text_u64,
+    OwnedText, TextBuilder, baryon_rt_text_bool, baryon_rt_text_complex64,
+    baryon_rt_text_complex128, baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish,
+    baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
 };
 
 use crate::Location;

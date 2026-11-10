@@ -119,8 +119,9 @@ pub use abi::{
     baryon_rt_str_split_whitespace, baryon_rt_str_starts_with, baryon_rt_str_strip,
     baryon_rt_str_strip_characters, baryon_rt_str_take, baryon_rt_str_upper, baryon_rt_sum_f32,
     baryon_rt_sum_f64, baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64, baryon_rt_text_bool,
-    baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish, baryon_rt_text_i64,
-    baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
+    baryon_rt_text_complex64, baryon_rt_text_complex128, baryon_rt_text_f32, baryon_rt_text_f64,
+    baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,
+    baryon_rt_text_u64,
 };
 pub use accumulate::Accumulator;
 pub use dict::{DictLayout, KeyPart, STR_PART, Table};

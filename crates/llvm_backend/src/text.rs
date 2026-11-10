@@ -110,7 +110,8 @@ impl Function<'_, '_, '_> {
     }
 
     /// Appends the value at `place` with the specification at `spec`, through the runtime
-    /// function for its type: a narrower integer is widened first, as for `print`.
+    /// function for its type: a narrower integer is widened first, as for `print`, and a
+    /// complex number passes its two parts.
     fn append_value(
         &mut self,
         builder: &str,
@@ -124,6 +125,11 @@ impl Function<'_, '_, '_> {
         if matches!(ty.kind(self.types.db), TypeKind::Str) {
             let (bytes, length) = self.text_parts(&value);
             self.append(builder, "str", &format!("ptr {bytes}, i64 {length}"), spec);
+            return Ok(());
+        }
+        if let Some(part) = self.complex_part(ty) {
+            let (kind, arguments) = self.complex_text(part, &value);
+            self.append(builder, kind, &arguments, spec);
             return Ok(());
         }
         let number = match ty.kind(self.types.db) {
@@ -161,6 +167,8 @@ impl Function<'_, '_, '_> {
             "bool" => "i1 zeroext",
             "f32" => "float",
             "f64" => "double",
+            "complex64" => "float, float",
+            "complex128" => "double, double",
             _ => "i64",
         };
         let function = format!("baryon_rt_text_{kind}");

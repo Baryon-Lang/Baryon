@@ -283,6 +283,21 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(())
     }
 
+    /// The runtime's name for a complex value whose parts are `part`, `complex64` or
+    /// `complex128`, and the value's two parts as typed call arguments, for an f-string's
+    /// `baryon_rt_text_complex64` or `baryon_rt_text_complex128`.
+    pub(crate) fn complex_text(&mut self, part: Float, value: &str) -> (&'static str, String) {
+        let llvm = part_llvm(part);
+        let parts = self.parts(part, value);
+        let kind = if part == Float::F32 {
+            "complex64"
+        } else {
+            "complex128"
+        };
+        let arguments = format!("{llvm} {}, {llvm} {}", parts.real, parts.imaginary);
+        (kind, arguments)
+    }
+
     /// Prints the complex value `value` to `stream` as Python's `repr` writes it, through the
     /// runtime's `baryon_rt_print_complex64` or `baryon_rt_print_complex128`.
     pub(crate) fn print_complex(&mut self, stream: u8, part: Float, value: &str) {

@@ -156,6 +156,21 @@ a number whose real part is `+0.0` is written as its imaginary part alone, `2j`.
 `(-0-2j)`, as in Python, since negating `2j` negates its real part `0.0` too. A `complex64`
 prints its parts' fewest `f32` digits, `(0.1+0.2j)`, as NumPy does.
 
+In an f-string, `f"{z}"` writes what `print(z)` writes, and a format specification works as
+Python's does for a complex number: a type letter formats each part with it and drops the
+parentheses, so `f"{z:.2f}"` of `1.5-2j` is `1.50-2.00j`; a sign, `,` or `_` grouping and a
+precision apply to each part, and a width, fill and alignment to the whole. The imaginary part
+always has its sign, and `#` keeps a point in each part: `f"{z:#}"` of `1+2j` is `(1.+2.j)`. As
+in Python, `%`, `0` padding and `=` alignment cannot format a complex number.
+
+```python
+def impedance(resistance: f64, reactance: f64) -> str:
+    z = complex(resistance, reactance)
+    return f"Z = {z:.1f} ohm, |Z| = {abs(z):.2f}"
+```
+
+`impedance(3.0, -4.0)` returns `Z = 3.0-4.0j ohm, |Z| = 5.00`.
+
 ## bool
 
 `bool` is its own type, not a number: `True + 1` is an error. Conditions in `if`, `while`, `and`,

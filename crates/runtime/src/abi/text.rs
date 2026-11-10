@@ -172,6 +172,51 @@ pub unsafe extern "C" fn baryon_rt_text_f32(
     }
 }
 
+/// Appends a `complex128`, `real + imaginary j`, formatted with `spec` as Python's
+/// `complex.__format__` formats it: `(1+2j)` with the empty specification, as `print` writes it,
+/// and `1.00+2.00j` with `.2f`.
+///
+/// # Safety
+///
+/// As for [`baryon_rt_text_str`], without the text.
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_text_complex128(
+    builder: *mut TextBuilder,
+    real: f64,
+    imaginary: f64,
+    spec: *const FormatSpec,
+) {
+    // SAFETY: the caller's promises, passed on.
+    unsafe {
+        push(builder, spec, |spec| {
+            format::complex(real, imaginary, false, spec)
+        });
+    }
+}
+
+/// Appends a `complex64` formatted with `spec`, as [`baryon_rt_text_complex128`] does; the empty
+/// specification writes each part's own shortest `f32` digits, as `print` does.
+///
+/// # Safety
+///
+/// As for [`baryon_rt_text_str`], without the text.
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_text_complex64(
+    builder: *mut TextBuilder,
+    real: f32,
+    imaginary: f32,
+    spec: *const FormatSpec,
+) {
+    // SAFETY: the caller's promises, passed on.
+    unsafe {
+        push(builder, spec, |spec| {
+            format::complex(f64::from(real), f64::from(imaginary), true, spec)
+        });
+    }
+}
+
 /// Appends a `bool` formatted with `spec`: `True` or `False` with the empty specification, 1 or
 /// 0 with any other, as in Python.
 ///
