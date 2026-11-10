@@ -165,7 +165,7 @@ impl<'db> Builder<'db> {
             }
             SyntaxKind::Attribute => {
                 let value = self.tree.child(node, Role::Value)?;
-                let field = self.field(value, node)?;
+                let fields = self.field(value, node)?;
                 if !matches!(
                     self.tree.kind(value),
                     SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
@@ -174,7 +174,11 @@ impl<'db> Builder<'db> {
                     return None;
                 }
                 let base = self.place(value)?;
-                Some(base.project(Projection::Field(field)))
+                Some(
+                    fields
+                        .into_iter()
+                        .fold(base, |place, field| place.project(Projection::Field(field))),
+                )
             }
             SyntaxKind::Subscript => self.subscript(node),
             _ => None,
@@ -204,21 +208,43 @@ impl<'db> Builder<'db> {
         Place::from(temporary)
     }
 
-    /// The position of the field `attribute` names in the struct `value` holds, or `None` with
-    /// an error when `value` is not a struct.
-    fn field(&mut self, value: NodeId, attribute: NodeId) -> Option<u32> {
+    /// The positions of the fields to step through for `attribute` on the struct `value`
+    /// holds: the embedded fields the checker found the name through (decision 0031), then the
+    /// field itself, so `ion.m` is `ion.particle.m`. `None` with an error when `value` is not a
+    /// struct.
+    fn field(&mut self, value: NodeId, attribute: NodeId) -> Option<Vec<u32>> {
         let name = self.tree.child(attribute, Role::Attribute)?;
         let TypeKind::Struct(nominal) = self.ty(value).kind(self.db) else {
             self.unsupported(attribute, "attributes other than struct fields");
             return None;
         };
-        let item = Item::new(self.db, self.package, nominal.file, nominal.name);
-        let Declaration::Struct { fields, .. } = &self.db.declaration(item).declaration else {
-            return None;
-        };
+        let mut path = self.typed.promotion(attribute).to_vec();
+        let mut class = (nominal.file, nominal.name);
+        for &step in &path {
+            let fields = self.fields(class)?;
+            let TypeKind::Struct(inner) = fields.get(usize::try_from(step).ok()?)?.ty.kind(self.db)
+            else {
+                return None;
+            };
+            class = (inner.file, inner.name);
+        }
         let wanted = self.text_of(name);
-        let position = fields.iter().position(|field| field.name == wanted)?;
-        u32::try_from(position).ok()
+        let position = self
+            .fields(class)?
+            .iter()
+            .position(|field| field.name == wanted)?;
+        path.push(u32::try_from(position).ok()?);
+        Some(path)
+    }
+
+    /// The fields of the struct declared by the class whose `Name` node is `class.1` in the
+    /// file `class.0`.
+    fn fields(&self, class: (database::File, NodeId)) -> Option<&'db [types::Field<'db>]> {
+        let item = Item::new(self.db, self.package, class.0, class.1);
+        match &self.db.declaration(item).declaration {
+            Declaration::Struct { fields, .. } => Some(fields),
+            _ => None,
+        }
     }
 
     /// The `bool` type.

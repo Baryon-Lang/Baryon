@@ -26,6 +26,30 @@ use types::TypeKind;
 const PAIRWISE_LANES: u64 = 8;
 
 impl<'db> Builder<'db> {
+    /// The method `method` of an `Array` or `Fixed` array, called with `arguments`, the
+    /// receiver first, into `place`. Reports any method or receiver it does not build.
+    pub(crate) fn array_method(
+        &mut self,
+        place: Place,
+        method: &str,
+        arguments: &[NodeId],
+        node: NodeId,
+    ) {
+        let fixed = arguments
+            .first()
+            .is_some_and(|&array| matches!(self.ty(array).kind(self.db), TypeKind::Fixed { .. }));
+        match (method, arguments) {
+            ("copy", [array]) if !fixed => self.array_copy(place, *array, node),
+            ("sum", [array]) => self.array_sum(place, *array, node),
+            ("min" | "max", [array]) => self.array_extreme(place, method == "min", *array, node),
+            ("dot", [left, right]) => self.array_dot(place, (*left, *right), node),
+            ("round", [array]) if fixed => self.fixed_round(place, *array, node),
+            ("round", [array]) => self.array_round(place, *array, node),
+            ("fill", [array, value]) => self.array_fill(place, (*array, *value), node),
+            _ => self.unsupported(node, &format!("the array method `{method}`")),
+        }
+    }
+
     /// `a.copy()` on an `Array`, into `place`: a new array with `a`'s lengths and elements.
     pub(crate) fn array_copy(&mut self, place: Place, array: NodeId, node: NodeId) {
         let source = self.borrow(array);

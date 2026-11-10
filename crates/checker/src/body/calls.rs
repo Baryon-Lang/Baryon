@@ -177,6 +177,16 @@ impl<'db> Body<'db> {
                 )
             }
             (Kind::Alias, Declaration::Alias(ty)) => self.construct(node, callee, ty, arguments),
+            (Kind::Class(_), Declaration::Trait { .. }) => {
+                self.untyped(arguments);
+                let message = format!("`{callee}` is a trait, which cannot be built");
+                self.lowerer.error(
+                    node,
+                    &message,
+                    "not a struct",
+                    Some("build a struct that implements it instead"),
+                )
+            }
             (Kind::Constant, _) => {
                 self.untyped(arguments);
                 let message = format!("`{callee}` is a constant, which cannot be called");

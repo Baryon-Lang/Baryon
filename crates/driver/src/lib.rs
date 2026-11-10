@@ -5,9 +5,10 @@
 //! is cached. Today the stages are the `parser`, the `syntax_check`, the `resolver` and the
 //! `checker`, which also answers [`types::TypeDb`]'s queries. The `documentation` generator
 //! reads the parser's trees for [`Session::document`], and `lowering` turns a checked function
-//! into the mid-level IR for [`Session::mir`]. Swapping an implementation means
-//! changing the one function here that calls it. A [`Session`] holds that database with one
-//! package loaded into it.
+//! into the mid-level IR for [`Session::mir`]. An editor's questions about a place in the code,
+//! [`Session::hover`], [`Session::definition`] and [`Session::complete`], read the same cached
+//! results. Swapping an implementation means changing the one function here that calls it. A
+//! [`Session`] holds that database with one package loaded into it.
 //!
 //! The `baryon` executable (`src/main.rs`) is a thin command line over this library:
 //! `baryon check <directory>` loads every source file under the directory, checks the package, and
@@ -31,7 +32,10 @@
 //! ```
 
 mod compile;
+mod editor;
 mod lowered;
+
+pub use editor::{Completion, CompletionKind, Hover};
 
 use database::{Db, File, Package, ParsedFile, Resolution};
 use diagnostics::Diagnostic;

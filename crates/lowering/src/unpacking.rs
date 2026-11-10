@@ -1,4 +1,5 @@
-//! Unpacking assignment: `a, b = value`, where `value` is a tuple or a rank-1 `Fixed` array.
+//! Unpacking assignment: `a, b = value`, where `value` is a tuple or a rank-1 `Fixed` array,
+//! and nested unpacking, `a, (b, c) = value`, where a part is itself such a value.
 //!
 //! The value is computed once, into a temporary, before any target is assigned, then each target
 //! takes its part from left to right, as Python does. So `u, out = out, u` swaps two arrays: the
@@ -13,20 +14,34 @@ use types::{Type, TypeKind};
 impl<'db> Builder<'db> {
     /// `a, b, … = value`, with the tuple of targets `targets`.
     pub(crate) fn unpack(&mut self, targets: NodeId, value: NodeId) {
-        let names: Vec<NodeId> = self.tree.children_with(targets, Role::Item).collect();
         let ty = self.ty(value);
-        let Some(parts) = self.parts(ty) else {
+        if self.parts(ty).is_none() {
             return self.unsupported(value, "unpacking a value that is not a tuple or a `Fixed`");
+        }
+        let whole = self.temporary(ty, value);
+        self.write(Place::from(whole), ty, value);
+        self.unpack_place(targets, &Place::from(whole), ty);
+        self.drop_later(whole);
+    }
+
+    /// Assigns each part of the value at `source`, of type `ty`, to its target in the tuple of
+    /// targets `targets`, from left to right. A target that is itself a tuple unpacks its part
+    /// in turn, so `a, (b, c) = e` takes `b` and `c` from the second part of `e`.
+    fn unpack_place(&mut self, targets: NodeId, source: &Place, ty: Type<'db>) {
+        let names: Vec<NodeId> = self.tree.children_with(targets, Role::Item).collect();
+        let Some(parts) = self.parts(ty) else {
+            return self.unsupported(
+                targets,
+                "unpacking a value that is not a tuple or a `Fixed`",
+            );
         };
         if parts.len() != names.len() {
             // The checker reports the count; nothing sensible lowers.
             return self.unsupported(targets, "unpacking into a different number of targets");
         }
-        let whole = self.temporary(ty, value);
-        self.write(Place::from(whole), ty, value);
         for (target, (projection, from)) in names.into_iter().zip(parts) {
-            let source = match projection {
-                Part::Field(field) => Place::from(whole).project(Projection::Field(field)),
+            let part = match projection {
+                Part::Field(field) => source.clone().project(Projection::Field(field)),
                 Part::Element(position) => {
                     let int = self.int_type();
                     let index = self.temporary(int, target);
@@ -36,19 +51,18 @@ impl<'db> Builder<'db> {
                         Rvalue::Use(mir::Operand::Constant(constant)),
                         target,
                     );
-                    Place::from(whole).project(Projection::Index(vec![index]))
+                    source.clone().project(Projection::Index(vec![index]))
                 }
             };
-            self.assign_part(target, source, from);
+            self.assign_part(target, part, from);
         }
-        self.drop_later(whole);
     }
 
     /// Assigns the part of the unpacked value at `source`, of type `from`, to `target`, which
-    /// may itself be a tuple of targets.
-    fn assign_part(&mut self, target: NodeId, source: Place, from: Type<'db>) {
+    /// may itself be a tuple of targets. A `for` loop assigns each element this way too.
+    pub(crate) fn assign_part(&mut self, target: NodeId, source: Place, from: Type<'db>) {
         if self.tree.kind(target) == syntax::SyntaxKind::Tuple {
-            return self.unsupported(target, "nested unpacking");
+            return self.unpack_place(target, &source, from);
         }
         let Some((place, to)) = self.target(target) else {
             return;

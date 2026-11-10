@@ -256,7 +256,8 @@ fn elementwise_moves(tree: &Elementwise<'_>, effects: &mut Vec<Effect>) {
 ///
 /// Moving out of an optional's value or an error value consumes the whole optional or error
 /// value, so the move path stops before that step. Array elements are copy types and are never
-/// moved out (the reference, "Moves"), so a move through an index moves nothing.
+/// moved out (the reference, "Moves"), so a move through an index moves nothing, and a view is
+/// a borrow, never moved (the `Slice` step).
 fn operand_moves(operand: &Operand<'_>, effects: &mut Vec<Effect>) {
     let Operand::Move(place) = operand else {
         return;
@@ -266,7 +267,7 @@ fn operand_moves(operand: &Operand<'_>, effects: &mut Vec<Effect>) {
         match projection {
             Projection::Field(_) => path.projections.push(projection.clone()),
             Projection::Value | Projection::Error(_) => break,
-            Projection::Index(_) => return,
+            Projection::Index(_) | Projection::Slice(_) => return,
         }
     }
     effects.push(Effect::Uninit(path));

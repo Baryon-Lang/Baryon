@@ -1,5 +1,5 @@
 //! Lowering of calls: arguments in their parameters' types, calls inside generic bodies, and the
-//! built-ins `min` and `max`.
+//! built-ins `min`, `max` and `print`.
 
 use crate::lower;
 
@@ -325,5 +325,33 @@ def show():
 7 |     print(V(1.0).x)
   |           ^^^^^^^^ not lowered yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}
+
+/// `print` writes its arguments with nothing between them, so lowering passes the separator
+/// between each pair and the line end after the last, as `str` constants.
+#[test]
+fn print_passes_its_separator_and_line_end() {
+    let program = r#"
+def show(x: f64):
+    print("x =", x)
+"#;
+    assert_eq!(
+        lower(program, "show"),
+        r#"fn(_1: f64) -> None {
+    let _0: None; // return
+    let _1: f64; // parameter x
+    let _2: None;
+
+    bb0: {
+        _2 = call print(owned "x =", owned " ", _1, owned "\n") -> [return: bb1];
+    }
+
+    bb1: {
+        _0 = None;
+        return;
+    }
+}
+"#
     );
 }

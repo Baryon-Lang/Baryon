@@ -240,12 +240,21 @@ pub enum Callee<'db> {
 /// lowered to rvalues instead; the ones here need code a backend or the runtime provides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, salsa::SalsaValue)]
 pub enum Builtin {
-    /// `print(a, b, …)`: writes each argument to standard output as Python does, separated by a
-    /// space, then a line end. Each argument is a number, a `bool` or a `str`, passed `Borrow`
-    /// or `Owned`; the destination has type `None` and the call cannot fail.
+    /// Writes each argument to standard output in order, as Python's `print` writes it, with
+    /// nothing between them and nothing after the last. Lowering spells out the separator and
+    /// the line end as arguments of their own, so `print(a, b)` is a call with the arguments
+    /// `a`, `" "`, `b` and `"\n"`, and the `sep=` and `end=` keywords need nothing more here.
+    ///
+    /// An argument is passed `Borrow`, or `Owned` when it is a constant. A `str` argument writes
+    /// its characters unquoted. Any other value writes as the language reference's `print`
+    /// entry says: a number, a `bool`, `None`, a `T | None`, a tuple, an enum member or a struct,
+    /// whose items and fields write as Python's `repr` writes them. A backend that cannot write
+    /// a type yet reports it. The destination has type `None` and the call cannot fail.
     Print,
     /// A mathematical function of floats. Every argument and the destination have one float
-    /// type, `f32` or `f64`; lowering converts integer operands first. The call cannot fail.
+    /// type, `f32` or `f64`; lowering converts integer operands first. The one exception is
+    /// [`Power`](MathFunction::Power) of complex numbers, where every argument and the
+    /// destination have one complex type instead. The call cannot fail.
     Math(MathFunction),
     /// `a.sum()` of an `Array` or `Fixed` array of floats: one argument, the array, passed
     /// `Borrow`; the destination has the element type. The elements are added in row-major
@@ -373,7 +382,8 @@ pub enum MathFunction {
     /// `math.fabs(x)`: the absolute value, always a float.
     Fabs,
     /// `math.hypot(x, y)`: `sqrt(x * x + y * y)` without overflow or underflow in between; two
-    /// arguments. Python's `hypot` of more than two arguments is not here.
+    /// arguments. Python's `hypot` of more than two arguments is not here. `abs` of a complex
+    /// number is `hypot` of its parts, as Python computes it.
     Hypot,
     /// `math.copysign(x, y)`: the size of `x` with the sign of `y`; two arguments.
     CopySign,
@@ -383,6 +393,12 @@ pub enum MathFunction {
     /// `math.fma(x, y, z)`: `x * y + z` rounded once; three arguments.
     FusedMultiplyAdd,
     /// `x ** y` on floats, and `math.pow(x, y)`: two arguments, the base then the exponent.
+    ///
+    /// Also `x ** y` on two complex numbers of one type, `complex64` or `complex128`, computed
+    /// as Python's `complex.__pow__` computes it: by repeated squaring for a whole exponent of
+    /// at most 100 in size, through polar form otherwise. Where Python raises
+    /// `ZeroDivisionError`, zero to a negative or complex power, the result is `nan+nanj`, as
+    /// `NumPy` gives; where it raises `OverflowError`, the parts are infinite.
     Power,
     /// `math.floor(x)` before its conversion to an integer: the largest whole number not above
     /// `x`, still a float.
@@ -508,6 +524,20 @@ pub enum Check<'db> {
         /// The dimension's length.
         length: Operand<'db>,
     },
+    /// A slice's range lies within its dimension (language reference, "Arrays", "Slicing"):
+    /// `start` and `stop` are each from 0 to the length, and when the range takes any element
+    /// its first, at `start`, is below the length. Python shortens such a slice; here it is
+    /// the bug it usually is.
+    SliceInBounds {
+        /// The dimension sliced, 0 for the outermost, so the panic message can name it.
+        dimension: u32,
+        /// Where the range starts, as the program wrote it or its default.
+        start: Operand<'db>,
+        /// Where the range stops, as the program wrote it or its default.
+        stop: Operand<'db>,
+        /// The dimension's length.
+        length: Operand<'db>,
+    },
     /// An integer operation did not overflow.
     NoOverflow(BinaryOperator),
     /// An integer `**` did not overflow. Lowering writes integer `x ** n` as repeated squaring,
@@ -516,10 +546,14 @@ pub enum Check<'db> {
     NoPowerOverflow,
     /// A divisor is not zero.
     NonZeroDivisor,
-    /// The step of a `range` is not zero, which Python reports as a `ValueError`. Lowering
-    /// writes it only for a step that is not a constant; a constant zero is reported when
-    /// building.
-    NonZeroStep,
+    /// The step of a `range` or a slice is not zero, which Python reports as a `ValueError`:
+    /// `range() arg 3 must not be zero`, or `slice step cannot be zero`. Lowering writes it only
+    /// for a step that is not a constant; a constant zero is reported when building.
+    NonZeroStep {
+        /// Whether the step is a slice's, `a[::k]`, rather than a `range`'s, which picks the
+        /// panic message.
+        slice: bool,
+    },
     /// The exponent of an integer `**` is zero or more: a negative exponent would need a
     /// fraction, which an integer cannot hold (language reference, "Errors and panics").
     NonNegativeExponent {
@@ -550,6 +584,12 @@ impl<'db> Check<'db> {
     pub fn operands(&self) -> Vec<&Operand<'db>> {
         match self {
             Self::IndexInBounds { index, length, .. } => vec![index, length],
+            Self::SliceInBounds {
+                start,
+                stop,
+                length,
+                ..
+            } => vec![start, stop, length],
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
@@ -557,7 +597,7 @@ impl<'db> Check<'db> {
             Self::NoOverflow(_)
             | Self::NoPowerOverflow
             | Self::NonZeroDivisor
-            | Self::NonZeroStep
+            | Self::NonZeroStep { .. }
             | Self::Assertion
             | Self::NotEmpty => Vec::new(),
         }
@@ -573,7 +613,7 @@ impl<'db> Check<'db> {
     ///
     /// assert!(Check::NoOverflow(BinaryOperator::Add).is_overflow());
     /// assert!(Check::NoPowerOverflow.is_overflow());
-    /// assert!(!Check::NonZeroStep.is_overflow());
+    /// assert!(!Check::NonZeroStep { slice: false }.is_overflow());
     /// ```
     #[must_use]
     pub fn is_overflow(&self) -> bool {
@@ -585,6 +625,12 @@ impl<'db> Check<'db> {
     pub fn operands_mut(&mut self) -> Vec<&mut Operand<'db>> {
         match self {
             Self::IndexInBounds { index, length, .. } => vec![index, length],
+            Self::SliceInBounds {
+                start,
+                stop,
+                length,
+                ..
+            } => vec![start, stop, length],
             Self::SameLength {
                 expected, found, ..
             } => vec![expected, found],
@@ -592,7 +638,7 @@ impl<'db> Check<'db> {
             Self::NoOverflow(_)
             | Self::NoPowerOverflow
             | Self::NonZeroDivisor
-            | Self::NonZeroStep
+            | Self::NonZeroStep { .. }
             | Self::Assertion
             | Self::NotEmpty => Vec::new(),
         }

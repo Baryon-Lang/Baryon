@@ -82,9 +82,9 @@ return early.
 ## `main`
 
 `main` may fail: `def main() -> Raises[None, ConfigError]`. An error that reaches the end of `main`
-prints its type and fields to standard error, each field by name with its value as `print` writes
-it, except that a `str` is quoted as Python's `repr` writes it, and ends the program with exit
-status 1:
+prints to standard error as [`print`](syntax.md#what-print-writes-for-each-value) writes a struct,
+its type and each field by name, a `str` quoted as Python's `repr` writes it, and ends the program
+with exit status 1:
 
 ```text
 error: ConfigError(line=3, strict=True, path='heat.toml')
@@ -103,6 +103,7 @@ These panic:
 | A conversion that cannot hold the value, such as `u8(300)` | The value and the target type |
 | Integer overflow, in debug builds ([Types](types.md#integer-overflow)) | The operation and its operands |
 | A negative exponent in integer `**` | The exponent |
+| A `range` whose step is zero, where Python raises `ValueError` | Nothing more: the step is zero |
 
 A panic prints its message and the source location, with a backtrace in debug builds, and ends the
 program with exit status 101, so a script can tell a panic from an error that reached the end of

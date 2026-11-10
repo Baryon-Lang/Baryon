@@ -5,7 +5,7 @@
 
 use crate::{
     Argument, BasicBlock, BlockId, Body, Callee, Elementwise, Local, LocalKind, Operand, Phase,
-    Piece, Place, Projection, Rvalue, StatementKind, TerminatorKind,
+    Piece, Place, Projection, Rvalue, SliceIndex, StatementKind, TerminatorKind,
 };
 use database::Db;
 use std::fmt;
@@ -46,6 +46,11 @@ pub enum Invalid {
     Outlined(u32, Box<Invalid>),
     /// [`Body::vectorized`] marks a block the body does not have.
     UnknownVectorized(BlockId),
+    /// A block uses a view, a place that ends in a [`Slice`](Projection::Slice), as a whole
+    /// value: moves or copies it, drops it, or assigns it anything but a whole-array
+    /// expression. A view is a borrow and owns no memory, so any of these would store a borrow
+    /// or free memory it does not own.
+    WholeView(BlockId),
 }
 
 impl fmt::Display for Invalid {
@@ -117,6 +122,13 @@ impl fmt::Display for Invalid {
             Self::Outlined(body, problem) => {
                 write!(formatter, "in outlined body {body}: {problem}")
             }
+            Self::WholeView(block) => {
+                write!(
+                    formatter,
+                    "bb{} uses a view as a whole value",
+                    block.index()
+                )
+            }
             Self::UnknownVectorized(block) => {
                 write!(
                     formatter,
@@ -141,6 +153,9 @@ impl Body<'_> {
     ///   and passes it one value per parameter;
     /// - an [`Accumulate`](StatementKind::Accumulate) adds only into an accumulated parameter
     ///   of an outlined body, so never in a function's own body;
+    /// - a view, a place that ends in a [`Slice`](Projection::Slice), is only borrowed, read
+    ///   by [`Length`](Rvalue::Length), a leaf of a whole-array expression or the destination
+    ///   of one: never moved, copied whole, dropped or assigned anything else;
     /// - each block marked as a `simd` loop header exists,
     /// - each outlined body keeps these rules too.
     ///
@@ -223,6 +238,9 @@ impl Body<'_> {
             }
             if self.phase == Phase::Ready && uses.elementwise {
                 problems.push(Invalid::NotExpanded(id));
+            }
+            if uses.whole_view {
+                problems.push(Invalid::WholeView(id));
             }
             for local in uses.accumulated {
                 if !accumulated.contains(&local) {
@@ -333,6 +351,8 @@ struct Uses {
     accumulated: Vec<Local>,
     /// Whether an [`Rvalue::Elementwise`] appears.
     elementwise: bool,
+    /// Whether a view is used as a whole value.
+    whole_view: bool,
 }
 
 impl Uses {
@@ -341,12 +361,13 @@ impl Uses {
         for statement in &block.statements {
             match &statement.kind {
                 StatementKind::Assign(place, rvalue) => {
+                    self.whole_view |= place.is_view() && !matches!(rvalue, Rvalue::Elementwise(_));
                     self.place(place);
                     self.rvalue(rvalue);
                 }
-                StatementKind::Drop(place) => self.place(place),
+                StatementKind::Drop(place) => self.value(place),
                 StatementKind::Accumulate { place, value, .. } => {
-                    self.place(place);
+                    self.value(place);
                     self.operand(value);
                     self.accumulated.push(place.local);
                 }
@@ -384,7 +405,7 @@ impl Uses {
                     self.operand(function);
                 }
                 self.arguments(arguments);
-                self.place(destination);
+                self.value(destination);
                 self.blocks.push(*target);
                 if let Some(edge) = error {
                     self.locals.push(edge.error);
@@ -413,10 +434,10 @@ impl Uses {
                 self.operand(count);
                 self.arguments(arguments);
                 for reduction in reductions {
-                    self.place(&reduction.place);
+                    self.value(&reduction.place);
                 }
                 for accumulation in accumulations {
-                    self.place(accumulation);
+                    self.value(accumulation);
                 }
                 self.blocks.push(*target);
             }
@@ -437,16 +458,28 @@ impl Uses {
     fn place(&mut self, place: &Place) {
         self.locals.push(place.local);
         for projection in &place.projections {
-            if let Projection::Index(indices) = projection {
-                self.locals.extend(indices);
+            match projection {
+                Projection::Index(indices) => self.locals.extend(indices),
+                Projection::Slice(dimensions) => {
+                    self.locals
+                        .extend(dimensions.iter().flat_map(SliceIndex::locals));
+                }
+                Projection::Field(_) | Projection::Value | Projection::Error(_) => {}
             }
         }
     }
 
-    /// Records the locals `operand` names.
+    /// Records the locals `place` names, where it is used as a whole value, which a view
+    /// cannot be.
+    fn value(&mut self, place: &Place) {
+        self.whole_view |= place.is_view();
+        self.place(place);
+    }
+
+    /// Records the locals `operand` names. Its value is read whole, which a view's cannot be.
     fn operand(&mut self, operand: &Operand<'_>) {
         match operand {
-            Operand::Copy(place) | Operand::Move(place) => self.place(place),
+            Operand::Copy(place) | Operand::Move(place) => self.value(place),
             Operand::Constant(_) => {}
         }
     }
@@ -476,7 +509,7 @@ impl Uses {
             Rvalue::Format(pieces) => {
                 for piece in pieces {
                     if let Piece::Value(place, _) = piece {
-                        self.place(place);
+                        self.value(place);
                     }
                 }
             }
@@ -486,6 +519,8 @@ impl Uses {
     /// Records the locals the leaves of a whole-array expression name.
     fn elementwise(&mut self, tree: &Elementwise<'_>) {
         match tree {
+            // A leaf is read one element at a time, so it may be a view; moving one may not.
+            Elementwise::Leaf(Operand::Copy(place)) => self.place(place),
             Elementwise::Leaf(operand) => self.operand(operand),
             Elementwise::Unary(_, operand) => self.elementwise(operand),
             Elementwise::Binary(_, left, right) => {

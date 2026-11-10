@@ -42,6 +42,10 @@ impl<'db> Builder<'db> {
             let operands = vec![self.operand_as(left, ty), self.operand_as(right, ty)];
             return self.math_call(place, MathFunction::Power, operands, node);
         }
+        if syntax == Operator::Power && self.is_integer(ty) {
+            let operands = (self.operand_as(left, ty), self.operand_as(right, ty));
+            return self.integer_power(place, operands, ty, node);
+        }
         let Some(operator) = arithmetic(syntax) else {
             return self.unsupported(node, &format!("`{}`", syntax.symbol()));
         };
@@ -123,6 +127,20 @@ impl<'db> Builder<'db> {
         &mut self,
         place: Place,
         operator: BinaryOperator,
+        operands: (Operand<'db>, Operand<'db>),
+        ty: Type<'db>,
+        node: NodeId,
+    ) {
+        let check = Check::NoOverflow(operator);
+        self.checked_as(place, (operator, check), operands, ty, node);
+    }
+
+    /// [`checked`](Self::checked), with the overflow reported as `check`, so the multiplications
+    /// of integer `**` can name the `**`.
+    pub(crate) fn checked_as(
+        &mut self,
+        place: Place,
+        (operator, check): (BinaryOperator, Check<'db>),
         (left, right): (Operand<'db>, Operand<'db>),
         ty: Type<'db>,
         node: NodeId,
@@ -145,7 +163,7 @@ impl<'db> Builder<'db> {
         );
         self.then(node, |target| TerminatorKind::Assert {
             condition: Operand::Copy(Place::from(fits)),
-            check: Check::NoOverflow(operator),
+            check,
             target,
         });
         let result = Operand::Copy(Place::from(pair).project(Projection::Field(0)));

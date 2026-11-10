@@ -21,10 +21,13 @@ mod math;
 mod modules;
 mod overflow;
 mod parallel;
+mod print;
 mod shapes;
+mod statements;
 mod structs;
 mod testing;
 mod text;
+mod traits;
 mod vector;
 
 /// The `baryon` executable cargo built for these tests.

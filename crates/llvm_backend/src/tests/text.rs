@@ -1,7 +1,9 @@
 //! `str` values (decision 0022): a literal is a constant with the "not owned" bit, printing
 //! masks the bit off, and a drop frees only when the bit is clear.
 
-use super::{Database, Module, assign, end, module, no_structs, parameter, primitive, sources};
+use super::{
+    Database, Module, assign, end, module, no_names, no_structs, parameter, primitive, sources,
+};
 use super::{span, symbol_of};
 use mir::{Argument, BlockId, Body, Builtin, Callee, Constant, ConstantValue, Operand, Rvalue};
 use mir::{Local, LocalKind, Piece, Statement, StatementKind, TerminatorKind};
@@ -25,7 +27,13 @@ fn literals_are_flagged_and_drops_free_only_owned_bytes() {
     };
     let first = body.push_block(end(TerminatorKind::Call {
         callee: Callee::Builtin(Builtin::Print),
-        arguments: vec![Argument::Borrow(name.into())],
+        arguments: vec![
+            Argument::Borrow(name.into()),
+            Argument::Owned(Operand::Constant(Constant {
+                ty: str,
+                value: ConstantValue::Str("\n".to_owned()),
+            })),
+        ],
         destination: printed.into(),
         target: BlockId::new(1),
         error: None,
@@ -39,7 +47,7 @@ fn literals_are_flagged_and_drops_free_only_owned_bytes() {
     }];
     let symbol = symbol_of(&database);
     let sources = sources();
-    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    let mut module = Module::new(&database, &sources, &no_structs, &no_names, &symbol);
     module.define("show", &body, &[]).unwrap();
     assert_eq!(
         module.finish(),

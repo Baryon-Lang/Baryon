@@ -1,5 +1,5 @@
-//! Statements: assignments, `return`, `raise`, `assert`, and the control flow of `if`, `while`
-//! and `for` over `range`.
+//! Statements: assignments, `return`, `raise`, `assert`, and the control flow of `if`. Loops
+//! are in the `loops` module.
 
 use crate::builder::{Builder, Loop};
 use crate::constants::integer;
@@ -206,12 +206,22 @@ impl<'db> Builder<'db> {
             let operands = vec![Operand::Copy(place.clone()), self.operand_as(value, ty)];
             return self.math_call(place, mir::MathFunction::Power, operands, statement);
         }
+        if syntax == Operator::Power && self.is_integer(ty) {
+            let Some(place) = self.place(target) else {
+                return;
+            };
+            let operands = (Operand::Copy(place.clone()), self.operand_as(value, ty));
+            return self.integer_power(place, operands, ty, statement);
+        }
         let Some(operator) = arithmetic(syntax) else {
             return self.unsupported(statement, &format!("`{}=`", syntax.symbol()));
         };
-        let Some(place) = self.place(target) else {
+        let Some(mut place) = self.place(target) else {
             return;
         };
+        if let Some(lane) = self.lane(&place) {
+            place = lane;
+        }
         if let Some(place) = self.accumulated_place(&place) {
             return self.accumulate(place, operator, ty, value, statement);
         }
@@ -287,170 +297,6 @@ impl<'db> Builder<'db> {
             self.start(otherwise);
         }
         self.join(join);
-    }
-
-    /// `while condition: body`. `continue` tests the condition again; `break` leaves. The syntax
-    /// check rejects a loop's `else`, so there is none to lower.
-    fn while_statement(&mut self, statement: NodeId) {
-        let Some(condition) = self.tree.child(statement, Role::Condition) else {
-            return;
-        };
-        let header = self.new_block();
-        self.terminate(TerminatorKind::Goto(header), statement);
-        self.start(header);
-        let condition = self.condition(condition);
-        let (body, end) = (self.new_block(), self.new_block());
-        self.terminate(
-            TerminatorKind::Branch {
-                condition,
-                then: body,
-                otherwise: end,
-            },
-            statement,
-        );
-        self.start(body);
-        self.repeat(statement, header, end);
-        self.start(end);
-    }
-
-    /// `for name in range(start, stop, step): body`. A hidden counter runs from
-    /// `start` while it is below `stop`, or above it for a negative step, and the variable takes
-    /// its value at the top of each pass, so the body may change the variable without changing
-    /// the loop. `start` and `stop` are computed once, before the loop.
-    ///
-    /// The step must be a constant, so its sign says which way the test goes. Adding it can
-    /// wrap only when `stop` is within one step of the counter type's limit.
-    fn for_statement(&mut self, statement: NodeId) {
-        let (Some(target), Some(iterator)) = (
-            self.tree.child(statement, Role::Target),
-            self.tree.child(statement, Role::Iterator),
-        ) else {
-            return;
-        };
-        let Some(variable) = self.target_variable(target) else {
-            return self.unsupported(target, "`for` loops that unpack");
-        };
-        let (iterator, vectorized) = match self.simd_range(iterator) {
-            Some(range) => (range, true),
-            None => (iterator, false),
-        };
-        let Some((first, bound, step)) = self.range(iterator) else {
-            return;
-        };
-        if self.is_prange(iterator) {
-            return self.parallel_for(statement, variable, first, bound, step);
-        }
-        let ty = self.local_type(variable);
-        let counter = self.temporary(ty, iterator);
-        match first {
-            Some(first) => self.write(Place::from(counter), ty, first),
-            None => self.assign(
-                Place::from(counter),
-                Rvalue::Use(Operand::Constant(Constant::integer(ty, 0))),
-                iterator,
-            ),
-        }
-        let limit = self.temporary(ty, bound);
-        self.write(Place::from(limit), ty, bound);
-
-        let header = self.new_block();
-        self.terminate(TerminatorKind::Goto(header), statement);
-        self.start(header);
-        if vectorized && !self.reorders_floats(statement) {
-            self.body.vectorized.push(header);
-        }
-        let test = if step > 0 {
-            mir::BinaryOperator::Less
-        } else {
-            mir::BinaryOperator::Greater
-        };
-        let condition = self.temporary(self.boolean_type(), iterator);
-        self.assign(
-            Place::from(condition),
-            Rvalue::Binary(
-                test,
-                Operand::Copy(Place::from(counter)),
-                Operand::Copy(Place::from(limit)),
-            ),
-            iterator,
-        );
-        let (body, next, end) = (self.new_block(), self.new_block(), self.new_block());
-        self.terminate(
-            TerminatorKind::Branch {
-                condition: Operand::Copy(Place::from(condition)),
-                then: body,
-                otherwise: end,
-            },
-            iterator,
-        );
-        self.start(body);
-        self.assign(
-            Place::from(variable),
-            Rvalue::Use(Operand::Copy(Place::from(counter))),
-            target,
-        );
-        self.repeat(statement, next, end);
-        self.start(next);
-        self.assign(
-            Place::from(counter),
-            Rvalue::Binary(
-                mir::BinaryOperator::Add,
-                Operand::Copy(Place::from(counter)),
-                Operand::Constant(Constant::integer(ty, step)),
-            ),
-            iterator,
-        );
-        self.terminate(TerminatorKind::Goto(header), statement);
-        self.start(end);
-    }
-
-    /// The start, stop and step of `range(start, stop, step)` or `prange(…)` at `iterator`:
-    /// the start and stop nodes, the start `None` when left out, and the step's value. `None`
-    /// after an error when `iterator` is not such a call.
-    fn range(&mut self, iterator: NodeId) -> Option<(Option<NodeId>, NodeId, i128)> {
-        let keywords = self.keyword_values(iterator);
-        let arguments = self
-            .typed
-            .call(iterator)
-            .filter(|call| {
-                matches!(&call.callee, types::Callee::Builtin(name)
-                    if name == "range" || name == "prange")
-            })
-            .and_then(|call| {
-                call.arguments
-                    .iter()
-                    .map(|argument| argument.map(|key| key.0))
-                    .filter(|argument| argument.is_none_or(|node| !keywords.contains(&node)))
-                    .collect::<Option<Vec<NodeId>>>()
-            });
-        let (first, bound, stride) = match arguments.as_deref() {
-            Some(&[bound]) => (None, bound, None),
-            Some(&[first, bound]) => (Some(first), bound, None),
-            Some(&[first, bound, stride]) => (Some(first), bound, Some(stride)),
-            _ => {
-                self.unsupported(iterator, "`for` loops over anything but `range`");
-                return None;
-            }
-        };
-        let Some(stride) = stride else {
-            return Some((first, bound, 1));
-        };
-        match self.constant_integer(stride) {
-            Some(step) if step != 0 => Some((first, bound, step)),
-            _ => {
-                self.unsupported(stride, "a `range` step that is not a non-zero constant");
-                None
-            }
-        }
-    }
-
-    /// The body of the loop `statement`, from the current block: `continue` and the end of the
-    /// body go to `next`, `break` to `end`.
-    fn repeat(&mut self, statement: NodeId, next: mir::BlockId, end: mir::BlockId) {
-        self.loops.push(Loop { next, end });
-        self.block(statement, Role::Body);
-        self.loops.pop();
-        self.jump(&mut Some(next), statement);
     }
 
     /// The value of an integer literal, possibly negative, or of a `Final` integer constant.

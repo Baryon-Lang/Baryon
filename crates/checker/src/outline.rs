@@ -63,7 +63,7 @@ pub(crate) enum Kind {
 /// What a class is, from its bases and type parameters.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Class {
-    /// Whether it is a struct, an error type or an enum.
+    /// Whether it is a struct, an error type, an enum or a trait.
     pub(crate) base: Base,
     /// Whether `Copy` is among its bases.
     pub(crate) copy: bool,
@@ -84,6 +84,8 @@ pub(crate) enum Base {
     Error,
     /// `Enum`.
     Enum,
+    /// `Protocol`: a trait (decision 0031).
+    Protocol,
 }
 
 /// The outline of `file`. Cached until the file's tree changes.
@@ -138,6 +140,8 @@ fn class(tree: &SyntaxTree, text: &str, statement: NodeId) -> Class {
         Base::Enum
     } else if bases.contains(&"Exception") {
         Base::Error
+    } else if bases.contains(&"Protocol") {
+        Base::Protocol
     } else {
         Base::Struct
     };

@@ -6,10 +6,11 @@
 //! into the instance's body by substituting each type parameter with its argument everywhere a
 //! type appears: in every local, constant, conversion, aggregate, and the type arguments of every
 //! call (decision 0018). Arithmetic on `T` needs little rewriting: once `T` is `f64`, `Multiply` on
-//! two `f64` locals is primitive arithmetic, and traits are standard and statically dispatched in
-//! the MVP, so no trait calls remain to resolve. Once `T` is an integer, `+`, `-`, `*` and `-x`
-//! on it gain the overflow check lowering writes for integers (decision 0030), and once it is an
-//! array they become whole-array expressions.
+//! two `f64` locals is primitive arithmetic. Once `T` is an integer, `+`, `-`, `*` and `-x` on it
+//! gain the overflow check lowering writes for integers (decision 0030), and once it is an array
+//! they become whole-array expressions. A call of a user trait's method, `body.energy()` on a
+//! `T: Body`, becomes a direct call of the receiver type's own method in [`trait_calls`]
+//! (decision 0031), so no trait call reaches the backend.
 //!
 //! The instance query runs [`instantiate`], then drop elaboration and array expansion, and marks
 //! the result [`Phase::Ready`](mir::Phase). The driver collects which instances a program needs
@@ -89,7 +90,7 @@ use mir::{
     LocalDeclaration, LocalKind, Operand, Place, Projection, Rvalue, Statement, StatementKind,
     Terminator, TerminatorKind, UnaryOperator,
 };
-use types::{Integer, Nominal, Primitive, Type, TypeKind};
+use types::{Integer, Item, Nominal, Primitive, Type, TypeKind};
 
 /// The body of `generic` at concrete types: each of `parameters`, the function's type parameters
 /// in order as its signature lists them, replaced by the argument at the same position in
@@ -278,6 +279,87 @@ fn checked_operation<'db>(
         _ => return None,
     };
     Some((place.clone(), operator, operands, ty))
+}
+
+/// Finds the method that implements a trait's method for a type (decision 0031): given the
+/// trait's method and the receiver's type, the implementing method, the positions of the
+/// embedded fields the receiver is reached through, outermost first, and the type arguments the
+/// method is compiled at. `None` when the method is not a trait's. The application builds it
+/// from the type checker, which knows which struct defines what.
+pub type Implementation<'a, 'db> =
+    dyn Fn(Item<'db>, Type<'db>) -> Option<(Item<'db>, Vec<u32>, Vec<Type<'db>>)> + 'a;
+
+/// Turns each call of a trait's method in `body`, an instance's body after [`instantiate`],
+/// into a direct call of the method that implements it for the receiver's type (decision
+/// 0031), in `body` and its outlined `prange` bodies.
+///
+/// The type checker records a call `body.energy()` on a `T: Body` as calling `Body.energy` with
+/// one type argument, `T`. Once `T` is `Particle`, `implementation` names `Particle.energy`,
+/// and the call goes there directly, so the backend can inline it: a trait costs nothing at run
+/// time. When the method comes from an embedded struct, the receiver steps into the embedded
+/// fields, so `Ion` passes its `particle` as `self`.
+///
+/// Cost: one call of `implementation` per call in the body with one type argument.
+///
+/// ```
+/// use mir::{Body, Terminator, TerminatorKind};
+/// use source::{FileId, Span};
+/// use types::{Type, TypeKind};
+///
+/// # #[salsa::db]
+/// # #[derive(Clone, Default)]
+/// # struct Database { storage: salsa::Storage<Self> }
+/// # #[salsa::db]
+/// # impl salsa::Database for Database {}
+/// let database = Database::default();
+/// let span = Span::new(FileId::from_index(0), 0, 1);
+/// let none = Type::new(&database, TypeKind::None);
+/// let mut body = Body::new(none, span);
+/// body.push_block(Terminator { kind: TerminatorKind::Return, span });
+///
+/// // A body without trait calls is left as it is.
+/// let before = body.clone();
+/// monomorphize::trait_calls(&mut body, &|_, _| None);
+/// assert_eq!(body, before);
+/// ```
+pub fn trait_calls<'db>(body: &mut Body<'db>, implementation: &Implementation<'_, 'db>) {
+    for outlined in &mut body.outlined {
+        trait_calls(outlined, implementation);
+    }
+    for block in &mut body.blocks {
+        let TerminatorKind::Call {
+            callee:
+                Callee::Function {
+                    item,
+                    type_arguments,
+                },
+            arguments,
+            ..
+        } = &mut block.terminator.kind
+        else {
+            continue;
+        };
+        let [receiver_type] = type_arguments.as_slice() else {
+            continue;
+        };
+        let Some((method, path, method_arguments)) = implementation(*item, *receiver_type) else {
+            continue;
+        };
+        *item = method;
+        *type_arguments = method_arguments;
+        let Some(receiver) = arguments.first_mut() else {
+            continue;
+        };
+        let place = match receiver {
+            Argument::Borrow(place)
+            | Argument::InOut(place)
+            | Argument::Owned(Operand::Copy(place) | Operand::Move(place)) => place,
+            Argument::Owned(Operand::Constant(_)) => continue,
+        };
+        place
+            .projections
+            .extend(path.into_iter().map(Projection::Field));
+    }
 }
 
 /// Gives each `Callable` parameter's local of `body`, in order, the type of the function it

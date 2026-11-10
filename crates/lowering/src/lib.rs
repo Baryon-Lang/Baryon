@@ -12,8 +12,10 @@
 //!
 //! - **Locals.** Local 0 is the return value, then one local per parameter, then one per
 //!   variable the function names, in source order, then the temporaries it needs.
-//! - **Control flow.** `if`, `while`, `for` over `range`, `and`, `or`, chained comparisons and
-//!   conditional expressions become basic blocks joined by branches.
+//! - **Control flow.** `if`, `while`, `for` over `range`, over a rank-1 array and over a tuple,
+//!   `and`, `or`, chained comparisons and conditional expressions become basic blocks joined by
+//!   branches. A `range` step computed at run time is asserted non-zero, and its sign picks the
+//!   loop test.
 //! - **Moves and borrows.** A read of a copy type copies; a read of any other type in a place
 //!   that takes the value moves it. Each call argument is passed in the mode its parameter
 //!   declares (decision 0006). An argument left out takes its parameter's default, after the
@@ -28,7 +30,12 @@
 //!   the checker already proved; `assert` becomes an [`Assert`](mir::TerminatorKind::Assert).
 //! - **Generic bodies.** A generic function lowers once, with its type parameters left open:
 //!   `+`, `-` and `*` on a `T: Number` and its number literals become the instance's arithmetic
-//!   and constants once monomorphization substitutes `T`.
+//!   and constants once monomorphization substitutes `T`. A call of a trait's method on a `T`
+//!   stays a call of the trait's method, with `T` as its type argument, until monomorphization
+//!   sends it to the type's own method (decision 0031).
+//! - **Embedded structs.** A name the checker found through `Embed` fields (decision 0031)
+//!   steps into each one: `ion.m` is the place `ion.particle.m`, and `ion.energy()` passes
+//!   `ion.particle` as `self`.
 //! - **Errors.** A call that can fail gets an error edge (decision 0018). The edge, and each
 //!   `raise`, goes to the innermost `except` that names the error, or else drops what the
 //!   function owns and [`Raise`](mir::TerminatorKind::Raise)s it to the caller. A bare `raise`
@@ -53,22 +60,25 @@
 //! - **Math.** `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` from `math`, and `**` and `**=` on
 //!   floats, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
 //!   [`Builtin::Math`](mir::Builtin::Math) calls a backend writes. The built-in `round(x)` rounds
-//!   a float and converts it to an integer.
+//!   a float and converts it to an integer. `**` and `**=` on integers are repeated squaring,
+//!   with a [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each
+//!   multiplication checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
 //! - **Random numbers.** `Philox(seed, stream)` and `generator.uniform()` call
 //!   [`Builtin::Philox`](mir::Builtin::Philox) and [`Builtin::Uniform`](mir::Builtin::Uniform),
 //!   the generator passed `InOut` (decision 0028). `pi`, `e`, `tau`, `inf` and `nan` from `math`
 //!   are `f64` constants.
 //! - **Unpacking.** `a, b = value` computes the value into a temporary, then moves or copies each
 //!   part into its target, left to right, so `a, b = b, a` swaps two arrays without copying them.
+//!   A target that is itself a tuple, `a, (b, c) = value`, unpacks its part in turn.
 //! - **Parallel loops.** The body of a `prange` loop is outlined into a body of its own that runs
 //!   one iteration, and the loop becomes a [`ParallelFor`](mir::TerminatorKind::ParallelFor)
 //!   that passes it the shared variables, each borrowed or `InOut`, the scalars it reduces
 //!   into with `+=`, `-=`, `*=`, `min` or `max` (the `parallel` module), and the arrays listed
 //!   in `accumulate=`, which it adds into with `Accumulate` statements (the `accumulate` module).
 //!   A `simd(range(...))` loop lowers as the `range` loop inside it, with its header block
-//!   listed in [`vectorized`](mir::Body::vectorized), unless it sums or multiplies into a
-//!   shared float, which stays unvectorized until fixed lanes keep its bits the same on every
-//!   machine (roadmap 1.9.14).
+//!   listed in [`vectorized`](mir::Body::vectorized). One that sums or multiplies into a
+//!   shared float adds into 8 fixed lanes instead, combined in a pairwise tree, so it
+//!   vectorizes and gives the same bits on every machine (the `lanes` module, roadmap 1.9.14).
 //! - **Functions as arguments.** A module-level function read as a value is a constant of its
 //!   own zero-sized type, a call passes that type as an extra type argument for each `Callable`
 //!   parameter, and a call of a `Callable` value is a [`Callee::Value`](mir::Callee::Value),
@@ -253,7 +263,9 @@ mod errors;
 mod escapes;
 mod expressions;
 mod facts;
+mod lanes;
 mod lists;
+mod loops;
 mod math;
 mod matrix;
 mod methods;

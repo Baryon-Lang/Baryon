@@ -20,18 +20,20 @@
 //! The other types (complex numbers and lists) are
 //! [`Unsupported`] until the slices of roadmap 1.10 that add them.
 
-use crate::Unsupported;
 use crate::text::TEXT;
+use crate::{ClassNames, Unsupported};
 use types::{Declared, Float, Nominal, Primitive, Type, TypeKind};
 
-/// What representing a type needs: the database types are read from, and what each struct and
-/// enum declares.
+/// What representing and printing a type needs: the database types are read from, what each
+/// struct and enum declares, and the names `print` writes for it.
 #[derive(Clone, Copy)]
 pub(crate) struct Types<'a, 'db> {
     /// The database types are read from.
     pub(crate) db: &'db dyn database::Db,
     /// What each struct or enum declares, with its type arguments substituted.
     pub(crate) declared: &'a dyn Fn(&Nominal<'db>) -> Declared<'db>,
+    /// The name of each struct or enum and of its fields or members.
+    pub(crate) names: &'a dyn Fn(&Nominal<'db>) -> ClassNames,
 }
 
 /// The LLVM representation of a language type.

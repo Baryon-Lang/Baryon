@@ -26,21 +26,21 @@ error: this decorator is not supported
    | ^^^^^^^^^^
    = note: the only function decorators are `@test` and `@bench`, which mark test and benchmark functions
 
-error: a class needs a base: `Struct`, `Exception` or `Enum`
+error: a class needs a base: `Struct`, `Exception`, `Enum` or `Protocol`
   --> definitions.byn:16:7
    |
 16 | class Plain:
    |       ^^^^^ no base
-   = note: the base says what the class is: a struct, an error type or an enum
+   = note: the base says what the class is: a struct, an error type, an enum or a trait
    = note: for a struct, write `class Plain(Struct):`
 
-error: a class cannot inherit from `Particle`
+error: a class cannot inherit from `Particle[f64]`
   --> definitions.byn:20:13
    |
-20 | class Child(Particle):
-   |             ^^^^^^^^ not one of `Struct`, `Copy`, `Exception` or `Enum`
+20 | class Child(Particle[f64]):
+   |             ^^^^^^^^^^^^^ not a name
    = note: there is no class inheritance (decision 0015)
-   = note: share behavior through traits, and data by holding the other struct in a field
+   = note: a class's bases say what it is, and name the traits it implements
 
 error: class keyword `metaclass=Meta` is not supported
   --> definitions.byn:24:21
@@ -54,47 +54,68 @@ error: these bases cannot be combined
    |
 28 | class Mixed(Struct, Enum):
    |            ^^^^^^^^^^^^^^
-   = note: a class's bases are `Struct`, `Struct, Copy`, `Exception` or `Enum`
+   = note: a class's bases are `Struct`, `Struct, Copy`, `Exception`, `Enum` or `Protocol`, and the traits it implements
 
 error: these bases cannot be combined
   --> definitions.byn:32:13
    |
 32 | class Copied(Copy):
    |             ^^^^^^
-   = note: a class's bases are `Struct`, `Struct, Copy`, `Exception` or `Enum`
+   = note: a class's bases are `Struct`, `Struct, Copy`, `Exception`, `Enum` or `Protocol`, and the traits it implements
+
+error: `Protocol` goes after the traits a trait requires
+  --> definitions.byn:36:17
+   |
+36 | class Backwards(Protocol, Body):
+   |                 ^^^^^^^^ move it to the end
+   = note: for example `class Backwards(Body, Charged, Protocol)`, the order Python requires (decision 0031)
+
+error: these bases cannot be combined
+  --> definitions.byn:40:11
+   |
+40 | class Both(Struct, Protocol):
+   |           ^^^^^^^^^^^^^^^^^^
+   = note: a class's bases are `Struct`, `Struct, Copy`, `Exception`, `Enum` or `Protocol`, and the traits it implements
+
+error: this expression's value is never used
+  --> definitions.byn:45:5
+   |
+45 |     ...
+   |     ^^^ computed, then thrown away
+   = note: write `pass` for an empty block
 
 error: this decorator is not supported
-  --> definitions.byn:36:1
+  --> definitions.byn:48:1
    |
-36 | @dataclass
+48 | @dataclass
    | ^^^^^^^^^^
    = note: the only class decorator is `@layout("C")`, which keeps a struct's fields in the order written without the padding warning
 
 error: `@layout` takes one argument, `"C"`
-  --> definitions.byn:41:1
+  --> definitions.byn:53:1
    |
-41 | @layout("packed")
+53 | @layout("packed")
    | ^^^^^^^^^^^^^^^^^
    = note: C layout is the only one: fields in the order written, each at the next offset its alignment allows
 
 error: `@layout` takes one argument, `"C"`
-  --> definitions.byn:46:1
+  --> definitions.byn:58:1
    |
-46 | @layout
+58 | @layout
    | ^^^^^^^
    = note: C layout is the only one: fields in the order written, each at the next offset its alignment allows
 
 error: `@layout` applies only to structs
-  --> definitions.byn:51:1
+  --> definitions.byn:63:1
    |
-51 | @layout("C")
+63 | @layout("C")
    | ^^^^^^^^^^^^
    = note: enums and error types are never shared with other programs byte for byte, so their layout is the compiler's
 
 error: this decorator is not supported
-  --> definitions.byn:56:1
+  --> definitions.byn:68:1
    |
-56 | @layout("C")
+68 | @layout("C")
    | ^^^^^^^^^^^^
    = note: the only function decorators are `@test` and `@bench`, which mark test and benchmark functions
 

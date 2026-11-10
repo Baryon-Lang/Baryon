@@ -1,12 +1,12 @@
-//! Names after a dot: a module's member, an enum's member, a struct's field or method, and an
-//! array's attributes.
+//! Names after a dot: a module's member, an enum's member, a struct's field or method, its own
+//! or an embedded struct's (the `embed` module), and an array's attributes.
 
 use super::Body;
-use super::relations;
+use crate::embed::{self, Lookup, Own};
 use crate::outline::{Base, Kind, outline};
 use database::Definition;
 use syntax::{NodeId, Role};
-use types::{Declaration, Item, Nominal, Type, TypeKind};
+use types::{Declaration, Item, Key, Nominal, Type, TypeKind};
 
 /// What a name after a dot refers to on a struct.
 pub(super) enum Member<'db> {
@@ -54,6 +54,15 @@ impl<'db> Body<'db> {
         let TypeKind::Struct(nominal) = base.kind(self.db) else {
             if self.has_no_members(base) {
                 return self.no_member(node, base, name, false);
+            }
+            if matches!(base.kind(self.db), TypeKind::Parameter { .. }) {
+                let message = format!("`{}` has no attribute `{name}`", self.show(base));
+                return self.lowerer.error(
+                    node,
+                    &message,
+                    "not known for a type parameter",
+                    Some("a type parameter has only what its bound allows, and a trait has methods only: call a method such as `body.mass()`"),
+                );
             }
             return self.lowerer.unknown();
         };
@@ -136,8 +145,11 @@ impl<'db> Body<'db> {
         Type::new(self.db, TypeKind::Enum(nominal))
     }
 
-    /// The field or method `attribute` names on a struct of type `base`, or `None` after
-    /// reporting that it has neither.
+    /// The field or method `attribute` names on a struct of type `base`, its own or one
+    /// reached through embedded fields (decision 0031), or `None` after reporting that it has
+    /// neither. A name found through embedded fields records their path for lowering, keyed by
+    /// `node`. A name two embedded structs provide at one depth was reported at the class, so
+    /// it gives no second error here.
     pub(super) fn member(
         &mut self,
         node: NodeId,
@@ -146,48 +158,32 @@ impl<'db> Body<'db> {
         attribute: NodeId,
     ) -> Option<Member<'db>> {
         let wanted = self.tree.text(attribute, self.text);
-        let item = Item::new(self.db, self.lowerer.package, nominal.file, nominal.name);
-        let parameters = match outline(self.db, nominal.file).get(nominal.name) {
-            Some(entry) => match &entry.kind {
-                Kind::Class(class) => class.type_parameters.clone(),
-                _ => Vec::new(),
-            },
-            None => Vec::new(),
-        };
-        let Declaration::Struct {
-            fields, methods, ..
-        } = &self.db.declaration(item).declaration
-        else {
-            return None;
-        };
-        if let Some(field) = fields.iter().find(|field| field.name == wanted) {
-            let ty = relations::substitute(
-                self.db,
-                field.ty,
-                nominal.file,
-                &parameters,
-                &nominal.arguments,
-            );
-            return Some(Member::Field(ty));
+        match embed::lookup(self.db, self.lowerer.package, nominal, wanted) {
+            Lookup::Found { path, member, .. } => {
+                if !path.is_empty() {
+                    self.typed.promotions.insert(Key(node), path);
+                }
+                Some(match member {
+                    Own::Field(ty) => Member::Field(ty),
+                    Own::Method {
+                        item,
+                        parameters,
+                        arguments,
+                    } => Member::Method {
+                        item,
+                        parameters,
+                        arguments,
+                    },
+                })
+            }
+            Lookup::Ambiguous(_) => None,
+            Lookup::Missing if wanted == "copy" => Some(Member::Copy),
+            Lookup::Missing => {
+                let message = format!("`{}` has no field or method `{wanted}`", self.show(base));
+                self.lowerer
+                    .error(node, &message, "not defined on this struct", None);
+                None
+            }
         }
-        let class_tree = self.db.parse(nominal.file).tree();
-        let class_text = nominal.file.source(self.db).text();
-        if let Some(&method) = methods
-            .iter()
-            .find(|method| class_tree.text(method.name(self.db), class_text) == wanted)
-        {
-            return Some(Member::Method {
-                item: method,
-                parameters,
-                arguments: nominal.arguments.clone(),
-            });
-        }
-        if wanted == "copy" {
-            return Some(Member::Copy);
-        }
-        let message = format!("`{}` has no field or method `{wanted}`", self.show(base));
-        self.lowerer
-            .error(node, &message, "not defined on this struct", None);
-        None
     }
 }

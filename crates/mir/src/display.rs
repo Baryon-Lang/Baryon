@@ -8,7 +8,8 @@
 
 use crate::{
     Argument, BinaryOperator, BlockId, Body, Callee, Check, ConstantValue, Elementwise, LocalKind,
-    Operand, Piece, Place, Projection, Rvalue, StatementKind, TerminatorKind, UnaryOperator,
+    Operand, Piece, Place, Projection, Rvalue, SliceIndex, StatementKind, TerminatorKind,
+    UnaryOperator,
 };
 use database::Db;
 use std::fmt::{self, Write};
@@ -388,10 +389,22 @@ impl Writer<'_> {
                 self.operand(index),
                 self.operand(length)
             ),
+            Check::SliceInBounds {
+                dimension,
+                start,
+                stop,
+                length,
+            } => format!(
+                "slice in bounds in dimension {dimension}: {}:{} within {}",
+                self.operand(start),
+                self.operand(stop),
+                self.operand(length)
+            ),
             Check::NoOverflow(operator) => format!("no overflow: {}", binary_name(*operator)),
             Check::NoPowerOverflow => "no overflow: power".to_owned(),
             Check::NonZeroDivisor => "non-zero divisor".to_owned(),
-            Check::NonZeroStep => "non-zero step".to_owned(),
+            Check::NonZeroStep { slice: false } => "non-zero step".to_owned(),
+            Check::NonZeroStep { slice: true } => "non-zero slice step".to_owned(),
             Check::NonNegativeExponent { exponent } => {
                 format!("non-negative exponent: {}", self.operand(exponent))
             }
@@ -410,7 +423,9 @@ impl Writer<'_> {
     }
 }
 
-/// A place: `_1`, `_1.0`, `_1[_2, _3]`, `_1.value`, `_1.error[0]`.
+/// A place: `_1`, `_1.0`, `_1[_2, _3]`, `_1.value`, `_1.error[0]`, or a view
+/// `_1[_2 for _3 by _4, _5]`: a range from `_2`, `_3` elements long, in steps of `_4`, then the
+/// index `_5`.
 fn place_text(place: &Place) -> String {
     let mut text = format!("_{}", place.local.index());
     for projection in &place.projections {
@@ -419,6 +434,22 @@ fn place_text(place: &Place) -> String {
             Projection::Index(indices) => {
                 let indices = indices.iter().map(|local| format!("_{}", local.index()));
                 write!(text, "[{}]", indices.collect::<Vec<_>>().join(", "))
+            }
+            Projection::Slice(dimensions) => {
+                let dimensions = dimensions.iter().map(|dimension| match dimension {
+                    SliceIndex::Index(index) => format!("_{}", index.index()),
+                    SliceIndex::Range {
+                        start,
+                        length,
+                        step,
+                    } => format!(
+                        "_{} for _{} by _{}",
+                        start.index(),
+                        length.index(),
+                        step.index()
+                    ),
+                });
+                write!(text, "[{}]", dimensions.collect::<Vec<_>>().join(", "))
             }
             Projection::Value => write!(text, ".value"),
             Projection::Error(position) => write!(text, ".error[{position}]"),
