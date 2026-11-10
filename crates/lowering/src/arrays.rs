@@ -91,11 +91,26 @@ impl<'db> Builder<'db> {
         index: NodeId,
         unchecked: bool,
     ) -> Local {
-        let int = self.int_type();
         let from_end = self.negative_literal(index);
         // An unchecked index that counts from the start needs no length.
         let length =
             (!unchecked || from_end.is_some()).then(|| self.length(array, ty, dimension, index));
+        self.index_within(length, dimension, index, unchecked)
+    }
+
+    /// The `i64` local holding `index`, an index into dimension `dimension` of something of
+    /// length `length`, an array or a `str`, checked to be in range unless `unchecked`. A
+    /// negative literal counts back from the length. `length` is `None` only for an unchecked
+    /// index that does not count from the end, which needs none.
+    pub(crate) fn index_within(
+        &mut self,
+        length: Option<Operand<'db>>,
+        dimension: u32,
+        index: NodeId,
+        unchecked: bool,
+    ) -> Local {
+        let int = self.int_type();
+        let from_end = self.negative_literal(index);
         let local = self.temporary(int, index);
         let value = match (from_end, &length) {
             (Some(from_end), Some(Operand::Constant(constant))) => {

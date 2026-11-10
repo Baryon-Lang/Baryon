@@ -75,7 +75,7 @@ checks what it prints.
 | Every integer type, `f32`, `f64` and `bool`, with Python's number mixing, `//` and `%` | |
 | [Complex numbers](types.md#complex-numbers) `complex64` and `complex128`: arithmetic, `==`, `real`, `imag`, `conjugate()`, `abs`, `complex(re, im)` and `print` | A complex number in an f-string; `a.sum()` of a complex array; complex numbers in `prange` reductions and `accumulate=`; the `cmath` module (roadmap idea I.37) |
 | Conversions that panic when the value does not fit | |
-| `str`: literals, f-strings, `+`, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len` | Indexing and slicing a `str`; its methods, such as `split` and `strip` |
+| `str`: literals, f-strings, `+`, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len`; [indexing and slicing](types.md#indexing-slicing-and-methods) by character; `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower` and `upper` | `str`'s other methods, such as `count`, `rfind` and `isdigit`; `split` with `maxsplit`, `find` with `start` and `end`, and `startswith` of a tuple |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
 | `T \| None`, with every narrowing rule | |
 | Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs and their methods, each method compiled once per type its struct is used at | |
@@ -115,7 +115,7 @@ out of a function, including through a `raise`.
 | --- | --- |
 | `Array.zeros`, `Array.ones` and `Array.fill`, with the element type from context, a `dtype` or `f64`; `a.copy()`; `Array(values)` of a list | `Array.zeros` and `Array.ones` of an enum, whose members are not numbers; `Array.fill` with a member works |
 | Indexing `a[i, j]` with bounds checks, reading and writing; negative literal indices | |
-| [Slices](arrays.md#slicing) `a[i:j]`, `a[i:j:k]`, `a[::-1]` and `grid[:, k]` of `Array` and `Fixed` arrays, with defaults, negative literals, steps known only at run time, and the out-of-range and zero-step panics; read, passed to functions, in whole-array arithmetic, and assigned into in place | Slices of lists and strings |
+| [Slices](arrays.md#slicing) `a[i:j]`, `a[i:j:k]`, `a[::-1]` and `grid[:, k]` of `Array` and `Fixed` arrays, with defaults, negative literals, steps known only at run time, and the out-of-range and zero-step panics; read, passed to functions, in whole-array arithmetic, and assigned into in place | |
 | `len(a)`, `a.shape`, `a.shape[k]` and `a.size`, of `Array` and `Fixed` arrays, and `print(a.shape)` | |
 | `a.unchecked[i]` inside `with unsafe:` | |
 | `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, the methods below, and whole-array arithmetic | |

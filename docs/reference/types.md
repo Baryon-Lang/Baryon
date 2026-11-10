@@ -154,12 +154,48 @@ on a rule the reader has to remember.
 `==` and `!=`, `in`, `len`, which counts characters as Python does, and `print`. `<`, `<=`, `>` and
 `>=` order strings as Python does, character by character by code point, with a string before any
 longer string it starts: `"Z" < "a"`, `"ab" < "abc"`. Comparing, `in` and `len` each read the
-string, so they take time in proportion to its length. Text processing beyond that arrives with
-the standard library (roadmap 1.13).
+string, so they take time in proportion to its length.
 
 ```python
 def is_noble(element: str) -> bool:
     return element in "He Ne Ar Kr Xe Rn" and len(element) == 2
+```
+
+### Indexing, slicing and methods
+
+`text[i]` is the character at position `i`, as a one-character `str`, and `text[i:j:k]` is a new
+`str` of the characters the range takes. Positions count characters, as in Python, so
+`"Ångström"[5]` is `"r"`. The rules are a list's: a negative literal counts from the end,
+`text[-1]` is the last character, and an index or a bound outside the text panics, where Python
+would raise `IndexError` or cut the slice short
+([differences from Python](differences-from-python.md)). UTF-8 stores characters in one to four
+bytes, so finding position `i` reads the text from its start: indexing costs time in proportion
+to the length, not constant time. A loop that visits every character should be `for c in text`,
+which reads the text once.
+
+These methods work as Python's do. Each reads the text and returns a new value; none changes it.
+
+| Method | Gives |
+| --- | --- |
+| `text.split(sep)` | A `list[str]` of the pieces between each `sep`; two `sep`s together give an empty piece. An empty `sep` panics |
+| `text.split()` | A `list[str]` of the words that runs of whitespace separate, with no empty word |
+| `text.strip()`, `lstrip()`, `rstrip()` | The text without whitespace at both ends, the start or the end |
+| `text.strip(chars)`, `lstrip(chars)`, `rstrip(chars)` | The same, removing any of the characters of `chars` |
+| `sep.join(pieces)` | The `str`s of the `list[str]` `pieces` with `sep` between each two |
+| `text.startswith(prefix)`, `text.endswith(suffix)` | A `bool` |
+| `text.find(sub)` | The position of the first `sub`, in characters, or -1 |
+| `text.replace(old, new)` | The text with every `old` replaced by `new` |
+| `text.lower()`, `text.upper()` | The text in lower or upper case, by Unicode's full case mapping, so `"ß".upper()` is `"SS"` |
+| `text.copy()` | A new `str` with the same text |
+
+Whitespace is what Python's `str.isspace` accepts: spaces, tabs, line ends and the other Unicode
+spaces. Every result is new text the value owns, never a view into the original, so it outlives
+the string it came from; making it costs one pass over the text.
+
+```python
+def symbols(line: str) -> list[str]:
+    """`" ar, he ,NE"` gives `['AR', 'HE', 'NE']`."""
+    return [entry.strip().upper() for entry in line.split(",")]
 ```
 
 An f-string formats each value with a specification from Python's format mini-language, and

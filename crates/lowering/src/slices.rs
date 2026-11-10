@@ -86,10 +86,21 @@ impl<'db> Builder<'db> {
         dimension: u32,
         slice: NodeId,
     ) -> SliceIndex {
+        let length = self.length(array, ty, dimension, slice);
+        self.range_within(&length, dimension, slice)
+    }
+
+    /// The range `slice`, `start:stop:step`, of dimension `dimension` of something of length
+    /// `length`, an array or a `str`, checked to lie within it.
+    pub(crate) fn range_within(
+        &mut self,
+        length: &Operand<'db>,
+        dimension: u32,
+        slice: NodeId,
+    ) -> SliceIndex {
         let int = self.int_type();
         let child = |role| self.tree.child(slice, role);
         let (lower, upper, step_node) = (child(Role::Lower), child(Role::Upper), child(Role::Step));
-        let length = self.length(array, ty, dimension, slice);
         let step = self.temporary(int, slice);
         let constant_step = step_node.map_or(Some(1), |node| self.signed_constant(node));
         let step_value = match (step_node, constant_step) {
@@ -113,15 +124,15 @@ impl<'db> Builder<'db> {
             step,
         };
         let given = Given {
-            start: lower.map(|node| self.bound(node, &length)),
-            stop: upper.map(|node| self.bound(node, &length)),
+            start: lower.map(|node| self.bound(node, length)),
+            stop: upper.map(|node| self.bound(node, length)),
         };
         if let Some(constant) = constant_step {
             self.directed(
                 constant < 0,
                 &bounds,
                 &given,
-                &length,
+                length,
                 constant.abs() == 1,
                 slice,
             );
@@ -138,13 +149,13 @@ impl<'db> Builder<'db> {
             );
             for (block, backwards) in [(back, true), (forth, false)] {
                 self.start(block);
-                self.directed(backwards, &bounds, &given, &length, false, slice);
+                self.directed(backwards, &bounds, &given, length, false, slice);
                 self.terminate(TerminatorKind::Goto(join), slice);
             }
             self.start(join);
         }
         let may_go_back = constant_step.is_none_or(|constant| constant < 0);
-        self.check_range(dimension, &bounds, &given, &length, may_go_back, slice);
+        self.check_range(dimension, &bounds, &given, length, may_go_back, slice);
         SliceIndex::Range {
             start: bounds.start,
             length: bounds.length,

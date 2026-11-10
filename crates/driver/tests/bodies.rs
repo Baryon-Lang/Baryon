@@ -513,16 +513,18 @@ error: expected `i64`, found `f64`
     );
 }
 
-/// A method or attribute on a value whose type has none in version 0, such as `"abc".upper()`,
-/// is reported by the checker. Before, it was left unchecked and failed at build time as "a
-/// call lowering does not handle". `copy` on a `str` still checks.
+/// A method or attribute on a value whose type has none in version 0, such as `x.real` on a
+/// float, or a method `str` does not have, such as `"abc".title()`, is reported by the checker,
+/// with the methods `str` has. Before, it was left unchecked and failed at build time as "a call
+/// lowering does not handle". `copy` and `upper` on a `str` check.
 #[test]
 fn methods_of_strings_and_numbers_are_reported() {
     let program = "
 def f(x: f64, s: str) -> str:
     print(x.real)
     s.copy()
-    return s.upper()
+    s.upper()
+    return s.title()
 ";
     assert_eq!(
         check_one(program),
@@ -533,12 +535,12 @@ def f(x: f64, s: str) -> str:
   |           ^^^^^^ not defined on this type
   = note: version 0 defines no methods or attributes on numbers, `bool`, enums or tuples
 
-error: `str` has no method `upper`
- --> main.byn:4:12
+error: `str` has no method `title`
+ --> main.byn:5:12
   |
-4 |     return s.upper()
-  |            ^^^^^^^ not defined on this type
-  = note: version 0 defines one method on `str`: `copy`"
+5 |     return s.title()
+  |            ^^^^^^^ not defined on `str`
+  = note: a `str` has the methods `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower`, `upper` and `copy`"
     );
 }
 

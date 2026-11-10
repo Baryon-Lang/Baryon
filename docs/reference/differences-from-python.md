@@ -21,7 +21,7 @@ reason in a line.
 | Any value can be a condition: `if items:` | Conditions must be `bool`: `if len(items) > 0:` | A condition should not depend on a rule the reader has to remember. [bool](types.md#bool) |
 | A variable can change type: `x = 1` then `x = "one"` | A variable keeps the type of its first value | One name meaning two things is a common bug in long code. [Type inference](types.md#type-inference) |
 | `a[-1]` and `a[i]` with `i = -1` both read the last element | `a[-1]` reads the last element; a negative index computed at run time panics | In a stencil, `u[i - 1]` at `i = 0` is a bug, not a wrap-around. [Indexing](arrays.md#indexing) |
-| `a[0:100]` on a 10-element list gives 10 elements | A slice past the end panics | A range that does not fit is usually a bug. [Slicing](arrays.md#slicing) |
+| `a[0:100]` on a 10-element list gives 10 elements | A slice past the end panics, for arrays, lists and `str`s alike | A range that does not fit is usually a bug. [Slicing](arrays.md#slicing), [strings](types.md#indexing-slicing-and-methods) |
 | A slice of a list is a copy; a NumPy slice is a view | An array slice is a view, and cannot be bound to a name in version 0 | A named view would be a stored borrow. [Slices](values-and-references.md#slices) |
 | A list can hold values of different types | `list[T]` holds one type | Values of one type are stored contiguously, with no boxing. [Lists](types.md#lists) |
 | Any hashable value is a `dict` key, floats included, and `d[k]` for a missing key raises `KeyError` | Keys are integers, `bool`, `str`, enums and tuples of them; a missing key panics | A float key that misses by rounding is a silent bug. [Dictionaries](types.md#dictionaries) |
