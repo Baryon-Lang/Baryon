@@ -23,7 +23,7 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Type, TypeKind};
 
 /// How a collection loop reaches its elements.
-enum Elements {
+pub(crate) enum Elements {
     /// At an index, in an array or a list.
     Indexed,
     /// Through a switch on the counter, in a tuple of this many items.
@@ -52,6 +52,9 @@ impl<'db> Builder<'db> {
         iterator: NodeId,
         pass: Pass<'_, 'db>,
     ) {
+        if self.is_iterator_call(iterator) {
+            return self.iterator_loop(statement, target, iterator, pass);
+        }
         let ty = self.ty(iterator);
         let element = match ty.kind(self.db) {
             TypeKind::Array { element, rank: 1 } | TypeKind::List(element) => *element,
@@ -70,8 +73,26 @@ impl<'db> Builder<'db> {
             );
         }
         let collection = self.borrow(iterator);
+        let (length, items) = self.loop_elements(&collection, ty, iterator);
+        let limit = self.temporary(self.int_type(), iterator);
+        self.assign(Place::from(limit), Rvalue::Use(length), iterator);
+        let bind = &mut |builder: &mut Self, counter| {
+            builder.bind_pass(target, (&collection, &items), counter, element);
+        };
+        self.counted_loop(statement, (iterator, limit), bind, pass);
+    }
+
+    /// How the loop over `collection`, of type `ty`, reaches its elements, and how many there
+    /// are, as an `i64` operand: the length of an array or list, the count of a tuple's items,
+    /// or the count of a `str`'s characters, whose cursor starts at the first byte.
+    pub(crate) fn loop_elements(
+        &mut self,
+        collection: &Place,
+        ty: Type<'db>,
+        node: NodeId,
+    ) -> (Operand<'db>, Elements) {
         let int = self.int_type();
-        let (length, items) = match ty.kind(self.db) {
+        match ty.kind(self.db) {
             TypeKind::Tuple(items) => {
                 let count = i128::try_from(items.len()).unwrap_or(i128::MAX);
                 let count = Operand::Constant(Constant::integer(int, count));
@@ -80,21 +101,32 @@ impl<'db> Builder<'db> {
             TypeKind::Str => {
                 // The loop runs once per character and reads each from a byte cursor, which
                 // each pass moves on.
-                let characters = self.temporary(int, iterator);
+                let characters = self.temporary(int, node);
                 let text = vec![Argument::Borrow(collection.clone())];
-                self.text_call(Place::from(characters), Builtin::LengthStr, text, iterator);
-                let cursor = self.temporary(int, iterator);
+                self.text_call(Place::from(characters), Builtin::LengthStr, text, node);
+                let cursor = self.temporary(int, node);
                 let start = Rvalue::Use(Operand::Constant(Constant::integer(int, 0)));
-                self.assign(Place::from(cursor), start, iterator);
+                self.assign(Place::from(cursor), start, node);
                 (
                     Operand::Copy(Place::from(characters)),
                     Elements::Text(cursor),
                 )
             }
-            _ => (self.length(&collection, ty, 0, iterator), Elements::Indexed),
-        };
-        let limit = self.temporary(int, iterator);
-        self.assign(Place::from(limit), Rvalue::Use(length), iterator);
+            _ => (self.length(collection, ty, 0, node), Elements::Indexed),
+        }
+    }
+
+    /// A loop of `limit` passes, the `i64` local `limit` computed before it, for `statement`
+    /// over `iterator`: a hidden counter runs from zero, and each pass runs `bind` with the
+    /// counter to bind the loop target, then `pass`.
+    pub(crate) fn counted_loop(
+        &mut self,
+        statement: NodeId,
+        (iterator, limit): (NodeId, Local),
+        bind: &mut dyn FnMut(&mut Self, Local),
+        pass: Pass<'_, 'db>,
+    ) {
+        let int = self.int_type();
         let counter = self.temporary(int, iterator);
         self.assign(
             Place::from(counter),
@@ -109,7 +141,7 @@ impl<'db> Builder<'db> {
         self.loop_test((BinaryOperator::Less, counter, limit, body, end), iterator);
         self.start(body);
         let aliases = self.aliases.clone();
-        self.bind_pass(target, (&collection, items), counter, element);
+        bind(self, counter);
         pass(self, next, end);
         self.aliases = aliases;
         self.start(next);
@@ -133,13 +165,13 @@ impl<'db> Builder<'db> {
     fn bind_pass(
         &mut self,
         target: NodeId,
-        (collection, items): (&Place, Elements),
+        (collection, items): (&Place, &Elements),
         counter: Local,
         element: Type<'db>,
     ) {
         let borrowed = !self.is_copy(element);
         match items {
-            Elements::Text(cursor) => {
+            &Elements::Text(cursor) => {
                 let character = self.temporary(element, target);
                 self.text_call(
                     Place::from(character),
@@ -156,7 +188,7 @@ impl<'db> Builder<'db> {
                 let place = collection.clone().project(Projection::Index(vec![counter]));
                 self.bind_element(target, place, element);
             }
-            Elements::Tuple(count) if borrowed => {
+            &Elements::Tuple(count) if borrowed => {
                 // The item is copied bit for bit into a temporary that is never dropped, so the
                 // switch's arms meet at one place the variable can borrow.
                 let item = self.temporary(element, target);
@@ -174,7 +206,7 @@ impl<'db> Builder<'db> {
                 );
                 self.bind_element(target, Place::from(item), element);
             }
-            Elements::Tuple(count) => {
+            &Elements::Tuple(count) => {
                 self.tuple_item(
                     target,
                     (collection, count),
@@ -190,7 +222,7 @@ impl<'db> Builder<'db> {
     /// Runs `write` on item number `counter` of the tuple at `tuple`, which has `count` items,
     /// for the loop target `target`: a switch on the counter goes to one block per item, each
     /// writes its item, and each joins the rest of the loop body.
-    fn tuple_item(
+    pub(crate) fn tuple_item(
         &mut self,
         target: NodeId,
         (tuple, count): (&Place, usize),
