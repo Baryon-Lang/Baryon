@@ -77,7 +77,7 @@ impl<'db> Builder<'db> {
     /// in a way that depends on the machine, and a float sum must give the same bits
     /// everywhere (Collins, 2026-11-08), so these loops add into fixed lanes instead (the
     /// `lanes` module). `min` and `max` give the same result in any order, and complex sums
-    /// stay as written, unvectorized, until complex numbers build (roadmap 1.10.13).
+    /// stay as written, unvectorized, until they get lanes of their own (roadmap idea I.37).
     pub(crate) fn float_reductions(
         &mut self,
         statement: NodeId,

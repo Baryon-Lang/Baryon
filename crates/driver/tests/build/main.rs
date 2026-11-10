@@ -14,6 +14,7 @@ use std::sync::{Mutex, Once, PoisonError};
 
 mod array_methods;
 mod clang;
+mod complex;
 mod defaults;
 mod dicts;
 mod examples;

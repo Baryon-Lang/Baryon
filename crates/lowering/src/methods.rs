@@ -71,6 +71,11 @@ impl<'db> Builder<'db> {
         if !matches!(element.kind(self.db), TypeKind::Primitive(_)) {
             return self.unsupported(node, "`sum` of an array whose elements are not numbers");
         }
+        // A complex sum must add in `NumPy`'s pairwise tree, as a float sum does, which the
+        // runtime does not do for complex numbers yet; adding in a loop would give other bits.
+        if self.is_complex(element) {
+            return self.unsupported(node, "`sum` of an array of complex numbers");
+        }
         let source = self.borrow(array);
         let result = self.ty(node);
         if self.is_float(element) {

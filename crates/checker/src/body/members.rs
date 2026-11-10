@@ -51,6 +51,9 @@ impl<'db> Body<'db> {
         if let Some(ty) = self.array_attribute(node, base, name) {
             return ty;
         }
+        if let Some(ty) = self.complex_attribute(node, base, name) {
+            return ty;
+        }
         let TypeKind::Struct(nominal) = base.kind(self.db) else {
             if self.has_no_members(base) {
                 return self.no_member(node, base, name, false);
@@ -73,8 +76,9 @@ impl<'db> Body<'db> {
     }
 
     /// Whether a value of type `ty` has no fields or methods at all in version 0, so any name
-    /// after a dot is an error: a `str` (other than `copy`, which the caller handles), a number,
-    /// `bool`, an enum value, a tuple or `None`. `Array`, `Fixed`, `list`, structs and the
+    /// after a dot is an error: a `str` (other than `copy`, which the caller handles), a real
+    /// number, `bool`, an enum value, a tuple or `None`. A complex number's `real`, `imag` and
+    /// `conjugate()` are checked before this (the `complex` module). `Array`, `Fixed`, `list`, structs and the
     /// standard library's types have their own.
     pub(super) fn has_no_members(&self, ty: Type<'db>) -> bool {
         matches!(

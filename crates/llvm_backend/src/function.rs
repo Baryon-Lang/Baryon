@@ -363,9 +363,17 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         Ok((address, ty))
     }
 
-    /// The type of item or field `position` of the tuple or struct type `ty`.
+    /// The type of item or field `position` of the tuple or struct type `ty`, or of part
+    /// `position` of a complex number: 0 the real part, 1 the imaginary part.
     pub(crate) fn field(&self, ty: Type<'db>, position: u32) -> Result<Type<'db>, Unsupported> {
         let items = match ty.kind(self.types.db) {
+            TypeKind::Primitive(types::Primitive::Complex(complex)) => {
+                let part = Type::new(
+                    self.types.db,
+                    TypeKind::Primitive(types::Primitive::Float(complex.part())),
+                );
+                vec![part, part]
+            }
             TypeKind::Tuple(items) => items.clone(),
             TypeKind::Struct(nominal) => match (self.types.declared)(nominal) {
                 types::Declared::Struct(fields) => fields,
@@ -408,8 +416,15 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                         self.types.value(constant.ty)? == "float",
                     ),
                     ConstantValue::Str(text) => self.text_constant(text),
-                    ConstantValue::Complex { .. } => {
-                        return Err(self.types.unsupported(constant.ty));
+                    ConstantValue::Complex { real, imaginary } => {
+                        let part = self
+                            .complex_part(constant.ty)
+                            .ok_or_else(|| self.types.unsupported(constant.ty))?;
+                        Self::complex_constant(
+                            part,
+                            f64::from_bits(*real),
+                            f64::from_bits(*imaginary),
+                        )
                     }
                 };
                 Ok(Some((value, constant.ty)))
