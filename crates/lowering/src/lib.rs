@@ -78,8 +78,10 @@
 //! - **Integer overflow.** Integer `+`, `-` and `*`, their in-place forms and `-x` on a signed
 //!   integer lower to a [`CheckedBinary`](mir::Rvalue::CheckedBinary) and an `Assert` of
 //!   [`NoOverflow`](mir::Check::NoOverflow) on its flag, in every build; a release build's
-//!   backend leaves the asserts out (decision 0030). On a type parameter they stay a wrapping
-//!   [`Binary`](mir::Rvalue::Binary), since lowering does not know the type is an integer.
+//!   backend leaves the asserts out (decision 0030). So do `abs` of an integer and each
+//!   addition and product of integer `a.sum()` and `v.dot(w)`. On a type parameter they are a
+//!   [`Binary`](mir::Rvalue::Binary) into a local of the parameter's type, since lowering does
+//!   not know the type is an integer; monomorphization checks it in an integer instance.
 //!
 //! # What it does not lower yet
 //!

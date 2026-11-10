@@ -140,7 +140,8 @@ fn(_1: i64, _2: f32) -> f32 {
 }
 
 /// `abs` of a float negates at zero too, so `abs(-0.0)` is `0.0`, and keeps everything else;
-/// `abs` of an integer negates only below zero.
+/// `abs` of an integer negates only below zero, checked for overflow as `-x` is, since the
+/// absolute value of the type's minimum does not fit (decision 0030).
 #[test]
 fn abs_negates_below_zero() {
     let program = "\
@@ -159,7 +160,9 @@ fn(_1: f64, _2: i32) -> f64 {
     let _6: i32;
     let _7: i32;
     let _8: bool;
-    let _9: f64;
+    let _9: tuple[i32, bool];
+    let _10: bool;
+    let _11: f64;
 
     bb0: {
         _4 = copy _1;
@@ -184,8 +187,9 @@ fn(_1: f64, _2: i32) -> f64 {
     }
 
     bb4: {
-        _6 = Subtract(0_i32, copy _7);
-        goto -> bb6;
+        _9 = CheckedSubtract(0_i32, copy _7);
+        _10 = Not(copy _9.1);
+        assert(copy _10, no overflow: Subtract) -> bb7;
     }
 
     bb5: {
@@ -194,9 +198,14 @@ fn(_1: f64, _2: i32) -> f64 {
     }
 
     bb6: {
-        _9 = f64(copy _6);
-        _0 = Add(copy _3, copy _9);
+        _11 = f64(copy _6);
+        _0 = Add(copy _3, copy _11);
         return;
+    }
+
+    bb7: {
+        _6 = copy _9.0;
+        goto -> bb6;
     }
 }
 "
