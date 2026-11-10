@@ -3,8 +3,8 @@
 
 use crate::builder::Builder;
 use mir::{
-    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Operand, Place, Rvalue,
-    TerminatorKind,
+    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, Operand, Place, Projection,
+    Rvalue, TerminatorKind,
 };
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
@@ -151,11 +151,17 @@ impl<'db> Builder<'db> {
         // The arguments passed come first, then each default left out, in parameter order
         // (decision 0027).
         let mut passed = Vec::with_capacity(arguments.len());
-        for (&argument, &(mode, ty)) in arguments.iter().zip(&parameters) {
+        for (position, (&argument, &(mode, ty))) in arguments.iter().zip(&parameters).enumerate() {
             let Some(argument) = argument else {
                 passed.push(None);
                 continue;
             };
+            if position == 0
+                && let Some(receiver) = self.promoted_receiver(argument, mode, node)
+            {
+                passed.push(Some(receiver));
+                continue;
+            }
             passed.push(Some(match mode {
                 Mode::Borrow => match self.borrow_as(argument, ty) {
                     Some(place) => Argument::Borrow(place),
@@ -205,8 +211,8 @@ impl<'db> Builder<'db> {
     /// first of `arguments`: `[f64]` for `p.total()` with `p: Pair[f64]`, or `[T]` inside
     /// another generic body, which monomorphization replaces. Empty for a function and for a
     /// method of a class with no type parameters. `None` when the class has type parameters
-    /// but the receiver is not a struct of that class, such as a method an embedded struct
-    /// provides (decision 0031), which is not built yet.
+    /// but the receiver is not a struct of that class, such as a method an embedded generic
+    /// struct provides (decision 0031), which is not built yet.
     fn class_arguments(
         &self,
         item: Item<'db>,
@@ -231,6 +237,36 @@ impl<'db> Builder<'db> {
             }
             _ => None,
         }
+    }
+
+    /// The receiver of the method call `node` when the checker found the method through
+    /// embedded fields (decision 0031): the receiver `argument`'s place, stepped into each
+    /// embedded field, so `ion.energy()` passes `ion.particle` as `self`. `None` for any other
+    /// call. The checker rejects a promoted method that takes `self` as `Owned`.
+    fn promoted_receiver(
+        &mut self,
+        argument: NodeId,
+        mode: Mode,
+        node: NodeId,
+    ) -> Option<Argument<'db>> {
+        let function = self.tree.child(node, Role::Function)?;
+        let path = self.typed.promotion(function).to_vec();
+        if path.is_empty() {
+            return None;
+        }
+        let project = |base: Place| {
+            path.iter().fold(base, |place, &field| {
+                place.project(Projection::Field(field))
+            })
+        };
+        Some(match mode {
+            Mode::Borrow => Argument::Borrow(project(self.borrow(argument))),
+            Mode::InOut => Argument::InOut(project(self.place(argument)?)),
+            Mode::Owned => {
+                self.unsupported(argument, "moving an embedded field out of its struct");
+                return None;
+            }
+        })
     }
 
     /// A call of a `Callable` value, such as the parameter `derivative` in
