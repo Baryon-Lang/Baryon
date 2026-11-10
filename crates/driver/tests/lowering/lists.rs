@@ -404,3 +404,30 @@ fn(_1: str) -> i64 {
 "
     );
 }
+
+/// Assigning into a list slice with a step, and into a slice of a list whose elements are not
+/// copied by a slice, are not lowered yet.
+#[test]
+fn list_slice_assignments_not_lowered_yet_are_errors() {
+    let program = "\
+        def show(xs: InOut[list[i64]], grid: InOut[list[list[i64]]]):\n\
+        \x20   xs[::2] = [0, 0]\n\
+        \x20   grid[0:1] = [[1]]\n";
+    assert_eq!(
+        lower(program, "show"),
+        "\
+error: lowering does not handle assigning into a list slice with a step yet
+ --> main.byn:2:5
+  |
+2 |     xs[::2] = [0, 0]
+  |     ^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
+
+error: lowering does not handle assigning into a slice of a list of `list[i64]` yet
+ --> main.byn:3:5
+  |
+3 |     grid[0:1] = [[1]]
+  |     ^^^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}

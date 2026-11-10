@@ -30,8 +30,11 @@ impl<'db> Body<'db> {
                 _ => None,
             };
             let ty = self.expression(value, Some(filled.unwrap_or(held)));
-            // A slice is read element by element into a slice: nothing moves, nothing is kept.
-            if filled.is_none() || !self.is_view(value) {
+            // A slice is read element by element into a slice, and a list slice takes copies
+            // of the elements of its list, `xs[i:j] = ys`, as Python's does: nothing moves.
+            let list_slice =
+                self.is_view(target) && matches!(held.kind(self.db), TypeKind::List(_));
+            if !list_slice && (filled.is_none() || !self.is_view(value)) {
                 self.consume(value, ty);
             }
             match filled {
