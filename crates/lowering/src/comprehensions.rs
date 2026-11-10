@@ -7,8 +7,10 @@
 //! `[(i, j) for i in range(n) for j in range(i)]` makes the pairs with `j < i`, row by row.
 //!
 //! Each clause loops the way the `loops` module lowers a `for` statement: over `range`, an array,
-//! a list of a copy type or a tuple. `prange` and `simd` are statements' loops, so a comprehension
-//! over one is reported as not lowered. The temporaries a pass makes are dropped when the pass
+//! a list, a tuple or a `str`. `simd(range(…))` runs as its plain `range`, since `simd` only asks
+//! for vectorizing and a comprehension has no sum whose order it could change. `prange` is a
+//! statement's parallel loop, so a comprehension over it is reported as not lowered until
+//! roadmap 1.13.10 settles what it means. The temporaries a pass makes are dropped when the pass
 //! ends, so a pass that builds text or a list frees it before the next.
 
 use crate::builder::Builder;
@@ -44,9 +46,12 @@ impl<'db> Builder<'db> {
         ) else {
             return;
         };
-        if self.is_prange(iterator) || self.simd_range(iterator).is_some() {
-            return self.unsupported(iterator, "`prange` and `simd` in a comprehension");
+        if self.is_prange(iterator) {
+            return self.unsupported(iterator, "`prange` in a comprehension");
         }
+        // `simd` only asks for a vectorized loop, and a comprehension sums into nothing, so its
+        // range runs as a plain one: the same values in the same order.
+        let iterator = self.simd_range(iterator).unwrap_or(iterator);
         let pass: Pass<'_, 'db> = &mut |builder, next, _end| {
             let conditions: Vec<NodeId> = builder
                 .tree

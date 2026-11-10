@@ -557,8 +557,9 @@ def main():
 }
 
 /// `for` over a `str` (roadmap 1.13.8) visits each character, code points not bytes, as a
-/// one-character `str`, in loops and comprehensions; two loops may reuse a variable's name.
-/// Python prints the same lines.
+/// one-character `str`, in loops and comprehensions; two loops may reuse a variable's name. A
+/// comprehension over `simd(range(…))` (1.13.10) runs as its plain range. Python, with
+/// `simd(r)` as `r`, prints the same lines.
 #[test]
 fn loops_over_a_string_build_and_run() {
     let program = r#"
@@ -577,11 +578,13 @@ def main():
     for c in "ab":
         for d in c:
             print(d)
+    squares = [i * i for i in simd(range(5))]
+    print(squares[4], len(squares))
 "#;
     prints(
         "loops-over-a-string",
         program,
-        "h|é|l|l|o|,| |Å|n|g|s|t|r|ö|m| |🙂|\n5 u\n2 0\na\nb\n",
+        "h|é|l|l|o|,| |Å|n|g|s|t|r|ö|m| |🙂|\n5 u\n2 0\na\nb\n16 5\n",
     )
     .unwrap();
 }
