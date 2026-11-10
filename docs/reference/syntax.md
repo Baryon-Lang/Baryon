@@ -74,7 +74,7 @@ the spelling to use instead.
 | Star targets `a, *rest = e` | no | |
 | `if`, `elif`, `else` | yes | The condition must be a `bool`; see [Types](types.md#bool) |
 | `while` | yes | No `else` clause |
-| `for x in e` | yes | Over `range`, `prange`, `simd`, an array, a list, a string or a tuple of one type. No `else` clause |
+| `for x in e` | yes | Over `range`, `prange`, `simd`, an array, a list, a string or a tuple of one type, and over [`enumerate`, `zip` and `reversed`](#enumerate-zip-and-reversed) of these. No `else` clause |
 | `break`, `continue`, `pass`, `return` | yes | `break` and `return` are not allowed in a `prange` body |
 | `def` | yes | At module level, and as methods inside a class. Nested functions are not in version 0 |
 | `class` | yes | Only with the base `Struct` (optionally with `Copy`), `Exception` or `Enum`. No inheritance, by [decision 0015](../decisions/0015-no-class-inheritance.md); see [Types](types.md#structs) |
@@ -210,6 +210,34 @@ def main():
 
 Output that `end=` leaves without a line end still appears when the program ends, and before the
 message of a panic.
+
+### `enumerate`, `zip` and `reversed`
+
+These three walk sequences in a `for` loop or a comprehension, as in Python. The sequences are
+those a `for` loop takes: arrays, lists, strings, tuples of one type and `range`.
+
+- `enumerate(values)` gives `(count, value)` pairs, counting from 0, or from `start` when given:
+  `enumerate(values, 1)` or `enumerate(values, start=1)`. The count is an `int`.
+- `zip(a, b, ...)` gives a tuple of one element from each sequence, and stops at the end of the
+  shortest, as Python does.
+- `reversed(values)` gives the elements from the last to the first. It takes a sequence whose
+  length is known, so not `enumerate` or `zip`; reverse the sequences inside instead,
+  `zip(reversed(a), reversed(b))`.
+
+```python
+def main():
+    names = ["argon", "neon", "xenon"]
+    masses = Array([39.948, 20.180, 131.29])
+    for i, (name, mass) in enumerate(zip(names, masses), start=1):
+        print(i, name, mass)          # 1 argon 39.948, then 2 neon 20.18, ...
+    for k in reversed(range(3)):
+        print(k)                      # 2, then 1, then 0
+```
+
+None of them builds a list or copies a sequence: the loop reads each sequence in place at its own
+position, `reversed` from the end, so they cost no more than indexing by hand. A loop over
+elements that are not copied, such as the `str`s above, borrows each one, as a plain `for` loop
+does ([values and references](values-and-references.md)).
 
 ## Names and style
 

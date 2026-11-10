@@ -13,6 +13,7 @@
 //! - **Locals.** Local 0 is the return value, then one local per parameter, then one per
 //!   variable the function names, in source order, then the temporaries it needs.
 //! - **Control flow.** `if`, `while`, `for` over `range`, over a rank-1 array and over a tuple,
+//!   and over `enumerate`, `zip` and `reversed` of them (the `iterators` module),
 //!   `and`, `or`, chained comparisons and conditional expressions become basic blocks joined by
 //!   branches. A `range` step computed at run time is asserted non-zero, and its sign picks the
 //!   loop test.
@@ -278,6 +279,7 @@ mod errors;
 mod escapes;
 mod expressions;
 mod facts;
+mod iterators;
 mod lanes;
 mod lists;
 mod loops;

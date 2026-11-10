@@ -13,6 +13,7 @@ use std::process::{Command, Output};
 use std::sync::{Mutex, Once, PoisonError};
 
 mod array_methods;
+mod builtins;
 mod clang;
 mod complex;
 mod defaults;

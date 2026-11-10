@@ -7,11 +7,12 @@
 //! `[(i, j) for i in range(n) for j in range(i)]` makes the pairs with `j < i`, row by row.
 //!
 //! Each clause loops the way the `loops` module lowers a `for` statement: over `range`, an array,
-//! a list, a tuple or a `str`. `simd(range(…))` runs as its plain `range`, since `simd` only asks
-//! for vectorizing and a comprehension has no sum whose order it could change. `prange` is a
-//! statement's parallel loop, so a comprehension over it is reported as not lowered until
-//! roadmap 1.13.10 settles what it means. The temporaries a pass makes are dropped when the pass
-//! ends, so a pass that builds text or a list frees it before the next.
+//! a list, a tuple or a `str`, and `enumerate`, `zip` and `reversed` of them. `simd(range(…))`
+//! runs as its plain `range`, since `simd` only asks for vectorizing and a comprehension has no
+//! sum whose order it could change. `prange` is a statement's parallel loop, so a comprehension
+//! over it is reported as not lowered until roadmap 1.13.10 settles what it means. The
+//! temporaries a pass makes are dropped when the pass ends, so a pass that builds text or a list
+//! frees it before the next.
 
 use crate::builder::Builder;
 use crate::loops::Pass;

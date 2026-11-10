@@ -588,3 +588,51 @@ error: `end=` takes a `str` or `None`, found `i64`
   |                  ^ not a `str`"
     );
 }
+
+/// `enumerate` takes one sequence and an integer start, given second or as `start=`, and nothing
+/// else. `reversed` takes one sequence whose length is known, so not `zip` or `enumerate`, which
+/// only count forward (roadmap 1.13.13).
+#[test]
+fn enumerate_and_reversed_check_their_arguments() {
+    let program = "
+def main():
+    xs = [1, 2]
+    for p in reversed(zip(xs, xs)):
+        print(p)
+    for i, x in enumerate(xs, step=2):
+        print(i)
+    for i, x in enumerate(xs, 1.5):
+        print(i)
+    for x in reversed(xs, xs):
+        print(x)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `reversed` needs a sequence, and this counts forward only
+ --> main.byn:3:23
+  |
+3 |     for p in reversed(zip(xs, xs)):
+  |                       ^^^^^^^^^^^ not reversible
+  = note: reverse the sequences inside: `zip(reversed(a), reversed(b))`
+
+error: `enumerate` has no parameter `step`
+ --> main.byn:5:31
+  |
+5 |     for i, x in enumerate(xs, step=2):
+  |                               ^^^^ unknown parameter
+  = note: `enumerate` takes the sequence, then `start=`
+
+error: `enumerate` counts in integers, found `f64`
+ --> main.byn:7:31
+  |
+7 |     for i, x in enumerate(xs, 1.5):
+  |                               ^^^ not an integer
+
+error: `reversed` takes one sequence
+ --> main.byn:9:14
+  |
+9 |     for x in reversed(xs, xs):
+  |              ^^^^^^^^^^^^^^^^ wrong number of arguments"
+    );
+}

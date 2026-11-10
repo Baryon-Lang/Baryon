@@ -1,5 +1,6 @@
 //! Calls to the language's built-in names: number conversions such as `f64(n)`, the built-in
-//! functions, and the iterators `range`, `prange`, `enumerate` and `zip` in a `for` loop.
+//! functions, and the iterators `range`, `prange`, `enumerate`, `zip` and `reversed` in a `for`
+//! loop.
 
 use super::calls::Arguments;
 use super::{Body, numbers, relations};
@@ -98,9 +99,8 @@ impl<'db> Body<'db> {
         matches!(ty.kind(self.db), TypeKind::Primitive(primitive) if numbers::is_number(*primitive))
     }
 
-    /// The element type of a `for` loop over `range`, `prange`, `simd(range(...))`, `enumerate` or
-    /// `zip`, or
-    /// `None` when the iterator is not a call to one of them.
+    /// The element type of a `for` loop over `range`, `prange`, `simd(range(...))`, `enumerate`,
+    /// `zip` or `reversed`, or `None` when the iterator is not a call to one of them.
     pub(super) fn builtin_iteration(&mut self, iterator: NodeId) -> Option<Type<'db>> {
         if self.tree.kind(iterator) != SyntaxKind::Call {
             return None;
@@ -178,8 +178,10 @@ impl<'db> Body<'db> {
                     Some(&sequence) => self.iteration(sequence),
                     None => self.lowerer.unknown(),
                 };
+                self.enumerate_start(iterator, &arguments, int);
                 Some(Type::new(self.db, TypeKind::Tuple(vec![int, element])))
             }
+            "reversed" => Some(self.reversed(iterator, &arguments)),
             "zip" => {
                 let elements = arguments
                     .positional
@@ -190,6 +192,91 @@ impl<'db> Body<'db> {
             }
             _ => None,
         }
+    }
+
+    /// Checks the count to start from in `enumerate(sequence, start)` at `iterator`, written
+    /// second or as `start=`, which is an integer converted to `int`, as the count is. Python
+    /// takes nothing else.
+    fn enumerate_start(&mut self, iterator: NodeId, arguments: &Arguments, int: Type<'db>) {
+        let mut starts: Vec<NodeId> = arguments.positional.iter().skip(1).copied().collect();
+        for &(name, value) in &arguments.keywords {
+            if self.tree.text(name, self.text) == "start" {
+                starts.push(value);
+            } else {
+                self.expression(value, None);
+                let message = format!(
+                    "`enumerate` has no parameter `{}`",
+                    self.tree.text(name, self.text)
+                );
+                self.lowerer.error(
+                    name,
+                    &message,
+                    "unknown parameter",
+                    Some("`enumerate` takes the sequence, then `start=`"),
+                );
+            }
+        }
+        for &start in &starts {
+            let found = self.expression(start, Some(int));
+            let is_integer = matches!(
+                found.kind(self.db),
+                TypeKind::Primitive(Primitive::Integer(_))
+            );
+            if !is_integer && !relations::is_open(self.db, found) {
+                let message = format!(
+                    "`enumerate` counts in integers, found `{}`",
+                    self.show(found)
+                );
+                self.lowerer.error(start, &message, "not an integer", None);
+            }
+        }
+        if arguments.positional.is_empty() || starts.len() > 1 {
+            self.lowerer.error(
+                iterator,
+                "`enumerate` takes one sequence and at most one start",
+                "wrong number of arguments",
+                Some("write `enumerate(values)` or `enumerate(values, start=1)`"),
+            );
+        }
+    }
+
+    /// The element type of `reversed(sequence)` at `iterator`: the sequence's own element,
+    /// from the last to the first. Like Python, it reverses a sequence whose length is known,
+    /// such as a list, an array or a `range`, and not `enumerate` or `zip`, which only count
+    /// forward.
+    fn reversed(&mut self, iterator: NodeId, arguments: &Arguments) -> Type<'db> {
+        for &(_, value) in &arguments.keywords {
+            self.expression(value, None);
+        }
+        let [sequence] = arguments.positional.as_slice() else {
+            for &argument in &arguments.positional {
+                self.expression(argument, None);
+            }
+            return self.lowerer.error(
+                iterator,
+                "`reversed` takes one sequence",
+                "wrong number of arguments",
+                None,
+            );
+        };
+        let element = self.iteration(*sequence);
+        if !arguments.keywords.is_empty() {
+            return self.lowerer.error(
+                iterator,
+                "`reversed` takes no keyword arguments",
+                "unknown parameter",
+                None,
+            );
+        }
+        if self.calls_builtin(*sequence, "enumerate") || self.calls_builtin(*sequence, "zip") {
+            return self.lowerer.error(
+                *sequence,
+                "`reversed` needs a sequence, and this counts forward only",
+                "not reversible",
+                Some("reverse the sequences inside: `zip(reversed(a), reversed(b))`"),
+            );
+        }
+        element
     }
 
     /// Records the call `node` of `function` for the stages after the checker, when it calls
