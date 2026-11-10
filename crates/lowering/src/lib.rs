@@ -18,8 +18,10 @@
 //!   loop test.
 //! - **Moves and borrows.** A read of a copy type copies; a read of any other type in a place
 //!   that takes the value moves it. Each call argument is passed in the mode its parameter
-//!   declares (decision 0006). An argument left out takes its parameter's default, a literal
-//!   or constant the call writes itself.
+//!   declares (decision 0006). An argument left out takes its parameter's default, after the
+//!   arguments passed: a literal or constant the call writes itself, or the value of a small
+//!   function of its own, lowered from the default in the callee's module and named by the
+//!   parameter, which the call calls each time (decision 0027, the `defaults` module).
 //! - **Drops.** Every exit from the function drops each variable and `Owned` parameter that
 //!   owns memory, and each statement drops the owning temporaries it made. In a built body a
 //!   drop of a value that was moved out does nothing; drop elaboration makes that exact.
@@ -94,11 +96,11 @@
 //! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, slices, indexing lists and strings,
 //! adding into a slice of an array in `accumulate=`, `match` captures of values that are not copy
 //! types or inside `|`, `raise ... from`, an `except` that names its error through a module, calls
-//! that leave out an argument whose default is not a literal or a constant, or that belongs to a
-//! generic function, the built-in functions and methods other than `print`, `min` and `max` of
-//! numbers, `len` of an array, `round` with one argument, the `math` functions above, the array
-//! constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a `Fixed` array, `**` on
-//! integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`, and comprehensions.
+//! that leave out an argument of a generic function, the built-in functions and methods other than
+//! `print`, `min` and `max` of numbers, `len` of an array, `round` with one argument, the `math`
+//! functions above, the array constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a
+//! `Fixed` array, `**` on integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`,
+//! and comprehensions.
 //!
 //! # Example
 //!
@@ -248,6 +250,7 @@ mod builder;
 mod calls;
 mod constants;
 mod creation;
+mod defaults;
 mod errors;
 mod escapes;
 mod expressions;
@@ -285,6 +288,9 @@ use types::{Declaration, Item, TypeDb};
 /// documentation), in source order. Fails with no errors when `item` is not a function, or its
 /// declaration or body has errors, which the checker already reports.
 pub fn lower<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Result<Body<'db>, Vec<Diagnostic>> {
+    if definition(db.parse(item.file(db)).tree(), item.name(db)).is_none() {
+        return defaults::lower(db, item);
+    }
     let Declaration::Function(signature) = &db.declaration(item).declaration else {
         return Err(Vec::new());
     };

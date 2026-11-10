@@ -55,7 +55,7 @@ checks what it prints.
 | Assignment, annotated assignment, augmented assignment including `**=`; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a`, and nested unpacking, `a, (b, c) = e` | |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
 | `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a tuple of one copy type, such as `(2, 3, 5)`; with a target that unpacks, `for x, y in points` | `for` over lists and strings; over a tuple of `str` or other values that are not copied; a `prange` step that is not a constant |
-| `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values) that are literals or `Final` constants | Leaving out an argument whose default is any other expression |
+| `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values), each evaluated at every call that leaves its argument out | Leaving out an argument of a generic function |
 | `class` with `Struct`, `Copy`, `Exception` and `Enum` bases; `@layout("C")` | |
 | `raise` and `try`/`except`, including bare `raise` | `raise ... from` |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |

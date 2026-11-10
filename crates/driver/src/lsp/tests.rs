@@ -54,6 +54,9 @@ fn initialized_reply() -> Value {
             "capabilities": {
                 "positionEncoding": "utf-16",
                 "textDocumentSync": {"openClose": true, "change": 1},
+                "hoverProvider": true,
+                "definitionProvider": true,
+                "completionProvider": {"triggerCharacters": ["."]},
             },
             "serverInfo": {"name": "baryon", "version": env!("CARGO_PKG_VERSION")},
         },
@@ -202,9 +205,10 @@ fn requests_follow_the_lifecycle() {
         request(1, "textDocument/hover", &json!({})),
         request(2, "initialize", &json!({"rootUri": null})),
         request(3, "initialize", &json!({"rootUri": null})),
-        request(4, "textDocument/hover", &json!({})),
-        request(5, "shutdown", &Value::Null),
+        request(4, "textDocument/rename", &json!({})),
+        request(5, "textDocument/hover", &json!({})),
         request(6, "shutdown", &Value::Null),
+        request(7, "shutdown", &Value::Null),
         notification("exit", &Value::Null),
     ]);
     assert_eq!(status, 0);
@@ -225,10 +229,17 @@ fn requests_follow_the_lifecycle() {
             ),
             (
                 &json!(4),
-                &json!({"code": -32601, "message": "`textDocument/hover` is not supported"})
+                &json!({"code": -32601, "message": "`textDocument/rename` is not supported"})
             ),
             (
-                &json!(6),
+                &json!(5),
+                &json!({
+                    "code": -32602,
+                    "message": "`textDocument/hover` needs a document and a position",
+                })
+            ),
+            (
+                &json!(7),
                 &json!({"code": -32600, "message": "the server is shutting down"})
             ),
         ]
@@ -271,4 +282,93 @@ fn a_malformed_notification_is_reported() {
             &json!({"type": 2, "message": "baryon: ignored a malformed `textDocument/didOpen`"}),
         )
     );
+}
+
+/// A request about `position` (line and UTF-16 character) in `uri`.
+fn at(id: u32, method: &str, uri: &str, line: u32, character: u32) -> Value {
+    request(
+        id,
+        method,
+        &json!({
+            "textDocument": {"uri": uri},
+            "position": {"line": line, "character": character},
+        }),
+    )
+}
+
+/// The `result` of the reply to request `id` among `replies`.
+fn result(replies: &[Value], id: u32) -> &Value {
+    &replies
+        .iter()
+        .find(|reply| reply["id"] == json!(id))
+        .unwrap()["result"]
+}
+
+#[test]
+fn hover_definition_and_completion_answer_across_the_workspace() {
+    let root = std::env::temp_dir().join(format!("baryon-lsp-queries-{}", std::process::id()));
+    fs::create_dir_all(root.join("physics")).unwrap();
+    fs::write(
+        root.join("physics/units.byn"),
+        "C: Final = 299792458.0\n\"\"\"The speed of light, in m/s.\"\"\"\n",
+    )
+    .unwrap();
+    let main = root.join("main.byn");
+    // `ψ` before the names checks that positions count UTF-16 code units, not bytes.
+    let text = "import physics.units\n\n\ndef main():\n    ψ = physics.units.C\n    print(ψ)\n";
+    fs::write(&main, text).unwrap();
+    let units = convert::uri(&root.join("physics/units.byn"));
+    let uri = convert::uri(&main);
+    let [shutdown, exit] = goodbye(9);
+    let (_, replies) = session(&[
+        initialize(Some(&root)),
+        open(&uri, text),
+        // `C` on line 4: `    ψ = physics.units.C`.
+        at(2, "textDocument/hover", &uri, 4, 22),
+        at(3, "textDocument/definition", &uri, 4, 22),
+        // `ψ` in `print(ψ)`, a character after the open parenthesis.
+        at(4, "textDocument/hover", &uri, 5, 11),
+        at(5, "textDocument/completion", &uri, 4, 22),
+        // Nothing there: whitespace.
+        at(6, "textDocument/hover", &uri, 1, 0),
+        at(7, "textDocument/definition", &uri, 5, 5),
+        at(8, "textDocument/hover", "file:///elsewhere.byn", 0, 0),
+        shutdown,
+        exit,
+    ]);
+    fs::remove_dir_all(&root).unwrap();
+    assert_eq!(
+        result(&replies, 2),
+        &json!({
+            "contents": {
+                "kind": "markdown",
+                "value": "```baryon\nC: Final[f64] = 299792458.0\n```\n\nThe speed of light, in m/s.",
+            },
+            "range": {
+                "start": {"line": 4, "character": 22},
+                "end": {"line": 4, "character": 23},
+            },
+        })
+    );
+    assert_eq!(
+        result(&replies, 3),
+        &json!({
+            "uri": units,
+            "range": {
+                "start": {"line": 0, "character": 0},
+                "end": {"line": 0, "character": 1},
+            },
+        })
+    );
+    assert_eq!(
+        result(&replies, 4)["contents"]["value"],
+        json!("```baryon\nψ: f64\n```")
+    );
+    assert_eq!(
+        result(&replies, 5),
+        &json!([{"label": "C", "kind": 21, "detail": "C: Final[f64] = 299792458.0"}])
+    );
+    assert_eq!(result(&replies, 6), &Value::Null);
+    assert_eq!(result(&replies, 7), &Value::Null);
+    assert_eq!(result(&replies, 8), &Value::Null);
 }
