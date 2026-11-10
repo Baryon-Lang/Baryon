@@ -2,7 +2,7 @@
 //! `with`, the `OSError` a failure raises, the panic when a dropped file cannot be written out,
 //! and `sys.exit` writing out what an open file still holds.
 
-use super::{baryon_build, package, panic_report};
+use super::{baryon_build, package};
 use std::fs;
 use std::process::Command;
 
@@ -115,7 +115,7 @@ def main() -> Raises[None, OSError]:
     let panicked = run(&["drop"]);
     assert_eq!(panicked.status.code(), Some(101), "{panicked:?}");
     assert_eq!(
-        panic_report(&panicked),
+        super::panic_report(&panicked),
         "panic: could not write out `/dev/full` when it was dropped: No space left on device\n"
     );
 }
