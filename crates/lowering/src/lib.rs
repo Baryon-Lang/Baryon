@@ -294,6 +294,7 @@ mod parallel;
 mod patterns;
 mod process;
 mod random;
+mod reductions;
 mod slices;
 mod statements;
 #[cfg(test)]

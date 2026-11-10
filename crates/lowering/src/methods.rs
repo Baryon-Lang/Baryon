@@ -213,11 +213,14 @@ impl<'db> Builder<'db> {
         });
     }
 
-    /// `a.min()` (`smallest`) or `a.max()` on an `Array` or `Fixed` array of numbers, into
-    /// `place`: the smallest or largest element, scanning in row-major order. An empty array
+    /// `a.min()` (`smallest`) or `a.max()` on an `Array` or `Fixed` array of numbers, and
+    /// `min(a)` or `max(a)` of one too or of a list of numbers (roadmap 1.13.13), into `place`:
+    /// the smallest or largest element, scanning in row-major order. An empty array or list
     /// panics, through a [`Check::NotEmpty`], since it has no smallest element. A float NaN
     /// anywhere gives NaN, as `numpy.min` does: a NaN element replaces the best so far, and
-    /// nothing compares smaller or larger than a NaN to replace it.
+    /// nothing compares smaller or larger than a NaN to replace it. A list follows the same
+    /// rule rather than Python's, whose answer depends on where the NaN is (Collins,
+    /// 2026-11-10).
     pub(crate) fn array_extreme(
         &mut self,
         place: Place,
@@ -226,20 +229,24 @@ impl<'db> Builder<'db> {
         node: NodeId,
     ) {
         let ty = self.ty(array);
-        let element = self.element(ty);
+        let (element, rank, list) = match ty.kind(self.db) {
+            TypeKind::List(element) => (*element, 1, true),
+            _ => (self.element(ty), self.rank(ty), false),
+        };
         if !matches!(element.kind(self.db), TypeKind::Primitive(_)) {
             let name = if smallest { "min" } else { "max" };
+            let sequence = if list { "a list" } else { "an array" };
             return self.unsupported(
                 node,
-                &format!("`{name}` of an array whose elements are not numbers"),
+                &format!("`{name}` of {sequence} whose elements are not numbers"),
             );
         }
         let source = self.borrow(array);
-        let lengths: Vec<Operand<'db>> = (0..self.rank(ty))
+        let lengths: Vec<Operand<'db>> = (0..rank)
             .map(|dimension| self.length(&source, ty, dimension, node))
             .collect();
-        if matches!(ty.kind(self.db), TypeKind::Array { .. }) {
-            self.not_empty(&lengths, node);
+        if list || matches!(ty.kind(self.db), TypeKind::Array { .. }) {
+            self.not_empty(&lengths, list, node);
         }
         let first: Vec<Local> = lengths.iter().map(|_| self.zero_index(node)).collect();
         let best = self.temporary(element, node);
@@ -295,8 +302,9 @@ impl<'db> Builder<'db> {
         self.assign(place, Rvalue::Use(Operand::Copy(Place::from(best))), node);
     }
 
-    /// Panics, through a [`Check::NotEmpty`] reported at `node`, when any of `lengths` is 0.
-    fn not_empty(&mut self, lengths: &[Operand<'db>], node: NodeId) {
+    /// Panics, through a [`Check::NotEmpty`] reported at `node`, when any of `lengths` is 0;
+    /// `list` says whether the sequence is a list, for the panic message.
+    fn not_empty(&mut self, lengths: &[Operand<'db>], list: bool, node: NodeId) {
         let int = self.int_type();
         let size = self.temporary(int, node);
         let one = Operand::Constant(Constant::integer(int, 1));
@@ -324,7 +332,7 @@ impl<'db> Builder<'db> {
         );
         self.then(node, |target| TerminatorKind::Assert {
             condition: Operand::Copy(Place::from(any)),
-            check: Check::NotEmpty { list: false },
+            check: Check::NotEmpty { list },
             target,
         });
     }
