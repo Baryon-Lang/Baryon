@@ -57,9 +57,10 @@
 //!   `a.round()` rounds each element and `a.fill(value)` writes each one. The matrix product
 //!   `a @ b` is a loop nest over the result's entries with an inner loop that adds the products.
 //! - **Lists.** A display `[a, b]` is an [`Aggregate`](mir::Rvalue::Aggregate) of a list type,
-//!   `xs.append(value)` calls [`Builtin::Append`](mir::Builtin::Append), `len(xs)` and `xs[i]`
-//!   read it as a one-dimensional array, and `Array(xs)` copies it into a new array. Only lists
-//!   of copy types, such as `list[f64]`, are built so far.
+//!   `xs.append(value)` calls [`Builtin::Append`](mir::Builtin::Append) and `xs.pop()`
+//!   [`Builtin::Pop`](mir::Builtin::Pop), `len(xs)` and `xs[i]` read it as a one-dimensional
+//!   array, `value in xs` and `xs.copy()` loop over its elements, and `Array(xs)` copies it into
+//!   a new array. Elements may be of any type; the backend drops them with the list.
 //! - **Math.** The functions of `math` for real numbers, and `**` and `**=` on floats, call a
 //!   [`MathFunction`](mir::MathFunction), as [`Builtin::Math`](mir::Builtin::Math) calls a
 //!   backend writes; `floor`, `ceil`, `trunc` and the built-in `round(x)` round and then convert

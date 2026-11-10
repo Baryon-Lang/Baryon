@@ -138,7 +138,9 @@ Tuples unpack in assignments and `for` loops: `x, y, z = position`.
 `Vec`, C++'s `std::vector`. It supports `append`, `pop`, `copy`, `len`, indexing, slicing, `in`,
 iteration and list comprehensions. `copy` makes a new list holding a copy of each element, which is
 how to keep a list and also pass it on, since a list moves
-([values and references](values-and-references.md#moves)). A list is for building up data of
+([values and references](values-and-references.md#moves)). A slice, `values[1:n]`, is a new list
+too, as in Python, unlike an array slice, which is a view; its bounds follow the rules of
+[array slicing](arrays.md#slicing), so a bound past the end panics. A list is for building up data of
 unknown length; convert it to an `Array` with `Array(values)` for numeric work. An empty list
 needs its type written: `columns: list[i64] = []`.
 

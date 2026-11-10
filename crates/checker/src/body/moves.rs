@@ -63,6 +63,9 @@ impl<'db> Body<'db> {
                     self.move_variable(root, node);
                 }
             }
+            // A slice of a list is a new list, as in Python, so keeping it moves nothing.
+            SyntaxKind::Subscript
+                if self.is_view(node) && matches!(ty.kind(self.db), TypeKind::List(_)) => {}
             SyntaxKind::Subscript if self.is_view(node) => {
                 // A view borrows the array, and a borrow cannot be stored (reference,
                 // "Slices").
