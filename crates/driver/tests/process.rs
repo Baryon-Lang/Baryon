@@ -92,3 +92,33 @@ error: `os.environ.setdefault` is not in Baryon yet
    = note: so far `sys` has `argv` and `exit`, and `os` has `getenv` and `environ.get` (decision 0036)"#
     );
 }
+
+/// `OSError` and `os.ErrorKind` are classes of the standard library's own source (decision
+/// 0038): their fields and members are checked like a program's, and a name the class does not
+/// have is an error.
+#[test]
+fn os_error_and_error_kind_are_library_classes() {
+    let program = r#"
+import os
+from os import ErrorKind
+
+
+def describe(error: OSError) -> str:
+    if error.kind == ErrorKind.FILE_NOT_FOUND:
+        return "no " + error.filename
+    code: i32 = error.errno
+    return error.message
+
+
+def fail() -> Raises[None, OSError]:
+    raise OSError(os.ErrorKind.PERMISSION, 13, "Permission denied", "data.txt")
+"#;
+    assert_eq!(
+        check_one(program),
+        r"error: `OSError` has no field or method `message`
+ --> main.byn:9:12
+  |
+9 |     return error.message
+  |            ^^^^^^^^^^^^^ not defined on this struct"
+    );
+}

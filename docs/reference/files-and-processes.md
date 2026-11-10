@@ -77,11 +77,46 @@ data race in the C library, and every `prange` loop runs on several threads. A p
 needs another environment gives one to the program it runs, which `subprocess.run(..., env=...)`
 will do (decision 0036).
 
+## Errors: `OSError`
+
+Every operation on the operating system that can fail raises one error type, `OSError`, which
+every module can use without an import:
+
+```python
+class OSError(Exception):
+    kind: ErrorKind   # what went wrong, for a program to test
+    errno: i32        # the operating system's error number, 0 when there is none
+    strerror: str     # the operating system's message, such as "No such file or directory"
+    filename: str     # the path involved, or "" when there is none
+```
+
+`ErrorKind` is an `Enum` in `os`, with the members `FILE_NOT_FOUND`, `FILE_EXISTS`,
+`PERMISSION`, `IS_A_DIRECTORY`, `NOT_A_DIRECTORY`, `BROKEN_PIPE`, `INTERRUPTED`, `TIMEOUT`,
+`INVALID_DATA` and `OTHER`, named after Python's subclasses of `OSError`. Baryon has no class
+inheritance, so where Python code catches `FileNotFoundError`, a Baryon program catches `OSError`
+and tests `kind`:
+
+```python
+from os import ErrorKind
+
+
+def settings(error: OSError) -> str:
+    if error.kind == ErrorKind.FILE_NOT_FOUND:
+        return "no " + error.filename + "; using the defaults"
+    return error.strerror.copy()
+```
+
+Both classes are written in Baryon, in source files the compiler carries
+([decision 0038](../decisions/0038-standard-library-in-baryon.md)), so they behave exactly like a
+program's own classes: `OSError(...)` builds one, `raise` and `except` work as for any exception,
+and one that leaves `main` is printed in Python's form, such as
+`error: OSError(kind=ErrorKind.FILE_NOT_FOUND, errno=2, strerror='No such file or directory', filename='heat.toml')`.
+
 ## What is not built yet
 
 Decision 0036 settles the rest of this chapter's surface, and the compiler reports each part by
 name until it is built: `` `sys.stdin` is not in Baryon yet ``. In order, the next parts are
 `os.environ[name]`, `name in os.environ` and `os.environ.copy()`; `open`, `with open(...) as f`
-and the file methods, with errors as one `OSError` whose `kind` says what went wrong;
+and the file methods, which raise `OSError`;
 `sys.stdin`, `sys.stdout`, `sys.stderr`, `input` and `print(..., file=)`; `Array.fromfile` and
 `a.tofile`; `pathlib.Path` and the directory functions of `os`; and `subprocess.run`.

@@ -326,6 +326,8 @@ impl<'a> Walker<'a> {
         let name = self.name(node);
         let definition = if let Some(found) = self.scopes.lookup(name) {
             found.clone()?
+        } else if let Some(library) = self.importer.library("builtins", name) {
+            library
         } else if let Some(builtin) = BUILTINS.into_iter().find(|&builtin| builtin == name) {
             Definition::Builtin(builtin)
         } else {
@@ -358,10 +360,7 @@ impl<'a> Walker<'a> {
             Definition::Standard {
                 module,
                 member: None,
-            } => Definition::Standard {
-                module,
-                member: Some(member.to_owned()),
-            },
+            } => self.importer.standard_member(module, member),
             _ => return None,
         };
         self.references.insert(attribute, definition.clone());
