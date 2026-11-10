@@ -29,6 +29,8 @@
 //! | [`baryon_rt_sum_strided_f64`], [`baryon_rt_sum_strided_f32`] | The same for an `Array` that may be a view, with any strides |
 //! | [`baryon_rt_dot_f64`], [`baryon_rt_dot_f32`] | Add the products of two float arrays' elements in the same order, for `a.dot(b)` |
 //! | [`baryon_rt_dot_strided_f64`], [`baryon_rt_dot_strided_f32`] | The same for two rank-1 `Array`s that may be views, each with its stride |
+//! | [`baryon_rt_print_complex128`], [`baryon_rt_print_complex64`] | Print a complex number as Python's `repr` writes it, such as `(1+2j)` |
+//! | [`baryon_rt_power_complex128`], [`baryon_rt_power_complex64`] | `z ** w` on complex numbers, as Python computes it |
 //! | [`baryon_rt_str_compare`], [`baryon_rt_str_contains`], [`baryon_rt_str_length`] | Compare two `str`s by code point, find one inside another, and count characters, for `==`, `<`, `in` and `len` of `str` |
 //! | [`baryon_rt_print_str_quoted`] | Print a `str` inside a tuple or struct, or a field of an error that ends `main`, as Python's `repr` writes it, quoted |
 //! | [`baryon_rt_dict_find`], [`baryon_rt_dict_insert`], [`baryon_rt_dict_remove`], [`baryon_rt_dict_next`], [`baryon_rt_dict_length`], [`baryon_rt_dict_free`] | The hash table behind `dict`: find a key, add one, remove an entry, step through the entries in insertion order, count and free (decision 0035) |
@@ -74,6 +76,7 @@
 mod abi;
 mod accumulate;
 mod backtrace;
+mod complex;
 mod dict;
 mod format;
 mod location;
@@ -93,12 +96,13 @@ pub use abi::{
     baryon_rt_dot_strided_f64, baryon_rt_flush, baryon_rt_panic, baryon_rt_panic_exponent,
     baryon_rt_panic_index, baryon_rt_panic_key, baryon_rt_panic_length_mismatch,
     baryon_rt_panic_slice, baryon_rt_parallel_for, baryon_rt_philox_new, baryon_rt_philox_uniform,
-    baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
-    baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64, baryon_rt_str_compare,
-    baryon_rt_str_contains, baryon_rt_str_length, baryon_rt_sum_f32, baryon_rt_sum_f64,
-    baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64, baryon_rt_text_bool, baryon_rt_text_f32,
-    baryon_rt_text_f64, baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new,
-    baryon_rt_text_str, baryon_rt_text_u64,
+    baryon_rt_power_complex64, baryon_rt_power_complex128, baryon_rt_print_bool,
+    baryon_rt_print_complex64, baryon_rt_print_complex128, baryon_rt_print_f32,
+    baryon_rt_print_f64, baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted,
+    baryon_rt_print_u64, baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_length,
+    baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64,
+    baryon_rt_text_bool, baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish,
+    baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
 };
 pub use accumulate::Accumulator;
 pub use dict::{DictLayout, KeyPart, STR_PART, Table};

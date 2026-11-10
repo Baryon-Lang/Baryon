@@ -7,7 +7,8 @@
 //! one square-root instruction, folds them on constants, and calls `libm` for the rest, which the
 //! driver links with `-lm` (decision 0020). Either way the result is the C library's, so it can
 //! differ in the last bit between platforms, as `NumPy`'s does. Since none of them can fail, the call needs no error
-//! edge and no check. Every operand and the result share one float type, as `mir` requires.
+//! edge and no check. Every operand and the result share one float type, as `mir` requires,
+//! except `**` on complex numbers, which calls the runtime (the `complex` module).
 //!
 //! A [`Builtin::Sum`](mir::Builtin::Sum) of floats calls the runtime's pairwise sum, and a
 //! [`Builtin::Dot`](mir::Builtin::Dot) its pairwise dot product. A `Fixed` array is one
@@ -34,9 +35,11 @@ impl<'db> Function<'_, '_, 'db> {
         target: BlockId,
     ) -> Result<(), Unsupported> {
         let (address, ty) = self.place(destination)?;
-        let (llvm, suffix) = match self.types.number(ty) {
-            Some(Number::Float(32)) => ("float", "f32"),
-            Some(Number::Float(_)) => ("double", "f64"),
+        let complex = self.complex_part(ty);
+        let (llvm, suffix) = match (self.types.number(ty), complex) {
+            (Some(Number::Float(32)), _) => ("float", "f32"),
+            (Some(Number::Float(_)), _) => ("double", "f64"),
+            (_, Some(_)) => ("", ""),
             _ => return Err(self.types.unsupported(ty)),
         };
         let mut values = Vec::with_capacity(arguments.len());
@@ -49,8 +52,21 @@ impl<'db> Function<'_, '_, 'db> {
                         .ok_or_else(|| Unsupported::new("`None` where a value is needed"))?
                 }
             };
-            values.push(format!("{llvm} {value}"));
+            values.push(value);
         }
+        if let Some(part) = complex {
+            if function != MathFunction::Power {
+                return Err(Unsupported::new(format!(
+                    "`{}` of complex numbers",
+                    function.name()
+                )));
+            }
+            return self.complex_power(part, &values, &address, target);
+        }
+        let values: Vec<String> = values
+            .into_iter()
+            .map(|value| format!("{llvm} {value}"))
+            .collect();
         let result = match routine(function) {
             Routine::Intrinsic(name) => {
                 let intrinsic = format!("llvm.{name}.{suffix}");

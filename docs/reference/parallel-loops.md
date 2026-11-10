@@ -262,4 +262,4 @@ differs, but it is the same on every machine, vectorized or not. Eight independe
 remove the wait for each addition to finish before the next can start, which is most of the
 speed-up. Integer reductions, `min` and `max` give the same result in any order and are not split.
 A `simd` loop that sums into a complex variable runs unvectorized, in the plain loop's order,
-until complex numbers build (roadmap 1.10.13).
+until complex sums get lanes of their own (roadmap idea I.37).

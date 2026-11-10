@@ -86,6 +86,61 @@ integer `a.sum()` and `v.dot(w)`. `abs` of the type's minimum, `abs(-92233720368
 not fit either and panics with ``integer overflow in `-` ``. A result that differs between the two builds is an overflow the debug build
 would have reported, so test in a debug build and time in a release build.
 
+### Complex numbers
+
+A complex number holds two floats: its *real part* and its *imaginary part*. `complex128`, also
+spelled `complex`, has `f64` parts, the same as Python's `complex`; `complex64` has `f32` parts,
+the same as `numpy.complex64`. Write one with an imaginary literal, a number followed by `j`, or
+build one from its parts with `complex(re, im)`:
+
+```python
+def impedance(r: f64, l: f64, c: f64, omega: f64) -> complex:
+    return complex(r, omega * l - 1 / (omega * c))
+
+
+def main():
+    z = impedance(50.0, 0.1, 1e-5, 2000.0)
+    current = 10.0 / z
+    print(z, abs(current), (10.0 * current.conjugate()).real / 2)
+```
+
+This prints `(50+150j) 0.0632455532033676 0.1`, as Python does: the impedance of a resistor, a
+coil and a capacitor in series at angular frequency `omega`, the amplitude of the current a 10 V
+source drives through it, and the power it draws.
+
+| Operation | Result |
+| --- | --- |
+| `z + w`, `z - w`, `z * w`, `z / w`, `-z` | A complex number, computed as Python computes it, so the bits match |
+| `z ** w` | A complex number: repeated multiplication for a whole exponent of at most 100 in size, polar form otherwise, as in Python |
+| `z == w`, `z != w` | A `bool`: both parts equal, or either part different |
+| `z.real`, `z.imag` | The part, a float of the parts' width: `f64` for a `complex128` |
+| `z.conjugate()` | The same number with its imaginary part negated |
+| `abs(z)` | The modulus, `math.hypot(z.real, z.imag)`, a float |
+| `complex(re, im)`, `complex64(re, im)` | A complex number of that type from two real numbers, each converted to the parts' type |
+| `complex(x)` | `x` as a complex number with imaginary part `0.0`, as for any [conversion](#conversions) |
+
+A real number mixes with a complex number by [rule 3](#number-mixing): `2 * z` converts `2` to
+`2+0j` first, so `1.5 - 2j` is `(1.5-2j)` and an `f64` mixes with a `complex128`, an `f32` with a
+`complex64`. `complex64` arithmetic works in `f32`, as NumPy's does.
+
+The parts of a complex number are read, never assigned: it is a value, like a float, so
+`z.real = 1.0` is an error; write `z = complex(1.0, z.imag)`. As in Python, there is no `<`,
+`<=`, `>` or `>=`, no `//` or `%`, no `round`, `min` or `max`, and no conversion to a real
+number: `f64(z)` is an error that suggests `z.real` or `abs(z)`.
+
+Dividing by zero and raising zero to a negative or complex power follow the rule for floats:
+they give IEEE 754 results, as NumPy does, where Python raises `ZeroDivisionError`. `z / 0`
+divides each part by `+0.0`, so `(1+1j) / 0` is `inf+infj` and `1j / 0` is `nan+infj`, and
+`0j ** -1` is `nan+nanj`. A result too large for the parts' type has infinite parts where
+Python raises `OverflowError`.
+
+`print(z)` writes what Python's `print` writes: each part as `print` writes a float, but
+without the `.0` of a whole number, the imaginary part always with its sign, all in
+parentheses, as `(1.5-2j)`;
+a number whose real part is `+0.0` is written as its imaginary part alone, `2j`. `-2j` prints
+`(-0-2j)`, as in Python, since negating `2j` negates its real part `0.0` too. A `complex64`
+prints its parts' fewest `f32` digits, `(0.1+0.2j)`, as NumPy does.
+
 ## bool
 
 `bool` is its own type, not a number: `True + 1` is an error. Conditions in `if`, `while`, `and`,

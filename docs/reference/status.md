@@ -60,16 +60,17 @@ checks what it prints.
 | `raise` and `try`/`except`, including bare `raise` | |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
 | `with unsafe:` | |
-| Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications | Complex literals such as `2j`; `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
+| Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications; complex literals such as `2j` | `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
 | `+ - * / // % **`, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions; comparisons, `in` and `not in` between two `str`s | `in` and `not in` on arrays and tuples |
-| `min`, `max`, `len` of arrays, lists and `str`, `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers and floats | `abs` of a complex number; `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; the integer and sequence functions of `math`, such as `gcd` and `fsum`; the rest of `random` |
+| `min`, `max`, `len` of arrays, lists and `str`, `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)`; `abs` of integers, floats and complex numbers | `float(text)` and the other conversions of a `str` to a number; `round(x, digits)`, `sum`, `enumerate`, `zip`; the integer and sequence functions of `math`, such as `gcd` and `fsum`; the rest of `random` |
 | `@test` functions, with `baryon test` | |
 
 ## Types
 
 | Builds today | Not built yet |
 | --- | --- |
-| Every integer type, `f32`, `f64` and `bool`, with Python's number mixing, `//` and `%` | `complex64` and `complex128` |
+| Every integer type, `f32`, `f64` and `bool`, with Python's number mixing, `//` and `%` | |
+| [Complex numbers](types.md#complex-numbers) `complex64` and `complex128`: arithmetic, `==`, `real`, `imag`, `conjugate()`, `abs`, `complex(re, im)` and `print` | A complex number in an f-string; `a.sum()` of a complex array; complex numbers in `prange` reductions and `accumulate=`; the `cmath` module (roadmap idea I.37) |
 | Conversions that panic when the value does not fit | |
 | `str`: literals, f-strings, `+`, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len` | Indexing and slicing a `str`; its methods, such as `split` and `strip` |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
@@ -132,7 +133,7 @@ idea I.18), and [Types](#types) lists the operations it does not check yet.
 | Builds today | Not built yet |
 | --- | --- |
 | `prange` with the same arguments as `range`, its inferred reductions and their reproducible combine; `accumulate=` of array variables and of struct fields such as `atoms.forces`, adding into elements and their lanes, and into slices such as `forces[j, :] += f` | |
-| `simd(range(...))`, which asks LLVM to vectorize the loop; a float sum or product in one adds into 8 fixed lanes, so it gives the same bits on every machine | A `simd` loop that sums complex numbers runs unvectorized (roadmap 1.10.13); an error when LLVM cannot vectorize a `simd` loop, such as one whose bounds checks it cannot move out of the loop (roadmap 3.7); until then such a loop runs unvectorized |
+| `simd(range(...))`, which asks LLVM to vectorize the loop; a float sum or product in one adds into 8 fixed lanes, so it gives the same bits on every machine | A `simd` loop that sums complex numbers runs unvectorized (roadmap idea I.37); an error when LLVM cannot vectorize a `simd` loop, such as one whose bounds checks it cannot move out of the loop (roadmap 3.7); until then such a loop runs unvectorized |
 
 `baryon check` applies every rule of the chapter, so a `prange` loop that breaks one is reported
 today, before it can be built.

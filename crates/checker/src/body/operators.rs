@@ -71,6 +71,18 @@ impl<'db> Body<'db> {
                         _ => None,
                     },
                     Operator::MatrixMultiply => None,
+                    Operator::FloorDivide | Operator::Modulo
+                        if matches!(a, Primitive::Complex(_))
+                            || matches!(b, Primitive::Complex(_)) =>
+                    {
+                        let message = format!("`{symbol}` is not defined on complex numbers");
+                        return self.lowerer.error(
+                            node,
+                            &message,
+                            "a complex number",
+                            Some("Python has no `//` or `%` of complex numbers either"),
+                        );
+                    }
                     _ => numbers::arithmetic(operator, *a, *b),
                 };
                 match result {

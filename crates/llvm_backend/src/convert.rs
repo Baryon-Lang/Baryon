@@ -20,6 +20,21 @@ impl<'db> Function<'_, '_, 'db> {
         to: Type<'db>,
     ) -> Result<String, Unsupported> {
         let (value, from) = self.value(operand)?;
+        if let Some(part) = self.complex_part(to) {
+            return self.complex_convert(&value, from, part);
+        }
+        self.convert_value(&value, from, to)
+    }
+
+    /// The number `value` of type `from` converted to the real number type `to`, checked as
+    /// [`convert`](Self::convert) says.
+    pub(crate) fn convert_value(
+        &mut self,
+        value: &str,
+        from: Type<'db>,
+        to: Type<'db>,
+    ) -> Result<String, Unsupported> {
+        let value = value.to_owned();
         let (source, source_llvm) = self.scalar(from)?;
         let (target, target_llvm) = self.scalar(to)?;
         let instruction = match (source, target) {
