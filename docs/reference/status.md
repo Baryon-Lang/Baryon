@@ -51,7 +51,7 @@ checks what it prints.
 | Builds today | Not built yet |
 | --- | --- |
 | Packages of several modules; `import m`, `from m import x`, `as`; calling a function, reading a constant and naming an enum member through its module, `physics.units.twice(x)`, `units.C`, `units.Phase.GAS` | |
-| `main` in `main.byn`; [`print`](syntax.md#what-print-writes-for-each-value) of numbers, `bool`, `str`, `None`, `T \| None`, tuples, enum members, structs, lists and dicts, with `sep=` and `end=` | `print` of arrays, as NumPy writes them (roadmap 1.10.15); a tuple holding `None` |
+| `main` in `main.byn`; [`print`](syntax.md#what-print-writes-for-each-value) of numbers, `bool`, `str`, `None`, `T \| None`, tuples, enum members, structs, lists and dicts, with `sep=` and `end=`; arrays of numbers and `bool`, [as NumPy writes them](arrays.md#printing) | `print` of arrays of `str` or structs; a tuple holding `None` |
 | Assignment, annotated assignment, augmented assignment including `**=`; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a`, and nested unpacking, `a, (b, c) = e` | |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
 | `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a list, such as `list[f64]` or `list[str]`; over a tuple whose items have one type, such as `(2, 3, 5)`; over the characters of a `str`, each a one-character `str`; a loop over values that are not copied, such as `str`s, borrows each element; with a target that unpacks, `for x, y in points` | A loop variable that borrows an element and is also used outside a loop that binds it, such as a read after the loop (roadmap 1.13.9); a `prange` step that is not a constant |
@@ -118,7 +118,7 @@ out of a function, including through a `raise`.
 | Arrays of `Fixed` arrays and of `Copy` structs | |
 | Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b` | |
 | [`@`, the matrix product](arrays.md#the-matrix-product), of `Array`s and of `Fixed` arrays: matrix by matrix, matrix by vector and vector by matrix, as a loop nest | `@=`; calling BLAS (roadmap 3.10) |
-| [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), `a.min()`, `a.max()`, `a.round()` and `a.fill(value)` | Printing an array |
+| [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), `a.min()`, `a.max()`, `a.round()` and `a.fill(value)`; [`print(a)`](arrays.md#printing), as NumPy writes it | Printing an array of `str` or structs |
 
 ## Errors and panics
 

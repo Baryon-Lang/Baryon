@@ -1,6 +1,6 @@
 //! `print` of every value built and run: `None`, optional values, tuples, enum members,
-//! structs, lists and dicts as Python writes them, and the `sep=` and `end=` keywords (roadmap
-//! 1.10.12, 1.13.11).
+//! structs, lists and dicts as Python writes them, arrays as `NumPy` writes them, and the `sep=`
+//! and `end=` keywords (roadmap 1.10.12, 1.13.11, 1.10.15).
 
 use super::{baryon_build, package, stderr};
 use std::io;
@@ -143,6 +143,58 @@ def main():
 {}
 {'x': [0.1, 1e+20], 'y': []}
 {2: 'two', 3: 'three'}
+"
+    );
+}
+
+/// Arrays print as `NumPy`'s `print` writes them, byte for byte (decision 0033): one format per
+/// array, rows on their own lines, a view as the elements it sees, the corners of an array of
+/// more than 1000 elements, and the same form inside a tuple or a struct. Each expected line is
+/// what `NumPy` 2.5 prints for the same array.
+#[test]
+fn arrays_print_as_numpy_does() {
+    let program = "\
+Mat2 = Fixed[i64, (2, 2)]
+
+
+class Grid(Struct):
+    cells: Array[f64, 1]
+
+
+def main():
+    a = Array([1.0, 2.5, 0.1 + 0.2])
+    print(a, a[::-1])
+    grid = Array.zeros((3, 4))
+    grid[1, 2] = 1e-5
+    grid[2, 3] = -7.0
+    print(grid)
+    print(grid[:, 3])
+    big = Array.fill((40, 40), 2, dtype=i32)
+    big[39, 39] = -100
+    print(big)
+    print(Mat2((1, -20), (3, 4)), (Array([True, False]), 1))
+    print(Grid(Array.ones(2, dtype=f32)))
+    print(Array([1 + 2j, -0.5j]), Array.zeros((2, 0)))
+";
+    assert_eq!(
+        printed("printed_arrays", program).unwrap(),
+        "\
+[1.  2.5 0.3] [0.3 2.5 1. ]
+[[ 0.e+00  0.e+00  0.e+00  0.e+00]
+ [ 0.e+00  0.e+00  1.e-05  0.e+00]
+ [ 0.e+00  0.e+00  0.e+00 -7.e+00]]
+[ 0.  0. -7.]
+[[   2    2    2 ...    2    2    2]
+ [   2    2    2 ...    2    2    2]
+ [   2    2    2 ...    2    2    2]
+ ...
+ [   2    2    2 ...    2    2    2]
+ [   2    2    2 ...    2    2    2]
+ [   2    2    2 ...    2    2 -100]]
+[[  1 -20]
+ [  3   4]] ([ True False], 1)
+Grid(cells=[1. 1.])
+[ 1.+2.j  -0.-0.5j] []
 "
     );
 }

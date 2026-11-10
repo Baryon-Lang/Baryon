@@ -170,20 +170,22 @@ def main():
 | A struct or an error | The type's name, then each field by name, in declaration order: `Point(x=1.0, y=2.0)`, as a Python dataclass prints |
 | A list | `[1, 2, 3]`; the empty list is `[]` |
 | A dict | `{'a': 1, 'b': 2}`, its entries in insertion order; the empty dict is `{}` |
+| An `Array` or `Fixed` array | As NumPy prints an `ndarray`: `[1.  2.5]`, rows on their own lines, only the corners of more than 1000 elements ([Printing arrays](arrays.md#printing)) |
 
 Inside a tuple, a struct, a list or a dict, each item, field, element, key and value is written as Python's `repr` writes it, so a
 `str` is quoted: `('argon', 39.95)`, `Atom(name='argon')`, `['He', 'Ne']`, `{'Ar': 39.948}`. A string holding a single quote and
 no double quote is quoted with double quotes, `"it's"`, as in Python. A generic struct prints
 without its type arguments, `Pair(first=1, second=2)`, and an enum member prints `Phase.GAS`
 everywhere, where Python's `repr` inside a container would write `<Phase.GAS: 3>`
-([Differences from Python](differences-from-python.md)). An array will print as NumPy prints an
-`ndarray`, `[1. 2. 3.]` with rows on their own lines
-([decision 0033](../decisions/0033-printing-arrays.md)); that is not built yet (roadmap 1.10.15).
+([Differences from Python](differences-from-python.md)). An array prints as NumPy prints an
+`ndarray` there too, `Grid(cells=[1. 2. 3.])`
+([decision 0033](../decisions/0033-printing-arrays.md)).
 
 Printing costs one call into the runtime per number, `bool` or `str` it writes; a struct of ten
 fields is ten calls and its punctuation, all chosen when the program is compiled. A list or a
 dict is a loop that runs when the program does: one call per element and per `, `, plus, for a
-dict, one call per entry to find the next.
+dict, one call per entry to find the next. An array is one call, which formats at most 1000
+elements.
 
 ### `sep=` and `end=`
 
