@@ -292,6 +292,7 @@ To run and test without typing commands, add a file `.vscode/tasks.json` to the 
 | Highlighting works but no error is ever underlined | The folder you opened is not the package. Open the folder that holds `main.byn`, or make the package the first folder of a multi-root workspace |
 | Errors stay after you fix them, or the server stopped | Open **View > Output** and pick **Baryon** in the list to read the server's log, then **Developer: Reload Window**. If the server crashed, please open an issue with that log |
 | `baryon run` says `` `clang` was not found `` | Install `clang` as in step 1 |
+| `baryon run` says `` `clang` is version 14 `` | Install `clang` 15 or newer as in step 1 |
 | `baryon run` says the runtime library `libruntime.a` is missing | The runtime was not built, or `baryon` was copied away from it. Run the `cargo build` command of step 2 again and use `baryon` from `target/debug/`, where it puts both |
 | `baryon run` reports an error that ends in `not lowered yet` or names the backend | The program is valid Baryon that the prototype compiler cannot build yet. [What builds today](../reference/status.md) lists what does |
 | You changed **Baryon: Path** and nothing happened | The server starts once per window; run **Developer: Reload Window** |

@@ -3,8 +3,12 @@
 //!
 //! The runtime is the static library `libruntime.a`, found next to the `baryon` executable, where
 //! `cargo build` puts both. The module is written to a scratch directory and removed after.
+//!
+//! The backend emits opaque pointers, which `clang` accepts from version 15 (decision 0020), so
+//! [`find_clang`] looks for a `clang` that new: `clang` itself, then the versioned names Linux
+//! distributions install side by side, such as `clang-15` on Ubuntu 22.04, whose plain `clang`
+//! is 14.
 
-use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
@@ -46,6 +50,7 @@ const DROP_UNUSED: &str = if cfg!(target_os = "macos") {
 /// runs `dsymutil` itself only for source files it compiles, not for an LLVM module.
 pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
     let runtime = runtime()?;
+    let clang = find_clang()?;
     let scratch = env::temp_dir().join(format!("baryon-build-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let source = scratch.join("module.ll");
@@ -53,7 +58,7 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
     let result = fs::write(&source, module)
         .map_err(|error| format!("{}: {error}", source.display()))
         .and_then(|()| {
-            clang(|command| {
+            run_clang(&clang, |command| {
                 command
                     .args(["-O2", "-g", "-Wno-override-module", "-c"])
                     .arg(&source)
@@ -62,7 +67,7 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
             })
         })
         .and_then(|()| {
-            clang(|command| {
+            run_clang(&clang, |command| {
                 command
                     .arg("-g")
                     .arg(&object)
@@ -84,22 +89,85 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
     result
 }
 
-/// Runs `clang` with the arguments `arguments` adds.
-fn clang(arguments: impl FnOnce(&mut Command)) -> Result<(), String> {
-    let mut command = Command::new("clang");
+/// The oldest `clang` major version that accepts the LLVM text the backend emits: opaque
+/// pointers became the default in LLVM 15 (decision 0020).
+const MINIMUM_CLANG: u32 = 15;
+
+/// The newest versioned name, `clang-<n>`, that [`find_clang`] tries. Names past it are not
+/// looked for; plain `clang` still finds any newer release.
+const NEWEST_CLANG: u32 = 30;
+
+/// How to install a new enough `clang`, the end of every message about a missing or old one.
+const INSTALL_CLANG: &str = "Install it with `xcode-select --install` on macOS, or the `clang` \
+     package on Linux; where that is older than 15, such as on Ubuntu 22.04, install `clang-15` \
+     or newer";
+
+/// The `clang` to compile and link with: the first of `clang`, then `clang-30` down to
+/// `clang-15`, whose version is [`MINIMUM_CLANG`] or newer.
+///
+/// Each name tried runs `<name> --version` once, a few milliseconds; a name that is not
+/// installed costs only the failed start. A `clang` whose version cannot be read is taken as
+/// new enough, so an unusual build is tried rather than refused.
+///
+/// # Errors
+///
+/// Fails with a message saying how to install `clang` when none is found, and naming the
+/// version found when every `clang` installed is older than 15.
+fn find_clang() -> Result<String, String> {
+    let names = std::iter::once("clang".to_owned()).chain(
+        (MINIMUM_CLANG..=NEWEST_CLANG)
+            .rev()
+            .map(|major| format!("clang-{major}")),
+    );
+    let mut too_old = None;
+    for name in names {
+        let Ok(finished) = Command::new(&name).arg("--version").output() else {
+            continue;
+        };
+        match major_version(&String::from_utf8_lossy(&finished.stdout)) {
+            Some(major) if major < MINIMUM_CLANG => {
+                too_old.get_or_insert((name, major));
+            }
+            _ => return Ok(name),
+        }
+    }
+    Err(match too_old {
+        Some((name, major)) => format!(
+            "`{name}` is version {major}, and `baryon build` needs clang {MINIMUM_CLANG} or \
+             newer. {INSTALL_CLANG}"
+        ),
+        None => format!(
+            "`clang` was not found; `baryon build` uses it to compile and link. {INSTALL_CLANG}"
+        ),
+    })
+}
+
+/// The major version in the first line `clang --version` prints, such as 18 from
+/// `Ubuntu clang version 18.1.3 (1ubuntu1)` or 15 from `Apple clang version 15.0.0`, or `None`
+/// when the line has no `clang version` followed by a number.
+///
+/// Apple numbers its `clang` releases its own way, but from Apple clang 15 on they accept opaque
+/// pointers as LLVM 15 does, so the same minimum applies.
+fn major_version(version: &str) -> Option<u32> {
+    let first_line = version.lines().next()?;
+    let (_, rest) = first_line.split_once("clang version ")?;
+    rest.split(|character: char| !character.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// Runs the `clang` named `clang` with the arguments `arguments` adds.
+fn run_clang(clang: &str, arguments: impl FnOnce(&mut Command)) -> Result<(), String> {
+    let mut command = Command::new(clang);
     arguments(&mut command);
     match command.output() {
         Ok(finished) if finished.status.success() => Ok(()),
         Ok(finished) => Err(format!(
-            "clang could not compile the program, which is a bug in baryon:\n{}",
+            "{clang} could not compile the program, which is a bug in baryon:\n{}",
             String::from_utf8_lossy(&finished.stderr)
         )),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Err(
-            "`clang` was not found; `baryon build` uses it to compile and link. Install it with \
-             `xcode-select --install` on macOS, or the `clang` package on Linux"
-                .to_owned(),
-        ),
-        Err(error) => Err(format!("clang: {error}")),
+        Err(error) => Err(format!("{clang}: {error}")),
     }
 }
 
@@ -128,5 +196,30 @@ fn runtime() -> Result<PathBuf, String> {
             "the runtime library `{}` is missing; build it with `cargo build --package runtime`",
             archive.display()
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn major_versions_are_read_from_each_vendor() {
+        let ubuntu = "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\n";
+        assert_eq!(major_version(ubuntu), Some(18));
+        assert_eq!(
+            major_version("Ubuntu clang version 14.0.0-1ubuntu1.1\n"),
+            Some(14)
+        );
+        let apple = "Apple clang version 15.0.0 (clang-1500.3.9.4)\nTarget: arm64-apple-darwin23\n";
+        assert_eq!(major_version(apple), Some(15));
+        assert_eq!(major_version("Homebrew clang version 19.1.7\n"), Some(19));
+        assert_eq!(major_version("clang version 21.0.0git\n"), Some(21));
+    }
+
+    #[test]
+    fn unreadable_versions_are_none() {
+        assert_eq!(major_version(""), None);
+        assert_eq!(major_version("gcc (Ubuntu 13.2.0) 13.2.0\n"), None);
     }
 }

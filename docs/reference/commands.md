@@ -18,7 +18,11 @@ one option is `--release`.
 
 ## Installing
 
-`baryon` is built from this repository with the pinned Rust toolchain
+From release 0.2.0, each release has prebuilt archives for Linux on x86_64 and macOS on Apple
+silicon, holding `baryon` and `libruntime.a` together; the
+[beginner's guide](../guide/README.md#download-a-prebuilt-baryon) says how to download, check and
+install one. On any other system, or to follow `main`, `baryon` is built from this repository
+with the pinned Rust toolchain
 ([rustup](https://rustup.rs) installs it on first use):
 
 ```sh
@@ -30,11 +34,15 @@ program is linked with ([decision 0021](../decisions/0021-runtime-crate-and-unsa
 `baryon` looks for the runtime next to its own executable, so keep the two together; put
 `target/debug` on your `PATH` or call `baryon` by its path.
 
-`build`, `run` and `test` also need `clang`, which optimizes the compiled program and links it
-([decision 0020](../decisions/0020-llvm-backend-emits-text.md)). On macOS it comes with the command
-line tools, `xcode-select --install`, which also provide the `dsymutil` that keeps line numbers
-for backtraces. On Linux, install your distribution's `clang` package. `check`, `doc` and `lsp`
-need neither.
+`build`, `run` and `test` also need `clang` 15 or newer, which optimizes the compiled program and
+links it ([decision 0020](../decisions/0020-llvm-backend-emits-text.md)); older versions reject
+the opaque pointers the backend emits. On macOS it comes with the command line tools,
+`xcode-select --install`, which also provide the `dsymutil` that keeps line numbers for
+backtraces. On Linux, install your distribution's `clang` package. `baryon` runs `clang` if it is
+15 or newer, and otherwise the newest of `clang-30` down to `clang-15` it finds, the names
+distributions give versions installed side by side; so on Ubuntu 22.04, whose `clang` is 14,
+`sudo apt install clang-15` is enough. With no new enough `clang`, `build` says which version it
+found and how to install one. `check`, `doc` and `lsp` need neither.
 
 ## Packages
 
