@@ -1,6 +1,6 @@
 //! Line tables: each function's subprogram, each instruction's location, and the C `main`'s.
 
-use super::{Database, Module, binary, no_structs, primitive, sources, symbol_of};
+use super::{Database, Module, binary, no_names, no_structs, primitive, sources, symbol_of};
 use mir::BinaryOperator;
 use types::{Float, Primitive};
 
@@ -15,7 +15,7 @@ fn instructions_carry_their_source_location() {
     let body = binary(f64, f64, BinaryOperator::Multiply);
     let symbol = symbol_of(&database);
     let sources = sources();
-    let mut module = Module::new(&database, &sources, &no_structs, &symbol);
+    let mut module = Module::new(&database, &sources, &no_structs, &no_names, &symbol);
     module.debug_info("/home/ada/heat");
     module.define("scale", &body, &[]).unwrap();
     module.entry("scale", &[]).unwrap();
@@ -45,8 +45,11 @@ bb0:
 define i32 @main() uwtable !dbg !4 {{
 start:
   call void @scale(), !dbg !DILocation(line: 0, scope: !4)
+  call void @baryon_rt_flush(), !dbg !DILocation(line: 0, scope: !4)
   ret i32 0, !dbg !DILocation(line: 0, scope: !4)
 }}
+
+declare void @baryon_rt_flush() nounwind
 
 !llvm.dbg.cu = !{{!0}}
 !llvm.module.flags = !{{!1, !2}}

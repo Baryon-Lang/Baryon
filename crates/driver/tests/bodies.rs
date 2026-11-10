@@ -561,3 +561,30 @@ def f():
   = note: a variable keeps one type for its whole scope; to fill it in later, declare it optional: `y: i64 | None = None`"
     );
 }
+
+/// `print` takes the keywords `sep=` and `end=`, each a `str` or `None`; any other keyword, or
+/// another type, is an error.
+#[test]
+fn print_takes_sep_and_end_as_text() {
+    let program = r#"
+def show(x: f64):
+    print(x, sep=", ", end=None)
+    print(x, file=None)
+    print(x, end=1)
+"#;
+    assert_eq!(
+        check_one(program),
+        r"error: `print` has no parameter `file`
+ --> main.byn:3:14
+  |
+3 |     print(x, file=None)
+  |              ^^^^ unknown parameter
+  = note: `print` takes the values to write, then `sep=` and `end=`
+
+error: `end=` takes a `str` or `None`, found `i64`
+ --> main.byn:4:18
+  |
+4 |     print(x, end=1)
+  |                  ^ not a `str`"
+    );
+}

@@ -17,8 +17,8 @@ pub use accumulate::{
     baryon_rt_accumulator_slot,
 };
 pub use output::{
-    baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
-    baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,
+    baryon_rt_flush, baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64,
+    baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,
 };
 pub use philox::{baryon_rt_philox_new, baryon_rt_philox_uniform};
 pub use sum::{baryon_rt_sum_f32, baryon_rt_sum_f64};

@@ -189,7 +189,8 @@ impl Session {
             format!("{base}[{}]", shown.join(", "))
         };
         let declared = declared(database, self.package);
-        let mut module = llvm_backend::Module::new(database, self, &declared, &symbol);
+        let names = names(database, self.package);
+        let mut module = llvm_backend::Module::new(database, self, &declared, &names, &symbol);
         if let Some(root) = root {
             module.debug_info(root);
         }
@@ -430,31 +431,13 @@ impl Session {
         functions
     }
 
-    /// The error types a `main` returning `returns` can raise, each with its fields' names,
-    /// for the report of an error that ends the program; empty when it cannot fail.
-    fn reported<'db>(&'db self, returns: types::Type<'db>) -> Vec<(types::Type<'db>, Vec<String>)> {
-        let database = &self.database;
-        let TypeKind::Fallible { errors, .. } = returns.kind(database) else {
-            return Vec::new();
-        };
-        errors
-            .iter()
-            .map(|&error| {
-                let fields = match error.kind(database) {
-                    TypeKind::Struct(nominal) => {
-                        let item = Item::new(database, self.package, nominal.file, nominal.name);
-                        match &database.declaration(item).declaration {
-                            Declaration::Struct { fields, .. } => {
-                                fields.iter().map(|field| field.name.clone()).collect()
-                            }
-                            _ => Vec::new(),
-                        }
-                    }
-                    _ => Vec::new(),
-                };
-                (error, fields)
-            })
-            .collect()
+    /// The error types a `main` returning `returns` can raise, for the report of an error that
+    /// ends the program; empty when it cannot fail.
+    fn reported<'db>(&'db self, returns: types::Type<'db>) -> Vec<types::Type<'db>> {
+        match returns.kind(&self.database) {
+            TypeKind::Fallible { errors, .. } => errors.clone(),
+            _ => Vec::new(),
+        }
     }
 
     /// An error at the name of `item`.
@@ -496,6 +479,34 @@ fn declared<'db>(
     package: database::Package,
 ) -> impl Fn(&Nominal<'db>) -> types::Declared<'db> {
     move |nominal| checker::declared(db, package, nominal)
+}
+
+/// The names `print` writes for each struct or enum of `package`: the class's name, then its
+/// fields' or members' names in declaration order.
+fn names<'db>(
+    db: &'db dyn TypeDb,
+    package: database::Package,
+) -> impl Fn(&Nominal<'db>) -> llvm_backend::ClassNames {
+    move |nominal| {
+        let bare = Nominal {
+            arguments: Vec::new(),
+            ..nominal.clone()
+        };
+        let item = Item::new(db, package, nominal.file, nominal.name);
+        let members = match &db.declaration(item).declaration {
+            Declaration::Struct { fields, .. } => {
+                fields.iter().map(|field| field.name.clone()).collect()
+            }
+            Declaration::Enum { variants } => variants.clone(),
+            _ => Vec::new(),
+        };
+        llvm_backend::ClassNames {
+            class: types::Type::new(db, TypeKind::Struct(bare))
+                .display(db)
+                .to_string(),
+            members,
+        }
+    }
 }
 
 /// Whether the function `item`, whose signature is `signature`, is compiled once per call's

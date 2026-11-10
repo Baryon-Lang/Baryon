@@ -20,6 +20,7 @@ mod math;
 mod modules;
 mod overflow;
 mod parallel;
+mod print;
 mod shapes;
 mod statements;
 mod structs;
