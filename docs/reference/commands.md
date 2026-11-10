@@ -34,11 +34,14 @@ program is linked with ([decision 0021](../decisions/0021-runtime-crate-and-unsa
 `baryon` looks for the runtime next to its own executable, so keep the two together; put
 `target/debug` on your `PATH` or call `baryon` by its path.
 
-`build`, `run` and `test` also need `clang`, which optimizes the compiled program and links it
-([decision 0020](../decisions/0020-llvm-backend-emits-text.md)). On macOS it comes with the command
-line tools, `xcode-select --install`, which also provide the `dsymutil` that keeps line numbers
-for backtraces. On Linux, install your distribution's `clang` package. `check`, `doc` and `lsp`
-need neither.
+`build`, `run` and `test` also need `clang` 15 or newer, which optimizes the compiled program and
+links it ([decision 0020](../decisions/0020-llvm-backend-emits-text.md)); older versions reject
+the opaque pointers the backend emits. On macOS it comes with the command line tools,
+`xcode-select --install`, which also provide the `dsymutil` that keeps line numbers for
+backtraces. On Linux, install your distribution's `clang` package; on Ubuntu 22.04, whose `clang`
+is 14, install `clang-15` and put it on `PATH` as `clang`, as the
+[beginner's guide](../guide/README.md#1-install-baryon) shows. `check`, `doc` and `lsp` need
+neither.
 
 ## Packages
 

@@ -105,14 +105,22 @@ jobs:
         with:
           name: ${{ matrix.target }}
           path: dist
-      - name: Install clang, as the guide tells a Linux user to
+      - name: Install clang 15, as the guide tells an Ubuntu 22.04 user to
+        # The backend needs LLVM 15 or newer (decision 0020), and Ubuntu 22.04's default `clang`
+        # is 14, which rejects the opaque pointers baryon emits. The guide's steps: install
+        # `clang-15` and put it on PATH as `clang`.
         if: runner.os == 'Linux'
-        run: command -v clang || { sudo apt-get update && sudo apt-get install -y clang; }
+        run: |
+          command -v clang-15 || { sudo apt-get update && sudo apt-get install -y clang-15; }
+          mkdir -p "$RUNNER_TEMP/clang"
+          ln -sf "$(command -v clang-15)" "$RUNNER_TEMP/clang/clang"
+          echo "$RUNNER_TEMP/clang" >> "$GITHUB_PATH"
       - name: Test the archive without Rust
         # The runner images come with Rust; drop it from PATH so the test sees what a user sees.
         run: |
           PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v -e '\.cargo' -e rustup | paste -sd: -)
           export PATH
+          clang --version
           sh .github/release/clean-machine-test.sh dist/*.tar.gz .
 
   release:

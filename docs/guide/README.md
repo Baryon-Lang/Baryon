@@ -12,9 +12,17 @@ bug: please open an issue. The compiler is a prototype and does not build the wh
 ## 1. Install `baryon`
 
 There are two ways to get `baryon`: download a prebuilt one, or build it from source. Either way
-you also need `clang`, which `baryon` uses to optimize and link programs. On macOS,
-`xcode-select --install` provides it; on Linux, install your distribution's `clang` package, such
-as `sudo apt install clang` on Ubuntu.
+you also need `clang` 15 or newer, which `baryon` uses to optimize and link programs. On macOS,
+`xcode-select --install` provides it. On Linux, install your distribution's `clang` package, such
+as `sudo apt install clang` on Ubuntu 24.04. Ubuntu 22.04's `clang` is version 14, too old, so
+there install `clang-15` and make it the `clang` that `baryon` runs:
+
+```sh
+sudo apt install clang-15
+sudo ln -s /usr/bin/clang-15 /usr/local/bin/clang
+```
+
+`clang --version` says which version you have.
 
 ### Download a prebuilt `baryon`
 
@@ -23,7 +31,7 @@ Prebuilt archives start with release 0.2.0, for two platforms:
 | Platform | Archive |
 | --- | --- |
 | Linux on x86_64, with glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 and later) | `baryon-<version>-x86_64-unknown-linux-gnu.tar.gz` |
-| macOS 11 or newer on Apple silicon (M1 and later) | `baryon-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS 13.5 or newer on Apple silicon (M1 and later), with the Command Line Tools 15 or newer for `clang` | `baryon-<version>-aarch64-apple-darwin.tar.gz` |
 
 Intel Macs, Alpine and other musl Linux distributions have no download; build from source there.
 Windows support comes in release 0.4.0.
