@@ -124,10 +124,15 @@ impl<'db> Builder<'db> {
             }
             _ => false,
         };
-        if is_unsafe {
-            self.block(statement, Role::Body);
-        } else {
-            self.unsupported(statement, "`with` other than `with unsafe:`");
+        match items.as_slice() {
+            _ if is_unsafe => self.block(statement, Role::Body),
+            [item] if self.tree.child(*item, Role::Target).is_some() => {
+                self.with_file(statement, *item);
+            }
+            _ => self.unsupported(
+                statement,
+                "`with` other than `with unsafe:` and `with open`",
+            ),
         }
     }
 
@@ -142,7 +147,7 @@ impl<'db> Builder<'db> {
 
     /// `target = value`. The value is computed first, then the old value of a target that owns
     /// memory is dropped, then the new one moves in, so `x = f(x)` reads the old `x`.
-    fn store(&mut self, target: NodeId, value: NodeId) {
+    pub(crate) fn store(&mut self, target: NodeId, value: NodeId) {
         if self.tree.kind(target) == SyntaxKind::Tuple {
             return self.unpack(target, value);
         }

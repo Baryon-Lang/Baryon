@@ -91,6 +91,7 @@ impl<'db> Builder<'db> {
             (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
             (None, _) if name == "print" => self.print(place, arguments, node),
             (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
+            (None, _) if name == "open" => self.open(place, arguments, node),
             (None, [values, rest @ ..]) if self.reduces(name, (*values, rest), node) => {
                 self.reduce(place, name, (*values, rest), node);
             }
@@ -115,7 +116,7 @@ impl<'db> Builder<'db> {
                 self.array_method(place, method, arguments, node);
             }
             (Some(("math", member)), _) => self.math_function(place, member, arguments, node),
-            (Some((owner @ ("random" | "Philox" | "sys" | "os"), member)), _) => {
+            (Some((owner @ ("random" | "Philox" | "sys" | "os" | "File"), member)), _) => {
                 self.standard_call(place, (owner, member), arguments, node);
             }
             _ => self.unsupported(node, &format!("the built-in `{name}`")),

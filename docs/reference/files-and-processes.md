@@ -4,10 +4,10 @@
 builds into programs yet.
 
 A program talks to the system that runs it through Python's modules and names: `sys` for its
-command-line arguments and exit status, and `os` for its environment
+command-line arguments and exit status, `os` for its environment, and `open` for text files
 ([decision 0036](../decisions/0036-files-and-processes.md)). They are this language's own
 modules, built into the compiler and the runtime, not CPython's: no Python runs underneath.
-Reading and writing files, paths, the standard streams and running another program come next,
+Paths, the standard streams, array files and running another program come next,
 with the names that decision gives them.
 
 ## Command-line arguments
@@ -39,7 +39,7 @@ sequence, so reading the arguments never fails.
 
 `sys.exit(status)` ends the program with `status`, an `int` from 0 to 255; `sys.exit()` is
 `sys.exit(0)`. It first writes out anything `print` still holds, such as a line `end=""` left
-open, then ends the program at once. Other statuses already have a meaning: 1 is an error that
+open, and everything written to a [file](#text-files) still open, then ends the program at once. Other statuses already have a meaning: 1 is an error that
 reached the end of `main`, and 101 is a [panic](errors.md#panics).
 
 - A status outside 0 to 255 panics: `` `sys.exit` status 256 is outside 0 to 255 ``.
@@ -112,11 +112,71 @@ program's own classes: `OSError(...)` builds one, `raise` and `except` work as f
 and one that leaves `main` is printed in Python's form, such as
 `error: OSError(kind=ErrorKind.FILE_NOT_FOUND, errno=2, strerror='No such file or directory', filename='heat.toml')`.
 
+## Text files
+
+`open(path, mode)` opens a text file and returns a `File`. The mode is written out as a literal:
+
+| Mode | Opens the file to | When the file exists | When it does not |
+| --- | --- | --- | --- |
+| `"r"`, the default | read | reads it from the start | `FILE_NOT_FOUND` |
+| `"w"` | write | empties it first | creates it |
+| `"a"` | write | writes after its end | creates it |
+| `"x"` | write | `FILE_EXISTS` | creates it |
+
+A `File` has six methods, and each can fail with `OSError`:
+
+| Method | Gives | Does |
+| --- | --- | --- |
+| `f.read()` | `str` | the rest of the file |
+| `f.readline()` | `str` | the next line with its line end, or `""` at the end of the file |
+| `f.readlines()` | `list[str]` | the remaining lines, each with its line end |
+| `f.write(text)` | `int` | writes `text` and gives the number of characters written |
+| `f.flush()` | `None` | sends what the file holds to the operating system |
+| `f.close()` | `None` | writes out what the file holds and closes it |
+
+```python
+def save(path: str, energies: list[float]) -> Raises[None, OSError]:
+    with open(path, "w") as out:
+        for energy in energies:
+            out.write(f"{energy}\n")
+
+
+def count(path: str) -> Raises[int, OSError]:
+    with open(path) as source:
+        return len(source.readlines())
+```
+
+`save("e.txt", [1.5, -0.25])` writes the two lines `1.5` and `-0.25`, and `count("e.txt")` then
+gives `2`. `count` returns from inside `with`, which drops the file and so closes it.
+
+- **Text is UTF-8.** `encoding="utf-8"` may be written and changes nothing; any other encoding is
+  an error. Reading text that is not UTF-8 raises `OSError` with the kind `INVALID_DATA`.
+- **Line ends are universal.** Reading turns `"\r\n"` and `"\r"` into `"\n"`, as Python does.
+  Writing writes text as it is.
+- **Writes are buffered.** A file holds what is written, 64 KiB at a time, and writes it out when
+  it fills, at `flush()`, at `close()`, and when the program calls `sys.exit`.
+- **A file has one owner.** Reading or writing changes the file, as `append` changes a list, so a
+  function that takes one declares the parameter `InOut[File]`. `close()` moves the file, so it
+  cannot be used after.
+- **`with` closes the file.** `with open(path, mode) as f:` gives the body the file and closes it
+  where the body ends. A failure to write it out then is an `OSError` raised by the `with`
+  statement. A body left by `return`, `break` or an error drops the file instead. `with` takes
+  only a `File` and one `as` name; other context managers are not in Baryon.
+- **A dropped file is closed.** A file that reaches the end of its owner's scope without
+  `close()` or `with` is closed then. A drop cannot raise, so a failure to write the file out
+  there panics: `` could not write out `out.txt` when it was dropped: No space left on device ``.
+  Use `with` or `close()` where that failure must be handled.
+
+The modes Python has and Baryon does not are errors that say what to write instead. A `"b"` mode
+points to `Array.fromfile` and `a.tofile`, since binary data is whole arrays
+([decision 0036](../decisions/0036-files-and-processes.md)). A `"+"` mode says a file is opened to
+read or to write, not both. Looping over a file, `for line in f:`, is not in Baryon yet; loop over
+`f.readlines()`.
+
 ## What is not built yet
 
 Decision 0036 settles the rest of this chapter's surface, and the compiler reports each part by
 name until it is built: `` `sys.stdin` is not in Baryon yet ``. In order, the next parts are
-`os.environ[name]`, `name in os.environ` and `os.environ.copy()`; `open`, `with open(...) as f`
-and the file methods, which raise `OSError`;
+`os.environ[name]`, `name in os.environ` and `os.environ.copy()`; `for line in f`;
 `sys.stdin`, `sys.stdout`, `sys.stderr`, `input` and `print(..., file=)`; `Array.fromfile` and
 `a.tofile`; `pathlib.Path` and the directory functions of `os`; and `subprocess.run`.

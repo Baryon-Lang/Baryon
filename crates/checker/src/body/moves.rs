@@ -27,7 +27,7 @@ use crate::traits::{Bound, Trait};
 use database::Definition;
 use diagnostics::Diagnostic;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Mode, Type, TypeKind};
+use types::{Mode, StandardType, Type, TypeKind};
 
 impl<'db> Body<'db> {
     /// Whether a value of `ty` moves when it is used as a value, rather than being copied.
@@ -176,14 +176,20 @@ impl<'db> Body<'db> {
             return;
         };
         let name = self.tree.text(node, self.text);
-        // A generator has no copy: two copies would draw the same numbers (decision 0028).
-        let generator = self
+        let standard = self
             .locals
             .get(&binding)
-            .is_some_and(|ty| matches!(ty.kind(self.db), TypeKind::Standard(_)));
-        let advice = if generator {
+            .and_then(|ty| match ty.kind(self.db) {
+                TypeKind::Standard(standard) => Some(*standard),
+                _ => None,
+            });
+        let advice = if standard == Some(StandardType::Philox) {
+            // A generator has no copy: two copies would draw the same numbers (decision 0028).
             "a generator cannot be copied, so no two draw the same numbers; make another with its \
              own `stream`"
+                .to_owned()
+        } else if standard == Some(StandardType::File) {
+            "a file has one owner, and `close()` or `with` ends it; open it again to read it again"
                 .to_owned()
         } else {
             format!(

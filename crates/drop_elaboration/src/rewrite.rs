@@ -350,8 +350,9 @@ impl<'db> Decider<'_, 'db> {
         }
     }
 
-    /// Whether a value of type `ty` owns memory a drop must free, or a file a drop must close. `open` holds the structs being
-    /// looked into, so a struct that contains itself, an error reported earlier, ends the search.
+    /// Whether a value of type `ty` owns memory a drop must free, or a file a drop must close.
+    /// `open` holds the structs being looked into, so a struct that contains itself, an error
+    /// reported earlier, ends the search.
     fn owns_memory(&self, ty: Type<'db>, open: &mut Vec<Type<'db>>) -> bool {
         match ty.kind(self.db) {
             TypeKind::Primitive(_)

@@ -7,8 +7,8 @@
 //! - `os.getenv(name)` and `os.environ.get(name)`, with or without a default, are a call of
 //!   [`Builtin::EnvironmentGet`] and a branch on whether the variable is set.
 //!
-//! [`Builder::standard_call`] also sends the calls of `random` to their module, so the one
-//! match over built-ins in `calls` stays short.
+//! [`Builder::standard_call`] also sends the calls of `random` and the `File` methods to their
+//! modules, so the one match over built-ins in `calls` stays short.
 
 use crate::builder::Builder;
 use database::Definition;
@@ -124,7 +124,7 @@ impl<'db> Builder<'db> {
 
     /// A call of a built-in of `random`, `sys` or `os`, or of a `Philox` method, named
     /// `owner.member`, into `place`: `random.Philox`, `Philox.uniform`, `sys.exit` and
-    /// `os.getenv`, which `os.environ.get` is recorded as. Any other, or the wrong number of
+    /// `os.getenv`, which `os.environ.get` is recorded as, and a `File` method. Any other, or the wrong number of
     /// arguments, is reported as not lowered yet.
     pub(crate) fn standard_call(
         &mut self,
@@ -142,6 +142,7 @@ impl<'db> Builder<'db> {
             (("os", "getenv"), [name, rest @ ..]) if rest.len() <= 1 => {
                 self.getenv(place, *name, rest.first().copied(), node);
             }
+            (("File", method), _) => self.file_method(place, method, arguments, node),
             _ => self.unsupported(node, &format!("the built-in `{owner}.{member}`")),
         }
     }
