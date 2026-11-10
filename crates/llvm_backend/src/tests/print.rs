@@ -1,11 +1,12 @@
-//! `print`: one runtime call per argument, the separator and line end as byte constants.
+//! `print`: one runtime call per argument; the separator and line end lowering passes become
+//! byte constants.
 
 use super::{Database, Module, end, no_structs, parameter, primitive, sources, span, symbol_of};
 use mir::{Argument, BlockId, Body, Builtin, Callee, Constant, ConstantValue, Operand};
 use mir::{LocalKind, TerminatorKind};
 use types::{Integer, Mode, Primitive, Type, TypeKind};
 
-/// `def show(x: u8): print("x =", x)`: the literal and the separators print through
+/// `def show(x: u8): print("x =", x)`: the literal, the separator and the line end print through
 /// `baryon_rt_print_str`, and the `u8` widens to `u64`.
 #[test]
 fn print_calls_the_runtime_per_argument() {
@@ -24,7 +25,9 @@ fn print_calls_the_runtime_per_argument() {
         callee: Callee::Builtin(Builtin::Print),
         arguments: vec![
             Argument::Owned(Operand::Constant(label)),
+            text(str, " "),
             Argument::Borrow(x.into()),
+            text(str, "\n"),
         ],
         destination: printed.into(),
         target: BlockId::new(1),
@@ -91,4 +94,13 @@ fn unprintable_values_are_named() {
             .map_err(|error| error.to_string()),
         Err("the LLVM backend does not compile printing values of type `tuple[]` yet".to_owned())
     );
+}
+
+/// The `str` constant `text`, passed `Owned`, as lowering passes `print`'s separator and line
+/// end.
+fn text<'db>(str: Type<'db>, text: &str) -> Argument<'db> {
+    Argument::Owned(Operand::Constant(Constant {
+        ty: str,
+        value: ConstantValue::Str(text.to_owned()),
+    }))
 }

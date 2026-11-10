@@ -21,7 +21,16 @@
 //!   whose diagnostics changed. A diagnostic with no location, such as a file name that is not a
 //!   valid module name, is shown once as a message when it first appears.
 //!
-//! Go to definition, hover, completion and fixes are later roadmap items (1.16).
+//! - **On `textDocument/hover`**, it shows the type or signature of the name under the cursor
+//!   and the documentation string of what it names ([`Session::hover`]).
+//! - **On `textDocument/definition`**, it goes to where the name is defined, in whichever of the
+//!   package's files that is ([`Session::definition`]).
+//! - **On `textDocument/completion`**, it offers the names in scope, or after a dot the members
+//!   of a module, an enum or a struct value ([`Session::complete`]). A dot asks for completion
+//!   without a keystroke.
+//!
+//! Each of the three reads the session's cached query results, so it answers from the same
+//! check that published the diagnostics. Fixes are a later roadmap item (1.16).
 //!
 //! # Example
 //!
@@ -37,6 +46,7 @@
 //! sessions this way.
 
 mod convert;
+mod query;
 mod transport;
 
 use crate::package;
@@ -181,6 +191,10 @@ impl Server {
                 INVALID_REQUEST,
                 "the server is already initialized".to_owned(),
             )),
+            (
+                Phase::Running,
+                "textDocument/hover" | "textDocument/definition" | "textDocument/completion",
+            ) => self.query(method, params),
             (Phase::Running, _) => Err((METHOD_NOT_FOUND, format!("`{method}` is not supported"))),
             (Phase::ShutDown, _) => {
                 Err((INVALID_REQUEST, "the server is shutting down".to_owned()))
@@ -237,6 +251,9 @@ impl Server {
             "capabilities": {
                 "positionEncoding": "utf-16",
                 "textDocumentSync": {"openClose": true, "change": 1},
+                "hoverProvider": true,
+                "definitionProvider": true,
+                "completionProvider": {"triggerCharacters": ["."]},
             },
             "serverInfo": {"name": "baryon", "version": env!("CARGO_PKG_VERSION")},
         })

@@ -2,8 +2,9 @@
 
 This page sets up Visual Studio Code for Baryon and walks through a first program in it: build the
 compiler, install the extension, open a package, write code with errors underlined as you type,
-then run it and test it. It is written for people trying the 0.1.0 review release, and takes about
-fifteen minutes.
+read types and documentation on hover, jump to definitions and complete names, then run it and
+test it. It is written for people trying the 0.1.0 review release, and takes about fifteen
+minutes.
 
 Like the [beginner's guide](README.md), every program here is built and run in CI exactly as
 written, and every output shown is what the command printed. If a step does not work for you,
@@ -181,6 +182,25 @@ def main():
         formula = period.small_angle(length)
         print(f"{length:.1f} m: simulated {swing:.3f} s, formula {formula:.3f} s")
 ```
+
+The editor knows what every name is, too. Hover over `simulated` in `period.simulated(...)`: a
+box shows its signature and its documentation string, as `baryon doc` writes it.
+
+```text
+def simulated(length: f64, angle: f64, dt: f64) -> f64
+
+The period, in seconds, of a pendulum `length` metres long released at `angle` radians.
+...
+```
+
+Hover over `swing` and the box shows the type the compiler worked out for it, `swing: f64`,
+although the program never wrote one. **Go to Definition** (`F12`, or `Cmd`-click on macOS and
+`Ctrl`-click elsewhere) on `simulated` opens `period.byn` at the `def` line; it works the same on
+variables, constants, fields, methods and enum members, in whichever file of the package they
+are defined. Now type `period.` on a new line inside the loop: the editor offers what `period`
+defines, `G`, `PI`, `simulated` and `small_angle`, each with its type or signature. After a
+struct value and a dot it offers the struct's fields and methods, after an enum's name its
+members, and anywhere else every name in scope. Delete the line again before going on.
 
 ## 7. Run it
 

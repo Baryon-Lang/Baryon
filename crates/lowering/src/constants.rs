@@ -7,6 +7,15 @@ use mir::{Constant, ConstantValue};
 use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::{Declaration, Item, Primitive, Type, TypeKind, Value};
 
+/// What a call writes for an argument it leaves out.
+pub(crate) enum DefaultArgument<'db> {
+    /// The default is a literal or a `Final` constant: this value.
+    Constant(Constant<'db>),
+    /// Any other default: the function that computes it, named by the parameter's `Name`
+    /// node (decision 0027).
+    Computed(Item<'db>),
+}
+
 impl<'db> Builder<'db> {
     /// The constant `node` names: a `Final` constant, by its name or through its module as in
     /// `units.G`, an enum member such as `Side.LEFT`, or a
@@ -97,18 +106,18 @@ impl<'db> Builder<'db> {
         Some(Constant { ty, value })
     }
 
-    /// The value of the default of parameter `position` of `item`, for the call `node` that
-    /// leaves that argument out: the literal or constant the default writes, at the type the
-    /// checker gave it in `item`'s body, which is the parameter's type. A literal or constant
-    /// has the same value whenever it is evaluated, so the call can write it itself. `None`
-    /// after reporting a default that is any other expression, or belongs to a generic
-    /// function, whose types name that function's type parameters.
+    /// The default of parameter `position` of `item`, for the call `node` that leaves that
+    /// argument out. A literal or `Final` constant has the same value whenever it is evaluated,
+    /// so the call writes it itself, at the type the checker gave it in `item`'s body, which is
+    /// the parameter's type. Any other default is computed by a function of its own, called at
+    /// each such call (decision 0027, the `defaults` module). `None` after reporting a default
+    /// of a generic function, whose types name that function's type parameters.
     pub(crate) fn default_value(
         &mut self,
         item: Item<'db>,
         position: usize,
         node: NodeId,
-    ) -> Option<Constant<'db>> {
+    ) -> Option<DefaultArgument<'db>> {
         let Declaration::Function(signature) = &self.db.declaration(item).declaration else {
             return None;
         };
@@ -121,14 +130,8 @@ impl<'db> Builder<'db> {
         }
         let tree = self.db.parse(item.file(self.db)).tree();
         let (function, class) = crate::definition(tree, item.name(self.db))?;
-        let default = tree
-            .child(function, Role::Parameters)
-            .into_iter()
-            .flat_map(|parameters| tree.children(parameters))
-            .filter(|&parameter| tree.kind(parameter) == SyntaxKind::Parameter)
-            .filter(|&parameter| tree.child(parameter, Role::Name).is_some())
-            .nth(position)
-            .and_then(|parameter| tree.child(parameter, Role::Default))?;
+        let parameter = crate::defaults::parameters(tree, function).nth(position)?;
+        let default = tree.child(parameter, Role::Default)?;
         let mut callee = Builder::new(
             self.db,
             item,
@@ -143,13 +146,16 @@ impl<'db> Builder<'db> {
             callee.named_constant(default)
         };
         if let (Some(constant), Ok(_)) = (constant, callee.finish()) {
-            return Some(constant);
+            return Some(DefaultArgument::Constant(constant));
         }
-        self.unsupported(
-            node,
-            "leaving out an argument whose default is not a literal or a constant",
-        );
-        None
+        let file = item.file(self.db);
+        let name = tree.child(parameter, Role::Name)?;
+        Some(DefaultArgument::Computed(Item::new(
+            self.db,
+            item.package(self.db),
+            file,
+            name,
+        )))
     }
 
     /// Whether `node` is a literal: a number, possibly signed, `True`, `False`, `None` or a

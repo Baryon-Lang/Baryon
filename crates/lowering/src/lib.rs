@@ -12,12 +12,16 @@
 //!
 //! - **Locals.** Local 0 is the return value, then one local per parameter, then one per
 //!   variable the function names, in source order, then the temporaries it needs.
-//! - **Control flow.** `if`, `while`, `for` over `range`, `and`, `or`, chained comparisons and
-//!   conditional expressions become basic blocks joined by branches.
+//! - **Control flow.** `if`, `while`, `for` over `range`, over a rank-1 array and over a tuple,
+//!   `and`, `or`, chained comparisons and conditional expressions become basic blocks joined by
+//!   branches. A `range` step computed at run time is asserted non-zero, and its sign picks the
+//!   loop test.
 //! - **Moves and borrows.** A read of a copy type copies; a read of any other type in a place
 //!   that takes the value moves it. Each call argument is passed in the mode its parameter
-//!   declares (decision 0006). An argument left out takes its parameter's default, a literal
-//!   or constant the call writes itself.
+//!   declares (decision 0006). An argument left out takes its parameter's default, after the
+//!   arguments passed: a literal or constant the call writes itself, or the value of a small
+//!   function of its own, lowered from the default in the callee's module and named by the
+//!   parameter, which the call calls each time (decision 0027, the `defaults` module).
 //! - **Drops.** Every exit from the function drops each variable and `Owned` parameter that
 //!   owns memory, and each statement drops the owning temporaries it made. In a built body a
 //!   drop of a value that was moved out does nothing; drop elaboration makes that exact.
@@ -48,13 +52,16 @@
 //! - **Math.** `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` from `math`, and `**` and `**=` on
 //!   floats, call a [`MathFunction`](mir::MathFunction), and rounding calls `RoundEven`, as
 //!   [`Builtin::Math`](mir::Builtin::Math) calls a backend writes. The built-in `round(x)` rounds
-//!   a float and converts it to an integer.
+//!   a float and converts it to an integer. `**` and `**=` on integers are repeated squaring,
+//!   with a [`NonNegativeExponent`](mir::Check::NonNegativeExponent) check and each
+//!   multiplication checked as [`NoPowerOverflow`](mir::Check::NoPowerOverflow).
 //! - **Random numbers.** `Philox(seed, stream)` and `generator.uniform()` call
 //!   [`Builtin::Philox`](mir::Builtin::Philox) and [`Builtin::Uniform`](mir::Builtin::Uniform),
 //!   the generator passed `InOut` (decision 0028). `pi`, `e`, `tau`, `inf` and `nan` from `math`
 //!   are `f64` constants.
 //! - **Unpacking.** `a, b = value` computes the value into a temporary, then moves or copies each
 //!   part into its target, left to right, so `a, b = b, a` swaps two arrays without copying them.
+//!   A target that is itself a tuple, `a, (b, c) = value`, unpacks its part in turn.
 //! - **Parallel loops.** The body of a `prange` loop is outlined into a body of its own that runs
 //!   one iteration, and the loop becomes a [`ParallelFor`](mir::TerminatorKind::ParallelFor)
 //!   that passes it the shared variables, each borrowed or `InOut`, the scalars it reduces
@@ -89,11 +96,11 @@
 //! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, slices, indexing lists and strings,
 //! adding into a slice of an array in `accumulate=`, `match` captures of values that are not copy
 //! types or inside `|`, `raise ... from`, an `except` that names its error through a module, calls
-//! that leave out an argument whose default is not a literal or a constant, or that belongs to a
-//! generic function, the built-in functions and methods other than `print`, `min` and `max` of
-//! numbers, `len` of an array, `round` with one argument, the `math` functions above, the array
-//! constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a `Fixed` array, `**` on
-//! integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`, and comprehensions.
+//! that leave out an argument of a generic function, the built-in functions and methods other than
+//! `print`, `min` and `max` of numbers, `len` of an array, `round` with one argument, the `math`
+//! functions above, the array constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a
+//! `Fixed` array, `**` on integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`,
+//! and comprehensions.
 //!
 //! # Example
 //!
@@ -243,12 +250,14 @@ mod builder;
 mod calls;
 mod constants;
 mod creation;
+mod defaults;
 mod errors;
 mod escapes;
 mod expressions;
 mod facts;
 mod lanes;
 mod lists;
+mod loops;
 mod math;
 mod methods;
 mod operators;
@@ -280,6 +289,9 @@ use types::{Declaration, Item, TypeDb};
 /// documentation), in source order. Fails with no errors when `item` is not a function, or its
 /// declaration or body has errors, which the checker already reports.
 pub fn lower<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Result<Body<'db>, Vec<Diagnostic>> {
+    if definition(db.parse(item.file(db)).tree(), item.name(db)).is_none() {
+        return defaults::lower(db, item);
+    }
     let Declaration::Function(signature) = &db.declaration(item).declaration else {
         return Err(Vec::new());
     };
