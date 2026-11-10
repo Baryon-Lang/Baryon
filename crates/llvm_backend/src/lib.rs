@@ -169,6 +169,7 @@ mod print_collections;
 mod process;
 mod random;
 mod rvalue;
+mod sort;
 mod string_methods;
 mod strings;
 mod text;

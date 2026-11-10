@@ -324,7 +324,7 @@ impl<'db> Builder<'db> {
         );
         self.then(node, |target| TerminatorKind::Assert {
             condition: Operand::Copy(Place::from(any)),
-            check: Check::NotEmpty,
+            check: Check::NotEmpty { list: false },
             target,
         });
     }

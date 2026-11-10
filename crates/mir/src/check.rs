@@ -63,9 +63,13 @@ pub enum Check<'db> {
     },
     /// A program's `assert` statement holds.
     Assertion,
-    /// An array reduced by `a.min()` or `a.max()` has at least one element, since there is no
-    /// smallest or largest of none. The panic message quotes the call from the source.
-    NotEmpty,
+    /// An array reduced by `a.min()` or `a.max()`, or a list reduced by `min(values)` or
+    /// `max(values)`, has at least one element, since there is no smallest or largest of none.
+    /// The panic message quotes the call from the source and names the kind of sequence.
+    NotEmpty {
+        /// Whether the sequence is a list rather than an array.
+        list: bool,
+    },
     /// A key looked up with `d[k]` or `d.pop(k)` is in the `dict` (decision 0035). A missing key
     /// panics rather than raising `KeyError`, as an index out of range does.
     KeyPresent {
@@ -99,7 +103,7 @@ impl<'db> Check<'db> {
             | Self::NonZeroDivisor
             | Self::NonZeroStep { .. }
             | Self::Assertion
-            | Self::NotEmpty => Vec::new(),
+            | Self::NotEmpty { .. } => Vec::new(),
         }
     }
 
@@ -141,7 +145,7 @@ impl<'db> Check<'db> {
             | Self::NonZeroDivisor
             | Self::NonZeroStep { .. }
             | Self::Assertion
-            | Self::NotEmpty => Vec::new(),
+            | Self::NotEmpty { .. } => Vec::new(),
         }
     }
 }
