@@ -1,6 +1,6 @@
 # 0036. Files and processes use Python's names, built natively in the runtime
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-10
 Roadmap: 1.13.6
 
@@ -41,7 +41,8 @@ workstream (roadmap 1.13.12). This record relies on it and does not define parsi
 Python's modules and names, a subset of each, with one error type. Collins chose parts 1 to 4
 on 2026-11-10, each the recommended option: Python's names, one `OSError` with a `kind`,
 `with open(...)`, and arrays as the only binary data in 0.3.0. The rest of the record follows
-from those choices and the rules above.
+from those choices and the rules above, and Collins accepted the whole record, read-only
+environment and no shell included, the same day.
 
 ### 1. Python's modules and names
 
