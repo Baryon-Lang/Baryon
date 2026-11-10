@@ -371,6 +371,47 @@ def main():
     .unwrap();
 }
 
+/// `pop()` on lists (roadmap 1.13.3) moves out the last element, of numbers, `str`s or lists,
+/// and a popped list can grow again. Python prints the same lines.
+#[test]
+fn list_pop_builds_and_runs() {
+    let program = r#"
+def main():
+    xs = [1.0, 2.0, 3.0]
+    last = xs.pop()
+    xs.append(4.0)
+    print(last, len(xs), xs[2])
+    names = ["argon", "neon"]
+    name = names.pop()
+    print(name, len(names), names[0])
+    rows = [[1, 2], [3]]
+    row = rows.pop()
+    print(len(row), row[0], len(rows))
+"#;
+    prints("list-pop", program, "3.0 3 4.0\nneon 1 argon\n1 3 1\n").unwrap();
+}
+
+/// Popping an empty list panics with Python's message, where `pop` is called.
+#[test]
+fn popping_an_empty_list_panics() {
+    let directory = package(
+        "list-pop-empty",
+        &[(
+            "main.byn",
+            "def main():\n    xs: list[int] = []\n    xs.pop()\n",
+        )],
+    )
+    .unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert_eq!(
+        panic_report(&ran),
+        "panic: pop from empty list\n  --> main.byn:3:5\n"
+    );
+}
+
 /// Monte Carlo pi: 1,024 chunks of a `prange` loop, each drawing from its own `Philox` stream.
 /// `NumPy`, drawing from `Generator(Philox(key=2026).jumped(chunk))` for each chunk, counts the
 /// same 80,420,174 hits, so the estimate matches to every digit, on any number of cores.

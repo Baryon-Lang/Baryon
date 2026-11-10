@@ -95,6 +95,7 @@ impl<'db> Builder<'db> {
                     self.list_append(place, *list, *value, node);
                 }
                 (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
+                (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
                 (Some(("Array" | "Fixed", method)), _) => {
                     self.array_method(place, method, &arguments, node);
                 }

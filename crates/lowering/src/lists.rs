@@ -56,6 +56,30 @@ impl<'db> Builder<'db> {
         self.start(next);
     }
 
+    /// `xs.pop()` into `place`: a call of [`Builtin::Pop`] with the list `InOut`, which moves
+    /// the last element out and panics on an empty list, as Python's `IndexError` stops a
+    /// program that does not catch it.
+    pub(crate) fn list_pop(&mut self, place: Place, list: NodeId, node: NodeId) {
+        if self.list_element(self.ty(list), node).is_none() {
+            return;
+        }
+        let Some(list) = self.place(list) else {
+            return;
+        };
+        let next = self.new_block();
+        self.terminate(
+            TerminatorKind::Call {
+                callee: Callee::Builtin(Builtin::Pop),
+                arguments: vec![Argument::InOut(list)],
+                destination: place,
+                target: next,
+                error: None,
+            },
+            node,
+        );
+        self.start(next);
+    }
+
     /// `Array(xs)` into `place`: a new one-dimensional array as long as the list, then a loop
     /// that copies each element in order. The list is borrowed, so it stays usable.
     ///
