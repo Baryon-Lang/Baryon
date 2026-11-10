@@ -62,7 +62,8 @@
 //!   array, `value in xs` and `xs.copy()` loop over its elements, and `Array(xs)` copies it into
 //!   a new array. Elements may be of any type; the backend drops them with the list. A `for`
 //!   loop over a list reads each element at a hidden counter, borrowing one that is not
-//!   copied, and a list comprehension is the loops it reads as, appending to a new list.
+//!   copied; one over a `str` borrows each character in turn through
+//!   [`Builtin::CharacterStr`](mir::Builtin::CharacterStr); and a list comprehension is the loops it reads as, appending to a new list.
 //! - **Math.** The functions of `math` for real numbers, and `**` and `**=` on floats, call a
 //!   [`MathFunction`](mir::MathFunction), as [`Builtin::Math`](mir::Builtin::Math) calls a
 //!   backend writes; `floor`, `ceil`, `trunc` and the built-in `round(x)` round and then convert
@@ -114,7 +115,7 @@
 //! `print`, `min` and `max` of numbers, `len` of an array, `round` with one argument, the `math`
 //! functions above, the array constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a
 //! `Fixed` array, `**` on integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`,
-//! a loop variable that borrows an element and is also used outside the loop, and `dict` and
+//! a loop variable that borrows an element and is also used outside a loop that binds it, and `dict` and
 //! `set` comprehensions.
 //!
 //! # Example
