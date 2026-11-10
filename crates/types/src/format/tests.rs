@@ -94,7 +94,21 @@ fn each_kind_of_value_allows_what_python_allows() {
         message("s", FormatClass::Bool),
         "format code `s` cannot format a `bool`"
     );
+    assert_eq!(
+        message("%", FormatClass::Complex),
+        "format code `%` cannot format a complex number"
+    );
+    assert_eq!(
+        message("010", FormatClass::Complex),
+        "zero padding `0` cannot format a complex number"
+    );
+    assert_eq!(
+        message("=10", FormatClass::Complex),
+        "`=` alignment cannot format a complex number"
+    );
     for (text, class) in [
+        (".2f", FormatClass::Complex),
+        ("+^20,.3e", FormatClass::Complex),
         (".2f", FormatClass::Integer),
         ("_x", FormatClass::Integer),
         (",", FormatClass::Integer),

@@ -234,6 +234,9 @@ pub enum FormatClass {
     Bool,
     /// A `str`.
     Text,
+    /// A complex number, `complex64` or `complex128`, whose two parts are formatted as floats
+    /// and written `re+imj`, as Python's `complex.__format__` writes them.
+    Complex,
 }
 
 impl FormatClass {
@@ -244,6 +247,7 @@ impl FormatClass {
             Self::Float => "a float",
             Self::Bool => "a `bool`",
             Self::Text => "a `str`",
+            Self::Complex => "a complex number",
         }
     }
 }
@@ -403,6 +407,22 @@ impl FormatSpec {
             FormatClass::Float => {
                 if presentation.is_integer() || presentation == Presentation::Text {
                     return not_for(code(presentation));
+                }
+            }
+            FormatClass::Complex => {
+                if presentation.is_integer()
+                    || matches!(presentation, Presentation::Text | Presentation::Percent)
+                {
+                    return not_for(code(presentation));
+                }
+                if self.zero {
+                    return not_for("zero padding `0`".to_owned());
+                }
+                if self.alternate {
+                    return not_for("`#`".to_owned());
+                }
+                if self.align == Some(Align::AfterSign) {
+                    return not_for("`=` alignment".to_owned());
                 }
             }
         }
