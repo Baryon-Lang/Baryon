@@ -38,10 +38,11 @@ program is linked with ([decision 0021](../decisions/0021-runtime-crate-and-unsa
 links it ([decision 0020](../decisions/0020-llvm-backend-emits-text.md)); older versions reject
 the opaque pointers the backend emits. On macOS it comes with the command line tools,
 `xcode-select --install`, which also provide the `dsymutil` that keeps line numbers for
-backtraces. On Linux, install your distribution's `clang` package; on Ubuntu 22.04, whose `clang`
-is 14, install `clang-15` and put it on `PATH` as `clang`, as the
-[beginner's guide](../guide/README.md#1-install-baryon) shows. `check`, `doc` and `lsp` need
-neither.
+backtraces. On Linux, install your distribution's `clang` package. `baryon` runs `clang` if it is
+15 or newer, and otherwise the newest of `clang-30` down to `clang-15` it finds, the names
+distributions give versions installed side by side; so on Ubuntu 22.04, whose `clang` is 14,
+`sudo apt install clang-15` is enough. With no new enough `clang`, `build` says which version it
+found and how to install one. `check`, `doc` and `lsp` need neither.
 
 ## Packages
 
