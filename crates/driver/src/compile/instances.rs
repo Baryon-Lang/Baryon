@@ -18,7 +18,8 @@ pub(crate) struct Instance<'db> {
 }
 
 /// The instances a program needs, collected as they are found: the roots first, then each
-/// instance of a generic function that a collected body calls, once.
+/// instance that a collected body calls, once: an instance of a generic function, or the
+/// function that computes a default (decision 0027), which is never a root.
 pub(crate) struct Instances<'db> {
     /// Every instance found so far, in the order found.
     found: Vec<Instance<'db>>,
@@ -45,8 +46,10 @@ impl<'db> Instances<'db> {
         Some(instance)
     }
 
-    /// Adds each instance of a generic function that `body` or one of its `prange` bodies calls
-    /// and is not yet found. The body is an instance's, so its type arguments are concrete.
+    /// Adds each instance that `body` or one of its `prange` bodies calls and is not yet found.
+    /// The body is an instance's, so its type arguments are concrete. A call of a function
+    /// that is not generic finds its root, already found, unless the function is one the roots
+    /// leave out, such as a default's.
     pub(crate) fn follow(&mut self, body: &Body<'db>) {
         for outlined in &body.outlined {
             self.follow(outlined);
@@ -60,7 +63,6 @@ impl<'db> Instances<'db> {
                     },
                 ..
             } = &block.terminator.kind
-                && !type_arguments.is_empty()
             {
                 let instance = Instance {
                     item: *item,

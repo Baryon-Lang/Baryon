@@ -25,7 +25,13 @@ fn literals_are_flagged_and_drops_free_only_owned_bytes() {
     };
     let first = body.push_block(end(TerminatorKind::Call {
         callee: Callee::Builtin(Builtin::Print),
-        arguments: vec![Argument::Borrow(name.into())],
+        arguments: vec![
+            Argument::Borrow(name.into()),
+            Argument::Owned(Operand::Constant(Constant {
+                ty: str,
+                value: ConstantValue::Str("\n".to_owned()),
+            })),
+        ],
         destination: printed.into(),
         target: BlockId::new(1),
         error: None,

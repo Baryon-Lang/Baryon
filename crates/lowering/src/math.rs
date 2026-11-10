@@ -7,16 +7,20 @@
 //! The operands convert to the result's float type first, as number mixing says (decision 0014),
 //! so `x ** 3` on an `f64` is `pow(x, 3.0)` and `sqrt(n)` on an integer is `sqrt(f64(n))`.
 //!
-//! `**` on integers is not lowered yet: it needs the panic on a negative exponent that the
-//! reference's errors chapter promises.
+//! `x ** n` and `x **= n` on integers are repeated squaring in the IR, with a panic on a negative
+//! exponent, as the reference's errors chapter says, and each multiplication checked for
+//! overflow as decision 0030 requires.
 
 use crate::builder::Builder;
 use mir::{
-    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, MathFunction, Operand,
-    Place, Rvalue, TerminatorKind,
+    Argument, BinaryOperator, Builtin, Callee, Check, Constant, ConstantValue, MathFunction,
+    Operand, Place, Rvalue, TerminatorKind,
 };
 use syntax::NodeId;
 use types::{Float, Primitive, Type, TypeKind};
+
+/// The overflow check of a multiplication inside integer `**`.
+const POWER: (BinaryOperator, Check<'static>) = (BinaryOperator::Multiply, Check::NoPowerOverflow);
 
 impl<'db> Builder<'db> {
     /// Whether `ty` is `f32` or `f64`.
@@ -208,6 +212,99 @@ impl<'db> Builder<'db> {
         self.assign(place, Rvalue::Use(Operand::Copy(Place::from(value))), node);
         self.terminate(TerminatorKind::Goto(join), node);
         self.start(join);
+    }
+
+    /// `place = base ** exponent` on the integer type `ty`, by repeated squaring: `result`
+    /// starts at 1, and for each bit of the exponent, lowest first, `result *= base` when the bit
+    /// is set, then `base *= base` while higher bits remain. That takes about `2 * log2(n)`
+    /// multiplications, and `0 ** 0` is 1, as in Python.
+    ///
+    /// A signed exponent below zero panics, naming it, since the result would be a fraction.
+    /// Each multiplication is checked for overflow. `base` is squared only while a higher bit
+    /// will multiply the square into the result, so a squaring overflows only when the result
+    /// would; a release build drops the checks and gets the result wrapped, since wrapping
+    /// multiplication is exact modulo 2 to the bit width.
+    pub(crate) fn integer_power(
+        &mut self,
+        place: Place,
+        (base, exponent): (Operand<'db>, Operand<'db>),
+        ty: Type<'db>,
+        node: NodeId,
+    ) {
+        let constant = |value| Operand::Constant(Constant::integer(ty, value));
+        let copy = |local| Operand::Copy(Place::from(local));
+        let factor = self.temporary(ty, node);
+        self.assign(Place::from(factor), Rvalue::Use(base), node);
+        let remaining = self.temporary(ty, node);
+        self.assign(Place::from(remaining), Rvalue::Use(exponent), node);
+        let boolean = self.boolean_type();
+        let signed = matches!(ty.kind(self.db),
+            TypeKind::Primitive(Primitive::Integer(integer)) if integer.is_signed());
+        if signed {
+            let valid = self.temporary(boolean, node);
+            let test = Rvalue::Binary(BinaryOperator::GreaterEqual, copy(remaining), constant(0));
+            self.assign(Place::from(valid), test, node);
+            self.then(node, |target| TerminatorKind::Assert {
+                condition: copy(valid),
+                check: Check::NonNegativeExponent {
+                    exponent: copy(remaining),
+                },
+                target,
+            });
+        }
+        let result = self.temporary(ty, node);
+        self.assign(Place::from(result), Rvalue::Use(constant(1)), node);
+        let header = self.new_block();
+        self.terminate(TerminatorKind::Goto(header), node);
+
+        // header: multiply in the factor when the lowest bit is set.
+        self.start(header);
+        let bit = self.temporary(ty, node);
+        let lowest = Rvalue::Binary(BinaryOperator::BitAnd, copy(remaining), constant(1));
+        self.assign(Place::from(bit), lowest, node);
+        let set = self.temporary(boolean, node);
+        let test = Rvalue::Binary(BinaryOperator::NotEqual, copy(bit), constant(0));
+        self.assign(Place::from(set), test, node);
+        let (multiply, shift) = (self.new_block(), self.new_block());
+        self.branch(copy(set), (multiply, shift), node);
+        self.start(multiply);
+        let operands = (copy(result), copy(factor));
+        self.checked_as(Place::from(result), POWER, operands, ty, node);
+        self.terminate(TerminatorKind::Goto(shift), node);
+
+        // shift: drop the bit; stop when none remain, else square the factor and go again.
+        self.start(shift);
+        let shifted = Rvalue::Binary(BinaryOperator::ShiftRight, copy(remaining), constant(1));
+        self.assign(Place::from(remaining), shifted, node);
+        let done = self.temporary(boolean, node);
+        let test = Rvalue::Binary(BinaryOperator::Equal, copy(remaining), constant(0));
+        self.assign(Place::from(done), test, node);
+        let (square, end) = (self.new_block(), self.new_block());
+        self.branch(copy(done), (end, square), node);
+        self.start(square);
+        let operands = (copy(factor), copy(factor));
+        self.checked_as(Place::from(factor), POWER, operands, ty, node);
+        self.terminate(TerminatorKind::Goto(header), node);
+
+        self.start(end);
+        self.assign(place, Rvalue::Use(copy(result)), node);
+    }
+
+    /// Ends the current block by going to `then` when `condition` holds, else to `otherwise`.
+    fn branch(
+        &mut self,
+        condition: Operand<'db>,
+        (then, otherwise): (mir::BlockId, mir::BlockId),
+        node: NodeId,
+    ) {
+        self.terminate(
+            TerminatorKind::Branch {
+                condition,
+                then,
+                otherwise,
+            },
+            node,
+        );
     }
 
     /// `place = function(operands…)`, where `place` and every operand have one float type.
