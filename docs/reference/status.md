@@ -57,7 +57,7 @@ checks what it prints.
 | `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a tuple of one copy type, such as `(2, 3, 5)`; with a target that unpacks, `for x, y in points` | `for` over lists and strings; over a tuple of `str` or other values that are not copied; a `prange` step that is not a constant |
 | `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values), each evaluated at every call that leaves its argument out | Leaving out an argument of a generic function |
 | `class` with `Struct`, `Copy`, `Exception`, `Enum` and `Protocol` bases, and the traits a struct names; `@layout("C")` | |
-| `raise` and `try`/`except`, including bare `raise` | `raise ... from` |
+| `raise` and `try`/`except`, including bare `raise` | |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications | Complex literals such as `2j`; `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
