@@ -140,12 +140,13 @@ in scope, with no import.
 | `Number`, `Float`, `VectorSpace` | Standard traits that bound a type parameter, as in `def rk4_step[S: VectorSpace](...)` | [Types](types.md#traits) |
 | `Protocol` | Base that makes a class a trait: `class Body(Protocol)` | [Types](types.md#declaring-a-trait) |
 | `Embed` | A struct field whose fields and methods the outer struct reaches: `particle: Embed[Particle]` | [Types](types.md#embedded-structs) |
+| `File` | An open text file, the type `open` returns | [Files and processes](files-and-processes.md) |
 | `Dyn` | Reserved for a value of any type with a trait, `Dyn[Body]`; an error until roadmap 3.5 | [Types](types.md#declaring-a-trait) |
 
 Python's own built-in names that the language keeps, with their Python meaning where it applies:
 `print`, `len`, `range`, `round`, `abs`, `min`, `max`, `sum`, `enumerate`, `zip`, `sorted`,
 `reversed`, `int`, `float`, `complex`, `bool`, `str`, `list`, `tuple`, `True`, `False`, `None`,
-`Exception` and `Enum`.
+`Exception`, `Enum` and `open`, which [Files and processes](files-and-processes.md) describes.
 
 `print(a, b, ...)` writes its arguments to standard output as Python does: separated by one space,
 followed by a line end. A float prints as Python's `repr` writes it, with the fewest digits that
