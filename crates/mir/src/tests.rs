@@ -602,3 +602,4 @@ mod parallel;
 mod vector;
 
 mod slices;
+mod unions;

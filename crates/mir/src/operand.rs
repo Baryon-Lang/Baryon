@@ -127,7 +127,8 @@ pub enum Rvalue<'db> {
     /// A number converted to another number type, as `f64(n)` writes it (decision 0014).
     Convert(Operand<'db>, Type<'db>),
     /// A value built from its parts: a struct's fields or a tuple's items in order, a `Fixed`
-    /// array's elements in row-major order, the one value of a present `T | None`, or a new
+    /// array's elements in row-major order, the one value of a present `T | None`, the one
+    /// value of a union, whose type names the member it holds (decision 0032), or a new
     /// `list` holding its elements in order, as the display `[a, b, c]` writes it. A list's
     /// buffer is allocated on the heap with room for exactly its elements, none for `[]`, and
     /// running out of memory panics; the place it is assigned to owns and drops it. A `dict`
@@ -150,6 +151,10 @@ pub enum Rvalue<'db> {
     /// Which error the error value at the place holds: its position in the callee's `Raises`
     /// list, as an `i64`.
     ErrorIndex(Place),
+    /// Which member the union at the place holds: its position in the union's canonical order
+    /// (`types::union`, decision 0032), as an `i64`. A `match` on a union switches on it and
+    /// then reads the member with [`Member`](crate::Projection::Member).
+    MemberIndex(Place),
     /// A whole-array expression, such as `a + b * c` over arrays, kept as one tree so array
     /// fusion can see it (decision 0018). Only in [`Phase::Built`](crate::Phase) bodies.
     Elementwise(Box<Elementwise<'db>>),

@@ -465,7 +465,10 @@ impl Uses {
                     self.locals
                         .extend(dimensions.iter().flat_map(SliceIndex::locals));
                 }
-                Projection::Field(_) | Projection::Value | Projection::Error(_) => {}
+                Projection::Field(_)
+                | Projection::Value
+                | Projection::Error(_)
+                | Projection::Member(_) => {}
             }
         }
     }
@@ -500,7 +503,10 @@ impl Uses {
                     self.operand(operand);
                 }
             }
-            Rvalue::Length(place, _) | Rvalue::IsPresent(place) | Rvalue::ErrorIndex(place) => {
+            Rvalue::Length(place, _)
+            | Rvalue::IsPresent(place)
+            | Rvalue::ErrorIndex(place)
+            | Rvalue::MemberIndex(place) => {
                 self.place(place);
             }
             Rvalue::Elementwise(tree) => {
