@@ -50,9 +50,12 @@
 //!   [`Elementwise`](mir::Rvalue::Elementwise) expression for array expansion to loop over.
 //!   `Array.zeros`, `ones` and `fill` allocate with [`NewArray`](mir::Rvalue::NewArray) and fill
 //!   the elements in a loop nest; a `Fixed` array is an [`Aggregate`](mir::Rvalue::Aggregate) of
-//!   its elements in row-major order. `a.copy()` is a whole-array expression of `a` alone,
-//!   `a.sum()` and `v.dot(w)` add in a loop nest, and `v.round()` on a `Fixed` array rounds each
-//!   element.
+//!   its elements in row-major order. `a.copy()` is a whole-array expression of `a` alone;
+//!   `a.sum()` and `a.dot(b)` of floats call [`Builtin::Sum`](mir::Builtin::Sum) and
+//!   [`Builtin::Dot`](mir::Builtin::Dot), and of integers add in a loop nest; `a.min()` and
+//!   `a.max()` scan in a loop nest after a [`NotEmpty`](mir::Check::NotEmpty) check;
+//!   `a.round()` rounds each element and `a.fill(value)` writes each one. The matrix product
+//!   `a @ b` is a loop nest over the result's entries with an inner loop that adds the products.
 //! - **Lists.** A display `[a, b]` is an [`Aggregate`](mir::Rvalue::Aggregate) of a list type,
 //!   `xs.append(value)` calls [`Builtin::Append`](mir::Builtin::Append), `len(xs)` and `xs[i]`
 //!   read it as a one-dimensional array, and `Array(xs)` copies it into a new array. Only lists
@@ -266,6 +269,7 @@ mod lanes;
 mod lists;
 mod loops;
 mod math;
+mod matrix;
 mod methods;
 mod operators;
 mod parallel;

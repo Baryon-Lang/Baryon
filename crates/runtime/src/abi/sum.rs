@@ -1,9 +1,10 @@
-//! The functions compiled code calls for `a.sum()` of floats (the `sum` module): one per float
-//! width, each taking the address of the first element and the element count.
+//! The functions compiled code calls for `a.sum()` and `a.dot(b)` of floats (the `sum` module):
+//! one per float width, each taking the address of the first element of each array and the
+//! element count, and `strided` forms that also take strides.
 //!
 //! A `Fixed` array is one value, so its elements are one run whatever the rank. A new `Array`
 //! keeps its elements contiguous in row-major order (decision 0008), but a view of one, a
-//! slice, may skip elements or walk backwards, so an `Array` is summed through its lengths and
+//! slice, may skip elements or walk backwards, so an `Array` is reduced through its lengths and
 //! strides by the `strided` functions. Integer sums never call
 //! these: integer addition is exact, so compiled code adds in a loop.
 
@@ -54,6 +55,58 @@ pub unsafe extern "C" fn baryon_rt_sum_f32(values: *const f32, count: i64) -> f3
     // SAFETY: the caller guarantees `count` initialized values at `values`.
     let values = unsafe { elements(values, count) };
     sum::sum(values, 0.0, -0.0)
+}
+
+/// The dot product of the `count` `f64` values at `left` and at `right`: the products added in
+/// `NumPy`'s pairwise order, so the result has the same bits as `numpy.sum(left * right)`. Zero
+/// values give `0.0`.
+///
+/// # Safety
+///
+/// `left` and `right` each point to `count` initialized `f64` values that nothing writes during
+/// the call, or `count` is 0 or less.
+///
+/// # Example
+///
+/// ```
+/// let (left, right) = ([1.0_f64, 2.0, 3.0], [4.0_f64, 5.0, 6.0]);
+/// // SAFETY: the pointers and count are two arrays'.
+/// let product = unsafe { runtime::baryon_rt_dot_f64(left.as_ptr(), right.as_ptr(), 3) };
+/// assert_eq!(product, 32.0);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_dot_f64(left: *const f64, right: *const f64, count: i64) -> f64 {
+    // SAFETY: the caller guarantees `count` initialized values at `left`.
+    let left = unsafe { elements(left, count) };
+    // SAFETY: and at `right`.
+    let right = unsafe { elements(right, count) };
+    sum::dot(left, right, 0.0, -0.0)
+}
+
+/// The dot product of the `count` `f32` values at `left` and at `right`, in `f32` arithmetic and
+/// `NumPy`'s pairwise order, as [`baryon_rt_dot_f64`] computes it for `f64`.
+///
+/// # Safety
+///
+/// `left` and `right` each point to `count` initialized `f32` values that nothing writes during
+/// the call, or `count` is 0 or less.
+///
+/// # Example
+///
+/// ```
+/// let (left, right) = ([1.5_f32, 2.0], [2.0_f32, 0.25]);
+/// // SAFETY: the pointers and count are two arrays'.
+/// assert_eq!(unsafe { runtime::baryon_rt_dot_f32(left.as_ptr(), right.as_ptr(), 2) }, 3.5);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_dot_f32(left: *const f32, right: *const f32, count: i64) -> f32 {
+    // SAFETY: the caller guarantees `count` initialized values at `left`.
+    let left = unsafe { elements(left, count) };
+    // SAFETY: and at `right`.
+    let right = unsafe { elements(right, count) };
+    sum::dot(left, right, 0.0, -0.0)
 }
 
 /// The `count` values at `values` as a slice; empty when `count` is 0 or less.
@@ -150,13 +203,102 @@ pub unsafe extern "C" fn baryon_rt_sum_strided_f32(
     }
 }
 
+/// The dot product of two rank-1 `f64` arrays of `count` elements that may be views, each
+/// given by its element pointer and its stride in elements: the products added in `NumPy`'s
+/// pairwise order, as [`baryon_rt_dot_f64`] adds a contiguous pair's, so a view gives the same
+/// bits as a contiguous copy of it.
+///
+/// Cost: a stride of 1 is read where it lies; any other is first copied into a buffer of its
+/// elements, one allocation and one pass per such operand.
+///
+/// # Safety
+///
+/// `count` elements from each pointer, each `stride` elements after the last, are initialized
+/// `f64` values that nothing writes during the call, or `count` is 0 or less.
+///
+/// # Example
+///
+/// ```
+/// // `values[::2]` dotted with `values[2::-1]`: 1*3 + 3*2 + 5*1.
+/// let values = [1.0_f64, 2.0, 3.0, 4.0, 5.0];
+/// // SAFETY: both views reach only the five values.
+/// let product = unsafe {
+///     runtime::baryon_rt_dot_strided_f64(values.as_ptr(), 2, values.as_ptr().add(2), -1, 3)
+/// };
+/// assert_eq!(product, 14.0);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_dot_strided_f64(
+    left: *const f64,
+    left_stride: i64,
+    right: *const f64,
+    right_stride: i64,
+    count: i64,
+) -> f64 {
+    // SAFETY: the caller's promise, passed on for each operand.
+    unsafe {
+        strided(left, 1, &raw const count, &raw const left_stride, |left| {
+            strided(
+                right,
+                1,
+                &raw const count,
+                &raw const right_stride,
+                |right| sum::dot(left, right, 0.0, -0.0),
+            )
+        })
+    }
+}
+
+/// The dot product of two rank-1 `f32` arrays that may be views, in `f32` arithmetic, as
+/// [`baryon_rt_dot_strided_f64`] computes it for `f64`.
+///
+/// # Safety
+///
+/// As for [`baryon_rt_dot_strided_f64`], with `f32` elements.
+///
+/// # Example
+///
+/// ```
+/// // `values[::-1]` dotted with `values`: 2.0*1.5 + 1.5*2.0.
+/// let values = [1.5_f32, 2.0];
+/// // SAFETY: both views reach only the two values.
+/// let product = unsafe {
+///     runtime::baryon_rt_dot_strided_f32(values.as_ptr().add(1), -1, values.as_ptr(), 1, 2)
+/// };
+/// assert_eq!(product, 6.0);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_dot_strided_f32(
+    left: *const f32,
+    left_stride: i64,
+    right: *const f32,
+    right_stride: i64,
+    count: i64,
+) -> f32 {
+    // SAFETY: the caller's promise, passed on for each operand.
+    unsafe {
+        strided(left, 1, &raw const count, &raw const left_stride, |left| {
+            strided(
+                right,
+                1,
+                &raw const count,
+                &raw const right_stride,
+                |right| sum::dot(left, right, 0.0, -0.0),
+            )
+        })
+    }
+}
+
 /// Calls `reduce` with the elements of the array at `data` with these lengths and strides, in
 /// row-major order: in place when the strides are a contiguous array's, otherwise copied into a
 /// buffer first.
 ///
 /// # Safety
 ///
-/// As for [`baryon_rt_sum_strided_f64`].
+/// `lengths` and `strides` point to `rank` values each, and every element they reach from
+/// `data` is initialized and nothing writes it during the call.
 #[allow(unsafe_code, reason = "reads an array compiled code points to")]
 unsafe fn strided<T: Copy, R>(
     data: *const T,
@@ -241,6 +383,28 @@ mod tests {
         let empty = unsafe {
             baryon_rt_sum_strided_f64(matrix.as_ptr(), 2, [0, 2].as_ptr(), [2, 1].as_ptr())
         };
+        assert_eq!(empty.to_bits(), 0.0_f64.to_bits());
+    }
+
+    /// A strided dot product equals the contiguous one of the same elements, bit for bit, and
+    /// an empty one is 0.
+    #[test]
+    #[allow(
+        unsafe_code,
+        reason = "calls the exported functions as compiled code does"
+    )]
+    fn strided_dot_products_match_contiguous_ones() {
+        let values = [0.1_f64, 0.7, 0.2, 0.9, 0.3];
+        let (left, right) = ([0.1_f64, 0.2, 0.3], [0.3_f64, 0.9, 0.2]);
+        // SAFETY: the arrays hold three values each.
+        let contiguous = unsafe { baryon_rt_dot_f64(left.as_ptr(), right.as_ptr(), 3) };
+        // `values[::2]` is `[0.1, 0.2, 0.3]` and `values[4:1:-1]` is `[0.3, 0.9, 0.2]`.
+        // SAFETY: both views reach only the five values.
+        let strided =
+            unsafe { baryon_rt_dot_strided_f64(values.as_ptr(), 2, &raw const values[4], -1, 3) };
+        assert_eq!(strided.to_bits(), contiguous.to_bits());
+        // SAFETY: an empty view reads nothing.
+        let empty = unsafe { baryon_rt_dot_strided_f64(values.as_ptr(), 2, values.as_ptr(), 1, 0) };
         assert_eq!(empty.to_bits(), 0.0_f64.to_bits());
     }
 }

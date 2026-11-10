@@ -97,6 +97,33 @@ def main():
     );
 }
 
+/// `a.dot(b)` of slices reads each through its stride, forwards, backwards and down a column
+/// of a matrix, and gives the same bits as the dot product of contiguous copies, and as
+/// Python adds the products of these fewer than eight elements, left to right.
+#[test]
+fn slices_dot_through_their_strides() {
+    let program = "\
+def main():
+    a = Array.zeros(10)
+    for i in range(10):
+        a[i] = f64(i) * 0.1
+    print(a[::2].dot(a[9::-2]), a[1:4].dot(a[1:4]))
+    print(a[::2].dot(a[9::-2]) == a[::2].copy().dot(a[9::-2].copy()))
+    m = Array.zeros((3, 4))
+    for i in range(3):
+        for j in range(4):
+            m[i, j] = f64(10 * i + j)
+    print(m[:, 1].dot(m[:, 2]), m[2, :].dot(a[0:4]))
+";
+    let (stdout, stderr, success) = run("slices-dot", program).unwrap();
+    assert_eq!(stderr, "");
+    assert!(success);
+    assert_eq!(
+        stdout,
+        "0.6000000000000001 0.14000000000000004\nTrue\n596.0 13.400000000000002\n"
+    );
+}
+
 /// Writing through views: `=` of a number and of a slice, `+=`, a slice passed `InOut`, a
 /// whole-array expression of slices into a new array, and an assignment between overlapping
 /// slices of one array, which reads every element before any is written, as `NumPy` does.

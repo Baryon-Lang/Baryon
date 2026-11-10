@@ -252,7 +252,9 @@ pub enum Builtin {
     /// a type yet reports it. The destination has type `None` and the call cannot fail.
     Print,
     /// A mathematical function of floats. Every argument and the destination have one float
-    /// type, `f32` or `f64`; lowering converts integer operands first. The call cannot fail.
+    /// type, `f32` or `f64`; lowering converts integer operands first. The one exception is
+    /// [`Power`](MathFunction::Power) of complex numbers, where every argument and the
+    /// destination have one complex type instead. The call cannot fail.
     Math(MathFunction),
     /// `a.sum()` of an `Array` or `Fixed` array of floats: one argument, the array, passed
     /// `Borrow`; the destination has the element type. The elements are added in row-major
@@ -380,7 +382,8 @@ pub enum MathFunction {
     /// `math.fabs(x)`: the absolute value, always a float.
     Fabs,
     /// `math.hypot(x, y)`: `sqrt(x * x + y * y)` without overflow or underflow in between; two
-    /// arguments. Python's `hypot` of more than two arguments is not here.
+    /// arguments. Python's `hypot` of more than two arguments is not here. `abs` of a complex
+    /// number is `hypot` of its parts, as Python computes it.
     Hypot,
     /// `math.copysign(x, y)`: the size of `x` with the sign of `y`; two arguments.
     CopySign,
@@ -390,6 +393,12 @@ pub enum MathFunction {
     /// `math.fma(x, y, z)`: `x * y + z` rounded once; three arguments.
     FusedMultiplyAdd,
     /// `x ** y` on floats, and `math.pow(x, y)`: two arguments, the base then the exponent.
+    ///
+    /// Also `x ** y` on two complex numbers of one type, `complex64` or `complex128`, computed
+    /// as Python's `complex.__pow__` computes it: by repeated squaring for a whole exponent of
+    /// at most 100 in size, through polar form otherwise. Where Python raises
+    /// `ZeroDivisionError`, zero to a negative or complex power, the result is `nan+nanj`, as
+    /// `NumPy` gives; where it raises `OverflowError`, the parts are infinite.
     Power,
     /// `math.floor(x)` before its conversion to an integer: the largest whole number not above
     /// `x`, still a float.
