@@ -17,6 +17,9 @@
 //!   64-bit. A view of an array has the same header with its own pointer and strides.
 //! - **`list[T]`** is a pointer, a length and a capacity; **`str`** a pointer and a length in
 //!   bytes.
+//! - **`dict[K, V]`** is one pointer to a table the runtime allocates and owns, or null while the
+//!   dict is empty (decision 0035). The table's own layout is the runtime's business, so it can
+//!   change without touching any other stage.
 //! - **`T | None`** is a `T` followed by a one-byte flag, as a record.
 //! - **Enums** are the smallest unsigned integer that numbers their variants.
 //! - **`Raises[T, E]`** is a one-byte tag followed by room for the largest of `T` and the errors.
@@ -216,6 +219,9 @@ impl<'db> Layouter<'_, 'db> {
             TypeKind::Primitive(primitive) => Ok(primitive_layout(*primitive)),
             TypeKind::Str => WORD.repeat(2).ok_or(too_large),
             TypeKind::List(_) => WORD.repeat(3).ok_or(too_large),
+            // One pointer to the runtime's table, null while the dict is empty, so a move
+            // copies one word and an empty dict allocates nothing.
+            TypeKind::Dict { .. } => Ok(WORD),
             TypeKind::Standard(StandardType::Philox) => WORD.repeat(11).ok_or(too_large),
             TypeKind::None | TypeKind::Callable { .. } | TypeKind::Function { .. } => {
                 Ok(Layout::EMPTY)

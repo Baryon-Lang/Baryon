@@ -42,6 +42,9 @@ impl fmt::Display for Displayed<'_> {
             TypeKind::None => formatter.write_str("None"),
             TypeKind::Tuple(items) => write!(formatter, "tuple[{}]", list(items).join(", ")),
             TypeKind::List(item) => write!(formatter, "list[{}]", show(*item)),
+            TypeKind::Dict { key, value } => {
+                write!(formatter, "dict[{}, {}]", show(*key), show(*value))
+            }
             TypeKind::Optional(value) => write!(formatter, "{} | None", show(*value)),
             TypeKind::Array { element, rank } => {
                 write!(formatter, "Array[{}, {rank}]", show(*element))
