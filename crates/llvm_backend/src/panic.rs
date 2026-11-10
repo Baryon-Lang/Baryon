@@ -419,9 +419,10 @@ impl<'db> Function<'_, '_, 'db> {
                 let (bytes, length) = self.text_parts(&text);
                 Failure::Key { bytes, length }
             }
-            Check::NotEmpty => {
+            Check::NotEmpty { list } => {
                 let call = self.constants.source(self.span);
-                Failure::Message(format!("`{call}` of an empty array"))
+                let sequence = if *list { "list" } else { "array" };
+                Failure::Message(format!("`{call}` of an empty {sequence}"))
             }
             Check::SameLength {
                 dimension,

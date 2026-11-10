@@ -419,7 +419,8 @@ impl Writer<'_> {
                 self.operand(expected)
             ),
             Check::Assertion => "assertion".to_owned(),
-            Check::NotEmpty => "not empty".to_owned(),
+            Check::NotEmpty { list: false } => "not empty".to_owned(),
+            Check::NotEmpty { list: true } => "list not empty".to_owned(),
             Check::KeyPresent { key } => format!("key present: {}", self.operand(key)),
         }
     }
