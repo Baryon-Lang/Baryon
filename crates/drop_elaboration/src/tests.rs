@@ -8,7 +8,9 @@ use mir::{
 };
 use source::{FileId, SourceFile, Span};
 use syntax::{NodeId, Role, SyntaxKind, TreeBuilder};
-use types::{Declared, Float, Integer, Item, Mode, Nominal, Primitive, Type, TypeKind};
+use types::{
+    Declared, Float, Integer, Item, Mode, Nominal, Primitive, StandardType, Type, TypeKind,
+};
 
 /// A database whose files each hold one name, standing for a definition.
 #[salsa::db]
@@ -362,6 +364,64 @@ fn(_1: bool) -> None {
 
     bb5: {
         _3 = False;
+        return;
+    }
+}
+"
+    );
+}
+
+/// A struct with a field moved out still drops a `File` field, which holds an open file to
+/// close, and needs no drop for a `Philox` field, which is only numbers.
+#[test]
+fn a_partly_moved_struct_still_closes_its_file() {
+    let database = Database::default();
+    let types = Types::new(&database);
+    let standard = |standard| Type::new(&database, TypeKind::Standard(standard));
+    let (file, name) = named(&database, "Run");
+    let run = Type::new(
+        &database,
+        TypeKind::Struct(Nominal {
+            file,
+            name,
+            arguments: Vec::new(),
+        }),
+    );
+    let fields = vec![
+        types.array,
+        standard(StandardType::File),
+        standard(StandardType::Philox),
+    ];
+    let declared = |_: &Nominal<'_>| Declared::Struct(fields.clone());
+
+    let mut body = Body::new(types.none, span());
+    let a = body.push_local(run, parameter("run", Mode::Owned), span());
+    let samples = body.push_local(
+        types.array,
+        LocalKind::Variable {
+            name: "samples".into(),
+        },
+        span(),
+    );
+    let entry = body.push_block(end(TerminatorKind::Return));
+    body.blocks[entry.index()].statements = vec![
+        move_into(samples, Place::from(a).project(Projection::Field(0))),
+        drop(samples),
+        drop(a),
+    ];
+
+    assert_eq!(
+        elaborated(&database, body, &declared),
+        "\
+fn(_1: Owned[Run]) -> None {
+    let _0: None; // return
+    let _1: Run; // parameter run
+    let _2: Array[f64, 1]; // samples
+
+    bb0: {
+        _2 = move _1.0;
+        drop(_2);
+        drop(_1.1);
         return;
     }
 }

@@ -192,7 +192,7 @@ impl<'db> Function<'_, '_, 'db> {
     }
 
     /// Ends the value at `place`: frees an array's elements, and every array inside a tuple or
-    /// struct; any other value owns no memory, so dropping it does nothing.
+    /// struct, and closes a `File`; any other value owns nothing, so dropping it does nothing.
     pub(crate) fn drop_place(&mut self, place: &Place) -> Result<(), Unsupported> {
         let (address, ty) = self.place(place)?;
         self.drop_value(&address, ty)
@@ -206,6 +206,10 @@ impl<'db> Function<'_, '_, 'db> {
             TypeKind::Dict { .. } => self.free_dict(address, ty),
             TypeKind::Str => {
                 self.free_text(address);
+                Ok(())
+            }
+            TypeKind::Standard(types::StandardType::File) => {
+                self.drop_file(address);
                 Ok(())
             }
             TypeKind::Tuple(_) | TypeKind::Struct(_) => {
@@ -244,14 +248,15 @@ impl<'db> Function<'_, '_, 'db> {
         }
     }
 
-    /// Whether a value of `ty` owns memory a drop frees: an array, a list, a `dict` or a `str`, or a
-    /// tuple, struct, optional or union holding one.
+    /// Whether a value of `ty` owns memory a drop frees, or a file a drop closes: an array, a
+    /// list, a `dict`, a `str` or a `File`, or a tuple, struct, optional or union holding one.
     pub(crate) fn owns_memory(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.types.db) {
             TypeKind::Array { .. } | TypeKind::List(_) | TypeKind::Dict { .. } | TypeKind::Str => {
                 true
             }
             TypeKind::Optional(value) => self.owns_memory(*value),
+            TypeKind::Standard(standard) => standard.owns_resources(),
             TypeKind::Union(members) => members.iter().any(|&member| self.owns_memory(member)),
             TypeKind::Tuple(_) | TypeKind::Struct(_) => (0..)
                 .map_while(|position| self.field(ty, position).ok())

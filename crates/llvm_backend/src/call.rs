@@ -31,6 +31,9 @@ impl<'db> Function<'_, '_, 'db> {
                 item,
                 type_arguments,
             } => (item, type_arguments),
+            Callee::Builtin(Builtin::File(method)) => {
+                return self.file_call(*method, arguments, destination, target, error);
+            }
             Callee::Builtin(builtin) => {
                 return self.builtin(*builtin, arguments, destination, target);
             }
@@ -153,6 +156,7 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Exit => self.system_exit(arguments),
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
+            // Each can fail, so `call` sends it to `file_call` with its error edge.
             Builtin::File(method) => Err(Unsupported::new(method.name())),
         }
     }

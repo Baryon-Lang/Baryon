@@ -156,6 +156,7 @@ mod debug;
 mod dict;
 mod entry;
 mod errors;
+mod files;
 mod function;
 mod list;
 mod literal;
