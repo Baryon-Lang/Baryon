@@ -57,7 +57,8 @@
 //!   checks it cannot hoist, runs unvectorized for now; reporting it is roadmap 3.7.
 //! - **`print` calls the runtime once per argument**, which writes the value as Python does.
 //!   Lowering passes the space between arguments and the line end as `str` constants, which
-//!   become byte constants.
+//!   become byte constants. A tuple or a struct is taken apart into those calls when the program
+//!   is compiled; a list or a dict is a loop over its elements that makes them as it runs.
 //! - **Math functions are LLVM intrinsics.** A [`Builtin::Math`](mir::Builtin::Math) call, such
 //!   as `x ** y` on floats, becomes `llvm.pow.f64`, which LLVM folds, turns into one instruction
 //!   where the target has one, or calls the C math library for.
@@ -162,6 +163,7 @@ mod math;
 mod panic;
 mod parallel;
 mod print;
+mod print_collections;
 mod random;
 mod rvalue;
 mod strings;
