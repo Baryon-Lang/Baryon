@@ -3,9 +3,11 @@
 //! the package's `main.byn`.
 //!
 //! This is the prototype of roadmap 1.11.3. It compiles every function and method that has no
-//! type parameters, then collects the instances of generic functions they call (roadmap 1.9.5,
-//! decision 0018): each call of a generic function at concrete types adds that instance, whose
-//! body is the generic body with the types substituted, and whose own calls are followed in turn.
+//! type parameters, then collects the instances of generic functions and of methods of generic
+//! classes they call (roadmap 1.9.5 and 1.9.18, decision 0018): each call of a generic function
+//! at concrete types adds that instance, whose body is the generic body with the types
+//! substituted, and whose own calls are followed in turn. It also compiles the function that
+//! computes each default a call leaves out, when that call is found (decision 0027).
 //! An instance's symbol is its function's with the type arguments after it: `main.square[f64]`.
 //! A function lowering or the backend cannot handle yet is reported once, at its name.
 
@@ -32,6 +34,11 @@ struct Function<'db> {
     in_main_module: bool,
     /// Whether it is decorated `@test`, and where.
     test: Test,
+    /// The function that computes each default of a parameter, named by the parameter's
+    /// `Name` node, with its symbol: the function's own with the
+    /// parameter's name after a colon, `main.drift:buffer`, which no name can spell (decision
+    /// 0027).
+    defaults: Vec<(Item<'db>, String)>,
 }
 
 /// Whether a function is decorated `@test`.
@@ -138,20 +145,6 @@ impl Session {
             )
     }
 
-    /// The error for a method of a generic class, such as `Pair[T]`'s: its signature names
-    /// its class's type parameters but has none of its own, so it can be neither compiled once
-    /// nor collected per call yet. `None` for any other function.
-    fn generic_method(
-        &self,
-        item: Item<'_>,
-        signature: &types::Signature<'_>,
-    ) -> Option<Diagnostic> {
-        mentions_type_parameter(&self.database, signature).then(|| {
-            self.at(item, "methods of generic classes are not compiled yet")
-                .with_note("collecting a class's type arguments comes after roadmap 1.9.5")
-        })
-    }
-
     /// The package as one LLVM module whose C `main` starts `program`, built for `profile`, with
     /// the names of the tests it runs, which are none for [`Program::Main`].
     fn program(
@@ -172,7 +165,10 @@ impl Session {
         let functions = self.functions();
         let symbols: HashMap<Item<'_>, String> = functions
             .iter()
-            .map(|function| (function.item, function.symbol.clone()))
+            .flat_map(|function| {
+                std::iter::once((function.item, function.symbol.clone()))
+                    .chain(function.defaults.iter().cloned())
+            })
             .collect();
         let symbol = |item: &Item<'_>, arguments: &[types::Type<'_>]| {
             let base = symbols.get(item).cloned().unwrap_or_default();
@@ -193,7 +189,8 @@ impl Session {
             format!("{base}[{}]", shown.join(", "))
         };
         let declared = declared(database, self.package);
-        let mut module = llvm_backend::Module::new(database, self, &declared, &symbol);
+        let names = names(database, self.package);
+        let mut module = llvm_backend::Module::new(database, self, &declared, &names, &symbol);
         if let Some(root) = root {
             module.debug_info(root);
         }
@@ -216,14 +213,10 @@ impl Session {
                 errors.push(self.at(function.item, "`@test` goes on a top-level function"));
                 continue;
             }
-            if is_generic(database, signature) {
+            if is_generic(database, function.item, signature) {
                 if entry && program == Program::Tests {
                     errors.push(self.at(function.item, "a test cannot have type parameters"));
                 }
-                continue;
-            }
-            if let Some(error) = self.generic_method(function.item, signature) {
-                errors.push(error);
                 continue;
             }
             if function.main && !function.in_main_module {
@@ -254,7 +247,8 @@ impl Session {
                 arguments: Vec::new(),
             });
         }
-        errors.extend(self.define(&mut module, roots, &declared, &symbol));
+        let owners = owners(&functions);
+        errors.extend(self.define(&mut module, roots, &declared, &symbol, &owners));
         let tests = self.start(&mut module, program, &entries, &mut errors);
         if errors.is_empty() {
             Ok((module.finish(), tests))
@@ -314,14 +308,16 @@ impl Session {
     }
 
     /// Defines in `module` each instance a program needs: `roots`, then each instance of a
-    /// generic function that a defined body calls. Returns one error per function lowering or the
-    /// backend cannot handle yet.
+    /// generic function, and each default's function, that a defined body calls. `owners`
+    /// maps each default's function to the function it belongs to, whose errors it raises.
+    /// Returns one error per function lowering or the backend cannot handle yet.
     fn define<'db>(
         &'db self,
         module: &mut llvm_backend::Module<'_, 'db>,
         roots: Vec<Instance<'db>>,
         declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
         symbol: &dyn Fn(&Item<'db>, &[types::Type<'db>]) -> String,
+        owners: &HashMap<Item<'db>, Item<'db>>,
     ) -> Vec<Diagnostic> {
         let database = &self.database;
         let mut errors = Vec::new();
@@ -332,13 +328,15 @@ impl Session {
             match ready(database, &instance, declared) {
                 Ok(body) => {
                     instances.follow(&body);
-                    let Declaration::Function(signature) =
-                        &database.declaration(instance.item).declaration
-                    else {
-                        continue;
-                    };
-                    let raises = match signature.returns.kind(database) {
-                        TypeKind::Fallible { errors, .. } => errors.as_slice(),
+                    // A default's function raises what the function it belongs to declares.
+                    let owner = owners.get(&instance.item).unwrap_or(&instance.item);
+                    let raises = match &database.declaration(*owner).declaration {
+                        Declaration::Function(signature) => {
+                            match signature.returns.kind(database) {
+                                TypeKind::Fallible { errors, .. } => errors.as_slice(),
+                                _ => &[],
+                            }
+                        }
                         _ => &[],
                     };
                     let name = symbol(&instance.item, &instance.arguments);
@@ -384,12 +382,19 @@ impl Session {
                         (true, false) => Test::Function,
                         (true, true) => Test::Method,
                     };
+                    let defaults = defaulted(tree, statement)
+                        .map(|name| {
+                            let item = Item::new(database, self.package, file, name);
+                            (item, format!("{symbol}:{}", tree.text(name, text)))
+                        })
+                        .collect();
                     functions.push(Function {
                         item: Item::new(database, self.package, file, node),
                         symbol,
                         main,
                         in_main_module,
                         test: decorated,
+                        defaults,
                     });
                 };
             for statement in tree.children_with(tree.root(), Role::Body) {
@@ -426,31 +431,13 @@ impl Session {
         functions
     }
 
-    /// The error types a `main` returning `returns` can raise, each with its fields' names,
-    /// for the report of an error that ends the program; empty when it cannot fail.
-    fn reported<'db>(&'db self, returns: types::Type<'db>) -> Vec<(types::Type<'db>, Vec<String>)> {
-        let database = &self.database;
-        let TypeKind::Fallible { errors, .. } = returns.kind(database) else {
-            return Vec::new();
-        };
-        errors
-            .iter()
-            .map(|&error| {
-                let fields = match error.kind(database) {
-                    TypeKind::Struct(nominal) => {
-                        let item = Item::new(database, self.package, nominal.file, nominal.name);
-                        match &database.declaration(item).declaration {
-                            Declaration::Struct { fields, .. } => {
-                                fields.iter().map(|field| field.name.clone()).collect()
-                            }
-                            _ => Vec::new(),
-                        }
-                    }
-                    _ => Vec::new(),
-                };
-                (error, fields)
-            })
-            .collect()
+    /// The error types a `main` returning `returns` can raise, for the report of an error that
+    /// ends the program; empty when it cannot fail.
+    fn reported<'db>(&'db self, returns: types::Type<'db>) -> Vec<types::Type<'db>> {
+        match returns.kind(&self.database) {
+            TypeKind::Fallible { errors, .. } => errors.clone(),
+            _ => Vec::new(),
+        }
     }
 
     /// An error at the name of `item`.
@@ -462,6 +449,30 @@ impl Session {
     }
 }
 
+/// The function each default's function in `functions` belongs to.
+fn owners<'db>(functions: &[Function<'db>]) -> HashMap<Item<'db>, Item<'db>> {
+    functions
+        .iter()
+        .flat_map(|function| {
+            function
+                .defaults
+                .iter()
+                .map(|(default, _)| (*default, function.item))
+        })
+        .collect()
+}
+
+/// The `Name` node of each parameter of the function `function` declares that has a default,
+/// which names the function that computes it.
+fn defaulted(tree: &syntax::SyntaxTree, function: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+    tree.child(function, Role::Parameters)
+        .into_iter()
+        .flat_map(|parameters| tree.children(parameters))
+        .filter(|&parameter| tree.kind(parameter) == SyntaxKind::Parameter)
+        .filter(|&parameter| tree.child(parameter, Role::Default).is_some())
+        .filter_map(|parameter| tree.child(parameter, Role::Name))
+}
+
 /// What each struct or enum of `package` declares, as layouts, the passes and the backend read it.
 fn declared<'db>(
     db: &'db dyn TypeDb,
@@ -470,45 +481,45 @@ fn declared<'db>(
     move |nominal| checker::declared(db, package, nominal)
 }
 
-/// Whether the signature of a function that is not generic itself still names a type
-/// parameter: the parameter of its class, as `Pair[T]`'s methods do.
-fn mentions_type_parameter<'db>(
-    database: &'db dyn TypeDb,
-    signature: &types::Signature<'db>,
-) -> bool {
-    signature
-        .parameters
-        .iter()
-        .map(|parameter| parameter.ty)
-        .chain([signature.returns])
-        .any(|ty| names_parameter(database, ty))
-}
-
-/// Whether `ty` is or contains a type parameter.
-fn names_parameter<'db>(database: &'db dyn TypeDb, ty: types::Type<'db>) -> bool {
-    let any = |types: &[types::Type<'db>]| types.iter().any(|&ty| names_parameter(database, ty));
-    match ty.kind(database) {
-        TypeKind::Parameter { .. } => true,
-        TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => any(&nominal.arguments),
-        TypeKind::Tuple(items) => any(items),
-        TypeKind::List(inner) | TypeKind::Optional(inner) => names_parameter(database, *inner),
-        TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
-            names_parameter(database, *element)
+/// The names `print` writes for each struct or enum of `package`: the class's name, then its
+/// fields' or members' names in declaration order.
+fn names<'db>(
+    db: &'db dyn TypeDb,
+    package: database::Package,
+) -> impl Fn(&Nominal<'db>) -> llvm_backend::ClassNames {
+    move |nominal| {
+        let bare = Nominal {
+            arguments: Vec::new(),
+            ..nominal.clone()
+        };
+        let item = Item::new(db, package, nominal.file, nominal.name);
+        let members = match &db.declaration(item).declaration {
+            Declaration::Struct { fields, .. } => {
+                fields.iter().map(|field| field.name.clone()).collect()
+            }
+            Declaration::Enum { variants } => variants.clone(),
+            _ => Vec::new(),
+        };
+        llvm_backend::ClassNames {
+            class: types::Type::new(db, TypeKind::Struct(bare))
+                .display(db)
+                .to_string(),
+            members,
         }
-        TypeKind::Fallible { value, errors } => names_parameter(database, *value) || any(errors),
-        TypeKind::Callable {
-            parameters,
-            returns,
-        } => names_parameter(database, *returns) || any(parameters),
-        _ => false,
     }
 }
 
-/// Whether the function `signature` declares is compiled once per call's arguments, from the
-/// calls that reach it, rather than once on its own: it has type parameters, or a `Callable`
-/// parameter, which is an implicit one (decision 0026).
-fn is_generic<'db>(database: &'db dyn TypeDb, signature: &types::Signature<'db>) -> bool {
+/// Whether the function `item`, whose signature is `signature`, is compiled once per call's
+/// arguments, from the calls that reach it, rather than once on its own: it has type
+/// parameters, it is a method of a class that has them (roadmap 1.9.18), or it has a
+/// `Callable` parameter, which is an implicit one (decision 0026).
+fn is_generic<'db>(
+    database: &'db dyn TypeDb,
+    item: Item<'db>,
+    signature: &types::Signature<'db>,
+) -> bool {
     !signature.type_parameters.is_empty()
+        || !instances::class_parameters(database, item).is_empty()
         || signature
             .parameters
             .iter()

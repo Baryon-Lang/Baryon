@@ -12,12 +12,17 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Mutex, Once, PoisonError};
 
+mod defaults;
 mod examples;
+mod generic_methods;
 mod guide;
+mod math;
 mod modules;
 mod overflow;
 mod parallel;
+mod print;
 mod shapes;
+mod statements;
 mod structs;
 mod testing;
 mod text;

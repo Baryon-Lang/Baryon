@@ -59,6 +59,10 @@ pub(crate) struct Builder<'db> {
     /// the array's place in the body, then the parameter that adds into the running chunk's
     /// copy of it (the `accumulate` module). Empty elsewhere.
     pub(crate) accumulated: Vec<(Place, Local)>,
+    /// Inside a `simd` loop that sums or multiplies floats, one entry per such variable: its
+    /// local, then the lane the current iteration adds into (the `lanes` module). Empty
+    /// elsewhere.
+    pub(crate) lanes: Vec<(Local, Place)>,
 }
 
 /// One `try` statement whose body is being lowered.
@@ -162,7 +166,31 @@ impl<'db> Builder<'db> {
             caught: Vec::new(),
             diagnostics: Vec::new(),
             accumulated: Vec::new(),
+            lanes: Vec::new(),
         }
+    }
+
+    /// A builder for the body that evaluates a default of a parameter of `item`, the function
+    /// `function` declares, with `class` for a method: it takes no parameters and returns
+    /// `returns`, the parameter's type. A default sees only module-level names (decision 0027),
+    /// so the function's parameters and variables get no locals.
+    pub(crate) fn for_default(
+        db: &'db dyn TypeDb,
+        item: Item<'db>,
+        returns: Type<'db>,
+        typed: &'db TypedBody<'db>,
+        function: NodeId,
+        class: Option<NodeId>,
+    ) -> Self {
+        let signature = Signature {
+            type_parameters: Vec::new(),
+            parameters: Vec::new(),
+            returns,
+        };
+        let mut builder = Self::new(db, item, &signature, typed, function, class);
+        builder.body.locals.truncate(1);
+        builder.variables.clear();
+        builder
     }
 
     /// A builder for the outlined body of the `prange` loop `statement` in the same function,
@@ -217,6 +245,7 @@ impl<'db> Builder<'db> {
             caught: Vec::new(),
             diagnostics: Vec::new(),
             accumulated: Vec::new(),
+            lanes: Vec::new(),
         }
     }
 

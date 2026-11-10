@@ -4,7 +4,8 @@
 
 use diagnostics::Diagnostic;
 use mir::{Body, Callee, Phase, TerminatorKind};
-use types::{Declaration, Item, Nominal, TypeDb};
+use syntax::{Role, SyntaxKind};
+use types::{Declaration, Item, Nominal, TypeDb, TypeKind};
 
 /// A function and the type arguments it is compiled at: none for a function that is not
 /// generic (decision 0018).
@@ -17,7 +18,8 @@ pub(crate) struct Instance<'db> {
 }
 
 /// The instances a program needs, collected as they are found: the roots first, then each
-/// instance of a generic function that a collected body calls, once.
+/// instance that a collected body calls, once: an instance of a generic function, or the
+/// function that computes a default (decision 0027), which is never a root.
 pub(crate) struct Instances<'db> {
     /// Every instance found so far, in the order found.
     found: Vec<Instance<'db>>,
@@ -44,8 +46,10 @@ impl<'db> Instances<'db> {
         Some(instance)
     }
 
-    /// Adds each instance of a generic function that `body` or one of its `prange` bodies calls
-    /// and is not yet found. The body is an instance's, so its type arguments are concrete.
+    /// Adds each instance that `body` or one of its `prange` bodies calls and is not yet found.
+    /// The body is an instance's, so its type arguments are concrete. A call of a function
+    /// that is not generic finds its root, already found, unless the function is one the roots
+    /// leave out, such as a default's.
     pub(crate) fn follow(&mut self, body: &Body<'db>) {
         for outlined in &body.outlined {
             self.follow(outlined);
@@ -59,7 +63,6 @@ impl<'db> Instances<'db> {
                     },
                 ..
             } = &block.terminator.kind
-                && !type_arguments.is_empty()
             {
                 let instance = Instance {
                     item: *item,
@@ -75,8 +78,11 @@ impl<'db> Instances<'db> {
 
 /// The body of `instance`, ready for a backend: lowered, its type parameters replaced by the
 /// instance's arguments, its drops elaborated and its whole-array expressions expanded. Errors
-/// for what lowering cannot handle yet, and for a generic method of a generic class, whose
-/// class's type parameters are not collected yet.
+/// for what lowering cannot handle yet.
+///
+/// A method of a generic class, such as `Pair[T]`'s `total`, is generic in its class's type
+/// parameters: they come first, before the method's own and its `Callable` ones, as lowering
+/// passes them at each call (roadmap 1.9.18).
 pub(crate) fn ready<'db>(
     db: &'db dyn TypeDb,
     instance: &Instance<'db>,
@@ -89,29 +95,71 @@ pub(crate) fn ready<'db>(
         };
         // Each `Callable` parameter is an implicit type parameter after the written ones
         // (decision 0026).
-        let parameters: Vec<types::Type<'db>> = signature
-            .type_parameters
-            .iter()
-            .copied()
+        let parameters: Vec<types::Type<'db>> = class_parameters(db, instance.item)
+            .into_iter()
+            .chain(signature.type_parameters.iter().copied())
             .chain(
                 signature
                     .parameters
                     .iter()
                     .map(|parameter| parameter.ty)
-                    .filter(|ty| matches!(ty.kind(db), types::TypeKind::Callable { .. })),
+                    .filter(|ty| matches!(ty.kind(db), TypeKind::Callable { .. })),
             )
             .collect();
         if parameters.len() != instance.arguments.len() {
             return Err(vec![
-                Diagnostic::error("methods of generic classes are not compiled yet")
-                    .with_primary(body.span, "a method of a generic class")
-                    .with_note("collecting a class's type arguments comes after roadmap 1.9.5"),
+                Diagnostic::error("this call's type arguments do not match the function's")
+                    .with_primary(body.span, "compiled at the wrong number of types")
+                    .with_note("this is a compiler bug; please report it"),
             ]);
         }
         body = monomorphize::instantiate(db, &body, &parameters, &instance.arguments);
+        monomorphize::forward_callables(db, &mut body, &|item| callable_positions(db, item));
     }
     drop_elaboration::elaborate(db, &mut body, declared);
     array_expansion::expand(db, &mut body, declared);
     body.phase = Phase::Ready;
     Ok(body)
+}
+
+/// The type parameters of the class that declares the method `item`, as types, in order: `T`
+/// for a method of `class Pair[T: Number](Struct)`. Empty for a top-level function and for a
+/// method of a class that has none, such as a trait (decision 0031), whose `Self` is not a
+/// written type parameter.
+pub(crate) fn class_parameters<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Vec<types::Type<'db>> {
+    let file = item.file(db);
+    let tree = db.parse(file).tree();
+    let name = item.name(db);
+    let Some(class) = tree
+        .children_with(tree.root(), Role::Body)
+        .filter(|&statement| tree.kind(statement) == SyntaxKind::ClassDefinition)
+        .find(|&class| {
+            tree.children_with(class, Role::Body)
+                .any(|method| tree.child(method, Role::Name) == Some(name))
+        })
+    else {
+        return Vec::new();
+    };
+    tree.child(class, Role::TypeParameters)
+        .into_iter()
+        .flat_map(|parameters| tree.children_with(parameters, Role::Item))
+        .filter_map(|parameter| tree.child(parameter, Role::Name))
+        .map(|name| types::Type::new(db, TypeKind::Parameter { file, name }))
+        .collect()
+}
+
+/// The positions of the `Callable` parameters of the function `item` among its parameters, the
+/// receiver first for a method: the parameters whose type arguments are the functions passed
+/// (decision 0026).
+fn callable_positions<'db>(db: &'db dyn TypeDb, item: Item<'db>) -> Vec<usize> {
+    let Declaration::Function(signature) = &db.declaration(item).declaration else {
+        return Vec::new();
+    };
+    signature
+        .parameters
+        .iter()
+        .enumerate()
+        .filter(|(_, parameter)| matches!(parameter.ty.kind(db), TypeKind::Callable { .. }))
+        .map(|(position, _)| position)
+        .collect()
 }

@@ -4,7 +4,8 @@
 //!
 //! A type argument is never written at a call; each type parameter takes the type of the first
 //! argument that fixes it, read left to right, number literals last so that `largest(x, 0)`
-//! with `x: f32` makes the `0` an `f32`. Version 0 has only the standard traits:
+//! with `x: f32` makes the `0` an `f32`. The bounds are the standard traits and the traits user
+//! code declares:
 //!
 //! | Trait | Satisfied by | Allows, inside a generic body |
 //! | --- | --- | --- |
@@ -12,11 +13,12 @@
 //! | `Float` | `f32`, `f64` | the same as `Number`, and float literals too |
 //! | `VectorSpace` | `f64`, and `Fixed` and `Array` arrays of `f64` | `+` and `-` with itself, `-x`, and `*` by an `f64` on either side |
 //! | `Copy` | copy types | copying |
+//! | a user trait, `class Body(Protocol)` | structs that name it, or a trait that requires it, among their bases (decision 0031) | calling the methods it and the traits it requires list |
 
 use super::Body;
 use super::relations;
 use crate::forms::is_copy;
-use crate::traits::{Trait, bound};
+use crate::traits::{self, Trait, bound};
 use database::File;
 use syntax::{NodeId, Operator};
 use types::{Float, Parameter, Primitive, Signature, Type, TypeKind, Value};
@@ -25,13 +27,21 @@ impl<'db> Body<'db> {
     /// The bound of `ty` when it is a type parameter.
     pub(super) fn trait_of(&self, ty: Type<'db>) -> Option<Trait> {
         match ty.kind(self.db) {
-            TypeKind::Parameter { file, name } => bound(self.db, *file, *name),
+            TypeKind::Parameter { file, name } => {
+                bound(self.db, self.lowerer.package, *file, *name)
+            }
             _ => None,
         }
     }
 
-    /// Whether `ty` satisfies `bound`.
+    /// Whether `ty` satisfies `bound`. A user trait is satisfied by a struct that names it, or
+    /// a trait that requires it, among its bases, and by a type parameter bounded the same way
+    /// (decision 0031).
     fn satisfies(&self, bound: Trait, ty: Type<'db>) -> bool {
+        if let Trait::User(wanted) = bound {
+            return matches!(ty.kind(self.db), TypeKind::Unknown)
+                || traits::implemented(self.db, self.lowerer.package, ty).contains(&wanted);
+        }
         if let Some(own) = self.trait_of(ty) {
             // Every float is a number, and every number is a copy type.
             return own == bound
@@ -113,7 +123,8 @@ impl<'db> Body<'db> {
             }
         }
         for (&(file, name), binding) in names.iter().zip(&bindings) {
-            let (Some(bound), Some(ty)) = (bound(self.db, file, name), *binding) else {
+            let package = self.lowerer.package;
+            let (Some(bound), Some(ty)) = (bound(self.db, package, file, name), *binding) else {
                 continue;
             };
             if !self.satisfies(bound, ty) {
@@ -122,13 +133,19 @@ impl<'db> Body<'db> {
                     .parse(file)
                     .tree()
                     .text(name, file.source(self.db).text());
+                let bound_name = bound.name(self.db);
                 let message = format!(
-                    "`{callee}` needs `{parameter}` to be a `{}`, found `{}`",
-                    bound.name(),
+                    "`{callee}` needs `{parameter}` to be a `{bound_name}`, found `{}`",
                     self.show(ty)
                 );
+                let hint = matches!(bound, Trait::User(_)).then(|| {
+                    format!(
+                        "a type has a trait only by naming it among its bases: \
+                         `class Particle(Struct, {bound_name})`"
+                    )
+                });
                 self.lowerer
-                    .error(node, &message, "bound not satisfied", None);
+                    .error(node, &message, "bound not satisfied", hint.as_deref());
             }
         }
         let returns = self
@@ -164,10 +181,16 @@ impl<'db> Body<'db> {
             };
             result = relations::substitute(self.db, result, file, &[name], &[argument]);
         }
-        let unresolved = names.iter().any(|&(file, name)| {
-            let parameter = Type::new(self.db, TypeKind::Parameter { file, name });
-            relations::mentions(self.db, result, parameter)
-        });
+        // A parameter bound to itself is resolved: inside a method of `Pair[T]`, the
+        // constructor call `Pair(self.b, self.a)` binds the class's `T` to that same `T`.
+        let unresolved = names
+            .iter()
+            .zip(bindings)
+            .filter(|(_, binding)| binding.is_none())
+            .any(|(&(file, name), _)| {
+                let parameter = Type::new(self.db, TypeKind::Parameter { file, name });
+                relations::mentions(self.db, result, parameter)
+            });
         (!unresolved).then_some(result)
     }
 

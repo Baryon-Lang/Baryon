@@ -3,7 +3,7 @@
 use crate::constant::to_float;
 use crate::lower::Lowerer;
 use crate::outline::{Base, Entry, Kind};
-use crate::traits::Trait;
+use crate::traits::{Trait, user_trait};
 use diagnostics::Diagnostic;
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{
@@ -20,6 +20,9 @@ impl<'db> Lowerer<'db> {
         let declaration = match &entry.kind {
             Kind::Function => Declaration::Function(self.signature(entry)),
             Kind::Class(class) if class.base == Base::Enum => self.enumeration(entry.statement),
+            Kind::Class(class) if class.base == Base::Protocol => {
+                self.trait_declaration(entry.statement)
+            }
             Kind::Class(class) => self.structure(entry.statement, class.copy, class.base),
             Kind::Alias => {
                 let ty = match self.tree.child(entry.statement, Role::Value) {
@@ -49,8 +52,22 @@ impl<'db> Lowerer<'db> {
                 continue;
             };
             let written = self.tree.text(bound, self.text);
-            let is_trait =
-                self.tree.kind(bound) == SyntaxKind::Name && Trait::from_name(written).is_some();
+            if self.tree.kind(bound) == SyntaxKind::Tuple {
+                self.error(
+                    bound,
+                    "a type parameter has one bound",
+                    "more than one trait",
+                    Some(
+                        "declare a trait that requires them all, `class ChargedBody(Body, \
+                         Charged, Protocol): pass`, and bound by it; in Python `[T: (A, B)]` \
+                         means `T` is exactly `A` or exactly `B` (decision 0031)",
+                    ),
+                );
+                continue;
+            }
+            let is_trait = (self.tree.kind(bound) == SyntaxKind::Name
+                && Trait::from_name(written).is_some())
+                || user_trait(self.db, self.package, self.file, bound).is_some();
             if is_trait || self.definition(bound).is_none() {
                 // An undefined name is already reported by name resolution.
                 continue;
@@ -60,7 +77,10 @@ impl<'db> Lowerer<'db> {
                 bound,
                 &message,
                 "expected a trait",
-                Some("a type parameter is bounded by `Number`, `Float`, `VectorSpace` or `Copy`"),
+                Some(
+                    "a type parameter is bounded by `Number`, `Float`, `VectorSpace`, `Copy`, \
+                     or a trait declared as `class Body(Protocol)`",
+                ),
             );
         }
     }
@@ -112,8 +132,13 @@ impl<'db> Lowerer<'db> {
         }
     }
 
-    /// A struct or error type: its fields, in order, and its methods.
+    /// A struct or error type: its fields, in order, its methods, and the traits it names.
     fn structure(&mut self, class: NodeId, copy: bool, base: Base) -> Declaration<'db> {
+        let traits = self
+            .named_traits(class)
+            .into_iter()
+            .map(|(_, found)| found.item(self.db, self.package))
+            .collect();
         let mut fields = Vec::new();
         let mut methods = Vec::new();
         let statements: Vec<NodeId> = self.tree.children_with(class, Role::Body).collect();
@@ -124,9 +149,9 @@ impl<'db> Lowerer<'db> {
                         continue;
                     };
                     let name = self.tree.text(target, self.text).to_owned();
-                    let ty = match self.tree.child(statement, Role::Annotation) {
-                        Some(annotation) => self.lower(annotation),
-                        None => self.unknown(),
+                    let (ty, embedded) = match self.tree.child(statement, Role::Annotation) {
+                        Some(annotation) => self.field_type(annotation),
+                        None => (self.unknown(), false),
                     };
                     if let Some(value) = self.tree.child(statement, Role::Value) {
                         self.error(
@@ -136,7 +161,7 @@ impl<'db> Lowerer<'db> {
                             Some("every field is given when a struct is built: `Particle(position, velocity, 1.0)`"),
                         );
                     }
-                    fields.push(Field { name, ty });
+                    fields.push(Field { name, ty, embedded });
                 }
                 SyntaxKind::Assign => {
                     self.error(
@@ -159,11 +184,21 @@ impl<'db> Lowerer<'db> {
             copy,
             error: base == Base::Error,
             methods,
+            traits,
         }
     }
 
-    /// An enum: the names of its variants, in order.
+    /// An enum: the names of its variants, in order. An enum has no methods in version 0, so
+    /// it cannot implement a trait yet.
     fn enumeration(&mut self, class: NodeId) -> Declaration<'db> {
+        for (base, _) in self.named_traits(class) {
+            self.error(
+                base,
+                "an enum cannot implement a trait in version 0",
+                "a trait",
+                Some("enums have no methods yet, so they cannot define a trait's methods"),
+            );
+        }
         let mut variants = Vec::new();
         let statements: Vec<NodeId> = self.tree.children_with(class, Role::Body).collect();
         for statement in statements {
