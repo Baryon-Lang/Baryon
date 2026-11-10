@@ -70,43 +70,55 @@ impl<'db> Builder<'db> {
                 }
                 _ => self.unsupported(node, "this conversion"),
             },
-            types::Callee::Builtin(name) => match (name.split_once('.'), arguments.as_slice()) {
-                (None, [argument]) if name == "len" => self.len(place, *argument, node),
-                (None, [argument]) if name == "round" => self.round(place, *argument, node),
-                (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
-                (None, _) if name == "print" => self.print(place, &arguments, node),
-                (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
-                (None, [values, rest @ ..]) if self.reduces(name, (*values, rest), node) => {
-                    self.reduce(place, name, (*values, rest), node);
-                }
-                (
-                    Some((owner @ ("Array" | "Fixed"), function @ ("zeros" | "ones" | "fill"))),
-                    _,
-                ) if !matches!(ty.kind(self.db), TypeKind::None) => {
-                    if owner == "Array" {
-                        self.new_array(&place, function, &arguments, node);
-                    } else {
-                        self.new_fixed(place, function, &arguments, node);
-                    }
-                }
-                (Some(("str", "copy")), [_]) => self.joined(place, &arguments, node),
-                (Some(("complex", "conjugate")), [value]) => self.conjugate(place, *value, node),
-                (Some(("list", "append")), [list, value]) => {
-                    self.list_append(place, *list, *value, node);
-                }
-                (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
-                (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
-                (Some(("dict", method)), _) => self.dict_method(place, method, &arguments, node),
-                (Some(("Array" | "Fixed", method)), _) => {
-                    self.array_method(place, method, &arguments, node);
-                }
-                (Some(("math", member)), _) => self.math_function(place, member, &arguments, node),
-                (Some((owner @ ("random" | "Philox" | "sys" | "os"), member)), _) => {
-                    self.standard_call(place, (owner, member), &arguments, node);
-                }
-                _ => self.unsupported(node, &format!("the built-in `{name}`")),
-            },
+            types::Callee::Builtin(name) => self.named_builtin(place, name, &arguments, node),
             types::Callee::Value => self.value_call(place, &arguments, node),
+        }
+    }
+
+    /// The call `node` of the built-in `name`, such as `len` or `list.append`, with
+    /// `arguments`, the receiver first for a method, its result written into `place`.
+    fn named_builtin(&mut self, place: Place, name: &str, arguments: &[NodeId], node: NodeId) {
+        let ty = self.ty(node);
+        match (name.split_once('.'), arguments) {
+            (None, [argument]) if name == "len" => self.len(place, *argument, node),
+            (None, [value]) if name == "round" => self.round(place, *value, node),
+            (None, [value, digits]) if name == "round" => {
+                self.round_digits(place, (*value, *digits), node);
+            }
+            (None, [list, rest @ ..]) if name == "sorted" && rest.len() <= 1 => {
+                self.sorted(&place, *list, rest.first().copied(), node);
+            }
+            (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
+            (None, _) if name == "print" => self.print(place, arguments, node),
+            (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
+            (None, [values, rest @ ..]) if self.reduces(name, (*values, rest), node) => {
+                self.reduce(place, name, (*values, rest), node);
+            }
+            (Some((owner @ ("Array" | "Fixed"), function @ ("zeros" | "ones" | "fill"))), _)
+                if !matches!(ty.kind(self.db), TypeKind::None) =>
+            {
+                if owner == "Array" {
+                    self.new_array(&place, function, arguments, node);
+                } else {
+                    self.new_fixed(place, function, arguments, node);
+                }
+            }
+            (Some(("str", "copy")), [_]) => self.joined(place, arguments, node),
+            (Some(("complex", "conjugate")), [value]) => self.conjugate(place, *value, node),
+            (Some(("list", "append")), [list, value]) => {
+                self.list_append(place, *list, *value, node);
+            }
+            (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
+            (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
+            (Some(("dict", method)), _) => self.dict_method(place, method, arguments, node),
+            (Some(("Array" | "Fixed", method)), _) => {
+                self.array_method(place, method, arguments, node);
+            }
+            (Some(("math", member)), _) => self.math_function(place, member, arguments, node),
+            (Some((owner @ ("random" | "Philox" | "sys" | "os"), member)), _) => {
+                self.standard_call(place, (owner, member), arguments, node);
+            }
+            _ => self.unsupported(node, &format!("the built-in `{name}`")),
         }
     }
 

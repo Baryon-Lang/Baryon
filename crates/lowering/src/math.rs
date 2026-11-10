@@ -170,6 +170,36 @@ impl<'db> Builder<'db> {
         self.whole(place, MathFunction::RoundEven, argument, node);
     }
 
+    /// `round(x, digits)` into `place` (roadmap 1.13.13): the multiple of `10 ** -digits` nearest
+    /// `x`'s exact value, ties to even, of `x`'s type, through [`Builtin::RoundDigits`]. An
+    /// `f32` or `f64` rounds as it is; any other integer than an `i64` rounds as an `i64` and
+    /// converts back, which panics when the result no longer fits, as every conversion does.
+    pub(crate) fn round_digits(
+        &mut self,
+        place: Place,
+        (value, digits): (NodeId, NodeId),
+        node: NodeId,
+    ) {
+        let ty = self.ty(node);
+        let int = self.int_type();
+        let through = if self.is_float(ty) { ty } else { int };
+        if !self.is_float(ty) && !self.is_integer(ty) {
+            return self.unsupported(node, "`round` with digits of this type");
+        }
+        let number = self.operand_as(value, through);
+        let digits = self.operand_as(digits, int);
+        let rounded = self.temporary(through, node);
+        self.then(node, |next| TerminatorKind::Call {
+            callee: Callee::Builtin(Builtin::RoundDigits),
+            arguments: vec![Argument::Owned(number), Argument::Owned(digits)],
+            destination: Place::from(rounded),
+            target: next,
+            error: None,
+        });
+        let result = self.convert(Operand::Copy(Place::from(rounded)), through, ty, node);
+        self.assign(place, Rvalue::Use(result), node);
+    }
+
     /// `abs(x)` of an integer or a float, into `place`: `0 - x` when `x` is below zero, else
     /// `x`. A float takes `0.0 - x` at zero too, so `abs(-0.0)` is `0.0` as in Python, and a
     /// `nan` stays `nan`. The absolute value of the most negative integer does not fit, so

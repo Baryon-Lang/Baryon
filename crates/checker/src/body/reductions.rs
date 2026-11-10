@@ -1,5 +1,6 @@
-//! The built-ins that reduce a sequence to one number: `sum(values)`, `sum(values, start)`,
-//! `min(values)` and `max(values)` of a list or a rank-1 array of numbers (roadmap 1.13.13).
+//! The built-ins that reduce or reorder a sequence (roadmap 1.13.13): `sum(values)`,
+//! `sum(values, start)`, `min(values)` and `max(values)` of a list or a rank-1 array of numbers,
+//! and `sorted(values, reverse=flag)` of a list.
 //!
 //! `min` and `max` of two or more numbers are the `builtins` module's. These take one sequence.
 
@@ -128,6 +129,68 @@ impl<'db> Body<'db> {
             _ => {
                 let message = format!("`sum` starts from a number, found `{}`", self.show(*start));
                 self.lowerer.error(at, &message, "not a number", None)
+            }
+        }
+    }
+
+    /// The type of `sorted(values)` or `sorted(values, reverse=flag)`, a new list of the
+    /// elements of `values`, whose types are `types`, positional then keyword. As in Python,
+    /// `reverse` is a `bool` given by keyword; `key=` is accepted here and left to lowering.
+    pub(super) fn sorted(
+        &mut self,
+        node: NodeId,
+        arguments: &Arguments,
+        types: &[Type<'db>],
+    ) -> Type<'db> {
+        let ([sequence], Some(&ty)) = (arguments.positional.as_slice(), types.first()) else {
+            return self.lowerer.error(
+                node,
+                "`sorted` takes one sequence",
+                "wrong number of arguments",
+                Some("write `sorted(values)` or `sorted(values, reverse=True)`"),
+            );
+        };
+        for (&(name, value), &found) in arguments.keywords.iter().zip(&types[1..]) {
+            match self.tree.text(name, self.text) {
+                "key" => {}
+                "reverse" => {
+                    let boolean = matches!(
+                        found.kind(self.db),
+                        TypeKind::Primitive(types::Primitive::Bool)
+                    );
+                    if !boolean && !relations::is_open(self.db, found) {
+                        let message =
+                            format!("`reverse=` takes a `bool`, found `{}`", self.show(found));
+                        self.lowerer.error(value, &message, "not a `bool`", None);
+                    }
+                }
+                written => {
+                    let message = format!("`sorted` has no parameter `{written}`");
+                    self.lowerer.error(
+                        name,
+                        &message,
+                        "unknown parameter",
+                        Some("`sorted` takes the values, then `key=` and `reverse=`"),
+                    );
+                }
+            }
+        }
+        match ty.kind(self.db) {
+            TypeKind::List(element) => {
+                if self.complex(*element).is_some() {
+                    return self.lowerer.error(
+                        *sequence,
+                        "`sorted` is not defined on complex numbers",
+                        "complex numbers",
+                        Some("complex numbers have no order; sort by their moduli, `abs(z)`"),
+                    );
+                }
+                ty
+            }
+            _ if relations::is_open(self.db, ty) => self.lowerer.unknown(),
+            _ => {
+                let message = format!("`sorted` sorts a list, found `{}`", self.show(ty));
+                self.lowerer.error(*sequence, &message, "not a list", None)
             }
         }
     }

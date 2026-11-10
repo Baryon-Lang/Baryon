@@ -382,3 +382,33 @@ error: lowering does not handle `sum` of an array with a start yet
   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
     );
 }
+
+/// `sorted` with `key=` and `sorted` of a list of tuples check, as Python takes them, but are not
+/// lowered yet (roadmap 1.13.13).
+#[test]
+fn sorted_not_lowered_yet_is_an_error() {
+    let program = r"
+def size(x: i64) -> i64:
+    return abs(x)
+
+
+def show(xs: list[i64], pairs: list[tuple[i64, i64]]):
+    print(sorted(xs, key=size), sorted(pairs))
+";
+    assert_eq!(
+        lower(program, "show"),
+        r"error: lowering does not handle `sorted` with `key=` yet
+ --> main.byn:7:11
+  |
+7 |     print(sorted(xs, key=size), sorted(pairs))
+  |           ^^^^^^^^^^^^^^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
+
+error: lowering does not handle `sorted` of a list of these elements yet
+ --> main.byn:7:33
+  |
+7 |     print(sorted(xs, key=size), sorted(pairs))
+  |                                 ^^^^^^^^^^^^^ not lowered yet
+  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+    );
+}

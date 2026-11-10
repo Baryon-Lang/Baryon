@@ -43,6 +43,9 @@ impl<'db> Body<'db> {
         {
             return ty;
         }
+        if name == "sorted" {
+            return self.sorted(node, arguments, &types);
+        }
         let int = primitive(self.db, Primitive::Integer(Integer::I64));
         match (name, types.as_slice()) {
             ("str", [_]) => Type::new(self.db, TypeKind::Str),
@@ -52,7 +55,21 @@ impl<'db> Body<'db> {
             }
             ("len", [_]) => int,
             ("round", [value]) if self.is_number(*value) => int,
-            ("abs", [value]) | ("round", [value, _]) => *value,
+            ("abs", [value]) => *value,
+            ("round", [value, digits]) => {
+                let integer = matches!(
+                    digits.kind(self.db),
+                    TypeKind::Primitive(Primitive::Integer(_))
+                );
+                if !integer && !relations::is_open(self.db, *digits) {
+                    let message = format!(
+                        "`round` takes a whole number of digits, found `{}`",
+                        self.show(*digits)
+                    );
+                    self.lowerer.error(all[1], &message, "not an integer", None);
+                }
+                *value
+            }
             ("min" | "max", [first, rest @ ..]) if !rest.is_empty() => {
                 let mut result = *first;
                 for (&ty, &argument) in rest.iter().zip(&all[1..]) {

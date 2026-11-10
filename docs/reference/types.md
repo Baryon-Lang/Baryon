@@ -66,6 +66,21 @@ a number's width or kind.
 A conversion that would lose a value panics rather than wraps, because a silently wrapped number in
 a simulation is a wrong answer with no error.
 
+### Rounding
+
+`round(x)` is the nearest integer to `x`, an `int`, with a tie going to the even neighbour, as in
+Python: `round(2.5)` is `2`. `round(x, digits)` keeps `x`'s type and gives the multiple of
+`10 ** -digits` nearest `x`, also with ties to even; a negative `digits` rounds to tens, hundreds
+and so on. A float rounds its exact binary value, as Python does, not the shorter text `print`
+shows: `2.675` is stored a little below 2.675, so `round(2.675, 2)` is `2.67`, while `0.125` is
+exact and rounds to the even `0.12`. An integer with zero or more digits is itself.
+
+```python
+def main():
+    print(round(2.675, 2), round(0.125, 2), round(1250.0, -2))   # 2.67 0.12 1200.0
+    print(round(1350, -2), round(2.5))                         # 1400 2
+```
+
 ### Integer overflow
 
 Arithmetic whose exact result does not fit its integer type *overflows*. A debug build, the
@@ -209,11 +224,18 @@ which keeps the rounding error of each addition and adds it back once at the end
 matches NumPy. `min` and `max` of an empty list panic, and a NaN anywhere makes them NaN, as for
 an [array](arrays.md#methods).
 
+`sorted(values)` is a new list of a list's elements from the smallest, and
+`sorted(values, reverse=True)` from the largest; the list itself does not change. Numbers sort by
+value and `str`s by code point, as Python orders them. The sort is stable: equal elements keep
+their order, from the largest too. Every float NaN goes last, either way, as `numpy.sort` puts it.
+It copies the list, then takes O(n log n) comparisons.
+
 ```python
 def main():
     energies = [0.1, 0.2, 0.3]
     print(sum(energies), sum([1, 2, 3], 10))   # 0.6 16
     print(min(energies), max([3, 1, 2]))       # 0.1 3
+    print(sorted(["neon", "argon"]))             # ['argon', 'neon']
 ```
 
 ## Dictionaries

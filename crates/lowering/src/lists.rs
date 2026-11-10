@@ -134,6 +134,60 @@ impl<'db> Builder<'db> {
         });
     }
 
+    /// `sorted(list)` or `sorted(list, reverse=flag)` into `place` (roadmap 1.13.13): a copy of
+    /// the list, as `copy()` makes, sorted in place by [`Builtin::Sort`], which is stable and
+    /// puts every float NaN last (Collins, 2026-11-10). The flag is a `bool`, `False` when left
+    /// out.
+    ///
+    /// Cost: the copy, then O(n log n) comparisons.
+    pub(crate) fn sorted(
+        &mut self,
+        place: &Place,
+        list: NodeId,
+        reverse: Option<NodeId>,
+        node: NodeId,
+    ) {
+        let ty = self.ty(list);
+        let TypeKind::List(element) = ty.kind(self.db) else {
+            return self.unsupported(node, "`sorted` of anything but a list");
+        };
+        let orderable = matches!(
+            element.kind(self.db),
+            TypeKind::Str | TypeKind::Primitive(_)
+        ) && !self.is_complex(*element);
+        if !orderable {
+            return self.unsupported(node, "`sorted` of a list of these elements");
+        }
+        let names: Vec<NodeId> = self
+            .tree
+            .child(node, Role::Arguments)
+            .into_iter()
+            .flat_map(|list| self.tree.children_with(list, Role::Item))
+            .filter(|&item| self.tree.kind(item) == SyntaxKind::Keyword)
+            .filter_map(|item| self.tree.child(item, Role::Name))
+            .collect();
+        if names.iter().any(|&name| self.text_of(name) != "reverse") {
+            return self.unsupported(node, "`sorted` with `key=`");
+        }
+        self.list_copy(place, list, node);
+        let boolean = self.boolean_type();
+        let flag = match reverse {
+            Some(reverse) => self.operand_as(reverse, boolean),
+            None => Operand::Constant(Constant {
+                ty: boolean,
+                value: ConstantValue::Bool(false),
+            }),
+        };
+        let nothing = self.temporary(Type::new(self.db, TypeKind::None), node);
+        self.then(node, |next| TerminatorKind::Call {
+            callee: Callee::Builtin(Builtin::Sort),
+            arguments: vec![Argument::InOut(place.clone()), Argument::Owned(flag)],
+            destination: Place::from(nothing),
+            target: next,
+            error: None,
+        });
+    }
+
     /// Whether `xs[i:j:k]` names a slice of a list: a subscript of a list by one slice.
     pub(crate) fn is_list_slice(&self, node: NodeId) -> bool {
         self.tree.kind(node) == SyntaxKind::Subscript

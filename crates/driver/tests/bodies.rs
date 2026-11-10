@@ -687,3 +687,58 @@ error: `sum` adds a list or an array of numbers, found `i64`
         )
     );
 }
+
+/// `sorted` takes one list and a `bool` `reverse=` by keyword, as Python does, and complex
+/// numbers have no order; `round` takes a whole number of digits (roadmap 1.13.13).
+#[test]
+fn sorted_and_round_check_their_arguments() {
+    let program = "
+def main():
+    xs = [1, 2]
+    zs = [1j]
+    print(sorted(xs, True), sorted(xs, reverse=1), sorted(xs, order=1))
+    print(sorted(3), sorted(zs), round(2.5, 1.0))
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `sorted` takes one sequence
+ --> main.byn:4:11
+  |
+4 |     print(sorted(xs, True), sorted(xs, reverse=1), sorted(xs, order=1))
+  |           ^^^^^^^^^^^^^^^^ wrong number of arguments
+  = note: write `sorted(values)` or `sorted(values, reverse=True)`
+
+error: `reverse=` takes a `bool`, found `i64`
+ --> main.byn:4:48
+  |
+4 |     print(sorted(xs, True), sorted(xs, reverse=1), sorted(xs, order=1))
+  |                                                ^ not a `bool`
+
+error: `sorted` has no parameter `order`
+ --> main.byn:4:63
+  |
+4 |     print(sorted(xs, True), sorted(xs, reverse=1), sorted(xs, order=1))
+  |                                                               ^^^^^ unknown parameter
+  = note: `sorted` takes the values, then `key=` and `reverse=`
+
+error: `sorted` sorts a list, found `i64`
+ --> main.byn:5:18
+  |
+5 |     print(sorted(3), sorted(zs), round(2.5, 1.0))
+  |                  ^ not a list
+
+error: `sorted` is not defined on complex numbers
+ --> main.byn:5:29
+  |
+5 |     print(sorted(3), sorted(zs), round(2.5, 1.0))
+  |                             ^^ complex numbers
+  = note: complex numbers have no order; sort by their moduli, `abs(z)`
+
+error: `round` takes a whole number of digits, found `f64`
+ --> main.byn:5:45
+  |
+5 |     print(sorted(3), sorted(zs), round(2.5, 1.0))
+  |                                             ^^^ not an integer"
+    );
+}

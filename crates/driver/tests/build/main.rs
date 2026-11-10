@@ -30,6 +30,7 @@ mod process;
 mod reductions;
 mod shapes;
 mod slices;
+mod sorting;
 mod statements;
 mod structs;
 mod testing;
