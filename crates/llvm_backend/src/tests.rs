@@ -12,6 +12,7 @@ mod math;
 mod panics;
 mod parallel;
 mod print;
+mod process;
 mod text;
 mod vector;
 mod views;
