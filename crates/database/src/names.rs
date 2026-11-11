@@ -85,8 +85,9 @@ pub const BUILTINS: [&str; 59] = [
 /// environment, and running another program. So is `pathlib`, whose `Path` the library's own
 /// source defines (decision 0038). `linalg` and `fft` are roadmap 3.10's linear algebra and
 /// fast Fourier transforms, named as `numpy.linalg` and `numpy.fft` are. `stats` is roadmap
-/// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042).
-pub const STANDARD_MODULES: [&str; 9] = [
+/// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042). `fits` is
+/// roadmap 3.14.3's FITS files, named as `astropy.io.fits` is (decision 0044).
+pub const STANDARD_MODULES: [&str; 10] = [
     "math",
     "random",
     "sys",
@@ -96,6 +97,7 @@ pub const STANDARD_MODULES: [&str; 9] = [
     "linalg",
     "fft",
     "stats",
+    "fits",
 ];
 
 /// What a name refers to.
