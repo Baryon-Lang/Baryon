@@ -263,8 +263,24 @@ impl<'db> Body<'db> {
         let sliced = indices
             .iter()
             .any(|&index| self.tree.kind(index) == SyntaxKind::Slice);
-        for &index in &indices {
+        let is_none = |index: NodeId| self.tree.kind(index) == SyntaxKind::None;
+        let new_axes = indices.iter().any(|&index| is_none(index));
+        for &index in indices.iter().filter(|&&index| !is_none(index)) {
             self.index(index);
+        }
+        if new_axes
+            && !matches!(
+                base.kind(self.db),
+                TypeKind::Array { .. } | TypeKind::Fixed { .. }
+            )
+        {
+            let message = format!("`None` cannot index a value of type `{}`", self.show(base));
+            return self.lowerer.error(
+                node,
+                &message,
+                "not an array",
+                Some("`None` in a subscript adds a dimension of length 1 to an array"),
+            );
         }
         let unknown = self.lowerer.unknown();
         match (base.kind(self.db), indices.as_slice()) {
@@ -294,7 +310,8 @@ impl<'db> Body<'db> {
 
     /// `a[i, j]` or `a[i, :]` on an array of `rank` dimensions: one index or slice per
     /// dimension (language reference, "Arrays", "Indexing"). All indices give the element; each
-    /// slice keeps its dimension in the view the subscript gives.
+    /// slice keeps its dimension in the view the subscript gives, and each `None` adds a
+    /// dimension of length 1 to it, which uses up no dimension of the array (roadmap 3.9).
     fn array_index(
         &mut self,
         node: NodeId,
@@ -303,25 +320,34 @@ impl<'db> Body<'db> {
         rank: usize,
         indices: &[NodeId],
     ) -> Type<'db> {
-        if indices.len() != rank {
+        let kind = |index: &&NodeId| self.tree.kind(**index);
+        let new_axes = indices
+            .iter()
+            .filter(|index| kind(index) == SyntaxKind::None)
+            .count();
+        if indices.len() - new_axes != rank {
             let message = format!(
                 "`{}` takes {rank} ind{}, found {}",
                 self.show(base),
                 if rank == 1 { "ex" } else { "ices" },
-                indices.len()
+                indices.len() - new_axes
             );
             return self.lowerer.error(
                 node,
                 &message,
                 "one index per dimension",
-                Some("take a row or column with a slice, such as `a[i, :]`"),
+                Some(if new_axes > 0 {
+                    "`None` adds a dimension and takes none: write `:` for each of the array's, such as `x[None, :]`"
+                } else {
+                    "take a row or column with a slice, such as `a[i, :]`"
+                }),
             );
         }
         let slices = indices
             .iter()
-            .filter(|&&index| self.tree.kind(index) == SyntaxKind::Slice)
+            .filter(|index| kind(index) == SyntaxKind::Slice)
             .count();
-        match u32::try_from(slices) {
+        match u32::try_from(slices + new_axes) {
             Ok(0) => element,
             Ok(rank) => Type::new(self.db, TypeKind::Array { element, rank }),
             Err(_) => self.lowerer.unknown(),
