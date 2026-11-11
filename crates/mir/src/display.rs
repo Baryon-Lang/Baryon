@@ -251,6 +251,7 @@ impl Writer<'_> {
                 self.elementwise(left),
                 self.elementwise(right)
             ),
+            Elementwise::Fused(tree, _) => format!("fused({})", self.elementwise(tree)),
         }
     }
 

@@ -21,6 +21,7 @@ mod print_array;
 mod process;
 mod round;
 mod sort;
+mod streams;
 mod string_lists;
 mod string_methods;
 mod strings;
@@ -72,6 +73,9 @@ pub use process::{
 };
 pub use round::{baryon_rt_round_f32, baryon_rt_round_f64, baryon_rt_round_i64};
 pub use sort::{baryon_rt_sort, baryon_rt_sort_str};
+pub use streams::{
+    RaisedEndOfInput, baryon_rt_file_print, baryon_rt_file_standard, baryon_rt_input,
+};
 pub use string_lists::{
     OwnedList, TextValue, baryon_rt_str_join, baryon_rt_str_split, baryon_rt_str_split_whitespace,
 };

@@ -135,7 +135,9 @@ impl<'db> Substitution<'_, 'db> {
     fn elementwise(&self, tree: &mut Elementwise<'db>) {
         match tree {
             Elementwise::Leaf(operand) => self.operand(operand),
-            Elementwise::Unary(_, operand) => self.elementwise(operand),
+            Elementwise::Unary(_, operand) | Elementwise::Fused(operand, _) => {
+                self.elementwise(operand);
+            }
             Elementwise::Binary(_, left, right) => {
                 self.elementwise(left);
                 self.elementwise(right);

@@ -104,6 +104,7 @@ mod paths;
 mod place;
 mod statement;
 mod text;
+mod uses;
 mod validate;
 
 pub use array_files::ArrayFile;

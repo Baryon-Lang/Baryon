@@ -8,10 +8,16 @@
 //!
 //! An open file that is written to is listed in a registry, so `sys.exit`, which runs no drops,
 //! can still write out every file's buffer first ([`flush_all`]).
+//!
+//! `sys.stdin`, `sys.stdout` and `sys.stderr` are files too (decision 0036, part 6): an
+//! [`OpenFile`] over a [`Standard`] stream, which the `streams` module reads and writes. Such a
+//! file is a handle on a stream the process owns, so closing or dropping it leaves the stream
+//! open.
 
+use crate::streams::{self, Standard};
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::sync::Mutex;
 
 pub(crate) mod arrays;
@@ -137,6 +143,8 @@ enum Stream {
     },
     /// A file opened with `"w"`, `"a"` or `"x"`, behind its buffer.
     Writer(BufWriter<fs::File>),
+    /// One of the process's standard streams, which the process buffers, not the file.
+    Standard(Standard),
 }
 
 /// A file `open` opened: what compiled code's `File` points to. Compiled code holds only a
@@ -196,16 +204,35 @@ impl OpenFile {
         Ok(file)
     }
 
+    /// A handle on the standard stream `standard`, as `sys.stdin`, `sys.stdout` or `sys.stderr`
+    /// gives: its path is the name Python gives the stream, such as `<stdout>`.
+    pub(crate) fn standard(standard: Standard) -> Self {
+        Self {
+            path: standard.name().to_owned(),
+            stream: Stream::Standard(standard),
+        }
+    }
+
     /// The address the registry lists the file by.
     fn address(&self) -> usize {
         std::ptr::from_ref(self) as usize
     }
 
-    /// The reader, or the failure Python reports for reading a file opened for writing.
-    fn reader(&mut self) -> Result<(&mut BufReader<fs::File>, &mut u64, &str), OsFailure> {
+    /// Runs `read` on what the file reads from, with the count of bytes read so far and the
+    /// path, or gives the failure Python reports for reading a file opened for writing.
+    fn reading<T>(
+        &mut self,
+        read: impl FnOnce(&mut dyn BufRead, &mut u64, &str) -> Result<T, OsFailure>,
+    ) -> Result<T, OsFailure> {
+        let path = &self.path;
         match &mut self.stream {
-            Stream::Reader { reader, offset } => Ok((reader, offset, &self.path)),
-            Stream::Writer(_) => Err(OsFailure::new(ErrorKind::Other, "not readable", &self.path)),
+            Stream::Reader { reader, offset } => read(reader, offset, path),
+            Stream::Standard(Standard::Input) => {
+                streams::with_input(|reader, offset| read(reader, offset, path))
+            }
+            Stream::Writer(_) | Stream::Standard(_) => {
+                Err(OsFailure::new(ErrorKind::Other, "not readable", path))
+            }
         }
     }
 
@@ -215,12 +242,13 @@ impl OpenFile {
     ///
     /// Fails when the file was opened for writing, the read fails, or the bytes are not UTF-8.
     pub(crate) fn read(&mut self) -> Result<String, OsFailure> {
-        let (reader, offset, path) = self.reader()?;
-        let mut bytes = Vec::new();
-        reader
-            .read_to_end(&mut bytes)
-            .map_err(|error| OsFailure::from_io(&error, path))?;
-        decode(bytes, offset, path)
+        self.reading(|reader, offset, path| {
+            let mut bytes = Vec::new();
+            reader
+                .read_to_end(&mut bytes)
+                .map_err(|error| OsFailure::from_io(&error, path))?;
+            decode(bytes, offset, path)
+        })
     }
 
     /// The next line with its `\n`, or `""` at the end: `f.readline()`. A line ends at `\n`,
@@ -230,44 +258,11 @@ impl OpenFile {
     ///
     /// Fails as [`read`](Self::read) does.
     pub(crate) fn read_line(&mut self) -> Result<String, OsFailure> {
-        let (reader, offset, path) = self.reader()?;
-        let failed = |error: io::Error| OsFailure::from_io(&error, path);
-        let mut bytes = Vec::new();
-        loop {
-            let buffer = reader.fill_buf().map_err(failed)?;
-            let Some(&first) = buffer.first() else {
-                break;
-            };
-            if bytes.last() == Some(&b'\r') {
-                // A `\r` ended the line; a `\n` right after it belongs to it.
-                if first == b'\n' {
-                    reader.consume(1);
-                    bytes.push(b'\n');
-                }
-                break;
-            }
-            match buffer
-                .iter()
-                .position(|&byte| byte == b'\n' || byte == b'\r')
-            {
-                Some(end) if buffer[end] == b'\n' => {
-                    bytes.extend_from_slice(&buffer[..=end]);
-                    reader.consume(end + 1);
-                    break;
-                }
-                Some(end) => {
-                    // A `\r`: look at the next byte, which may be in the next buffer.
-                    bytes.extend_from_slice(&buffer[..=end]);
-                    reader.consume(end + 1);
-                }
-                None => {
-                    let length = buffer.len();
-                    bytes.extend_from_slice(buffer);
-                    reader.consume(length);
-                }
-            }
-        }
-        decode(bytes, offset, path)
+        self.reading(|reader, offset, path| {
+            let bytes =
+                streams::line_bytes(reader).map_err(|error| OsFailure::from_io(&error, path))?;
+            decode(bytes, offset, path)
+        })
     }
 
     /// The remaining lines, `f.readlines()`, each as [`read_line`](Self::read_line) gives it.
@@ -292,12 +287,16 @@ impl OpenFile {
     ///
     /// Fails when the file was opened for reading or the write fails.
     pub(crate) fn write(&mut self, text: &str) -> Result<i64, OsFailure> {
-        let Stream::Writer(writer) = &mut self.stream else {
-            return Err(OsFailure::new(ErrorKind::Other, "not writable", &self.path));
+        let written = match &mut self.stream {
+            Stream::Writer(writer) => writer.write_all(text.as_bytes()),
+            Stream::Standard(standard) if *standard != Standard::Input => {
+                standard.write(text.as_bytes())
+            }
+            Stream::Reader { .. } | Stream::Standard(_) => {
+                return Err(OsFailure::new(ErrorKind::Other, "not writable", &self.path));
+            }
         };
-        writer
-            .write_all(text.as_bytes())
-            .map_err(|error| OsFailure::from_io(&error, &self.path))?;
+        written.map_err(|error| OsFailure::from_io(&error, &self.path))?;
         Ok(i64::try_from(text.chars().count()).unwrap_or(i64::MAX))
     }
 
@@ -307,15 +306,16 @@ impl OpenFile {
     ///
     /// Fails when the write fails, such as on a full disk.
     pub(crate) fn flush(&mut self) -> Result<(), OsFailure> {
-        match &mut self.stream {
+        let flushed = match &mut self.stream {
             Stream::Reader { .. } => Ok(()),
-            Stream::Writer(writer) => writer
-                .flush()
-                .map_err(|error| OsFailure::from_io(&error, &self.path)),
-        }
+            Stream::Writer(writer) => writer.flush(),
+            Stream::Standard(standard) => standard.flush(),
+        };
+        flushed.map_err(|error| OsFailure::from_io(&error, &self.path))
     }
 
-    /// Writes out the buffer and closes the file, `f.close()` and the end of a `with` block.
+    /// Writes out the buffer and closes the file, `f.close()` and the end of a `with` block. A
+    /// standard stream is written out and stays open: the handle ends, not the stream.
     ///
     /// # Errors
     ///
@@ -328,6 +328,21 @@ impl OpenFile {
         let flushed = self.flush();
         writers().remove(&self.address());
         flushed
+    }
+
+    /// Ends a file that was dropped, not closed: [`close`](Self::close) for a file `open`
+    /// opened. A handle on a standard stream is only freed, with no write: the process writes
+    /// its streams out when it ends, and a write for each `sys.stdout.write(...)` statement,
+    /// whose handle is dropped at once, would cost a system call each.
+    ///
+    /// # Errors
+    ///
+    /// Fails as [`close`](Self::close) does.
+    pub(crate) fn release(self: Box<Self>) -> Result<(), OsFailure> {
+        if matches!(self.stream, Stream::Standard(_)) {
+            return Ok(());
+        }
+        self.close()
     }
 
     /// The path, for the panic a failed final write on a drop reports.

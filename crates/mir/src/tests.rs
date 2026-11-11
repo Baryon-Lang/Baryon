@@ -598,6 +598,7 @@ fn format_writes_its_pieces() {
     );
 }
 
+mod fused;
 mod parallel;
 mod vector;
 
