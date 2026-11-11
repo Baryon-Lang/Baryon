@@ -124,3 +124,34 @@ def main():
         "3\n-1.0\n3.0\n"
     );
 }
+
+/// A literal default of an optional parameter, `n: int | None = None` or `m: int | None = 5`,
+/// arrives as the optional it is, borrowed or owned. The call that left `n` out used to pass an
+/// uninitialized optional, so `n is not None` read garbage; `numpy.fft.irfft(x, n=None)` is the
+/// signature `fft.irfft` needs.
+#[test]
+fn literal_defaults_of_optional_parameters_are_wrapped() {
+    let program = "\
+def pick(x: int, n: int | None = None, m: int | None = 5) -> int:
+    length = 2 * x
+    if n is not None:
+        length = n
+    if m is not None:
+        length += m
+    return length
+
+
+def label(name: Owned[str | None] = None) -> str:
+    if name is None:
+        return \"unnamed\"
+    return name
+
+
+def main():
+    print(pick(3), pick(3, 9), pick(3, None, None), label(), label(\"probe\"))
+";
+    assert_eq!(
+        output("defaults-optional-literals", &[("main.byn", program)]).unwrap(),
+        "11 14 6 unnamed probe\n"
+    );
+}

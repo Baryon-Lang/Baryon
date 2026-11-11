@@ -173,3 +173,62 @@ differ from NumPy's. Raises `LinAlgError("Eigenvalues did not converge")` if the
 not converge within 30 steps for an eigenvalue, as LAPACK does; panics when `a` is not square.
 
 Differences from NumPy: no `UPLO="U"` argument; `eigvalsh` costs as much as `eigh`.
+
+## `fft`
+
+```python
+def fft(x: Array[complex128, 1]) -> Array[complex128, 1]: ...
+def ifft(x: Array[complex128, 1]) -> Array[complex128, 1]: ...
+def rfft(x: Array[f64, 1]) -> Array[complex128, 1]: ...
+def irfft(x: Array[complex128, 1], n: int | None = None) -> Array[f64, 1]: ...
+def fftfreq(n: int, d: f64 = 1.0) -> Array[f64, 1]: ...
+def rfftfreq(n: int, d: f64 = 1.0) -> Array[f64, 1]: ...
+```
+
+The module `fft` holds the discrete Fourier transform and its inverse, with NumPy's names and
+its default scaling, `norm="backward"`:
+
+- `fft(x)[k]` is the sum over `j` of `x[j] * exp(-2πi jk / n)`, not scaled.
+- `ifft(x)` is the same sum with `+2πi`, divided by n, so `ifft(fft(x))` gives back `x` up to
+  rounding.
+- `rfft(x)` transforms real samples and keeps the first n // 2 + 1 frequencies, since the rest
+  are their complex conjugates. `irfft(x, n)` turns such a half spectrum back into n real
+  samples; `n` defaults to 2 * (len(x) - 1), so give it for an odd number of samples.
+- `fftfreq(n, d)` and `rfftfreq(n, d)` give the frequency of each entry, in cycles per unit of
+  `d`, the spacing of the samples.
+
+```python
+from math import cos, pi
+from fft import rfft, rfftfreq
+
+
+def main():
+    n = 64
+    samples = Array.zeros(n)
+    for j in range(n):
+        samples[j] = cos(2.0 * pi * 5.0 * j / n)  # 5 cycles over the window
+    spectrum = rfft(samples)
+    frequencies = rfftfreq(n, 1.0 / n)
+    peak = 0
+    for k in range(len(spectrum)):
+        if abs(spectrum[k]) > abs(spectrum[peak]):
+            peak = k
+    print(frequencies[peak], round(abs(spectrum[peak]), 6))
+```
+
+prints
+
+```text
+5.0 32.0
+```
+
+Any length works. A power of two uses the radix-2 algorithm, 0.08 s for 2²⁰ points on one core,
+about twice NumPy's time. Any other length uses Bluestein's algorithm, three power-of-two
+transforms of at least twice the length, so it costs about six times as much. The twiddle factors
+come from `cos` and `sin` for each angle, never from repeated multiplication, so the error stays
+within a few units in the last place of the largest entry, as NumPy's does.
+
+Differences from NumPy: `fft` and `ifft` take a `complex128` array, so real samples go through
+`rfft`, or into a complex array first; there is no `n` to pad or cut the input, no `axis` and no
+`norm`; an empty input panics, where NumPy raises `ValueError`. Two-dimensional and N-dimensional
+transforms, `fft2` and `fftn`, come later in roadmap 3.10.
