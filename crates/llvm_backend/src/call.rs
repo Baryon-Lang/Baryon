@@ -33,6 +33,7 @@ impl<'db> Function<'_, '_, 'db> {
             } => (item, type_arguments),
             Callee::Builtin(
                 builtin @ (Builtin::File(_)
+                | Builtin::Path(_)
                 | Builtin::Run
                 | Builtin::Text(TextMethod::ParseInt | TextMethod::ParseFloat)),
             ) => {
@@ -44,32 +45,7 @@ impl<'db> Function<'_, '_, 'db> {
             Callee::Value(_) => return Err(Unsupported::new("calls of `Callable` values")),
         };
         let symbol = (self.symbol)(item, type_arguments);
-        let mut written = Vec::new();
-        let mut parameters = Vec::new();
-        for argument in arguments {
-            let (ty, value) = match argument {
-                Argument::Borrow(place) => {
-                    let (address, ty) = self.place(place)?;
-                    if self.types.by_value(ty) {
-                        let Some(value) = self.load(&address, ty)? else {
-                            continue;
-                        };
-                        (self.types.value(ty)?, value)
-                    } else {
-                        ("ptr".to_owned(), address)
-                    }
-                }
-                Argument::InOut(place) => ("ptr".to_owned(), self.place(place)?.0),
-                Argument::Owned(operand) => {
-                    let Some((value, ty)) = self.operand(operand)? else {
-                        continue;
-                    };
-                    (self.types.value(ty)?, value)
-                }
-            };
-            written.push(format!("{ty} {value}"));
-            parameters.push(ty);
-        }
+        let (mut written, mut parameters) = self.function_arguments(arguments)?;
         if let Some(edge) = error {
             let (address, _) = self.place(&edge.error.into())?;
             written.push(format!("ptr {address}"));
@@ -127,9 +103,10 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(())
     }
 
-    /// Writes a call of `builtin`, one of those that can fail: a file operation,
-    /// `subprocess.run`, or `int(text)` and `float(text)`. Each is a call of the runtime that
-    /// raises through `error`, the call's error edge.
+    /// Writes a call of `builtin`, one of those that can fail: a file operation, a path or
+    /// directory operation, `subprocess.run`, or `int(text)` and `float(text)`. Each is a call
+    /// of the runtime that raises through `error`, the call's error edge; a path operation that
+    /// cannot fail, such as `path.name`, has no edge.
     fn raising_builtin(
         &mut self,
         builtin: Builtin,
@@ -140,12 +117,49 @@ impl<'db> Function<'_, '_, 'db> {
     ) -> Result<(), Unsupported> {
         match builtin {
             Builtin::File(method) => self.file_call(method, arguments, destination, target, error),
+            Builtin::Path(method) => self.path_call(method, arguments, destination, target, error),
             Builtin::Run => self.subprocess_run(arguments, destination, target, error),
             Builtin::Text(method) => {
                 self.parse_number(method, arguments, destination, target, error)
             }
             _ => Err(Unsupported::new(builtin.name())),
         }
+    }
+
+    /// The arguments of a call of a compiled function, each as LLVM writes it, `double %3`,
+    /// and the parameter types they give its declaration. An argument of a type that takes no
+    /// bytes is left out of both.
+    fn function_arguments(
+        &mut self,
+        arguments: &[Argument<'db>],
+    ) -> Result<(Vec<String>, Vec<String>), Unsupported> {
+        let mut written = Vec::new();
+        let mut parameters = Vec::new();
+        for argument in arguments {
+            let (ty, value) = match argument {
+                Argument::Borrow(place) => {
+                    let (address, ty) = self.place(place)?;
+                    if self.types.by_value(ty) {
+                        let Some(value) = self.load(&address, ty)? else {
+                            continue;
+                        };
+                        (self.types.value(ty)?, value)
+                    } else {
+                        ("ptr".to_owned(), address)
+                    }
+                }
+                Argument::InOut(place) => ("ptr".to_owned(), self.place(place)?.0),
+                Argument::Owned(operand) => {
+                    let Some((value, ty)) = self.operand(operand)? else {
+                        continue;
+                    };
+                    (self.types.value(ty)?, value)
+                }
+            };
+            written.push(format!("{ty} {value}"));
+            parameters.push(ty);
+        }
+        Ok((written, parameters))
     }
 
     /// Writes a call of the built-in function `builtin`, each of which the backend expands in
@@ -178,13 +192,13 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::ArgumentCount => self.argument_count(arguments, destination, target),
             Builtin::Argument => self.argument(arguments, destination, target),
             Builtin::EnvironmentGet => self.environment_get(arguments, destination, target),
+            Builtin::EnvironmentEntries => self.environment_entries(arguments, destination, target),
             Builtin::Exit => self.system_exit(arguments),
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
-            // `File` and `Run` can fail, so `call` sends them to `raising_builtin` with their error
-            // edge. `Path` and `EnvironmentEntries` are not built by this backend yet: the calls
-            // of the runtime follow the runtime's part.
-            Builtin::File(_) | Builtin::Run | Builtin::Path(_) | Builtin::EnvironmentEntries => {
+            // `File`, `Path` and `Run` can fail, so `call` sends them to `raising_builtin` with
+            // their error edge.
+            Builtin::File(_) | Builtin::Run | Builtin::Path(_) => {
                 Err(Unsupported::new(builtin.name()))
             }
             Builtin::ArrayFile(method) => Err(Unsupported::new(method.name())),

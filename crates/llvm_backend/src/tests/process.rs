@@ -126,3 +126,35 @@ declare void @baryon_rt_exit(i64, ptr) noreturn nounwind
 "
     );
 }
+
+/// `os.environ.copy()` starts from the list of names and values the runtime writes to the
+/// destination.
+#[test]
+fn the_environment_entries_are_written_by_the_runtime() {
+    let database = Database::default();
+    let str = Type::new(&database, TypeKind::Str);
+    let list = Type::new(&database, TypeKind::List(str));
+    let mut body = Body::new(list, span());
+    calls(
+        &mut body,
+        vec![(Builtin::EnvironmentEntries, vec![], Local::RETURN)],
+    );
+    assert_eq!(
+        module(&database, &[("entries", body)]),
+        "\
+define { ptr, i64, i64 } @entries() {
+start:
+  %_0 = alloca { ptr, i64, i64 }
+  br label %bb0
+bb0:
+  call void @baryon_rt_environment_entries(ptr %_0)
+  br label %bb1
+bb1:
+  %t0 = load { ptr, i64, i64 }, ptr %_0
+  ret { ptr, i64, i64 } %t0
+}
+
+declare void @baryon_rt_environment_entries(ptr) nounwind
+"
+    );
+}

@@ -164,6 +164,7 @@ mod math;
 mod module;
 mod panic;
 mod parallel;
+mod paths;
 mod print;
 mod print_array;
 mod print_collections;

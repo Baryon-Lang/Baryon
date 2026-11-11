@@ -12,6 +12,7 @@ mod files;
 mod math;
 mod panics;
 mod parallel;
+mod paths;
 mod print;
 mod process;
 mod sorting;
