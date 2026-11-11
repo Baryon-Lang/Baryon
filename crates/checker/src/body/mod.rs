@@ -53,6 +53,7 @@ mod math;
 mod members;
 mod methods;
 mod moves;
+mod npy;
 mod numbers;
 mod operators;
 mod parallel;
