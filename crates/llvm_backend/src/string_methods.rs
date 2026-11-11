@@ -6,12 +6,16 @@
 //! A new `str` comes back as `{ ptr, i64 }` with the flag clear, so the destination owns it. A
 //! new `list[str]` is written by the runtime straight into the destination's header, which has
 //! the runtime's `OwnedList` layout, `{ ptr, i64, i64 }`.
+//!
+//! `int(text)` and `float(text)` (decision 0037) can fail, so they are written by
+//! `parse_number`, which branches to the call's error edge as a call of a compiled function that
+//! raises does.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
 use crate::panic::Failure;
 use crate::text::TEXT;
-use mir::{Argument, BlockId, Place, TextMethod};
+use mir::{Argument, BlockId, ErrorEdge, Place, TextMethod};
 
 /// What a runtime function for a `str` method returns, and so how the destination is written.
 #[derive(Clone, Copy)]
@@ -131,11 +135,52 @@ impl<'db> Function<'_, '_, 'db> {
                 (symbol, Returns::Text, self.text_values(arguments)?)
             }
             TextMethod::ParseInt | TextMethod::ParseFloat => {
-                return Err(Unsupported::new(format!("`{}` of a `str`", method.name())));
+                return Err(Unsupported::new("a number read with no error edge"));
             }
         };
         self.runtime_text_call(symbol, returns, values, destination)?;
         self.line(&format!("br label %{}", block_label(target)));
+        Ok(())
+    }
+
+    /// Writes `destination = int(text)` or `float(text)` (decision 0037) and goes to `target`,
+    /// or to the error edge's block with the `ValueError` in its local. The runtime reads the
+    /// number and raises as a compiled function does: `baryon_rt_str_parse_int` and
+    /// `baryon_rt_str_parse_float` take the text, the destination's address, written only on
+    /// success, and the error local's address, and return an `i1` that is true when they failed.
+    pub(crate) fn parse_number(
+        &mut self,
+        method: TextMethod,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+        target: BlockId,
+        error: Option<&ErrorEdge>,
+    ) -> Result<(), Unsupported> {
+        let name = method.name();
+        let edge = error.ok_or_else(|| Unsupported::new(format!("`{name}` with no error edge")))?;
+        let [text] = arguments else {
+            return Err(Unsupported::new(format!("`{name}` with these arguments")));
+        };
+        let (bytes, length) = self.text_argument(text)?;
+        let (out, _) = self.place(destination)?;
+        let (raised, _) = self.place(&edge.error.into())?;
+        let symbol = if method == TextMethod::ParseInt {
+            "baryon_rt_str_parse_int"
+        } else {
+            "baryon_rt_str_parse_float"
+        };
+        self.declare(
+            symbol,
+            &format!("declare zeroext i1 @{symbol}(ptr, i64, ptr, ptr) nounwind"),
+        );
+        let failed = self.emit(&format!(
+            "call zeroext i1 @{symbol}(ptr {bytes}, i64 {length}, ptr {out}, ptr {raised})"
+        ));
+        self.line(&format!(
+            "br i1 {failed}, label %{}, label %{}",
+            block_label(edge.target),
+            block_label(target)
+        ));
         Ok(())
     }
 

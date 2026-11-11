@@ -1,8 +1,8 @@
 //! `str`'s methods (roadmap 1.13.12): each is one call of its runtime function, with each `str`
 //! passed as its bytes and their count, the "not owned" bit masked off.
 
-use super::{Database, end, module, parameter, span};
-use mir::{Argument, BlockId, Body, Builtin, Callee, Constant, ConstantValue, Operand};
+use super::{Database, end, module, parameter, primitive, span};
+use mir::{Argument, BlockId, Body, Builtin, Callee, Constant, ConstantValue, ErrorEdge, Operand};
 use mir::{Local, LocalKind, TerminatorKind, TextMethod};
 use types::{Integer, Mode, Primitive, Type, TypeKind};
 
@@ -81,4 +81,65 @@ fn take_passes_positions_and_returns_owned_text() {
             "{expected} missing from\n{written}"
         );
     }
+}
+
+/// `n = int("42")` (decision 0037): the runtime reads the number into the destination and
+/// raises through the error edge's local, so its failure flag picks the edge's block. `i64`
+/// stands for `ValueError`, since the backend only passes the local's address.
+#[test]
+fn reading_a_number_branches_on_the_failure_flag() {
+    let database = Database::default();
+    let none = Type::new(&database, TypeKind::None);
+    let str = Type::new(&database, TypeKind::Str);
+    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
+    let raised = Type::new(
+        &database,
+        TypeKind::Fallible {
+            value: none,
+            errors: vec![i64],
+        },
+    );
+    let mut body = Body::new(none, span());
+    let number = body.push_local(i64, LocalKind::Temporary, span());
+    let error = body.push_local(raised, LocalKind::Temporary, span());
+    body.push_block(end(TerminatorKind::Call {
+        callee: Callee::Builtin(Builtin::Text(TextMethod::ParseInt)),
+        arguments: vec![Argument::Owned(Operand::Constant(Constant {
+            ty: str,
+            value: ConstantValue::Str("42".to_owned()),
+        }))],
+        destination: number.into(),
+        target: BlockId::new(1),
+        error: Some(ErrorEdge {
+            error,
+            target: BlockId::new(2),
+        }),
+    }));
+    body.push_block(end(TerminatorKind::Return));
+    body.push_block(end(TerminatorKind::Return));
+    assert_eq!(
+        module(&database, &[("read", body)]),
+        "\
+define void @read() {
+start:
+  %_1 = alloca i64
+  %_2 = alloca { i8, [1 x i64] }
+  br label %bb0
+bb0:
+  %t0 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775806 }, 0
+  %t1 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775806 }, 1
+  %t2 = and i64 %t1, 9223372036854775807
+  %t3 = call zeroext i1 @baryon_rt_str_parse_int(ptr %t0, i64 %t2, ptr %_1, ptr %_2)
+  br i1 %t3, label %bb2, label %bb1
+bb1:
+  ret void
+bb2:
+  ret void
+}
+
+@baryon.str.0 = private unnamed_addr constant [2 x i8] c\"42\"
+
+declare zeroext i1 @baryon_rt_str_parse_int(ptr, i64, ptr, ptr) nounwind
+"
+    );
 }

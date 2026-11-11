@@ -125,3 +125,46 @@ def main() -> Raises[None, ValueError]:
         "error: ValueError(message='mass must be positive')\n"
     );
 }
+
+/// `int(text)` and `float(text)` (decision 0037) read numbers as Python does, and bad text
+/// raises a `ValueError` with Python's message, caught by `except` or reported at the end of
+/// `main`. Every line printed is what CPython prints for the same program.
+#[test]
+fn numbers_are_read_from_text_as_python_reads_them() {
+    let program = "\
+def total(line: str) -> Raises[float, ValueError]:
+    result = 0.0
+    for field in line.split(\",\"):
+        result += float(field)
+    return result
+
+
+def main() -> Raises[None, ValueError]:
+    print(int(\" -1_024\\n\"), float(\"6.022e23\"), float(\"-inf\"), total(\"1.5, 2.5,3\"))
+    try:
+        n = int(\"12a\")
+        print(n)
+    except ValueError as error:
+        print(error.message)
+    try:
+        print(total(\"1.5,x\"))
+    except ValueError as error:
+        print(error.message)
+    print(int(\"99999999999999999999\"))
+";
+    let directory = package("text-numbers", &[("main.byn", program)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", super::stderr(&output));
+    let ran = Command::new(&executable).output().unwrap();
+    assert_eq!(ran.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "-1024 6.022e+23 -inf 7.0\n\
+         invalid literal for int() with base 10: '12a'\n\
+         could not convert string to float: 'x'\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stderr),
+        "error: ValueError(message=\"int() result out of range: '99999999999999999999'\")\n"
+    );
+}

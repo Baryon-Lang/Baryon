@@ -28,7 +28,8 @@ def main():
 ```
 
 `baryon build . heat` followed by `./heat 64 1000` prints `argument: 64` and `argument: 1000`.
-Turning the text into numbers is `int(text)` and `float(text)`, which roadmap 1.13.12 builds.
+Turning the text into numbers is `int(text)` and `float(text)`, which raise `ValueError` on text
+that is not a number ([Types](types.md#indexing-slicing-and-methods)).
 
 Each read of `sys.argv` gives a new list, a copy of a few strings, so a program that changes its
 list, such as `args = sys.argv` and then `args.pop()`, changes only its own copy. An argument

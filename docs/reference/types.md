@@ -228,6 +228,23 @@ def symbols(line: str) -> list[str]:
     return [entry.strip().upper() for entry in line.split(",")]
 ```
 
+`int(text)` and `float(text)` read a number from text as Python's do: whitespace around it, a
+sign, and underscores between digits, as in `" -1_024\n"`, and for `float` an exponent and
+`inf`, `infinity` and `nan` in any case. Text that is not a number raises
+[`ValueError`](errors.md#error-types-the-language-provides) with Python's message, such as
+`invalid literal for int() with base 10: '12a'`, so a function that reads numbers handles it or
+lists it in its `Raises` ([decision 0037](../decisions/0037-reading-numbers-from-text.md)).
+Only `int` and `float` read text; `f32(text)` is an error.
+
+```python
+def total(line: str) -> Raises[float, ValueError]:
+    """`"1.5, 2.5,3"` gives `7.0`; `"1.5,x"` raises `ValueError`."""
+    result = 0.0
+    for field in line.split(","):
+        result += float(field)
+    return result
+```
+
 An f-string formats each value with a specification from Python's format mini-language, and
 writes what Python writes:
 

@@ -43,9 +43,13 @@ impl<'db> Builder<'db> {
             }
             types::Callee::Conversion(to) => match (to.kind(self.db), arguments.as_slice()) {
                 (TypeKind::Primitive(_), [argument])
+                    if matches!(self.ty(*argument).kind(self.db), TypeKind::Str) =>
+                {
+                    self.parse_number(place, *to, *argument, node);
+                }
+                (TypeKind::Primitive(_), [argument])
                     if !matches!(self.ty(*argument).kind(self.db), TypeKind::Primitive(_)) =>
                 {
-                    // `float("nan")` parses text, which no backend does yet.
                     let from = self.ty(*argument).display(self.db);
                     let to = to.display(self.db);
                     self.unsupported(node, &format!("converting a `{from}` to `{to}`"));

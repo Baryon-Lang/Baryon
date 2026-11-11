@@ -141,3 +141,39 @@ error: a bare `raise` must be inside an `except` block
    = note: raise an error value: `raise SolverError(...)`"
     );
 }
+
+/// `int(text)` and `float(text)` raise the library's `ValueError` (decision 0037), so a
+/// function that neither catches it nor lists it is told to; another number type cannot read
+/// text, and a number converts as before, without `Raises`.
+#[test]
+fn reading_a_number_from_text_can_fail_with_value_error() {
+    let program = r"
+def parse(text: str) -> i64:
+    return int(text)
+
+
+def scale(text: str) -> f32:
+    return f32(text)
+
+
+def ok(x: f64) -> i64:
+    return int(x)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `int` can fail with `ValueError`, which is not handled here
+ --> main.byn:2:12
+  |
+2 |     return int(text)
+  |            ^^^^^^^^^ can fail with `ValueError`
+  = note: catch it with `try:` and `except ValueError:`, or let it pass on by declaring `-> Raises[i64, ValueError]`
+
+error: `f32(...)` cannot read a number from a `str`
+ --> main.byn:6:12
+  |
+6 |     return f32(text)
+  |            ^^^^^^^^^ not `int` or `float`
+  = note: read it with `int(text)` or `float(text)`, then convert the number"
+    );
+}

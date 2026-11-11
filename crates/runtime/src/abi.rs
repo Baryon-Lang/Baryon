@@ -11,6 +11,7 @@ mod complex;
 mod dict;
 mod files;
 mod memory;
+mod numbers;
 mod output;
 mod panics;
 mod parallel;
@@ -43,6 +44,9 @@ pub use files::{
     baryon_rt_file_write,
 };
 pub use memory::{baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_deallocate};
+pub use numbers::{
+    RaisedValueError, ValueError, baryon_rt_str_parse_float, baryon_rt_str_parse_int,
+};
 pub use output::{
     baryon_rt_flush, baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64,
     baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,

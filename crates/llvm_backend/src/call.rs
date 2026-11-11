@@ -12,7 +12,7 @@ use crate::function::{Function, block_label};
 use crate::literal::global;
 use crate::strings::{COMPARE, CONTAINS, LENGTH};
 use crate::ty::Repr;
-use mir::{Argument, BlockId, Builtin, Callee, ErrorEdge, Place};
+use mir::{Argument, BlockId, Builtin, Callee, ErrorEdge, Place, TextMethod};
 
 impl<'db> Function<'_, '_, 'db> {
     /// Writes a call of `callee` with `arguments`, storing its result at `destination` and going
@@ -33,6 +33,11 @@ impl<'db> Function<'_, '_, 'db> {
             } => (item, type_arguments),
             Callee::Builtin(Builtin::File(method)) => {
                 return self.file_call(*method, arguments, destination, target, error);
+            }
+            Callee::Builtin(Builtin::Text(
+                method @ (TextMethod::ParseInt | TextMethod::ParseFloat),
+            )) => {
+                return self.parse_number(*method, arguments, destination, target, error);
             }
             Callee::Builtin(builtin) => {
                 return self.builtin(*builtin, arguments, destination, target);
