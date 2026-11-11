@@ -29,7 +29,7 @@ use crate::traits::{Bound, Trait};
 use database::Definition;
 use diagnostics::Diagnostic;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Mode, StandardType, Type, TypeKind};
+use types::{Key, Mode, StandardType, Type, TypeKind};
 
 impl<'db> Body<'db> {
     /// Whether a value of `ty` moves when it is used as a value, rather than being copied.
@@ -91,6 +91,8 @@ impl<'db> Body<'db> {
                     .tree
                     .child(node, Role::Value)
                     .is_some_and(|value| self.is_environ(value)) => {}
+            // `header["OBJECT"]` is a call of a library function, which gives a new value.
+            SyntaxKind::Subscript if self.typed.calls.contains_key(&Key(node)) => {}
             // A slice of a list is a new list, as in Python, so keeping it moves nothing.
             SyntaxKind::Subscript
                 if self.is_view(node) && matches!(ty.kind(self.db), TypeKind::List(_)) => {}

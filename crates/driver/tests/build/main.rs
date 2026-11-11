@@ -25,6 +25,7 @@ mod errors;
 mod examples;
 mod fft;
 mod files;
+mod fits;
 mod fusion;
 mod generic_methods;
 mod guide;

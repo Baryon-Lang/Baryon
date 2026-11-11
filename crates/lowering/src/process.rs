@@ -46,6 +46,7 @@ impl<'db> Builder<'db> {
             || self.is_environ_item(node)
             || self.is_path_part(node)
             || self.standard_stream(node).is_some()
+            || self.is_library_access(node)
     }
 
     /// Whether `node` names the member `member` of the standard module `module`, as

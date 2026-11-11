@@ -22,6 +22,7 @@ impl<'db> Builder<'db> {
             return self.assign(place, rvalue, node);
         }
         match kind {
+            _ if self.is_library_access(node) => self.call(place, node),
             _ if self.is_literal(node) => {
                 let operand = self.operand(node);
                 self.assign(place, Rvalue::Use(operand), node);

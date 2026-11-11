@@ -30,6 +30,12 @@ impl<'db> Builder<'db> {
             return self.array_fromfile(place, &given, node);
         }
         if let types::Callee::Builtin(name) = &call.callee
+            && name.starts_with("fits.")
+        {
+            let name = name.clone();
+            return self.fits_call(place, &name, &given, node);
+        }
+        if let types::Callee::Builtin(name) = &call.callee
             && let ("Array.load" | "Array.save", Some(arguments)) = (
                 name.as_str(),
                 given.iter().copied().collect::<Option<Vec<_>>>(),

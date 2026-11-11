@@ -69,6 +69,13 @@ impl<'db> Body<'db> {
                 self.process_call(node, module, &member, &arguments)
             }
             Some(Definition::Standard {
+                module: "fits",
+                member: Some(member),
+            }) => {
+                let member = member.clone();
+                self.fits_call(node, &member, &arguments, expected)
+            }
+            Some(Definition::Standard {
                 module: "subprocess",
                 member: Some(member),
             }) => {

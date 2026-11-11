@@ -50,6 +50,9 @@ impl<'db> Body<'db> {
         {
             return result;
         }
+        if self.is_header(base) && callee == "get" {
+            return self.header_get(node, value, base, arguments);
+        }
         if let &TypeKind::Standard(standard) = base.kind(self.db) {
             let result = self.standard_method(node, standard, &callee, arguments);
             self.used_receiver(value, base, &callee);
