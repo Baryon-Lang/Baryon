@@ -366,7 +366,14 @@ fn writers() -> std::sync::MutexGuard<'static, BTreeSet<usize>> {
 /// without dropping anything. A write that fails here cannot be reported, as at the end of a C
 /// program.
 pub(crate) fn flush_all() {
-    for &address in writers().iter() {
+    flush_where(|_| true);
+}
+
+/// Writes out the buffer of each file open for writing whose address `chosen` accepts.
+/// [`flush_all`] chooses every file; a test chooses only its own, because the files other
+/// tests write at the same moment are not this thread's to touch.
+fn flush_where(chosen: impl Fn(usize) -> bool) {
+    for &address in writers().iter().filter(|&&address| chosen(address)) {
         // SAFETY: a listed address is a live `OpenFile`: it is removed before the file is
         // freed, and `sys.exit` runs on a thread that holds no reference to it.
         #[allow(unsafe_code, reason = "flushes files compiled code owns, at exit")]
