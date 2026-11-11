@@ -119,3 +119,58 @@ def main() -> Raises[None, OSError]:
         "panic: could not write out `/dev/full` when it was dropped: No space left on device\n"
     );
 }
+
+/// A loop over a file reads it line by line, as Python does: each line keeps its line end, an
+/// empty line is `"\n"`, `continue` and `break` work, a `readline()` after the loop carries on
+/// where it stopped, and a file at its end gives no passes. A comprehension loops the same way,
+/// a file opened in the loop's header is closed after it, and a failed read is an `OSError`.
+#[test]
+fn a_loop_over_a_file_reads_each_line() {
+    let program = "\
+def main() -> Raises[None, OSError]:
+    with open(\"data.txt\", \"w\") as out:
+        out.write(\"x 1.5\\n\\ny 2.5\\r\\nz 3\")
+    f = open(\"data.txt\")
+    kept: list[str] = []
+    for line in f:
+        if line == \"\\n\":
+            continue
+        stop = line.startswith(\"y\")
+        kept.append(line)
+        if stop:
+            break
+    print(kept)
+    print(f.readline())
+    for line in f:
+        print(\"never\", line)
+    print([line.strip() for line in open(\"data.txt\") if line != \"\\n\"])
+    for line in open(\"data.txt\"):
+        print(line, end=\"\")
+    print()
+    try:
+        for line in open(\"missing.txt\"):
+            print(line)
+    except OSError as error:
+        print(error.filename)
+    log = open(\"data.txt\", \"a\")
+    try:
+        for line in log:
+            print(line)
+    except OSError as error:
+        print(error.strerror)
+";
+    let directory = package("file_loop", &[("main.byn", program)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let run = Command::new(&executable)
+        .current_dir(&directory)
+        .output()
+        .unwrap();
+    assert!(run.status.success(), "{run:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "['x 1.5\\n', 'y 2.5\\n']\nz 3\n['x 1.5', 'y 2.5', 'z 3']\n\
+         x 1.5\n\ny 2.5\nz 3\nmissing.txt\nnot readable\n"
+    );
+    fs::remove_dir_all(directory).unwrap();
+}

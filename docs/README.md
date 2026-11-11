@@ -41,6 +41,7 @@ and runs `baryon lsp` for you. The [release notes](../CHANGELOG.md) say what eac
 | [`bench/README.md`](../bench/README.md) | The baseline benchmark suite: the kernels, how to run and record them, and the numbers Baryon must match |
 | [`decisions/`](decisions/README.md) | Every hard-to-reverse choice, why it was made, and what it costs |
 | [`design/language-design-plan.md`](design/language-design-plan.md) | Goals, language design, compiler architecture, roadmap and open questions |
+| [`design/astrobaryon-roadmap.md`](design/astrobaryon-roadmap.md) | AstroBaryon, the astronomy library: scope, build order, prerequisite libraries, and the documentation each piece ships with, including the transition guide from AstroPy |
 
 ## Integrating a crate
 
