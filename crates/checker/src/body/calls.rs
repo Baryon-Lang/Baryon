@@ -65,6 +65,13 @@ impl<'db> Body<'db> {
                 let (module, member) = (*module, member.clone());
                 self.process_call(node, module, &member, &arguments)
             }
+            Some(Definition::Standard {
+                module: "subprocess",
+                member: Some(member),
+            }) => {
+                let member = member.clone();
+                self.subprocess_call(node, &member, &arguments)
+            }
             Some(Definition::Local(_)) => {
                 let ty = self.expression(function, None);
                 self.call_value(node, &callee, ty, &arguments)

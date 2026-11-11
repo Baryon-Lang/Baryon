@@ -4,11 +4,12 @@
 builds into programs yet.
 
 A program talks to the system that runs it through Python's modules and names: `sys` for its
-command-line arguments and exit status, `os` for its environment, and `open` for text files
+command-line arguments and exit status, `os` for its environment, `open` for text files, and
+`subprocess` for running another program
 ([decision 0036](../decisions/0036-files-and-processes.md)). They are this language's own
 modules, built into the compiler and the runtime, not CPython's: no Python runs underneath.
-Paths, the standard streams, array files and running another program come next,
-with the names that decision gives them.
+Paths, the standard streams and array files come next, with the names that decision gives
+them.
 
 ## Command-line arguments
 
@@ -75,8 +76,8 @@ does.
 The environment is read-only. Setting a variable, `os.environ["OMP_NUM_THREADS"] = "4"` in
 Python, is not part of the language: changing the environment while another thread reads it is a
 data race in the C library, and every `prange` loop runs on several threads. A program that
-needs another environment gives one to the program it runs, which `subprocess.run(..., env=...)`
-will do (decision 0036).
+needs another environment gives one to the program it runs, with
+[`subprocess.run(..., env=...)`](#running-a-program).
 
 ## Errors: `OSError`
 
@@ -201,10 +202,104 @@ points to `Array.fromfile` and `a.tofile`, since binary data is whole arrays
 ([decision 0036](../decisions/0036-files-and-processes.md)). A `"+"` mode says a file is opened to
 read or to write, not both.
 
+## Running a program
+
+`subprocess.run(args)` runs another program, waits for it to end, and returns a
+`CompletedProcess`. `args` is a `list[str]`: the program, found on `PATH`, then each of its
+arguments.
+
+```python
+import subprocess
+
+
+def git_revision() -> Raises[str, OSError]:
+    result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True)
+    if result.returncode != 0:
+        return "unknown"
+    return result.stdout.strip()
+```
+
+In a `git` checkout `git_revision()` gives the commit, such as
+`"ed289d3c0a7b..."`, and anywhere else it gives `"unknown"`. On a machine without `git` the call
+raises `OSError` with the kind `FILE_NOT_FOUND`.
+
+A `CompletedProcess` is a struct in `subprocess` with Python's fields:
+
+| Field | Type | Holds |
+| --- | --- | --- |
+| `args` | `list[str]` | a copy of the list the program was run with |
+| `returncode` | `int` | the exit status, 0 to 255; minus the signal's number when a signal ended the program, such as `-9` |
+| `stdout` | `str` | what the program wrote to standard output, when `capture_output=True`; `""` otherwise |
+| `stderr` | `str` | what the program wrote to standard error, when `capture_output=True`; `""` otherwise |
+
+Five keywords change how the program runs. Each is written with a value or left out:
+
+| Keyword | Type | Without it | With it |
+| --- | --- | --- | --- |
+| `capture_output` | `bool` | the program writes to this program's standard output and standard error | `True` collects both into `stdout` and `stderr` |
+| `input` | `str` | the program reads this program's standard input | the program reads the text as its standard input |
+| `cwd` | `str` | the program runs in this program's directory | the program runs in that directory |
+| `env` | `dict[str, str]` | the program gets a copy of this program's environment | the `dict` is the program's whole environment |
+| `timeout` | `float` or `int` | the program runs as long as it takes | after that many seconds the program is ended and the call raises `OSError` with the kind `TIMEOUT` |
+
+```python
+import subprocess
+
+
+def solve(mesh: str, threads: int) -> Raises[str, OSError]:
+    environment = {"PATH": "/usr/bin:/bin", "OMP_NUM_THREADS": f"{threads}"}
+    result = subprocess.run(
+        ["sh", "-c", "wc -l; echo $OMP_NUM_THREADS threads"],
+        capture_output=True,
+        input=mesh,
+        cwd="/tmp",
+        env=environment,
+        timeout=60,
+    )
+    return result.stdout
+```
+
+`solve("0 0\n1 0\n", 4)` runs `wc -l` on the two lines and gives `"2\n4 threads\n"`, with
+spaces before the `2` on macOS.
+
+- **There is no shell.** The arguments reach the program exactly as the list holds them, so a
+  file name with a space is one argument and nothing in a value is ever run as a command. A `str`
+  command and `shell=True` are errors that show the list to write. A pipeline or a redirection
+  is written by running `["sh", "-c", line]`, which makes the shell visible.
+- **A status other than 0 is not an error.** The call returns, and the program tests
+  `returncode`. `check=True` is not in Baryon yet.
+- **Failures raise `OSError`.** A program that is not found has the kind `FILE_NOT_FOUND`, one
+  that may not be run `PERMISSION`, a `cwd` that is missing or not a directory `FILE_NOT_FOUND` or
+  `NOT_A_DIRECTORY`, and a timeout `TIMEOUT`. `filename` is the program, or `cwd` when that is
+  what was wrong. An empty list panics:
+  `` `subprocess.run` needs a program to run: its argument list is empty ``.
+- **Output is text.** Captured output is read as a [text file](#text-files) is: it must be
+  UTF-8, or the call raises `OSError` with the kind `INVALID_DATA`, and `"\r\n"` and `"\r"`
+  read as `"\n"`. `text=True` may be written and changes nothing. Captured output is held in
+  memory whole.
+- **Output stays in order.** Anything `print` still holds is written out before the program
+  starts, so this program's output so far comes before the other program's.
+- **The call borrows its arguments.** The list, the `dict` and the text are read, not moved, and
+  can be used after the call.
+- **A keyword is written or left out.** `input=None` means what leaving `input` out means.
+  Passing a value that may be `None`, such as a `str | None`, is not built yet: test it first and
+  call with the keyword only where there is a value.
+- **A timeout ends the program, not what it started.** Programs the ended program started
+  itself keep running, and a `timeout` call does not wait for them or read what they write.
+- **`env` replaces the environment.** With `env`, the program is looked up on the `PATH` the
+  `dict` gives, and on the system's default when it gives none.
+
+Three things differ from Python. `stdout` and `stderr` are `""` when output is not captured,
+where Python gives `None`, so `result.stdout.strip()` needs no test first. A timeout raises
+`OSError`, where Python raises `subprocess.TimeoutExpired`. And only the keywords above exist:
+`stdin`, `stdout`, `stderr`, `encoding` and the rest of Python's are errors that say so.
+
 ## What is not built yet
 
 Decision 0036 settles the rest of this chapter's surface, and the compiler reports each part by
 name until it is built: `` `sys.stdin` is not in Baryon yet ``. In order, the next parts are
 `os.environ[name]`, `name in os.environ` and `os.environ.copy()`;
 `sys.stdin`, `sys.stdout`, `sys.stderr`, `input` and `print(..., file=)`; `Array.fromfile` and
-`a.tofile`; `pathlib.Path` and the directory functions of `os`; and `subprocess.run`.
+`a.tofile`; and `pathlib.Path` and the directory functions of `os`. Past that, idea I.39
+lists what comes later, `subprocess.run(check=True)` and a keyword of `subprocess.run` given a
+value that may be `None` among them.

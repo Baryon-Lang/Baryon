@@ -298,6 +298,7 @@ mod random;
 mod reductions;
 mod slices;
 mod statements;
+mod subprocess;
 #[cfg(test)]
 mod tests;
 mod text;
