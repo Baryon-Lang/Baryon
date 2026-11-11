@@ -1,6 +1,6 @@
 # 0040. `linalg` and `fft` follow NumPy and are written in Baryon
 
-Status: Accepted; amendment for `eig` and `svd` proposed
+Status: Accepted, amended 2026-11-11
 Date: 2026-11-11
 Roadmap: 3.10
 
@@ -135,6 +135,8 @@ same-bits guarantee, as NumPy does, and its reference entry says so.
 - `--blas` is the first build option after `--release`.
 
 ## Amendment, 2026-11-11: `eig` and `svd` in Baryon
+
+Collins accepted this amendment on 2026-11-11.
 
 The first version of this record called LAPACK's `dgeev` and `dgesdd` for `eig` and `svd`. Calling
 them needs compiler plumbing that does not exist yet (built-ins in `mir`, a foreign call in the
