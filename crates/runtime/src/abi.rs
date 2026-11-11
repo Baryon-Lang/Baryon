@@ -15,6 +15,7 @@ mod numbers;
 mod output;
 mod panics;
 mod parallel;
+mod paths;
 mod philox;
 mod print_array;
 mod process;
@@ -58,6 +59,11 @@ pub use panics::{
     baryon_rt_panic_length_mismatch, baryon_rt_panic_slice,
 };
 pub use parallel::{baryon_rt_chunk_count, baryon_rt_parallel_for};
+pub use paths::{
+    baryon_rt_current_directory, baryon_rt_path_is, baryon_rt_path_join, baryon_rt_path_list,
+    baryon_rt_path_make_directory, baryon_rt_path_part, baryon_rt_path_remove,
+    baryon_rt_path_rename,
+};
 pub use philox::{baryon_rt_philox_new, baryon_rt_philox_uniform};
 pub use print_array::{
     ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128, ELEMENT_F32, ELEMENT_F64, ELEMENT_I8,
@@ -65,7 +71,8 @@ pub use print_array::{
     baryon_rt_print_array,
 };
 pub use process::{
-    baryon_rt_argument, baryon_rt_argument_count, baryon_rt_environment_get, baryon_rt_exit,
+    baryon_rt_argument, baryon_rt_argument_count, baryon_rt_environment_entries,
+    baryon_rt_environment_get, baryon_rt_exit,
 };
 pub use round::{baryon_rt_round_f32, baryon_rt_round_f64, baryon_rt_round_i64};
 pub use sort::{baryon_rt_sort, baryon_rt_sort_str};
