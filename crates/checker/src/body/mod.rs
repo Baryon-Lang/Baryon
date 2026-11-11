@@ -45,6 +45,7 @@ mod files;
 mod flow;
 mod formatted;
 mod generics;
+mod library;
 mod loops;
 mod math;
 mod members;

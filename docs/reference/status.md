@@ -24,9 +24,10 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-10, when text files, `open`, the `File` methods
-and `with open(...) as f`, began to build. Before that, the same day, `OSError`, `os.ErrorKind`,
-unions of structs and, before them, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches lowering or the backend something new
+This page was last brought up to date on 2026-11-11, when `int(text)` and `float(text)` began to
+build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
+`with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
+`sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches lowering or the backend something new
 updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
@@ -75,7 +76,7 @@ checks what it prints.
 | Every integer type, `f32`, `f64` and `bool`, with Python's number mixing, `//` and `%` | |
 | [Complex numbers](types.md#complex-numbers) `complex64` and `complex128`: arithmetic, `==`, `real`, `imag`, `conjugate()`, `abs`, `complex(re, im)`, `print`, and f-strings with format specifications | `a.sum()` of a complex array; complex numbers in `prange` reductions and `accumulate=`; the `cmath` module (roadmap idea I.37) |
 | Conversions that panic when the value does not fit | |
-| `str`: literals, f-strings, `+`, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len`; [indexing and slicing](types.md#indexing-slicing-and-methods) by character; `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower` and `upper` | `str`'s other methods, such as `count`, `rfind` and `isdigit`; `split` with `maxsplit`, `find` with `start` and `end`, and `startswith` of a tuple |
+| `str`: literals, f-strings, `+`, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len`; [indexing and slicing](types.md#indexing-slicing-and-methods) by character; `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower` and `upper`; `int(text)` and `float(text)`, which raise `ValueError` | `str`'s other methods, such as `count`, `rfind` and `isdigit`; `split` with `maxsplit`, `find` with `start` and `end`, and `startswith` of a tuple |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
 | `T \| None`, with every narrowing rule | |
 | Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs and their methods, each method compiled once per type its struct is used at | |
@@ -129,9 +130,10 @@ out of a function, including through a `raise`.
 Everything in this chapter builds: error types, `Raises`, `raise`, errors passed on through
 callers, `try` with `except` naming one type or a tuple of them, `as`, bare `raise`, `main`
 ending with an error, and every panic in the table, with its message, location and backtrace.
-`ValueError` and `OSError` build like a program's own error types; `int(text)` and `float(text)`,
-which raise `ValueError`, are not built yet (roadmap 1.13.12). The one exception is the overflow panic: it names the operator but not yet its operands (roadmap
-idea I.18), and [Types](#types) lists the operations it does not check yet.
+`ValueError` and `OSError` build like a program's own error types, and so do `int(text)` and
+`float(text)`, which raise `ValueError`. The one exception is the overflow panic: it names the
+operator but not yet its operands (roadmap idea I.18), and [Types](#types) lists the operations
+it does not check yet.
 
 ## Parallel and vector loops
 

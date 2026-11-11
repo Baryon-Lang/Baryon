@@ -6,13 +6,19 @@
 //! slice is a new `str`. The text's length comes from [`Builtin::LengthStr`], then the index or
 //! range is checked against it exactly as an array's is, then [`TextMethod::Take`] copies the
 //! characters out.
+//!
+//! `int(text)` and `float(text)` (decision 0037) are [`TextMethod::ParseInt`] and
+//! [`TextMethod::ParseFloat`] calls that can fail: the checker records the library's
+//! `ValueError` as the call's error, and the call gets an error edge like any fallible call.
 
 use crate::builder::Builder;
-use mir::{Argument, Builtin, Constant, Operand, Place, SliceIndex, TextMethod};
+use mir::{
+    Argument, Builtin, Callee, Constant, Operand, Place, SliceIndex, TerminatorKind, TextMethod,
+};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::TypeKind;
+use types::{Primitive, Type, TypeKind};
 
-impl Builder<'_> {
+impl<'db> Builder<'db> {
     /// Whether `node` indexes or slices a `str`, which makes a new `str` rather than naming a
     /// place.
     pub(crate) fn is_text_subscript(&self, node: NodeId) -> bool {
@@ -99,5 +105,34 @@ impl Builder<'_> {
             .map(|&argument| Argument::Borrow(self.borrow(argument)))
             .collect();
         self.text_call(place, Builtin::Text(text_method), arguments, node);
+    }
+
+    /// `int(text)` or `float(text)` into `place`, of the number type `to`: a call that reads the
+    /// borrowed text, and fails with the `ValueError` the checker recorded for `node`, which goes
+    /// where any error of a call goes.
+    pub(crate) fn parse_number(&mut self, place: Place, to: Type<'db>, text: NodeId, node: NodeId) {
+        let method = if matches!(to.kind(self.db), TypeKind::Primitive(Primitive::Float(_))) {
+            TextMethod::ParseFloat
+        } else {
+            TextMethod::ParseInt
+        };
+        let text = Argument::Borrow(self.borrow(text));
+        let errors = self.typed.errors(node);
+        let edge = self.error_edge(errors, node);
+        let next = self.new_block();
+        self.terminate(
+            TerminatorKind::Call {
+                callee: Callee::Builtin(Builtin::Text(method)),
+                arguments: vec![text],
+                destination: place,
+                target: next,
+                error: edge.clone(),
+            },
+            node,
+        );
+        if let Some(edge) = edge {
+            self.dispatch(&edge, errors, node);
+        }
+        self.start(next);
     }
 }
