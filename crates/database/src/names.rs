@@ -82,7 +82,7 @@ pub const BUILTINS: [&str; 58] = [
 /// importing one of these is accepted and its members are not checked. `sys`, `os` and
 /// `subprocess` are decision 0036's: the command-line arguments, the exit status, the
 /// environment, and running another program. `linalg` and `fft` are roadmap 3.10's linear
-/// algebra and fast Fourier transforms, with NumPy's `numpy.linalg` and `numpy.fft` names.
+/// algebra and fast Fourier transforms, named as `numpy.linalg` and `numpy.fft` are.
 pub const STANDARD_MODULES: [&str; 7] =
     ["math", "random", "sys", "os", "subprocess", "linalg", "fft"];
 
