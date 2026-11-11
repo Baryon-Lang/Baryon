@@ -132,3 +132,46 @@ def main():
         "True True True False False True\nTrue True True True True\n5 8 0 5 True\nTrue False True\n"
     );
 }
+
+/// A loop variable that borrows each `str` can also hold its own value outside the loop
+/// (roadmap 1.13.9): assigned before the loop, again after it, and copied inside it, through
+/// plain, nested, `enumerate` and `dict` loops. Each value prints once and is freed once.
+#[test]
+fn loop_variables_hold_their_own_value_outside_the_loop() {
+    let program = "\
+def main():
+    names = [\"ada\", \"bo\"]
+    name = \"none\"
+    print(name)
+    for name in names:
+        print(name)
+    name = \"after\"
+    print(name)
+    last = \"\"
+    for group in [names.copy(), [\"cy\"]]:
+        for name in group:
+            last = name.copy()
+        print(last)
+    for i, word in enumerate(names):
+        print(i, word)
+    word = \"z\"
+    print(word)
+    for key in {\"x\": 1}:
+        print(key)
+    key = \"q\"
+    print(key)
+";
+    let directory = package("loop-variables-outside", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "none\nada\nbo\nafter\nbo\ncy\n0 ada\n1 bo\nz\nx\nq\n"
+    );
+}

@@ -89,12 +89,6 @@ impl<'db> Builder<'db> {
             return;
         };
         let ty = self.walk_type(&walk);
-        if !self.is_copy(ty) && !self.confined(statement, target) {
-            return self.unsupported(
-                target,
-                "a loop variable that borrows an element and is also used outside the loop",
-            );
-        }
         let int = self.int_type();
         let mut lengths = Vec::new();
         Self::walk_lengths(&walk, &mut lengths);

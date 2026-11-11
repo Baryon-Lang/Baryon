@@ -170,7 +170,18 @@ impl<'db> Body<'db> {
     pub(super) fn name(&mut self, node: NodeId) -> Type<'db> {
         match self.lowerer.definition(node) {
             Some(&Definition::Local(binding)) => {
-                self.read(node, binding);
+                // A read after a borrowing loop is reported once, as that, even when the loop
+                // may also have run zero times.
+                let ended = self
+                    .state
+                    .moved
+                    .get(&binding)
+                    .is_some_and(|site| self.loop_ends.contains(site));
+                if ended {
+                    self.state.assigned.insert(binding);
+                } else {
+                    self.read(node, binding);
+                }
                 self.read_moved(node, binding);
                 self.state
                     .narrowed

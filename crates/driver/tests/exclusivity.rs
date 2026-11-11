@@ -468,3 +468,73 @@ error: `name` was moved
   = note: to keep both, move a copy: `name.copy()`"
     );
 }
+
+/// A loop variable that borrows an element holds nothing once its loop ends (roadmap 1.13.9):
+/// a read of it before it is assigned again is reported, on any path that skips the
+/// assignment. Assigning it before or after the loop, reading a copy kept inside it, and a
+/// variable of a copy type, which keeps its last value as in Python, all check clean.
+#[test]
+fn loop_variables_that_borrow_end_with_their_loop() {
+    let program = r#"
+def run(names: list[str], pairs: list[tuple[str, f64]], grid: list[list[f64]]) -> f64:
+    name = "none"
+    print(name)
+    for name in names:
+        print(name)
+    print(name)
+    weight = 0.0
+    for label, weight in pairs:
+        print(weight)
+    print(label, weight)
+    for row in grid:
+        print(len(row))
+    if len(grid) > 1:
+        row = [0.0]
+    print(row)
+    last = ""
+    for name in names:
+        last = name.copy()
+    name = last.copy()
+    print(name, last)
+    total = 0.0
+    x = 0.0
+    for x in [1.0, 2.0]:
+        total += x
+    return total + x
+"#;
+    assert_eq!(
+        check_one(program),
+        "error: `name` is read after its loop ended
+ --> main.byn:6:11
+  |
+6 |     print(name)
+  |           ^^^^ read after the loop
+ ::: main.byn:4:9
+  |
+4 |     for name in names:
+  |         ---- `name` borrows each element only while the loop runs
+  = note: to keep an element, copy it inside the loop: `last = name.copy()`
+
+error: `label` is read after its loop ended
+  --> main.byn:10:11
+   |
+10 |     print(label, weight)
+   |           ^^^^^ read after the loop
+  ::: main.byn:8:9
+   |
+ 8 |     for label, weight in pairs:
+   |         ----- `label` borrows each element only while the loop runs
+   = note: to keep an element, copy it inside the loop: `last = label.copy()`
+
+error: `row` is read after its loop ended
+  --> main.byn:15:11
+   |
+15 |     print(row)
+   |           ^^^ read after the loop
+  ::: main.byn:11:9
+   |
+11 |     for row in grid:
+   |         --- `row` borrows each element only while the loop runs
+   = note: to keep an element, copy it inside the loop: `last = row.copy()`"
+    );
+}

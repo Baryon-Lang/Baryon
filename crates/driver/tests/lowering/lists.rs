@@ -174,10 +174,11 @@ fn(_1: list[f64]) -> list[f64] {
     );
 }
 
-/// A loop variable that borrows a `str` and is also used outside the loop is not lowered yet,
-/// since reading it as the element it borrows is exact only inside (roadmap 1.13.9).
+/// A loop variable that borrows a `str` can also be assigned outside its loop: the variable keeps
+/// its own value, `"none"`, which is dropped once, while the loop reads each element in place
+/// (roadmap 1.13.9). The checker rejects a read of it after the loop, which would find no element.
 #[test]
-fn a_borrowed_loop_variable_used_after_its_loop_is_not_lowered_yet() {
+fn a_borrowed_loop_variable_keeps_its_own_value_outside_the_loop() {
     let program = "\
         def lengths(names: list[str]):\n\
         \x20   name = \"none\"\n\
@@ -186,18 +187,59 @@ fn a_borrowed_loop_variable_used_after_its_loop_is_not_lowered_yet() {
     assert_eq!(
         lower(program, "lengths"),
         "\
-error: lowering does not handle a loop variable that borrows an element and is also used outside the loop yet
- --> main.byn:3:9
-  |
-3 |     for name in names:
-  |         ^^^^ not lowered yet
-  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+fn(_1: list[str]) -> None {
+    let _0: None; // return
+    let _1: list[str]; // parameter names
+    let _2: str; // name
+    let _3: str;
+    let _4: i64;
+    let _5: i64;
+    let _6: i64;
+    let _7: bool;
+    let _8: None;
+
+    bb0: {
+        _3 = \"none\";
+        drop(_2);
+        _2 = move _3;
+        _4 = len(_1, 0);
+        _5 = copy _4;
+        _6 = 0_i64;
+        goto -> bb1;
+    }
+
+    bb1: {
+        _7 = Less(copy _6, copy _5);
+        branch copy _7 -> [true: bb2, false: bb4];
+    }
+
+    bb2: {
+        _8 = call print(_1[_6], owned \"\\n\") -> [return: bb5];
+    }
+
+    bb3: {
+        _6 = Add(copy _6, 1_i64);
+        goto -> bb1;
+    }
+
+    bb4: {
+        _0 = None;
+        drop(_2);
+        return;
+    }
+
+    bb5: {
+        goto -> bb3;
+    }
+}
+"
     );
 }
 
-/// `enumerate`, `zip` and `reversed` keep a plain loop's limits (roadmap 1.13.13): a borrowed
-/// element's variable used outside its loop, `reversed` of a `str`, which is read forward one
-/// character at a time, and a `range` step known only at run time are not lowered yet.
+/// `enumerate`, `zip` and `reversed` keep a plain loop's limits (roadmap 1.13.13): `reversed` of
+/// a `str`, which is read forward one character at a time, and a `range` step known only at run
+/// time are not lowered yet. A borrowed element's variable assigned outside its loop, `name`
+/// here, is (roadmap 1.13.9).
 #[test]
 fn iterators_not_lowered_yet_are_errors() {
     let program = "\
@@ -212,13 +254,6 @@ fn iterators_not_lowered_yet_are_errors() {
     assert_eq!(
         lower(program, "show"),
         "\
-error: lowering does not handle a loop variable that borrows an element and is also used outside the loop yet
- --> main.byn:3:9
-  |
-3 |     for i, name in enumerate(names):
-  |         ^^^^^^^ not lowered yet
-  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues
-
 error: lowering does not handle `reversed` of a `str` yet
  --> main.byn:5:23
   |
