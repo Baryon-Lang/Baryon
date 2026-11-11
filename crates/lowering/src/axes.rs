@@ -40,16 +40,8 @@ impl<'db> Builder<'db> {
     ) {
         let ty = self.ty(array);
         let rank = self.rank(ty);
-        let Some(given) = self.constant_integer(axis) else {
-            return self.unsupported(axis, "an axis that is not a literal or a `Final` constant");
-        };
-        let position = if given < 0 {
-            given + i128::from(rank)
-        } else {
-            given
-        };
-        let Some(axis) = u32::try_from(position).ok().filter(|axis| *axis < rank) else {
-            return self.unsupported(axis, "an axis outside the array");
+        let Some(axis) = self.axis_position(axis, rank) else {
+            return;
         };
         if rank == 1 {
             return match method {
@@ -67,12 +59,49 @@ impl<'db> Builder<'db> {
             );
         }
         let source = self.borrow(array);
+        let result_type = self.ty(node);
+        self.reduce_along(place, method, (&source, ty, result_type), axis, node);
+    }
+
+    /// The dimension, from 0, that the constant axis argument `axis` names in an array of rank
+    /// `rank`, where -1 is the last. `None`, after reporting it, when it is not a constant or
+    /// names no dimension; the checker has reported both already.
+    pub(crate) fn axis_position(&mut self, axis: NodeId, rank: u32) -> Option<u32> {
+        let Some(given) = self.constant_integer(axis) else {
+            self.unsupported(axis, "an axis that is not a literal or a `Final` constant");
+            return None;
+        };
+        let position = if given < 0 {
+            given + i128::from(rank)
+        } else {
+            given
+        };
+        let found = u32::try_from(position).ok().filter(|axis| *axis < rank);
+        if found.is_none() {
+            self.unsupported(axis, "an axis outside the array");
+        }
+        found
+    }
+
+    /// The reduction `method`, `"sum"`, `"min"` or `"max"`, along `axis` of the array at
+    /// `source`, of type `ty` with rank 2 or more and real elements, into `place` as
+    /// `result_type`, the array's type without that axis. `a.mean(axis=k)` and `a.var(axis=k)`
+    /// sum through here too.
+    pub(crate) fn reduce_along(
+        &mut self,
+        place: Place,
+        method: &str,
+        (source, ty, result_type): (&Place, types::Type<'db>, types::Type<'db>),
+        axis: u32,
+        node: NodeId,
+    ) {
+        let rank = self.rank(ty);
+        let element = self.element(ty);
         let lengths: Vec<Operand<'db>> = (0..rank)
             .map(|dimension| self.length(&source, ty, dimension, node))
             .collect();
         let mut kept = lengths.clone();
         let along = kept.remove(axis as usize);
-        let result_type = self.ty(node);
         let result = self.temporary(result_type, node);
         let start = if let TypeKind::Array { .. } = result_type.kind(self.db) {
             Rvalue::NewArray(result_type, kept.clone())
@@ -84,7 +113,7 @@ impl<'db> Builder<'db> {
         };
         self.assign(Place::from(result), start, node);
         let reduced = Reduced {
-            source,
+            source: source.clone(),
             result: Place::from(result),
             lengths: &lengths,
             kept: &kept,

@@ -124,7 +124,7 @@ impl<'db> Builder<'db> {
 
     /// The positional arguments of the call `node`, in order, and its keyword arguments, each
     /// name with its value.
-    fn call_arguments(&self, node: NodeId) -> (Vec<NodeId>, Vec<(&'db str, NodeId)>) {
+    pub(crate) fn call_arguments(&self, node: NodeId) -> (Vec<NodeId>, Vec<(&'db str, NodeId)>) {
         let (mut positional, mut keywords) = (Vec::new(), Vec::new());
         let items = self
             .tree
