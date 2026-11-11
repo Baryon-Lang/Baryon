@@ -94,6 +94,7 @@
 //! );
 //! ```
 
+mod array_files;
 mod call;
 mod check;
 mod display;
@@ -104,6 +105,7 @@ mod statement;
 mod text;
 mod validate;
 
+pub use array_files::ArrayFile;
 pub use call::{Argument, Builtin, Callee, MathFunction};
 pub use check::Check;
 pub use display::DisplayedBody;

@@ -163,6 +163,7 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
             // Each can fail, so `call` sends it to `file_call` with its error edge.
             Builtin::File(method) => Err(Unsupported::new(method.name())),
+            Builtin::ArrayFile(method) => Err(Unsupported::new(method.name())),
         }
     }
 }

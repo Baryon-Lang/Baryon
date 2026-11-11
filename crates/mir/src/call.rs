@@ -2,7 +2,7 @@
 //! [`Call`](crate::TerminatorKind::Call), the [`Builtin`] operations and [`MathFunction`]s the
 //! backends build inline or call the runtime for, and each [`Argument`]'s mode.
 
-use crate::{FileMethod, Operand, Place, TextMethod};
+use crate::{ArrayFile, FileMethod, Operand, Place, TextMethod};
 use types::{Item, Type};
 
 /// The function a [`Call`](crate::TerminatorKind::Call) calls.
@@ -176,6 +176,10 @@ pub enum Builtin {
     /// `open` or a method of the `File` it returns (decision 0036). [`FileMethod`] says what each
     /// takes and gives. Unlike every other built-in, each can fail: its call has an error edge.
     File(FileMethod),
+    /// `Array.fromfile` or `a.tofile`, which read and write an array's elements as a file of
+    /// raw bytes (decision 0036). [`ArrayFile`] says what each takes and gives. Each can fail,
+    /// as a [`File`](Self::File) call can: its call has an error edge.
+    ArrayFile(ArrayFile),
 }
 
 impl Builtin {
@@ -197,6 +201,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Exit.name(), "sys.exit");
     /// assert_eq!(mir::Builtin::Sort.name(), "sorted");
     /// assert_eq!(mir::Builtin::File(mir::FileMethod::Write).name(), "File.write");
+    /// assert_eq!(mir::Builtin::ArrayFile(mir::ArrayFile::ToFile).name(), "Array.tofile");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -225,6 +230,7 @@ impl Builtin {
             Self::Sort => "sorted",
             Self::RoundDigits => "round",
             Self::File(method) => method.name(),
+            Self::ArrayFile(method) => method.name(),
         }
     }
 }
