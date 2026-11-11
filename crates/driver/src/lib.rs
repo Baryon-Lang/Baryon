@@ -47,12 +47,16 @@ use types::{Checked, Item, TypeDb, TypedBody};
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-const LIBRARY: [(&str, &str); 2] = [
+const LIBRARY: [(&str, &str); 3] = [
     (
         "<std>/builtins.byn",
         include_str!("../library/builtins.byn"),
     ),
     ("<std>/os.byn", include_str!("../library/os.byn")),
+    (
+        "<std>/subprocess.byn",
+        include_str!("../library/subprocess.byn"),
+    ),
 ];
 
 /// The compiler's incremental database: every input and every cached query result.

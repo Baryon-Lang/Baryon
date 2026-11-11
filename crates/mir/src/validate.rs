@@ -3,10 +3,8 @@
 //! Lowering and every pass call it in their tests, so a pass that breaks a rule fails where the
 //! mistake is made, not in a backend three stages later.
 
-use crate::{
-    Argument, BasicBlock, BlockId, Body, Callee, Elementwise, Local, LocalKind, Operand, Phase,
-    Piece, Place, Projection, Rvalue, SliceIndex, StatementKind, TerminatorKind,
-};
+use crate::uses::Uses;
+use crate::{BlockId, Body, Local, LocalKind, Phase, TerminatorKind};
 use database::Db;
 use std::fmt;
 use types::{Type, TypeKind};
@@ -25,7 +23,7 @@ pub enum Invalid {
     UnknownLocal(BlockId, Local),
     /// A block jumps to a block the body does not have.
     UnknownBlock(BlockId, BlockId),
-    /// A block of a [`Phase::Ready`] body holds an [`Elementwise`](Rvalue::Elementwise) rvalue,
+    /// A block of a [`Phase::Ready`] body holds an [`Elementwise`](crate::Rvalue::Elementwise) rvalue,
     /// which only built bodies may hold.
     NotExpanded(BlockId),
     /// A local of a [`Phase::Ready`] body has a type that contains a type parameter.
@@ -37,7 +35,7 @@ pub enum Invalid {
     /// values than its outlined body has parameters: the iteration, the arguments and the
     /// reductions and the accumulations.
     OutlinedParameters(BlockId),
-    /// A block's [`Accumulate`](StatementKind::Accumulate) adds into a place whose local is
+    /// A block's [`Accumulate`](crate::StatementKind::Accumulate) adds into a place whose local is
     /// not an accumulated parameter: one the [`ParallelFor`](TerminatorKind::ParallelFor) that
     /// runs this outlined body lists in its accumulations. An `Accumulate` outside an outlined
     /// body is always this.
@@ -46,7 +44,7 @@ pub enum Invalid {
     Outlined(u32, Box<Invalid>),
     /// [`Body::vectorized`] marks a block the body does not have.
     UnknownVectorized(BlockId),
-    /// A block uses a view, a place that ends in a [`Slice`](Projection::Slice), as a whole
+    /// A block uses a view, a place that ends in a [`Slice`](crate::Projection::Slice), as a whole
     /// value: moves or copies it, drops it, or assigns it anything but a whole-array
     /// expression. A view is a borrow and owns no memory, so any of these would store a borrow
     /// or free memory it does not own.
@@ -151,10 +149,10 @@ impl Body<'_> {
     /// - a [`Phase::Ready`] body has no whole-array expressions and no type parameters;
     /// - a [`ParallelFor`](TerminatorKind::ParallelFor) names an outlined body that exists,
     ///   and passes it one value per parameter;
-    /// - an [`Accumulate`](StatementKind::Accumulate) adds only into an accumulated parameter
+    /// - an [`Accumulate`](crate::StatementKind::Accumulate) adds only into an accumulated parameter
     ///   of an outlined body, so never in a function's own body;
-    /// - a view, a place that ends in a [`Slice`](Projection::Slice), is only borrowed, read
-    ///   by [`Length`](Rvalue::Length), a leaf of a whole-array expression or the destination
+    /// - a view, a place that ends in a [`Slice`](crate::Projection::Slice), is only borrowed, read
+    ///   by [`Length`](crate::Rvalue::Length), a leaf of a whole-array expression or the destination
     ///   of one: never moved, copied whole, dropped or assigned anything else;
     /// - each block marked as a `simd` loop header exists,
     /// - each outlined body keeps these rules too.
@@ -337,203 +335,5 @@ fn has_parameter(db: &dyn Db, ty: Type<'_>) -> bool {
             returns,
         } => any(parameters) || has_parameter(db, *returns),
         TypeKind::Fallible { value, errors } => has_parameter(db, *value) || any(errors),
-    }
-}
-
-/// What one block mentions: the locals and blocks it names, and whether it holds a whole-array
-/// expression.
-#[derive(Default)]
-struct Uses {
-    /// Every local named, in order, with repeats.
-    locals: Vec<Local>,
-    /// Every block named, in order, with repeats.
-    blocks: Vec<BlockId>,
-    /// The local of every place an [`Accumulate`](StatementKind::Accumulate) adds into.
-    accumulated: Vec<Local>,
-    /// Whether an [`Rvalue::Elementwise`] appears.
-    elementwise: bool,
-    /// Whether a view is used as a whole value.
-    whole_view: bool,
-}
-
-impl Uses {
-    /// Records everything `block` names.
-    fn block(&mut self, block: &BasicBlock<'_>) {
-        for statement in &block.statements {
-            match &statement.kind {
-                StatementKind::Assign(place, rvalue) => {
-                    self.whole_view |= place.is_view() && !matches!(rvalue, Rvalue::Elementwise(_));
-                    self.place(place);
-                    self.rvalue(rvalue);
-                }
-                StatementKind::Drop(place) => self.value(place),
-                StatementKind::Accumulate { place, value, .. } => {
-                    self.value(place);
-                    self.operand(value);
-                    self.accumulated.push(place.local);
-                }
-            }
-        }
-        match &block.terminator.kind {
-            TerminatorKind::Goto(target) => self.blocks.push(*target),
-            TerminatorKind::Branch {
-                condition,
-                then,
-                otherwise,
-            } => {
-                self.operand(condition);
-                self.blocks.extend([*then, *otherwise]);
-            }
-            TerminatorKind::Switch {
-                value,
-                cases,
-                otherwise,
-            } => {
-                self.operand(value);
-                self.blocks.extend(cases.iter().map(|&(_, target)| target));
-                self.blocks.push(*otherwise);
-            }
-            TerminatorKind::Return | TerminatorKind::Unreachable => {}
-            TerminatorKind::Raise(error) => self.operand(error),
-            TerminatorKind::Call {
-                callee,
-                arguments,
-                destination,
-                target,
-                error,
-            } => {
-                if let Callee::Value(function) = callee {
-                    self.operand(function);
-                }
-                self.arguments(arguments);
-                self.value(destination);
-                self.blocks.push(*target);
-                if let Some(edge) = error {
-                    self.locals.push(edge.error);
-                    self.blocks.push(edge.target);
-                }
-            }
-            TerminatorKind::Assert {
-                condition,
-                check,
-                target,
-            } => {
-                self.operand(condition);
-                for operand in check.operands() {
-                    self.operand(operand);
-                }
-                self.blocks.push(*target);
-            }
-            TerminatorKind::ParallelFor {
-                count,
-                arguments,
-                reductions,
-                accumulations,
-                target,
-                ..
-            } => {
-                self.operand(count);
-                self.arguments(arguments);
-                for reduction in reductions {
-                    self.value(&reduction.place);
-                }
-                for accumulation in accumulations {
-                    self.value(accumulation);
-                }
-                self.blocks.push(*target);
-            }
-        }
-    }
-
-    /// Records the locals call arguments name.
-    fn arguments(&mut self, arguments: &[Argument<'_>]) {
-        for argument in arguments {
-            match argument {
-                Argument::Borrow(place) | Argument::InOut(place) => self.place(place),
-                Argument::Owned(operand) => self.operand(operand),
-            }
-        }
-    }
-
-    /// Records the locals `place` names: its base and its indices.
-    fn place(&mut self, place: &Place) {
-        self.locals.push(place.local);
-        for projection in &place.projections {
-            match projection {
-                Projection::Index(indices) => self.locals.extend(indices),
-                Projection::Slice(dimensions) => {
-                    self.locals
-                        .extend(dimensions.iter().flat_map(SliceIndex::locals));
-                }
-                Projection::Field(_)
-                | Projection::Value
-                | Projection::Error(_)
-                | Projection::Member(_) => {}
-            }
-        }
-    }
-
-    /// Records the locals `place` names, where it is used as a whole value, which a view
-    /// cannot be.
-    fn value(&mut self, place: &Place) {
-        self.whole_view |= place.is_view();
-        self.place(place);
-    }
-
-    /// Records the locals `operand` names. Its value is read whole, which a view's cannot be.
-    fn operand(&mut self, operand: &Operand<'_>) {
-        match operand {
-            Operand::Copy(place) | Operand::Move(place) => self.value(place),
-            Operand::Constant(_) => {}
-        }
-    }
-
-    /// Records the locals `rvalue` names, and whether it is a whole-array expression.
-    fn rvalue(&mut self, rvalue: &Rvalue<'_>) {
-        match rvalue {
-            Rvalue::Use(operand) | Rvalue::Unary(_, operand) | Rvalue::Convert(operand, _) => {
-                self.operand(operand);
-            }
-            Rvalue::Binary(_, left, right) | Rvalue::CheckedBinary(_, left, right) => {
-                self.operand(left);
-                self.operand(right);
-            }
-            Rvalue::Aggregate(_, operands) | Rvalue::NewArray(_, operands) => {
-                for operand in operands {
-                    self.operand(operand);
-                }
-            }
-            Rvalue::Length(place, _)
-            | Rvalue::IsPresent(place)
-            | Rvalue::ErrorIndex(place)
-            | Rvalue::MemberIndex(place) => {
-                self.place(place);
-            }
-            Rvalue::Elementwise(tree) => {
-                self.elementwise = true;
-                self.elementwise(tree);
-            }
-            Rvalue::Format(pieces) => {
-                for piece in pieces {
-                    if let Piece::Value(place, _) = piece {
-                        self.value(place);
-                    }
-                }
-            }
-        }
-    }
-
-    /// Records the locals the leaves of a whole-array expression name.
-    fn elementwise(&mut self, tree: &Elementwise<'_>) {
-        match tree {
-            // A leaf is read one element at a time, so it may be a view; moving one may not.
-            Elementwise::Leaf(Operand::Copy(place)) => self.place(place),
-            Elementwise::Leaf(operand) => self.operand(operand),
-            Elementwise::Unary(_, operand) => self.elementwise(operand),
-            Elementwise::Binary(_, left, right) => {
-                self.elementwise(left);
-                self.elementwise(right);
-            }
-        }
     }
 }

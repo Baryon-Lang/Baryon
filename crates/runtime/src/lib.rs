@@ -42,6 +42,7 @@
 //! | [`baryon_rt_path_part`], [`baryon_rt_path_join`], [`baryon_rt_path_is`] | The parts of a `pathlib.Path` as CPython's `pathlib` gives them, joining with `/`, and whether a path names a file or a directory (decision 0036) |
 //! | [`baryon_rt_path_list`], [`baryon_rt_path_remove`], [`baryon_rt_path_rename`], [`baryon_rt_path_make_directory`], [`baryon_rt_current_directory`] | List a directory, remove and rename a file, make directories and read the current directory, each failure written as an `OSError` |
 //! | [`baryon_rt_file_open`], [`baryon_rt_file_read`], [`baryon_rt_file_read_line`], [`baryon_rt_file_read_lines`], [`baryon_rt_file_write`], [`baryon_rt_file_flush`], [`baryon_rt_file_close`], [`baryon_rt_file_drop`] | Open a text file and read, write, flush and close it, each failure written as an `OSError` the way a compiled function raises one (decision 0036) |
+//! | [`baryon_rt_file_standard`], [`baryon_rt_file_print`], [`baryon_rt_input`] | Make the `File` that `sys.stdin`, `sys.stdout` or `sys.stderr` gives, write a `print(..., file=f)` to its file, and read a line for `input`, raising `EOFError` at the end of the input (decision 0036) |
 //! | [`baryon_rt_subprocess_run`] | Run another program from an argument list, with no shell, wait for it and write a [`CompletedProcess`]: its exit status and, when asked, its output, for `subprocess.run` (decision 0036) |
 //! | [`baryon_rt_flush`] | Write out a line `print(..., end="")` left unended, before the C `main` returns |
 //!
@@ -97,6 +98,7 @@ mod paths;
 mod philox;
 mod print;
 mod print_array;
+mod streams;
 mod strings;
 mod subprocess;
 mod sum;
@@ -104,8 +106,8 @@ mod sum;
 pub use abi::{
     CompletedProcess, ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128, ELEMENT_F32,
     ELEMENT_F64, ELEMENT_I8, ELEMENT_I16, ELEMENT_I32, ELEMENT_I64, ELEMENT_U8, ELEMENT_U16,
-    ELEMENT_U32, ELEMENT_U64, OsError, OwnedList, OwnedText, RaisedError, RaisedValueError,
-    TextBuilder, TextValue, ValueError, baryon_rt_accumulator_chunk_done,
+    ELEMENT_U32, ELEMENT_U64, OsError, OwnedList, OwnedText, RaisedEndOfInput, RaisedError,
+    RaisedValueError, TextBuilder, TextValue, ValueError, baryon_rt_accumulator_chunk_done,
     baryon_rt_accumulator_finish, baryon_rt_accumulator_new, baryon_rt_accumulator_slot,
     baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_argument, baryon_rt_argument_count,
     baryon_rt_chunk_count, baryon_rt_current_directory, baryon_rt_deallocate, baryon_rt_dict_find,
@@ -113,11 +115,12 @@ pub use abi::{
     baryon_rt_dict_remove, baryon_rt_dot_f32, baryon_rt_dot_f64, baryon_rt_dot_strided_f32,
     baryon_rt_dot_strided_f64, baryon_rt_environment_entries, baryon_rt_environment_get,
     baryon_rt_exit, baryon_rt_file_close, baryon_rt_file_drop, baryon_rt_file_flush,
-    baryon_rt_file_open, baryon_rt_file_read, baryon_rt_file_read_line, baryon_rt_file_read_lines,
-    baryon_rt_file_write, baryon_rt_flush, baryon_rt_panic, baryon_rt_panic_exponent,
-    baryon_rt_panic_index, baryon_rt_panic_key, baryon_rt_panic_length_mismatch,
-    baryon_rt_panic_slice, baryon_rt_parallel_for, baryon_rt_path_is, baryon_rt_path_join,
-    baryon_rt_path_list, baryon_rt_path_make_directory, baryon_rt_path_part, baryon_rt_path_remove,
+    baryon_rt_file_open, baryon_rt_file_print, baryon_rt_file_read, baryon_rt_file_read_line,
+    baryon_rt_file_read_lines, baryon_rt_file_standard, baryon_rt_file_write, baryon_rt_flush,
+    baryon_rt_input, baryon_rt_panic, baryon_rt_panic_exponent, baryon_rt_panic_index,
+    baryon_rt_panic_key, baryon_rt_panic_length_mismatch, baryon_rt_panic_slice,
+    baryon_rt_parallel_for, baryon_rt_path_is, baryon_rt_path_join, baryon_rt_path_list,
+    baryon_rt_path_make_directory, baryon_rt_path_part, baryon_rt_path_remove,
     baryon_rt_path_rename, baryon_rt_philox_new, baryon_rt_philox_uniform,
     baryon_rt_power_complex64, baryon_rt_power_complex128, baryon_rt_print_array,
     baryon_rt_print_bool, baryon_rt_print_complex64, baryon_rt_print_complex128,

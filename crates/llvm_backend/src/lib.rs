@@ -173,6 +173,7 @@ mod rvalue;
 mod sort;
 mod string_methods;
 mod strings;
+mod subprocess;
 mod text;
 mod ty;
 mod unions;

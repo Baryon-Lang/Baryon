@@ -2,7 +2,7 @@
 //! [`Call`](crate::TerminatorKind::Call), the [`Builtin`] operations and [`MathFunction`]s the
 //! backends build inline or call the runtime for, and each [`Argument`]'s mode.
 
-use crate::{FileMethod, Operand, PathMethod, Place, TextMethod};
+use crate::{ArrayFile, FileMethod, Operand, PathMethod, Place, TextMethod};
 use types::{Item, Type};
 
 /// The function a [`Call`](crate::TerminatorKind::Call) calls.
@@ -190,6 +190,33 @@ pub enum Builtin {
     /// system, or a directory function of `os` (decision 0036). [`PathMethod`] says what each
     /// takes and gives, and which can fail and so have an error edge.
     Path(PathMethod),
+    /// `Array.fromfile` or `a.tofile`, which read and write an array's elements as a file of
+    /// raw bytes (decision 0036). [`ArrayFile`] says what each takes and gives. Each can fail,
+    /// as a [`File`](Self::File) call can: its call has an error edge.
+    ArrayFile(ArrayFile),
+    /// `subprocess.run(args, ...)` (decision 0036, part 8): runs the program `args[0]` names,
+    /// found on `PATH`, with the rest of `args` as its arguments and no shell, and waits for it.
+    /// Six arguments, in this order:
+    ///
+    /// 1. `args`, a `list[str]` passed `Borrow`. An empty list panics.
+    /// 2. `capture_output`, a `bool` passed `Owned`.
+    /// 3. `input`, a `str` passed `Borrow`, or `Owned` for a literal: the program's standard
+    ///    input.
+    /// 4. `cwd`, a `str` passed the same way: the directory the program runs in.
+    /// 5. `env`, a `dict[str, str]` passed `Borrow`: the program's whole environment.
+    /// 6. `timeout`, an `f64` passed `Owned`: the seconds the program may run.
+    ///
+    /// Each of the last four is the constant `None`, passed `Owned`, when the call leaves its
+    /// keyword out: the program then shares the caller's standard input, directory and
+    /// environment, and runs without a limit.
+    ///
+    /// The destination is a new `CompletedProcess`, the class of the standard library's own
+    /// source (decision 0038), whose `stdout` and `stderr` are empty unless `capture_output` is
+    /// set. Like a [`File`](Self::File) call it can fail, so it has an error edge whose local is
+    /// a `Raises[None, OSError]`: the program cannot be started, the timeout passed, or captured
+    /// output is not UTF-8. A program that exits with a status other than 0 is not a failure.
+    /// Captured output is held in memory whole.
+    Run,
 }
 
 impl Builtin {
@@ -212,6 +239,8 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Sort.name(), "sorted");
     /// assert_eq!(mir::Builtin::File(mir::FileMethod::Write).name(), "File.write");
     /// assert_eq!(mir::Builtin::Path(mir::PathMethod::Parent).name(), "Path.parent");
+    /// assert_eq!(mir::Builtin::ArrayFile(mir::ArrayFile::ToFile).name(), "Array.tofile");
+    /// assert_eq!(mir::Builtin::Run.name(), "subprocess.run");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -242,6 +271,8 @@ impl Builtin {
             Self::RoundDigits => "round",
             Self::File(method) => method.name(),
             Self::Path(method) => method.name(),
+            Self::ArrayFile(method) => method.name(),
+            Self::Run => "subprocess.run",
         }
     }
 }
