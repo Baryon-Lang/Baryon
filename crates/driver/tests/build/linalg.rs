@@ -133,6 +133,135 @@ def main() -> Raises[None, LinAlgError]:
     .unwrap();
 }
 
+/// `qr` of a tall 6 × 4 and a wide 2 × 3 matrix, with LAPACK's signs, and `cholesky` of the
+/// positive definite aᵀa, built with loops; `LinAlgError` from `cholesky` of its negative. `numpy.linalg.qr`
+/// and `cholesky` print the same lines for the matrix
+///
+/// ```python
+/// numpy.random.Generator(numpy.random.Philox(key=5)).random(24).reshape(6, 4) - 0.5
+/// ```
+#[test]
+fn qr_and_cholesky_match_numpy() {
+    let program = r#"
+from linalg import LinAlgError, cholesky, qr
+from random import Philox
+
+
+def show(x: Array[f64, 1]):
+    for value in x:
+        print(f"{value:.12g}", end=" ")
+    print()
+
+
+def main() -> Raises[None, LinAlgError]:
+    generator = Philox(5)
+    m = 6
+    n = 4
+    a = Array.zeros((m, n))
+    for i in range(m):
+        for j in range(n):
+            a[i, j] = generator.uniform() - 0.5
+    q, r = qr(a)
+    print(q.shape, r.shape)
+    show(q[:, 0])
+    show(q[m - 1, :])
+    show(r[0, :])
+    show(r[n - 1, :])
+    wide = Array.zeros((2, 3))
+    wide[0, 0] = 1.0
+    wide[0, 2] = 2.0
+    wide[1, 1] = -3.0
+    wide[1, 2] = 4.0
+    w, s = qr(wide)
+    show(w[0, :])
+    show(s[1, :])
+    spd = Array.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            for row in range(m):
+                spd[i, j] += a[row, i] * a[row, j]
+    l = cholesky(spd)
+    show(l[n - 1, :])
+    show(l[0, :])
+    try:
+        cholesky(-spd)
+    except LinAlgError as error:
+        print(error.message)
+"#;
+    prints(
+        "linalg-qr-cholesky",
+        program.trim_start(),
+        "(6, 4) (4, 4)\n\
+         -0.281522415406 0.302304503291 -0.419073951516 0.537691320677 -0.407090667502 0.445981358553 \n\
+         0.445981358553 0.52929388876 0.235715737462 0.276282679904 \n\
+         -0.830292519007 -0.218066672763 0.280847721127 -0.145792048279 \n\
+         0 0 0 0.461631664317 \n\
+         1 0 \n\
+         0 -3 4 \n\
+         0.145792048279 -0.0976633501946 -0.0665563428344 0.461631664317 \n\
+         0.830292519007 0 0 0 \n\
+         Matrix is not positive definite\n",
+    )
+    .unwrap();
+}
+
+/// `eigh` of a 6 × 6 matrix that is not symmetric, so only its lower triangle counts, with each
+/// eigenvector's sign fixed by its first entry; `eigvalsh` of a 2 × 2 and a 1 × 1 matrix.
+/// `numpy.linalg.eigh` and `eigvalsh` print the same lines, after the same sign fix, for the
+/// matrix
+///
+/// ```python
+/// numpy.random.Generator(numpy.random.Philox(key=3)).random(36).reshape(6, 6) - 0.5
+/// ```
+#[test]
+fn eigh_matches_numpy() {
+    let program = r#"
+from linalg import LinAlgError, eigh, eigvalsh
+from random import Philox
+
+
+def show(x: Array[f64, 1]):
+    for value in x:
+        print(f"{value:.12g}", end=" ")
+    print()
+
+
+def main() -> Raises[None, LinAlgError]:
+    generator = Philox(3)
+    n = 6
+    a = Array.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            a[i, j] = generator.uniform() - 0.5
+    w, v = eigh(a)
+    show(w)
+    for column in range(n):
+        sign = 1.0
+        if v[0, column] < 0.0:
+            sign = -1.0
+        show(sign * v[:, column])
+    pair = Array.fill((2, 2), 1.0)
+    pair[0, 0] = 2.0
+    pair[1, 1] = 2.0
+    show(eigvalsh(pair))
+    show(eigvalsh(Array.zeros((1, 1))))
+"#;
+    prints(
+        "linalg-eigh",
+        program.trim_start(),
+        "-1.09864751102 -0.623056033148 0.105672894405 0.252152380431 0.632048281014 1.39128252921 \n\
+         0.0702231302418 -0.259929287153 -0.348399288863 0.511270318189 -0.537915007938 -0.505344950655 \n\
+         0.44852342135 0.740061248056 -0.0223712546044 0.422991542099 -0.111334310976 0.243553778672 \n\
+         0.390381331872 -0.368034704039 -0.669218587309 -0.0379479424274 0.172656077597 0.482751682839 \n\
+         0.444733592095 -0.0733501484867 0.0814411821081 0.15264609584 0.691109147793 -0.537834953214 \n\
+         0.394668629067 0.239300732214 -0.189159183759 -0.731164547665 -0.312893929062 -0.344508968513 \n\
+         0.536606535087 -0.432031812148 0.622776109002 0.0183941398049 -0.304807364243 0.210489867155 \n\
+         1 3 \n\
+         0 \n",
+    )
+    .unwrap();
+}
+
 /// A right-hand side whose length is not the matrix's panics, as mismatched shapes in
 /// whole-array arithmetic do, pointing into the library and naming the caller's line.
 #[test]
