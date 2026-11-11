@@ -5,8 +5,9 @@
 //! one runtime function per argument, and prints the separator and the line end, which may be
 //! `sep=` and `end=`, with [`baryon_rt_print_str`](crate::baryon_rt_print_str): `print(a, b)` is
 //! four calls. Each call names
-//! its stream: 1 for standard output, where `print` writes, or 2 for standard error, where the
-//! report of an error that ends `main` goes.
+//! its stream: 1 for standard output, where `print` writes, 2 for standard error, where
+//! `print(..., file=sys.stderr)` and the report of an error that ends `main` go, or 3 to hold the
+//! text for `print(..., file=f)`, which then writes it to the file in one piece ([`captured`]).
 //!
 //! A float prints as Python's `repr` writes it: the fewest digits that read back as the same
 //! value, `.0` on a whole number, and an exponent below `1e-4` and from `1e16` up.
@@ -18,18 +19,37 @@
 //! interleave. A failed write, such as to a closed pipe, is ignored: the program carries on, as
 //! one printing to `head` should.
 
+use std::cell::RefCell;
 use std::fmt::Write as _;
 use std::io::Write as _;
 
-/// Writes `text` to standard error when `stream` is 2, the POSIX number of standard error, and
-/// to standard output otherwise, ignoring a failed write.
+/// Writes `text` to standard error when `stream` is 2, the POSIX number of standard error,
+/// holds it for [`captured`] when `stream` is 3, and writes it to standard output otherwise,
+/// ignoring a failed write.
 pub(crate) fn write(stream: i32, text: &str) {
+    if stream == CAPTURE {
+        return CAPTURED.with_borrow_mut(|held| held.push_str(text));
+    }
     // A program whose output is closed has nowhere to report it; it carries on.
     let _ = if stream == STDERR {
         std::io::stderr().lock().write_all(text.as_bytes())
     } else {
         std::io::stdout().lock().write_all(text.as_bytes())
     };
+}
+
+thread_local! {
+    /// What this thread has printed to stream 3 since [`captured`] last took it: the text of
+    /// one `print(..., file=f)` on its way to the file. Each thread holds its own, so the
+    /// passes of a `prange` loop that print to their own files never mix their lines.
+    static CAPTURED: RefCell<String> = const { RefCell::new(String::new()) };
+}
+
+/// Takes the text this thread printed to stream 3, leaving none held. Compiled code prints the
+/// values of a `print(..., file=f)` to stream 3 and then hands the whole text to the file, so a
+/// file sees one write for each `print`, whatever the values are.
+pub(crate) fn captured() -> String {
+    CAPTURED.take()
 }
 
 /// Writes out what standard output holds back: the start of a line that `print(..., end="")`
@@ -43,6 +63,9 @@ pub(crate) fn flush() {
 /// The stream number of standard error, as POSIX numbers it. `print` writes to 1, standard
 /// output; the report of an error that ends `main` writes to 2.
 const STDERR: i32 = 2;
+
+/// The stream number that holds text for [`captured`] in place of writing it.
+const CAPTURE: i32 = 3;
 
 /// `text` as Python's `repr` writes a `str`: in single quotes, or in double quotes when it holds
 /// a single quote and no double quote, with the backslash, that quote, and each control
@@ -135,7 +158,15 @@ pub(crate) fn float(shortest: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{bool, float, quoted};
+    use super::{bool, captured, float, quoted, write};
+
+    #[test]
+    fn stream_three_holds_text_until_it_is_taken() {
+        write(3, "t = ");
+        write(3, "0.5\n");
+        assert_eq!(captured(), "t = 0.5\n");
+        assert_eq!(captured(), "");
+    }
 
     /// Python's `repr` of the same value, for `f64`.
     fn repr(value: f64) -> String {
