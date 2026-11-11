@@ -1,6 +1,6 @@
 # 0043. Text tables and `.npy` files are read and written with NumPy's names, as `Array` functions
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-11
 Roadmap: 3.14.1, 3.14.2
 
