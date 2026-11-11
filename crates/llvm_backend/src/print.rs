@@ -8,7 +8,8 @@
 //! shortest digits. A string literal, which lowering passes as a constant, becomes a byte
 //! constant printed with `baryon_rt_print_str`. A `str` value prints its bytes the same way, with
 //! the "not owned" bit masked off its length (decision 0022). Each runtime call names its stream
-//! first: 1, standard output, for `print`. A complex number passes its two parts to
+//! first: 1, standard output, for `print`; 2, standard error, for `print(..., file=sys.stderr)`;
+//! and 3, text the runtime holds, for `print(..., file=f)` (the `streams` module). A complex number passes its two parts to
 //! `baryon_rt_print_complex64` or `baryon_rt_print_complex128`, the same in either form.
 //!
 //! Every other value is taken apart here, at compile time, into those calls and byte constants,
@@ -44,9 +45,13 @@ use types::{Declared, Type, TypeKind};
 /// The runtime's number for standard output, where `print` writes.
 pub(crate) const STDOUT: u8 = 1;
 
-/// The runtime's number for standard error, where the report of an error that ends `main`
-/// goes.
+/// The runtime's number for standard error, where `print(..., file=sys.stderr)` and the report
+/// of an error that ends `main` go.
 pub(crate) const STDERR: u8 = 2;
+
+/// The runtime's number for the text it holds for `print(..., file=f)`, which a
+/// `baryon_rt_file_print` call then writes to the file (the `streams` module).
+pub(crate) const CAPTURE: u8 = 3;
 
 /// How a value is written: as `print` writes it, or as Python's `repr` writes it inside a tuple
 /// or struct. The two differ only for a `str`, which `repr` quotes.
@@ -59,25 +64,36 @@ pub(crate) enum Form {
 }
 
 impl<'db> Function<'_, '_, 'db> {
-    /// Writes `print(arguments…)` and goes to `target`.
+    /// Writes `print(arguments…)` to `stream` and goes to `target`.
     pub(crate) fn print(
         &mut self,
+        stream: u8,
         arguments: &[Argument<'db>],
         target: BlockId,
     ) -> Result<(), Unsupported> {
-        for argument in arguments {
-            self.print_argument(argument)?;
-        }
+        self.print_arguments(stream, arguments)?;
         self.line(&format!("br label %{}", block_label(target)));
         Ok(())
     }
 
-    /// Prints one argument. A `None` has no value to load, so it prints its name directly.
-    fn print_argument(&mut self, argument: &Argument<'db>) -> Result<(), Unsupported> {
+    /// Prints each of `arguments` to `stream` in order, with nothing between them.
+    pub(crate) fn print_arguments(
+        &mut self,
+        stream: u8,
+        arguments: &[Argument<'db>],
+    ) -> Result<(), Unsupported> {
+        arguments
+            .iter()
+            .try_for_each(|argument| self.print_argument(stream, argument))
+    }
+
+    /// Prints one argument to `stream`. A `None` has no value to load, so it prints its name
+    /// directly.
+    fn print_argument(&mut self, stream: u8, argument: &Argument<'db>) -> Result<(), Unsupported> {
         let printed = match argument {
             Argument::Owned(Operand::Constant(constant)) => {
                 if let ConstantValue::Str(text) = &constant.value {
-                    self.print_text(STDOUT, text.as_bytes());
+                    self.print_text(stream, text.as_bytes());
                     return Ok(());
                 }
                 self.operand(&Operand::Constant(constant.clone()))?
@@ -89,9 +105,9 @@ impl<'db> Function<'_, '_, 'db> {
             }
         };
         if let Some((value, ty)) = printed {
-            return self.print_value(STDOUT, &value, ty, Form::Print);
+            return self.print_value(stream, &value, ty, Form::Print);
         }
-        self.print_text(STDOUT, b"None");
+        self.print_text(stream, b"None");
         Ok(())
     }
 
