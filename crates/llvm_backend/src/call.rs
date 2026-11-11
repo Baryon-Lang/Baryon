@@ -159,6 +159,11 @@ impl<'db> Function<'_, '_, 'db> {
     ) -> Result<(), Unsupported> {
         match builtin {
             Builtin::Print => self.print(arguments, target),
+            // The standard streams (decision 0036, part 6) are in `mir` before they are here.
+            Builtin::PrintError
+            | Builtin::FlushOutput
+            | Builtin::StandardStream
+            | Builtin::Input => Err(Unsupported::new(builtin.name())),
             Builtin::Math(function) => self.math(function, arguments, destination, target),
             Builtin::Append => self.list_append(arguments, target),
             Builtin::Pop => self.list_pop(arguments, destination, target),

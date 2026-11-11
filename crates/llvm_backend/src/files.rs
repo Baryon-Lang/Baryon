@@ -131,5 +131,6 @@ fn symbol(method: FileMethod) -> &'static str {
         FileMethod::Write => "baryon_rt_file_write",
         FileMethod::Flush => "baryon_rt_file_flush",
         FileMethod::Close => "baryon_rt_file_close",
+        FileMethod::Print => "baryon_rt_file_print",
     }
 }
