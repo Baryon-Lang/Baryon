@@ -139,12 +139,12 @@ error: `subprocess.run` has no parameter `stdout` in Baryon
    |                            ^^^^^^ unknown parameter
    = note: `subprocess.run` takes a `list[str]`, then `capture_output=`, `input=`, `cwd=`, `env=` and `timeout=`
 
-error: `input=` takes a `str`, found `str | None`
+error: passing a value that may be `None` to `input=` is not in Baryon yet
   --> main.byn:12:34
    |
 12 |     subprocess.run(["ls"], input=maybe())
    |                                  ^^^^^^^ may be `None`
-   = note: a keyword is written or left out: test for `None` first, and call `subprocess.run` with the keyword only where there is a value
+   = note: test for `None` first, and call `subprocess.run` with the keyword only where there is a value
 
 error: expected `f64`, found `str`
   --> main.byn:13:36

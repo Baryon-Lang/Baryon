@@ -281,9 +281,9 @@ spaces before the `2` on macOS.
   starts, so this program's output so far comes before the other program's.
 - **The call borrows its arguments.** The list, the `dict` and the text are read, not moved, and
   can be used after the call.
-- **A keyword is written or left out.** `input=None` means what leaving `input` out means, but a
-  value that may be `None`, a `str | None`, is an error: test it first and call with the keyword
-  only where there is a value.
+- **A keyword is written or left out.** `input=None` means what leaving `input` out means.
+  Passing a value that may be `None`, such as a `str | None`, is not built yet: test it first and
+  call with the keyword only where there is a value.
 - **A timeout ends the program, not what it started.** Programs the ended program started
   itself keep running, and a `timeout` call does not wait for them or read what they write.
 - **`env` replaces the environment.** With `env`, the program is looked up on the `PATH` the
@@ -300,4 +300,6 @@ Decision 0036 settles the rest of this chapter's surface, and the compiler repor
 name until it is built: `` `sys.stdin` is not in Baryon yet ``. In order, the next parts are
 `os.environ[name]`, `name in os.environ` and `os.environ.copy()`;
 `sys.stdin`, `sys.stdout`, `sys.stderr`, `input` and `print(..., file=)`; `Array.fromfile` and
-`a.tofile`; and `pathlib.Path` and the directory functions of `os`.
+`a.tofile`; and `pathlib.Path` and the directory functions of `os`. Past that, idea I.39
+lists what comes later, `subprocess.run(check=True)` and a keyword of `subprocess.run` given a
+value that may be `None` among them.

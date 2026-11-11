@@ -8,8 +8,10 @@
 //! There is no shell: the command is a `list[str]`, and a `str` command or `shell=True` is an
 //! error that shows the list to write. `input`, `cwd`, `env` and `timeout` are each written as
 //! a value or left out, since the compiler decides here which of them the call passes; `None`
-//! written out counts as left out. A keyword Python has and decision 0036 leaves for later, such
-//! as `check=True`, is reported by name, never given another meaning.
+//! written out counts as left out. A value that may be `None`, such as a `str | None`, is not in
+//! Baryon yet (idea I.39): it would need the choice made while the program runs. A keyword
+//! Python has and decision 0036 leaves for later, such as `check=True`, is reported by name,
+//! never given another meaning.
 
 use super::Body;
 use super::calls::Arguments;
@@ -162,18 +164,15 @@ impl<'db> Body<'db> {
         if let TypeKind::Optional(inner) = found.kind(self.db)
             && super::relations::compatible(self.db, expected, *inner)
         {
-            let message = format!(
-                "`{name}=` takes a `{}`, found `{}`",
-                self.show(expected),
-                self.show(found)
-            );
+            let message =
+                format!("passing a value that may be `None` to `{name}=` is not in Baryon yet");
             self.lowerer.error(
                 value,
                 &message,
                 "may be `None`",
                 Some(
-                    "a keyword is written or left out: test for `None` first, and call \
-                     `subprocess.run` with the keyword only where there is a value",
+                    "test for `None` first, and call `subprocess.run` with the keyword only \
+                     where there is a value",
                 ),
             );
             return false;
