@@ -31,6 +31,7 @@ mod accumulate;
 mod array_files;
 mod arrays;
 mod assignment;
+mod axes;
 mod binding;
 mod builtins;
 mod calls;
