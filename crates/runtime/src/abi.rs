@@ -12,6 +12,7 @@ mod complex;
 mod dict;
 mod files;
 mod memory;
+mod npy;
 mod numbers;
 mod output;
 mod pairwise;
@@ -52,6 +53,7 @@ pub use files::{
     baryon_rt_file_write,
 };
 pub use memory::{baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_deallocate};
+pub use npy::{baryon_rt_array_load, baryon_rt_array_save};
 pub use numbers::{
     RaisedValueError, ValueError, baryon_rt_str_parse_float, baryon_rt_str_parse_int,
 };
