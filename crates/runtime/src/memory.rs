@@ -73,11 +73,33 @@ pub(crate) fn allocate(layout: Layout) -> Result<NonNull<u8>, Failure<'static>> 
     })
 }
 
-/// Frees memory [`allocate`] returned.
+/// Allocates memory for `layout` with every byte zero, for memory that is read into, such as an
+/// array filled from a file. A zero-sized layout allocates nothing, as in [`allocate`].
+///
+/// Cost: the system allocator maps a large request as fresh pages, which the operating system
+/// zeroes as each is first touched, so this costs no pass over the memory.
+///
+/// # Errors
+///
+/// [`Failure::OutOfMemory`] when the system allocator returns null.
+pub(crate) fn allocate_zeroed(layout: Layout) -> Result<NonNull<u8>, Failure<'static>> {
+    if layout.size() == 0 {
+        return Ok(dangling(layout));
+    }
+    // SAFETY: `GlobalAlloc::alloc_zeroed` requires a layout of non-zero size, checked above.
+    #[allow(unsafe_code, reason = "calls the system allocator")]
+    let pointer = unsafe { System.alloc_zeroed(layout) };
+    NonNull::new(pointer).ok_or(Failure::OutOfMemory {
+        bytes: layout.size(),
+    })
+}
+
+/// Frees memory [`allocate`] or [`allocate_zeroed`] returned.
 ///
 /// # Safety
 ///
-/// `pointer` came from [`allocate`] with this same `layout` and has not been freed since.
+/// `pointer` came from [`allocate`] or [`allocate_zeroed`] with this same `layout` and has not
+/// been freed since.
 #[allow(unsafe_code, reason = "frees memory through the system allocator")]
 pub(crate) unsafe fn deallocate(pointer: NonNull<u8>, layout: Layout) {
     if layout.size() == 0 {
@@ -120,6 +142,23 @@ mod tests {
         unsafe {
             deallocate(pointer, layout);
         }
+    }
+
+    #[test]
+    fn zeroed_memory_is_all_zero() {
+        let layout = array_layout(1000, 8, 8).unwrap();
+        let pointer = allocate_zeroed(layout).unwrap();
+        // SAFETY: the allocation holds 8000 initialized bytes, and nothing else refers to it.
+        #[allow(unsafe_code, reason = "views the allocation under test as a slice")]
+        let bytes = unsafe { std::slice::from_raw_parts(pointer.as_ptr(), 8000) };
+        assert!(bytes.iter().all(|&byte| byte == 0));
+        // SAFETY: `pointer` came from `allocate_zeroed` with `layout` and is freed once.
+        #[allow(unsafe_code, reason = "frees the allocation under test")]
+        unsafe {
+            deallocate(pointer, layout);
+        }
+        let empty = array_layout(0, 8, 32).unwrap();
+        assert_eq!(allocate_zeroed(empty).unwrap().as_ptr().addr(), 32);
     }
 
     #[test]

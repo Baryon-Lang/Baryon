@@ -7,6 +7,7 @@
 //! code in the other modules.
 
 mod accumulate;
+mod array_files;
 mod complex;
 mod dict;
 mod files;
@@ -32,6 +33,9 @@ mod text;
 pub use accumulate::{
     baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
     baryon_rt_accumulator_slot,
+};
+pub use array_files::{
+    ArrayHeader, ElementLayout, baryon_rt_array_from_file, baryon_rt_array_to_file,
 };
 pub use complex::{
     baryon_rt_power_complex64, baryon_rt_power_complex128, baryon_rt_print_complex64,
