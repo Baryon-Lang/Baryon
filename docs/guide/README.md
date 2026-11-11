@@ -19,7 +19,7 @@ there run `sudo apt install clang-15` as well; `baryon` finds `clang-15` by itse
 
 ### Download a prebuilt `baryon`
 
-Prebuilt archives start with release 0.2.0, for two platforms:
+Prebuilt archives start with the release due on 2026-11-25, for two platforms:
 
 | Platform | Archive |
 | --- | --- |
@@ -30,7 +30,7 @@ The release is tested on Ubuntu 22.04 and macOS 15. macOS 13.5 is the oldest who
 Tools include a new enough `clang`, but no Mac older than macOS 15 has run it yet; if yours does
 or does not, please say so in an issue. Intel Macs, Alpine and other musl Linux distributions have
 no download; build from source there.
-Windows support comes in release 0.4.0.
+Windows support is planned; roadmap item R.4 tracks it.
 
 Each archive is on the project's
 [releases page](https://github.com/Baryon-Lang/Baryon/releases), next to a `.sha256` file with
