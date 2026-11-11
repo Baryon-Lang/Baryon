@@ -113,7 +113,8 @@ the runtime. On success it prints `built <output> from <n> file(s)` to standard 
 with 0. A package with errors, or that uses a feature the compiler cannot build yet, gets its
 errors printed and exits with 1, with nothing written. Warnings are shown only by `check` today.
 
-The program is optimized (`clang -O2`) and keeps its line tables, so a panic prints a backtrace of
+The program is optimized (`clang -O2`, with loops that sum floats vectorized while still adding
+in order, so results match an unoptimized build to the bit) and keeps its line tables, so a panic prints a backtrace of
 `.byn` lines and `gdb` and `lldb` stop at and show them. On macOS the line tables are written to
 `<output>.dSYM` beside the executable; keep it with the executable for backtraces to name lines.
 

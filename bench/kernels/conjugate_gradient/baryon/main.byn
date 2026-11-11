@@ -1,0 +1,99 @@
+"""Conjugate gradient on the 3D Poisson matrix, stored in CSR form.
+
+The Baryon twin of `conjugate_gradient.f90`, line for line: the same loops, operations, constants and summation
+order, so it prints the same checksum to the last bit. Fortran's column-major `a(i, j)` is written
+`a[j, i]`, so the innermost loop still walks memory in order. Inputs come from the same xorshift64
+generator, `Random` below, as `support.f90`.
+
+Usage: `main <arguments>` with `<points per side> <iterations>`.
+Checksum: Norm of the solution.
+Timing: Baryon has no clock yet, so the whole run is timed from outside; see `bench/README.md`.
+"""
+
+import math
+import sys
+
+
+class Matrix(Struct):
+    """A sparse matrix in CSR form: row `r` holds entries `offsets[r]` to `offsets[r + 1] - 1`."""
+
+    offsets: Array[i64, 1]
+    columns: Array[i64, 1]
+    values: Array[f64, 1]
+
+
+def laplacian(n: i64) -> Matrix:
+    """The 7-point Laplacian on an n^3 grid, 6 on the diagonal and -1 per neighbour, columns in increasing order."""
+    unknowns = n * n * n
+    offsets = Array.zeros((unknowns + 1,), dtype=i64)
+    columns = Array.zeros((7 * unknowns,), dtype=i64)
+    values = Array.zeros((7 * unknowns,))
+    entries = 0
+    for k in range(n):
+        for j in range(n):
+            for i in range(n):
+                row = (k * n + j) * n + i
+                for d in range(7):
+                    column = -1
+                    value = -1.0
+                    if d == 0 and k > 0:
+                        column = row - n * n
+                    elif d == 1 and j > 0:
+                        column = row - n
+                    elif d == 2 and i > 0:
+                        column = row - 1
+                    elif d == 3:
+                        column = row
+                        value = 6.0
+                    elif d == 4 and i < n - 1:
+                        column = row + 1
+                    elif d == 5 and j < n - 1:
+                        column = row + n
+                    elif d == 6 and k < n - 1:
+                        column = row + n * n
+                    if column >= 0:
+                        columns[entries] = column
+                        values[entries] = value
+                        entries += 1
+                offsets[row + 1] = entries
+    return Matrix(offsets=offsets, columns=columns, values=values)
+
+
+def multiply(a: Matrix, x: Array[f64, 1], y: InOut[Array[f64, 1]]):
+    """`y = a x`."""
+    for row in range(len(y)):
+        total = 0.0
+        for e in range(a.offsets[row], a.offsets[row + 1]):
+            total += a.values[e] * x[a.columns[e]]
+        y[row] = total
+
+
+def dot(u: Array[f64, 1], v: Array[f64, 1]) -> f64:
+    """The dot product, summed in index order."""
+    total = 0.0
+    for i in range(len(u)):
+        total += u[i] * v[i]
+    return total
+
+
+def main() -> Raises[None, ValueError]:
+    """Builds the matrix, runs the iterations and prints the checksum."""
+    n = int(sys.argv[1])
+    iterations = int(sys.argv[2])
+    a = laplacian(n)
+    unknowns = n * n * n
+    x = Array.zeros((unknowns,))
+    r = Array.fill((unknowns,), 1.0)
+    p = Array.fill((unknowns,), 1.0)
+    q = Array.zeros((unknowns,))
+    rho = dot(r, r)
+    for _ in range(iterations):
+        multiply(a, p, q)
+        alpha = rho / dot(p, q)
+        x += alpha * p
+        r -= alpha * q
+        rho_next = dot(r, r)
+        beta = rho_next / rho
+        rho = rho_next
+        p = r + beta * p
+    print(f"checksum {math.sqrt(dot(x, x)):.17e}")
