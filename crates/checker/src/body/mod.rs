@@ -66,6 +66,7 @@ mod shared;
 mod statistics;
 mod subprocess;
 mod text;
+mod text_tables;
 mod union_methods;
 
 use crate::lower::Lowerer;
