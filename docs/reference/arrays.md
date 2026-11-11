@@ -51,6 +51,7 @@ view can skip elements or pick a column without copying.
 | `Array.fill(shape, value)` | Every element `value`; the element type is `value`'s type |
 | `Array(values)` | A rank-1 array with the elements of the list `values` |
 | `a.copy()` | A new contiguous array with `a`'s elements |
+| `Array.fromfile(path, dtype)` | A rank-1 array of the elements in a binary file; see [Array files](files-and-processes.md#array-files) |
 
 `shape` is a tuple of integers with one entry per dimension, `(nx, ny, nz)`, or a single integer
 for rank 1. The rank is the tuple's length, so the tuple must be written out where the array is
@@ -180,6 +181,7 @@ set.
 | `a.dot(b)` | The dot product of two rank-1 arrays or vectors of the same length |
 | `a.round()` | A new array with each element rounded to the nearest whole number, ties to even |
 | `a.fill(value)` | Sets every element to `value`; `a` must be changeable |
+| `a.tofile(path)` | Writes every element to a binary file, as NumPy's `tofile` does; an `Array` only. See [Array files](files-and-processes.md#array-files) |
 
 `a.min()` and `a.max()` of an empty array panic, since there is no smallest element of none;
 NumPy raises `ValueError`. If any element is a float NaN, the result is NaN, as `numpy.min`

@@ -57,6 +57,9 @@
 //!   `a.max()` scan in a loop nest after a [`NotEmpty`](mir::Check::NotEmpty) check;
 //!   `a.round()` rounds each element and `a.fill(value)` writes each one. The matrix product
 //!   `a @ b` is a loop nest over the result's entries with an inner loop that adds the products.
+//!   `Array.fromfile` and `a.tofile` are calls of a
+//!   [`Builtin::ArrayFile`](mir::Builtin::ArrayFile) with an error edge (the `array_files`
+//!   module).
 //! - **Lists.** A display `[a, b]` is an [`Aggregate`](mir::Rvalue::Aggregate) of a list type,
 //!   `xs.append(value)` calls [`Builtin::Append`](mir::Builtin::Append) and `xs.pop()`
 //!   [`Builtin::Pop`](mir::Builtin::Pop), `len(xs)` and `xs[i]` read it as a one-dimensional
@@ -268,6 +271,7 @@
 //! ```
 
 mod accumulate;
+mod array_files;
 mod arrays;
 mod builder;
 mod calls;

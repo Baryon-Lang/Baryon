@@ -148,7 +148,7 @@ error: `Array[f64, 2]` has no method `mean` taking these arguments
   |
 3 |     h = grid.mean()
   |         ^^^^^^^^^^^ not defined
-  = note: version 0 defines `copy`, `sum`, `min`, `max`, `dot`, `round` and `fill`
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `dot`, `round`, `fill` and `tofile`
 
 error: a shape's lengths are integers, found `f64`
  --> main.byn:4:22
