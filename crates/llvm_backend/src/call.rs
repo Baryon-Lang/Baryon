@@ -33,6 +33,7 @@ impl<'db> Function<'_, '_, 'db> {
             } => (item, type_arguments),
             Callee::Builtin(
                 builtin @ (Builtin::File(_)
+                | Builtin::ArrayFile(_)
                 | Builtin::Run
                 | Builtin::Text(TextMethod::ParseInt | TextMethod::ParseFloat)),
             ) => {
@@ -127,7 +128,7 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(())
     }
 
-    /// Writes a call of `builtin`, one of those that can fail: a file operation,
+    /// Writes a call of `builtin`, one of those that can fail: a file operation, an array file,
     /// `subprocess.run`, or `int(text)` and `float(text)`. Each is a call of the runtime that
     /// raises through `error`, the call's error edge.
     fn raising_builtin(
@@ -140,6 +141,9 @@ impl<'db> Function<'_, '_, 'db> {
     ) -> Result<(), Unsupported> {
         match builtin {
             Builtin::File(method) => self.file_call(method, arguments, destination, target, error),
+            Builtin::ArrayFile(method) => {
+                self.array_file_call(method, arguments, destination, target, error)
+            }
             Builtin::Run => self.subprocess_run(arguments, destination, target, error),
             Builtin::Text(method) => {
                 self.parse_number(method, arguments, destination, target, error)
@@ -181,13 +185,14 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Exit => self.system_exit(arguments),
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
-            // `File` and `Run` can fail, so `call` sends them to `raising_builtin` with their error
-            // edge. `Path` and `EnvironmentEntries` are not built by this backend yet: the calls
-            // of the runtime follow the runtime's part.
-            Builtin::File(_) | Builtin::Run | Builtin::Path(_) | Builtin::EnvironmentEntries => {
-                Err(Unsupported::new(builtin.name()))
-            }
-            Builtin::ArrayFile(method) => Err(Unsupported::new(method.name())),
+            // `File`, `ArrayFile` and `Run` can fail, so `call` sends them to `raising_builtin`
+            // with their error edge. `Path` and `EnvironmentEntries` are not built by this
+            // backend yet: the calls of the runtime follow the runtime's part.
+            Builtin::File(_)
+            | Builtin::ArrayFile(_)
+            | Builtin::Run
+            | Builtin::Path(_)
+            | Builtin::EnvironmentEntries => Err(Unsupported::new(builtin.name())),
         }
     }
 }
