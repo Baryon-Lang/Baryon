@@ -116,7 +116,7 @@ pub unsafe extern "C" fn baryon_rt_dot_f32(left: *const f32, right: *const f32, 
 /// When `count` is above 0, `values` points to `count` initialized values that nothing writes
 /// while the slice lives.
 #[allow(unsafe_code, reason = "reads an array compiled code points to")]
-unsafe fn elements<'a, T>(values: *const T, count: i64) -> &'a [T] {
+pub(super) unsafe fn elements<'a, T>(values: *const T, count: i64) -> &'a [T] {
     match usize::try_from(count) {
         Ok(count) if count > 0 => {
             // SAFETY: the caller guarantees `count` initialized, unaliased values.
