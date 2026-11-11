@@ -215,6 +215,7 @@ impl<'db> Body<'db> {
     /// `sys.exit()` or `sys.exit(status)`: the status, an `int`, defaults to 0. The call ends
     /// the program, so its type is `None`.
     fn exit(&mut self, node: NodeId, arguments: &Arguments) -> Type<'db> {
+        self.exit_in_loop(node);
         let int = Type::new(
             self.db,
             TypeKind::Primitive(Primitive::Integer(Integer::I64)),

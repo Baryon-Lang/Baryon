@@ -2,7 +2,7 @@
 //! thread pool, arrays written at each iteration's own elements, and reductions combined in a
 //! fixed order, so the result is the same on every run.
 
-use super::{baryon_build, package, stderr};
+use super::{baryon_build, package, panic_report, stderr};
 use std::process::Command;
 
 /// A `prange` over 100,000 iterations writes `ys[i]` and sums into `total`, and one with a
@@ -150,5 +150,45 @@ def main():
     for _ in 0..5 {
         let again = Command::new(&program).output().unwrap();
         assert_eq!(again.stdout, first.stdout);
+    }
+}
+
+/// `sys.exit` reached through a call inside a `prange` body panics instead of writing out files
+/// other iterations are still writing, which crashed the program before (roadmap 1.13.17). Each
+/// of 64 iterations writes 400 KB to its own file, so writers are busy when iteration 3 exits.
+#[test]
+fn exit_inside_a_parallel_loop_panics() {
+    let program = "\
+import sys
+
+
+def stop(i: int):
+    if i == 3:
+        sys.exit(0)
+
+
+def main():
+    for i in prange(64):
+        try:
+            out = open(f\"out{i}.txt\", \"w\")
+            for k in range(20000):
+                out.write(\"xxxxxxxxxxxxxxxxxxxx\")
+        except OSError:
+            pass
+        stop(i)
+";
+    let directory = package("exit_in_prange", &[("main.byn", program)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    for _ in 0..3 {
+        let run = Command::new(&executable)
+            .current_dir(&directory)
+            .output()
+            .unwrap();
+        assert_eq!(run.status.code(), Some(101));
+        assert_eq!(
+            panic_report(&run),
+            "panic: `sys.exit` cannot end the program inside a parallel loop\n  --> main.byn:6:9\n"
+        );
     }
 }

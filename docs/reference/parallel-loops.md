@@ -76,6 +76,9 @@ before the loop and used inside it is **shared**. The rules concern shared varia
 4. **Passing a shared place as `InOut`** to a function counts as writing it, under rule 2 or 3.
 5. **Leaving the loop early** is not allowed: no `break`, `return` or `raise` in the body.
    `continue` is allowed. A call that can fail must be handled by a `try` inside the body.
+   Neither may the body end the program: `sys.exit` in it is a compile error, and one reached
+   through a function the body calls panics, since other iterations may still be writing their
+   files. Count failures with a reduction, `failed += 1`, and call `sys.exit` after the loop.
 6. A `prange` inside a `prange` body is an error that suggests `range` for the inner loop. Nested
    parallelism would oversubscribe the cores for no gain on the loop shapes simulations use.
 

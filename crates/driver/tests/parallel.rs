@@ -410,3 +410,37 @@ error: `prange` cannot be used in a comprehension
   = note: make the result first, then fill it in parallel: `for i in prange(n): out[i] = f(i)`"
     );
 }
+
+/// `sys.exit` written in a `prange` body would end the program while other iterations write
+/// their files, so it is reported as `return` is (roadmap 1.13.17). The note points to a
+/// reduction, the one way a parallel loop can tell what follows it that something failed.
+#[test]
+fn exit_inside_a_parallel_loop_is_reported() {
+    let program = "
+import sys
+
+
+def main():
+    failed = 0
+    for i in prange(8):
+        if i == 3:
+            sys.exit(1)
+        failed += 1
+    if failed > 0:
+        sys.exit(1)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: a parallel loop cannot end early
+ --> main.byn:8:13
+  |
+8 |             sys.exit(1)
+  |             ^^^^^^^^^^^ ends the program from inside the loop
+ ::: main.byn:6:14
+  |
+6 |     for i in prange(8):
+  |              --------- iterations run in parallel
+  = note: every iteration runs; count failures with `failed += 1` and call `sys.exit` after the loop"
+    );
+}
