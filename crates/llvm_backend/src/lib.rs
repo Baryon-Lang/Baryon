@@ -166,6 +166,7 @@ mod module;
 mod pairwise;
 mod panic;
 mod parallel;
+mod paths;
 mod print;
 mod print_array;
 mod print_collections;

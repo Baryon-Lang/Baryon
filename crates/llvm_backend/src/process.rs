@@ -7,6 +7,7 @@
 //! | [`ArgumentCount`](mir::Builtin::ArgumentCount) | `baryon_rt_argument_count()` |
 //! | [`Argument`](mir::Builtin::Argument) | `baryon_rt_argument(index)`, a new owned `str` |
 //! | [`EnvironmentGet`](mir::Builtin::EnvironmentGet) | `baryon_rt_environment_get(name, length, found)`, a new owned `str` |
+//! | [`EnvironmentEntries`](mir::Builtin::EnvironmentEntries) | `baryon_rt_environment_entries(out)`, a new `list[str]` |
 //! | [`Exit`](mir::Builtin::Exit) | `baryon_rt_exit(status, location)`, which never returns |
 
 use crate::Unsupported;
@@ -89,6 +90,29 @@ impl<'db> Function<'_, '_, 'db> {
         ));
         let (address, _) = self.place(destination)?;
         self.line(&format!("store {TEXT} {text}, ptr {address}"));
+        self.line(&format!("br label %{}", block_label(target)));
+        Ok(())
+    }
+
+    /// Writes `destination = ` every environment variable's name and value, the new `list[str]`
+    /// that `os.environ.copy()` is built from, and goes to `target`.
+    pub(crate) fn environment_entries(
+        &mut self,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+        target: BlockId,
+    ) -> Result<(), Unsupported> {
+        if !arguments.is_empty() {
+            return Err(Unsupported::new("`os.environ.copy` with arguments"));
+        }
+        self.declare(
+            "baryon_rt_environment_entries",
+            "declare void @baryon_rt_environment_entries(ptr) nounwind",
+        );
+        let (address, _) = self.place(destination)?;
+        self.line(&format!(
+            "call void @baryon_rt_environment_entries(ptr {address})"
+        ));
         self.line(&format!("br label %{}", block_label(target)));
         Ok(())
     }

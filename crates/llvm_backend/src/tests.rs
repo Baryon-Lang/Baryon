@@ -13,6 +13,7 @@ mod math;
 mod pairwise;
 mod panics;
 mod parallel;
+mod paths;
 mod print;
 mod process;
 mod sorting;
