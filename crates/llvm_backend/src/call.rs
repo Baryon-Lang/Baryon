@@ -191,12 +191,17 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
             // `File`, `ArrayFile` and `Run` can fail, so `call` sends them to `raising_builtin`
             // with their error edge. `Path` and `EnvironmentEntries` are not built by this
-            // backend yet: the calls of the runtime follow the runtime's part.
+            // backend yet: the calls of the runtime follow the runtime's part. Nor are the
+            // standard streams (decision 0036, part 6), which are in `mir` before they are here.
             Builtin::File(_)
             | Builtin::ArrayFile(_)
             | Builtin::Run
             | Builtin::Path(_)
-            | Builtin::EnvironmentEntries => Err(Unsupported::new(builtin.name())),
+            | Builtin::EnvironmentEntries
+            | Builtin::PrintError
+            | Builtin::FlushOutput
+            | Builtin::StandardStream
+            | Builtin::Input => Err(Unsupported::new(builtin.name())),
         }
     }
 }
