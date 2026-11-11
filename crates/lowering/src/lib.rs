@@ -287,6 +287,7 @@ mod escapes;
 mod expressions;
 mod facts;
 mod files;
+mod in_place;
 mod iterators;
 mod lanes;
 mod lists;

@@ -299,36 +299,6 @@ impl<'db> Builder<'db> {
             && self.tree.node(node).operator() == Operator::MatrixMultiply
     }
 
-    /// `target op= value` on an array, as `target = target op value` over every element.
-    pub(crate) fn augmented_array(
-        &mut self,
-        place: Place,
-        ty: Type<'db>,
-        operator: BinaryOperator,
-        value: NodeId,
-        node: NodeId,
-    ) {
-        let Some(right) = self.tree_of(value, self.element(ty)) else {
-            return;
-        };
-        let tree = Elementwise::Binary(
-            operator,
-            Box::new(Elementwise::Leaf(Operand::Copy(place.clone()))),
-            Box::new(right),
-        );
-        let temporary = self.temporary(ty, node);
-        self.assign(
-            Place::from(temporary),
-            Rvalue::Elementwise(Box::new(tree)),
-            node,
-        );
-        if self.needs_drop(ty) {
-            self.push(mir::StatementKind::Drop(place.clone()), node);
-        }
-        let moved = self.take(Place::from(temporary), ty);
-        self.assign(place, Rvalue::Use(moved), node);
-    }
-
     /// Whether `node` reads `a.shape`, one of its entries `a.shape[k]`, or `a.size` of an
     /// array `a`. None of them is a place: each is computed from the lengths.
     pub(crate) fn is_array_attribute(&self, node: NodeId) -> bool {

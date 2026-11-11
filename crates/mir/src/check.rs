@@ -51,12 +51,14 @@ pub enum Check<'db> {
         /// The exponent, which the panic message names.
         exponent: Operand<'db>,
     },
-    /// Two arrays combined element by element have the same length in one dimension, as
-    /// whole-array arithmetic requires until broadcasting (roadmap 3.9).
+    /// Two arrays combined fit together in one dimension: the same length, for `a.dot(b)` and
+    /// `@`; the same length or 1, for whole-array arithmetic, which broadcasts (roadmap 3.9).
+    /// The stage that writes the check computes its condition; the panic message names both
+    /// lengths.
     SameLength {
-        /// The dimension, 0 for the outermost.
+        /// The dimension, 0 for the outermost; for broadcasting, the result's dimension.
         dimension: u32,
-        /// The length the first array has.
+        /// The length the first array has; for broadcasting, the length the result has.
         expected: Operand<'db>,
         /// The length this array has.
         found: Operand<'db>,

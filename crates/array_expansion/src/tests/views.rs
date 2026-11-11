@@ -105,8 +105,9 @@ fn the_view_itself_is_read_in_place() {
 }
 
 /// `a[i:j] = a[k:l]`: the leaf is another view of `a`, which may overlap the destination, so
-/// the elements go to a new array first, checked to have the view's length, and are copied
-/// into the view after; the new array is dropped.
+/// the elements go to a new array first, checked to have the view's length or 1, and are copied
+/// into the view after; the new array is dropped. A leaf of length 1 repeats, through the
+/// broadcasting nest, which multiplies its index by 0.
 #[test]
 fn an_overlapping_view_goes_through_a_new_array() {
     let database = Database::default();
@@ -116,14 +117,18 @@ fn an_overlapping_view_goes_through_a_new_array() {
         text.contains("same length in dimension 0: copy _9 == copy _8"),
         "{text}"
     );
-    assert!(text.contains("_11 = new Array[f64, 1](copy _8);"), "{text}");
+    assert!(text.contains("_15 = new Array[f64, 1](copy _8);"), "{text}");
     assert!(
-        text.contains("_11[_12] = copy _1[_5 for _6 by _7][_12];"),
+        text.contains("_15[_16] = copy _1[_5 for _6 by _7][_16];"),
         "{text}"
     );
     assert!(
-        text.contains("_1[_2 for _3 by _4][_14] = copy _11[_14];"),
+        text.contains("_1[_2 for _3 by _4][_21] = copy _15[_21];"),
         "{text}"
     );
-    assert!(text.contains("drop(_11);"), "{text}");
+    assert!(
+        text.contains("_15[_18] = copy _1[_5 for _6 by _7][_20];"),
+        "{text}"
+    );
+    assert!(text.contains("drop(_15);"), "{text}");
 }

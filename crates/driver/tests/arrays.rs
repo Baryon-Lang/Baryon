@@ -54,8 +54,9 @@ def clean(grid: Array[f64, 2], small: Array[f32, 1], values: InOut[list[f64]]) -
     assert_eq!(check_one(program), "");
 }
 
-/// Non-copy elements, too few indices, mismatched ranks and shapes, an `f32` array with an
-/// `f64` literal, and `Fixed` arrays built with the wrong number of elements.
+/// Non-copy elements, too few indices, mixed element types, `Fixed` shapes that do not
+/// broadcast, an `f32` array with an `f64` literal, and `Fixed` arrays built with the wrong
+/// number of elements.
 #[test]
 fn array_types_and_arithmetic_mistakes_are_reported() {
     let program = r"
@@ -88,12 +89,12 @@ error: `Array[f64, 2]` takes 2 indices, found 1
   |         ^^^^^^^ one index per dimension
   = note: take a row or column with a slice, such as `a[i, :]`
 
-error: `+` cannot combine `Array[f64, 2]` and `Array[f32, 1]`
+error: `+` cannot mix `f64` and `f32`
  --> main.byn:8:9
   |
 8 |     b = grid + small
-  |         ^^^^^^^^^^^^ shapes do not match
-  = note: both arrays need the same rank, or the same shape for `Fixed` arrays, or one side a single number
+  |         ^^^^^^^^^^^^ different number types
+  = note: convert one side so both are the same type, such as `f64(x)`
 
 error: `Vec3` needs its elements in the shape `(3,)`
   --> main.byn:10:9
@@ -107,7 +108,7 @@ error: `+` cannot combine `Fixed[f64, (3,)]` and `Fixed[f64, (2,)]`
    |
 11 |     e = Vec3(1.0, 2.0, 3.0) + Vec2(1.0, 2.0)
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ shapes do not match
-   = note: both arrays need the same rank, or the same shape for `Fixed` arrays, or one side a single number
+   = note: two `Fixed` arrays combine when, in each dimension counted from the last, their lengths are equal or one of them is 1
 
 error: `Mat3` needs its elements in the shape `(3, 3)`
   --> main.byn:12:9
@@ -231,5 +232,60 @@ def fill(a: InOut[Array[f64, 1]], grid: InOut[Array[f64, 2]], n: i64):
   |
 6 |     a[0:2] = "no"
   |              ^^^^ each element of the slice holds `f64`"#
+    );
+}
+
+/// Broadcasting (roadmap 3.9): arrays of different ranks combine into the higher rank, `Fixed`
+/// shapes broadcast when compiling, a slice takes an array of lower rank, which it copies rather
+/// than moves, and `+=` keeps its target's rank. `Fixed` shapes that do not broadcast, an `Array` mixed with a `Fixed` array,
+/// and `+=` that would raise the target's rank are errors.
+#[test]
+fn arrays_broadcast_by_rank_and_fixed_shape() {
+    let clean = r"
+Row = Fixed[f64, (3,)]
+Column = Fixed[f64, (2, 1)]
+Grid = Fixed[f64, (2, 3)]
+
+
+def clean(grid: Array[f64, 2], row: Array[f64, 1]) -> Array[f64, 2]:
+    shifted = grid - row
+    shifted += row * 2.0
+    shifted[:, :] = row
+    table: Grid = Column((1.0,), (2.0,)) + Row(1.0, 2.0, 3.0)
+    return shifted + table[0, 0]
+";
+    assert_eq!(check_one(clean), "");
+    let mistakes = r"
+Row = Fixed[f64, (3,)]
+Pair = Fixed[f64, (2,)]
+
+
+def mistakes(grid: Array[f64, 2], row: InOut[Array[f64, 1]]):
+    a = Row.zeros() + Pair.zeros()
+    b = grid + Row.zeros()
+    row += grid
+";
+    assert_eq!(
+        check_one(mistakes),
+        r"error: `+` cannot combine `Fixed[f64, (3,)]` and `Fixed[f64, (2,)]`
+ --> main.byn:6:9
+  |
+6 |     a = Row.zeros() + Pair.zeros()
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^ shapes do not match
+  = note: two `Fixed` arrays combine when, in each dimension counted from the last, their lengths are equal or one of them is 1
+
+error: `+` cannot combine `Array[f64, 2]` and `Fixed[f64, (3,)]`
+ --> main.byn:7:9
+  |
+7 |     b = grid + Row.zeros()
+  |         ^^^^^^^^^^^^^^^^^^ shapes do not match
+  = note: an `Array` and a `Fixed` array do not combine
+
+error: `+=` gives `Array[f64, 2]`, but the target has type `Array[f64, 1]`
+ --> main.byn:8:5
+  |
+8 |     row += grid
+  |     ^^^^^^^^^^^ would change the target's type
+  = note: a variable keeps one type for its whole scope; convert the value, or use a new name"
     );
 }

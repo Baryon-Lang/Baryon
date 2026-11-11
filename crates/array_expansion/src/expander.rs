@@ -1,7 +1,10 @@
 //! Expands one whole-array statement into its loop nest.
 
-use crate::leaves::{ArrayLeaf, fused, shape_leaves};
+mod broadcast;
+
+use crate::leaves::{ArrayLeaf, fused};
 use crate::place_types::{Shape, Types};
+use broadcast::{Broadcast, Step};
 use mir::{
     BasicBlock, BinaryOperator, BlockId, Body, Check, Constant, Elementwise, Local, LocalKind,
     Operand, Place, Projection, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
@@ -64,32 +67,19 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
         terminator: Terminator<'db>,
     ) {
         let in_place = destination.is_view();
-        // Each fused subexpression checks its own leaves first, where its statement was.
+        let mut broadcast = Broadcast::default();
+        // Each fused subexpression checks its own operands first, where its statement was.
         for (subexpression, span) in fused(tree) {
-            let outer = std::mem::replace(&mut self.span, span);
-            let group = shape_leaves(self.types, &self.body.locals, subexpression);
-            if let Some((first, rest)) = group.split_first() {
-                let lengths = self.lengths(first);
-                for leaf in rest {
-                    self.check_lengths(leaf, &lengths);
-                }
-            }
-            self.span = outer;
+            self.fused_lengths(subexpression, span, &mut broadcast);
         }
-        let group = shape_leaves(self.types, &self.body.locals, tree);
-        let (lengths, checked) = if in_place {
+        let into = in_place.then(|| {
             let rank = match result_type.kind(self.db) {
                 TypeKind::Array { rank, .. } => *rank,
                 _ => 0,
             };
-            (self.view_lengths(destination, rank), &group[..])
-        } else {
-            (self.lengths(&leaves[0]), &group[1..])
-        };
-        // The view itself, as `+=` reads it, has its own lengths.
-        for leaf in checked.iter().filter(|leaf| leaf.place != *destination) {
-            self.check_lengths(leaf, &lengths);
-        }
+            (destination, self.view_lengths(destination, rank))
+        });
+        let lengths = self.broadcast(tree, into, &mut broadcast);
         let staged = in_place
             && leaves
                 .iter()
@@ -106,11 +96,44 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
             }
             Place::from(result)
         };
-        self.loop_nest(&lengths, |this, indices| {
-            let (value, _) = this.element(tree, leaves, indices);
-            let element = target.clone().project(Projection::Index(indices.to_vec()));
-            this.assign(element, Rvalue::Use(value));
-        });
+        let fill = |this: &mut Self, scaled: bool| {
+            this.loop_nest(&lengths, |this, indices| {
+                let (value, _) = this.element(tree, leaves, indices, (&broadcast, scaled));
+                let element = target.clone().project(Projection::Index(indices.to_vec()));
+                this.assign(element, Rvalue::Use(value));
+            });
+        };
+        if let Some((first, rest)) = broadcast.same.split_first() {
+            // Some operand may repeat: the plain nest when none does, else the broadcasting one.
+            let mut none = *first;
+            for same in rest {
+                let both = self.local(self.bool());
+                self.assign(
+                    Place::from(both),
+                    Rvalue::Binary(
+                        BinaryOperator::BitAnd,
+                        Operand::Copy(Place::from(none)),
+                        Operand::Copy(Place::from(*same)),
+                    ),
+                );
+                none = both;
+            }
+            let (plain, repeating, join) = (self.new_block(), self.new_block(), self.new_block());
+            self.finish(
+                TerminatorKind::Branch {
+                    condition: Operand::Copy(Place::from(none)),
+                    then: plain,
+                    otherwise: repeating,
+                },
+                plain,
+            );
+            fill(&mut self, false);
+            self.finish(TerminatorKind::Goto(join), repeating);
+            fill(&mut self, true);
+            self.finish(TerminatorKind::Goto(join), join);
+        } else {
+            fill(&mut self, false);
+        }
         if staged {
             self.loop_nest(&lengths, |this, indices| {
                 let from = target.clone().project(Projection::Index(indices.to_vec()));
@@ -170,65 +193,6 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
             .collect()
     }
 
-    /// The length of each dimension of `reference`: constants for a `Fixed`, otherwise read
-    /// into new locals.
-    fn lengths(&mut self, reference: &ArrayLeaf<'db>) -> Vec<Operand<'db>> {
-        match &reference.shape {
-            Shape::Fixed(lengths) => lengths
-                .iter()
-                .map(|&length| Operand::Constant(Constant::integer(self.i64, length.into())))
-                .collect(),
-            Shape::Runtime(rank) => (0..*rank)
-                .map(|dimension| {
-                    let length = self.local(self.i64);
-                    self.assign(
-                        Place::from(length),
-                        Rvalue::Length(reference.place.clone(), dimension),
-                    );
-                    Operand::Copy(Place::from(length))
-                })
-                .collect(),
-        }
-    }
-
-    /// Checks that each dimension of the `Array` leaf `leaf` has the length in `lengths`. A
-    /// `Fixed` leaf needs no check: its type, which the checker matched, fixes its lengths.
-    fn check_lengths(&mut self, leaf: &ArrayLeaf<'db>, lengths: &[Operand<'db>]) {
-        if !matches!(leaf.shape, Shape::Runtime(_)) {
-            return;
-        }
-        let bool = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
-        for (dimension, expected) in (0u32..).zip(lengths) {
-            let found = self.local(self.i64);
-            self.assign(
-                Place::from(found),
-                Rvalue::Length(leaf.place.clone(), dimension),
-            );
-            let same = self.local(bool);
-            self.assign(
-                Place::from(same),
-                Rvalue::Binary(
-                    BinaryOperator::Equal,
-                    Operand::Copy(Place::from(found)),
-                    expected.clone(),
-                ),
-            );
-            let next = self.new_block();
-            self.finish(
-                TerminatorKind::Assert {
-                    condition: Operand::Copy(Place::from(same)),
-                    check: Check::SameLength {
-                        dimension,
-                        expected: expected.clone(),
-                        found: Operand::Copy(Place::from(found)),
-                    },
-                    target: next,
-                },
-                next,
-            );
-        }
-    }
-
     /// Starts `for index in range(length)`: sets the index to zero and writes the loop header.
     /// Continues in the loop body; returns the header, which the body's end jumps back to, and
     /// the block the loop exits to.
@@ -262,14 +226,17 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
         (header, exit)
     }
 
-    /// Computes one element of `tree` at `indices`, into temporaries, and returns the operand
-    /// that holds it and its type. Array leaves are read at the indices without a bounds check: each index is
-    /// below its dimension's length, and every array was checked to have those lengths.
+    /// Computes one element of `tree` at `indices`, one per dimension of `tree`'s result, into
+    /// temporaries, and returns the operand that holds it and its type. `indexing` is what
+    /// broadcasting worked out, and whether this is the broadcasting nest, which multiplies the
+    /// indices of operands that may repeat. Array leaves are read without a bounds check: each
+    /// index is below its dimension's length, and every array was checked to fit those lengths.
     fn element(
         &mut self,
         tree: &Elementwise<'db>,
         leaves: &[ArrayLeaf<'db>],
         indices: &[Local],
+        indexing: (&Broadcast<'db>, bool),
     ) -> (Operand<'db>, Type<'db>) {
         match tree {
             Elementwise::Leaf(operand) => {
@@ -278,14 +245,15 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                     Operand::Constant(constant) => return (operand.clone(), constant.ty),
                 };
                 if let Some(leaf) = leaves.iter().find(|leaf| leaf.place == *place) {
-                    let element = place.clone().project(Projection::Index(indices.to_vec()));
+                    let own = self.operand_indices(tree, indices, indexing);
+                    let element = place.clone().project(Projection::Index(own));
                     return (Operand::Copy(element), leaf.element);
                 }
                 let ty = self.place_type(place).unwrap_or(self.i64);
                 (Operand::Copy(place.clone()), ty)
             }
             Elementwise::Unary(operator, operand) => {
-                let (value, ty) = self.element(operand, leaves, indices);
+                let (value, ty) = self.element(operand, leaves, indices, indexing);
                 if *operator == UnaryOperator::Negate
                     && let TypeKind::Primitive(Primitive::Integer(integer)) = ty.kind(self.db)
                     && integer.is_signed()
@@ -301,14 +269,15 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
             }
             Elementwise::Fused(subexpression, span) => {
                 // Its overflow checks report where its statement was.
+                let own = self.operand_indices(tree, indices, indexing);
                 let outer = std::mem::replace(&mut self.span, *span);
-                let element = self.element(subexpression, leaves, indices);
+                let element = self.element(subexpression, leaves, &own, indexing);
                 self.span = outer;
                 element
             }
             Elementwise::Binary(operator, left, right) => {
-                let (left, ty) = self.element(left, leaves, indices);
-                let (right, _) = self.element(right, leaves, indices);
+                let (left, ty) = self.element(left, leaves, indices, indexing);
+                let (right, _) = self.element(right, leaves, indices, indexing);
                 let overflows = matches!(
                     operator,
                     BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
@@ -328,6 +297,41 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 (Operand::Copy(Place::from(result)), ty)
             }
         }
+    }
+
+    /// The indices of the operand at `node`, an array leaf or a fused subexpression, given the
+    /// `indices` of the level it belongs to: its dimensions line up with the last of the level's,
+    /// and each is indexed by its [`Step`].
+    fn operand_indices(
+        &mut self,
+        node: &Elementwise<'db>,
+        indices: &[Local],
+        (broadcast, scaled): (&Broadcast<'db>, bool),
+    ) -> Vec<Local> {
+        let Some(steps) = broadcast.steps(node) else {
+            return indices.to_vec();
+        };
+        let offset = indices.len().saturating_sub(steps.len());
+        let mut own = Vec::with_capacity(steps.len());
+        for (index, step) in indices[offset..].iter().zip(steps) {
+            own.push(match *step {
+                Step::Zero(zero) => zero,
+                Step::Scaled(scale) if scaled => {
+                    let repeated = self.local(self.i64);
+                    self.assign(
+                        Place::from(repeated),
+                        Rvalue::Binary(
+                            BinaryOperator::Multiply,
+                            Operand::Copy(Place::from(*index)),
+                            Operand::Copy(Place::from(scale)),
+                        ),
+                    );
+                    repeated
+                }
+                Step::Same | Step::Scaled(_) => *index,
+            });
+        }
+        own
     }
 
     /// `left op right` for integer `+`, `-` or `*` on elements of type `ty`, checked for

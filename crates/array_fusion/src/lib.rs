@@ -28,9 +28,8 @@
 //!
 //! # What is written in place
 //!
-//! `x += k * d`, `x = d + x * k` and every other whole-array assignment whose expression reads
-//! the array it replaces is written into that array, instead of into a new one that then
-//! replaces it, when:
+//! `x = d + x * k` and every other whole-array assignment whose expression reads the array it
+//! replaces is written into that array, instead of into a new one that then replaces it, when:
 //!
 //! 1. `x` owns its array: a variable, or an `Owned` or `InOut` parameter, never a borrowed one;
 //! 2. the expression reads `x` only whole, never through a view or a field.
@@ -38,7 +37,14 @@
 //! Each element of `x` is then read just before it is written, at the same index, so the
 //! results are the ones the new array would have held. The pass replaces the assignment with
 //! one to a view of all of `x`, which array expansion writes in place, and wraps the expression
-//! as fused so its lengths are checked against its first array before anything is written.
+//! as fused so its arrays' lengths are checked against each other, as written, before anything
+//! is written.
+//!
+//! Broadcasting (roadmap 3.9) can make the result larger than `x`, as `x = x * 2.0 + b` does
+//! when `x` has length 1 and `b` length 3. So when the expression reads another array, the
+//! write in place runs only when every other array has `x`'s length or 1 in each dimension, and
+//! the assignment as written runs otherwise. Lowering already writes `x += b` in place, since
+//! `+=` never changes `x`'s shape.
 //! On a conjugate-gradient-style update of 4 million elements this took 100 steps from 1.90 s to
 //! 1.40 s: no array is allocated, filled with fresh pages and freed each step.
 //!
@@ -139,9 +145,15 @@ pub fn fuse<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
         fuse(db, outlined);
     }
     let mentions = mentions(body);
-    for block in 0..body.blocks.len() {
+    // Blocks that hold an update as it was, for when broadcasting changes its shape.
+    let mut fallbacks = Vec::new();
+    let mut block = 0;
+    while block < body.blocks.len() {
         while fusion::fuse_one(db, body, block, &mentions) {}
-        while in_place::update_one(db, body, block, &mentions) {}
+        if !fallbacks.contains(&block) {
+            while in_place::update_one(db, body, block, &mentions, &mut fallbacks) {}
+        }
+        block += 1;
     }
 }
 

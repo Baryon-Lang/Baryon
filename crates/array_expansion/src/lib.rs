@@ -4,31 +4,38 @@
 //! rvalue, so array fusion (roadmap 3.1) can merge such trees before anything else sees them
 //! (decision 0018). Backends never see one: this pass replaces each with plain IR that
 //!
-//! 1. reads the lengths of the first array in the expression, or takes them from its type for a
+//! 1. reads the lengths of each array in the expression, or takes them from its type for a
 //!    `Fixed` array;
-//! 2. checks that every other `Array` has the same length in each dimension, with a
-//!    [`SameLength`](mir::Check::SameLength) check, until broadcasting (roadmap 3.9) relaxes it;
+//! 2. works out the result's lengths by broadcasting, as `NumPy` does (roadmap 3.9): arrays
+//!    line up from their last dimension, and in each dimension the result has the one length
+//!    other than 1 they have; it checks that every `Array` has, in each dimension, the result's
+//!    length or 1, with a [`SameLength`](mir::Check::SameLength) check that names both;
 //! 3. allocates the result with [`NewArray`](mir::Rvalue::NewArray), for an `Array` result;
 //! 4. loops over every index in row-major order (decision 0008), the last dimension innermost,
 //!    computing each element into temporaries and storing it; the reads need no bounds checks,
-//!    since each index is below a length every array was checked to have; integer `+`, `-`, `*`
+//!    since each index is below a length every array was checked to fit; integer `+`, `-`, `*`
 //!    and `-x` on elements are checked for overflow as lowering checks them on two integers,
-//!    so a debug build panics and a release build wraps (decision 0030);
+//!    so a debug build panics and a release build wraps (decision 0030). When an array of
+//!    length 1 in some dimension may meet a longer one, which only the run can tell for an
+//!    `Array`, the loop nest is written twice: the plain nest, which indexes every array by
+//!    the loop indices, and the broadcasting nest, which multiplies the index of each array
+//!    that may repeat by 0 or 1. A flag computed before the loops runs the plain nest unless
+//!    some array repeats, so the common case keeps the loop the optimizer vectorizes best;
 //! 5. moves the result into the destination, and drops each array the expression moved.
 //!
 //! A [`Fused`](mir::Elementwise::Fused) subexpression, a statement that array fusion moved into
-//! this one, has its own array leaves checked against each other first, in step 2, reported at
-//! its statement's span, in the order the statements ran; in the enclosing expression's checks it
-//! then counts as one array with the shape of its first array leaf. Its overflow checks report at
-//! its statement's span too. The loop computes its elements with the rest, and no array is ever
+//! this one, has its own array leaves broadcast and checked against each other first, in step
+//! 2, reported at its statement's span, in the order the statements ran; in the enclosing
+//! expression it then counts as one array with the lengths its leaves broadcast to. Its overflow
+//! checks report at its statement's span too. The loop computes its elements with the rest, and no array is ever
 //! built for it, which is the point of fusing it.
 //!
 //! The result goes to a new temporary and moves into the destination only after the loop, so
 //! `a = a * 2.0`, which reads the array it replaces, is correct.
 //!
 //! A destination that is a view, `a[1:n] = b + c` or `a[1:n] += b`, is written in place
-//! instead: the view's own lengths set the shape, every `Array` leaf is checked against them,
-//! and nothing is allocated. The one exception is a leaf that may overlap the view, a place
+//! instead: the view's own lengths set the shape, every `Array` leaf is checked to have them or
+//! 1 in each dimension, as `NumPy` checks an output, and nothing is allocated. The one exception is a leaf that may overlap the view, a place
 //! of the same variable other than the view itself, as in `a[1:n] = a[0:n - 1]`: writing in
 //! place would read elements already overwritten, so the result goes to a new array first and
 //! is copied into the view after, as `NumPy` does.  A leaf that is the view itself, as `+=`
@@ -86,8 +93,11 @@
 //! body.phase = Phase::Ready;
 //! assert!(body.validate(&database).is_empty());
 //! let text = body.display(&database).to_string();
-//! assert!(text.contains("assert(copy _5, same length in dimension 0: copy _4 == copy _3)"));
-//! assert!(text.contains("_9 = Add(copy _1[_7], copy _2[_7]);"));
+//! // `b` fits the result's length, which is `a`'s unless that is 1.
+//! assert!(text.contains("assert(copy _12, same length in dimension 0: copy _4 == copy _9)"));
+//! // The plain nest, when neither repeats, then the broadcasting one.
+//! assert!(text.contains("_21 = Add(copy _1[_19], copy _2[_19]);"));
+//! assert!(text.contains("_26 = Add(copy _1[_24], copy _2[_25]);"));
 //! ```
 
 mod expander;

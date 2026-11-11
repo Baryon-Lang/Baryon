@@ -89,8 +89,194 @@ fn expanded<'db>(database: &'db Database, mut body: Body<'db>) -> String {
     body.display(database).to_string()
 }
 
-/// `a * k + b` over rank-2 arrays: one nest of two loops, `b`'s lengths checked against `a`'s in
-/// both dimensions, the result allocated with `a`'s lengths and moved out after the loops.
+/// The text form of `a * k + b` over rank-2 arrays once expanded, for the test below.
+const RANK_TWO_EXPANDED: &str = "\
+fn(_1: Array[f64, 2], _2: Array[f64, 2], _3: f64) -> Array[f64, 2] {
+    let _0: Array[f64, 2]; // return
+    let _1: Array[f64, 2]; // parameter a
+    let _2: Array[f64, 2]; // parameter b
+    let _3: f64; // parameter k
+    let _4: i64;
+    let _5: i64;
+    let _6: i64;
+    let _7: i64;
+    let _8: bool;
+    let _9: i64;
+    let _10: i64;
+    let _11: i64;
+    let _12: i64;
+    let _13: bool;
+    let _14: i64;
+    let _15: i64;
+    let _16: i64;
+    let _17: i64;
+    let _18: bool;
+    let _19: bool;
+    let _20: bool;
+    let _21: bool;
+    let _22: bool;
+    let _23: bool;
+    let _24: bool;
+    let _25: i64;
+    let _26: bool;
+    let _27: i64;
+    let _28: bool;
+    let _29: i64;
+    let _30: bool;
+    let _31: i64;
+    let _32: Array[f64, 2];
+    let _33: bool;
+    let _34: bool;
+    let _35: bool;
+    let _36: i64;
+    let _37: i64;
+    let _38: bool;
+    let _39: bool;
+    let _40: f64;
+    let _41: f64;
+    let _42: i64;
+    let _43: i64;
+    let _44: bool;
+    let _45: bool;
+    let _46: i64;
+    let _47: i64;
+    let _48: f64;
+    let _49: i64;
+    let _50: i64;
+    let _51: f64;
+
+    bb0: {
+        _4 = len(_1, 0);
+        _5 = len(_1, 1);
+        _6 = len(_2, 0);
+        _7 = len(_2, 1);
+        _8 = Equal(copy _4, 1_i64);
+        _9 = i64(copy _8);
+        _10 = Subtract(copy _6, copy _4);
+        _11 = Multiply(copy _10, copy _9);
+        _12 = Add(copy _4, copy _11);
+        _13 = Equal(copy _5, 1_i64);
+        _14 = i64(copy _13);
+        _15 = Subtract(copy _7, copy _5);
+        _16 = Multiply(copy _15, copy _14);
+        _17 = Add(copy _5, copy _16);
+        _18 = Equal(copy _6, copy _12);
+        _19 = Equal(copy _6, 1_i64);
+        _20 = BitOr(copy _18, copy _19);
+        assert(copy _20, same length in dimension 0: copy _6 == copy _12) -> bb1;
+    }
+
+    bb1: {
+        _21 = Equal(copy _7, copy _17);
+        _22 = Equal(copy _7, 1_i64);
+        _23 = BitOr(copy _21, copy _22);
+        assert(copy _23, same length in dimension 1: copy _7 == copy _17) -> bb2;
+    }
+
+    bb2: {
+        _24 = Equal(copy _4, copy _12);
+        _25 = i64(copy _24);
+        _26 = Equal(copy _5, copy _17);
+        _27 = i64(copy _26);
+        _28 = Equal(copy _6, copy _12);
+        _29 = i64(copy _28);
+        _30 = Equal(copy _7, copy _17);
+        _31 = i64(copy _30);
+        _32 = new Array[f64, 2](copy _12, copy _17);
+        _33 = BitAnd(copy _24, copy _26);
+        _34 = BitAnd(copy _33, copy _28);
+        _35 = BitAnd(copy _34, copy _30);
+        branch copy _35 -> [true: bb3, false: bb4];
+    }
+
+    bb3: {
+        _36 = 0_i64;
+        goto -> bb6;
+    }
+
+    bb4: {
+        _42 = 0_i64;
+        goto -> bb12;
+    }
+
+    bb5: {
+        _0 = move _32;
+        return;
+    }
+
+    bb6: {
+        _38 = Less(copy _36, copy _12);
+        branch copy _38 -> [true: bb7, false: bb8];
+    }
+
+    bb7: {
+        _37 = 0_i64;
+        goto -> bb9;
+    }
+
+    bb8: {
+        goto -> bb5;
+    }
+
+    bb9: {
+        _39 = Less(copy _37, copy _17);
+        branch copy _39 -> [true: bb10, false: bb11];
+    }
+
+    bb10: {
+        _40 = Multiply(copy _1[_36, _37], copy _3);
+        _41 = Add(copy _40, copy _2[_36, _37]);
+        _32[_36, _37] = copy _41;
+        _37 = Add(copy _37, 1_i64);
+        goto -> bb9;
+    }
+
+    bb11: {
+        _36 = Add(copy _36, 1_i64);
+        goto -> bb6;
+    }
+
+    bb12: {
+        _44 = Less(copy _42, copy _12);
+        branch copy _44 -> [true: bb13, false: bb14];
+    }
+
+    bb13: {
+        _43 = 0_i64;
+        goto -> bb15;
+    }
+
+    bb14: {
+        goto -> bb5;
+    }
+
+    bb15: {
+        _45 = Less(copy _43, copy _17);
+        branch copy _45 -> [true: bb16, false: bb17];
+    }
+
+    bb16: {
+        _46 = Multiply(copy _42, copy _25);
+        _47 = Multiply(copy _43, copy _27);
+        _48 = Multiply(copy _1[_46, _47], copy _3);
+        _49 = Multiply(copy _42, copy _29);
+        _50 = Multiply(copy _43, copy _31);
+        _51 = Add(copy _48, copy _2[_49, _50]);
+        _32[_42, _43] = copy _51;
+        _43 = Add(copy _43, 1_i64);
+        goto -> bb15;
+    }
+
+    bb17: {
+        _42 = Add(copy _42, 1_i64);
+        goto -> bb12;
+    }
+}
+";
+
+/// `a * k + b` over rank-2 arrays: the lengths broadcast from `a`'s and `b`'s, `b` checked to fit
+/// them in both dimensions, the result allocated with them, the plain nest of two loops and the
+/// broadcasting nest, and the result moved out after the loops.
 #[test]
 fn rank_two_arrays_expand_to_a_checked_loop_nest() {
     let database = Database::default();
@@ -122,83 +308,7 @@ fn rank_two_arrays_expand_to_a_checked_loop_nest() {
         },
     );
 
-    assert_eq!(
-        expanded(&database, body),
-        "\
-fn(_1: Array[f64, 2], _2: Array[f64, 2], _3: f64) -> Array[f64, 2] {
-    let _0: Array[f64, 2]; // return
-    let _1: Array[f64, 2]; // parameter a
-    let _2: Array[f64, 2]; // parameter b
-    let _3: f64; // parameter k
-    let _4: i64;
-    let _5: i64;
-    let _6: i64;
-    let _7: bool;
-    let _8: i64;
-    let _9: bool;
-    let _10: Array[f64, 2];
-    let _11: i64;
-    let _12: i64;
-    let _13: bool;
-    let _14: bool;
-    let _15: f64;
-    let _16: f64;
-
-    bb0: {
-        _4 = len(_1, 0);
-        _5 = len(_1, 1);
-        _6 = len(_2, 0);
-        _7 = Equal(copy _6, copy _4);
-        assert(copy _7, same length in dimension 0: copy _6 == copy _4) -> bb1;
-    }
-
-    bb1: {
-        _8 = len(_2, 1);
-        _9 = Equal(copy _8, copy _5);
-        assert(copy _9, same length in dimension 1: copy _8 == copy _5) -> bb2;
-    }
-
-    bb2: {
-        _10 = new Array[f64, 2](copy _4, copy _5);
-        _11 = 0_i64;
-        goto -> bb3;
-    }
-
-    bb3: {
-        _13 = Less(copy _11, copy _4);
-        branch copy _13 -> [true: bb4, false: bb5];
-    }
-
-    bb4: {
-        _12 = 0_i64;
-        goto -> bb6;
-    }
-
-    bb5: {
-        _0 = move _10;
-        return;
-    }
-
-    bb6: {
-        _14 = Less(copy _12, copy _5);
-        branch copy _14 -> [true: bb7, false: bb8];
-    }
-
-    bb7: {
-        _15 = Multiply(copy _1[_11, _12], copy _3);
-        _16 = Add(copy _15, copy _2[_11, _12]);
-        _10[_11, _12] = copy _16;
-        _12 = Add(copy _12, 1_i64);
-        goto -> bb6;
-    }
-
-    bb8: {
-        _11 = Add(copy _11, 1_i64);
-        goto -> bb3;
-    }
-}
-"
-    );
+    assert_eq!(expanded(&database, body), RANK_TWO_EXPANDED);
 }
 
 /// `v * 2.0` over a `Fixed[f64, (3,)]` needs no lengths read, no check and no allocation: the
@@ -294,5 +404,6 @@ fn integer_arithmetic_is_checked_for_overflow() {
     assert!(text.contains("_2[_3] = copy _5.0;"), "{text}");
 }
 
+mod broadcast;
 mod fused;
 mod views;

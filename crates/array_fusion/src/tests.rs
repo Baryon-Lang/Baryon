@@ -223,10 +223,49 @@ fn update<'db>(target: usize) -> Vec<Statement<'db>> {
     ]
 }
 
-/// `t = t * b` becomes a write into a view of all of `t`, wrapped as fused so its lengths are
+/// `t = t * 2` becomes a write into a view of all of `t`, wrapped as fused so its lengths are
 /// checked as written; nothing is dropped or allocated.
 #[test]
 fn an_update_of_an_owned_array_writes_in_place() {
+    let database = Database::default();
+    let i64 = Type::new(
+        &database,
+        TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+    );
+    let two = Elementwise::Leaf(Operand::Constant(mir::Constant::integer(i64, 2)));
+    let mut statements = update(3);
+    statements[0] = compute(
+        5,
+        Elementwise::Binary(
+            BinaryOperator::Multiply,
+            Box::new(Elementwise::Leaf(Operand::Copy(local(3).into()))),
+            Box::new(two),
+        ),
+    );
+    let text = Builder::new(&database, Primitive::Integer(Integer::I64))
+        .block(statements, false)
+        .fused();
+    assert!(
+        text.ends_with(
+            "    bb0: {
+        _7 = 0_i64;
+        _8 = 1_i64;
+        _9 = len(_3, 0);
+        _3[_7 for _9 by _8] = elementwise fused(Multiply(copy _3[_7 for _9 by _8], 2_i64));
+        return;
+    }
+}
+"
+        ),
+        "{text}"
+    );
+}
+
+/// `t = t * b` reads another array, which could broadcast the result larger than `t` (roadmap
+/// 3.9): the write in place runs only when `b` has `t`'s length or 1, and the update as it was
+/// runs otherwise.
+#[test]
+fn an_update_that_could_grow_is_guarded() {
     let database = Database::default();
     let text = Builder::new(&database, Primitive::Integer(Integer::I64))
         .block(update(3), false)
@@ -237,8 +276,27 @@ fn an_update_of_an_owned_array_writes_in_place() {
         _7 = 0_i64;
         _8 = 1_i64;
         _9 = len(_3, 0);
-        _3[_7 for _9 by _8] = elementwise fused(Multiply(copy _3[_7 for _9 by _8], copy _2));
+        _10 = len(_2, 0);
+        _11 = Equal(copy _10, copy _9);
+        _12 = Equal(copy _10, 1_i64);
+        _13 = BitOr(copy _11, copy _12);
+        branch copy _13 -> [true: bb2, false: bb3];
+    }
+
+    bb1: {
         return;
+    }
+
+    bb2: {
+        _3[_7 for _9 by _8] = elementwise fused(Multiply(copy _3[_7 for _9 by _8], copy _2));
+        goto -> bb1;
+    }
+
+    bb3: {
+        _5 = elementwise Multiply(copy _3, copy _2);
+        drop(_3);
+        _3 = move _5;
+        goto -> bb1;
     }
 }
 "
