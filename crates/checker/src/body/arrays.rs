@@ -35,8 +35,11 @@ impl<'db> Body<'db> {
         arguments: &Arguments,
         expected: Option<Type<'db>>,
     ) -> Type<'db> {
-        if name == "fromfile" {
-            return self.array_fromfile(node, arguments, expected);
+        match name {
+            "fromfile" => return self.array_fromfile(node, arguments, expected),
+            "loadtxt" => return self.array_loadtxt(node, arguments, expected),
+            "savetxt" => return self.array_savetxt(node, arguments),
+            _ => {}
         }
         if !matches!(name, "zeros" | "ones" | "fill") {
             self.untyped(arguments);
@@ -45,7 +48,7 @@ impl<'db> Body<'db> {
                 node,
                 &message,
                 "not defined",
-                Some("arrays are created with `Array.zeros`, `Array.ones`, `Array.fill`, `Array(values)` or `Array.fromfile`"),
+                Some("arrays are created with `Array.zeros`, `Array.ones`, `Array.fill`, `Array(values)`, `Array.fromfile` or `Array.loadtxt`"),
             );
         }
         let mut positional = arguments.positional.iter().copied();

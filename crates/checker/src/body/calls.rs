@@ -137,7 +137,7 @@ impl<'db> Body<'db> {
     }
 
     /// A call to a module-level definition: a function, a struct's constructor, or an alias.
-    fn call_item(
+    pub(super) fn call_item(
         &mut self,
         node: NodeId,
         callee: &str,
