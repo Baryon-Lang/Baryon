@@ -10,6 +10,7 @@ use driver::Session;
 
 mod calls;
 mod dicts;
+mod files;
 mod lists;
 mod math;
 mod process;

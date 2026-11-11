@@ -24,8 +24,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-11, when `int(text)` and `float(text)` began to
-build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
+This page was last brought up to date on 2026-11-11, when `for line in f` over a text file and,
+before it, `int(text)` and `float(text)` began to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
 `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
 `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches lowering or the backend something new
 updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
@@ -149,7 +149,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`sys.argv`](files-and-processes.md#command-line-arguments), a new `list[str]` at each read; [`sys.exit()` and `sys.exit(status)`](files-and-processes.md#exit-status), which panics outside 0 to 255; [`os.getenv` and `os.environ.get`](files-and-processes.md#environment-variables), with and without a default; [`OSError` and `os.ErrorKind`](files-and-processes.md#errors-oserror), built, raised, caught and printed; [text files](files-and-processes.md#text-files): `open` in the modes `"r"`, `"w"`, `"a"` and `"x"`, `read`, `readline`, `readlines`, `write`, `flush`, `close` and `with open(...) as f` | `os.environ[name]`, `in` and `copy()`; `for line in f`; the standard streams and `input`; array files; `pathlib` and directories; `subprocess.run` (roadmap 1.13.6) |
+| [`sys.argv`](files-and-processes.md#command-line-arguments), a new `list[str]` at each read; [`sys.exit()` and `sys.exit(status)`](files-and-processes.md#exit-status), which panics outside 0 to 255; [`os.getenv` and `os.environ.get`](files-and-processes.md#environment-variables), with and without a default; [`OSError` and `os.ErrorKind`](files-and-processes.md#errors-oserror), built, raised, caught and printed; [text files](files-and-processes.md#text-files): `open` in the modes `"r"`, `"w"`, `"a"` and `"x"`, `read`, `readline`, `readlines`, `write`, `flush`, `close`, `with open(...) as f` and `for line in f`, in a loop or a comprehension | `os.environ[name]`, `in` and `copy()`; the standard streams and `input`; array files; `pathlib` and directories; `subprocess.run` (roadmap 1.13.6) |
 
 ## Tests
 

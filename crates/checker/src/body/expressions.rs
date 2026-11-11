@@ -479,12 +479,8 @@ impl<'db> Body<'db> {
             TypeKind::Tuple(items) if items.windows(2).all(|pair| pair[0] == pair[1]) => {
                 items.first().copied().unwrap_or(unknown)
             }
-            TypeKind::Standard(types::StandardType::File) => self.lowerer.error(
-                iterator,
-                "looping over a `File` is not in Baryon yet",
-                "not built yet",
-                Some("loop over its lines as a list: `for line in f.readlines():`"),
-            ),
+            // Each pass reads the next line (the `files` module).
+            TypeKind::Standard(types::StandardType::File) => Type::new(self.db, TypeKind::Str),
             TypeKind::Primitive(_) | TypeKind::None => {
                 let message = format!("a value of type `{}` cannot be looped over", self.show(ty));
                 self.lowerer
