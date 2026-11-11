@@ -15,6 +15,7 @@ publish = false
 [workspace.dependencies]
 array_expansion = { path = "crates/array_expansion" }
 array_fusion = { path = "crates/array_fusion" }
+bounds_hoisting = { path = "crates/bounds_hoisting" }
 checker = { path = "crates/checker" }
 database = { path = "crates/database" }
 diagnostics = { path = "crates/diagnostics" }

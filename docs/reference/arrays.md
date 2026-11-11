@@ -101,8 +101,12 @@ far edge of the grid instead of stopping.
 
 Every index is checked against its dimension in every build mode, and an index out of range panics
 with the index, the dimension and its length
-([decision 0010](../decisions/0010-bounds-checks.md)). The compiler removes a check when it can
-prove the index is in range, as for `for i in range(len(a)): a[i]`, so most loops pay nothing.
+([decision 0010](../decisions/0010-bounds-checks.md)). Inside `for i in range(start, stop)`, the
+compiler makes a check once, before the loop, when the index is `i`, a value the loop does not
+change, or a constant, plus or minus a constant, and the array's shape does not change in the loop:
+`a[i]`, `u[i - 1]` and `b[row, i + 1]` all qualify. If those checks pass for the first and last
+pass, the loop runs without them; if one fails, the loop runs with every check and panics at the
+same element, with the same message, as it would otherwise. So most loops pay nothing.
 Indices into `Fixed` arrays are checked when compiling wherever the index is a compile-time value.
 
 ### Unchecked access
