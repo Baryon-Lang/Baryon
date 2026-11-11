@@ -11,6 +11,7 @@
 
 use super::files::{RaisedError, finish};
 use super::strings::text;
+use crate::files::OsFailure;
 use crate::files::arrays::{self, Element};
 use crate::memory;
 use crate::panic::panic;
@@ -101,42 +102,7 @@ pub unsafe extern "C" fn baryon_rt_array_from_file(
     // SAFETY: the caller guarantees `length` readable bytes of UTF-8 at `path`.
     let path = unsafe { text(path, length) };
     // SAFETY: the caller guarantees a readable layout at `element`.
-    let layout = unsafe { &*element };
-    let bools = if layout.bool_count == 0 {
-        &[]
-    } else {
-        // SAFETY: the caller guarantees `bool_count` readable offsets at `bools`.
-        unsafe { std::slice::from_raw_parts(layout.bools, layout.bool_count) }
-    };
-    let described = Element {
-        size: layout.size,
-        bools,
-    };
-    let mut allocated = None;
-    let allocate = |elements: usize| {
-        let count = i64::try_from(elements).unwrap_or(i64::MAX);
-        let memory = memory::array_layout(count, layout.size, layout.align)
-            .and_then(|array| Ok((memory::allocate_zeroed(array)?, array)));
-        let (pointer, array) = match memory {
-            Ok(memory) => memory,
-            Err(failure) => panic(failure, None),
-        };
-        allocated = Some((pointer, array));
-        // SAFETY: the allocation holds `array.size()` zeroed bytes that nothing else refers to;
-        // an empty one is an aligned pointer that is never read through.
-        unsafe { std::slice::from_raw_parts_mut(pointer.as_ptr(), array.size()) }
-    };
-    let result = arrays::read(path, described, count, offset, allocate);
-    let data = match (allocated, &result) {
-        (Some((pointer, _)), Ok(_)) => pointer.as_ptr(),
-        (Some((pointer, array)), Err(_)) => {
-            // The read failed after the array was allocated, as when the disk fails.
-            // SAFETY: `pointer` came from `allocate_zeroed` with this layout just above.
-            unsafe { memory::deallocate(pointer, array) };
-            std::ptr::null_mut()
-        }
-        (None, _) => std::ptr::null_mut(),
-    };
+    let (result, data) = unsafe { read_elements(path, element, count, offset) };
     let write = |elements: usize| {
         let header = ArrayHeader {
             data,
@@ -215,6 +181,67 @@ pub unsafe extern "C" fn baryon_rt_array_to_file(
     unsafe { finish(result, |()| {}, error) }
 }
 
+/// Reads elements of the layout at `element` from the file at `path`, as
+/// [`baryon_rt_array_from_file`] does: skips `offset` bytes and reads `count` elements, or all
+/// that follow when `count` is negative, into new memory. Returns the number of elements read
+/// and the memory, which is null when the read failed and freed nothing is owed, or when no
+/// memory was needed.
+///
+/// # Panics
+///
+/// Ends the program with a panic when the array does not fit in memory, as any allocation does.
+///
+/// # Safety
+///
+/// `element` points to a readable [`ElementLayout`] whose `bools` points to `bool_count`
+/// readable offsets, each below `size`.
+#[allow(unsafe_code, reason = "reads the layout compiled code passes")]
+pub(super) unsafe fn read_elements(
+    path: &str,
+    element: *const ElementLayout,
+    count: i64,
+    offset: i64,
+) -> (Result<usize, OsFailure>, *mut u8) {
+    // SAFETY: the caller guarantees a readable layout at `element`.
+    let layout = unsafe { &*element };
+    let bools = if layout.bool_count == 0 {
+        &[]
+    } else {
+        // SAFETY: the caller guarantees `bool_count` readable offsets at `bools`.
+        unsafe { std::slice::from_raw_parts(layout.bools, layout.bool_count) }
+    };
+    let described = Element {
+        size: layout.size,
+        bools,
+    };
+    let mut allocated = None;
+    let allocate = |elements: usize| {
+        let count = i64::try_from(elements).unwrap_or(i64::MAX);
+        let memory = memory::array_layout(count, layout.size, layout.align)
+            .and_then(|array| Ok((memory::allocate_zeroed(array)?, array)));
+        let (pointer, array) = match memory {
+            Ok(memory) => memory,
+            Err(failure) => panic(failure, None),
+        };
+        allocated = Some((pointer, array));
+        // SAFETY: the allocation holds `array.size()` zeroed bytes that nothing else refers to;
+        // an empty one is an aligned pointer that is never read through.
+        unsafe { std::slice::from_raw_parts_mut(pointer.as_ptr(), array.size()) }
+    };
+    let result = arrays::read(path, described, count, offset, allocate);
+    let data = match (allocated, &result) {
+        (Some((pointer, _)), Ok(_)) => pointer.as_ptr(),
+        (Some((pointer, array)), Err(_)) => {
+            // The read failed after the array was allocated, as when the disk fails.
+            // SAFETY: `pointer` came from `allocate_zeroed` with this layout just above.
+            unsafe { memory::deallocate(pointer, array) };
+            std::ptr::null_mut()
+        }
+        (None, _) => std::ptr::null_mut(),
+    };
+    (result, data)
+}
+
 /// Writes the elements of an array to `writer` in row-major order, as few runs of neighbouring
 /// elements as its strides allow: the whole array at once unless it is a view that skips
 /// elements, then one write for each stretch of the innermost dimensions that lies together.
@@ -227,7 +254,7 @@ pub unsafe extern "C" fn baryon_rt_array_to_file(
     unsafe_code,
     reason = "reads the elements of an array compiled code owns"
 )]
-unsafe fn runs(
+pub(super) unsafe fn runs(
     writer: &mut dyn Write,
     data: *const u8,
     lengths: &[i64],
