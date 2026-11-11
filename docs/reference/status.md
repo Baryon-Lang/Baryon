@@ -24,7 +24,9 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-11, when `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files, `Array.fromfile` and
+This page was last brought up to date on 2026-11-11, when text tables, `Array.loadtxt` and
+`Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`,
+`lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files, `Array.fromfile` and
 `a.tofile`, and before them `for line in f` over a text file, `int(text)` and `float(text)`, began
 to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
 `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
@@ -158,6 +160,12 @@ today, before it can be built.
 | Builds today | Not built yet |
 | --- | --- |
 | [`sys.argv`](files-and-processes.md#command-line-arguments), a new `list[str]` at each read; [`sys.exit()` and `sys.exit(status)`](files-and-processes.md#exit-status), which panics outside 0 to 255; [`os.getenv`, `os.environ.get`, `os.environ[name]`, `in` and `copy()`](files-and-processes.md#environment-variables); [`OSError` and `os.ErrorKind`](files-and-processes.md#errors-oserror), built, raised, caught and printed; [text files](files-and-processes.md#text-files): `open` in the modes `"r"`, `"w"`, `"a"` and `"x"`, `read`, `readline`, `readlines`, `write`, `flush`, `close`, `with open(...) as f` and `for line in f`, in a loop or a comprehension; [`subprocess.run`](files-and-processes.md#running-a-program) with `capture_output`, `input`, `cwd`, `env` and `timeout`, and `CompletedProcess`; [array files](files-and-processes.md#array-files): `Array.fromfile` with `dtype`, `count` and `offset`, reading numbers, `bool`s, `Fixed` arrays and `Copy` structs of them, and `a.tofile` of any `Array`, a view included; [`pathlib.Path` and the directory functions of `os`](files-and-processes.md#paths-and-directories) | the standard streams and `input`; printing a `Path` inside another value (roadmap 1.13.6); `subprocess.run(check=True)` and `subprocess.Popen`, `Array.fromfile` of a type parameter, and the `.npy` format (idea I.39) |
+
+## Data files
+
+| Builds today | Not built yet |
+| --- | --- |
+| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments` | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files, FITS, CSV into a DataFrame, NetCDF, Parquet and HDF5 (roadmap 3.14.2 to 3.14.6) |
 
 ## Tests
 
