@@ -205,10 +205,16 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
             // `File`, `ArrayFile`, `Path` and `Run` can fail, so `call` sends them to
-            // `raising_builtin` with their error edge.
-            Builtin::File(_) | Builtin::ArrayFile(_) | Builtin::Run | Builtin::Path(_) => {
-                Err(Unsupported::new(builtin.name()))
-            }
+            // `raising_builtin` with their error edge. The standard streams (decision 0036, part
+            // 6) are in `mir` before they are here.
+            Builtin::File(_)
+            | Builtin::ArrayFile(_)
+            | Builtin::Run
+            | Builtin::Path(_)
+            | Builtin::PrintError
+            | Builtin::FlushOutput
+            | Builtin::StandardStream
+            | Builtin::Input => Err(Unsupported::new(builtin.name())),
         }
     }
 }

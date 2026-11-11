@@ -1,5 +1,6 @@
 //! The operations on text files a [`Builtin::File`](crate::Builtin::File) call performs
-//! (decision 0036, parts 3 and 4): `open`, and the methods of the `File` it returns.
+//! (decision 0036, parts 3, 4 and 6): `open`, the methods of the `File` it returns, and
+//! `print(..., file=f)`.
 
 /// An operation on a text file, called by [`Builtin::File`](crate::Builtin::File).
 ///
@@ -28,6 +29,11 @@ pub enum FileMethod {
     Write,
     /// `f.flush()`: one argument, the file; the destination has type `None`.
     Flush,
+    /// `print(..., file=f)`: the file, then the values [`Builtin::Print`](crate::Builtin::Print)
+    /// takes, passed as it takes them, the separators and the line end among them; the
+    /// destination has type `None`. The values are written as `print` writes them, and reach
+    /// the file as one write, so the call fails as [`Write`](Self::Write) does.
+    Print,
     /// `f.close()` and the end of a `with` block: one argument, the file, passed `Owned`, which
     /// the call closes whether or not it fails; the destination has type `None`.
     Close,
@@ -39,6 +45,7 @@ impl FileMethod {
     /// ```
     /// assert_eq!(mir::FileMethod::Open.name(), "open");
     /// assert_eq!(mir::FileMethod::ReadLine.name(), "File.readline");
+    /// assert_eq!(mir::FileMethod::Print.name(), "print to a File");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -49,6 +56,7 @@ impl FileMethod {
             Self::ReadLines => "File.readlines",
             Self::Write => "File.write",
             Self::Flush => "File.flush",
+            Self::Print => "print to a File",
             Self::Close => "File.close",
         }
     }

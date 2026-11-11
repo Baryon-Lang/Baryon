@@ -38,6 +38,15 @@ pub enum Builtin {
     /// whose items and fields write as Python's `repr` writes them. A backend that cannot write
     /// a type yet reports it. The destination has type `None` and the call cannot fail.
     Print,
+    /// [`Print`](Self::Print) to standard error, for `print(..., file=sys.stderr)` (decision
+    /// 0036, part 6): the same arguments, written the same way. Standard error is not buffered,
+    /// so each piece is written at once. A failed write is ignored, as `Print`'s is; the call
+    /// cannot fail.
+    PrintError,
+    /// Writes out what standard output holds back, for `print(..., flush=True)`: no arguments;
+    /// the destination has type `None`. Standard output holds a line until it ends, so this
+    /// matters after a `print` with `end=""`. A failed write is ignored; the call cannot fail.
+    FlushOutput,
     /// A mathematical function of floats. Every argument and the destination have one float
     /// type, `f32` or `f64`; lowering converts integer operands first. The one exception is
     /// [`Power`](MathFunction::Power) of complex numbers, where every argument and the
@@ -201,8 +210,22 @@ pub enum Builtin {
     /// with zero or more digits is itself; one whose result does not fit panics with
     /// ``integer overflow in `round` ``. NaN and the infinities come back unchanged.
     RoundDigits,
+    /// `sys.stdin`, `sys.stdout` or `sys.stderr` (decision 0036, part 6): one argument, the
+    /// stream's number, an `i64` constant passed `Owned`, 0, 1 or 2 in that order; the
+    /// destination is a new `File`, a handle on the stream. Every read of `sys.stdout` makes a
+    /// handle of its own, so a module needs no variable to hold one. Closing or dropping the
+    /// handle leaves the stream open. Making one allocates a few bytes. The call cannot fail.
+    StandardStream,
+    /// `input(prompt)` (decision 0036, part 6): one argument, the prompt, a `str` passed
+    /// `Borrow`, or `Owned` for a literal, the empty string when the source gives none; the
+    /// destination is a new owned `str`, the next line of standard input without its line end.
+    /// It writes the prompt to standard output and writes standard output out first. Bytes that
+    /// are not UTF-8 read as U+FFFD. At the end of the input it fails: its call has an error
+    /// edge whose local is a `Raises[None, EOFError]`, with `EOFError` the class of the standard
+    /// library's own source (decision 0038).
+    Input,
     /// `open` or a method of the `File` it returns (decision 0036). [`FileMethod`] says what each
-    /// takes and gives. Unlike every other built-in, each can fail: its call has an error edge.
+    /// takes and gives. Each can fail: its call has an error edge.
     File(FileMethod),
     /// An operation on a path or a directory: a part of a `pathlib.Path`, a question to the file
     /// system, or a directory function of `os` (decision 0036). [`PathMethod`] says what each
@@ -242,6 +265,9 @@ impl Builtin {
     ///
     /// ```
     /// assert_eq!(mir::Builtin::Print.name(), "print");
+    /// assert_eq!(mir::Builtin::PrintError.name(), "print to sys.stderr");
+    /// assert_eq!(mir::Builtin::StandardStream.name(), "standard stream");
+    /// assert_eq!(mir::Builtin::Input.name(), "input");
     /// assert_eq!(mir::Builtin::Math(mir::MathFunction::Sqrt).name(), "math.sqrt");
     /// assert_eq!(mir::Builtin::Sum.name(), "sum");
     /// assert_eq!(mir::Builtin::Dot.name(), "dot");
@@ -265,6 +291,8 @@ impl Builtin {
     pub fn name(self) -> &'static str {
         match self {
             Self::Print => "print",
+            Self::PrintError => "print to sys.stderr",
+            Self::FlushOutput => "flush of print",
             Self::Math(function) => function.name(),
             Self::Sum => "sum",
             Self::Dot => "dot",
@@ -291,6 +319,8 @@ impl Builtin {
             Self::Exit => "sys.exit",
             Self::Sort => "sorted",
             Self::RoundDigits => "round",
+            Self::StandardStream => "standard stream",
+            Self::Input => "input",
             Self::File(method) => method.name(),
             Self::Path(method) => method.name(),
             Self::ArrayFile(method) => method.name(),
