@@ -31,6 +31,8 @@ reason in a line.
 | Exceptions unwind, and any function may raise | A function that can fail says so with `Raises[T, E]`; errors are return values | Failure is visible in signatures and costs one branch. [Errors](errors.md) |
 | `sys.exit` raises `SystemExit`, which a `try` can catch | `sys.exit` ends the program at once; nothing catches it | It is not an error a caller can handle, and errors are values here. [Exit status](files-and-processes.md#exit-status) |
 | `os.environ[name] = value` changes the program's environment | The environment is read-only | Changing it while another thread reads it is a data race in the C library, and `prange` loops run on several threads. [Environment variables](files-and-processes.md#environment-variables) |
+| `subprocess.run("ls -l *.dat", shell=True)` hands a line to a shell | `subprocess.run` takes a `list[str]` and has no shell | A shell splits a file name with a space and lets a value become a command. [Running a program](files-and-processes.md#running-a-program) |
+| `result.stdout` is `None` when output was not captured, and a timeout raises `TimeoutExpired` | `stdout` and `stderr` are `""` when not captured, and a timeout raises `OSError` with the kind `TIMEOUT` | A field has one type, and one error type covers every failure of the operating system. [Running a program](files-and-processes.md#running-a-program) |
 | Every failure is an exception and can be caught | Bugs such as an index out of range panic, and panics cannot be caught | A caught bug is an ignored bug. [Panics](errors.md#panics) |
 | `assert` is removed by `python -O` | `assert` is checked in every build | [Syntax](syntax.md#statements) |
 | Classes have inheritance and reference semantics | A class is a struct, an error type or an enum: a value type with no inheritance. Types share behavior through traits | Inheritance would make struct sizes unknown and method calls indirect, which stops arrays of structs being contiguous and loops vectorizing. [Decision 0015](../decisions/0015-no-class-inheritance.md) |
@@ -53,8 +55,8 @@ is left out by design (see the table above).
 
 ## Names that look like Python's modules
 
-`math`, `random`, `sys` and `os` are this language's standard library modules, not CPython's. They follow
-Python's names where Python has the function, so `from math import sqrt` reads as expected, but
-`random` provides counter-based generators such as `Philox` that Python's module does not. Running
-a program under CPython therefore needs a small shim library; roadmap idea I.11 proposes one, to
-use CPython as a reference for checking the compiler's output.
+`math`, `random`, `sys`, `os` and `subprocess` are this language's standard library modules, not
+CPython's. They follow Python's names where Python has the function, so `from math import sqrt`
+reads as expected, but `random` provides counter-based generators such as `Philox` that Python's
+module does not. Running a program under CPython therefore needs a small shim library; roadmap
+idea I.11 proposes one, to use CPython as a reference for checking the compiler's output.

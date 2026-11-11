@@ -36,6 +36,7 @@ mod slices;
 mod sorting;
 mod statements;
 mod structs;
+mod subprocess;
 mod testing;
 mod text;
 mod text_methods;
