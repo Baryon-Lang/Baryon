@@ -1,5 +1,6 @@
-//! Text files (decision 0036, parts 3 and 4): `open`, the `File` methods and
-//! `with open(...) as f:`, each a call of a [`Builtin::File`] that can fail with `OSError`.
+//! Text files (decision 0036, parts 3 and 4): `open`, the `File` methods,
+//! `with open(...) as f:` and `for line in f:`, each a call of a [`Builtin::File`] that can fail
+//! with `OSError`.
 //!
 //! - `open(path, mode)` passes the mode as its number: 0 `"r"`, 1 `"w"`, 2 `"a"`, 3 `"x"`.
 //! - `f.read()`, `f.write(text)` and the other methods borrow the file; `f.close()` moves it in,
@@ -8,11 +9,17 @@
 //!   through, closes it as `f.close()` does, so a failure to write it out is an `OSError` from
 //!   the `with` statement. A body that leaves early by `return`, `break` or an error leaves `f`
 //!   to be dropped, which also closes it.
+//! - `for line in f:` calls `f.readline()` at the top of each pass and leaves at the empty
+//!   string, the end of the file. The loop variable owns each line.
 //!
 //! Each call's error edge goes where any failing call's does (the `errors` module).
 
 use crate::builder::Builder;
-use mir::{Argument, Builtin, Callee, Constant, FileMethod, Operand, Place, TerminatorKind};
+use crate::loops::Pass;
+use mir::{
+    Argument, BinaryOperator, Builtin, Callee, Constant, ConstantValue, FileMethod, Operand, Place,
+    Rvalue, StatementKind, TerminatorKind,
+};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Integer, Primitive, Type, TypeKind};
 
@@ -98,6 +105,60 @@ impl<'db> Builder<'db> {
         let closed = self.temporary(none, statement);
         let arguments = vec![Argument::Owned(Operand::Move(Place::from(file)))];
         self.file_call(FileMethod::Close, arguments, Place::from(closed), statement);
+    }
+
+    /// `for target in file: body`, or a comprehension's clause over a file. Each pass reads
+    /// the next line into a temporary, as `file.readline()` does; an empty line is the end of
+    /// the file and leaves the loop, and any other replaces the loop variable's value, which
+    /// the variable owns, so the last line stays in it after the loop, as in Python. A read
+    /// that fails takes the error edge the checker recorded at `statement`.
+    ///
+    /// Cost: one runtime call and one new `str` for each line, and no system call until the
+    /// file's 64 KiB buffer runs out.
+    pub(crate) fn file_loop(
+        &mut self,
+        statement: NodeId,
+        target: NodeId,
+        iterator: NodeId,
+        pass: Pass<'_, 'db>,
+    ) {
+        if self.tree.kind(target) != SyntaxKind::Name {
+            return self.unsupported(target, "this loop target over a file");
+        }
+        let Some((variable, _)) = self.target(target) else {
+            return;
+        };
+        let file = self.borrow(iterator);
+        let str = Type::new(self.db, TypeKind::Str);
+        let (int, boolean) = (self.int_type(), self.boolean_type());
+        let header = self.new_block();
+        self.terminate(TerminatorKind::Goto(header), statement);
+        self.start(header);
+        let line = self.temporary(str, iterator);
+        let read = vec![Argument::Borrow(file)];
+        self.file_call(FileMethod::ReadLine, read, Place::from(line), statement);
+        // Only the end of the file reads as the empty string: an empty line is `"\n"`.
+        let order = self.temporary(int, iterator);
+        let empty = Operand::Constant(Constant {
+            ty: str,
+            value: ConstantValue::Str(String::new()),
+        });
+        let compared = vec![Argument::Borrow(Place::from(line)), Argument::Owned(empty)];
+        self.text_call(Place::from(order), Builtin::CompareStr, compared, iterator);
+        let more = self.temporary(boolean, iterator);
+        let zero = Operand::Constant(Constant::integer(int, 0));
+        let order = Operand::Copy(Place::from(order));
+        let differs = Rvalue::Binary(BinaryOperator::NotEqual, order, zero);
+        self.assign(Place::from(more), differs, iterator);
+        let (body, finished, end) = (self.new_block(), self.new_block(), self.new_block());
+        self.branch(Operand::Copy(Place::from(more)), (body, finished), iterator);
+        self.start(finished);
+        self.push(StatementKind::Drop(Place::from(line)), iterator);
+        self.terminate(TerminatorKind::Goto(end), statement);
+        self.start(body);
+        self.replace(variable, Operand::Move(Place::from(line)), target);
+        pass(self, header, end);
+        self.start(end);
     }
 
     /// A `str` argument: a literal passed `Owned`, anything else borrowed.

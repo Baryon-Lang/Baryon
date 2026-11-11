@@ -182,3 +182,60 @@ error: `work` is moved in one pass of the loop and read in the next
    = note: move a copy, `.copy()`, or assign the variable a new value later in the loop"
     );
 }
+
+/// A field of a list element is part of the element, so moving it out is moving out of an
+/// element: by assignment, through a nested field, into a list and in a comprehension. Copies
+/// and borrows of the same fields check clean. Before, `first = people[0].name` moved `people`
+/// as a whole, so the list and `first` both owned one `str` and it was freed twice.
+#[test]
+fn fields_of_elements_cannot_be_moved_out() {
+    let program = r"
+class Person(Struct):
+    name: str
+
+
+class Team(Struct):
+    lead: Person
+
+
+def run(people: Owned[list[Person]], teams: Owned[list[Team]]) -> int:
+    first = people[0].name
+    lead = teams[0].lead.name
+    names: list[str] = []
+    names.append(people[1].name)
+    twice = [people[0].name for _ in range(2)]
+    kept = people[0].name.copy()
+    copies = [people[i].name.copy() for i in range(len(people))]
+    return len(kept) + len(copies) + len(people[0].name)
+";
+    assert_eq!(
+        check_one(program),
+        "error: a value cannot be moved out of an element
+  --> main.byn:10:13
+   |
+10 |     first = people[0].name
+   |             ^^^^^^^^^^^^^^ moved out of an element
+   = note: move a copy instead: `people[0].name.copy()`
+
+error: a value cannot be moved out of an element
+  --> main.byn:11:12
+   |
+11 |     lead = teams[0].lead.name
+   |            ^^^^^^^^^^^^^^^^^^ moved out of an element
+   = note: move a copy instead: `teams[0].lead.name.copy()`
+
+error: a value cannot be moved out of an element
+  --> main.byn:13:18
+   |
+13 |     names.append(people[1].name)
+   |                  ^^^^^^^^^^^^^^ moved out of an element
+   = note: move a copy instead: `people[1].name.copy()`
+
+error: a value cannot be moved out of an element
+  --> main.byn:14:14
+   |
+14 |     twice = [people[0].name for _ in range(2)]
+   |              ^^^^^^^^^^^^^^ moved out of an element
+   = note: move a copy instead: `people[0].name.copy()`"
+    );
+}

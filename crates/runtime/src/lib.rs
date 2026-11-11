@@ -39,6 +39,7 @@
 //! | [`baryon_rt_argument_count`], [`baryon_rt_argument`], [`baryon_rt_environment_get`], [`baryon_rt_exit`] | Read the command-line arguments and an environment variable as owned `str`s, and end the program with an exit status, for `sys.argv`, `os.environ` and `sys.exit` (decision 0036) |
 //! | [`baryon_rt_file_open`], [`baryon_rt_file_read`], [`baryon_rt_file_read_line`], [`baryon_rt_file_read_lines`], [`baryon_rt_file_write`], [`baryon_rt_file_flush`], [`baryon_rt_file_close`], [`baryon_rt_file_drop`] | Open a text file and read, write, flush and close it, each failure written as an `OSError` the way a compiled function raises one (decision 0036) |
 //! | [`baryon_rt_file_open`], [`baryon_rt_file_read`], [`baryon_rt_file_read_line`], [`baryon_rt_file_read_lines`], [`baryon_rt_file_write`], [`baryon_rt_file_flush`], [`baryon_rt_file_close`], [`baryon_rt_file_drop`] | Open a text file and read, write, flush and close it, each failure written as an `OSError` the way a compiled function raises one (decision 0036) |
+//! | [`baryon_rt_subprocess_run`] | Run another program from an argument list, with no shell, wait for it and write a [`CompletedProcess`]: its exit status and, when asked, its output, for `subprocess.run` (decision 0036) |
 //! | [`baryon_rt_flush`] | Write out a line `print(..., end="")` left unended, before the C `main` returns |
 //!
 //! A panic prints its message, the [`Location`] of the check and, when the program has debug
@@ -93,18 +94,19 @@ mod philox;
 mod print;
 mod print_array;
 mod strings;
+mod subprocess;
 mod sum;
 
 pub use abi::{
-    ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128, ELEMENT_F32, ELEMENT_F64, ELEMENT_I8,
-    ELEMENT_I16, ELEMENT_I32, ELEMENT_I64, ELEMENT_U8, ELEMENT_U16, ELEMENT_U32, ELEMENT_U64,
-    OsError, OwnedList, OwnedText, RaisedError, RaisedValueError, TextBuilder, TextValue,
-    ValueError, baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish,
-    baryon_rt_accumulator_new, baryon_rt_accumulator_slot, baryon_rt_allocate,
-    baryon_rt_allocate_array, baryon_rt_argument, baryon_rt_argument_count, baryon_rt_chunk_count,
-    baryon_rt_deallocate, baryon_rt_dict_find, baryon_rt_dict_free, baryon_rt_dict_insert,
-    baryon_rt_dict_length, baryon_rt_dict_next, baryon_rt_dict_remove, baryon_rt_dot_f32,
-    baryon_rt_dot_f64, baryon_rt_dot_strided_f32, baryon_rt_dot_strided_f64,
+    CompletedProcess, ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128, ELEMENT_F32,
+    ELEMENT_F64, ELEMENT_I8, ELEMENT_I16, ELEMENT_I32, ELEMENT_I64, ELEMENT_U8, ELEMENT_U16,
+    ELEMENT_U32, ELEMENT_U64, OsError, OwnedList, OwnedText, RaisedError, RaisedValueError,
+    TextBuilder, TextValue, ValueError, baryon_rt_accumulator_chunk_done,
+    baryon_rt_accumulator_finish, baryon_rt_accumulator_new, baryon_rt_accumulator_slot,
+    baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_argument, baryon_rt_argument_count,
+    baryon_rt_chunk_count, baryon_rt_deallocate, baryon_rt_dict_find, baryon_rt_dict_free,
+    baryon_rt_dict_insert, baryon_rt_dict_length, baryon_rt_dict_next, baryon_rt_dict_remove,
+    baryon_rt_dot_f32, baryon_rt_dot_f64, baryon_rt_dot_strided_f32, baryon_rt_dot_strided_f64,
     baryon_rt_environment_get, baryon_rt_exit, baryon_rt_file_close, baryon_rt_file_drop,
     baryon_rt_file_flush, baryon_rt_file_open, baryon_rt_file_read, baryon_rt_file_read_line,
     baryon_rt_file_read_lines, baryon_rt_file_write, baryon_rt_flush, baryon_rt_panic,
@@ -120,10 +122,10 @@ pub use abi::{
     baryon_rt_str_lower, baryon_rt_str_parse_float, baryon_rt_str_parse_int, baryon_rt_str_replace,
     baryon_rt_str_split, baryon_rt_str_split_whitespace, baryon_rt_str_starts_with,
     baryon_rt_str_strip, baryon_rt_str_strip_characters, baryon_rt_str_take, baryon_rt_str_upper,
-    baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64,
-    baryon_rt_text_bool, baryon_rt_text_complex64, baryon_rt_text_complex128, baryon_rt_text_f32,
-    baryon_rt_text_f64, baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new,
-    baryon_rt_text_str, baryon_rt_text_u64,
+    baryon_rt_subprocess_run, baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_sum_strided_f32,
+    baryon_rt_sum_strided_f64, baryon_rt_text_bool, baryon_rt_text_complex64,
+    baryon_rt_text_complex128, baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish,
+    baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
 };
 pub use accumulate::Accumulator;
 pub use dict::{DictLayout, KeyPart, STR_PART, Table};
