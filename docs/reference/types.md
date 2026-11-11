@@ -346,9 +346,9 @@ def main():
 | `d[k] = v` | Sets the value, adding the key last when it is missing |
 | `k in d`, `k not in d` | Whether the key is there |
 | `len(d)` | The number of entries |
-| `d.get(k)`, `d.get(k, default)` | A copy of the value, or `None` or the default when the key is missing. Values must copy; for others, ask with `in` and read `d[k]` |
+| `d.get(k)`, `d.get(k, default)` | A copy of the value, or `None` or the default when the key is missing. Values must copy or be `str`, or tuples of them; a `list` or an array would be a hidden large copy, so ask with `in` and read `d[k]` |
 | `d.pop(k)`, `d.pop(k, default)` | Takes the entry out and gives its value; a missing key panics, or gives the default |
-| `d.setdefault(k, default)` | A copy of the value for `k`, after adding `k` with `default` when it is missing. Values must copy |
+| `d.setdefault(k, default)` | A copy of the value for `k`, after adding `k` with `default` when it is missing. Values must copy or be `str`, as for `get` |
 | `d.update(other)` | Sets each entry of `other`, a dict of the same type, in `other`'s order |
 | `d.clear()` | Removes every entry |
 | `del d[k]` | Removes the entry; a missing key panics |

@@ -121,7 +121,7 @@ error: dict values must share one type, found `i64` and `str`
 9 |     mixed = {"a": 1, "b": "two"}
   |                           ^^^^^ a different type
 
-error: `get` with no default needs values that copy, found `list[i64]`
+error: `get` with no default needs values that copy or are `str`, found `list[i64]`
   --> main.byn:11:11
    |
 11 |     print(d.get("a"))
@@ -221,7 +221,7 @@ error: `del` removes a dict entry, not an element of `list[i64]`
   |         ^^^^^ not a dict
   = note: a list shrinks with `xs.pop()`; an array keeps its length
 
-error: `setdefault` needs values that copy, found `list[i64]`
+error: `setdefault` needs values that copy or are `str`, found `list[i64]`
  --> main.byn:8:11
   |
 8 |     print(d.setdefault("a", [1]))
