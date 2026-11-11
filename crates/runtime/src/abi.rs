@@ -14,6 +14,7 @@ mod files;
 mod memory;
 mod numbers;
 mod output;
+mod pairwise;
 mod panics;
 mod parallel;
 mod paths;
@@ -57,6 +58,10 @@ pub use numbers::{
 pub use output::{
     baryon_rt_flush, baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64,
     baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,
+};
+pub use pairwise::{
+    baryon_rt_pairwise_combine_f32, baryon_rt_pairwise_combine_f64, baryon_rt_pairwise_leaf_end,
+    baryon_rt_pairwise_leaves,
 };
 pub use panics::{
     baryon_rt_panic, baryon_rt_panic_exponent, baryon_rt_panic_index,
