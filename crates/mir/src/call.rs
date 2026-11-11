@@ -2,7 +2,7 @@
 //! [`Call`](crate::TerminatorKind::Call), the [`Builtin`] operations and [`MathFunction`]s the
 //! backends build inline or call the runtime for, and each [`Argument`]'s mode.
 
-use crate::{FileMethod, Operand, Place, TextMethod};
+use crate::{FileMethod, Operand, PathMethod, Place, TextMethod};
 use types::{Item, Type};
 
 /// The function a [`Call`](crate::TerminatorKind::Call) calls.
@@ -153,6 +153,16 @@ pub enum Builtin {
     /// `str | None` of `get`, and the panic of `os.environ[name]`, from the two. A value that is
     /// not UTF-8 reads with U+FFFD in place of each bad sequence. The call cannot fail.
     EnvironmentGet,
+    /// Every environment variable, for `os.environ.copy()` (decision 0036): no arguments; the
+    /// destination is a new `list[str]` of two elements for each variable, its name then its
+    /// value, with the variables in the reverse of the order the operating system gives. So
+    /// popping the list twice gives the next variable's value, then its name, in the operating
+    /// system's order, which is how lowering fills the `dict[str, str]`. Each name appears once:
+    /// of two variables with one name, the first is kept, the one
+    /// [`EnvironmentGet`](Self::EnvironmentGet) reads. A name or value that is not UTF-8 reads
+    /// with U+FFFD in place of each bad sequence. It copies every name and value, one
+    /// allocation each. The call cannot fail.
+    EnvironmentEntries,
     /// `sys.exit(status)` (decision 0036): one argument, the status, an `i64` passed `Owned`;
     /// the destination has type `None`, and the call never returns. It writes out what `print`
     /// holds back and ends the program with the status, running nothing else on the way out. A
@@ -176,6 +186,10 @@ pub enum Builtin {
     /// `open` or a method of the `File` it returns (decision 0036). [`FileMethod`] says what each
     /// takes and gives. Unlike every other built-in, each can fail: its call has an error edge.
     File(FileMethod),
+    /// An operation on a path or a directory: a part of a `pathlib.Path`, a question to the file
+    /// system, or a directory function of `os` (decision 0036). [`PathMethod`] says what each
+    /// takes and gives, and which can fail and so have an error edge.
+    Path(PathMethod),
 }
 
 impl Builtin {
@@ -197,6 +211,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Exit.name(), "sys.exit");
     /// assert_eq!(mir::Builtin::Sort.name(), "sorted");
     /// assert_eq!(mir::Builtin::File(mir::FileMethod::Write).name(), "File.write");
+    /// assert_eq!(mir::Builtin::Path(mir::PathMethod::Parent).name(), "Path.parent");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -221,10 +236,12 @@ impl Builtin {
             Self::ArgumentCount => "len of sys.argv",
             Self::Argument => "sys.argv item",
             Self::EnvironmentGet => "os.environ.get",
+            Self::EnvironmentEntries => "os.environ.copy",
             Self::Exit => "sys.exit",
             Self::Sort => "sorted",
             Self::RoundDigits => "round",
             Self::File(method) => method.name(),
+            Self::Path(method) => method.name(),
         }
     }
 }
