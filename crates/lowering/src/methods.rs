@@ -9,6 +9,7 @@
 //! does `v.dot(w)` of a `Fixed` vector shorter than 8, for which the pairwise order is the plain
 //! one. Each integer `+` and `*` is checked for overflow as the operators are. `a.min()` and
 //! `a.max()` scan in row-major order after checking the array is not empty.
+//! The same three along one axis, `a.sum(axis=k)`, are in the `axes` module.
 //! `a.round()` copies an `Array` and rounds each element in place; on a `Fixed` array it builds
 //! the new value from each element rounded, with one call per element, since a `Fixed` array is
 //! small and its length is known when compiling. `a.fill(value)` writes every element.
@@ -42,6 +43,9 @@ impl<'db> Builder<'db> {
             ("copy", [array]) if !fixed => self.array_copy(place, *array, node),
             ("sum", [array]) => self.array_sum(place, *array, node),
             ("min" | "max", [array]) => self.array_extreme(place, method == "min", *array, node),
+            ("sum" | "min" | "max", [array, axis]) => {
+                self.axis_reduction(place, method, (*array, *axis), node);
+            }
             ("dot", [left, right]) => self.array_dot(place, (*left, *right), node),
             ("round", [array]) if fixed => self.fixed_round(place, *array, node),
             ("round", [array]) => self.array_round(place, *array, node),
@@ -259,53 +263,68 @@ impl<'db> Builder<'db> {
             BinaryOperator::Greater
         };
         let float = self.is_float(element);
-        let (value, better, missing) = (
+        let scratch = (
             self.temporary(element, node),
             self.temporary(self.boolean_type(), node),
             self.temporary(self.boolean_type(), node),
         );
         self.loop_nest(&lengths, &mut Vec::new(), node, &mut |builder, indices| {
             let at = source.clone().project(Projection::Index(indices.to_vec()));
-            builder.assign(Place::from(value), Rvalue::Use(Operand::Copy(at)), node);
-            let copy = |local: Local| Operand::Copy(Place::from(local));
-            builder.assign(
-                Place::from(better),
-                Rvalue::Binary(test, copy(value), copy(best)),
-                node,
-            );
-            if float {
-                // `x != x` holds only for NaN.
-                builder.assign(
-                    Place::from(missing),
-                    Rvalue::Binary(BinaryOperator::NotEqual, copy(value), copy(value)),
-                    node,
-                );
-                builder.assign(
-                    Place::from(better),
-                    Rvalue::Binary(BinaryOperator::BitOr, copy(better), copy(missing)),
-                    node,
-                );
-            }
-            let (replace, join) = (builder.new_block(), builder.new_block());
-            builder.terminate(
-                TerminatorKind::Branch {
-                    condition: copy(better),
-                    then: replace,
-                    otherwise: join,
-                },
-                node,
-            );
-            builder.start(replace);
-            builder.assign(Place::from(best), Rvalue::Use(copy(value)), node);
-            builder.terminate(TerminatorKind::Goto(join), node);
-            builder.start(join);
+            builder.keep_extreme(Place::from(best), at, (test, float), scratch, node);
         });
         self.assign(place, Rvalue::Use(Operand::Copy(Place::from(best))), node);
     }
 
+    /// Replaces `best` with the element at `at` when the element is smaller, for `test`
+    /// [`Less`](BinaryOperator::Less), or larger, for [`Greater`](BinaryOperator::Greater), or,
+    /// when `float`, a NaN, so a NaN anywhere wins as in `numpy.min`. `scratch` is a local of
+    /// the element type and two `bool` locals the comparison is worked out in.
+    pub(crate) fn keep_extreme(
+        &mut self,
+        best: Place,
+        at: Place,
+        (test, float): (BinaryOperator, bool),
+        (value, better, missing): (Local, Local, Local),
+        node: NodeId,
+    ) {
+        let copy = |local: Local| Operand::Copy(Place::from(local));
+        self.assign(Place::from(value), Rvalue::Use(Operand::Copy(at)), node);
+        self.assign(
+            Place::from(better),
+            Rvalue::Binary(test, copy(value), Operand::Copy(best.clone())),
+            node,
+        );
+        if float {
+            // `x != x` holds only for NaN.
+            self.assign(
+                Place::from(missing),
+                Rvalue::Binary(BinaryOperator::NotEqual, copy(value), copy(value)),
+                node,
+            );
+            self.assign(
+                Place::from(better),
+                Rvalue::Binary(BinaryOperator::BitOr, copy(better), copy(missing)),
+                node,
+            );
+        }
+        let (replace, join) = (self.new_block(), self.new_block());
+        self.terminate(
+            TerminatorKind::Branch {
+                condition: copy(better),
+                then: replace,
+                otherwise: join,
+            },
+            node,
+        );
+        self.start(replace);
+        self.assign(best, Rvalue::Use(copy(value)), node);
+        self.terminate(TerminatorKind::Goto(join), node);
+        self.start(join);
+    }
+
     /// Panics, through a [`Check::NotEmpty`] reported at `node`, when any of `lengths` is 0;
     /// `list` says whether the sequence is a list, for the panic message.
-    fn not_empty(&mut self, lengths: &[Operand<'db>], list: bool, node: NodeId) {
+    pub(crate) fn not_empty(&mut self, lengths: &[Operand<'db>], list: bool, node: NodeId) {
         let int = self.int_type();
         let size = self.temporary(int, node);
         let one = Operand::Constant(Constant::integer(int, 1));

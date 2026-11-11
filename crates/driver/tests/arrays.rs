@@ -322,3 +322,58 @@ error: `None` cannot index a value of type `list[f64]`
   = note: `None` in a subscript adds a dimension of length 1 to an array"
     );
 }
+
+/// `sum`, `min` and `max` take one constant axis, positional or `axis=`, counted from the
+/// last when negative, and give the array without that axis, or one number from a vector. An
+/// axis outside the array, one that is not a constant, or any other argument is an error.
+#[test]
+fn reductions_take_one_constant_axis() {
+    let clean = r"
+LAST: Final = -1
+
+
+def clean(a: Array[f64, 2], v: Array[f64, 1], m: Fixed[i64, (2, 3)]):
+    rows: Array[f64, 1] = a.sum(axis=1)
+    columns: Array[f64, 1] = a.max(0)
+    last: Array[f64, 1] = a.min(axis=LAST)
+    total: f64 = v.sum(axis=-1)
+    fixed: Fixed[i64, (3,)] = m.sum(axis=0)
+";
+    assert_eq!(check_one(clean), "");
+    let mistakes = r"
+def mistakes(a: Array[f64, 2], k: i64):
+    b = a.sum(axis=2)
+    c = a.max(axis=k)
+    d = a.min(keepdims=1)
+    e = a.sum(0, 1)
+";
+    assert_eq!(
+        check_one(mistakes),
+        r"error: axis 2 is out of range for `Array[f64, 2]`, which has 2 axes
+ --> main.byn:2:20
+  |
+2 |     b = a.sum(axis=2)
+  |                    ^ no such axis
+  = note: an array of rank 2 has axes 0 to 1, or -2 to -1 counted from the last
+
+error: `k` is not a constant
+ --> main.byn:3:20
+  |
+3 |     c = a.max(axis=k)
+  |                    ^ used in a constant expression
+
+error: `min` takes no arguments or one axis
+ --> main.byn:4:9
+  |
+4 |     d = a.min(keepdims=1)
+  |         ^^^^^^^^^^^^^^^^^ wrong arguments
+  = note: the axis is a constant whole number, such as `a.sum(axis=0)` or `a.max(axis=-1)` for the last
+
+error: `sum` takes no arguments or one axis
+ --> main.byn:5:9
+  |
+5 |     e = a.sum(0, 1)
+  |         ^^^^^^^^^^^ wrong arguments
+  = note: the axis is a constant whole number, such as `a.sum(axis=0)` or `a.max(axis=-1)` for the last"
+    );
+}

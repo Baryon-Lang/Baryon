@@ -251,6 +251,7 @@ set.
 | --- | --- |
 | `a.copy()` | A new contiguous array with the same elements |
 | `a.sum()`, `a.min()`, `a.max()` | The sum, smallest and largest element |
+| `a.sum(axis=k)`, `a.min(axis=k)`, `a.max(axis=k)` | The sums, smallest and largest elements along axis `k`: an array with that axis removed. See [Reductions along an axis](#reductions-along-an-axis) |
 | `a.dot(b)` | The dot product of two rank-1 arrays or vectors of the same length |
 | `a.round()` | A new array with each element rounded to the nearest whole number, ties to even |
 | `a.fill(value)` | Sets every element to `value`; `a` must be changeable |
@@ -327,6 +328,53 @@ never fused with the add that follows, and the products are summed as `sum` sums
 `a * b`. `numpy.dot` itself calls BLAS, whose order depends on the machine, so its last bits
 can differ. For fewer than 8 elements, such as a 3-vector, the tree adds in plain order. The same reasoning fixes the order of reductions in
 parallel loops; see [reproducible reductions](parallel-loops.md#reproducible-reductions).
+
+### Reductions along an axis
+
+`a.sum(axis=k)`, `a.min(axis=k)` and `a.max(axis=k)` reduce along one axis, as NumPy's do. The
+result has `a`'s lengths without axis `k`: each of its elements reduces the line of elements of
+`a` along `k` that passes through it. For a grid of shape `(rows, columns)`, `axis=0` gives one
+value per column and `axis=1` one per row. A negative axis counts from the last, so `axis=-1` is
+the last axis; the axis can also be written without its name, `a.sum(1)`.
+
+| `a` | `a.sum(axis=0)` | `a.sum(axis=1)` |
+| --- | --- | --- |
+| `Array[f64, 2]` of shape `(3, 4)` | `Array[f64, 1]` of length 4 | `Array[f64, 1]` of length 3 |
+| `Array[f64, 3]` of shape `(2, 3, 4)` | `Array[f64, 2]` of shape `(3, 4)` | `Array[f64, 2]` of shape `(2, 4)` |
+| `Fixed[f64, (2, 3)]` | `Fixed[f64, (3,)]` | `Fixed[f64, (2,)]` |
+| `Array[f64, 1]` of length 5 | one `f64`, the same as `a.sum()` | an error |
+
+The axis is a constant whole number: a literal, a negated literal or a `Final` constant, since the
+result's rank depends on it. An axis the array does not have is an error when compiling:
+
+```text
+error: axis 2 is out of range for `Array[f64, 2]`, which has 2 axes
+```
+
+A float sum along an axis has the same bits as `numpy.sum(a, axis=k)`. NumPy adds in two orders,
+and Baryon follows both. Along the last axis each line is one row in memory, and each row is
+summed by the pairwise tree of [`a.sum()`](#the-order-sum-adds-in). Along any other axis, each
+result starts at `0.0` and the elements are added one at a time from the first, which reads the
+array in row-major order. Integer sums are exact in any order, and overflow is checked as `+`
+checks it.
+
+`a.min(axis=k)` and `a.max(axis=k)` follow the rules of `a.min()`: a NaN anywhere in a line makes
+that result NaN, and an axis of length 0 panics, even when the other axes are long, as NumPy
+raises. An empty result, from a length of 0 in another axis, is fine.
+
+```python
+def column_means(samples: Array[f64, 2]) -> Array[f64, 1]:
+    """The mean of each column of a table of samples, one row per sample."""
+    return samples.sum(axis=0) / samples.shape[0]
+
+
+def peak_per_channel(signal: Array[f64, 2]) -> Array[f64, 1]:
+    """The largest value of each row, one row per channel."""
+    return signal.max(axis=-1)
+```
+
+Each reduction reads the array once and allocates only its result. Version 0 reduces along one
+axis at a time; NumPy's tuple of axes and `keepdims=` are not built.
 
 ### The matrix product
 

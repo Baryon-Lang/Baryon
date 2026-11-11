@@ -8,6 +8,7 @@
 //! - `Vec3.zeros()`, `Vec3.ones()` and `Vec3.fill(value)` create a `Fixed` array an alias
 //!   names, and `Mat3((1.0, 0.0), (0.0, 1.0))` builds one from nested tuples of its elements.
 //! - Arithmetic on arrays and the matrix product are in the `elementwise` module.
+//! - `a.sum(axis=k)`, `a.min(axis=k)` and `a.max(axis=k)` are in the `axes` module.
 
 use super::calls::Arguments;
 use super::{Body, relations};
@@ -313,7 +314,11 @@ impl<'db> Body<'db> {
         }
         Some(match (name, arguments.positional.as_slice()) {
             ("copy" | "round", []) => base,
-            ("sum" | "min" | "max", []) => element,
+            ("sum" | "min" | "max", []) if arguments.keywords.is_empty() => element,
+            ("sum" | "min" | "max", _) => {
+                let axis = self.axis_argument(arguments);
+                self.axis_reduction(node, (base, element), name, axis, arguments)
+            }
             ("dot", [other]) => {
                 let found = self.expression(*other, Some(base));
                 self.expect(*other, base, found, "the dot product needs");
