@@ -131,6 +131,9 @@ in [Values and references](values-and-references.md#slices).
 shortened. Python shortens it silently; here, as with indices, a range that does not fit the array
 is treated as the bug it usually is. Negative literals count from the end, as with indices.
 
+`None` among the indices adds a dimension of length 1 to the view, for
+[broadcasting](#broadcasting): `x[:, None]` is a vector seen as a column.
+
 ## Whole-array arithmetic
 
 Arithmetic operators work element by element on whole arrays and views:
@@ -202,6 +205,19 @@ def centered(samples: Array[f64, 2]) -> Array[f64, 2]:
     means /= n
     return samples - means  # each row minus the column means
 ```
+
+`None` in a subscript adds a dimension of length 1, as NumPy's `None` (`numpy.newaxis`) does,
+so a vector can stand as a column or a row. It takes no dimension of the array, so every
+dimension still needs its index or slice: `x[:, None]` and `x[None, :]` of a vector `x` are
+views of shape `(n, 1)` and `(1, n)`. Combining the two gives every pair, with no loop written:
+
+```python
+def separations(x: Array[f64, 1]) -> Array[f64, 2]:
+    return x[:, None] - x[None, :]  # entry [i, j] is x[i] - x[j]
+```
+
+Like any slice, `x[:, None]` is a view of `x`'s memory, not a copy; NumPy's `x[None]`, which
+leaves the last dimension out, is written `x[None, :]` here.
 
 The rank of the result is known when compiling, so `Array[f64, 2] + Array[f64, 1]` is an
 `Array[f64, 2]`. Whether an `Array` repeats along a dimension is known only when the line runs,

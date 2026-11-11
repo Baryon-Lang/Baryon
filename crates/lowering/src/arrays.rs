@@ -22,8 +22,8 @@ enum Lengths<'a> {
 impl<'db> Builder<'db> {
     /// The element `a[i, j]` names, after a bounds check of each index unless the program wrote
     /// `a.unchecked[i, j]` (decision 0010). A negative literal counts from the end. Indexing a
-    /// tuple with a constant names the item. A subscript with a slice names a view (the
-    /// `slices` module).
+    /// tuple with a constant names the item. A subscript with a slice or a `None` names a view
+    /// (the `slices` module).
     pub(crate) fn subscript(&mut self, node: NodeId) -> Option<Place> {
         let (value, index) = (
             self.tree.child(node, Role::Value)?,
@@ -38,7 +38,7 @@ impl<'db> Builder<'db> {
         };
         if indices
             .iter()
-            .any(|&index| self.tree.kind(index) == SyntaxKind::Slice)
+            .any(|&index| matches!(self.tree.kind(index), SyntaxKind::Slice | SyntaxKind::None))
         {
             return self.view(node, value, &indices);
         }
