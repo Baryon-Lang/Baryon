@@ -72,3 +72,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0037. `int(text)` and `float(text)` raise a built-in `ValueError`](0037-reading-numbers-from-text.md) | Accepted |
 | [0038. Standard-library classes are Baryon source shipped inside the compiler](0038-standard-library-in-baryon.md) | Accepted |
 | [0039. AstroBaryon keeps AstroPy's names](0039-astrobaryon-keeps-astropy-names.md) | Accepted |
+| [0040. `linalg` and `fft` follow NumPy and are written in Baryon](0040-linear-algebra-and-fft.md) | Proposed |
