@@ -1,6 +1,9 @@
 //! Expands one whole-array statement into its loop nest.
 
 mod broadcast;
+mod summed;
+
+pub(crate) use summed::summed;
 
 use crate::leaves::{ArrayLeaf, fused};
 use crate::place_types::{Shape, Types};
@@ -103,37 +106,7 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 this.assign(element, Rvalue::Use(value));
             });
         };
-        if let Some((first, rest)) = broadcast.same.split_first() {
-            // Some operand may repeat: the plain nest when none does, else the broadcasting one.
-            let mut none = *first;
-            for same in rest {
-                let both = self.local(self.bool());
-                self.assign(
-                    Place::from(both),
-                    Rvalue::Binary(
-                        BinaryOperator::BitAnd,
-                        Operand::Copy(Place::from(none)),
-                        Operand::Copy(Place::from(*same)),
-                    ),
-                );
-                none = both;
-            }
-            let (plain, repeating, join) = (self.new_block(), self.new_block(), self.new_block());
-            self.finish(
-                TerminatorKind::Branch {
-                    condition: Operand::Copy(Place::from(none)),
-                    then: plain,
-                    otherwise: repeating,
-                },
-                plain,
-            );
-            fill(&mut self, false);
-            self.finish(TerminatorKind::Goto(join), repeating);
-            fill(&mut self, true);
-            self.finish(TerminatorKind::Goto(join), join);
-        } else {
-            fill(&mut self, false);
-        }
+        self.versioned(&broadcast, fill);
         if staged {
             self.loop_nest(&lengths, |this, indices| {
                 let from = target.clone().project(Projection::Index(indices.to_vec()));
@@ -146,6 +119,17 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
         } else if !in_place {
             self.assign(destination.clone(), Rvalue::Use(Operand::Move(target)));
         }
+        self.drop_moved(leaves);
+        self.statements.extend(after);
+        let current = self.current.index();
+        self.body.blocks[current] = BasicBlock {
+            statements: self.statements,
+            terminator,
+        };
+    }
+
+    /// Drops each `Array` leaf the expression moved, once: its last use was this expression.
+    fn drop_moved(&mut self, leaves: &[ArrayLeaf<'db>]) {
         let mut dropped: Vec<&Place> = Vec::new();
         for leaf in leaves.iter().filter(|leaf| leaf.moved) {
             if !dropped.contains(&&leaf.place) && matches!(leaf.shape, Shape::Runtime(_)) {
@@ -153,12 +137,42 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 self.push(StatementKind::Drop(leaf.place.clone()));
             }
         }
-        self.statements.extend(after);
-        let current = self.current.index();
-        self.body.blocks[current] = BasicBlock {
-            statements: self.statements,
-            terminator,
+    }
+
+    /// Writes `fill`'s loop nest once, when no operand can repeat, or twice behind a branch: the
+    /// plain nest, when every operand of [`Broadcast::same`] has the result's lengths, and the
+    /// broadcasting nest otherwise. `fill` is told which nest it writes. Continues after both.
+    fn versioned(&mut self, broadcast: &Broadcast<'db>, fill: impl Fn(&mut Self, bool)) {
+        let Some((first, rest)) = broadcast.same.split_first() else {
+            return fill(self, false);
         };
+        // Some operand may repeat: the plain nest when none does, else the broadcasting one.
+        let mut none = *first;
+        for same in rest {
+            let both = self.local(self.bool());
+            self.assign(
+                Place::from(both),
+                Rvalue::Binary(
+                    BinaryOperator::BitAnd,
+                    Operand::Copy(Place::from(none)),
+                    Operand::Copy(Place::from(*same)),
+                ),
+            );
+            none = both;
+        }
+        let (plain, repeating, join) = (self.new_block(), self.new_block(), self.new_block());
+        self.finish(
+            TerminatorKind::Branch {
+                condition: Operand::Copy(Place::from(none)),
+                then: plain,
+                otherwise: repeating,
+            },
+            plain,
+        );
+        fill(self, false);
+        self.finish(TerminatorKind::Goto(join), repeating);
+        fill(self, true);
+        self.finish(TerminatorKind::Goto(join), join);
     }
 
     /// Writes a loop over every index below `lengths`, in row-major order with the last

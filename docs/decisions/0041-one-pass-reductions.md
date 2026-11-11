@@ -9,7 +9,7 @@ Roadmap: 3.9
 `(a * b).sum()` and `((u - v) ** 2).sum()` are the inner products, norms and residuals of most
 numerical code. Today the expression is stored in a new array of `n` elements, and then that
 array is summed: one allocation, `n` writes and `n` reads more than the sum needs. Measured on
-4 million `f64` elements with the release runtime, `(a * b).sum()` takes 5.6 ms and `a.dot(b)`,
+4 million `f64` elements with the release runtime, `(a * b).sum()` takes 5.9 ms and `a.dot(b)`,
 which computes the same bits without the array, 3.3 ms.
 
 The result must keep its bits. `a.sum()` of floats adds in NumPy's pairwise tree (roadmap I.22,
@@ -67,7 +67,10 @@ stack.
 
 ## Consequences
 
-- `(a * b).sum()` does the work of `a.dot(b)`, with the same bits as before.
+- `(a * b).sum()` keeps its bits and no longer stores the product. On the same 4 million
+  elements it takes 4.1 ms, down from 5.9 ms; `a.dot(b)` takes 3.3 ms. Each row is written in
+  runs that end at a leaf's end, so the loop that computes the elements has no branch and
+  vectorizes as the stored expression's loop did.
 - Only array expansion and the backend change; no pass sees a new kind of statement.
 - The buffer size, 128, is NumPy's leaf size. Changing NumPy's tree would change both the stored
   and the one-pass sums together, since both use the runtime's tree.

@@ -41,6 +41,13 @@
 //! is copied into the view after, as `NumPy` does.  A leaf that is the view itself, as `+=`
 //! makes, reads each element just before writing it, so it needs no copy.
 //!
+//! An expression of floats that is only summed, `(a * b).sum()`, is never stored (decision
+//! 0041): lowering writes it to a temporary that a call of [`Sum`](mir::Builtin::Sum) reads and
+//! a drop frees, and when nothing else names that temporary, the loops write each element into
+//! a buffer of one leaf of `NumPy`'s pairwise tree instead, sum each leaf as it fills, and let
+//! the runtime add the leaf sums in the tree's order. Steps 1 and 2 are the same, so the result
+//! and every panic are those of the stored sum.
+//!
 //! It runs in the instance query after drop elaboration, so types are concrete. It is one
 //! replaceable implementation (decision 0001): it reads and writes only `mir` types, and asks what
 //! a struct declares through a callback, as [`types::layout`] does.
@@ -137,6 +144,12 @@ pub fn expand<'db>(
             continue;
         };
         let (position, leaves, result_type) = found;
+        let summed = expander::summed(db, body, block, position);
+        if let Some(summed) = &summed {
+            body.blocks[summed.target.index()]
+                .statements
+                .remove(summed.drop);
+        }
         let data = &mut body.blocks[block];
         let after = data.statements.split_off(position + 1);
         let Some(statement) = data.statements.pop() else {
@@ -155,21 +168,24 @@ pub fn expand<'db>(
                 span: statement.span,
             },
         );
-        Expander::new(
+        let expander = Expander::new(
             db,
             &types,
             body,
             BlockId::new(block),
             before,
             statement.span,
-        )
-        .expand(
-            &destination,
-            &tree,
-            (&leaves, result_type),
-            after,
-            terminator,
         );
+        match summed {
+            Some(summed) => expander.sum(&tree, &leaves, summed),
+            None => expander.expand(
+                &destination,
+                &tree,
+                (&leaves, result_type),
+                after,
+                terminator,
+            ),
+        }
         block += 1;
     }
 }

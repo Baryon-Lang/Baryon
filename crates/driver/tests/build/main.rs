@@ -32,6 +32,7 @@ mod kernels;
 mod list_slices;
 mod math;
 mod modules;
+mod one_pass;
 mod overflow;
 mod parallel;
 mod print;

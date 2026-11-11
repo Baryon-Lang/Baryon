@@ -322,6 +322,14 @@ The `0.0` added last is the identity of `+`, so an empty array sums to `0.0`. An
 in `f32` throughout, as NumPy does. Integer sums add one element at a time: integer addition is
 exact, so the order cannot change the result.
 
+A sum of a whole-array expression, such as `(a * b).sum()` or `((u - v) * (u - v)).sum()`,
+adds in the same tree, so it has the same bits as storing the expression and summing it, and as
+`numpy.sum`. It never stores the expression: the compiler computes the elements one leaf of the
+tree at a time, at most 128 of them, into a small buffer, sums each leaf, and adds the leaf sums
+in the tree's order ([decision 0041](../decisions/0041-one-pass-reductions.md)). That saves an
+array as large as the expression and a pass over it. It applies to `Array`s of floats; a sum
+along an axis of an expression still stores the expression first.
+
 `a.dot(b)` of floats adds its products in the same tree: each product `a[i] * b[i]` is rounded,
 never fused with the add that follows, and the products are summed as `sum` sums its elements. So
 `a.dot(b)` has the same bits as `(a * b).sum()` and as `numpy.sum(a * b)`, without building
