@@ -17,6 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 array_expansion.workspace = true
+array_fusion.workspace = true
 checker.workspace = true
 database.workspace = true
 diagnostics.workspace = true

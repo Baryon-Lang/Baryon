@@ -8,6 +8,7 @@
 //! `os.environ` cannot raise. Each call returns a new owned `str`, which compiled code frees as
 //! it frees any other.
 
+use super::string_lists::{OwnedList, write_list};
 use super::text::{OwnedText, owned};
 use crate::location::Location;
 use crate::panic::{Failure, panic};
@@ -93,6 +94,68 @@ pub unsafe extern "C" fn baryon_rt_environment_get(
     // SAFETY: the caller guarantees `found` is writable.
     unsafe { found.write(value.is_some()) };
     owned(&value.unwrap_or_default().to_string_lossy())
+}
+
+/// Every environment variable, for `os.environ.copy()`: two texts for each variable, its name
+/// then its value, with the variables in the reverse of the order the operating system gives,
+/// so that popping twice from the end gives the next variable's value, then its name, in that
+/// order. Of two variables with one name, the first is kept, the one a lookup reads. Names and
+/// values that are not UTF-8 read with U+FFFD in place of each bad sequence.
+fn environment_entries() -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut variables: Vec<(String, String)> = std::env::vars_os()
+        .map(|(name, value)| {
+            let name = name.to_string_lossy().into_owned();
+            (name, value.to_string_lossy().into_owned())
+        })
+        .filter(|(name, _)| seen.insert(name.clone()))
+        .collect();
+    variables.reverse();
+    variables
+        .into_iter()
+        .flat_map(|(name, value)| [name, value])
+        .collect()
+}
+
+/// Writes every environment variable to `*out` as a new `list[str]`, for `os.environ.copy()`:
+/// two elements for each variable, its name then its value, the variables in the reverse of the
+/// operating system's order. Compiled code pops a value and then a name until the list is
+/// empty, which visits the variables in the operating system's order. Each name appears once.
+/// Cost: one allocation for each name and each value.
+///
+/// # Panics
+///
+/// Ends the program with a panic when the system has no memory left.
+///
+/// # Safety
+///
+/// `out` points to a writable [`OwnedList`].
+///
+/// # Example
+///
+/// ```
+/// use runtime::{OwnedList, OwnedText, baryon_rt_deallocate, baryon_rt_environment_entries};
+///
+/// let mut entries = OwnedList { elements: std::ptr::null_mut(), length: 0, capacity: 0 };
+/// // SAFETY: `entries` is a local; each text and the buffer are freed once, with their sizes.
+/// unsafe {
+///     baryon_rt_environment_entries(&mut entries);
+///     assert_eq!(entries.length % 2, 0);
+///     for index in 0..entries.length as usize {
+///         let text: &OwnedText = &*entries.elements.add(index);
+///         baryon_rt_deallocate(text.bytes, text.length as usize, 1);
+///     }
+///     let size = entries.capacity as usize * size_of::<OwnedText>();
+///     baryon_rt_deallocate(entries.elements.cast(), size, 8);
+/// }
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_environment_entries(out: *mut OwnedList) {
+    let entries = environment_entries();
+    let pieces: Vec<&str> = entries.iter().map(String::as_str).collect();
+    // SAFETY: the caller guarantees `out` is writable.
+    unsafe { write_list(&pieces, out) };
 }
 
 /// Ends the program with exit status `status`: `sys.exit(status)`. It first writes out what
@@ -194,6 +257,25 @@ mod tests {
             assert!(!found, "{name:?}");
             assert_eq!(take(&value), "");
         }
+    }
+
+    #[test]
+    fn lists_each_variable_once_in_reverse_as_name_then_value() {
+        const TEST: &str =
+            "abi::process::tests::lists_each_variable_once_in_reverse_as_name_then_value";
+        if std::env::var(CHILD).as_deref() == Ok("entries") {
+            let entries = environment_entries();
+            let expected: Vec<(String, String)> = std::env::vars().collect();
+            assert_eq!(entries.len(), 2 * expected.len());
+            for (pair, (name, value)) in entries.chunks(2).rev().zip(&expected) {
+                assert_eq!(pair, [name.clone(), value.clone()]);
+            }
+            let position = entries.iter().position(|name| name == CHILD).unwrap();
+            assert_eq!(entries[position + 1], "entries");
+            std::process::exit(7);
+        }
+        // The child reads an environment no other test's thread is reading or starting from.
+        assert_eq!(child(TEST, "entries"), (Some(7), String::new()));
     }
 
     #[test]
