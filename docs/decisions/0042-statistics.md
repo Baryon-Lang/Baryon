@@ -43,10 +43,16 @@ Three homes were considered:
    `t = 0.5` and `b - (b - a) * (1 - t)` from there. Tests compare against NumPy and SciPy.
    Where NumPy calls BLAS, as `cov` does through `dot`, the order is the pairwise one of
    `a.dot(b)`, and the last bits can differ from NumPy's machine-dependent ones.
-4. **NaN gives NaN.** A NaN anywhere in the input makes `median`, `percentile` and `quantile`
-   NaN, as NumPy's do.
+4. **NaN gives NaN, and so does too little data.** A NaN anywhere in the input makes `median`,
+   `percentile` and `quantile` NaN, as NumPy's do. Where NumPy answers too little data with NaN
+   and a `RuntimeWarning`, the answer here is the same NaN, without the warning: `median` and
+   `a.mean()` of an empty array, `a.var()` when `n - ddof` is 0 (infinity when the squares do not
+   sum to 0), and `cov` and `corrcoef` of empty or one-element arrays, whose `1 / (n - 1)` scale
+   is infinite or NaN, so every entry is NaN.
 5. **A wrong argument panics.** A percentile outside 0 to 100, a quantile outside 0 to 1, a
-   percentile of an empty array, and weights that sum to zero panic, where NumPy raises
+   percentile or quantile of an empty array, weights that sum to zero (an empty `average`
+   included), arrays of different lengths in `average`, `cov` and `corrcoef`, and a histogram
+   with fewer than one bin or a NaN or infinite element panic, where NumPy raises
    `ValueError`, `IndexError` or `ZeroDivisionError`. They are mistakes in the program, not in
    its data, as `a.min()` of an empty array is, which panics for the same reason.
 
