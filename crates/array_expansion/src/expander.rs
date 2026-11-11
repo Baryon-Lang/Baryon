@@ -1,6 +1,9 @@
 //! Expands one whole-array statement into its loop nest.
 
 mod broadcast;
+mod summed;
+
+pub(crate) use summed::summed;
 
 use crate::leaves::{ArrayLeaf, fused};
 use crate::place_types::{Shape, Types};
@@ -103,37 +106,7 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 this.assign(element, Rvalue::Use(value));
             });
         };
-        if let Some((first, rest)) = broadcast.same.split_first() {
-            // Some operand may repeat: the plain nest when none does, else the broadcasting one.
-            let mut none = *first;
-            for same in rest {
-                let both = self.local(self.bool());
-                self.assign(
-                    Place::from(both),
-                    Rvalue::Binary(
-                        BinaryOperator::BitAnd,
-                        Operand::Copy(Place::from(none)),
-                        Operand::Copy(Place::from(*same)),
-                    ),
-                );
-                none = both;
-            }
-            let (plain, repeating, join) = (self.new_block(), self.new_block(), self.new_block());
-            self.finish(
-                TerminatorKind::Branch {
-                    condition: Operand::Copy(Place::from(none)),
-                    then: plain,
-                    otherwise: repeating,
-                },
-                plain,
-            );
-            fill(&mut self, false);
-            self.finish(TerminatorKind::Goto(join), repeating);
-            fill(&mut self, true);
-            self.finish(TerminatorKind::Goto(join), join);
-        } else {
-            fill(&mut self, false);
-        }
+        self.versioned(&broadcast, fill);
         if staged {
             self.loop_nest(&lengths, |this, indices| {
                 let from = target.clone().project(Projection::Index(indices.to_vec()));
@@ -146,6 +119,17 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
         } else if !in_place {
             self.assign(destination.clone(), Rvalue::Use(Operand::Move(target)));
         }
+        self.drop_moved(leaves);
+        self.statements.extend(after);
+        let current = self.current.index();
+        self.body.blocks[current] = BasicBlock {
+            statements: self.statements,
+            terminator,
+        };
+    }
+
+    /// Drops each `Array` leaf the expression moved, once: its last use was this expression.
+    fn drop_moved(&mut self, leaves: &[ArrayLeaf<'db>]) {
         let mut dropped: Vec<&Place> = Vec::new();
         for leaf in leaves.iter().filter(|leaf| leaf.moved) {
             if !dropped.contains(&&leaf.place) && matches!(leaf.shape, Shape::Runtime(_)) {
@@ -153,12 +137,42 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 self.push(StatementKind::Drop(leaf.place.clone()));
             }
         }
-        self.statements.extend(after);
-        let current = self.current.index();
-        self.body.blocks[current] = BasicBlock {
-            statements: self.statements,
-            terminator,
+    }
+
+    /// Writes `fill`'s loop nest once, when no operand can repeat, or twice behind a branch: the
+    /// plain nest, when every operand of [`Broadcast::same`] has the result's lengths, and the
+    /// broadcasting nest otherwise. `fill` is told which nest it writes. Continues after both.
+    fn versioned(&mut self, broadcast: &Broadcast<'db>, fill: impl Fn(&mut Self, bool)) {
+        let Some((first, rest)) = broadcast.same.split_first() else {
+            return fill(self, false);
         };
+        // Some operand may repeat: the plain nest when none does, else the broadcasting one.
+        let mut none = *first;
+        for same in rest {
+            let both = self.local(self.bool());
+            self.assign(
+                Place::from(both),
+                Rvalue::Binary(
+                    BinaryOperator::BitAnd,
+                    Operand::Copy(Place::from(none)),
+                    Operand::Copy(Place::from(*same)),
+                ),
+            );
+            none = both;
+        }
+        let (plain, repeating, join) = (self.new_block(), self.new_block(), self.new_block());
+        self.finish(
+            TerminatorKind::Branch {
+                condition: Operand::Copy(Place::from(none)),
+                then: plain,
+                otherwise: repeating,
+            },
+            plain,
+        );
+        fill(self, false);
+        self.finish(TerminatorKind::Goto(join), repeating);
+        fill(self, true);
+        self.finish(TerminatorKind::Goto(join), join);
     }
 
     /// Writes a loop over every index below `lengths`, in row-major order with the last
@@ -276,8 +290,11 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 element
             }
             Elementwise::Binary(operator, left, right) => {
-                let (left, ty) = self.element(left, leaves, indices, indexing);
-                let (right, _) = self.element(right, leaves, indices, indexing);
+                let (left, left_type) = self.element(left, leaves, indices, indexing);
+                let (right, right_type) = self.element(right, leaves, indices, indexing);
+                let ty = self.common(left_type, right_type);
+                let left = self.convert(left, left_type, ty);
+                let right = self.convert(right, right_type, ty);
                 let overflows = matches!(
                     operator,
                     BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
@@ -297,6 +314,34 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 (Operand::Copy(Place::from(result)), ty)
             }
         }
+    }
+
+    /// The type two operands of different number types meet in, as `NumPy` promotes them: a
+    /// complex type over a real one, a float over an integer, the wider of two of one kind. Lowering
+    /// converts a scalar to the expression's element type, so this matters where an array of
+    /// another element type meets it: `Array([1.0, 2.0]) + 0j` adds in `complex128`, and an
+    /// integer array plus `1.5` in `f64`. The left type when neither is a number.
+    fn common(&self, left: Type<'db>, right: Type<'db>) -> Type<'db> {
+        let rank = |ty: Type<'db>| match ty.kind(self.db) {
+            TypeKind::Primitive(Primitive::Complex(complex)) => Some((2, complex.part().bits())),
+            TypeKind::Primitive(Primitive::Float(float)) => Some((1, float.bits())),
+            TypeKind::Primitive(Primitive::Integer(integer)) => Some((0, integer.bits())),
+            _ => None,
+        };
+        match (rank(left), rank(right)) {
+            (Some(a), Some(b)) if b > a => right,
+            _ => left,
+        }
+    }
+
+    /// `value`, of type `from`, converted to `to` when the two differ, into a new temporary.
+    fn convert(&mut self, value: Operand<'db>, from: Type<'db>, to: Type<'db>) -> Operand<'db> {
+        if from == to {
+            return value;
+        }
+        let converted = self.local(to);
+        self.assign(Place::from(converted), Rvalue::Convert(value, to));
+        Operand::Copy(Place::from(converted))
     }
 
     /// The indices of the operand at `node`, an array leaf or a fused subexpression, given the

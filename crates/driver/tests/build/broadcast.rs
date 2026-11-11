@@ -151,3 +151,25 @@ def main():
 "
     );
 }
+
+/// An array meets a scalar or array of a wider number type in that type, as `NumPy` promotes:
+/// a float array plus a complex number adds in `complex128`, and an integer array plus a float
+/// in `f64`. Each used to reach the backend unconverted and fail to compile.
+#[test]
+fn mixed_element_types_promote_as_numpy_does() {
+    let program = "\
+def main():
+    a = Array([1.0, 2.0])
+    print(a + 0j)
+    print(a * 2j - a)
+    n = Array([1, 2])
+    print(n + 1.5)
+    print(n * 0.5 + n)
+";
+    let (code, stdout, report) = run("broadcast-promote", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(
+        stdout,
+        "[1.+0.j 2.+0.j]\n[-1.+2.j -2.+4.j]\n[2.5 3.5]\n[1.5 3. ]\n"
+    );
+}

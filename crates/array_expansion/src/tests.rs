@@ -406,4 +406,5 @@ fn integer_arithmetic_is_checked_for_overflow() {
 
 mod broadcast;
 mod fused;
+mod summed;
 mod views;
