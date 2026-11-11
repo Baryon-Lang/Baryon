@@ -184,6 +184,8 @@ fn header(file: &mut impl Read, offset: u64, index: usize) -> Result<Hdu, Failur
             return Err(Failure::Invalid(
                 if index > 0 && blocks == 0 && filled == 0 {
                     format!("there is no HDU {index}; the file has {index}")
+                } else if index == 0 && blocks == 0 && !block[..filled].starts_with(b"SIMPLE  =") {
+                    "the file is not a FITS file: it does not start with SIMPLE".to_owned()
                 } else {
                     "the file ends inside a FITS header".to_owned()
                 },

@@ -135,10 +135,15 @@ fn integers_read_as_stored_or_shifted_and_floats_scale_as_astropy_does() {
 
 #[test]
 fn what_is_not_fits_is_invalid_data() {
-    let cases: [(&str, Vec<u8>, &str); 3] = [
+    let cases: [(&str, Vec<u8>, &str); 4] = [
         (
             "text",
             b"1.5 2.5\n".to_vec(),
+            "the file is not a FITS file: it does not start with SIMPLE",
+        ),
+        (
+            "short",
+            b"SIMPLE  =                    T".to_vec(),
             "the file ends inside a FITS header",
         ),
         (
