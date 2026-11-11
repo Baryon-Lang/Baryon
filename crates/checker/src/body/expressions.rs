@@ -288,6 +288,9 @@ impl<'db> Body<'db> {
                 Some("`None` in a subscript adds a dimension of length 1 to an array"),
             );
         }
+        if let Some(chosen) = self.selection(node, base, &indices) {
+            return chosen;
+        }
         let unknown = self.lowerer.unknown();
         match (base.kind(self.db), indices.as_slice()) {
             (TypeKind::List(_), [_]) if sliced => base,

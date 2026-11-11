@@ -306,6 +306,7 @@ mod patterns;
 mod process;
 mod random;
 mod reductions;
+mod selection;
 mod slices;
 mod statements;
 mod statistics;
