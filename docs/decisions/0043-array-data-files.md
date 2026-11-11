@@ -57,9 +57,10 @@ Two homes were considered:
    order. `Array.load(path)` takes the element type and rank from the context, as `loadtxt`
    does, defaulting to `f64`, and raises `OSError` with the kind `INVALID_DATA` when the file
    holds another type or rank, where NumPy would return whatever the file holds. It reads files
-   NumPy writes in version 1.0, 2.0 and 3.0, little-endian, in row-major order; anything else (Fortran order, big-endian,
-   object arrays, `.npz`) raises the same `OSError`, saying what it found. It is the error
-   `Array.fromfile` raises for a file too short for what was asked (Collins, 2026-11-11).
+   NumPy writes in version 1.0, 2.0 and 3.0, little-endian, in row-major order; anything else
+   (Fortran order, big-endian, object arrays, `.npz`) raises the same `OSError`, saying what it
+   found. It is the error `Array.fromfile` raises for a file too short for what was asked
+   (Collins, 2026-11-11).
 6. **Written in Baryon where Baryon can say it.** `loadtxt` and `savetxt` are Baryon source in
    the standard library ([decision 0038](0038-standard-library-in-baryon.md)), built on `open`,
    `for line in f`, `split` and f-strings. `.npy` needs bytes, which Baryon has no type for
