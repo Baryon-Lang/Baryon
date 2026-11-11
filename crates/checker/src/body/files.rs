@@ -1,5 +1,5 @@
 //! Text files (decision 0036, parts 3 and 4): `open(path, mode)`, the methods of the `File` it
-//! returns, and `with open(...) as f:`.
+//! returns, `with open(...) as f:` and `for line in f:`.
 //!
 //! Every one of them can fail with `OSError`, the class the standard library's own source
 //! defines (decision 0038), so each has the type `Raises[T, OSError]` and its error is handled
@@ -9,9 +9,8 @@
 
 use super::Body;
 use super::calls::Arguments;
-use database::LIBRARY_ROOT;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Call, Callee, Integer, Key, Nominal, Primitive, StandardType, Type, TypeKind};
+use types::{Call, Callee, Integer, Key, Primitive, StandardType, Type, TypeKind};
 
 /// The modes `open` takes, each with the number the `mir` call passes: read, write, append and
 /// create (decision 0036, part 4).
@@ -34,43 +33,7 @@ pub(crate) fn literal(tree: &syntax::SyntaxTree, text: &str, node: NodeId) -> Op
 impl<'db> Body<'db> {
     /// `Raises[value, OSError]`.
     fn raises_os_error(&mut self, node: NodeId, value: Type<'db>) -> Type<'db> {
-        let Some(error) = self.os_error() else {
-            return self.lowerer.error(
-                node,
-                "`OSError` is missing from the standard library",
-                "cannot be typed",
-                Some("the compiler adds the library's files to every package (decision 0038)"),
-            );
-        };
-        Type::new(
-            self.db,
-            TypeKind::Fallible {
-                value,
-                errors: vec![error],
-            },
-        )
-    }
-
-    /// The type `OSError`, the class `<std>/builtins.byn` defines, when the package has that
-    /// file.
-    pub(super) fn os_error(&self) -> Option<Type<'db>> {
-        let file = database::modules(self.db, self.lowerer.package).library("builtins")?;
-        debug_assert!(file.source(self.db).name().starts_with(LIBRARY_ROOT));
-        let tree = self.db.parse(file).tree();
-        let text = file.source(self.db).text();
-        let name = tree
-            .children_with(tree.root(), Role::Body)
-            .filter(|&statement| tree.kind(statement) == SyntaxKind::ClassDefinition)
-            .filter_map(|class| tree.child(class, Role::Name))
-            .find(|&name| tree.text(name, text) == "OSError")?;
-        Some(Type::new(
-            self.db,
-            TypeKind::Struct(Nominal {
-                file,
-                name,
-                arguments: Vec::new(),
-            }),
-        ))
+        self.raises_library_error(node, value, "OSError")
     }
 
     /// `open(path)` or `open(path, mode)`, the mode positional or by keyword, with an optional
@@ -239,6 +202,24 @@ impl<'db> Body<'db> {
             }
         };
         self.raises_os_error(node, value)
+    }
+
+    /// `for line in file:` or a comprehension's `for line in file`, where `statement` is the
+    /// loop or the clause and `iterator` what it goes over. When `iterator` is a `File`, each
+    /// pass reads the next line as `readline()` does, so the loop changes the file and can fail
+    /// with `OSError`, recorded at `statement`. Returns whether `iterator` is a `File`.
+    pub(super) fn file_loop(&mut self, statement: NodeId, iterator: NodeId) -> bool {
+        let is_file = matches!(
+            self.typed.expression(iterator).map(|ty| ty.kind(self.db)),
+            Some(TypeKind::Standard(StandardType::File))
+        );
+        if is_file {
+            self.change(iterator);
+            let none = Type::new(self.db, TypeKind::None);
+            let read = self.raises_os_error(statement, none);
+            self.fallible_at(statement, read, "reading a line of the file can fail with");
+        }
+        is_file
     }
 
     /// Records the receiver `value`, of the built-in type `base`, as used by the method `method`:

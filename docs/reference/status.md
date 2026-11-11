@@ -24,9 +24,10 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-10, when text files, `open`, the `File` methods
-and `with open(...) as f`, began to build. Before that, the same day, `OSError`, `os.ErrorKind`,
-unions of structs and, before them, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches lowering or the backend something new
+This page was last brought up to date on 2026-11-11, when `for line in f` over a text file and,
+before it, `int(text)` and `float(text)` began to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
+`with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
+`sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches lowering or the backend something new
 updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
@@ -75,7 +76,7 @@ checks what it prints.
 | Every integer type, `f32`, `f64` and `bool`, with Python's number mixing, `//` and `%` | |
 | [Complex numbers](types.md#complex-numbers) `complex64` and `complex128`: arithmetic, `==`, `real`, `imag`, `conjugate()`, `abs`, `complex(re, im)`, `print`, and f-strings with format specifications | `a.sum()` of a complex array; complex numbers in `prange` reductions and `accumulate=`; the `cmath` module (roadmap idea I.37) |
 | Conversions that panic when the value does not fit | |
-| `str`: literals, f-strings, `+`, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len`; [indexing and slicing](types.md#indexing-slicing-and-methods) by character; `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower` and `upper` | `str`'s other methods, such as `count`, `rfind` and `isdigit`; `split` with `maxsplit`, `find` with `start` and `end`, and `startswith` of a tuple |
+| `str`: literals, f-strings, `+`, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len`; [indexing and slicing](types.md#indexing-slicing-and-methods) by character; `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower` and `upper`; `int(text)` and `float(text)`, which raise `ValueError` | `str`'s other methods, such as `count`, `rfind` and `isdigit`; `split` with `maxsplit`, `find` with `start` and `end`, and `startswith` of a tuple |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
 | `T \| None`, with every narrowing rule | |
 | Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs and their methods, each method compiled once per type its struct is used at | |
@@ -129,9 +130,10 @@ out of a function, including through a `raise`.
 Everything in this chapter builds: error types, `Raises`, `raise`, errors passed on through
 callers, `try` with `except` naming one type or a tuple of them, `as`, bare `raise`, `main`
 ending with an error, and every panic in the table, with its message, location and backtrace.
-`ValueError` and `OSError` build like a program's own error types; `int(text)` and `float(text)`,
-which raise `ValueError`, are not built yet (roadmap 1.13.12). The one exception is the overflow panic: it names the operator but not yet its operands (roadmap
-idea I.18), and [Types](#types) lists the operations it does not check yet.
+`ValueError` and `OSError` build like a program's own error types, and so do `int(text)` and
+`float(text)`, which raise `ValueError`. The one exception is the overflow panic: it names the
+operator but not yet its operands (roadmap idea I.18), and [Types](#types) lists the operations
+it does not check yet.
 
 ## Parallel and vector loops
 
@@ -147,7 +149,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`sys.argv`](files-and-processes.md#command-line-arguments), a new `list[str]` at each read; [`sys.exit()` and `sys.exit(status)`](files-and-processes.md#exit-status), which panics outside 0 to 255; [`os.getenv` and `os.environ.get`](files-and-processes.md#environment-variables), with and without a default; [`OSError` and `os.ErrorKind`](files-and-processes.md#errors-oserror), built, raised, caught and printed; [text files](files-and-processes.md#text-files): `open` in the modes `"r"`, `"w"`, `"a"` and `"x"`, `read`, `readline`, `readlines`, `write`, `flush`, `close` and `with open(...) as f` | `os.environ[name]`, `in` and `copy()`; `for line in f`; the standard streams and `input`; array files; `pathlib` and directories; `subprocess.run` (roadmap 1.13.6) |
+| [`sys.argv`](files-and-processes.md#command-line-arguments), a new `list[str]` at each read; [`sys.exit()` and `sys.exit(status)`](files-and-processes.md#exit-status), which panics outside 0 to 255; [`os.getenv` and `os.environ.get`](files-and-processes.md#environment-variables), with and without a default; [`OSError` and `os.ErrorKind`](files-and-processes.md#errors-oserror), built, raised, caught and printed; [text files](files-and-processes.md#text-files): `open` in the modes `"r"`, `"w"`, `"a"` and `"x"`, `read`, `readline`, `readlines`, `write`, `flush`, `close`, `with open(...) as f` and `for line in f`, in a loop or a comprehension | `os.environ[name]`, `in` and `copy()`; the standard streams and `input`; array files; `pathlib` and directories; `subprocess.run` (roadmap 1.13.6) |
 
 ## Tests
 

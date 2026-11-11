@@ -56,6 +56,12 @@ impl<'db> Builder<'db> {
             return self.iterator_loop(statement, target, iterator, pass);
         }
         let ty = self.ty(iterator);
+        if matches!(
+            ty.kind(self.db),
+            TypeKind::Standard(types::StandardType::File)
+        ) {
+            return self.file_loop(statement, target, iterator, pass);
+        }
         let element = match ty.kind(self.db) {
             TypeKind::Array { element, rank: 1 } | TypeKind::List(element) => *element,
             TypeKind::Fixed { element, shape } if shape.rank() == 1 => *element,

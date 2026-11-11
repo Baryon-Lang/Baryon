@@ -14,9 +14,11 @@
 //!
 //! Only a local variable or an `Owned` parameter can be moved. A read-only or `InOut` parameter
 //! belongs to the caller, so moving it, including returning it, is an error that suggests a
-//! copy. Moving a field out moves the whole struct; moving an element out of an array or a list
-//! is an error, and so is keeping a slice: a slice is a view of its array, a borrow, which can
-//! be passed to a call or assigned to but not stored.
+//! copy. Moving a field out moves the whole struct. Moving an element out of an array or a
+//! list is an error, as is moving a field out of an element, `people[0].name`: the container
+//! still owns the element and would free it a second time. Keeping a slice is an error too: a
+//! slice is a view of its array, a borrow, which can be passed to a call or assigned to but not
+//! stored.
 //!
 //! A variable moved on some path counts as moved after the paths join, and one moved inside a
 //! loop, and not assigned again before the loop's next pass, is reported at the move.
@@ -62,6 +64,9 @@ impl<'db> Body<'db> {
         match self.tree.kind(node) {
             SyntaxKind::Name | SyntaxKind::Attribute if self.borrowed_by_loop(node, "moved") => {}
             SyntaxKind::Name => self.move_variable(node, node),
+            // A field of an element, `people[0].name`, is part of the element: moving it out
+            // is moving out of an element, the error below.
+            SyntaxKind::Attribute if self.inside_element(node) => self.moved_out_of_element(node),
             SyntaxKind::Attribute => {
                 // Moving a field out moves the whole struct: one with a hole cannot be used.
                 if let Some(root) = self.place_root(node) {
@@ -94,20 +99,39 @@ impl<'db> Body<'db> {
                     Some(&hint),
                 );
             }
-            SyntaxKind::Subscript => {
-                let hint = format!(
-                    "move a copy instead: `{}.copy()`",
-                    self.tree.text(node, self.text)
-                );
-                self.lowerer.error(
-                    node,
-                    "a value cannot be moved out of an element",
-                    "moved out of an element",
-                    Some(&hint),
-                );
-            }
+            SyntaxKind::Subscript => self.moved_out_of_element(node),
             _ => {}
         }
+    }
+
+    /// Whether the field access `node` reads a field of an element, as `people[0].name` and
+    /// `grid[i].cell.label` do: whether a subscript sits between it and its variable.
+    fn inside_element(&self, node: NodeId) -> bool {
+        let mut place = node;
+        while let Some(value) = self.tree.child(place, Role::Value) {
+            match self.tree.kind(value) {
+                SyntaxKind::Subscript => return true,
+                SyntaxKind::Attribute => place = value,
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    /// Reports `node`, an element or a field of one, moved out of its container. The container
+    /// still owns the element and frees it, so the move would free it twice; a copy is the
+    /// way to keep it.
+    fn moved_out_of_element(&mut self, node: NodeId) {
+        let hint = format!(
+            "move a copy instead: `{}.copy()`",
+            self.tree.text(node, self.text)
+        );
+        self.lowerer.error(
+            node,
+            "a value cannot be moved out of an element",
+            "moved out of an element",
+            Some(&hint),
+        );
     }
 
     /// Whether the subscript `node` is a slice, `a[1:n]` or `grid[:, 0]`: a view of its

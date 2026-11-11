@@ -212,21 +212,38 @@ fn(_1: f64, _2: i32) -> f64 {
     );
 }
 
-/// `float(text)` parses a string, which no backend does yet, so it is reported. Before this,
-/// the string constant was stored into the float, and clang refused the program.
+/// `float(text)` reads a number from a string (decision 0037): one runtime call with an error
+/// edge, whose `ValueError` passes on to the caller. Before roadmap 1.13.12 it was reported as
+/// not lowered; before that, the string constant was stored into the float, and clang refused
+/// the program.
 #[test]
-fn a_string_converted_to_a_number_is_reported() {
+fn a_string_converted_to_a_number_is_a_call_that_can_fail() {
     let program = "\
-        def parse() -> f64:\n\
+        def parse() -> Raises[f64, ValueError]:\n\
         \x20   return float(\"nan\")\n";
     assert_eq!(
         lower(program, "parse"),
         "\
-error: lowering does not handle converting a `str` to `f64` yet
- --> main.byn:2:12
-  |
-2 |     return float(\"nan\")
-  |            ^^^^^^^^^^^^ not lowered yet
-  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+fn() -> f64 {
+    let _0: f64; // return
+    let _1: str;
+    let _2: Raises[None, ValueError];
+
+    bb0: {
+        _1 = \"nan\";
+        _0 = call float(_1) -> [return: bb2, error _2: bb1];
+    }
+
+    bb1: {
+        drop(_1);
+        raise move _2.error[0];
+    }
+
+    bb2: {
+        drop(_1);
+        return;
+    }
+}
+"
     );
 }

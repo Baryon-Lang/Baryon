@@ -6,7 +6,7 @@ use super::calls::Arguments;
 use super::{Body, numbers, relations};
 use database::Definition;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Call, Callee, Integer, Key, Primitive, Type, TypeKind};
+use types::{Call, Callee, Float, Integer, Key, Primitive, Type, TypeKind};
 
 impl<'db> Body<'db> {
     /// A call to one of the language's names: a number conversion such as `f64(n)`, or a
@@ -32,6 +32,9 @@ impl<'db> Body<'db> {
                 return self
                     .lowerer
                     .error(node, &message, "wrong number of arguments", None);
+            }
+            if matches!(types[0].kind(self.db), TypeKind::Str) {
+                return self.number_from_text(node, name, target);
             }
             return primitive(self.db, target);
         }
@@ -87,6 +90,26 @@ impl<'db> Body<'db> {
             }
             _ => self.lowerer.unknown(),
         }
+    }
+
+    /// `int(text)` or `float(text)` (decision 0037): `Raises[int, ValueError]` or
+    /// `Raises[float, ValueError]`, since text may not be a number. Another number type, such as
+    /// `f32(text)`, is an error that names the two that read text.
+    fn number_from_text(&mut self, node: NodeId, name: &str, target: Primitive) -> Type<'db> {
+        if !matches!(
+            target,
+            Primitive::Integer(Integer::I64) | Primitive::Float(Float::F64)
+        ) {
+            let message = format!("`{name}(...)` cannot read a number from a `str`");
+            return self.lowerer.error(
+                node,
+                &message,
+                "not `int` or `float`",
+                Some("read it with `int(text)` or `float(text)`, then convert the number"),
+            );
+        }
+        let value = Type::new(self.db, TypeKind::Primitive(target));
+        self.raises_library_error(node, value, "ValueError")
     }
 
     /// Checks `print`'s keyword arguments, whose types are `types`: only `sep=` and `end=`, each
@@ -317,7 +340,11 @@ impl<'db> Body<'db> {
         let mut receiver = None;
         let callee = match (self.tree.kind(function), self.lowerer.definition(function)) {
             (_, Some(Definition::Builtin(name))) if Primitive::from_name(name).is_some() => {
-                Callee::Conversion(ty)
+                // `int(text)` has the type `Raises[int, ValueError]`; it still builds an `int`.
+                match ty.kind(self.db) {
+                    TypeKind::Fallible { value, .. } => Callee::Conversion(*value),
+                    _ => Callee::Conversion(ty),
+                }
             }
             (_, Some(Definition::Builtin(name))) => Callee::Builtin((*name).to_owned()),
             (
