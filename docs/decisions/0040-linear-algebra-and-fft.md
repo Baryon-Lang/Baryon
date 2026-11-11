@@ -1,6 +1,6 @@
 # 0040. `linalg` and `fft` follow NumPy and are written in Baryon
 
-Status: Accepted
+Status: Accepted; amendment for `eig` and `svd` proposed
 Date: 2026-11-11
 Roadmap: 3.10
 
@@ -86,8 +86,7 @@ sign, which NumPy does not fix either. `fft` matches NumPy's pocketfft to within
 the last place relative to the largest magnitude.
 
 The native code fixes its order of operations, so a Baryon result has the same bits on every
-machine and every run, as `sum` and `dot` do. The opt-in BLAS and the LAPACK functions give up that
-guarantee, as NumPy does, and their reference entries say so.
+machine and every run, as `sum` and `dot` do.
 
 ### Code: Baryon library files
 
@@ -97,15 +96,22 @@ describes. They are ordinary Baryon: loops over arrays, compiled with the progra
 vectorized like its own code. Where they are slower than Fortran, the gap is a gap in the compiler,
 and goes to roadmap 3.1 to 3.3, not around them. The matrix product stays the operator `@`.
 
-### LAPACK and BLAS: linked only when used
+### `eig` and `svd`: native too, LAPACK only if evidence asks
 
-`eig` and `svd` call LAPACK's `dgeev` and `dgesdd`: the system's `liblapack` on Linux and the
-Accelerate framework on macOS. The driver links LAPACK only into a program that calls one of them,
-so every other program builds and runs with no LAPACK installed.
+Amended (see the end of this record): `eig` and `svd` are written in Baryon like the rest of
+`linalg`, not called from LAPACK. `eig` balances, reduces to Hessenberg form and runs the shifted
+double QR iteration (EISPACK's `balanc`, `orthes` and `hqr2`); `svd` uses one-sided Jacobi
+rotations. Both are tested against results recorded from NumPy on matrices chosen to break them.
+No program needs LAPACK installed. If a case turns up that the native code gets wrong and LAPACK
+gets right, LAPACK's `dgeev` and `dgesdd` can replace them behind the same functions, linked only
+into a program that calls them.
+
+### BLAS: an opt-in
 
 The opt-in BLAS is the build option `--blas`: `baryon build --blas` and `baryon run --blas` make
 `@` of `f64` and `f32` matrices call `cblas_dgemm` and `cblas_sgemm` from OpenBLAS on Linux and
-Accelerate on macOS. Without it, `@` is compiled code with a fixed order.
+Accelerate on macOS. Without it, `@` is compiled code with a fixed order. The opt-in gives up the
+same-bits guarantee, as NumPy does, and its reference entry says so.
 
 ## Alternatives
 
@@ -125,5 +131,16 @@ Accelerate on macOS. Without it, `@` is compiled code with a fixed order.
   function needs something the language cannot express yet.
 - A caller of `solve`, `inv`, `cholesky` and the decompositions writes `Raises[..., LinAlgError]` or
   a `try`, as for any fallible call.
-- Programs that call `eig` or `svd` need LAPACK on Linux (`liblapack-dev`); macOS has Accelerate.
+- No program needs LAPACK installed, `eig` and `svd` included.
 - `--blas` is the first build option after `--release`.
+
+## Amendment, 2026-11-11: `eig` and `svd` in Baryon
+
+The first version of this record called LAPACK's `dgeev` and `dgesdd` for `eig` and `svd`. Calling
+them needs compiler plumbing that does not exist yet (built-ins in `mir`, a foreign call in the
+runtime, linking a library only when a program calls it) and LAPACK on every Linux machine and CI
+runner that builds such a program. The native versions took one pull request with no compiler
+change, and match NumPy on the hard cases the tests list: Jordan blocks, badly scaled and graded
+matrices, nearly repeated and complex conjugate eigenvalues, companion matrices, zero and
+rank-deficient matrices. They are slower than LAPACK on large matrices, about ten times for an
+`svd` of 300 × 300, a gap for roadmap 3.1 to 3.3 to close as for the rest of `linalg`.
