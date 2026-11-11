@@ -31,13 +31,12 @@ impl<'db> Function<'_, '_, 'db> {
                 item,
                 type_arguments,
             } => (item, type_arguments),
-            Callee::Builtin(Builtin::File(method)) => {
-                return self.file_call(*method, arguments, destination, target, error);
-            }
-            Callee::Builtin(Builtin::Text(
-                method @ (TextMethod::ParseInt | TextMethod::ParseFloat),
-            )) => {
-                return self.parse_number(*method, arguments, destination, target, error);
+            Callee::Builtin(
+                builtin @ (Builtin::File(_)
+                | Builtin::Run
+                | Builtin::Text(TextMethod::ParseInt | TextMethod::ParseFloat)),
+            ) => {
+                return self.raising_builtin(*builtin, arguments, destination, target, error);
             }
             Callee::Builtin(builtin) => {
                 return self.builtin(*builtin, arguments, destination, target);
@@ -128,6 +127,27 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(())
     }
 
+    /// Writes a call of `builtin`, one of those that can fail: a file operation,
+    /// `subprocess.run`, or `int(text)` and `float(text)`. Each is a call of the runtime that
+    /// raises through `error`, the call's error edge.
+    fn raising_builtin(
+        &mut self,
+        builtin: Builtin,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+        target: BlockId,
+        error: Option<&ErrorEdge>,
+    ) -> Result<(), Unsupported> {
+        match builtin {
+            Builtin::File(method) => self.file_call(method, arguments, destination, target, error),
+            Builtin::Run => self.subprocess_run(arguments, destination, target, error),
+            Builtin::Text(method) => {
+                self.parse_number(method, arguments, destination, target, error)
+            }
+            _ => Err(Unsupported::new(builtin.name())),
+        }
+    }
+
     /// Writes a call of the built-in function `builtin`, each of which the backend expands in
     /// place or turns into a call of the runtime, rather than a call of a compiled function.
     fn builtin(
@@ -161,10 +181,10 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Exit => self.system_exit(arguments),
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
-            // Each can fail, so `call` sends it to `file_call` with its error edge.
-            Builtin::File(method) => Err(Unsupported::new(method.name())),
-            // Not built by this backend yet: the calls of the runtime follow the runtime's part.
-            Builtin::Path(_) | Builtin::EnvironmentEntries | Builtin::Run => {
+            // `File` and `Run` can fail, so `call` sends them to `raising_builtin` with their error
+            // edge. `Path` and `EnvironmentEntries` are not built by this backend yet: the calls
+            // of the runtime follow the runtime's part.
+            Builtin::File(_) | Builtin::Run | Builtin::Path(_) | Builtin::EnvironmentEntries => {
                 Err(Unsupported::new(builtin.name()))
             }
             Builtin::ArrayFile(method) => Err(Unsupported::new(method.name())),
