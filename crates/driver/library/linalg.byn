@@ -1,0 +1,133 @@
+"""The `linalg` module: linear algebra written in Baryon (decision 0040), with NumPy's names.
+
+Every function fixes its order of operations, so a result has the same bits on every machine.
+"""
+
+from math import fabs
+
+
+class LinAlgError(Exception):
+    """A matrix that a linear algebra function cannot solve or factor, as NumPy's
+    `numpy.linalg.LinAlgError` (decision 0040). `message` is NumPy's text, such as
+    "Singular matrix".
+    """
+
+    message: str
+
+
+def lu_factor(a: Array[f64, 2]) -> Raises[tuple[Array[f64, 2], Array[int, 1]], LinAlgError]:
+    """The LU factors of a square matrix `a` with partial pivoting, as `scipy.linalg.lu_factor`.
+
+    Returns `(lu, piv)`: `lu` holds the unit lower triangle `L` below its diagonal and the upper
+    triangle `U` on and above it, and row `k` was swapped with row `piv[k]` at step `k`, so
+    `a[perm] == L @ U` for the permutation the swaps make. The order of operations is LAPACK's
+    unblocked `getf2`: about 2n³/3 multiply-adds. Raises `LinAlgError` when a pivot is exactly
+    zero, where SciPy only warns; panics when `a` is not square.
+    """
+    n = a.shape[0]
+    assert a.shape[1] == n, "lu_factor needs a square matrix"
+    lu = a.copy()
+    piv = Array.zeros(n, int)
+    for k in range(n):
+        pivot = k
+        largest = fabs(lu[k, k])
+        for i in range(k + 1, n):
+            if fabs(lu[i, k]) > largest:
+                largest = fabs(lu[i, k])
+                pivot = i
+        if largest == 0.0:
+            raise LinAlgError("Singular matrix")
+        piv[k] = pivot
+        if pivot != k:
+            for j in range(n):
+                swap = lu[k, j]
+                lu[k, j] = lu[pivot, j]
+                lu[pivot, j] = swap
+        for i in range(k + 1, n):
+            factor = lu[i, k] / lu[k, k]
+            lu[i, k] = factor
+            for j in range(k + 1, n):
+                lu[i, j] -= factor * lu[k, j]
+    return lu, piv
+
+
+def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 1]) -> Array[f64, 1]:
+    """The vector `x` with `a @ x == b`, from `lu_factor(a)`'s `lu` and `piv`, as
+    `scipy.linalg.lu_solve((lu, piv), b)`.
+
+    Swaps `b`'s rows as `piv` says, then solves with `L` forward and `U` backward: about 2n²
+    multiply-adds, so factoring once and solving many times saves the n³ work. Panics when the
+    lengths do not fit.
+    """
+    n = lu.shape[0]
+    assert lu.shape[1] == n, "lu_solve needs a square lu"
+    assert len(piv) == n, "lu_solve needs piv as long as lu has rows"
+    assert len(b) == n, "lu_solve needs b as long as lu has rows"
+    x = b.copy()
+    for k in range(n):
+        pivot = piv[k]
+        if pivot != k:
+            swap = x[k]
+            x[k] = x[pivot]
+            x[pivot] = swap
+    for i in range(n):
+        total = x[i]
+        for k in range(i):
+            total -= lu[i, k] * x[k]
+        x[i] = total
+    for k in range(n - 1, -1, -1):
+        total = x[k]
+        for j in range(k + 1, n):
+            total -= lu[k, j] * x[j]
+        x[k] = total / lu[k, k]
+    return x
+
+
+def solve(a: Array[f64, 2], b: Array[f64, 1]) -> Raises[Array[f64, 1], LinAlgError]:
+    """The vector `x` with `a @ x == b`, for a square matrix `a`, as `numpy.linalg.solve`.
+
+    `lu_factor` then `lu_solve`, LAPACK's `gesv` order unblocked: about 2n³/3 multiply-adds and
+    one n × n copy of `a`. Raises `LinAlgError` when a pivot is exactly zero; panics when `a` is
+    not square or `b`'s length is not `a`'s.
+    """
+    assert len(b) == a.shape[0], "solve needs b as long as a has rows"
+    lu, piv = lu_factor(a)
+    return lu_solve(lu, piv, b)
+
+
+def det(a: Array[f64, 2]) -> f64:
+    """The determinant of a square matrix `a`, as `numpy.linalg.det`: the product of `U`'s
+    diagonal from `lu_factor`, negated once for each row swap. A singular matrix gives `0.0`.
+
+    About 2n³/3 multiply-adds. Panics when `a` is not square.
+    """
+    try:
+        lu, piv = lu_factor(a)
+    except LinAlgError:
+        return 0.0
+    result = 1.0
+    for k in range(len(piv)):
+        result *= lu[k, k]
+        if piv[k] != k:
+            result = -result
+    return result
+
+
+def inv(a: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]:
+    """The inverse of a square matrix `a`, as `numpy.linalg.inv`: `lu_solve` of each column of
+    the identity. Prefer `solve(a, b)` to `inv(a) @ b`, which costs more and is less accurate.
+
+    About 8n³/3 multiply-adds. Raises `LinAlgError` when `a` is singular; panics when `a` is not
+    square.
+    """
+    n = a.shape[0]
+    lu, piv = lu_factor(a)
+    result = Array.zeros((n, n))
+    column = Array.zeros(n)
+    for j in range(n):
+        column.fill(0.0)
+        column[j] = 1.0
+        x = lu_solve(lu, piv, column)
+        for i in range(n):
+            result[i, j] = x[i]
+    return result

@@ -32,6 +32,7 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Errors and panics](errors.md) | `Raises`, `raise`, `try`/`except`, and failures that stop the program |
 | [Parallel and vector loops](parallel-loops.md) | `prange`, reductions, the disjoint-write rule, adding into shared arrays with `accumulate=`, and `simd` |
 | [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |
+| [Linear algebra and FFT](linear-algebra.md) | `linalg` and `fft`: solving systems, factoring matrices and Fourier transforms, with NumPy's names, and `LinAlgError` |
 | [Files and processes](files-and-processes.md) | Command-line arguments, the exit status and environment variables: `sys` and `os` |
 | [Differences from Python](differences-from-python.md) | Every place a Python programmer will be surprised, with the reason |
 | [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |
