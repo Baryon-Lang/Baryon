@@ -26,6 +26,9 @@ impl<'db> Builder<'db> {
         if matches!(&call.callee, types::Callee::Builtin(name) if name == "subprocess.run") {
             return self.subprocess_run(place, &given, node);
         }
+        if matches!(&call.callee, types::Callee::Builtin(name) if name == "Array.fromfile") {
+            return self.array_fromfile(place, &given, node);
+        }
         let Some(arguments) = given.into_iter().collect::<Option<Vec<NodeId>>>() else {
             return self.unsupported(node, "calls that leave out a defaulted argument");
         };

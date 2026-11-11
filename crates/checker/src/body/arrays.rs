@@ -4,6 +4,7 @@
 //! - `Array.zeros(shape)`, `Array.ones(shape)` and `Array.fill(shape, value)` create an `Array`
 //!   whose rank is the length of the `shape` tuple. Its element type is the one the context
 //!   needs, else the `dtype` argument, else `f64` (for `fill`, the value's type).
+//! - `Array.fromfile(path, dtype)` and `a.tofile(path)` are in the `array_files` module.
 //! - `Vec3.zeros()`, `Vec3.ones()` and `Vec3.fill(value)` create a `Fixed` array an alias
 //!   names, and `Mat3((1.0, 0.0), (0.0, 1.0))` builds one from nested tuples of its elements.
 //! - Arithmetic on arrays and the matrix product are in the `elementwise` module.
@@ -14,8 +15,11 @@ use crate::forms::is_copy;
 use syntax::{Flags, NodeId, Role, SyntaxKind};
 use types::{Float, Integer, Primitive, Type, TypeKind};
 
-/// The methods version 0 defines on arrays, for messages.
-const ARRAY_METHODS: &str = "`copy`, `sum`, `min`, `max`, `dot`, `round` and `fill`";
+/// The methods version 0 defines on a `Fixed` array, for messages.
+const FIXED_METHODS: &str = "`copy`, `sum`, `min`, `max`, `dot`, `round` and `fill`";
+
+/// The methods version 0 defines on an `Array`, for messages.
+const ARRAY_METHODS: &str = "`copy`, `sum`, `min`, `max`, `dot`, `round`, `fill` and `tofile`";
 
 impl<'db> Body<'db> {
     /// `Array.zeros(shape)`, `Array.ones(shape)`, `Array.fill(shape, value)`, each with an
@@ -27,6 +31,9 @@ impl<'db> Body<'db> {
         arguments: &Arguments,
         expected: Option<Type<'db>>,
     ) -> Type<'db> {
+        if name == "fromfile" {
+            return self.array_fromfile(node, arguments, expected);
+        }
         if !matches!(name, "zeros" | "ones" | "fill") {
             self.untyped(arguments);
             let message = format!("`Array` has no function `{name}`");
@@ -34,7 +41,7 @@ impl<'db> Body<'db> {
                 node,
                 &message,
                 "not defined",
-                Some("arrays are created with `Array.zeros`, `Array.ones`, `Array.fill` or `Array(values)`"),
+                Some("arrays are created with `Array.zeros`, `Array.ones`, `Array.fill`, `Array(values)` or `Array.fromfile`"),
             );
         }
         let mut positional = arguments.positional.iter().copied();
@@ -300,6 +307,10 @@ impl<'db> Body<'db> {
             }
             _ => return None,
         };
+        let is_array = matches!(base.kind(self.db), TypeKind::Array { .. });
+        if name == "tofile" && is_array {
+            return Some(self.array_tofile(node, arguments));
+        }
         Some(match (name, arguments.positional.as_slice()) {
             ("copy" | "round", []) => base,
             ("sum" | "min" | "max", []) => element,
@@ -328,7 +339,12 @@ impl<'db> Body<'db> {
                     "`{}` has no method `{name}` taking these arguments",
                     self.show(base)
                 );
-                let hint = format!("version 0 defines {ARRAY_METHODS}");
+                let methods = if is_array {
+                    ARRAY_METHODS
+                } else {
+                    FIXED_METHODS
+                };
+                let hint = format!("version 0 defines {methods}");
                 self.lowerer
                     .error(node, &message, "not defined", Some(&hint))
             }

@@ -46,6 +46,7 @@ impl<'db> Builder<'db> {
             ("round", [array]) if fixed => self.fixed_round(place, *array, node),
             ("round", [array]) => self.array_round(place, *array, node),
             ("fill", [array, value]) => self.array_fill(place, (*array, *value), node),
+            ("tofile", [array, path]) if !fixed => self.array_tofile(place, *array, *path, node),
             _ => self.unsupported(node, &format!("the array method `{method}`")),
         }
     }
