@@ -44,7 +44,9 @@ tuple `(lu, piv)`.
 ### Failures: shapes panic, singular matrices raise `LinAlgError`
 
 Shapes that do not fit, such as a matrix that is not square or a right-hand side of the wrong
-length, are bugs, and panic with both shapes, as whole-array arithmetic does.
+length, are bugs, and panic, as mismatched shapes in whole-array arithmetic do. The message says
+what does not fit, such as `solve needs b as long as a has rows`; it names the lengths once
+`assert` can format its message, which today it prints as written.
 
 A matrix the algorithm cannot handle is an expected failure: a stiffness matrix with a loose
 node, a covariance matrix that rounding made indefinite. It raises `linalg.LinAlgError`, as
