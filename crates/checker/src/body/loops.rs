@@ -43,6 +43,7 @@ impl<'db> Body<'db> {
             Some(iterator) => self.iteration(iterator),
             None => self.lowerer.unknown(),
         };
+        let lines = iterator.is_some_and(|iterator| self.file_loop(statement, iterator));
         let collection = iterator
             .map(|iterator| self.dict_view_receiver(iterator).unwrap_or(iterator))
             .filter(|&collection| self.place_root(collection).is_some());
@@ -55,7 +56,13 @@ impl<'db> Body<'db> {
             if let Some(target) = target {
                 body.bind(target, element, None);
             }
-            let borrowed = body.borrowed_elements(target, element);
+            // A line read from a file is a new `str` the loop variable owns, so it borrows
+            // nothing.
+            let borrowed = if lines {
+                Vec::new()
+            } else {
+                body.borrowed_elements(target, element)
+            };
             body.loops.push(Loop {
                 collection,
                 elements: borrowed.iter().map(|&(binding, _)| binding).collect(),
@@ -113,6 +120,7 @@ impl<'db> Body<'db> {
         if let Some(iterator) = iterator.filter(|&iterator| self.is_prange(iterator)) {
             self.prange_in_comprehension(iterator);
         }
+        let lines = iterator.is_some_and(|iterator| self.file_loop(clause, iterator));
         let collection = iterator
             .map(|iterator| self.dict_view_receiver(iterator).unwrap_or(iterator))
             .filter(|&collection| self.place_root(collection).is_some());
@@ -122,13 +130,14 @@ impl<'db> Body<'db> {
             if let Some(target) = target {
                 body.bind(target, element, None);
             }
+            let borrowed = if lines {
+                Vec::new()
+            } else {
+                body.borrowed_elements(target, element)
+            };
             body.loops.push(Loop {
                 collection,
-                elements: body
-                    .borrowed_elements(target, element)
-                    .into_iter()
-                    .map(|(binding, _)| binding)
-                    .collect(),
+                elements: borrowed.into_iter().map(|(binding, _)| binding).collect(),
             });
             let conditions: Vec<NodeId> =
                 body.tree.children_with(clause, Role::Condition).collect();
@@ -240,12 +249,24 @@ impl<'db> Body<'db> {
             )
             .with_note(if self.is_dict(collection) {
                 format!("loop over a copy instead: `for k in {collection_name}.copy():`")
+            } else if self.is_file(collection) {
+                format!(
+                    "read the lines first, then loop over them: `for line in {collection_name}.readlines():`"
+                )
             } else {
                 format!("loop over the indices instead: `for i in range(len({collection_name})):`")
             })
         };
         self.lowerer.diagnostics.push(diagnostic);
         true
+    }
+
+    /// Whether the expression `node` was typed as a `File`, whose loop reads it line by line.
+    fn is_file(&self, node: NodeId) -> bool {
+        matches!(
+            self.typed.expression(node).map(|ty| ty.kind(self.db)),
+            Some(TypeKind::Standard(types::StandardType::File))
+        )
     }
 
     /// Whether the expression `node` was typed as a `dict`, whose loops have no indices.

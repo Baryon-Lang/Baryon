@@ -1,5 +1,5 @@
 //! Text files (decision 0036, parts 3 and 4): `open(path, mode)`, the methods of the `File` it
-//! returns, and `with open(...) as f:`.
+//! returns, `with open(...) as f:` and `for line in f:`.
 //!
 //! Every one of them can fail with `OSError`, the class the standard library's own source
 //! defines (decision 0038), so each has the type `Raises[T, OSError]` and its error is handled
@@ -202,6 +202,24 @@ impl<'db> Body<'db> {
             }
         };
         self.raises_os_error(node, value)
+    }
+
+    /// `for line in file:` or a comprehension's `for line in file`, where `statement` is the
+    /// loop or the clause and `iterator` what it goes over. When `iterator` is a `File`, each
+    /// pass reads the next line as `readline()` does, so the loop changes the file and can fail
+    /// with `OSError`, recorded at `statement`. Returns whether `iterator` is a `File`.
+    pub(super) fn file_loop(&mut self, statement: NodeId, iterator: NodeId) -> bool {
+        let is_file = matches!(
+            self.typed.expression(iterator).map(|ty| ty.kind(self.db)),
+            Some(TypeKind::Standard(StandardType::File))
+        );
+        if is_file {
+            self.change(iterator);
+            let none = Type::new(self.db, TypeKind::None);
+            let read = self.raises_os_error(statement, none);
+            self.fallible_at(statement, read, "reading a line of the file can fail with");
+        }
+        is_file
     }
 
     /// Records the receiver `value`, of the built-in type `base`, as used by the method `method`:
