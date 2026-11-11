@@ -214,16 +214,50 @@ the REPL, and three external users have written something real.
 | 3.14 | File formats: CSV, Parquet, HDF5, NetCDF, FITS | 3 | 3.13 | Planned | — | — |
 | 3.15 | Plotting | 4 | 3.9 | Planned | — | — |
 | 3.16 | Statistics | 2 | 3.9 | Planned | — | — |
+| 3.18 | Special functions as SciPy's `scipy.special` has them, tested against it: the gamma, beta and error function families, Bessel functions, the Gauss hypergeometric function, elliptic integrals and orthogonal polynomials. A base library; AstroPy relies on it (Collins, 2026-11-10) | 70 | 3.9 | Planned | — | — |
+| 3.19 | Numerical integration as `scipy.integrate` has it: adaptive quadrature in QUADPACK's manner, fixed rules such as trapezoid and Simpson, and initial value problems for ordinary differential equations (RK45 and DOP853). A base library; AstroPy relies on it (Collins, 2026-11-10) | 25 | 3.9 | Planned | — | — |
+| 3.20 | Optimization and root finding as `scipy.optimize` has them: Levenberg-Marquardt least squares and curve fitting, Nelder-Mead, constrained minimization (SLSQP), and bracketing and Newton root finders. A base library; AstroPy relies on it (Collins, 2026-11-10) | 35 | 3.10 | Planned | — | — |
+| 3.21 | Interpolation as `scipy.interpolate` has it: linear, cubic and B-spline interpolation in one and two dimensions, smoothing splines, and interpolation on regular grids. A base library; AstroPy relies on it (Collins, 2026-11-10) | 25 | 3.10 | Planned | — | — |
+| 3.22 | Spatial search and image processing: a k-d tree for nearest neighbours as `scipy.spatial` has it, and `scipy.ndimage`'s filters, shifts, zooms and coordinate mapping on N-dimensional arrays. A base library; AstroPy relies on it (Collins, 2026-11-10) | 25 | 3.9, 3.10 | Planned | — | — |
+| 3.23 | Probability distributions on top of statistics (3.16): density, cumulative distribution and its inverse, and sampling for the common continuous and discrete distributions, tested against `scipy.stats`. A base library; AstroPy relies on it (Collins, 2026-11-10) | 20 | 3.16, 3.18 | Planned | — | — |
+| 3.24 | Missing values in arrays and tables, in the form D.21 settles (NumPy-style masked arrays or Arrow validity bitmaps). A base library; AstroPy relies on it (Collins, 2026-11-10) | 15 | 3.9, D.21 | Planned | — | — |
+| 3.25 | Arrays of records, fixed-width text and dates and times, as NumPy's structured dtypes, string arrays and `datetime64` provide, laid out byte for byte as file formats store them. A base library; AstroPy relies on it (Collins, 2026-11-10) | 15 | 3.9 | Planned | — | — |
+| 3.26 | Regular expressions, Python's `re` module with its syntax and matching rules, written in Baryon. A base library; AstroPy relies on it (Collins, 2026-11-10) | 45 | 1.13.12 | Planned | — | — |
+| 3.27 | Compression: deflate, zlib and gzip streams and files, written in Baryon; the file formats (3.14) need them too. A base library; AstroPy relies on it (Collins, 2026-11-10) | 25 | I.39 | Planned | — | — |
+| 3.28 | XML: a streaming parser and a writer for well-formed XML with namespaces, enough for VOTable and similar formats, in place of the expat C library. A base library; AstroPy relies on it (Collins, 2026-11-10) | 25 | 1.13.12 | Planned | — | — |
+| 3.29 | Structured text: JSON, a safe subset of YAML, and base64, as Python's `json`, `yaml.safe_load` and `base64` read and write them. A base library; AstroPy relies on it (Collins, 2026-11-10) | 15 | 1.13.12 | Planned | — | — |
+| 3.30 | Networking: an HTTP and HTTPS client and a download cache, for data that changes such as Earth orientation tables and ephemerides; how TLS is provided waits on D.22. A base library; AstroPy relies on it (Collins, 2026-11-10) | 45 | I.39, D.22 | Planned | — | — |
+| 3.31 | ERFA, the IAU's Essential Routines for Fundamental Astronomy: all 251 functions of time scales, precession, nutation, Earth rotation and star catalogue conversions written in Baryon, tested against the C library's own test suite and checked on large arrays against `pyerfa`. Needs little beyond what builds today, so it can start before the rest of Phase 3. A base library; AstroPy relies on it (Collins, 2026-11-10) | 55 | 1.13 | Planned | — | — |
+| 3.32 | World coordinate systems: the FITS WCS standard (WCS papers I to IV) for mapping pixels to sky, spectral and distortion coordinates, written in Baryon from the standard with wcslib's projection core as the reference, and header parsing by hand-written parsers rather than wcslib's generated ones. A base library; AstroPy relies on it (Collins, 2026-11-10) | 180 | 3.9, 3.14 | Planned | — | — |
 
 ## Phase 4: ecosystem and interop
 
 Ongoing. Automatic differentiation, distributed arrays, GPU offload, more targets, a package
-registry and a standalone IDE are candidates, each added here when it is planned.
+registry and a standalone IDE are candidates, each added here when it is planned. AstroBaryon,
+the astronomy library (4.2), has its own plan in the
+[AstroBaryon roadmap](docs/design/astrobaryon-roadmap.md); its rows stay here.
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
 | 3.17 | Python interop with zero-copy arrays, after Phase 3's native libraries: Baryon's own capability comes first and interop is not a way to wrap Baryon in Python (Collins, 2026-11-10) | 3 | 1.10, 3.10, 3.13, 3.14, 3.15, 3.16 | Planned | — | — |
 | 4.1 | C++ interop: header import, templates by instantiation, exceptions at the boundary | 12+ | 3.5 | Planned | — | — |
+| 4.2 | AstroBaryon, the astronomy library: AstroPy's capability designed natively from the astronomy standards, not by translating AstroPy's Python (D.23 decides where it lives). Tested against reference data recorded from AstroPy, and documented so that moving from AstroPy is easy: no sub-row is `Done` without its reference documentation, transition guide entries, worked example and validation. The [AstroBaryon roadmap](docs/design/astrobaryon-roadmap.md) gives the scope, build order, prerequisites and documentation rules. The study behind it estimates 22 to 28 person-years once the Phase 3 libraries exist (Collins, 2026-11-10) | 1120 | 3.31, 3.32, D.23, D.24 | Planned | — | — |
+| 4.2.1 | Reference data: run AstroPy's tests and examples, and record their inputs and outputs as data files the Baryon library is checked against, since AstroPy's tests are written against its Python API | 90 | — | Planned | — | — |
+| 4.2.2 | Time: time scales and formats with two-part Julian dates for full precision, leap seconds and Earth orientation tables, kept current through the download cache | 70 | 3.25, 3.30, 3.31 | Planned | — | — |
+| 4.2.3 | Units and physical constants, in the form D.19 and D.20 settle: units checked at compile time in code, and a run-time unit for values read from files | 70 | D.19, D.20 | Planned | — | — |
+| 4.2.4 | Coordinates: celestial frames (ICRS, FK5, Galactic, GCRS, CIRS, ITRS, AltAz and the rest), transforms between them, positions and velocities, and solar system ephemerides from JPL files | 160 | 3.5, 3.9, 3.21, 3.31, 4.2.2, 4.2.3 | Planned | — | — |
+| 4.2.5 | FITS beyond the file formats row: header keywords and verification, tile compression (Rice, HCOMPRESS, PLIO, gzip), binary tables, scaled data and memory-mapped images larger than memory | 115 | 3.14, 3.25, 3.27, I.39 | Planned | — | — |
+| 4.2.6 | Tables: a table on the DataFrame with columns of units, times and coordinates and missing values, and the astronomy text formats ECSV, IPAC, CDS and fixed width, and VOTable | 200 | 3.13, 3.24, 3.26, 3.28, 3.29, 4.2.3 | Planned | — | — |
+| 4.2.7 | Models and fitting: one- and two-dimensional models as traits, combined into compound models, and fitters on the optimizers | 115 | 3.20, 4.2.3, D.19 | Planned | — | — |
+| 4.2.8 | Cosmology: distances, ages and densities for the standard FLRW models | 70 | 3.18, 3.19, 4.2.3 | Planned | — | — |
+| 4.2.9 | Astronomy statistics and signal: sigma clipping, Bayesian blocks, convolution with kernels and missing values, and the Lomb-Scargle and box least squares periodograms | 90 | 3.10, 3.16, 3.22, 3.24 | Planned | — | — |
+| 4.2.10 | Visualization: image stretches and normalizations, and plot axes in sky coordinates | 45 | 3.15, 3.32 | Planned | — | — |
+| 4.2.11 | Transition guide from AstroPy: its frame, a first page with the changes every AstroPy user meets, and a coverage list checked in CI of every public name in the AstroPy subpackages in scope, each marked mapped, not provided or not yet built. Each sub-row then adds its own entries and flags every behavior difference | 15 | 4.2.13, D.24 | Planned | — | — |
+| 4.2.12 | User guide and tutorials: the tasks AstroPy's tutorials teach (observation planning, FITS images with WCS, catalog matching, light curves, fitting) as AstroBaryon programs run in CI, each beside its AstroPy version; added milestone by milestone | 20 | 4.2.13 | Planned | — | — |
+| 4.2.13 | Package skeleton: modules named after AstroPy's subpackages (decision 0039), the documentation site from `baryon doc`, and CI that builds every example and checks the reference data | 5 | 4.2.1, D.23, D.24 | Planned | — | — |
+| 4.2.14 | Benchmarks against AstroPy: frame transforms and time conversions on large catalogs, FITS reads, unit-heavy code, single-threaded and parallel; added as each sub-row lands | 10 | 4.2.13 | Planned | — | — |
+| 4.2.15 | Data containers: `NDData` and `CCDData` with uncertainties, masks, units and WCS, image cutouts, and `TimeSeries` and `BinnedTimeSeries` | 45 | 3.24, 3.32, 4.2.2, 4.2.6 | Planned | — | — |
+| 4.3 | Packages: a Baryon program depends on Baryon packages outside the compiler, named with versions in a manifest, fetched and built by `baryon`; a registry comes later. The design gets its own decision record first. Needed by AstroBaryon if D.23 makes it a separate package | 8 | 1.11 | Planned | — | — |
 
 ## Releases
 
@@ -239,10 +273,16 @@ never as a way to wrap Baryon in Python. A self-hosted compiler stays a non-goal
 
 After 0.3.0, native capability comes before compile speed (Collins, 2026-11-10): speed of the
 compiled code (3.1, 3.2, 3.3), then broadcasting and axis reductions (3.9), linear algebra and FFT
-(3.10), statistics (3.16), file formats (3.14), DataFrame (3.13) and plotting (3.15). Phase 2's
-faster compiling follows, unless compile times start to slow users down first. Python interop
-(3.17) comes only after as many native libraries as can be built: Baryon should be a native
-language before it needs wrappers from other languages (Collins, 2026-11-10).
+(3.10), statistics (3.16), file formats (3.14), DataFrame (3.13) and plotting (3.15). The base
+libraries AstroPy relies on join them as Baryon's own (3.18 to 3.32): special functions,
+integration, optimization, interpolation, spatial search and image processing, distributions,
+missing values, record and date arrays, regular expressions, compression, XML, structured text,
+networking, ERFA and world coordinate systems; ERFA (3.31) can start early, since it needs little
+beyond what builds today. AstroBaryon, the native astronomy library (4.2), builds on them
+(Collins, 2026-11-10). Phase 2's faster compiling follows, unless compile times start to slow
+users down first. Python interop (3.17) comes only after as many native libraries as can be
+built: Baryon should be a native language before it needs wrappers from other languages
+(Collins, 2026-11-10).
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -293,6 +333,12 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.16 | Publish the VS Code extension to the Visual Studio Marketplace under the `baryon-lang` publisher, or keep installing it from a `.vsix` file | — | 1.17 | Planned | Collins | [0025](docs/decisions/0025-vscode-extension.md) |
 | D.17 | How `print` writes an array: NumPy's form, `[1. 2. 3.]` with rows on their own lines, or Python's list form, `[1.0, 2.0, 3.0]`; 1.10.12 proposes it in a record. Decided: NumPy's form, byte for byte, built as 1.10.15 | — | — | Done | Collins | [0033](docs/decisions/0033-printing-arrays.md) |
 | D.18 | What `raise E(...) from cause` means: rejected with a note to keep the cause in a field, accepted with the cause dropped, or a chain of causes printed as Python does. Decided: rejected, so chaining can still come later without breaking code | — | 1.9.17 | Done | Collins | [0034](docs/decisions/0034-no-error-chaining.md), [#142](https://github.com/Baryon-Lang/Baryon/pull/142) |
+| D.19 | Operators on user types: whether a struct can define `+`, `*`, `==` and the rest (Python's `__add__` and friends), and how. Needed by units, models and any number-like library such as intervals or quaternions; raised by the AstroPy study | — | — | Planned | Collins | — |
+| D.20 | Physical units: checked at compile time and erased to plain numbers, as the design plan's Phase 3 candidate says, a run-time unit for values read from files, or both | — | D.19 | Planned | Collins | — |
+| D.21 | Missing values: NumPy-style masked arrays, Arrow validity bitmaps, or one form for both arrays and tables; settle before 3.13 | — | — | Planned | Collins | — |
+| D.22 | Networking and TLS: written in Baryon, or TLS taken from the operating system, given that writing TLS well is a security project of its own | — | — | Planned | Collins | — |
+| D.23 | Where the astronomy library (4.2) lives: shipped with Baryon's standard distribution or as a separate package, which points to a package registry | — | — | Planned | Collins | — |
+| D.24 | How close AstroBaryon's names and calls stay to AstroPy's: the same module, class, function and argument names wherever the behavior is the same, with each forced difference in the transition guide, or an API designed fresh from the standards with every call mapped in the guide. Decided: keep AstroPy's names | — | — | Done | Collins | [0039](docs/decisions/0039-astrobaryon-keeps-astropy-names.md), [#209](https://github.com/Baryon-Lang/Baryon/pull/209) |
 
 ## Ideas
 
@@ -341,3 +387,4 @@ Anyone may add an idea. The first ones come from the review of the design plan.
 | I.39 | Files and processes past decision 0036's first version: `bytes` and binary file modes, NumPy's `.npy` format (`save`, `load`), memory-mapped arrays for files larger than memory, `subprocess.run(check=True)` and `CalledProcessError`, `subprocess.Popen` with pipes, `shutil`, `glob`, `tempfile`, `os.walk`, `seek` and `tell`, and encodings other than UTF-8 | — | 1.13.6 | Idea | — | [0036](docs/decisions/0036-files-and-processes.md) |
 | I.40 | Everyday built-ins past 1.13.13: assigning into a list slice with a step (`xs[::2] = ys`, whose lengths must match), `reversed` of a `str`, a `range` step known only at run time inside `enumerate`, `zip` or `reversed`, those three calls outside a loop (`list(zip(a, b))`), `sorted(values, key=f)`, and `sum` of an array with a start | — | 1.13.13 | Idea | — | [#198](https://github.com/Baryon-Lang/Baryon/pull/198) |
 | I.41 | A parallel map: `[f(i) for i in prange(n)]` runs `f` on every core and fills the list in order, so the result matches Python's; a comprehension with `if` over `prange` stays an error. 1.13.10 makes `prange` in a comprehension a compile error for now, which this could relax without breaking code | — | 1.13.10 | Idea | — | — |
+| I.42 | `cargo xtask check-roadmap` also checks that every row ID cited in the [AstroBaryon roadmap](docs/design/astrobaryon-roadmap.md) exists in this file, so a renumbered or dropped row cannot leave it pointing nowhere | — | 4.2 | Idea | — | — |

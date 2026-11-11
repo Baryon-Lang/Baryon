@@ -99,7 +99,7 @@ contributing to the compiler, or integrating one of its crates.
 | `docs/README.md` | Map of all documentation |
 | `docs/architecture.md` | Crate kinds and dependency rules |
 | `docs/decisions/` | Decision records |
-| `docs/design/` | The language design plan |
+| `docs/design/` | The language design plan and the AstroBaryon roadmap |
 | `docs/guide/` | The beginner's guide and the VS Code setup guide, both run in CI as written |
 | `docs/examples/` | Example programs written in the language |
 | `docs/reference/` | The language reference: what a program may say and what it means |
