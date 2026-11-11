@@ -213,3 +213,73 @@ fn temporaries_that_cannot_be_fused_stay() {
             .block(second, false),
     );
 }
+
+/// The statements of `t = t * b` as lowering writes them, through temporary 5.
+fn update<'db>(target: usize) -> Vec<Statement<'db>> {
+    vec![
+        compute(5, binary(BinaryOperator::Multiply, target, 2)),
+        drop(target),
+        store(target, 5),
+    ]
+}
+
+/// `t = t * b` becomes a write into a view of all of `t`, wrapped as fused so its lengths are
+/// checked as written; nothing is dropped or allocated.
+#[test]
+fn an_update_of_an_owned_array_writes_in_place() {
+    let database = Database::default();
+    let text = Builder::new(&database, Primitive::Integer(Integer::I64))
+        .block(update(3), false)
+        .fused();
+    assert!(
+        text.ends_with(
+            "    bb0: {
+        _7 = 0_i64;
+        _8 = 1_i64;
+        _9 = len(_3, 0);
+        _3[_7 for _9 by _8] = elementwise fused(Multiply(copy _3[_7 for _9 by _8], copy _2));
+        return;
+    }
+}
+"
+        ),
+        "{text}"
+    );
+}
+
+/// A borrowed parameter's array belongs to the caller, so `a = a * b` keeps building a new
+/// one; so does an update whose expression reads the array through a view, whose elements
+/// are not the ones written at each index.
+#[test]
+fn updates_that_others_could_see_are_not_in_place() {
+    let database = Database::default();
+    let float = Primitive::Float(Float::F64);
+    let builder = Builder::new(&database, float).block(update(1), false);
+    let before = builder.body.display(builder.database).to_string();
+    assert_eq!(builder.fused(), before);
+
+    let mut builder = Builder::new(&database, float);
+    let i64 = Type::new(
+        &database,
+        TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+    );
+    let index = builder.body.push_local(i64, LocalKind::Temporary, span());
+    let view =
+        Place::from(local(3)).project(mir::Projection::Slice(vec![mir::SliceIndex::Range {
+            start: index,
+            length: index,
+            step: index,
+        }]));
+    let mut statements = update(3);
+    statements[0] = compute(
+        5,
+        Elementwise::Binary(
+            BinaryOperator::Add,
+            Box::new(Elementwise::Leaf(Operand::Copy(local(3).into()))),
+            Box::new(Elementwise::Leaf(Operand::Copy(view))),
+        ),
+    );
+    let builder = builder.block(statements, false);
+    let before = builder.body.display(builder.database).to_string();
+    assert_eq!(builder.fused(), before);
+}

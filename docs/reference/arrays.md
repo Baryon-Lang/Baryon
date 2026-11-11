@@ -158,9 +158,12 @@ direction = residual + beta * direction
   Results are identical to the bit, and a shape mismatch still panics at the line it is on.
   Reading `t` a second time, changing `a`, `b` or `d` between the lines, a call between them, or
   integer elements keep each line its own loop.
-- Assigning an expression to a name, `direction = residual + beta * direction`, creates one new
-  array for the result. The compiler may reuse the storage of the value the assignment replaces;
-  that optimization is roadmap 3.1, and it does not change the meaning.
+- Assigning an expression to a name, `direction = residual + beta * direction`, means a new array
+  for the result. When the expression reads the array the name holds, as this one reads
+  `direction`, only whole and not through a slice, and the name owns its array (a variable, or an
+  `Owned` or `InOut` parameter), the compiler writes the result into that array instead, so the
+  update allocates nothing. `x += alpha * direction` is written in place the same way. The
+  meaning does not change: each element is read before it is written.
 
 `@` is the matrix product for rank-2 arrays and `Fixed` matrices, and between a matrix and a
 vector; see [The matrix product](#the-matrix-product).
