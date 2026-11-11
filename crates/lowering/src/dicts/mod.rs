@@ -316,8 +316,9 @@ impl<'db> Builder<'db> {
         local
     }
 
-    /// A new copy of the key part at `source`, of type `ty`: a `str` is copied into a new
-    /// string, a tuple part by part, and a copy type bit for bit.
+    /// A new copy of the key part at `source`, or of a value `get` or `setdefault` reads out, of
+    /// type `ty`: a `str` is copied into a new string, a tuple part by part, and a copy type bit
+    /// for bit.
     fn key_copy(&mut self, source: Place, ty: Type<'db>, node: NodeId) -> Operand<'db> {
         match ty.kind(self.db) {
             TypeKind::Str => Operand::Move(self.copied(source, ty, node)),

@@ -1,6 +1,7 @@
 //! Dictionaries (decision 0035, roadmap 1.13.4 and 1.13.14), built and run: displays, `d[k]`
-//! read, written and updated, `in`, `len`, `get`, `pop`, `setdefault`, `update`, `clear`, `copy`,
-//! `del d[k]`, dict comprehensions, loops in insertion order, and the panic for a missing key.
+//! read, written and updated, `in`, `len`, `get` (of `str` values too), `pop`, `setdefault`,
+//! `update`, `clear`, `copy`, `del d[k]`, dict comprehensions, loops in insertion order, and the
+//! panic for a missing key.
 //! Python prints the same lines for every program here.
 
 use super::{baryon_build, package, panic_report, stderr};
@@ -194,6 +195,41 @@ def main():
     assert_eq!(
         printed,
         "3 7 4\na 3\nb 20\nc 1\nz 7\ny 9\nFalse 4\n0\n1\n0 0\n1 1\n3 9\n4 16\n10 4\n3\n{'Ar': 2, 'Ne': 2, 'Kr': 2}\na 2\nb 1\n1.0\n3.0\n[2, 1]\n[1, 2]\n"
+    );
+    assert_eq!(status, Some(0));
+}
+
+/// `get` and `setdefault` of `str` values and of tuples holding one copy the value out, so
+/// the copy outlives a later change to the entry; an unused default that owns a string is
+/// dropped.
+#[test]
+fn getting_a_str_value_copies_it() {
+    let program = r#"
+def main():
+    names: dict[int, str] = {1: "H", 2: "He"}
+    first = names.get(1)
+    missing = names.get(9)
+    print(first, missing)
+    fallback = "none"
+    print(names.get(2, "x"), names.get(7, "unknown"), names.get(8, fallback), names.get(1, "?"))
+    print(names.setdefault(3, "Li"), names.setdefault(1, "hydrogen"), len(names))
+    for z, n in names.items():
+        print(z, n)
+    pairs: dict[str, tuple[str, int]] = {"a": ("x", 1)}
+    print(pairs.get("a", ("y", 0)), pairs.get("b", ("y", 0)))
+    copy = names.get(2)
+    names[2] = "helium"
+    print(copy, names[2])
+    spare = f"s{1}"
+    print(names.get(1, spare))
+    other = f"o{2}"
+    print(names.setdefault(1, other), names.setdefault(5, f"B{5}"))
+"#;
+    let (printed, status, report) = run("dict-get-str", program).unwrap();
+    assert_eq!(report, "");
+    assert_eq!(
+        printed,
+        "H None\nHe unknown none H\nLi H 3\n1 H\n2 He\n3 Li\n('x', 1) ('y', 0)\nHe helium\nH\nH B5\n"
     );
     assert_eq!(status, Some(0));
 }

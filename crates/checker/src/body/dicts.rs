@@ -332,14 +332,16 @@ impl<'db> Body<'db> {
     }
 
     /// The error for `what`, a method that copies a value of type `value` out of a `dict`, when
-    /// the value does not copy, or `None` when it does. Copying a list or an array out of a
-    /// lookup would hide a large copy, so the program asks with `in` and borrows `d[k]` instead.
+    /// the value cannot be copied out, or `None` when it can: a copy type, a `str`, or a tuple
+    /// of them. A `str` is copied as a key is, since it is short text. Copying a list or an
+    /// array out of a lookup would hide a large copy, so the program asks with `in` and borrows
+    /// `d[k]` instead (Collins's choice for roadmap 1.13.14).
     fn copied_out(&mut self, node: NodeId, what: &str, value: Type<'db>) -> Option<Type<'db>> {
-        if crate::forms::is_copy(self.db, value) {
+        if copies_out(self.db, value) {
             return None;
         }
         let message = format!(
-            "{what} needs values that copy, found `{}`",
+            "{what} needs values that copy or are `str`, found `{}`",
             self.show(value)
         );
         Some(self.lowerer.error(
@@ -401,6 +403,16 @@ impl<'db> Body<'db> {
                 Some(TypeKind::Dict { .. })
             );
         is_view.then_some(receiver)
+    }
+}
+
+/// Whether `get` and `setdefault` can copy a value of type `ty` out of a `dict`: a copy type, a
+/// `str`, or a tuple of them, the values lowering copies as it copies keys.
+fn copies_out<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
+    match ty.kind(db) {
+        TypeKind::Str => true,
+        TypeKind::Tuple(items) => items.iter().all(|&item| copies_out(db, item)),
+        _ => crate::forms::is_copy(db, ty),
     }
 }
 

@@ -63,7 +63,8 @@ impl<'db> Builder<'db> {
     }
 
     /// `d.get(k)` or `d.get(k, default)` into `place`: the value copied out as a `V | None`, or
-    /// the value or the default. The checker allows `get` only on values that copy.
+    /// the value or the default. The checker allows `get` only on values that copy or are
+    /// `str`, or tuples of them, which [`key_copy`](Self::key_copy) copies as it copies keys.
     fn dict_get(
         &mut self,
         place: Place,
@@ -82,7 +83,7 @@ impl<'db> Builder<'db> {
         let present = self.at_least_zero(position, node);
         self.branch(present, (found, missing), node);
         self.start(found);
-        let value = Operand::Copy(entry(base, position, 1));
+        let value = self.key_copy(entry(base, position, 1), held, node);
         let result = self.ty(node);
         let rvalue = if default.is_some() {
             Rvalue::Use(value)
@@ -209,7 +210,8 @@ impl<'db> Builder<'db> {
     /// `d.setdefault(k, default)` into `place`: the value for `k`, after adding `k` with the
     /// value `default` when it is missing. The key and then the default are computed once,
     /// before the lookup, as Python passes them. The checker allows `setdefault` only on values
-    /// that copy, so an unused default needs no drop.
+    /// that copy or are `str`, or tuples of them; an unused `str` default is dropped at the end
+    /// of the statement.
     fn dict_setdefault(
         &mut self,
         place: Place,
@@ -243,11 +245,8 @@ impl<'db> Builder<'db> {
         self.assign(entry(base.clone(), position, 1), Rvalue::Use(value), node);
         self.terminate(TerminatorKind::Goto(found), node);
         self.start(found);
-        self.assign(
-            place,
-            Rvalue::Use(Operand::Copy(entry(base, position, 1))),
-            node,
-        );
+        let copy = self.key_copy(entry(base, position, 1), held, node);
+        self.assign(place, Rvalue::Use(copy), node);
     }
 
     /// `d.clear()`: drops every key and value and leaves `d` empty, as a new empty `dict`

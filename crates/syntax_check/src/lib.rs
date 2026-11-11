@@ -63,6 +63,7 @@
 
 mod definitions;
 mod expressions;
+mod placement;
 mod statements;
 
 use diagnostics::Diagnostic;
