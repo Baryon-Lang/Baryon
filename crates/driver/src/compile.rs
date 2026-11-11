@@ -39,6 +39,9 @@ struct Function<'db> {
     /// parameter's name after a colon, `main.drift:buffer`, which no name can spell (decision
     /// 0027).
     defaults: Vec<(Item<'db>, String)>,
+    /// Whether it is the standard library's (decision 0038). A library function is compiled
+    /// only into a program that calls it, never as a root, so an unused one costs nothing.
+    library: bool,
 }
 
 /// Whether a function is decorated `@test`.
@@ -200,7 +203,8 @@ impl Session {
         let mut errors = Vec::new();
         let mut entries = Vec::new();
         let mut roots = Vec::new();
-        for function in &functions {
+        // A library function is never a root: it is compiled only when a root calls it.
+        for function in functions.iter().filter(|function| !function.library) {
             let Declaration::Function(signature) = &database.declaration(function.item).declaration
             else {
                 continue;
@@ -359,11 +363,17 @@ impl Session {
     fn functions(&self) -> Vec<Function<'_>> {
         let database = &self.database;
         let mut functions = Vec::new();
-        for &file in &self.files {
-            let Ok(module) = database::module_name(database, file) else {
-                continue;
+        for &file in self.library.iter().chain(&self.files) {
+            // A library file's module is `<std>.linalg`, which no program's module can spell, so
+            // its symbols never clash with the program's own.
+            let library = database::library_module(file.source(database).name());
+            let module = match library {
+                Some(name) => format!("<std>.{name}"),
+                None => match database::module_name(database, file) {
+                    Ok(module) => module.to_string(),
+                    Err(_) => continue,
+                },
             };
-            let module = module.to_string();
             let tree = database.parse(file).tree();
             let text = file.source(database).text();
             let name = |statement: NodeId| {
@@ -399,6 +409,7 @@ impl Session {
                         in_main_module,
                         test: decorated,
                         defaults,
+                        library: library.is_some(),
                     });
                 };
             for statement in tree.children_with(tree.root(), Role::Body) {

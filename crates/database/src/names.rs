@@ -83,8 +83,9 @@ pub const BUILTINS: [&str; 58] = [
 /// `subprocess` are decision 0036's: the command-line arguments, the exit status, the
 /// environment, and running another program. So is `pathlib`, whose `Path` the library's own
 /// source defines (decision 0038). `linalg` and `fft` are roadmap 3.10's linear algebra and
-/// fast Fourier transforms, named as `numpy.linalg` and `numpy.fft` are.
-pub const STANDARD_MODULES: [&str; 8] = [
+/// fast Fourier transforms, named as `numpy.linalg` and `numpy.fft` are. `stats` is roadmap
+/// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042).
+pub const STANDARD_MODULES: [&str; 9] = [
     "math",
     "random",
     "sys",
@@ -93,6 +94,7 @@ pub const STANDARD_MODULES: [&str; 8] = [
     "pathlib",
     "linalg",
     "fft",
+    "stats",
 ];
 
 /// What a name refers to.

@@ -29,6 +29,7 @@ mod generic_methods;
 mod guide;
 mod hoisting;
 mod kernels;
+mod linalg;
 mod list_slices;
 mod math;
 mod modules;
