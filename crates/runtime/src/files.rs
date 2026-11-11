@@ -60,7 +60,7 @@ pub(crate) struct OsFailure {
 
 impl OsFailure {
     /// The failure an I/O error from the standard library describes, for the file at `path`.
-    fn from_io(error: &io::Error, path: &str) -> Self {
+    pub(crate) fn from_io(error: &io::Error, path: &str) -> Self {
         let errno = error.raw_os_error().unwrap_or(0);
         let kind = match error.kind() {
             io::ErrorKind::NotFound => ErrorKind::FileNotFound,
@@ -90,7 +90,7 @@ impl OsFailure {
     }
 
     /// A failure with no error number, such as reading a file opened for writing.
-    fn new(kind: ErrorKind, message: impl Into<String>, path: &str) -> Self {
+    pub(crate) fn new(kind: ErrorKind, message: impl Into<String>, path: &str) -> Self {
         Self {
             kind,
             errno: 0,
@@ -360,8 +360,9 @@ pub(crate) fn flush_all() {
 
 /// `bytes` as text, or an `INVALID_DATA` failure naming the byte offset of the first bad
 /// sequence. `offset` counts the bytes read before these and is advanced past them; `\r\n` and
-/// `\r` become `\n`.
-fn decode(bytes: Vec<u8>, offset: &mut u64, path: &str) -> Result<String, OsFailure> {
+/// `\r` become `\n`. Captured output of `subprocess.run` is decoded the same way, with the
+/// program as `path`.
+pub(crate) fn decode(bytes: Vec<u8>, offset: &mut u64, path: &str) -> Result<String, OsFailure> {
     let start = *offset;
     *offset += u64::try_from(bytes.len()).unwrap_or(u64::MAX);
     let text = String::from_utf8(bytes).map_err(|error| {

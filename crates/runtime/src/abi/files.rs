@@ -47,7 +47,7 @@ pub struct RaisedError {
 ///
 /// `error` points to a writable [`RaisedError`].
 #[allow(unsafe_code, reason = "writes an error compiled code owns")]
-unsafe fn raise(failure: &OsFailure, error: *mut RaisedError) -> bool {
+pub(super) unsafe fn raise(failure: &OsFailure, error: *mut RaisedError) -> bool {
     let kind: ErrorKind = failure.kind;
     let value = RaisedError {
         tag: 0,
@@ -70,7 +70,7 @@ unsafe fn raise(failure: &OsFailure, error: *mut RaisedError) -> bool {
 ///
 /// `error` points to a writable [`RaisedError`], and `write` may be called once.
 #[allow(unsafe_code, reason = "writes results compiled code owns")]
-unsafe fn finish<T>(
+pub(super) unsafe fn finish<T>(
     result: Result<T, OsFailure>,
     write: impl FnOnce(T),
     error: *mut RaisedError,

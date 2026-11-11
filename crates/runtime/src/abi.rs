@@ -23,6 +23,7 @@ mod sort;
 mod string_lists;
 mod string_methods;
 mod strings;
+mod subprocess;
 mod sum;
 mod text;
 
@@ -76,6 +77,7 @@ pub use string_methods::{
     baryon_rt_str_take, baryon_rt_str_upper,
 };
 pub use strings::{baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_length};
+pub use subprocess::{CompletedProcess, baryon_rt_subprocess_run};
 pub use sum::{
     baryon_rt_dot_f32, baryon_rt_dot_f64, baryon_rt_dot_strided_f32, baryon_rt_dot_strided_f64,
     baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64,
