@@ -150,6 +150,34 @@ def count(path: str) -> Raises[int, OSError]:
 `save("e.txt", [1.5, -0.25])` writes the two lines `1.5` and `-0.25`, and `count("e.txt")` then
 gives `2`. `count` returns from inside `with`, which drops the file and so closes it.
 
+A `for` loop over a file reads it one line at a time, so a file of any size costs the memory of
+its longest line:
+
+```python
+def total(path: str) -> Raises[float, OSError | ValueError]:
+    energy = 0.0
+    with open(path) as source:
+        for line in source:
+            if line.startswith("#"):
+                continue
+            energy += float(line.split()[1])
+    return energy
+```
+
+With `e.txt` holding the lines `# step energy`, `0 1.5` and `1 -0.25`, `total("e.txt")` gives
+`1.25`.
+
+- **Each pass is one `readline()`.** The loop variable gets the next line with its line end, and
+  the loop ends at the end of the file. A `break` leaves the rest unread, so a `readline()` or
+  another loop after it carries on from there. A comprehension loops the same way:
+  `[line.strip() for line in source]`.
+- **The loop variable owns its line.** Each line is a new `str`, so it can be kept without a
+  copy: `kept.append(line)`.
+- **The loop can fail.** A read that fails raises `OSError` from the `for` statement, as
+  `readline()` would.
+- **The loop borrows the file.** The body cannot read, write or close the file the loop goes
+  over; to do that, read the lines first with `readlines()`.
+
 - **Text is UTF-8.** `encoding="utf-8"` may be written and changes nothing; any other encoding is
   an error. Reading text that is not UTF-8 raises `OSError` with the kind `INVALID_DATA`.
 - **Line ends are universal.** Reading turns `"\r\n"` and `"\r"` into `"\n"`, as Python does.
@@ -171,13 +199,12 @@ gives `2`. `count` returns from inside `with`, which drops the file and so close
 The modes Python has and Baryon does not are errors that say what to write instead. A `"b"` mode
 points to `Array.fromfile` and `a.tofile`, since binary data is whole arrays
 ([decision 0036](../decisions/0036-files-and-processes.md)). A `"+"` mode says a file is opened to
-read or to write, not both. Looping over a file, `for line in f:`, is not in Baryon yet; loop over
-`f.readlines()`.
+read or to write, not both.
 
 ## What is not built yet
 
 Decision 0036 settles the rest of this chapter's surface, and the compiler reports each part by
 name until it is built: `` `sys.stdin` is not in Baryon yet ``. In order, the next parts are
-`os.environ[name]`, `name in os.environ` and `os.environ.copy()`; `for line in f`;
+`os.environ[name]`, `name in os.environ` and `os.environ.copy()`;
 `sys.stdin`, `sys.stdout`, `sys.stderr`, `input` and `print(..., file=)`; `Array.fromfile` and
 `a.tofile`; `pathlib.Path` and the directory functions of `os`; and `subprocess.run`.

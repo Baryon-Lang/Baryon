@@ -84,8 +84,8 @@ error: `open` can fail with `OSError`, which is not handled here
     );
 }
 
-/// Using a `File` wrongly is explained: changing it through a read-only parameter, looping over
-/// it, using it after `close()`, `with` on something that is not a file, and wrong arguments and
+/// Using a `File` wrongly is explained: changing it through a read-only parameter, reading it
+/// inside a loop over it, using it after `close()`, `with` on something that is not a file, and wrong arguments and
 /// methods.
 #[test]
 fn file_mistakes_are_explained() {
@@ -97,7 +97,7 @@ def log(out: File) -> Raises[None, OSError]:
 def main() -> Raises[None, OSError]:
     f = open("data.txt")
     for line in f:
-        print(line)
+        f.readline()
     f.close()
     f.read()
     with 3 as h:
@@ -116,12 +116,16 @@ def main() -> Raises[None, OSError]:
   |     ^^^ changed here
   = note: take it as `InOut[File]` to use the caller's
 
-error: looping over a `File` is not in Baryon yet
- --> main.byn:7:17
+error: `f` cannot be changed while a loop goes over it
+ --> main.byn:8:9
+  |
+8 |         f.readline()
+  |         ^ changed here
+ ::: main.byn:7:17
   |
 7 |     for line in f:
-  |                 ^ not built yet
-  = note: loop over its lines as a list: `for line in f.readlines():`
+  |                 - the loop goes over `f` here
+  = note: read the lines first, then loop over them: `for line in f.readlines():`
 
 error: `f` was moved
   --> main.byn:10:5
@@ -159,5 +163,57 @@ error: `read` takes no arguments
    |
 16 |     g.read(10)
    |     ^^^^^^^^^^ wrong arguments"#
+    );
+}
+
+/// A loop over a file reads it, so it needs a file it may change and a place for the `OSError`
+/// of a failed read to go, in a `for` statement and in a comprehension alike; each line is one
+/// `str`, so it does not unpack.
+#[test]
+fn loops_over_a_file_are_checked() {
+    let program = r#"
+def count(source: File) -> int:
+    lines = 0
+    for line in source:
+        lines += 1
+    return lines
+
+
+def lengths(source: InOut[File]) -> list[int]:
+    return [len(line) for line in source]
+
+
+def main() -> Raises[None, OSError]:
+    for name, value in open("data.txt"):
+        print(name)
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: `source` is a read-only parameter, so it cannot be changed
+ --> main.byn:3:17
+  |
+3 |     for line in source:
+  |                 ^^^^^^ changed here
+  = note: take it as `InOut[File]` to use the caller's
+
+error: reading a line of the file can fail with `OSError`, which is not handled here
+ --> main.byn:3:5
+  |
+3 |     for line in source:
+  |     ^^^^^^^^^^^^^^^^^^^ can fail with `OSError`
+  = note: catch it with `try:` and `except OSError:`, or let it pass on by declaring `-> Raises[i64, OSError]`
+
+error: reading a line of the file can fail with `OSError`, which is not handled here
+ --> main.byn:9:23
+  |
+9 |     return [len(line) for line in source]
+  |                       ^^^^^^^^^^^^^^^^^^ can fail with `OSError`
+  = note: catch it with `try:` and `except OSError:`, or let it pass on by declaring `-> Raises[list[i64], OSError]`
+
+error: a value of type `str` cannot be unpacked into 2 names
+  --> main.byn:13:9
+   |
+13 |     for name, value in open("data.txt"):
+   |         ^^^^^^^^^^^ does not match the value"#
     );
 }
