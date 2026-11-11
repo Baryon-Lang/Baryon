@@ -124,3 +124,52 @@ cost about n³ operations and panic when `a` is not square.
 
 To apply an inverse, call `solve(a, b)` rather than `inv(a) @ b`: it does a third of the work
 and rounds less.
+
+## `linalg.cholesky`
+
+```python
+def cholesky(a: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]: ...
+```
+
+The lower triangular matrix `l` with `l @ lᵀ == a`, for a symmetric positive definite `a`, such
+as a covariance or a stiffness matrix. It reads only `a`'s lower triangle, as NumPy does, and
+costs about n³/3 multiply-adds, half of `lu_factor`'s. Raises
+`LinAlgError("Matrix is not positive definite")` when `a` is not; panics when `a` is not square.
+
+## `linalg.qr`
+
+```python
+def qr(a: Array[f64, 2]) -> tuple[Array[f64, 2], Array[f64, 2]]: ...
+```
+
+`q, r = qr(a)` factors an m × n matrix as `q @ r`, NumPy's default `mode="reduced"`: `q` is
+m × k with orthonormal columns and `r` is k × n and upper triangular, for k the smaller of m and
+n. It uses Householder reflections with LAPACK's signs, so `q` and `r` match NumPy's entry by
+entry, not only up to sign. It never fails. Cost: about 4mn² - 4n³/3 multiply-adds.
+
+QR is the stable way to fit least squares: for a tall `a`, the `x` that minimizes the length of
+`a @ x - b` solves `r @ x == qᵀ b`, with no squaring of `a`'s condition number.
+
+Differences from NumPy: only the default mode; `mode="complete"`, `"r"` and `"raw"` are not
+built.
+
+## `linalg.eigh` and `linalg.eigvalsh`
+
+```python
+def eigh(a: Array[f64, 2]) -> Raises[tuple[Array[f64, 1], Array[f64, 2]], LinAlgError]: ...
+def eigvalsh(a: Array[f64, 2]) -> Raises[Array[f64, 1], LinAlgError]: ...
+```
+
+`w, v = eigh(a)` gives the eigenvalues of a symmetric matrix in ascending order and, as the
+columns of `v`, their unit eigenvectors: `a @ v[:, i]` is `w[i] * v[:, i]`. `eigvalsh(a)` gives
+`w` alone. Both read only `a`'s lower triangle, as NumPy does, so a matrix that rounding made
+slightly unsymmetric is still treated as symmetric. Use them for normal modes, the inertia
+tensor, a Hamiltonian, or a covariance matrix's principal axes.
+
+The algorithm reduces `a` to a tridiagonal matrix with Householder reflections, then finds its
+eigenvalues by the implicit QL iteration, EISPACK's `tred2` and `tql2`: about 9n³ multiply-adds,
+0.15 s for n = 400 on one core. An eigenvector's sign is not part of the answer, and it can
+differ from NumPy's. Raises `LinAlgError("Eigenvalues did not converge")` if the iteration does
+not converge within 30 steps for an eigenvalue, as LAPACK does; panics when `a` is not square.
+
+Differences from NumPy: no `UPLO="U"` argument; `eigvalsh` costs as much as `eigh`.

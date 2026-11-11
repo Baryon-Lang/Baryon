@@ -25,8 +25,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 type, while `baryon run` builds only what this page lists.
 
 This page was last brought up to date on 2026-11-11, when text tables, `Array.loadtxt` and
-`Array.savetxt`, and before them `linalg.solve`, `lu_factor`, `lu_solve`, `det` and `inv` and,
-before them, array files, `Array.fromfile` and
+`Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`,
+`lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files, `Array.fromfile` and
 `a.tofile`, and before them `for line in f` over a text file, `int(text)` and `float(text)`, began
 to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
 `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
@@ -127,6 +127,7 @@ out of a function, including through a `raise`.
 | Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b`, with [broadcasting](arrays.md#broadcasting) between arrays of different ranks and of length 1, as NumPy's, and new axes with `None`, `x[:, None]` | |
 | [`@`, the matrix product](arrays.md#the-matrix-product), of `Array`s and of `Fixed` arrays: matrix by matrix, matrix by vector and vector by matrix, as a loop nest | `@=`; calling BLAS (roadmap 3.10) |
 | [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), the float sum of a whole-array expression, `(a * b).sum()`, without storing it, `a.min()`, `a.max()`, [`sum`, `min` and `max` along an axis](arrays.md#reductions-along-an-axis) with NumPy's bits, [`a.mean()`, `a.var(ddof)` and `a.std(ddof)`](arrays.md#means-and-variances), of the whole array and along an axis, with NumPy's bits, `a.round()` and `a.fill(value)`; [`print(a)`](arrays.md#printing), as NumPy writes it | Printing an array of `str` or structs; `var` and `std` of integers or complex numbers, and `mean` of integers along an axis |
+| [The `stats` module](statistics.md): `median`, `quantile`, `percentile`, `average` and `histogram` of an `Array[f64, 1]`, with NumPy's bits; `cov` and `corrcoef` of two, to NumPy's last bit but one | `axis=`, several quantiles at once, the other quantile methods and other element types; `histogram` with other bins or `range=`, `weights=` and `density=`; `cov` and `corrcoef` of more than two variables |
 
 ## Errors and panics
 
@@ -152,7 +153,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix | Several right-hand sides, other element types, and the rest of `linalg` and `fft` (roadmap 3.10) |
+| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix | Several right-hand sides, other element types, and the rest of `linalg` and `fft` (roadmap 3.10) |
 
 ## Files and processes
 

@@ -45,6 +45,7 @@ mod slices;
 mod sorting;
 mod statements;
 mod statistics;
+mod stats;
 mod structs;
 mod subprocess;
 mod testing;
