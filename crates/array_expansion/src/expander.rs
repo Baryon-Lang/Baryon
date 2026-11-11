@@ -290,8 +290,11 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 element
             }
             Elementwise::Binary(operator, left, right) => {
-                let (left, ty) = self.element(left, leaves, indices, indexing);
-                let (right, _) = self.element(right, leaves, indices, indexing);
+                let (left, left_type) = self.element(left, leaves, indices, indexing);
+                let (right, right_type) = self.element(right, leaves, indices, indexing);
+                let ty = self.common(left_type, right_type);
+                let left = self.convert(left, left_type, ty);
+                let right = self.convert(right, right_type, ty);
                 let overflows = matches!(
                     operator,
                     BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
@@ -311,6 +314,34 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 (Operand::Copy(Place::from(result)), ty)
             }
         }
+    }
+
+    /// The type two operands of different number types meet in, as `NumPy` promotes them: a
+    /// complex type over a real one, a float over an integer, the wider of two of one kind. Lowering
+    /// converts a scalar to the expression's element type, so this matters where an array of
+    /// another element type meets it: `Array([1.0, 2.0]) + 0j` adds in `complex128`, and an
+    /// integer array plus `1.5` in `f64`. The left type when neither is a number.
+    fn common(&self, left: Type<'db>, right: Type<'db>) -> Type<'db> {
+        let rank = |ty: Type<'db>| match ty.kind(self.db) {
+            TypeKind::Primitive(Primitive::Complex(complex)) => Some((2, complex.part().bits())),
+            TypeKind::Primitive(Primitive::Float(float)) => Some((1, float.bits())),
+            TypeKind::Primitive(Primitive::Integer(integer)) => Some((0, integer.bits())),
+            _ => None,
+        };
+        match (rank(left), rank(right)) {
+            (Some(a), Some(b)) if b > a => right,
+            _ => left,
+        }
+    }
+
+    /// `value`, of type `from`, converted to `to` when the two differ, into a new temporary.
+    fn convert(&mut self, value: Operand<'db>, from: Type<'db>, to: Type<'db>) -> Operand<'db> {
+        if from == to {
+            return value;
+        }
+        let converted = self.local(to);
+        self.assign(Place::from(converted), Rvalue::Convert(value, to));
+        Operand::Copy(Place::from(converted))
     }
 
     /// The indices of the operand at `node`, an array leaf or a fused subexpression, given the
