@@ -149,6 +149,7 @@
 
 mod accumulate;
 mod array;
+mod array_files;
 mod call;
 mod complex;
 mod convert;
