@@ -1,6 +1,7 @@
 //! Operands and rvalues: the values a statement computes from.
 
 use crate::Place;
+use source::Span;
 use types::{FormatSpec, Type};
 
 /// A value used by an rvalue, a call or a terminator.
@@ -186,6 +187,15 @@ pub enum Elementwise<'db> {
     Unary(UnaryOperator, Box<Elementwise<'db>>),
     /// A two-operand operation on every pair of elements.
     Binary(BinaryOperator, Box<Elementwise<'db>>, Box<Elementwise<'db>>),
+    /// A whole-array expression that was its own statement, at the span, before array fusion
+    /// (roadmap 3.1) moved it into this one, so its result is never stored as an array.
+    ///
+    /// Its array leaves are checked against each other first and reported at the span, as the
+    /// statement would have been, and the whole subexpression then counts as one array of the
+    /// shape of its first array leaf when the enclosing expression's leaves are checked. A
+    /// fused program therefore panics where, and with the message, the program as written
+    /// would; only the arrays it never builds differ.
+    Fused(Box<Elementwise<'db>>, Span),
 }
 
 /// A one-operand operation.
