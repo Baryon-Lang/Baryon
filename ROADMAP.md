@@ -199,7 +199,7 @@ the REPL, and three external users have written something real.
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3.1 | Array expression fusion | 4 | 1.14 | Planned | — | — |
+| 3.1 | Array expression fusion: a whole-array result that only feeds a later whole-array statement is computed inside that statement's loop instead of being stored, so `t = a * b` then `c = t + d` runs as one loop with no array for `t`, as `c = a * b + d` already does. Fusion never changes a result or a panic: each fused statement's shape checks still run, and report, where the statement was. Measured on 4 million elements, 100 steps: the update as three statements 1.88 s, as one expression 0.86 s, as a hand-written loop 0.69 s. Built in slices: first `Elementwise::Fused` in `mir`, a subexpression that keeps its statement's checks and span, and array expansion's handling of it; then the fusion pass, for float and complex results used once later in the same block; then `x += ...` and `x = f(x, ...)` written into `x` in place when nothing else can see the old array; then sums and other reductions of a whole-array expression, `(a * b).sum()`, in one pass in the same pairwise order | 4 | 1.14 | In progress | Claude | [#226](https://github.com/Baryon-Lang/Baryon/pull/226) |
 | 3.2 | Bounds-check hoisting and shape inference | 3 | 3.1 | Planned | — | — |
 | 3.3 | Vectorizer audit against gfortran on each kernel | 3 | 3.1 | Planned | — | — |
 | 3.4 | Thin LTO, profile-guided optimization, instantiation deduplication | 3 | 1.10 | Planned | — | — |

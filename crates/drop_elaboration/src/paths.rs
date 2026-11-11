@@ -248,7 +248,9 @@ fn rvalue_moves(rvalue: &Rvalue<'_>, effects: &mut Vec<Effect>) {
 fn elementwise_moves(tree: &Elementwise<'_>, effects: &mut Vec<Effect>) {
     match tree {
         Elementwise::Leaf(operand) => operand_moves(operand, effects),
-        Elementwise::Unary(_, operand) => elementwise_moves(operand, effects),
+        Elementwise::Unary(_, operand) | Elementwise::Fused(operand, _) => {
+            elementwise_moves(operand, effects);
+        }
         Elementwise::Binary(_, left, right) => {
             elementwise_moves(left, effects);
             elementwise_moves(right, effects);

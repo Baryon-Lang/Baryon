@@ -294,4 +294,5 @@ fn integer_arithmetic_is_checked_for_overflow() {
     assert!(text.contains("_2[_3] = copy _5.0;"), "{text}");
 }
 
+mod fused;
 mod views;
