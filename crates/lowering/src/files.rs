@@ -172,7 +172,7 @@ impl<'db> Builder<'db> {
 
     /// A call of the file operation `method`, its result written into `place`, with the error
     /// edge for the errors the checker recorded at `node`.
-    fn file_call(
+    pub(crate) fn file_call(
         &mut self,
         method: FileMethod,
         arguments: Vec<Argument<'db>>,

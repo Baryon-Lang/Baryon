@@ -197,24 +197,24 @@ error: expected `i64`, found `f64`
     );
 }
 
-/// `print` takes the keywords `sep=` and `end=`, each a `str` or `None`; any other keyword, or
-/// another type, is an error.
+/// `print` takes the keywords `sep=` and `end=`, each a `str` or `None`; an unknown keyword, or
+/// another type, is an error. `file=` and `flush=` are tested with the standard streams.
 #[test]
 fn print_takes_sep_and_end_as_text() {
     let program = r#"
 def show(x: f64):
     print(x, sep=", ", end=None)
-    print(x, file=None)
+    print(x, color=None)
     print(x, end=1)
 "#;
     assert_eq!(
         check_one(program),
-        r"error: `print` has no parameter `file`
+        r"error: `print` has no parameter `color`
  --> main.byn:3:14
   |
-3 |     print(x, file=None)
-  |              ^^^^ unknown parameter
-  = note: `print` takes the values to write, then `sep=` and `end=`
+3 |     print(x, color=None)
+  |              ^^^^^ unknown parameter
+  = note: `print` takes the values to write, then `sep=`, `end=`, `file=` and `flush=`
 
 error: `end=` takes a `str` or `None`, found `i64`
  --> main.byn:4:18

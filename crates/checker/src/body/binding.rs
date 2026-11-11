@@ -34,6 +34,7 @@ impl<'db> Body<'db> {
                 return;
             }
             self.assigned_complex_part(target);
+            self.assigned_module_member(target);
             // A slice takes a number for every element, `a[1:n] = 0.0` (reference, "Slices").
             let filled = match held.kind(self.db) {
                 TypeKind::Array { element, .. } if self.is_view(target) => Some(*element),
