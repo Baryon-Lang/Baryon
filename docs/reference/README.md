@@ -29,6 +29,7 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Types](types.md) | Numbers, number mixing, strings, collections, structs, enums, generics, type inference, constants |
 | [Values and references](values-and-references.md) | Moves, copies, borrows, and the exclusivity check, written as a decision procedure |
 | [Arrays](arrays.md) | `Array` and `Fixed`: construction, layout, indexing, slicing, whole-array arithmetic |
+| [Statistics](statistics.md) | The `stats` module: `median`, `quantile`, `percentile` and `average`, with NumPy's bits |
 | [Errors and panics](errors.md) | `Raises`, `raise`, `try`/`except`, and failures that stop the program |
 | [Parallel and vector loops](parallel-loops.md) | `prange`, reductions, the disjoint-write rule, adding into shared arrays with `accumulate=`, and `simd` |
 | [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |

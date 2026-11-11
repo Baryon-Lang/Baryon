@@ -1,0 +1,151 @@
+"""The `stats` module: statistics written in Baryon (decision 0042), with NumPy's names.
+
+Each function rounds where NumPy's does, so a result has NumPy's bits. The mean, variance and
+standard deviation are array methods, `a.mean()`, `a.var()` and `a.std()`, as in NumPy.
+"""
+
+from math import floor, isnan, nan
+
+
+def _has_nan(a: Array[f64, 1]) -> bool:
+    """Whether any element of `a` is NaN."""
+    for i in range(len(a)):
+        if isnan(a[i]):
+            return True
+    return False
+
+
+def _select(values: InOut[Array[f64, 1]], k: int) -> f64:
+    """The `k`th smallest element of `values`, counting from 0, which holds no NaN.
+
+    Rearranges `values` so the element at `k` is in its sorted place, every element before it
+    is no larger and every element after it no smaller: Hoare's selection, with the median of
+    the first, middle and last elements as the pivot. Expected cost about 3n comparisons; the
+    value found is the same whatever the algorithm, so only the time depends on it.
+    """
+    low = 0
+    high = len(values) - 1
+    while low < high:
+        middle = low + (high - low) // 2
+        if values[middle] < values[low]:
+            swap = values[middle]
+            values[middle] = values[low]
+            values[low] = swap
+        if values[high] < values[low]:
+            swap = values[high]
+            values[high] = values[low]
+            values[low] = swap
+        if values[high] < values[middle]:
+            swap = values[high]
+            values[high] = values[middle]
+            values[middle] = swap
+        pivot = values[middle]
+        i = low
+        j = high
+        while i <= j:
+            while values[i] < pivot:
+                i += 1
+            while pivot < values[j]:
+                j -= 1
+            if i <= j:
+                swap = values[i]
+                values[i] = values[j]
+                values[j] = swap
+                i += 1
+                j -= 1
+        if k <= j:
+            high = j
+        elif k >= i:
+            low = i
+        else:
+            return values[k]
+    return values[k]
+
+
+def _smallest_after(values: Array[f64, 1], k: int) -> f64:
+    """The smallest element of `values` after position `k`, once `_select` has put the `k`th
+    smallest there: the `k + 1`th smallest."""
+    best = values[k + 1]
+    for i in range(k + 2, len(values)):
+        if values[i] < best:
+            best = values[i]
+    return best
+
+
+def median(a: Array[f64, 1]) -> f64:
+    """The median of `a`, as `numpy.median`: the middle element of `a` sorted, or the mean of
+    the two middle elements, `(x + y) / 2`, when the length is even.
+
+    NaN when any element is NaN, and NaN for an empty array, as NumPy gives (it also warns).
+    Copies `a` once and selects in place, about 3n comparisons on average; `a` is unchanged.
+    """
+    n = len(a)
+    if n == 0 or _has_nan(a):
+        return nan
+    values = a.copy()
+    half = n // 2
+    if n % 2 == 1:
+        return _select(values, half)
+    low = _select(values, half - 1)
+    return (low + _smallest_after(values, half - 1)) / 2.0
+
+
+def quantile(a: Array[f64, 1], q: f64) -> f64:
+    """The `q` quantile of `a`, for `q` from 0 to 1, as `numpy.quantile` with its default
+    method, "linear": the element at the fractional position `(n - 1) * q` of `a` sorted,
+    interpolated linearly between its two neighbours, rounded as NumPy rounds.
+
+    NaN when any element is NaN. Panics when `q` is outside 0 to 1, where NumPy raises
+    `ValueError`, or when `a` is empty. Copies `a` once and selects in place; `a` is unchanged.
+    """
+    assert q >= 0.0 and q <= 1.0, "quantile needs q from 0 to 1"
+    n = len(a)
+    assert n > 0, "quantile of an empty array"
+    if _has_nan(a):
+        return nan
+    position = (n - 1) * q
+    values = a.copy()
+    # NumPy takes the last element for both neighbours at the end of the range, and keeps
+    # `position - (-1)` as the weight; the interpolation below then gives that element, or NaN
+    # when it is infinite, exactly as NumPy's does.
+    previous = 0.0
+    following = 0.0
+    gamma = 0.0
+    if position < n - 1:
+        below = floor(position)
+        gamma = position - below
+        previous = _select(values, below)
+        following = _smallest_after(values, below)
+    else:
+        gamma = position + 1.0
+        previous = _select(values, n - 1)
+        following = previous
+    difference = following - previous
+    if gamma >= 0.5:
+        return following - difference * (1.0 - gamma)
+    return previous + difference * gamma
+
+
+def percentile(a: Array[f64, 1], q: f64) -> f64:
+    """The `q` percentile of `a`, for `q` from 0 to 100, as `numpy.percentile`: the quantile
+    `q / 100`, computed as `quantile` does.
+
+    NaN when any element is NaN. Panics when `q` is outside 0 to 100, where NumPy raises
+    `ValueError`, or when `a` is empty.
+    """
+    assert q >= 0.0 and q <= 100.0, "percentile needs q from 0 to 100"
+    return quantile(a, q / 100.0)
+
+
+def average(a: Array[f64, 1], weights: Array[f64, 1]) -> f64:
+    """The mean of `a` weighted by `weights`, as `numpy.average(a, weights=weights)`: the sum of
+    `a * weights` over the sum of `weights`, each sum added in NumPy's pairwise order.
+
+    The unweighted average is `a.mean()`. Panics when the lengths differ, or when the weights
+    sum to zero, where NumPy raises `ZeroDivisionError`. Reads both arrays twice and stores
+    nothing.
+    """
+    assert len(weights) == len(a), "average needs weights as long as a"
+    scale = weights.sum()
+    assert scale != 0.0, "average needs weights that do not sum to zero"
+    return (a * weights).sum() / scale
