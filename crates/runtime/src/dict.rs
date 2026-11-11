@@ -305,6 +305,16 @@ impl Table {
             .map_or(-1, position_of)
     }
 
+    /// The entries that hold keys, in insertion order, each as the `words` 64-bit words of its
+    /// record: the hash, then the key and the value as compiled code lays them out. For the
+    /// runtime's own reads of a whole `dict`, such as the `env=` of `subprocess.run`.
+    pub(crate) fn entries(&self, words: usize) -> impl Iterator<Item = &[u64]> {
+        self.storage
+            .chunks_exact(words.max(1))
+            .take(self.used)
+            .filter(|entry| entry[0] != HOLE)
+    }
+
     /// Rebuilds the table with an index of `slots` slots, copying the entries that hold keys
     /// across in order and leaving the holes behind.
     ///
