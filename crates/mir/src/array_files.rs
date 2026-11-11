@@ -1,5 +1,6 @@
 //! The operations on array files a [`Builtin::ArrayFile`](crate::Builtin::ArrayFile) call
-//! performs (decision 0036, part 4): `Array.fromfile` and `a.tofile`.
+//! performs: `Array.fromfile` and `a.tofile` (decision 0036, part 4), and `Array.load` and
+//! `Array.save` of `NumPy`'s `.npy` files (decision 0043).
 
 /// An operation on an array file, called by [`Builtin::ArrayFile`](crate::Builtin::ArrayFile).
 ///
@@ -24,6 +25,19 @@ pub enum ArrayFile {
     /// writes every element the array sees, so a view writes only its own elements, in
     /// row-major order.
     ToFile,
+    /// `Array.load(path)`: one argument, the path, a `str`. The destination is a new
+    /// `Array[T, rank]` of any rank, and its `T` is a number or a `bool`. The call reads a
+    /// `.npy` file, `NumPy`'s format versions 1.0 to 3.0, and fails with the kind
+    /// `INVALID_DATA` when the file is not one, or when its header names another element type
+    /// or rank than the destination's, Fortran order or big-endian bytes. Its elements are read
+    /// straight into the array, as `FromFile` reads them.
+    Load,
+    /// `Array.save(path, a)`: two arguments, the path, a `str`, and the array, passed `Borrow`;
+    /// the destination has type `None`. The call makes the file, or empties the one there, and
+    /// writes a `.npy` file in `NumPy`'s format version 1.0: the header that names the element
+    /// type, as `NumPy` spells it (`'<f8'`), and the shape, then every element the array sees
+    /// in row-major order, as `ToFile` writes them.
+    Save,
 }
 
 impl ArrayFile {
@@ -32,12 +46,16 @@ impl ArrayFile {
     /// ```
     /// assert_eq!(mir::ArrayFile::FromFile.name(), "Array.fromfile");
     /// assert_eq!(mir::ArrayFile::ToFile.name(), "Array.tofile");
+    /// assert_eq!(mir::ArrayFile::Load.name(), "Array.load");
+    /// assert_eq!(mir::ArrayFile::Save.name(), "Array.save");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             Self::FromFile => "Array.fromfile",
             Self::ToFile => "Array.tofile",
+            Self::Load => "Array.load",
+            Self::Save => "Array.save",
         }
     }
 }
