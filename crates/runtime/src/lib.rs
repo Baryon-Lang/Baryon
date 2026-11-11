@@ -98,12 +98,13 @@ mod subprocess;
 mod sum;
 
 pub use abi::{
-    CompletedProcess, ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128, ELEMENT_F32,
-    ELEMENT_F64, ELEMENT_I8, ELEMENT_I16, ELEMENT_I32, ELEMENT_I64, ELEMENT_U8, ELEMENT_U16,
-    ELEMENT_U32, ELEMENT_U64, OsError, OwnedList, OwnedText, RaisedError, RaisedValueError,
-    TextBuilder, TextValue, ValueError, baryon_rt_accumulator_chunk_done,
-    baryon_rt_accumulator_finish, baryon_rt_accumulator_new, baryon_rt_accumulator_slot,
-    baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_argument, baryon_rt_argument_count,
+    ArrayHeader, CompletedProcess, ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128,
+    ELEMENT_F32, ELEMENT_F64, ELEMENT_I8, ELEMENT_I16, ELEMENT_I32, ELEMENT_I64, ELEMENT_U8,
+    ELEMENT_U16, ELEMENT_U32, ELEMENT_U64, ElementLayout, OsError, OwnedList, OwnedText,
+    RaisedError, RaisedValueError, TextBuilder, TextValue, ValueError,
+    baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
+    baryon_rt_accumulator_slot, baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_argument,
+    baryon_rt_argument_count, baryon_rt_array_from_file, baryon_rt_array_to_file,
     baryon_rt_chunk_count, baryon_rt_deallocate, baryon_rt_dict_find, baryon_rt_dict_free,
     baryon_rt_dict_insert, baryon_rt_dict_length, baryon_rt_dict_next, baryon_rt_dict_remove,
     baryon_rt_dot_f32, baryon_rt_dot_f64, baryon_rt_dot_strided_f32, baryon_rt_dot_strided_f64,
