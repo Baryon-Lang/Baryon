@@ -1,6 +1,6 @@
 //! The type of a place, worked out from its local's type and its projections.
 
-use mir::{Place, Projection, SliceIndex};
+use mir::{Place, Projection};
 use types::{Declared, Nominal, Primitive, Type, TypeKind};
 
 /// What working out a place's type needs: the database, the body's locals and what each struct
@@ -15,7 +15,7 @@ pub(crate) struct Types<'a, 'db> {
 impl<'db> Types<'_, 'db> {
     /// The type of the value at `place`, starting from `local`, the type of its local; `None` when
     /// a projection does not fit the type, which a type-checked body never contains. A view is
-    /// an `Array` of the base's element type, one dimension per range.
+    /// an `Array` of the base's element type, one dimension per range or new axis.
     pub(crate) fn of(&self, local: Type<'db>, place: &Place) -> Option<Type<'db>> {
         let mut ty = local;
         for projection in &place.projections {
@@ -46,11 +46,11 @@ impl<'db> Types<'_, 'db> {
                     Projection::Slice(dimensions),
                     TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. },
                 ) => {
-                    let ranges = dimensions
+                    let kept = dimensions
                         .iter()
-                        .filter(|dimension| matches!(dimension, SliceIndex::Range { .. }))
+                        .filter(|dimension| dimension.in_view())
                         .count();
-                    let rank = u32::try_from(ranges).ok()?;
+                    let rank = u32::try_from(kept).ok()?;
                     Type::new(
                         self.db,
                         TypeKind::Array {

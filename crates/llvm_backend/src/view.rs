@@ -5,7 +5,8 @@
 //! array's elements and owns none of them. For each dimension of the base, an index `i` moves
 //! the data pointer by `i * stride` and drops the dimension; a range moves it by
 //! `start * stride` and keeps the dimension with the range's length and `stride * step` as its
-//! stride. The base may be an `Array`, whose pointer and strides are read from its header, or a
+//! stride; a new axis, `None` in the subscript, adds a dimension of length 1 and stride 0 and
+//! uses up no dimension of the base. The base may be an `Array`, whose pointer and strides are read from its header, or a
 //! `Fixed`, whose elements are in place in row-major order, so its strides are constants.
 //!
 //! The header goes in a stack slot of its own that the entry block makes, so building a view
@@ -54,14 +55,25 @@ impl<'db> Function<'_, '_, 'db> {
             }
             _ => return Err(self.types.unsupported(ty)),
         };
-        if strides.len() != dimensions.len() {
+        if strides.len() != dimensions.iter().filter(|entry| entry.of_base()).count() {
             return Err(Unsupported::new(
                 "a slice with the wrong number of dimensions",
             ));
         }
         let mut offset = "0".to_owned();
         let (mut lengths, mut steps) = (Vec::new(), Vec::new());
-        for (dimension, stride) in dimensions.iter().zip(&strides) {
+        let mut strides = strides.iter();
+        for dimension in dimensions {
+            // A new axis: length 1 and stride 0, using up no dimension of the base.
+            if !dimension.of_base() {
+                lengths.push("1".to_owned());
+                steps.push("0".to_owned());
+                continue;
+            }
+            // As many base dimensions as strides, checked above.
+            let Some(stride) = strides.next() else {
+                break;
+            };
             let first = match dimension {
                 SliceIndex::Index(index) => self.index(*index)?,
                 SliceIndex::Range {
@@ -74,6 +86,7 @@ impl<'db> Function<'_, '_, 'db> {
                     steps.push(self.emit(&format!("mul i64 {step}, {stride}")));
                     self.index(*start)?
                 }
+                SliceIndex::NewAxis => continue,
             };
             let moved = self.emit(&format!("mul i64 {first}, {stride}"));
             offset = if offset == "0" {

@@ -143,3 +143,61 @@ fn views_read_through_their_strides() {
         Err("32 0 1\n2\npanic: slice 2:12 is out of range for dimension 0 of length 10\n  --> heat.byn:1:1\n".to_owned())
     );
 }
+
+/// `grid[start for length by step, None, column]`: a column of rows with a new axis between,
+/// a view of rank 2 whose second dimension has length 1 and uses up none of the grid's.
+fn with_new_axis() -> Place {
+    Place::from(Local::new(1)).project(Projection::Slice(vec![
+        SliceIndex::Range {
+            start: Local::new(2),
+            length: Local::new(3),
+            step: Local::new(4),
+        },
+        SliceIndex::NewAxis,
+        SliceIndex::Index(Local::new(5)),
+    ]))
+}
+
+/// The C program for [`a_new_axis_has_length_one_and_takes_no_dimension`]: the same grid.
+const NEW_AXIS_MAIN: &str = r#"
+    #include <stdio.h>
+    #include <stdint.h>
+    typedef struct { double *data; int64_t length[2], stride[2]; } Grid;
+    double pick(const Grid *, int64_t, int64_t, int64_t, int64_t, int64_t);
+    int64_t axis(const Grid *, int64_t, int64_t, int64_t, int64_t, int64_t);
+    int main(void) {
+        double data[12];
+        for (int i = 0; i < 12; i++) data[i] = 10 * (i / 3) + i % 3;
+        Grid grid = { data, { 4, 3 }, { 3, 1 } };
+        printf("%g %lld\n", pick(&grid, 1, 2, 2, 2, 0), (long long)axis(&grid, 0, 4, 1, 1, 0));
+        return 0;
+    }
+"#;
+
+/// A new axis adds a dimension of length 1 to the view's header and moves its data pointer by
+/// nothing, so `view[k, k]` with `k` 0 reads the grid at the range's start, and the view's
+/// dimension 1 has length 1.
+#[test]
+fn a_new_axis_has_length_one_and_takes_no_dimension() {
+    let database = Database::default();
+    let f64 = primitive(&database, Primitive::Float(Float::F64));
+    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
+    let element = with_new_axis().project(Projection::Index(vec![Local::new(6), Local::new(6)]));
+    let functions = [
+        (
+            "pick",
+            body(&database, f64, Rvalue::Use(Operand::Copy(element)), None),
+        ),
+        (
+            "axis",
+            body(&database, i64, Rvalue::Length(with_new_axis(), 1), None),
+        ),
+    ];
+    let text = super::module(&database, &functions);
+    assert!(
+        text.contains("alloca { ptr, [2 x i64], [2 x i64] }"),
+        "{text}"
+    );
+    let executable = build("new-axis", &text, NEW_AXIS_MAIN);
+    assert_eq!(run(&executable, &[]), Ok("12 1\n".to_owned()));
+}

@@ -452,6 +452,7 @@ fn place_text(place: &Place) -> String {
                         length.index(),
                         step.index()
                     ),
+                    SliceIndex::NewAxis => "None".to_owned(),
                 });
                 write!(text, "[{}]", dimensions.collect::<Vec<_>>().join(", "))
             }
