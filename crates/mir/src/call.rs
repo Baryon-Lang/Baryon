@@ -56,6 +56,24 @@ pub enum Builtin {
     /// has the same bits as `(a * b).sum()` without building `a * b`. A multiply and an add are
     /// never fused into one rounding. Integer dot products lower to a loop, as integer sums do.
     Dot,
+    /// How many leaves the pairwise tree of [`Sum`](Self::Sum) has for `count` values (decision
+    /// 0041): one argument, `count`, an `i64` passed `Owned`; the destination is an `i64`, 1 for
+    /// up to 128 values. Array expansion calls it, with
+    /// [`PairwiseLeafEnd`](Self::PairwiseLeafEnd) and [`PairwiseCombine`](Self::PairwiseCombine),
+    /// to sum a whole-array expression one leaf at a time without storing it. The call cannot
+    /// fail.
+    PairwiseLeaves,
+    /// Where the leaf of the pairwise tree of `count` values that starts at `start` ends: two
+    /// arguments, `count` and `start`, each an `i64` passed `Owned`, `start` being 0 or the end
+    /// of the leaf before; the destination is an `i64`, the index of the next leaf's first
+    /// value, or `count` for the last. A leaf holds at most 128 values. The call cannot fail.
+    PairwiseLeafEnd,
+    /// The pairwise sum of `count` values from the sums of its leaves: two arguments, `count`,
+    /// an `i64` passed `Owned`, and the leaf sums in order, a rank-1 `Array` of floats passed
+    /// `Borrow`, one per leaf, each the [`Sum`](Self::Sum) of that leaf's values. The
+    /// destination has the element type and the bits [`Sum`](Self::Sum) of all the values
+    /// would give. The call cannot fail.
+    PairwiseCombine,
     /// `xs.append(value)` on a `list`: two arguments, the list passed `InOut` and the value
     /// passed `Owned`, of the list's element type; the destination has type `None`. When the
     /// buffer is full it grows to twice its capacity, at least 4 elements, so a run of appends
@@ -227,6 +245,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Math(mir::MathFunction::Sqrt).name(), "math.sqrt");
     /// assert_eq!(mir::Builtin::Sum.name(), "sum");
     /// assert_eq!(mir::Builtin::Dot.name(), "dot");
+    /// assert_eq!(mir::Builtin::PairwiseCombine.name(), "pairwise combine");
     /// assert_eq!(mir::Builtin::Append.name(), "list.append");
     /// assert_eq!(mir::Builtin::Pop.name(), "list.pop");
     /// assert_eq!(mir::Builtin::Philox.name(), "random.Philox");
@@ -249,6 +268,9 @@ impl Builtin {
             Self::Math(function) => function.name(),
             Self::Sum => "sum",
             Self::Dot => "dot",
+            Self::PairwiseLeaves => "pairwise leaves",
+            Self::PairwiseLeafEnd => "pairwise leaf end",
+            Self::PairwiseCombine => "pairwise combine",
             Self::Append => "list.append",
             Self::Pop => "list.pop",
             Self::Philox => "random.Philox",

@@ -163,6 +163,7 @@ mod list;
 mod literal;
 mod math;
 mod module;
+mod pairwise;
 mod panic;
 mod parallel;
 mod print;
