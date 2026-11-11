@@ -32,14 +32,13 @@ pub(crate) fn literal(tree: &syntax::SyntaxTree, text: &str, node: NodeId) -> Op
 
 impl<'db> Body<'db> {
     /// `Raises[value, OSError]`.
-    fn raises_os_error(&mut self, node: NodeId, value: Type<'db>) -> Type<'db> {
+    pub(super) fn raises_os_error(&mut self, node: NodeId, value: Type<'db>) -> Type<'db> {
         self.raises_library_error(node, value, "OSError")
     }
 
-    /// `open(path)` or `open(path, mode)`, the mode positional or by keyword, with an optional
+    /// `open(path)` or `open(path, mode)`, the path a `str` or a `Path`, the mode positional or by keyword, with an optional
     /// `encoding="utf-8"`. The mode is a literal: `"r"`, `"w"`, `"a"` or `"x"`.
     pub(super) fn open(&mut self, node: NodeId, arguments: &Arguments) -> Type<'db> {
-        let str = Type::new(self.db, TypeKind::Str);
         let mut mode = arguments.positional.get(1).copied();
         let mut wrong = arguments.positional.len() > 2 || arguments.positional.is_empty();
         for &(name, value) in &arguments.keywords {
@@ -58,9 +57,7 @@ impl<'db> Body<'db> {
                 Some("for example `open(\"data.txt\")` or `open(\"out.txt\", \"w\")`"),
             );
         }
-        let path = arguments.positional[0];
-        let found = self.expression(path, Some(str));
-        self.expect(path, str, found, "a path is");
+        self.path_like(arguments.positional[0]);
         if let Some(mode) = mode {
             self.mode(mode);
         }
@@ -129,7 +126,7 @@ impl<'db> Body<'db> {
     }
 
     /// Checks `encoding=`: text files are UTF-8, so only `"utf-8"` is accepted.
-    fn encoding(&mut self, encoding: NodeId) {
+    pub(super) fn encoding(&mut self, encoding: NodeId) {
         let str = Type::new(self.db, TypeKind::Str);
         let found = self.expression(encoding, Some(str));
         self.expect(encoding, str, found, "an encoding is");

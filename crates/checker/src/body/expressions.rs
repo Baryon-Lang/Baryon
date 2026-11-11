@@ -198,15 +198,11 @@ impl<'db> Body<'db> {
                 Type::new(self.db, TypeKind::Primitive(Primitive::Float(Float::F64)))
             }
             Some(Definition::Standard {
-                module: "sys",
-                member: Some(member),
-            }) if member == "argv" => self.argv(),
-            Some(Definition::Standard {
                 module: module @ ("sys" | "os" | "subprocess"),
                 member: Some(member),
             }) => {
                 let (module, member) = (*module, member.clone());
-                self.not_built(node, module, &member)
+                self.process_value(node, module, &member)
             }
             _ => self.lowerer.unknown(),
         }
@@ -241,6 +237,11 @@ impl<'db> Body<'db> {
 
     /// `value[index]`: an element of a list, a string, a tuple, an `Array` or a `Fixed`.
     fn subscript(&mut self, node: NodeId) -> Type<'db> {
+        if let Some(value) = self.tree.child(node, Role::Value)
+            && self.is_environ(value)
+        {
+            return self.environ_item(node);
+        }
         let base = self.child_type(node, Role::Value);
         if let Some(value) = self.tree.child(node, Role::Value)
             && self.maybe_none(value, base)

@@ -13,10 +13,11 @@ impl<'db> Body<'db> {
         for part in parts {
             match self.tree.kind(part) {
                 SyntaxKind::Interpolation => {
-                    let ty = self
-                        .tree
-                        .child(part, Role::Value)
-                        .map(|value| self.expression(value, None));
+                    let value = self.tree.child(part, Role::Value);
+                    let ty = value.map(|value| self.expression(value, None));
+                    if let (Some(value), Some(ty)) = (value, ty) {
+                        self.shows_no_path(value, ty);
+                    }
                     if let Some(format) = self.tree.child(part, Role::Format) {
                         self.interpolations(format);
                         if let Some(ty) = ty {

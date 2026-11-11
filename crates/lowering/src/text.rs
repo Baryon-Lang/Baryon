@@ -48,8 +48,10 @@ impl<'db> Builder<'db> {
                     let Some(spec) = self.format_spec(item) else {
                         return;
                     };
+                    // A `Path` is formatted as its text, as Python's `str(path)`.
+                    let ty = self.ty(value);
                     let value = self.borrow(value);
-                    pieces.push(Piece::Value(value, spec));
+                    pieces.push(Piece::Value(self.text_place(value, ty), spec));
                 }
                 _ => return self.unsupported(item, "this part of an f-string"),
             }
@@ -86,7 +88,8 @@ impl<'db> Builder<'db> {
         FormatSpec::parse(&text).ok()
     }
 
-    /// One link of a comparison chain between two `str`s, `left op right`, into the `bool` at
+    /// One link of a comparison chain between two `str`s, or two `Path`s compared with `==` or
+    /// `!=`, `left op right`, into the `bool` at
     /// `place`. `==`, `!=`, `<`, `<=`, `>` and `>=` compare the three-way order
     /// [`Builtin::CompareStr`] gives with 0; `in` and `not in` ask [`Builtin::ContainsStr`]
     /// whether `left` occurs in `right`. `previous` is the left string when the link before
@@ -100,11 +103,16 @@ impl<'db> Builder<'db> {
         previous: Option<Operand<'db>>,
         node: NodeId,
     ) -> Option<Operand<'db>> {
-        let left = match previous {
-            Some(Operand::Copy(place)) => place,
-            _ => self.borrow(left),
+        // A `Path` compares as its text does (`Builder::text_place`).
+        let (left_type, right_type) = (self.ty(left), self.ty(right));
+        let left = if let Some(Operand::Copy(place)) = previous {
+            place
+        } else {
+            let place = self.borrow(left);
+            self.text_place(place, left_type)
         };
         let right = self.borrow(right);
+        let right = self.text_place(right, right_type);
         let returned = Some(Operand::Copy(right.clone()));
         if matches!(operator, Operator::In | Operator::NotIn) {
             let arguments = vec![Argument::Borrow(right), Argument::Borrow(left)];

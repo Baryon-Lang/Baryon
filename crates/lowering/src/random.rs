@@ -41,7 +41,7 @@ impl<'db> Builder<'db> {
     }
 
     /// A call of `builtin` with `arguments`, its result written into `place`; it cannot fail.
-    fn builtin_call(
+    pub(crate) fn builtin_call(
         &mut self,
         builtin: Builtin,
         arguments: Vec<Argument<'db>>,

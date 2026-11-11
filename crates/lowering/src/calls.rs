@@ -102,6 +102,12 @@ impl<'db> Builder<'db> {
             (None, _) if name == "print" => self.print(place, arguments, node),
             (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
             (None, _) if name == "open" => self.open(place, arguments, node),
+            (None, [value]) if name == "str" => {
+                if !self.text_of_value(&place, *value, node) {
+                    self.unsupported(node, "the built-in `str`");
+                }
+            }
+            (Some(("pathlib", "Path")), _) => self.path_new(place, arguments, node),
             (None, [values, rest @ ..]) if self.reduces(name, (*values, rest), node) => {
                 self.reduce(place, name, (*values, rest), node);
             }
@@ -126,7 +132,7 @@ impl<'db> Builder<'db> {
                 self.array_method(place, method, arguments, node);
             }
             (Some(("math", member)), _) => self.math_function(place, member, arguments, node),
-            (Some((owner @ ("random" | "Philox" | "sys" | "os" | "File"), member)), _) => {
+            (Some((owner @ ("random" | "Philox" | "sys" | "os" | "File" | "Path"), member)), _) => {
                 self.standard_call(place, (owner, member), arguments, node);
             }
             _ => self.unsupported(node, &format!("the built-in `{name}`")),
@@ -406,7 +412,10 @@ impl<'db> Builder<'db> {
         if self.is_literal(argument) {
             Argument::Owned(Operand::Constant(self.literal(argument)))
         } else {
-            Argument::Borrow(self.borrow(argument))
+            // A `Path` prints as its text, as Python's `print(path)` does.
+            let ty = self.ty(argument);
+            let place = self.borrow(argument);
+            Argument::Borrow(self.text_place(place, ty))
         }
     }
 

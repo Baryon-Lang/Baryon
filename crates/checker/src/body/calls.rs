@@ -34,6 +34,9 @@ impl<'db> Body<'db> {
         };
         let callee = self.tree.text(function, self.text).to_owned();
         let ty = match resolved {
+            Some(&Definition::Item(file, name)) if self.is_path_class(file, name) => {
+                self.path_new(node, &arguments)
+            }
             Some(&Definition::Item(file, name)) => {
                 self.call_item(node, &callee, file, name, &arguments)
             }
@@ -79,8 +82,9 @@ impl<'db> Body<'db> {
             None if self.environ_value(function) => {
                 let method = self.tree.child(function, Role::Attribute);
                 let method = method.map_or("", |method| self.tree.text(method, self.text));
-                let ty = self.environ_method(node, method, &arguments);
-                self.record_environ(node, &arguments, ty);
+                let method = method.to_owned();
+                let ty = self.environ_method(node, &method, &arguments);
+                self.record_environ(node, &method, &arguments, ty);
                 ty
             }
             None if self.tree.kind(function) == SyntaxKind::Attribute => {

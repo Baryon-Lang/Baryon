@@ -21,8 +21,18 @@ impl<'db> Body<'db> {
         {
             // The place's type is the value's context, so `p.mass = 2` on an `f32` field
             // makes `2` an `f32`, as `x: f32 = 2` does.
+            // `path.name = "x"` is reported before `change`, which would add that a borrowed
+            // `path` cannot change; a part reached through a field is reported once typed.
+            if self.path_part_changed(target) {
+                self.expression(value, None);
+                return;
+            }
             self.change(target);
             let held = self.expression(target, None);
+            if self.path_part_changed(target) {
+                self.expression(value, None);
+                return;
+            }
             self.assigned_complex_part(target);
             // A slice takes a number for every element, `a[1:n] = 0.0` (reference, "Slices").
             let filled = match held.kind(self.db) {
@@ -110,8 +120,16 @@ impl<'db> Body<'db> {
             return;
         };
         let operator = self.tree.node(statement).operator();
+        if self.path_part_changed(target) {
+            self.expression(value, None);
+            return;
+        }
         self.change(target);
         let current = self.expression(target, None);
+        if self.path_part_changed(target) {
+            self.expression(value, None);
+            return;
+        }
         self.assigned_complex_part(target);
         if self.maybe_none(target, current) {
             self.expression(value, None);

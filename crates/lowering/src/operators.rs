@@ -264,6 +264,10 @@ impl<'db> Builder<'db> {
             self.is_none(place, operator, left, right, node);
             return None;
         }
+        if matches!(operator, Operator::In | Operator::NotIn) && self.is_environ(right) {
+            self.environ_contains(place, operator, left, node);
+            return None;
+        }
         let (left_type, right_type) = (self.ty(left), self.ty(right));
         if matches!(operator, Operator::In | Operator::NotIn) {
             match right_type.kind(self.db) {
@@ -281,6 +285,16 @@ impl<'db> Builder<'db> {
         let is_text = |builder: &Self, ty: Type<'db>| matches!(ty.kind(builder.db), TypeKind::Str);
         if is_text(self, left_type) && is_text(self, right_type) {
             return self.text_comparison(place, operator, (left, right), previous, node);
+        }
+        // Two paths are equal when their texts are, as in Python, where `Path` holds the same
+        // form of the text. Python orders paths part by part, which is not the order of their
+        // texts, so `<` and the rest are not lowered.
+        if self.is_path(left_type) && self.is_path(right_type) {
+            if matches!(operator, Operator::Equal | Operator::NotEqual) {
+                return self.text_comparison(place, operator, (left, right), previous, node);
+            }
+            self.unsupported(node, &format!("`{}` on `Path` values", operator.symbol()));
+            return None;
         }
         let Some(operator) = comparison(operator) else {
             self.unsupported(node, &format!("`{}`", operator.symbol()));

@@ -53,6 +53,9 @@ impl<'db> Body<'db> {
         match (name, types.as_slice()) {
             ("str", [_]) => Type::new(self.db, TypeKind::Str),
             ("print", _) => {
+                for (&argument, &ty) in all.iter().zip(&types) {
+                    self.shows_no_path(argument, ty);
+                }
                 self.print_keywords(arguments, &types[arguments.positional.len()..]);
                 Type::new(self.db, TypeKind::None)
             }

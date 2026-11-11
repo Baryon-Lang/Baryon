@@ -10,6 +10,7 @@
 //! A missing key panics. The panic names the key as Python's `repr` writes it, and that text is
 //! built only on the failing path, so a lookup that succeeds costs one hash and no formatting.
 
+mod environment;
 mod loops;
 mod methods;
 mod text;
@@ -391,7 +392,7 @@ impl<'db> Builder<'db> {
 
 /// Field `field` (0 the key, 1 the value) of the entry at the position in `position` of the
 /// `dict` at `dict`.
-fn entry(dict: Place, position: Local, field: u32) -> Place {
+pub(super) fn entry(dict: Place, position: Local, field: u32) -> Place {
     dict.project(Projection::Index(vec![position]))
         .project(Projection::Field(field))
 }

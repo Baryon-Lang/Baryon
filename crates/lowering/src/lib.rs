@@ -300,6 +300,7 @@ mod matrix;
 mod methods;
 mod operators;
 mod parallel;
+mod paths;
 mod patterns;
 mod process;
 mod random;

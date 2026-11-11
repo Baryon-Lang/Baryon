@@ -12,14 +12,41 @@
 
 use crate::builder::Builder;
 use database::Definition;
-use mir::TerminatorKind;
-use mir::{Argument, Builtin, Callee, Constant, ConstantValue, Operand, Place, Rvalue};
-use syntax::{NodeId, Role, SyntaxKind};
-use types::{Primitive, Type, TypeKind};
+use mir::{Argument, Builtin, Callee, Check, Constant, ConstantValue, Local, Operand, Piece};
+use mir::{Place, Rvalue, TerminatorKind, UnaryOperator};
+use syntax::{NodeId, Operator, Role, SyntaxKind};
+use types::{FormatSpec, Primitive, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// Whether `node` reads `sys.argv`, as `sys.argv` or as `argv` after `from sys import argv`.
     pub(crate) fn is_argv(&self, node: NodeId) -> bool {
+        self.is_standard(node, "sys", "argv")
+    }
+
+    /// Whether `node` names `os.environ`, as `os.environ` or as `environ` after
+    /// `from os import environ`.
+    pub(crate) fn is_environ(&self, node: NodeId) -> bool {
+        self.is_standard(node, "os", "environ")
+    }
+
+    /// Whether `node` is `os.environ[name]`, which names no place: each read asks the runtime.
+    pub(crate) fn is_environ_item(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::Subscript
+            && self
+                .tree
+                .child(node, Role::Value)
+                .is_some_and(|value| self.is_environ(value))
+    }
+
+    /// Whether `node` is a value that names no place because each read computes it: `sys.argv`,
+    /// `os.environ[name]`, or a part of a `Path` such as `path.name`.
+    pub(crate) fn is_computed(&self, node: NodeId) -> bool {
+        self.is_argv(node) || self.is_environ_item(node) || self.is_path_part(node)
+    }
+
+    /// Whether `node` names the member `member` of the standard module `module`, as
+    /// `module.member` or as `member` after `from module import member`.
+    fn is_standard(&self, node: NodeId, module: &str, member: &str) -> bool {
         let name = match self.tree.kind(node) {
             SyntaxKind::Name => Some(node),
             SyntaxKind::Attribute => self.tree.child(node, Role::Attribute),
@@ -27,7 +54,7 @@ impl<'db> Builder<'db> {
         };
         name.and_then(|name| self.definition(name))
             .is_some_and(|definition| {
-                matches!(definition, Definition::Standard { module: "sys", member: Some(member) } if member == "argv")
+                matches!(definition, Definition::Standard { module: found, member: Some(name) } if *found == module && name == member)
             })
     }
 
@@ -83,20 +110,12 @@ impl<'db> Builder<'db> {
         default: Option<NodeId>,
         node: NodeId,
     ) {
-        let str = Type::new(self.db, TypeKind::Str);
-        let found = self.temporary(
-            Type::new(self.db, TypeKind::Primitive(Primitive::Bool)),
-            node,
-        );
-        let value = self.temporary(str, node);
-        self.drop_later(value);
         let name = if self.is_literal(name) {
             Argument::Owned(self.operand(name))
         } else {
             Argument::Borrow(self.borrow(name))
         };
-        let arguments = vec![name, Argument::InOut(Place::from(found))];
-        self.call_builtin(Builtin::EnvironmentGet, arguments, Place::from(value), node);
+        let (found, value) = self.environment_get(name, node);
         let (set, unset, join) = (self.new_block(), self.new_block(), self.new_block());
         self.branch(Operand::Copy(Place::from(found)), (set, unset), node);
         self.start(set);
@@ -122,6 +141,77 @@ impl<'db> Builder<'db> {
         self.start(join);
     }
 
+    /// The call of [`Builtin::EnvironmentGet`] for the variable `name`: a `bool` local set to
+    /// whether it is set, and a `str` local holding its value, or the empty text, which the end
+    /// of the statement drops unless it is moved first.
+    fn environment_get(&mut self, name: Argument<'db>, node: NodeId) -> (Local, Local) {
+        let str = Type::new(self.db, TypeKind::Str);
+        let found = self.temporary(
+            Type::new(self.db, TypeKind::Primitive(Primitive::Bool)),
+            node,
+        );
+        let value = self.temporary(str, node);
+        self.drop_later(value);
+        let arguments = vec![name, Argument::InOut(Place::from(found))];
+        self.call_builtin(Builtin::EnvironmentGet, arguments, Place::from(value), node);
+        (found, value)
+    }
+
+    /// `os.environ[name]` into `place`: the variable's value. A variable that is not set
+    /// panics with the message of a missing `dict` key, naming it (decision 0036, part 5); the
+    /// text of that message is built only on the failing path.
+    pub(crate) fn environ_item(&mut self, place: Place, node: NodeId) {
+        let Some(index) = self.tree.child(node, Role::Index) else {
+            return;
+        };
+        let name = self.borrow(index);
+        let (found, value) = self.environment_get(Argument::Borrow(name.clone()), node);
+        let (set, unset) = (self.new_block(), self.new_block());
+        self.branch(Operand::Copy(Place::from(found)), (set, unset), node);
+        self.start(unset);
+        let quote = || Piece::Text("'".to_owned());
+        let quoted = vec![quote(), Piece::Value(name, FormatSpec::default()), quote()];
+        let key = self.temporary(Type::new(self.db, TypeKind::Str), node);
+        self.assign(Place::from(key), Rvalue::Format(quoted), node);
+        self.terminate(
+            TerminatorKind::Assert {
+                condition: Operand::Copy(Place::from(found)),
+                check: Check::KeyPresent {
+                    key: Operand::Move(Place::from(key)),
+                },
+                target: set,
+            },
+            node,
+        );
+        self.start(set);
+        let moved = Rvalue::Use(Operand::Move(Place::from(value)));
+        self.assign(place, moved, node);
+    }
+
+    /// `name in os.environ`, or `not in`, into the `bool` at `place`: whether the variable is
+    /// set. The value the runtime also reads is dropped.
+    pub(crate) fn environ_contains(
+        &mut self,
+        place: Place,
+        operator: Operator,
+        name: NodeId,
+        node: NodeId,
+    ) {
+        let name = if self.is_literal(name) {
+            Argument::Owned(self.operand(name))
+        } else {
+            Argument::Borrow(self.borrow(name))
+        };
+        let (found, _) = self.environment_get(name, node);
+        let found = Operand::Copy(Place::from(found));
+        let rvalue = if operator == Operator::NotIn {
+            Rvalue::Unary(UnaryOperator::Not, found)
+        } else {
+            Rvalue::Use(found)
+        };
+        self.assign(place, rvalue, node);
+    }
+
     /// A call of a built-in of `random`, `sys` or `os`, or of a `Philox` method, named
     /// `owner.member`, into `place`: `random.Philox`, `Philox.uniform`, `sys.exit` and
     /// `os.getenv`, which `os.environ.get` is recorded as, and a `File` method. Any other, or the wrong number of
@@ -133,7 +223,12 @@ impl<'db> Builder<'db> {
         arguments: &[NodeId],
         node: NodeId,
     ) {
+        if owner == "os" && self.directory_call(&place, member, arguments, node) {
+            return;
+        }
         match ((owner, member), arguments) {
+            (("os", "environ.copy"), []) => self.environ_copy(&place, node),
+            (("Path", method), _) => self.path_method(place, method, arguments, node),
             (("random", "Philox"), [seed, rest @ ..]) if rest.len() <= 1 => {
                 self.philox(place, *seed, rest.first().copied(), node);
             }

@@ -4,11 +4,11 @@
 builds into programs yet.
 
 A program talks to the system that runs it through Python's modules and names: `sys` for its
-command-line arguments and exit status, `os` for its environment, `open` for text files, and
-`subprocess` for running another program, and `Array.fromfile` and `a.tofile` for binary files of
-arrays ([decision 0036](../decisions/0036-files-and-processes.md)). They are this language's own
-modules, built into the compiler and the runtime, not CPython's: no Python runs underneath.
-Paths and the standard streams come next, with the names that decision gives them.
+command-line arguments and exit status, `os` for its environment and directories, `pathlib` for
+paths, `open` for text files, `subprocess` for running another program, and `Array.fromfile` and
+`a.tofile` for binary files of arrays ([decision 0036](../decisions/0036-files-and-processes.md)).
+They are this language's own modules, built into the compiler and the runtime, not CPython's: no
+Python runs underneath. The standard streams come next, with the names that decision gives them.
 
 ## Command-line arguments
 
@@ -53,6 +53,13 @@ reached the end of `main`, and 101 is a [panic](errors.md#panics).
 when it is not set. `os.getenv(name, default)` gives a `str`, `default` when it is not set.
 `os.environ.get(name)` and `os.environ.get(name, default)` mean the same.
 
+`os.environ[name]` gives the value as a `str` and panics when the variable is not set, as reading
+a missing key of a `dict` does; Python raises `KeyError` there. `name in os.environ` and
+`name not in os.environ` test whether it is set. `os.environ.copy()` gives every variable as a new
+`dict[str, str]` of the program's own, in the order the operating system keeps them: changing the
+copy changes nothing else, so it is the way to build the environment for another program.
+`os.environ` on its own is not a value, since these are the only ways to read it.
+
 ```python
 import os
 
@@ -67,13 +74,17 @@ def main():
         print("HOME is not set")
     else:
         print("home:", home)
+    if "CI" in os.environ:
+        print("running in CI as", os.environ["USER"])
+    variables = os.environ.copy()
+    print(len(variables), "variables")
 ```
 
 A value that is not valid UTF-8 reads with U+FFFD in place of each bad sequence, as an argument
 does.
 
 The environment is read-only. Setting a variable, `os.environ["OMP_NUM_THREADS"] = "4"` in
-Python, is not part of the language: changing the environment while another thread reads it is a
+Python, is a compile error, and so are `del os.environ[name]`, `os.putenv` and `os.unsetenv`: changing the environment while another thread reads it is a
 data race in the C library, and every `prange` loop runs on several threads. A program that
 needs another environment gives one to the program it runs, with
 [`subprocess.run(..., env=...)`](#running-a-program).
@@ -200,6 +211,75 @@ The modes Python has and Baryon does not are errors that say what to write inste
 points to `Array.fromfile` and `a.tofile`, since binary data is whole arrays
 ([decision 0036](../decisions/0036-files-and-processes.md)). A `"+"` mode says a file is opened to
 read or to write, not both.
+
+## Paths and directories
+
+`pathlib.Path` holds a path, and `/` joins one to a name or another path. Its parts read the text
+and never touch the file system: `name` is the last component, `stem` the name without its suffix,
+`suffix` the name's last `.` and what follows, such as `.csv`, and `parent` the path without its
+last component. A `Path` keeps its text in the form Python's `pathlib` keeps on Linux and macOS:
+`Path("runs//out/")` is `runs/out`, `./a` is `a`, the empty text is `.`, and `..` stays, since
+removing it would change what a path through a symbolic link names. Each part gives what
+CPython 3.13 gives for the same text.
+
+```python
+import os
+from pathlib import Path
+
+
+def save(root: Path, step: int, energy: float) -> Raises[None, OSError]:
+    os.makedirs(root, exist_ok=True)
+    out = root / f"step_{step}.csv"
+    out.write_text(f"{energy}\n")
+    print(out, out.name, out.stem, out.suffix, out.parent)
+
+
+def main() -> Raises[None, OSError]:
+    save(Path("runs") / "2026", 3, -1.5)
+    for entry in Path("runs/2026").iterdir():
+        if entry.is_file():
+            print(entry.read_text(), end="")
+```
+
+prints `runs/2026/step_3.csv step_3.csv step_3 .csv runs/2026`, then `-1.5`.
+
+| Python | What it gives |
+| --- | --- |
+| `Path(text)` | the path, from one `str` or `Path` |
+| `path / other` | the two joined; `other` is a `Path` or a `str`, and one that starts with `/` replaces `path` |
+| `path.name`, `path.stem`, `path.suffix` | a `str` |
+| `path.parent` | a `Path` |
+| `path.exists()`, `path.is_file()`, `path.is_dir()` | a `bool`, following symbolic links; `False` when the system cannot tell |
+| `path.iterdir()` | a `list[Path]` of the directory's entries, in the order the system gives |
+| `path.read_text()` | the file's text, a `str` |
+| `path.write_text(text)` | the number of characters written; the file is made or emptied first |
+| `str(path)`, `print(path)`, `f"{path}"` | the text |
+| `path == other`, `path != other` | whether the two texts are equal |
+| `path.copy()` | a new `Path` with the same text |
+
+The directory functions of `os` take a path as a `str` or a `Path`, as everything that takes a
+path does, `open` included:
+
+| Python | What it does |
+| --- | --- |
+| `os.listdir(path)`, `os.listdir()` | the names in the directory, `.` when left out, as a `list[str]` in the order the system gives |
+| `os.mkdir(path)` | makes one directory |
+| `os.makedirs(path)`, `os.makedirs(path, exist_ok=True)` | makes the directory and every missing one above it |
+| `os.remove(path)` | removes a file |
+| `os.rename(source, destination)` | moves `source`, replacing a file at `destination` |
+| `os.getcwd()` | the directory the program runs in, a `str` |
+
+Everything that reads or changes the file system but `exists`, `is_file` and `is_dir` can fail,
+with an `OSError` that carries Python's `errno`, text and file name:
+`os.mkdir("runs")` on a directory that exists raises `ErrorKind.FILE_EXISTS`, errno 17,
+`File exists`, `runs`. A directory entry whose name is not UTF-8 is an `OSError` of the kind
+`INVALID_DATA` naming the directory, since a program could not open that name again.
+
+Three things differ from Python. `iterdir()` gives a list rather than an iterator, so `len` works
+on it. A `Path` inside a list, a tuple, a `dict` or a struct cannot be printed yet, where Python
+shows `PosixPath('runs')`: print each path on its own, or keep `str(path)`. Paths compare with
+`==` and `!=` only; Python orders them part by part, which is not built. A part cannot be
+assigned, `path.name = "x"`, as in Python: make a new path, `path.parent / "x"`.
 
 ## Running a program
 
@@ -376,8 +456,7 @@ NumPy's text mode, `sep=`, is not in Baryon: an array file is binary, and text i
 
 Decision 0036 settles the rest of this chapter's surface, and the compiler reports each part by
 name until it is built: `` `sys.stdin` is not in Baryon yet ``. In order, the next parts are
-`os.environ[name]`, `name in os.environ` and `os.environ.copy()`;
-`sys.stdin`, `sys.stdout`, `sys.stderr`, `input` and `print(..., file=)`; and `pathlib.Path`
-and the directory functions of `os`. Past that, idea I.39 lists what comes later,
-`subprocess.run(check=True)` and a keyword of `subprocess.run` given a value that may be `None`
-among them.
+`sys.stdin`, `sys.stdout`, `sys.stderr`, `input` and `print(..., file=)`. Past that, idea I.39
+lists what comes later, `subprocess.run(check=True)` and a keyword of `subprocess.run` given a
+value that may be `None` among them. The rest of `os` and `pathlib`, such as `os.chdir`,
+`Path.unlink` and `Path.glob`, is not part of decision 0036 and is reported the same way.
