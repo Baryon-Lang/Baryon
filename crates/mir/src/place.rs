@@ -71,11 +71,14 @@ pub enum Projection {
     /// gave, and names that entry as a `tuple[K, V]`: field 0 is the key and field 1 the value.
     /// The key is only read; the value is read, or written in place by `d[k] = v`.
     Index(Vec<Local>),
-    /// A view of part of an `Array` or `Fixed`: one [`SliceIndex`] per dimension, at least one
-    /// of them a range (language reference, "Arrays", "Slicing"). The view is an `Array` whose
-    /// rank is the number of ranges, of the base's element type. It refers to the base's memory
-    /// and owns none: element `k` of a range dimension is element `start + k * step` of the
-    /// base's dimension, and an index dimension is fixed at its index and dropped.
+    /// A view of part of an `Array` or `Fixed`: one [`SliceIndex`] per dimension of the base,
+    /// plus any number of [`NewAxis`](SliceIndex::NewAxis) entries, and at least one range or
+    /// new axis (language reference, "Arrays", "Slicing"). The view is an `Array` of the base's
+    /// element type whose rank is the number of ranges and new axes, in their order. It refers
+    /// to the base's memory and owns none: element `k` of a range dimension is element
+    /// `start + k * step` of the base's dimension, an index dimension is fixed at its index and
+    /// dropped, and a new axis is a dimension of length 1 that uses up no dimension of the
+    /// base.
     ///
     /// A view is a borrow, so a place that ends in this step is used only where a borrow can
     /// be: as a `Borrow` or `InOut` argument, read by [`Length`](crate::Rvalue::Length), as a
@@ -131,6 +134,10 @@ pub enum SliceIndex {
         /// The distance from one element taken to the next, not 0; negative walks backwards.
         step: Local,
     },
+    /// A new dimension of length 1 in the view, which uses up no dimension of the base: `None`
+    /// in a subscript, as `b[:, None]` writes it, so that the view broadcasts against arrays
+    /// of higher rank (roadmap 3.9). Its stride is 0.
+    NewAxis,
 }
 
 impl SliceIndex {
@@ -150,6 +157,34 @@ impl SliceIndex {
                 length,
                 step,
             } => vec![*start, *length, *step],
+            Self::NewAxis => Vec::new(),
         }
+    }
+
+    /// Whether the view has this dimension: a range or a new axis does, an index does not.
+    ///
+    /// ```
+    /// use mir::{Local, SliceIndex};
+    ///
+    /// assert!(SliceIndex::NewAxis.in_view());
+    /// assert!(!SliceIndex::Index(Local::new(3)).in_view());
+    /// ```
+    #[must_use]
+    pub fn in_view(&self) -> bool {
+        !matches!(self, Self::Index(_))
+    }
+
+    /// Whether this entry uses up a dimension of the base: an index or a range does, a new axis
+    /// does not.
+    ///
+    /// ```
+    /// use mir::{Local, SliceIndex};
+    ///
+    /// assert!(SliceIndex::Index(Local::new(3)).of_base());
+    /// assert!(!SliceIndex::NewAxis.of_base());
+    /// ```
+    #[must_use]
+    pub fn of_base(&self) -> bool {
+        !matches!(self, Self::NewAxis)
     }
 }

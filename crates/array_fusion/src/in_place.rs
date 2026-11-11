@@ -162,11 +162,11 @@ fn other_arrays(
         let rank = match (local.kind(db), place.projections.as_slice()) {
             (TypeKind::Array { rank, .. }, []) => *rank,
             (TypeKind::Array { .. } | TypeKind::Fixed { .. }, [Projection::Slice(dimensions)]) => {
-                let ranges = dimensions
+                let kept = dimensions
                     .iter()
-                    .filter(|dimension| matches!(dimension, SliceIndex::Range { .. }))
+                    .filter(|dimension| dimension.in_view())
                     .count();
-                u32::try_from(ranges).ok()?
+                u32::try_from(kept).ok()?
             }
             (TypeKind::Primitive(_), []) => continue,
             _ => return None,
