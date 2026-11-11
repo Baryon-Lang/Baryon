@@ -70,3 +70,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0035. `dict` is Python's dict, with keys that compare exactly](0035-dict.md) | Accepted |
 | [0036. Files and processes use Python's names, built natively in the runtime](0036-files-and-processes.md) | Accepted |
 | [0038. Standard-library classes are Baryon source shipped inside the compiler](0038-standard-library-in-baryon.md) | Accepted |
+| [0039. AstroBaryon keeps AstroPy's names](0039-astrobaryon-keeps-astropy-names.md) | Accepted |

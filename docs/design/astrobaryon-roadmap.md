@@ -41,9 +41,10 @@ also the first outline of the [transition guide](#the-transition-guide-from-astr
 
 [Not planned](#not-planned) lists the parts of AstroPy that AstroBaryon leaves out, and why.
 
-How close AstroBaryon's names and calls stay to AstroPy's is open decision D.24. The proposal is
-to keep AstroPy's module, class, function and argument names wherever the behavior is the same,
-and to differ only where Baryon's types force it, with every difference in the transition guide.
+AstroBaryon keeps AstroPy's module, class, function and argument names wherever the behavior is
+the same, and differs only where Baryon's types force it, with every difference in the transition
+guide ([decision 0039](../decisions/0039-astrobaryon-keeps-astropy-names.md), Collins,
+2026-11-11).
 
 ## Documentation is a deliverable
 
@@ -85,8 +86,6 @@ The guide also has:
   scope, each marked mapped, not provided, or not yet built. An AstroPy release that adds a name
   shows up as an unmapped entry.
 
-Until D.24 is decided, the example rows in the guide are written against AstroPy's names.
-
 ## Prerequisites, in build order
 
 Every Baryon library and language feature AstroBaryon needs, in the order they unblock it. Each
@@ -104,7 +103,7 @@ These settle the shape of whole modules, so they come before the code that depen
 | D.21 | Missing values: masked arrays, validity bitmaps, or one form for both | 3.24, 3.13, 4.2.6, 4.2.9 |
 | D.22 | Networking and TLS: written in Baryon or taken from the operating system | 3.30, and through it 4.2.2 and 4.2.4 |
 | D.23 | Where AstroBaryon lives: with Baryon's standard distribution, or a separate package | 4.2.13 and, if separate, 4.3 |
-| D.24 | How close AstroBaryon's names and calls stay to AstroPy's | 4.2.11 and every AstroBaryon row's API |
+| D.24 | How close AstroBaryon's names and calls stay to AstroPy's. Decided: AstroPy's names ([0039](../decisions/0039-astrobaryon-keeps-astropy-names.md)) | 4.2.11 and every AstroBaryon row's API |
 | D.1 | Team size, which sets every estimate below | Calendar dates |
 
 ### Language and arrays
@@ -155,7 +154,7 @@ in `ROADMAP.md`, which includes their documentation.
 1. **Groundwork.** Reference data recorded from AstroPy (4.2.1), the package skeleton with its
    documentation site and CI (4.2.13), and the transition guide's frame and coverage list
    (4.2.11). ERFA (3.31) is built in parallel: it needs little beyond what builds today and is the
-   best early showcase. Starts once D.23 and D.24 are decided.
+   best early showcase. Starts once D.23 is decided.
 2. **Astrometry core.** Time (4.2.2), units and constants (4.2.3), coordinates (4.2.4), world
    coordinate systems (3.32) and FITS images without compression (3.14). This covers most
    day-to-day astrometry and is the study's 10 to 12 person-year core, prerequisites included.

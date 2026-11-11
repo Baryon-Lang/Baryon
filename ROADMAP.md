@@ -253,7 +253,7 @@ the astronomy library (4.2), has its own plan in the
 | 4.2.10 | Visualization: image stretches and normalizations, and plot axes in sky coordinates | 45 | 3.15, 3.32 | Planned | — | — |
 | 4.2.11 | Transition guide from AstroPy: its frame, a first page with the changes every AstroPy user meets, and a coverage list checked in CI of every public name in the AstroPy subpackages in scope, each marked mapped, not provided or not yet built. Each sub-row then adds its own entries and flags every behavior difference | 15 | 4.2.13, D.24 | Planned | — | — |
 | 4.2.12 | User guide and tutorials: the tasks AstroPy's tutorials teach (observation planning, FITS images with WCS, catalog matching, light curves, fitting) as AstroBaryon programs run in CI, each beside its AstroPy version; added milestone by milestone | 20 | 4.2.13 | Planned | — | — |
-| 4.2.13 | Package skeleton: modules named after AstroPy's subpackages as D.24 settles, the documentation site from `baryon doc`, and CI that builds every example and checks the reference data | 5 | 4.2.1, D.23, D.24 | Planned | — | — |
+| 4.2.13 | Package skeleton: modules named after AstroPy's subpackages (decision 0039), the documentation site from `baryon doc`, and CI that builds every example and checks the reference data | 5 | 4.2.1, D.23, D.24 | Planned | — | — |
 | 4.2.14 | Benchmarks against AstroPy: frame transforms and time conversions on large catalogs, FITS reads, unit-heavy code, single-threaded and parallel; added as each sub-row lands | 10 | 4.2.13 | Planned | — | — |
 | 4.2.15 | Data containers: `NDData` and `CCDData` with uncertainties, masks, units and WCS, image cutouts, and `TimeSeries` and `BinnedTimeSeries` | 45 | 3.24, 3.32, 4.2.2, 4.2.6 | Planned | — | — |
 | 4.3 | Packages: a Baryon program depends on Baryon packages outside the compiler, named with versions in a manifest, fetched and built by `baryon`; a registry comes later. The design gets its own decision record first. Needed by AstroBaryon if D.23 makes it a separate package | 8 | 1.11 | Planned | — | — |
@@ -337,7 +337,7 @@ Open questions from the design plan and its review. A decision is `Done` once it
 | D.21 | Missing values: NumPy-style masked arrays, Arrow validity bitmaps, or one form for both arrays and tables; settle before 3.13 | — | — | Planned | Collins | — |
 | D.22 | Networking and TLS: written in Baryon, or TLS taken from the operating system, given that writing TLS well is a security project of its own | — | — | Planned | Collins | — |
 | D.23 | Where the astronomy library (4.2) lives: shipped with Baryon's standard distribution or as a separate package, which points to a package registry | — | — | Planned | Collins | — |
-| D.24 | How close AstroBaryon's names and calls stay to AstroPy's: the same module, class, function and argument names wherever the behavior is the same, with each forced difference in the transition guide (proposed), or an API designed fresh from the standards with every call mapped in the guide | — | — | Planned | Collins | — |
+| D.24 | How close AstroBaryon's names and calls stay to AstroPy's: the same module, class, function and argument names wherever the behavior is the same, with each forced difference in the transition guide, or an API designed fresh from the standards with every call mapped in the guide. Decided: keep AstroPy's names | — | — | Done | Collins | [0039](docs/decisions/0039-astrobaryon-keeps-astropy-names.md), [#209](https://github.com/Baryon-Lang/Baryon/pull/209) |
 
 ## Ideas
 
