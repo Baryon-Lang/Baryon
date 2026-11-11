@@ -16,6 +16,7 @@ mod print;
 mod process;
 mod sorting;
 mod string_methods;
+mod subprocess;
 mod text;
 mod vector;
 mod views;
