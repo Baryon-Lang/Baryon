@@ -232,7 +232,8 @@ pub enum Builtin {
     /// takes and gives, and which can fail and so have an error edge.
     Path(PathMethod),
     /// `Array.fromfile` or `a.tofile`, which read and write an array's elements as a file of
-    /// raw bytes (decision 0036). [`ArrayFile`] says what each takes and gives. Each can fail,
+    /// raw bytes (decision 0036), or `Array.load` or `Array.save`, which read and write a `.npy`
+    /// file (decision 0043). [`ArrayFile`] says what each takes and gives. Each can fail,
     /// as a [`File`](Self::File) call can: its call has an error edge.
     ArrayFile(ArrayFile),
     /// `subprocess.run(args, ...)` (decision 0036, part 8): runs the program `args[0]` names,
