@@ -306,6 +306,7 @@ mod random;
 mod reductions;
 mod slices;
 mod statements;
+mod statistics;
 mod subprocess;
 #[cfg(test)]
 mod tests;

@@ -214,7 +214,7 @@ the REPL, and three external users have written something real.
 | 3.13 | Arrow memory layout, DataFrame, group by, join | 5 | 3.9 | Planned | — | — |
 | 3.14 | File formats: CSV, Parquet, HDF5, NetCDF, FITS | 3 | 3.13 | Planned | — | — |
 | 3.15 | Plotting | 4 | 3.9 | Planned | — | — |
-| 3.16 | Statistics | 2 | 3.9 | Planned | — | — |
+| 3.16 | Statistics with NumPy's names and bits: `a.mean()`, `a.var(ddof=0)` and `a.std(ddof=0)` as array methods, of the whole array and along an axis, and `median`, `percentile`, `quantile`, `average`, `histogram`, `cov` and `corrcoef` as functions, in the module decision 0042 settles. Built in slices: the methods of the whole array first, then the functions, then the methods along an axis | 2 | 3.9 | In progress | Claude | — |
 | 3.18 | Special functions as SciPy's `scipy.special` has them, tested against it: the gamma, beta and error function families, Bessel functions, the Gauss hypergeometric function, elliptic integrals and orthogonal polynomials. A base library; AstroPy relies on it (Collins, 2026-11-10) | 70 | 3.9 | Planned | — | — |
 | 3.19 | Numerical integration as `scipy.integrate` has it: adaptive quadrature in QUADPACK's manner, fixed rules such as trapezoid and Simpson, and initial value problems for ordinary differential equations (RK45 and DOP853). A base library; AstroPy relies on it (Collins, 2026-11-10) | 25 | 3.9 | Planned | — | — |
 | 3.20 | Optimization and root finding as `scipy.optimize` has them: Levenberg-Marquardt least squares and curve fitting, Nelder-Mead, constrained minimization (SLSQP), and bracketing and Newton root finders. A base library; AstroPy relies on it (Collins, 2026-11-10) | 35 | 3.10 | Planned | — | — |

@@ -252,6 +252,8 @@ set.
 | `a.copy()` | A new contiguous array with the same elements |
 | `a.sum()`, `a.min()`, `a.max()` | The sum, smallest and largest element |
 | `a.sum(axis=k)`, `a.min(axis=k)`, `a.max(axis=k)` | The sums, smallest and largest elements along axis `k`: an array with that axis removed. See [Reductions along an axis](#reductions-along-an-axis) |
+| `a.mean()` | The mean of the elements, with NumPy's bits. See [Means and variances](#means-and-variances) |
+| `a.var(ddof=0)`, `a.std(ddof=0)` | The variance and standard deviation of float elements, dividing by `n - ddof`, with NumPy's bits |
 | `a.dot(b)` | The dot product of two rank-1 arrays or vectors of the same length |
 | `a.round()` | A new array with each element rounded to the nearest whole number, ties to even |
 | `a.fill(value)` | Sets every element to `value`; `a` must be changeable |
@@ -383,6 +385,49 @@ def peak_per_channel(signal: Array[f64, 2]) -> Array[f64, 1]:
 
 Each reduction reads the array once and allocates only its result. Version 0 reduces along one
 axis at a time; NumPy's tuple of axes and `keepdims=` are not built.
+
+### Means and variances
+
+`a.mean()`, `a.var()` and `a.std()` are NumPy's `mean`, `var` and `std` of the whole array, and
+give the same bits as NumPy, because they round in the same places NumPy does:
+
+- `a.mean()` is `a.sum()` divided by `n`, the number of elements. The mean of floats keeps their
+  type, so the mean of an `Array[f32, 1]` is an `f32`, and the mean of integers is an `f64`.
+- `a.var()` is the mean squared distance from the mean: the [pairwise sum](#the-order-sum-adds-in)
+  of `(a - m) * (a - m)`, where `m` is `a.mean()`, divided by `n - ddof`. The keyword `ddof`,
+  "delta degrees of freedom", is an `int` and defaults to 0, as in NumPy, which gives the
+  population variance; `ddof=1` gives the sample variance, the one Python's
+  `statistics.variance` computes.
+- `a.std()` is the square root of `a.var()`, with the same `ddof`.
+
+`var` and `std` take arrays of floats; `mean` takes integers too. The mean of an integer array
+sums the integers exactly, as `a.sum()` does, and converts the total to `f64` once, which has
+NumPy's bits while the total stays below 2⁵³. Complex arrays are not built.
+
+An empty array has no mean: `a.mean()` is NaN, 0 / 0, as NumPy's is, without NumPy's warning.
+When `n - ddof` is 0 or less, the variance divides by 0 and is infinity or NaN, again as NumPy's
+is.
+
+```python
+from math import sqrt
+
+
+def standardize(x: Array[f64, 1]) -> Array[f64, 1]:
+    """`x` shifted to mean 0 and scaled to standard deviation 1: z-scores."""
+    return (x - x.mean()) / x.std()
+
+
+def standard_error(samples: Array[f64, 1]) -> f64:
+    """The standard error of the mean of independent samples."""
+    return samples.std(ddof=1) / sqrt(f64(len(samples)))
+```
+
+`a.mean()` reads the array once. `a.var()` and `a.std()` read it twice, once for the mean and
+once for the squares, which are summed as they are computed, one leaf of the pairwise tree at a
+time ([decision 0041](../decisions/0041-one-pass-reductions.md)), so no second array is
+allocated. NumPy's two-pass formula is used rather than a one-pass running update because it is
+NumPy's: a one-pass formula would round in other places and give other bits. Means and
+variances along an axis are not built yet.
 
 ### The matrix product
 
