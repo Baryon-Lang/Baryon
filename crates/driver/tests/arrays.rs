@@ -126,7 +126,7 @@ fn array_methods_and_creation_mistakes_are_reported() {
     let program = r#"
 def methods(grid: Array[f64, 2], counts: InOut[list[i64]]):
     g = grid.dot(grid)
-    h = grid.mean()
+    h = grid.median()
     k = Array.zeros((2.5,))
     m = Array.fill((3,), "x")
     counts.append(1.5)
@@ -144,12 +144,12 @@ def methods(grid: Array[f64, 2], counts: InOut[list[i64]]):
   |         ^^^^^^^^^^^^^^ not rank 1
   = note: for a matrix product, use `@`
 
-error: `Array[f64, 2]` has no method `mean` taking these arguments
+error: `Array[f64, 2]` has no method `median` taking these arguments
  --> main.byn:3:9
   |
-3 |     h = grid.mean()
-  |         ^^^^^^^^^^^ not defined
-  = note: version 0 defines `copy`, `sum`, `min`, `max`, `dot`, `round`, `fill` and `tofile`
+3 |     h = grid.median()
+  |         ^^^^^^^^^^^^^ not defined
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill` and `tofile`
 
 error: a shape's lengths are integers, found `f64`
  --> main.byn:4:22
@@ -375,5 +375,65 @@ error: `sum` takes no arguments or one axis
 5 |     e = a.sum(0, 1)
   |         ^^^^^^^^^^^ wrong arguments
   = note: the axis is a constant whole number, such as `a.sum(axis=0)` or `a.max(axis=-1)` for the last"
+    );
+}
+
+/// `mean`, `var` and `std` (roadmap 3.16): the mean of floats keeps their type and the mean of
+/// integers is an `f64`, `ddof` is an `int` keyword, and an axis, a positional argument, or
+/// `var` of integers is an error that says what is built.
+#[test]
+fn statistics_methods_check_their_arguments() {
+    let clean = r"
+def clean(a: Array[f64, 2], s: Array[f32, 1], n: Array[i64, 1], v: Fixed[f64, (3,)]):
+    m: f64 = a.mean()
+    small: f32 = s.var(ddof=1)
+    counted: f64 = n.mean()
+    spread: f64 = v.std()
+    sample: f64 = a.std(ddof=len(n))
+";
+    assert_eq!(check_one(clean), "");
+    let mistakes = r"
+def mistakes(a: Array[f64, 2], n: Array[i64, 1], z: Array[complex128, 1]):
+    b = a.mean(axis=0)
+    c = a.var(1)
+    d = n.var()
+    e = z.mean()
+    f = a.std(ddof=0.5)
+";
+    assert_eq!(
+        check_one(mistakes),
+        r"error: `mean` takes no arguments
+ --> main.byn:2:9
+  |
+2 |     b = a.mean(axis=0)
+  |         ^^^^^^^^^^^^^^ wrong arguments
+  = note: write `a.mean()` for the whole array; along an axis is not built yet
+
+error: `var` takes no arguments or `ddof`
+ --> main.byn:3:9
+  |
+3 |     c = a.var(1)
+  |         ^^^^^^^^ wrong arguments
+  = note: write `a.var()` for the whole array, or `ddof=1` to divide by n - 1; along an axis is not built yet
+
+error: `var` of `Array[i64, 1]` is not built
+ --> main.byn:4:9
+  |
+4 |     d = n.var()
+  |         ^^^^^^^ not floats
+  = note: `var` and `std` take an array of floats
+
+error: `mean` of `Array[complex128, 1]` is not built
+ --> main.byn:5:9
+  |
+5 |     e = z.mean()
+  |         ^^^^^^^^ not real numbers
+  = note: `mean` takes an array of integers or floats
+
+error: expected `i64`, found `f64`
+ --> main.byn:6:20
+  |
+6 |     f = a.std(ddof=0.5)
+  |                    ^^^ `ddof` is `i64`"
     );
 }

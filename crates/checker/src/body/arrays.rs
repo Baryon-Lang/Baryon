@@ -9,6 +9,7 @@
 //!   names, and `Mat3((1.0, 0.0), (0.0, 1.0))` builds one from nested tuples of its elements.
 //! - Arithmetic on arrays and the matrix product are in the `elementwise` module.
 //! - `a.sum(axis=k)`, `a.min(axis=k)` and `a.max(axis=k)` are in the `axes` module.
+//! - `a.mean()`, `a.var()` and `a.std()` are in the `statistics` module.
 
 use super::calls::Arguments;
 use super::{Body, relations};
@@ -17,10 +18,12 @@ use syntax::{Flags, NodeId, Role, SyntaxKind};
 use types::{Float, Integer, Primitive, Type, TypeKind};
 
 /// The methods version 0 defines on a `Fixed` array, for messages.
-const FIXED_METHODS: &str = "`copy`, `sum`, `min`, `max`, `dot`, `round` and `fill`";
+const FIXED_METHODS: &str =
+    "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round` and `fill`";
 
 /// The methods version 0 defines on an `Array`, for messages.
-const ARRAY_METHODS: &str = "`copy`, `sum`, `min`, `max`, `dot`, `round`, `fill` and `tofile`";
+const ARRAY_METHODS: &str =
+    "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill` and `tofile`";
 
 impl<'db> Body<'db> {
     /// `Array.zeros(shape)`, `Array.ones(shape)`, `Array.fill(shape, value)`, each with an
@@ -311,6 +314,9 @@ impl<'db> Body<'db> {
         let is_array = matches!(base.kind(self.db), TypeKind::Array { .. });
         if name == "tofile" && is_array {
             return Some(self.array_tofile(node, arguments));
+        }
+        if matches!(name, "mean" | "var" | "std") {
+            return Some(self.statistic(node, (base, element), name, arguments));
         }
         Some(match (name, arguments.positional.as_slice()) {
             ("copy" | "round", []) => base,

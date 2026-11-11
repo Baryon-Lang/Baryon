@@ -62,6 +62,7 @@ mod random;
 mod reductions;
 pub(crate) mod relations;
 mod shared;
+mod statistics;
 mod subprocess;
 mod text;
 mod union_methods;

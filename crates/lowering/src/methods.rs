@@ -9,7 +9,8 @@
 //! does `v.dot(w)` of a `Fixed` vector shorter than 8, for which the pairwise order is the plain
 //! one. Each integer `+` and `*` is checked for overflow as the operators are. `a.min()` and
 //! `a.max()` scan in row-major order after checking the array is not empty.
-//! The same three along one axis, `a.sum(axis=k)`, are in the `axes` module.
+//! The same three along one axis, `a.sum(axis=k)`, are in the `axes` module, and `a.mean()`,
+//! `a.var()` and `a.std()` in the `statistics` module.
 //! `a.round()` copies an `Array` and rounds each element in place; on a `Fixed` array it builds
 //! the new value from each element rounded, with one call per element, since a `Fixed` array is
 //! small and its length is known when compiling. `a.fill(value)` writes every element.
@@ -45,6 +46,9 @@ impl<'db> Builder<'db> {
             ("min" | "max", [array]) => self.array_extreme(place, method == "min", *array, node),
             ("sum" | "min" | "max", [array, axis]) => {
                 self.axis_reduction(place, method, (*array, *axis), node);
+            }
+            ("mean" | "var" | "std", _) => {
+                self.array_statistic(place, method, arguments, node);
             }
             ("dot", [left, right]) => self.array_dot(place, (*left, *right), node),
             ("round", [array]) if fixed => self.fixed_round(place, *array, node),
@@ -83,13 +87,26 @@ impl<'db> Builder<'db> {
         }
         let source = self.borrow(array);
         let result = self.ty(node);
+        self.sum_of(place, (&source, ty, result), node);
+    }
+
+    /// The sum of the array at `source`, of type `ty`, into `place` as type `result`, as
+    /// [`array_sum`](Self::array_sum) describes; the caller has checked the elements are real
+    /// numbers. `a.mean()` and `a.var()` sum through here too.
+    pub(crate) fn sum_of(
+        &mut self,
+        place: Place,
+        (source, ty, result): (&Place, types::Type<'db>, types::Type<'db>),
+        node: NodeId,
+    ) {
+        let element = self.element(ty);
         if self.is_float(element) {
             let total = self.temporary(element, node);
             let next = self.new_block();
             self.terminate(
                 TerminatorKind::Call {
                     callee: Callee::Builtin(Builtin::Sum),
-                    arguments: vec![Argument::Borrow(source)],
+                    arguments: vec![Argument::Borrow(source.clone())],
                     destination: Place::from(total),
                     target: next,
                     error: None,
@@ -101,7 +118,7 @@ impl<'db> Builder<'db> {
             return self.assign(place, rvalue, node);
         }
         let lengths: Vec<Operand<'db>> = (0..self.rank(ty))
-            .map(|dimension| self.length(&source, ty, dimension, node))
+            .map(|dimension| self.length(source, ty, dimension, node))
             .collect();
         let total = self.temporary(element, node);
         let zero = Operand::Constant(self.number_constant(element, 0));
