@@ -126,7 +126,7 @@ pub unsafe extern "C" fn baryon_rt_file_open(
 /// `file` came from [`baryon_rt_file_open`], has not been closed or dropped, and nothing else
 /// uses it during the call.
 #[allow(unsafe_code, reason = "reads a file compiled code owns")]
-unsafe fn open_file<'a>(file: *mut OpenFile) -> &'a mut OpenFile {
+pub(super) unsafe fn open_file<'a>(file: *mut OpenFile) -> &'a mut OpenFile {
     // SAFETY: the caller guarantees `file` is a live `OpenFile` used by nothing else.
     unsafe { &mut *file }
 }
@@ -264,7 +264,8 @@ pub unsafe extern "C" fn baryon_rt_file_close(
 
 /// The drop of a `File` that was neither closed nor ended by `with`: writes out the buffer,
 /// closes the file and frees it. A drop cannot raise, so a failed write panics, naming the file
-/// (decision 0036, part 3).
+/// (decision 0036, part 3). A handle on a standard stream is only freed: nothing is written and
+/// the stream stays open.
 ///
 /// # Panics
 ///
@@ -279,7 +280,7 @@ pub unsafe extern "C" fn baryon_rt_file_drop(file: *mut OpenFile) {
     // SAFETY: the caller guarantees `file` came from `Box::into_raw` and is used no more.
     let file = unsafe { Box::from_raw(file) };
     let path = file.path().to_owned();
-    if let Err(failure) = file.close() {
+    if let Err(failure) = file.release() {
         let message = format!(
             "could not write out `{path}` when it was dropped: {}",
             failure.strerror
