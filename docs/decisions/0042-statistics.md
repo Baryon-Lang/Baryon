@@ -1,6 +1,6 @@
 # 0042. Statistics keep NumPy's names and bits, and its functions live in `stats`
 
-Status: Proposed
+Status: Accepted (Collins, 2026-11-11)
 Date: 2026-11-11
 Roadmap: 3.16
 
