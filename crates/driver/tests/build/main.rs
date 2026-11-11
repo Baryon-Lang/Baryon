@@ -23,6 +23,7 @@ mod defaults;
 mod dicts;
 mod errors;
 mod examples;
+mod fft;
 mod files;
 mod fusion;
 mod generic_methods;
