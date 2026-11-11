@@ -1,6 +1,6 @@
 # 0040. `linalg` and `fft` follow NumPy and are written in Baryon
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-11
 Roadmap: 3.10
 
@@ -25,6 +25,8 @@ programs depend on them:
 6. How LAPACK and the opt-in BLAS reach a program.
 
 ## Decision
+
+Collins accepted this on 2026-11-11: a singular matrix raises `LinAlgError`, as NumPy does, and the record as written.
 
 ### Names: NumPy's, then SciPy's
 
