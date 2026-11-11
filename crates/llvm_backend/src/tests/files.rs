@@ -6,7 +6,7 @@ use super::{Database, end, module, primitive, span};
 use mir::ErrorEdge;
 use mir::{Argument, ArrayFile, BlockId, Body, Builtin, Callee, Constant, ConstantValue};
 use mir::{FileMethod, Local, LocalKind, Operand, Statement, StatementKind, TerminatorKind};
-use types::{Integer, Primitive, StandardType, Type, TypeKind};
+use types::{Float, Integer, Primitive, StandardType, Type, TypeKind};
 
 /// `out = open("out.txt", "w")`, then `out.write("hi")`, then the drop of `out`; either call's
 /// failure goes to the last block with the error in its local. `i64` stands for `OSError`,
@@ -192,6 +192,96 @@ bb3:
 
 declare zeroext i1 @baryon_rt_array_from_file(ptr, i64, ptr, i64, i64, ptr, ptr) nounwind
 declare zeroext i1 @baryon_rt_array_to_file(ptr, i64, ptr, i64, i64, ptr) nounwind
+"
+    );
+}
+
+/// `grid = Array.load("grid.npy")` of an `Array[f32, 2]`, then `Array.save("copy.npy", grid)`;
+/// either call's failure goes to the last block. Each passes the element type as `NumPy` spells
+/// it, `<f4`, as a constant; the load passes the rank and the header's address to write.
+#[test]
+fn npy_calls_pass_numpys_type_and_the_rank() {
+    let database = Database::default();
+    let none = Type::new(&database, TypeKind::None);
+    let str = Type::new(&database, TypeKind::Str);
+    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
+    let element = primitive(&database, Primitive::Float(Float::F32));
+    let array = Type::new(&database, TypeKind::Array { element, rank: 2 });
+    let raised = Type::new(
+        &database,
+        TypeKind::Fallible {
+            value: none,
+            errors: vec![i64],
+        },
+    );
+    let mut body = Body::new(none, span());
+    let grid = body.push_local(array, LocalKind::Temporary, span());
+    let error = body.push_local(raised, LocalKind::Temporary, span());
+    let text = |text: &str| {
+        Argument::Owned(Operand::Constant(Constant {
+            ty: str,
+            value: ConstantValue::Str(text.to_owned()),
+        }))
+    };
+    let edge = || {
+        Some(ErrorEdge {
+            error,
+            target: BlockId::new(3),
+        })
+    };
+    body.push_block(end(TerminatorKind::Call {
+        callee: Callee::Builtin(Builtin::ArrayFile(ArrayFile::Load)),
+        arguments: vec![text("grid.npy")],
+        destination: grid.into(),
+        target: BlockId::new(1),
+        error: edge(),
+    }));
+    body.push_block(end(TerminatorKind::Call {
+        callee: Callee::Builtin(Builtin::ArrayFile(ArrayFile::Save)),
+        arguments: vec![text("copy.npy"), Argument::Borrow(grid.into())],
+        destination: Local::RETURN.into(),
+        target: BlockId::new(2),
+        error: edge(),
+    }));
+    body.push_block(end(TerminatorKind::Return));
+    body.push_block(end(TerminatorKind::Return));
+    assert_eq!(
+        module(&database, &[("copy", body)]),
+        "\
+define void @copy() {
+start:
+  %t4 = alloca { i64, i64, i64, ptr }
+  %_1 = alloca { ptr, [2 x i64], [2 x i64] }
+  %_2 = alloca { i8, [1 x i64] }
+  br label %bb0
+bb0:
+  %t0 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775800 }, 0
+  %t1 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775800 }, 1
+  %t2 = and i64 %t1, 9223372036854775807
+  %t3 = insertvalue { i64, i64, i64, ptr } { i64 4, i64 4, i64 0, ptr null }, ptr null, 3
+  store { i64, i64, i64, ptr } %t3, ptr %t4
+  %t5 = call zeroext i1 @baryon_rt_array_load(ptr %t0, i64 %t2, ptr %t4, ptr @baryon.str.1, \
+i64 3, i64 2, ptr %_1, ptr %_2)
+  br i1 %t5, label %bb3, label %bb1
+bb1:
+  %t6 = extractvalue { ptr, i64 } { ptr @baryon.str.2, i64 -9223372036854775800 }, 0
+  %t7 = extractvalue { ptr, i64 } { ptr @baryon.str.2, i64 -9223372036854775800 }, 1
+  %t8 = and i64 %t7, 9223372036854775807
+  %t9 = call zeroext i1 @baryon_rt_array_save(ptr %t6, i64 %t8, ptr %_1, i64 2, i64 4, \
+ptr @baryon.str.1, i64 3, ptr %_2)
+  br i1 %t9, label %bb3, label %bb2
+bb2:
+  ret void
+bb3:
+  ret void
+}
+
+@baryon.str.0 = private unnamed_addr constant [8 x i8] c\"grid.npy\"
+@baryon.str.1 = private unnamed_addr constant [3 x i8] c\"<f4\"
+@baryon.str.2 = private unnamed_addr constant [8 x i8] c\"copy.npy\"
+
+declare zeroext i1 @baryon_rt_array_load(ptr, i64, ptr, ptr, i64, i64, ptr, ptr) nounwind
+declare zeroext i1 @baryon_rt_array_save(ptr, i64, ptr, i64, i64, ptr, i64, ptr) nounwind
 "
     );
 }
