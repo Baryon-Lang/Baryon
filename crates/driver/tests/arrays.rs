@@ -289,3 +289,36 @@ error: `+=` gives `Array[f64, 2]`, but the target has type `Array[f64, 1]`
   = note: a variable keeps one type for its whole scope; convert the value, or use a new name"
     );
 }
+
+/// `None` in a subscript adds a dimension of length 1 to the view: `x[:, None]` is an
+/// `Array[f64, 2]`, and still takes one index or slice per dimension of `x`. On a list it is an
+/// error.
+#[test]
+fn none_adds_an_axis_to_an_array() {
+    let clean = r"
+def clean(x: Array[f64, 1]) -> Array[f64, 2]:
+    return x[:, None] - x[None, :]
+";
+    assert_eq!(check_one(clean), "");
+    let mistakes = r"
+def mistakes(x: Array[f64, 1], values: list[f64]):
+    a = x[None]
+    b = values[None]
+";
+    assert_eq!(
+        check_one(mistakes),
+        r"error: `Array[f64, 1]` takes 1 index, found 0
+ --> main.byn:2:9
+  |
+2 |     a = x[None]
+  |         ^^^^^^^ one index per dimension
+  = note: `None` adds a dimension and takes none: write `:` for each of the array's, such as `x[None, :]`
+
+error: `None` cannot index a value of type `list[f64]`
+ --> main.byn:3:9
+  |
+3 |     b = values[None]
+  |         ^^^^^^^^^^^^ not an array
+  = note: `None` in a subscript adds a dimension of length 1 to an array"
+    );
+}

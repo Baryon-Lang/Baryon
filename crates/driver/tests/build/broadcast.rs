@@ -118,3 +118,36 @@ def main():
         "panic: array lengths differ in dimension 0: 1 and 3\n  --> main.byn:6:5\n"
     );
 }
+
+/// `None` in a subscript adds an axis of length 1, so `x[:, None] - x[None, :]` is the table of
+/// every difference, and a vector times a row of another broadcasts to a matrix: what `NumPy`
+/// 2.5 prints for the same lines.
+#[test]
+fn new_axes_make_outer_operations() {
+    let program = "\
+def main():
+    x = Array([0.0, 1.0, 3.0])
+    print(x[:, None] - x[None, :])
+    y = Array([1.0, 2.0])
+    print(x[:, None] * y)
+    print(x[None, :])
+    print(x[None, :, None] + y)
+";
+    let (code, stdout, report) = run("broadcast-new-axes", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(
+        stdout,
+        "\
+[[ 0. -1. -3.]
+ [ 1.  0. -2.]
+ [ 3.  2.  0.]]
+[[0. 0.]
+ [1. 2.]
+ [3. 6.]]
+[[0. 1. 3.]]
+[[[1. 2.]
+  [2. 3.]
+  [4. 5.]]]
+"
+    );
+}
