@@ -98,7 +98,7 @@ impl<'db> Builder<'db> {
         let rank = self.rank(ty);
         let element = self.element(ty);
         let lengths: Vec<Operand<'db>> = (0..rank)
-            .map(|dimension| self.length(&source, ty, dimension, node))
+            .map(|dimension| self.length(source, ty, dimension, node))
             .collect();
         let mut kept = lengths.clone();
         let along = kept.remove(axis as usize);
