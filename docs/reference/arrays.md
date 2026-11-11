@@ -145,6 +145,19 @@ direction = residual + beta * direction
 - An expression of element-wise operations runs as a single loop with no temporary arrays.
   `x += alpha * direction` reads each element of `direction` once and writes each element of `x`
   once.
+- An intermediate result stored in a name and read once, later in the same function, is not built
+  either, when its elements are floats or complex numbers. The compiler moves its expression into
+  the one that reads it, so these three lines run as one loop, as `c = (a * b + d) * 0.5` does:
+
+  ```python
+  t = a * b
+  u = t + d
+  c = u * 0.5
+  ```
+
+  Results are identical to the bit, and a shape mismatch still panics at the line it is on.
+  Reading `t` a second time, changing `a`, `b` or `d` between the lines, a call between them, or
+  integer elements keep each line its own loop.
 - Assigning an expression to a name, `direction = residual + beta * direction`, creates one new
   array for the result. The compiler may reuse the storage of the value the assignment replaces;
   that optimization is roadmap 3.1, and it does not change the meaning.

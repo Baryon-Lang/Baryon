@@ -119,6 +119,7 @@ pub(crate) fn ready<'db>(
         monomorphize::forward_callables(db, &mut body, &|item| callable_positions(db, item));
         monomorphize::trait_calls(db, &mut body, implementation);
     }
+    array_fusion::fuse(db, &mut body);
     drop_elaboration::elaborate(db, &mut body, declared);
     array_expansion::expand(db, &mut body, declared);
     body.phase = Phase::Ready;

@@ -21,6 +21,7 @@ mod dicts;
 mod errors;
 mod examples;
 mod files;
+mod fusion;
 mod generic_methods;
 mod guide;
 mod list_slices;

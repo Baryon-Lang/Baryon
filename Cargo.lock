@@ -30,6 +30,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "array_fusion"
+version = "0.2.0"
+dependencies = [
+ "database",
+ "mir",
+ "salsa",
+ "source",
+ "types",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -216,6 +227,7 @@ name = "driver"
 version = "0.2.0"
 dependencies = [
  "array_expansion",
+ "array_fusion",
  "checker",
  "database",
  "diagnostics",
