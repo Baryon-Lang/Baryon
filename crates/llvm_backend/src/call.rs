@@ -165,6 +165,7 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::File(method) => Err(Unsupported::new(method.name())),
             // Not built by this backend yet: the calls of the runtime follow the runtime's part.
             Builtin::Path(_) | Builtin::EnvironmentEntries => Err(Unsupported::new(builtin.name())),
+            Builtin::ArrayFile(method) => Err(Unsupported::new(method.name())),
         }
     }
 }

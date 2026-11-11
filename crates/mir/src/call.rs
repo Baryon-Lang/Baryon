@@ -2,7 +2,7 @@
 //! [`Call`](crate::TerminatorKind::Call), the [`Builtin`] operations and [`MathFunction`]s the
 //! backends build inline or call the runtime for, and each [`Argument`]'s mode.
 
-use crate::{FileMethod, Operand, PathMethod, Place, TextMethod};
+use crate::{ArrayFile, FileMethod, Operand, PathMethod, Place, TextMethod};
 use types::{Item, Type};
 
 /// The function a [`Call`](crate::TerminatorKind::Call) calls.
@@ -190,6 +190,10 @@ pub enum Builtin {
     /// system, or a directory function of `os` (decision 0036). [`PathMethod`] says what each
     /// takes and gives, and which can fail and so have an error edge.
     Path(PathMethod),
+    /// `Array.fromfile` or `a.tofile`, which read and write an array's elements as a file of
+    /// raw bytes (decision 0036). [`ArrayFile`] says what each takes and gives. Each can fail,
+    /// as a [`File`](Self::File) call can: its call has an error edge.
+    ArrayFile(ArrayFile),
 }
 
 impl Builtin {
@@ -212,6 +216,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Sort.name(), "sorted");
     /// assert_eq!(mir::Builtin::File(mir::FileMethod::Write).name(), "File.write");
     /// assert_eq!(mir::Builtin::Path(mir::PathMethod::Parent).name(), "Path.parent");
+    /// assert_eq!(mir::Builtin::ArrayFile(mir::ArrayFile::ToFile).name(), "Array.tofile");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -242,6 +247,7 @@ impl Builtin {
             Self::RoundDigits => "round",
             Self::File(method) => method.name(),
             Self::Path(method) => method.name(),
+            Self::ArrayFile(method) => method.name(),
         }
     }
 }
