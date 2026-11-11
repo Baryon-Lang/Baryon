@@ -202,7 +202,7 @@ impl<'db> Body<'db> {
                 member: Some(member),
             }) if member == "argv" => self.argv(),
             Some(Definition::Standard {
-                module: module @ ("sys" | "os"),
+                module: module @ ("sys" | "os" | "subprocess"),
                 member: Some(member),
             }) => {
                 let (module, member) = (*module, member.clone());

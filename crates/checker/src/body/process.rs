@@ -86,18 +86,16 @@ impl<'db> Body<'db> {
         self.not_built(node, "os", &format!("environ.{method}"))
     }
 
-    /// The error for `module.member` that this slice does not build.
+    /// The error for `module.member` of `sys`, `os` or `subprocess` that is not built.
     pub(super) fn not_built(&mut self, node: NodeId, module: &str, member: &str) -> Type<'db> {
         let message = format!("`{module}.{member}` is not in Baryon yet");
-        self.lowerer.error(
-            node,
-            &message,
-            "not built",
-            Some(
-                "so far `sys` has `argv` and `exit`, and `os` has `getenv` and `environ.get` \
-                 (decision 0036)",
-            ),
-        )
+        let built = if module == "subprocess" {
+            "`subprocess` has `run` and `CompletedProcess` (decision 0036)"
+        } else {
+            "so far `sys` has `argv` and `exit`, and `os` has `getenv` and `environ.get` \
+             (decision 0036)"
+        };
+        self.lowerer.error(node, &message, "not built", Some(built))
     }
 
     /// `sys.exit()` or `sys.exit(status)`: the status, an `int`, defaults to 0. The call ends
