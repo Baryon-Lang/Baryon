@@ -51,7 +51,7 @@ documentation strings as Markdown pages.
 compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
 Release 0.1.0, a review release, is out. Releases are time-based: a new one every two weeks, cut
-from `main`. The next, due on 2026-11-25, is the first with prebuilt downloads for Linux and macOS
+from `main`. The next, 0.2.0, due on 2026-11-25, is the first with prebuilt downloads for Linux and macOS
 and the basics of a standard library; [`CHANGELOG.md`](CHANGELOG.md) says what each holds, and the
 [roadmap](ROADMAP.md#releases) says how releases are made.
 
