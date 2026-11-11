@@ -9,10 +9,17 @@ use types::{Nominal, Type, TypeKind};
 
 impl<'db> Body<'db> {
     /// The class `name` that `<std>/builtins.byn` defines at its top level, such as `OSError`,
-    /// when the package has that file. It reads the file's syntax tree, which the database has
-    /// already parsed for the package, so the cost is one pass over its few top-level statements.
+    /// when the package has that file.
     pub(super) fn library_class(&self, name: &str) -> Option<Type<'db>> {
-        let file = database::modules(self.db, self.lowerer.package).library("builtins")?;
+        self.library_class_in("builtins", name)
+    }
+
+    /// The class `name` that the library's file for `module` defines at its top level, such as
+    /// `CompletedProcess` in `<std>/subprocess.byn`, when the package has that file. It reads
+    /// the file's syntax tree, which the database has already parsed for the package, so the
+    /// cost is one pass over its few top-level statements.
+    pub(super) fn library_class_in(&self, module: &str, name: &str) -> Option<Type<'db>> {
+        let file = database::modules(self.db, self.lowerer.package).library(module)?;
         debug_assert!(file.source(self.db).name().starts_with(LIBRARY_ROOT));
         let tree = self.db.parse(file).tree();
         let text = file.source(self.db).text();

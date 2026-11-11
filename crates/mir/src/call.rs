@@ -2,7 +2,7 @@
 //! [`Call`](crate::TerminatorKind::Call), the [`Builtin`] operations and [`MathFunction`]s the
 //! backends build inline or call the runtime for, and each [`Argument`]'s mode.
 
-use crate::{FileMethod, Operand, Place, TextMethod};
+use crate::{ArrayFile, FileMethod, Operand, PathMethod, Place, TextMethod};
 use types::{Item, Type};
 
 /// The function a [`Call`](crate::TerminatorKind::Call) calls.
@@ -153,6 +153,16 @@ pub enum Builtin {
     /// `str | None` of `get`, and the panic of `os.environ[name]`, from the two. A value that is
     /// not UTF-8 reads with U+FFFD in place of each bad sequence. The call cannot fail.
     EnvironmentGet,
+    /// Every environment variable, for `os.environ.copy()` (decision 0036): no arguments; the
+    /// destination is a new `list[str]` of two elements for each variable, its name then its
+    /// value, with the variables in the reverse of the order the operating system gives. So
+    /// popping the list twice gives the next variable's value, then its name, in the operating
+    /// system's order, which is how lowering fills the `dict[str, str]`. Each name appears once:
+    /// of two variables with one name, the first is kept, the one
+    /// [`EnvironmentGet`](Self::EnvironmentGet) reads. A name or value that is not UTF-8 reads
+    /// with U+FFFD in place of each bad sequence. It copies every name and value, one
+    /// allocation each. The call cannot fail.
+    EnvironmentEntries,
     /// `sys.exit(status)` (decision 0036): one argument, the status, an `i64` passed `Owned`;
     /// the destination has type `None`, and the call never returns. It writes out what `print`
     /// holds back and ends the program with the status, running nothing else on the way out. A
@@ -176,6 +186,37 @@ pub enum Builtin {
     /// `open` or a method of the `File` it returns (decision 0036). [`FileMethod`] says what each
     /// takes and gives. Unlike every other built-in, each can fail: its call has an error edge.
     File(FileMethod),
+    /// An operation on a path or a directory: a part of a `pathlib.Path`, a question to the file
+    /// system, or a directory function of `os` (decision 0036). [`PathMethod`] says what each
+    /// takes and gives, and which can fail and so have an error edge.
+    Path(PathMethod),
+    /// `Array.fromfile` or `a.tofile`, which read and write an array's elements as a file of
+    /// raw bytes (decision 0036). [`ArrayFile`] says what each takes and gives. Each can fail,
+    /// as a [`File`](Self::File) call can: its call has an error edge.
+    ArrayFile(ArrayFile),
+    /// `subprocess.run(args, ...)` (decision 0036, part 8): runs the program `args[0]` names,
+    /// found on `PATH`, with the rest of `args` as its arguments and no shell, and waits for it.
+    /// Six arguments, in this order:
+    ///
+    /// 1. `args`, a `list[str]` passed `Borrow`. An empty list panics.
+    /// 2. `capture_output`, a `bool` passed `Owned`.
+    /// 3. `input`, a `str` passed `Borrow`, or `Owned` for a literal: the program's standard
+    ///    input.
+    /// 4. `cwd`, a `str` passed the same way: the directory the program runs in.
+    /// 5. `env`, a `dict[str, str]` passed `Borrow`: the program's whole environment.
+    /// 6. `timeout`, an `f64` passed `Owned`: the seconds the program may run.
+    ///
+    /// Each of the last four is the constant `None`, passed `Owned`, when the call leaves its
+    /// keyword out: the program then shares the caller's standard input, directory and
+    /// environment, and runs without a limit.
+    ///
+    /// The destination is a new `CompletedProcess`, the class of the standard library's own
+    /// source (decision 0038), whose `stdout` and `stderr` are empty unless `capture_output` is
+    /// set. Like a [`File`](Self::File) call it can fail, so it has an error edge whose local is
+    /// a `Raises[None, OSError]`: the program cannot be started, the timeout passed, or captured
+    /// output is not UTF-8. A program that exits with a status other than 0 is not a failure.
+    /// Captured output is held in memory whole.
+    Run,
 }
 
 impl Builtin {
@@ -197,6 +238,9 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Exit.name(), "sys.exit");
     /// assert_eq!(mir::Builtin::Sort.name(), "sorted");
     /// assert_eq!(mir::Builtin::File(mir::FileMethod::Write).name(), "File.write");
+    /// assert_eq!(mir::Builtin::Path(mir::PathMethod::Parent).name(), "Path.parent");
+    /// assert_eq!(mir::Builtin::ArrayFile(mir::ArrayFile::ToFile).name(), "Array.tofile");
+    /// assert_eq!(mir::Builtin::Run.name(), "subprocess.run");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -221,10 +265,14 @@ impl Builtin {
             Self::ArgumentCount => "len of sys.argv",
             Self::Argument => "sys.argv item",
             Self::EnvironmentGet => "os.environ.get",
+            Self::EnvironmentEntries => "os.environ.copy",
             Self::Exit => "sys.exit",
             Self::Sort => "sorted",
             Self::RoundDigits => "round",
             Self::File(method) => method.name(),
+            Self::Path(method) => method.name(),
+            Self::ArrayFile(method) => method.name(),
+            Self::Run => "subprocess.run",
         }
     }
 }

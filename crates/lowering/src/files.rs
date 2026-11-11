@@ -162,7 +162,7 @@ impl<'db> Builder<'db> {
     }
 
     /// A `str` argument: a literal passed `Owned`, anything else borrowed.
-    fn text_argument(&mut self, text: NodeId) -> Argument<'db> {
+    pub(crate) fn text_argument(&mut self, text: NodeId) -> Argument<'db> {
         if self.tree.kind(text) == SyntaxKind::StringLiteral {
             Argument::Owned(self.operand(text))
         } else {
@@ -179,12 +179,24 @@ impl<'db> Builder<'db> {
         place: Place,
         node: NodeId,
     ) {
+        self.raising_call(Builtin::File(method), arguments, place, node);
+    }
+
+    /// A call of `builtin`, one that can fail, its result written into `place`, with the error
+    /// edge for the errors the checker recorded at `node`.
+    pub(crate) fn raising_call(
+        &mut self,
+        builtin: Builtin,
+        arguments: Vec<Argument<'db>>,
+        place: Place,
+        node: NodeId,
+    ) {
         let errors = self.typed.errors(node).to_vec();
         let edge = self.error_edge(&errors, node);
         let next = self.new_block();
         self.terminate(
             TerminatorKind::Call {
-                callee: Callee::Builtin(Builtin::File(method)),
+                callee: Callee::Builtin(builtin),
                 arguments,
                 destination: place,
                 target: next,

@@ -94,16 +94,20 @@
 //! );
 //! ```
 
+mod array_files;
 mod call;
 mod check;
 mod display;
 mod files;
 mod operand;
+mod paths;
 mod place;
 mod statement;
 mod text;
+mod uses;
 mod validate;
 
+pub use array_files::ArrayFile;
 pub use call::{Argument, Builtin, Callee, MathFunction};
 pub use check::Check;
 pub use display::DisplayedBody;
@@ -111,6 +115,7 @@ pub use files::FileMethod;
 pub use operand::{
     BinaryOperator, Constant, ConstantValue, Elementwise, Operand, Piece, Rvalue, UnaryOperator,
 };
+pub use paths::PathMethod;
 pub use place::{Place, Projection, SliceIndex};
 pub use statement::{
     AccumulateOperator, ErrorEdge, Reduction, ReductionOperator, Statement, StatementKind,

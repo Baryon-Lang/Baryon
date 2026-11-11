@@ -16,6 +16,13 @@
 //!    so a debug build panics and a release build wraps (decision 0030);
 //! 5. moves the result into the destination, and drops each array the expression moved.
 //!
+//! A [`Fused`](mir::Elementwise::Fused) subexpression, a statement that array fusion moved into
+//! this one, has its own array leaves checked against each other first, in step 2, reported at
+//! its statement's span, in the order the statements ran; in the enclosing expression's checks it
+//! then counts as one array with the shape of its first array leaf. Its overflow checks report at
+//! its statement's span too. The loop computes its elements with the rest, and no array is ever
+//! built for it, which is the point of fusing it.
+//!
 //! The result goes to a new temporary and moves into the destination only after the loop, so
 //! `a = a * 2.0`, which reads the array it replaces, is correct.
 //!
@@ -84,9 +91,11 @@
 //! ```
 
 mod expander;
+mod leaves;
 mod place_types;
 
-use expander::{Expander, array_leaves};
+use expander::Expander;
+use leaves::array_leaves;
 use mir::{BlockId, Body, Rvalue, StatementKind, Terminator, TerminatorKind};
 
 /// Replaces every whole-array expression in `body` with a loop nest, as the crate documentation
@@ -161,7 +170,7 @@ fn next_expandable<'db>(
     types: &place_types::Types<'_, 'db>,
     body: &Body<'db>,
     block: usize,
-) -> Option<(usize, Vec<expander::ArrayLeaf<'db>>, types::Type<'db>)> {
+) -> Option<(usize, Vec<leaves::ArrayLeaf<'db>>, types::Type<'db>)> {
     body.blocks[block]
         .statements
         .iter()

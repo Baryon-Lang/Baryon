@@ -1,0 +1,18 @@
+"""The parts of the `subprocess` module written in Baryon (decision 0038).
+
+`subprocess.run` itself is built into the compiler and the runtime, which start the program and
+wait for it (decision 0036).
+"""
+
+
+class CompletedProcess(Struct):
+    """A program that `subprocess.run` ran to its end (decision 0036, part 8), with the fields
+    Python's `CompletedProcess` has.
+
+    The runtime writes this value into memory field by field, so the fields' order is fixed.
+    """
+
+    args: list[str]  # the program and its arguments, a copy of the list it was run with
+    returncode: int  # the exit status; minus the signal's number when a signal ended the program
+    stdout: str  # what the program wrote to standard output, "" unless `capture_output=True`
+    stderr: str  # what the program wrote to standard error, "" unless `capture_output=True`

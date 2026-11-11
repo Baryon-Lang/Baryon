@@ -23,6 +23,9 @@ impl<'db> Builder<'db> {
         if let types::Callee::Function(item) | types::Callee::Method(item) = call.callee {
             return self.function_call(place, item, call.type_arguments.clone(), &given, node);
         }
+        if matches!(&call.callee, types::Callee::Builtin(name) if name == "subprocess.run") {
+            return self.subprocess_run(place, &given, node);
+        }
         let Some(arguments) = given.into_iter().collect::<Option<Vec<NodeId>>>() else {
             return self.unsupported(node, "calls that leave out a defaulted argument");
         };

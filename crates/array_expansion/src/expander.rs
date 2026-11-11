@@ -1,5 +1,6 @@
 //! Expands one whole-array statement into its loop nest.
 
+use crate::leaves::{ArrayLeaf, fused, shape_leaves};
 use crate::place_types::{Shape, Types};
 use mir::{
     BasicBlock, BinaryOperator, BlockId, Body, Check, Constant, Elementwise, Local, LocalKind,
@@ -8,18 +9,6 @@ use mir::{
 };
 use source::Span;
 use types::{Integer, Primitive, Type, TypeKind};
-
-/// One leaf of a whole-array expression that is an array.
-pub(crate) struct ArrayLeaf<'db> {
-    /// Where the array is.
-    place: Place,
-    /// Its element type.
-    element: Type<'db>,
-    /// Its shape.
-    shape: Shape,
-    /// Whether the expression moves it, so expansion drops it after the loop.
-    moved: bool,
-}
 
 /// Writes the blocks of one expansion, one block at a time.
 pub(crate) struct Expander<'a, 'b, 'db> {
@@ -62,7 +51,8 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
     }
 
     /// Writes `destination = tree` as a loop nest, then `after` and `terminator` in the block
-    /// the nest exits to. `leaves` are the expression's array leaves from [`array_leaves`];
+    /// the nest exits to. `leaves` are the expression's array leaves from
+    /// [`array_leaves`](crate::leaves::array_leaves);
     /// `result_type` is the destination's array type. The shape is the destination's when it is
     /// a view, which is written in place, and otherwise that of `leaves[0]`, which must exist.
     pub(crate) fn expand(
@@ -74,14 +64,27 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
         terminator: Terminator<'db>,
     ) {
         let in_place = destination.is_view();
+        // Each fused subexpression checks its own leaves first, where its statement was.
+        for (subexpression, span) in fused(tree) {
+            let outer = std::mem::replace(&mut self.span, span);
+            let group = shape_leaves(self.types, &self.body.locals, subexpression);
+            if let Some((first, rest)) = group.split_first() {
+                let lengths = self.lengths(first);
+                for leaf in rest {
+                    self.check_lengths(leaf, &lengths);
+                }
+            }
+            self.span = outer;
+        }
+        let group = shape_leaves(self.types, &self.body.locals, tree);
         let (lengths, checked) = if in_place {
             let rank = match result_type.kind(self.db) {
                 TypeKind::Array { rank, .. } => *rank,
                 _ => 0,
             };
-            (self.view_lengths(destination, rank), leaves)
+            (self.view_lengths(destination, rank), &group[..])
         } else {
-            (self.lengths(&leaves[0]), &leaves[1..])
+            (self.lengths(&leaves[0]), &group[1..])
         };
         // The view itself, as `+=` reads it, has its own lengths.
         for leaf in checked.iter().filter(|leaf| leaf.place != *destination) {
@@ -296,6 +299,13 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 self.assign(Place::from(result), Rvalue::Unary(*operator, value));
                 (Operand::Copy(Place::from(result)), ty)
             }
+            Elementwise::Fused(subexpression, span) => {
+                // Its overflow checks report where its statement was.
+                let outer = std::mem::replace(&mut self.span, *span);
+                let element = self.element(subexpression, leaves, indices);
+                self.span = outer;
+                element
+            }
             Elementwise::Binary(operator, left, right) => {
                 let (left, ty) = self.element(left, leaves, indices);
                 let (right, _) = self.element(right, leaves, indices);
@@ -396,42 +406,6 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
         };
         self.current = next;
     }
-}
-
-/// Every array leaf of `tree`, in order from the left. The first sets the shape.
-pub(crate) fn array_leaves<'db>(
-    types: &Types<'_, 'db>,
-    locals: &[mir::LocalDeclaration<'db>],
-    tree: &Elementwise<'db>,
-) -> Vec<ArrayLeaf<'db>> {
-    let mut leaves = Vec::new();
-    let mut pending = vec![tree];
-    while let Some(node) = pending.pop() {
-        match node {
-            Elementwise::Leaf(operand) => {
-                let (place, moved) = match operand {
-                    Operand::Copy(place) => (place, false),
-                    Operand::Move(place) => (place, true),
-                    Operand::Constant(_) => continue,
-                };
-                let array = locals
-                    .get(place.local.index())
-                    .and_then(|local| types.of(local.ty, place))
-                    .and_then(|ty| types.array(ty));
-                if let Some((element, shape)) = array {
-                    leaves.push(ArrayLeaf {
-                        place: place.clone(),
-                        element,
-                        shape,
-                        moved,
-                    });
-                }
-            }
-            Elementwise::Unary(_, operand) => pending.push(operand),
-            Elementwise::Binary(_, left, right) => pending.extend([&**right, &**left]),
-        }
-    }
-    leaves
 }
 
 /// Whether `operator` compares, giving a `bool` whatever its operands are.
