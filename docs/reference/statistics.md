@@ -11,10 +11,14 @@ holds the rest of NumPy's statistics functions, with NumPy's names and results
 | `quantile(a, q)` | The value below which a fraction `q` of `a` lies, `q` from 0 to 1 | `numpy.quantile(a, q)` |
 | `percentile(a, q)` | The same with `q` in percent, from 0 to 100 | `numpy.percentile(a, q)` |
 | `average(a, weights)` | The mean of `a` weighted by `weights` | `numpy.average(a, weights=weights)` |
+| `histogram(a, bins)` | The counts of `a` in `bins` equal bins, and the bins' edges | `numpy.histogram(a, bins)` |
+| `cov(x, y)` | The 2 by 2 covariance matrix of `x` and `y` | `numpy.cov(x, y)` |
+| `corrcoef(x, y)` | The 2 by 2 matrix of correlation coefficients of `x` and `y` | `numpy.corrcoef(x, y)` |
 
-Each takes a rank-1 `Array[f64, 1]` and returns an `f64`, and each gives the bits NumPy gives
-for the same array: it rounds in the same places, not just to the same precision. A test can
-compare a result with NumPy's using `==`.
+Each takes rank-1 `Array[f64, 1]`s, and each gives the bits NumPy gives for the same arrays: it
+rounds in the same places, not just to the same precision, so a test can compare a result with
+NumPy's using `==`. The one exception is the last bit of `cov` and `corrcoef`, where NumPy's
+order depends on the machine; see [`cov` and `corrcoef`](#cov-and-corrcoef).
 
 ```python
 from stats import median, percentile
@@ -71,9 +75,61 @@ def center_of_mass(x: Array[f64, 1], m: Array[f64, 1]) -> f64:
     return average(x, m)
 ```
 
+## `histogram`
+
+`histogram(a, bins)` returns a tuple `(counts, edges)`: `counts` is an `Array[int, 1]` of `bins`
+counts, and `edges` an `Array[f64, 1]` of the `bins + 1` bin edges, evenly spaced from the
+smallest element of `a` to the largest. Bin `k` counts the elements from `edges[k]` up to but not
+including `edges[k + 1]`; the last bin also counts the largest element, so every element is
+counted once.
+
+The edges are NumPy's `linspace`: `edges[k]` is `k * step + first`, rounded twice, and the last
+edge is exactly the largest element. An element's bin is computed by NumPy's arithmetic and then
+checked against the edges, as NumPy checks it, so the counts and the edges equal NumPy's
+exactly. When every element is equal, the range is widened by 0.5 on each side; an empty `a`
+gets the range 0 to 1 and zero counts. A NaN or infinite element, or `bins` less than 1, panics,
+where NumPy raises `ValueError`. It makes two passes over `a`.
+
+```python
+from stats import histogram
+
+
+def show_distribution(energies: Array[f64, 1]):
+    """One line per bin: its range and how many energies fall in it."""
+    counts, edges = histogram(energies, 10)
+    for k in range(10):
+        print(f"{edges[k]:8.3f} to {edges[k + 1]:8.3f}: {counts[k]}")
+```
+
+## `cov` and `corrcoef`
+
+`cov(x, y)` is the 2 by 2 matrix with the sample variances of `x` and `y` on its diagonal and
+their sample covariance off it, dividing by `n - 1`, as `numpy.cov(x, y)`. Each entry is the dot
+product of the two arrays' deviations from their means, added in the pairwise order of
+[`a.dot(b)`](arrays.md#methods), times `1 / (n - 1)`, which is how NumPy scales. `corrcoef(x, y)`
+divides each entry by the standard deviation of its row and then of its column, and limits the
+result to -1 to 1, as `numpy.corrcoef(x, y)` does.
+
+NumPy computes the dot products with BLAS, whose order of additions depends on the machine and
+the library, so its last bit can differ from one computer to the next. Here the order is fixed,
+so a result has the same bits everywhere and agrees with NumPy's to about 15 significant digits.
+Arrays of different lengths panic; fewer than two elements give NaN or infinity, as NumPy's
+do, and a constant array has no correlation, so `corrcoef` gives NaN.
+
+```python
+from stats import corrcoef
+
+
+def correlation(x: Array[f64, 1], y: Array[f64, 1]) -> f64:
+    """Pearson's correlation coefficient of two series of the same length."""
+    return corrcoef(x, y)[0, 1]
+```
+
 ## Not built yet
 
 The first version takes rank-1 `f64` arrays. NumPy's `axis=` argument, several quantiles in
 one call, its other quantile methods, and arrays of other element types are not built: they need
 functions that accept arrays of any rank or element type, which the standard library cannot
-write yet. `histogram`, `cov` and `corrcoef` come next on [roadmap 3.16](../../ROADMAP.md).
+write yet. `histogram`'s other ways to choose bins, such as a list of edges or `"auto"`,
+`range=`, `weights=` and `density=`, and `cov` and `corrcoef` of more than two variables are not
+built either.

@@ -1,6 +1,6 @@
 //! The `stats` module (roadmap 3.16, decision 0042), built and run: `median`, `quantile`,
-//! `percentile` and `average` print what `NumPy` 2.5 prints for the same arrays, bit for bit,
-//! and a program that never calls them carries none of their code.
+//! `percentile`, `average`, `histogram`, `cov` and `corrcoef` print what `NumPy` 2.5 prints for
+//! the same arrays, and a program that never calls them carries none of their code.
 
 use super::{baryon_build, package, stderr};
 use std::io;
@@ -152,6 +152,122 @@ fn stats_functions_print_what_numpy_prints() -> io::Result<()> {
     let run = Command::new(&executable).output()?;
     assert!(run.status.success());
     assert_eq!(String::from_utf8_lossy(&run.stdout), EXPECTED);
+    Ok(())
+}
+
+/// The second program: histograms, covariances and correlations.
+const HISTOGRAMS: &str = "\
+from stats import corrcoef, cov, histogram
+
+
+def main():
+    n = 1003
+    a = Array.zeros(n)
+    b = Array.zeros(n)
+    for i in range(n):
+        a[i] = ((i * 7919) % 1009) * 0.37 - 50.0 + 1.0 / (i + 1.0)
+        b[i] = 0.3 * a[i] + ((i * 31) % 17) * 0.7
+    for bins in [1, 3, 10, 37]:
+        counts, edges = histogram(a, bins)
+        for k in range(bins):
+            print(counts[k], edges[k])
+        print(edges[bins])
+    counts, edges = histogram(Array([2.0, 2.0, 2.0]), 4)
+    print(counts)
+    print(edges)
+    counts, edges = histogram(Array.zeros(0), 2)
+    print(counts)
+    print(edges)
+    c = cov(a, b)
+    r = corrcoef(a, b)
+    for i in range(2):
+        for j in range(2):
+            print(f\"{c[i, j]:.14g} {r[i, j]:.14g}\")
+    print(f\"{corrcoef(a, a * -2.0)[0, 1]:.14g}\")
+    print(cov(Array([1.0]), Array([2.0]))[0, 1])
+";
+
+/// What `NumPy` 2.5 prints for the same arrays. The covariances and correlations are printed
+/// to 14 significant digits, since `NumPy` forms their products through BLAS, whose last bit
+/// depends on the machine (decision 0042).
+const HISTOGRAMS_EXPECTED: &str = "1003 -49.62591836734694\n\
+322.9613054830287\n\
+335 -49.62591836734694\n\
+334 74.56982291611159\n\
+334 198.76556419957012\n\
+322.9613054830287\n\
+102 -49.62591836734694\n\
+100 -12.367195982309383\n\
+101 24.891526402728175\n\
+99 62.15024878776573\n\
+100 99.40897117280329\n\
+101 136.66769355784086\n\
+99 173.9264159428784\n\
+100 211.18513832791595\n\
+101 248.44386071295352\n\
+100 285.7025830979911\n\
+322.9613054830287\n\
+29 -49.62591836734694\n\
+27 -39.55599339841787\n\
+27 -29.4860684294888\n\
+27 -19.41614346055973\n\
+28 -9.346218491630658\n\
+26 0.7237064772984141\n\
+27 10.79363144622748\n\
+27 20.863556415156552\n\
+27 30.933481384085624\n\
+28 41.0034063530147\n\
+27 51.07333132194377\n\
+26 61.14325629087284\n\
+27 71.2131812598019\n\
+28 81.28310622873099\n\
+27 91.35303119766004\n\
+27 101.42295616658913\n\
+26 111.49288113551819\n\
+27 121.56280610444725\n\
+28 131.63273107337633\n\
+27 141.7026560423054\n\
+27 151.77258101123448\n\
+27 161.84250598016354\n\
+26 171.91243094909262\n\
+28 181.98235591802168\n\
+27 192.05228088695074\n\
+27 202.12220585587983\n\
+27 212.1921308248089\n\
+28 222.26205579373797\n\
+26 232.33198076266703\n\
+27 242.4019057315961\n\
+27 252.4718307005252\n\
+27 262.54175566945423\n\
+28 272.6116806383833\n\
+26 282.68160560731235\n\
+27 292.7515305762414\n\
+27 302.8214555451706\n\
+28 312.89138051409964\n\
+322.9613054830287\n\
+[0 0 3 0]\n\
+[1.5  1.75 2.   2.25 2.5 ]\n\
+[0 0]\n\
+[0.  0.5 1. ]\n\
+11638.732926211 1\n\
+3484.8594436771 0.99440826997729\n\
+3484.8594436771 0.99440826997729\n\
+1055.2014393742 1\n\
+-1\n\
+nan\n\
+";
+
+/// Histograms with 1, 3, 10 and 37 bins, of equal elements and of no elements, match
+/// `NumPy`'s counts and edges exactly; covariance and correlation matrices match `NumPy`'s to 14
+/// digits, a perfectly anticorrelated pair gives -1, and one element gives NaN.
+#[test]
+fn histograms_and_covariances_print_what_numpy_prints() -> io::Result<()> {
+    let directory = package("stats-histograms", &[("main.byn", HISTOGRAMS)])?;
+    let (output, executable) = baryon_build(&directory)?;
+    assert!(output.status.success(), "{}", stderr(&output));
+    let run = Command::new(&executable).output()?;
+    assert!(run.status.success());
+    assert_eq!(String::from_utf8_lossy(&run.stdout), HISTOGRAMS_EXPECTED);
     Ok(())
 }
 

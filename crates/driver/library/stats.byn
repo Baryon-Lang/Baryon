@@ -4,7 +4,7 @@ Each function rounds where NumPy's does, so a result has NumPy's bits. The mean,
 standard deviation are array methods, `a.mean()`, `a.var()` and `a.std()`, as in NumPy.
 """
 
-from math import floor, isnan, nan
+from math import floor, isfinite, isnan, nan, sqrt, trunc
 
 
 def _has_nan(a: Array[f64, 1]) -> bool:
@@ -149,3 +149,109 @@ def average(a: Array[f64, 1], weights: Array[f64, 1]) -> f64:
     scale = weights.sum()
     assert scale != 0.0, "average needs weights that do not sum to zero"
     return (a * weights).sum() / scale
+
+
+def histogram(a: Array[f64, 1], bins: int) -> tuple[Array[int, 1], Array[f64, 1]]:
+    """The counts of `a` in `bins` equal bins from its smallest to its largest element, and the
+    `bins + 1` edges of those bins, as `numpy.histogram(a, bins)`.
+
+    Bin `k` holds the elements from `edges[k]` up to but not including `edges[k + 1]`; the last
+    bin also holds the largest element. The edges are `numpy.linspace`'s, `start + k * step`
+    with the last edge exactly the largest element, and each element is placed by NumPy's
+    arithmetic and corrected against the edges as NumPy's is, so counts and edges match NumPy's
+    exactly. When every element is equal the range is widened by 0.5 on each side; an empty `a`
+    takes the range 0 to 1. Panics when `bins` is less than 1, or when an element is NaN or
+    infinite, where NumPy raises `ValueError`. Two passes over `a`.
+    """
+    assert bins >= 1, "histogram needs at least one bin"
+    first = 0.0
+    last = 1.0
+    if len(a) > 0:
+        first = a.min()
+        last = a.max()
+        assert isfinite(first) and isfinite(last), "histogram needs finite elements"
+    if first == last:
+        first = first - 0.5
+        last = last + 0.5
+    edges = Array.zeros(bins + 1)
+    delta = last - first
+    step = delta / bins
+    for k in range(bins + 1):
+        if step == 0.0:
+            edges[k] = k / bins * delta + first
+        else:
+            edges[k] = k * step + first
+    edges[bins] = last
+    counts = Array.zeros(bins, dtype=int)
+    for i in range(len(a)):
+        x = a[i]
+        index = trunc((x - first) / delta * bins)
+        if index == bins:
+            index -= 1
+        if x < edges[index]:
+            index -= 1
+        if x >= edges[index + 1] and index != bins - 1:
+            index += 1
+        counts[index] += 1
+    return counts, edges
+
+
+def _cov_entries(x: Array[f64, 1], y: Array[f64, 1]) -> tuple[f64, f64, f64]:
+    """The covariance matrix entries of `x` and `y` as `numpy.cov(x, y)` computes them: the
+    variance of `x`, the covariance, and the variance of `y`, each a pairwise dot product of
+    deviations from the mean times `1 / (n - 1)`."""
+    assert len(x) == len(y), "cov needs x and y of the same length"
+    n = len(x)
+    dx = x - x.mean()
+    dy = y - y.mean()
+    fact = 0.0
+    if n > 1:
+        fact = n - 1.0
+    scale = 1.0 / fact
+    return dx.dot(dx) * scale, dx.dot(dy) * scale, dy.dot(dy) * scale
+
+
+def cov(x: Array[f64, 1], y: Array[f64, 1]) -> Array[f64, 2]:
+    """The 2 by 2 covariance matrix of `x` and `y`, as `numpy.cov(x, y)`: the sample variances
+    on the diagonal and the sample covariance off it, dividing by `n - 1`.
+
+    Each entry is the dot product of the two deviations from the mean, added in NumPy's
+    pairwise order, times `1 / (n - 1)` as NumPy multiplies. NumPy forms the products through
+    BLAS, whose order depends on the machine, so its last bit can differ. Fewer than two
+    elements give infinity or NaN, as NumPy's do. Panics when the lengths differ.
+    """
+    xx, xy, yy = _cov_entries(x, y)
+    result = Array.zeros((2, 2))
+    result[0, 0] = xx
+    result[0, 1] = xy
+    result[1, 0] = xy
+    result[1, 1] = yy
+    return result
+
+
+def _clip_unit(value: f64) -> f64:
+    """`value` limited to -1 to 1, as `numpy.clip(value, -1, 1)`; NaN stays NaN."""
+    if value > 1.0:
+        return 1.0
+    if value < -1.0:
+        return -1.0
+    return value
+
+
+def corrcoef(x: Array[f64, 1], y: Array[f64, 1]) -> Array[f64, 2]:
+    """The 2 by 2 matrix of Pearson correlation coefficients of `x` and `y`, as
+    `numpy.corrcoef(x, y)`: 1 on the diagonal and the correlation off it.
+
+    Each entry of `cov(x, y)` is divided by the standard deviation of its row and then of its
+    column, and limited to -1 to 1, in NumPy's order. NaN when either array is constant, as
+    NumPy's is. Panics when the lengths differ.
+    """
+    xx, xy, yy = _cov_entries(x, y)
+    sx = sqrt(xx)
+    sy = sqrt(yy)
+    result = Array.zeros((2, 2))
+    result[0, 0] = _clip_unit(xx / sx / sx)
+    result[0, 1] = _clip_unit(xy / sx / sy)
+    result[1, 0] = _clip_unit(xy / sy / sx)
+    result[1, 1] = _clip_unit(yy / sy / sy)
+    return result
