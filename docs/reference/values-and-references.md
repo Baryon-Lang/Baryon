@@ -100,7 +100,18 @@ cannot be used. So a field may be moved out only of a struct owned by a local va
 other fields are destroyed when the function returns. In any other case, such as
 `x = atoms.positions` with `atoms` used later, write `x = atoms.positions.copy()`, or pass
 `atoms.positions` straight to the function that needs it. Values cannot be moved out of array or
-list elements at all; elements of arrays are copy types anyway.
+list elements at all, and neither can their fields: `first = people[0].name` is an error, because
+the list still owns that `str` and would free it a second time. Copy it instead,
+`first = people[0].name.copy()`, in a comprehension too. Elements of arrays are copy types anyway.
+
+```text
+error: a value cannot be moved out of an element
+ --> main.byn:7:13
+  |
+7 |     first = people[0].name
+  |             ^^^^^^^^^^^^^^ moved out of an element
+  = note: move a copy instead: `people[0].name.copy()`
+```
 
 ### Tuple assignment
 
