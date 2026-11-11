@@ -168,6 +168,10 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Pop => self.list_pop(arguments, destination, target),
             Builtin::Sum => self.sum(arguments, destination, target),
             Builtin::Dot => self.dot(arguments, destination, target),
+            Builtin::PairwiseLeaves | Builtin::PairwiseLeafEnd => {
+                self.pairwise_leaf(arguments, destination, target)
+            }
+            Builtin::PairwiseCombine => self.pairwise_combine(arguments, destination, target),
             Builtin::Philox => self.philox(arguments, destination, target),
             Builtin::Uniform => self.uniform(arguments, destination, target),
             Builtin::CompareStr => self.text_builtin(&COMPARE, arguments, destination, target),
