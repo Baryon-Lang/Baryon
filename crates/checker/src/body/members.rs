@@ -54,6 +54,9 @@ impl<'db> Body<'db> {
         if let Some(ty) = self.complex_attribute(node, base, name) {
             return ty;
         }
+        if self.is_path(base) {
+            return self.path_attribute(node, name);
+        }
         let TypeKind::Struct(nominal) = base.kind(self.db) else {
             if self.has_no_members(base) {
                 return self.no_member(node, base, name, false);

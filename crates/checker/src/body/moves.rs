@@ -64,6 +64,8 @@ impl<'db> Body<'db> {
         match self.tree.kind(node) {
             SyntaxKind::Name | SyntaxKind::Attribute if self.borrowed_by_loop(node, "moved") => {}
             SyntaxKind::Name => self.move_variable(node, node),
+            // `path.name` and the other parts of a `Path` are new values each time.
+            SyntaxKind::Attribute if self.is_path_part(node) => {}
             // A field of an element, `people[0].name`, is part of the element: moving it out
             // is moving out of an element, the error below.
             SyntaxKind::Attribute if self.inside_element(node) => self.moved_out_of_element(node),
@@ -82,6 +84,13 @@ impl<'db> Body<'db> {
                     }
                 }
             }
+            // `os.environ["HOME"]` is a new `str` each time it is read, so keeping it moves
+            // nothing out of anything.
+            SyntaxKind::Subscript
+                if self
+                    .tree
+                    .child(node, Role::Value)
+                    .is_some_and(|value| self.is_environ(value)) => {}
             // A slice of a list is a new list, as in Python, so keeping it moves nothing.
             SyntaxKind::Subscript
                 if self.is_view(node) && matches!(ty.kind(self.db), TypeKind::List(_)) => {}

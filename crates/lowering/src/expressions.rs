@@ -33,6 +33,10 @@ impl<'db> Builder<'db> {
             SyntaxKind::Name | SyntaxKind::Attribute if self.is_argv(node) => {
                 self.argv(&place, node);
             }
+            SyntaxKind::Attribute if self.is_path_part(node) => self.path_part(place, node),
+            SyntaxKind::Subscript if self.is_environ_item(node) => {
+                self.environ_item(place, node);
+            }
             SyntaxKind::Subscript if self.is_text_subscript(node) => {
                 self.text_subscript(place, node);
             }
@@ -43,6 +47,7 @@ impl<'db> Builder<'db> {
             SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation if self.is_array(ty) => {
                 self.elementwise(place, node);
             }
+            SyntaxKind::BinaryOperation if self.is_path_join(node) => self.path_join(place, node),
             SyntaxKind::BinaryOperation => self.binary(place, node),
             SyntaxKind::UnaryOperation => self.unary(place, node),
             SyntaxKind::Compare => self.compare(&place, node),
@@ -89,7 +94,7 @@ impl<'db> Builder<'db> {
             SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
         ) && !self.is_array_attribute(node)
             && !self.is_list_slice(node)
-            && !self.is_argv(node)
+            && !self.is_computed(node)
             && !self.is_text_subscript(node)
         {
             // A name of something lowering does not handle, already reported by `place`.
@@ -175,8 +180,9 @@ impl<'db> Builder<'db> {
     /// `T | None` variable the checker narrowed to `T` reads the value inside, and a loop
     /// variable that borrows an element reads the element.
     pub(crate) fn place(&mut self, node: NodeId) -> Option<Place> {
-        if self.is_argv(node) {
-            // `sys.argv` names no place: each read builds a new list.
+        if self.is_computed(node) {
+            // `sys.argv` names no place: each read builds a new list. Neither does a part of
+            // a `Path` or a variable of the environment.
             return None;
         }
         match self.tree.kind(node) {

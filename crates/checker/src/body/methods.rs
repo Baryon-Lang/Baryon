@@ -37,25 +37,18 @@ impl<'db> Body<'db> {
             return self.untyped(arguments);
         };
         let callee = self.tree.text(attribute, self.text).to_owned();
-        match self.lowerer.definition(value) {
-            Some(Definition::Builtin("Array")) => {
-                return self.array_function(node, &callee, arguments, expected);
-            }
-            Some(Definition::Item(..)) => {
-                // `Vec3.zeros()` on an alias of a `Fixed` type; anything else on a class has no
-                // functions in version 0.
-                let ty = self.lowerer.lower(value);
-                return match ty.kind(self.db) {
-                    TypeKind::Fixed { .. } => self.fixed_function(node, ty, &callee, arguments),
-                    _ => self.untyped(arguments),
-                };
-            }
-            _ => {}
+        if let Some(result) = self.class_function(node, value, &callee, arguments, expected) {
+            return result;
         }
         let base = self.expression(value, None);
         if self.maybe_none(value, base) {
             self.untyped(arguments);
             return self.lowerer.unknown();
+        }
+        if self.is_path(base)
+            && let Some(result) = self.path_method(node, value, &callee, arguments)
+        {
+            return result;
         }
         if let &TypeKind::Standard(standard) = base.kind(self.db) {
             let result = self.standard_method(node, standard, &callee, arguments);
@@ -130,6 +123,32 @@ impl<'db> Body<'db> {
                 self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments)
             }
             None => self.untyped(arguments),
+        }
+    }
+
+    /// `Class.function(arguments)`, where `value` names a class rather than a value:
+    /// `Array.zeros(n)`, or `Vec3.zeros()` on an alias of a `Fixed` type; anything else on a
+    /// class has no functions in version 0. Returns `None` when `value` is not a class.
+    fn class_function(
+        &mut self,
+        node: NodeId,
+        value: NodeId,
+        callee: &str,
+        arguments: &Arguments,
+        expected: Option<Type<'db>>,
+    ) -> Option<Type<'db>> {
+        match self.lowerer.definition(value) {
+            Some(Definition::Builtin("Array")) => {
+                Some(self.array_function(node, callee, arguments, expected))
+            }
+            Some(Definition::Item(..)) => {
+                let ty = self.lowerer.lower(value);
+                Some(match ty.kind(self.db) {
+                    TypeKind::Fixed { .. } => self.fixed_function(node, ty, callee, arguments),
+                    _ => self.untyped(arguments),
+                })
+            }
+            _ => None,
         }
     }
 

@@ -46,7 +46,7 @@ impl<'db> Builder<'db> {
             self.db,
             TypeKind::Primitive(Primitive::Integer(Integer::I64)),
         );
-        let path = self.text_argument(path);
+        let path = self.path_argument(path);
         let mode = Argument::Owned(Operand::Constant(Constant::integer(int, number)));
         self.file_call(FileMethod::Open, vec![path, mode], place, node);
     }
@@ -78,7 +78,7 @@ impl<'db> Builder<'db> {
         };
         let mut passed = vec![file];
         if let [_, text] = arguments {
-            passed.push(self.text_argument(*text));
+            passed.push(self.path_argument(*text));
         }
         self.file_call(method, passed, place, node);
     }
@@ -182,8 +182,8 @@ impl<'db> Builder<'db> {
         self.raising_call(Builtin::File(method), arguments, place, node);
     }
 
-    /// A call of `builtin`, one that can fail, its result written into `place`, with the error
-    /// edge for the errors the checker recorded at `node`.
+    /// A call of `builtin`, its result written into `place`, with the error edge for the errors
+    /// the checker recorded at `node`: none for a built-in that cannot fail.
     pub(crate) fn raising_call(
         &mut self,
         builtin: Builtin,

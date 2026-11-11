@@ -48,6 +48,44 @@ def main():
     );
 }
 
+/// `os.environ[name]`, `in` and `copy()` read the environment as Python's do: the copy is a
+/// `dict` of the program's own, so adding to it changes nothing else, and a variable that is
+/// not set panics as a missing dict key does, where Python raises `KeyError`.
+#[test]
+fn the_environment_is_indexed_tested_and_copied() {
+    let program = "\
+import os
+
+
+def main():
+    name = \"BARYON_TEST_SET\"
+    value = os.environ[name]
+    print(value, name in os.environ, \"BARYON_TEST_UNSET\" in os.environ)
+    print(\"BARYON_TEST_UNSET\" not in os.environ)
+    copy = os.environ.copy()
+    copy[\"BARYON_TEST_NEW\"] = \"new\"
+    print(copy[name], len(copy) > 1, \"BARYON_TEST_NEW\" in os.environ)
+    print(os.environ[\"BARYON_TEST_UNSET\"])
+";
+    let directory = package("environment", &[("main.byn", program)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let run = Command::new(&executable)
+        .env("BARYON_TEST_SET", "café")
+        .env_remove("BARYON_TEST_UNSET")
+        .output()
+        .unwrap();
+    assert_eq!(run.status.code(), Some(101));
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "café True False\nTrue\ncafé True False\n"
+    );
+    assert_eq!(
+        panic_report(&run),
+        "panic: key 'BARYON_TEST_UNSET' is not in the dict\n  --> main.byn:12:11\n"
+    );
+}
+
 /// `OSError` and `ErrorKind`, the standard library's own classes (decision 0038), compile like a
 /// program's: caught, tested by `kind`, and printed in Python's form when `main` lets one out.
 #[test]

@@ -19,7 +19,13 @@ impl<'db> Body<'db> {
         if self.maybe_none(left, left_type) | self.maybe_none(right, right_type) {
             return self.lowerer.unknown();
         }
-        self.combine(node, self.tree.node(node).operator(), left_type, right_type)
+        let operator = self.tree.node(node).operator();
+        if operator == Operator::Divide
+            && let Some(path) = self.path_join(node, left_type, right_type)
+        {
+            return path;
+        }
+        self.combine(node, operator, left_type, right_type)
     }
 
     /// The types of two operands. A number literal takes the other side's type.
@@ -251,6 +257,15 @@ impl<'db> Body<'db> {
             let Some(right_node) = self.tree.child(comparator, Role::Right) else {
                 continue;
             };
+            if matches!(operator, Operator::In | Operator::NotIn) && self.is_environ(right_node) {
+                // `name in os.environ`: whether the variable is set.
+                let name = left.unwrap_or_else(|| self.expression(left_node, None));
+                let str = Type::new(self.db, TypeKind::Str);
+                self.expect(left_node, str, name, "a variable's name is");
+                left = Some(self.lowerer.unknown());
+                left_node = right_node;
+                continue;
+            }
             let (left_type, right_type) = match left {
                 Some(left_type) => {
                     let right = self.expression(right_node, self.number_context(left_type));

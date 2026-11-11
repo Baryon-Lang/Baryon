@@ -13,6 +13,7 @@ mod dicts;
 mod files;
 mod lists;
 mod math;
+mod paths;
 mod process;
 mod random;
 mod slices;

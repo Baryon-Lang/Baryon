@@ -1,0 +1,17 @@
+"""The parts of the `pathlib` module written in Baryon (decision 0038).
+
+The class is declared here, so a `Path` is stored, moved, copied and dropped as any struct is.
+What a `Path` does, such as `/`, `name` and `exists()`, is built into the compiler and the
+runtime (decision 0036, part 7).
+"""
+
+
+class Path(Struct):
+    """A path in the file system: the name of a file or a directory (decision 0036, part 7).
+
+    `Path(text)` makes one, and `/` joins it with a name: `Path("runs") / "out.csv"`. A `Path`
+    holds its text in the form Python's `pathlib` keeps, with no doubled or trailing `/`, and
+    `str(path)` gives that text.
+    """
+
+    _text: str  # the path's text, in the form `pathlib` keeps; the compiler's to read

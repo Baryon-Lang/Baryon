@@ -196,6 +196,9 @@ impl<'db> Body<'db> {
         ) else {
             return;
         };
+        if self.environ_changed(target) {
+            return;
+        }
         let base = self.expression(receiver, None);
         let &TypeKind::Dict { key, .. } = base.kind(self.db) else {
             self.expression(index, None);

@@ -14,10 +14,12 @@ impl<'db> Body<'db> {
         self.library_class_in("builtins", name)
     }
 
-    /// The class `name` that the library's file for `module` defines at its top level, such as
-    /// `CompletedProcess` in `<std>/subprocess.byn`, when the package has that file. It reads
-    /// the file's syntax tree, which the database has already parsed for the package, so the
-    /// cost is one pass over its few top-level statements.
+    /// The class `name` that the library's file for the standard module `module` defines at its
+    /// top level, such as `Path` in `<std>/pathlib.byn` or `CompletedProcess` in
+    /// `<std>/subprocess.byn`, when the package has that file; `builtins` names the file of the
+    /// names every module can use. It reads the file's syntax tree, which the database has
+    /// already parsed for the package, so the cost is one pass over its few top-level
+    /// statements.
     pub(super) fn library_class_in(&self, module: &str, name: &str) -> Option<Type<'db>> {
         let file = database::modules(self.db, self.lowerer.package).library(module)?;
         debug_assert!(file.source(self.db).name().starts_with(LIBRARY_ROOT));

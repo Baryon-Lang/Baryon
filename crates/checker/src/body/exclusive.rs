@@ -171,6 +171,9 @@ impl<'db> Body<'db> {
     /// an `InOut` argument or receiver. Reports it when an enclosing loop borrows it (the
     /// `loops` module), or when it is part of a read-only parameter.
     pub(super) fn change(&mut self, node: NodeId) {
+        if self.environ_changed(node) {
+            return;
+        }
         // A `simd` loop inside a `prange` loop: the write counts for both.
         for parallel in &mut self.parallel {
             parallel.writes.insert(node);

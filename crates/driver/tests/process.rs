@@ -82,14 +82,101 @@ error: `sys.stdin` is not in Baryon yet
    |
 14 |     line = sys.stdin.readline()
    |                ^^^^^ not built
-   = note: so far `sys` has `argv` and `exit`, and `os` has `getenv` and `environ.get` (decision 0036)
+   = note: so far `sys` has `argv` and `exit`, and `os` has `environ`, `getenv`, `listdir`, `remove`, `rename`, `mkdir`, `makedirs`, `getcwd` and `ErrorKind` (decision 0036)
 
 error: `os.environ.setdefault` is not in Baryon yet
   --> main.byn:15:5
    |
 15 |     os.environ.setdefault("A", "B")
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not built
-   = note: so far `sys` has `argv` and `exit`, and `os` has `getenv` and `environ.get` (decision 0036)"#
+   = note: so far `sys` has `argv` and `exit`, and `os` has `environ`, `getenv`, `listdir`, `remove`, `rename`, `mkdir`, `makedirs`, `getcwd` and `ErrorKind` (decision 0036)"#
+    );
+}
+
+/// `os.environ[name]`, `name in os.environ` and `os.environ.copy()` read the environment;
+/// anything that would change it is a compile error, and so is `os.environ` on its own, which has
+/// no type (decision 0036, part 5).
+#[test]
+fn the_environment_is_read_four_ways_and_never_changed() {
+    let program = r#"
+import os
+
+
+def f(name: str) -> str:
+    home = os.environ["HOME"]
+    env: dict[str, str] = os.environ.copy()
+    if name in os.environ and "CI" not in os.environ:
+        return os.environ[name]
+    os.environ["A"] = "b"
+    del os.environ["A"]
+    os.putenv("A", "b")
+    os.unsetenv("A")
+    table = os.environ
+    count: int = os.environ[3]
+    found: bool = 3 in os.environ
+    os.environ.copy(1)
+    return home
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: the environment is read-only
+ --> main.byn:9:5
+  |
+9 |     os.environ["A"] = "b"
+  |     ^^^^^^^^^^^^^^^ cannot be changed
+  = note: changing it would race with every thread that reads it; to run a program with another environment, pass it one: `subprocess.run(..., env=...)` (decision 0036)
+
+error: the environment is read-only
+  --> main.byn:10:9
+   |
+10 |     del os.environ["A"]
+   |         ^^^^^^^^^^^^^^^ cannot be changed
+   = note: changing it would race with every thread that reads it; to run a program with another environment, pass it one: `subprocess.run(..., env=...)` (decision 0036)
+
+error: the environment is read-only
+  --> main.byn:11:5
+   |
+11 |     os.putenv("A", "b")
+   |     ^^^^^^^^^^^^^^^^^^^ cannot be changed
+   = note: changing it would race with every thread that reads it; to run a program with another environment, pass it one: `subprocess.run(..., env=...)` (decision 0036)
+
+error: the environment is read-only
+  --> main.byn:12:5
+   |
+12 |     os.unsetenv("A")
+   |     ^^^^^^^^^^^^^^^^ cannot be changed
+   = note: changing it would race with every thread that reads it; to run a program with another environment, pass it one: `subprocess.run(..., env=...)` (decision 0036)
+
+error: `os.environ` is not a value on its own
+  --> main.byn:13:16
+   |
+13 |     table = os.environ
+   |                ^^^^^^^ read one variable, or copy them all
+   = note: the environment is read with `os.environ[name]`, `os.environ.get(name)`, `name in os.environ` and `os.environ.copy()`, which gives a `dict[str, str]` (decision 0036)
+
+error: expected `str`, found `i64`
+  --> main.byn:14:29
+   |
+14 |     count: int = os.environ[3]
+   |                             ^ a variable's name is `str`
+
+error: expected `i64`, found `str`
+  --> main.byn:14:18
+   |
+14 |     count: int = os.environ[3]
+   |                  ^^^^^^^^^^^^^ the annotation says `i64`
+
+error: expected `str`, found `i64`
+  --> main.byn:15:19
+   |
+15 |     found: bool = 3 in os.environ
+   |                   ^ a variable's name is `str`
+
+error: `copy` takes no arguments
+  --> main.byn:16:5
+   |
+16 |     os.environ.copy(1)
+   |     ^^^^^^^^^^^^^^^^^^ wrong arguments"#
     );
 }
 

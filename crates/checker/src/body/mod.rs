@@ -56,6 +56,7 @@ mod moves;
 mod numbers;
 mod operators;
 mod parallel;
+mod paths;
 mod patterns;
 mod process;
 mod random;
