@@ -379,8 +379,9 @@ error: `sum` takes no arguments or one axis
 }
 
 /// `mean`, `var` and `std` (roadmap 3.16): the mean of floats keeps their type and the mean of
-/// integers is an `f64`, `ddof` is an `int` keyword, and an axis, a positional argument, or
-/// `var` of integers is an error that says what is built.
+/// integers is an `f64`, `ddof` is an `int` keyword, and an axis, positional or keyword, gives
+/// `a.sum(axis=k)`'s type. Other arguments, `var` of integers, and integers along an axis are
+/// errors that say what is built.
 #[test]
 fn statistics_methods_check_their_arguments() {
     let clean = r"
@@ -390,33 +391,38 @@ def clean(a: Array[f64, 2], s: Array[f32, 1], n: Array[i64, 1], v: Fixed[f64, (3
     counted: f64 = n.mean()
     spread: f64 = v.std()
     sample: f64 = a.std(ddof=len(n))
+    rows: Array[f64, 1] = a.mean(axis=1)
+    columns: Array[f64, 1] = a.var(0, ddof=1)
+    last: Array[f64, 1] = a.std(ddof=1, axis=-1)
 ";
     assert_eq!(check_one(clean), "");
     let mistakes = r"
-def mistakes(a: Array[f64, 2], n: Array[i64, 1], z: Array[complex128, 1]):
-    b = a.mean(axis=0)
-    c = a.var(1)
+def mistakes(a: Array[f64, 2], n: Array[i64, 2], z: Array[complex128, 1]):
+    b = a.mean(ddof=1)
+    c = a.var(0, 1)
     d = n.var()
     e = z.mean()
     f = a.std(ddof=0.5)
+    g = n.mean(axis=0)
+    h = a.var(axis=2)
 ";
     assert_eq!(
         check_one(mistakes),
-        r"error: `mean` takes no arguments
+        r"error: `mean` takes no arguments or one axis
  --> main.byn:2:9
   |
-2 |     b = a.mean(axis=0)
+2 |     b = a.mean(ddof=1)
   |         ^^^^^^^^^^^^^^ wrong arguments
-  = note: write `a.mean()` for the whole array; along an axis is not built yet
+  = note: write `a.mean()` for the whole array, or `a.mean(axis=0)` along the first axis
 
-error: `var` takes no arguments or `ddof`
+error: `var` takes an axis, `ddof`, both or neither
  --> main.byn:3:9
   |
-3 |     c = a.var(1)
-  |         ^^^^^^^^ wrong arguments
-  = note: write `a.var()` for the whole array, or `ddof=1` to divide by n - 1; along an axis is not built yet
+3 |     c = a.var(0, 1)
+  |         ^^^^^^^^^^^ wrong arguments
+  = note: write `a.var()` for the whole array, or `a.var(axis=0)` along the first axis; `ddof=1` divides by n - 1
 
-error: `var` of `Array[i64, 1]` is not built
+error: `var` of `Array[i64, 2]` is not built
  --> main.byn:4:9
   |
 4 |     d = n.var()
@@ -434,6 +440,20 @@ error: expected `i64`, found `f64`
  --> main.byn:6:20
   |
 6 |     f = a.std(ddof=0.5)
-  |                    ^^^ `ddof` is `i64`"
+  |                    ^^^ `ddof` is `i64`
+
+error: `mean` along an axis of `Array[i64, 2]` is not built
+ --> main.byn:7:9
+  |
+7 |     g = n.mean(axis=0)
+  |         ^^^^^^^^^^^^^^ not floats
+  = note: along an axis, `mean` takes an array of floats
+
+error: axis 2 is out of range for `Array[f64, 2]`, which has 2 axes
+ --> main.byn:8:20
+  |
+8 |     h = a.var(axis=2)
+  |                    ^ no such axis
+  = note: an array of rank 2 has axes 0 to 1, or -2 to -1 counted from the last"
     );
 }

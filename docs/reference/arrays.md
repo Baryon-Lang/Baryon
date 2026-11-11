@@ -252,8 +252,8 @@ set.
 | `a.copy()` | A new contiguous array with the same elements |
 | `a.sum()`, `a.min()`, `a.max()` | The sum, smallest and largest element |
 | `a.sum(axis=k)`, `a.min(axis=k)`, `a.max(axis=k)` | The sums, smallest and largest elements along axis `k`: an array with that axis removed. See [Reductions along an axis](#reductions-along-an-axis) |
-| `a.mean()` | The mean of the elements, with NumPy's bits. See [Means and variances](#means-and-variances) |
-| `a.var(ddof=0)`, `a.std(ddof=0)` | The variance and standard deviation of float elements, dividing by `n - ddof`, with NumPy's bits |
+| `a.mean()`, `a.mean(axis=k)` | The mean of the elements, or of each line along axis `k`, with NumPy's bits. See [Means and variances](#means-and-variances) |
+| `a.var(ddof=0)`, `a.std(ddof=0)`, each with `axis=k` | The variance and standard deviation of float elements, dividing by `n - ddof`, with NumPy's bits |
 | `a.dot(b)` | The dot product of two rank-1 arrays or vectors of the same length |
 | `a.round()` | A new array with each element rounded to the nearest whole number, ties to even |
 | `a.fill(value)` | Sets every element to `value`; `a` must be changeable |
@@ -426,8 +426,25 @@ def standard_error(samples: Array[f64, 1]) -> f64:
 once for the squares, which are summed as they are computed, one leaf of the pairwise tree at a
 time ([decision 0041](../decisions/0041-one-pass-reductions.md)), so no second array is
 allocated. NumPy's two-pass formula is used rather than a one-pass running update because it is
-NumPy's: a one-pass formula would round in other places and give other bits. Means and
-variances along an axis are not built yet.
+NumPy's: a one-pass formula would round in other places and give other bits.
+
+Each also takes an axis, as [`a.sum(axis=k)`](#reductions-along-an-axis) does, by position or as
+`axis=`, alongside `ddof`. The result drops that axis, and each element is the statistic of one
+line along it: `a.mean(axis=k)` is `a.sum(axis=k)` divided by the length along `k`, with the
+bits of `numpy.mean(a, axis=k)`, and `a.var(axis=k, ddof=1)` subtracts each line's mean from the
+line, squares, sums along `k` in `a.sum(axis=k)`'s order and divides by `n - ddof`, with the bits
+of `numpy.var`. Along an axis they take floats only.
+
+```python
+def standardize_columns(table: Array[f64, 2]) -> Array[f64, 2]:
+    """Each column of a table of samples, one row per sample, shifted to mean 0 and scaled to
+    sample standard deviation 1."""
+    return (table - table.mean(axis=0)) / table.std(axis=0, ddof=1)
+```
+
+Along an axis, `a.var()` stores the squared differences in an array the size of `a` before
+summing them, since one-pass sums along an axis are not built (roadmap idea I.46): one extra
+array, written and read once.
 
 ### The matrix product
 
