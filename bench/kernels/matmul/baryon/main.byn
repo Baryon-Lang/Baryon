@@ -1,0 +1,66 @@
+"""Dense C = AB with plain loops.
+
+The Baryon twin of `matmul.f90`, line for line: the same loops, operations, constants and summation
+order, so it prints the same checksum to the last bit. Fortran's column-major `a(i, j)` is written
+`a[j, i]`, so the innermost loop still walks memory in order. Inputs come from the same xorshift64
+generator, `Random` below, as `support.f90`.
+
+Usage: `main <arguments>` with `<n>`.
+Checksum: Sum of C, row by row.
+Timing: Baryon has no clock yet, so the whole run is timed from outside; see `bench/README.md`.
+"""
+
+import math
+import sys
+
+
+class Random(Struct):
+    """The xorshift64 generator of `support.f90`, with its seed."""
+
+    state: u64
+
+
+def uniform(random: InOut[Random]) -> f64:
+    """The next number from `random`, uniform in [0, 1), from its top 53 bits."""
+    s = random.state
+    s = s ^ (s << 13)
+    s = s ^ (s >> 7)
+    s = s ^ (s << 17)
+    random.state = s
+    return f64(s >> 11) * 1.1102230246251565e-16
+
+
+def uniform_range(random: InOut[Random], low: f64, high: f64) -> f64:
+    """The next number from `random`, uniform in [low, high)."""
+    return low + (high - low) * uniform(random)
+
+
+def multiply(a: Array[f64, 2], b: Array[f64, 2], c: InOut[Array[f64, 2]]):
+    """`c += a b`, with `j, k, i` loops so the innermost walks memory in order."""
+    n = a.shape[0]
+    for j in range(n):
+        for k in range(n):
+            b_kj = b[j, k]
+            for i in range(n):
+                c[j, i] = c[j, i] + a[k, i] * b_kj
+
+
+def main() -> Raises[None, ValueError]:
+    """Draws the matrices, multiplies them and prints the checksum."""
+    n = int(sys.argv[1])
+    random = Random(state=u64(88172645463325252))
+    a = Array.zeros((n, n))
+    b = Array.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            a[j, i] = uniform_range(random, -1.0, 1.0)
+    for i in range(n):
+        for j in range(n):
+            b[j, i] = uniform_range(random, -1.0, 1.0)
+    c = Array.zeros((n, n))
+    multiply(a, b, c)
+    checksum = 0.0
+    for i in range(n):
+        for j in range(n):
+            checksum += c[j, i]
+    print(f"checksum {checksum:.17e}")

@@ -1,0 +1,45 @@
+"""Monte Carlo integral of exp(-|x|^2) over the 6D unit cube.
+
+The Baryon twin of `monte_carlo.f90`, line for line: the same loops, operations, constants and summation
+order, so it prints the same checksum to the last bit. Fortran's column-major `a(i, j)` is written
+`a[j, i]`, so the innermost loop still walks memory in order. Inputs come from the same xorshift64
+generator, `Random` below, as `support.f90`.
+
+Usage: `main <arguments>` with `<samples>`.
+Checksum: The estimate.
+Timing: Baryon has no clock yet, so the whole run is timed from outside; see `bench/README.md`.
+"""
+
+import math
+import sys
+
+
+class Random(Struct):
+    """The xorshift64 generator of `support.f90`, with its seed."""
+
+    state: u64
+
+
+def uniform(random: InOut[Random]) -> f64:
+    """The next number from `random`, uniform in [0, 1), from its top 53 bits."""
+    s = random.state
+    s = s ^ (s << 13)
+    s = s ^ (s >> 7)
+    s = s ^ (s << 17)
+    random.state = s
+    return f64(s >> 11) * 1.1102230246251565e-16
+
+
+
+def main() -> Raises[None, ValueError]:
+    """Draws the samples and prints the estimate."""
+    samples = int(sys.argv[1])
+    random = Random(state=u64(88172645463325252))
+    total = 0.0
+    for _ in range(samples):
+        radius_squared = 0.0
+        for _ in range(6):
+            coordinate = uniform(random)
+            radius_squared += coordinate * coordinate
+        total += math.exp(-radius_squared)
+    print(f"checksum {total / samples:.17e}")

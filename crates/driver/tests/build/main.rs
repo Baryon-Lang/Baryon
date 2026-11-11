@@ -26,6 +26,7 @@ mod fusion;
 mod generic_methods;
 mod guide;
 mod hoisting;
+mod kernels;
 mod list_slices;
 mod math;
 mod modules;
