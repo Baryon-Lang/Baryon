@@ -164,10 +164,10 @@ impl<'db> Function<'_, '_, 'db> {
             // Each can fail, so `call` sends it to `file_call` with its error edge.
             Builtin::File(method) => Err(Unsupported::new(method.name())),
             // Not built by this backend yet: the calls of the runtime follow the runtime's part.
-            Builtin::Path(_) | Builtin::EnvironmentEntries => Err(Unsupported::new(builtin.name())),
+            Builtin::Path(_) | Builtin::EnvironmentEntries | Builtin::Run => {
+                Err(Unsupported::new(builtin.name()))
+            }
             Builtin::ArrayFile(method) => Err(Unsupported::new(method.name())),
-            // The backend does not build `subprocess.run` yet.
-            Builtin::Run => Err(Unsupported::new(builtin.name())),
         }
     }
 }
