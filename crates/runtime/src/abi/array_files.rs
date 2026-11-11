@@ -242,6 +242,38 @@ pub(super) unsafe fn read_elements(
     (result, data)
 }
 
+/// Writes the header of a new row-major array to `out`: the pointer `data`, the lengths
+/// `shape`, then the strides in elements that lay the array out in row-major order, the last
+/// dimension's 1. A length past `i64::MAX`, which no allocation reaches, is written as it.
+///
+/// # Safety
+///
+/// `out` points to `1 + 2 * shape.len()` writable 64-bit words.
+#[allow(unsafe_code, reason = "writes a header compiled code owns")]
+pub(super) unsafe fn write_header(out: *mut i64, data: *mut u8, shape: &[usize]) {
+    let lengths: Vec<i64> = shape
+        .iter()
+        .map(|&length| i64::try_from(length).unwrap_or(i64::MAX))
+        .collect();
+    let mut stride = 1_i64;
+    let mut strides: Vec<i64> = lengths
+        .iter()
+        .rev()
+        .map(|&length| {
+            let this = stride;
+            stride = stride.saturating_mul(length);
+            this
+        })
+        .collect();
+    strides.reverse();
+    // SAFETY: the caller guarantees `out` is writable; its first word is the pointer.
+    unsafe { out.cast::<*mut u8>().write(data) };
+    for (at, word) in lengths.into_iter().chain(strides).enumerate() {
+        // SAFETY: the caller guarantees `1 + 2 * shape.len()` writable words at `out`.
+        unsafe { out.wrapping_add(1 + at).write(word) };
+    }
+}
+
 /// Writes the elements of an array to `writer` in row-major order, as few runs of neighbouring
 /// elements as its strides allow: the whole array at once unless it is a view that skips
 /// elements, then one write for each stretch of the innermost dimensions that lies together.
