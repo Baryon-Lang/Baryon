@@ -74,3 +74,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0039. AstroBaryon keeps AstroPy's names](0039-astrobaryon-keeps-astropy-names.md) | Accepted |
 | [0040. `linalg` and `fft` follow NumPy and are written in Baryon](0040-linear-algebra-and-fft.md) | Accepted |
 | [0041. A sum of a whole-array expression is computed one pairwise leaf at a time](0041-one-pass-reductions.md) | Accepted |
+| [0042. Statistics keep NumPy's names and bits, and its functions live in `stats`](0042-statistics.md) | Accepted |
