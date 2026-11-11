@@ -50,9 +50,10 @@ documentation strings as Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
 compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
-Release 0.1.0, a review release, is out. Release 0.2.0, the first with prebuilt downloads for Linux
-and macOS and the basics of a standard library, is being prepared; [`CHANGELOG.md`](CHANGELOG.md)
-says what each holds.
+Release 0.1.0, a review release, is out. Releases are time-based: a new one every two weeks, cut
+from `main`. The next, due on 2026-11-25, is the first with prebuilt downloads for Linux and macOS
+and the basics of a standard library; [`CHANGELOG.md`](CHANGELOG.md) says what each holds, and the
+[roadmap](ROADMAP.md#releases) says how releases are made.
 
 [`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the
 place to add new ideas. The reasoning behind it is in the

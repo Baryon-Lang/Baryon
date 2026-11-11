@@ -186,6 +186,10 @@ impl<'db> Builder<'db> {
             .iter()
             .filter_map(|dimension| match dimension {
                 SliceIndex::Range { length, .. } => Some(Operand::Copy(Place::from(*length))),
+                SliceIndex::NewAxis => Some(Operand::Constant(mir::Constant::integer(
+                    self.int_type(),
+                    1,
+                ))),
                 SliceIndex::Index(_) => None,
             })
             .collect();
@@ -204,6 +208,11 @@ impl<'db> Builder<'db> {
                 for dimension in &dimensions {
                     indices.push(match dimension {
                         SliceIndex::Index(index) => *index,
+                        // A new axis has length 1 and indexes no dimension of the base.
+                        SliceIndex::NewAxis => {
+                            counters.next();
+                            continue;
+                        }
                         SliceIndex::Range { start, step, .. } => {
                             let Some(&counter) = counters.next() else {
                                 return;

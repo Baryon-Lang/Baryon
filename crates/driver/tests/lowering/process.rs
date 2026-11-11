@@ -1,5 +1,6 @@
-//! Lowering of `sys` and `os` (decision 0036): `sys.argv` builds a new list, `sys.exit` is a
-//! call that never returns, and `os.getenv` branches on whether the variable is set.
+//! Lowering of `sys`, `os` and array files (decision 0036): `sys.argv` builds a new list,
+//! `sys.exit` is a call that never returns, `os.getenv` branches on whether the variable is set,
+//! and `Array.fromfile` and `tofile` are calls with an error edge.
 
 use crate::lower;
 
@@ -131,6 +132,57 @@ fn() -> str {
 
     bb8: {
         goto -> bb7;
+    }
+}
+"
+    );
+}
+
+/// `Array.fromfile` passes the path, the count and the offset, -1 and 0 where left out, and
+/// `tofile` borrows the array; a failure of either raises its `OSError` to the caller.
+#[test]
+fn array_files_are_calls_that_can_fail() {
+    let program = "\
+        def copy(source: str, target: str) -> Raises[None, OSError]:\n\
+        \x20   field = Array.fromfile(source, f32, offset=64)\n\
+        \x20   field.tofile(target)\n";
+    assert_eq!(
+        lower(program, "copy"),
+        "\
+fn(_1: str, _2: str) -> None {
+    let _0: None; // return
+    let _1: str; // parameter source
+    let _2: str; // parameter target
+    let _3: Array[f32, 1]; // field
+    let _4: Array[f32, 1];
+    let _5: Raises[None, OSError];
+    let _6: None;
+    let _7: Raises[None, OSError];
+
+    bb0: {
+        _4 = call Array.fromfile(_1, owned -1_i64, owned 64_i64) -> [return: bb2, error _5: bb1];
+    }
+
+    bb1: {
+        drop(_3);
+        raise move _5.error[0];
+    }
+
+    bb2: {
+        drop(_3);
+        _3 = move _4;
+        _6 = call Array.tofile(_3, _2) -> [return: bb4, error _7: bb3];
+    }
+
+    bb3: {
+        drop(_3);
+        raise move _7.error[0];
+    }
+
+    bb4: {
+        _0 = None;
+        drop(_3);
+        return;
     }
 }
 "

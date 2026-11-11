@@ -18,7 +18,7 @@ one option is `--release`.
 
 ## Installing
 
-From release 0.2.0, each release has prebuilt archives for Linux on x86_64 and macOS on Apple
+From the release due on 2026-11-25, each release has prebuilt archives for Linux on x86_64 and macOS on Apple
 silicon, holding `baryon` and `libruntime.a` together; the
 [beginner's guide](../guide/README.md#download-a-prebuilt-baryon) says how to download, check and
 install one. On any other system, or to follow `main`, `baryon` is built from this repository
@@ -113,7 +113,8 @@ the runtime. On success it prints `built <output> from <n> file(s)` to standard 
 with 0. A package with errors, or that uses a feature the compiler cannot build yet, gets its
 errors printed and exits with 1, with nothing written. Warnings are shown only by `check` today.
 
-The program is optimized (`clang -O2`) and keeps its line tables, so a panic prints a backtrace of
+The program is optimized (`clang -O2`, with loops that sum floats vectorized while still adding
+in order, so results match an unoptimized build to the bit) and keeps its line tables, so a panic prints a backtrace of
 `.byn` lines and `gdb` and `lldb` stop at and show them. On macOS the line tables are written to
 `<output>.dSYM` beside the executable; keep it with the executable for backtraces to name lines.
 

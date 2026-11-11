@@ -134,13 +134,14 @@ impl<'db> Body<'db> {
         );
     }
 
-    /// Whether the subscript `node` is a slice, `a[1:n]` or `grid[:, 0]`: a view of its
-    /// array rather than an element.
+    /// Whether the subscript `node` is a slice, `a[1:n]` or `grid[:, 0]`, or adds a new axis,
+    /// `b[:, None]`: a view of its array rather than an element.
     pub(super) fn is_view(&self, node: NodeId) -> bool {
         let Some(index) = self.tree.child(node, Role::Index) else {
             return false;
         };
-        let slice = |part: NodeId| self.tree.kind(part) == SyntaxKind::Slice;
+        let slice =
+            |part: NodeId| matches!(self.tree.kind(part), SyntaxKind::Slice | SyntaxKind::None);
         slice(index)
             || (self.tree.kind(index) == SyntaxKind::Tuple
                 && self.tree.children_with(index, Role::Item).any(slice))

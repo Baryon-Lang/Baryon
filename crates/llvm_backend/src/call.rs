@@ -33,6 +33,7 @@ impl<'db> Function<'_, '_, 'db> {
             } => (item, type_arguments),
             Callee::Builtin(
                 builtin @ (Builtin::File(_)
+                | Builtin::ArrayFile(_)
                 | Builtin::Path(_)
                 | Builtin::Run
                 | Builtin::Text(TextMethod::ParseInt | TextMethod::ParseFloat)),
@@ -103,10 +104,10 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(())
     }
 
-    /// Writes a call of `builtin`, one of those that can fail: a file operation, a path or
-    /// directory operation, `subprocess.run`, or `int(text)` and `float(text)`. Each is a call
-    /// of the runtime that raises through `error`, the call's error edge; a path operation that
-    /// cannot fail, such as `path.name`, has no edge.
+    /// Writes a call of `builtin`, one of those that can fail: a file operation, an array file,
+    /// a path or directory operation, `subprocess.run`, or `int(text)` and `float(text)`. Each
+    /// is a call of the runtime that raises through `error`, the call's error edge; a path
+    /// operation that cannot fail, such as `path.name`, has no edge.
     fn raising_builtin(
         &mut self,
         builtin: Builtin,
@@ -117,6 +118,9 @@ impl<'db> Function<'_, '_, 'db> {
     ) -> Result<(), Unsupported> {
         match builtin {
             Builtin::File(method) => self.file_call(method, arguments, destination, target, error),
+            Builtin::ArrayFile(method) => {
+                self.array_file_call(method, arguments, destination, target, error)
+            }
             Builtin::Path(method) => self.path_call(method, arguments, destination, target, error),
             Builtin::Run => self.subprocess_run(arguments, destination, target, error),
             Builtin::Text(method) => {
@@ -178,6 +182,10 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Pop => self.list_pop(arguments, destination, target),
             Builtin::Sum => self.sum(arguments, destination, target),
             Builtin::Dot => self.dot(arguments, destination, target),
+            Builtin::PairwiseLeaves | Builtin::PairwiseLeafEnd => {
+                self.pairwise_leaf(arguments, destination, target)
+            }
+            Builtin::PairwiseCombine => self.pairwise_combine(arguments, destination, target),
             Builtin::Philox => self.philox(arguments, destination, target),
             Builtin::Uniform => self.uniform(arguments, destination, target),
             Builtin::CompareStr => self.text_builtin(&COMPARE, arguments, destination, target),
@@ -196,12 +204,11 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Exit => self.system_exit(arguments),
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
-            // `File`, `Path` and `Run` can fail, so `call` sends them to `raising_builtin` with
-            // their error edge.
-            Builtin::File(_) | Builtin::Run | Builtin::Path(_) => {
+            // `File`, `ArrayFile`, `Path` and `Run` can fail, so `call` sends them to
+            // `raising_builtin` with their error edge.
+            Builtin::File(_) | Builtin::ArrayFile(_) | Builtin::Run | Builtin::Path(_) => {
                 Err(Unsupported::new(builtin.name()))
             }
-            Builtin::ArrayFile(method) => Err(Unsupported::new(method.name())),
         }
     }
 }

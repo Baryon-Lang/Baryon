@@ -149,6 +149,7 @@
 
 mod accumulate;
 mod array;
+mod array_files;
 mod call;
 mod complex;
 mod convert;
@@ -162,6 +163,7 @@ mod list;
 mod literal;
 mod math;
 mod module;
+mod pairwise;
 mod panic;
 mod parallel;
 mod paths;

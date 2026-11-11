@@ -1,0 +1,77 @@
+"""RK4 on an ensemble of stiff Van der Pol oscillators, mu = 10.
+
+The Baryon twin of `runge_kutta.f90`, line for line: the same loops, operations, constants and summation
+order, so it prints the same checksum to the last bit. Fortran's column-major `a(i, j)` is written
+`a[j, i]`, so the innermost loop still walks memory in order. Inputs come from the same xorshift64
+generator, `Random` below, as `support.f90`.
+
+Usage: `main <arguments>` with `<oscillators> <steps>`.
+Checksum: Sum of x + y over the oscillators.
+Timing: Baryon has no clock yet, so the whole run is timed from outside; see `bench/README.md`.
+"""
+
+import math
+import sys
+
+MU: Final = 10.0
+H: Final = 1.0e-3
+
+
+class Random(Struct):
+    """The xorshift64 generator of `support.f90`, with its seed."""
+
+    state: u64
+
+
+def uniform(random: InOut[Random]) -> f64:
+    """The next number from `random`, uniform in [0, 1), from its top 53 bits."""
+    s = random.state
+    s = s ^ (s << 13)
+    s = s ^ (s >> 7)
+    s = s ^ (s << 17)
+    random.state = s
+    return f64(s >> 11) * 1.1102230246251565e-16
+
+
+def uniform_range(random: InOut[Random], low: f64, high: f64) -> f64:
+    """The next number from `random`, uniform in [low, high)."""
+    return low + (high - low) * uniform(random)
+
+
+def acceleration(x: f64, y: f64) -> f64:
+    """The right-hand side of the Van der Pol system for the velocity."""
+    return MU * (1.0 - x * x) * y - x
+
+
+def advance(x: InOut[Array[f64, 1]], y: InOut[Array[f64, 1]], steps: i64):
+    """Advances every oscillator by `steps` RK4 steps."""
+    for _ in range(steps):
+        for i in range(len(x)):
+            x0 = x[i]
+            y0 = y[i]
+            kx1 = y0
+            ky1 = acceleration(x0, y0)
+            kx2 = y0 + 0.5 * H * ky1
+            ky2 = acceleration(x0 + 0.5 * H * kx1, y0 + 0.5 * H * ky1)
+            kx3 = y0 + 0.5 * H * ky2
+            ky3 = acceleration(x0 + 0.5 * H * kx2, y0 + 0.5 * H * ky2)
+            kx4 = y0 + H * ky3
+            ky4 = acceleration(x0 + H * kx3, y0 + H * ky3)
+            x[i] = x0 + H / 6.0 * (kx1 + 2.0 * kx2 + 2.0 * kx3 + kx4)
+            y[i] = y0 + H / 6.0 * (ky1 + 2.0 * ky2 + 2.0 * ky3 + ky4)
+
+
+def main() -> Raises[None, ValueError]:
+    """Draws the oscillators, advances them and prints the checksum."""
+    oscillators = int(sys.argv[1])
+    steps = int(sys.argv[2])
+    random = Random(state=u64(88172645463325252))
+    x = Array.zeros((oscillators,))
+    for i in range(oscillators):
+        x[i] = uniform_range(random, 0.5, 2.0)
+    y = Array.zeros((oscillators,))
+    advance(x, y, steps)
+    checksum = 0.0
+    for i in range(oscillators):
+        checksum += x[i] + y[i]
+    print(f"checksum {checksum:.17e}")

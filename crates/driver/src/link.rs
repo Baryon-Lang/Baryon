@@ -39,6 +39,24 @@ const DROP_UNUSED: &str = if cfg!(target_os = "macos") {
     "-Wl,--gc-sections"
 };
 
+/// What `clang` is asked for when it optimizes the module, beyond `-O2`.
+///
+/// `-force-ordered-reductions` lets the loop vectorizer vectorize a loop that sums floats, such
+/// as `total += x[j] * w[j]`, while still adding the terms one at a time in index order, as
+/// gfortran does. Without it LLVM leaves such a loop scalar, since reordering the additions would
+/// change the result. Results are the same to the bit; the n-body benchmark kernel ran in 0.61 s
+/// with it and 1.18 s without (roadmap 3.3). The option is LLVM's own, through `-mllvm`, and
+/// every `clang` from 15, the oldest this driver accepts, knows it.
+const OPTIMIZE: &[&str] = &["-O2", "-mllvm", "-force-ordered-reductions=true"];
+
+/// The C math library, linked before the runtime. LLVM calls `floor` and `trunc` for those
+/// operations on CPUs without an instruction for them, and the runtime, a Rust static library,
+/// carries portable versions under the same names. Naming the system library first makes the
+/// linker take its versions, which pick the fastest instruction the CPU has: the Lennard-Jones
+/// benchmark kernel ran in 6.1 s with them and 8.0 s with the runtime's (roadmap 3.3). Both are
+/// exact, so results do not change.
+const MATH_LIBRARY: &str = "-lm";
+
 /// Compiles the LLVM module `module` at `-O2` and links it with the runtime into the executable
 /// `output`, keeping the module's line tables (`-g`) so debuggers and panic backtraces show
 /// `.byn` lines.
@@ -60,7 +78,8 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
         .and_then(|()| {
             run_clang(&clang, |command| {
                 command
-                    .args(["-O2", "-g", "-Wno-override-module", "-c"])
+                    .args(OPTIMIZE)
+                    .args(["-g", "-Wno-override-module", "-c"])
                     .arg(&source)
                     .arg("-o")
                     .arg(&object);
@@ -71,6 +90,7 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
                 command
                     .arg("-g")
                     .arg(&object)
+                    .arg(MATH_LIBRARY)
                     .arg(&runtime)
                     .args(SYSTEM_LIBRARIES)
                     .arg(DROP_UNUSED)

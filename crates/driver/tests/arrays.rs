@@ -54,8 +54,9 @@ def clean(grid: Array[f64, 2], small: Array[f32, 1], values: InOut[list[f64]]) -
     assert_eq!(check_one(program), "");
 }
 
-/// Non-copy elements, too few indices, mismatched ranks and shapes, an `f32` array with an
-/// `f64` literal, and `Fixed` arrays built with the wrong number of elements.
+/// Non-copy elements, too few indices, mixed element types, `Fixed` shapes that do not
+/// broadcast, an `f32` array with an `f64` literal, and `Fixed` arrays built with the wrong
+/// number of elements.
 #[test]
 fn array_types_and_arithmetic_mistakes_are_reported() {
     let program = r"
@@ -88,12 +89,12 @@ error: `Array[f64, 2]` takes 2 indices, found 1
   |         ^^^^^^^ one index per dimension
   = note: take a row or column with a slice, such as `a[i, :]`
 
-error: `+` cannot combine `Array[f64, 2]` and `Array[f32, 1]`
+error: `+` cannot mix `f64` and `f32`
  --> main.byn:8:9
   |
 8 |     b = grid + small
-  |         ^^^^^^^^^^^^ shapes do not match
-  = note: both arrays need the same rank, or the same shape for `Fixed` arrays, or one side a single number
+  |         ^^^^^^^^^^^^ different number types
+  = note: convert one side so both are the same type, such as `f64(x)`
 
 error: `Vec3` needs its elements in the shape `(3,)`
   --> main.byn:10:9
@@ -107,7 +108,7 @@ error: `+` cannot combine `Fixed[f64, (3,)]` and `Fixed[f64, (2,)]`
    |
 11 |     e = Vec3(1.0, 2.0, 3.0) + Vec2(1.0, 2.0)
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ shapes do not match
-   = note: both arrays need the same rank, or the same shape for `Fixed` arrays, or one side a single number
+   = note: two `Fixed` arrays combine when, in each dimension counted from the last, their lengths are equal or one of them is 1
 
 error: `Mat3` needs its elements in the shape `(3, 3)`
   --> main.byn:12:9
@@ -148,7 +149,7 @@ error: `Array[f64, 2]` has no method `mean` taking these arguments
   |
 3 |     h = grid.mean()
   |         ^^^^^^^^^^^ not defined
-  = note: version 0 defines `copy`, `sum`, `min`, `max`, `dot`, `round` and `fill`
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `dot`, `round`, `fill` and `tofile`
 
 error: a shape's lengths are integers, found `f64`
  --> main.byn:4:22
@@ -231,5 +232,148 @@ def fill(a: InOut[Array[f64, 1]], grid: InOut[Array[f64, 2]], n: i64):
   |
 6 |     a[0:2] = "no"
   |              ^^^^ each element of the slice holds `f64`"#
+    );
+}
+
+/// Broadcasting (roadmap 3.9): arrays of different ranks combine into the higher rank, `Fixed`
+/// shapes broadcast when compiling, a slice takes an array of lower rank, which it copies rather
+/// than moves, and `+=` keeps its target's rank. `Fixed` shapes that do not broadcast, an `Array` mixed with a `Fixed` array,
+/// and `+=` that would raise the target's rank are errors.
+#[test]
+fn arrays_broadcast_by_rank_and_fixed_shape() {
+    let clean = r"
+Row = Fixed[f64, (3,)]
+Column = Fixed[f64, (2, 1)]
+Grid = Fixed[f64, (2, 3)]
+
+
+def clean(grid: Array[f64, 2], row: Array[f64, 1]) -> Array[f64, 2]:
+    shifted = grid - row
+    shifted += row * 2.0
+    shifted[:, :] = row
+    table: Grid = Column((1.0,), (2.0,)) + Row(1.0, 2.0, 3.0)
+    return shifted + table[0, 0]
+";
+    assert_eq!(check_one(clean), "");
+    let mistakes = r"
+Row = Fixed[f64, (3,)]
+Pair = Fixed[f64, (2,)]
+
+
+def mistakes(grid: Array[f64, 2], row: InOut[Array[f64, 1]]):
+    a = Row.zeros() + Pair.zeros()
+    b = grid + Row.zeros()
+    row += grid
+";
+    assert_eq!(
+        check_one(mistakes),
+        r"error: `+` cannot combine `Fixed[f64, (3,)]` and `Fixed[f64, (2,)]`
+ --> main.byn:6:9
+  |
+6 |     a = Row.zeros() + Pair.zeros()
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^ shapes do not match
+  = note: two `Fixed` arrays combine when, in each dimension counted from the last, their lengths are equal or one of them is 1
+
+error: `+` cannot combine `Array[f64, 2]` and `Fixed[f64, (3,)]`
+ --> main.byn:7:9
+  |
+7 |     b = grid + Row.zeros()
+  |         ^^^^^^^^^^^^^^^^^^ shapes do not match
+  = note: an `Array` and a `Fixed` array do not combine
+
+error: `+=` gives `Array[f64, 2]`, but the target has type `Array[f64, 1]`
+ --> main.byn:8:5
+  |
+8 |     row += grid
+  |     ^^^^^^^^^^^ would change the target's type
+  = note: a variable keeps one type for its whole scope; convert the value, or use a new name"
+    );
+}
+
+/// `None` in a subscript adds a dimension of length 1 to the view: `x[:, None]` is an
+/// `Array[f64, 2]`, and still takes one index or slice per dimension of `x`. On a list it is an
+/// error.
+#[test]
+fn none_adds_an_axis_to_an_array() {
+    let clean = r"
+def clean(x: Array[f64, 1]) -> Array[f64, 2]:
+    return x[:, None] - x[None, :]
+";
+    assert_eq!(check_one(clean), "");
+    let mistakes = r"
+def mistakes(x: Array[f64, 1], values: list[f64]):
+    a = x[None]
+    b = values[None]
+";
+    assert_eq!(
+        check_one(mistakes),
+        r"error: `Array[f64, 1]` takes 1 index, found 0
+ --> main.byn:2:9
+  |
+2 |     a = x[None]
+  |         ^^^^^^^ one index per dimension
+  = note: `None` adds a dimension and takes none: write `:` for each of the array's, such as `x[None, :]`
+
+error: `None` cannot index a value of type `list[f64]`
+ --> main.byn:3:9
+  |
+3 |     b = values[None]
+  |         ^^^^^^^^^^^^ not an array
+  = note: `None` in a subscript adds a dimension of length 1 to an array"
+    );
+}
+
+/// `sum`, `min` and `max` take one constant axis, positional or `axis=`, counted from the
+/// last when negative, and give the array without that axis, or one number from a vector. An
+/// axis outside the array, one that is not a constant, or any other argument is an error.
+#[test]
+fn reductions_take_one_constant_axis() {
+    let clean = r"
+LAST: Final = -1
+
+
+def clean(a: Array[f64, 2], v: Array[f64, 1], m: Fixed[i64, (2, 3)]):
+    rows: Array[f64, 1] = a.sum(axis=1)
+    columns: Array[f64, 1] = a.max(0)
+    last: Array[f64, 1] = a.min(axis=LAST)
+    total: f64 = v.sum(axis=-1)
+    fixed: Fixed[i64, (3,)] = m.sum(axis=0)
+";
+    assert_eq!(check_one(clean), "");
+    let mistakes = r"
+def mistakes(a: Array[f64, 2], k: i64):
+    b = a.sum(axis=2)
+    c = a.max(axis=k)
+    d = a.min(keepdims=1)
+    e = a.sum(0, 1)
+";
+    assert_eq!(
+        check_one(mistakes),
+        r"error: axis 2 is out of range for `Array[f64, 2]`, which has 2 axes
+ --> main.byn:2:20
+  |
+2 |     b = a.sum(axis=2)
+  |                    ^ no such axis
+  = note: an array of rank 2 has axes 0 to 1, or -2 to -1 counted from the last
+
+error: `k` is not a constant
+ --> main.byn:3:20
+  |
+3 |     c = a.max(axis=k)
+  |                    ^ used in a constant expression
+
+error: `min` takes no arguments or one axis
+ --> main.byn:4:9
+  |
+4 |     d = a.min(keepdims=1)
+  |         ^^^^^^^^^^^^^^^^^ wrong arguments
+  = note: the axis is a constant whole number, such as `a.sum(axis=0)` or `a.max(axis=-1)` for the last
+
+error: `sum` takes no arguments or one axis
+ --> main.byn:5:9
+  |
+5 |     e = a.sum(0, 1)
+  |         ^^^^^^^^^^^ wrong arguments
+  = note: the axis is a constant whole number, such as `a.sum(axis=0)` or `a.max(axis=-1)` for the last"
     );
 }

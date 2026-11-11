@@ -7,12 +7,14 @@
 //! code in the other modules.
 
 mod accumulate;
+mod array_files;
 mod complex;
 mod dict;
 mod files;
 mod memory;
 mod numbers;
 mod output;
+mod pairwise;
 mod panics;
 mod parallel;
 mod paths;
@@ -32,6 +34,9 @@ mod text;
 pub use accumulate::{
     baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
     baryon_rt_accumulator_slot,
+};
+pub use array_files::{
+    ArrayHeader, ElementLayout, baryon_rt_array_from_file, baryon_rt_array_to_file,
 };
 pub use complex::{
     baryon_rt_power_complex64, baryon_rt_power_complex128, baryon_rt_print_complex64,
@@ -53,6 +58,10 @@ pub use numbers::{
 pub use output::{
     baryon_rt_flush, baryon_rt_print_bool, baryon_rt_print_f32, baryon_rt_print_f64,
     baryon_rt_print_i64, baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64,
+};
+pub use pairwise::{
+    baryon_rt_pairwise_combine_f32, baryon_rt_pairwise_combine_f64, baryon_rt_pairwise_leaf_end,
+    baryon_rt_pairwise_leaves,
 };
 pub use panics::{
     baryon_rt_panic, baryon_rt_panic_exponent, baryon_rt_panic_index,

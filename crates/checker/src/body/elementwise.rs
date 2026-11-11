@@ -1,7 +1,10 @@
 //! Whole-array arithmetic and the matrix product (language reference, "Arrays"):
 //!
-//! - Arithmetic works element by element on two arrays of the same rank (`Array`) or shape
-//!   (`Fixed`), or on an array and a number; the number mixing rules apply to the elements.
+//! - Arithmetic works element by element on two arrays, or on an array and a number; the number
+//!   mixing rules apply to the elements. Two arrays broadcast as `NumPy`'s do (roadmap 3.9): the
+//!   result has the higher rank of the two, and for `Fixed` arrays each dimension, lined up from
+//!   the last, must have the same length in both or 1 in one, which is checked here. `Array`
+//!   lengths are checked when the line runs.
 //! - `a @ b` is the matrix product of two rank-2 arrays, of a matrix and a vector, or of a
 //!   vector and a matrix.
 
@@ -47,10 +50,7 @@ impl<'db> Body<'db> {
                     rank: n,
                 },
             ) => {
-                if m != n {
-                    return Some(self.shape_error(node, symbol, left, right));
-                }
-                let (a, b, rank) = (*a, *b, *m);
+                let (a, b, rank) = (*a, *b, *m.max(n));
                 let element = self.combine(node, operator, a, b);
                 Array { element, rank }
             }
@@ -64,10 +64,10 @@ impl<'db> Body<'db> {
                     shape: t,
                 },
             ) => {
-                if s != t {
+                let Some(shape) = broadcast(s, t) else {
                     return Some(self.shape_error(node, symbol, left, right));
-                }
-                let (a, b, shape) = (*a, *b, s.clone());
+                };
+                let (a, b) = (*a, *b);
                 let element = self.combine(node, operator, a, b);
                 Fixed { element, shape }
             }
@@ -170,12 +170,41 @@ impl<'db> Body<'db> {
             self.show(left),
             self.show(right)
         );
+        let fixed = |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Fixed { .. });
+        let array = |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Array { .. });
         let hint = if symbol == "@" {
             "`@` multiplies a matrix by a matrix or a vector whose lengths match"
+        } else if fixed(left) && fixed(right) {
+            "two `Fixed` arrays combine when, in each dimension counted from the last, their lengths are equal or one of them is 1"
+        } else if (fixed(left) || array(left)) && (fixed(right) || array(right)) {
+            "an `Array` and a `Fixed` array do not combine"
         } else {
-            "both arrays need the same rank, or the same shape for `Fixed` arrays, or one side a single number"
+            "combine two arrays, or an array and a single number"
         };
         self.lowerer
             .error(node, &message, "shapes do not match", Some(hint))
     }
+}
+
+/// The shape two `Fixed` shapes broadcast to, as `NumPy` broadcasts: lined up from the last
+/// dimension, each pair of lengths is equal or one of them is 1, and a missing dimension counts
+/// as 1. `None` when they do not broadcast.
+fn broadcast(left: &Shape, right: &Shape) -> Option<Shape> {
+    let (left, right) = (left.lengths(), right.lengths());
+    let rank = left.len().max(right.len());
+    let length = |lengths: &[u64], dimension: usize| {
+        (dimension + lengths.len())
+            .checked_sub(rank)
+            .map_or(1, |position| lengths[position])
+    };
+    let mut lengths = Vec::with_capacity(rank);
+    for dimension in 0..rank {
+        let (a, b) = (length(left, dimension), length(right, dimension));
+        lengths.push(match (a, b) {
+            _ if a == b => a,
+            (1, other) | (other, 1) => other,
+            _ => return None,
+        });
+    }
+    Shape::new(lengths)
 }

@@ -51,9 +51,10 @@ struct Bounds {
 }
 
 impl<'db> Builder<'db> {
-    /// The view `node` names, `value[indices]` with at least one index a slice: the array's
-    /// place followed by a [`Slice`](Projection::Slice) step, after the checks of every index
-    /// and range. `None` after an error.
+    /// The view `node` names, `value[indices]` with at least one index a slice or `None`, a new
+    /// axis of length 1 (roadmap 3.9): the array's place followed by a
+    /// [`Slice`](Projection::Slice) step, after the checks of every index and range. `None`
+    /// after an error.
     pub(crate) fn view(
         &mut self,
         node: NodeId,
@@ -67,12 +68,17 @@ impl<'db> Builder<'db> {
         }
         let base = self.borrow(value);
         let mut dimensions = Vec::with_capacity(indices.len());
-        for (dimension, &index) in (0u32..).zip(indices) {
-            dimensions.push(if self.tree.kind(index) == SyntaxKind::Slice {
-                self.slice_range(&base, ty, dimension, index)
-            } else {
-                SliceIndex::Index(self.index(&base, ty, dimension, index, false))
+        // The dimension of the base the next index or range takes; a new axis takes none.
+        let mut dimension = 0u32;
+        for &index in indices {
+            dimensions.push(match self.tree.kind(index) {
+                SyntaxKind::None => SliceIndex::NewAxis,
+                SyntaxKind::Slice => self.slice_range(&base, ty, dimension, index),
+                _ => SliceIndex::Index(self.index(&base, ty, dimension, index, false)),
             });
+            if dimensions.last().is_some_and(SliceIndex::of_base) {
+                dimension += 1;
+            }
         }
         Some(base.project(Projection::Slice(dimensions)))
     }
@@ -408,9 +414,19 @@ impl<'db> Builder<'db> {
         value: NodeId,
         node: NodeId,
     ) {
-        let Some(right) = self.tree_of(value, self.element(ty)) else {
-            return;
-        };
+        if let Some(right) = self.tree_of(value, self.element(ty)) {
+            self.update_view(view, operator, right, node);
+        }
+    }
+
+    /// `view = view op right`, written in place.
+    pub(crate) fn update_view(
+        &mut self,
+        view: Place,
+        operator: BinaryOperator,
+        right: Elementwise<'db>,
+        node: NodeId,
+    ) {
         let tree = Elementwise::Binary(
             operator,
             Box::new(Elementwise::Leaf(Operand::Copy(view.clone()))),

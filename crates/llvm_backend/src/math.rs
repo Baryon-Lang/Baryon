@@ -226,7 +226,7 @@ impl<'db> Function<'_, '_, 'db> {
     /// The `Array` or `Fixed` array at `array` as an operand of a reduction: the address of its
     /// first element, its element count, the product of its lengths, and, for an `Array`, which
     /// may be strided, its rank and the addresses of its header's lengths and strides.
-    fn reduced(&mut self, array: &Place) -> Result<Reduced, Unsupported> {
+    pub(crate) fn reduced(&mut self, array: &Place) -> Result<Reduced, Unsupported> {
         let (array_address, array_type) = self.place(array)?;
         match array_type.kind(self.types.db) {
             TypeKind::Fixed { shape, .. } => Ok(Reduced {
@@ -259,11 +259,11 @@ impl<'db> Function<'_, '_, 'db> {
 }
 
 /// An array operand of a reduction, as [`Function::reduced`] reads it.
-struct Reduced {
+pub(crate) struct Reduced {
     /// The address of the first element.
-    data: String,
+    pub(crate) data: String,
     /// The element count, an `i64` value or constant.
-    count: String,
+    pub(crate) count: String,
     /// For an `Array`: its rank and the addresses of its header's lengths and strides, so the
     /// runtime can walk a view. `None` for a `Fixed` array, always one contiguous run.
     header: Option<(u32, String, String)>,

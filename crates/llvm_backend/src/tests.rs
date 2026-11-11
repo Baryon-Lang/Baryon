@@ -10,6 +10,7 @@ mod dicts;
 mod errors;
 mod files;
 mod math;
+mod pairwise;
 mod panics;
 mod parallel;
 mod paths;

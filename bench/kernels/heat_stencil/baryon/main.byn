@@ -1,0 +1,51 @@
+"""3D heat equation: explicit Jacobi steps of the 7-point Laplacian on an n^3 grid.
+
+The Baryon twin of `heat_stencil.f90`, line for line: the same loops, operations, constants and summation
+order, so it prints the same checksum to the last bit. Fortran's column-major `a(i, j)` is written
+`a[j, i]`, so the innermost loop still walks memory in order. Inputs come from the same xorshift64
+generator, `Random` below, as `support.f90`.
+
+Usage: `main <arguments>` with `<points per side> <steps>`.
+Checksum: Sum of the temperature over the grid, in memory order.
+Timing: Baryon has no clock yet, so the whole run is timed from outside; see `bench/README.md`.
+"""
+
+import math
+import sys
+
+
+def step(source: Array[f64, 3], target: InOut[Array[f64, 3]]):
+    """One time step from `source` into `target`; boundary points are never written."""
+    n = source.shape[0]
+    for k in range(1, n - 1):
+        for j in range(1, n - 1):
+            for i in range(1, n - 1):
+                target[k, j, i] = source[k, j, i] + 0.125 * (
+                    source[k, j, i - 1] + source[k, j, i + 1]
+                    + source[k, j - 1, i] + source[k, j + 1, i]
+                    + source[k - 1, j, i] + source[k + 1, j, i]
+                    - 6.0 * source[k, j, i]
+                )
+
+
+def main() -> Raises[None, ValueError]:
+    """Sets up the grid, runs the steps and prints the checksum."""
+    n = int(sys.argv[1])
+    steps = int(sys.argv[2])
+    h = 1.0 / (n - 1)
+    even = Array.zeros((n, n, n))
+    for k in range(1, n - 1):
+        for j in range(1, n - 1):
+            for i in range(1, n - 1):
+                even[k, j, i] = math.sin(math.pi * i * h) * math.sin(math.pi * j * h) * math.sin(math.pi * k * h)
+    odd = even.copy()
+    for t in range(steps):
+        step(even, odd)
+        even, odd = odd, even
+    # Summed in memory order, as Fortran's `sum` does, so the checksums match to the bit.
+    checksum = 0.0
+    for k in range(n):
+        for j in range(n):
+            for i in range(n):
+                checksum += even[k, j, i]
+    print(f"checksum {checksum:.17e}")

@@ -107,3 +107,60 @@ def main():
     );
     assert_eq!(allocations(&integers), allocations(floats) + 1);
 }
+
+/// `x += k * d` and `d = r + k * d` write into `x` and `d` in place: the update allocates
+/// nothing when broadcasting keeps the target's shape, and the results are the same to the last
+/// digit. So does `x = d + x * 0.5` on an `InOut` parameter.
+#[test]
+fn updates_write_in_place_with_the_same_results() {
+    let program = "\
+def update(x: InOut[Array[f64, 1]], d: Array[f64, 1]):
+    x = d + x * 0.5
+
+
+def main():
+    x = Array.zeros((5,))
+    d = Array.fill((5,), 1.0)
+    r = Array.fill((5,), 2.0)
+    for _ in range(3):
+        x += 0.5 * d
+        r -= 0.25 * d
+        d = r + 0.5 * d
+    update(x, d)
+    print(x.sum(), r.sum(), d.sum())
+";
+    let (code, stdout, report) = run("fusion-in-place", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, "15.78125 3.046875 8.828125\n");
+
+    let mut session = driver::Session::new();
+    session.add_file("main.byn", program).unwrap();
+    assert!(session.check().is_empty());
+    let module = session.compile(None, driver::Profile::Debug).unwrap();
+    // `zeros` and the two `fill`s, and one in each update that reads another array: kept as it
+    // was for when broadcasting would make the result larger than the target, which never
+    // happens here, so neither runs.
+    assert_eq!(
+        module.matches("call ptr @baryon_rt_allocate_array").count(),
+        5
+    );
+}
+
+/// An update in place checks the lengths as the update as written does: `x = d + x` with `x`
+/// shorter than `d` reports `d`'s length as expected and `x`'s as found, before writing.
+#[test]
+fn an_update_in_place_panics_as_written() {
+    let program = "\
+def main():
+    x = Array.zeros((3,))
+    d = Array.zeros((4,))
+    x = d + x
+    print(x.sum())
+";
+    let (code, _, report) = run("fusion-in-place-panic", program).unwrap();
+    assert_eq!(code, Some(101));
+    assert_eq!(
+        report,
+        "panic: array lengths differ in dimension 0: 4 and 3\n  --> main.byn:4:9\n"
+    );
+}
