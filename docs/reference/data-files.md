@@ -94,8 +94,9 @@ The first version reads and writes `f64` only. NumPy's other keywords, `usecols`
 `converters`, `ndmin`, `encoding`, `quotechar` and `like` for `loadtxt`, and `fmt` and `encoding`
 for `savetxt`, are compile errors that name the keyword, never ignored. Until they come, `open`,
 the `str` methods and f-strings do the same work by hand
-([Text files](files-and-processes.md#text-files)). `comments=None` and `delimiter=None`, which
-NumPy accepts, are written `comments=""` and `delimiter=""`.
+([Text files](files-and-processes.md#text-files)). NumPy also accepts `comments=None` and
+`delimiter=None`; a `str` argument cannot be `None` yet, so for now they are written
+`comments=""` and `delimiter=""`.
 
 ## `.npy` files
 
