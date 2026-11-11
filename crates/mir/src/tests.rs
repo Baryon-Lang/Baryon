@@ -4,7 +4,7 @@
 use crate::{
     Argument, BasicBlock, BinaryOperator, BlockId, Body, Builtin, Callee, Check, Constant,
     Elementwise, ErrorEdge, Invalid, Local, LocalKind, MathFunction, Operand, Phase, Place,
-    Projection, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
+    Projection, Rvalue, SliceIndex, Statement, StatementKind, Terminator, TerminatorKind,
 };
 use database::{Db, File, Package, ParsedFile, Resolution};
 use source::{FileId, SourceFile, Span};
@@ -425,6 +425,42 @@ fn new_array_names_its_type_and_lengths() {
         body.display(&database)
             .to_string()
             .contains("_0 = new Array[f64, 2](copy _1, copy _2);")
+    );
+}
+
+/// `b[:, None]`: a view whose second dimension is a new axis of length 1. It names no local, and
+/// the text form writes it as `None`.
+#[test]
+fn a_new_axis_is_written_none_and_names_no_local() {
+    let database = Database::default();
+    let f64 = primitive(&database, Primitive::Float(Float::F64));
+    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
+    let array = |rank| Type::new(&database, TypeKind::Array { element: f64, rank });
+    let mut body = Body::new(f64, span());
+    let b = body.push_local(array(1), LocalKind::Temporary, span());
+    let range: Vec<Local> = (0..3)
+        .map(|_| body.push_local(i64, LocalKind::Temporary, span()))
+        .collect();
+    let length = body.push_local(i64, LocalKind::Temporary, span());
+    let view = Place::from(b).project(Projection::Slice(vec![
+        SliceIndex::Range {
+            start: range[0],
+            length: range[1],
+            step: range[2],
+        },
+        SliceIndex::NewAxis,
+    ]));
+    let statement = assign(length, Rvalue::Length(view, 1));
+    assert_eq!(
+        statement.kind.locals(),
+        [length, b, range[0], range[1], range[2]]
+    );
+    let entry = body.push_block(end(TerminatorKind::Unreachable));
+    body.blocks[entry.index()].statements = vec![statement];
+    assert!(
+        body.display(&database)
+            .to_string()
+            .contains("_5 = len(_1[_2 for _3 by _4, None], 1);")
     );
 }
 

@@ -1,0 +1,190 @@
+"""A Lennard-Jones liquid in a periodic box, with a cell list and velocity Verlet steps.
+
+The Baryon twin of `lennard_jones.f90`, line for line: the same loops, operations, constants and summation
+order, so it prints the same checksum to the last bit. Fortran's column-major `a(i, j)` is written
+`a[j, i]`, so the innermost loop still walks memory in order. Inputs come from the same xorshift64
+generator, `Random` below, as `support.f90`.
+
+Usage: `main <arguments>` with `<cells per side> <steps>`.
+Checksum: Total energy per atom after the last step.
+Timing: Baryon has no clock yet, so the whole run is timed from outside; see `bench/README.md`.
+"""
+
+import math
+import sys
+
+DENSITY: Final = 0.8442
+TEMPERATURE: Final = 0.72
+CUTOFF: Final = 2.5
+TIME_STEP: Final = 0.005
+
+
+class Random(Struct):
+    """The xorshift64 generator of `support.f90`, with its seed."""
+
+    state: u64
+
+
+def uniform(random: InOut[Random]) -> f64:
+    """The next number from `random`, uniform in [0, 1), from its top 53 bits."""
+    s = random.state
+    s = s ^ (s << 13)
+    s = s ^ (s >> 7)
+    s = s ^ (s << 17)
+    random.state = s
+    return f64(s >> 11) * 1.1102230246251565e-16
+
+
+def uniform_range(random: InOut[Random], low: f64, high: f64) -> f64:
+    """The next number from `random`, uniform in [low, high)."""
+    return low + (high - low) * uniform(random)
+
+
+class Grid(Struct):
+    """The periodic box and the number of force cells along each side."""
+
+    box: f64
+    cells: i64
+
+
+def wrap(grid: Grid, coordinates: InOut[Array[f64, 1]]):
+    """Wraps each coordinate into [0, box)."""
+    for i in range(len(coordinates)):
+        coordinates[i] = coordinates[i] - grid.box * f64(math.floor(coordinates[i] / grid.box))
+
+
+def cell_of(grid: Grid, coordinate: f64) -> i64:
+    """The zero-based cell along one axis of a wrapped coordinate."""
+    return min(int(coordinate / grid.box * f64(grid.cells)), grid.cells - 1)
+
+
+def nearest(value: f64) -> f64:
+    """Fortran's `anint`: the nearest whole number, halves rounded away from zero."""
+    return math.copysign(f64(math.trunc(math.fabs(value) + 0.5)), value)
+
+
+def compute_forces(grid: Grid, x: Array[f64, 1], y: Array[f64, 1], z: Array[f64, 1],
+                   fx: InOut[Array[f64, 1]], fy: InOut[Array[f64, 1]], fz: InOut[Array[f64, 1]],
+                   head: InOut[Array[i64, 1]], next: InOut[Array[i64, 1]]) -> f64:
+    """Sets every force and returns the potential energy; each pair is visited from both sides."""
+    cells = grid.cells
+    box = grid.box
+    atoms = len(x)
+    for c in range(len(head)):
+        head[c] = -1
+    for i in range(atoms):
+        cell = (cell_of(grid, z[i]) * cells + cell_of(grid, y[i])) * cells + cell_of(grid, x[i])
+        next[i] = head[cell]
+        head[cell] = i
+    energy = 0.0
+    for i in range(atoms):
+        cx = cell_of(grid, x[i])
+        cy = cell_of(grid, y[i])
+        cz = cell_of(grid, z[i])
+        sum_x = 0.0
+        sum_y = 0.0
+        sum_z = 0.0
+        for dz in range(-1, 2):
+            for dy in range(-1, 2):
+                for dx in range(-1, 2):
+                    neighbor = (((cz + dz) % cells) * cells + (cy + dy) % cells) * cells + (cx + dx) % cells
+                    j = head[neighbor]
+                    while j != -1:
+                        if j != i:
+                            rx = x[i] - x[j]
+                            ry = y[i] - y[j]
+                            rz = z[i] - z[j]
+                            rx = rx - box * nearest(rx / box)
+                            ry = ry - box * nearest(ry / box)
+                            rz = rz - box * nearest(rz / box)
+                            r2 = rx * rx + ry * ry + rz * rz
+                            if r2 < CUTOFF * CUTOFF:
+                                inverse_r2 = 1.0 / r2
+                                inverse_r6 = inverse_r2 * inverse_r2 * inverse_r2
+                                magnitude = 24.0 * inverse_r2 * inverse_r6 * (2.0 * inverse_r6 - 1.0)
+                                sum_x += magnitude * rx
+                                sum_y += magnitude * ry
+                                sum_z += magnitude * rz
+                                energy += 2.0 * inverse_r6 * (inverse_r6 - 1.0)
+                        j = next[j]
+        fx[i] = sum_x
+        fy[i] = sum_y
+        fz[i] = sum_z
+    return energy
+
+
+def kinetic_energy(vx: Array[f64, 1], vy: Array[f64, 1], vz: Array[f64, 1]) -> f64:
+    """Kinetic energy, every mass one."""
+    total = 0.0
+    for i in range(len(vx)):
+        total += 0.5 * (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i])
+    return total
+
+
+def main() -> Raises[None, ValueError]:
+    """Builds the lattice and velocities, runs the steps and prints the checksum."""
+    lattice_cells = int(sys.argv[1])
+    steps = int(sys.argv[2])
+    atoms = 4 * lattice_cells * lattice_cells * lattice_cells
+    box = (f64(atoms) / DENSITY) ** (1.0 / 3.0)
+    grid = Grid(box=box, cells=int(box / CUTOFF))
+    cells = grid.cells
+    x = Array.zeros((atoms,))
+    y = Array.zeros((atoms,))
+    z = Array.zeros((atoms,))
+    vx = Array.zeros((atoms,))
+    vy = Array.zeros((atoms,))
+    vz = Array.zeros((atoms,))
+    fx = Array.zeros((atoms,))
+    fy = Array.zeros((atoms,))
+    fz = Array.zeros((atoms,))
+    head = Array.zeros((cells * cells * cells,), dtype=i64)
+    next = Array.zeros((atoms,), dtype=i64)
+    spacing = box / f64(lattice_cells)
+    basis_x = Array([0.0, 0.5, 0.5, 0.0])
+    basis_y = Array([0.0, 0.5, 0.0, 0.5])
+    basis_z = Array([0.0, 0.0, 0.5, 0.5])
+    atom = 0
+    for k in range(lattice_cells):
+        for j in range(lattice_cells):
+            for i in range(lattice_cells):
+                for b in range(4):
+                    x[atom] = (f64(i) + basis_x[b] + 0.25) * spacing
+                    y[atom] = (f64(j) + basis_y[b] + 0.25) * spacing
+                    z[atom] = (f64(k) + basis_z[b] + 0.25) * spacing
+                    atom += 1
+    random = Random(state=u64(88172645463325252))
+    mean_x = 0.0
+    mean_y = 0.0
+    mean_z = 0.0
+    for i in range(atoms):
+        vx[i] = uniform_range(random, -0.5, 0.5)
+        vy[i] = uniform_range(random, -0.5, 0.5)
+        vz[i] = uniform_range(random, -0.5, 0.5)
+        mean_x += vx[i]
+        mean_y += vy[i]
+        mean_z += vz[i]
+    count = f64(atoms)
+    vx -= mean_x / count
+    vy -= mean_y / count
+    vz -= mean_z / count
+    factor = math.sqrt(1.5 * count * TEMPERATURE / kinetic_energy(vx, vy, vz))
+    vx *= factor
+    vy *= factor
+    vz *= factor
+    potential = compute_forces(grid, x, y, z, fx, fy, fz, head, next)
+    for _ in range(steps):
+        vx += 0.5 * TIME_STEP * fx
+        vy += 0.5 * TIME_STEP * fy
+        vz += 0.5 * TIME_STEP * fz
+        x += TIME_STEP * vx
+        y += TIME_STEP * vy
+        z += TIME_STEP * vz
+        wrap(grid, x)
+        wrap(grid, y)
+        wrap(grid, z)
+        potential = compute_forces(grid, x, y, z, fx, fy, fz, head, next)
+        vx += 0.5 * TIME_STEP * fx
+        vy += 0.5 * TIME_STEP * fy
+        vz += 0.5 * TIME_STEP * fz
+    print(f"checksum {(kinetic_energy(vx, vy, vz) + potential) / f64(atoms):.17e}")

@@ -1,0 +1,24 @@
+[package]
+name = "bounds_hoisting"
+description = "Bounds-check hoisting: runs a counted loop whose index checks all pass, as checked once before it starts, in a copy with those checks removed."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.architecture]
+kind = "implementation"
+
+[dependencies]
+mir.workspace = true
+salsa.workspace = true
+source.workspace = true
+types.workspace = true
+
+[dev-dependencies]
+database.workspace = true
+
+[lints]
+workspace = true

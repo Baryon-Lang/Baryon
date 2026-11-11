@@ -5,11 +5,10 @@ builds into programs yet.
 
 A program talks to the system that runs it through Python's modules and names: `sys` for its
 command-line arguments and exit status, `os` for its environment, `open` for text files, and
-`subprocess` for running another program
-([decision 0036](../decisions/0036-files-and-processes.md)). They are this language's own
+`subprocess` for running another program, and `Array.fromfile` and `a.tofile` for binary files of
+arrays ([decision 0036](../decisions/0036-files-and-processes.md)). They are this language's own
 modules, built into the compiler and the runtime, not CPython's: no Python runs underneath.
-Paths, the standard streams and array files come next, with the names that decision gives
-them.
+Paths and the standard streams come next, with the names that decision gives them.
 
 ## Command-line arguments
 
@@ -294,12 +293,91 @@ where Python gives `None`, so `result.stdout.strip()` needs no test first. A tim
 `OSError`, where Python raises `subprocess.TimeoutExpired`. And only the keywords above exist:
 `stdin`, `stdout`, `stderr`, `encoding` and the rest of Python's are errors that say so.
 
+## Array files
+
+Binary data is whole arrays, with NumPy's names and NumPy's bytes. `a.tofile(path)` writes an
+array's elements to a file, and `Array.fromfile(path, dtype)` reads a file's elements into a new
+array. An array file holds the elements and nothing else: each element's bytes as they lie in
+memory, in row-major order, with no header, shape or type. It is the file `numpy.ndarray.tofile`
+writes and `numpy.fromfile` reads, so Baryon and NumPy share array files byte for byte. Every
+platform Baryon supports is little-endian, so a file written on one reads on any other.
+
+| Call | Gives | Does |
+| --- | --- | --- |
+| `a.tofile(path)` | `None` | makes the file, or empties the one there, and writes every element of `a` |
+| `Array.fromfile(path, dtype)` | `Array[dtype, 1]` | reads every element in the file |
+| `Array.fromfile(path, dtype, count=n, offset=k)` | `Array[dtype, 1]` | skips `k` bytes, then reads `n` elements |
+
+Each can fail with [`OSError`](#errors-oserror). A simulation saves its state and picks it up
+again in a later run:
+
+```python
+from os import ErrorKind
+
+
+def save(path: str, temperature: Array[f64, 2]) -> Raises[None, OSError]:
+    temperature.tofile(path)
+
+
+def restore(path: str, temperature: InOut[Array[f64, 2]]) -> Raises[bool, OSError]:
+    rows, columns = temperature.shape
+    try:
+        saved = Array.fromfile(path, f64, count=rows * columns)
+    except OSError as error:
+        if error.kind == ErrorKind.FILE_NOT_FOUND:
+            return False
+        raise
+    for i in range(rows):
+        for j in range(columns):
+            temperature[i, j] = saved[i * columns + j]
+    return True
+```
+
+`save("heat.bin", grid)` of a 64 by 64 grid writes a file of 32768 bytes, 4096 elements of 8
+bytes. `restore` gives `False` when there is no file yet, fills the grid when there is one, and
+raises `OSError` with the kind `INVALID_DATA` when the file holds fewer than `rows * columns`
+elements, so a file cut short is never taken for a whole grid. In Python,
+`numpy.fromfile("heat.bin").reshape(64, 64)` reads the same file.
+
+- **Reading gives rank 1.** The file does not record a shape, so `fromfile` gives an
+  `Array[dtype, 1]` in the file's order, which is row-major for an array `tofile` wrote: element
+  `[i, j]` of a grid with `columns` columns is element `i * columns + j`.
+- **The element type** is the `dtype` argument, given second or as `dtype=`; without it, the type
+  the context needs, as in `masses: Array[f32, 1] = Array.fromfile(path)`; otherwise `f64`, as
+  NumPy's default is `float64`.
+- **What can be read.** The file's bytes become the elements as they are, so `dtype` is a type
+  every pattern of bytes is a value of: a number, a `bool`, a `Fixed` array of them, or a struct
+  declared `Copy` whose fields are all such types. A struct is read with the padding C gives it,
+  which NumPy calls `align=True`. A byte read as a `bool` is `True` unless it is 0, as in NumPy.
+  An enum cannot be read, since a byte might name no member; read the integers and convert them.
+  A type parameter cannot be read either: write the element type out.
+- **What can be written.** `tofile` writes an array of any element type. A view writes the
+  elements it sees, in row-major order, so `grid[:, 0].tofile(path)` writes one column.
+- **`count` and `offset`.** `offset` is in bytes, as in NumPy, and skips a header or the blocks
+  before the one wanted. `count` is in elements; left out, or negative, it reads to the end of
+  the file. An offset at or past the end of the file reads an empty array.
+- **A file that does not fit is an error.** With no `count`, the bytes after the offset must be
+  a whole number of elements. With a `count`, the file must hold at least that many elements.
+  Otherwise the call raises `OSError` with the kind `INVALID_DATA`, such as
+  `the file holds 4 elements of 8 bytes after the offset, fewer than the 100 asked for`. NumPy
+  returns a shorter array and no error in both cases; Baryon never loses data silently.
+- **Cost.** One pass over the bytes, a system call for each large block and no work per
+  element: a read goes straight into the new array's memory, and a write comes straight from
+  the array's. A view that skips elements is written a run at a time through a 64 KiB buffer.
+  Reading into `bool`s visits each one once more.
+- **Other files.** A path that is not a regular file, such as a pipe, is read to its end before
+  the array is made, since it has no length to ask for.
+
+NumPy's text mode, `sep=`, is not in Baryon: an array file is binary, and text is read with
+[`open`](#text-files) and the `str` methods. `tofile` does not write to an open `File`, and the
+`.npy` format, which records the shape and the type, is not built yet (roadmap idea I.39).
+
 ## What is not built yet
 
 Decision 0036 settles the rest of this chapter's surface, and the compiler reports each part by
 name until it is built: `` `sys.stdin` is not in Baryon yet ``. In order, the next parts are
 `os.environ[name]`, `name in os.environ` and `os.environ.copy()`;
-`sys.stdin`, `sys.stdout`, `sys.stderr`, `input` and `print(..., file=)`; `Array.fromfile` and
-`a.tofile`; and `pathlib.Path` and the directory functions of `os`. Past that, idea I.39
-lists what comes later, `subprocess.run(check=True)` and a keyword of `subprocess.run` given a
-value that may be `None` among them.
+`sys.stdin`, `sys.stdout`, `sys.stderr`, `input` and `print(..., file=)`; and `pathlib.Path`
+and the directory functions of `os`. Past that, idea I.39 lists what comes later,
+`subprocess.run(check=True)` and a keyword of `subprocess.run` given a value that may be `None`
+among them.

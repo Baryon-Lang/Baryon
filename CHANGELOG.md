@@ -1,10 +1,14 @@
 # Release notes
 
 What each release of Baryon holds, newest first. A release is a tag on `main`; nothing is
-published to a package registry yet. [`ROADMAP.md`](ROADMAP.md#releases) tracks the steps of the
-release in progress.
+published to a package registry yet. Releases are time-based: one every two weeks, cut from what
+`main` holds that day. [`ROADMAP.md`](ROADMAP.md#releases) tracks the steps of the release in
+progress.
 
-## 0.2.0: Linux and macOS, 2026-11-10
+## Unreleased: Linux and macOS, due 2026-11-25
+
+These notes were written for 0.2.0, which was never tagged. They ship with the first time-based
+release, whose notes add everything merged since (roadmap R.5).
 
 The second release, and the first to download and use without building the compiler: prebuilt
 `baryon` archives for Linux and macOS, programs written the way the reference describes them

@@ -1,0 +1,100 @@
+"""Iterative radix-2 complex FFT, real and imaginary parts in separate arrays.
+
+The Baryon twin of `fft.f90`, line for line: the same loops, operations, constants and summation
+order, so it prints the same checksum to the last bit. Fortran's column-major `a(i, j)` is written
+`a[j, i]`, so the innermost loop still walks memory in order. Inputs come from the same xorshift64
+generator, `Random` below, as `support.f90`.
+
+Usage: `main <arguments>` with `<log2 of points> <repetitions>`.
+Checksum: Sum of the magnitudes.
+Timing: Baryon has no clock yet, so the whole run is timed from outside; see `bench/README.md`.
+"""
+
+import math
+import sys
+
+
+class Random(Struct):
+    """The xorshift64 generator of `support.f90`, with its seed."""
+
+    state: u64
+
+
+def uniform(random: InOut[Random]) -> f64:
+    """The next number from `random`, uniform in [0, 1), from its top 53 bits."""
+    s = random.state
+    s = s ^ (s << 13)
+    s = s ^ (s >> 7)
+    s = s ^ (s << 17)
+    random.state = s
+    return f64(s >> 11) * 1.1102230246251565e-16
+
+
+def uniform_range(random: InOut[Random], low: f64, high: f64) -> f64:
+    """The next number from `random`, uniform in [low, high)."""
+    return low + (high - low) * uniform(random)
+
+
+def transform(re: InOut[Array[f64, 1]], im: InOut[Array[f64, 1]], twiddle_re: Array[f64, 1], twiddle_im: Array[f64, 1]):
+    """Transforms `re` and `im` in place: bit-reversal permutation, then butterfly passes."""
+    n = len(re)
+    j = 0
+    for i in range(1, n):
+        bit = n >> 1
+        while j & bit != 0:
+            j = j ^ bit
+            bit = bit >> 1
+        j = j ^ bit
+        if i < j:
+            swap = re[i]
+            re[i] = re[j]
+            re[j] = swap
+            swap = im[i]
+            im[i] = im[j]
+            im[j] = swap
+    length = 2
+    while length <= n:
+        half = length >> 1
+        stride = n // length
+        for block in range(0, n, length):
+            for k in range(half):
+                w_re = twiddle_re[k * stride]
+                w_im = twiddle_im[k * stride]
+                top = block + k
+                bottom = top + half
+                t_re = w_re * re[bottom] - w_im * im[bottom]
+                t_im = w_re * im[bottom] + w_im * re[bottom]
+                re[bottom] = re[top] - t_re
+                im[bottom] = im[top] - t_im
+                re[top] = re[top] + t_re
+                im[top] = im[top] + t_im
+        length = length << 1
+
+
+def main() -> Raises[None, ValueError]:
+    """Draws the input, transforms it `repetitions` times and prints the checksum."""
+    log2_points = int(sys.argv[1])
+    repetitions = int(sys.argv[2])
+    n = 1 << log2_points
+    random = Random(state=u64(88172645463325252))
+    input_re = Array.zeros((n,))
+    input_im = Array.zeros((n,))
+    for i in range(n):
+        input_re[i] = uniform_range(random, -1.0, 1.0)
+        input_im[i] = uniform_range(random, -1.0, 1.0)
+    twiddle_re = Array.zeros((n // 2,))
+    twiddle_im = Array.zeros((n // 2,))
+    for k in range(n // 2):
+        angle = -2.0 * math.pi * k / n
+        twiddle_re[k] = math.cos(angle)
+        twiddle_im[k] = math.sin(angle)
+    re = input_re.copy()
+    im = input_im.copy()
+    for _ in range(repetitions):
+        re = input_re.copy()
+        im = input_im.copy()
+        transform(re, im, twiddle_re, twiddle_im)
+    checksum = 0.0
+    for i in range(n):
+        checksum += math.sqrt(re[i] * re[i] + im[i] * im[i])
+    print(f"checksum {checksum:.17e}")

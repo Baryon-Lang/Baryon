@@ -304,7 +304,8 @@ fn(_1: i64) -> Array[Fixed[f64, (3,)], 1] {
 }
 
 /// Arithmetic on whole arrays becomes one elementwise expression for array expansion to loop
-/// over, and `a += b` replaces `a` with the result.
+/// over, and `a += b` writes into `a` through a view of all of it, so the result keeps `a`'s
+/// shape.
 #[test]
 fn whole_array_expressions_stay_whole() {
     let program = r"
@@ -339,12 +340,15 @@ fn(_1: InOut[Array[f64, 1]], _2: Array[f64, 1]) -> None {
     let _0: None; // return
     let _1: Array[f64, 1]; // parameter a
     let _2: Array[f64, 1]; // parameter b
-    let _3: Array[f64, 1];
+    let _3: i64;
+    let _4: i64;
+    let _5: i64;
 
     bb0: {
-        _3 = elementwise Add(copy _1, copy _2);
-        drop(_1);
-        _1 = move _3;
+        _3 = 0_i64;
+        _4 = 1_i64;
+        _5 = len(_1, 0);
+        _1[_3 for _5 by _4] = elementwise Add(copy _1[_3 for _5 by _4], copy _2);
         _0 = None;
         return;
     }

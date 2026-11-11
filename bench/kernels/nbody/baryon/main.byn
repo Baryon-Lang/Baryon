@@ -1,0 +1,106 @@
+"""Gravity between every pair of bodies, kick-drift-kick leapfrog.
+
+The Baryon twin of `nbody.f90`, line for line: the same loops, operations, constants and summation
+order, so it prints the same checksum to the last bit. Fortran's column-major `a(i, j)` is written
+`a[j, i]`, so the innermost loop still walks memory in order. Inputs come from the same xorshift64
+generator, `Random` below, as `support.f90`.
+
+Usage: `main <arguments>` with `<bodies> <steps>`.
+Checksum: Total energy after the last step.
+Timing: Baryon has no clock yet, so the whole run is timed from outside; see `bench/README.md`.
+"""
+
+import math
+import sys
+
+TIME_STEP: Final = 1.0e-3
+SOFTENING_SQUARED: Final = 1.0e-2
+
+
+class Random(Struct):
+    """The xorshift64 generator of `support.f90`, with its seed."""
+
+    state: u64
+
+
+def uniform(random: InOut[Random]) -> f64:
+    """The next number from `random`, uniform in [0, 1), from its top 53 bits."""
+    s = random.state
+    s = s ^ (s << 13)
+    s = s ^ (s >> 7)
+    s = s ^ (s << 17)
+    random.state = s
+    return f64(s >> 11) * 1.1102230246251565e-16
+
+
+def uniform_range(random: InOut[Random], low: f64, high: f64) -> f64:
+    """The next number from `random`, uniform in [low, high)."""
+    return low + (high - low) * uniform(random)
+
+
+def accelerate(x: Array[f64, 1], y: Array[f64, 1], z: Array[f64, 1], mass: Array[f64, 1],
+               ax: InOut[Array[f64, 1]], ay: InOut[Array[f64, 1]], az: InOut[Array[f64, 1]]):
+    """Sets each body's acceleration from every body, itself included: the softening makes its own term zero."""
+    n = len(x)
+    for i in range(n):
+        sum_x = 0.0
+        sum_y = 0.0
+        sum_z = 0.0
+        for j in range(n):
+            dx = x[j] - x[i]
+            dy = y[j] - y[i]
+            dz = z[j] - z[i]
+            r2 = dx * dx + dy * dy + dz * dz + SOFTENING_SQUARED
+            inverse_r3 = mass[j] / (r2 * math.sqrt(r2))
+            sum_x += dx * inverse_r3
+            sum_y += dy * inverse_r3
+            sum_z += dz * inverse_r3
+        ax[i] = sum_x
+        ay[i] = sum_y
+        az[i] = sum_z
+
+
+def main() -> Raises[None, ValueError]:
+    """Draws the bodies, runs the steps and prints the checksum."""
+    n = int(sys.argv[1])
+    steps = int(sys.argv[2])
+    random = Random(state=u64(88172645463325252))
+    x = Array.zeros((n,))
+    y = Array.zeros((n,))
+    z = Array.zeros((n,))
+    vx = Array.zeros((n,))
+    vy = Array.zeros((n,))
+    vz = Array.zeros((n,))
+    mass = Array.zeros((n,))
+    for i in range(n):
+        x[i] = uniform_range(random, -1.0, 1.0)
+        y[i] = uniform_range(random, -1.0, 1.0)
+        z[i] = uniform_range(random, -1.0, 1.0)
+        vx[i] = uniform_range(random, -0.05, 0.05)
+        vy[i] = uniform_range(random, -0.05, 0.05)
+        vz[i] = uniform_range(random, -0.05, 0.05)
+        mass[i] = 1.0 / n
+    ax = Array.zeros((n,))
+    ay = Array.zeros((n,))
+    az = Array.zeros((n,))
+    accelerate(x, y, z, mass, ax, ay, az)
+    for _ in range(steps):
+        vx += 0.5 * TIME_STEP * ax
+        vy += 0.5 * TIME_STEP * ay
+        vz += 0.5 * TIME_STEP * az
+        x += TIME_STEP * vx
+        y += TIME_STEP * vy
+        z += TIME_STEP * vz
+        accelerate(x, y, z, mass, ax, ay, az)
+        vx += 0.5 * TIME_STEP * ax
+        vy += 0.5 * TIME_STEP * ay
+        vz += 0.5 * TIME_STEP * az
+    total = 0.0
+    for i in range(n):
+        total += 0.5 * mass[i] * (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i])
+        for j in range(i + 1, n):
+            dx = x[j] - x[i]
+            dy = y[j] - y[i]
+            dz = z[j] - z[i]
+            total -= mass[i] * mass[j] / math.sqrt(dx * dx + dy * dy + dz * dz + SOFTENING_SQUARED)
+    print(f"checksum {total:.17e}")

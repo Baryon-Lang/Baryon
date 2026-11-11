@@ -140,6 +140,55 @@ and add) grows over the run; its checksum is the total energy, which the integra
 about `1e-5` whatever the trajectory. With clang++ or g++ and gfortran on x86-64, every checksum
 is identical to the last bit.
 
+## The Baryon kernels and the vectorizer audit
+
+Each kernel also has a Baryon twin, `kernels/<name>/baryon/main.byn`, written line for line from
+the Fortran version: the same loops, operations, constants and summation order. Fortran's
+column-major `a(i, j)` is written `a[j, i]`, so the innermost loop walks memory in order in both.
+At the smoke sizes every twin prints the same checksum as `gfortran -O3`, to the last bit, and the
+driver's build test `kernels_match_fortran_to_the_bit` keeps it that way.
+
+The harness does not run them yet: Baryon has no clock to time the computation alone, so they
+print only the checksum. Build one and time the whole run from outside:
+
+```sh
+cargo build --release
+target/release/baryon build --release bench/kernels/nbody/baryon nbody
+time ./nbody 4096 20
+```
+
+Roadmap item 3.3 timed them against the Fortran kernels at the reference sizes on Linux x86-64
+in a shared cloud VM: whole runs, setup included, best of 5, so small differences are noise.
+
+| Kernel | gfortran | Baryon before 3.3 | Baryon | Baryon / gfortran |
+| --- | --- | --- | --- | --- |
+| `nbody` | 0.66 s | 1.01 s | 0.72 s | 1.09 |
+| `lennard_jones` | 4.57 s | 8.07 s | 6.43 s | 1.41 |
+| `heat_stencil` | 1.56 s | 1.41 s | 1.50 s | 0.96 |
+| `conjugate_gradient` | 1.45 s | 2.15 s | 2.20 s | 1.51 |
+| `runge_kutta` | 0.60 s | 0.56 s | 0.47 s | 0.78 |
+| `monte_carlo` | 0.73 s | 0.73 s | 0.60 s | 0.82 |
+| `matmul` | 0.50 s | 0.51 s | 0.50 s | 0.99 |
+| `fft` | 1.12 s | 1.28 s | 1.08 s | 0.97 |
+
+What the audit found, and what came of it:
+
+- **Float sums in loops.** gfortran vectorizes the body of `sum_x = sum_x + dx * inverse_r3`
+  and still adds the terms one at a time, in order. LLVM leaves such a loop scalar unless told it
+  may do the same, so `baryon build` now passes `-force-ordered-reductions` to `clang`. Results
+  do not change; `nbody` went from 1.01 s to 0.72 s.
+- **`floor` and `trunc`.** On x86-64 without SSE4.1, LLVM calls these as functions, and the
+  runtime's portable Rust versions were linked ahead of the C library's. The C library now comes
+  first; `lennard_jones` went from 8.1 s to 6.4 s. The rest of its gap is the minimum-image
+  rounding, which gfortran's `anint` does in two instructions, and the gathered indices below.
+- **Strides.** Every `Array` access multiplies its index by a stride read from the array, since
+  a view may skip elements. Idea I.43 would run loops over contiguous arrays in a copy with every
+  stride 1.
+- **Gathers.** `x[columns[e]]` in `conjugate_gradient` is checked on every access, 0.5 s of its
+  2.2 s; Fortran checks nothing. Idea I.44 would check the index array once.
+- **Indices that add two values.** The FFT's `top = block + k` is not hoisted by roadmap 3.2;
+  idea I.45.
+
 ## Output protocol
 
 A kernel is an executable that takes positive integer arguments and prints exactly two lines:
@@ -150,8 +199,9 @@ seconds 7.06986239999991994e-01
 ```
 
 Any spacing and either exponent letter is accepted (Fortran prints `E+000`). A wrong argument
-prints a usage line to standard error and exits with status 2. The Baryon kernels will follow the same
-protocol, so the harness needs no change to measure them.
+prints a usage line to standard error and exits with status 2. The Baryon kernels print the checksum line
+the same way, and will print the seconds line once Baryon has a clock, so the harness then needs
+no change to measure them.
 
 ## Baseline files
 
@@ -195,6 +245,7 @@ machine, and the least affected by other work on the computer.
 | Path | Contents |
 | --- | --- |
 | `kernels/<name>/<name>.cpp`, `<name>.f90` | One kernel in each language |
+| `kernels/<name>/baryon/main.byn` | Its Baryon twin, which prints the same checksum |
 | `kernels/support/` | The shared generator, timer, argument parsing and report, in each language |
 | `src/` | The harness: `cargo kernels` |
 | `baselines/` | Recorded baselines, one JSON file per platform |

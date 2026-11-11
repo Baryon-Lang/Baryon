@@ -72,6 +72,5 @@ reference leaves the feature out.
 
 These are planned and will get their sections as the work that needs them starts: column-major
 array layout ([decision 0008](../decisions/0008-row-major-arrays.md) promises an opt-in), the
-`stencil` loop form, `with fastmath:`, broadcasting between arrays of different shapes, closures,
-generators, `dict` and `set` comprehensions, and the full method lists of the standard library
-types.
+`stencil` loop form, `with fastmath:`, closures, generators, `dict` and `set` comprehensions,
+and the full method lists of the standard library types.

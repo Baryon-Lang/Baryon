@@ -30,18 +30,39 @@ impl<'db> Body<'db> {
                 _ => None,
             };
             let ty = self.expression(value, Some(filled.unwrap_or(held)));
-            // A slice is read element by element into a slice, and a list slice takes copies
-            // of the elements of its list, `xs[i:j] = ys`, as Python's does: nothing moves.
+            // An array is read element by element into an array slice, as `NumPy` copies it,
+            // and a list slice takes copies of the elements of its list, `xs[i:j] = ys`, as
+            // Python's does: nothing moves.
             let list_slice =
                 self.is_view(target) && matches!(held.kind(self.db), TypeKind::List(_));
-            if !list_slice && (filled.is_none() || !self.is_view(value)) {
+            if !list_slice && filled.is_none() {
                 self.consume(value, ty);
             }
             match filled {
                 Some(element) if self.is_scalar(ty) => {
                     self.expect(value, element, ty, "each element of the slice holds");
                 }
-                _ => self.expect(value, held, ty, "the target holds"),
+                // An array of lower rank broadcasts over the slice's leading dimensions, as
+                // `NumPy`'s does: `grid[:, :] = row` writes `row` into every row.
+                Some(_) => {
+                    let ty = match (ty.kind(self.db), held.kind(self.db)) {
+                        (
+                            TypeKind::Array { element, rank },
+                            TypeKind::Array {
+                                rank: target_rank, ..
+                            },
+                        ) if rank < target_rank => Type::new(
+                            self.db,
+                            TypeKind::Array {
+                                element: *element,
+                                rank: *target_rank,
+                            },
+                        ),
+                        _ => ty,
+                    };
+                    self.expect(value, held, ty, "the target holds");
+                }
+                None => self.expect(value, held, ty, "the target holds"),
             }
             return;
         }

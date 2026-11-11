@@ -55,8 +55,13 @@
 //!   `a.sum()` and `a.dot(b)` of floats call [`Builtin::Sum`](mir::Builtin::Sum) and
 //!   [`Builtin::Dot`](mir::Builtin::Dot), and of integers add in a loop nest; `a.min()` and
 //!   `a.max()` scan in a loop nest after a [`NotEmpty`](mir::Check::NotEmpty) check;
+//!   `a.sum(axis=k)`, `a.min(axis=k)` and `a.max(axis=k)` build the result in loop nests, a float
+//!   sum along the last axis with one `Builtin::Sum` per row, so the bits are `NumPy`'s;
 //!   `a.round()` rounds each element and `a.fill(value)` writes each one. The matrix product
 //!   `a @ b` is a loop nest over the result's entries with an inner loop that adds the products.
+//!   `Array.fromfile` and `a.tofile` are calls of a
+//!   [`Builtin::ArrayFile`](mir::Builtin::ArrayFile) with an error edge (the `array_files`
+//!   module).
 //! - **Lists.** A display `[a, b]` is an [`Aggregate`](mir::Rvalue::Aggregate) of a list type,
 //!   `xs.append(value)` calls [`Builtin::Append`](mir::Builtin::Append) and `xs.pop()`
 //!   [`Builtin::Pop`](mir::Builtin::Pop), `len(xs)` and `xs[i]` read it as a one-dimensional
@@ -268,7 +273,9 @@
 //! ```
 
 mod accumulate;
+mod array_files;
 mod arrays;
+mod axes;
 mod builder;
 mod calls;
 mod collections;
@@ -283,6 +290,7 @@ mod escapes;
 mod expressions;
 mod facts;
 mod files;
+mod in_place;
 mod iterators;
 mod lanes;
 mod lists;

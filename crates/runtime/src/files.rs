@@ -20,6 +20,8 @@ use std::fs;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::sync::Mutex;
 
+pub(crate) mod arrays;
+
 /// The size of a file's buffer: one system call per 64 KiB read or written.
 const BUFFER: usize = 64 * 1024;
 

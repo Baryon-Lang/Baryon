@@ -28,8 +28,10 @@
 //! rules (1.8.5, 1.8.1 and 1.9.7, the `parallel`, `shared` and `accumulate` modules).
 
 mod accumulate;
+mod array_files;
 mod arrays;
 mod assignment;
+mod axes;
 mod binding;
 mod builtins;
 mod calls;

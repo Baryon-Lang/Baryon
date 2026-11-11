@@ -22,8 +22,8 @@ enum Lengths<'a> {
 impl<'db> Builder<'db> {
     /// The element `a[i, j]` names, after a bounds check of each index unless the program wrote
     /// `a.unchecked[i, j]` (decision 0010). A negative literal counts from the end. Indexing a
-    /// tuple with a constant names the item. A subscript with a slice names a view (the
-    /// `slices` module).
+    /// tuple with a constant names the item. A subscript with a slice or a `None` names a view
+    /// (the `slices` module).
     pub(crate) fn subscript(&mut self, node: NodeId) -> Option<Place> {
         let (value, index) = (
             self.tree.child(node, Role::Value)?,
@@ -38,7 +38,7 @@ impl<'db> Builder<'db> {
         };
         if indices
             .iter()
-            .any(|&index| self.tree.kind(index) == SyntaxKind::Slice)
+            .any(|&index| matches!(self.tree.kind(index), SyntaxKind::Slice | SyntaxKind::None))
         {
             return self.view(node, value, &indices);
         }
@@ -297,36 +297,6 @@ impl<'db> Builder<'db> {
     fn is_matrix_product(&self, node: NodeId) -> bool {
         self.tree.kind(node) == SyntaxKind::BinaryOperation
             && self.tree.node(node).operator() == Operator::MatrixMultiply
-    }
-
-    /// `target op= value` on an array, as `target = target op value` over every element.
-    pub(crate) fn augmented_array(
-        &mut self,
-        place: Place,
-        ty: Type<'db>,
-        operator: BinaryOperator,
-        value: NodeId,
-        node: NodeId,
-    ) {
-        let Some(right) = self.tree_of(value, self.element(ty)) else {
-            return;
-        };
-        let tree = Elementwise::Binary(
-            operator,
-            Box::new(Elementwise::Leaf(Operand::Copy(place.clone()))),
-            Box::new(right),
-        );
-        let temporary = self.temporary(ty, node);
-        self.assign(
-            Place::from(temporary),
-            Rvalue::Elementwise(Box::new(tree)),
-            node,
-        );
-        if self.needs_drop(ty) {
-            self.push(mir::StatementKind::Drop(place.clone()), node);
-        }
-        let moved = self.take(Place::from(temporary), ty);
-        self.assign(place, Rvalue::Use(moved), node);
     }
 
     /// Whether `node` reads `a.shape`, one of its entries `a.shape[k]`, or `a.size` of an

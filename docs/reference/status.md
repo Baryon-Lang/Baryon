@@ -24,8 +24,9 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-11, when `for line in f` over a text file and,
-before it, `int(text)` and `float(text)` began to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
+This page was last brought up to date on 2026-11-11, when array files, `Array.fromfile` and
+`a.tofile`, and before them `for line in f` over a text file, `int(text)` and `float(text)`, began
+to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
 `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
 `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches lowering or the backend something new
 updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
@@ -121,9 +122,9 @@ out of a function, including through a `raise`.
 | `a.unchecked[i]` inside `with unsafe:` | |
 | `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, the methods below, and whole-array arithmetic | |
 | Arrays of `Fixed` arrays and of `Copy` structs | |
-| Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b` | |
+| Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b`, with [broadcasting](arrays.md#broadcasting) between arrays of different ranks and of length 1, as NumPy's, and new axes with `None`, `x[:, None]` | |
 | [`@`, the matrix product](arrays.md#the-matrix-product), of `Array`s and of `Fixed` arrays: matrix by matrix, matrix by vector and vector by matrix, as a loop nest | `@=`; calling BLAS (roadmap 3.10) |
-| [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), `a.min()`, `a.max()`, `a.round()` and `a.fill(value)`; [`print(a)`](arrays.md#printing), as NumPy writes it | Printing an array of `str` or structs |
+| [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), the float sum of a whole-array expression, `(a * b).sum()`, without storing it, `a.min()`, `a.max()`, [`sum`, `min` and `max` along an axis](arrays.md#reductions-along-an-axis) with NumPy's bits, `a.round()` and `a.fill(value)`; [`print(a)`](arrays.md#printing), as NumPy writes it | Printing an array of `str` or structs |
 
 ## Errors and panics
 
@@ -149,7 +150,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`sys.argv`](files-and-processes.md#command-line-arguments), a new `list[str]` at each read; [`sys.exit()` and `sys.exit(status)`](files-and-processes.md#exit-status), which panics outside 0 to 255; [`os.getenv` and `os.environ.get`](files-and-processes.md#environment-variables), with and without a default; [`OSError` and `os.ErrorKind`](files-and-processes.md#errors-oserror), built, raised, caught and printed; [text files](files-and-processes.md#text-files): `open` in the modes `"r"`, `"w"`, `"a"` and `"x"`, `read`, `readline`, `readlines`, `write`, `flush`, `close`, `with open(...) as f` and `for line in f`, in a loop or a comprehension; [`subprocess.run`](files-and-processes.md#running-a-program) with `capture_output`, `input`, `cwd`, `env` and `timeout`, and `CompletedProcess` | `os.environ[name]`, `in` and `copy()`; the standard streams and `input`; array files; `pathlib` and directories (roadmap 1.13.6); `subprocess.run(check=True)` and `subprocess.Popen` (idea I.39) |
+| [`sys.argv`](files-and-processes.md#command-line-arguments), a new `list[str]` at each read; [`sys.exit()` and `sys.exit(status)`](files-and-processes.md#exit-status), which panics outside 0 to 255; [`os.getenv` and `os.environ.get`](files-and-processes.md#environment-variables), with and without a default; [`OSError` and `os.ErrorKind`](files-and-processes.md#errors-oserror), built, raised, caught and printed; [text files](files-and-processes.md#text-files): `open` in the modes `"r"`, `"w"`, `"a"` and `"x"`, `read`, `readline`, `readlines`, `write`, `flush`, `close`, `with open(...) as f` and `for line in f`, in a loop or a comprehension; [`subprocess.run`](files-and-processes.md#running-a-program) with `capture_output`, `input`, `cwd`, `env` and `timeout`, and `CompletedProcess`; [array files](files-and-processes.md#array-files): `Array.fromfile` with `dtype`, `count` and `offset`, reading numbers, `bool`s, `Fixed` arrays and `Copy` structs of them, and `a.tofile` of any `Array`, a view included | `os.environ[name]`, `in` and `copy()`; the standard streams and `input`; `pathlib` and directories (roadmap 1.13.6); `subprocess.run(check=True)` and `subprocess.Popen`, `Array.fromfile` of a type parameter, and the `.npy` format (idea I.39) |
 
 ## Tests
 

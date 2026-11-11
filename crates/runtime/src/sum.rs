@@ -85,9 +85,62 @@ fn pairwise<T: Copy + Add<Output = T>>(
         + pairwise(start + split, count - split, value, negative_zero)
 }
 
+/// The end of the leaf of the pairwise tree of `count` values that starts at `start`: the
+/// first index past the run of at most 128 values that [`pairwise`] adds as one block. Compiled
+/// code that sums an expression without storing it computes one leaf at a time into a buffer
+/// and sums it with [`sum`]; `start` is 0 or the end of the leaf before. `count` when `start` is
+/// `count` or more.
+pub(crate) fn leaf_end(count: usize, start: usize) -> usize {
+    let (mut offset, mut length) = (0, count);
+    while length > BLOCK {
+        let half = length / 2;
+        let split = half - half % LANES;
+        if start < offset + split {
+            length = split;
+        } else {
+            offset += split;
+            length -= split;
+        }
+    }
+    offset + length
+}
+
+/// The number of leaves in the pairwise tree of `count` values: 1 for up to 128 values, even
+/// none.
+pub(crate) fn leaves(count: usize) -> usize {
+    if count <= BLOCK {
+        return 1;
+    }
+    let half = count / 2;
+    let split = half - half % LANES;
+    leaves(split) + leaves(count - split)
+}
+
+/// The pairwise sum of `count` values from the sums of its leaves, in order, as [`sum`] of the
+/// values gives it: each leaf sum is [`sum`] of that leaf's values, and the leaves are added in
+/// the tree [`pairwise`] adds them in. `zero` is `0.0` of the float type. A missing leaf counts
+/// as `zero`.
+pub(crate) fn combine<T: Copy + Add<Output = T>>(count: usize, sums: &[T], zero: T) -> T {
+    /// The sum of the `count` values whose leaf sums are next in `sums`.
+    fn tree<T: Copy + Add<Output = T>>(
+        count: usize,
+        sums: &mut impl Iterator<Item = T>,
+        zero: T,
+    ) -> T {
+        if count <= BLOCK {
+            return sums.next().unwrap_or(zero);
+        }
+        let half = count / 2;
+        let split = half - half % LANES;
+        let left = tree(split, sums, zero);
+        left + tree(count - split, sums, zero)
+    }
+    zero + tree(count, &mut sums.iter().copied(), zero)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{dot, sum};
+    use super::{combine, dot, leaf_end, leaves, sum};
 
     /// The sum of `f64` values, as `a.sum()` computes it.
     fn sum_f64(values: &[f64]) -> f64 {
@@ -152,4 +205,31 @@ mod tests {
 
     /// `numpy.sum(numpy.float32(1.0) / numpy.arange(1, 301, dtype=numpy.float32))`.
     const NUMPY_HARMONIC_300_F32: f32 = f32::from_bits(0x40c9_0b97);
+
+    /// Summing each leaf into a buffer and combining the leaf sums gives the bits of summing
+    /// the whole run, at every length that takes a different path through the tree.
+    #[test]
+    fn leaves_combine_to_the_sum() {
+        for count in [0, 1, 7, 8, 127, 128, 129, 300, 1000, 4099] {
+            let values: Vec<f64> = (0..count).map(|i| 1.0 / f64::from(i + 1)).collect();
+            let length = usize::try_from(count).unwrap_or(0);
+            let mut sums = Vec::new();
+            let mut start = 0;
+            loop {
+                let end = leaf_end(length, start);
+                assert!(end - start <= 128 && (end > start || length == 0));
+                sums.push(sum_f64(&values[start..end]));
+                start = end;
+                if start >= length {
+                    break;
+                }
+            }
+            assert_eq!(sums.len(), leaves(length), "{count} values");
+            assert_eq!(
+                combine(length, &sums, 0.0).to_bits(),
+                sum_f64(&values).to_bits(),
+                "{count} values"
+            );
+        }
+    }
 }

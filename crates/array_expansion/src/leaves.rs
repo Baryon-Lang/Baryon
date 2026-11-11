@@ -18,38 +18,23 @@ pub(crate) struct ArrayLeaf<'db> {
     pub(crate) moved: bool,
 }
 
-/// Every array leaf of `tree`, in order from the left, fused subexpressions included. The first
-/// sets the shape.
+/// Every array leaf of `tree`, in order from the left, fused subexpressions included.
 pub(crate) fn array_leaves<'db>(
     types: &Types<'_, 'db>,
     locals: &[mir::LocalDeclaration<'db>],
     tree: &Elementwise<'db>,
 ) -> Vec<ArrayLeaf<'db>> {
     let mut leaves = Vec::new();
-    collect_leaves(types, locals, tree, true, &mut leaves);
+    collect_leaves(types, locals, tree, &mut leaves);
     leaves
 }
 
-/// The array leaves whose lengths `tree` checks against each other itself: its own leaves, and
-/// for each [`Fused`](Elementwise::Fused) subexpression only its first array leaf, which has the
-/// shape of the subexpression's result. The subexpression checks the rest of its leaves itself.
-pub(crate) fn shape_leaves<'db>(
-    types: &Types<'_, 'db>,
-    locals: &[mir::LocalDeclaration<'db>],
-    tree: &Elementwise<'db>,
-) -> Vec<ArrayLeaf<'db>> {
-    let mut leaves = Vec::new();
-    collect_leaves(types, locals, tree, false, &mut leaves);
-    leaves
-}
-
-/// Appends the array leaves of `tree` to `leaves`, from the left: every leaf when `inside_fused`
-/// is set, and otherwise one leaf for each fused subexpression, as [`shape_leaves`] describes.
+/// Appends the array leaves of `tree` to `leaves`, from the left, fused subexpressions
+/// included.
 fn collect_leaves<'db>(
     types: &Types<'_, 'db>,
     locals: &[mir::LocalDeclaration<'db>],
     tree: &Elementwise<'db>,
-    inside_fused: bool,
     leaves: &mut Vec<ArrayLeaf<'db>>,
 ) {
     match tree {
@@ -72,20 +57,12 @@ fn collect_leaves<'db>(
                 });
             }
         }
-        Elementwise::Unary(_, operand) => {
-            collect_leaves(types, locals, operand, inside_fused, leaves);
+        Elementwise::Unary(_, operand) | Elementwise::Fused(operand, _) => {
+            collect_leaves(types, locals, operand, leaves);
         }
         Elementwise::Binary(_, left, right) => {
-            collect_leaves(types, locals, left, inside_fused, leaves);
-            collect_leaves(types, locals, right, inside_fused, leaves);
-        }
-        Elementwise::Fused(subexpression, _) if inside_fused => {
-            collect_leaves(types, locals, subexpression, true, leaves);
-        }
-        Elementwise::Fused(subexpression, _) => {
-            let mut own = Vec::new();
-            collect_leaves(types, locals, subexpression, false, &mut own);
-            leaves.extend(own.into_iter().next());
+            collect_leaves(types, locals, left, leaves);
+            collect_leaves(types, locals, right, leaves);
         }
     }
 }
