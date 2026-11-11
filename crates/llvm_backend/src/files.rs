@@ -16,10 +16,12 @@
 //! | [`Write`](mir::FileMethod::Write) | `baryon_rt_file_write(file, text, length, out, error)` |
 //! | [`Flush`](mir::FileMethod::Flush) | `baryon_rt_file_flush(file, error)` |
 //! | [`Close`](mir::FileMethod::Close) | `baryon_rt_file_close(file, error)` |
+//! | [`Print`](mir::FileMethod::Print) | each value printed to stream 3, then `baryon_rt_file_print(file, error)` |
 //! | a drop | `baryon_rt_file_drop(file)`, which panics if the last write fails |
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
+use crate::print::CAPTURE;
 use mir::{Argument, BlockId, ErrorEdge, FileMethod, Place};
 
 impl<'db> Function<'_, '_, 'db> {
@@ -67,9 +69,19 @@ impl<'db> Function<'_, '_, 'db> {
                 let file = self.file_argument(file)?;
                 parameters.push(format!("ptr {file}"));
             }
+            (FileMethod::Print, [file, values @ ..]) => {
+                // The runtime holds what is printed to stream 3 and writes it to the file in
+                // the call below, so a `print` of any values is one write.
+                self.print_arguments(CAPTURE, values)?;
+                let file = self.file_argument(file)?;
+                parameters.push(format!("ptr {file}"));
+            }
             _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
         }
-        if !matches!(method, FileMethod::Flush | FileMethod::Close) {
+        if !matches!(
+            method,
+            FileMethod::Flush | FileMethod::Close | FileMethod::Print
+        ) {
             let (out, _) = self.place(destination)?;
             parameters.push(format!("ptr {out}"));
         }
@@ -130,7 +142,7 @@ fn symbol(method: FileMethod) -> &'static str {
         FileMethod::ReadLines => "baryon_rt_file_read_lines",
         FileMethod::Write => "baryon_rt_file_write",
         FileMethod::Flush => "baryon_rt_file_flush",
-        FileMethod::Close => "baryon_rt_file_close",
         FileMethod::Print => "baryon_rt_file_print",
+        FileMethod::Close => "baryon_rt_file_close",
     }
 }

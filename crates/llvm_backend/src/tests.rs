@@ -16,6 +16,7 @@ mod parallel;
 mod print;
 mod process;
 mod sorting;
+mod streams;
 mod string_methods;
 mod subprocess;
 mod text;

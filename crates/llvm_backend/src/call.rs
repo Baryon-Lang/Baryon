@@ -10,6 +10,7 @@
 use crate::Unsupported;
 use crate::function::{Function, block_label};
 use crate::literal::global;
+use crate::print::{STDERR, STDOUT};
 use crate::strings::{COMPARE, CONTAINS, LENGTH};
 use crate::ty::Repr;
 use mir::{Argument, BlockId, Builtin, Callee, ErrorEdge, Place, TextMethod};
@@ -31,12 +32,7 @@ impl<'db> Function<'_, '_, 'db> {
                 item,
                 type_arguments,
             } => (item, type_arguments),
-            Callee::Builtin(
-                builtin @ (Builtin::File(_)
-                | Builtin::ArrayFile(_)
-                | Builtin::Run
-                | Builtin::Text(TextMethod::ParseInt | TextMethod::ParseFloat)),
-            ) => {
+            Callee::Builtin(builtin) if raises(*builtin) => {
                 return self.raising_builtin(*builtin, arguments, destination, target, error);
             }
             Callee::Builtin(builtin) => {
@@ -129,8 +125,8 @@ impl<'db> Function<'_, '_, 'db> {
     }
 
     /// Writes a call of `builtin`, one of those that can fail: a file operation, an array file,
-    /// `subprocess.run`, or `int(text)` and `float(text)`. Each is a call of the runtime that
-    /// raises through `error`, the call's error edge.
+    /// `subprocess.run`, `input`, or `int(text)` and `float(text)`. Each is a call of the runtime
+    /// that raises through `error`, the call's error edge.
     fn raising_builtin(
         &mut self,
         builtin: Builtin,
@@ -145,6 +141,7 @@ impl<'db> Function<'_, '_, 'db> {
                 self.array_file_call(method, arguments, destination, target, error)
             }
             Builtin::Run => self.subprocess_run(arguments, destination, target, error),
+            Builtin::Input => self.input(arguments, destination, target, error),
             Builtin::Text(method) => {
                 self.parse_number(method, arguments, destination, target, error)
             }
@@ -162,7 +159,10 @@ impl<'db> Function<'_, '_, 'db> {
         target: BlockId,
     ) -> Result<(), Unsupported> {
         match builtin {
-            Builtin::Print => self.print(arguments, target),
+            Builtin::Print => self.print(STDOUT, arguments, target),
+            Builtin::PrintError => self.print(STDERR, arguments, target),
+            Builtin::FlushOutput => self.flush_output(arguments, target),
+            Builtin::StandardStream => self.standard_stream(arguments, destination, target),
             Builtin::Math(function) => self.math(function, arguments, destination, target),
             Builtin::Append => self.list_append(arguments, target),
             Builtin::Pop => self.list_pop(arguments, destination, target),
@@ -189,19 +189,28 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Exit => self.system_exit(arguments),
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
-            // `File`, `ArrayFile` and `Run` can fail, so `call` sends them to `raising_builtin`
-            // with their error edge. `Path` and `EnvironmentEntries` are not built by this
-            // backend yet: the calls of the runtime follow the runtime's part. Nor are the
-            // standard streams (decision 0036, part 6), which are in `mir` before they are here.
+            // `File`, `ArrayFile`, `Run` and `Input` can fail, so `call` sends them to
+            // `raising_builtin` with their error edge. `Path` and `EnvironmentEntries` are not
+            // built by this backend yet: the calls of the runtime follow the runtime's part.
             Builtin::File(_)
             | Builtin::ArrayFile(_)
             | Builtin::Run
+            | Builtin::Input
             | Builtin::Path(_)
-            | Builtin::EnvironmentEntries
-            | Builtin::PrintError
-            | Builtin::FlushOutput
-            | Builtin::StandardStream
-            | Builtin::Input => Err(Unsupported::new(builtin.name())),
+            | Builtin::EnvironmentEntries => Err(Unsupported::new(builtin.name())),
         }
     }
+}
+
+/// Whether a call of `builtin` can fail, and so raises through its error edge: a file
+/// operation, an array file, `subprocess.run`, `input`, or `int(text)` and `float(text)`.
+fn raises(builtin: Builtin) -> bool {
+    matches!(
+        builtin,
+        Builtin::File(_)
+            | Builtin::ArrayFile(_)
+            | Builtin::Run
+            | Builtin::Input
+            | Builtin::Text(TextMethod::ParseInt | TextMethod::ParseFloat)
+    )
 }
