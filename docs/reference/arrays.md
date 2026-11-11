@@ -137,10 +137,10 @@ residual -= alpha * product
 direction = residual + beta * direction
 ```
 
-- Both operands must have the same shape, or one must be a single number, which applies to every
-  element. Shapes of `Array` operands are checked when the line runs, and a mismatch panics; shapes
-  of `Fixed` operands are checked when compiling. Broadcasting between different shapes, NumPy's
-  `a + b[:, None]`, comes in Phase 3.
+- The operands are two arrays whose shapes [broadcast](#broadcasting), as NumPy's do, or an
+  array and a single number, which applies to every element. Shapes of `Array` operands are
+  checked when the line runs, and shapes that do not broadcast panic; shapes of `Fixed` operands
+  are checked when compiling. An `Array` and a `Fixed` array do not combine.
 - The number mixing rules of [Types](types.md#number-mixing) apply to the element types.
 - `-a` negates each element and `+a` keeps it. Both need an array of numbers.
 - An expression of element-wise operations runs as a single loop with no temporary arrays.
@@ -168,6 +168,59 @@ direction = residual + beta * direction
 
 `@` is the matrix product for rank-2 arrays and `Fixed` matrices, and between a matrix and a
 vector; see [The matrix product](#the-matrix-product).
+
+### Broadcasting
+
+Two arrays of different shapes combine element by element when their shapes *broadcast*: when
+one can be stretched to the other's shape by repeating it. The rules are NumPy's, so code ported
+from NumPy gives the same results:
+
+1. The shapes line up from the last dimension. An array of lower rank counts as having extra
+   leading dimensions of length 1: a vector of length 4 against a 3 × 4 matrix is a 1 × 4 row.
+2. In each dimension the lengths must be equal, or one of them must be 1.
+3. The result has the higher rank, and in each dimension the length that is not 1. An array of
+   length 1 in a dimension repeats its one element along it.
+
+| `a` | `b` | `a + b` |
+| --- | --- | --- |
+| `(3, 4)` | `(4,)` | `(3, 4)`: `b` added to every row |
+| `(3, 4)` | `(3, 1)` | `(3, 4)`: `b[i, 0]` added to every element of row `i` |
+| `(3, 1)` | `(4,)` | `(3, 4)`: every sum `a[i, 0] + b[j]` |
+| `(4,)` | `(1,)` | `(4,)`: the one element of `b` added to each |
+| `(2, 3)` | `(4,)` | a panic: 3 and 4 differ and neither is 1 |
+
+```python
+def centered(samples: Array[f64, 2]) -> Array[f64, 2]:
+    n, m = samples.shape
+    means = Array.zeros(m)
+    for i in range(n):
+        means += samples[i, :]
+    means /= n
+    return samples - means  # each row minus the column means
+```
+
+The rank of the result is known when compiling, so `Array[f64, 2] + Array[f64, 1]` is an
+`Array[f64, 2]`. Whether an `Array` repeats along a dimension is known only when the line runs,
+from its length there; a pair of lengths that are neither equal nor 1 panics, naming the
+result's dimension, the result's length there and the length that does not fit:
+
+```text
+panic: array lengths differ in dimension 1: 3 and 4
+```
+
+`Fixed` shapes broadcast when compiling: `Fixed[f64, (3, 1)]` plus `Fixed[f64, (4,)]` is a
+`Fixed[f64, (3, 4)]`, and shapes that do not broadcast are a compile error.
+
+Writing into an existing array never changes its shape, as in NumPy. So `x += b`, `x -= b` and
+the other in-place operators, and assigning into a slice, `grid[:, :] = row`, take operands that
+broadcast to the target's shape: `grid += row` adds `row` to every row of `grid`, but `x += b`
+with `x` of length 1 and `b` of length 3 panics, since `x` cannot grow. `x = x + b` gives a new
+array of length 3 instead.
+
+Cost: an operand that repeats is read again from memory, never copied, so `grid - means` reads
+`means` once per row and allocates only the result. For an `Array` the program decides once per
+line, before the loop, whether anything repeats; when nothing does, the loop is the same one
+arrays of equal shapes run, so broadcasting costs nothing where it is not used.
 
 ## Methods
 

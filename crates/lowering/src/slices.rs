@@ -408,9 +408,19 @@ impl<'db> Builder<'db> {
         value: NodeId,
         node: NodeId,
     ) {
-        let Some(right) = self.tree_of(value, self.element(ty)) else {
-            return;
-        };
+        if let Some(right) = self.tree_of(value, self.element(ty)) {
+            self.update_view(view, operator, right, node);
+        }
+    }
+
+    /// `view = view op right`, written in place.
+    pub(crate) fn update_view(
+        &mut self,
+        view: Place,
+        operator: BinaryOperator,
+        right: Elementwise<'db>,
+        node: NodeId,
+    ) {
         let tree = Elementwise::Binary(
             operator,
             Box::new(Elementwise::Leaf(Operand::Copy(view.clone()))),

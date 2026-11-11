@@ -109,8 +109,8 @@ def main():
 }
 
 /// `x += k * d` and `d = r + k * d` write into `x` and `d` in place: the update allocates
-/// nothing, and the results are the same to the last digit. So does `x = d + x * 0.5` on an
-/// `InOut` parameter.
+/// nothing when broadcasting keeps the target's shape, and the results are the same to the last
+/// digit. So does `x = d + x * 0.5` on an `InOut` parameter.
 #[test]
 fn updates_write_in_place_with_the_same_results() {
     let program = "\
@@ -137,10 +137,12 @@ def main():
     session.add_file("main.byn", program).unwrap();
     assert!(session.check().is_empty());
     let module = session.compile(None, driver::Profile::Debug).unwrap();
-    // `zeros` and the two `fill`s.
+    // `zeros` and the two `fill`s, and one in each update that reads another array: kept as it
+    // was for when broadcasting would make the result larger than the target, which never
+    // happens here, so neither runs.
     assert_eq!(
         module.matches("call ptr @baryon_rt_allocate_array").count(),
-        3
+        5
     );
 }
 
