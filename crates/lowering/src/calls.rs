@@ -463,7 +463,7 @@ impl<'db> Builder<'db> {
             // A `Path` prints as its text, as Python's `print(path)` does.
             let ty = self.ty(argument);
             let place = self.borrow(argument);
-            Argument::Borrow(self.text_place(place, ty))
+            Argument::Borrow(self.shown_place(argument, place, ty))
         }
     }
 
