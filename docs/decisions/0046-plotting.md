@@ -1,6 +1,6 @@
 # 0046. Plots are drawn with matplotlib's object-oriented names, in a `pyplot` module, to SVG first
 
-Status: Proposed
+Status: Accepted (Collins, 2026-11-12)
 Date: 2026-11-12
 Roadmap: 3.15
 

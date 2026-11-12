@@ -77,4 +77,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0042. Statistics keep NumPy's names and bits, and its functions live in `stats`](0042-statistics.md) | Accepted |
 | [0043. Text tables and `.npy` files are read and written with NumPy's names, as `Array` functions](0043-array-data-files.md) | Accepted |
 | [0044. FITS images and headers are read and written with AstroPy's names, in a `fits` module](0044-fits-images-and-headers.md) | Accepted |
-| [0046. Plots are drawn with matplotlib's object-oriented names, in a `pyplot` module, to SVG first](0046-plotting.md) | Proposed |
+| [0046. Plots are drawn with matplotlib's object-oriented names, in a `pyplot` module, to SVG first](0046-plotting.md) | Accepted |
