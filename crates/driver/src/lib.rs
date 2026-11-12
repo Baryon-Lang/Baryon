@@ -63,6 +63,7 @@ const LIBRARY: [(&str, &str); 21] = [
     ("<std>/fft.byn", include_str!("../library/fft.byn")),
     ("<std>/fits.byn", include_str!("../library/fits.byn")),
     ("<std>/frames.byn", include_str!("../library/frames.byn")),
+    ("<std>/gzip.byn", include_str!("../library/gzip.byn")),
     ("<std>/legend.byn", include_str!("../library/legend.byn")),
     ("<std>/linalg.byn", include_str!("../library/linalg.byn")),
     ("<std>/math.byn", include_str!("../library/math.byn")),
@@ -77,7 +78,6 @@ const LIBRARY: [(&str, &str); 21] = [
     ),
     ("<std>/ticker.byn", include_str!("../library/ticker.byn")),
     ("<std>/zlib.byn", include_str!("../library/zlib.byn")),
-    ("<std>/gzip.byn", include_str!("../library/gzip.byn")),
 ];
 
 /// The compiler's incremental database: every input and every cached query result.
