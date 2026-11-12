@@ -76,6 +76,7 @@ const LIBRARY: [(&str, &str); 19] = [
     ),
     ("<std>/ticker.byn", include_str!("../library/ticker.byn")),
     ("<std>/zlib.byn", include_str!("../library/zlib.byn")),
+    ("<std>/gzip.byn", include_str!("../library/gzip.byn")),
 ];
 
 /// The compiler's incremental database: every input and every cached query result.
