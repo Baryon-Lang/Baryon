@@ -1,5 +1,6 @@
 //! Choosing rows of a frame (decision 0045, roadmap 3.13.4): `df[mask]`, `df[i:j]`,
-//! `df.head(n)` and `df.tail(n)`, each a new frame with the same columns.
+//! `df.head(n)` and `df.tail(n)`, each a new frame with the same columns, and the rows a
+//! `for` loop over `df.itertuples()` walks, each a new struct of the frame's schema.
 //!
 //! The work is written in Baryon, in the standard library's `<std>/frames.byn` (decision
 //! 0038). A mask is applied to each column by `masked`. For the others one call works out
@@ -12,6 +13,18 @@ use mir::{BinaryOperator, Check, Constant, Local, Operand, Place, Projection, Rv
 use mir::{ConstantValue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Type, TypeKind};
+
+/// The rows of a frame that a `for` loop over `df.itertuples()` walks.
+pub(crate) struct Rows<'db> {
+    /// The borrowed frame.
+    frame: Place,
+    /// The number of the frame's columns.
+    columns: u32,
+    /// The struct of one row.
+    pub(crate) row: Type<'db>,
+    /// The local holding the number of rows.
+    pub(crate) length: Local,
+}
 
 impl<'db> Builder<'db> {
     /// The call `node` of the method `method` of the frame `frame`, with the arguments
@@ -158,6 +171,59 @@ impl<'db> Builder<'db> {
         let local = self.temporary(ty, node);
         self.assign(Place::from(local), Rvalue::Use(operand), node);
         local
+    }
+
+    /// The frame `df` and the struct of its rows when `node` is the call `df.itertuples()`,
+    /// whose rows a `for` loop walks (the `iterators` module); `None` for any other
+    /// expression. The checker has reported a frame with no struct for its rows.
+    pub(crate) fn itertuples_frame(&self, node: NodeId) -> Option<(NodeId, Type<'db>)> {
+        if self.tree.kind(node) != SyntaxKind::Call {
+            return None;
+        }
+        let function = self.tree.child(node, Role::Function)?;
+        let name = self.tree.child(function, Role::Attribute)?;
+        let frame = self.tree.child(function, Role::Value)?;
+        match self.typed.expression(frame)?.kind(self.db) {
+            &TypeKind::DataFrame { row: Some(row), .. } if self.text_of(name) == "itertuples" => {
+                Some((frame, row))
+            }
+            _ => None,
+        }
+    }
+
+    /// The rows a loop over the call `node`, `df.itertuples()`, walks: the frame computed
+    /// once and borrowed for the loop, and its rows counted. `None`, with nothing lowered,
+    /// when `node` is any other expression.
+    pub(crate) fn rows(&mut self, node: NodeId) -> Option<Rows<'db>> {
+        let (value, row) = self.itertuples_frame(node)?;
+        let columns = self.frame_columns(value).map_or(0, <[_]>::len);
+        let frame = self.borrow(value);
+        let length = self.row_count(&frame, node);
+        Some(Rows {
+            frame,
+            columns: u32::try_from(columns).unwrap_or(u32::MAX),
+            row,
+            length,
+        })
+    }
+
+    /// A temporary holding row `at` of `rows` as the schema's struct: a copy of element `at`
+    /// of each column, in the order of the struct's fields. `at` is a row the loop has
+    /// counted, so it is in range.
+    pub(crate) fn row_at(&mut self, rows: &Rows<'db>, at: Local, node: NodeId) -> Place {
+        let fields = (0..rows.columns)
+            .map(|position| {
+                let column = rows.frame.clone().project(Projection::Field(position));
+                Operand::Copy(column.project(Projection::Index(vec![at])))
+            })
+            .collect();
+        let value = self.temporary(rows.row, node);
+        self.assign(
+            Place::from(value),
+            Rvalue::Aggregate(rows.row, fields),
+            node,
+        );
+        Place::from(value)
     }
 
     /// A temporary holding the number of rows of the frame at `source`: the length of its

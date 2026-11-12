@@ -48,9 +48,17 @@ impl<'db> Body<'db> {
             None => self.lowerer.unknown(),
         };
         let lines = iterator.is_some_and(|iterator| self.file_loop(statement, iterator));
-        let owned = lines || iterator.is_some_and(|iterator| self.is_text_literal(iterator));
+        // A row of a frame is a new struct on each pass, so the loop variable owns it too.
+        let rows = iterator.and_then(|iterator| self.rows_receiver(iterator));
+        let owned = lines
+            || rows.is_some()
+            || iterator.is_some_and(|iterator| self.is_text_literal(iterator));
         let collection = iterator
-            .map(|iterator| self.dict_view_receiver(iterator).unwrap_or(iterator))
+            .map(|iterator| {
+                self.dict_view_receiver(iterator)
+                    .or(rows)
+                    .unwrap_or(iterator)
+            })
             .filter(|&collection| self.place_root(collection).is_some());
         let parallel = iterator.is_some_and(|iterator| {
             self.loop_kind(iterator)
@@ -128,9 +136,17 @@ impl<'db> Body<'db> {
             self.prange_in_comprehension(iterator);
         }
         let lines = iterator.is_some_and(|iterator| self.file_loop(clause, iterator));
-        let owned = lines || iterator.is_some_and(|iterator| self.is_text_literal(iterator));
+        // A row of a frame is a new struct on each pass, so the loop variable owns it too.
+        let rows = iterator.and_then(|iterator| self.rows_receiver(iterator));
+        let owned = lines
+            || rows.is_some()
+            || iterator.is_some_and(|iterator| self.is_text_literal(iterator));
         let collection = iterator
-            .map(|iterator| self.dict_view_receiver(iterator).unwrap_or(iterator))
+            .map(|iterator| {
+                self.dict_view_receiver(iterator)
+                    .or(rows)
+                    .unwrap_or(iterator)
+            })
             .filter(|&collection| self.place_root(collection).is_some());
         let mut item = self.lowerer.unknown();
         self.repeated(clause, iterator.unwrap_or(clause), |body| {
