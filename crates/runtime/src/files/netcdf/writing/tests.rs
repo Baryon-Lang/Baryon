@@ -263,3 +263,43 @@ fn slices_write_what_netcdf4_writes() {
          (2) does not fill"
     );
 }
+
+#[test]
+fn huge_record_positions_are_refused_before_anything_is_made() {
+    let path = file("huge");
+    apply(&path, &["C\t1", "D\tt\t0", "D\tx\t3", "V\ta\ti2\tt,x"]);
+    let before = fs::read(&path).unwrap();
+    let too_many = "a NetCDF classic file holds at most 4294967294 records, fewer than a write \
+                    of the variable a needs";
+    let slice = |start, stop| Item::Slice {
+        start,
+        stop,
+        stride: None,
+    };
+    let cases: [(Item, &str); 4] = [
+        // `a[10**12] = row`
+        (Item::Index(1_000_000_000_000), too_many),
+        // `a[0:2**62] = row`
+        (slice(Some(0), Some(1 << 62)), too_many),
+        // `a[0:4_000_000_000] = row`, within the format but far more rows than the array's.
+        (
+            slice(Some(0), Some(4_000_000_000)),
+            "the values picked of the NetCDF variable a have 4000000000 positions along its \
+             dimension t, which an array of 1 rows does not fill",
+        ),
+        // `a[i64::MAX - 1:] = row`, whose last position overflows.
+        (slice(Some(i64::MAX - 1), None), too_many),
+    ];
+    for (item, message) in cases {
+        let shape: &[usize] = if matches!(item, Item::Index(_)) {
+            &[3]
+        } else {
+            &[1, 3]
+        };
+        let failure =
+            write(&path, ("a", &[item]), Pixel::I64, shape, &longs(&[1, 2, 3])).unwrap_err();
+        assert_eq!(failure.kind, ErrorKind::InvalidData, "{item:?}");
+        assert_eq!(failure.strerror, message, "{item:?}");
+    }
+    assert_eq!(fs::read(&path).unwrap(), before);
+}

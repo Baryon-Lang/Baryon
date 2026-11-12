@@ -7,6 +7,11 @@
 //! one. A write may go past the last record: its positions along the unlimited dimension are
 //! not bounded, and a slice there with no end takes as many records as the array has rows.
 
+/// The most records a classic file holds: its record count is a 32-bit field, and the C
+/// library keeps the all-ones value for a file still being written. A write past it is refused
+/// before anything is made for it.
+pub(crate) const MOST_RECORDS: u64 = u32::MAX as u64 - 1;
+
 /// The word compiled code passes for a slice's start, stop or step that the program left out.
 pub(crate) const LEFT_OUT: i64 = i64::MIN;
 
@@ -184,7 +189,9 @@ impl Selection {
 /// # Errors
 ///
 /// A message when there are more items than axes, an index is past its axis's bounds, a step
-/// is 0, or a write steps backwards along the unlimited dimension.
+/// is 0, a write steps backwards along the unlimited dimension or past [`MOST_RECORDS`], or a
+/// write's slice picks more positions than its array has rows. Each is found from the items'
+/// numbers before any list of positions is made, so a huge index or stop costs nothing.
 pub(crate) fn select(
     name: &str,
     items: &[Item],
@@ -218,6 +225,9 @@ pub(crate) fn select(
                     Some(index)
                 };
                 match position.and_then(|position| u64::try_from(position).ok()) {
+                    Some(position) if unbounded && position >= MOST_RECORDS => {
+                        return Err(too_many_records(name));
+                    }
                     Some(position) if unbounded || position < length => vec![position],
                     _ => {
                         return Err(format!(
@@ -248,13 +258,35 @@ pub(crate) fn select(
                     let start = resolve(start, length, (0, i64::MAX)).unsigned_abs();
                     let count = rows.unwrap_or(0) as u64;
                     let stride = stride.unsigned_abs();
+                    let last = count
+                        .checked_sub(1)
+                        .map(|steps| steps.checked_mul(stride)?.checked_add(start));
+                    if matches!(last, Some(None)) || last.flatten() >= Some(MOST_RECORDS) {
+                        return Err(too_many_records(name));
+                    }
                     (0..count).map(|row| start + row * stride).collect()
                 } else {
-                    // A write's explicit stop may pass the records written.
+                    // A write's explicit stop may pass the records written, up to the most a
+                    // file holds.
                     let length = match (unbounded, stop) {
+                        (true, Some(stop)) if stop.unsigned_abs() > MOST_RECORDS => {
+                            return Err(too_many_records(name));
+                        }
                         (true, Some(stop)) => length.max(stop.unsigned_abs()),
                         _ => length,
                     };
+                    // A write picks as many positions as its array has rows. Past the records
+                    // written, more is an error the shape check would report, found here
+                    // before they are listed; elsewhere the file's own length bounds them.
+                    let count = count(start, stop, stride, length);
+                    if let Some(rows) = rows.filter(|&rows| unbounded && count > rows as u64) {
+                        return Err(format!(
+                            "the values picked of the NetCDF variable {name} have {count} \
+                             positions along its dimension {}, which an array of {rows} \
+                             rows does not fill",
+                            names[axis]
+                        ));
+                    }
                     indices(start, stop, stride, length)
                 }
             }
@@ -269,31 +301,66 @@ pub(crate) fn select(
     Ok(Selection { axes })
 }
 
-/// The positions `start:stop:stride` takes along an axis of `length`, as Python's
-/// `slice.indices` and `range` give them; `stride` is not 0.
-fn indices(start: Option<i64>, stop: Option<i64>, stride: i64, length: u64) -> Vec<u64> {
+/// The message for a write past [`MOST_RECORDS`] of the variable `name`.
+fn too_many_records(name: &str) -> String {
+    format!(
+        "a NetCDF classic file holds at most {MOST_RECORDS} records, fewer than a write of \
+         the variable {name} needs"
+    )
+}
+
+/// How many positions `start:stop:stride` takes along an axis of `length`, worked out from
+/// the bounds, as `len(range(...))` is, without listing them; `stride` is not 0.
+fn count(start: Option<i64>, stop: Option<i64>, stride: i64, length: u64) -> u64 {
+    let (start, stop) = bounds(start, stop, stride, length);
+    let (start, stop, stride) = (i128::from(start), i128::from(stop), i128::from(stride));
+    let span = if stride > 0 {
+        stop - start
+    } else {
+        start - stop
+    };
+    if span <= 0 {
+        return 0;
+    }
+    let count = (span - 1) / stride.abs() + 1;
+    u64::try_from(count).unwrap_or(u64::MAX)
+}
+
+/// The first position `start:stop:stride` takes along an axis of `length` and the bound it
+/// stops before, as Python's `slice.indices` gives them; `stride` is not 0.
+fn bounds(start: Option<i64>, stop: Option<i64>, stride: i64, length: u64) -> (i64, i64) {
     let length = i64::try_from(length).unwrap_or(i64::MAX);
-    let bounds = if stride > 0 {
+    let range = if stride > 0 {
         (0, length)
     } else {
         (-1, length - 1)
     };
     let (first, last) = if stride > 0 {
-        (bounds.0, bounds.1)
+        (range.0, range.1)
     } else {
-        (bounds.1, bounds.0)
+        (range.1, range.0)
     };
     let start = start.map_or(first, |start| {
-        resolve(Some(start), length.unsigned_abs(), bounds)
+        resolve(Some(start), length.unsigned_abs(), range)
     });
     let stop = stop.map_or(last, |stop| {
-        resolve(Some(stop), length.unsigned_abs(), bounds)
+        resolve(Some(stop), length.unsigned_abs(), range)
     });
+    (start, stop)
+}
+
+/// The positions `start:stop:stride` takes along an axis of `length`, as Python's
+/// `slice.indices` and `range` give them; `stride` is not 0. Cost: one position each, so the
+/// caller checks [`count`] first where the length is not the file's own.
+fn indices(start: Option<i64>, stop: Option<i64>, stride: i64, length: u64) -> Vec<u64> {
+    let (start, stop) = bounds(start, stop, stride, length);
     let mut positions = Vec::new();
-    let mut at = start;
-    while (stride > 0 && at < stop) || (stride < 0 && at > stop) {
-        positions.push(at.unsigned_abs());
-        at += stride;
+    let mut at = Some(start);
+    while let Some(position) =
+        at.filter(|&at| (stride > 0 && at < stop) || (stride < 0 && at > stop))
+    {
+        positions.push(position.unsigned_abs());
+        at = position.checked_add(stride);
     }
     positions
 }

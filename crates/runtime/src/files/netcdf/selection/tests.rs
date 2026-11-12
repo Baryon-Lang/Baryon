@@ -148,3 +148,24 @@ fn neighbouring_values_are_read_together() {
         [(None, 3, 1), (None, 5, 1)]
     );
 }
+
+#[test]
+fn a_slices_count_is_the_number_of_positions_it_lists() {
+    let bounds = [None, Some(-7), Some(-2), Some(0), Some(1), Some(4), Some(9)];
+    for length in [0, 1, 5] {
+        for start in bounds {
+            for stop in bounds {
+                for stride in [-3, -1, 1, 2] {
+                    let listed = indices(start, stop, stride, length).len() as u64;
+                    assert_eq!(
+                        count(start, stop, stride, length),
+                        listed,
+                        "{start:?}:{stop:?}:{stride} of {length}"
+                    );
+                }
+            }
+        }
+    }
+    // A huge stop is counted, never listed.
+    assert_eq!(count(Some(0), Some(i64::MAX), 1, u64::MAX), i64::MAX.unsigned_abs());
+}

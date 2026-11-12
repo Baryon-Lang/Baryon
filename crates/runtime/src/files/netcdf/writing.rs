@@ -161,25 +161,42 @@ pub(crate) fn write(
             .positions
             .iter()
             .max()
-            .map_or(0, |&last| last + 1);
-        add_records(&mut contents, needed);
+            .map_or(0, |&last| last.saturating_add(1));
+        add_records(&mut contents, needed).map_err(invalid)?;
     }
-    let mut taken = 0;
+    let mut taken: usize = 0;
     let slots = &mut contents.slots[index];
     selection.runs(record, &inner, |at, offset, count| {
-        let start = usize::try_from(at.unwrap_or(0)).unwrap_or(usize::MAX) * size
-            + usize::try_from(offset).unwrap_or(usize::MAX) * width;
-        let bytes = usize::try_from(count).unwrap_or(usize::MAX) * width;
-        slots[start..start + bytes].copy_from_slice(&stored[taken..taken + bytes]);
-        taken += bytes;
-        Ok::<(), OsFailure>(())
+        let too_large = || invalid(format!("the NetCDF variable {name} is too large to write"));
+        let bytes = |value: u64, width: usize| usize::try_from(value).ok()?.checked_mul(width);
+        let start = bytes(at.unwrap_or(0), size)
+            .zip(bytes(offset, width))
+            .and_then(|(record, inner)| record.checked_add(inner));
+        let (Some(start), Some(length)) = (start, bytes(count, width)) else {
+            return Err(too_large());
+        };
+        let (Some(end), Some(from)) = (start.checked_add(length), taken.checked_add(length)) else {
+            return Err(too_large());
+        };
+        let (Some(slot), Some(values)) = (slots.get_mut(start..end), stored.get(taken..from))
+        else {
+            return Err(too_large());
+        };
+        slot.copy_from_slice(values);
+        taken = from;
+        Ok(())
     })?;
     save(path, &contents)
 }
 
 /// Adds records to `contents` until it has `needed`, each filled for every record variable,
 /// padding and all, as the C library fills the records a write adds.
-fn add_records(contents: &mut Contents, needed: u64) {
+///
+/// # Errors
+///
+/// A message, before anything is added, when the records would not fit in memory: the room
+/// for them is reserved first, so a huge record number is an error, never an abort.
+fn add_records(contents: &mut Contents, needed: u64) -> Result<(), String> {
     let header = &contents.header;
     let blank: Vec<(usize, Vec<u8>, usize)> = header
         .variables
@@ -188,12 +205,24 @@ fn add_records(contents: &mut Contents, needed: u64) {
         .filter(|(_, variable)| header.is_record(variable))
         .map(|(index, variable)| (index, fill(variable), slot(header, variable)))
         .collect();
+    let added = needed.saturating_sub(header.records);
+    let too_many = || format!("{needed} records of a NetCDF file do not fit in memory");
+    for (index, _, size) in &blank {
+        let room = usize::try_from(added)
+            .ok()
+            .and_then(|added| added.checked_mul(*size))
+            .ok_or_else(too_many)?;
+        contents.slots[*index]
+            .try_reserve_exact(room)
+            .map_err(|_| too_many())?;
+    }
     for _ in header.records..needed {
         for (index, filling, size) in &blank {
             contents.slots[*index].extend(filled(filling, *size));
         }
     }
     contents.header.records = contents.header.records.max(needed);
+    Ok(())
 }
 
 /// The big-endian bytes of `variable`'s fill value: its `_FillValue` attribute's, or the
