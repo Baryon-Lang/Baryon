@@ -25,10 +25,12 @@ the language that is specified and checked, but not built yet. The editor sees t
 type, while `baryon run` builds only what this page lists.
 
 This page was last brought up to date on 2026-11-12, when the rows of a `DataFrame` chosen by
-`df[mask]`, `df[i:j]`, `head` and `tail`, and before them `print(df)`, a frame printed as
-pandas prints it, and before it `zlib.decompressobj` and `gzip`, and
-before them a `DataFrame` built from rows and `df[i]`, and before them `DataFrame[S]` built from
-arrays, with its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
+`df[mask]`, `df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and
+before it `fft2`, `ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`,
+and before it `print(df)`, a frame printed as pandas prints it, and before it
+`zlib.decompressobj` and `gzip`, and before them a `DataFrame` built from rows and `df[i]`, and
+before them `DataFrame[S]` built from arrays, with its columns, and before them
+`zlib.compress`, and before it `zlib.decompress`,
 `zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends
 and grid lines, and before them comparisons of arrays and `a[mask]`, and before them line plots
 with `pyplot` and `ticker`, saved as SVG, and before them slices of a NetCDF variable,
@@ -177,7 +179,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), [`svd` and `svdvals`](linear-algebra.md#linalgsvd-and-linalgsvdvals), [`eig` and `eigvals`](linear-algebra.md#linalgeig-and-linalgeigvals), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix; [`fft`](linear-algebra.md#fft): `fft`, `ifft`, `rfft`, `irfft`, `fftfreq` and `rfftfreq` of any length | Other element types (roadmap 3.10.1), `--blas` (3.10.2), several right-hand sides (3.10.3), and `fft2` and `fftn` (3.10.4) |
+| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), [`svd` and `svdvals`](linear-algebra.md#linalgsvd-and-linalgsvdvals), [`eig` and `eigvals`](linear-algebra.md#linalgeig-and-linalgeigvals), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix; [`fft`](linear-algebra.md#fft): `fft`, `ifft`, `rfft`, `irfft`, `fftfreq` and `rfftfreq` of any length, and [`fft2`, `ifft2`, `rfft2` and `irfft2`](linear-algebra.md#fftfft2-and-the-other-two-dimensional-transforms) | Other element types (roadmap 3.10.1), `--blas` (3.10.2), several right-hand sides (3.10.3), and `fftn` (idea I.51) |
 
 ## Files and processes
 
@@ -201,7 +203,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`zlib.compress`](compression.md#zlibcompress) at every level and in each container; [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32); [`zlib.decompressobj`](compression.md#zlibdecompressobj) with `decompress`, `flush`, `eof` and `unused_data`; [`gzip.compress`](compression.md#gzipcompress) and [`gzip.decompress`](compression.md#gzipdecompress) of one member or several | `zlib.compressobj` and preset dictionaries; `gzip.open` (3.27.4); the `bz2`, `lzma` and `compression.zstd` modules (3.27.7 to 3.27.10) |
+| [`zlib.compress`](compression.md#zlibcompress) at every level and in each container; [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32); [`zlib.decompressobj`](compression.md#zlibdecompressobj) with `decompress`, `flush`, `eof` and `unused_data`; [`gzip.compress`](compression.md#gzipcompress) and [`gzip.decompress`](compression.md#gzipdecompress) of one member or several; [`compression.zstd.decompress`](compression.md#compressionzstddecompress) of one frame or several and [`compression.zstd.compress`](compression.md#compressionzstdcompress) at every level, imported with `from compression import zstd` or `from compression.zstd import decompress` | `zlib.compressobj` and preset dictionaries; `gzip.open` (3.27.4); `import compression.zstd` (idea I.56), Zstandard dictionaries and `options`; the `bz2` and `lzma` modules (3.27.9 and 3.27.10) |
 
 ## Tests
 

@@ -1,0 +1,1612 @@
+"""The `compression.zstd` module: Zstandard frames (RFC 8878) with Python 3.14's names,
+written in Baryon (decision 0049).
+
+Bytes are `Array[u8, 1]` where Python has `bytes`. Data that is not a valid frame raises
+`OSError` with the kind `INVALID_DATA` and the message Python's `ZstdError` carries, such as
+`Unable to decompress Zstandard data: Data corruption detected`.
+"""
+
+from os import ErrorKind
+
+
+def decompress(data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
+    """The bytes the Zstandard frames in `data` hold, joined, as
+    `compression.zstd.decompress(data)` gives them in Python 3.14. Skippable frames are
+    skipped, and each frame's content size and content checksum, where it records them, are
+    checked.
+
+    Raises `OSError` with the kind `INVALID_DATA` and Python's message for data that ends
+    inside a frame or is empty (`Compressed data ended before the end-of-stream marker was
+    reached`), bytes that start no frame (`Unknown frame descriptor`), a frame that needs a
+    dictionary (`Dictionary mismatch`), a wrong checksum (`Restored data doesn't match
+    checksum`) and any other corruption (`Data corruption detected`).
+
+    Costs one pass over `data` and one over the output, plus the copies of the output each
+    time its buffer doubles. A frame that records its size is decoded into a buffer of that
+    size, so only frames without one are copied as they grow.
+    """
+    output = _Output(Array.zeros(4 * len(data) + 64, u8), 0)
+    error = 1 if len(data) == 0 else _unzstd(data, output)
+    if error != 0:
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(error), "")
+    exact = Array.zeros(output.length, u8)
+    for i in range(output.length):
+        exact[i] = output.data[i]
+    return exact
+
+
+def compress(data: Array[u8, 1], level: int = 3) -> Raises[Array[u8, 1], ValueError]:
+    """`data` compressed as one Zstandard frame, as `compression.zstd.compress(data, level)`
+    gives it in Python 3.14: a frame any Zstandard decoder reads, with the content size and an
+    XXH64 checksum, which Python writes only when asked.
+
+    `level` runs from -131072 to 22, as Python's does, and 0 means 3, the default. Baryon's
+    encoder has one strategy, Zstandard's "fast" one, and the level sets how far it searches
+    for each match: from one earlier position at negative levels to 256 at level 19 and above.
+    Its frames come within about 10% of the C library's size at levels 1 to 3 and are larger
+    at higher levels; they decode to the same data but are Baryon's own bytes (decision 0049).
+    A level outside the range raises `ValueError` with Python's message.
+
+    Costs one pass over `data`, each position following up to the level's number of links of
+    a hash chain, plus about 4.5 MiB of tables for data of 1 MiB or more.
+    """
+    if level < -131072 or level > 22:
+        raise ValueError(f"illegal compression level {level}; the valid range is [-131072, 22]")
+    if level == 0:
+        level = 3
+    tries = 1
+    for floor, count in [(1, 4), (2, 8), (3, 16), (4, 32), (7, 64), (13, 128), (19, 256)]:
+        if level >= floor:
+            tries = count
+    writer = _Writer(Array.zeros(len(data) + len(data) // 64 + 64, u8), 0, 0, 0)
+    _zstd(data, writer, tries)
+    exact = Array.zeros(writer.length, u8)
+    for i in range(writer.length):
+        exact[i] = writer.data[i]
+    return exact
+
+
+def _message(error: int) -> str:
+    """Python's message for the error code `_unzstd` gives."""
+    if error == 1:
+        return "Compressed data ended before the end-of-stream marker was reached"
+    prefix = "Unable to decompress Zstandard data: "
+    if error == 27:
+        return prefix + "Unknown frame descriptor"
+    if error == 28:
+        return prefix + "Dictionary mismatch"
+    if error == 29:
+        return prefix + "Restored data doesn't match checksum"
+    if error == 30:
+        return prefix + "Frame requires too much memory for decoding"
+    if error == 32:
+        return prefix + "Unsupported frame parameter"
+    if error == 33:
+        return prefix + "Destination buffer is too small"
+    return prefix + "Data corruption detected"
+
+
+class _Bits(Struct):
+    """Where a decoder stands in its input: DEFLATE reads bits from the lowest bit of each byte
+    up, so bits not yet used wait in `buffer`, lowest first."""
+
+    position: int  # the next byte of the input to load into `buffer`
+    buffer: int  # bits loaded and not yet used, the next one lowest
+    count: int  # how many bits `buffer` holds, at most 63
+
+
+class _Output(Struct):
+    """The bytes decoded so far: the first `length` bytes of `data`, whose length doubles when
+    it fills, so n bytes cost O(n) copying in all."""
+
+    data: Array[u8, 1]
+    length: int
+
+
+def _fill(bits: InOut[_Bits], data: Array[u8, 1], n: int):
+    """Loads bytes until `bits` holds at least `n` bits or the input ends."""
+    while bits.count < n and bits.position < len(data):
+        bits.buffer = bits.buffer | (int(data[bits.position]) << bits.count)
+        bits.position += 1
+        bits.count += 8
+
+
+def _take(bits: InOut[_Bits], data: Array[u8, 1], n: int) -> int:
+    """The next `n` bits as a number, first bit lowest, or -1 when the input ends first."""
+    _fill(bits, data, n)
+    if bits.count < n:
+        return -1
+    value = bits.buffer & ((1 << n) - 1)
+    bits.buffer = bits.buffer >> n
+    bits.count -= n
+    return value
+
+
+def _reserve(output: InOut[_Output], extra: int):
+    """Makes room for `extra` more bytes, doubling the buffer as needed."""
+    needed = output.length + extra
+    if needed <= len(output.data):
+        return
+    size = 2 * len(output.data)
+    if size < needed:
+        size = needed
+    grown = Array.zeros(size, u8)
+    for i in range(output.length):
+        grown[i] = output.data[i]
+    output.data = grown
+
+
+def _word(data: Array[u8, 1], position: int, size: int, big: bool) -> int:
+    """The unsigned number in the `size` bytes of `data` from `position`, big-endian or
+    little-endian. The caller checks the bytes are there."""
+    value = 0
+    for i in range(size):
+        if big:
+            value = (value << 8) | int(data[position + i])
+        else:
+            value = value | (int(data[position + i]) << (8 * i))
+    return value
+
+
+
+
+class _Backward(Struct):
+    """A bit stream read from its end (RFC 8878, section 4.1): the last byte's highest set bit
+    marks where the stream starts, and each read takes the highest bits not yet read. Bits
+    below the stream's first byte read as zeros, and `position` going below 0 marks reading
+    past the start."""
+
+    base: int  # the stream's first byte in the input
+    stop: int  # the byte after its last
+    position: int  # bits not yet read, counted from the first byte's lowest bit
+
+
+class _Fse(Struct):
+    """An FSE decoding table (RFC 8878, section 4.1.1): for each state, the symbol it decodes,
+    how many bits the next state reads, and the base those bits are added to."""
+
+    symbols: Array[i32, 1]
+    bits: Array[i32, 1]
+    bases: Array[i32, 1]
+    log: int  # the accuracy log: the table has 2 ** log states
+
+
+class _Huffman(Struct):
+    """A Huffman decoding table for literals (RFC 8878, section 4.2): entry `i` decodes the
+    next `log` bits `i` as `symbols[i]`, which uses `bits[i]` of them."""
+
+    symbols: Array[i32, 1]
+    bits: Array[i32, 1]
+    log: int
+
+
+class _ZstdState(Struct):
+    """What a Zstandard frame's blocks pass on to the blocks after them: the last Huffman and
+    FSE tables, for the modes that repeat them, and the three repeated offsets."""
+
+    huffman: _Huffman
+    literal_lengths: _Fse
+    offsets: _Fse
+    match_lengths: _Fse
+    repeats: Array[int, 1]
+    has_huffman: bool
+
+
+def _highest_bit(value: int) -> int:
+    """The position of `value`'s highest set bit; `value` is positive."""
+    bit = 0
+    while value >> (bit + 1) != 0:
+        bit += 1
+    return bit
+
+
+def _backward(data: Array[u8, 1], start: int, stop: int) -> _Backward:
+    """The backward stream in `data[start:stop]`, or one with `position` -1 when its last byte
+    is zero, which no valid stream ends with."""
+    if stop <= start or data[stop - 1] == 0:
+        return _Backward(start, stop, -1)
+    return _Backward(start, stop, 8 * (stop - start - 1) + _highest_bit(int(data[stop - 1])))
+
+
+def _bits_at(data: Array[u8, 1], stream: _Backward, at: int, n: int) -> int:
+    """The `n` bits, at most 32, from bit `at` of `stream` upward, as a number; bits below the
+    stream's start are zeros."""
+    if n == 0:
+        return 0
+    if at < 0:
+        if at + n <= 0:
+            return 0
+        return _bits_at(data, stream, 0, at + n) << (-at)
+    first = stream.base + (at >> 3)
+    value = 0
+    for i in range(5):
+        if first + i < stream.stop:
+            value = value | (int(data[first + i]) << (8 * i))
+    return (value >> (at & 7)) & ((1 << n) - 1)
+
+
+def _read_back(data: Array[u8, 1], stream: InOut[_Backward], n: int) -> int:
+    """Reads the next `n` bits of a backward stream, the first of them highest."""
+    stream.position -= n
+    return _bits_at(data, stream, stream.position, n)
+
+
+def _fse_from_counts(counts: Array[i32, 1], symbol_count: int, log: int) -> _Fse:
+    """The decoding table for normalized counts (RFC 8878, section 4.1.1), -1 meaning a
+    probability below one, as zstd's `FSE_buildDTable` spreads the symbols."""
+    size = 1 << log
+    symbols = Array.zeros(size, i32)
+    bits = Array.zeros(size, i32)
+    bases = Array.zeros(size, i32)
+    next_state = Array.zeros(symbol_count, int)
+    high = size - 1
+    for symbol in range(symbol_count):
+        if counts[symbol] == -1:
+            symbols[high] = i32(symbol)
+            high -= 1
+            next_state[symbol] = 1
+        else:
+            next_state[symbol] = int(counts[symbol])
+    step = (size >> 1) + (size >> 3) + 3
+    position = 0
+    for symbol in range(symbol_count):
+        for _ in range(int(counts[symbol])):
+            symbols[position] = i32(symbol)
+            position = (position + step) & (size - 1)
+            while position > high:
+                position = (position + step) & (size - 1)
+    for state in range(size):
+        symbol = int(symbols[state])
+        following = next_state[symbol]
+        next_state[symbol] += 1
+        read = log - _highest_bit(following)
+        bits[state] = i32(read)
+        bases[state] = i32((following << read) - size)
+    return _Fse(symbols, bits, bases, log)
+
+
+def _fse_read(data: Array[u8, 1], start: int, stop: int, max_symbols: int, max_log: int) -> tuple[_Fse, int]:
+    """Reads an FSE table description (RFC 8878, section 4.1.1) from `data[start:stop]`, read
+    forward, as zstd's `FSE_readNCount`. Gives the table and the position after the
+    description, or a position of -1 for a corrupt one."""
+    failed = (_Fse(Array.zeros(1, i32), Array.zeros(1, i32), Array.zeros(1, i32), 0), -1)
+    bits = _Bits(start, 0, 0)
+    log = _take(bits, data, 4)
+    if log < 0:
+        return failed
+    log += 5
+    if log > max_log:
+        return failed
+    counts = Array.zeros(max_symbols, i32)
+    remaining = (1 << log) + 1
+    threshold = 1 << log
+    width = log + 1
+    symbol = 0
+    while remaining > 1:
+        if symbol >= max_symbols:
+            return failed
+        _fill(bits, data, width)
+        if bits.count < width - 1:
+            return failed
+        low = bits.buffer & (threshold - 1)
+        largest = 2 * threshold - 1 - remaining
+        count = 0
+        if low < largest:
+            count = low
+            bits.buffer = bits.buffer >> (width - 1)
+            bits.count -= width - 1
+        else:
+            if bits.count < width:
+                return failed
+            count = bits.buffer & (2 * threshold - 1)
+            if count >= threshold:
+                count -= largest
+            bits.buffer = bits.buffer >> width
+            bits.count -= width
+        count -= 1
+        remaining -= count if count >= 0 else -count
+        counts[symbol] = i32(count)
+        symbol += 1
+        if count == 0:
+            while True:
+                repeat = _take(bits, data, 2)
+                if repeat < 0:
+                    return failed
+                for _ in range(repeat):
+                    if symbol >= max_symbols:
+                        return failed
+                    counts[symbol] = i32(0)
+                    symbol += 1
+                if repeat != 3:
+                    break
+        while remaining < threshold and threshold > 1:
+            width -= 1
+            threshold = threshold >> 1
+    if remaining != 1:
+        return failed
+    end = bits.position - (bits.count >> 3)
+    if end > stop:
+        return failed
+    return (_fse_from_counts(counts, max_symbols, log), end)
+
+
+def _fse_rle(symbol: int) -> _Fse:
+    """The one-state table of an RLE mode: every sequence has `symbol`, reading no bits."""
+    symbols = Array.zeros(1, i32)
+    symbols[0] = i32(symbol)
+    return _Fse(symbols, Array.zeros(1, i32), Array.zeros(1, i32), 0)
+
+
+def _fse_predefined(kind: int) -> _Fse:
+    """The predefined table of RFC 8878, section 3.1.1.3.2.2: `kind` 0 for literal lengths,
+    1 for offsets, 2 for match lengths."""
+    if kind == 0:
+        values = [4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1]
+        counts = Array.zeros(36, i32)
+        for i in range(36):
+            counts[i] = i32(values[i])
+        return _fse_from_counts(counts, 36, 6)
+    if kind == 1:
+        values = [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1]
+        counts = Array.zeros(29, i32)
+        for i in range(29):
+            counts[i] = i32(values[i])
+        return _fse_from_counts(counts, 29, 5)
+    values = [1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1]
+    counts = Array.zeros(53, i32)
+    for i in range(53):
+        counts[i] = i32(values[i])
+    return _fse_from_counts(counts, 53, 6)
+
+
+def _huffman_read(data: Array[u8, 1], start: int, stop: int) -> tuple[_Huffman, int]:
+    """Reads a Huffman tree description (RFC 8878, section 4.2.1) at `data[start]`: weights
+    stored 4 bits each, or compressed with FSE and two interleaved states. Gives the decoding
+    table and the position after the description, or -1 for a corrupt one."""
+    failed = (_Huffman(Array.zeros(1, i32), Array.zeros(1, i32), 0), -1)
+    if start >= stop:
+        return failed
+    header = int(data[start])
+    weights = Array.zeros(256, i32)
+    count = 0
+    end = 0
+    if header >= 128:
+        count = header - 127
+        end = start + 1 + (count + 1) // 2
+        if end > stop:
+            return failed
+        for i in range(count):
+            byte = int(data[start + 1 + i // 2])
+            weights[i] = i32(byte >> 4 if i % 2 == 0 else byte & 15)
+    else:
+        end = start + 1 + header
+        if end > stop:
+            return failed
+        table, after = _fse_read(data, start + 1, end, 16, 6)
+        if after < 0:
+            return failed
+        stream = _backward(data, after, end)
+        if stream.position < 0:
+            return failed
+        first = _read_back(data, stream, table.log)
+        second = _read_back(data, stream, table.log)
+        states = [first, second]
+        which = 0
+        while True:
+            if count >= 255:
+                return failed
+            state = states[which]
+            weights[count] = table.symbols[state]
+            count += 1
+            states[which] = int(table.bases[state]) + _read_back(data, stream, int(table.bits[state]))
+            if stream.position < 0:
+                other = states[1 - which]
+                weights[count] = table.symbols[other]
+                count += 1
+                break
+            which = 1 - which
+    total = 0
+    for i in range(count):
+        if weights[i] > 11:
+            return failed
+        if weights[i] > 0:
+            total += 1 << (int(weights[i]) - 1)
+    if total == 0:
+        return failed
+    log = _highest_bit(total) + 1
+    rest = (1 << log) - total
+    if rest & (rest - 1) != 0:
+        return failed
+    weights[count] = i32(_highest_bit(rest) + 1)
+    count += 1
+    if log > 11:
+        return failed
+    starts = Array.zeros(13, int)
+    position = 0
+    for weight in range(1, log + 1):
+        starts[weight] = position
+        for i in range(count):
+            if int(weights[i]) == weight:
+                position += (1 << weight) >> 1
+    size = 1 << log
+    symbols = Array.zeros(size, i32)
+    bits = Array.zeros(size, i32)
+    for symbol in range(count):
+        weight = int(weights[symbol])
+        if weight > 0:
+            length = (1 << weight) >> 1
+            for i in range(starts[weight], starts[weight] + length):
+                symbols[i] = i32(symbol)
+                bits[i] = i32(log + 1 - weight)
+            starts[weight] += length
+    return (_Huffman(symbols, bits, log), end)
+
+
+def _huffman_stream(
+    data: Array[u8, 1],
+    start: int,
+    stop: int,
+    table: _Huffman,
+    literals: InOut[Array[u8, 1]],
+    first: int,
+    last: int,
+    exact: bool,
+) -> bool:
+    """Decodes one Huffman-coded stream `data[start:stop]` into `literals[first:last]`. With
+    `exact`, gives False unless the stream holds exactly that many symbols. Without it, as the
+    reference decoder's fast path for four streams does, bits past the stream's start read as
+    zeros and only a stream that does not end in its marker bit is refused; the frame's
+    checksum then catches the damage, with the reference decoder's message."""
+    stream = _backward(data, start, stop)
+    if stream.position < 0:
+        return False
+    for i in range(first, last):
+        index = _bits_at(data, stream, stream.position - table.log, table.log)
+        literals[i] = u8(table.symbols[index])
+        stream.position -= int(table.bits[index])
+        if exact and stream.position < 0:
+            return False
+    return stream.position == 0 or not exact
+
+
+def _literals(
+    data: Array[u8, 1], start: int, stop: int, state: InOut[_ZstdState]
+) -> tuple[Array[u8, 1], int]:
+    """Reads a compressed block's literals section (RFC 8878, section 3.1.1.3.1) at
+    `data[start]`: raw, one byte repeated, or Huffman-coded in one or four streams. Gives the
+    literals and the position after the section, or -1 for a corrupt one."""
+    failed = (Array.zeros(0, u8), -1)
+    if start >= stop:
+        return failed
+    kind = int(data[start]) & 3
+    form = (int(data[start]) >> 2) & 3
+    if kind <= 1:
+        size = 0
+        position = start
+        if form == 0 or form == 2:
+            size = int(data[start]) >> 3
+            position += 1
+        elif form == 1:
+            if start + 2 > stop:
+                return failed
+            size = (int(data[start]) >> 4) + (int(data[start + 1]) << 4)
+            position += 2
+        else:
+            if start + 3 > stop:
+                return failed
+            size = (int(data[start]) >> 4) + (int(data[start + 1]) << 4) + (int(data[start + 2]) << 12)
+            position += 3
+        literals = Array.zeros(size, u8)
+        if kind == 0:
+            if position + size > stop:
+                return failed
+            for i in range(size):
+                literals[i] = data[position + i]
+            return (literals, position + size)
+        if position >= stop:
+            return failed
+        for i in range(size):
+            literals[i] = data[position]
+        return (literals, position + 1)
+    header_size = 3 if form <= 1 else form + 2
+    field = 10 if form <= 1 else 4 * form + 6
+    if start + header_size > stop:
+        return failed
+    header = _word(data, start, header_size, False)
+    size = (header >> 4) & ((1 << field) - 1)
+    compressed = (header >> (4 + field)) & ((1 << field) - 1)
+    position = start + header_size
+    end = position + compressed
+    if end > stop:
+        return failed
+    if kind == 2:
+        huffman, position = _huffman_read(data, position, end)
+        if position < 0:
+            return failed
+        state.huffman = huffman
+        state.has_huffman = True
+    elif not state.has_huffman:
+        return failed
+    literals = Array.zeros(size, u8)
+    if form == 0:
+        if not _huffman_stream(data, position, end, state.huffman, literals, 0, size, True):
+            return failed
+        return (literals, end)
+    if position + 6 > end:
+        return failed
+    share = (size + 3) // 4
+    stream_start = position + 6
+    for k in range(4):
+        stream_stop = end
+        if k < 3:
+            stream_stop = stream_start + _word(data, position + 2 * k, 2, False)
+        if stream_stop > end:
+            return failed
+        last = min(size, share * (k + 1))
+        if not _huffman_stream(
+            data, stream_start, stream_stop, state.huffman, literals, min(size, share * k), last, False
+        ):
+            return failed
+        stream_start = stream_stop
+    return (literals, end)
+
+
+def _code_values(kind: int) -> Array[i32, 1]:
+    """Each literal-length (`kind` 0) or match-length (`kind` 2) code's baseline, then its
+    count of extra bits, from RFC 8878, section 3.1.1.3.2.1."""
+    if kind == 0:
+        values = Array.zeros(72, i32)
+        lengths = [16, 18, 20, 22, 24, 28, 32, 40, 48, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
+        extras = [1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        for code in range(36):
+            if code < 16:
+                values[code] = i32(code)
+            else:
+                values[code] = i32(lengths[code - 16])
+                values[36 + code] = i32(extras[code - 16])
+        return values
+    values = Array.zeros(106, i32)
+    lengths = [35, 37, 39, 41, 43, 47, 51, 59, 67, 83, 99, 131, 259, 515, 1027, 2051, 4099, 8195, 16387, 32771, 65539]
+    extras = [1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    for code in range(53):
+        if code < 32:
+            values[code] = i32(code + 3)
+        else:
+            values[code] = i32(lengths[code - 32])
+            values[53 + code] = i32(extras[code - 32])
+    return values
+
+
+def _sequence_table(
+    data: Array[u8, 1], position: int, stop: int, mode: int, kind: int, previous: _Fse
+) -> tuple[_Fse, int]:
+    """The table one of a block's sequence codes uses, by its compression mode (RFC 8878,
+    section 3.1.1.3.2.1): predefined, RLE, read from the block, or the previous block's.
+    `kind` is 0, 1 or 2 for literal lengths, offsets and match lengths. Gives the table and the
+    position after its description, -1 for a corrupt one."""
+    largest = [35, 31, 52]
+    logs = [9, 8, 9]
+    if mode == 0:
+        return (_fse_predefined(kind), position)
+    if mode == 1:
+        if position >= stop or int(data[position]) > largest[kind]:
+            return (_fse_rle(0), -1)
+        return (_fse_rle(int(data[position])), position + 1)
+    if mode == 2:
+        return _fse_read(data, position, stop, largest[kind] + 1, logs[kind])
+    if previous.log < 0:
+        return (_fse_rle(0), -1)
+    return (_Fse(previous.symbols.copy(), previous.bits.copy(), previous.bases.copy(), previous.log), position)
+
+
+def _sequences(
+    data: Array[u8, 1],
+    start: int,
+    stop: int,
+    literals: Array[u8, 1],
+    state: InOut[_ZstdState],
+    output: InOut[_Output],
+    frame_start: int,
+    window: int,
+    limit: int,
+) -> int:
+    """Reads a compressed block's sequences section (RFC 8878, section 3.1.1.3.2) and executes
+    it: each sequence copies literals, then a match from earlier in the frame's output. Gives an
+    error code, 0 for none."""
+    if start >= stop:
+        return 26
+    count = int(data[start])
+    position = start + 1
+    if count >= 128:
+        if position >= stop:
+            return 26
+        if count == 255:
+            if position + 2 > stop:
+                return 26
+            count = int(data[position]) + (int(data[position + 1]) << 8) + 0x7F00
+            position += 2
+        else:
+            count = ((count - 128) << 8) + int(data[position])
+            position += 1
+    used = 0
+    if count > 0:
+        if position >= stop:
+            return 26
+        modes = int(data[position])
+        position += 1
+        if modes & 3 != 0:
+            return 26
+        literal_table, position = _sequence_table(data, position, stop, modes >> 6, 0, state.literal_lengths)
+        if position < 0:
+            return 26
+        state.literal_lengths = literal_table
+        offset_table, position = _sequence_table(data, position, stop, (modes >> 4) & 3, 1, state.offsets)
+        if position < 0:
+            return 26
+        state.offsets = offset_table
+        match_table, position = _sequence_table(data, position, stop, (modes >> 2) & 3, 2, state.match_lengths)
+        if position < 0:
+            return 26
+        state.match_lengths = match_table
+        stream = _backward(data, position, stop)
+        if stream.position < 0:
+            return 26
+        literal_values = _code_values(0)
+        match_values = _code_values(2)
+        literal_state = _read_back(data, stream, state.literal_lengths.log)
+        offset_state = _read_back(data, stream, state.offsets.log)
+        match_state = _read_back(data, stream, state.match_lengths.log)
+        for index in range(count):
+            offset_code = int(state.offsets.symbols[offset_state])
+            match_code = int(state.match_lengths.symbols[match_state])
+            literal_code = int(state.literal_lengths.symbols[literal_state])
+            if offset_code > 31:
+                return 26
+            offset_value = (1 << offset_code) + _read_back(data, stream, offset_code)
+            match_length = int(match_values[match_code]) + _read_back(data, stream, int(match_values[53 + match_code]))
+            literal_length = int(literal_values[literal_code]) + _read_back(
+                data, stream, int(literal_values[36 + literal_code])
+            )
+            offset = 0
+            if offset_value > 3:
+                offset = offset_value - 3
+                state.repeats[2] = state.repeats[1]
+                state.repeats[1] = state.repeats[0]
+                state.repeats[0] = offset
+            else:
+                which = offset_value if literal_length > 0 else offset_value + 1
+                if which == 1:
+                    offset = state.repeats[0]
+                elif which == 2:
+                    offset = state.repeats[1]
+                    state.repeats[1] = state.repeats[0]
+                    state.repeats[0] = offset
+                else:
+                    offset = state.repeats[2] if which == 3 else state.repeats[0] - 1
+                    state.repeats[2] = state.repeats[1]
+                    state.repeats[1] = state.repeats[0]
+                    state.repeats[0] = offset
+            if index + 1 < count:
+                literal_state = int(state.literal_lengths.bases[literal_state]) + _read_back(
+                    data, stream, int(state.literal_lengths.bits[literal_state])
+                )
+                match_state = int(state.match_lengths.bases[match_state]) + _read_back(
+                    data, stream, int(state.match_lengths.bits[match_state])
+                )
+                offset_state = int(state.offsets.bases[offset_state]) + _read_back(
+                    data, stream, int(state.offsets.bits[offset_state])
+                )
+            if limit >= 0 and output.length + literal_length + match_length > limit:
+                return 33
+            if used + literal_length > len(literals):
+                return 26
+            _reserve(output, literal_length + match_length)
+            for i in range(literal_length):
+                output.data[output.length + i] = literals[used + i]
+            output.length += literal_length
+            used += literal_length
+            if offset <= 0 or offset > output.length - frame_start or offset > window:
+                return 26
+            source = output.length - offset
+            for i in range(match_length):
+                output.data[output.length + i] = output.data[source + i]
+            output.length += match_length
+        if stream.position != 0:
+            return 26
+    elif position != stop:
+        return 26
+    rest = len(literals) - used
+    if limit >= 0 and output.length + rest > limit:
+        return 33
+    _reserve(output, rest)
+    for i in range(rest):
+        output.data[output.length + i] = literals[used + i]
+    output.length += rest
+    return 0
+
+
+def _u64(high: int, low: int) -> u64:
+    """The 64-bit number whose upper and lower 32 bits are `high` and `low`, for constants past
+    `i64`'s range, which a literal cannot yet spell."""
+    return (u64(high) << u64(32)) | u64(low)
+
+
+def _add64(a: u64, b: u64) -> u64:
+    """`a + b` modulo 2 ** 64, added in 32-bit halves so no step overflows."""
+    mask = u64(0xFFFFFFFF)
+    low = (a & mask) + (b & mask)
+    high = ((a >> 32) + (b >> 32) + (low >> 32)) & mask
+    return (high << 32) | (low & mask)
+
+
+def _multiply64(a: u64, b: u64) -> u64:
+    """`a * b` modulo 2 ** 64, from products of 32-bit halves so no step overflows."""
+    mask = u64(0xFFFFFFFF)
+    a_low = a & mask
+    b_low = b & mask
+    low = a_low * b_low
+    middle = ((a_low * (b >> 32)) & mask) + (((a >> 32) * b_low) & mask) + (low >> 32)
+    return ((middle & mask) << 32) | (low & mask)
+
+
+def _rotate64(x: u64, r: int) -> u64:
+    """`x`'s bits rotated left by `r`, from 1 to 63."""
+    kept = x & ((u64(1) << u64(64 - r)) - u64(1))
+    return (kept << u64(r)) | (x >> u64(64 - r))
+
+
+def _xxh64_round(accumulator: u64, lane: u64) -> u64:
+    """One XXH64 round: a lane of input mixed into an accumulator."""
+    prime1 = _u64(0x9E3779B1, 0x85EBCA87)
+    prime2 = _u64(0xC2B2AE3D, 0x27D4EB4F)
+    return _multiply64(_rotate64(_add64(accumulator, _multiply64(lane, prime2)), 31), prime1)
+
+
+def _xxh64_merge(accumulator: u64, value: u64) -> u64:
+    """XXH64's merge of one accumulator into the result."""
+    prime1 = _u64(0x9E3779B1, 0x85EBCA87)
+    prime4 = _u64(0x85EBCA77, 0xC2B2AE63)
+    mixed = accumulator ^ _xxh64_round(u64(0), value)
+    return _add64(_multiply64(mixed, prime1), prime4)
+
+
+def _xxh64(data: Array[u8, 1], start: int, stop: int) -> u64:
+    """The XXH64 hash, seed 0, of `data[start:stop]`, as Zstandard's content checksum takes
+    its lowest 32 bits (RFC 8878, section 3.1.1)."""
+    prime1 = _u64(0x9E3779B1, 0x85EBCA87)
+    prime2 = _u64(0xC2B2AE3D, 0x27D4EB4F)
+    prime3 = _u64(0x165667B1, 0x9E3779F9)
+    prime4 = _u64(0x85EBCA77, 0xC2B2AE63)
+    prime5 = _u64(0x27D4EB2F, 0x165667C5)
+    length = stop - start
+    position = start
+    hash = u64(0)
+    if length >= 32:
+        v1 = _add64(prime1, prime2)
+        v2 = prime2
+        v3 = u64(0)
+        v4 = _u64(0xFFFFFFFF, 0xFFFFFFFF) - prime1 + u64(1)
+        while position + 32 <= stop:
+            v1 = _xxh64_round(v1, u64(_word(data, position, 4, False)) | (u64(_word(data, position + 4, 4, False)) << 32))
+            v2 = _xxh64_round(v2, u64(_word(data, position + 8, 4, False)) | (u64(_word(data, position + 12, 4, False)) << 32))
+            v3 = _xxh64_round(v3, u64(_word(data, position + 16, 4, False)) | (u64(_word(data, position + 20, 4, False)) << 32))
+            v4 = _xxh64_round(v4, u64(_word(data, position + 24, 4, False)) | (u64(_word(data, position + 28, 4, False)) << 32))
+            position += 32
+        hash = _add64(_add64(_rotate64(v1, 1), _rotate64(v2, 7)), _add64(_rotate64(v3, 12), _rotate64(v4, 18)))
+        hash = _xxh64_merge(hash, v1)
+        hash = _xxh64_merge(hash, v2)
+        hash = _xxh64_merge(hash, v3)
+        hash = _xxh64_merge(hash, v4)
+    else:
+        hash = prime5
+    hash = _add64(hash, u64(length))
+    while position + 8 <= stop:
+        lane = u64(_word(data, position, 4, False)) | (u64(_word(data, position + 4, 4, False)) << 32)
+        hash = hash ^ _xxh64_round(u64(0), lane)
+        hash = _add64(_multiply64(_rotate64(hash, 27), prime1), prime4)
+        position += 8
+    if position + 4 <= stop:
+        hash = hash ^ _multiply64(u64(_word(data, position, 4, False)), prime1)
+        hash = _add64(_multiply64(_rotate64(hash, 23), prime2), prime3)
+        position += 4
+    while position < stop:
+        hash = hash ^ _multiply64(u64(data[position]), prime5)
+        hash = _multiply64(_rotate64(hash, 11), prime1)
+        position += 1
+    hash = _multiply64(hash ^ (hash >> 33), prime2)
+    hash = _multiply64(hash ^ (hash >> 29), prime3)
+    return hash ^ (hash >> 32)
+
+
+def _zstd_state() -> _ZstdState:
+    """A frame's starting state: no tables yet (`log` -1) and the repeated offsets 1, 4, 8."""
+    repeats = Array.zeros(3, int)
+    repeats[0] = 1
+    repeats[1] = 4
+    repeats[2] = 8
+    return _ZstdState(
+        _Huffman(Array.zeros(1, i32), Array.zeros(1, i32), 0), _fse_none(), _fse_none(), _fse_none(), repeats, False
+    )
+
+
+def _fse_none() -> _Fse:
+    """The table a frame has before any block gives one: `log` -1, which the repeat mode
+    rejects."""
+    return _Fse(Array.zeros(1, i32), Array.zeros(1, i32), Array.zeros(1, i32), -1)
+
+
+def _magic_start(data: Array[u8, 1], position: int) -> bool:
+    """Whether the bytes from `position` to the end, fewer than four, could begin a frame's
+    magic number, `28 B5 2F FD` or a skippable frame's `5x 2A 4D 18`, so that more input could
+    complete it: the reference decoder calls such input cut short, and any other unknown."""
+    frame = True
+    skippable = True
+    for i in range(len(data) - position):
+        byte = int(data[position + i])
+        frame = frame and byte == [0x28, 0xB5, 0x2F, 0xFD][i]
+        skippable = skippable and (byte >> 4 == 5 if i == 0 else byte == [0x50, 0x2A, 0x4D, 0x18][i])
+    return frame or skippable
+
+
+def _unzstd(data: Array[u8, 1], output: InOut[_Output]) -> int:
+    """Decodes every Zstandard frame in `data` (RFC 8878) into `output`, skipping skippable
+    frames and checking each content checksum and content size that a frame carries. Gives
+    0, 26 for a corrupt frame, 27 for bytes that are not a frame, 28 for a frame that needs a
+    dictionary, 29 for a checksum that differs, or 1 for input that ends inside a frame."""
+    position = 0
+    if len(data) == 0:
+        return 27
+    while position < len(data):
+        if position + 4 > len(data):
+            return 1 if _magic_start(data, position) else 27
+        magic = _word(data, position, 4, False)
+        if magic >> 4 == 0x184D2A5:
+            if position + 8 > len(data):
+                return 1
+            position += 8 + _word(data, position + 4, 4, False)
+            if position > len(data):
+                return 1
+            continue
+        if magic != 0xFD2FB528:
+            return 27
+        position += 4
+        if position >= len(data):
+            return 1
+        descriptor = int(data[position])
+        position += 1
+        size_flag = descriptor >> 6
+        single = (descriptor >> 5) & 1
+        checksum = (descriptor >> 2) & 1
+        dictionary_flag = descriptor & 3
+        if descriptor & 8 != 0:
+            return 32
+        window = 0
+        if single == 0:
+            if position >= len(data):
+                return 1
+            exponent = int(data[position]) >> 3
+            if exponent > 17:
+                return 30
+            window = (1 << (10 + exponent)) + ((1 << (10 + exponent)) >> 3) * (int(data[position]) & 7)
+            position += 1
+        dictionary_size = [0, 1, 2, 4][dictionary_flag]
+        if position + dictionary_size > len(data):
+            return 1
+        if dictionary_size > 0 and _word(data, position, dictionary_size, False) != 0:
+            return 28
+        position += dictionary_size
+        content_bytes = [0, 2, 4, 8][size_flag]
+        if size_flag == 0 and single == 1:
+            content_bytes = 1
+        content_size = -1
+        if content_bytes > 0:
+            if position + content_bytes > len(data):
+                return 1
+            content_size = _word(data, position, content_bytes, False)
+            if content_bytes == 2:
+                content_size += 256
+            position += content_bytes
+        if single == 1:
+            if content_size > 1 << 27:
+                return 30
+            window = content_size
+        frame_start = output.length
+        if content_size > 0:
+            _reserve(output, min(content_size, 1 << 27))
+        state = _zstd_state()
+        last = 0
+        while last == 0:
+            if position + 3 > len(data):
+                return 1
+            header = _word(data, position, 3, False)
+            position += 3
+            last = header & 1
+            kind = (header >> 1) & 3
+            size = header >> 3
+            if kind == 3 or size > min(window, 131072):
+                return 26
+            limit = frame_start + content_size if content_size >= 0 else -1
+            if kind == 1:
+                if position >= len(data):
+                    return 1
+                if limit >= 0 and output.length + size > limit:
+                    return 33
+                _reserve(output, size)
+                for i in range(size):
+                    output.data[output.length + i] = data[position]
+                output.length += size
+                position += 1
+            else:
+                if position + size > len(data):
+                    return 1
+                if kind == 0:
+                    if limit >= 0 and output.length + size > limit:
+                        return 33
+                    _reserve(output, size)
+                    for i in range(size):
+                        output.data[output.length + i] = data[position + i]
+                    output.length += size
+                else:
+                    literals, after = _literals(data, position, position + size, state)
+                    if after < 0:
+                        return 26
+                    error = _sequences(data, after, position + size, literals, state, output, frame_start, window, limit)
+                    if error != 0:
+                        return error
+                position += size
+        if content_size >= 0 and output.length - frame_start != content_size:
+            return 26
+        if checksum == 1:
+            if position + 4 > len(data):
+                return 1
+            expected = _word(data, position, 4, False)
+            if int(_xxh64(output.data, frame_start, output.length) & u64(0xFFFFFFFF)) != expected:
+                return 29
+            position += 4
+    return 0
+
+
+class _Writer(Struct):
+    """A bit stream being written, as Zstandard writes its forward streams: bits go into
+    `buffer` lowest first and leave as whole bytes into the first `length` bytes of `data`,
+    which doubles when it fills."""
+
+    data: Array[u8, 1]
+    length: int  # bytes written to `data`
+    buffer: int  # bits not yet written, the first lowest
+    count: int  # how many bits `buffer` holds, less than 8 between calls
+
+
+def _align(writer: InOut[_Writer]):
+    """Pads the stream with zero bits to the next byte boundary."""
+    if writer.count > 0:
+        _put(writer, 0, 8 - writer.count)
+
+
+def _limited_lengths(counts: Array[int, 1], size: int, limit: int) -> Array[i32, 1]:
+    """Huffman code lengths of at most `limit` bits for symbols with frequencies
+    `counts[0:size]`, 0 for an unused symbol. At least two symbols get a code, as zlib ensures,
+    since a decoder needs a code of at least one bit. The tree is built from frequencies in
+    order; lengths past the limit are then pulled in and the Kraft sum restored by lengthening
+    the next-deepest codes, as miniz does, and the shortest codes go to the most frequent
+    symbols."""
+    lengths = Array.zeros(size, i32)
+    used: list[int] = []
+    for symbol in range(size):
+        if counts[symbol] > 0:
+            used.append(symbol)
+    forced = 0
+    while len(used) < 2:
+        if counts[forced] == 0:
+            used.append(forced)
+        forced += 1
+    n = len(used)
+    # Leaves sorted by frequency (then symbol), smallest first: an insertion sort of at most
+    # 286 symbols.
+    order = Array.zeros(n, int)
+    weights = Array.zeros(2 * n, int)
+    for i in range(n):
+        symbol = used[i]
+        weight = counts[symbol] if counts[symbol] > 0 else 1
+        j = i
+        while j > 0 and weights[j - 1] > weight:
+            weights[j] = weights[j - 1]
+            order[j] = order[j - 1]
+            j -= 1
+        weights[j] = weight
+        order[j] = symbol
+    # Two-queue Huffman: leaves 0..n-1 in order, internal nodes n..2n-2 in the order made.
+    parents = Array.zeros(2 * n, int)
+    leaf = 0
+    node = n
+    for made in range(n, 2 * n - 1):
+        children = Array.zeros(2, int)
+        for k in range(2):
+            if leaf < n and (node >= made or weights[leaf] <= weights[node]):
+                children[k] = leaf
+                leaf += 1
+            else:
+                children[k] = node
+                node += 1
+        weights[made] = weights[children[0]] + weights[children[1]]
+        parents[children[0]] = made
+        parents[children[1]] = made
+    depths = Array.zeros(2 * n, int)
+    for i in range(2 * n - 3, -1, -1):
+        depths[i] = depths[parents[i]] + 1
+    counts_by_length = Array.zeros(64, int)
+    for i in range(n):
+        counts_by_length[depths[i]] += 1
+    for length in range(limit + 1, 64):
+        counts_by_length[limit] += counts_by_length[length]
+        counts_by_length[length] = 0
+    total = 0
+    for length in range(1, limit + 1):
+        total += counts_by_length[length] << (limit - length)
+    while total != (1 << limit):
+        counts_by_length[limit] -= 1
+        for length in range(limit - 1, 0, -1):
+            if counts_by_length[length] > 0:
+                counts_by_length[length] -= 1
+                counts_by_length[length + 1] += 2
+                break
+        total -= 1
+    # The least frequent leaves take the longest lengths.
+    i = 0
+    for length in range(limit, 0, -1):
+        for _ in range(counts_by_length[length]):
+            lengths[order[i]] = i32(length)
+            i += 1
+    return lengths
+
+
+def _multiply32(a: int, b: int) -> int:
+    """`a * b` modulo 2 ** 32 for `a` and `b` below 2 ** 32, in 16-bit halves of `a` so no
+    product passes 2 ** 63, which would overflow a debug build."""
+    low = (a & 65535) * b
+    high = (((a >> 16) * b) & 65535) << 16
+    return (low + high) & 0xFFFFFFFF
+
+
+def _put(writer: InOut[_Writer], value: int, n: int):
+    """Writes the `n` lowest bits of `value`, at most 16, lowest first."""
+    writer.buffer = writer.buffer | (value << writer.count)
+    writer.count += n
+    if writer.length + 3 > len(writer.data):
+        grown = Array.zeros(2 * len(writer.data) + 16, u8)
+        for i in range(writer.length):
+            grown[i] = writer.data[i]
+        writer.data = grown
+    while writer.count >= 8:
+        writer.data[writer.length] = u8(writer.buffer & 255)
+        writer.length += 1
+        writer.buffer = writer.buffer >> 8
+        writer.count -= 8
+
+
+class _Sequences(Struct):
+    """A Zstandard block's sequences as the encoder gathers them: each copies `literal_lengths`
+    literals, then `match_lengths` bytes from the offset its Offset_Value names."""
+
+    literal_lengths: Array[i32, 1]
+    match_lengths: Array[i32, 1]
+    offsets: Array[i32, 1]  # each sequence's Offset_Value: the offset plus 3, or 1 to repeat the last
+    count: int
+
+
+def _literal_code(length: int) -> int:
+    """The literal-length code, 0 to 35, of a literal length (RFC 8878, section 3.1.1.3.2.1)."""
+    if length < 16:
+        return length
+    if length < 64:
+        lengths = [16, 18, 20, 22, 24, 28, 32, 40, 48]
+        code = 16
+        for k in range(1, 9):
+            if length >= lengths[k]:
+                code = 16 + k
+        return code
+    return 19 + _highest_bit(length)
+
+
+def _match_code(length: int) -> int:
+    """The match-length code, 0 to 52, of a match length from 3 (RFC 8878, section
+    3.1.1.3.2.1)."""
+    if length < 35:
+        return length - 3
+    if length < 131:
+        lengths = [35, 37, 39, 41, 43, 47, 51, 59, 67, 83, 99]
+        code = 32
+        for k in range(1, 11):
+            if length >= lengths[k]:
+                code = 32 + k
+        return code
+    return 36 + _highest_bit(length - 3)
+
+
+def _fse_encoder(counts: Array[i32, 1], symbol_count: int, log: int) -> tuple[Array[i32, 1], Array[int, 1], Array[int, 1]]:
+    """The FSE encoding tables for normalized counts, mirroring the decoding table's spread, as
+    zstd's `FSE_buildCTable`: the state table, then each symbol's `deltaNbBits` and
+    `deltaFindState`."""
+    size = 1 << log
+    spread = Array.zeros(size, i32)
+    cumulative = Array.zeros(symbol_count + 1, int)
+    high = size - 1
+    for symbol in range(symbol_count):
+        if counts[symbol] == -1:
+            cumulative[symbol + 1] = cumulative[symbol] + 1
+            spread[high] = i32(symbol)
+            high -= 1
+        else:
+            cumulative[symbol + 1] = cumulative[symbol] + int(counts[symbol])
+    step = (size >> 1) + (size >> 3) + 3
+    position = 0
+    for symbol in range(symbol_count):
+        for _ in range(int(counts[symbol])):
+            spread[position] = i32(symbol)
+            position = (position + step) & (size - 1)
+            while position > high:
+                position = (position + step) & (size - 1)
+    states = Array.zeros(size, i32)
+    next = cumulative.copy()
+    for u in range(size):
+        symbol = int(spread[u])
+        states[next[symbol]] = i32(size + u)
+        next[symbol] += 1
+    delta_bits = Array.zeros(symbol_count, int)
+    delta_states = Array.zeros(symbol_count, int)
+    total = 0
+    for symbol in range(symbol_count):
+        count = int(counts[symbol])
+        if count == 0:
+            delta_bits[symbol] = ((log + 1) << 16) - size
+        elif count == -1 or count == 1:
+            delta_bits[symbol] = (log << 16) - size
+            delta_states[symbol] = total - 1
+            total += 1
+        else:
+            out = log - _highest_bit(count - 1)
+            delta_bits[symbol] = (out << 16) - (count << out)
+            delta_states[symbol] = total - count
+            total += count
+    return (states, delta_bits, delta_states)
+
+
+def _fse_start(states: Array[i32, 1], delta_bits: Array[int, 1], delta_states: Array[int, 1], symbol: int) -> int:
+    """The encoder's state before the last symbol it encodes (the first the decoder reads), as
+    zstd's `FSE_initCState2`."""
+    out = (delta_bits[symbol] + (1 << 15)) >> 16
+    value = (out << 16) - delta_bits[symbol]
+    return int(states[(value >> out) + delta_states[symbol]])
+
+
+def _fse_encode(
+    writer: InOut[_Writer], state: int, states: Array[i32, 1], delta_bits: Array[int, 1], delta_states: Array[int, 1], symbol: int
+) -> int:
+    """Encodes `symbol` from `state`, writing the bits the decoder reads to reach `state`;
+    gives the new state."""
+    out = (state + delta_bits[symbol]) >> 16
+    _put(writer, state & ((1 << out) - 1), out)
+    return int(states[(state >> out) + delta_states[symbol]])
+
+
+def _predefined_counts(kind: int) -> Array[i32, 1]:
+    """The predefined normalized counts of RFC 8878, section 3.1.1.3.2.2, as `_fse_predefined`
+    holds them: `kind` 0 literal lengths, 1 offsets, 2 match lengths."""
+    values = [4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1]
+    if kind == 1:
+        values = [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1]
+    elif kind == 2:
+        values = [1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1]
+    counts = Array.zeros(len(values), i32)
+    for i in range(len(values)):
+        counts[i] = i32(values[i])
+    return counts
+
+
+def _normalized(frequencies: Array[int, 1], symbol_count: int, total: int, log: int) -> Array[i32, 1]:
+    """Frequencies scaled to sum to 2 ** log, every used symbol at least 1, the most frequent
+    taking up the rounding, for an FSE table of the block's own statistics. Gives counts all 0
+    when that leaves the most frequent below 1, so the caller keeps the predefined table."""
+    size = 1 << log
+    counts = Array.zeros(symbol_count, i32)
+    largest = 0
+    sum = 0
+    for symbol in range(symbol_count):
+        if frequencies[symbol] > 0:
+            scaled = (frequencies[symbol] * size + total // 2) // total
+            if scaled < 1:
+                scaled = 1
+            counts[symbol] = i32(scaled)
+            sum += scaled
+            if frequencies[symbol] > frequencies[largest]:
+                largest = symbol
+    adjusted = int(counts[largest]) + size - sum
+    if adjusted < 1:
+        return Array.zeros(symbol_count, i32)
+    counts[largest] = i32(adjusted)
+    return counts
+
+
+def _write_counts(writer: InOut[_Writer], counts: Array[i32, 1], symbol_count: int, log: int):
+    """Writes an FSE table description (RFC 8878, section 4.1.1) of normalized counts, as
+    zstd's `FSE_writeNCount`: the accuracy log, then each count in a variable number of bits,
+    runs of zeros as 2-bit repeat flags, padded to a whole byte."""
+    _put(writer, log - 5, 4)
+    remaining = (1 << log) + 1
+    threshold = 1 << log
+    width = log + 1
+    symbol = 0
+    previous_zero = False
+    while symbol < symbol_count and remaining > 1:
+        if previous_zero:
+            start = symbol
+            while symbol < symbol_count and counts[symbol] == 0:
+                symbol += 1
+            while symbol >= start + 3:
+                _put(writer, 3, 2)
+                start += 3
+            _put(writer, symbol - start, 2)
+        count = int(counts[symbol])
+        symbol += 1
+        largest = 2 * threshold - 1 - remaining
+        remaining -= count if count >= 0 else -count
+        count += 1
+        if count >= threshold:
+            count += largest
+        _put(writer, count, width - 1 if count < largest else width)
+        previous_zero = count == 1
+        while remaining < threshold:
+            width -= 1
+            threshold = threshold >> 1
+    _align(writer)
+
+
+def _write_sequences(writer: InOut[_Writer], sequences: _Sequences):
+    """Writes a block's sequences section (RFC 8878, section 3.1.1.3.2) with the predefined
+    tables: the count, the modes byte, then the backward bit stream, which holds the sequences
+    from last to first so the decoder reads them first to last."""
+    count = sequences.count
+    if count < 128:
+        _put(writer, count, 8)
+    elif count < 0x7F00:
+        _put(writer, (count >> 8) + 128, 8)
+        _put(writer, count & 255, 8)
+    else:
+        _put(writer, 255, 8)
+        _put(writer, (count - 0x7F00) & 255, 8)
+        _put(writer, (count - 0x7F00) >> 8, 8)
+    if count == 0:
+        return
+    literal_frequencies = Array.zeros(36, int)
+    offset_frequencies = Array.zeros(32, int)
+    match_frequencies = Array.zeros(53, int)
+    for index in range(count):
+        literal_frequencies[_literal_code(int(sequences.literal_lengths[index]))] += 1
+        offset_frequencies[_highest_bit(int(sequences.offsets[index]))] += 1
+        match_frequencies[_match_code(int(sequences.match_lengths[index]))] += 1
+    literal_counts = _predefined_counts(0)
+    offset_counts = _predefined_counts(1)
+    match_counts = _predefined_counts(2)
+    logs = [6, 5, 6]
+    modes = 0
+    if count >= 64:
+        log = min(9, max(5, _highest_bit(count)))
+        literal_own = _normalized(literal_frequencies, 36, count, log)
+        if literal_own[_literal_code(int(sequences.literal_lengths[0]))] > 0:
+            literal_counts = literal_own
+            logs[0] = log
+            modes = modes | 128
+        offset_own = _normalized(offset_frequencies, 32, count, min(log, 8))
+        if offset_own[_highest_bit(int(sequences.offsets[0]))] > 0:
+            offset_counts = offset_own
+            logs[1] = min(log, 8)
+            modes = modes | 32
+        match_own = _normalized(match_frequencies, 53, count, log)
+        if match_own[_match_code(int(sequences.match_lengths[0]))] > 0:
+            match_counts = match_own
+            logs[2] = log
+            modes = modes | 8
+    _put(writer, modes, 8)
+    if modes & 128 != 0:
+        _write_counts(writer, literal_counts, 36, logs[0])
+    if modes & 32 != 0:
+        _write_counts(writer, offset_counts, 32, logs[1])
+    if modes & 8 != 0:
+        _write_counts(writer, match_counts, 53, logs[2])
+    literal_states, literal_bits, literal_finds = _fse_encoder(literal_counts, len(literal_counts), logs[0])
+    offset_states, offset_bits, offset_finds = _fse_encoder(offset_counts, len(offset_counts), logs[1])
+    match_states, match_bits, match_finds = _fse_encoder(match_counts, len(match_counts), logs[2])
+    literal_values = _code_values(0)
+    match_values = _code_values(2)
+    last = count - 1
+    literal_code = _literal_code(int(sequences.literal_lengths[last]))
+    match_code = _match_code(int(sequences.match_lengths[last]))
+    offset_value = int(sequences.offsets[last])
+    offset_code = _highest_bit(offset_value)
+    match_state = _fse_start(match_states, match_bits, match_finds, match_code)
+    offset_state = _fse_start(offset_states, offset_bits, offset_finds, offset_code)
+    literal_state = _fse_start(literal_states, literal_bits, literal_finds, literal_code)
+    for index in range(last, -1, -1):
+        literal_length = int(sequences.literal_lengths[index])
+        match_length = int(sequences.match_lengths[index])
+        offset_value = int(sequences.offsets[index])
+        literal_code = _literal_code(literal_length)
+        match_code = _match_code(match_length)
+        offset_code = _highest_bit(offset_value)
+        if index < last:
+            offset_state = _fse_encode(writer, offset_state, offset_states, offset_bits, offset_finds, offset_code)
+            match_state = _fse_encode(writer, match_state, match_states, match_bits, match_finds, match_code)
+            literal_state = _fse_encode(writer, literal_state, literal_states, literal_bits, literal_finds, literal_code)
+        literal_extra = int(literal_values[36 + literal_code])
+        _put(writer, literal_length - int(literal_values[literal_code]), literal_extra)
+        match_extra = int(match_values[53 + match_code])
+        _put(writer, match_length - int(match_values[match_code]), match_extra)
+        if offset_code > 24:
+            _put(writer, offset_value & ((1 << 24) - 1), 24)
+            _put(writer, (offset_value - (1 << offset_code)) >> 24, offset_code - 24)
+        else:
+            _put(writer, offset_value - (1 << offset_code), offset_code)
+    _put(writer, match_state & ((1 << logs[2]) - 1), logs[2])
+    _put(writer, offset_state & ((1 << logs[1]) - 1), logs[1])
+    _put(writer, literal_state & ((1 << logs[0]) - 1), logs[0])
+    _put(writer, 1, 1)
+    _align(writer)
+
+
+def _literals_header(writer: InOut[_Writer], kind: int, size: int):
+    """Writes the header of a raw (`kind` 0) or one-byte (`kind` 1) literals section of `size`
+    bytes, in the shortest of its three forms."""
+    if size < 32:
+        _put(writer, kind | (size << 3), 8)
+    elif size < 4096:
+        _put(writer, kind | 4 | (size << 4), 16)
+    else:
+        _put(writer, kind | 12 | ((size & 15) << 4), 8)
+        _put(writer, size >> 4, 16)
+
+
+def _huffman_literals(writer: InOut[_Writer], literals: Array[u8, 1], stop: int) -> bool:
+    """Writes `literals[0:stop]` as a Huffman-coded literals section (RFC 8878, section 4.2)
+    with its tree as 4-bit weights, four streams past 1023 bytes. Gives False, writing nothing,
+    when the code would not save space or its weights do not fit the 4-bit form, which needs
+    every literal below 129."""
+    counts = Array.zeros(256, int)
+    largest = 0
+    distinct = 0
+    for i in range(stop):
+        symbol = int(literals[i])
+        if counts[symbol] == 0:
+            distinct += 1
+        counts[symbol] += 1
+        if symbol > largest:
+            largest = symbol
+    if largest > 128 or distinct < 2 or stop < 64:
+        return False
+    lengths = _limited_lengths(counts, largest + 1, 11)
+    log = 0
+    for symbol in range(largest + 1):
+        if int(lengths[symbol]) > log:
+            log = int(lengths[symbol])
+    bits = 0
+    for symbol in range(largest + 1):
+        bits += counts[symbol] * int(lengths[symbol])
+    tree_bytes = 1 + (largest + 1) // 2
+    streams = 1 if stop <= 1023 else 4
+    estimate = tree_bytes + bits // 8 + 4 * streams + (3 if streams == 1 else 9)
+    if estimate >= stop:
+        return False
+    weights = Array.zeros(largest + 1, int)
+    for symbol in range(largest + 1):
+        if lengths[symbol] > 0:
+            weights[symbol] = log + 1 - int(lengths[symbol])
+    # Codes in the decoder's order: by weight, then by symbol, each weight's codes after the
+    # lighter ones', as `_huffman_read` lays out its table.
+    codes = Array.zeros(largest + 1, int)
+    start = 0
+    for weight in range(1, log + 1):
+        for symbol in range(largest + 1):
+            if weights[symbol] == weight:
+                codes[symbol] = start >> (weight - 1)
+                start += 1 << (weight - 1)
+    body = _Writer(Array.zeros(stop // 2 + 64, u8), 0, 0, 0)
+    body_sizes = Array.zeros(4, int)
+    share = (stop + 3) // 4
+    for k in range(streams):
+        first = 0 if streams == 1 else min(stop, share * k)
+        last = stop if streams == 1 else min(stop, share * (k + 1))
+        before = body.length
+        for i in range(last - 1, first - 1, -1):
+            symbol = int(literals[i])
+            _put(body, codes[symbol], int(lengths[symbol]))
+        _put(body, 1, 1)
+        _align(body)
+        body_sizes[k] = body.length - before
+    compressed = tree_bytes + body.length + (6 if streams == 4 else 0)
+    if compressed >= stop or (streams == 4 and (body_sizes[0] > 65535 or body_sizes[1] > 65535 or body_sizes[2] > 65535)):
+        return False
+    form = 0
+    header_bytes = 3
+    field = 10
+    if streams == 4:
+        form = 1
+        if stop >= 1024 or compressed >= 1024:
+            form = 2
+            header_bytes = 4
+            field = 14
+        if stop >= 16384 or compressed >= 16384:
+            form = 3
+            header_bytes = 5
+            field = 18
+    header = 2 | (form << 2) | (stop << 4) | (compressed << (4 + field))
+    for i in range(header_bytes):
+        _put(writer, (header >> (8 * i)) & 255, 8)
+    _put(writer, 127 + largest, 8)
+    for i in range(0, largest, 2):
+        high = weights[i]
+        low = weights[i + 1] if i + 1 < largest else 0
+        _put(writer, (high << 4) | low, 8)
+    if streams == 4:
+        for k in range(3):
+            _put(writer, body_sizes[k], 16)
+    for i in range(body.length):
+        _put(writer, int(body.data[i]), 8)
+    return True
+
+
+def _zstd_block(
+    writer: InOut[_Writer],
+    data: Array[u8, 1],
+    start: int,
+    stop: int,
+    last: bool,
+    heads: InOut[Array[i32, 1]],
+    links: InOut[Array[i32, 1]],
+    repeats: InOut[Array[int, 1]],
+    tries: int,
+):
+    """Compresses `data[start:stop]`, at most 128 KiB, as one block: matches of 4 bytes or more
+    found on 16-step hash chains across everything before it, up to 1 MiB back, or at the last
+    offset, which costs fewer bits (`repeats` mirrors the decoder's repeated offsets), the literals
+    Huffman-coded where that pays, and the block stored raw, or as one repeated byte, when
+    that is smaller. `tries` is how many links of a chain to follow, as the level sets it;
+    `links` holds a power-of-two number of entries, enough for every position."""
+    literals = Array.zeros(stop - start, u8)
+    literal_count = 0
+    capacity = (stop - start) // 4 + 1
+    sequences = _Sequences(Array.zeros(capacity, i32), Array.zeros(capacity, i32), Array.zeros(capacity, i32), 0)
+    position = start
+    anchor = start
+    while position + 4 <= stop:
+        word = _word(data, position, 4, False)
+        hash = _multiply32(word, 0x9E3779B1) >> 15
+        candidate = int(heads[hash]) - 1
+        links[position & (len(links) - 1)] = heads[hash]
+        heads[hash] = i32(position + 1)
+        best = 0
+        distance = 0
+        left = tries
+        while candidate >= 0 and position - candidate <= 1048575 and left > 0:
+            if _word(data, candidate, 4, False) == word:
+                length = 4
+                while position + length < stop and data[candidate + length] == data[position + length]:
+                    length += 1
+                if length > best:
+                    best = length
+                    distance = position - candidate
+            following = int(links[candidate & (len(links) - 1)]) - 1
+            if following >= candidate:
+                break
+            candidate = following
+            left -= 1
+        value = distance + 3
+        last_offset = repeats[0]
+        if position > anchor and position - last_offset >= 0:
+            length = 0
+            while position + length < stop and data[position - last_offset + length] == data[position + length]:
+                length += 1
+            if length >= 4 and length + 1 >= best:
+                best = length
+                distance = last_offset
+                value = 1
+        if best >= 4:
+            if value != 1:
+                repeats[2] = repeats[1]
+                repeats[1] = repeats[0]
+                repeats[0] = distance
+            for i in range(anchor, position):
+                literals[literal_count] = data[i]
+                literal_count += 1
+            index = sequences.count
+            sequences.literal_lengths[index] = i32(position - anchor)
+            sequences.match_lengths[index] = i32(best)
+            sequences.offsets[index] = i32(value)
+            sequences.count += 1
+            stop_insert = min(position + best, stop - 3)
+            for inserted in range(position + 1, stop_insert):
+                inserted_hash = _multiply32(_word(data, inserted, 4, False), 0x9E3779B1) >> 15
+                links[inserted & (len(links) - 1)] = heads[inserted_hash]
+                heads[inserted_hash] = i32(inserted + 1)
+            position += best
+            anchor = position
+        else:
+            position += 1
+    for i in range(anchor, stop):
+        literals[literal_count] = data[i]
+        literal_count += 1
+    size = stop - start
+    same = True
+    for i in range(start + 1, stop):
+        if data[i] != data[start]:
+            same = False
+            break
+    final = 1 if last else 0
+    if same and size > 0:
+        _put(writer, final | 2 | ((size & 31) << 3), 8)
+        _put(writer, size >> 5, 16)
+        _put(writer, int(data[start]), 8)
+        return
+    body = _Writer(Array.zeros(size + 64, u8), 0, 0, 0)
+    if not _huffman_literals(body, literals, literal_count):
+        _literals_header(body, 0, literal_count)
+        for i in range(literal_count):
+            _put(body, int(literals[i]), 8)
+    _write_sequences(body, sequences)
+    if body.length >= size:
+        _put(writer, final | ((size & 31) << 3), 8)
+        _put(writer, size >> 5, 16)
+        for i in range(start, stop):
+            _put(writer, int(data[i]), 8)
+        return
+    _put(writer, final | 4 | ((body.length & 31) << 3), 8)
+    _put(writer, body.length >> 5, 16)
+    for i in range(body.length):
+        _put(writer, int(body.data[i]), 8)
+
+
+def _zstd(data: Array[u8, 1], writer: InOut[_Writer], tries: int):
+    """Compresses `data` as one Zstandard frame (RFC 8878): a frame header with the content
+    size, 128 KiB blocks, and the XXH64 content checksum. Data of 1 MiB or less is one
+    segment, whose window is the whole content; larger data names a 1 MiB window, the farthest
+    the matches reach, so a decoder needs only that much memory."""
+    n = len(data)
+    _put(writer, 0xFD2FB528 & 65535, 16)
+    _put(writer, 0xFD2FB528 >> 16, 16)
+    if n > 1048576:
+        _put(writer, 192 | 4, 8)
+        _put(writer, (20 - 10) << 3, 8)
+        for i in range(4):
+            _put(writer, (n >> (16 * i)) & 65535, 16)
+    elif n < 256:
+        _put(writer, 32 | 4, 8)
+        _put(writer, n, 8)
+    elif n < 65536 + 256:
+        _put(writer, 64 | 32 | 4, 8)
+        _put(writer, n - 256, 16)
+    elif n <= 0xFFFFFFFF:
+        _put(writer, 128 | 32 | 4, 8)
+        _put(writer, n & 65535, 16)
+        _put(writer, n >> 16, 16)
+    else:
+        _put(writer, 192 | 32 | 4, 8)
+        for i in range(4):
+            _put(writer, (n >> (16 * i)) & 65535, 16)
+    heads = Array.zeros(131072, i32)
+    size = 1
+    while size < min(n, 1048576):
+        size *= 2
+    links = Array.zeros(size, i32)
+    repeats = Array.zeros(3, int)
+    repeats[0] = 1
+    repeats[1] = 4
+    repeats[2] = 8
+    if n == 0:
+        _put(writer, 1, 8)
+        _put(writer, 0, 16)
+    start = 0
+    while start < n:
+        stop = min(start + 131072, n)
+        _zstd_block(writer, data, start, stop, stop == n, heads, links, repeats, tries)
+        start = stop
+    checksum = int(_xxh64(data, 0, n) & u64(0xFFFFFFFF))
+    _put(writer, checksum & 65535, 16)
+    _put(writer, checksum >> 16, 16)
