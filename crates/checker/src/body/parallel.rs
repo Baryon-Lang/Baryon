@@ -222,6 +222,24 @@ impl Body<'_> {
         self.reductions(&parallel, &accesses, &elements);
     }
 
+    /// Reports `sys.exit`, the call `node`, when it stands in the body of a `prange` or `simd`
+    /// loop: it would end the program while other iterations run and write their files, which
+    /// it writes out (roadmap 1.13.17). An exit reached through a call panics instead, in the
+    /// runtime.
+    pub(super) fn exit_in_loop(&mut self, node: NodeId) {
+        let Some(parallel) = self.parallel.last() else {
+            return;
+        };
+        let message = format!("a {} cannot end early", parallel.kind.noun());
+        let diagnostic = Diagnostic::error(message)
+            .with_primary(self.tree.span(node), "ends the program from inside the loop")
+            .with_secondary(self.tree.span(parallel.call), parallel.kind.together())
+            .with_note(
+                "every iteration runs; count failures with `failed += 1` and call `sys.exit` after the loop",
+            );
+        self.lowerer.diagnostics.push(diagnostic);
+    }
+
     /// Reports each `return` and `break` inside `node` that would leave the loop. `nested`
     /// says a loop inside the parallel one holds `node`. An error that would leave it, from
     /// `raise` or a call, is the `errors` module's to report, as it knows which `try` catches

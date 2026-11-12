@@ -165,7 +165,8 @@ pub unsafe extern "C" fn baryon_rt_environment_entries(out: *mut OwnedList) {
 /// # Panics
 ///
 /// Ends the program with a panic, reporting `location`, when `status` is outside 0 to 255, the
-/// statuses Linux and macOS can report to the program's parent.
+/// statuses Linux and macOS can report to the program's parent, and when it is called inside a
+/// parallel loop's body, where other iterations may be writing the files it would write out.
 ///
 /// # Safety
 ///
@@ -180,6 +181,16 @@ pub unsafe extern "C" fn baryon_rt_exit(status: i64, location: *const Location) 
             super::location(location)
         });
     };
+    if crate::parallel::in_loop() {
+        // Other iterations may be writing their files on other threads, so writing every file
+        // out here would race with them. The checker rejects `sys.exit` written in a `prange`
+        // body; this catches one reached through a call.
+        // SAFETY: the caller's promise about `location`, passed on.
+        panic(
+            Failure::Message("`sys.exit` cannot end the program inside a parallel loop"),
+            unsafe { super::location(location) },
+        );
+    }
     print::flush();
     crate::files::flush_all();
     std::process::exit(status)
