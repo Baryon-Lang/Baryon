@@ -96,8 +96,8 @@ pub const BUILTINS: [&str; 60] = [
 /// files, named as Python's `gzip` is, and `compression.zstd` roadmap 3.27.7's Zstandard
 /// frames, named as Python 3.14's `compression.zstd` is. Its file is
 /// `<std>/compression.zstd.byn`, so [`library_module`](crate::library_module) gives its dotted
-/// name.
-pub const STANDARD_MODULES: [&str; 21] = [
+/// name. `bz2` is roadmap 3.27.9's bzip2 streams, named as Python's `bz2` is.
+pub const STANDARD_MODULES: [&str; 22] = [
     "math",
     "random",
     "sys",
@@ -119,6 +119,7 @@ pub const STANDARD_MODULES: [&str; 21] = [
     "zlib",
     "gzip",
     "compression.zstd",
+    "bz2",
 ];
 
 /// What a name refers to.
