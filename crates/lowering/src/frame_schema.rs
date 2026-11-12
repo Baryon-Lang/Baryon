@@ -39,7 +39,8 @@ impl Builder<'_> {
         self.assign(place, Rvalue::Aggregate(ty, copies), node);
     }
 
-    /// The call `node` of `assign`, `drop` or `rename` on the frame `frame`, into `place`. `false`, with nothing lowered, for any other method.
+    /// The call `node` of `assign`, `drop` or `rename` on the frame `frame`, into `place`.
+    /// `false`, with nothing lowered, for any other method.
     ///
     /// The arguments are computed before the frame is taken, since
     /// `df.assign(total=df.a + df.b)` reads the frame it then moves.
