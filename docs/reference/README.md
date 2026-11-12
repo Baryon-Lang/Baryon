@@ -38,6 +38,7 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Files and processes](files-and-processes.md) | Command-line arguments, the exit status and environment variables: `sys` and `os` |
 | [Data files](data-files.md) | Text tables of numbers, NumPy's `.npy` files and the other data file formats, with NumPy's names: `Array.loadtxt`, `Array.savetxt`, `Array.load` and `Array.save` |
 | [Plotting](plotting.md) | The `pyplot` and `ticker` modules: line plots with matplotlib's names and look, saved as SVG |
+| [Compression](compression.md) | The `zlib` module and the other compression formats, with Python's names, on byte arrays |
 | [Differences from Python](differences-from-python.md) | Every place a Python programmer will be surprised, with the reason |
 | [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |
 | [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |

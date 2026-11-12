@@ -45,6 +45,7 @@ reason in a line.
 | `from . import x` imports relative to the current package | Imports always name modules from the package root | An import reads the same wherever the file sits. [Source files](syntax.md#source-files) |
 | A leading `_` marks a name private by convention only | A leading `_` makes a name private to its module; importing it is an error | A module's private helpers stay free to change. [Source files](syntax.md#source-files) |
 | `numpy.loadtxt` gives a rank-1 array for a file of one row or column and a table otherwise | `Array.loadtxt` gives a table, `Array[f64, 2]`, unless the context asks for `Array[f64, 1]`; a rank-1 result from a table raises `ValueError` | The rank is part of an array's type, so it is known before the file is read. [Text tables](data-files.md#text-tables) |
+| `zlib.decompress` takes and gives `bytes`, and raises `zlib.error` for a corrupt stream | It takes and gives `Array[u8, 1]`, and raises `OSError` with the kind `INVALID_DATA` and Python's message | Baryon has no `bytes` type yet, and one error type covers every file and stream it cannot read. [Compression](compression.md#errors) |
 
 ## What Python has that version 0 does not
 

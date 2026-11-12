@@ -49,7 +49,7 @@ impl<'db> Function<'_, '_, 'db> {
     /// Writes `result = instruction` with a fresh name and returns the name.
     pub(crate) fn emit(&mut self, instruction: &str) -> String {
         let result = self.fresh();
-        self.line(&format!("{result} = {instruction}"));
+        self.line_with_result(&result, instruction);
         result
     }
 

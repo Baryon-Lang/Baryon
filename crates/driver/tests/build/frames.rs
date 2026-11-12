@@ -1,6 +1,7 @@
 //! Frames (roadmap 3.13.2, decision 0045), built and run: a `DataFrame` built from arrays, its
 //! columns read, changed and replaced, `len`, `shape`, `columns` and `copy`, and the panics
-//! that keep every column of a frame one length.
+//! that keep every column of a frame one length, and a frame as a generic function's type
+//! argument.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -96,6 +97,33 @@ def main():
 (3, 2)
 "
     );
+}
+
+/// A frame is the type argument of a generic function, moved in and returned, alone and
+/// inside a tuple: the call site sees the frame's storage where the callee names `T`.
+#[test]
+fn frames_pass_through_generic_functions() {
+    let program = r#"
+class Trade(Struct):
+    price: f64
+    volume: i64
+
+def first[T](x: Owned[T]) -> T:
+    return x
+
+def pair[T](x: Owned[T], n: i64) -> tuple[T, i64]:
+    return (x, n)
+
+def main():
+    df: DataFrame[Trade] = DataFrame({"price": Array([1.5, 2.5]), "volume": Array([1, 2])})
+    back = first(df)
+    print(len(back), back.price[1])
+    both = pair(back, 3)
+    print(both[1], both[0].volume[0])
+"#;
+    let (code, stdout, report) = run("frames-generic", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, "2 2.5\n3 1\n");
 }
 
 /// Columns of two lengths panic when the frame is built, and a new column of another length

@@ -195,6 +195,17 @@ impl<'db> Builder<'db> {
             Some(class) => class.into_iter().chain(type_arguments).collect::<Vec<_>>(),
             None => return self.unsupported(node, "a method call on this receiver"),
         };
+        // Each argument is moved, converted or borrowed at the parameter's type with this
+        // call's type arguments in place; in a generic caller they may be its own type
+        // parameters (the `generics` module).
+        let generic = self.type_parameters(item, signature);
+        let parameters: Vec<(Mode, types::Type<'db>)> = parameters
+            .into_iter()
+            .map(|(mode, ty)| match ty.kind(self.db) {
+                TypeKind::Callable { .. } => (mode, ty),
+                _ => (mode, self.instantiate(ty, &generic, &type_arguments)),
+            })
+            .collect();
         // Each `Callable` parameter is an implicit type parameter after the written ones, and
         // its argument is the type of the function passed (decision 0026).
         for (&argument, (_, ty)) in arguments.iter().zip(&parameters) {

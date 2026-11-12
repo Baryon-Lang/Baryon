@@ -1,0 +1,585 @@
+"""The `zlib` module: deflate streams (RFC 1951) in their zlib (RFC 1950) and gzip (RFC 1952)
+containers, with Python's names, written in Baryon (decision 0049).
+
+Bytes are `Array[u8, 1]` where Python has `bytes`. Data that is not a valid stream raises
+`OSError` with the kind `INVALID_DATA` and the message Python's `zlib.error` carries, such as
+`Error -3 while decompressing data: invalid block type`.
+"""
+
+from os import ErrorKind
+
+
+def decompress(data: Array[u8, 1], wbits: int = 15, bufsize: int = 16384) -> Raises[Array[u8, 1], OSError]:
+    """The bytes `data` holds compressed, as `zlib.decompress(data, wbits, bufsize)` gives them.
+
+    `wbits` names the container as in Python: 8 to 15 a zlib stream whose window is at most
+    2 ** wbits bytes, 0 a zlib stream of any window, -8 to -15 a raw deflate stream, 16 plus
+    those a gzip member, and 32 plus them either, told apart by the first bytes. Bytes after the
+    stream are ignored, as Python ignores them; a gzip member is read alone, so use
+    `gzip.decompress` for files of several members. `bufsize` is the first size of the output
+    buffer, which doubles as needed.
+
+    Raises `OSError` with the kind `INVALID_DATA` for a stream that is corrupt, truncated or of
+    another container, and for a `wbits` Python rejects. Costs one pass over `data` and over the
+    output, plus O(log n) copies of the output as its buffer grows.
+    """
+    output = _Output(Array.zeros(max(bufsize, 64), u8), 0)
+    error = _decompress(data, wbits, output)
+    if error != 0:
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(error), "")
+    exact = Array.zeros(output.length, u8)
+    for i in range(output.length):
+        exact[i] = output.data[i]
+    return exact
+
+
+def crc32(data: Array[u8, 1], value: int = 0) -> int:
+    """The CRC-32 of `data` (ISO 3309, as gzip and PNG use it), continuing the checksum `value`
+    of the bytes before it, as `zlib.crc32(data, value)` gives it: a number from 0 to
+    2 ** 32 - 1. Costs one table lookup per byte.
+    """
+    return _crc32(data, 0, len(data), value & 0xFFFFFFFF, _crc_table())
+
+
+def adler32(data: Array[u8, 1], value: int = 1) -> int:
+    """The Adler-32 checksum of `data` (RFC 1950, as zlib streams end with it), continuing the
+    checksum `value` of the bytes before it, as `zlib.adler32(data, value)` gives it: a number
+    from 0 to 2 ** 32 - 1. Costs two additions per byte.
+    """
+    return _adler32(data, 0, len(data), value & 0xFFFFFFFF)
+
+
+def _decompress(data: Array[u8, 1], wbits: int, output: InOut[_Output]) -> int:
+    """Decodes `data` in the container `wbits` names, as `decompress` describes, into `output`;
+    gives an error code for `_message`, 0 for none."""
+    window = wbits
+    container = 0
+    if wbits < 0:
+        window = -wbits
+        container = 2
+    elif wbits >= 32:
+        window = wbits - 32
+        container = 3
+    elif wbits >= 16:
+        window = wbits - 16
+        container = 1
+    if window > 15 or (window < 8 and not (window == 0 and wbits >= 0)):
+        return 21
+    if container == 3:
+        container = 1 if len(data) >= 2 and data[0] == 31 and data[1] == 139 else 0
+    if container == 2:
+        return _inflate(data, 0, output)[0]
+    if container == 1:
+        return _gzip_member(data, output)
+    return _zlib_stream(data, window, output)
+
+
+class _Bits(Struct):
+    """Where a decoder stands in its input: DEFLATE reads bits from the lowest bit of each byte
+    up, so bits not yet used wait in `buffer`, lowest first."""
+
+    position: int  # the next byte of the input to load into `buffer`
+    buffer: int  # bits loaded and not yet used, the next one lowest
+    count: int  # how many bits `buffer` holds, at most 63
+
+
+class _Output(Struct):
+    """The bytes decoded so far: the first `length` bytes of `data`, whose length doubles when
+    it fills, so n bytes cost O(n) copying in all."""
+
+    data: Array[u8, 1]
+    length: int
+
+
+class _Table(Struct):
+    """A Huffman code as a table read by the next `bits` input bits: entry `i` is
+    `symbol * 16 + length` for the code whose reversed bits start `i`, or 0 where no code does.
+    `bits` is the longest code's length, at most 15, so the table has 2 ** bits entries."""
+
+    entries: Array[i32, 1]
+    bits: int
+
+
+def _fill(bits: InOut[_Bits], data: Array[u8, 1], n: int):
+    """Loads bytes until `bits` holds at least `n` bits or the input ends."""
+    while bits.count < n and bits.position < len(data):
+        bits.buffer = bits.buffer | (int(data[bits.position]) << bits.count)
+        bits.position += 1
+        bits.count += 8
+
+
+def _take(bits: InOut[_Bits], data: Array[u8, 1], n: int) -> int:
+    """The next `n` bits as a number, first bit lowest, or -1 when the input ends first."""
+    _fill(bits, data, n)
+    if bits.count < n:
+        return -1
+    value = bits.buffer & ((1 << n) - 1)
+    bits.buffer = bits.buffer >> n
+    bits.count -= n
+    return value
+
+
+def _reverse(code: int, length: int) -> int:
+    """`code`'s lowest `length` bits in the opposite order."""
+    reversed = 0
+    for _ in range(length):
+        reversed = (reversed << 1) | (code & 1)
+        code = code >> 1
+    return reversed
+
+
+def _table(lengths: Array[i32, 1], start: int, count: int, kind: int) -> _Table:
+    """The table of the canonical Huffman code whose code lengths are
+    `lengths[start:start + count]` (RFC 1951, section 3.2.2). `kind` is 0 for the code-length
+    code, which must be complete, and 1 for the literal/length and distance codes, which may be
+    incomplete only when they have a single code, of length 1, as zlib allows. Gives a table of
+    `bits` -1 for a set of lengths that is over-subscribed or wrongly incomplete."""
+    counts = Array.zeros(16, int)
+    longest = 0
+    for symbol in range(count):
+        length = int(lengths[start + symbol])
+        counts[length] += 1
+        if length > longest:
+            longest = length
+    if longest == 0:
+        return _Table(Array.zeros(2, i32), 1)
+    left = 1
+    for length in range(1, 16):
+        left = (left << 1) - counts[length]
+        if left < 0:
+            return _Table(Array.zeros(1, i32), -1)
+    if left > 0 and (kind == 0 or longest != 1):
+        return _Table(Array.zeros(1, i32), -1)
+    counts[0] = 0
+    next_code = Array.zeros(16, int)
+    code = 0
+    for length in range(1, 16):
+        code = (code + counts[length - 1]) << 1
+        next_code[length] = code
+    size = 1 << longest
+    entries = Array.zeros(size, i32)
+    for symbol in range(count):
+        length = int(lengths[start + symbol])
+        if length > 0:
+            first = _reverse(next_code[length], length)
+            next_code[length] += 1
+            entry = i32(symbol * 16 + length)
+            step = 1 << length
+            index = first
+            while index < size:
+                entries[index] = entry
+                index += step
+    return _Table(entries, longest)
+
+
+def _decode(bits: InOut[_Bits], data: Array[u8, 1], table: _Table) -> int:
+    """The next symbol of `table`'s code, -1 when the input ends inside it, or -2 for bits that
+    start no code."""
+    _fill(bits, data, table.bits)
+    entry = int(table.entries[bits.buffer & ((1 << table.bits) - 1)])
+    length = entry & 15
+    if length == 0:
+        if bits.count < table.bits:
+            return -1
+        return -2
+    if length > bits.count:
+        return -1
+    bits.buffer = bits.buffer >> length
+    bits.count -= length
+    return entry >> 4
+
+
+def _reserve(output: InOut[_Output], extra: int):
+    """Makes room for `extra` more bytes, doubling the buffer as needed."""
+    needed = output.length + extra
+    if needed <= len(output.data):
+        return
+    size = 2 * len(output.data)
+    if size < needed:
+        size = needed
+    grown = Array.zeros(size, u8)
+    for i in range(output.length):
+        grown[i] = output.data[i]
+    output.data = grown
+
+
+def _stored(bits: InOut[_Bits], data: Array[u8, 1], output: InOut[_Output]) -> int:
+    """Copies a stored block (RFC 1951, section 3.2.4), from the byte after its header; gives
+    an error code, 0 for none."""
+    bits.buffer = bits.buffer >> (bits.count & 7)
+    bits.count -= bits.count & 7
+    length = _take(bits, data, 16)
+    complement = _take(bits, data, 16)
+    if complement < 0:
+        return 1
+    if length != (complement ^ 65535):
+        return 3
+    # Whole bytes still in the buffer were loaded ahead; step back so the copy starts there.
+    bits.position -= bits.count >> 3
+    bits.buffer = 0
+    bits.count = 0
+    if bits.position + length > len(data):
+        return 1
+    _reserve(output, length)
+    for i in range(length):
+        output.data[output.length + i] = data[bits.position + i]
+    output.length += length
+    bits.position += length
+    return 0
+
+
+def _huffman(
+    bits: InOut[_Bits],
+    data: Array[u8, 1],
+    output: InOut[_Output],
+    literals: _Table,
+    distances: _Table,
+    bases: Array[i32, 1],
+) -> int:
+    """Decodes one block coded with `literals` and `distances` up to its end-of-block symbol
+    (RFC 1951, section 3.2.5); gives an error code, 0 for none. `bases` holds each length
+    symbol's base and extra bits, then each distance symbol's."""
+    while True:
+        symbol = _decode(bits, data, literals)
+        if symbol < 0:
+            return 1 if symbol == -1 else 10
+        if symbol < 256:
+            if output.length == len(output.data):
+                _reserve(output, 1)
+            output.data[output.length] = u8(symbol)
+            output.length += 1
+        elif symbol == 256:
+            return 0
+        else:
+            symbol -= 257
+            if symbol >= 29:
+                return 10
+            extra = _take(bits, data, int(bases[29 + symbol]))
+            if extra < 0:
+                return 1
+            length = int(bases[symbol]) + extra
+            code = _decode(bits, data, distances)
+            if code < 0:
+                return 1 if code == -1 else 11
+            if code >= 30:
+                return 11
+            extra = _take(bits, data, int(bases[88 + code]))
+            if extra < 0:
+                return 1
+            distance = int(bases[58 + code]) + extra
+            if distance > output.length:
+                return 12
+            _reserve(output, length)
+            source = output.length - distance
+            for i in range(length):
+                output.data[output.length + i] = output.data[source + i]
+            output.length += length
+
+
+def _bases() -> Array[i32, 1]:
+    """The base lengths of length symbols 257 to 285 (29 entries), their extra bits (29), the base
+    distances of distance codes 0 to 29 (30) and their extra bits (30), from RFC 1951's tables."""
+    bases = Array.zeros(118, i32)
+    length = 3
+    for symbol in range(28):
+        extra = 0 if symbol < 8 else (symbol - 4) // 4
+        bases[symbol] = i32(length)
+        bases[29 + symbol] = i32(extra)
+        length += 1 << extra
+    bases[28] = i32(258)
+    bases[57] = i32(0)
+    distance = 1
+    for code in range(30):
+        extra = 0 if code < 4 else (code - 2) // 2
+        bases[58 + code] = i32(distance)
+        bases[88 + code] = i32(extra)
+        distance += 1 << extra
+    return bases
+
+
+def _failed(error: int) -> tuple[_Table, _Table, int]:
+    """What `_dynamic` gives for error code `error`: two empty tables and the code."""
+    return (_Table(Array.zeros(1, i32), -1), _Table(Array.zeros(1, i32), -1), error)
+
+
+def _dynamic(bits: InOut[_Bits], data: Array[u8, 1]) -> tuple[_Table, _Table, int]:
+    """Reads a dynamic block's code definitions (RFC 1951, section 3.2.7): the literal/length
+    and distance tables, and an error code, 0 for none."""
+    literal_count = _take(bits, data, 5)
+    distance_count = _take(bits, data, 5)
+    code_count = _take(bits, data, 4)
+    if code_count < 0:
+        return _failed(1)
+    literal_count += 257
+    distance_count += 1
+    code_count += 4
+    if literal_count > 286 or distance_count > 30:
+        return _failed(4)
+    order = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+    code_lengths = Array.zeros(19, i32)
+    for i in range(code_count):
+        length = _take(bits, data, 3)
+        if length < 0:
+            return _failed(1)
+        code_lengths[order[i]] = i32(length)
+    codes = _table(code_lengths, 0, 19, 0)
+    if codes.bits < 0:
+        return _failed(5)
+    total = literal_count + distance_count
+    lengths = Array.zeros(total, i32)
+    filled = 0
+    while filled < total:
+        symbol = _decode(bits, data, codes)
+        if symbol == -1:
+            return _failed(1)
+        if symbol < 0:
+            return _failed(5)
+        if symbol < 16:
+            lengths[filled] = i32(symbol)
+            filled += 1
+        else:
+            repeated = 0
+            times = 0
+            if symbol == 16:
+                if filled == 0:
+                    return _failed(6)
+                repeated = int(lengths[filled - 1])
+                times = 3 + _take(bits, data, 2)
+                if times < 3:
+                    return _failed(1)
+            elif symbol == 17:
+                times = 3 + _take(bits, data, 3)
+                if times < 3:
+                    return _failed(1)
+            else:
+                times = 11 + _take(bits, data, 7)
+                if times < 11:
+                    return _failed(1)
+            if filled + times > total:
+                return _failed(6)
+            for _ in range(times):
+                lengths[filled] = i32(repeated)
+                filled += 1
+    if lengths[256] == 0:
+        return _failed(7)
+    literals = _table(lengths, 0, literal_count, 1)
+    if literals.bits < 0:
+        return _failed(8)
+    distances = _table(lengths, literal_count, distance_count, 1)
+    if distances.bits < 0:
+        return _failed(9)
+    return (literals, distances, 0)
+
+
+def _fixed() -> tuple[_Table, _Table]:
+    """The fixed literal/length and distance tables of RFC 1951, section 3.2.6."""
+    lengths = Array.zeros(320, i32)
+    for symbol in range(288):
+        if symbol < 144:
+            lengths[symbol] = i32(8)
+        elif symbol < 256:
+            lengths[symbol] = i32(9)
+        elif symbol < 280:
+            lengths[symbol] = i32(7)
+        else:
+            lengths[symbol] = i32(8)
+    for code in range(32):
+        lengths[288 + code] = i32(5)
+    return (_table(lengths, 0, 288, 1), _table(lengths, 288, 32, 1))
+
+
+def _inflate(data: Array[u8, 1], start: int, output: InOut[_Output]) -> tuple[int, int]:
+    """Decodes the raw DEFLATE stream (RFC 1951) that starts at byte `start` of `data`, adding
+    its bytes to `output`. Gives the error code, 0 for none, and the position of the first byte
+    after the stream."""
+    bits = _Bits(start, 0, 0)
+    bases = _bases()
+    fixed = _fixed()
+    final = 0
+    while final == 0:
+        header = _take(bits, data, 3)
+        if header < 0:
+            return (1, bits.position)
+        final = header & 1
+        kind = header >> 1
+        error = 0
+        if kind == 0:
+            error = _stored(bits, data, output)
+        elif kind == 1:
+            error = _huffman(bits, data, output, fixed[0], fixed[1], bases)
+        elif kind == 2:
+            tables = _dynamic(bits, data)
+            error = tables[2]
+            if error == 0:
+                error = _huffman(bits, data, output, tables[0], tables[1], bases)
+        else:
+            error = 2
+        if error != 0:
+            return (error, bits.position)
+    return (0, bits.position - (bits.count >> 3))
+
+
+def _adler32(data: Array[u8, 1], start: int, stop: int, value: int) -> int:
+    """The Adler-32 checksum (RFC 1950, section 9) of `data[start:stop]`, continuing from
+    `value`, as `zlib.adler32(data, value)` gives it. The sums are reduced every 5552 bytes,
+    zlib's NMAX, the most that cannot overflow 32 bits."""
+    low = value & 65535
+    high = (value >> 16) & 65535
+    position = start
+    while position < stop:
+        chunk = min(stop, position + 5552)
+        for i in range(position, chunk):
+            low += int(data[i])
+            high += low
+        low = low % 65521
+        high = high % 65521
+        position = chunk
+    return (high << 16) | low
+
+
+def _crc_table() -> Array[u32, 1]:
+    """The CRC-32 table for the reflected polynomial 0xEDB88320 (ISO 3309, RFC 1952): entry `n`
+    is the CRC of the byte `n`."""
+    table = Array.zeros(256, u32)
+    for n in range(256):
+        c = n
+        for _ in range(8):
+            if c & 1 == 1:
+                c = 0xEDB88320 ^ (c >> 1)
+            else:
+                c = c >> 1
+        table[n] = u32(c)
+    return table
+
+
+def _crc32(data: Array[u8, 1], start: int, stop: int, value: int, table: Array[u32, 1]) -> int:
+    """The CRC-32 (RFC 1952, section 8) of `data[start:stop]`, continuing from `value`, as
+    `zlib.crc32(data, value)` gives it, one table lookup per byte."""
+    c = value ^ 0xFFFFFFFF
+    for i in range(start, stop):
+        c = int(table[(c ^ int(data[i])) & 255]) ^ (c >> 8)
+    return c ^ 0xFFFFFFFF
+
+
+def _word(data: Array[u8, 1], position: int, size: int, big: bool) -> int:
+    """The unsigned number in the `size` bytes of `data` from `position`, big-endian or
+    little-endian. The caller checks the bytes are there."""
+    value = 0
+    for i in range(size):
+        if big:
+            value = (value << 8) | int(data[position + i])
+        else:
+            value = value | (int(data[position + i]) << (8 * i))
+    return value
+
+
+def _zlib_stream(data: Array[u8, 1], window: int, output: InOut[_Output]) -> int:
+    """Decodes the zlib stream (RFC 1950) at the start of `data` into `output`, checking its
+    header against a window of at most 2 ** `window` bytes (any window for 0) and its Adler-32,
+    as zlib does; gives an error code, 0 for none."""
+    if len(data) < 2:
+        return 1
+    method = int(data[0])
+    flags = int(data[1])
+    if (method * 256 + flags) % 31 != 0:
+        return 13
+    if method & 15 != 8:
+        return 14
+    if (method >> 4) + 8 > 15 or (window > 0 and (method >> 4) + 8 > window):
+        return 15
+    if flags & 32 != 0:
+        return 18
+    error, end = _inflate(data, 2, output)
+    if error != 0:
+        return error
+    if end + 4 > len(data):
+        return 1
+    if _word(data, end, 4, True) != _adler32(output.data, 0, output.length, 1):
+        return 16
+    return 0
+
+
+def _skip_text(data: Array[u8, 1], position: int) -> int:
+    """The position after the zero byte that ends the text at `position` in a gzip header, or
+    -1 when the input ends first."""
+    while position < len(data):
+        if data[position] == 0:
+            return position + 1
+        position += 1
+    return -1
+
+
+def _gzip_member(data: Array[u8, 1], output: InOut[_Output]) -> int:
+    """Decodes the gzip member (RFC 1952) at the start of `data` into `output`, checking its
+    header, its header CRC when it has one, and its CRC-32 and length, as zlib does; gives an
+    error code, 0 for none."""
+    if len(data) < 10:
+        return 1
+    if data[0] != 31 or data[1] != 139:
+        return 13
+    if data[2] != 8:
+        return 14
+    flags = int(data[3])
+    if flags & 224 != 0:
+        return 19
+    position = 10
+    if flags & 4 != 0:
+        if position + 2 > len(data):
+            return 1
+        position += 2 + _word(data, position, 2, False)
+    if flags & 8 != 0 and position <= len(data):
+        position = _skip_text(data, position)
+    if flags & 16 != 0 and position >= 0 and position <= len(data):
+        position = _skip_text(data, position)
+    if position < 0 or position > len(data):
+        return 1
+    table = _crc_table()
+    if flags & 2 != 0:
+        if position + 2 > len(data):
+            return 1
+        if _word(data, position, 2, False) != _crc32(data, 0, position, 0, table) & 65535:
+            return 20
+        position += 2
+    error, end = _inflate(data, position, output)
+    if error != 0:
+        return error
+    if end + 8 > len(data):
+        return 1
+    if _word(data, end, 4, False) != _crc32(output.data, 0, output.length, 0, table):
+        return 16
+    if _word(data, end + 4, 4, False) != output.length & 0xFFFFFFFF:
+        return 17
+    return 0
+
+
+def _message(error: int) -> str:
+    """The message of Python's `zlib.error` for error code `error`: zlib's return code, then
+    zlib's own words for what was wrong."""
+    if error == 1:
+        return "Error -5 while decompressing data: incomplete or truncated stream"
+    if error == 18:
+        return "Error 2 while decompressing data"
+    if error == 21:
+        return "Error -2 while preparing to decompress data: inconsistent stream state"
+    words = [
+        "invalid block type",
+        "invalid stored block lengths",
+        "too many length or distance symbols",
+        "invalid code lengths set",
+        "invalid bit length repeat",
+        "invalid code -- missing end-of-block",
+        "invalid literal/lengths set",
+        "invalid distances set",
+        "invalid literal/length code",
+        "invalid distance code",
+        "invalid distance too far back",
+        "incorrect header check",
+        "unknown compression method",
+        "invalid window size",
+        "incorrect data check",
+        "incorrect length check",
+        "",
+        "unknown header flags set",
+        "header crc mismatch",
+    ]
+    return "Error -3 while decompressing data: " + words[error - 2]
