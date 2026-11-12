@@ -89,6 +89,172 @@ def decompress(data: Array[u8, 1], wbits: int = 15, bufsize: int = 16384) -> Rai
     return exact
 
 
+class Decompress(Struct):
+    """A decompressor fed a stream in pieces, as `zlib.decompressobj` gives Python one: each
+    `decompress(piece)` gives the bytes the pieces so far hold, so a file larger than memory
+    can be read a block at a time. `eof` turns true at the end of the stream, and bytes after
+    it collect in `unused_data`, as in Python.
+
+    Output comes a whole deflate block at a time: a block cut off by the end of a piece is
+    decoded again, from its start, when the next piece arrives. Pieces of 64 KiB or more cost
+    one pass over the data; much smaller pieces decode a block's start several times.
+    """
+
+    unused_data: Array[u8, 1]  # the bytes after the end of the stream
+    eof: bool  # whether the end of the stream has been reached
+    _container: int  # 0 zlib, 1 gzip, 2 raw deflate, 3 zlib or gzip, not yet told apart
+    _window: int  # the largest window a zlib header may ask for, as `wbits` gives it; 0 any
+    _stage: int  # 0 the header, 1 the blocks, 2 the trailer, 3 ended
+    _pending: Array[u8, 1]  # input not yet used, from the byte the next block starts in
+    _bit: int  # bits of `_pending[0]` an earlier block used, 0 to 7
+    _history: Array[u8, 1]  # the last 32 KiB of output, which matches may copy from
+    _check: int  # the Adler-32 or CRC-32 of the output so far
+    _size: int  # the number of bytes of output so far
+
+    def decompress(self: InOut[Self], data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
+        """The bytes `data` and the pieces before it hold that no earlier call gave, as
+        `Decompress.decompress(data)` does in Python. Raises `OSError` with the kind
+        `INVALID_DATA` and Python's message for a corrupt stream."""
+        pending = _joined(self._pending, data)
+        if self._stage == 3:
+            self.unused_data = _joined(self.unused_data, pending)
+            self._pending = Array.zeros(0, u8)
+            return Array.zeros(0, u8)
+        output = _Output(_joined(self._history, Array.zeros(len(data) * 4 + 64, u8)), len(self._history))
+        start = output.length
+        folded = output.length
+        position = 0
+        bases = _bases()
+        fixed = _fixed()
+        waiting = False
+        while not waiting:
+            if self._stage == 0:
+                if self._container == 3 and len(pending) >= 2:
+                    self._container = 1 if pending[0] == 31 and pending[1] == 139 else 0
+                    self._check = 0 if self._container == 1 else 1
+                error = 1
+                end = 0
+                if self._container == 0:
+                    error, end = _zlib_header(pending, self._window)
+                elif self._container == 1:
+                    error, end = _gzip_header(pending)
+                elif self._container == 2:
+                    error = 0
+                if error == 1:
+                    waiting = True
+                elif error != 0:
+                    raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(error), "")
+                else:
+                    position = end
+                    self._stage = 1
+            elif self._stage == 1:
+                bits = _Bits(position, 0, 0)
+                if self._bit > 0 and position < len(pending):
+                    bits = _Bits(position + 1, int(pending[position]) >> self._bit, 8 - self._bit)
+                mark = output.length
+                error, final = _block(bits, pending, output, bases, fixed)
+                if error == 1:
+                    output.length = mark
+                    waiting = True
+                elif error != 0:
+                    raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(error), "")
+                else:
+                    position = bits.position - (bits.count >> 3)
+                    self._bit = 0
+                    if bits.count & 7 > 0:
+                        position -= 1
+                        self._bit = 8 - (bits.count & 7)
+                    if final:
+                        self._stage = 2
+                        if self._bit > 0:
+                            position += 1
+                            self._bit = 0
+            elif self._stage == 2:
+                self._check = self._fold(output, folded)
+                self._size += output.length - folded
+                folded = output.length
+                size = 0 if self._container == 2 else (4 if self._container == 0 else 8)
+                if position + size > len(pending):
+                    waiting = True
+                else:
+                    if self._container == 0 and _word(pending, position, 4, True) != self._check:
+                        raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(16), "")
+                    if self._container == 1:
+                        if _word(pending, position, 4, False) != self._check:
+                            raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(16), "")
+                        if _word(pending, position + 4, 4, False) != self._size & 0xFFFFFFFF:
+                            raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(17), "")
+                    position += size
+                    self._stage = 3
+                    self.eof = True
+            else:
+                self.unused_data = _joined(self.unused_data, pending[position:].copy())
+                position = len(pending)
+                waiting = True
+        self._check = self._fold(output, folded)
+        self._size += output.length - folded
+        self._pending = pending[position:].copy()
+        keep = min(output.length, 32768)
+        self._history = output.data[output.length - keep : output.length].copy()
+        return output.data[start : output.length].copy()
+
+    def flush(self: InOut[Self]) -> Array[u8, 1]:
+        """The bytes still held back, as `Decompress.flush()` gives them in Python: the part
+        of a block that the input so far cuts off, decoded as far as it goes. Use it once, at
+        the end of the input."""
+        if self._stage != 1 or len(self._pending) == 0:
+            return Array.zeros(0, u8)
+        output = _Output(_joined(self._history, Array.zeros(4 * len(self._pending) + 64, u8)), len(self._history))
+        start = output.length
+        bits = _Bits(0, 0, 0)
+        if self._bit > 0:
+            bits = _Bits(1, int(self._pending[0]) >> self._bit, 8 - self._bit)
+        _block(bits, self._pending, output, _bases(), _fixed())
+        self._pending = Array.zeros(0, u8)
+        return output.data[start : output.length].copy()
+
+    def _fold(self, output: _Output, start: int) -> int:
+        """The running checksum with `output.data[start:output.length]` folded in: Adler-32
+        for a zlib stream, CRC-32 for a gzip member, nothing for a raw stream."""
+        if self._container == 0:
+            return _adler32(output.data, start, output.length, self._check)
+        if self._container == 1:
+            return _crc32(output.data, start, output.length, self._check, _crc_table())
+        return 0
+
+
+def decompressobj(wbits: int = 15) -> Raises[Decompress, OSError]:
+    """A `Decompress` for a stream in the container `wbits` names, as for `decompress`, as
+    `zlib.decompressobj(wbits)` gives one in Python. Raises `OSError` for a `wbits` Python
+    rejects."""
+    window = wbits
+    container = 0
+    if wbits < 0:
+        window = -wbits
+        container = 2
+    elif wbits >= 32:
+        window = wbits - 32
+        container = 3
+    elif wbits >= 16:
+        window = wbits - 16
+        container = 1
+    if window > 15 or (window < 8 and not (window == 0 and wbits >= 0)):
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(21), "")
+    check = 1 if container != 1 else 0
+    empty = Array.zeros(0, u8)
+    return Decompress(empty.copy(), False, container, window, 0, empty.copy(), 0, empty.copy(), check, 0)
+
+
+def _joined(first: Array[u8, 1], second: Array[u8, 1]) -> Array[u8, 1]:
+    """A new array of `first`'s bytes followed by `second`'s."""
+    joined = Array.zeros(len(first) + len(second), u8)
+    for i in range(len(first)):
+        joined[i] = first[i]
+    for i in range(len(second)):
+        joined[len(first) + i] = second[i]
+    return joined
+
+
 def crc32(data: Array[u8, 1], value: int = 0) -> int:
     """The CRC-32 of `data` (ISO 3309, as gzip and PNG use it), continuing the checksum `value`
     of the bytes before it, as `zlib.crc32(data, value)` gives it: a number from 0 to
@@ -451,28 +617,36 @@ def _inflate(data: Array[u8, 1], start: int, output: InOut[_Output]) -> tuple[in
     bits = _Bits(start, 0, 0)
     bases = _bases()
     fixed = _fixed()
-    final = 0
-    while final == 0:
-        header = _take(bits, data, 3)
-        if header < 0:
-            return (1, bits.position)
-        final = header & 1
-        kind = header >> 1
-        error = 0
-        if kind == 0:
-            error = _stored(bits, data, output)
-        elif kind == 1:
-            error = _huffman(bits, data, output, fixed[0], fixed[1], bases)
-        elif kind == 2:
-            tables = _dynamic(bits, data)
-            error = tables[2]
-            if error == 0:
-                error = _huffman(bits, data, output, tables[0], tables[1], bases)
-        else:
-            error = 2
+    final = False
+    while not final:
+        error, final = _block(bits, data, output, bases, fixed)
         if error != 0:
             return (error, bits.position)
     return (0, bits.position - (bits.count >> 3))
+
+
+def _block(
+    bits: InOut[_Bits], data: Array[u8, 1], output: InOut[_Output], bases: Array[i32, 1], fixed: tuple[_Table, _Table]
+) -> tuple[int, bool]:
+    """Decodes the one DEFLATE block that starts at `bits` into `output`: its 3-bit header,
+    then a stored, fixed-code or dynamic-code body. Gives the error code, 0 for none, and
+    whether the block is the stream's last."""
+    header = _take(bits, data, 3)
+    if header < 0:
+        return (1, False)
+    kind = header >> 1
+    error = 0
+    if kind == 0:
+        error = _stored(bits, data, output)
+    elif kind == 1:
+        error = _huffman(bits, data, output, fixed[0], fixed[1], bases)
+    elif kind == 2:
+        literals, distances, error = _dynamic(bits, data)
+        if error == 0:
+            error = _huffman(bits, data, output, literals, distances, bases)
+    else:
+        error = 2
+    return (error, header & 1 == 1)
 
 
 def _adler32(data: Array[u8, 1], start: int, stop: int, value: int) -> int:
@@ -533,19 +707,10 @@ def _zlib_stream(data: Array[u8, 1], window: int, output: InOut[_Output]) -> int
     """Decodes the zlib stream (RFC 1950) at the start of `data` into `output`, checking its
     header against a window of at most 2 ** `window` bytes (any window for 0) and its Adler-32,
     as zlib does; gives an error code, 0 for none."""
-    if len(data) < 2:
-        return 1
-    method = int(data[0])
-    flags = int(data[1])
-    if (method * 256 + flags) % 31 != 0:
-        return 13
-    if method & 15 != 8:
-        return 14
-    if (method >> 4) + 8 > 15 or (window > 0 and (method >> 4) + 8 > window):
-        return 15
-    if flags & 32 != 0:
-        return 18
-    error, end = _inflate(data, 2, output)
+    error, start = _zlib_header(data, window)
+    if error != 0:
+        return error
+    error, end = _inflate(data, start, output)
     if error != 0:
         return error
     if end + 4 > len(data):
@@ -553,6 +718,25 @@ def _zlib_stream(data: Array[u8, 1], window: int, output: InOut[_Output]) -> int
     if _word(data, end, 4, True) != _adler32(output.data, 0, output.length, 1):
         return 16
     return 0
+
+
+def _zlib_header(data: Array[u8, 1], window: int) -> tuple[int, int]:
+    """Checks the two-byte zlib header (RFC 1950) at the start of `data` against a window of at
+    most 2 ** `window` bytes (any window for 0), as zlib does. Gives the error code, 0 for none
+    and 1 when `data` is too short to tell, and the position after the header."""
+    if len(data) < 2:
+        return (1, 0)
+    method = int(data[0])
+    flags = int(data[1])
+    if (method * 256 + flags) % 31 != 0:
+        return (13, 0)
+    if method & 15 != 8:
+        return (14, 0)
+    if (method >> 4) + 8 > 15 or (window > 0 and (method >> 4) + 8 > window):
+        return (15, 0)
+    if flags & 32 != 0:
+        return (18, 0)
+    return (0, 2)
 
 
 def _skip_text(data: Array[u8, 1], position: int) -> int:
@@ -569,43 +753,52 @@ def _gzip_member(data: Array[u8, 1], output: InOut[_Output]) -> int:
     """Decodes the gzip member (RFC 1952) at the start of `data` into `output`, checking its
     header, its header CRC when it has one, and its CRC-32 and length, as zlib does; gives an
     error code, 0 for none."""
-    if len(data) < 10:
+    error, start = _gzip_header(data)
+    if error != 0:
+        return error
+    error, end = _inflate(data, start, output)
+    if error != 0:
+        return error
+    if end + 8 > len(data):
         return 1
+    if _word(data, end, 4, False) != _crc32(output.data, 0, output.length, 0, _crc_table()):
+        return 16
+    if _word(data, end + 4, 4, False) != output.length & 0xFFFFFFFF:
+        return 17
+    return 0
+
+
+def _gzip_header(data: Array[u8, 1]) -> tuple[int, int]:
+    """Checks the gzip member header (RFC 1952) at the start of `data`, its optional fields and
+    its header CRC when it has one, as zlib does. Gives the error code, 0 for none and 1 when
+    `data` is too short to tell, and the position after the header."""
+    if len(data) < 10:
+        return (1, 0)
     if data[0] != 31 or data[1] != 139:
-        return 13
+        return (13, 0)
     if data[2] != 8:
-        return 14
+        return (14, 0)
     flags = int(data[3])
     if flags & 224 != 0:
-        return 19
+        return (19, 0)
     position = 10
     if flags & 4 != 0:
         if position + 2 > len(data):
-            return 1
+            return (1, 0)
         position += 2 + _word(data, position, 2, False)
     if flags & 8 != 0 and position <= len(data):
         position = _skip_text(data, position)
     if flags & 16 != 0 and position >= 0 and position <= len(data):
         position = _skip_text(data, position)
     if position < 0 or position > len(data):
-        return 1
-    table = _crc_table()
+        return (1, 0)
     if flags & 2 != 0:
         if position + 2 > len(data):
-            return 1
-        if _word(data, position, 2, False) != _crc32(data, 0, position, 0, table) & 65535:
-            return 20
+            return (1, 0)
+        if _word(data, position, 2, False) != _crc32(data, 0, position, 0, _crc_table()) & 65535:
+            return (20, 0)
         position += 2
-    error, end = _inflate(data, position, output)
-    if error != 0:
-        return error
-    if end + 8 > len(data):
-        return 1
-    if _word(data, end, 4, False) != _crc32(output.data, 0, output.length, 0, table):
-        return 16
-    if _word(data, end + 4, 4, False) != output.length & 0xFFFFFFFF:
-        return 17
-    return 0
+    return (0, position)
 
 
 def _message(error: int) -> str:
