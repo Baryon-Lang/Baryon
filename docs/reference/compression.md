@@ -15,6 +15,7 @@ imports and calls.
 | [`gzip`](#gzip) | gzip files (RFC 1952) of one member or several | `compress`, `decompress` |
 | [`compression.zstd`](#compressionzstd) | Zstandard frames (RFC 8878) | `compress`, `decompress` |
 | [`bz2`](#bz2) | bzip2 streams of one block or several | `compress`, `decompress` |
+| [`lzma`](#lzma) | xz files and `.lzma` files | `decompress` |
 
 Python's functions take and give `bytes`. Baryon has no `bytes` type yet, so they take and give
 `Array[u8, 1]`, an array of bytes, which [`Array.fromfile`](files-and-processes.md#array-files)
@@ -338,3 +339,48 @@ Baryon's own, as for `zlib.compress` ([decision 0049](../decisions/0049-compress
 **Cost.** O(n log n) for n bytes: each block is sorted by prefix doubling, which takes about
 13 bytes of tables for each byte of the block. Compressing takes about 1.6 times the time
 Python's `bz2.compress` takes.
+
+## `lzma`
+
+xz files compress tighter than bzip2 and decompress faster; source archives, Linux packages and
+many data releases ship as `.xz`. Baryon's `lzma` module keeps Python's name and reads xz files
+and the older `.lzma` files. Writing them is not built yet.
+
+```python
+import lzma
+from zlib import crc32
+
+
+def main() -> Raises[None, OSError]:
+    table = lzma.decompress(Array.fromfile("level6.xz", u8))
+    print(len(table), "bytes, CRC-32", crc32(table))
+```
+
+This reads `level6.xz`, a file Python's `lzma.compress` wrote from the table at the top of the
+chapter, and prints `11600 bytes, CRC-32 1019181682`.
+
+### `lzma.decompress`
+
+`decompress(data)` gives the bytes the streams in `data` hold, joined, as Python's does. Like
+Python's default, `FORMAT_AUTO`, it tells an xz file from a `.lzma` file by its first bytes. It
+checks each block's CRC-32, CRC-64 or SHA-256, and the index and footer of each stream. As in
+Python, bytes after the first stream that start no other stream are ignored. The `format`,
+`memlimit` and `filters` arguments are not built yet, and neither are blocks with a filter
+before LZMA2, such as the x86 branch filter some packages use.
+
+Data Python refuses raises `OSError` with the kind `INVALID_DATA` and, in `strerror`, the
+message Python's `LZMAError` carries:
+
+| Data | Message |
+| --- | --- |
+| Empty, or a stream cut short | `Compressed data ended before the end-of-stream marker was reached` |
+| Bytes that are neither format | `Input format not supported by decoder` |
+| A header naming options liblzma cannot decode, or a filter Baryon does not decode yet | `Invalid or unsupported options` |
+| Any damage, a wrong check included | `Corrupt input data` |
+
+The decoder checks each part in the order liblzma checks it, so a damaged or cut file gets
+Python's message: all of 4,563 damaged and cut files in tests did.
+
+**Cost.** One pass over `data` and one over the output, which is copied each time its buffer
+doubles. The probabilities take 7 to 50 KiB, and up to 12 MiB for a `.lzma` file with the
+largest literal context. Decoding takes about three times the time Python's takes.
