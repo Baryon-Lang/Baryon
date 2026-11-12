@@ -1,0 +1,436 @@
+"""The `pyplot` module: plots with matplotlib's object-oriented names, drawn by Baryon code to SVG
+(decision 0046).
+
+Make an `Axes` with `axes()`, draw on it with its methods, and write it with `savefig`:
+
+```python
+import pyplot as plt
+
+def main() -> Raises[None, OSError | ValueError]:
+    t = Array([0.0, 1.0, 2.0, 3.0])
+    ax = plt.axes()
+    ax.plot(t, t * t, label="t squared")
+    ax.set_xlabel("time (s)")
+    ax.savefig("square.svg")
+```
+
+A figure looks as matplotlib's default style draws it: 6.4 by 4.8 inches, DejaVu Sans at 10
+points, colors from the `tab10` cycle, and ticks placed and labelled by `ticker`'s
+`MaxNLocator` and `ScalarFormatter`, as matplotlib's are.
+"""
+
+from artist import Artist, Kind, View
+from axis import XAxis, YAxis
+from backend_svg import RendererSVG
+from colors import to_hex
+from legend import draw_legend, location_code
+from math import inf, isfinite
+from stats import histogram
+
+WIDTH: Final = 460.8  # the figure's width in points: 6.4 inches
+HEIGHT: Final = 345.6  # the figure's height in points: 4.8 inches
+LEFT: Final = 57.6  # the axes' left edge, 0.125 of the width, from the figure's left
+RIGHT: Final = 414.72  # the axes' right edge, 0.9 of the width
+TOP: Final = 41.472  # the axes' top edge, 0.12 of the height, from the figure's top
+BOTTOM: Final = 307.584  # the axes' bottom edge, 0.89 of the height
+FONT_SIZE: Final = 10.0  # tick labels and axis labels, in points
+TITLE_SIZE: Final = 12.0  # the title, matplotlib's "large"
+LABEL_PAD: Final = 4.0  # the gap between the tick labels and the axis label
+TITLE_PAD: Final = 6.0  # the gap between the axes and the title's baseline
+
+
+class Axes(Struct):
+    """A plot: the data drawn in a rectangle, with an axis below it and one to its left, as
+    matplotlib's `Axes`.
+
+    Make one with `axes()`. Each method that draws or labels changes the axes in place, so a
+    plot is built up call by call and written once with `savefig`. The x and y ranges follow
+    the data, with a margin of 5% on each side, until `set_xlim` or `set_ylim` fixes them.
+    """
+
+    artists: list[Artist]  # every line, set of markers and set of bars, in the order drawn
+    title: str  # above the axes; "" for none
+    xlabel: str  # under the x axis; "" for none
+    ylabel: str  # left of the y axis; "" for none
+    xlim: tuple[f64, f64] | None  # the x range shown when fixed, `None` to follow the data
+    ylim: tuple[f64, f64] | None  # the y range shown when fixed, `None` to follow the data
+    line_colors: int  # how many colors of the cycle `plot` has taken
+    patch_colors: int  # how many `scatter`, `bar` and `hist` have taken, from their own cycle
+    legend_loc: str  # where the legend goes, as `legend`'s `loc`; "" for no legend
+    grid_on: bool  # whether grid lines are drawn at the ticks
+
+    def plot(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        color: str = "",
+        linewidth: f64 = 1.5,
+        linestyle: str = "-",
+        marker: str = "",
+        markersize: f64 = 6.0,
+        label: str = "",
+    ) -> None:
+        """Draws the points `(x[i], y[i])` joined by straight lines, as matplotlib's `plot`.
+
+        `color` is a name `colors.to_hex` knows: `"#rrggbb"`, `"C0"` to `"C9"`, one of the
+        letters `"bgrcmykw"`, or a `tab10` name such as `"tab:orange"`; left out, or `""`, each
+        line takes the next color of the cycle. `linestyle` is `"-"`, `"--"`, `":"` or
+        `"-."`, or their names `"solid"`, `"dashed"`, `"dotted"` and `"dashdot"`, with dashes
+        that grow with `linewidth` as matplotlib's do, or `""` or `"None"` for no line.
+        `marker` puts a marker `markersize` points across at each point: `"o"`, `"."`, `"s"`,
+        `"^"`, `"v"`, `"D"`, `"+"` or `"x"`. A point with a NaN or infinite coordinate breaks
+        the line there. Copies `x` and `y`, so they can change afterwards.
+
+        Panics when `x` and `y` differ in length, or `color` or `linestyle` is not one of
+        those, and `savefig` panics on a `marker` that is not, where matplotlib raises
+        `ValueError`: a mistake in the program, not its data.
+        """
+        assert len(x) == len(y), "plot needs x and y of the same length"
+        width = 0.0 if linestyle == "" or linestyle == "None" else linewidth
+        dashes: list[f64] = []
+        if width > 0.0:
+            dashes = _dashes(linestyle, linewidth)
+        self.artists.append(
+            Artist(
+                Kind.LINE,
+                x.copy(),
+                y.copy(),
+                Array.zeros(0),
+                self._color(color, True),
+                width,
+                dashes,
+                marker.copy(),
+                markersize,
+                label.copy(),
+            )
+        )
+
+    def scatter(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        s: f64 = 36.0,
+        color: str = "",
+        marker: str = "o",
+        label: str = "",
+    ) -> None:
+        """Draws a marker at each point `(x[i], y[i])`, as matplotlib's `scatter`: `s` is the
+        marker's area in points squared, so `s=36.0` is 6 points across, and `color` and
+        `marker` are `plot`'s. Copies `x` and `y`. Panics as `plot` does."""
+        assert len(x) == len(y), "scatter needs x and y of the same length"
+        self.artists.append(
+            Artist(
+                Kind.MARKERS,
+                x.copy(),
+                y.copy(),
+                Array.zeros(0),
+                self._color(color, False),
+                0.0,
+                [],
+                marker.copy(),
+                s**0.5,
+                label.copy(),
+            )
+        )
+
+    def bar(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        height: Array[f64, 1],
+        width: f64 = 0.8,
+        color: str = "",
+        label: str = "",
+    ) -> None:
+        """Draws a bar from 0 to `height[i]` centred on each `x[i]`, `width` wide, as
+        matplotlib's `bar`; a negative height hangs below 0. Copies its arguments. Panics when
+        `x` and `height` differ in length, or `color` is not a color."""
+        assert len(x) == len(height), "bar needs x and height of the same length"
+        self.artists.append(
+            Artist(
+                Kind.BARS,
+                x - 0.5 * width,
+                height.copy(),
+                Array.fill(len(x), width),
+                self._color(color, False),
+                0.0,
+                [],
+                "",
+                0.0,
+                label.copy(),
+            )
+        )
+
+    def hist(
+        self: InOut[Self], x: Array[f64, 1], bins: int = 10, color: str = "", label: str = ""
+    ) -> tuple[Array[f64, 1], Array[f64, 1]]:
+        """Draws the histogram of `x` in `bins` equal bins from its smallest to its largest
+        element, as matplotlib's `hist`, and returns the counts and the `bins + 1` edges, which
+        `stats.histogram` computes with NumPy's bits. matplotlib returns its bars too, as a
+        third value; here they stay in the axes. Panics as `stats.histogram` does, on fewer than
+        one bin or a NaN or infinite element."""
+        counts, edges = histogram(x, bins)
+        heights = Array.zeros(bins)
+        widths = Array.zeros(bins)
+        for k in range(bins):
+            heights[k] = f64(counts[k])
+            widths[k] = edges[k + 1] - edges[k]
+        self.artists.append(
+            Artist(
+                Kind.BARS,
+                edges[0:bins].copy(),
+                heights.copy(),
+                widths,
+                self._color(color, False),
+                0.0,
+                [],
+                "",
+                0.0,
+                label.copy(),
+            )
+        )
+        return (heights, edges)
+
+    def _color(self: InOut[Self], color: str, line: bool) -> str:
+        """The SVG color of `color`, or when it is `""` the next color of the cycle: the lines'
+        cycle or the one `scatter`, `bar` and `hist` share. matplotlib keeps the two apart, so a
+        plot's first line and its first bars are both blue."""
+        if color != "":
+            return to_hex(color)
+        if line:
+            self.line_colors += 1
+            return to_hex(f"C{(self.line_colors - 1) % 10}")
+        self.patch_colors += 1
+        return to_hex(f"C{(self.patch_colors - 1) % 10}")
+
+    def set_title(self: InOut[Self], label: str) -> None:
+        """Sets the title, centred above the axes."""
+        self.title = label.copy()
+
+    def set_xlabel(self: InOut[Self], xlabel: str) -> None:
+        """Sets the label centred under the x axis."""
+        self.xlabel = xlabel.copy()
+
+    def set_ylabel(self: InOut[Self], ylabel: str) -> None:
+        """Sets the label centred left of the y axis, turned to read upwards."""
+        self.ylabel = ylabel.copy()
+
+    def set_xlim(self: InOut[Self], left: f64, right: f64) -> None:
+        """Shows x from `left` to `right`; `left` larger than `right` turns the axis around.
+        Limits too close to tell apart are widened by 5% each way, as matplotlib widens them,
+        so `set_xlim(1.0, 1.0)` shows 0.95 to 1.05.
+
+        Panics when a limit is NaN or infinite, where matplotlib raises `ValueError`."""
+        assert isfinite(left) and isfinite(right), "Axis limits cannot be NaN or Inf"
+        self.xlim = _limits(left, right)
+
+    def set_ylim(self: InOut[Self], bottom: f64, top: f64) -> None:
+        """Shows y from `bottom` to `top`; `bottom` larger than `top` turns the axis around.
+        Widens limits and panics as `set_xlim` does."""
+        assert isfinite(bottom) and isfinite(top), "Axis limits cannot be NaN or Inf"
+        self.ylim = _limits(bottom, top)
+
+    def legend(self: InOut[Self], loc: str = "best") -> None:
+        """Shows a legend of every artist with a label, as matplotlib's `legend`: a sample of
+        each beside its label, in the order drawn, in a white box inside the axes.
+
+        `loc` is matplotlib's: `"upper right"`, `"upper left"`, `"lower left"`,
+        `"lower right"`, `"right"`, `"center left"`, `"center right"`, `"lower center"`,
+        `"upper center"` or `"center"`, or `"best"`, which takes the first of those, in that
+        order, that covers the fewest data points, as matplotlib's `"best"` does. Panics on any
+        other `loc`.
+        """
+        assert location_code(loc) >= 0, "legend's loc must be 'best' or one of matplotlib's places"
+        self.legend_loc = loc.copy()
+
+    def grid(self: InOut[Self], visible: bool = True) -> None:
+        """Draws light gray grid lines across the axes at every tick, or stops drawing them, as
+        matplotlib's `grid`. They lie above bars and markers and below lines, as matplotlib's
+        default puts them."""
+        self.grid_on = visible
+
+    def savefig(self: Self, fname: str) -> Raises[None, OSError | ValueError]:
+        """Writes a figure holding these axes to the file `fname`, as matplotlib's
+        `Figure.savefig`; the extension picks the format.
+
+        The SVG's text is left as text, as matplotlib's `svg.fonttype = "none"` leaves it, so
+        the viewer draws it in DejaVu Sans or the nearest font it has. The file holds every
+        point of every artist: about 15 bytes a point of a line and 60 a marker.
+
+        # Errors
+
+        `ValueError` when the extension is not `.svg`, the only format so far, with
+        matplotlib's message; `OSError` when the file cannot be written.
+        """
+        dot = _last_dot(fname)
+        extension = fname[dot + 1 :].lower() if dot >= 0 else ""
+        if extension != "svg":
+            raise ValueError(f"Format '{extension}' is not supported (supported formats: svg)")
+        renderer = RendererSVG(WIDTH, HEIGHT, [])
+        _draw(self, renderer)
+        with open(fname, "w") as file:
+            file.write(renderer.tostring())
+
+
+def axes() -> Axes:
+    """New, empty axes in the default figure, as matplotlib's `pyplot.axes()`.
+
+    ```python
+    import pyplot as plt
+
+    def main():
+        ax = plt.axes()
+        ax.set_title("empty")
+    ```
+    """
+    return Axes([], "", "", "", None, None, 0, 0, "", False)
+
+
+def _last_dot(path: str) -> int:
+    """The position of the dot that starts the file name's extension in `path`, or -1 when the
+    name has none: a dot in a directory's name, `runs.d/plot`, does not count."""
+    found = -1
+    position = 0
+    for character in path:
+        if character == ".":
+            found = position
+        elif character == "/":
+            found = -1
+        position += 1
+    return found
+
+
+def _dashes(style: str, linewidth: f64) -> list[f64]:
+    """The on and off lengths, in points, of a matplotlib line style: its pattern for a line
+    one point wide, scaled by `linewidth`. Empty for a solid line. Panics on an unknown style."""
+    pattern: list[f64] = []
+    if style == "--" or style == "dashed":
+        pattern = [3.7, 1.6]
+    elif style == ":" or style == "dotted":
+        pattern = [1.0, 1.65]
+    elif style == "-." or style == "dashdot":
+        pattern = [6.4, 1.6, 1.0, 1.6]
+    else:
+        known = style == "-" or style == "solid"
+        assert known, f"{style!r} is not a line style: use '-', '--', ':', '-.' or ''"
+    return [length * linewidth for length in pattern]
+
+
+def _expand(low: f64, high: f64, expander: f64, tiny: f64) -> tuple[f64, f64]:
+    """`low` and `high`, widened by `expander` of their size when they are too close to tell
+    apart, as matplotlib's `transforms.nonsingular`."""
+    largest = max(abs(low), abs(high))
+    if largest < 1e6 / tiny * 2.2250738585072014e-308:
+        return (-expander, expander)
+    if high - low <= largest * tiny:
+        if high == 0.0 and low == 0.0:
+            return (-expander, expander)
+        return (low - expander * abs(low), high + expander * abs(high))
+    return (low, high)
+
+
+def _limits(first: f64, second: f64) -> tuple[f64, f64]:
+    """Fixed limits as matplotlib's `set_xlim` keeps them: put in order, widened by
+    `nonsingular` with an expander of 5% when too close to tell apart, then turned back round
+    if `first` was the larger."""
+    low, high = _expand(min(first, second), max(first, second), 0.05, 1e-15)
+    if first > second:
+        return (high, low)
+    return (low, high)
+
+
+def _view(ax: Axes, along_x: bool) -> tuple[f64, f64]:
+    """The range one axis shows, as matplotlib's `autoscale_view`: the fixed range when set;
+    otherwise the finite data, bars from their base at 0, with a margin of 5% on each side
+    that never crosses 0 into a range of bars that all stand on it; 0 to 1 with no data."""
+    fixed = ax.xlim if along_x else ax.ylim
+    if fixed is not None:
+        return fixed
+    low = inf
+    high = -inf
+    sticky = False
+    for artist in ax.artists:
+        bars = artist.kind == Kind.BARS
+        for i in range(len(artist.x)):
+            if isfinite(artist.x[i]) and isfinite(artist.y[i]):
+                first = artist.x[i] if along_x else artist.y[i]
+                last = first
+                if bars and along_x:
+                    last = first + artist.widths[i]
+                elif bars:
+                    first = min(0.0, artist.y[i])
+                    last = max(0.0, artist.y[i])
+                    sticky = True
+                low = min(low, first)
+                high = max(high, last)
+    if low > high:
+        return (0.0, 1.0)
+    low, high = _expand(low, high, 0.05, 1e-15)
+    margin = 0.05 * (high - low)
+    bottom = low if sticky and low == 0.0 else low - margin
+    top = high if sticky and high == 0.0 else high + margin
+    return _expand(bottom, top, 0.001, 1e-15)
+
+
+def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
+    """Draws `ax` in the default figure: bars and markers, the grid, lines, the frame, the axes'
+    ticks and labels, the title and the legend, in matplotlib's order."""
+    x0, x1 = _view(ax, True)
+    y0, y1 = _view(ax, False)
+    xscale = (RIGHT - LEFT) / (x1 - x0)
+    yscale = (BOTTOM - TOP) / (y1 - y0)
+    renderer.set_clip(LEFT, TOP, RIGHT - LEFT, BOTTOM - TOP)
+    for artist in ax.artists:
+        px = LEFT + (artist.x - x0) * xscale
+        py = BOTTOM - (artist.y - y0) * yscale
+        if artist.kind == Kind.BARS:
+            base = BOTTOM + y0 * yscale
+            for i in range(len(px)):
+                width = artist.widths[i] * xscale
+                height = base - py[i]
+                renderer.draw_rectangle(
+                    px[i], py[i], width, height, artist.color, 1.0, "none", 0.0, True
+                )
+        elif artist.kind == Kind.MARKERS:
+            renderer.draw_markers(px, py, artist.marker, artist.markersize, artist.color, 1.5, True)
+    xaxis = XAxis(x0, x1, LEFT, RIGHT, BOTTOM)
+    yaxis = YAxis(y0, y1, BOTTOM, TOP, LEFT)
+    if ax.grid_on:
+        gray = "#b0b0b0"  # matplotlib's grid color
+        for tick in xaxis.get_majorticklocs():
+            if min(x0, x1) <= tick and tick <= max(x0, x1):
+                at = LEFT + (tick - x0) * xscale
+                line = Array([at, at])
+                renderer.draw_path(line, Array([TOP, BOTTOM]), gray, 0.8, [], "projecting", True)
+        for tick in yaxis.get_majorticklocs():
+            if min(y0, y1) <= tick and tick <= max(y0, y1):
+                at = BOTTOM - (tick - y0) * yscale
+                line = Array([at, at])
+                renderer.draw_path(Array([LEFT, RIGHT]), line, gray, 0.8, [], "projecting", True)
+    for artist in ax.artists:
+        if artist.kind == Kind.LINE:
+            px = LEFT + (artist.x - x0) * xscale
+            py = BOTTOM - (artist.y - y0) * yscale
+            if artist.linewidth > 0.0:
+                renderer.draw_path(
+                    px, py, artist.color, artist.linewidth, artist.dashes, "projecting", True
+                )
+            if artist.marker != "":
+                size = artist.markersize
+                renderer.draw_markers(px, py, artist.marker, size, artist.color, 1.0, True)
+    width = RIGHT - LEFT
+    renderer.draw_rectangle(LEFT, TOP, width, BOTTOM - TOP, "none", 1.0, "#000000", 0.8, False)
+    below = xaxis.draw(renderer)
+    beside = yaxis.draw(renderer)
+    _, height, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
+    if ax.xlabel != "":
+        baseline = below + LABEL_PAD + height - descent
+        renderer.draw_text((LEFT + RIGHT) / 2.0, baseline, ax.xlabel, FONT_SIZE, "middle", False)
+    if ax.ylabel != "":
+        across = beside - LABEL_PAD - descent
+        renderer.draw_text(across, (TOP + BOTTOM) / 2.0, ax.ylabel, FONT_SIZE, "middle", True)
+    if ax.title != "":
+        middle = (LEFT + RIGHT) / 2.0
+        renderer.draw_text(middle, TOP - TITLE_PAD, ax.title, TITLE_SIZE, "middle", False)
+    if ax.legend_loc != "":
+        view = View(LEFT, TOP, RIGHT, BOTTOM, x0, x1, y0, y1)
+        draw_legend(ax.artists, ax.legend_loc, view, renderer)

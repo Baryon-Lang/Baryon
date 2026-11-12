@@ -1,0 +1,232 @@
+"""The `backend_svg` module: draws paths, markers, rectangles and text into an SVG file, as
+matplotlib's `backend_svg` does (decision 0046).
+
+`pyplot` lays a figure out in points, measured from the figure's top left corner, and hands each
+piece to a `RendererSVG`; `tostring` then gives the file's text. The PNG and PDF backends of
+roadmap 3.15.6 and 3.15.7 take the same calls, so `pyplot` draws once for every format.
+"""
+
+from math import isfinite
+
+
+class RendererSVG(Struct):
+    """An SVG drawing `width` by `height` points, built up one call at a time, as matplotlib's
+    `RendererSVG`. Make one with no elements, `RendererSVG(460.8, 345.6, [])`.
+
+    Every coordinate is in points from the top left corner, y growing downwards, as SVG has it.
+    Each call adds one element, so the cost is linear in what is drawn: about 15 bytes a point
+    of a path, and about 60 a marker.
+
+    ```python
+    from backend_svg import RendererSVG
+
+    def main():
+        renderer = RendererSVG(100.0, 50.0, [])
+        renderer.draw_text(50.0, 25.0, "hello", 10.0, "middle", False)
+        print(len(renderer.tostring()) > 0)  # True
+    ```
+    """
+
+    width: f64  # the drawing's width in points
+    height: f64  # the drawing's height in points
+    elements: list[str]  # the SVG elements drawn so far, in order
+
+    def set_clip(self: InOut[Self], x: f64, y: f64, width: f64, height: f64) -> None:
+        """Sets the rectangle that `draw_path` and `draw_markers` clip to when asked: the axes,
+        so data outside the range shown is cut off at its edge. Set it once, before drawing."""
+        self.elements.append(
+            f'<clipPath id="axes"><rect x="{_number(x)}" y="{_number(y)}" '
+            + f'width="{_number(width)}" height="{_number(height)}"/></clipPath>'
+        )
+
+    def draw_path(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        color: str,
+        linewidth: f64,
+        dashes: list[f64],
+        capstyle: str,
+        clip: bool,
+    ) -> None:
+        """Strokes straight lines through the points `(x[i], y[i])`, in `color`, `linewidth`
+        points wide, dashed by the on and off lengths `dashes` when it is not empty. A point
+        with a NaN or infinite coordinate lifts the pen, so the line breaks there. `capstyle` is
+        matplotlib's: `"projecting"` ends reach half the width past the last point, as data
+        lines and grid lines do, and `"butt"` ends stop at it, as ticks do. Joins are round."""
+        path: list[str] = []
+        pen_down = False
+        for i in range(len(x)):
+            if isfinite(x[i]) and isfinite(y[i]):
+                command = "L" if pen_down else "M"
+                path.append(f"{command}{_number(x[i])} {_number(y[i])}")
+                pen_down = True
+            else:
+                pen_down = False
+        if len(path) == 0:
+            return
+        pattern = ""
+        if len(dashes) > 0:
+            pattern = ' stroke-dasharray="' + ",".join([_number(d) for d in dashes]) + '"'
+        self.elements.append(
+            f'<path d="{"".join(path)}"{_clip(clip)} fill="none" stroke="{color}" '
+            + f'stroke-width="{linewidth}" stroke-linecap="{_cap(capstyle)}" '
+            + 'stroke-linejoin="round"'
+            + f"{pattern}/>"
+        )
+
+    def draw_markers(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        marker: str,
+        size: f64,
+        color: str,
+        edgewidth: f64,
+        clip: bool,
+    ) -> None:
+        """Draws the marker `marker` centred on each finite point, `size` points across, filled
+        and edged in `color` with an edge `edgewidth` wide, as matplotlib's markers are:
+        `"o"` a circle, `"."` a circle half as big, `"s"` a square, `"^"` and `"v"` triangles
+        pointing up and down, `"D"` a diamond, and `"+"` and `"x"` crosses, which are edge only.
+        The marker is defined once and placed at each point, so a point costs one short element.
+        """
+        name = f"marker{len(self.elements)}"
+        self.elements.append(
+            f'<defs><path id="{name}" d="{_marker_path(marker, size)}" fill="{color}" '
+            + f'stroke="{color}" stroke-width="{edgewidth}"/></defs>'
+        )
+        group: list[str] = [f"<g{_clip(clip)}>"]
+        for i in range(len(x)):
+            if isfinite(x[i]) and isfinite(y[i]):
+                group.append(f'<use href="#{name}" x="{_number(x[i])}" y="{_number(y[i])}"/>')
+        group.append("</g>")
+        self.elements.append("".join(group))
+
+    def draw_rectangle(
+        self: InOut[Self],
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        fill: str,
+        opacity: f64,
+        edge: str,
+        edgewidth: f64,
+        clip: bool,
+    ) -> None:
+        """Draws a rectangle with its top left corner at `(x, y)`, filled with `fill` at
+        `opacity` from 0 to 1 and edged in `edge` `edgewidth` points wide; `fill` or `edge`
+        `"none"` leaves that part out. A negative width or height is drawn from the other
+        side."""
+        left = min(x, x + width)
+        top = min(y, y + height)
+        stroke = ""
+        if edge != "none":
+            stroke = f' stroke="{edge}" stroke-width="{edgewidth}" stroke-linejoin="miter"'
+        shade = ""
+        if opacity < 1.0:
+            shade = f' fill-opacity="{opacity}"'
+        self.elements.append(
+            f'<rect x="{_number(left)}" y="{_number(top)}" width="{_number(abs(width))}" '
+            + f'height="{_number(abs(height))}"{_clip(clip)} fill="{fill}"{shade}{stroke}/>'
+        )
+
+    def draw_text(
+        self: InOut[Self], x: f64, y: f64, text: str, size: f64, anchor: str, rotate: bool
+    ) -> None:
+        """Writes `text` with its baseline at `(x, y)`, `size` points tall in DejaVu Sans,
+        anchored at `anchor`: `"start"`, `"middle"` or `"end"`. `rotate` turns it to read
+        upwards, as a y label does. XML's special characters are escaped, so any text is safe.
+        """
+        place = f'x="{_number(x)}" y="{_number(y)}"'
+        if rotate:
+            place = f'transform="translate({_number(x)} {_number(y)}) rotate(-90)"'
+        self.elements.append(
+            f'<text {place} font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, '
+            + f'sans-serif" font-size="{size}" text-anchor="{anchor}" fill="#000000">'
+            + f"{_escape(text)}</text>"
+        )
+
+    def get_text_width_height_descent(self: Self, text: str, size: f64) -> tuple[f64, f64, f64]:
+        """About how wide `text` is in DejaVu Sans at `size` points, how tall a line of it is,
+        and how far its layout box reaches below the baseline, as matplotlib's renderers report
+        them. The viewer draws the text, so the width is estimated from DejaVu Sans's widths
+        of digits, the point and the minus sign, which tick labels are made of, and an average
+        of 0.6 of the size for other characters. The height and descent are those of
+        matplotlib's layout box for one line, which is never smaller than that of `"lp"`: 0.76
+        of the size above the baseline, the height of an `l`, and 0.208 below it, the depth of a
+        `p`, as matplotlib measures DejaVu Sans.
+        """
+        width = 0.0
+        for character in text:
+            if "0" <= character and character <= "9":
+                width += 0.636
+            elif character == "." or character == " ":
+                width += 0.318
+            elif character == "\u2212":
+                width += 0.838
+            else:
+                width += 0.6
+        return (width * size, 0.968 * size, 0.208 * size)
+
+    def tostring(self: Self) -> str:
+        """The whole SVG file: its header, a white background, and every element in the order
+        drawn."""
+        head = [
+            '<?xml version="1.0" encoding="utf-8" standalone="no"?>',
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.width}pt" '
+            + f'height="{self.height}pt" viewBox="0 0 {self.width} {self.height}" version="1.1">',
+            f'<rect width="{self.width}" height="{self.height}" fill="#ffffff"/>',
+        ]
+        return "\n".join(head) + "\n" + "\n".join(self.elements) + "\n</svg>\n"
+
+
+def _number(value: f64) -> str:
+    """A coordinate in the SVG, to a thousandth of a point."""
+    return f"{value:.3f}"
+
+
+def _cap(capstyle: str) -> str:
+    """SVG's name for a matplotlib cap style: `"projecting"` is SVG's `"square"`."""
+    return "square" if capstyle == "projecting" else capstyle.copy()
+
+
+def _clip(clip: bool) -> str:
+    """The attribute that clips an element to the axes, or nothing."""
+    return ' clip-path="url(#axes)"' if clip else ""
+
+
+def _escape(text: str) -> str:
+    """`text` with XML's special characters escaped, so it is safe inside an element."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _marker_path(marker: str, size: f64) -> str:
+    """The SVG path of `marker` centred on 0, 0 and `size` points across, as matplotlib's
+    `MarkerStyle` shapes it. Panics on a marker it does not know."""
+    half = 0.5 * size
+    if marker == "o" or marker == ".":
+        radius = half if marker == "o" else 0.5 * half
+        return (
+            f"M{_number(-radius)} 0A{_number(radius)} {_number(radius)} 0 1 0 "
+            + f"{_number(radius)} 0A{_number(radius)} {_number(radius)} 0 1 0 "
+            + f"{_number(-radius)} 0Z"
+        )
+    if marker == "s":
+        corner = _number(-half)
+        return f"M{corner} {corner}H{_number(half)}V{_number(half)}H{corner}Z"
+    if marker == "^":
+        return f"M0 {_number(-half)}L{_number(half)} {_number(half)}H{_number(-half)}Z"
+    if marker == "v":
+        return f"M0 {_number(half)}L{_number(half)} {_number(-half)}H{_number(-half)}Z"
+    if marker == "D":
+        return f"M0 {_number(-half)}L{_number(half)} 0L0 {_number(half)}L{_number(-half)} 0Z"
+    if marker == "+":
+        return f"M{_number(-half)} 0H{_number(half)}M0 {_number(-half)}V{_number(half)}"
+    known = marker == "x"
+    assert known, f"{marker!r} is not a marker: use 'o', '.', 's', '^', 'v', 'D', '+' or 'x'"
+    return (
+        f"M{_number(-half)} {_number(-half)}L{_number(half)} {_number(half)}"
+        + f"M{_number(-half)} {_number(half)}L{_number(half)} {_number(-half)}"
+    )

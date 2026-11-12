@@ -434,7 +434,7 @@ pub(crate) fn arithmetic(operator: Operator) -> Option<BinaryOperator> {
 }
 
 /// The IR operator for a comparison operator of the source; `None` for `is` and `in`.
-fn comparison(operator: Operator) -> Option<BinaryOperator> {
+pub(crate) fn comparison(operator: Operator) -> Option<BinaryOperator> {
     Some(match operator {
         Operator::Equal => BinaryOperator::Equal,
         Operator::NotEqual => BinaryOperator::NotEqual,

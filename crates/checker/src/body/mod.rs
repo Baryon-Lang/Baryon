@@ -67,6 +67,7 @@ mod process;
 mod random;
 mod reductions;
 pub(crate) mod relations;
+mod selection;
 mod shared;
 mod statistics;
 mod streams;

@@ -112,6 +112,8 @@ impl<'db> Body<'db> {
                     Some(&hint),
                 );
             }
+            // `a[mask]` is a new array, so keeping it moves nothing.
+            SyntaxKind::Subscript if self.is_selection(node) => {}
             SyntaxKind::Subscript => self.moved_out_of_element(node),
             _ => {}
         }

@@ -1,0 +1,339 @@
+"""The `ticker` module: where an axis puts its ticks and how it labels them (decision 0046), with
+matplotlib's names and its results.
+
+`MaxNLocator.tick_values` gives the positions matplotlib's `MaxNLocator` gives, to the last bit,
+and `ScalarFormatter.format_ticks` writes them as matplotlib's `ScalarFormatter` does, with an
+offset or a power of ten moved into `get_offset` when the numbers are large, small or close
+together. `pyplot` uses both for every axis.
+"""
+
+from math import copysign, floor, fmod, log10
+
+TINY: Final = 2.2250738585072014e-308  # the smallest normal f64, NumPy's `finfo(float).tiny`
+
+
+class MaxNLocator(Struct):
+    """Tick positions at multiples of a "nice" step, as matplotlib's `ticker.MaxNLocator`.
+
+    The step is the smallest of `steps`, scaled by a power of ten, that puts at most `nbins`
+    intervals between the ticks, and at least two ticks inside the range. matplotlib's axes
+    use `MaxNLocator(9, [1.0, 2.0, 2.5, 5.0, 10.0])` at the default figure size, as `pyplot`
+    does. `steps` rise from 1 to 10, as matplotlib requires.
+
+    ```python
+    from ticker import MaxNLocator
+
+    def main():
+        locator = MaxNLocator(9, [1.0, 2.0, 2.5, 5.0, 10.0])
+        print(locator.tick_values(0.0, 10.0))  # [0.0, 2.0, 4.0, 6.0, 8.0, 10.0]
+    ```
+    """
+
+    nbins: int  # the most intervals between ticks
+    steps: list[f64]  # the nice steps between 1 and 10, rising
+
+    def tick_values(self, vmin: f64, vmax: f64) -> list[f64]:
+        """The tick positions for the range `vmin` to `vmax`, as matplotlib's `tick_values`.
+
+        The first and last ticks may fall just outside the range; an axis draws only the ones
+        inside. A range too narrow for `f64` to split is widened first, as matplotlib's
+        `nonsingular` widens it. Costs a few dozen operations plus one per tick.
+        """
+        low, high = _nonsingular(vmin, vmax)
+        scale, offset = _scale_range(low, high, self.nbins)
+        low -= offset
+        high -= offset
+        extended: list[f64] = [0.1 * step for step in self.steps[0 : len(self.steps) - 1]]
+        for step in self.steps:
+            extended.append(step)
+        extended.append(10.0 * self.steps[1])
+        raw_step = (high - low) / f64(self.nbins)
+        largest = len(extended) - 1
+        for k in range(len(extended)):
+            if extended[k] * scale >= raw_step:
+                largest = k
+                break
+        ticks: list[f64] = []
+        for k in range(largest, -1, -1):
+            step = extended[k] * scale
+            base = _divmod(low, step)[0] * step
+            whole, rest = _divmod(low - base, step)
+            first = whole + 1.0 if _close(rest / step, 1.0, step, offset) else whole
+            whole, rest = _divmod(high - base, step)
+            last = whole if _close(rest / step, 0.0, step, offset) else whole + 1.0
+            ticks = []
+            inside = 0
+            n = first
+            while n < last + 1.0:
+                tick = n * step + base
+                ticks.append(tick + offset)
+                if low <= tick and tick <= high:
+                    inside += 1
+                n += 1.0
+            if inside >= 2:
+                break
+        return ticks
+
+
+class ScalarFormatter(Struct):
+    """Tick labels as matplotlib's default `ticker.ScalarFormatter` writes them.
+
+    Every label has the same number of decimals, the fewest that tell the ticks apart. When the
+    ticks share their leading digits, such as 1000.1 to 1000.5, the shared part becomes an offset,
+    `+1e3`; when they are smaller than 1e-5 or reach 1e6, a power of ten is moved out, `1e-7`.
+    `get_offset` gives that text, which an axis shows at its end. Negative numbers use the minus
+    sign U+2212, as matplotlib does. `vmin` and `vmax` are the range the axis shows, which
+    matplotlib reads from the axis itself.
+
+    ```python
+    from ticker import ScalarFormatter
+
+    def main():
+        formatter = ScalarFormatter(-1.0, 1.0)
+        print(formatter.format_ticks([-1.0, -0.5, 0.0, 0.5, 1.0]))
+        # ['−1.0', '−0.5', '0.0', '0.5', '1.0']
+    ```
+    """
+
+    vmin: f64  # the low end of the range the axis shows
+    vmax: f64  # the high end of the range the axis shows
+
+    def format_ticks(self, values: list[f64]) -> list[str]:
+        """The label of each tick in `values`, as matplotlib's `format_ticks`."""
+        offset, power, decimals = self._layout(values)
+        labels: list[str] = []
+        for value in values:
+            scaled = (value - offset) / 10.0 ** f64(power)
+            if abs(scaled) < 1e-8:
+                scaled = 0.0
+            labels.append(_minus(_fixed(scaled, decimals)))
+        return labels
+
+    def get_offset(self, values: list[f64]) -> str:
+        """The text shown at the end of the axis for the ticks `values`: the power of ten taken
+        out, `1e-7`, then the offset, `+1e3`, or `""` when there is neither."""
+        offset, power, _ = self._layout(values)
+        text = ""
+        if power != 0:
+            text = f"1e{power}"
+        if offset != 0.0:
+            sign = "+" if offset > 0.0 else ""
+            text = text + sign + _format_data(offset)
+        return _minus(text)
+
+    def _layout(self, values: list[f64]) -> tuple[f64, int, int]:
+        """The offset, the power of ten and the decimals for the ticks `values`: matplotlib's
+        `_compute_offset`, `_set_order_of_magnitude` and `_set_format`, in that order."""
+        low = min(self.vmin, self.vmax)
+        high = max(self.vmin, self.vmax)
+        shown = [value for value in values if low <= value and value <= high]
+        offset = _offset(shown)
+        power = 0
+        if len(shown) > 0:
+            magnitude = 0
+            if offset != 0.0:
+                magnitude = floor(log10(high - low))
+            else:
+                largest = max([abs(value) for value in shown])
+                if largest != 0.0:
+                    magnitude = floor(log10(largest))
+            if magnitude <= -5 or magnitude >= 6:
+                power = magnitude
+        return (offset, power, _decimals(values, low, high, offset, power))
+
+
+def _nonsingular(vmin: f64, vmax: f64) -> tuple[f64, f64]:
+    """`vmin` and `vmax` in order, widened when they are too close for `f64` to put ticks
+    between, as matplotlib's `transforms.nonsingular(expander=1e-13, tiny=1e-14)`."""
+    low = min(vmin, vmax)
+    high = max(vmin, vmax)
+    largest = max(abs(low), abs(high))
+    if largest < 1e6 / 1e-14 * TINY:
+        return (-1e-13, 1e-13)
+    if high - low <= largest * 1e-14:
+        if high == 0.0 and low == 0.0:
+            return (-1e-13, 1e-13)
+        return (low - 1e-13 * abs(low), high + 1e-13 * abs(high))
+    return (low, high)
+
+
+def _scale_range(low: f64, high: f64, bins: int) -> tuple[f64, f64]:
+    """The power of ten that sizes the steps, and the offset subtracted from the range before
+    stepping when its numbers are large next to its width, as matplotlib's `scale_range`."""
+    width = abs(high - low)
+    middle = (high + low) / 2.0
+    offset = 0.0
+    if abs(middle) / width >= 100.0:
+        offset = copysign(10.0 ** _divmod(log10(abs(middle)), 1.0)[0], middle)
+    return (10.0 ** _divmod(log10(width / f64(bins)), 1.0)[0], offset)
+
+
+def _divmod(x: f64, y: f64) -> tuple[f64, f64]:
+    """Python's `divmod(x, y)` of two floats, rounded as CPython rounds it, so ticks land where
+    matplotlib's do to the last bit. `floor(x / y)` differs from it in the last bit."""
+    rest = fmod(x, y)
+    whole = (x - rest) / y
+    if rest != 0.0:
+        if (y < 0.0) != (rest < 0.0):
+            rest += y
+            whole -= 1.0
+    else:
+        rest = copysign(0.0, y)
+    if whole == 0.0:
+        return (copysign(0.0, x / y), rest)
+    nearest = _floor(whole)
+    if whole - nearest > 0.5:
+        nearest += 1.0
+    return (nearest, rest)
+
+
+def _floor(x: f64) -> f64:
+    """`x` rounded down to a whole number, as an `f64`: `math.floor` gives an `int`, which cannot
+    hold the largest floats, and every float from 2**52 up is already whole."""
+    if abs(x) >= 4503599627370496.0:
+        return x
+    return f64(floor(x))
+
+
+def _close(value: f64, edge: f64, step: f64, offset: f64) -> bool:
+    """Whether `value` is within rounding of `edge`, as matplotlib's `_Edge_integer.closeto`,
+    which allows more when the offset is large next to the step."""
+    tolerance = 1e-10
+    if offset != 0.0:
+        tolerance = min(0.4999, max(1e-10, 10.0 ** (log10(abs(offset) / step) - 12.0)))
+    return abs(value - edge) < tolerance
+
+
+def _offset(shown: list[f64]) -> f64:
+    """The offset taken out of the ticks shown, as matplotlib's `_compute_offset`: the leading
+    digits they share, when that saves at least 4 digits, and 0 otherwise."""
+    if len(shown) == 0:
+        return 0.0
+    low = min(shown)
+    high = max(shown)
+    if low == high or (low <= 0.0 and 0.0 <= high):
+        return 0.0
+    small = min(abs(low), abs(high))
+    large = max(abs(low), abs(high))
+    sign = copysign(1.0, low)
+    top = f64(_ceil_log10(large))
+    power = top
+    while _divmod(small, 10.0**power)[0] == _divmod(large, 10.0**power)[0]:
+        power -= 1.0
+    power += 1.0
+    if (large - small) / 10.0**power <= 1e-2:
+        power = top
+        while _divmod(large, 10.0**power)[0] - _divmod(small, 10.0**power)[0] <= 1.0:
+            power -= 1.0
+        power += 1.0
+    if _divmod(large, 10.0**power)[0] >= 1000.0:
+        return sign * _divmod(large, 10.0**power)[0] * 10.0**power
+    return 0.0
+
+
+def _ceil_log10(x: f64) -> int:
+    """`ceil(log10(x))` for a positive `x`."""
+    whole = floor(log10(x))
+    return whole if f64(whole) == log10(x) else whole + 1
+
+
+def _decimals(values: list[f64], low: f64, high: f64, offset: f64, power: int) -> int:
+    """The decimals every label gets, as matplotlib's `_set_format`: the fewest that write each
+    tick to within a thousandth of the ticks' spread."""
+    points = [value for value in values]
+    if len(values) < 2:
+        points.append(low)
+        points.append(high)
+    scaled = [(point - offset) / 10.0 ** f64(power) for point in points]
+    spread = max(scaled) - min(scaled)
+    if spread == 0.0:
+        spread = max([abs(point) for point in scaled])
+    if spread == 0.0:
+        spread = 1.0
+    if len(values) < 2:
+        scaled = scaled[0 : len(scaled) - 2]
+    magnitude = floor(log10(spread))
+    threshold = 1e-3 * 10.0 ** f64(magnitude)
+    decimals = max(0, 3 - magnitude)
+    while decimals >= 0:
+        worst = 0.0
+        for point in scaled:
+            worst = max(worst, abs(point - _round_to(point, decimals)))
+        if worst < threshold:
+            decimals -= 1
+        else:
+            break
+    return decimals + 1
+
+
+def _round_to(x: f64, decimals: int) -> f64:
+    """`x` rounded to `decimals` places as NumPy's `round` does it: scaled by a power of ten,
+    rounded half to even, and scaled back."""
+    scale = 10.0 ** f64(decimals)
+    y = x * scale
+    nearest = _floor(y)
+    fraction = y - nearest
+    if fraction > 0.5 or (fraction == 0.5 and fmod(nearest, 2.0) != 0.0):
+        nearest += 1.0
+    return nearest / scale
+
+
+def _format_data(value: f64) -> str:
+    """An offset written as matplotlib's `format_data` writes it: `1e3`, `2.5e-4`, `-7e6`."""
+    exponent = floor(log10(abs(value)))
+    significand = round(value / 10.0 ** f64(exponent), 10)
+    text = f"{significand:.10g}"
+    if fmod(significand, 1.0) == 0.0:
+        text = f"{significand:.0f}"
+    if exponent == 0:
+        return text
+    return f"{text}e{exponent}"
+
+
+def _minus(text: str) -> str:
+    """`text` with each hyphen replaced by the minus sign, U+2212, as matplotlib writes it."""
+    return text.replace("-", "−")
+
+
+def _fixed(value: f64, decimals: int) -> str:
+    """`value` with exactly `decimals` decimals, as Python's `"%1.Nf" % value`.
+
+    A chain of fixed format specifications, since a specification with a value inside it,
+    `f"{x:.{n}f}"`, does not build yet. Labels never need more than 17 decimals: an `f64` holds
+    17 significant digits.
+    """
+    if decimals <= 0:
+        return f"{value:.0f}"
+    if decimals == 1:
+        return f"{value:.1f}"
+    if decimals == 2:
+        return f"{value:.2f}"
+    if decimals == 3:
+        return f"{value:.3f}"
+    if decimals == 4:
+        return f"{value:.4f}"
+    if decimals == 5:
+        return f"{value:.5f}"
+    if decimals == 6:
+        return f"{value:.6f}"
+    if decimals == 7:
+        return f"{value:.7f}"
+    if decimals == 8:
+        return f"{value:.8f}"
+    if decimals == 9:
+        return f"{value:.9f}"
+    if decimals == 10:
+        return f"{value:.10f}"
+    if decimals == 11:
+        return f"{value:.11f}"
+    if decimals == 12:
+        return f"{value:.12f}"
+    if decimals == 13:
+        return f"{value:.13f}"
+    if decimals == 14:
+        return f"{value:.14f}"
+    if decimals == 15:
+        return f"{value:.15f}"
+    if decimals == 16:
+        return f"{value:.16f}"
+    return f"{value:.17f}"
