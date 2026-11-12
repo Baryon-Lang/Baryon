@@ -317,6 +317,56 @@ print(value)
   pass it or return it as `DataFrame[Priced]`, where the struct `Priced` lists the same
   columns in the same order, and `df[i]` and `itertuples` give `Priced` values.
 
+## Sorting
+
+`df.sort_values(by)` gives a new frame with the same columns and the rows in the order of
+one column, or of several:
+
+| Expression | The order of the rows |
+| --- | --- |
+| `df.sort_values("price")` | Rising `price` |
+| `df.sort_values("price", ascending=False)` | Falling `price` |
+| `df.sort_values(["symbol", "price"])` | Rising `symbol`; rows with one `symbol` by rising `price` |
+| `df.sort_values(["symbol", "price"], ascending=[True, False])` | The same, with `price` falling |
+
+The columns can also be given by name, `df.sort_values(by="price")`. With
+`trades` holding the prices 189.5, 410.0, 171.0 and 189.5:
+
+```python
+print(trades.sort_values("price"))
+print(trades.sort_values(["price", "volume"], ascending=[False, True]))
+```
+
+```text
+   price  volume
+0  171.0      50
+1  189.5     100
+2  189.5     300
+3  410.0     250
+   price  volume
+0  410.0     250
+1  189.5     100
+2  189.5     300
+3  171.0      50
+```
+
+- **The sort is stable.** Rows equal in every column sorted by keep the order they had,
+  whichever way the sort runs. pandas promises this only when asked, with `kind="stable"`;
+  here it is always so ([decision 0045](../decisions/0045-dataframe.md)).
+- **NaN goes last**, rising or falling, as in pandas. In a `bool` column `False` comes
+  before `True`.
+- **The result is a new frame**, and the frame sorted stays as it was. To keep only the
+  sorted rows, assign the result back: `trades = trades.sort_values("price")`.
+- **Rows are numbered again from 0**, since a frame has no row index. pandas would print each
+  row with the number it had before the sort.
+- **`ascending` is a `bool`**, which need not be known when compiling, or a list written
+  out with one `bool` for each column. The columns are string literals, checked when
+  compiling.
+- **Cost:** for `n` rows, about `n log n` comparisons for each column sorted by, two arrays
+  of `n` integers while sorting, and one copy of every column.
+- **A complex column has no order**, so sorting by one is a compile error. pandas's other
+  arguments, such as `na_position=`, `key=` and `inplace=`, are not built.
+
 ## `len`, `shape` and `columns`
 
 | Expression | Result |
