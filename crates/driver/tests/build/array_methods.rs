@@ -144,6 +144,48 @@ def main():
     assert_eq!(status, Some(0));
 }
 
+/// `@` adds each entry's products one at a time from the first, whatever order its loops run
+/// in, so a product with a matrix on the right, which runs row by row to vectorize, has the same
+/// bits as a sum written out by hand: for a matrix times a matrix, a vector times a matrix and a
+/// matrix times a vector, of random sizes that leave a remainder after vectorizing.
+#[test]
+fn matrix_products_add_in_textbook_order() {
+    let program = "\
+from random import Philox
+
+
+def main():
+    rng = Philox(7)
+    a = Array.zeros((37, 53))
+    b = Array.zeros((53, 29))
+    for i in range(37):
+        for p in range(53):
+            a[i, p] = rng.uniform() - 0.5
+    for p in range(53):
+        for j in range(29):
+            b[p, j] = rng.uniform() * 1e8 - 3e7
+    c = a @ b
+    row = a[3, :] @ b
+    column = a @ b[:, 5]
+    same = True
+    for i in range(37):
+        for j in range(29):
+            total = 0.0
+            for p in range(53):
+                total += a[i, p] * b[p, j]
+            same = same and c[i, j] == total
+            if i == 3:
+                same = same and row[j] == total
+            if j == 5:
+                same = same and column[i] == total
+    print(same)
+";
+    let (printed, status, report) = run("array-matmul-order", program).unwrap();
+    assert_eq!(report, "");
+    assert_eq!(printed, "True\n");
+    assert_eq!(status, Some(0));
+}
+
 /// Each array method or product that cannot give a value panics with what went wrong and
 /// where: `min` of an empty array, a dot product of different lengths, and `@` of a matrix
 /// whose columns do not match the vector's length; and, in a debug build, an integer `@`
