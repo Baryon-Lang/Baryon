@@ -258,6 +258,7 @@ as the same lines would in Python.
 | `Dataset(filename, mode="r")` | `Dataset` | opens the file and reads its header |
 | `ds.variables[name]` | `Variable` | the variable `name` |
 | `var[:]` | `Array[T, rank]` | reads every value of the variable into a new array |
+| `var[0, :, ::2]` | `Array[T, rank]` | reads the values a subscript picks, as `netCDF4` picks them |
 | `ds.dimensions[name]` | `Dimension` | the dimension `name`: its `name`, its `size` and `isunlimited()` |
 | `ds.getncattr(name)`, `var.getncattr(name)` | the type the context needs | an attribute of the file or of a variable |
 | `ds.ncattrs()`, `var.ncattrs()` | `list[str]` | the names of the attributes, in the file's order |
@@ -282,9 +283,21 @@ as the same lines would in Python.
   with the name quoted, `'pressure'`, and `AttributeError` for an attribute, with `netCDF4`'s
   message, `NetCDF: Attribute not found`. An attribute that does not hold the type read, such
   as text read as a `float` or an attribute of two numbers, raises `AttributeError` too.
+- **A subscript picks part of a variable** as `netCDF4` and NumPy pick it: an integer takes one
+  position and drops its axis, counting from the end when negative, a slice `start:stop:step`
+  takes the positions Python's slices take and keeps its axis, and the axes after the last item
+  are taken whole. `temp[0, :, ::2]` of a variable over `(time, lat, lon)` is an
+  `Array[T, 2]`. The rank in the program's type is the number of axes kept; another rank
+  raises `OSError`. Items are integers or slices of integers, constant or not.
+- **A subscript that picks nothing raises what `netCDF4` raises**: an index out of bounds
+  raises `IndexError` with `netCDF4`'s message, `index 5 is out of bounds for the dimension time
+  of length 2`, and a step of zero raises `ValueError`, `slice step cannot be zero`. So a
+  subscripted read or write can fail with `OSError | IndexError | ValueError`; `var[:]` only
+  with `OSError`.
 - **Cost.** Opening reads the header only. `var[:]` reads the header again, then makes one pass
   over the variable's values, converting them from big-endian as they are copied into the
-  array; a record variable is read one record at a time.
+  array; a record variable is read one record at a time. A subscript reads only the stretches
+  of the file it picks, one run of values along the last axis at a time.
 
 ### Differences from `netCDF4`
 
@@ -298,6 +311,8 @@ as the same lines would in Python.
   which needs the name known only when the file is read; Baryon reads
   `ds.getncattr("title")`.
 - **`var.dimensions` is a `list[str]`**, where `netCDF4` gives a tuple of the same names.
+- **A subscript takes integers and slices.** `netCDF4` also takes arrays of indices, of
+  booleans and `...`; those are compile errors so far.
 
 ### Writing a NetCDF file
 
@@ -331,6 +346,7 @@ the same calls, fill values and padding included; the tests compare them.
 | `ds.createVariable(varname, datatype, dimensions=())` | `Variable` | a new variable over the dimensions named, slowest first |
 | `ds.setncattr(name, value)`, `var.setncattr(name, value)` | `None` | sets an attribute of the file or of a variable |
 | `var[:] = values` | `None` | writes an array as all the variable's values |
+| `var[1, ::2] = values` | `None` | writes an array as the values a subscript picks |
 | `with Dataset(...) as ds:` | | binds `ds` for the block, as `ds = Dataset(...)` does |
 
 - **Each call changes the file at once.** The file is the only state, so `ds.close()` and the
@@ -339,9 +355,12 @@ the same calls, fill values and padding included; the tests compare them.
   old one and then renames it over it, so even a crash or a full disk in the middle of a change
   leaves the old file or the new one, never one cut short, and the file keeps its permissions.
   A variable is filled with its type's fill value until it is
-  written. Defining reads and writes the whole file each time, which is quick for the small
-  headers of classic files but makes many small definitions of a large file slow: define
-  everything first, then write the values.
+  written. Each change and each write reads the whole file into memory and writes it again,
+  which is quick for the small headers of classic files but makes many small definitions of a
+  large file slow: define everything first, then write the values. The file must fit in
+  memory, records added included: a write that would not fit raises `OSError` with the kind
+  `INVALID_DATA`, or, on a system that promises more memory than it has, can end the program.
+  Writing in place is idea I.53 on the roadmap.
 - **A type is named as `netCDF4` names it** (`"f4"`, `"f8"`, `"i1"`, `"i2"`, `"i4"`) or as NumPy
   names or codes it (`"float32"`, `"f"`, `"int16"`, `"h"` and so on). `dimensions` is a tuple of
   names, or one name, and up to four of them so far.
@@ -353,14 +372,23 @@ the same calls, fill values and padding included; the tests compare them.
   `add_offset` as `netCDF4` packs. A record variable takes as many records as the array's first
   length, adding records to the file; every other length must be the dimension's.
   `ds.variables[name][:] = values` writes a variable found by name.
+- **A subscript writes part of a variable**, picked as a read picks it. The array's rank is the
+  number of axes the subscript keeps and its lengths the positions it picks. Along the
+  unlimited dimension a write may go past the last record, as `netCDF4`'s may: `temp[5] = row`
+  of a file of two records adds four, filling the ones not written, and a slice there with no
+  stop, `temp[2:] = values`, takes as many records as the array has rows. A slice with a
+  negative step along the unlimited dimension is refused with `OSError`, where `netCDF4` writes
+  the wrong positions.
+  Along any other dimension an index out of bounds raises `IndexError`, and a step of zero
+  raises `ValueError`, as a read's does.
 - **What the format refuses raises `OSError`** with the kind `INVALID_DATA` and `netCDF4`'s
   message: a name already in use, a second unlimited dimension, or the unlimited dimension
   anywhere but first.
 
 ### Not built yet
 
-Slices of a variable, such as `var[0, :, :]`, come next under decision 0047. Listing
-`ds.variables` and `ds.dimensions`, attributes set as `var.units = "K"`, `fill_value=` and
-compression in `createVariable`, text variables, attributes of several values, CDF-5 files and
+Listing `ds.variables` and `ds.dimensions`, attributes set as `var.units = "K"`, `fill_value=` and
+compression in `createVariable`, subscripts of arrays of indices, booleans or `...`, text
+variables, attributes of several values, CDF-5 files and
 NetCDF-4 files, which are HDF5 files (roadmap 3.14.6), come later. Each is an error that names
 it, never silently ignored.

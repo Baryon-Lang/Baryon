@@ -88,79 +88,73 @@ fn total(database: &Database) -> Body<'_> {
 const TOTAL: &str = "\
 define i64 @total(i64 %a1, i64 %a2) {
 start:
-  %_0 = alloca i64
-  %_1 = alloca i64
   %_2 = alloca i64
   %_3 = alloca i64
-  store i64 %a1, ptr %_1
   store i64 %a2, ptr %_2
   br label %bb0
 bb0:
   store i64 0, ptr %_3
-  %t0 = load i64, ptr %_1
-  %t1 = call ptr @llvm.stacksave()
-  %t2 = alloca [2 x ptr]
-  %t3 = getelementptr inbounds [2 x ptr], ptr %t2, i64 0, i64 0
-  store ptr %_2, ptr %t3
-  %t4 = call i64 @baryon_rt_chunk_count(i64 %t0)
-  %t5 = add i64 %t4, 1
-  %t6 = call ptr @baryon_rt_allocate_array(i64 %t5, i64 8, i64 8, ptr @baryon.loc.1)
-  store i64 0, ptr %t6
-  %t7 = getelementptr inbounds [2 x ptr], ptr %t2, i64 0, i64 1
-  store ptr %t6, ptr %t7
-  call void @baryon_rt_parallel_for(i64 %t0, ptr @total.chunk0, ptr %t2)
+  %t0 = call ptr @llvm.stacksave()
+  %t1 = alloca [2 x ptr]
+  %t2 = getelementptr inbounds [2 x ptr], ptr %t1, i64 0, i64 0
+  store ptr %_2, ptr %t2
+  %t3 = call i64 @baryon_rt_chunk_count(i64 %a1)
+  %t4 = add i64 %t3, 1
+  %t5 = call ptr @baryon_rt_allocate_array(i64 %t4, i64 8, i64 8, ptr @baryon.loc.1)
+  store i64 0, ptr %t5
+  %t6 = getelementptr inbounds [2 x ptr], ptr %t1, i64 0, i64 1
+  store ptr %t5, ptr %t6
+  call void @baryon_rt_parallel_for(i64 %a1, ptr @total.chunk0, ptr %t1)
+  %t7 = alloca i64
   %t8 = alloca i64
-  %t9 = alloca i64
-  store i64 1, ptr %t8
+  store i64 1, ptr %t7
   br label %c0
 c0:
-  %t10 = load i64, ptr %t8
-  %t11 = icmp slt i64 %t10, %t4
-  br i1 %t11, label %c1, label %c5
+  %t9 = load i64, ptr %t7
+  %t10 = icmp slt i64 %t9, %t3
+  br i1 %t10, label %c1, label %c5
 c1:
-  %t12 = shl i64 %t10, 1
-  store i64 0, ptr %t9
+  %t11 = shl i64 %t9, 1
+  store i64 0, ptr %t8
   br label %c2
 c2:
-  %t13 = load i64, ptr %t9
-  %t14 = add i64 %t13, %t10
-  %t15 = icmp slt i64 %t14, %t4
-  br i1 %t15, label %c3, label %c4
+  %t12 = load i64, ptr %t8
+  %t13 = add i64 %t12, %t9
+  %t14 = icmp slt i64 %t13, %t3
+  br i1 %t14, label %c3, label %c4
 c3:
-  %t16 = getelementptr inbounds i64, ptr %t6, i64 %t13
-  %t17 = getelementptr inbounds i64, ptr %t6, i64 %t14
+  %t15 = getelementptr inbounds i64, ptr %t5, i64 %t12
+  %t16 = getelementptr inbounds i64, ptr %t5, i64 %t13
+  %t17 = load i64, ptr %t15
   %t18 = load i64, ptr %t16
-  %t19 = load i64, ptr %t17
-  %t20 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t18, i64 %t19)
-  %t21 = extractvalue { i64, i1 } %t20, 1
-  br i1 %t21, label %p0, label %c6
+  %t19 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t17, i64 %t18)
+  %t20 = extractvalue { i64, i1 } %t19, 1
+  br i1 %t20, label %p0, label %c6
 c6:
-  %t22 = extractvalue { i64, i1 } %t20, 0
-  store i64 %t22, ptr %t16
-  %t23 = add i64 %t13, %t12
-  store i64 %t23, ptr %t9
+  %t21 = extractvalue { i64, i1 } %t19, 0
+  store i64 %t21, ptr %t15
+  %t22 = add i64 %t12, %t11
+  store i64 %t22, ptr %t8
   br label %c2
 c4:
-  store i64 %t12, ptr %t8
+  store i64 %t11, ptr %t7
   br label %c0
 c5:
-  %t24 = load i64, ptr %t6
-  %t25 = load i64, ptr %_3
-  %t26 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t25, i64 %t24)
-  %t27 = extractvalue { i64, i1 } %t26, 1
-  br i1 %t27, label %p1, label %c7
+  %t23 = load i64, ptr %t5
+  %t24 = load i64, ptr %_3
+  %t25 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t24, i64 %t23)
+  %t26 = extractvalue { i64, i1 } %t25, 1
+  br i1 %t26, label %p1, label %c7
 c7:
-  %t28 = extractvalue { i64, i1 } %t26, 0
-  store i64 %t28, ptr %_3
-  %t29 = mul i64 %t5, 8
-  call void @baryon_rt_deallocate(ptr %t6, i64 %t29, i64 8)
-  call void @llvm.stackrestore(ptr %t1)
+  %t27 = extractvalue { i64, i1 } %t25, 0
+  store i64 %t27, ptr %_3
+  %t28 = mul i64 %t4, 8
+  call void @baryon_rt_deallocate(ptr %t5, i64 %t28, i64 8)
+  call void @llvm.stackrestore(ptr %t0)
   br label %bb1
 bb1:
-  %t30 = load i64, ptr %_3
-  store i64 %t30, ptr %_0
-  %t31 = load i64, ptr %_0
-  ret i64 %t31
+  %t29 = load i64, ptr %_3
+  ret i64 %t29
 p0:
   call void @baryon_rt_panic(ptr @baryon.str.2, i64 23, ptr @baryon.loc.1)
   unreachable
@@ -196,22 +190,16 @@ done:
 
 define internal void @total.body0(i64 %a1, i64 %a2, ptr noalias %a3) {
 start:
-  %_1 = alloca i64
-  %_2 = alloca i64
-  store i64 %a1, ptr %_1
-  store i64 %a2, ptr %_2
   br label %bb0
 bb0:
   %t0 = load i64, ptr %a3
-  %t1 = load i64, ptr %_2
-  %t2 = add i64 %t0, %t1
-  store i64 %t2, ptr %a3
+  %t1 = add i64 %t0, %a2
+  store i64 %t1, ptr %a3
   ret void
 }
 
 @baryon.str.0 = private unnamed_addr constant [8 x i8] c\"heat.byn\"
-@baryon.loc.1 = private unnamed_addr constant { ptr, i64, i32, i32 } \
-{ ptr @baryon.str.0, i64 8, i32 1, i32 1 }
+@baryon.loc.1 = private unnamed_addr constant { ptr, i64, i32, i32 } { ptr @baryon.str.0, i64 8, i32 1, i32 1 }
 @baryon.str.2 = private unnamed_addr constant [23 x i8] c\"integer overflow in `+`\"
 
 declare noalias nonnull ptr @baryon_rt_allocate_array(i64, i64, i64, ptr) nounwind

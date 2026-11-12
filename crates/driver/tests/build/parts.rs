@@ -6,9 +6,9 @@ use driver::{Profile, Session};
 use std::fmt::Write as _;
 use std::process::Command;
 
-/// How many copies of the summing function [`program`] writes: about 25 KB of LLVM IR each, so
-/// 40 make about 1 MB, enough for several modules.
-const COPIES: usize = 40;
+/// How many copies of the summing function [`program`] writes: about 11 KB of LLVM IR each, so
+/// 120 make about 1.3 MB, enough for several modules.
+const COPIES: usize = 120;
 
 /// A program of [`COPIES`] functions, each adding `x[i] * x[i] + x[i] / 3.0` over an array in
 /// index order and then its own number, and a `main` that prints each one's result.

@@ -247,7 +247,7 @@ fn release_builds_wrap_on_overflow() {
     module.define("step", &body, &[]).unwrap();
     let text = module.finish();
     assert!(
-        text.contains("  store i1 %t5, ptr %_4\n  br label %bb1\nbb1:"),
+        text.contains("  %t4 = xor i1 %t3, true\n  br label %bb1\nbb1:"),
         "{text}"
     );
     assert!(!text.contains("baryon_rt_panic"), "{text}");

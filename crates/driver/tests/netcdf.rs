@@ -46,7 +46,7 @@ def main() -> Raises[None, OSError | KeyError | AttributeError]:
     assert_eq!(check_one(program), "");
 }
 
-/// An array type no `NetCDF` variable holds, a slice of a variable, an untyped attribute, a
+/// An array type no `NetCDF` variable holds, a float index, an untyped attribute, a
 /// new file with no format, a listing of the variables, a class not built, and an unhandled
 /// `KeyError`.
 #[test]
@@ -57,7 +57,7 @@ from netCDF4 import Dataset, MFDataset
 def main() -> Raises[None, OSError | KeyError]:
     ds = Dataset("air.nc")
     flags: Array[u8, 1] = ds.variables["flags"][:]
-    first: Array[f32, 2] = ds.variables["air"][0]
+    first: Array[f32, 2] = ds.variables["air"][0.5]
     print(ds.getncattr("title"))
     out = Dataset("out.nc", "w")
     names = ds.variables
@@ -75,12 +75,12 @@ def careless(ds: Dataset) -> None:
   |                           ^^^^^^^^^^^^^^^^^^^^^^^^ not a type a NetCDF variable holds
   = note: a classic NetCDF file holds signed integers and floats, such as `Array[f32, 3]`
 
-error: a NetCDF variable is read whole, as `var[:]`, so far
+error: a NetCDF variable is indexed by integers and slices, found `f64`
  --> main.byn:6:48
   |
-6 |     first: Array[f32, 2] = ds.variables["air"][0]
-  |                                                ^ not built yet
-  = note: slices of a variable come later under decision 0047; read it whole, then slice the array
+6 |     first: Array[f32, 2] = ds.variables["air"][0.5]
+  |                                                ^^^ not an integer
+  = note: for example `var[0, :, ::2]`; other indexes come later under decision 0047
 
 error: the type of a NetCDF attribute comes from where it goes
  --> main.byn:7:11
@@ -148,7 +148,7 @@ def main() -> Raises[None, OSError | KeyError]:
 }
 
 /// A NetCDF-4 format, a mode not built, a variable of five dimensions or with compression, an
-/// attribute of a list, a slice written, values that are not numbers, and an unhandled
+/// attribute of a list, a `str` index, values that are not numbers, and an unhandled
 /// `OSError`.
 #[test]
 fn what_cannot_be_written_is_explained() {
@@ -163,7 +163,7 @@ def main() -> Raises[None, OSError]:
     ds.createVariable("w", "f8", ("a",), zlib=True)
     ds.setncattr("weights", [0.5, 1.5])
     v = ds.createVariable("u", "f8", ("a",))
-    v[0] = Array([1.0])
+    v["a"] = Array([1.0])
     v[:] = Array([True])
 
 def unhandled(ds: Dataset):
@@ -205,12 +205,12 @@ error: a NetCDF attribute is a `str`, an `int` or a `float`, found `list[f64]`
 9 |     ds.setncattr("weights", [0.5, 1.5])
   |                             ^^^^^^^^^^ not an attribute's type
 
-error: a NetCDF variable is written whole, as `var[:] = values`, so far
+error: a NetCDF variable is indexed by integers and slices, found `str`
   --> main.byn:11:7
    |
-11 |     v[0] = Array([1.0])
-   |       ^ not built yet
-   = note: slices of a variable come later under decision 0047
+11 |     v["a"] = Array([1.0])
+   |       ^^^ not an integer
+   = note: for example `var[0, :, ::2]`; other indexes come later under decision 0047
 
 error: a NetCDF variable is written from an array of numbers, found `Array[bool, 1]`
   --> main.byn:12:12
