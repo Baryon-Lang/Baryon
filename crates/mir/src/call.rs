@@ -235,8 +235,7 @@ pub enum Builtin {
     /// raw bytes (decision 0036), `Array.load` or `Array.save`, which read and write a `.npy`
     /// file (decision 0043), or `fits.getheader`, `fits.getdata` or `fits.writeto`, which read
     /// and write a FITS file (decision 0044). [`ArrayFile`] says what each takes and gives.
-    /// Each can fail,
-    /// as a [`File`](Self::File) call can: its call has an error edge.
+    /// Each can fail, as a [`File`](Self::File) call can: its call has an error edge.
     ArrayFile(ArrayFile),
     /// `subprocess.run(args, ...)` (decision 0036, part 8): runs the program `args[0]` names,
     /// found on `PATH`, with the rest of `args` as its arguments and no shell, and waits for it.
