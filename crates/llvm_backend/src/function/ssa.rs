@@ -30,6 +30,7 @@ mod rewrite;
 use rewrite::{rewrite, trivial};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
+use std::hash::{BuildHasherDefault, Hasher};
 
 /// What every branch to a body block contains: `label %bb` and the block's number
 /// ([`block_label`](super::block_label)).
@@ -204,7 +205,7 @@ impl Ssa {
             edges,
             walked: vec![0; blocks],
             walk: 0,
-            entries: HashMap::new(),
+            entries: HashMap::default(),
             phis: Vec::new(),
             pending: Vec::new(),
         };
@@ -268,7 +269,7 @@ struct Resolver<'s> {
     /// The number of the walk being made.
     walk: u32,
     /// The value of each (block, local) on entry, once found.
-    entries: HashMap<(usize, usize), Value>,
+    entries: HashMap<(usize, usize), Value, BuildHasherDefault<NumberHasher>>,
     /// Every `phi` made so far.
     phis: Vec<Phi<'s>>,
     /// The `phi`s whose operands are still to be found.
@@ -396,3 +397,33 @@ fn phi_name(local: usize, block: usize) -> String {
 /// How the name of every `phi` this module makes starts. The `$` appears nowhere else the
 /// backend writes, outside text constants, so [`rewrite`](rewrite()) finds names by looking for it.
 const PHI_PREFIX: &str = "%ssa$";
+
+/// A hasher for keys made of numbers, such as `(block, local)`: one multiply per number, where
+/// the standard library's `SipHash`, built to resist keys an attacker picks, takes dozens of
+/// instructions. The keys here come from the compiler itself, so that resistance buys nothing.
+/// Finding each `phi`'s entry value hashes one key per step of every walk; on the 4,706-line
+/// program of roadmap 2.0 this hasher took the walks from 185 to 83 million instructions, and
+/// the whole build from 1.92 to 1.82 billion (roadmap 2.3).
+#[derive(Default)]
+struct NumberHasher(u64);
+
+impl Hasher for NumberHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.write_u64(u64::from(byte));
+        }
+    }
+
+    fn write_u64(&mut self, number: u64) {
+        // The mixing step of the Fx hash rustc uses for its own tables.
+        self.0 = (self.0.rotate_left(5) ^ number).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+
+    fn write_usize(&mut self, number: usize) {
+        self.write_u64(number as u64);
+    }
+}
