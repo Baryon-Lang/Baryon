@@ -3,7 +3,7 @@
 Every function fixes its order of operations, so a result has the same bits on every machine.
 """
 
-from math import copysign, fabs, hypot, sqrt
+from math import copysign, fabs, hypot, isfinite, sqrt
 
 
 class LinAlgError(Exception):
@@ -419,3 +419,641 @@ def _diagonalize(
     for i in range(n):
         for j in range(n):
             v[i, j] = vt[j, i]
+
+
+def svd(
+    a: Array[f64, 2], full_matrices: bool = True
+) -> Raises[tuple[Array[f64, 2], Array[f64, 1], Array[f64, 2]], LinAlgError]:
+    """The singular value decomposition of an m × n matrix `a`, as `numpy.linalg.svd(a)`:
+    `u, s, vh` with `a == u @ diag(s) @ vh`, `s` the k = min(m, n) singular values in descending
+    order, and `u` and `vh` with orthonormal columns and rows. `u` is m × m and `vh` n × n, or
+    m × k and k × n when `full_matrices` is `False`.
+
+    One-sided Jacobi rotations (Hestenes) on the columns of `a`, or of its transpose when it is
+    wide, until every pair of columns is orthogonal to working precision: each sweep costs about
+    3mn² multiply-adds, and 6 to 10 sweeps are typical. Its error is small relative to the largest
+    singular value, as LAPACK's is. A singular vector's sign is the algorithm's, and
+    can differ from NumPy's. Raises `LinAlgError("SVD did not converge")` after 60 sweeps.
+    """
+    m = a.shape[0]
+    n = a.shape[1]
+    wide = m < n
+    rows = m
+    columns = n
+    if wide:
+        rows = n
+        columns = m
+    work = Array.zeros((columns, rows))
+    for i in range(m):
+        for j in range(n):
+            if wide:
+                work[i, j] = a[i, j]
+            else:
+                work[j, i] = a[i, j]
+    v = Array.zeros((columns, columns))
+    for i in range(columns):
+        v[i, i] = 1.0
+    _jacobi_sweeps(work, v)
+    order = _descending(work)
+    k = columns
+    s = Array.zeros(k)
+    left = Array.zeros((k, rows))
+    right = Array.zeros((k, columns))
+    for position in range(k):
+        column = order[position]
+        norm = 0.0
+        for row in range(rows):
+            norm += work[column, row] * work[column, row]
+        norm = sqrt(norm)
+        s[position] = norm
+        for row in range(rows):
+            if norm > 0.0:
+                left[position, row] = work[column, row] / norm
+        for row in range(columns):
+            right[position, row] = v[column, row]
+    full_left = _completed(left, rows, full_matrices)
+    if wide:
+        u = Array.zeros((m, k))
+        for i in range(m):
+            for j in range(k):
+                u[i, j] = right[j, i]
+        return u, s, full_left
+    u = Array.zeros((full_left.shape[0], m))
+    for i in range(full_left.shape[0]):
+        for j in range(m):
+            u[i, j] = full_left[i, j]
+    return _transposed(u), s, right
+
+
+def svdvals(a: Array[f64, 2]) -> Raises[Array[f64, 1], LinAlgError]:
+    """The singular values of `a` in descending order, as `numpy.linalg.svdvals(a)`: the `s` of
+    `svd(a)`, at about the same cost.
+    """
+    _, s, _ = svd(a, False)
+    return s
+
+
+def _jacobi_sweeps(work: InOut[Array[f64, 2]], v: InOut[Array[f64, 2]]) -> Raises[None, LinAlgError]:
+    """Rotates pairs of rows of `work`, each a column of the matrix being decomposed, until every
+    pair is orthogonal to working precision, applying the same rotations to the rows of `v`.
+    Rows are used so that each rotation reads contiguous memory.
+    """
+    columns = work.shape[0]
+    rows = work.shape[1]
+    epsilon = 2.0**-52
+    for _ in range(60):
+        rotated = False
+        for p in range(columns - 1):
+            for q in range(p + 1, columns):
+                alpha = 0.0
+                beta = 0.0
+                gamma = 0.0
+                for row in range(rows):
+                    alpha += work[p, row] * work[p, row]
+                    beta += work[q, row] * work[q, row]
+                    gamma += work[p, row] * work[q, row]
+                if gamma == 0.0 or fabs(gamma) <= epsilon * sqrt(alpha * beta):
+                    continue
+                rotated = True
+                zeta = (beta - alpha) / (2.0 * gamma)
+                t = copysign(1.0, zeta) / (fabs(zeta) + sqrt(1.0 + zeta * zeta))
+                c = 1.0 / sqrt(1.0 + t * t)
+                s = c * t
+                for row in range(rows):
+                    x = work[p, row]
+                    y = work[q, row]
+                    work[p, row] = c * x - s * y
+                    work[q, row] = s * x + c * y
+                for row in range(columns):
+                    x = v[p, row]
+                    y = v[q, row]
+                    v[p, row] = c * x - s * y
+                    v[q, row] = s * x + c * y
+        if not rotated:
+            return
+    raise LinAlgError("SVD did not converge")
+
+
+def _descending(work: Array[f64, 2]) -> Array[int, 1]:
+    """The rows of `work` in descending order of their length, ties in their own order."""
+    count = work.shape[0]
+    lengths = Array.zeros(count)
+    order = Array.zeros(count, int)
+    for i in range(count):
+        order[i] = i
+        for row in range(work.shape[1]):
+            lengths[i] += work[i, row] * work[i, row]
+    for i in range(1, count):
+        current = order[i]
+        j = i - 1
+        while j >= 0 and lengths[order[j]] < lengths[current]:
+            order[j + 1] = order[j]
+            j -= 1
+        order[j + 1] = current
+    return order
+
+
+def _completed(vectors: Array[f64, 2], length: int, full: bool) -> Array[f64, 2]:
+    """`vectors`, rows that are orthonormal or zero, with each zero row replaced by a unit vector
+    orthogonal to all the others, and, when `full`, rows added until there are `length`: Gram-
+    Schmidt twice against each unit vector of the standard basis, keeping the first that stays
+    long enough. These are the singular vectors of zero singular values, which any orthonormal
+    completion gives.
+    """
+    count = vectors.shape[0]
+    total = count
+    if full:
+        total = length
+    result = Array.zeros((total, length))
+    for i in range(count):
+        for j in range(length):
+            result[i, j] = vectors[i, j]
+    candidate = 0
+    for i in range(total):
+        filled = False
+        if i < count:
+            for j in range(length):
+                if result[i, j] != 0.0:
+                    filled = True
+        while not filled and candidate < length:
+            trial = Array.zeros(length)
+            trial[candidate] = 1.0
+            candidate += 1
+            for _ in range(2):
+                for other in range(total):
+                    if other == i:
+                        continue
+                    projection = 0.0
+                    for j in range(length):
+                        projection += result[other, j] * trial[j]
+                    for j in range(length):
+                        trial[j] -= projection * result[other, j]
+            norm = sqrt(trial.dot(trial))
+            if norm > 0.5:
+                for j in range(length):
+                    result[i, j] = trial[j] / norm
+                filled = True
+    return result
+
+
+def _transposed(a: Array[f64, 2]) -> Array[f64, 2]:
+    """A new array holding the transpose of `a`."""
+    result = Array.zeros((a.shape[1], a.shape[0]))
+    for i in range(a.shape[0]):
+        for j in range(a.shape[1]):
+            result[j, i] = a[i, j]
+    return result
+
+
+def eig(a: Array[f64, 2]) -> Raises[tuple[Array[complex128, 1], Array[complex128, 2]], LinAlgError]:
+    """The eigenvalues `w` and right eigenvectors `v` of a square matrix `a`, as
+    `numpy.linalg.eig(a)`: `a @ v[:, i]` is `w[i] * v[:, i]`. Each eigenvector has length 1 and
+    its largest entry real, as LAPACK's `geev` returns them; complex eigenvalues come in conjugate
+    pairs, the one with positive imaginary part first.
+
+    Balancing by powers of two (EISPACK's `balanc`, without permutations), reduction to
+    Hessenberg form (`orthes`), then the shifted double QR iteration with back-substitution for
+    the eigenvectors (`hqr2`), as JAMA writes them: about 25n³ multiply-adds. The order of the
+    eigenvalues is the algorithm's, which can differ from NumPy's. Raises
+    `LinAlgError("Array must not contain infs or NaNs")` for such an entry, as NumPy does, and
+    `LinAlgError("Eigenvalues did not converge")` after 100 iterations on one eigenvalue; panics
+    when `a` is not square.
+    """
+    n = a.shape[0]
+    assert a.shape[1] == n, "eig needs a square matrix"
+    for i in range(n):
+        for j in range(n):
+            if not isfinite(a[i, j]):
+                raise LinAlgError("Array must not contain infs or NaNs")
+    h = a.copy()
+    scale = _balance(h)
+    v = Array.zeros((n, n))
+    real = Array.zeros(n)
+    imaginary = Array.zeros(n)
+    if n > 0:
+        _hessenberg(h, v)
+        _schur(h, v, real, imaginary)
+    values = Array.zeros(n, complex128)
+    vectors = Array.zeros((n, n), complex128)
+    for j in range(n):
+        values[j] = complex(real[j], imaginary[j])
+        for i in range(n):
+            if imaginary[j] > 0.0:
+                vectors[i, j] = complex(v[i, j], v[i, j + 1]) * scale[i]
+            elif imaginary[j] < 0.0:
+                vectors[i, j] = complex(v[i, j - 1], -v[i, j]) * scale[i]
+            else:
+                vectors[i, j] = complex(v[i, j] * scale[i], 0.0)
+    for j in range(n):
+        length = 0.0
+        largest = 0
+        for i in range(n):
+            size = abs(vectors[i, j])
+            length = hypot(length, size)
+            if size > abs(vectors[largest, j]):
+                largest = i
+        if length == 0.0:
+            continue
+        turn = vectors[largest, j].conjugate() / abs(vectors[largest, j]) / length
+        if imaginary[j] == 0.0:
+            turn = complex(1.0 / length, 0.0)
+        for i in range(n):
+            vectors[i, j] = vectors[i, j] * turn
+        if imaginary[j] != 0.0:
+            vectors[largest, j] = complex(vectors[largest, j].real, 0.0)
+    return values, vectors
+
+
+def eigvals(a: Array[f64, 2]) -> Raises[Array[complex128, 1], LinAlgError]:
+    """The eigenvalues of a square matrix `a`, as `numpy.linalg.eigvals(a)`: the `w` of `eig(a)`,
+    at the same cost.
+    """
+    w, _ = eig(a)
+    return w
+
+
+def _balance(a: InOut[Array[f64, 2]]) -> Array[f64, 1]:
+    """Scales the rows and columns of `a` by powers of two, `a = d⁻¹ a d`, until each row and its
+    column have about the same size, and returns `d`'s diagonal: EISPACK's `balanc` without its
+    permutations. Powers of two scale exactly, and a balanced matrix's eigenvalues come out
+    accurate when its entries span many orders of magnitude.
+    """
+    n = a.shape[0]
+    scale = Array.ones(n)
+    unbalanced = True
+    while unbalanced:
+        unbalanced = False
+        for i in range(n):
+            column = 0.0
+            row = 0.0
+            for j in range(n):
+                if j != i:
+                    column += fabs(a[j, i])
+                    row += fabs(a[i, j])
+            if column == 0.0 or row == 0.0:
+                continue
+            total = column + row
+            factor = 1.0
+            while column < row / 2.0:
+                factor *= 2.0
+                column *= 4.0
+            while column >= row * 2.0:
+                factor /= 2.0
+                column /= 4.0
+            if (column + row) / factor < 0.95 * total:
+                unbalanced = True
+                scale[i] *= factor
+                for j in range(n):
+                    a[i, j] /= factor
+                    a[j, i] *= factor
+    return scale
+
+
+def _hessenberg(h: InOut[Array[f64, 2]], v: InOut[Array[f64, 2]]):
+    """Reduces `h` to upper Hessenberg form by Householder reflections and sets `v` to the
+    orthogonal matrix that does it: EISPACK's `orthes` and `ortran` as JAMA writes them.
+    """
+    n = h.shape[0]
+    high = n - 1
+    reflector = Array.zeros(n)
+    for m in range(1, high):
+        scale = 0.0
+        for i in range(m, high + 1):
+            scale += fabs(h[i, m - 1])
+        if scale == 0.0:
+            continue
+        total = 0.0
+        for i in range(high, m - 1, -1):
+            reflector[i] = h[i, m - 1] / scale
+            total += reflector[i] * reflector[i]
+        g = sqrt(total)
+        if reflector[m] > 0.0:
+            g = -g
+        total -= reflector[m] * g
+        reflector[m] -= g
+        for j in range(m, n):
+            f = 0.0
+            for i in range(high, m - 1, -1):
+                f += reflector[i] * h[i, j]
+            f /= total
+            for i in range(m, high + 1):
+                h[i, j] -= f * reflector[i]
+        for i in range(high + 1):
+            f = 0.0
+            for j in range(high, m - 1, -1):
+                f += reflector[j] * h[i, j]
+            f /= total
+            for j in range(m, high + 1):
+                h[i, j] -= f * reflector[j]
+        reflector[m] *= scale
+        h[m, m - 1] = scale * g
+    for i in range(n):
+        for j in range(n):
+            v[i, j] = 0.0
+        v[i, i] = 1.0
+    for m in range(high - 1, 0, -1):
+        if h[m, m - 1] == 0.0:
+            continue
+        for i in range(m + 1, high + 1):
+            reflector[i] = h[i, m - 1]
+        for j in range(m, high + 1):
+            g = 0.0
+            for i in range(m, high + 1):
+                g += reflector[i] * v[i, j]
+            g = (g / reflector[m]) / h[m, m - 1]
+            for i in range(m, high + 1):
+                v[i, j] += g * reflector[i]
+
+
+def _schur(
+    h: InOut[Array[f64, 2]],
+    v: InOut[Array[f64, 2]],
+    real: InOut[Array[f64, 1]],
+    imaginary: InOut[Array[f64, 1]],
+) -> Raises[None, LinAlgError]:
+    """Finds the eigenvalues of the Hessenberg matrix `h` by the shifted double QR iteration,
+    into `real` and `imaginary`, then the eigenvectors by back-substitution, into `v`: EISPACK's
+    `hqr2` as JAMA writes it, with the single-letter names of the original. A complex pair's
+    eigenvector is two columns of `v`, its real and imaginary parts. Raises `LinAlgError` after
+    100 iterations on one eigenvalue.
+    """
+    size = h.shape[0]
+    n = size - 1
+    epsilon = 2.0**-52
+    shift = 0.0
+    p = 0.0
+    q = 0.0
+    r = 0.0
+    s = 0.0
+    z = 0.0
+    norm = 0.0
+    for i in range(size):
+        for j in range(max(i - 1, 0), size):
+            norm += fabs(h[i, j])
+    iterations = 0
+    while n >= 0:
+        l = n
+        while l > 0:
+            s = fabs(h[l - 1, l - 1]) + fabs(h[l, l])
+            if s == 0.0:
+                s = norm
+            if fabs(h[l, l - 1]) < epsilon * s:
+                break
+            l -= 1
+        if l == n:
+            h[n, n] += shift
+            real[n] = h[n, n]
+            imaginary[n] = 0.0
+            n -= 1
+            iterations = 0
+        elif l == n - 1:
+            w = h[n, n - 1] * h[n - 1, n]
+            p = (h[n - 1, n - 1] - h[n, n]) / 2.0
+            q = p * p + w
+            z = sqrt(fabs(q))
+            h[n, n] += shift
+            h[n - 1, n - 1] += shift
+            x = h[n, n]
+            if q >= 0.0:
+                z = p + copysign(z, p)
+                real[n - 1] = x + z
+                real[n] = real[n - 1]
+                if z != 0.0:
+                    real[n] = x - w / z
+                imaginary[n - 1] = 0.0
+                imaginary[n] = 0.0
+                x = h[n, n - 1]
+                s = fabs(x) + fabs(z)
+                p = x / s
+                q = z / s
+                r = sqrt(p * p + q * q)
+                p /= r
+                q /= r
+                for j in range(n - 1, size):
+                    z = h[n - 1, j]
+                    h[n - 1, j] = q * z + p * h[n, j]
+                    h[n, j] = q * h[n, j] - p * z
+                for i in range(n + 1):
+                    z = h[i, n - 1]
+                    h[i, n - 1] = q * z + p * h[i, n]
+                    h[i, n] = q * h[i, n] - p * z
+                for i in range(size):
+                    z = v[i, n - 1]
+                    v[i, n - 1] = q * z + p * v[i, n]
+                    v[i, n] = q * v[i, n] - p * z
+            else:
+                real[n - 1] = x + p
+                real[n] = x + p
+                imaginary[n - 1] = z
+                imaginary[n] = -z
+            n -= 2
+            iterations = 0
+        else:
+            x = h[n, n]
+            y = 0.0
+            w = 0.0
+            if l < n:
+                y = h[n - 1, n - 1]
+                w = h[n, n - 1] * h[n - 1, n]
+            if iterations == 10:
+                shift += x
+                for i in range(n + 1):
+                    h[i, i] -= x
+                s = fabs(h[n, n - 1]) + fabs(h[n - 1, n - 2])
+                x = 0.75 * s
+                y = x
+                w = -0.4375 * s * s
+            if iterations == 30:
+                s = (y - x) / 2.0
+                s = s * s + w
+                if s > 0.0:
+                    s = sqrt(s)
+                    if y < x:
+                        s = -s
+                    s = x - w / ((y - x) / 2.0 + s)
+                    for i in range(n + 1):
+                        h[i, i] -= s
+                    shift += s
+                    x = 0.964
+                    y = x
+                    w = x
+            iterations += 1
+            if iterations > 100:
+                raise LinAlgError("Eigenvalues did not converge")
+            m = n - 2
+            while m >= l:
+                z = h[m, m]
+                r = x - z
+                s = y - z
+                p = (r * s - w) / h[m + 1, m] + h[m, m + 1]
+                q = h[m + 1, m + 1] - z - r - s
+                r = h[m + 2, m + 1]
+                s = fabs(p) + fabs(q) + fabs(r)
+                p /= s
+                q /= s
+                r /= s
+                if m == l:
+                    break
+                left = fabs(h[m, m - 1]) * (fabs(q) + fabs(r))
+                right = epsilon * (fabs(p) * (fabs(h[m - 1, m - 1]) + fabs(z) + fabs(h[m + 1, m + 1])))
+                if left < right:
+                    break
+                m -= 1
+            for i in range(m + 2, n + 1):
+                h[i, i - 2] = 0.0
+                if i > m + 2:
+                    h[i, i - 3] = 0.0
+            for k in range(m, n):
+                not_last = k != n - 1
+                if k != m:
+                    p = h[k, k - 1]
+                    q = h[k + 1, k - 1]
+                    r = 0.0
+                    if not_last:
+                        r = h[k + 2, k - 1]
+                    x = fabs(p) + fabs(q) + fabs(r)
+                    if x == 0.0:
+                        continue
+                    p /= x
+                    q /= x
+                    r /= x
+                s = copysign(sqrt(p * p + q * q + r * r), p)
+                if s == 0.0:
+                    continue
+                if k != m:
+                    h[k, k - 1] = -s * x
+                elif l != m:
+                    h[k, k - 1] = -h[k, k - 1]
+                p += s
+                x = p / s
+                y = q / s
+                z = r / s
+                q /= p
+                r /= p
+                for j in range(k, size):
+                    p = h[k, j] + q * h[k + 1, j]
+                    if not_last:
+                        p += r * h[k + 2, j]
+                        h[k + 2, j] -= p * z
+                    h[k, j] -= p * x
+                    h[k + 1, j] -= p * y
+                for i in range(min(n, k + 3) + 1):
+                    p = x * h[i, k] + y * h[i, k + 1]
+                    if not_last:
+                        p += z * h[i, k + 2]
+                        h[i, k + 2] -= p * r
+                    h[i, k] -= p
+                    h[i, k + 1] -= p * q
+                for i in range(size):
+                    p = x * v[i, k] + y * v[i, k + 1]
+                    if not_last:
+                        p += z * v[i, k + 2]
+                        v[i, k + 2] -= p * r
+                    v[i, k] -= p
+                    v[i, k + 1] -= p * q
+    if norm == 0.0:
+        return
+    _back_substitute(h, real, imaginary, norm)
+    for j in range(size - 1, -1, -1):
+        for i in range(size):
+            total = 0.0
+            for k in range(j + 1):
+                total += v[i, k] * h[k, j]
+            v[i, j] = total
+
+
+def _back_substitute(h: InOut[Array[f64, 2]], real: Array[f64, 1], imaginary: Array[f64, 1], norm: f64):
+    """Overwrites the quasi-triangular Schur form `h` with the eigenvectors of that form, by
+    back-substitution: the second half of EISPACK's `hqr2`. `norm` is the sum of the magnitudes of
+    the Hessenberg matrix's entries, which stands in for a zero divisor.
+    """
+    size = h.shape[0]
+    epsilon = 2.0**-52
+    z = 0.0
+    s = 0.0
+    r = 0.0
+    for n in range(size - 1, -1, -1):
+        p = real[n]
+        q = imaginary[n]
+        if q == 0.0:
+            l = n
+            h[n, n] = 1.0
+            for i in range(n - 1, -1, -1):
+                w = h[i, i] - p
+                r = 0.0
+                for j in range(l, n + 1):
+                    r += h[i, j] * h[j, n]
+                if imaginary[i] < 0.0:
+                    z = w
+                    s = r
+                    continue
+                l = i
+                if imaginary[i] == 0.0:
+                    if w != 0.0:
+                        h[i, n] = -r / w
+                    else:
+                        h[i, n] = -r / (epsilon * norm)
+                else:
+                    x = h[i, i + 1]
+                    y = h[i + 1, i]
+                    q = (real[i] - p) * (real[i] - p) + imaginary[i] * imaginary[i]
+                    t = (x * s - z * r) / q
+                    h[i, n] = t
+                    if fabs(x) > fabs(z):
+                        h[i + 1, n] = (-r - w * t) / x
+                    else:
+                        h[i + 1, n] = (-s - y * t) / z
+                t = fabs(h[i, n])
+                if (epsilon * t) * t > 1.0:
+                    for j in range(i, n + 1):
+                        h[j, n] /= t
+        elif q < 0.0:
+            l = n - 1
+            if fabs(h[n, n - 1]) > fabs(h[n - 1, n]):
+                h[n - 1, n - 1] = q / h[n, n - 1]
+                h[n - 1, n] = -(h[n, n] - p) / h[n, n - 1]
+            else:
+                quotient = complex(0.0, -h[n - 1, n]) / complex(h[n - 1, n - 1] - p, q)
+                h[n - 1, n - 1] = quotient.real
+                h[n - 1, n] = quotient.imag
+            h[n, n - 1] = 0.0
+            h[n, n] = 1.0
+            for i in range(n - 2, -1, -1):
+                ra = 0.0
+                sa = 0.0
+                for j in range(l, n + 1):
+                    ra += h[i, j] * h[j, n - 1]
+                    sa += h[i, j] * h[j, n]
+                w = h[i, i] - p
+                if imaginary[i] < 0.0:
+                    z = w
+                    r = ra
+                    s = sa
+                    continue
+                l = i
+                if imaginary[i] == 0.0:
+                    quotient = complex(-ra, -sa) / complex(w, q)
+                    h[i, n - 1] = quotient.real
+                    h[i, n] = quotient.imag
+                else:
+                    x = h[i, i + 1]
+                    y = h[i + 1, i]
+                    vr = (real[i] - p) * (real[i] - p) + imaginary[i] * imaginary[i] - q * q
+                    vi = (real[i] - p) * 2.0 * q
+                    if vr == 0.0 and vi == 0.0:
+                        vr = epsilon * norm * (fabs(w) + fabs(q) + fabs(x) + fabs(y) + fabs(z))
+                    quotient = complex(x * r - z * ra + q * sa, x * s - z * sa - q * ra) / complex(vr, vi)
+                    h[i, n - 1] = quotient.real
+                    h[i, n] = quotient.imag
+                    if fabs(x) > fabs(z) + fabs(q):
+                        h[i + 1, n - 1] = (-ra - w * h[i, n - 1] + q * h[i, n]) / x
+                        h[i + 1, n] = (-sa - w * h[i, n] - q * h[i, n - 1]) / x
+                    else:
+                        quotient = complex(-r - y * h[i, n - 1], -s - y * h[i, n]) / complex(z, q)
+                        h[i + 1, n - 1] = quotient.real
+                        h[i + 1, n] = quotient.imag
+                t = max(fabs(h[i, n - 1]), fabs(h[i, n]))
+                if (epsilon * t) * t > 1.0:
+                    for j in range(i, n + 1):
+                        h[j, n - 1] /= t
+                        h[j, n] /= t
