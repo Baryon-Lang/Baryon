@@ -367,6 +367,7 @@ impl<'db> Decider<'_, 'db> {
             | TypeKind::List(_)
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }
+            | TypeKind::DataFrame { .. }
             | TypeKind::Parameter { .. }
             | TypeKind::Unknown => true,
             TypeKind::Optional(value) => self.owns_memory(*value, open),

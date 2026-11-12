@@ -53,6 +53,16 @@ impl fmt::Display for Displayed<'_> {
             TypeKind::Fixed { element, shape } => {
                 write!(formatter, "Fixed[{}, {shape}]", show(*element))
             }
+            TypeKind::DataFrame { row: Some(row), .. } => {
+                write!(formatter, "DataFrame[{}]", show(*row))
+            }
+            TypeKind::DataFrame { columns, row: None } => {
+                let columns: Vec<String> = columns
+                    .iter()
+                    .map(|column| format!("{}: {}", column.name, show(column.element)))
+                    .collect();
+                write!(formatter, "DataFrame[{}]", columns.join(", "))
+            }
             TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => {
                 write!(formatter, "{}", name(db, nominal.file, nominal.name))?;
                 arguments(formatter, &list(&nominal.arguments))
