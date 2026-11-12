@@ -78,6 +78,10 @@ on its own once the server says it supports them, so the extension needs no code
 [`baryon lsp`](../../docs/reference/commands.md#baryon-lsp) reference says, the server reads the
 first folder of the window as one package.
 
+The extension has no debugger of its own. A debug build keeps line tables, so CodeLLDB or
+Microsoft's C/C++ extension stop at `.byn` lines and step through them; the
+[VS Code guide](../../docs/guide/vscode.md#10-debug-it) has the `launch.json`.
+
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `baryon.path` | `baryon` | The program run as `baryon lsp`. A bare name is looked up on `PATH`; give a full path, such as `/Users/you/Baryon/target/release/baryon`, if `baryon` is not on it. Reload the window after changing it |

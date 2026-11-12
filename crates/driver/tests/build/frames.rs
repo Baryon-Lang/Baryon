@@ -1,7 +1,7 @@
 //! Frames (roadmap 3.13.2, decision 0045), built and run: a `DataFrame` built from arrays, its
 //! columns read, changed and replaced, `len`, `shape`, `columns` and `copy`, and the panics
-//! that keep every column of a frame one length, and a frame as a generic function's type
-//! argument.
+//! that keep every column of a frame one length, a frame as a generic function's type
+//! argument, and a frame printed as pandas prints it.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -260,4 +260,115 @@ def main():
     let (code, stdout, report) = run("frames-row-fields", program).unwrap();
     assert_eq!((code, report.as_str()), (Some(0), ""));
     assert_eq!(stdout, "1.5 3 False\n3.75\n-3.0\n3\n");
+}
+
+/// `print(df)` and a frame in an f-string give the table pandas 3.0.5 prints for the same
+/// frame; the expected text is pandas's own. A float column keeps the decimals its longest
+/// value needs, switches to powers of ten for a tiny or a huge value, and prints `NaN` and
+/// `-inf`; an `f32` column prints as its values; a frame with no rows prints its columns.
+#[test]
+fn frames_print_as_pandas_prints() {
+    let program = r#"
+import math
+
+class Trade(Struct):
+    price: f64
+    volume: i64
+    ok: bool
+
+def main():
+    trades: DataFrame[Trade] = DataFrame({
+        "price": Array([1.5, 2.25, -3.0]),
+        "volume": Array([10, 200, 3]),
+        "ok": Array([True, False, True]),
+    })
+    print(trades)
+    print("trades:", trades, sep="\n", end="\n--\n")
+    print(f"<{trades.copy()}>")
+    single: Array[f32, 1] = Array([0.1, 0.5])
+    odd = DataFrame({
+        "tiny": Array([1.0e-7, 2.5]),
+        "huge": Array([1.0e10, 2.5]),
+        "none": Array([math.nan, -math.inf]),
+        "single": single,
+    })
+    print(odd)
+    empty: DataFrame[Trade] = DataFrame([])
+    print(empty)
+"#;
+    let expected = [
+        "   price  volume     ok\n",
+        "0   1.50      10   True\n",
+        "1   2.25     200  False\n",
+        "2  -3.00       3   True\n",
+        "trades:\n",
+        "   price  volume     ok\n",
+        "0   1.50      10   True\n",
+        "1   2.25     200  False\n",
+        "2  -3.00       3   True\n",
+        "--\n",
+        "<   price  volume     ok\n",
+        "0   1.50      10   True\n",
+        "1   2.25     200  False\n",
+        "2  -3.00       3   True>\n",
+        "           tiny          huge  none  single\n",
+        "0  1.000000e-07  1.000000e+10   NaN     0.1\n",
+        "1  2.500000e+00  2.500000e+00  -inf     0.5\n",
+        "Empty DataFrame\n",
+        "Columns: [price, volume, ok]\n",
+        "Index: []\n",
+    ];
+    let (code, stdout, report) = run("frames-print", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, expected.concat());
+}
+
+/// A frame of more than 60 rows prints its first and last 5 with dots between, a frame wider
+/// than 80 characters loses the columns in its middle, and each ends with its size, as in
+/// pandas 3.0.5, whose text this is.
+#[test]
+fn long_and_wide_frames_are_cut_as_pandas_cuts_them() {
+    let program = r#"
+def main():
+    rows = 100
+    long = DataFrame({
+        "a": Array([f64(row) * 1.5 for row in range(rows)]),
+        "b": Array([row for row in range(rows)]),
+    })
+    print(long)
+    wide = DataFrame({
+        "column_number_0": Array([0.0, 2.0]),
+        "column_number_1": Array([1.0, 2.0]),
+        "column_number_2": Array([2.0, 2.0]),
+        "column_number_3": Array([3.0, 2.0]),
+        "column_number_4": Array([4.0, 2.0]),
+        "column_number_5": Array([5.0, 2.0]),
+        "column_number_6": Array([6.0, 2.0]),
+    })
+    print(wide)
+"#;
+    let expected = [
+        "        a   b\n",
+        "0     0.0   0\n",
+        "1     1.5   1\n",
+        "2     3.0   2\n",
+        "3     4.5   3\n",
+        "4     6.0   4\n",
+        "..    ...  ..\n",
+        "95  142.5  95\n",
+        "96  144.0  96\n",
+        "97  145.5  97\n",
+        "98  147.0  98\n",
+        "99  148.5  99\n",
+        "\n",
+        "[100 rows x 2 columns]\n",
+        "   column_number_0  column_number_1  ...  column_number_5  column_number_6\n",
+        "0              0.0              1.0  ...              5.0              6.0\n",
+        "1              2.0              2.0  ...              2.0              2.0\n",
+        "\n",
+        "[2 rows x 7 columns]\n",
+    ];
+    let (code, stdout, report) = run("frames-print-cut", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, expected.concat());
 }

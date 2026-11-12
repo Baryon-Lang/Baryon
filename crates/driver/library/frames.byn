@@ -1,0 +1,202 @@
+"""How a `DataFrame` prints (decision 0045): the text pandas prints for the same frame.
+
+The compiler calls these functions for `print(df)` and for a frame in an f-string. It formats
+each column with `float_cells`, `single_cells` or `cells`, by the type of the column's
+elements, then lays the columns out with `frame_text`. A program cannot import this file.
+
+The rules are those of pandas 3 at its default options, on a screen 80 characters wide:
+
+- A frame of more than 60 rows shows its first 5 and last 5, with a row of dots between.
+- Columns that do not fit in 80 characters are left out of the middle, with `...` in their
+  place.
+- A frame cut either way ends with its size, `[100 rows x 2 columns]`.
+- A column of floats shows up to 6 decimals, and as many as its longest value needs. It
+  switches to powers of ten, `1.500000e+10`, when a value is too small for 6 decimals or too
+  large to read.
+
+Only the rows shown are formatted, so printing costs the same for ten rows or ten million.
+"""
+
+from math import isinf, isnan
+
+
+def _shown(count: int) -> list[int]:
+    """The rows of a frame of `count` rows that are printed: all of 60 rows or fewer, or else
+    the first 5 and the last 5."""
+    rows: list[int] = []
+    if count <= 60:
+        for row in range(count):
+            rows.append(row)
+    else:
+        for row in range(5):
+            rows.append(row)
+        for row in range(count - 5, count):
+            rows.append(row)
+    return rows
+
+
+def _signed(text: Owned[str]) -> str:
+    """`text`, a number, with a space in front when it has no minus sign, so that numbers of
+    either sign line up."""
+    if text.startswith("-"):
+        return text
+    return " " + text
+
+
+def _float(value: f64, scientific: bool) -> str:
+    """`value` with 6 decimals, as `1.500000` or, when `scientific`, as `1.500000e+00`."""
+    if isnan(value):
+        return " NaN"
+    if isinf(value):
+        if value > 0.0:
+            return " inf"
+        return "-inf"
+    if scientific:
+        return _signed(f"{value:.6e}")
+    return _signed(f"{value:.6f}")
+
+
+def _floats(values: list[f64], small: bool) -> list[str]:
+    """One cell for each of `values`, formatted together as one column.
+
+    Each value is written with 6 decimals, then the zeros every value ends with are removed,
+    down to one decimal: 1.5 and 2.25 give `1.50` and `2.25`. The column is written in powers
+    of ten instead when `small`, which says a value is under 0.000001 in size and not zero,
+    or when a value is over 1,000,000 in size and the longest cell is over 12 characters.
+    """
+    cells = [_float(value, False) for value in values]
+    trimming = True
+    while trimming:
+        numbers = 0
+        for cell in cells:
+            if "." in cell:
+                numbers += 1
+                if not cell.endswith("0"):
+                    trimming = False
+        if numbers == 0:
+            trimming = False
+        if trimming:
+            cells = [cell[:len(cell) - 1] if "." in cell else cell.copy() for cell in cells]
+    cells = [cell + "0" if cell.endswith(".") else cell.copy() for cell in cells]
+    longest = 0
+    for cell in cells:
+        longest = max(longest, len(cell))
+    large = False
+    for value in values:
+        if abs(value) > 1.0e6:
+            large = True
+    if small or (large and longest > 12):
+        return [_float(value, True) for value in values]
+    return cells
+
+
+def float_cells(column: Array[f64, 1]) -> list[str]:
+    """The cells of the `f64` column `column`: one text for each row that is printed."""
+    values = [column[row] for row in _shown(len(column))]
+    small = False
+    for value in values:
+        if abs(value) > 0.0 and abs(value) < 1.0e-6:
+            small = True
+    return _floats(values, small)
+
+
+def single_cells(column: Array[f32, 1]) -> list[str]:
+    """The cells of the `f32` column `column`, formatted as the same values in `f64`.
+
+    Whether a value is under 0.000001 is tested in `f32`, as pandas tests it: the `f32`
+    nearest 0.000001 is a little under it, and still prints with 6 decimals.
+    """
+    values = [column[row] for row in _shown(len(column))]
+    limit = f32(1.0e-6)
+    small = False
+    for value in values:
+        if abs(value) > f32(0.0) and abs(value) < limit:
+            small = True
+    return _floats([f64(value) for value in values], small)
+
+
+def cells[T](column: Array[T, 1]) -> list[str]:
+    """The cells of a column of integers or of `bool`: each value as `print` writes it."""
+    return [_signed(f"{column[row]}") for row in _shown(len(column))]
+
+
+def _pad(text: str, width: int, left: bool) -> str:
+    """`text` with spaces added to make it `width` characters: after it when `left`, which
+    puts the text on the left, and before it otherwise."""
+    padding = "".join([" " for position in range(width - len(text))])
+    if left:
+        return text + padding
+    return padding + text
+
+
+def _column(name: str, cells: list[str], left: bool, cut: bool) -> list[str]:
+    """One column of the table as its lines: the heading `name`, then `cells`, every line
+    padded to the width of the longest. When `cut`, rows were left out after the fifth cell,
+    and a line of dots stands for them: `...`, or `..` in a column 3 characters wide or less.
+    """
+    width = len(name)
+    for cell in cells:
+        width = max(width, len(cell))
+    column = [_pad(name, width, left)]
+    for position in range(len(cells)):
+        if cut and position == 5:
+            column.append(_pad("..." if width > 3 else "..", width, left))
+        column.append(_pad(cells[position], width, left))
+    return column
+
+
+def _table(
+    names: list[str], columns: list[list[str]], picked: list[int], dots: int, count: int
+) -> list[list[str]]:
+    """The table's columns, each as its lines: the row numbers, then the columns `picked`,
+    which are positions in `names` and `columns`. A column of `...` goes before the picked
+    column at position `dots`; pass -1 for none. `count` is the frame's number of rows."""
+    rows = _shown(count)
+    cut = len(rows) < count
+    table = [_column("", [f"{row}" for row in rows], True, cut)]
+    for position in range(len(picked)):
+        if position == dots:
+            table.append(_column(" ...", [" ..." for row in rows], False, cut))
+        column = picked[position]
+        table.append(_column(" " + names[column], columns[column], False, cut))
+    return table
+
+
+def frame_text(names: list[str], columns: list[list[str]], count: int) -> str:
+    """The text of a frame of `count` rows whose columns are named `names`; `columns` holds
+    each column's cells, from `float_cells`, `single_cells` or `cells`.
+
+    The table is laid out whole first. While it is wider than 79 characters, the column in
+    the middle is taken out, the row numbers counting as a column. If any column went, the
+    table is laid out again with the same number of columns from each end of the frame, at
+    least one from each, and `...` between them.
+    """
+    if count == 0:
+        return "Empty DataFrame\nColumns: [" + ", ".join(names) + "]\nIndex: []"
+    table = _table(names, columns, [column for column in range(len(names))], -1, count)
+    widths = [len(column[0]) for column in table]
+    excess = len(widths) - 80
+    for width in widths:
+        excess += width
+    while excess > 0 and len(widths) > 1:
+        # The middle as Python's `round(n / 2)` gives it: a half rounds to the even number.
+        middle = len(widths) // 2
+        if len(widths) % 2 == 1 and middle % 2 == 1:
+            middle += 1
+        excess -= widths[middle] + 1
+        widths = [widths[position] for position in range(len(widths)) if position != middle]
+    fitted = max(len(widths) - 1, 2)
+    narrowed = len(names) > fitted
+    if narrowed:
+        half = fitted // 2
+        picked = [column for column in range(half)]
+        for column in range(len(names) - half, len(names)):
+            picked.append(column)
+        table = _table(names, columns, picked, half, count)
+    lines: list[str] = []
+    for row in range(len(table[0])):
+        lines.append(" ".join([column[row].copy() for column in table]))
+    text = "\n".join(lines)
+    if narrowed or len(table[0]) - 1 < count:
+        return text + f"\n\n[{count} rows x {len(names)} columns]"
+    return text
