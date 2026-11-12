@@ -92,8 +92,9 @@ pub const BUILTINS: [&str; 59] = [
 /// `colors`, the color names, `axis`, which draws an axis, `backend_svg`, which writes SVG
 /// files, `png`, which writes PNG images, `cm`, the colormaps, `artist`, what an axes holds, and
 /// `legend`, `image` and `colorbar`, which draw a legend, an image and a colorbar, and
-/// `transforms`, the ranges an axes shows.
-pub const STANDARD_MODULES: [&str; 23] = [
+/// `transforms`, the ranges an axes shows. `zlib` is roadmap 3.27's deflate streams, named as
+/// Python's `zlib` is (decision 0049).
+pub const STANDARD_MODULES: [&str; 24] = [
     "math",
     "random",
     "sys",
@@ -117,6 +118,7 @@ pub const STANDARD_MODULES: [&str; 23] = [
     "image",
     "colorbar",
     "transforms",
+    "zlib",
 ];
 
 /// What a name refers to.

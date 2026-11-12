@@ -81,3 +81,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0046. Plots are drawn with matplotlib's object-oriented names, in a `pyplot` module, to SVG first](0046-plotting.md) | Accepted |
 | [0047. NetCDF classic files are read and written with netCDF4's names](0047-netcdf-classic-files.md) | Accepted |
 | [0048. Debug builds compile fast and run unoptimized; Cranelift must earn its place](0048-debug-builds-compile-fast.md) | Accepted |
+| [0049. Compression keeps Python's module names, works on byte arrays, and raises `OSError`](0049-compression.md) | Accepted |
