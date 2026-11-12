@@ -414,6 +414,12 @@ impl<'db> Body<'db> {
                 "wrong arguments",
                 None,
             ),
+            ("groupby", _) => self.lowerer.error(
+                function,
+                "`groupby` is followed by `.agg(...)`, which says what to work out for each group",
+                "groups with nothing worked out",
+                Some("for example `df.groupby(\"symbol\").agg(total=(\"volume\", \"sum\"))`"),
+            ),
             _ => {
                 let message = format!("a `DataFrame` has no method `{callee}` yet");
                 self.lowerer.error(
@@ -422,8 +428,9 @@ impl<'db> Body<'db> {
                     "not defined yet",
                     Some(
                         "a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop`, \
-                         `rename` and `sort_values` today; the rest of decision 0045's methods \
-                         come with roadmap items 3.13.6 to 3.13.9",
+                         `rename`, `sort_values` and `groupby(...).agg(...)` today; the rest of \
+                         decision 0045's methods come with roadmap items 3.13.6, 3.13.8 and \
+                         3.13.9",
                     ),
                 )
             }

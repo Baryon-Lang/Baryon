@@ -40,6 +40,9 @@ impl<'db> Builder<'db> {
         if self.schema_method(&place, method, frame, node) {
             return;
         }
+        if method == "agg" {
+            return self.frame_agg(place, frame, node);
+        }
         if method == "sort_values" {
             return self.frame_sort(place, frame, node);
         }
