@@ -8,6 +8,8 @@ use mir::{Argument, ArrayFile, BlockId, Body, Builtin, Callee, Constant, Constan
 use mir::{FileMethod, Local, LocalKind, Operand, Statement, StatementKind, TerminatorKind};
 use types::{Float, Integer, Primitive, StandardType, Type, TypeKind};
 
+mod netcdf;
+
 /// `out = open("out.txt", "w")`, then `out.write("hi")`, then the drop of `out`; either call's
 /// failure goes to the last block with the error in its local. `i64` stands for `OSError`,
 /// since the backend only passes the local's address.
@@ -436,66 +438,6 @@ bb1:
 
 declare zeroext i1 @baryon_rt_fits_write(ptr, i64, ptr, i64, i32, ptr, i64, i1 zeroext, \
 i1 zeroext, ptr) nounwind
-"
-    );
-}
-
-/// `lines` of `Dataset("in.nc")`, then `variables["temp"][:]` of an `Array[i16, 2]`: the read
-/// passes the variable's name after the path, then the element number and the rank, as a FITS
-/// read does.
-#[test]
-fn netcdf_reads_pass_the_variable_name_and_the_element_number() {
-    let database = Database::default();
-    let (mut body, [lines, _, error]) = fits_body(&database);
-    let element = primitive(&database, Primitive::Integer(Integer::I16));
-    let array = Type::new(&database, TypeKind::Array { element, rank: 2 });
-    let values = body.push_local(array, LocalKind::Temporary, span());
-    let str = Type::new(&database, TypeKind::Str);
-    let path = || constant(str, ConstantValue::Str("in.nc".to_owned()));
-    let open = ArrayFile::NetcdfOpen;
-    body.push_block(fits_call(open, vec![path()], lines, error, (1, 3)));
-    let arguments = vec![path(), constant(str, ConstantValue::Str("temp".to_owned()))];
-    let read = ArrayFile::NetcdfRead;
-    body.push_block(fits_call(read, arguments, values, error, (2, 3)));
-    body.push_block(end(TerminatorKind::Return));
-    body.push_block(end(TerminatorKind::Return));
-    assert_eq!(
-        module(&database, &[("read", body)]),
-        "\
-define void @read() {
-start:
-  %_1 = alloca { ptr, i64, i64 }
-  %_2 = alloca { ptr, [2 x i64], [2 x i64] }
-  %_3 = alloca { i8, [1 x i64] }
-  %_4 = alloca { ptr, [2 x i64], [2 x i64] }
-  br label %bb0
-bb0:
-  %t0 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775803 }, 0
-  %t1 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775803 }, 1
-  %t2 = and i64 %t1, 9223372036854775807
-  %t3 = call zeroext i1 @baryon_rt_netcdf_open(ptr %t0, i64 %t2, ptr %_1, ptr %_3)
-  br i1 %t3, label %bb3, label %bb1
-bb1:
-  %t4 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775803 }, 0
-  %t5 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775803 }, 1
-  %t6 = and i64 %t5, 9223372036854775807
-  %t7 = extractvalue { ptr, i64 } { ptr @baryon.str.1, i64 -9223372036854775804 }, 0
-  %t8 = extractvalue { ptr, i64 } { ptr @baryon.str.1, i64 -9223372036854775804 }, 1
-  %t9 = and i64 %t8, 9223372036854775807
-  %t10 = call zeroext i1 @baryon_rt_netcdf_read(ptr %t4, i64 %t6, ptr %t7, i64 %t9, i32 2, \
-i64 2, ptr %_4, ptr %_3)
-  br i1 %t10, label %bb3, label %bb2
-bb2:
-  ret void
-bb3:
-  ret void
-}
-
-@baryon.str.0 = private unnamed_addr constant [5 x i8] c\"in.nc\"
-@baryon.str.1 = private unnamed_addr constant [4 x i8] c\"temp\"
-
-declare zeroext i1 @baryon_rt_netcdf_open(ptr, i64, ptr, ptr) nounwind
-declare zeroext i1 @baryon_rt_netcdf_read(ptr, i64, ptr, i64, i32, i64, ptr, ptr) nounwind
 "
     );
 }
