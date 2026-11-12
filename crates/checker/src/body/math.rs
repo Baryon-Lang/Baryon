@@ -6,8 +6,8 @@
 //! `f64`, as Python's `math.sqrt(2)` gives `1.4142135623730951`. A function of two or three
 //! numbers, such as `pow(x, y)` or `fma(x, y, z)`, mixes them as `x ** y` does, except that
 //! integers alone give an `f64`. Inside `def f[T: Float]`, an argument of type `T` makes the
-//! call take and return `T`, so one generic function serves `f32` and `f64`. `floor`, `ceil` and `trunc` return an `int`, as in Python, and
-//! `isnan`, `isinf` and `isfinite` a `bool`.
+//! call take and return `T`, so one generic function serves `f32` and `f64`. `floor`, `ceil`
+//! and `trunc` return an `int`, as in Python, and `isnan`, `isinf` and `isfinite` a `bool`.
 //!
 //! The constants `pi`, `e`, `tau`, `inf` and `nan` are `f64`s with Python's values.
 //!
