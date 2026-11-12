@@ -247,6 +247,13 @@ Splitting the release build too took it to 2.9 s, but `clang` never inlines a ca
 module, so a small function called in a hot loop could run slower. Release builds stay one
 module until a benchmark of run time shows the split costs nothing.
 
+After 2.7 the debug build's 0.9 s splits into about 0.45 s in `baryon` itself (checking,
+lowering, the IR passes and writing LLVM text), 0.3 s of `clang -O0` on 4 cores and 0.17 s of
+linking. A faster code generator can only shrink the middle part: even one that took no time
+at all would make the build 1.5 times faster, short of the twice that decision 0048 asks of
+Cranelift, so roadmap 2.1 keeps only its role as the REPL's JIT and the work turned to
+`baryon`'s own stages (2.3).
+
 ## Output protocol
 
 A kernel is an executable that takes positive integer arguments and prints exactly two lines:
