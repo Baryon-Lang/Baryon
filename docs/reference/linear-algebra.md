@@ -14,11 +14,11 @@ fix their order of operations, so a result has the same bits on every machine an
 NumPy calls LAPACK, which adds in its own order, so the last bits of a result can differ from
 NumPy's; the tests compare to 12 significant digits.
 
-Every `linalg` function except `eig` and `eigvals` is
-[generic](types.md#generics) over `T: Float`, so it takes `f64` or `f32` matrices and
-computes in that type: an `f32` matrix gives an `f32` result, at half the memory and with about
-seven significant digits, as NumPy's `float32` does. Complex matrices are not built yet (idea I.57). The tests compare `f32` results to NumPy's
-to 4 significant digits.
+Every `linalg` function except `eig` and `eigvals` is [generic](types.md#generics) over `T: Float`,
+so it takes `f64` or `f32` matrices and computes in that type: an `f32` matrix gives an `f32`
+result, at half the memory and with about seven significant digits, as NumPy's `float32` does.
+Complex matrices are not built yet (idea I.57). The tests compare `f32` results to NumPy's to 4
+significant digits.
 
 The matrix product is the operator [`@`](arrays.md#the-matrix-product), not a function.
 
