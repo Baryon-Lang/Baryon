@@ -327,7 +327,7 @@ impl<'db> Builder<'db> {
             if self.adds_into(node, accumulated) {
                 continue;
             }
-            for (binding, usage) in self.writes(node)? {
+            for (binding, usage) in self.writes(node, loop_start)? {
                 if let Some((_, current)) = shared.get_mut(&binding) {
                     *current = match (*current, usage) {
                         (Use::Read, usage) => usage,
@@ -349,9 +349,11 @@ impl<'db> Builder<'db> {
 
     /// The variables, by binding, that the statement or call `node` writes, and how: an
     /// in-place operator on a number variable reduces into it; any other assignment, in-place
-    /// operator or `InOut` argument writes into the variable it starts from. `None` after
-    /// reporting a write lowering does not handle.
-    fn writes(&mut self, node: NodeId) -> Option<Vec<(NodeId, Use)>> {
+    /// operator or `InOut` argument writes into the variable it starts from. `loop_start` is
+    /// where the `prange` loop begins, so a variable bound inside its body is private to the
+    /// iteration and may be assigned again. `None` after reporting a write lowering does not
+    /// handle.
+    fn writes(&mut self, node: NodeId, loop_start: u32) -> Option<Vec<(NodeId, Use)>> {
         let mut writes = Vec::new();
         match self.tree.kind(node) {
             SyntaxKind::Assign | SyntaxKind::AnnotatedAssign => {
@@ -362,7 +364,7 @@ impl<'db> Builder<'db> {
                     });
                     if self.tree.kind(target) == SyntaxKind::Name
                         && number
-                        && self.is_shared_name(target, node)
+                        && self.is_shared_name(target, loop_start)
                     {
                         // The checker allows only `x = min(x, e)` and `x = max(x, e)` here.
                         let Some(operator) = self.min_max_reduction(node) else {
@@ -460,11 +462,11 @@ impl<'db> Builder<'db> {
         }
     }
 
-    /// Whether the name `target`, assigned by `statement`, names a variable bound before
-    /// `statement`.
-    fn is_shared_name(&self, target: NodeId, statement: NodeId) -> bool {
+    /// Whether the name `target` names a variable bound before the `prange` loop that begins
+    /// at `loop_start`, and so shared by its iterations.
+    fn is_shared_name(&self, target: NodeId, loop_start: u32) -> bool {
         matches!(self.definition(target), Some(&Definition::Local(binding))
-            if self.tree.span(binding).start() < self.tree.span(statement).start())
+            if self.tree.span(binding).start() < loop_start)
     }
 
     /// Whether the expression `node` is a number.
