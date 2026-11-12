@@ -307,7 +307,7 @@ pub unsafe extern "C" fn baryon_rt_fits_write(
 ///
 /// Ends the program with a panic for a number that is not a number type FITS holds, which the
 /// checker never passes.
-fn pixel(element: u32) -> Pixel {
+pub(super) fn pixel(element: u32) -> Pixel {
     match element {
         ELEMENT_U8 => Pixel::U8,
         ELEMENT_I8 => Pixel::I8,

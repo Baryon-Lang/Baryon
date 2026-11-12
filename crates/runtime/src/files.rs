@@ -22,6 +22,7 @@ use std::sync::Mutex;
 
 pub(crate) mod arrays;
 pub(crate) mod fits;
+pub(crate) mod netcdf;
 pub(crate) mod npy;
 
 /// The size of a file's buffer: one system call per 64 KiB read or written.
