@@ -1,4 +1,4 @@
-//! Plots (roadmap 3.15.1, decision 0046), built and run: `ticker` places and labels ticks as
+//! Plots (roadmap 3.15.1 and 3.15.2, decision 0046), built and run: `ticker` places and labels ticks as
 //! matplotlib 3.11 does, to the last bit, and `pyplot` draws the same SVG as the reference files.
 //!
 //! The files in `tests/fixtures/plotting` were recorded from matplotlib or written by these
@@ -94,6 +94,46 @@ def main() -> Raises[None, OSError | ValueError]:
     near.savefig(\"offset.svg\")
 ";
 
+/// The program that draws the reference plots of scatter, bars and histograms (roadmap
+/// 3.15.2), from data that is exact in binary, and prints what `hist` returns.
+const SHAPES: &str = "\
+import pyplot as plt
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    n = 32
+    x = Array.zeros(n)
+    y = Array.zeros(n)
+    for i in range(n):
+        x[i] = 0.25 * f64(i)
+        y[i] = 0.5 * x[i] + 0.125 * f64(i % 5) - 0.25
+    ax = plt.axes()
+    ax.scatter(x, y, label=\"measured\")
+    ax.plot(x, 0.5 * x, linestyle=\"--\", marker=\"o\", markersize=3.0, label=\"fit\")
+    ax.bar(Array([2.0, 5.0, 7.0]), Array([1.0, -0.5, 2.0]), width=0.6, label=\"bins\")
+    ax.grid()
+    ax.legend()
+    ax.set_title(\"Scatter, line & bars\")
+    ax.savefig(\"shapes.svg\")
+    m = plt.axes()
+    markers = [\"o\", \".\", \"s\", \"^\", \"v\", \"D\", \"+\", \"x\"]
+    for k in range(len(markers)):
+        m.scatter(Array([f64(k)]), Array([f64(k % 3)]), color=f\"C{k}\", marker=markers[k])
+    m.plot(Array([0.0, 7.0]), Array([2.5, 2.5]), linestyle=\"\", marker=\"s\", label=\"markers only\")
+    m.legend(loc=\"center\")
+    m.savefig(\"markers.svg\")
+    data = Array.zeros(200)
+    for i in range(200):
+        data[i] = 0.25 * f64((i * i) % 17)
+    h = plt.axes()
+    counts, edges = h.hist(data, bins=8, label=\"counts\")
+    h.legend(loc=\"upper left\")
+    h.set_xlabel(\"value\")
+    h.savefig(\"histogram.svg\")
+    print(counts)
+    print(edges)
+";
+
 /// Two plots are drawn as the stored reference files, byte for byte: three lines in the cycle's
 /// colors, a fixed color, dashes and dots, a NaN that breaks a line, labels and a title with
 /// characters XML escapes; and a reversed x axis, with y ticks that need an offset and a power
@@ -103,11 +143,37 @@ fn plots_are_drawn_as_the_reference_files() {
     let (ran, directory) = run("plotting-drawing", DRAWING).unwrap();
     assert_eq!(stderr(&ran), "");
     assert_eq!(ran.status.code(), Some(0));
-    for name in ["polynomials.svg", "offset.svg"] {
-        let drawn = fs::read_to_string(directory.join(name)).unwrap();
-        let reference = fs::read_to_string(fixtures().join(name)).unwrap();
+    compare(&directory, &["polynomials.svg", "offset.svg"]).unwrap();
+}
+
+/// Scatter, bars and a histogram are drawn as the stored reference files: markers of every
+/// shape from the patch cycle, a line with markers and one with markers only, bars above and
+/// below 0, grid lines, and legends placed by `"best"`, by name and in the centre. `hist`
+/// returns the counts and edges `NumPy` gives for the same data, and its bars start at 0 as
+/// matplotlib's do.
+#[test]
+fn shapes_are_drawn_as_the_reference_files() {
+    let (ran, directory) = run("plotting-shapes", SHAPES).unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "[35. 24. 23.  0. 47.  0. 24. 47.]\n[0.  0.5 1.  1.5 2.  2.5 3.  3.5 4. ]\n"
+    );
+    compare(&directory, &["shapes.svg", "markers.svg", "histogram.svg"]).unwrap();
+}
+
+/// Asserts that each file of `names` in `directory` is the reference file of that name.
+///
+/// # Errors
+///
+/// Fails when a drawn file or a reference file cannot be read.
+fn compare(directory: &Path, names: &[&str]) -> io::Result<()> {
+    for name in names {
+        let drawn = fs::read_to_string(directory.join(name))?;
+        let reference = fs::read_to_string(fixtures().join(name))?;
         assert_eq!(drawn, reference, "{name} differs from the reference file");
     }
+    Ok(())
 }
 
 /// `savefig` raises `ValueError` with matplotlib's message for a format it does not write, and
@@ -160,6 +226,32 @@ def main():
         ),
         "{}",
         panic_report(&ran)
+    );
+}
+
+/// A color name `colors.to_hex` does not know panics when it is given, not when the plot is
+/// saved, so the backtrace points at the call that is wrong.
+#[test]
+fn unknown_colors_panic() {
+    let program = "\
+import pyplot as plt
+
+
+def main():
+    ax = plt.axes()
+    ax.bar(Array.zeros(2), Array.zeros(2), color=\"navy\")
+";
+    let (ran, _directory) = run("plotting-colors", program).unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert!(
+        panic_report(&ran).starts_with("panic: assertion failed: False, f\"{c!r} is not a color"),
+        "{}",
+        panic_report(&ran)
+    );
+    assert!(
+        stderr(&ran).contains("pyplot.Axes.bar at"),
+        "{}",
+        stderr(&ran)
     );
 }
 

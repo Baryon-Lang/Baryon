@@ -32,7 +32,7 @@ for line in open("ranges.txt"):
 open("matplotlib_ticks.txt", "w").write("\n".join(lines) + "\n")
 ```
 
-`polynomials.svg` and `offset.svg` are Baryon's own output, checked by eye against matplotlib's
-drawing of the same data and stored so any change to how a plot is drawn shows up as a
-difference. When a change to drawing is intended, write them again from the programs in
-`plotting.rs` and look at them before committing.
+`polynomials.svg`, `offset.svg`, `shapes.svg`, `markers.svg` and `histogram.svg` are Baryon's
+own output, checked by eye against matplotlib's drawing of the same data and stored so any change
+to how a plot is drawn shows up as a difference. When a change to drawing is intended, write them
+again from the programs in `plotting.rs` and look at them before committing.

@@ -89,8 +89,10 @@ pub const BUILTINS: [&str; 60] = [
 /// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042). `fits` is
 /// roadmap 3.14.3's FITS files, named as `astropy.io.fits` is (decision 0044), `netCDF4`
 /// roadmap 3.14.5's `NetCDF` files, named as Unidata's `netCDF4` package is (decision 0047), and
-/// `pyplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046).
-pub const STANDARD_MODULES: [&str; 13] = [
+/// `pyplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046), as are
+/// `colors`, the color names, `axis`, which draws an axis, `backend_svg`, which writes SVG
+/// files, `artist`, what an axes holds, and `legend`, which draws a legend.
+pub const STANDARD_MODULES: [&str; 18] = [
     "math",
     "random",
     "sys",
@@ -104,6 +106,11 @@ pub const STANDARD_MODULES: [&str; 13] = [
     "netCDF4",
     "pyplot",
     "ticker",
+    "colors",
+    "axis",
+    "backend_svg",
+    "artist",
+    "legend",
 ];
 
 /// What a name refers to.

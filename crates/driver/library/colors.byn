@@ -1,0 +1,66 @@
+"""The `colors` module: the color names plots take, with matplotlib's names (decision 0046).
+
+`to_hex` turns any color name `pyplot` accepts into the `#rrggbb` text an SVG file holds, as
+`matplotlib.colors.to_hex` does. The colormaps for images join this module with roadmap 3.15.3.
+"""
+
+
+def to_hex(c: str) -> str:
+    """The `#rrggbb` form of the color `c`, in lower case, as `matplotlib.colors.to_hex`.
+
+    `c` is `"#rrggbb"`, `"C0"` to `"C9"` for the colors of the default cycle, a letter of
+    `"bgrcmykw"` with matplotlib's meaning of each, or a `tab10` name such as `"tab:orange"`.
+    Panics on any other name, where matplotlib raises `ValueError`: a color is written in the
+    program, so a wrong one is the program's mistake (decision 0046).
+
+    ```python
+    from colors import to_hex
+
+    def main():
+        print(to_hex("C1"), to_hex("k"), to_hex("tab:green"))  # #ff7f0e #000000 #2ca02c
+    ```
+    """
+    if len(c) == 7 and c.startswith("#"):
+        return c.lower()
+    digits = "0123456789"
+    for k in range(10):
+        if c == "C" + digits[k]:
+            return _cycle(k)
+    letters = "bgrcmykw"
+    values = [
+        "#0000ff",
+        "#008000",
+        "#ff0000",
+        "#00bfbf",
+        "#bf00bf",
+        "#bfbf00",
+        "#000000",
+        "#ffffff",
+    ]
+    for k in range(len(letters)):
+        if c == letters[k]:
+            return values[k].copy()
+    names = ["blue", "orange", "green", "red", "purple", "brown", "pink", "gray", "olive", "cyan"]
+    for k in range(len(names)):
+        if c == "tab:" + names[k]:
+            return _cycle(k)
+    assert False, f"{c!r} is not a color: use '#rrggbb', 'C0' to 'C9', 'bgrcmykw' or 'tab:' names"
+    return ""
+
+
+def _cycle(k: int) -> str:
+    """The `k`th color of matplotlib's default color cycle, `tab10`, counting from 0: blue,
+    orange, green, red, purple, brown, pink, gray, olive and cyan."""
+    colors = [
+        "#1f77b4",
+        "#ff7f0e",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#7f7f7f",
+        "#bcbd22",
+        "#17becf",
+    ]
+    return colors[k].copy()
