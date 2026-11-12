@@ -334,8 +334,10 @@ the same calls, fill values and padding included; the tests compare them.
 | `with Dataset(...) as ds:` | | binds `ds` for the block, as `ds = Dataset(...)` does |
 
 - **Each call changes the file at once.** The file is the only state, so `ds.close()` and the
-  end of a `with` block have nothing left to write, and a program that stops halfway leaves a valid file with what it
-  defined and wrote so far. A variable is filled with its type's fill value until it is
+  end of a `with` block have nothing left to write, and a program that stops halfway leaves a
+  valid file with what it defined and wrote so far, unless it stops while a change is being
+  written: each change rewrites the whole file in place, so a crash or a full disk then leaves
+  it cut short. A variable is filled with its type's fill value until it is
   written. Defining reads and writes the whole file each time, which is quick for the small
   headers of classic files but makes many small definitions of a large file slow: define
   everything first, then write the values.
