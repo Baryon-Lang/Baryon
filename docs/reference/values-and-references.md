@@ -265,7 +265,11 @@ A loop variable that borrows a non-copy element cannot be changed or moved eithe
 `v.copy()`, to hold on to one. A tuple target borrows each part the same way: in
 `for name, mass in species:` over a `list[tuple[str, f64]]`, `name` is a borrow and `mass` a
 copy. A loop over a temporary, such as `range(n)` or a call's result,
-borrows nothing.
+borrows no collection, so the body may change any variable. Its elements are borrowed all the
+same, because the loop frees the temporary when it ends: in `for word in words(3):`, keeping
+`word` takes `kept.append(word.copy())`. A string literal is the exception: it is never freed
+([decision 0022](../decisions/0022-str-values.md)), so
+`for c in "aeiou":` may keep each `c`.
 
 The borrow ends with the loop. In Python, `name` still holds the last element after
 `for name in names:`; here a variable that borrowed a non-copy element holds nothing after its
