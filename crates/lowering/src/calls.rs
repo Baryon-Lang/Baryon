@@ -188,8 +188,9 @@ impl<'db> Builder<'db> {
             Some(class) => class.into_iter().chain(type_arguments).collect::<Vec<_>>(),
             None => return self.unsupported(node, "a method call on this receiver"),
         };
-        // The caller is not generic: each argument is moved, converted or borrowed at the
-        // parameter's type with this call's type arguments in place (the `generics` module).
+        // Each argument is moved, converted or borrowed at the parameter's type with this
+        // call's type arguments in place; in a generic caller they may be its own type
+        // parameters (the `generics` module).
         let generic = self.type_parameters(item, signature);
         let parameters: Vec<(Mode, types::Type<'db>)> = parameters
             .into_iter()

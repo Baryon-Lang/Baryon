@@ -1,11 +1,13 @@
 //! Generic calls: a call site's view of a generic function's parameter types.
 //!
-//! A generic function's signature names its type parameters, `x: Owned[T]`. The caller is not
-//! generic, so every value it builds for the call must have a concrete type: the `int` that `T`
-//! stands for at `first(3)`, or the `int | None` that `T | None` stands for at `show(3)`.
-//! Monomorphization replaces type parameters only inside the generic body it instantiates,
-//! never in its callers, so lowering instantiates the parameter types itself before it moves,
-//! converts or borrows an argument.
+//! A generic function's signature names its type parameters, `x: Owned[T]`. Every value a
+//! caller builds for the call must have the type the call gives that parameter: the `int` that
+//! `T` stands for at `first(3)`, or the `int | None` that `T | None` stands for at `show(3)`.
+//! Monomorphization replaces the callee's type parameters only inside the callee's body, never
+//! in its callers, so lowering instantiates the parameter types itself before it moves,
+//! converts or borrows an argument. In a caller that is generic itself, a type argument may be
+//! the caller's own parameter, `U` at `first(u)` in `def wrap[U](u: Owned[U])`; the argument
+//! then has type `U`, which the caller's own instances replace.
 
 use crate::builder::Builder;
 use syntax::Role;
@@ -76,6 +78,11 @@ impl<'db> Builder<'db> {
             TypeKind::Fixed { element, shape } => TypeKind::Fixed {
                 element: map(*element),
                 shape: shape.clone(),
+            },
+            // A schema struct can be generic, so its columns and row type are mapped too.
+            TypeKind::DataFrame { columns, row } => TypeKind::DataFrame {
+                columns: columns.iter().map(|column| column.map(map)).collect(),
+                row: row.map(map),
             },
             TypeKind::Struct(nominal) => TypeKind::Struct(types::Nominal {
                 arguments: list(&nominal.arguments),
