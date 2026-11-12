@@ -24,10 +24,11 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when `compression.zstd.decompress`, and before
-it `print(df)`, a frame printed as pandas prints it, and before it `zlib.decompressobj` and `gzip`,
-and before them a `DataFrame` built from rows and `df[i]`, and before them `DataFrame[S]` built
-from arrays, with its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
+This page was last brought up to date on 2026-11-12, when `fft2`, `ifft2`, `rfft2` and
+`irfft2`, and before them `compression.zstd.decompress`, and before it `print(df)`, a frame
+printed as pandas prints it, and before it `zlib.decompressobj` and `gzip`, and before them a
+`DataFrame` built from rows and `df[i]`, and before them `DataFrame[S]` built from arrays, with
+its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
 `zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends
 and grid lines, and before them comparisons of arrays and `a[mask]`, and before them line plots
 with `pyplot` and `ticker`, saved as SVG, and before them slices of a NetCDF variable,
@@ -175,7 +176,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), [`svd` and `svdvals`](linear-algebra.md#linalgsvd-and-linalgsvdvals), [`eig` and `eigvals`](linear-algebra.md#linalgeig-and-linalgeigvals), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix; [`fft`](linear-algebra.md#fft): `fft`, `ifft`, `rfft`, `irfft`, `fftfreq` and `rfftfreq` of any length | Other element types (roadmap 3.10.1), `--blas` (3.10.2), several right-hand sides (3.10.3), and `fft2` and `fftn` (3.10.4) |
+| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), [`svd` and `svdvals`](linear-algebra.md#linalgsvd-and-linalgsvdvals), [`eig` and `eigvals`](linear-algebra.md#linalgeig-and-linalgeigvals), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix; [`fft`](linear-algebra.md#fft): `fft`, `ifft`, `rfft`, `irfft`, `fftfreq` and `rfftfreq` of any length, and [`fft2`, `ifft2`, `rfft2` and `irfft2`](linear-algebra.md#fftfft2-and-the-other-two-dimensional-transforms) | Other element types (roadmap 3.10.1), `--blas` (3.10.2), several right-hand sides (3.10.3), and `fftn` (idea I.51) |
 
 ## Files and processes
 
