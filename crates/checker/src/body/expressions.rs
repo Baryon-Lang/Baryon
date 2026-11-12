@@ -256,6 +256,9 @@ impl<'db> Body<'db> {
         {
             return self.header_item(node, value, base, expected);
         }
+        if let Some(column) = self.frame_item(node, base) {
+            return column;
+        }
         let Some(index) = self.tree.child(node, Role::Index) else {
             return self.lowerer.unknown();
         };

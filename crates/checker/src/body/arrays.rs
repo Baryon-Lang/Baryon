@@ -291,6 +291,9 @@ impl<'db> Body<'db> {
         let (element, rank_one) = match base.kind(self.db) {
             TypeKind::Array { element, rank } => (*element, *rank == 1),
             TypeKind::Fixed { element, shape } => (*element, shape.rank() == 1),
+            TypeKind::DataFrame { .. } => {
+                return Some(self.frame_method(node, base, name, arguments));
+            }
             TypeKind::List(item) => {
                 let item = *item;
                 return Some(match (name, arguments.positional.as_slice()) {

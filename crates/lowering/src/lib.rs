@@ -293,6 +293,7 @@ mod expressions;
 mod facts;
 mod files;
 mod fits;
+mod frames;
 mod generics;
 mod in_place;
 mod iterators;

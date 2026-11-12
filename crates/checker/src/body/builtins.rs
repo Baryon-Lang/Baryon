@@ -399,6 +399,7 @@ impl<'db> Body<'db> {
                             Some(TypeKind::Dict { .. }) => "dict",
                             Some(TypeKind::Array { .. }) => "Array",
                             Some(TypeKind::Fixed { .. }) => "Fixed",
+                            Some(TypeKind::DataFrame { .. }) => "DataFrame",
                             Some(TypeKind::Standard(standard)) => standard.name(),
                             _ => return,
                         }
