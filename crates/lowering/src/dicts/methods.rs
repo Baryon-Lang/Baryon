@@ -117,7 +117,7 @@ impl<'db> Builder<'db> {
         let Some((_, held)) = self.dict_types(ty, node) else {
             return;
         };
-        let Some(base) = self.place(dict) else {
+        let Some(base) = self.changed_place(dict) else {
             return;
         };
         let Some(default) = default else {
@@ -186,7 +186,7 @@ impl<'db> Builder<'db> {
         let Some((key, value)) = self.copyable_parts(ty, "update", node) else {
             return;
         };
-        let Some(target) = self.place(dict) else {
+        let Some(target) = self.changed_place(dict) else {
             return;
         };
         let source = self.borrow(other);
@@ -222,7 +222,7 @@ impl<'db> Builder<'db> {
         let Some((_, held)) = self.dict_types(ty, node) else {
             return;
         };
-        let Some(base) = self.place(dict) else {
+        let Some(base) = self.changed_place(dict) else {
             return;
         };
         let owned = self.stored_key(ty, key);
@@ -253,7 +253,7 @@ impl<'db> Builder<'db> {
     /// replacing the old one.
     fn dict_clear(&mut self, dict: NodeId, node: NodeId) {
         let ty = self.ty(dict);
-        let Some(base) = self.place(dict) else {
+        let Some(base) = self.changed_place(dict) else {
             return;
         };
         let empty = self.temporary(ty, node);

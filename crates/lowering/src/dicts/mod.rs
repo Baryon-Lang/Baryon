@@ -52,7 +52,7 @@ impl<'db> Builder<'db> {
         ) else {
             return;
         };
-        let Some(place) = self.place(dict) else {
+        let Some(place) = self.changed_place(dict) else {
             return;
         };
         let ty = self.ty(dict);
@@ -94,7 +94,7 @@ impl<'db> Builder<'db> {
         let Some((_, held)) = self.dict_types(ty, target) else {
             return;
         };
-        let Some(base) = self.place(dict) else {
+        let Some(base) = self.changed_place(dict) else {
             return;
         };
         let Some(position) = self.existing_entry(&base, ty, key, target) else {

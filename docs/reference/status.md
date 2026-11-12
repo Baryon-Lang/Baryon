@@ -25,8 +25,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 type, while `baryon run` builds only what this page lists.
 
 This page was last brought up to date on 2026-11-12, when `DataFrame[S]` built from arrays, with
-its columns, and before them `zlib.decompress`, `zlib.crc32` and
-`zlib.adler32`, and before them scatter plots, bars, histograms, legends
+its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
+`zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends
 and grid lines, and before them comparisons of arrays and `a[mask]`, and before them line plots
 with `pyplot` and `ticker`, saved as SVG, and before them slices of a NetCDF variable,
 `var[0, :, ::2]` read and written, and before them writing NetCDF classic files,
@@ -197,7 +197,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32) | `zlib.compress` (roadmap 3.27.2), `zlib.decompressobj` and `compressobj`, preset dictionaries; the `gzip`, `bz2`, `lzma` and `compression.zstd` modules (3.27.3 to 3.27.10) |
+| [`zlib.compress`](compression.md#zlibcompress) at every level and in each container; [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32) | `zlib.decompressobj` and `compressobj`, preset dictionaries; the `gzip`, `bz2`, `lzma` and `compression.zstd` modules (3.27.3 to 3.27.10) |
 
 ## Tests
 

@@ -239,3 +239,82 @@ error: a value cannot be moved out of an element
    = note: move a copy instead: `people[0].name.copy()`"
     );
 }
+
+/// A loop over a temporary list, such as a call's result, borrows each element just as a loop
+/// over a variable does: the loop owns the temporary and frees it, elements included, when it
+/// ends. So the loop variable cannot be moved into a list, a field or a return value, or
+/// changed, and the fix is the same `.copy()`. A copy is fine, and so is keeping a character of
+/// a string literal, which is never freed (decision 0022). Before, these checked clean,
+/// and the program read and freed each string again after the loop had freed it (roadmap
+/// 1.9.23).
+#[test]
+fn elements_of_a_temporary_list_are_borrowed_too() {
+    let program = r#"
+class Box(Struct):
+    name: str
+
+
+def words(n: int) -> list[str]:
+    return [f"w{k}" for k in range(n)]
+
+
+def keep(kept: InOut[list[str]], box: InOut[Box]) -> str:
+    for word in words(3):
+        kept.append(word)
+        box.name = word
+        kept.append(word.copy())
+    rows: list[list[int]] = []
+    for row in [[1], [2]]:
+        rows.append(row)
+        row[0] = 2
+    again = [w for w in words(2)]
+    letters = [c for c in "ab"]
+    for i, text in enumerate(words(2)):
+        return text
+    return "none"
+"#;
+    assert_eq!(
+        check_one(program),
+        "error: `word` borrows an element of `words(3)`, so it cannot be moved
+  --> main.byn:11:21
+   |
+11 |         kept.append(word)
+   |                     ^^^^ moved here
+   = note: to keep the element, keep a copy: `word.copy()`
+
+error: `word` borrows an element of `words(3)`, so it cannot be moved
+  --> main.byn:12:20
+   |
+12 |         box.name = word
+   |                    ^^^^ moved here
+   = note: to keep the element, keep a copy: `word.copy()`
+
+error: `row` borrows an element of `[[1], [2]]`, so it cannot be moved
+  --> main.byn:16:21
+   |
+16 |         rows.append(row)
+   |                     ^^^ moved here
+   = note: to keep the element, keep a copy: `row.copy()`
+
+error: `row` borrows an element of `[[1], [2]]`, so it cannot be changed
+  --> main.byn:17:9
+   |
+17 |         row[0] = 2
+   |         ^^^^^^ changed here
+   = note: work on a copy: `row.copy()`
+
+error: `w` borrows an element of `words(2)`, so it cannot be moved
+  --> main.byn:18:14
+   |
+18 |     again = [w for w in words(2)]
+   |              ^ moved here
+   = note: to keep the element, keep a copy: `w.copy()`
+
+error: `text` borrows an element of `enumerate(words(2))`, so it cannot be moved
+  --> main.byn:21:16
+   |
+21 |         return text
+   |                ^^^^ moved here
+   = note: to keep the element, keep a copy: `text.copy()`"
+    );
+}
