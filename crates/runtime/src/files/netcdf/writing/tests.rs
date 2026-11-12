@@ -24,6 +24,14 @@ fn fixture(name: &str) -> Vec<u8> {
     fs::read(format!("{path}{name}")).unwrap()
 }
 
+/// The `OSError` a failed write raised, as these writes raise no other error.
+fn os(failure: SubscriptFailure) -> OsFailure {
+    match failure {
+        SubscriptFailure::Os(failure) => failure,
+        other => panic!("not an OSError: {other:?}"),
+    }
+}
+
 /// Applies each of `lines` to the file at `path`.
 fn apply(path: &str, lines: &[&str]) {
     for line in lines {
@@ -141,7 +149,7 @@ fn what_the_format_refuses_is_refused() {
         assert_eq!(failure.kind, ErrorKind::InvalidData, "{line}");
         assert_eq!(failure.strerror, message, "{line}");
     }
-    let failure = write(&path, ("v", &[]), Pixel::F64, &[3], &[0; 24]).unwrap_err();
+    let failure = os(write(&path, ("v", &[]), Pixel::F64, &[3], &[0; 24]).unwrap_err());
     assert_eq!(
         failure.strerror,
         "the NetCDF variable v has the shape (2), which an array of shape (3) does not fill"
@@ -169,7 +177,7 @@ fn a_header_that_claims_more_than_the_file_holds_is_refused() {
     fs::write(&path, bytes).unwrap();
     for failure in [
         define(&path, "D\ty\t2").unwrap_err(),
-        write(&path, ("w", &[]), Pixel::F64, &[3], &[0; 24]).unwrap_err(),
+        os(write(&path, ("w", &[]), Pixel::F64, &[3], &[0; 24]).unwrap_err()),
     ] {
         assert_eq!(failure.kind, ErrorKind::InvalidData);
         assert_eq!(
@@ -249,14 +257,14 @@ fn slices_write_what_netcdf4_writes() {
     write(&path, ("c", &items), Pixel::F64, &[2], &values).unwrap();
     assert_eq!(fs::read(&path).unwrap(), fixture("grid.nc"));
     // An array of another shape than the values picked is refused.
-    let failure = write(
+    let failure = os(write(
         &path,
         ("c", &[every, Item::Index(0)]),
         Pixel::F64,
         &[2],
         &values,
     )
-    .unwrap_err();
+    .unwrap_err());
     assert_eq!(
         failure.strerror,
         "the values picked of the NetCDF variable c have the shape (4), which an array of shape \
@@ -297,7 +305,7 @@ fn huge_record_positions_are_refused_before_anything_is_made() {
             &[1, 3]
         };
         let failure =
-            write(&path, ("a", &[item]), Pixel::I64, shape, &longs(&[1, 2, 3])).unwrap_err();
+            os(write(&path, ("a", &[item]), Pixel::I64, shape, &longs(&[1, 2, 3])).unwrap_err());
         assert_eq!(failure.kind, ErrorKind::InvalidData, "{item:?}");
         assert_eq!(failure.strerror, message, "{item:?}");
     }
