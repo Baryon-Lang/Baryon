@@ -44,7 +44,8 @@ fn split_checks_the_separator_and_writes_the_list() {
 
 /// `def middle(name: str, start: int, count: int) -> str: return name[start:start + count]`,
 /// reduced to its call: the text, then three `i64` positions; the runtime returns a new owned
-/// `str`, stored as it is.
+/// `str`, stored as it is. The positions are registers: `start` is the parameter itself, and
+/// `count`, a temporary this reduced body never assigns, reads as `poison`.
 #[test]
 fn take_passes_positions_and_returns_owned_text() {
     let database = Database::default();
@@ -73,7 +74,7 @@ fn take_passes_positions_and_returns_owned_text() {
     body.push_block(end(TerminatorKind::Return));
     let written = module(&database, &[("middle", body)]);
     for expected in [
-        "call { ptr, i64 } @baryon_rt_str_take(ptr %t1, i64 %t3, i64 %t4, i64 %t5, i64 1)\n",
+        "call { ptr, i64 } @baryon_rt_str_take(ptr %t1, i64 %t3, i64 %a2, i64 poison, i64 1)\n",
         "declare { ptr, i64 } @baryon_rt_str_take(ptr, i64, i64, i64, i64) nounwind\n",
     ] {
         assert!(

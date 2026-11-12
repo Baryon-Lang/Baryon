@@ -135,16 +135,10 @@
 //!     "\
 //! define double @double(double %a1) {
 //! start:
-//!   %_0 = alloca double
-//!   %_1 = alloca double
-//!   store double %a1, ptr %_1
 //!   br label %bb0
 //! bb0:
-//!   %t0 = load double, ptr %_1
-//!   %t1 = fmul double %t0, 0x4000000000000000
-//!   store double %t1, ptr %_0
-//!   %t2 = load double, ptr %_0
-//!   ret double %t2
+//!   %t0 = fmul double %a1, 0x4000000000000000
+//!   ret double %t0
 //! }
 //! ",
 //! );

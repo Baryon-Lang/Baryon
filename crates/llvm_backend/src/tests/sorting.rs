@@ -89,13 +89,13 @@ fn round_digits_calls_the_runtime_for_its_type() {
     let float = primitive(&database, Primitive::Float(Float::F64));
     let real = super::module(&database, &[("real", rounded(float, int))]);
     assert!(
-        real.contains("= call double @baryon_rt_round_f64(double %t0, i64 %t1)\n"),
+        real.contains("= call double @baryon_rt_round_f64(double %a1, i64 %a2)\n"),
         "{real}"
     );
     assert!(real.contains("declare double @baryon_rt_round_f64(double, i64) nounwind"));
     let whole = super::module(&database, &[("whole", rounded(int, int))]);
     assert!(
-        whole.contains("= call i64 @baryon_rt_round_i64(i64 %t0, i64 %t1, ptr @baryon.loc.1)\n"),
+        whole.contains("= call i64 @baryon_rt_round_i64(i64 %a1, i64 %a2, ptr @baryon.loc.1)\n"),
         "{whole}"
     );
     assert!(whole.contains("declare i64 @baryon_rt_round_i64(i64, i64, ptr) nounwind"));
