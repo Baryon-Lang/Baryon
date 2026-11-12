@@ -42,7 +42,9 @@ backtraces. On Linux, install your distribution's `clang` package. `baryon` runs
 15 or newer, and otherwise the newest of `clang-30` down to `clang-15` it finds, the names
 distributions give versions installed side by side; so on Ubuntu 22.04, whose `clang` is 14,
 `sudo apt install clang-15` is enough. With no new enough `clang`, `build` says which version it
-found and how to install one. `check`, `doc` and `lsp` need neither.
+found and how to install one. `check`, `doc` and `lsp` need neither. On Linux, installing
+LLVM's linker too (the `lld` package) makes every build's link about twice as fast; `baryon`
+uses it when `clang` can find it, and links with the system linker otherwise.
 
 ## Packages
 
