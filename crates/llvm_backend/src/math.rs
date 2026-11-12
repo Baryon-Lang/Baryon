@@ -20,7 +20,7 @@
 //! reduces a contiguous array where it lies and gathers any other first.
 
 use crate::Unsupported;
-use crate::function::{Function, block_label};
+use crate::function::{Destination, Function, block_label};
 use crate::ty::Number;
 use mir::{Argument, BlockId, MathFunction, Place};
 use types::TypeKind;
@@ -34,7 +34,7 @@ impl<'db> Function<'_, '_, 'db> {
         destination: &Place,
         target: BlockId,
     ) -> Result<(), Unsupported> {
-        let (address, ty) = self.place(destination)?;
+        let (destination, ty) = self.destination(destination)?;
         let complex = self.complex_part(ty);
         let (llvm, suffix) = match (self.types.number(ty), complex) {
             (Some(Number::Float(32)), _) => ("float", "f32"),
@@ -47,9 +47,9 @@ impl<'db> Function<'_, '_, 'db> {
             let value = match argument {
                 Argument::Owned(operand) => self.value(operand)?.0,
                 Argument::Borrow(place) | Argument::InOut(place) => {
-                    let (address, ty) = self.place(place)?;
-                    self.load(&address, ty)?
+                    self.place_value(place)?
                         .ok_or_else(|| Unsupported::new("`None` where a value is needed"))?
+                        .0
                 }
             };
             values.push(value);
@@ -61,6 +61,10 @@ impl<'db> Function<'_, '_, 'db> {
                     function.name()
                 )));
             }
+            let Destination::Address(address) = destination else {
+                // A complex number is never a register.
+                return Err(Unsupported::new("a complex number in a register"));
+            };
             return self.complex_power(part, &values, &address, target);
         }
         let values: Vec<String> = values
@@ -101,7 +105,7 @@ impl<'db> Function<'_, '_, 'db> {
                 ))
             }
         };
-        self.line(&format!("store {llvm} {result}, ptr {address}"));
+        self.store(&destination, llvm, &result);
         self.line(&format!("br label %{}", block_label(target)));
         Ok(())
     }

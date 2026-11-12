@@ -213,28 +213,19 @@ fn element_addresses_use_the_strides() {
         "\
 define double @get(ptr noalias readonly %a1, i64 %a2, i64 %a3) {
 start:
-  %_0 = alloca double
-  %_2 = alloca i64
-  %_3 = alloca i64
-  store i64 %a2, ptr %_2
-  store i64 %a3, ptr %_3
   br label %bb0
 bb0:
   %t0 = load ptr, ptr %a1
-  %t1 = load i64, ptr %_2
-  %t2 = getelementptr inbounds { ptr, [2 x i64], [2 x i64] }, ptr %a1, i32 0, i32 2, i32 0
-  %t3 = load i64, ptr %t2
-  %t4 = mul i64 %t1, %t3
-  %t5 = load i64, ptr %_3
-  %t6 = getelementptr inbounds { ptr, [2 x i64], [2 x i64] }, ptr %a1, i32 0, i32 2, i32 1
-  %t7 = load i64, ptr %t6
-  %t8 = mul i64 %t5, %t7
-  %t9 = add i64 %t4, %t8
-  %t10 = getelementptr inbounds double, ptr %t0, i64 %t9
-  %t11 = load double, ptr %t10
-  store double %t11, ptr %_0
-  %t12 = load double, ptr %_0
-  ret double %t12
+  %t1 = getelementptr inbounds { ptr, [2 x i64], [2 x i64] }, ptr %a1, i32 0, i32 2, i32 0
+  %t2 = load i64, ptr %t1
+  %t3 = mul i64 %a2, %t2
+  %t4 = getelementptr inbounds { ptr, [2 x i64], [2 x i64] }, ptr %a1, i32 0, i32 2, i32 1
+  %t5 = load i64, ptr %t4
+  %t6 = mul i64 %a3, %t5
+  %t7 = add i64 %t3, %t6
+  %t8 = getelementptr inbounds double, ptr %t0, i64 %t7
+  %t9 = load double, ptr %t8
+  ret double %t9
 }
 "
     );

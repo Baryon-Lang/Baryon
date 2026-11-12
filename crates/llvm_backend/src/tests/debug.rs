@@ -27,19 +27,10 @@ fn instructions_carry_their_source_location() {
             "\
 define double @scale(double %a1, double %a2) uwtable !dbg !3 {{
 start:
-  %_0 = alloca double
-  %_1 = alloca double
-  %_2 = alloca double
-  store double %a1, ptr %_1
-  store double %a2, ptr %_2
   br label %bb0
 bb0:
-  %t0 = load double, ptr %_1, !dbg {location}
-  %t1 = load double, ptr %_2, !dbg {location}
-  %t2 = fmul double %t0, %t1, !dbg {location}
-  store double %t2, ptr %_0, !dbg {location}
-  %t3 = load double, ptr %_0, !dbg {location}
-  ret double %t3, !dbg {location}
+  %t0 = fmul double %a1, %a2, !dbg {location}
+  ret double %t0, !dbg {location}
 }}
 
 define i32 @main() uwtable !dbg !4 {{
