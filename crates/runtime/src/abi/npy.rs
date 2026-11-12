@@ -10,7 +10,7 @@
 //! An `Array[T, rank]` is its header, as compiled code lays it out: a pointer to the elements,
 //! then `rank` lengths, then `rank` strides in elements, each 64 bits.
 
-use super::array_files::{ElementLayout, read_elements, runs};
+use super::array_files::{ElementLayout, read_elements, runs, write_header};
 use super::files::{RaisedError, finish};
 use super::strings::text;
 use crate::files::npy;
@@ -113,32 +113,9 @@ pub unsafe extern "C" fn baryon_rt_array_load(
     let offset = i64::try_from(header.offset).unwrap_or(i64::MAX);
     // SAFETY: the caller's promise about `element`, passed on.
     let (result, data) = unsafe { read_elements(path, element, count, offset) };
-    let write = |_: usize| {
-        let lengths: Vec<i64> = header
-            .shape
-            .iter()
-            .map(|&length| i64::try_from(length).unwrap_or(i64::MAX))
-            .collect();
-        let mut stride = 1_i64;
-        let mut strides: Vec<i64> = lengths
-            .iter()
-            .rev()
-            .map(|&length| {
-                let this = stride;
-                stride = stride.saturating_mul(length);
-                this
-            })
-            .collect();
-        strides.reverse();
-        // SAFETY: the caller guarantees `out` is writable; its first word is the pointer.
-        unsafe { out.cast::<*mut u8>().write(data) };
-        for (at, word) in lengths.into_iter().chain(strides).enumerate() {
-            let place = out.wrapping_add(1 + at);
-            // SAFETY: the caller guarantees `1 + 2 * rank` writable words at `out`, and `check`
-            // made the shape `rank` long, so `place` is one of them.
-            unsafe { place.write(word) };
-        }
-    };
+    // SAFETY: the caller guarantees `1 + 2 * rank` writable words at `out`, and `check` made
+    // the shape `rank` long.
+    let write = |_: usize| unsafe { write_header(out, data, &header.shape) };
     // SAFETY: the caller guarantees `error` is writable.
     unsafe { finish(result, write, error) }
 }
