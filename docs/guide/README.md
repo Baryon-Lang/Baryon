@@ -107,6 +107,11 @@ Hello, Baryon!
 `baryon run` compiled the program to machine code, ran it and removed it. To keep the executable,
 use `baryon build hello hello/program` instead, then run `hello/program`.
 
+Both make a *debug build*, which compiles quickly but is not optimized. When a program runs long
+enough to wait for, such as a big simulation, add `--release`: `baryon run --release hello`
+takes longer to compile and runs up to ten times faster, with the same results
+([Debug and release builds](../reference/commands.md#debug-and-release-builds)).
+
 ## 3. Numbers, functions and loops
 
 How long does a ball take to fall 10 metres? Here is a simulation that steps time forward in small

@@ -193,6 +193,7 @@ Comes after Phase 3's native capability work (Collins, 2026-11-10): see the orde
 | 2.2 | Incremental code generation and object patching | 3 | 2.1 | Planned | — | — |
 | 2.3 | Compile-speed profiling and tuning to the targets | 3 | 2.2 | Planned | — | — |
 | 2.4 | Language server: rename, inlay hints, run tests from the editor, debugger hookup | 2 | 1.16 | Planned | — | — |
+| 2.5 | Debug builds compile at `clang -O0` and release builds at `-O2` (decision 0048, replacing 0030's "both are optimized"): a 4,706-line program's debug build went from 9.5 s to 1.85 s, and the `nbody` kernel's from 0.40 s to 0.20 s; debug programs run up to ten times slower, so timing runs use `--release` | — | 2.0 | In progress | Claude | [0048](docs/decisions/0048-debug-builds-compile-fast.md) |
 
 ## Phase 3: optimization and data science
 
