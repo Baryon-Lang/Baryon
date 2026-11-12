@@ -4,6 +4,7 @@
 
 use super::calls::Arguments;
 use super::{Body, numbers, relations};
+use crate::traits::Trait;
 use database::Definition;
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Call, Callee, Float, Integer, Key, Primitive, Type, TypeKind};
@@ -88,6 +89,9 @@ impl<'db> Body<'db> {
                                 None => self.mixing_error(argument, name, *a, *b),
                             }
                         }
+                        // Two values of one `Float` type parameter, `max(x, y)` in
+                        // `def f[T: Float]`, compare as `f32` or `f64` do.
+                        _ if result == ty && self.trait_of(ty) == Some(Trait::Float) => ty,
                         _ => self.lowerer.unknown(),
                     };
                 }

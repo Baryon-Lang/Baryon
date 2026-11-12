@@ -15,7 +15,7 @@ class LinAlgError(Exception):
     message: str
 
 
-def lu_factor(a: Array[f64, 2]) -> Raises[tuple[Array[f64, 2], Array[int, 1]], LinAlgError]:
+def lu_factor[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 2], Array[int, 1]], LinAlgError]:
     """The LU factors of a square matrix `a` with partial pivoting, as `scipy.linalg.lu_factor`.
 
     Returns `(lu, piv)`: `lu` holds the unit lower triangle `L` below its diagonal and the upper
@@ -51,7 +51,7 @@ def lu_factor(a: Array[f64, 2]) -> Raises[tuple[Array[f64, 2], Array[int, 1]], L
     return lu, piv
 
 
-def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 1]) -> Array[f64, 1]:
+def lu_solve[T: Float](lu: Array[T, 2], piv: Array[int, 1], b: Array[T, 1]) -> Array[T, 1]:
     """The vector `x` with `a @ x == b`, from `lu_factor(a)`'s `lu` and `piv`, as
     `scipy.linalg.lu_solve((lu, piv), b)`.
 
@@ -83,7 +83,7 @@ def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 1]) -> Array[f
     return x
 
 
-def solve(a: Array[f64, 2], b: Array[f64, 1]) -> Raises[Array[f64, 1], LinAlgError]:
+def solve[T: Float](a: Array[T, 2], b: Array[T, 1]) -> Raises[Array[T, 1], LinAlgError]:
     """The vector `x` with `a @ x == b`, for a square matrix `a`, as `numpy.linalg.solve`.
 
     `lu_factor` then `lu_solve`, LAPACK's `gesv` order unblocked: about 2n³/3 multiply-adds and
@@ -95,7 +95,7 @@ def solve(a: Array[f64, 2], b: Array[f64, 1]) -> Raises[Array[f64, 1], LinAlgErr
     return lu_solve(lu, piv, b)
 
 
-def det(a: Array[f64, 2]) -> f64:
+def det[T: Float](a: Array[T, 2]) -> T:
     """The determinant of a square matrix `a`, as `numpy.linalg.det`: the product of `U`'s
     diagonal from `lu_factor`, negated once for each row swap. A singular matrix gives `0.0`.
 
@@ -105,7 +105,7 @@ def det(a: Array[f64, 2]) -> f64:
         lu, piv = lu_factor(a)
     except LinAlgError:
         return 0.0
-    result = 1.0
+    result: T = 1.0
     for k in range(len(piv)):
         result *= lu[k, k]
         if piv[k] != k:
@@ -113,7 +113,7 @@ def det(a: Array[f64, 2]) -> f64:
     return result
 
 
-def inv(a: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]:
+def inv[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]:
     """The inverse of a square matrix `a`, as `numpy.linalg.inv`: `lu_solve` of each column of
     the identity. Prefer `solve(a, b)` to `inv(a) @ b`, which costs more and is less accurate.
 
@@ -122,8 +122,8 @@ def inv(a: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]:
     """
     n = a.shape[0]
     lu, piv = lu_factor(a)
-    result = Array.zeros((n, n))
-    column = Array.zeros(n)
+    result = Array.zeros((n, n), T)
+    column = Array.zeros(n, T)
     for j in range(n):
         column.fill(0.0)
         column[j] = 1.0
@@ -133,7 +133,7 @@ def inv(a: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]:
     return result
 
 
-def cholesky(a: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]:
+def cholesky[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]:
     """The lower triangular `l` with `l @ lᵀ == a`, for a symmetric positive definite matrix
     `a`, as `numpy.linalg.cholesky`.
 
@@ -143,7 +143,7 @@ def cholesky(a: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]:
     """
     n = a.shape[0]
     assert a.shape[1] == n, "cholesky needs a square matrix"
-    l = Array.zeros((n, n))
+    l = Array.zeros((n, n), T)
     for j in range(n):
         diagonal = a[j, j]
         for k in range(j):
@@ -160,7 +160,7 @@ def cholesky(a: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]:
     return l
 
 
-def qr(a: Array[f64, 2]) -> tuple[Array[f64, 2], Array[f64, 2]]:
+def qr[T: Float](a: Array[T, 2]) -> tuple[Array[T, 2], Array[T, 2]]:
     """The factors `q` and `r` of an m × n matrix `a` with `q @ r == a`, as
     `numpy.linalg.qr(a)`: `q` is m × k with orthonormal columns and `r` is k × n upper
     triangular, for k = min(m, n).
@@ -173,10 +173,10 @@ def qr(a: Array[f64, 2]) -> tuple[Array[f64, 2], Array[f64, 2]]:
     n = a.shape[1]
     k = min(m, n)
     work = a.copy()
-    tau = Array.zeros(k)
+    tau = Array.zeros(k, T)
     for i in range(k):
         alpha = work[i, i]
-        squares = 0.0
+        squares: T = 0.0
         for row in range(i + 1, m):
             squares += work[row, i] * work[row, i]
         if squares == 0.0:
@@ -189,11 +189,11 @@ def qr(a: Array[f64, 2]) -> tuple[Array[f64, 2], Array[f64, 2]]:
         work[i, i] = 1.0
         _reflect(work, tau[i], i, i + 1, n)
         work[i, i] = beta
-    r = Array.zeros((k, n))
+    r = Array.zeros((k, n), T)
     for row in range(k):
         for column in range(row, n):
             r[row, column] = work[row, column]
-    q = Array.zeros((m, k))
+    q = Array.zeros((m, k), T)
     for row in range(m):
         for column in range(k):
             q[row, column] = work[row, column]
@@ -209,7 +209,7 @@ def qr(a: Array[f64, 2]) -> tuple[Array[f64, 2], Array[f64, 2]]:
     return q, r
 
 
-def _reflect(matrix: InOut[Array[f64, 2]], tau: f64, i: int, start: int, stop: int):
+def _reflect[T: Float](matrix: InOut[Array[T, 2]], tau: T, i: int, start: int, stop: int):
     """Applies the reflection `I - tau v vᵀ` from the left to columns `start` to `stop` of
     `matrix`, rows `i` on, where `v` is column `i` from row `i` down: LAPACK's `larf`.
     """
@@ -217,7 +217,7 @@ def _reflect(matrix: InOut[Array[f64, 2]], tau: f64, i: int, start: int, stop: i
         return
     m = matrix.shape[0]
     for column in range(start, stop):
-        total = 0.0
+        total: T = 0.0
         for row in range(i, m):
             total += matrix[row, i] * matrix[row, column]
         total *= tau
@@ -225,7 +225,7 @@ def _reflect(matrix: InOut[Array[f64, 2]], tau: f64, i: int, start: int, stop: i
             matrix[row, column] -= total * matrix[row, i]
 
 
-def eigh(a: Array[f64, 2]) -> Raises[tuple[Array[f64, 1], Array[f64, 2]], LinAlgError]:
+def eigh[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 1], Array[T, 2]], LinAlgError]:
     """The eigenvalues `w`, in ascending order, and eigenvectors `v` of a symmetric matrix `a`, as
     `numpy.linalg.eigh(a)`: column `v[:, i]` is the unit eigenvector of `w[i]`.
 
@@ -236,13 +236,13 @@ def eigh(a: Array[f64, 2]) -> Raises[tuple[Array[f64, 1], Array[f64, 2]], LinAlg
     """
     n = a.shape[0]
     assert a.shape[1] == n, "eigh needs a square matrix"
-    v = Array.zeros((n, n))
+    v = Array.zeros((n, n), T)
     for i in range(n):
         for j in range(i + 1):
             v[i, j] = a[i, j]
             v[j, i] = a[i, j]
-    d = Array.zeros(n)
-    e = Array.zeros(n)
+    d = Array.zeros(n, T)
+    e = Array.zeros(n, T)
     if n > 0:
         _tridiagonalize(v, d, e)
         _diagonalize(v, d, e)
@@ -262,7 +262,7 @@ def eigh(a: Array[f64, 2]) -> Raises[tuple[Array[f64, 1], Array[f64, 2]], LinAlg
     return d, v
 
 
-def eigvalsh(a: Array[f64, 2]) -> Raises[Array[f64, 1], LinAlgError]:
+def eigvalsh[T: Float](a: Array[T, 2]) -> Raises[Array[T, 1], LinAlgError]:
     """The eigenvalues of a symmetric matrix `a` in ascending order, as `numpy.linalg.eigvalsh`:
     the `w` of `eigh(a)`, at the same cost.
     """
@@ -270,7 +270,7 @@ def eigvalsh(a: Array[f64, 2]) -> Raises[Array[f64, 1], LinAlgError]:
     return w
 
 
-def _tridiagonalize(v: InOut[Array[f64, 2]], d: InOut[Array[f64, 1]], e: InOut[Array[f64, 1]]):
+def _tridiagonalize[T: Float](v: InOut[Array[T, 2]], d: InOut[Array[T, 1]], e: InOut[Array[T, 1]]):
     """Reduces the symmetric matrix in `v` to tridiagonal form by Householder reflections,
     EISPACK's `tred2` as JAMA writes it: `d` gets the diagonal, `e` the subdiagonal in `e[1:]`,
     and `v` the orthogonal matrix that does the reduction.
@@ -279,8 +279,8 @@ def _tridiagonalize(v: InOut[Array[f64, 2]], d: InOut[Array[f64, 1]], e: InOut[A
     for j in range(n):
         d[j] = v[n - 1, j]
     for i in range(n - 1, 0, -1):
-        scale = 0.0
-        h = 0.0
+        scale: T = 0.0
+        h: T = 0.0
         for k in range(i):
             scale += fabs(d[k])
         if scale == 0.0:
@@ -310,7 +310,7 @@ def _tridiagonalize(v: InOut[Array[f64, 2]], d: InOut[Array[f64, 1]], e: InOut[A
                     g += v[k, j] * d[k]
                     e[k] += v[k, j] * f
                 e[j] = g
-            f = 0.0
+            f: T = 0.0
             for j in range(i):
                 e[j] /= h
                 f += e[j] * d[j]
@@ -333,7 +333,7 @@ def _tridiagonalize(v: InOut[Array[f64, 2]], d: InOut[Array[f64, 1]], e: InOut[A
             for k in range(i + 1):
                 d[k] = v[k, i + 1] / h
             for j in range(i + 1):
-                g = 0.0
+                g: T = 0.0
                 for k in range(i + 1):
                     g += v[k, i + 1] * v[k, j]
                 for k in range(i + 1):
@@ -347,8 +347,8 @@ def _tridiagonalize(v: InOut[Array[f64, 2]], d: InOut[Array[f64, 1]], e: InOut[A
     e[0] = 0.0
 
 
-def _diagonalize(
-    v: InOut[Array[f64, 2]], d: InOut[Array[f64, 1]], e: InOut[Array[f64, 1]]
+def _diagonalize[T: Float](
+    v: InOut[Array[T, 2]], d: InOut[Array[T, 1]], e: InOut[Array[T, 1]]
 ) -> Raises[None, LinAlgError]:
     """Finds the eigenvalues of the tridiagonal matrix `d`, `e` from `_tridiagonalize` by the
     implicit QL iteration with Wilkinson shifts, EISPACK's `tql2` as JAMA writes it, rotating
@@ -358,16 +358,16 @@ def _diagonalize(
     n = len(d)
     # The rotations touch two columns of `v` each; they run on rows of its transpose, which lie
     # contiguous in memory.
-    vt = Array.zeros((n, n))
+    vt = Array.zeros((n, n), T)
     for i in range(n):
         for j in range(n):
             vt[j, i] = v[i, j]
     for i in range(1, n):
         e[i - 1] = e[i]
     e[n - 1] = 0.0
-    f = 0.0
-    largest = 0.0
-    epsilon = 2.0**-52
+    f: T = 0.0
+    largest: T = 0.0
+    epsilon = _epsilon(e[0])
     for l in range(n):
         largest = max(largest, fabs(d[l]) + fabs(e[l]))
         m = l
@@ -389,12 +389,12 @@ def _diagonalize(
                 d[i] -= h
             f += h
             p = d[m]
-            c = 1.0
-            c2 = 1.0
-            c3 = 1.0
+            c: T = 1.0
+            c2: T = 1.0
+            c3: T = 1.0
             next_off = e[l + 1]
-            s = 0.0
-            s2 = 0.0
+            s: T = 0.0
+            s2: T = 0.0
             for i in range(m - 1, l - 1, -1):
                 c3 = c2
                 c2 = c
@@ -421,9 +421,9 @@ def _diagonalize(
             v[i, j] = vt[j, i]
 
 
-def svd(
-    a: Array[f64, 2], full_matrices: bool = True
-) -> Raises[tuple[Array[f64, 2], Array[f64, 1], Array[f64, 2]], LinAlgError]:
+def svd[T: Float](
+    a: Array[T, 2], full_matrices: bool = True
+) -> Raises[tuple[Array[T, 2], Array[T, 1], Array[T, 2]], LinAlgError]:
     """The singular value decomposition of an m × n matrix `a`, as `numpy.linalg.svd(a)`:
     `u, s, vh` with `a == u @ diag(s) @ vh`, `s` the k = min(m, n) singular values in descending
     order, and `u` and `vh` with orthonormal columns and rows. `u` is m × m and `vh` n × n, or
@@ -443,25 +443,25 @@ def svd(
     if wide:
         rows = n
         columns = m
-    work = Array.zeros((columns, rows))
+    work = Array.zeros((columns, rows), T)
     for i in range(m):
         for j in range(n):
             if wide:
                 work[i, j] = a[i, j]
             else:
                 work[j, i] = a[i, j]
-    v = Array.zeros((columns, columns))
+    v = Array.zeros((columns, columns), T)
     for i in range(columns):
         v[i, i] = 1.0
     _jacobi_sweeps(work, v)
     order = _descending(work)
     k = columns
-    s = Array.zeros(k)
-    left = Array.zeros((k, rows))
-    right = Array.zeros((k, columns))
+    s = Array.zeros(k, T)
+    left = Array.zeros((k, rows), T)
+    right = Array.zeros((k, columns), T)
     for position in range(k):
         column = order[position]
-        norm = 0.0
+        norm: T = 0.0
         for row in range(rows):
             norm += work[column, row] * work[column, row]
         norm = sqrt(norm)
@@ -473,19 +473,19 @@ def svd(
             right[position, row] = v[column, row]
     full_left = _completed(left, rows, full_matrices)
     if wide:
-        u = Array.zeros((m, k))
+        u = Array.zeros((m, k), T)
         for i in range(m):
             for j in range(k):
                 u[i, j] = right[j, i]
         return u, s, full_left
-    u = Array.zeros((full_left.shape[0], m))
+    u = Array.zeros((full_left.shape[0], m), T)
     for i in range(full_left.shape[0]):
         for j in range(m):
             u[i, j] = full_left[i, j]
     return _transposed(u), s, right
 
 
-def svdvals(a: Array[f64, 2]) -> Raises[Array[f64, 1], LinAlgError]:
+def svdvals[T: Float](a: Array[T, 2]) -> Raises[Array[T, 1], LinAlgError]:
     """The singular values of `a` in descending order, as `numpy.linalg.svdvals(a)`: the `s` of
     `svd(a)`, at about the same cost.
     """
@@ -493,21 +493,21 @@ def svdvals(a: Array[f64, 2]) -> Raises[Array[f64, 1], LinAlgError]:
     return s
 
 
-def _jacobi_sweeps(work: InOut[Array[f64, 2]], v: InOut[Array[f64, 2]]) -> Raises[None, LinAlgError]:
+def _jacobi_sweeps[T: Float](work: InOut[Array[T, 2]], v: InOut[Array[T, 2]]) -> Raises[None, LinAlgError]:
     """Rotates pairs of rows of `work`, each a column of the matrix being decomposed, until every
     pair is orthogonal to working precision, applying the same rotations to the rows of `v`.
     Rows are used so that each rotation reads contiguous memory.
     """
     columns = work.shape[0]
     rows = work.shape[1]
-    epsilon = 2.0**-52
+    epsilon = _epsilon(work[0, 0])
     for _ in range(60):
         rotated = False
         for p in range(columns - 1):
             for q in range(p + 1, columns):
-                alpha = 0.0
-                beta = 0.0
-                gamma = 0.0
+                alpha: T = 0.0
+                beta: T = 0.0
+                gamma: T = 0.0
                 for row in range(rows):
                     alpha += work[p, row] * work[p, row]
                     beta += work[q, row] * work[q, row]
@@ -534,10 +534,10 @@ def _jacobi_sweeps(work: InOut[Array[f64, 2]], v: InOut[Array[f64, 2]]) -> Raise
     raise LinAlgError("SVD did not converge")
 
 
-def _descending(work: Array[f64, 2]) -> Array[int, 1]:
+def _descending[T: Float](work: Array[T, 2]) -> Array[int, 1]:
     """The rows of `work` in descending order of their length, ties in their own order."""
     count = work.shape[0]
-    lengths = Array.zeros(count)
+    lengths = Array.zeros(count, T)
     order = Array.zeros(count, int)
     for i in range(count):
         order[i] = i
@@ -553,7 +553,7 @@ def _descending(work: Array[f64, 2]) -> Array[int, 1]:
     return order
 
 
-def _completed(vectors: Array[f64, 2], length: int, full: bool) -> Array[f64, 2]:
+def _completed[T: Float](vectors: Array[T, 2], length: int, full: bool) -> Array[T, 2]:
     """`vectors`, rows that are orthonormal or zero, with each zero row replaced by a unit vector
     orthogonal to all the others, and, when `full`, rows added until there are `length`: Gram-
     Schmidt twice against each unit vector of the standard basis, keeping the first that stays
@@ -564,7 +564,7 @@ def _completed(vectors: Array[f64, 2], length: int, full: bool) -> Array[f64, 2]
     total = count
     if full:
         total = length
-    result = Array.zeros((total, length))
+    result = Array.zeros((total, length), T)
     for i in range(count):
         for j in range(length):
             result[i, j] = vectors[i, j]
@@ -576,14 +576,14 @@ def _completed(vectors: Array[f64, 2], length: int, full: bool) -> Array[f64, 2]
                 if result[i, j] != 0.0:
                     filled = True
         while not filled and candidate < length:
-            trial = Array.zeros(length)
+            trial = Array.zeros(length, T)
             trial[candidate] = 1.0
             candidate += 1
             for _ in range(2):
                 for other in range(total):
                     if other == i:
                         continue
-                    projection = 0.0
+                    projection: T = 0.0
                     for j in range(length):
                         projection += result[other, j] * trial[j]
                     for j in range(length):
@@ -596,13 +596,25 @@ def _completed(vectors: Array[f64, 2], length: int, full: bool) -> Array[f64, 2]
     return result
 
 
-def _transposed(a: Array[f64, 2]) -> Array[f64, 2]:
+def _transposed[T: Float](a: Array[T, 2]) -> Array[T, 2]:
     """A new array holding the transpose of `a`."""
-    result = Array.zeros((a.shape[1], a.shape[0]))
+    result = Array.zeros((a.shape[1], a.shape[0]), T)
     for i in range(a.shape[0]):
         for j in range(a.shape[1]):
             result[j, i] = a[i, j]
     return result
+
+
+def _epsilon[T: Float](like: T) -> T:
+    """The machine epsilon of `like`'s type, 2⁻²³ for `f32` and 2⁻⁵² for `f64`: the gap between
+    1 and the next larger number, found by halving until adding it to 1 no longer counts. The
+    convergence tests of `eigh` and `svd` compare against it, so each type stops at its own
+    precision. `like` gives only the type.
+    """
+    epsilon: T = 1.0
+    while 1.0 + epsilon / 2.0 != 1.0:
+        epsilon /= 2.0
+    return epsilon
 
 
 def eig(a: Array[f64, 2]) -> Raises[tuple[Array[complex128, 1], Array[complex128, 2]], LinAlgError]:

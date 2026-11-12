@@ -14,6 +14,12 @@ fix their order of operations, so a result has the same bits on every machine an
 NumPy calls LAPACK, which adds in its own order, so the last bits of a result can differ from
 NumPy's; the tests compare to 12 significant digits.
 
+Every `linalg` function except `eig` and `eigvals` is [generic](types.md#generics) over `T: Float`,
+so it takes `f64` or `f32` matrices and computes in that type: an `f32` matrix gives an `f32`
+result, at half the memory and with about seven significant digits, as NumPy's `float32` does.
+Complex matrices are not built yet (idea I.57). The tests compare `f32` results to NumPy's to 4
+significant digits.
+
 The matrix product is the operator [`@`](arrays.md#the-matrix-product), not a function.
 
 ## Errors
@@ -34,7 +40,7 @@ with `try` or lists it in its own `Raises`.
 ## `linalg.solve`
 
 ```python
-def solve(a: Array[f64, 2], b: Array[f64, 1]) -> Raises[Array[f64, 1], LinAlgError]: ...
+def solve[T: Float](a: Array[T, 2], b: Array[T, 1]) -> Raises[Array[T, 1], LinAlgError]: ...
 ```
 
 The vector `x` with `a @ x == b`, for a square matrix `a`: Gaussian elimination with partial
@@ -76,15 +82,15 @@ prints
 [0.2 0.6 0.7]
 ```
 
-Differences from NumPy: `b` is one vector, not a matrix of several right-hand sides, and `a`
-holds `f64`s only; they are roadmap 3.10.3 and 3.10.1. NumPy converts an integer matrix to
+Differences from NumPy: `b` is one vector, not a matrix of several right-hand sides (roadmap
+3.10.3), and `a` holds `f64` or `f32`, not complex numbers. NumPy converts an integer matrix to
 `float64`; here it is a type error, since every conversion is a call.
 
 ## `linalg.lu_factor` and `linalg.lu_solve`
 
 ```python
-def lu_factor(a: Array[f64, 2]) -> Raises[tuple[Array[f64, 2], Array[int, 1]], LinAlgError]: ...
-def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 1]) -> Array[f64, 1]: ...
+def lu_factor[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 2], Array[int, 1]], LinAlgError]: ...
+def lu_solve[T: Float](lu: Array[T, 2], piv: Array[int, 1], b: Array[T, 1]) -> Array[T, 1]: ...
 ```
 
 NumPy has no LU factorization, so these are SciPy's `scipy.linalg.lu_factor` and `lu_solve`.
@@ -113,8 +119,8 @@ returns factors with a zero on the diagonal.
 ## `linalg.det` and `linalg.inv`
 
 ```python
-def det(a: Array[f64, 2]) -> f64: ...
-def inv(a: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]: ...
+def det[T: Float](a: Array[T, 2]) -> T: ...
+def inv[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]: ...
 ```
 
 `det(a)` is the determinant: the product of `U`'s diagonal, negated for each row swap. A singular
@@ -128,7 +134,7 @@ and rounds less.
 ## `linalg.cholesky`
 
 ```python
-def cholesky(a: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]: ...
+def cholesky[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]: ...
 ```
 
 The lower triangular matrix `l` with `l @ lᵀ == a`, for a symmetric positive definite `a`, such
@@ -139,7 +145,7 @@ costs about n³/3 multiply-adds, half of `lu_factor`'s. Raises
 ## `linalg.qr`
 
 ```python
-def qr(a: Array[f64, 2]) -> tuple[Array[f64, 2], Array[f64, 2]]: ...
+def qr[T: Float](a: Array[T, 2]) -> tuple[Array[T, 2], Array[T, 2]]: ...
 ```
 
 `q, r = qr(a)` factors an m × n matrix as `q @ r`, NumPy's default `mode="reduced"`: `q` is
@@ -156,8 +162,8 @@ built.
 ## `linalg.eigh` and `linalg.eigvalsh`
 
 ```python
-def eigh(a: Array[f64, 2]) -> Raises[tuple[Array[f64, 1], Array[f64, 2]], LinAlgError]: ...
-def eigvalsh(a: Array[f64, 2]) -> Raises[Array[f64, 1], LinAlgError]: ...
+def eigh[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 1], Array[T, 2]], LinAlgError]: ...
+def eigvalsh[T: Float](a: Array[T, 2]) -> Raises[Array[T, 1], LinAlgError]: ...
 ```
 
 `w, v = eigh(a)` gives the eigenvalues of a symmetric matrix in ascending order and, as the
@@ -177,8 +183,8 @@ Differences from NumPy: no `UPLO="U"` argument; `eigvalsh` costs as much as `eig
 ## `linalg.svd` and `linalg.svdvals`
 
 ```python
-def svd(a: Array[f64, 2], full_matrices: bool = True) -> Raises[tuple[Array[f64, 2], Array[f64, 1], Array[f64, 2]], LinAlgError]: ...
-def svdvals(a: Array[f64, 2]) -> Raises[Array[f64, 1], LinAlgError]: ...
+def svd[T: Float](a: Array[T, 2], full_matrices: bool = True) -> Raises[tuple[Array[T, 2], Array[T, 1], Array[T, 2]], LinAlgError]: ...
+def svdvals[T: Float](a: Array[T, 2]) -> Raises[Array[T, 1], LinAlgError]: ...
 ```
 
 `u, s, vh = svd(a)` is the singular value decomposition of an m × n matrix: `a` is
@@ -256,7 +262,8 @@ NumPy does. A defective matrix, one without a full set of eigenvectors, gives ei
 error near the square root of the rounding error, in NumPy as here.
 
 Differences from NumPy: the order of the eigenvalues is the algorithm's, and can differ from
-NumPy's; sort them when the order matters.
+NumPy's; sort them when the order matters. `eig` and `eigvals` take `f64` matrices only: an `f32`
+matrix, whose eigenvalues NumPy gives as `complex64`, is not built yet (idea I.57).
 
 ## `fft`
 
