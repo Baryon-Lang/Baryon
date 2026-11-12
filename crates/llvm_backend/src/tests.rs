@@ -425,7 +425,7 @@ fn inout_parameters_checked_arithmetic_and_calls() {
     assert_eq!(
         text,
         "\
-define void @step(ptr noalias %a1, i64 %a2) {
+define void @step(ptr noalias align 8 dereferenceable(8) %a1, i64 %a2) {
 start:
   %_3 = alloca { i64, i1 }
   br label %bb0

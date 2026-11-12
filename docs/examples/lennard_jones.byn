@@ -14,6 +14,7 @@ Language features shown:
 - passing two different fields of one `InOut` struct to one call, which the exclusivity check
   allows because the fields do not overlap
 - `prange` with a `+=` reduction that the compiler infers
+- `prange(N, accumulate=forces)`, a parallel loop that adds each pair's force into both atoms
 """
 
 from math import sqrt
@@ -71,25 +72,27 @@ def lattice() -> Atoms:
 def compute_forces(positions: Array[Vec3, 1], forces: InOut[Array[Vec3, 1]]) -> f64:
     """Fills `forces` with the force on every atom and returns the potential energy.
 
-    Each atom sums the forces from all of its neighbours itself, so iteration `i` writes only
-    `forces[i]` and the parallel loop has no data race. Newton's third law would halve the work
-    but write both `forces[i]` and `forces[j]` from one iteration; that form needs
-    `prange(N, accumulate=forces)` (decision 0013), which roadmap item 1.14.1 adopts here.
+    Each pair of atoms is computed once and applied to both, with opposite signs, as Newton's
+    third law says. That is the "half neighbour list" of molecular dynamics: half the pair
+    arithmetic of summing every neighbour from both ends. Iteration `i` then writes `forces[j]`
+    as well as `forces[i]`, so the parallel loop names the array in `accumulate=forces`
+    (decision 0013): inside it `forces` may only be added to, and the runtime gives each chunk
+    of iterations private copies of the blocks it touches and sums them after the loop.
     """
-    energy = 0.0
     for i in prange(N):
-        force = Vec3.zeros()
-        for j in range(N):
-            if j == i:
-                continue
+        forces[i] = Vec3.zeros()
+    energy = 0.0
+    for i in prange(N, accumulate=forces):
+        for j in range(i + 1, N):
             delta = positions[i] - positions[j]
             delta -= BOX * (delta / BOX).round()
             distance_squared = delta.dot(delta)
             if distance_squared < CUTOFF * CUTOFF:
                 inverse_6 = 1.0 / distance_squared**3
-                force += delta * (24.0 * inverse_6 * (2.0 * inverse_6 - 1.0) / distance_squared)
-                energy += 2.0 * inverse_6 * (inverse_6 - 1.0)
-        forces[i] = force
+                force = delta * (24.0 * inverse_6 * (2.0 * inverse_6 - 1.0) / distance_squared)
+                forces[i] += force
+                forces[j] -= force
+                energy += 4.0 * inverse_6 * (inverse_6 - 1.0)
     return energy
 
 
