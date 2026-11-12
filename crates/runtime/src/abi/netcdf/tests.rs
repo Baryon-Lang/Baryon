@@ -206,3 +206,54 @@ fn writing_a_variable_the_file_does_not_have_raises_invalid_data() {
     );
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn a_subscript_that_picks_nothing_raises_index_error_or_value_error() {
+    // `temp[5]` of two records, then `temp[::0]`, each read as one `f32` axis fewer.
+    let cases: [([i64; 4], u8, &str); 2] = [
+        (
+            [0, 5, i64::MIN, i64::MIN],
+            1,
+            "index 5 is out of bounds for the dimension time of length 2",
+        ),
+        ([1, i64::MIN, i64::MIN, 0], 2, "slice step cannot be zero"),
+    ];
+    for (item, tag, message) in cases {
+        let name = "temp";
+        let mut words = [0_i64; 5];
+        let mut error = MaybeUninit::<RaisedError>::uninit();
+        // SAFETY: the path and the name are the strings' bytes, `item` is one item's four
+        // words, `words` holds `1 + 2 * 2` words, and `error` is a local the size of an
+        // `OSError`, more than an `IndexError` or `ValueError` needs.
+        let failed = unsafe {
+            baryon_rt_netcdf_read(
+                CLASSIC.as_ptr(),
+                CLASSIC.len(),
+                name.as_ptr(),
+                name.len(),
+                item.as_ptr(),
+                1,
+                ELEMENT_F32,
+                2,
+                words.as_mut_ptr(),
+                error.as_mut_ptr(),
+            )
+        };
+        assert!(failed);
+        // SAFETY: the failed call wrote the tag and, where an `OSError` starts, the message:
+        // a `RaisedMessage`.
+        let RaisedMessage {
+            tag: written,
+            message: text,
+        } = unsafe { error.as_ptr().cast::<RaisedMessage>().read() };
+        let length = usize::try_from(text.length).unwrap();
+        // SAFETY: an owned `str` is `length` bytes of UTF-8 at `bytes`, freed once here.
+        let bytes = unsafe { std::slice::from_raw_parts(text.bytes, length) }.to_vec();
+        // SAFETY: as above.
+        unsafe { baryon_rt_deallocate(text.bytes, length, 1) };
+        assert_eq!(
+            (written, String::from_utf8(bytes).unwrap()),
+            (tag, message.to_owned())
+        );
+    }
+}

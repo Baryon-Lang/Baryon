@@ -114,3 +114,49 @@ def main() -> Raises[None, OSError | KeyError]:
          [1.5 2.5]\n",
     );
 }
+
+/// Slices of a variable written as the `netCDF4` script for `rows.nc` writes them, a row past
+/// the last record and every other value of the first, then read back by index and by slice.
+/// An index out of bounds raises `IndexError` and a zero step `ValueError`, each caught by its
+/// own `except`, which checks that the runtime's tags match the order the checker lists them.
+#[test]
+fn slices_are_written_and_read_as_netcdf4_does() {
+    let program = "\
+from netCDF4 import Dataset
+
+
+def main() -> Raises[None, OSError | KeyError | IndexError | ValueError]:
+    ds = Dataset(\"out.nc\", \"w\", format=\"NETCDF3_CLASSIC\")
+    ds.createDimension(\"t\", None)
+    ds.createDimension(\"x\", 3)
+    a = ds.createVariable(\"a\", \"i2\", (\"t\", \"x\"))
+    ds.createVariable(\"b\", \"i1\", (\"t\",))
+    row = 2
+    a[row] = Array([4, 5, 6])
+    a[0, ::2] = Array([7, 8])
+    ds.close()
+    back = Dataset(\"out.nc\")
+    v = back.variables[\"a\"]
+    last: Array[i64, 1] = v[-1]
+    column: Array[i64, 1] = v[:, 1]
+    corner: Array[i64, 2] = v[0:3:2, 1:]
+    print(last, column, corner)
+    try:
+        wrong: Array[i64, 1] = v[3]
+        print(wrong)
+    except IndexError as error:
+        print(error.message)
+    try:
+        a[0, ::0] = Array([1, 2, 3])
+    except ValueError as refused:
+        print(refused.message)
+";
+    let (printed, bytes) = written("netcdf_slices", program).unwrap();
+    assert_eq!(
+        printed,
+        "[4 5 6] [-32767 -32767      5] [[-32767      8]\n [     5      6]]\n\
+         index 3 is out of bounds for the dimension t of length 3\n\
+         slice step cannot be zero\n"
+    );
+    assert_eq!(bytes, fs::read(fixtures().join("rows.nc")).unwrap());
+}
