@@ -30,8 +30,10 @@
 //! type it is called at (roadmap 1.9.5).
 //!
 //! `build`, `run` and `test` make a debug build unless given `--release`, anywhere after the
-//! command. Both are optimized and carry line tables; in a debug build, integer arithmetic that
-//! overflows panics, and in a release build it wraps around ([`Profile`], decision 0030).
+//! command. A debug build compiles fast and runs unoptimized (`clang -O0`); a release build is
+//! optimized (`clang -O2`) (decision 0048). Both carry line tables; in a debug build, integer
+//! arithmetic that overflows panics, and in a release build it wraps around ([`Profile`],
+//! decision 0030).
 //!
 //! `--timings`, also anywhere after `build`, `run` or `test`, prints to standard error how long
 //! each stage of the build took, once the executable is linked ([`Timings`]). It is how a
@@ -198,7 +200,7 @@ fn check(root: &Path) -> Result<ExitCode, String> {
 /// Fails with a message when a file cannot be read, or when `clang` or the runtime archive is
 /// missing or the link fails.
 fn build(root: &Path, output: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String> {
-    let files = match compile(root, output, timings, |session, directory| {
+    let files = match compile(root, output, profile, timings, |session, directory| {
         session
             .compile(directory, profile)
             .map(|module| (module, Vec::new()))
@@ -228,7 +230,7 @@ fn run(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String>
     let scratch = env::temp_dir().join(format!("baryon-run-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("program");
-    let built = compile(root, &program, timings, |session, directory| {
+    let built = compile(root, &program, profile, timings, |session, directory| {
         session
             .compile(directory, profile)
             .map(|module| (module, Vec::new()))
@@ -259,7 +261,7 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
     let scratch = env::temp_dir().join(format!("baryon-test-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("tests");
-    let built = compile(root, &program, timings, |session, directory| {
+    let built = compile(root, &program, profile, timings, |session, directory| {
         session.compile_tests(directory, profile)
     });
     let ran = built.and_then(|built| match built {
@@ -272,8 +274,9 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
 
 /// Compiles the package rooted at `root` with `program`, one of [`Session::compile`] and
 /// [`Session::compile_tests`] giving a module and its test names, and links the module into the
-/// executable `output`. Returns the number of files compiled and the test names, or, when the
-/// package has errors, prints them and returns the exit status 1. When `timings` is set and the
+/// executable `output`, optimized when `profile` is [`Profile::Release`]. Returns the number of
+/// files compiled and the test names, or, when the package has errors, prints them and returns the
+/// exit status 1. When `timings` is set and the
 /// executable is linked, prints each stage's time to standard error ([`Timings`]).
 ///
 /// # Errors
@@ -283,6 +286,7 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
 fn compile(
     root: &Path,
     output: &Path,
+    profile: Profile,
     timings: bool,
     program: impl FnOnce(&Session, Option<&str>) -> Result<(String, Vec<String>), Vec<Diagnostic>>,
 ) -> Result<Result<(usize, Vec<String>), ExitCode>, String> {
@@ -305,7 +309,7 @@ fn compile(
         }
     };
     let compiled = Instant::now();
-    let linked = link::link(&module, output)?;
+    let linked = link::link(&module, output, profile == Profile::Release)?;
     if timings {
         let report = Timings {
             files,

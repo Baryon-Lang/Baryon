@@ -58,6 +58,13 @@ const DROP_UNUSED: &str = if cfg!(target_os = "macos") {
 /// every `clang` from 15, the oldest this driver accepts, knows it.
 const OPTIMIZE: &[&str] = &["-O2", "-mllvm", "-force-ordered-reductions=true"];
 
+/// What `clang` is asked for in a debug build: no optimization, so the module becomes machine
+/// code about five times sooner, and the program runs up to an order of magnitude slower
+/// (decision 0048). A 4,706-line program's object file took 9.0 s at `-O2` and 1.8 s at `-O0`.
+/// Results are the same to the bit: `-O0` never reorders arithmetic, and [`OPTIMIZE`] keeps
+/// float sums in order.
+const DEBUG: &[&str] = &["-O0"];
+
 /// The C math library, linked before the runtime. LLVM calls `floor` and `trunc` for those
 /// operations on CPUs without an instruction for them, and the runtime, a Rust static library,
 /// carries portable versions under the same names. Naming the system library first makes the
@@ -66,9 +73,9 @@ const OPTIMIZE: &[&str] = &["-O2", "-mllvm", "-force-ordered-reductions=true"];
 /// exact, so results do not change.
 const MATH_LIBRARY: &str = "-lm";
 
-/// Compiles the LLVM module `module` at `-O2` and links it with the runtime into the executable
-/// `output`, keeping the module's line tables (`-g`) so debuggers and panic backtraces show
-/// `.byn` lines.
+/// Compiles the LLVM module `module`, at `-O2` for a release build and `-O0` for a debug build
+/// (`optimize`, decision 0048), and links it with the runtime into the executable `output`,
+/// keeping the module's line tables (`-g`) so debuggers and panic backtraces show `.byn` lines.
 ///
 /// The module is compiled to an object file in a scratch directory, then linked. On Linux the
 /// line tables are copied into the executable. On macOS the linker leaves them in the object file
@@ -78,7 +85,7 @@ const MATH_LIBRARY: &str = "-lm";
 ///
 /// Returns how long the object file and the link took ([`Linked`]); writing the module to the
 /// scratch directory counts toward the object file.
-pub(crate) fn link(module: &str, output: &Path) -> Result<Linked, String> {
+pub(crate) fn link(module: &str, output: &Path, optimize: bool) -> Result<Linked, String> {
     let runtime = runtime()?;
     let clang = find_clang()?;
     let scratch = env::temp_dir().join(format!("baryon-build-{}", std::process::id()));
@@ -92,7 +99,7 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<Linked, String> {
         .and_then(|()| {
             run_clang(&clang, |command| {
                 command
-                    .args(OPTIMIZE)
+                    .args(if optimize { OPTIMIZE } else { DEBUG })
                     .args(["-g", "-Wno-override-module", "-c"])
                     .arg(&source)
                     .arg("-o")

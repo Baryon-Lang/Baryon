@@ -113,24 +113,26 @@ the runtime. On success it prints `built <output> from <n> file(s)` to standard 
 with 0. A package with errors, or that uses a feature the compiler cannot build yet, gets its
 errors printed and exits with 1, with nothing written. Warnings are shown only by `check` today.
 
-The program is optimized (`clang -O2`, with loops that sum floats vectorized while still adding
-in order, so results match an unoptimized build to the bit) and keeps its line tables, so a panic prints a backtrace of
+A debug build is compiled fast and not optimized (`clang -O0`); a release build is optimized
+(`clang -O2`, with loops that sum floats vectorized while still adding in order, so results match
+the debug build to the bit). Both keep their line tables, so a panic prints a backtrace of
 `.byn` lines and `gdb` and `lldb` stop at and show them. On macOS the line tables are written to
 `<output>.dSYM` beside the executable; keep it with the executable for backtraces to name lines.
 
 ### Debug and release builds
 
 `build` makes a *debug build* unless given `--release`, anywhere after the command; `run` and
-`test` take the same flag. Both builds are optimized and keep their line tables. They differ in one
-thing ([decision 0030](../decisions/0030-integer-overflow.md)):
+`test` take the same flag. Both keep their line tables. They differ in two things
+([decision 0030](../decisions/0030-integer-overflow.md),
+[decision 0048](../decisions/0048-debug-builds-compile-fast.md)):
 
-| Build | Integer arithmetic that overflows |
-| --- | --- |
-| Debug, the default | Panics with the operator and its location: ``panic: integer overflow in `+` `` |
-| Release, `--release` | Wraps around in two's complement, and the check costs nothing |
+| Build | Compiled | Integer arithmetic that overflows |
+| --- | --- | --- |
+| Debug, the default | Fast, not optimized: runs up to ten times slower | Panics with the operator and its location: ``panic: integer overflow in `+` `` |
+| Release, `--release` | Optimized: takes about five times longer to compile | Wraps around in two's complement, and the check costs nothing |
 
-Develop and test in a debug build, where an overflow stops at the line that caused it. Time and
-ship a release build: a debug build cannot vectorize a loop that adds integers. Every other check,
+Develop and test in a debug build, which compiles quickly and stops an overflow at the line that
+caused it. Time, run long simulations in, and ship a release build. Every other check,
 such as array bounds, stays on in both ([Integer overflow](types.md#integer-overflow)).
 
 ### Timing a build
