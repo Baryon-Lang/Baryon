@@ -207,7 +207,8 @@ impl<'db> Body<'db> {
         };
         let index = self.tree.child(node, Role::Index)?;
         let Some(name) = self.literal_text(index) else {
-            return Some(self.frame_row(index, base, *row));
+            let chosen = self.frame_select(index, base);
+            return Some(chosen.unwrap_or_else(|| self.frame_row(index, base, *row)));
         };
         let name = name.to_owned();
         let column = columns.iter().find(|column| column.name == name);
@@ -371,7 +372,7 @@ impl<'db> Body<'db> {
 
     /// Reports `name` read from the frame type `base`, which has no such column, and lists
     /// the columns it has.
-    fn no_column(&mut self, node: NodeId, base: Type<'db>, name: &str) -> Type<'db> {
+    pub(super) fn no_column(&mut self, node: NodeId, base: Type<'db>, name: &str) -> Type<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return self.lowerer.unknown();
         };
@@ -397,6 +398,9 @@ impl<'db> Body<'db> {
         if let Some(rows) = self.rows_method(function, base, callee, arguments) {
             return rows;
         }
+        if let Some(frame) = self.schema_method(function, base, callee, arguments) {
+            return frame;
+        }
         let given = arguments.positional.len() + arguments.keywords.len();
         self.untyped(arguments);
         match (callee, given) {
@@ -414,8 +418,9 @@ impl<'db> Body<'db> {
                     &message,
                     "not defined yet",
                     Some(
-                        "a `DataFrame` has `copy()`, `head()` and `tail()` today; the rest of \
-                         decision 0045's methods come with roadmap items 3.13.4 to 3.13.9",
+                        "a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop` \
+                         and `rename` today; the rest of decision 0045's methods come with \
+                         roadmap items 3.13.5 to 3.13.9",
                     ),
                 )
             }

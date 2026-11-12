@@ -149,7 +149,7 @@ def reprice(trades: InOut[DataFrame[Trade]], factor: f64):
 the column. The array moves in and the old column is freed. Its length must be the frame's number
 of rows, or the assignment panics. Its element type must be the column's: a frame's type never
 changes, so assignment cannot add a column. Adding and removing columns give a new frame
-(`assign` and `drop`, a later part of roadmap 3.13.4).
+([`assign` and `drop`](#choosing-and-changing-columns)).
 
 **A column cannot be moved out of its frame.** `kept = trades.price` is an error, since it would
 leave the frame with a column missing. Copy the column to keep it on its own:
@@ -258,6 +258,64 @@ busy = [row for row in trades.itertuples() if row.volume >= 100]
   `(df.price * df.volume).sum()` does the same work as one pass over two arrays, and is the
   form the compiler vectorizes.
 - **The frame needs a struct to give**, as for `df[i]`.
+
+## Choosing and changing columns
+
+A frame's type lists its columns, so a frame never gains, loses or renames a column in place.
+Each of these gives a new frame, whose type the compiler works out:
+
+| Expression | The frame it gives |
+| --- | --- |
+| `df[["a", "b"]]` | Copies of the columns named, in the order written |
+| `df.assign(name=values)` | The frame with a column added at the end, or replaced where it stands when `name` is already a column |
+| `df.drop(columns=["a"])`, `df.drop(columns="a")` | The frame without the columns named |
+| `df.rename(columns={"old": "new"})` | The frame with columns under new names |
+
+```python
+priced = trades.assign(notional=trades.price * trades.volume)
+print(priced)
+print(priced[["volume", "price"]])
+value = priced.drop(columns=["volume"]).rename(columns={"notional": "value"})
+print(value)
+```
+
+```text
+   price  volume  notional
+0  189.5     100   18950.0
+1  410.0     250  102500.0
+2  171.0      50    8550.0
+   volume  price
+0     100  189.5
+1     250  410.0
+2      50  171.0
+   price     value
+0  189.5   18950.0
+1  410.0  102500.0
+2  171.0    8550.0
+```
+
+- **`assign`, `drop` and `rename` take the frame.** Its columns move into the result, which
+  costs nothing however many rows there are, and the old name is gone, as for any moved
+  value: after the first line above, `trades` cannot be read. This is where Baryon differs
+  from pandas, which copies. To keep the old frame too, take a copy: `trades.copy().assign(...)`.
+  A frame borrowed from a caller cannot be taken, so a function that changes the columns of
+  its parameter copies it, or takes it as `Owned[DataFrame[Trade]]`.
+- **`df[["a", "b"]]` reads the frame and copies** the columns it names, at the cost of one
+  pass over each, so the frame stays as it was.
+- **Column names are string literals**, checked when compiling: a name the frame does not
+  have is a compile error in all four, also in `rename`, where pandas ignores it. Naming one
+  column twice, leaving no columns, and giving two columns one name are compile errors too.
+- **A new column is an array of rank 1** with the frame's number of rows, or `assign` panics.
+  The array moves in, so a column of the same or another frame is copied first:
+  `df.assign(backup=df.price.copy())`. To give every row one value, build the array:
+  `df.assign(fee=Array.fill(len(df), 0.25))`.
+- **The arguments of `assign` are computed before the frame is taken**, so they can read
+  it, as `trades.price * trades.volume` does above. Each one sees the frame as it was: a
+  column added earlier in the same call cannot be read by a later argument.
+- **The result has no struct for its rows** until it meets one: its type is written
+  `DataFrame[price: f64, volume: i64, notional: f64]` in messages. Assign it to a variable,
+  pass it or return it as `DataFrame[Priced]`, where the struct `Priced` lists the same
+  columns in the same order, and `df[i]` and `itertuples` give `Priced` values.
 
 ## `len`, `shape` and `columns`
 
