@@ -75,14 +75,17 @@ pub enum ArrayFile {
     /// kind `INVALID_DATA` when the file is not a classic `NetCDF` file. It reads the header
     /// only.
     NetcdfOpen,
-    /// `ds.variables[name][:]` of the `netCDF4` module: two arguments, the path and the
-    /// variable's name, each a `str`. The destination is a new `Array[T, rank]`, its `T` a
-    /// signed integer or float type, its shape the variable's dimensions in the file's order.
-    /// A float `T` reads any number variable, with `scale_factor` and `add_offset` applied as
-    /// `netCDF4` applies them; an integer `T` reads an unscaled integer variable it can hold.
-    /// Fill values are read as stored. The call fails with the kind `INVALID_DATA` when the
-    /// file has no such variable, or one of another rank or that `T` cannot read. It costs one
-    /// pass over the variable's values.
+    /// `ds.variables[name][items]` of the `netCDF4` module: the path and the variable's name,
+    /// each a `str`, then four `int`s for each item of the subscript, which picks the values
+    /// read: `0` and an index, or `1` and a slice's start, stop and step, each `i64::MIN` when
+    /// the program left it out. No items read the whole variable, as `var[:]` does. The
+    /// destination is a new `Array[T, rank]`, its `T` a signed integer or float type, its shape
+    /// the lengths picked along the axes a slice keeps, in the file's order. A float `T` reads
+    /// any number variable, with `scale_factor` and `add_offset` applied as `netCDF4` applies
+    /// them; an integer `T` reads an unscaled integer variable it can hold. Fill values are read
+    /// as stored. The call fails with the kind `INVALID_DATA` when the file has no such
+    /// variable, the items do not fit its dimensions, or the values picked have another rank or
+    /// `T` cannot read them. It costs one pass over the values picked.
     NetcdfRead,
     /// One change to a `NetCDF` classic file opened for writing, which the `netCDF4` module's
     /// `Dataset(path, "w")`, `createDimension`, `createVariable` and `setncattr` make: two
@@ -97,14 +100,16 @@ pub enum ArrayFile {
     /// change reads it, writes it again and reads its header. The call fails with the kind
     /// `INVALID_DATA` when the format refuses the change.
     NetcdfDefine,
-    /// `ds.variables[name][:] = array` of the `netCDF4` module: three arguments, the path and
-    /// the variable's name, each a `str`, and the array, an `Array[T, rank]` borrowed, its `T` a
-    /// number type. The destination is `None`. The values become all of the variable's,
-    /// converted to its type and packed by `scale_factor` and `add_offset` as `netCDF4` packs
-    /// them; a record variable takes as many records as the array's first length. The call
-    /// fails with the kind `INVALID_DATA` when the file has no such variable, or the array's
-    /// rank or a fixed length differs from the variable's. It costs one pass over the values
-    /// and one read and write of the file.
+    /// `ds.variables[name][items] = array` of the `netCDF4` module: the path and the
+    /// variable's name, each a `str`, the array, an `Array[T, rank]` borrowed, its `T` a number
+    /// type, then four `int`s for each item of the subscript, as [`Self::NetcdfRead`] takes
+    /// them; no items write the whole variable. The destination is `None`. The array's values
+    /// become the values picked, converted to the variable's type and packed by `scale_factor`
+    /// and `add_offset` as `netCDF4` packs them. Along the unlimited dimension the items may
+    /// pass the last record, and a slice with no end takes as many records as the array has
+    /// rows. The call fails with the kind `INVALID_DATA` when the file has no such variable, the
+    /// items do not fit its dimensions, or the array's shape differs from the shape picked. It
+    /// costs one pass over the values and one read and write of the file.
     NetcdfWrite,
 }
 
