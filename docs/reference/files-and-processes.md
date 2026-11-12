@@ -44,6 +44,10 @@ open, and everything written to a [file](#text-files) still open, then ends the 
 reached the end of `main`, and 101 is a [panic](errors.md#panics).
 
 - A status outside 0 to 255 panics: `` `sys.exit` status 256 is outside 0 to 255 ``.
+- `sys.exit` cannot run inside a `prange` loop, where other iterations may be writing the files
+  it would write out. Written in the body it is a compile error; reached through a call it
+  panics: `` `sys.exit` cannot end the program inside a parallel loop ``. See
+  [Parallel loops](parallel-loops.md).
 - Unlike Python's, `sys.exit` is not an exception. A `try` cannot catch it, and nothing after it
   runs.
 

@@ -203,6 +203,17 @@ thread_local! {
     /// inside a `prange`, so only a compiler bug gets here, and it gets a slow loop instead of a
     /// hang.
     static IN_CHUNK: Cell<bool> = const { Cell::new(false) };
+
+    /// Whether this thread is running a parallel loop's body: a worker running chunks, or the
+    /// thread that started the loop, whether the pool helps it or not.
+    static IN_LOOP: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Whether this thread is inside the body of a parallel loop. `sys.exit` asks, since it writes
+/// out every open file and other iterations may be writing theirs at the same moment
+/// (roadmap 1.13.17).
+pub(crate) fn in_loop() -> bool {
+    IN_LOOP.get()
 }
 
 impl Pool {
@@ -287,8 +298,10 @@ fn work_forever(shared: &Shared) {
 #[allow(unsafe_code, reason = "runs the compiled loop body")]
 unsafe fn run_chunks(job: &Job) {
     IN_CHUNK.set(true);
+    let outer = IN_LOOP.replace(true);
     // SAFETY: the caller's promise, passed on.
     unsafe { job.work() };
+    IN_LOOP.set(outer);
     IN_CHUNK.set(false);
 }
 
@@ -307,12 +320,14 @@ pub(crate) unsafe fn parallel_for(task: Task) {
     } else {
         None
     };
+    let outer = IN_LOOP.replace(true);
     match pool {
         // SAFETY: the caller's promise, passed on.
         Some(pool) => unsafe { pool.run(&job) },
         // SAFETY: the caller's promise, passed on; here every chunk runs on this thread.
         None => unsafe { job.work() },
     }
+    IN_LOOP.set(outer);
 }
 
 /// Locks `mutex`, ignoring poisoning: a thread can only panic while holding one of the pool's

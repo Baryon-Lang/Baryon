@@ -475,9 +475,9 @@ def apply(m: Array[f64, 2], x: Array[f64, 1], b: Array[f64, 1]) -> Array[f64, 1]
 ```
 
 Each entry adds its products one at a time, from `p = 0`. This order is not part of the language:
-`@` will call BLAS (roadmap 3.10), which adds in an order that depends on the machine, as
-NumPy's `@` does. Where the last bits must be reproducible, use `dot` and `sum`, whose order is
-fixed.
+with the build option `--blas` (roadmap 3.10.2), `@` will call BLAS, which adds in an order that
+depends on the machine, as NumPy's `@` does. Where the last bits must be reproducible, use `dot`
+and `sum`, whose order is fixed.
 
 ## Printing
 
