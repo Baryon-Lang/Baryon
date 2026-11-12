@@ -25,6 +25,9 @@
 //! for is then demoted, and the function written again. Results never change: a register and a
 //! slot hold the same bits.
 
+mod rewrite;
+
+use rewrite::{rewrite, trivial};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 
@@ -391,125 +394,5 @@ fn phi_name(local: usize, block: usize) -> String {
 }
 
 /// How the name of every `phi` this module makes starts. The `$` appears nowhere else the
-/// backend writes, outside text constants, so [`rewrite`] finds names by looking for it.
+/// backend writes, outside text constants, so [`rewrite`](rewrite()) finds names by looking for it.
 const PHI_PREFIX: &str = "%ssa$";
-
-/// For each of `phis`, by number, the value it stands for when it is one value, or `None`
-/// when it stays a `phi`: a `phi` whose operands, once each replaced `phi` is followed, are all
-/// one value or itself. Repeats until no `phi` changes, since replacing one can make another
-/// one value.
-fn trivial(phis: &[Phi<'_>]) -> Vec<Option<String>> {
-    let mut replaced: Vec<Option<Value>> = vec![None; phis.len()];
-    let follow = |replaced: &[Option<Value>], value: &Value| -> Value {
-        let mut value = value.clone();
-        while let Value::Phi(number) = value {
-            match &replaced[number] {
-                Some(next) => value = next.clone(),
-                None => break,
-            }
-        }
-        value
-    };
-    loop {
-        let mut changed = false;
-        for (number, phi) in phis.iter().enumerate().rev() {
-            if replaced[number].is_some() {
-                continue;
-            }
-            let mut only: Option<Value> = None;
-            let mut several = false;
-            for (value, _) in &phi.incoming {
-                let value = follow(&replaced, value);
-                if value == Value::Phi(number) {
-                    continue;
-                }
-                match &only {
-                    None => only = Some(value),
-                    Some(existing) if *existing == value => {}
-                    Some(_) => {
-                        several = true;
-                        break;
-                    }
-                }
-            }
-            if let (false, Some(value)) = (several, only) {
-                replaced[number] = Some(value);
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-    (0..phis.len())
-        .map(|number| {
-            replaced[number]
-                .as_ref()
-                .map(|_| match follow(&replaced, &Value::Phi(number)) {
-                    Value::Phi(other) => phi_name(phis[other].local, phis[other].block),
-                    Value::Text(text) => text,
-                })
-        })
-        .collect()
-}
-
-/// `code` with each block's marker replaced by its `phi`s in `phis`, and the name of each `phi`
-/// that turned out to be one value replaced by that value, as `names` says.
-///
-/// Scans `code` once for each pattern, keeping the next place each occurs, rather than line by
-/// line: the function's text is most of what the backend writes, and markers and `phi` names
-/// are rare in it.
-fn rewrite(code: &str, phis: &BTreeMap<usize, String>, names: &HashMap<String, String>) -> String {
-    // Each pattern is found by its one rare character, `;` or `$`, which a byte search finds
-    // far faster than a search for the whole pattern, then checked whole.
-    let next = |pattern: &str, from: usize| {
-        let key = pattern.find([';', '$'])?;
-        let character = char::from(pattern.as_bytes()[key]);
-        let mut start = from + key;
-        loop {
-            let at = start + code.get(start..)?.find(character)?;
-            if at - key >= from && code[at - key..].starts_with(pattern) {
-                return Some(at - key);
-            }
-            start = at + 1;
-        }
-    };
-    let mut text = String::with_capacity(code.len());
-    let mut done = 0;
-    let mut marker = next(MARKER, 0);
-    let mut name = next(PHI_PREFIX, 0);
-    loop {
-        let position = match (marker, name) {
-            (None, None) => break,
-            (Some(marker), Some(name)) => marker.min(name),
-            (Some(position), None) | (None, Some(position)) => position,
-        };
-        text.push_str(&code[done..position]);
-        if marker == Some(position) {
-            // A marker line is `MARKER`, the block's number and a line end.
-            let after = &code[position + MARKER.len()..];
-            let end = after.find('\n').map_or(after.len(), |end| end + 1);
-            let block_phis = after[..end]
-                .trim_end()
-                .parse()
-                .ok()
-                .and_then(|block: usize| phis.get(&block));
-            if let Some(block_phis) = block_phis {
-                text.push_str(block_phis);
-            }
-            done = position + MARKER.len() + end;
-            marker = next(MARKER, done);
-        } else {
-            let rest = &code[position..];
-            let end = rest[PHI_PREFIX.len()..]
-                .find(|character: char| !(character.is_ascii_digit() || character == '.'))
-                .map_or(rest.len(), |end| end + PHI_PREFIX.len());
-            let found = &rest[..end];
-            text.push_str(names.get(found).map_or(found, String::as_str));
-            done = position + end;
-            name = next(PHI_PREFIX, done);
-        }
-    }
-    text.push_str(&code[done..]);
-    text
-}
