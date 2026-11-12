@@ -99,11 +99,14 @@ pub(crate) fn link(modules: &[String], output: &Path, optimize: bool) -> Result<
         .collect();
     let started = Instant::now();
     let mut compiled = started;
+    let lld = Lld::look(&clang);
     let result = compile_objects(&clang, &scratch, modules, &objects, optimize)
         .and_then(|()| {
             compiled = Instant::now();
+            let linker = lld.flag();
             run_clang(&clang, |command| {
                 command
+                    .args(linker)
                     .arg("-g")
                     .args(&objects)
                     .arg(MATH_LIBRARY)
@@ -127,6 +130,44 @@ pub(crate) fn link(modules: &[String], output: &Path, optimize: bool) -> Result<
         machine_code: compiled - started,
         link: linked - compiled,
     })
+}
+
+/// The search for LLVM's linker, `lld`, which links on Linux in about half the time of the
+/// system's default `ld`: the 4,706-line program of roadmap 2.0 linked in 57 ms instead of
+/// 122 ms (roadmap 2.3). It is used when it is installed and never required, so a system with
+/// only `clang` links as before. On macOS the system linker is already as fast, and is kept.
+///
+/// `clang --print-prog-name=ld.lld` prints the path of the `lld` that `clang -fuse-ld=lld` would
+/// run, found beside `clang` or on the search path, or the bare name when there is none. The
+/// question costs a `clang` start, about 20 ms, so it runs while the object files are compiled
+/// and its answer is read only when the link starts.
+struct Lld(Option<std::process::Child>);
+
+impl Lld {
+    /// Starts asking `clang` where `lld` is, on Linux; does nothing on macOS, or when the
+    /// question cannot be started.
+    fn look(clang: &str) -> Self {
+        if cfg!(target_os = "macos") {
+            return Self(None);
+        }
+        let child = Command::new(clang)
+            .arg("--print-prog-name=ld.lld")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok();
+        Self(child)
+    }
+
+    /// The flag that makes `clang` link with `lld` when the answer names one that exists, and
+    /// none otherwise.
+    fn flag(self) -> Option<&'static str> {
+        let finished = self.0?.wait_with_output().ok()?;
+        let answer = String::from_utf8_lossy(&finished.stdout);
+        let path = Path::new(answer.trim());
+        (finished.status.success() && path.is_absolute() && path.is_file())
+            .then_some("-fuse-ld=lld")
+    }
 }
 
 /// Writes each of `modules` into `scratch` and compiles it into the object file at the same
