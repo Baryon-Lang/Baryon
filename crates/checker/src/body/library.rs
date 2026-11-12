@@ -1,11 +1,14 @@
 //! The classes of the standard library's own Baryon source (decision 0038) that the checker
 //! names itself: the error a built-in raises, such as `OSError` from `open` (decision 0036) and
-//! `ValueError` from `int(text)` (decision 0037).
+//! `ValueError` from `int(text)` (decision 0037), and the library functions a program calls as
+//! methods of a library class, such as a FITS `Header`'s `header["EXPTIME"]` (decision 0044).
 
 use super::Body;
+use super::calls::Arguments;
+use super::exclusive::Passed;
 use database::{File, LIBRARY_ROOT};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Nominal, Type, TypeKind};
+use types::{Callee, Declaration, Item, Key, Mode, Nominal, Type, TypeKind};
 
 impl<'db> Body<'db> {
     /// The class `name` that `<std>/builtins.byn` defines at its top level, such as `OSError`,
@@ -81,5 +84,56 @@ impl<'db> Body<'db> {
                 errors: vec![error],
             },
         )
+    }
+
+    /// The call `node` of the library function `function` of the standard module `module`'s
+    /// file, which a program writes as a method of the library class `class`: the value
+    /// `receiver` of type `base` is its first argument, then `arguments`. The checker checks it
+    /// as a call of that function and records it at `node`, so lowering lowers it as any call
+    /// of a library function: `header["EXPTIME"]` of a FITS `Header` (decision 0044), or
+    /// `ds.getncattr("title")` of a `NetCDF` `Dataset` (decision 0047).
+    pub(super) fn library_method(
+        &mut self,
+        node: NodeId,
+        (module, class, function): (&str, &str, &str),
+        (receiver, base): (NodeId, Type<'db>),
+        arguments: &Arguments,
+    ) -> Type<'db> {
+        let signature = self
+            .library_function(module, function)
+            .map(|(file, name)| Item::new(self.db, self.lowerer.package, file, name))
+            .and_then(|item| match self.db.declaration(item).declaration.clone() {
+                Declaration::Function(signature) => Some((item, signature)),
+                _ => None,
+            });
+        let Some((item, signature)) = signature else {
+            self.untyped(arguments);
+            let message = format!("`{module}.{function}` is missing from the standard library");
+            return self.lowerer.error(
+                node,
+                &message,
+                "cannot be typed",
+                Some("the compiler adds the library's files to every package (decision 0038)"),
+            );
+        };
+        let mode = signature
+            .parameters
+            .first()
+            .map_or(Mode::Borrow, |parameter| parameter.mode);
+        let receiver = Passed {
+            node: receiver,
+            mode,
+            ty: base,
+        };
+        let ty = self.check_call(
+            node,
+            class,
+            &signature,
+            Some(receiver),
+            Callee::Function(item),
+            arguments,
+        );
+        debug_assert!(self.typed.calls.contains_key(&Key(node)));
+        ty
     }
 }
