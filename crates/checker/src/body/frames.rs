@@ -407,6 +407,9 @@ impl<'db> Body<'db> {
         if let Some(frame) = self.merge_method(function, base, callee, arguments) {
             return frame;
         }
+        if let Some(frame) = self.distinct_method(function, base, callee, arguments) {
+            return frame;
+        }
         let given = arguments.positional.len() + arguments.keywords.len();
         self.untyped(arguments);
         match (callee, given) {
@@ -431,9 +434,9 @@ impl<'db> Body<'db> {
                     "not defined yet",
                     Some(
                         "a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop`, \
-                         `rename`, `sort_values`, `groupby(...).agg(...)` and `merge` today; the rest \
-                         of decision 0045's methods come with roadmap items 3.13.6, 3.13.8 and \
-                         3.13.9",
+                         `rename`, `sort_values`, `groupby(...).agg(...)`, `merge` and \
+                         `drop_duplicates` today; the rest of decision 0045's methods come with \
+                         roadmap items 3.13.6, 3.13.8 and 3.13.9",
                     ),
                 )
             }

@@ -89,3 +89,18 @@ def pair_side(pairs: Array[i64, 1], side: int) -> Array[i64, 1]:
     """The rows of one frame in the pairs `join_pairs` gives: the left frame's when `side`
     is 0, the right frame's when it is 1."""
     return Array([pairs[2 * at + side] for at in range(len(pairs) // 2)])
+
+
+def first_rows(ids: Array[i64, 1]) -> Array[i64, 1]:
+    """The rows that `drop_duplicates` keeps, in order: each row whose number in `ids`, the
+    number `group_ids` gives its key, no row before it has. Cost: one pass over the rows."""
+    groups = 0
+    for at in range(len(ids)):
+        groups = max(groups, ids[at] + 1)
+    seen = [False for group in range(groups)]
+    rows: list[int] = []
+    for at in range(len(ids)):
+        if not seen[ids[at]]:
+            seen[ids[at]] = True
+            rows.append(at)
+    return Array(rows)
