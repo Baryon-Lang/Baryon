@@ -48,8 +48,8 @@ bb1:
   %t7 = extractvalue { ptr, i64 } { ptr @baryon.str.1, i64 -9223372036854775804 }, 0
   %t8 = extractvalue { ptr, i64 } { ptr @baryon.str.1, i64 -9223372036854775804 }, 1
   %t9 = and i64 %t8, 9223372036854775807
-  %t10 = call zeroext i1 @baryon_rt_netcdf_read(ptr %t4, i64 %t6, ptr %t7, i64 %t9, i32 2, \
-i64 2, ptr %_4, ptr %_3)
+  %t10 = call zeroext i1 @baryon_rt_netcdf_read(ptr %t4, i64 %t6, ptr %t7, i64 %t9, ptr null, \
+i64 0, i32 2, i64 2, ptr %_4, ptr %_3)
   br i1 %t10, label %bb3, label %bb2
 bb2:
   ret void
@@ -61,7 +61,8 @@ bb3:
 @baryon.str.1 = private unnamed_addr constant [4 x i8] c\"temp\"
 
 declare zeroext i1 @baryon_rt_netcdf_open(ptr, i64, ptr, ptr) nounwind
-declare zeroext i1 @baryon_rt_netcdf_read(ptr, i64, ptr, i64, i32, i64, ptr, ptr) nounwind
+declare zeroext i1 @baryon_rt_netcdf_read(ptr, i64, ptr, i64, ptr, i64, i32, i64, ptr, ptr) \
+nounwind
 "
     );
 }
@@ -118,7 +119,7 @@ bb1:
   %t11 = extractvalue { ptr, i64 } { ptr @baryon.str.2, i64 -9223372036854775804 }, 1
   %t12 = and i64 %t11, 9223372036854775807
   %t13 = call zeroext i1 @baryon_rt_netcdf_write(ptr %t7, i64 %t9, ptr %t10, i64 %t12, \
-ptr %_4, i64 2, i32 2, ptr %_3)
+ptr null, i64 0, ptr %_4, i64 2, i32 2, ptr %_3)
   br i1 %t13, label %bb3, label %bb2
 bb2:
   ret void
@@ -131,7 +132,8 @@ bb3:
 @baryon.str.2 = private unnamed_addr constant [4 x i8] c\"temp\"
 
 declare zeroext i1 @baryon_rt_netcdf_define(ptr, i64, ptr, i64, ptr, ptr) nounwind
-declare zeroext i1 @baryon_rt_netcdf_write(ptr, i64, ptr, i64, ptr, i64, i32, ptr) nounwind
+declare zeroext i1 @baryon_rt_netcdf_write(ptr, i64, ptr, i64, ptr, i64, ptr, i64, i32, ptr) \
+nounwind
 "
     );
 }

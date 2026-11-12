@@ -108,3 +108,42 @@ with Dataset("padded.nc", "w", format="NETCDF3_CLASSIC") as ds:
     ds.createVariable("b", "i1", ("t",))
     a[:] = np.array([[4, 5, 6]], dtype="i2")
 ```
+
+## Files the slice tests compare against
+
+The runtime's tests write slices of a variable, `var[0, ::2] = values`, change by change, and
+compare the bytes with these.
+
+- `rows.nc`: a classic file with the record variables `a` (`i2` over `(t, x)`) and `b` (`i1` over
+  `(t,)`). `a[2] = [4, 5, 6]` adds three records, each filled for both variables, then
+  `a[0, ::2] = [7, 8]` writes every other value of the first.
+- `point.nc`: `a[1, 1] = 9` of the only record variable, which adds two filled records.
+- `grid.nc`: `c[1:3, -1] = [1.5, 2.5]` of a fixed `f4` variable over `(x, y)` of 4 by 3, the rest
+  filled.
+
+To record them again, run this in this directory:
+
+```text
+import numpy as np
+from netCDF4 import Dataset
+
+with Dataset("rows.nc", "w", format="NETCDF3_CLASSIC") as ds:
+    ds.createDimension("t", None)
+    ds.createDimension("x", 3)
+    a = ds.createVariable("a", "i2", ("t", "x"))
+    ds.createVariable("b", "i1", ("t",))
+    a[2] = np.array([4, 5, 6], dtype="i2")
+    a[0, ::2] = np.array([7, 8], dtype="i2")
+
+with Dataset("point.nc", "w", format="NETCDF3_CLASSIC") as ds:
+    ds.createDimension("t", None)
+    ds.createDimension("x", 3)
+    a = ds.createVariable("a", "i2", ("t", "x"))
+    a[1, 1] = 9
+
+with Dataset("grid.nc", "w", format="NETCDF3_CLASSIC") as ds:
+    ds.createDimension("x", 4)
+    ds.createDimension("y", 3)
+    c = ds.createVariable("c", "f4", ("x", "y"))
+    c[1:3, -1] = np.array([1.5, 2.5], dtype="f4")
+```

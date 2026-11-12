@@ -17,7 +17,7 @@
 
 use super::encoding::{encode, store};
 use super::storage::{Contents, load, save, slot};
-use super::{Attribute, Header, Kind, Values, Variable, scaling};
+use super::{Attribute, Header, Item, Kind, Values, Variable, is_whole, scaling, select};
 use crate::files::fits::Pixel;
 use crate::files::{ErrorKind, OsFailure};
 
@@ -81,19 +81,22 @@ pub(crate) fn define(path: &str, line: &str) -> Result<(), OsFailure> {
 }
 
 /// Writes `values`, every element of an array of `pixel`s with the lengths `shape`, in
-/// row-major order and the machine's byte order, as all the values of the variable `name` of
-/// the file at `path`, converted to the variable's type as `NumPy`'s `astype` converts them and
-/// packed by `scale_factor` and `add_offset` as `netCDF4` packs them. A record variable takes
-/// as many records as the array's first length, adding records to the file when it has fewer.
+/// row-major order and the machine's byte order, as the values `items` pick of the variable
+/// `name` of the file at `path`: all of them when there are no items, as `var[:] = values`
+/// writes. The values are converted to the variable's type as `NumPy`'s `astype` converts them
+/// and packed by `scale_factor` and `add_offset` as `netCDF4` packs them. Along the unlimited
+/// dimension the items may pick records past the last one, and a slice with no end picks as
+/// many as the array has rows: the file gains the records, each filled for every record
+/// variable, padding and all, before the values are written, as the C library fills them.
 ///
 /// # Errors
 ///
 /// Fails as the operating system does, and with `INVALID_DATA` when the file has no variable
-/// `name`, the array's rank or a fixed length differs from the variable's, or the variable
-/// holds text.
+/// `name`, the items do not fit its dimensions, the array's shape differs from the shape of the
+/// values picked, or the variable holds text.
 pub(crate) fn write(
     path: &str,
-    name: &str,
+    (name, items): (&str, &[Item]),
     pixel: Pixel,
     shape: &[usize],
     values: &[u8],
@@ -115,25 +118,33 @@ pub(crate) fn write(
         )));
     }
     let record = header.is_record(variable);
+    let names: Vec<&str> = variable
+        .dimensions
+        .iter()
+        .map(|&dimension| header.dimensions[dimension].0.as_str())
+        .collect();
     let lengths: Vec<u64> = variable
         .dimensions
         .iter()
         .map(|&dimension| header.length(dimension))
         .collect();
-    let fits = shape.len() == lengths.len()
-        && shape
-            .iter()
-            .zip(&lengths)
-            .enumerate()
-            .all(|(axis, (&given, &length))| (record && axis == 0) || given as u64 == length);
-    if !fits {
-        let wanted: Vec<String> = lengths.iter().map(u64::to_string).collect();
-        let given: Vec<String> = shape.iter().map(usize::to_string).collect();
+    let selection =
+        select(name, items, (&names, &lengths), record, Some(shape)).map_err(invalid)?;
+    let picked = selection.shape();
+    if picked != shape {
+        let show = |lengths: &[usize]| {
+            let lengths: Vec<String> = lengths.iter().map(usize::to_string).collect();
+            lengths.join(", ")
+        };
+        let what = if is_whole(items) {
+            format!("the NetCDF variable {name} has")
+        } else {
+            format!("the values picked of the NetCDF variable {name} have")
+        };
         return Err(invalid(format!(
-            "the NetCDF variable {name} has the shape ({}), which an array of shape ({}) does \
-             not fill",
-            wanted.join(", "),
-            given.join(", ")
+            "{what} the shape ({}), which an array of shape ({}) does not fill",
+            show(&picked),
+            show(shape)
         )));
     }
     let scale = scaling(variable);
@@ -142,38 +153,76 @@ pub(crate) fn write(
         .chunks_exact(pixel.size())
         .flat_map(|element| store(element, pixel, kind, scale))
         .collect();
-    if !record {
-        contents.slots[index][..stored.len()].copy_from_slice(&stored);
-        return save(path, &contents);
+    let size = slot(header, variable);
+    let width = kind.size();
+    let inner = lengths[usize::from(record)..].to_vec();
+    if record {
+        let needed = selection.axes[0]
+            .positions
+            .iter()
+            .max()
+            .map_or(0, |&last| last.saturating_add(1));
+        add_records(&mut contents, needed).map_err(invalid)?;
     }
-    let per_record = usize::try_from(header.values(variable))
-        .unwrap_or(usize::MAX)
-        .saturating_mul(kind.size())
-        .max(1);
-    // What a new record holds for each record variable before any value is written.
+    let mut taken: usize = 0;
+    let slots = &mut contents.slots[index];
+    selection.runs(record, &inner, |at, offset, count| {
+        let too_large = || invalid(format!("the NetCDF variable {name} is too large to write"));
+        let bytes = |value: u64, width: usize| usize::try_from(value).ok()?.checked_mul(width);
+        let start = bytes(at.unwrap_or(0), size)
+            .zip(bytes(offset, width))
+            .and_then(|(record, inner)| record.checked_add(inner));
+        let (Some(start), Some(length)) = (start, bytes(count, width)) else {
+            return Err(too_large());
+        };
+        let (Some(end), Some(from)) = (start.checked_add(length), taken.checked_add(length)) else {
+            return Err(too_large());
+        };
+        let (Some(slot), Some(values)) = (slots.get_mut(start..end), stored.get(taken..from))
+        else {
+            return Err(too_large());
+        };
+        slot.copy_from_slice(values);
+        taken = from;
+        Ok(())
+    })?;
+    save(path, &contents)
+}
+
+/// Adds records to `contents` until it has `needed`, each filled for every record variable,
+/// padding and all, as the C library fills the records a write adds.
+///
+/// # Errors
+///
+/// A message, before anything is added, when the records would not fit in memory: the room
+/// for them is reserved first, so a huge record number is an error, never an abort.
+fn add_records(contents: &mut Contents, needed: u64) -> Result<(), String> {
+    let header = &contents.header;
     let blank: Vec<(usize, Vec<u8>, usize)> = header
         .variables
         .iter()
         .enumerate()
-        .filter(|(_, other)| header.is_record(other))
-        .map(|(other, variable)| (other, fill(variable), slot(header, variable)))
+        .filter(|(_, variable)| header.is_record(variable))
+        .map(|(index, variable)| (index, fill(variable), slot(header, variable)))
         .collect();
-    let records = header.records;
-    let size = slot(header, variable);
-    for (at, values) in stored.chunks(per_record).enumerate() {
-        // A new record is filled for every record variable, padding and all, before its values
-        // are written, as the C library fills the records a write adds.
-        if (at as u64) >= records {
-            for (other, filling, other_size) in &blank {
-                contents.slots[*other].extend(filled(filling, *other_size));
-            }
-        }
-        let start = at * size;
-        contents.slots[index][start..start + values.len()].copy_from_slice(values);
+    let added = needed.saturating_sub(header.records);
+    let too_many = || format!("{needed} records of a NetCDF file do not fit in memory");
+    for (index, _, size) in &blank {
+        let room = usize::try_from(added)
+            .ok()
+            .and_then(|added| added.checked_mul(*size))
+            .ok_or_else(too_many)?;
+        contents.slots[*index]
+            .try_reserve_exact(room)
+            .map_err(|_| too_many())?;
     }
-    let written = (stored.len() / per_record) as u64;
-    contents.header.records = records.max(written);
-    save(path, &contents)
+    for _ in header.records..needed {
+        for (index, filling, size) in &blank {
+            contents.slots[*index].extend(filled(filling, *size));
+        }
+    }
+    contents.header.records = contents.header.records.max(needed);
+    Ok(())
 }
 
 /// The big-endian bytes of `variable`'s fill value: its `_FillValue` attribute's, or the
