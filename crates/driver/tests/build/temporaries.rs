@@ -78,21 +78,29 @@ def main():
 }
 
 /// Changing a conditional expression would change the variable its branch names, which
-/// lowering does not build yet. It reports so rather than change a moved-out copy and free
-/// the variable's value.
+/// lowering does not build yet. It reports so, for a list and for an `int`, rather than change
+/// a temporary: before, `bump(a if a > 0 else b)` left `a` at 1 without a word.
 #[test]
 fn changing_a_conditional_is_reported() {
     let program = "\
+def bump(x: InOut[int]) -> None:
+    x += 1
+
+
 def main():
     a = [1, 2]
     b = [3]
     print((a if len(a) > 5 else b).pop())
+    c = 1
+    d = 2
+    bump(c if c > 0 else d)
+    print(c, d)
 ";
     let directory = package("changing-conditional", &[("main.byn", program)]).unwrap();
     let (built, _) = baryon_build(&directory).unwrap();
     assert!(!built.status.success());
     assert_eq!(
         stderr(&built),
-        "error: lowering does not handle changing the value of a conditional expression yet\n --> main.byn:4:12\n  |\n4 |     print((a if len(a) > 5 else b).pop())\n  |            ^^^^^^^^^^^^^^^^^^^^^^ not lowered yet\n  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues\n\n"
+        "error: lowering does not handle changing the value of a conditional expression yet\n --> main.byn:8:12\n  |\n8 |     print((a if len(a) > 5 else b).pop())\n  |            ^^^^^^^^^^^^^^^^^^^^^^ not lowered yet\n  = note: the compiler lowers more of the language as roadmap item 1.9.3 continues\n\nerror: lowering does not handle changing the value of a conditional expression yet\n  --> main.byn:11:10\n   |\n11 |     bump(c if c > 0 else d)\n   |          ^^^^^^^^^^^^^^^^^ not lowered yet\n   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues\n\n"
     );
 }

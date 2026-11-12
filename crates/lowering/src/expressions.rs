@@ -289,11 +289,11 @@ impl<'db> Builder<'db> {
     /// "Values and references": a temporary cannot conflict). Before, lowering skipped the
     /// call, and its result was never written.
     ///
-    /// A conditional expression whose value moves, `(a if c else b).pop()`, would change the
-    /// variable its branch names; lowering does not build that yet and reports it, rather than
-    /// change a moved-out copy.
+    /// A conditional expression, `(a if c else b).pop()` or `bump(a if c else b)`, would
+    /// change the variable its branch names, of any type; lowering does not build that yet and
+    /// reports it, rather than change a temporary and lose the change.
     pub(crate) fn changed_place(&mut self, node: NodeId) -> Option<Place> {
-        if self.tree.kind(node) == SyntaxKind::Conditional && self.needs_drop(self.ty(node)) {
+        if self.tree.kind(node) == SyntaxKind::Conditional {
             self.unsupported(node, "changing the value of a conditional expression");
             return None;
         }
