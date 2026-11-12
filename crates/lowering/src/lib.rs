@@ -294,6 +294,7 @@ mod facts;
 mod files;
 mod fits;
 mod frame_groups;
+mod frame_joins;
 mod frame_rows;
 mod frame_schema;
 mod frame_sort;

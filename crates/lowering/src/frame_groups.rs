@@ -212,7 +212,13 @@ impl<'db> Builder<'db> {
     /// The place of the array `array`, whose elements are `from`, with its elements as `to`:
     /// `array` itself when the two are one type, and otherwise a new array, dropped when the
     /// statement ends. Cost: one pass, and the new array.
-    fn converted(&mut self, array: Place, from: Type<'db>, to: Type<'db>, node: NodeId) -> Place {
+    pub(crate) fn converted(
+        &mut self,
+        array: Place,
+        from: Type<'db>,
+        to: Type<'db>,
+        node: NodeId,
+    ) -> Place {
         if from == to {
             return array;
         }
@@ -251,7 +257,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The arguments written in the call `call`, in order, keywords included.
-    fn written(&self, call: NodeId) -> Vec<NodeId> {
+    pub(crate) fn written(&self, call: NodeId) -> Vec<NodeId> {
         self.tree
             .child(call, Role::Arguments)
             .into_iter()
@@ -261,7 +267,7 @@ impl<'db> Builder<'db> {
 
     /// The value of the argument `argument`: what follows `name=` for a keyword, and the
     /// argument itself otherwise.
-    fn keyword_value(&self, argument: NodeId) -> NodeId {
+    pub(crate) fn keyword_value(&self, argument: NodeId) -> NodeId {
         (self.tree.kind(argument) == SyntaxKind::Keyword)
             .then(|| self.tree.child(argument, Role::Value))
             .flatten()
@@ -276,7 +282,7 @@ impl<'db> Builder<'db> {
 
     /// The column of `columns` that the string literal `node` names, with its position in
     /// the tuple that stores the frame.
-    fn named_column(
+    pub(crate) fn named_column(
         &self,
         columns: &'db [Column<'db>],
         node: NodeId,
@@ -288,12 +294,12 @@ impl<'db> Builder<'db> {
     }
 
     /// The type of an array of rank 1 of `element`.
-    fn array_of(&self, element: Type<'db>) -> Type<'db> {
+    pub(crate) fn array_of(&self, element: Type<'db>) -> Type<'db> {
         Type::new(self.db, TypeKind::Array { element, rank: 1 })
     }
 
     /// The type of an array of row positions, `Array[i64, 1]`.
-    fn positions_type(&self) -> Type<'db> {
+    pub(crate) fn positions_type(&self) -> Type<'db> {
         self.array_of(Type::new(
             self.db,
             TypeKind::Primitive(Primitive::Integer(Integer::I64)),
