@@ -258,7 +258,8 @@ impl<'db> Column<'db> {
     /// # impl salsa::Database for Database {}
     /// let database = Database::default();
     /// let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
-    /// let column = Column { name: "price".to_owned(), element: Type::new(&database, TypeKind::Unknown) };
+    /// let unknown = Type::new(&database, TypeKind::Unknown);
+    /// let column = Column { name: "price".to_owned(), element: unknown };
     /// assert_eq!(column.map(|_| f64), Column { name: "price".to_owned(), element: f64 });
     /// ```
     #[must_use]
