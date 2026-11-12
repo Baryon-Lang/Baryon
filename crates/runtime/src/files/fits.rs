@@ -150,6 +150,7 @@ pub(crate) fn read_hdu(path: &str, ext: i64) -> Result<Hdu, OsFailure> {
         if index == wanted {
             return Ok(hdu);
         }
+        // `describe` checked that this sum fits.
         offset = hdu.offset + padded(hdu.size);
         file.seek(SeekFrom::Start(offset)).map_err(failed)?;
     }
@@ -259,14 +260,27 @@ fn describe(cards: Vec<String>, offset: u64) -> Result<Hdu, String> {
     }
     let pcount = integer("PCOUNT")?.unwrap_or(0);
     let gcount = integer("GCOUNT")?.unwrap_or(1);
+    // The lengths come from the file, so a corrupt header can name more data than a `u64`
+    // counts; that is invalid data, never an overflow.
+    let too_big = || "the FITS header describes more data than a file can hold".to_owned();
     let elements = if axes.is_empty() {
         0
     } else {
-        axes.iter().map(|&length| length as u64).product::<u64>()
+        axes.iter()
+            .try_fold(1_u64, |product, &length| product.checked_mul(length as u64))
+            .ok_or_else(too_big)?
     };
-    let size = (bitpix.unsigned_abs() / 8)
-        .saturating_mul(gcount.unsigned_abs())
-        .saturating_mul(pcount.unsigned_abs().saturating_add(elements));
+    let size = pcount
+        .unsigned_abs()
+        .checked_add(elements)
+        .and_then(|count| count.checked_mul(gcount.unsigned_abs()))
+        .and_then(|count| count.checked_mul(bitpix.unsigned_abs() / 8))
+        .ok_or_else(too_big)?;
+    // The next HDU starts after the data, padded to whole blocks; [`read_hdu`] relies on that
+    // offset fitting a `u64`.
+    size.checked_next_multiple_of(BLOCK as u64)
+        .and_then(|padded| offset.checked_add(padded))
+        .ok_or_else(too_big)?;
     Ok(Hdu {
         bscale: real("BSCALE", 1.0)?,
         bzero: real("BZERO", 0.0)?,

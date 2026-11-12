@@ -135,7 +135,7 @@ fn integers_read_as_stored_or_shifted_and_floats_scale_as_astropy_does() {
 
 #[test]
 fn what_is_not_fits_is_invalid_data() {
-    let cases: [(&str, Vec<u8>, &str); 4] = [
+    let cases: [(&str, Vec<u8>, &str); 7] = [
         (
             "text",
             b"1.5 2.5\n".to_vec(),
@@ -158,6 +158,38 @@ fn what_is_not_fits_is_invalid_data() {
                 "BITPIX  =                   12",
             ]),
             "the FITS header has BITPIX = 12, which the standard does not allow",
+        ),
+        (
+            "axes",
+            block(&[
+                "SIMPLE  =                    T",
+                "BITPIX  =                    8",
+                "NAXIS   =                    2",
+                "NAXIS1  =        1099511627776",
+                "NAXIS2  =        1099511627776",
+            ]),
+            "the FITS header describes more data than a file can hold",
+        ),
+        (
+            "bytes",
+            block(&[
+                "SIMPLE  =                    T",
+                "BITPIX  =                   64",
+                "NAXIS   =                    1",
+                "NAXIS1  =  9223372036854775807",
+            ]),
+            "the FITS header describes more data than a file can hold",
+        ),
+        (
+            "padding",
+            block(&[
+                "SIMPLE  =                    T",
+                "BITPIX  =                    8",
+                "NAXIS   =                    1",
+                "NAXIS1  =  9223372036854775807",
+                "PCOUNT  =  9223372036854775807",
+            ]),
+            "the FITS header describes more data than a file can hold",
         ),
     ];
     for (name, bytes, message) in cases {
