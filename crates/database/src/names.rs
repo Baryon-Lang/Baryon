@@ -88,7 +88,8 @@ pub const BUILTINS: [&str; 59] = [
 /// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042). `fits` is
 /// roadmap 3.14.3's FITS files, named as `astropy.io.fits` is (decision 0044), and `netCDF4`
 /// roadmap 3.14.5's `NetCDF` files, named as Unidata's `netCDF4` package is (decision 0047).
-pub const STANDARD_MODULES: [&str; 11] = [
+/// `zlib` is roadmap 3.27's deflate streams, named as Python's `zlib` is (decision 0049).
+pub const STANDARD_MODULES: [&str; 12] = [
     "math",
     "random",
     "sys",
@@ -100,6 +101,7 @@ pub const STANDARD_MODULES: [&str; 11] = [
     "stats",
     "fits",
     "netCDF4",
+    "zlib",
 ];
 
 /// What a name refers to.
