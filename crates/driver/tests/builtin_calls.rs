@@ -128,6 +128,34 @@ error: `fma` cannot mix `f32` and `f64`
     );
 }
 
+/// Inside a function generic over `T: Float`, a `math` function takes `T` and returns `T`, so one
+/// function serves `f32` and `f64`; an argument of another type does not mix with `T`, since
+/// the instance may be `f32`.
+#[test]
+fn math_functions_take_a_float_type_parameter() {
+    let program = r"
+from math import hypot, isfinite, sqrt
+
+
+def norm[T: Float](x: T, y: T) -> T:
+    if not isfinite(x):
+        return x
+    return sqrt(x * x + y * y) + hypot(x, y)
+
+
+def mix[T: Float](x: T, y: f64) -> T:
+    return hypot(x, y)
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `hypot` cannot mix `T` and `f64`
+  --> main.byn:11:21
+   |
+11 |     return hypot(x, y)
+   |                     ^ not a `T`"
+    );
+}
+
 /// `Philox` takes a seed and an optional stream, both `int`; it has `uniform()` and nothing
 /// else; and it moves, so a generator given to another name cannot draw again. `math.pi` and
 /// the other constants are `f64`s.

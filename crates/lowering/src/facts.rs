@@ -85,6 +85,39 @@ impl<'db> Builder<'db> {
     /// Whether the type parameter whose `Name` node is `name`, declared by this function or its
     /// class, has a bound whose types all copy.
     fn copy_bound(&self, name: NodeId) -> bool {
+        matches!(
+            self.parameter_bound(name),
+            Some("Copy" | "Number" | "Float")
+        )
+    }
+
+    /// Whether `ty` is a type parameter of the function being lowered, or of its class, bounded
+    /// by `Float`, so every instance is `f32` or `f64` and float arithmetic, comparisons and
+    /// `math` functions apply to it as they do to those types.
+    pub(crate) fn is_float_parameter(&self, ty: Type<'db>) -> bool {
+        match ty.kind(self.db) {
+            TypeKind::Parameter { file, name } => {
+                *file == self.file && self.parameter_bound(*name) == Some("Float")
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether `ty` is a type parameter of the function being lowered, or of its class, bounded
+    /// by `Number` or `Float`, so every instance is a number type and has a zero and a one.
+    pub(crate) fn is_number_parameter(&self, ty: Type<'db>) -> bool {
+        match ty.kind(self.db) {
+            TypeKind::Parameter { file, name } => {
+                *file == self.file
+                    && matches!(self.parameter_bound(*name), Some("Number" | "Float"))
+            }
+            _ => false,
+        }
+    }
+
+    /// The name of the built-in trait that bounds the type parameter `name`, such as `"Float"`
+    /// in `def f[T: Float]`, looked up in the function being lowered and then its class.
+    fn parameter_bound(&self, name: NodeId) -> Option<&'static str> {
         let tree = self.tree;
         let bound = [Some(self.function), self.class]
             .into_iter()
@@ -93,13 +126,11 @@ impl<'db> Builder<'db> {
             .flat_map(|parameters| tree.children(parameters))
             .filter(|&variable| tree.kind(variable) == SyntaxKind::TypeVariable)
             .find(|&variable| tree.child(variable, Role::Name) == Some(name))
-            .and_then(|variable| tree.child(variable, Role::Bound));
-        bound.is_some_and(|bound| {
-            matches!(
-                self.definition(bound),
-                Some(Definition::Builtin("Copy" | "Number" | "Float"))
-            )
-        })
+            .and_then(|variable| tree.child(variable, Role::Bound))?;
+        match self.definition(bound) {
+            Some(Definition::Builtin(builtin)) => Some(builtin),
+            _ => None,
+        }
     }
 
     /// The number type two operands of these types convert to before they are combined or

@@ -108,6 +108,11 @@ impl<'db> Builder<'db> {
             TypeKind::Primitive(_) => {
                 return Some(Operand::Constant(self.number_constant(ty, number)));
             }
+            // A `Number` or `Float` type parameter's zero or one, which monomorphization writes
+            // at the instance's number type, so `Array.zeros(n, T)` builds in a generic function.
+            TypeKind::Parameter { .. } if self.is_number_parameter(ty) => {
+                return Some(Operand::Constant(self.number_constant(ty, number)));
+            }
             &TypeKind::Fixed { element, ref shape } => {
                 let count = usize::try_from(shape.elements()).ok()?;
                 let value = self.filled(element, number, node)?;

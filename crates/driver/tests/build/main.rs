@@ -27,6 +27,7 @@ mod examples;
 mod fft;
 mod files;
 mod fits;
+mod float_generics;
 mod frame_rows;
 mod frames;
 mod fusion;

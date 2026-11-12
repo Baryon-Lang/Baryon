@@ -222,11 +222,14 @@ impl<'db> Builder<'db> {
         }
         let ty = self.ty(target);
         let array = self.is_array(ty);
-        if !array && !matches!(ty.kind(self.db), TypeKind::Primitive(_)) {
+        let float_parameter = self.is_float_parameter(ty);
+        if !array && !float_parameter && !matches!(ty.kind(self.db), TypeKind::Primitive(_)) {
             return self.unsupported(statement, "in-place operators on values other than numbers");
         }
         let syntax = self.tree.node(statement).operator();
-        if syntax == Operator::Power && (self.is_float(ty) || self.is_complex(ty)) {
+        if syntax == Operator::Power
+            && (self.is_float(ty) || float_parameter || self.is_complex(ty))
+        {
             let Some(place) = self.place(target) else {
                 return;
             };
