@@ -47,7 +47,7 @@ use types::{Checked, Item, TypeDb, TypedBody};
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-const LIBRARY: [(&str, &str); 10] = [
+const LIBRARY: [(&str, &str); 12] = [
     ("<std>/arrays.byn", include_str!("../library/arrays.byn")),
     (
         "<std>/builtins.byn",
@@ -59,11 +59,13 @@ const LIBRARY: [(&str, &str); 10] = [
     ("<std>/netCDF4.byn", include_str!("../library/netCDF4.byn")),
     ("<std>/os.byn", include_str!("../library/os.byn")),
     ("<std>/pathlib.byn", include_str!("../library/pathlib.byn")),
+    ("<std>/pyplot.byn", include_str!("../library/pyplot.byn")),
     ("<std>/stats.byn", include_str!("../library/stats.byn")),
     (
         "<std>/subprocess.byn",
         include_str!("../library/subprocess.byn"),
     ),
+    ("<std>/ticker.byn", include_str!("../library/ticker.byn")),
 ];
 
 /// The compiler's incremental database: every input and every cached query result.

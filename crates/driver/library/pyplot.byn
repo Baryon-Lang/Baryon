@@ -1,0 +1,433 @@
+"""The `pyplot` module: plots with matplotlib's object-oriented names, drawn by Baryon code to SVG
+(decision 0046).
+
+Make an `Axes` with `axes()`, draw on it with its methods, and write it with `savefig`:
+
+```python
+import pyplot as plt
+
+def main() -> Raises[None, OSError | ValueError]:
+    t = Array([0.0, 1.0, 2.0, 3.0])
+    ax = plt.axes()
+    ax.plot(t, t * t, label="t squared")
+    ax.set_xlabel("time (s)")
+    ax.savefig("square.svg")
+```
+
+A figure looks as matplotlib's default style draws it: 6.4 by 4.8 inches, DejaVu Sans at 10
+points, colors from the `tab10` cycle, and ticks placed and labelled by `ticker`'s
+`MaxNLocator` and `ScalarFormatter`, as matplotlib's are.
+"""
+
+from math import isfinite
+from ticker import MaxNLocator, ScalarFormatter
+
+WIDTH: Final = 460.8  # the figure's width in points: 6.4 inches
+HEIGHT: Final = 345.6  # the figure's height in points: 4.8 inches
+LEFT: Final = 57.6  # the axes' left edge, 0.125 of the width, from the figure's left
+RIGHT: Final = 414.72  # the axes' right edge, 0.9 of the width
+TOP: Final = 41.472  # the axes' top edge, 0.12 of the height, from the figure's top
+BOTTOM: Final = 307.584  # the axes' bottom edge, 0.89 of the height
+FONT_SIZE: Final = 10.0  # tick labels and axis labels, in points
+TITLE_SIZE: Final = 12.0  # the title, matplotlib's "large"
+TICK_LENGTH: Final = 3.5  # a major tick, drawn outward, in points
+TICK_PAD: Final = 3.5  # the gap between a tick and its label
+LABEL_PAD: Final = 4.0  # the gap between the tick labels and the axis label
+TITLE_PAD: Final = 6.0  # the gap between the axes and the title's baseline
+ASCENT: Final = 0.76  # DejaVu Sans's height above the baseline, as a fraction of the size
+
+
+class _Line(Struct):
+    """One line drawn by `Axes.plot`: its points, in data coordinates, and how it is stroked."""
+
+    x: Array[f64, 1]  # the x of each point
+    y: Array[f64, 1]  # the y of each point, as long as `x`
+    color: str  # an SVG color, `#rrggbb`
+    linewidth: f64  # in points
+    dashes: list[f64]  # on and off lengths in points; empty for a solid line
+    label: str  # the legend's text, kept for `legend` (roadmap 3.15.2); "" for none
+
+
+class Axes(Struct):
+    """A plot: the data drawn in a rectangle, with an axis below it and one to its left, as
+    matplotlib's `Axes`.
+
+    Make one with `axes()`. Each method that draws or labels changes the axes in place, so a
+    plot is built up call by call and written once with `savefig`. The x and y ranges follow
+    the data, with a margin of 5% on each side, until `set_xlim` or `set_ylim` fixes them.
+    """
+
+    lines: list[_Line]  # every line, in the order drawn
+    title: str  # above the axes; "" for none
+    xlabel: str  # under the x axis; "" for none
+    ylabel: str  # left of the y axis; "" for none
+    xlim: tuple[f64, f64] | None  # the x range shown when fixed, `None` to follow the data
+    ylim: tuple[f64, f64] | None  # the y range shown when fixed, `None` to follow the data
+    colors_used: int  # how many colors of the cycle `plot` has taken
+
+    def plot(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        color: str = "",
+        linewidth: f64 = 1.5,
+        linestyle: str = "-",
+        label: str = "",
+    ) -> None:
+        """Draws the points `(x[i], y[i])` joined by straight lines, as matplotlib's `plot`.
+
+        `color` is a name matplotlib knows: `"#rrggbb"`, `"C0"` to `"C9"`, one of the letters
+        `"bgrcmykw"`, or a `tab10` name such as `"tab:orange"`; left out, or `""`, each line
+        takes the next color of the cycle. `linestyle` is `"-"`, `"--"`, `":"` or `"-."`, or their
+        names `"solid"`, `"dashed"`, `"dotted"` and `"dashdot"`, with dashes that grow with
+        `linewidth` as matplotlib's do. A point with a NaN or infinite coordinate breaks the
+        line there. Copies `x` and `y`, so they can change afterwards.
+
+        Panics when `x` and `y` differ in length, or `color` or `linestyle` is not one of
+        those, where matplotlib raises `ValueError`: a mistake in the program, not its data.
+        """
+        assert len(x) == len(y), "plot needs x and y of the same length"
+        chosen = ""
+        if color == "":
+            chosen = _cycle(self.colors_used)
+            self.colors_used += 1
+        else:
+            chosen = _color(color)
+        self.lines.append(
+            _Line(x.copy(), y.copy(), chosen, linewidth, _dashes(linestyle, linewidth), label.copy())
+        )
+
+    def set_title(self: InOut[Self], label: str) -> None:
+        """Sets the title, centred above the axes."""
+        self.title = label.copy()
+
+    def set_xlabel(self: InOut[Self], xlabel: str) -> None:
+        """Sets the label centred under the x axis."""
+        self.xlabel = xlabel.copy()
+
+    def set_ylabel(self: InOut[Self], ylabel: str) -> None:
+        """Sets the label centred left of the y axis, turned to read upwards."""
+        self.ylabel = ylabel.copy()
+
+    def set_xlim(self: InOut[Self], left: f64, right: f64) -> None:
+        """Shows x from `left` to `right`; `left` larger than `right` turns the axis around.
+        Limits too close to tell apart are widened by 5% each way, as matplotlib widens them,
+        so `set_xlim(1.0, 1.0)` shows 0.95 to 1.05.
+
+        Panics when a limit is NaN or infinite, where matplotlib raises `ValueError`."""
+        assert isfinite(left) and isfinite(right), "Axis limits cannot be NaN or Inf"
+        self.xlim = _limits(left, right)
+
+    def set_ylim(self: InOut[Self], bottom: f64, top: f64) -> None:
+        """Shows y from `bottom` to `top`; `bottom` larger than `top` turns the axis around.
+        Widens limits and panics as `set_xlim` does."""
+        assert isfinite(bottom) and isfinite(top), "Axis limits cannot be NaN or Inf"
+        self.ylim = _limits(bottom, top)
+
+    def savefig(self: Self, fname: str) -> Raises[None, OSError | ValueError]:
+        """Writes a figure holding these axes to the file `fname`, as matplotlib's
+        `Figure.savefig`; the extension picks the format.
+
+        The SVG's text is left as text, as matplotlib's `svg.fonttype = "none"` leaves it, so
+        the viewer draws it in DejaVu Sans or the nearest font it has. The file holds every
+        point of every line: about 15 bytes a point.
+
+        # Errors
+
+        `ValueError` when the extension is not `.svg`, the only format so far, with
+        matplotlib's message; `OSError` when the file cannot be written.
+        """
+        dot = _last_dot(fname)
+        extension = fname[dot + 1 :].lower() if dot >= 0 else ""
+        if extension != "svg":
+            raise ValueError(f"Format '{extension}' is not supported (supported formats: svg)")
+        text = _render(self)
+        with open(fname, "w") as file:
+            file.write(text)
+
+
+def axes() -> Axes:
+    """New, empty axes in the default figure, as matplotlib's `pyplot.axes()`.
+
+    ```python
+    import pyplot as plt
+
+    def main():
+        ax = plt.axes()
+        ax.set_title("empty")
+    ```
+    """
+    return Axes([], "", "", "", None, None, 0)
+
+
+def _last_dot(path: str) -> int:
+    """The position of the dot that starts the file name's extension in `path`, or -1 when the
+    name has none: a dot in a directory's name, `runs.d/plot`, does not count."""
+    found = -1
+    position = 0
+    for character in path:
+        if character == ".":
+            found = position
+        elif character == "/":
+            found = -1
+        position += 1
+    return found
+
+
+def _cycle(k: int) -> str:
+    """The `k`th color of matplotlib's default cycle, `tab10`, counting from 0 and wrapping."""
+    return _tab10(k % 10)
+
+
+def _tab10(k: int) -> str:
+    """The `k`th of the ten `tab10` colors, from 0: blue, orange, green, red, purple, brown,
+    pink, gray, olive and cyan."""
+    colors = [
+        "#1f77b4",
+        "#ff7f0e",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#7f7f7f",
+        "#bcbd22",
+        "#17becf",
+    ]
+    return colors[k].copy()
+
+
+def _color(name: str) -> str:
+    """The SVG color of a matplotlib color name: `#rrggbb` as it is, `C0` to `C9` from the
+    cycle, a letter of `bgrcmykw`, or a `tab10` name such as `tab:blue`. Panics on any other."""
+    if len(name) == 7 and name.startswith("#"):
+        return name.lower()
+    digits = "0123456789"
+    for k in range(10):
+        if name == "C" + digits[k]:
+            return _tab10(k)
+    letters = "bgrcmykw"
+    values = [
+        "#0000ff",
+        "#008000",
+        "#ff0000",
+        "#00bfbf",
+        "#bf00bf",
+        "#bfbf00",
+        "#000000",
+        "#ffffff",
+    ]
+    for k in range(len(letters)):
+        if name == letters[k]:
+            return values[k].copy()
+    names = ["blue", "orange", "green", "red", "purple", "brown", "pink", "gray", "olive", "cyan"]
+    for k in range(len(names)):
+        if name == "tab:" + names[k]:
+            return _tab10(k)
+    assert False, f"{name!r} is not a color pyplot knows: use '#rrggbb', 'C0' to 'C9', a letter of 'bgrcmykw' or a 'tab:' name"
+    return ""
+
+
+def _dashes(style: str, linewidth: f64) -> list[f64]:
+    """The on and off lengths, in points, of a matplotlib line style: its pattern for a line
+    one point wide, scaled by `linewidth`. Empty for a solid line. Panics on an unknown style."""
+    pattern: list[f64] = []
+    if style == "--" or style == "dashed":
+        pattern = [3.7, 1.6]
+    elif style == ":" or style == "dotted":
+        pattern = [1.0, 1.65]
+    elif style == "-." or style == "dashdot":
+        pattern = [6.4, 1.6, 1.0, 1.6]
+    else:
+        assert style == "-" or style == "solid", f"{style!r} is not a line style: use '-', '--', ':' or '-.'"
+    return [length * linewidth for length in pattern]
+
+
+def _expand(low: f64, high: f64, expander: f64, tiny: f64) -> tuple[f64, f64]:
+    """`low` and `high`, widened by `expander` of their size when they are too close to tell
+    apart, as matplotlib's `transforms.nonsingular`."""
+    largest = max(abs(low), abs(high))
+    if largest < 1e6 / tiny * 2.2250738585072014e-308:
+        return (-expander, expander)
+    if high - low <= largest * tiny:
+        if high == 0.0 and low == 0.0:
+            return (-expander, expander)
+        return (low - expander * abs(low), high + expander * abs(high))
+    return (low, high)
+
+
+def _limits(first: f64, second: f64) -> tuple[f64, f64]:
+    """Fixed limits as matplotlib's `set_xlim` keeps them: put in order, widened by
+    `nonsingular` with an expander of 5% when too close to tell apart, then turned back round
+    if `first` was the larger."""
+    low, high = _expand(min(first, second), max(first, second), 0.05, 1e-15)
+    if first > second:
+        return (high, low)
+    return (low, high)
+
+
+def _view(lines: list[_Line], along_x: bool, fixed: tuple[f64, f64] | None) -> tuple[f64, f64]:
+    """The range one axis shows: `fixed` when set; otherwise the finite data with a margin of 5%
+    on each side, as matplotlib's `autoscale_view`, and 0 to 1 when there is no data."""
+    if fixed is not None:
+        return fixed
+    low = 0.0
+    high = 0.0
+    found = False
+    for line in lines:
+        for i in range(len(line.x)):
+            value = line.x[i] if along_x else line.y[i]
+            if isfinite(line.x[i]) and isfinite(line.y[i]):
+                if not found or value < low:
+                    low = value
+                if not found or value > high:
+                    high = value
+                found = True
+    if not found:
+        return (0.0, 1.0)
+    low, high = _expand(low, high, 0.05, 1e-15)
+    margin = 0.05 * (high - low)
+    return _expand(low - margin, high + margin, 0.001, 1e-15)
+
+
+def _number(value: f64) -> str:
+    """A coordinate in the SVG, to a thousandth of a point."""
+    return f"{value:.3f}"
+
+
+def _escape(text: str) -> str:
+    """`text` with XML's special characters escaped, so it is safe inside an element."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _text(x: f64, y: f64, size: f64, anchor: str, text: str, rotate: bool = False) -> str:
+    """An SVG text element with its baseline at `(x, y)`, anchored at `anchor`: `start`,
+    `middle` or `end`. `rotate` turns it to read upwards, as a y label does."""
+    place = f'x="{_number(x)}" y="{_number(y)}"'
+    if rotate:
+        place = f'transform="translate({_number(x)} {_number(y)}) rotate(-90)"'
+    return (
+        f'<text {place} font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="{size}" text-anchor="{anchor}" '
+        + f'fill="#000000">{_escape(text)}</text>'
+    )
+
+
+def _width(text: str, size: f64) -> f64:
+    """About how wide `text` is in DejaVu Sans at `size` points, from the widths of its
+    digits, which tick labels are made of, and an average for other characters."""
+    width = 0.0
+    for character in text:
+        if "0" <= character and character <= "9":
+            width += 0.636
+        elif character == "." or character == " ":
+            width += 0.318
+        elif character == "−":
+            width += 0.838
+        else:
+            width += 0.6
+    return width * size
+
+
+def _render(ax: Axes) -> str:
+    """The SVG text of the default figure holding `ax`."""
+    x0, x1 = _view(ax.lines, True, ax.xlim)
+    y0, y1 = _view(ax.lines, False, ax.ylim)
+    xscale = (RIGHT - LEFT) / (x1 - x0)
+    yscale = (BOTTOM - TOP) / (y1 - y0)
+    out: list[str] = [
+        '<?xml version="1.0" encoding="utf-8" standalone="no"?>',
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}pt" height="{HEIGHT}pt" '
+        + f'viewBox="0 0 {WIDTH} {HEIGHT}" version="1.1">',
+        f'<rect width="{WIDTH}" height="{HEIGHT}" fill="#ffffff"/>',
+        f'<clipPath id="axes"><rect x="{LEFT}" y="{TOP}" width="{_number(RIGHT - LEFT)}" '
+        + f'height="{_number(BOTTOM - TOP)}"/></clipPath>',
+    ]
+    for line in ax.lines:
+        path = ""
+        pen_down = False
+        for i in range(len(line.x)):
+            if isfinite(line.x[i]) and isfinite(line.y[i]):
+                px = LEFT + (line.x[i] - x0) * xscale
+                py = BOTTOM - (line.y[i] - y0) * yscale
+                command = "L" if pen_down else "M"
+                path = path + f"{command}{_number(px)} {_number(py)}"
+                pen_down = True
+            else:
+                pen_down = False
+        dashes = ""
+        if len(line.dashes) > 0:
+            dashes = ' stroke-dasharray="' + ",".join([_number(d) for d in line.dashes]) + '"'
+        out.append(
+            f'<path d="{path}" clip-path="url(#axes)" fill="none" stroke="{line.color}" '
+            + f'stroke-width="{line.linewidth}" stroke-linecap="square" '
+            + f'stroke-linejoin="round"{dashes}/>'
+        )
+    out.append(
+        f'<rect x="{LEFT}" y="{TOP}" width="{_number(RIGHT - LEFT)}" '
+        + f'height="{_number(BOTTOM - TOP)}" fill="none" stroke="#000000" stroke-width="0.8" '
+        + 'stroke-linejoin="miter" stroke-linecap="square"/>'
+    )
+    below = _x_axis(x0, x1, xscale, out)
+    beside = _y_axis(y0, y1, yscale, out)
+    if ax.xlabel != "":
+        out.append(
+            _text((LEFT + RIGHT) / 2.0, below + LABEL_PAD + ASCENT * FONT_SIZE, FONT_SIZE, "middle", ax.xlabel)
+        )
+    if ax.ylabel != "":
+        x = beside - LABEL_PAD - (1.0 - ASCENT) * FONT_SIZE
+        out.append(_text(x, (TOP + BOTTOM) / 2.0, FONT_SIZE, "middle", ax.ylabel, True))
+    if ax.title != "":
+        out.append(_text((LEFT + RIGHT) / 2.0, TOP - TITLE_PAD, TITLE_SIZE, "middle", ax.title))
+    out.append("</svg>")
+    return "\n".join(out) + "\n"
+
+
+def _bins(length: f64, spacing: f64) -> int:
+    """The most tick intervals an axis `length` points long holds, as matplotlib's
+    `get_tick_space` and `MaxNLocator` work it out: one per `spacing` font sizes, 1 to 9."""
+    return min(9, max(1, int(length / (spacing * FONT_SIZE))))
+
+
+def _x_axis(x0: f64, x1: f64, scale: f64, out: InOut[list[str]]) -> f64:
+    """Draws the x axis's ticks, their labels and its offset text, and returns how far down the
+    labels reach, where the x label goes."""
+    ticks = MaxNLocator(_bins(RIGHT - LEFT, 3.0), [1.0, 2.0, 2.5, 5.0, 10.0]).tick_values(x0, x1)
+    formatter = ScalarFormatter(x0, x1)
+    labels = formatter.format_ticks(ticks)
+    top = BOTTOM + TICK_LENGTH + TICK_PAD
+    baseline = top + ASCENT * FONT_SIZE
+    for k in range(len(ticks)):
+        if min(x0, x1) <= ticks[k] and ticks[k] <= max(x0, x1):
+            px = LEFT + (ticks[k] - x0) * scale
+            out.append(
+                f'<path d="M{_number(px)} {BOTTOM}v{TICK_LENGTH}" stroke="#000000" stroke-width="0.8"/>'
+            )
+            out.append(_text(px, baseline, FONT_SIZE, "middle", labels[k]))
+    offset = formatter.get_offset(ticks)
+    below = baseline + (1.17 - ASCENT) * FONT_SIZE
+    if offset != "":
+        out.append(_text(RIGHT, below + ASCENT * FONT_SIZE, FONT_SIZE, "end", offset))
+    return below
+
+
+def _y_axis(y0: f64, y1: f64, scale: f64, out: InOut[list[str]]) -> f64:
+    """Draws the y axis's ticks, their labels and its offset text, and returns how far left the
+    labels reach, where the y label goes."""
+    ticks = MaxNLocator(_bins(BOTTOM - TOP, 2.0), [1.0, 2.0, 2.5, 5.0, 10.0]).tick_values(y0, y1)
+    formatter = ScalarFormatter(y0, y1)
+    labels = formatter.format_ticks(ticks)
+    right = LEFT - TICK_LENGTH - TICK_PAD
+    widest = 0.0
+    for k in range(len(ticks)):
+        if min(y0, y1) <= ticks[k] and ticks[k] <= max(y0, y1):
+            py = BOTTOM - (ticks[k] - y0) * scale
+            out.append(
+                f'<path d="M{LEFT} {_number(py)}h-{TICK_LENGTH}" stroke="#000000" stroke-width="0.8"/>'
+            )
+            middle = py + (ASCENT / 2.0) * FONT_SIZE
+            out.append(_text(right, middle, FONT_SIZE, "end", labels[k]))
+            widest = max(widest, _width(labels[k], FONT_SIZE))
+    offset = formatter.get_offset(ticks)
+    if offset != "":
+        out.append(_text(LEFT, TOP - 4.0, FONT_SIZE, "start", offset))
+    return right - widest

@@ -86,9 +86,10 @@ pub const BUILTINS: [&str; 59] = [
 /// source defines (decision 0038). `linalg` and `fft` are roadmap 3.10's linear algebra and
 /// fast Fourier transforms, named as `numpy.linalg` and `numpy.fft` are. `stats` is roadmap
 /// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042). `fits` is
-/// roadmap 3.14.3's FITS files, named as `astropy.io.fits` is (decision 0044), and `netCDF4`
-/// roadmap 3.14.5's `NetCDF` files, named as Unidata's `netCDF4` package is (decision 0047).
-pub const STANDARD_MODULES: [&str; 11] = [
+/// roadmap 3.14.3's FITS files, named as `astropy.io.fits` is (decision 0044), `netCDF4`
+/// roadmap 3.14.5's `NetCDF` files, named as Unidata's `netCDF4` package is (decision 0047), and
+/// `pyplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046).
+pub const STANDARD_MODULES: [&str; 13] = [
     "math",
     "random",
     "sys",
@@ -100,6 +101,8 @@ pub const STANDARD_MODULES: [&str; 11] = [
     "stats",
     "fits",
     "netCDF4",
+    "pyplot",
+    "ticker",
 ];
 
 /// What a name refers to.
