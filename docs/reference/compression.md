@@ -13,7 +13,7 @@ imports and calls.
 | --- | --- | --- |
 | [`zlib`](#zlib) | Deflate streams (RFC 1951), alone or in a zlib (RFC 1950) or gzip (RFC 1952) container | `compress`, `decompress`, `decompressobj`, `crc32`, `adler32` |
 | [`gzip`](#gzip) | gzip files (RFC 1952) of one member or several | `compress`, `decompress` |
-| [`compression.zstd`](#compressionzstd) | Zstandard frames (RFC 8878) | `decompress` |
+| [`compression.zstd`](#compressionzstd) | Zstandard frames (RFC 8878) | `compress`, `decompress` |
 
 Python's functions take and give `bytes`. Baryon has no `bytes` type yet, so they take and give
 `Array[u8, 1]`, an array of bytes, which [`Array.fromfile`](files-and-processes.md#array-files)
@@ -234,7 +234,7 @@ chapter, and prints `11600 bytes, CRC-32 1019181682`.
 `decompress(data)` gives the bytes the frames in `data` hold, joined, as Python's does. It skips
 skippable frames, and checks each frame's content size and content checksum where the frame
 records them. Frames that need a dictionary, and the `zstd_dict` and `options` arguments, are
-not built yet; `compress` is roadmap 3.27.8.
+not built yet.
 
 Data Python refuses raises `OSError` with the kind `INVALID_DATA` and, in `strerror`, the
 message Python's `ZstdError` carries:
@@ -259,3 +259,22 @@ wrong bytes than Python's, as no check catches it.
 `zstd.compress` writes one, is decoded into a buffer of that size; the output of a frame
 without one is copied each time its buffer doubles. The decoder takes about four times the time
 the C library takes; making it faster is a later roadmap step.
+
+### `compression.zstd.compress`
+
+`compress(data, level=3)` gives `data` as one Zstandard frame, which any Zstandard decoder reads,
+Python's included. The frame records the content size and ends with an XXH64 checksum of the
+content, which Python writes only when its `options` ask for one. `level` runs from -131072 to
+22, as Python's does, and 0 means 3; a level outside that range raises `ValueError` with
+Python's message, `illegal compression level 23; the valid range is [-131072, 22]`.
+
+Baryon's encoder has one strategy, the C library's fast one: hash chains of earlier positions,
+matches of four bytes or more up to 1 MiB back, the repeated offset when it is as long, and
+Huffman-coded literals where they pay. The level sets how far each chain is searched, from one
+position at negative levels to 256 at level 19 and above. At levels 1 to 3 its frames come within
+about 15% of the C library's size; above that the C library's slower strategies win, by up to a
+third at level 19. The bytes are Baryon's own, as for `zlib.compress`
+([decision 0049](../decisions/0049-compression.md)).
+
+**Cost.** One pass over `data`, each position following up to the level's number of chain
+links, plus about 4.5 MiB of tables for data of 1 MiB or more, less for smaller data.

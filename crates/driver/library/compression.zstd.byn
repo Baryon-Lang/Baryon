@@ -35,6 +35,37 @@ def decompress(data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
     return exact
 
 
+def compress(data: Array[u8, 1], level: int = 3) -> Raises[Array[u8, 1], ValueError]:
+    """`data` compressed as one Zstandard frame, as `compression.zstd.compress(data, level)`
+    gives it in Python 3.14: a frame any Zstandard decoder reads, with the content size and an
+    XXH64 checksum, which Python writes only when asked.
+
+    `level` runs from -131072 to 22, as Python's does, and 0 means 3, the default. Baryon's
+    encoder has one strategy, Zstandard's "fast" one, and the level sets how far it searches
+    for each match: from one earlier position at negative levels to 256 at level 19 and above.
+    Its frames come within about 10% of the C library's size at levels 1 to 3 and are larger
+    at higher levels; they decode to the same data but are Baryon's own bytes (decision 0049).
+    A level outside the range raises `ValueError` with Python's message.
+
+    Costs one pass over `data`, each position following up to the level's number of links of
+    a hash chain, plus about 4.5 MiB of tables for data of 1 MiB or more.
+    """
+    if level < -131072 or level > 22:
+        raise ValueError(f"illegal compression level {level}; the valid range is [-131072, 22]")
+    if level == 0:
+        level = 3
+    tries = 1
+    for floor, count in [(1, 4), (2, 8), (3, 16), (4, 32), (7, 64), (13, 128), (19, 256)]:
+        if level >= floor:
+            tries = count
+    writer = _Writer(Array.zeros(len(data) + len(data) // 64 + 64, u8), 0, 0, 0)
+    _zstd(data, writer, tries)
+    exact = Array.zeros(writer.length, u8)
+    for i in range(writer.length):
+        exact[i] = writer.data[i]
+    return exact
+
+
 def _message(error: int) -> str:
     """Python's message for the error code `_unzstd` gives."""
     if error == 1:
@@ -933,3 +964,649 @@ def _unzstd(data: Array[u8, 1], output: InOut[_Output]) -> int:
                 return 29
             position += 4
     return 0
+
+
+class _Writer(Struct):
+    """A bit stream being written, as Zstandard writes its forward streams: bits go into
+    `buffer` lowest first and leave as whole bytes into the first `length` bytes of `data`,
+    which doubles when it fills."""
+
+    data: Array[u8, 1]
+    length: int  # bytes written to `data`
+    buffer: int  # bits not yet written, the first lowest
+    count: int  # how many bits `buffer` holds, less than 8 between calls
+
+
+def _align(writer: InOut[_Writer]):
+    """Pads the stream with zero bits to the next byte boundary."""
+    if writer.count > 0:
+        _put(writer, 0, 8 - writer.count)
+
+
+def _limited_lengths(counts: Array[int, 1], size: int, limit: int) -> Array[i32, 1]:
+    """Huffman code lengths of at most `limit` bits for symbols with frequencies
+    `counts[0:size]`, 0 for an unused symbol. At least two symbols get a code, as zlib ensures,
+    since a decoder needs a code of at least one bit. The tree is built from frequencies in
+    order; lengths past the limit are then pulled in and the Kraft sum restored by lengthening
+    the next-deepest codes, as miniz does, and the shortest codes go to the most frequent
+    symbols."""
+    lengths = Array.zeros(size, i32)
+    used: list[int] = []
+    for symbol in range(size):
+        if counts[symbol] > 0:
+            used.append(symbol)
+    forced = 0
+    while len(used) < 2:
+        if counts[forced] == 0:
+            used.append(forced)
+        forced += 1
+    n = len(used)
+    # Leaves sorted by frequency (then symbol), smallest first: an insertion sort of at most
+    # 286 symbols.
+    order = Array.zeros(n, int)
+    weights = Array.zeros(2 * n, int)
+    for i in range(n):
+        symbol = used[i]
+        weight = counts[symbol] if counts[symbol] > 0 else 1
+        j = i
+        while j > 0 and weights[j - 1] > weight:
+            weights[j] = weights[j - 1]
+            order[j] = order[j - 1]
+            j -= 1
+        weights[j] = weight
+        order[j] = symbol
+    # Two-queue Huffman: leaves 0..n-1 in order, internal nodes n..2n-2 in the order made.
+    parents = Array.zeros(2 * n, int)
+    leaf = 0
+    node = n
+    for made in range(n, 2 * n - 1):
+        children = Array.zeros(2, int)
+        for k in range(2):
+            if leaf < n and (node >= made or weights[leaf] <= weights[node]):
+                children[k] = leaf
+                leaf += 1
+            else:
+                children[k] = node
+                node += 1
+        weights[made] = weights[children[0]] + weights[children[1]]
+        parents[children[0]] = made
+        parents[children[1]] = made
+    depths = Array.zeros(2 * n, int)
+    for i in range(2 * n - 3, -1, -1):
+        depths[i] = depths[parents[i]] + 1
+    counts_by_length = Array.zeros(64, int)
+    for i in range(n):
+        counts_by_length[depths[i]] += 1
+    for length in range(limit + 1, 64):
+        counts_by_length[limit] += counts_by_length[length]
+        counts_by_length[length] = 0
+    total = 0
+    for length in range(1, limit + 1):
+        total += counts_by_length[length] << (limit - length)
+    while total != (1 << limit):
+        counts_by_length[limit] -= 1
+        for length in range(limit - 1, 0, -1):
+            if counts_by_length[length] > 0:
+                counts_by_length[length] -= 1
+                counts_by_length[length + 1] += 2
+                break
+        total -= 1
+    # The least frequent leaves take the longest lengths.
+    i = 0
+    for length in range(limit, 0, -1):
+        for _ in range(counts_by_length[length]):
+            lengths[order[i]] = i32(length)
+            i += 1
+    return lengths
+
+
+def _multiply32(a: int, b: int) -> int:
+    """`a * b` modulo 2 ** 32 for `a` and `b` below 2 ** 32, in 16-bit halves of `a` so no
+    product passes 2 ** 63, which would overflow a debug build."""
+    low = (a & 65535) * b
+    high = (((a >> 16) * b) & 65535) << 16
+    return (low + high) & 0xFFFFFFFF
+
+
+def _put(writer: InOut[_Writer], value: int, n: int):
+    """Writes the `n` lowest bits of `value`, at most 16, lowest first."""
+    writer.buffer = writer.buffer | (value << writer.count)
+    writer.count += n
+    if writer.length + 3 > len(writer.data):
+        grown = Array.zeros(2 * len(writer.data) + 16, u8)
+        for i in range(writer.length):
+            grown[i] = writer.data[i]
+        writer.data = grown
+    while writer.count >= 8:
+        writer.data[writer.length] = u8(writer.buffer & 255)
+        writer.length += 1
+        writer.buffer = writer.buffer >> 8
+        writer.count -= 8
+
+
+class _Sequences(Struct):
+    """A Zstandard block's sequences as the encoder gathers them: each copies `literal_lengths`
+    literals, then `match_lengths` bytes from the offset its Offset_Value names."""
+
+    literal_lengths: Array[i32, 1]
+    match_lengths: Array[i32, 1]
+    offsets: Array[i32, 1]  # each sequence's Offset_Value: the offset plus 3, or 1 to repeat the last
+    count: int
+
+
+def _literal_code(length: int) -> int:
+    """The literal-length code, 0 to 35, of a literal length (RFC 8878, section 3.1.1.3.2.1)."""
+    if length < 16:
+        return length
+    if length < 64:
+        lengths = [16, 18, 20, 22, 24, 28, 32, 40, 48]
+        code = 16
+        for k in range(1, 9):
+            if length >= lengths[k]:
+                code = 16 + k
+        return code
+    return 19 + _highest_bit(length)
+
+
+def _match_code(length: int) -> int:
+    """The match-length code, 0 to 52, of a match length from 3 (RFC 8878, section
+    3.1.1.3.2.1)."""
+    if length < 35:
+        return length - 3
+    if length < 131:
+        lengths = [35, 37, 39, 41, 43, 47, 51, 59, 67, 83, 99]
+        code = 32
+        for k in range(1, 11):
+            if length >= lengths[k]:
+                code = 32 + k
+        return code
+    return 36 + _highest_bit(length - 3)
+
+
+def _fse_encoder(counts: Array[i32, 1], symbol_count: int, log: int) -> tuple[Array[i32, 1], Array[int, 1], Array[int, 1]]:
+    """The FSE encoding tables for normalized counts, mirroring the decoding table's spread, as
+    zstd's `FSE_buildCTable`: the state table, then each symbol's `deltaNbBits` and
+    `deltaFindState`."""
+    size = 1 << log
+    spread = Array.zeros(size, i32)
+    cumulative = Array.zeros(symbol_count + 1, int)
+    high = size - 1
+    for symbol in range(symbol_count):
+        if counts[symbol] == -1:
+            cumulative[symbol + 1] = cumulative[symbol] + 1
+            spread[high] = i32(symbol)
+            high -= 1
+        else:
+            cumulative[symbol + 1] = cumulative[symbol] + int(counts[symbol])
+    step = (size >> 1) + (size >> 3) + 3
+    position = 0
+    for symbol in range(symbol_count):
+        for _ in range(int(counts[symbol])):
+            spread[position] = i32(symbol)
+            position = (position + step) & (size - 1)
+            while position > high:
+                position = (position + step) & (size - 1)
+    states = Array.zeros(size, i32)
+    next = cumulative.copy()
+    for u in range(size):
+        symbol = int(spread[u])
+        states[next[symbol]] = i32(size + u)
+        next[symbol] += 1
+    delta_bits = Array.zeros(symbol_count, int)
+    delta_states = Array.zeros(symbol_count, int)
+    total = 0
+    for symbol in range(symbol_count):
+        count = int(counts[symbol])
+        if count == 0:
+            delta_bits[symbol] = ((log + 1) << 16) - size
+        elif count == -1 or count == 1:
+            delta_bits[symbol] = (log << 16) - size
+            delta_states[symbol] = total - 1
+            total += 1
+        else:
+            out = log - _highest_bit(count - 1)
+            delta_bits[symbol] = (out << 16) - (count << out)
+            delta_states[symbol] = total - count
+            total += count
+    return (states, delta_bits, delta_states)
+
+
+def _fse_start(states: Array[i32, 1], delta_bits: Array[int, 1], delta_states: Array[int, 1], symbol: int) -> int:
+    """The encoder's state before the last symbol it encodes (the first the decoder reads), as
+    zstd's `FSE_initCState2`."""
+    out = (delta_bits[symbol] + (1 << 15)) >> 16
+    value = (out << 16) - delta_bits[symbol]
+    return int(states[(value >> out) + delta_states[symbol]])
+
+
+def _fse_encode(
+    writer: InOut[_Writer], state: int, states: Array[i32, 1], delta_bits: Array[int, 1], delta_states: Array[int, 1], symbol: int
+) -> int:
+    """Encodes `symbol` from `state`, writing the bits the decoder reads to reach `state`;
+    gives the new state."""
+    out = (state + delta_bits[symbol]) >> 16
+    _put(writer, state & ((1 << out) - 1), out)
+    return int(states[(state >> out) + delta_states[symbol]])
+
+
+def _predefined_counts(kind: int) -> Array[i32, 1]:
+    """The predefined normalized counts of RFC 8878, section 3.1.1.3.2.2, as `_fse_predefined`
+    holds them: `kind` 0 literal lengths, 1 offsets, 2 match lengths."""
+    values = [4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1]
+    if kind == 1:
+        values = [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1]
+    elif kind == 2:
+        values = [1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1]
+    counts = Array.zeros(len(values), i32)
+    for i in range(len(values)):
+        counts[i] = i32(values[i])
+    return counts
+
+
+def _normalized(frequencies: Array[int, 1], symbol_count: int, total: int, log: int) -> Array[i32, 1]:
+    """Frequencies scaled to sum to 2 ** log, every used symbol at least 1, the most frequent
+    taking up the rounding, for an FSE table of the block's own statistics. Gives counts all 0
+    when that leaves the most frequent below 1, so the caller keeps the predefined table."""
+    size = 1 << log
+    counts = Array.zeros(symbol_count, i32)
+    largest = 0
+    sum = 0
+    for symbol in range(symbol_count):
+        if frequencies[symbol] > 0:
+            scaled = (frequencies[symbol] * size + total // 2) // total
+            if scaled < 1:
+                scaled = 1
+            counts[symbol] = i32(scaled)
+            sum += scaled
+            if frequencies[symbol] > frequencies[largest]:
+                largest = symbol
+    adjusted = int(counts[largest]) + size - sum
+    if adjusted < 1:
+        return Array.zeros(symbol_count, i32)
+    counts[largest] = i32(adjusted)
+    return counts
+
+
+def _write_counts(writer: InOut[_Writer], counts: Array[i32, 1], symbol_count: int, log: int):
+    """Writes an FSE table description (RFC 8878, section 4.1.1) of normalized counts, as
+    zstd's `FSE_writeNCount`: the accuracy log, then each count in a variable number of bits,
+    runs of zeros as 2-bit repeat flags, padded to a whole byte."""
+    _put(writer, log - 5, 4)
+    remaining = (1 << log) + 1
+    threshold = 1 << log
+    width = log + 1
+    symbol = 0
+    previous_zero = False
+    while symbol < symbol_count and remaining > 1:
+        if previous_zero:
+            start = symbol
+            while symbol < symbol_count and counts[symbol] == 0:
+                symbol += 1
+            while symbol >= start + 3:
+                _put(writer, 3, 2)
+                start += 3
+            _put(writer, symbol - start, 2)
+        count = int(counts[symbol])
+        symbol += 1
+        largest = 2 * threshold - 1 - remaining
+        remaining -= count if count >= 0 else -count
+        count += 1
+        if count >= threshold:
+            count += largest
+        _put(writer, count, width - 1 if count < largest else width)
+        previous_zero = count == 1
+        while remaining < threshold:
+            width -= 1
+            threshold = threshold >> 1
+    _align(writer)
+
+
+def _write_sequences(writer: InOut[_Writer], sequences: _Sequences):
+    """Writes a block's sequences section (RFC 8878, section 3.1.1.3.2) with the predefined
+    tables: the count, the modes byte, then the backward bit stream, which holds the sequences
+    from last to first so the decoder reads them first to last."""
+    count = sequences.count
+    if count < 128:
+        _put(writer, count, 8)
+    elif count < 0x7F00:
+        _put(writer, (count >> 8) + 128, 8)
+        _put(writer, count & 255, 8)
+    else:
+        _put(writer, 255, 8)
+        _put(writer, (count - 0x7F00) & 255, 8)
+        _put(writer, (count - 0x7F00) >> 8, 8)
+    if count == 0:
+        return
+    literal_frequencies = Array.zeros(36, int)
+    offset_frequencies = Array.zeros(32, int)
+    match_frequencies = Array.zeros(53, int)
+    for index in range(count):
+        literal_frequencies[_literal_code(int(sequences.literal_lengths[index]))] += 1
+        offset_frequencies[_highest_bit(int(sequences.offsets[index]))] += 1
+        match_frequencies[_match_code(int(sequences.match_lengths[index]))] += 1
+    literal_counts = _predefined_counts(0)
+    offset_counts = _predefined_counts(1)
+    match_counts = _predefined_counts(2)
+    logs = [6, 5, 6]
+    modes = 0
+    if count >= 64:
+        log = min(9, max(5, _highest_bit(count)))
+        literal_own = _normalized(literal_frequencies, 36, count, log)
+        if literal_own[_literal_code(int(sequences.literal_lengths[0]))] > 0:
+            literal_counts = literal_own
+            logs[0] = log
+            modes = modes | 128
+        offset_own = _normalized(offset_frequencies, 32, count, min(log, 8))
+        if offset_own[_highest_bit(int(sequences.offsets[0]))] > 0:
+            offset_counts = offset_own
+            logs[1] = min(log, 8)
+            modes = modes | 32
+        match_own = _normalized(match_frequencies, 53, count, log)
+        if match_own[_match_code(int(sequences.match_lengths[0]))] > 0:
+            match_counts = match_own
+            logs[2] = log
+            modes = modes | 8
+    _put(writer, modes, 8)
+    if modes & 128 != 0:
+        _write_counts(writer, literal_counts, 36, logs[0])
+    if modes & 32 != 0:
+        _write_counts(writer, offset_counts, 32, logs[1])
+    if modes & 8 != 0:
+        _write_counts(writer, match_counts, 53, logs[2])
+    literal_states, literal_bits, literal_finds = _fse_encoder(literal_counts, len(literal_counts), logs[0])
+    offset_states, offset_bits, offset_finds = _fse_encoder(offset_counts, len(offset_counts), logs[1])
+    match_states, match_bits, match_finds = _fse_encoder(match_counts, len(match_counts), logs[2])
+    literal_values = _code_values(0)
+    match_values = _code_values(2)
+    last = count - 1
+    literal_code = _literal_code(int(sequences.literal_lengths[last]))
+    match_code = _match_code(int(sequences.match_lengths[last]))
+    offset_value = int(sequences.offsets[last])
+    offset_code = _highest_bit(offset_value)
+    match_state = _fse_start(match_states, match_bits, match_finds, match_code)
+    offset_state = _fse_start(offset_states, offset_bits, offset_finds, offset_code)
+    literal_state = _fse_start(literal_states, literal_bits, literal_finds, literal_code)
+    for index in range(last, -1, -1):
+        literal_length = int(sequences.literal_lengths[index])
+        match_length = int(sequences.match_lengths[index])
+        offset_value = int(sequences.offsets[index])
+        literal_code = _literal_code(literal_length)
+        match_code = _match_code(match_length)
+        offset_code = _highest_bit(offset_value)
+        if index < last:
+            offset_state = _fse_encode(writer, offset_state, offset_states, offset_bits, offset_finds, offset_code)
+            match_state = _fse_encode(writer, match_state, match_states, match_bits, match_finds, match_code)
+            literal_state = _fse_encode(writer, literal_state, literal_states, literal_bits, literal_finds, literal_code)
+        literal_extra = int(literal_values[36 + literal_code])
+        _put(writer, literal_length - int(literal_values[literal_code]), literal_extra)
+        match_extra = int(match_values[53 + match_code])
+        _put(writer, match_length - int(match_values[match_code]), match_extra)
+        if offset_code > 24:
+            _put(writer, offset_value & ((1 << 24) - 1), 24)
+            _put(writer, (offset_value - (1 << offset_code)) >> 24, offset_code - 24)
+        else:
+            _put(writer, offset_value - (1 << offset_code), offset_code)
+    _put(writer, match_state & ((1 << logs[2]) - 1), logs[2])
+    _put(writer, offset_state & ((1 << logs[1]) - 1), logs[1])
+    _put(writer, literal_state & ((1 << logs[0]) - 1), logs[0])
+    _put(writer, 1, 1)
+    _align(writer)
+
+
+def _literals_header(writer: InOut[_Writer], kind: int, size: int):
+    """Writes the header of a raw (`kind` 0) or one-byte (`kind` 1) literals section of `size`
+    bytes, in the shortest of its three forms."""
+    if size < 32:
+        _put(writer, kind | (size << 3), 8)
+    elif size < 4096:
+        _put(writer, kind | 4 | (size << 4), 16)
+    else:
+        _put(writer, kind | 12 | ((size & 15) << 4), 8)
+        _put(writer, size >> 4, 16)
+
+
+def _huffman_literals(writer: InOut[_Writer], literals: Array[u8, 1], stop: int) -> bool:
+    """Writes `literals[0:stop]` as a Huffman-coded literals section (RFC 8878, section 4.2)
+    with its tree as 4-bit weights, four streams past 1023 bytes. Gives False, writing nothing,
+    when the code would not save space or its weights do not fit the 4-bit form, which needs
+    every literal below 129."""
+    counts = Array.zeros(256, int)
+    largest = 0
+    distinct = 0
+    for i in range(stop):
+        symbol = int(literals[i])
+        if counts[symbol] == 0:
+            distinct += 1
+        counts[symbol] += 1
+        if symbol > largest:
+            largest = symbol
+    if largest > 128 or distinct < 2 or stop < 64:
+        return False
+    lengths = _limited_lengths(counts, largest + 1, 11)
+    log = 0
+    for symbol in range(largest + 1):
+        if int(lengths[symbol]) > log:
+            log = int(lengths[symbol])
+    bits = 0
+    for symbol in range(largest + 1):
+        bits += counts[symbol] * int(lengths[symbol])
+    tree_bytes = 1 + (largest + 1) // 2
+    streams = 1 if stop <= 1023 else 4
+    estimate = tree_bytes + bits // 8 + 4 * streams + (3 if streams == 1 else 9)
+    if estimate >= stop:
+        return False
+    weights = Array.zeros(largest + 1, int)
+    for symbol in range(largest + 1):
+        if lengths[symbol] > 0:
+            weights[symbol] = log + 1 - int(lengths[symbol])
+    # Codes in the decoder's order: by weight, then by symbol, each weight's codes after the
+    # lighter ones', as `_huffman_read` lays out its table.
+    codes = Array.zeros(largest + 1, int)
+    start = 0
+    for weight in range(1, log + 1):
+        for symbol in range(largest + 1):
+            if weights[symbol] == weight:
+                codes[symbol] = start >> (weight - 1)
+                start += 1 << (weight - 1)
+    body = _Writer(Array.zeros(stop // 2 + 64, u8), 0, 0, 0)
+    body_sizes = Array.zeros(4, int)
+    share = (stop + 3) // 4
+    for k in range(streams):
+        first = 0 if streams == 1 else min(stop, share * k)
+        last = stop if streams == 1 else min(stop, share * (k + 1))
+        before = body.length
+        for i in range(last - 1, first - 1, -1):
+            symbol = int(literals[i])
+            _put(body, codes[symbol], int(lengths[symbol]))
+        _put(body, 1, 1)
+        _align(body)
+        body_sizes[k] = body.length - before
+    compressed = tree_bytes + body.length + (6 if streams == 4 else 0)
+    if compressed >= stop or (streams == 4 and (body_sizes[0] > 65535 or body_sizes[1] > 65535 or body_sizes[2] > 65535)):
+        return False
+    form = 0
+    header_bytes = 3
+    field = 10
+    if streams == 4:
+        form = 1
+        if stop >= 1024 or compressed >= 1024:
+            form = 2
+            header_bytes = 4
+            field = 14
+        if stop >= 16384 or compressed >= 16384:
+            form = 3
+            header_bytes = 5
+            field = 18
+    header = 2 | (form << 2) | (stop << 4) | (compressed << (4 + field))
+    for i in range(header_bytes):
+        _put(writer, (header >> (8 * i)) & 255, 8)
+    _put(writer, 127 + largest, 8)
+    for i in range(0, largest, 2):
+        high = weights[i]
+        low = weights[i + 1] if i + 1 < largest else 0
+        _put(writer, (high << 4) | low, 8)
+    if streams == 4:
+        for k in range(3):
+            _put(writer, body_sizes[k], 16)
+    for i in range(body.length):
+        _put(writer, int(body.data[i]), 8)
+    return True
+
+
+def _zstd_block(
+    writer: InOut[_Writer],
+    data: Array[u8, 1],
+    start: int,
+    stop: int,
+    last: bool,
+    heads: InOut[Array[i32, 1]],
+    links: InOut[Array[i32, 1]],
+    repeats: InOut[Array[int, 1]],
+    tries: int,
+):
+    """Compresses `data[start:stop]`, at most 128 KiB, as one block: matches of 4 bytes or more
+    found on 16-step hash chains across everything before it, up to 1 MiB back, or at the last
+    offset, which costs fewer bits (`repeats` mirrors the decoder's repeated offsets), the literals
+    Huffman-coded where that pays, and the block stored raw, or as one repeated byte, when
+    that is smaller. `tries` is how many links of a chain to follow, as the level sets it;
+    `links` holds a power-of-two number of entries, enough for every position."""
+    literals = Array.zeros(stop - start, u8)
+    literal_count = 0
+    capacity = (stop - start) // 4 + 1
+    sequences = _Sequences(Array.zeros(capacity, i32), Array.zeros(capacity, i32), Array.zeros(capacity, i32), 0)
+    position = start
+    anchor = start
+    while position + 4 <= stop:
+        word = _word(data, position, 4, False)
+        hash = _multiply32(word, 0x9E3779B1) >> 15
+        candidate = int(heads[hash]) - 1
+        links[position & (len(links) - 1)] = heads[hash]
+        heads[hash] = i32(position + 1)
+        best = 0
+        distance = 0
+        left = tries
+        while candidate >= 0 and position - candidate <= 1048575 and left > 0:
+            if _word(data, candidate, 4, False) == word:
+                length = 4
+                while position + length < stop and data[candidate + length] == data[position + length]:
+                    length += 1
+                if length > best:
+                    best = length
+                    distance = position - candidate
+            following = int(links[candidate & (len(links) - 1)]) - 1
+            if following >= candidate:
+                break
+            candidate = following
+            left -= 1
+        value = distance + 3
+        last_offset = repeats[0]
+        if position > anchor and position - last_offset >= 0:
+            length = 0
+            while position + length < stop and data[position - last_offset + length] == data[position + length]:
+                length += 1
+            if length >= 4 and length + 1 >= best:
+                best = length
+                distance = last_offset
+                value = 1
+        if best >= 4:
+            if value != 1:
+                repeats[2] = repeats[1]
+                repeats[1] = repeats[0]
+                repeats[0] = distance
+            for i in range(anchor, position):
+                literals[literal_count] = data[i]
+                literal_count += 1
+            index = sequences.count
+            sequences.literal_lengths[index] = i32(position - anchor)
+            sequences.match_lengths[index] = i32(best)
+            sequences.offsets[index] = i32(value)
+            sequences.count += 1
+            stop_insert = min(position + best, stop - 3)
+            for inserted in range(position + 1, stop_insert):
+                inserted_hash = _multiply32(_word(data, inserted, 4, False), 0x9E3779B1) >> 15
+                links[inserted & (len(links) - 1)] = heads[inserted_hash]
+                heads[inserted_hash] = i32(inserted + 1)
+            position += best
+            anchor = position
+        else:
+            position += 1
+    for i in range(anchor, stop):
+        literals[literal_count] = data[i]
+        literal_count += 1
+    size = stop - start
+    same = True
+    for i in range(start + 1, stop):
+        if data[i] != data[start]:
+            same = False
+            break
+    final = 1 if last else 0
+    if same and size > 0:
+        _put(writer, final | 2 | ((size & 31) << 3), 8)
+        _put(writer, size >> 5, 16)
+        _put(writer, int(data[start]), 8)
+        return
+    body = _Writer(Array.zeros(size + 64, u8), 0, 0, 0)
+    if not _huffman_literals(body, literals, literal_count):
+        _literals_header(body, 0, literal_count)
+        for i in range(literal_count):
+            _put(body, int(literals[i]), 8)
+    _write_sequences(body, sequences)
+    if body.length >= size:
+        _put(writer, final | ((size & 31) << 3), 8)
+        _put(writer, size >> 5, 16)
+        for i in range(start, stop):
+            _put(writer, int(data[i]), 8)
+        return
+    _put(writer, final | 4 | ((body.length & 31) << 3), 8)
+    _put(writer, body.length >> 5, 16)
+    for i in range(body.length):
+        _put(writer, int(body.data[i]), 8)
+
+
+def _zstd(data: Array[u8, 1], writer: InOut[_Writer], tries: int):
+    """Compresses `data` as one Zstandard frame (RFC 8878): a frame header with the content
+    size, 128 KiB blocks, and the XXH64 content checksum. Data of 1 MiB or less is one
+    segment, whose window is the whole content; larger data names a 1 MiB window, the farthest
+    the matches reach, so a decoder needs only that much memory."""
+    n = len(data)
+    _put(writer, 0xFD2FB528 & 65535, 16)
+    _put(writer, 0xFD2FB528 >> 16, 16)
+    if n > 1048576:
+        _put(writer, 192 | 4, 8)
+        _put(writer, (20 - 10) << 3, 8)
+        for i in range(4):
+            _put(writer, (n >> (16 * i)) & 65535, 16)
+    elif n < 256:
+        _put(writer, 32 | 4, 8)
+        _put(writer, n, 8)
+    elif n < 65536 + 256:
+        _put(writer, 64 | 32 | 4, 8)
+        _put(writer, n - 256, 16)
+    elif n <= 0xFFFFFFFF:
+        _put(writer, 128 | 32 | 4, 8)
+        _put(writer, n & 65535, 16)
+        _put(writer, n >> 16, 16)
+    else:
+        _put(writer, 192 | 32 | 4, 8)
+        for i in range(4):
+            _put(writer, (n >> (16 * i)) & 65535, 16)
+    heads = Array.zeros(131072, i32)
+    size = 1
+    while size < min(n, 1048576):
+        size *= 2
+    links = Array.zeros(size, i32)
+    repeats = Array.zeros(3, int)
+    repeats[0] = 1
+    repeats[1] = 4
+    repeats[2] = 8
+    if n == 0:
+        _put(writer, 1, 8)
+        _put(writer, 0, 16)
+    start = 0
+    while start < n:
+        stop = min(start + 131072, n)
+        _zstd_block(writer, data, start, stop, stop == n, heads, links, repeats, tries)
+        start = stop
+    checksum = int(_xxh64(data, 0, n) & u64(0xFFFFFFFF))
+    _put(writer, checksum & 65535, 16)
+    _put(writer, checksum >> 16, 16)

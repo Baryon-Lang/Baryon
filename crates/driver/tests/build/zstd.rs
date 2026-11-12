@@ -110,3 +110,55 @@ fn the_reference_s_zstd_example_runs() {
         "11600 bytes, CRC-32 1019181682\n"
     );
 }
+
+/// `compression.zstd.compress` writes frames that `decompress` reads back to the table at each
+/// level, from a negative level to 19, and to nothing from empty input; the sizes are Baryon's
+/// own (decision 0049). Python 3.14's `compression.zstd.decompress` reads every one of these
+/// frames back to the table (checked when the test was written; the tests do not run Python).
+/// A level outside -131072 to 22 raises `ValueError` with Python's message.
+#[test]
+fn frames_are_compressed_at_every_level() {
+    let program = "\
+from compression import zstd
+
+
+def same(data: Array[u8, 1], text: Array[u8, 1]) -> bool:
+    if len(data) != len(text):
+        return False
+    for i in range(len(text)):
+        if data[i] != text[i]:
+            return False
+    return True
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    text = Array.fromfile(\"text.txt\", u8)
+    for level in [-5, 1, 3, 9, 19]:
+        frame = zstd.compress(text, level)
+        print(level, len(frame), same(zstd.decompress(frame), text))
+    many = Array.zeros(40 * len(text), u8)
+    for i in range(len(many)):
+        many[i] = text[i % len(text)]
+    print(len(zstd.compress(many)), same(zstd.decompress(zstd.compress(many)), many))
+    print(len(zstd.decompress(zstd.compress(Array.zeros(0, u8)))))
+    for level in [23, -131073]:
+        try:
+            zstd.compress(text, level)
+        except ValueError as error:
+            print(error.message)
+";
+    let (output, _) = run("zstd_compress", program).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "-5 4436 True\n\
+         1 4399 True\n\
+         3 4379 True\n\
+         9 4377 True\n\
+         19 4376 True\n\
+         4439 True\n\
+         0\n\
+         illegal compression level 23; the valid range is [-131072, 22]\n\
+         illegal compression level -131073; the valid range is [-131072, 22]\n"
+    );
+}

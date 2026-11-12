@@ -1,10 +1,19 @@
-"""How a `DataFrame` prints (decision 0045): the text pandas prints for the same frame.
+"""The parts of a `DataFrame` written in Baryon (decision 0045): choosing rows, and the
+text a frame prints as.
 
-The compiler calls these functions for `print(df)` and for a frame in an f-string. It formats
-each column with `float_cells`, `single_cells` or `cells`, by the type of the column's
-elements, then lays the columns out with `frame_text`. A program cannot import this file.
+The compiler calls these functions; a program cannot import this file. A frame's columns
+are known when compiling, so the compiler calls a function once for each column, with the
+column's element type as `T`.
 
-The rules are those of pandas 3 at its default options, on a screen 80 characters wide:
+Choosing rows, for `df[mask]`, `df[i:j]`, `df.head(n)` and `df.tail(n)`: `masked` keeps the
+elements of one column where a mask is true. For the others the positions of the rows are
+worked out once, by `slice_positions`, `head_positions` or `tail_positions`, and `taken`
+copies those elements of each column.
+
+Printing, for `print(df)` and a frame in an f-string: each column is formatted with
+`float_cells`, `single_cells` or `cells`, by the type of its elements, and `frame_text` lays
+the columns out. The rules are those of pandas 3 at its default options, on a screen 80
+characters wide:
 
 - A frame of more than 60 rows shows its first 5 and last 5, with a row of dots between.
 - Columns that do not fit in 80 characters are left out of the middle, with `...` in their
@@ -18,6 +27,55 @@ Only the rows shown are formatted, so printing costs the same for ten rows or te
 """
 
 from math import isinf, isnan
+
+
+def masked[T](column: Array[T, 1], mask: Array[bool, 1]) -> Array[T, 1]:
+    """The elements of `column` where `mask` is true, as a new array. The compiler has
+    checked that the two have one length. Cost: two passes over `mask`."""
+    return column[mask]
+
+
+def taken[T](column: Array[T, 1], positions: Array[i64, 1]) -> Array[T, 1]:
+    """The elements of `column` at `positions`, in that order, as a new array."""
+    return column[positions]
+
+
+def slice_positions(
+    count: int, start: int, stop: int, step: int, starts: bool, stops: bool
+) -> Array[i64, 1]:
+    """The rows that the slice `start:stop:step` chooses from `count` rows, as Python
+    chooses them: a negative bound counts from the end, and a bound past either end stops
+    there. `starts` and `stops` say whether the slice gives each bound; a bound left out is
+    the end the slice walks from or to. `step` is not 0, which the compiler has checked.
+    """
+    low = 0
+    high = count
+    if step < 0:
+        low = -1
+        high = count - 1
+    first = low if step > 0 else high
+    last = high if step > 0 else low
+    if starts:
+        first = start + count if start < 0 else start
+        first = min(max(first, low), high)
+    if stops:
+        last = stop + count if stop < 0 else stop
+        last = min(max(last, low), high)
+    return Array([position for position in range(first, last, step)])
+
+
+def head_positions(count: int, rows: int) -> Array[i64, 1]:
+    """The first `rows` of `count` rows or, when `rows` is negative, all but the last
+    `-rows`, as pandas's `head` chooses them."""
+    return slice_positions(count, 0, rows, 1, False, True)
+
+
+def tail_positions(count: int, rows: int) -> Array[i64, 1]:
+    """The last `rows` of `count` rows or, when `rows` is negative, all but the first
+    `-rows`, as pandas's `tail` chooses them."""
+    if rows >= 0:
+        return slice_positions(count, max(count - rows, 0), 0, 1, True, False)
+    return slice_positions(count, min(-rows, count), 0, 1, True, False)
 
 
 def _shown(count: int) -> list[int]:
