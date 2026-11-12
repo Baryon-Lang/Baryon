@@ -303,7 +303,7 @@ fn attribute_line(owner: &str, attribute: &Attribute) -> String {
 /// `value` as Python's `repr` prints a `float`: the shortest text that reads back to it, with a
 /// `.0` on a whole number, an exponent of at least two digits and a sign, and `inf`, `-inf` and
 /// `nan` as Python spells them.
-fn python_float(value: f64) -> String {
+pub(crate) fn python_float(value: f64) -> String {
     if value.is_nan() {
         return "nan".to_owned();
     }
