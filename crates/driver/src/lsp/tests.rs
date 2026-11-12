@@ -421,7 +421,7 @@ fn rename_edits_every_use_or_says_why_not() {
             &json!({
                 "textDocument": {"uri": uri},
                 "position": {"line": line, "character": character},
-                "newName": "sum",
+                "newName": "accumulated",
             }),
         )
     };
@@ -440,7 +440,7 @@ fn rename_edits_every_use_or_says_why_not() {
                 "start": {"line": line, "character": character},
                 "end": {"line": line, "character": character + 5},
             },
-            "newText": "sum",
+            "newText": "accumulated",
         })
     };
     assert_eq!(

@@ -249,7 +249,10 @@ is, shows inlay hints and renames, from the same checked package:
   defined at the top of a module everywhere the package names it, imports and `module.name`
   included. The resolver says what each name refers to, so a different thing with the same name
   is never touched. Parameters (a call may name one as a keyword argument), fields, methods,
-  enum members and modules cannot be renamed yet, and the editor says so.
+  enum members and modules cannot be renamed yet, and the editor says so. A new name that is
+  already taken where the rename reaches is refused too, since it would join two variables or
+  hide a builtin, an import or another definition: a builtin such as `print`, any name the
+  variable's function uses, or any name in a module the definition is defined or named in.
 
 Answers come from the parts of the file that parse and check, so code half typed still gets them
 where it can, and gets nothing rather than an error where it cannot. Fixes come later (roadmap
