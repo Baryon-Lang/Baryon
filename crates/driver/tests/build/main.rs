@@ -57,6 +57,7 @@ mod reductions;
 mod shapes;
 mod slices;
 mod sorting;
+mod spectral;
 mod statements;
 mod statistics;
 mod stats;
