@@ -48,3 +48,35 @@ def main():
     )
     .unwrap();
 }
+
+/// `math.fsum` of lists and rank-1 arrays, views included (roadmap 1.13.16): each sum is the
+/// exact sum rounded once, so it gives CPython's `math.fsum` bits where `sum` loses digits to
+/// cancellation, and infinities and NaN give their IEEE 754 sum where CPython raises.
+#[test]
+fn fsum_rounds_the_exact_sum_once() {
+    let program = "\
+import math
+from math import fsum, inf, nan
+
+
+def main():
+    tenths = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    print(fsum(tenths), sum(tenths) == 1.0, math.fsum([1e100, 1.0, -1e100, 1e-100, 1e50, -1.0, -1e50]))
+    print(fsum([1, 1e-16, 1e-16, 1e-16]), fsum([1e16, 1.0, 1e-16]), fsum([]), fsum([-0.0, -0.0]))
+    a = Array([1.0, 2.0, 3.0, 4.0, 5.0])
+    table = Array.zeros((2, 2))
+    table[1, 0] = 0.5
+    table[1, 1] = 1e-20
+    print(fsum(a), fsum(a[::2]), fsum(table[1, :]), fsum(Array([2.0 ** 53, 1.0, 1.0])))
+    print(fsum([inf, 1.0]), fsum([inf, -inf]), fsum([nan, 1.0]), fsum([1e308, 1e308, -1e308]))
+";
+    prints(
+        "math-fsum",
+        program,
+        "1.0 True 1e-100\n\
+         1.0000000000000002 1.0000000000000002e+16 0.0 0.0\n\
+         15.0 9.0 0.5 9007199254740994.0\n\
+         inf nan nan inf\n",
+    )
+    .unwrap();
+}
