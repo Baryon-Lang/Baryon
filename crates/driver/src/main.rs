@@ -202,7 +202,7 @@ fn check(root: &Path) -> Result<ExitCode, String> {
 fn build(root: &Path, output: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String> {
     let files = match compile(root, output, profile, timings, |session, directory| {
         session
-            .compile_parts(directory, profile, cores())
+            .compile_parts(directory, profile, parts(profile))
             .map(|modules| (modules, Vec::new()))
     })? {
         Ok((files, _)) => files,
@@ -232,7 +232,7 @@ fn run(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String>
     let program = scratch.join("program");
     let built = compile(root, &program, profile, timings, |session, directory| {
         session
-            .compile_parts(directory, profile, cores())
+            .compile_parts(directory, profile, parts(profile))
             .map(|modules| (modules, Vec::new()))
     });
     let ran = built.and_then(|built| match built {
@@ -262,7 +262,7 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("tests");
     let built = compile(root, &program, profile, timings, |session, directory| {
-        session.compile_tests_parts(directory, profile, cores())
+        session.compile_tests_parts(directory, profile, parts(profile))
     });
     let ran = built.and_then(|built| match built {
         Ok((_, tests)) => runner::run(&program, &tests, &mut io::stdout().lock()),
@@ -324,10 +324,18 @@ fn compile(
     Ok(Ok((files, tests)))
 }
 
-/// How many LLVM modules to split a program into: one per core the operating system lets this
-/// process use, so each gets a `clang` of its own (roadmap 2.6), or one when that is unknown.
-fn cores() -> usize {
-    std::thread::available_parallelism().map_or(1, usize::from)
+/// How many LLVM modules to split a program built for `profile` into (roadmap 2.6).
+///
+/// A debug build gets one per core the operating system lets this process use, so each gets a
+/// `clang` of its own, or one when that is unknown. A release build stays one module: `clang`
+/// never inlines a call into another module, and at `-O2` a small function called from a hot
+/// loop in another part would run slower, a cost no benchmark measures yet. At `-O0` nothing
+/// is inlined, so splitting a debug build costs nothing.
+fn parts(profile: Profile) -> usize {
+    match profile {
+        Profile::Debug => std::thread::available_parallelism().map_or(1, usize::from),
+        Profile::Release => 1,
+    }
 }
 
 /// Runs `baryon doc` on the package rooted at `root`, writing its pages into `output`.
