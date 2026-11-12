@@ -1,6 +1,6 @@
 # 0047. NetCDF classic files are read and written with netCDF4's names
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-12
 Roadmap: 3.14.5
 
