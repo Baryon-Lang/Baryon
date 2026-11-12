@@ -24,24 +24,23 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when `zlib.decompress`, `zlib.crc32` and
-`zlib.adler32`, and before them scatter plots, bars, histograms, legends
-and grid lines, and before them comparisons of arrays and `a[mask]`, and before them line plots
-with `pyplot` and `ticker`, saved as SVG, and before them slices of a NetCDF variable,
-`var[0, :, ::2]` read and written, and before them writing NetCDF classic files,
-`Dataset(path, "w", format=...)`, `createDimension`, `createVariable`, `setncattr` and
-`var[:] = values`, and before them reading NetCDF classic files, `netCDF4.Dataset`, its
-variables, dimensions and attributes, and `AttributeError`, and before them
-FITS images and headers, `fits.getdata`, `fits.getheader`, `fits.writeto` and `KeyError`, and
-before them, on 2026-11-11,
-the standard streams, `print(..., file=)` and `input`, `.npy` files, `Array.load` and
-`Array.save`, `linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables, `Array.loadtxt`
-and `Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`,
+This page was last brought up to date on 2026-11-12, when `zlib.compress`, and before it
+`zlib.decompress`, `zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars,
+histograms, legends and grid lines, and before them comparisons of arrays and `a[mask]`, and before
+them line plots with `pyplot` and `ticker`, saved as SVG, and before them slices of a NetCDF
+variable, `var[0, :, ::2]` read and written, and before them writing NetCDF classic files,
+`Dataset(path, "w", format=...)`, `createDimension`, `createVariable`, `setncattr` and `var[:] =
+values`, and before them reading NetCDF classic files, `netCDF4.Dataset`, its variables, dimensions
+and attributes, and `AttributeError`, and before them FITS images and headers, `fits.getdata`,
+`fits.getheader`, `fits.writeto` and `KeyError`, and before them, on 2026-11-11, the standard
+streams, `print(..., file=)` and `input`, `.npy` files, `Array.load` and `Array.save`,
+`linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables, `Array.loadtxt` and
+`Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`,
 `lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files, `Array.fromfile` and
 `a.tofile`, and before them `for line in f` over a text file, `int(text)` and `float(text)`, began
-to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
-`with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
-`sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches lowering or the backend something new
+to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and `with open(...) as
+f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them, `sys.argv`, `sys.exit` and
+`os.getenv` began to build. Every pull request that teaches lowering or the backend something new
 updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
@@ -188,7 +187,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32) | `zlib.compress` (roadmap 3.27.2), `zlib.decompressobj` and `compressobj`, preset dictionaries; the `gzip`, `bz2`, `lzma` and `compression.zstd` modules (3.27.3 to 3.27.10) |
+| [`zlib.compress`](compression.md#zlibcompress) at every level and in each container; [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32) | `zlib.decompressobj` and `compressobj`, preset dictionaries; the `gzip`, `bz2`, `lzma` and `compression.zstd` modules (3.27.3 to 3.27.10) |
 
 ## Tests
 

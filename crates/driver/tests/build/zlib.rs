@@ -1,5 +1,6 @@
-//! The `zlib` module (roadmap 3.27.1, decision 0049), built and run: `zlib.decompress` reads
-//! the streams Python's `zlib` and `gzip` wrote, in every container `wbits` names, `crc32` and
+//! The `zlib` module (roadmap 3.27.1 and 3.27.2, decision 0049), built and run:
+//! `zlib.decompress` reads the streams Python's `zlib` and `gzip` wrote, in every container
+//! `wbits` names, `zlib.compress` writes streams it reads back at every level, `crc32` and
 //! `adler32` give Python's checksums, and a corrupt stream raises `OSError` with the kind
 //! `INVALID_DATA` and the message Python's `zlib.error` carries.
 //!
@@ -149,5 +150,61 @@ fn the_reference_example_runs() {
     assert_eq!(
         fs::read(directory.join("table.txt")).unwrap(),
         fs::read(directory.join("text.txt")).unwrap()
+    );
+}
+
+/// A program compresses `text.txt` at every level and in each container and decompresses each
+/// stream back to the text. The sizes are within a byte of Python's `zlib.compress` for the
+/// same calls (levels 1 and 3 differ by one), and Python's `zlib.decompress` reads every one of these streams back to the text (checked
+/// when the test was written; the tests do not run Python). A level or `wbits` Python rejects
+/// raises its message.
+#[test]
+fn streams_are_compressed_at_every_level() {
+    let program = "\
+from zlib import compress, decompress
+
+
+def main() -> Raises[None, OSError]:
+    text = Array.fromfile(\"text.txt\", u8)
+    for level in [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]:
+        stream = compress(text, level)
+        back = decompress(stream)
+        same = len(back) == len(text)
+        for i in range(len(text)):
+            if back[i] != text[i]:
+                same = False
+        print(level, len(stream), same)
+    for wbits in [9, -15, 31]:
+        stream = compress(text, wbits=wbits)
+        print(wbits, len(stream), len(decompress(stream, wbits)))
+    print(len(compress(Array.zeros(0, u8))), len(decompress(compress(Array.zeros(0, u8)))))
+    for level, wbits in [(10, 15), (6, 7), (6, 16)]:
+        try:
+            compress(text, level, wbits)
+        except OSError as error:
+            print(error.strerror)
+";
+    let (output, _) = run("zlib_compress", program).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "-1 4381 True\n\
+         0 11611 True\n\
+         1 4761 True\n\
+         2 4691 True\n\
+         3 4596 True\n\
+         4 4474 True\n\
+         5 4383 True\n\
+         6 4381 True\n\
+         7 4378 True\n\
+         8 4378 True\n\
+         9 4378 True\n\
+         9 3712 11600\n\
+         -15 4375 11600\n\
+         31 4393 11600\n\
+         8 0\n\
+         Bad compression level\n\
+         Bad compression level\n\
+         Bad compression level\n"
     );
 }
