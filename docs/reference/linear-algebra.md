@@ -322,14 +322,14 @@ Differences from NumPy: `fft` and `ifft` take a `complex128` array, so real samp
 def fft2(x: Array[complex128, 2]) -> Array[complex128, 2]: ...
 def ifft2(x: Array[complex128, 2]) -> Array[complex128, 2]: ...
 def rfft2(x: Array[f64, 2]) -> Array[complex128, 2]: ...
-def irfft2(x: Array[complex128, 2], n: int | None = None) -> Array[f64, 2]: ...
+def irfft2(x: Array[complex128, 2], s: tuple[int, int] | None = None) -> Array[f64, 2]: ...
 ```
 
 The transforms of a matrix, such as an image or a field on a grid, with NumPy's names and
 scaling. `fft2(x)` is `fft` of each row, then of each column of the result; `ifft2` inverts it,
 divided by the number of entries. `rfft2(x)` transforms a real m × n array and keeps n // 2 + 1
-columns, the rest being complex conjugates; `irfft2(x, n)` turns it back into n real columns,
-with `n` defaulting to 2 * (columns - 1) as for `irfft`. Each side can have any length, a power
+columns, the rest being complex conjugates; `irfft2(x, s)` turns it back into a real array of
+shape `s`, which defaults to `x`'s rows and 2 * (columns - 1) columns, as for `irfft`. Each side can have any length, a power
 of two being the cheapest; an m × n transform costs about m n (log m + log n) operations.
 
 ```python
@@ -361,7 +361,6 @@ prints
 0.0
 ```
 
-Differences from NumPy: `irfft2` takes the number of columns `n`, where NumPy takes the shape
-`s=(m, n)`; the number of rows is always `x`'s. There is no `axes` argument. `fftn` and `ifftn`,
+Differences from NumPy: no `axes` or `norm` argument. `fftn` and `ifftn`,
 for any number of dimensions, wait for functions that take an array of any rank (idea I.51).
 

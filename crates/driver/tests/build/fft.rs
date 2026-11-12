@@ -74,8 +74,8 @@ def main():
 
 /// `fft2` and `ifft2` of a 4 × 8 array, all powers of two, of a 3 × 5 array through Bluestein's
 /// algorithm, and of a 1 × 1 array; `rfft2` of a 3 × 6 real array and `irfft2` back; and
-/// `irfft2` of a 2 × 5 array, an odd number of columns, with `n` given. `NumPy` prints the
-/// same lines, with `irfft2(x, s=(2, 5))` for the last, for
+/// `irfft2` of a 2 × 5 array, an odd number of columns, with the shape `s` given, then with
+/// `s=(3, 4)`, which pads the rows and cuts the columns. `NumPy` prints the same lines for
 ///
 /// ```python
 /// g = numpy.random.Generator(numpy.random.Philox(key=11))
@@ -120,7 +120,8 @@ def main():
     for i in range(2):
         for j in range(5):
             odd[i, j] = generator.uniform()
-    print(irfft2(rfft2(odd), 5))
+    print(irfft2(rfft2(odd), (2, 5)))
+    print(irfft2(rfft2(odd), s=(3, 4)))
 "#;
     prints("fft-two-dimensional", program.trim_start(), "-1.88165196849,0.0318715395787 -1.20969243951,1.02843046161 0.436953288163,-0.840587540199 -0.785998645853,0.848626029537 1.30581033996,-1.15095985177 -0.0244262145824,-0.492588098182 -2.3672858969,2.45199867094 0.412669801643,2.17720873184 \n\
          -1.0109879839,-0.744877573873 -1.52526157184,-2.21586646582 -2.04835254647,-0.745604770495 0.109513626998,-0.357032710629 -1.94000943478,1.1837605562 -0.336287215838,-2.00391567523 0.429188018697,-0.851154760284 -1.04503338338,1.43112582876 \n\
@@ -145,7 +146,10 @@ def main():
          \u{20}[0.28583719 0.77020339 0.47211764 0.84221627 0.59196807 0.29779837]\n\
          \u{20}[0.61613046 0.98997388 0.35930895 0.24547275 0.54431625 0.92514109]]\n\
          [[0.55900552 0.33677131 0.87270777 0.86101086 0.66833005]\n\
-         \u{20}[0.0369576  0.52285086 0.7634266  0.20574513 0.86014111]]\n").unwrap();
+         \u{20}[0.0369576  0.52285086 0.7634266  0.20574513 0.86014111]]\n\
+         [[0.41890294 0.39988398 0.77424221 0.6055212 ]\n\
+         \u{20}[0.21780959 0.49123037 0.55758835 0.47756992]\n\
+         \u{20}[0.23344284 0.50510334 0.39108451 0.61456754]]\n").unwrap();
 }
 
 /// The worked example of the `fft` section in the reference's Linear algebra and FFT chapter,

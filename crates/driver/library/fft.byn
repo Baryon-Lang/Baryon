@@ -151,17 +151,23 @@ def rfft2(x: Array[f64, 2]) -> Array[complex128, 2]:
     return half
 
 
-def irfft2(x: Array[complex128, 2], n: int | None = None) -> Array[f64, 2]:
-    """The real m × n array whose `rfft2` is `x`, as `numpy.fft.irfft2(x, s=(m, n))` with m the
-    number of rows of `x`: `ifft` of each column, then `irfft` of each row. `n` defaults to
-    2 * (columns - 1), as for `irfft`; give it for an odd number of columns.
+def irfft2(x: Array[complex128, 2], s: tuple[int, int] | None = None) -> Array[f64, 2]:
+    """The real m × n array whose `rfft2` is `x`, as `numpy.fft.irfft2(x, s)`: `ifft` of each
+    column, then `irfft` of each row. `s` is the shape `(m, n)`; it defaults to `x`'s number of
+    rows and 2 * (columns - 1), as for `irfft`, so give it for an odd number of columns. Rows of
+    `x` past m are ignored and missing ones count as zero, as in NumPy. Panics when m is less
+    than 1 or n is less than 1.
     """
     rows = x.shape[0]
-    work = x.copy()
-    _columns(work, 1.0)
     length = 2 * (x.shape[1] - 1)
-    if n is not None:
-        length = n
+    if s is not None:
+        rows, length = s
+    assert rows >= 1, "irfft2 needs at least one row"
+    work = Array.zeros((rows, x.shape[1]), complex128)
+    for i in range(min(rows, x.shape[0])):
+        for k in range(x.shape[1]):
+            work[i, k] = x[i, k]
+    _columns(work, 1.0)
     result = Array.zeros((rows, length))
     scale = 1.0 / rows
     for i in range(rows):
