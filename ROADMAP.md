@@ -247,7 +247,7 @@ the astronomy library (4.2), has its own plan in the
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3.17 | Python interop with zero-copy arrays, after Phase 3's native libraries: Baryon's own capability comes first and interop is not a way to wrap Baryon in Python (Collins, 2026-11-10) | 3 | 1.10, 3.10, 3.13, 3.14, 3.15, 3.16 | Planned | — | — |
+| 3.17 | Python interop with zero-copy arrays, for Python libraries that will never be rewritten. Comes late, after the native stack: Phase 2's faster compiling, the native numeric, data and plotting libraries, the base libraries and AstroBaryon. Native Baryon covers most work, and interop is never a way to wrap Baryon in Python (Collins, 2026-11-10 and 2026-11-12) | 3 | 2.3, 3.10, 3.13, 3.14, 3.15, 3.16, 3.18, 3.19, 3.20, 3.21, 3.22, 3.23, 3.26, 3.27, 3.28, 3.29, 3.30, 4.2 | Planned | — | [#PRNUM](https://github.com/Baryon-Lang/Baryon/pull/PRNUM) |
 | 4.1 | C++ interop: header import, templates by instantiation, exceptions at the boundary | 12+ | 3.5 | Planned | — | — |
 | 4.2 | AstroBaryon, the astronomy library: AstroPy's capability designed natively from the astronomy standards, not by translating AstroPy's Python (D.23 decides where it lives). Tested against reference data recorded from AstroPy, and documented so that moving from AstroPy is easy: no sub-row is `Done` without its reference documentation, transition guide entries, worked example and validation. The [AstroBaryon roadmap](docs/design/astrobaryon-roadmap.md) gives the scope, build order, prerequisites and documentation rules. The study behind it estimates 22 to 28 person-years once the Phase 3 libraries exist (Collins, 2026-11-10) | 1120 | 3.31, 3.32, D.23, D.24 | Planned | — | — |
 | 4.2.1 | Reference data: run AstroPy's tests and examples, and record their inputs and outputs as data files the Baryon library is checked against, since AstroPy's tests are written against its Python API | 90 | — | Planned | — | — |
@@ -286,8 +286,8 @@ the next time-based release.
 Every release up to 1.0 puts working functionality for users first: a feature someone needs to
 write, run or ship a real program comes before internal rework (Collins, 2026-11-10). Baryon
 stands on its own: its libraries are written in Baryon and grow alongside it, so Python
-interoperability comes in a later phase, after native language capability and native libraries,
-never as a way to wrap Baryon in Python. A self-hosted compiler stays a non-goal, as the
+interoperability comes late, after native language capability and native libraries, never as a
+way to wrap Baryon in Python. A self-hosted compiler stays a non-goal, as the
 [design plan](docs/design/language-design-plan.md) says.
 
 After the real-data checkpoint (R.3), native capability comes before compile speed (Collins, 2026-11-10): speed of the
@@ -299,9 +299,9 @@ missing values, record and date arrays, regular expressions, compression, XML, s
 networking, ERFA and world coordinate systems; ERFA (3.31) can start early, since it needs little
 beyond what builds today. AstroBaryon, the native astronomy library (4.2), builds on them
 (Collins, 2026-11-10). Phase 2's faster compiling follows, unless compile times start to slow
-users down first. Python interop (3.17) comes only after as many native libraries as can be
-built: Baryon should be a native language before it needs wrappers from other languages
-(Collins, 2026-11-10).
+users down first. Python interop (3.17) comes last, well after all of these: native Baryon is how
+most work gets done, and interop is only for Python libraries that will never be rewritten
+(Collins, 2026-11-10 and 2026-11-12).
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |

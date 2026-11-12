@@ -303,8 +303,10 @@ tooling on top of the language, which is why it can follow the MVP without reope
 - **Interactive use**: a REPL on the Cranelift backend that keeps live values, and a Jupyter kernel
   on top of it (roadmap 3.11, 3.12). Without it the analytics half is not credible.
 - **Python interop** (roadmap 3.17, Phase 4): call Python libraries that will never be rewritten,
-  and exchange arrays with zero copy. Idea [I.5](../../ROADMAP.md#ideas) proposes exporting
-  functions to Python earlier, in Phase 2.
+  and exchange arrays with zero copy. It comes late, after Phase 2 and the native libraries:
+  native Baryon is how most work gets done (Collins, 2026-11-12). Idea
+  [I.5](../../ROADMAP.md#ideas), exporting functions to Python in Phase 2, was dropped for the
+  same reason.
 
 Two MVP choices protect this: array layout and strides are a stable part of the array types, so
 NumPy and Arrow buffers can be viewed without copying, and `None` on a value type is a real
