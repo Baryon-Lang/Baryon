@@ -96,7 +96,9 @@ dashes.
 
 Each axis shows the finite data with a margin of 5% of its spread on each side, as matplotlib's
 default, until `set_xlim` or `set_ylim` fixes it. With no data an axis shows 0 to 1, and a line
-whose values are all equal is widened by 5% of its value.
+whose values are all equal is widened by 5% of its value. Fixed limits too close to tell apart
+are widened by 5% each way, as matplotlib widens them, and a NaN or infinite limit panics with
+matplotlib's message, `Axis limits cannot be NaN or Inf`.
 
 Ticks fall at multiples of a step of 1, 2, 2.5 or 5 times a power of ten, chosen so at most 9
 intervals fit, which is what matplotlib's `AutoLocator` chooses at the default figure size. Their

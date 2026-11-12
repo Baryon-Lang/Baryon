@@ -162,3 +162,54 @@ def main():
         panic_report(&ran)
     );
 }
+
+/// Equal limits are widened by 5% each way, as matplotlib's `set_xlim` widens them, so the
+/// file holds only finite coordinates and the ticks from 0.96 to 1.04 that matplotlib draws.
+#[test]
+fn equal_limits_are_widened() {
+    let program = "\
+import pyplot as plt
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    ax = plt.axes()
+    ax.plot(Array([0.0, 1.0]), Array([0.0, 1.0]))
+    ax.set_xlim(1.0, 1.0)
+    ax.set_ylim(0.0, 0.0)
+    ax.savefig(\"equal.svg\")
+    with open(\"equal.svg\") as f:
+        text = f.read()
+    print(\"nan\" in text, \"inf\" in text, \">0.96<\" in text, \">1.04<\" in text)
+    print(\">−0.04<\" in text, \">0.04<\" in text)
+";
+    let (ran, _directory) = run("plotting-equal-limits", program).unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "False False True True\nTrue True\n"
+    );
+}
+
+/// A NaN or infinite limit panics at `set_xlim` or `set_ylim`, with matplotlib's message,
+/// rather than deep inside `savefig`.
+#[test]
+fn limits_that_are_not_finite_panic() {
+    let program = "\
+import pyplot as plt
+
+
+def main():
+    ax = plt.axes()
+    ax.set_ylim(0.0 / 0.0, 2.0)
+";
+    let (ran, _directory) = run("plotting-nan-limits", program).unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert!(
+        panic_report(&ran).starts_with(
+            "panic: assertion failed: isfinite(bottom) and isfinite(top), \
+             \"Axis limits cannot be NaN or Inf\""
+        ),
+        "{}",
+        panic_report(&ran)
+    );
+}

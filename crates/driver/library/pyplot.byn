@@ -110,12 +110,19 @@ class Axes(Struct):
         self.ylabel = ylabel.copy()
 
     def set_xlim(self: InOut[Self], left: f64, right: f64) -> None:
-        """Shows x from `left` to `right`; `left` larger than `right` turns the axis around."""
-        self.xlim = (left, right)
+        """Shows x from `left` to `right`; `left` larger than `right` turns the axis around.
+        Limits too close to tell apart are widened by 5% each way, as matplotlib widens them,
+        so `set_xlim(1.0, 1.0)` shows 0.95 to 1.05.
+
+        Panics when a limit is NaN or infinite, where matplotlib raises `ValueError`."""
+        assert isfinite(left) and isfinite(right), "Axis limits cannot be NaN or Inf"
+        self.xlim = _limits(left, right)
 
     def set_ylim(self: InOut[Self], bottom: f64, top: f64) -> None:
-        """Shows y from `bottom` to `top`; `bottom` larger than `top` turns the axis around."""
-        self.ylim = (bottom, top)
+        """Shows y from `bottom` to `top`; `bottom` larger than `top` turns the axis around.
+        Widens limits and panics as `set_xlim` does."""
+        assert isfinite(bottom) and isfinite(top), "Axis limits cannot be NaN or Inf"
+        self.ylim = _limits(bottom, top)
 
     def savefig(self: Self, fname: str) -> Raises[None, OSError | ValueError]:
         """Writes a figure holding these axes to the file `fname`, as matplotlib's
@@ -246,6 +253,16 @@ def _expand(low: f64, high: f64, expander: f64, tiny: f64) -> tuple[f64, f64]:
         if high == 0.0 and low == 0.0:
             return (-expander, expander)
         return (low - expander * abs(low), high + expander * abs(high))
+    return (low, high)
+
+
+def _limits(first: f64, second: f64) -> tuple[f64, f64]:
+    """Fixed limits as matplotlib's `set_xlim` keeps them: put in order, widened by
+    `nonsingular` with an expander of 5% when too close to tell apart, then turned back round
+    if `first` was the larger."""
+    low, high = _expand(min(first, second), max(first, second), 0.05, 1e-15)
+    if first > second:
+        return (high, low)
     return (low, high)
 
 
