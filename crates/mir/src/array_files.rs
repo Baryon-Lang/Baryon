@@ -84,6 +84,28 @@ pub enum ArrayFile {
     /// file has no such variable, or one of another rank or that `T` cannot read. It costs one
     /// pass over the variable's values.
     NetcdfRead,
+    /// One change to a `NetCDF` classic file opened for writing, which the `netCDF4` module's
+    /// `Dataset(path, "w")`, `createDimension`, `createVariable` and `setncattr` make: two
+    /// arguments, the path and the change, each a `str`. The change is a line of a tag and
+    /// fields separated by tabs: `C` and the format's version, `1` or `2`, for a new empty file;
+    /// `D`, a dimension's name and its length, `0` for the unlimited one; `V`, a variable's
+    /// name, its type as `netCDF4` names it (`f4`) and its dimensions' names separated by
+    /// commas; `A`, an attribute's variable (empty for the file's own), its kind (`str`, `int`
+    /// or `float`), its name and its value. The destination is a new `list[str]`, the lines
+    /// that describe the file's header after the change, as [`Self::NetcdfOpen`] writes them,
+    /// so the library's `Dataset` stays in step with its file. The file is the only state: each
+    /// change reads it, writes it again and reads its header. The call fails with the kind
+    /// `INVALID_DATA` when the format refuses the change.
+    NetcdfDefine,
+    /// `ds.variables[name][:] = array` of the `netCDF4` module: three arguments, the path and
+    /// the variable's name, each a `str`, and the array, an `Array[T, rank]` borrowed, its `T` a
+    /// number type. The destination is `None`. The values become all of the variable's,
+    /// converted to its type and packed by `scale_factor` and `add_offset` as `netCDF4` packs
+    /// them; a record variable takes as many records as the array's first length. The call
+    /// fails with the kind `INVALID_DATA` when the file has no such variable, or the array's
+    /// rank or a fixed length differs from the variable's. It costs one pass over the values
+    /// and one read and write of the file.
+    NetcdfWrite,
 }
 
 impl ArrayFile {
@@ -99,6 +121,8 @@ impl ArrayFile {
     /// assert_eq!(mir::ArrayFile::FitsWrite.name(), "fits.writeto");
     /// assert_eq!(mir::ArrayFile::NetcdfOpen.name(), "netCDF4.Dataset");
     /// assert_eq!(mir::ArrayFile::NetcdfRead.name(), "netCDF4.Variable[:]");
+    /// assert_eq!(mir::ArrayFile::NetcdfDefine.name(), "netCDF4.define");
+    /// assert_eq!(mir::ArrayFile::NetcdfWrite.name(), "netCDF4.Variable[:] =");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -112,6 +136,8 @@ impl ArrayFile {
             Self::FitsWrite => "fits.writeto",
             Self::NetcdfOpen => "netCDF4.Dataset",
             Self::NetcdfRead => "netCDF4.Variable[:]",
+            Self::NetcdfDefine => "netCDF4.define",
+            Self::NetcdfWrite => "netCDF4.Variable[:] =",
         }
     }
 }
