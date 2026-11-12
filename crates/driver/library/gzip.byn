@@ -12,7 +12,9 @@ from os import ErrorKind
 import zlib
 
 
-def compress(data: Array[u8, 1], compresslevel: int = 9, mtime: int | None = None) -> Raises[Array[u8, 1], OSError]:
+def compress(
+    data: Array[u8, 1], compresslevel: int = 9, mtime: int | None = None
+) -> Raises[Array[u8, 1], OSError]:
     """`data` compressed as one gzip member, as `gzip.compress(data, compresslevel, mtime=mtime)`
     gives it, with no file name and the operating-system byte 255, "unknown", as Python writes.
 
@@ -87,7 +89,12 @@ def _header(data: Array[u8, 1]) -> Raises[int, OSError]:
     comment and header CRC are skipped, not checked. Raises `OSError` with Python's message for
     a header that is not gzip's, names another method or is cut short."""
     if len(data) < 2 or data[0] != 31 or data[1] != 139:
-        raise OSError(ErrorKind.INVALID_DATA, i32(0), "Not a gzipped file (" + _bytes_repr(data, min(2, len(data))) + ")", "")
+        raise OSError(
+            ErrorKind.INVALID_DATA,
+            i32(0),
+            "Not a gzipped file (" + _bytes_repr(data, min(2, len(data))) + ")",
+            "",
+        )
     if len(data) < 10:
         raise OSError(ErrorKind.INVALID_DATA, i32(0), _ended(), "")
     if data[2] != 8:
@@ -131,7 +138,10 @@ def _bytes_repr(data: Array[u8, 1], count: int) -> str:
         has_single = has_single or data[i] == 39
         has_double = has_double or data[i] == 34
     quote = '"' if has_single and not has_double else "'"
-    printable = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+    printable = (
+        " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        + "[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+    )
     text = "b" + quote
     for i in range(count):
         byte = int(data[i])

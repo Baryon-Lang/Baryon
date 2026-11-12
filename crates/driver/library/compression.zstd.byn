@@ -265,7 +265,9 @@ def _fse_from_counts(counts: Array[i32, 1], symbol_count: int, log: int) -> _Fse
     return _Fse(symbols, bits, bases, log)
 
 
-def _fse_read(data: Array[u8, 1], start: int, stop: int, max_symbols: int, max_log: int) -> tuple[_Fse, int]:
+def _fse_read(
+    data: Array[u8, 1], start: int, stop: int, max_symbols: int, max_log: int
+) -> tuple[_Fse, int]:
     """Reads an FSE table description (RFC 8878, section 4.1.1) from `data[start:stop]`, read
     forward, as zstd's `FSE_readNCount`. Gives the table and the position after the
     description, or a position of -1 for a corrupt one."""
@@ -341,18 +343,27 @@ def _fse_predefined(kind: int) -> _Fse:
     """The predefined table of RFC 8878, section 3.1.1.3.2.2: `kind` 0 for literal lengths,
     1 for offsets, 2 for match lengths."""
     if kind == 0:
-        values = [4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1]
+        values = [
+            4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1,
+            1, 1, 1, -1, -1, -1, -1,
+        ]
         counts = Array.zeros(36, i32)
         for i in range(36):
             counts[i] = i32(values[i])
         return _fse_from_counts(counts, 36, 6)
     if kind == 1:
-        values = [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1]
+        values = [
+            1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1,
+            -1,
+        ]
         counts = Array.zeros(29, i32)
         for i in range(29):
             counts[i] = i32(values[i])
         return _fse_from_counts(counts, 29, 5)
-    values = [1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1]
+    values = [
+        1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1,
+    ]
     counts = Array.zeros(53, i32)
     for i in range(53):
         counts[i] = i32(values[i])
@@ -398,7 +409,9 @@ def _huffman_read(data: Array[u8, 1], start: int, stop: int) -> tuple[_Huffman, 
             state = states[which]
             weights[count] = table.symbols[state]
             count += 1
-            states[which] = int(table.bases[state]) + _read_back(data, stream, int(table.bits[state]))
+            states[which] = int(table.bases[state]) + _read_back(
+                data, stream, int(table.bits[state])
+            )
             if stream.position < 0:
                 other = states[1 - which]
                 weights[count] = table.symbols[other]
@@ -494,7 +507,9 @@ def _literals(
         else:
             if start + 3 > stop:
                 return failed
-            size = (int(data[start]) >> 4) + (int(data[start + 1]) << 4) + (int(data[start + 2]) << 12)
+            size = (
+                (int(data[start]) >> 4) + (int(data[start + 1]) << 4) + (int(data[start + 2]) << 12)
+            )
             position += 3
         literals = Array.zeros(size, u8)
         if kind == 0:
@@ -544,7 +559,14 @@ def _literals(
             return failed
         last = min(size, share * (k + 1))
         if not _huffman_stream(
-            data, stream_start, stream_stop, state.huffman, literals, min(size, share * k), last, False
+            data,
+            stream_start,
+            stream_stop,
+            state.huffman,
+            literals,
+            min(size, share * k),
+            last,
+            False,
         ):
             return failed
         stream_start = stream_stop
@@ -556,7 +578,10 @@ def _code_values(kind: int) -> Array[i32, 1]:
     count of extra bits, from RFC 8878, section 3.1.1.3.2.1."""
     if kind == 0:
         values = Array.zeros(72, i32)
-        lengths = [16, 18, 20, 22, 24, 28, 32, 40, 48, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
+        lengths = [
+            16, 18, 20, 22, 24, 28, 32, 40, 48, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384,
+            32768, 65536,
+        ]
         extras = [1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         for code in range(36):
             if code < 16:
@@ -566,7 +591,10 @@ def _code_values(kind: int) -> Array[i32, 1]:
                 values[36 + code] = i32(extras[code - 16])
         return values
     values = Array.zeros(106, i32)
-    lengths = [35, 37, 39, 41, 43, 47, 51, 59, 67, 83, 99, 131, 259, 515, 1027, 2051, 4099, 8195, 16387, 32771, 65539]
+    lengths = [
+        35, 37, 39, 41, 43, 47, 51, 59, 67, 83, 99, 131, 259, 515, 1027, 2051, 4099, 8195, 16387,
+        32771, 65539,
+    ]
     extras = [1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     for code in range(53):
         if code < 32:
@@ -596,7 +624,10 @@ def _sequence_table(
         return _fse_read(data, position, stop, largest[kind] + 1, logs[kind])
     if previous.log < 0:
         return (_fse_rle(0), -1)
-    return (_Fse(previous.symbols.copy(), previous.bits.copy(), previous.bases.copy(), previous.log), position)
+    return (
+        _Fse(previous.symbols.copy(), previous.bits.copy(), previous.bases.copy(), previous.log),
+        position,
+    )
 
 
 def _sequences(
@@ -636,15 +667,21 @@ def _sequences(
         position += 1
         if modes & 3 != 0:
             return 26
-        literal_table, position = _sequence_table(data, position, stop, modes >> 6, 0, state.literal_lengths)
+        literal_table, position = _sequence_table(
+            data, position, stop, modes >> 6, 0, state.literal_lengths
+        )
         if position < 0:
             return 26
         state.literal_lengths = literal_table
-        offset_table, position = _sequence_table(data, position, stop, (modes >> 4) & 3, 1, state.offsets)
+        offset_table, position = _sequence_table(
+            data, position, stop, (modes >> 4) & 3, 1, state.offsets
+        )
         if position < 0:
             return 26
         state.offsets = offset_table
-        match_table, position = _sequence_table(data, position, stop, (modes >> 2) & 3, 2, state.match_lengths)
+        match_table, position = _sequence_table(
+            data, position, stop, (modes >> 2) & 3, 2, state.match_lengths
+        )
         if position < 0:
             return 26
         state.match_lengths = match_table
@@ -663,7 +700,9 @@ def _sequences(
             if offset_code > 31:
                 return 26
             offset_value = (1 << offset_code) + _read_back(data, stream, offset_code)
-            match_length = int(match_values[match_code]) + _read_back(data, stream, int(match_values[53 + match_code]))
+            match_length = int(match_values[match_code]) + _read_back(
+                data, stream, int(match_values[53 + match_code])
+            )
             literal_length = int(literal_values[literal_code]) + _read_back(
                 data, stream, int(literal_values[36 + literal_code])
             )
@@ -787,12 +826,30 @@ def _xxh64(data: Array[u8, 1], start: int, stop: int) -> u64:
         v3 = u64(0)
         v4 = _u64(0xFFFFFFFF, 0xFFFFFFFF) - prime1 + u64(1)
         while position + 32 <= stop:
-            v1 = _xxh64_round(v1, u64(_word(data, position, 4, False)) | (u64(_word(data, position + 4, 4, False)) << 32))
-            v2 = _xxh64_round(v2, u64(_word(data, position + 8, 4, False)) | (u64(_word(data, position + 12, 4, False)) << 32))
-            v3 = _xxh64_round(v3, u64(_word(data, position + 16, 4, False)) | (u64(_word(data, position + 20, 4, False)) << 32))
-            v4 = _xxh64_round(v4, u64(_word(data, position + 24, 4, False)) | (u64(_word(data, position + 28, 4, False)) << 32))
+            v1 = _xxh64_round(
+                v1,
+                u64(_word(data, position, 4, False))
+                | (u64(_word(data, position + 4, 4, False)) << 32),
+            )
+            v2 = _xxh64_round(
+                v2,
+                u64(_word(data, position + 8, 4, False))
+                | (u64(_word(data, position + 12, 4, False)) << 32),
+            )
+            v3 = _xxh64_round(
+                v3,
+                u64(_word(data, position + 16, 4, False))
+                | (u64(_word(data, position + 20, 4, False)) << 32),
+            )
+            v4 = _xxh64_round(
+                v4,
+                u64(_word(data, position + 24, 4, False))
+                | (u64(_word(data, position + 28, 4, False)) << 32),
+            )
             position += 32
-        hash = _add64(_add64(_rotate64(v1, 1), _rotate64(v2, 7)), _add64(_rotate64(v3, 12), _rotate64(v4, 18)))
+        hash = _add64(
+            _add64(_rotate64(v1, 1), _rotate64(v2, 7)), _add64(_rotate64(v3, 12), _rotate64(v4, 18))
+        )
         hash = _xxh64_merge(hash, v1)
         hash = _xxh64_merge(hash, v2)
         hash = _xxh64_merge(hash, v3)
@@ -801,7 +858,9 @@ def _xxh64(data: Array[u8, 1], start: int, stop: int) -> u64:
         hash = prime5
     hash = _add64(hash, u64(length))
     while position + 8 <= stop:
-        lane = u64(_word(data, position, 4, False)) | (u64(_word(data, position + 4, 4, False)) << 32)
+        lane = u64(_word(data, position, 4, False)) | (
+            u64(_word(data, position + 4, 4, False)) << 32
+        )
         hash = hash ^ _xxh64_round(u64(0), lane)
         hash = _add64(_multiply64(_rotate64(hash, 27), prime1), prime4)
         position += 8
@@ -825,7 +884,12 @@ def _zstd_state() -> _ZstdState:
     repeats[1] = 4
     repeats[2] = 8
     return _ZstdState(
-        _Huffman(Array.zeros(1, i32), Array.zeros(1, i32), 0), _fse_none(), _fse_none(), _fse_none(), repeats, False
+        _Huffman(Array.zeros(1, i32), Array.zeros(1, i32), 0),
+        _fse_none(),
+        _fse_none(),
+        _fse_none(),
+        repeats,
+        False,
     )
 
 
@@ -844,7 +908,9 @@ def _magic_start(data: Array[u8, 1], position: int) -> bool:
     for i in range(len(data) - position):
         byte = int(data[position + i])
         frame = frame and byte == [0x28, 0xB5, 0x2F, 0xFD][i]
-        skippable = skippable and (byte >> 4 == 5 if i == 0 else byte == [0x50, 0x2A, 0x4D, 0x18][i])
+        skippable = skippable and (
+            byte >> 4 == 5 if i == 0 else byte == [0x50, 0x2A, 0x4D, 0x18][i]
+        )
     return frame or skippable
 
 
@@ -887,7 +953,9 @@ def _unzstd(data: Array[u8, 1], output: InOut[_Output]) -> int:
             exponent = int(data[position]) >> 3
             if exponent > 17:
                 return 30
-            window = (1 << (10 + exponent)) + ((1 << (10 + exponent)) >> 3) * (int(data[position]) & 7)
+            window = (1 << (10 + exponent)) + ((1 << (10 + exponent)) >> 3) * (
+                int(data[position]) & 7
+            )
             position += 1
         dictionary_size = [0, 1, 2, 4][dictionary_flag]
         if position + dictionary_size > len(data):
@@ -950,7 +1018,10 @@ def _unzstd(data: Array[u8, 1], output: InOut[_Output]) -> int:
                     literals, after = _literals(data, position, position + size, state)
                     if after < 0:
                         return 26
-                    error = _sequences(data, after, position + size, literals, state, output, frame_start, window, limit)
+                    error = _sequences(
+                        data, after, position + size, literals, state, output, frame_start, window,
+                        limit,
+                    )
                     if error != 0:
                         return error
                 position += size
@@ -1090,7 +1161,9 @@ class _Sequences(Struct):
 
     literal_lengths: Array[i32, 1]
     match_lengths: Array[i32, 1]
-    offsets: Array[i32, 1]  # each sequence's Offset_Value: the offset plus 3, or 1 to repeat the last
+    offsets: Array[
+        i32, 1
+    ]  # each sequence's Offset_Value: the offset plus 3, or 1 to repeat the last
     count: int
 
 
@@ -1123,7 +1196,9 @@ def _match_code(length: int) -> int:
     return 36 + _highest_bit(length - 3)
 
 
-def _fse_encoder(counts: Array[i32, 1], symbol_count: int, log: int) -> tuple[Array[i32, 1], Array[int, 1], Array[int, 1]]:
+def _fse_encoder(
+    counts: Array[i32, 1], symbol_count: int, log: int
+) -> tuple[Array[i32, 1], Array[int, 1], Array[int, 1]]:
     """The FSE encoding tables for normalized counts, mirroring the decoding table's spread, as
     zstd's `FSE_buildCTable`: the state table, then each symbol's `deltaNbBits` and
     `deltaFindState`."""
@@ -1171,7 +1246,9 @@ def _fse_encoder(counts: Array[i32, 1], symbol_count: int, log: int) -> tuple[Ar
     return (states, delta_bits, delta_states)
 
 
-def _fse_start(states: Array[i32, 1], delta_bits: Array[int, 1], delta_states: Array[int, 1], symbol: int) -> int:
+def _fse_start(
+    states: Array[i32, 1], delta_bits: Array[int, 1], delta_states: Array[int, 1], symbol: int
+) -> int:
     """The encoder's state before the last symbol it encodes (the first the decoder reads), as
     zstd's `FSE_initCState2`."""
     out = (delta_bits[symbol] + (1 << 15)) >> 16
@@ -1180,7 +1257,12 @@ def _fse_start(states: Array[i32, 1], delta_bits: Array[int, 1], delta_states: A
 
 
 def _fse_encode(
-    writer: InOut[_Writer], state: int, states: Array[i32, 1], delta_bits: Array[int, 1], delta_states: Array[int, 1], symbol: int
+    writer: InOut[_Writer],
+    state: int,
+    states: Array[i32, 1],
+    delta_bits: Array[int, 1],
+    delta_states: Array[int, 1],
+    symbol: int,
 ) -> int:
     """Encodes `symbol` from `state`, writing the bits the decoder reads to reach `state`;
     gives the new state."""
@@ -1192,18 +1274,29 @@ def _fse_encode(
 def _predefined_counts(kind: int) -> Array[i32, 1]:
     """The predefined normalized counts of RFC 8878, section 3.1.1.3.2.2, as `_fse_predefined`
     holds them: `kind` 0 literal lengths, 1 offsets, 2 match lengths."""
-    values = [4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1]
+    values = [
+        4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1,
+        1, -1, -1, -1, -1,
+    ]
     if kind == 1:
-        values = [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1]
+        values = [
+            1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1,
+            -1,
+        ]
     elif kind == 2:
-        values = [1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1]
+        values = [
+            1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1,
+        ]
     counts = Array.zeros(len(values), i32)
     for i in range(len(values)):
         counts[i] = i32(values[i])
     return counts
 
 
-def _normalized(frequencies: Array[int, 1], symbol_count: int, total: int, log: int) -> Array[i32, 1]:
+def _normalized(
+    frequencies: Array[int, 1], symbol_count: int, total: int, log: int
+) -> Array[i32, 1]:
     """Frequencies scaled to sum to 2 ** log, every used symbol at least 1, the most frequent
     taking up the rounding, for an FSE table of the block's own statistics. Gives counts all 0
     when that leaves the most frequent below 1, so the caller keeps the predefined table."""
@@ -1313,8 +1406,12 @@ def _write_sequences(writer: InOut[_Writer], sequences: _Sequences):
         _write_counts(writer, offset_counts, 32, logs[1])
     if modes & 8 != 0:
         _write_counts(writer, match_counts, 53, logs[2])
-    literal_states, literal_bits, literal_finds = _fse_encoder(literal_counts, len(literal_counts), logs[0])
-    offset_states, offset_bits, offset_finds = _fse_encoder(offset_counts, len(offset_counts), logs[1])
+    literal_states, literal_bits, literal_finds = _fse_encoder(
+        literal_counts, len(literal_counts), logs[0]
+    )
+    offset_states, offset_bits, offset_finds = _fse_encoder(
+        offset_counts, len(offset_counts), logs[1]
+    )
     match_states, match_bits, match_finds = _fse_encoder(match_counts, len(match_counts), logs[2])
     literal_values = _code_values(0)
     match_values = _code_values(2)
@@ -1334,9 +1431,15 @@ def _write_sequences(writer: InOut[_Writer], sequences: _Sequences):
         match_code = _match_code(match_length)
         offset_code = _highest_bit(offset_value)
         if index < last:
-            offset_state = _fse_encode(writer, offset_state, offset_states, offset_bits, offset_finds, offset_code)
-            match_state = _fse_encode(writer, match_state, match_states, match_bits, match_finds, match_code)
-            literal_state = _fse_encode(writer, literal_state, literal_states, literal_bits, literal_finds, literal_code)
+            offset_state = _fse_encode(
+                writer, offset_state, offset_states, offset_bits, offset_finds, offset_code
+            )
+            match_state = _fse_encode(
+                writer, match_state, match_states, match_bits, match_finds, match_code
+            )
+            literal_state = _fse_encode(
+                writer, literal_state, literal_states, literal_bits, literal_finds, literal_code
+            )
         literal_extra = int(literal_values[36 + literal_code])
         _put(writer, literal_length - int(literal_values[literal_code]), literal_extra)
         match_extra = int(match_values[53 + match_code])
@@ -1422,7 +1525,9 @@ def _huffman_literals(writer: InOut[_Writer], literals: Array[u8, 1], stop: int)
         _align(body)
         body_sizes[k] = body.length - before
     compressed = tree_bytes + body.length + (6 if streams == 4 else 0)
-    if compressed >= stop or (streams == 4 and (body_sizes[0] > 65535 or body_sizes[1] > 65535 or body_sizes[2] > 65535)):
+    if compressed >= stop or (
+        streams == 4 and (body_sizes[0] > 65535 or body_sizes[1] > 65535 or body_sizes[2] > 65535)
+    ):
         return False
     form = 0
     header_bytes = 3
@@ -1473,7 +1578,9 @@ def _zstd_block(
     literals = Array.zeros(stop - start, u8)
     literal_count = 0
     capacity = (stop - start) // 4 + 1
-    sequences = _Sequences(Array.zeros(capacity, i32), Array.zeros(capacity, i32), Array.zeros(capacity, i32), 0)
+    sequences = _Sequences(
+        Array.zeros(capacity, i32), Array.zeros(capacity, i32), Array.zeros(capacity, i32), 0
+    )
     position = start
     anchor = start
     while position + 4 <= stop:
@@ -1488,7 +1595,9 @@ def _zstd_block(
         while candidate >= 0 and position - candidate <= 1048575 and left > 0:
             if _word(data, candidate, 4, False) == word:
                 length = 4
-                while position + length < stop and data[candidate + length] == data[position + length]:
+                while (
+                    position + length < stop and data[candidate + length] == data[position + length]
+                ):
                     length += 1
                 if length > best:
                     best = length
@@ -1502,7 +1611,10 @@ def _zstd_block(
         last_offset = repeats[0]
         if position > anchor and position - last_offset >= 0:
             length = 0
-            while position + length < stop and data[position - last_offset + length] == data[position + length]:
+            while (
+                position + length < stop
+                and data[position - last_offset + length] == data[position + length]
+            ):
                 length += 1
             if length >= 4 and length + 1 >= best:
                 best = length

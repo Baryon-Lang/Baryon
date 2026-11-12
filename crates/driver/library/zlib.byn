@@ -15,10 +15,10 @@ def compress(data: Array[u8, 1], level: int = -1, wbits: int = 15) -> Raises[Arr
 
     `level` runs from 0, stored without compression, through 1, the fastest, to 9, the
     smallest; -1, the default, is 6, as in zlib. `wbits` names the container as for
-    `decompress`: 9 to 15 a zlib stream with a window of 2 ** wbits bytes (8 is taken as 9, as zlib takes it), -9 to -15 a raw
-    deflate stream, and 25 to 31 a gzip member with no name and a modification time of 0, as
-    zlib writes it. The stream follows zlib's algorithm and comes within a few bytes of zlib's
-    size, but its bytes are Baryon's own (decision 0049).
+    `decompress`: 9 to 15 a zlib stream with a window of 2 ** wbits bytes (8 is taken as 9, as
+    zlib takes it), -9 to -15 a raw deflate stream, and 25 to 31 a gzip member with no name and
+    a modification time of 0, as zlib writes it. The stream follows zlib's algorithm and comes
+    within a few bytes of zlib's size, but its bytes are Baryon's own (decision 0049).
 
     Raises `OSError` with the kind `INVALID_DATA` and Python's message for a `level` or `wbits`
     Python rejects. Costs one pass over `data`; each position searches a hash chain up to the
@@ -65,7 +65,9 @@ def compress(data: Array[u8, 1], level: int = -1, wbits: int = 15) -> Raises[Arr
     return exact
 
 
-def decompress(data: Array[u8, 1], wbits: int = 15, bufsize: int = 16384) -> Raises[Array[u8, 1], OSError]:
+def decompress(
+    data: Array[u8, 1], wbits: int = 15, bufsize: int = 16384
+) -> Raises[Array[u8, 1], OSError]:
     """The bytes `data` holds compressed, as `zlib.decompress(data, wbits, bufsize)` gives them.
 
     `wbits` names the container as in Python: 8 to 15 a zlib stream whose window is at most
@@ -120,7 +122,9 @@ class Decompress(Struct):
             self.unused_data = _joined(self.unused_data, pending)
             self._pending = Array.zeros(0, u8)
             return Array.zeros(0, u8)
-        output = _Output(_joined(self._history, Array.zeros(len(data) * 4 + 64, u8)), len(self._history))
+        output = _Output(
+            _joined(self._history, Array.zeros(len(data) * 4 + 64, u8)), len(self._history)
+        )
         start = output.length
         folded = output.length
         position = 0
@@ -204,7 +208,9 @@ class Decompress(Struct):
         the end of the input."""
         if self._stage != 1 or len(self._pending) == 0:
             return Array.zeros(0, u8)
-        output = _Output(_joined(self._history, Array.zeros(4 * len(self._pending) + 64, u8)), len(self._history))
+        output = _Output(
+            _joined(self._history, Array.zeros(4 * len(self._pending) + 64, u8)), len(self._history)
+        )
         start = output.length
         bits = _Bits(0, 0, 0)
         if self._bit > 0:
@@ -242,7 +248,9 @@ def decompressobj(wbits: int = 15) -> Raises[Decompress, OSError]:
         raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(21), "")
     check = 1 if container != 1 else 0
     empty = Array.zeros(0, u8)
-    return Decompress(empty.copy(), False, container, window, 0, empty.copy(), 0, empty.copy(), check, 0)
+    return Decompress(
+        empty.copy(), False, container, window, 0, empty.copy(), 0, empty.copy(), check, 0
+    )
 
 
 def _joined(first: Array[u8, 1], second: Array[u8, 1]) -> Array[u8, 1]:
@@ -626,7 +634,11 @@ def _inflate(data: Array[u8, 1], start: int, output: InOut[_Output]) -> tuple[in
 
 
 def _block(
-    bits: InOut[_Bits], data: Array[u8, 1], output: InOut[_Output], bases: Array[i32, 1], fixed: tuple[_Table, _Table]
+    bits: InOut[_Bits],
+    data: Array[u8, 1],
+    output: InOut[_Output],
+    bases: Array[i32, 1],
+    fixed: tuple[_Table, _Table],
 ) -> tuple[int, bool]:
     """Decodes the one DEFLATE block that starts at `bits` into `output`: its 3-bit header,
     then a stored, fixed-code or dynamic-code body. Gives the error code, 0 for none, and
@@ -1019,7 +1031,9 @@ def _fixed_lengths() -> Array[i32, 1]:
     return lengths
 
 
-def _data_bits(block: _Block, literal_lengths: Array[i32, 1], distance_lengths: Array[i32, 1]) -> int:
+def _data_bits(
+    block: _Block, literal_lengths: Array[i32, 1], distance_lengths: Array[i32, 1]
+) -> int:
     """The bits a block's symbols and end-of-block take with the given code lengths, extra
     bits included."""
     bits = 0
@@ -1185,7 +1199,14 @@ def _flush(writer: InOut[_Writer], data: Array[u8, 1], block: InOut[_Block], sto
         block.distance_counts[code] = 0
 
 
-def _add(writer: InOut[_Writer], data: Array[u8, 1], block: InOut[_Block], length: int, distance: int, position: int):
+def _add(
+    writer: InOut[_Writer],
+    data: Array[u8, 1],
+    block: InOut[_Block],
+    length: int,
+    distance: int,
+    position: int,
+):
     """Gathers one symbol, a literal when `distance` is 0, flushing the block once it holds
     16383 symbols, as zlib's 16 KiB symbol buffer does. `position` is the input position after
     the symbol."""
@@ -1203,7 +1224,9 @@ def _add(writer: InOut[_Writer], data: Array[u8, 1], block: InOut[_Block], lengt
 
 def _hash(data: Array[u8, 1], position: int) -> int:
     """zlib's hash of the three bytes at `position`, 15 bits."""
-    return ((int(data[position]) << 10) ^ (int(data[position + 1]) << 5) ^ int(data[position + 2])) & 32767
+    return (
+        (int(data[position]) << 10) ^ (int(data[position + 1]) << 5) ^ int(data[position + 2])
+    ) & 32767
 
 
 def _longest(
@@ -1268,7 +1291,12 @@ def _deflate(data: Array[u8, 1], level: int, window: int, writer: InOut[_Writer]
     heads = Array.zeros(32768, i32)
     links = Array.zeros(32768, i32)
     block = _Block(
-        Array.zeros(16383, i32), Array.zeros(16383, i32), 0, 0, Array.zeros(286, int), Array.zeros(30, int)
+        Array.zeros(16383, i32),
+        Array.zeros(16383, i32),
+        0,
+        0,
+        Array.zeros(286, int),
+        Array.zeros(30, int),
     )
     position = 0
     # Lazy matching's state: a match found at the previous position, and whether that
@@ -1288,7 +1316,9 @@ def _deflate(data: Array[u8, 1], level: int, window: int, writer: InOut[_Writer]
                 tries = chain
                 if level > 3 and previous_length >= good:
                     tries = chain >> 2
-                found = _longest(data, position, candidate, 2, tries, nice, links, (1 << window) - 262)
+                found = _longest(
+                    data, position, candidate, 2, tries, nice, links, (1 << window) - 262
+                )
                 length = found[0]
                 distance = found[1]
                 if level > 3 and length == 3 and distance > 4096:
@@ -1307,7 +1337,14 @@ def _deflate(data: Array[u8, 1], level: int, window: int, writer: InOut[_Writer]
                 position += 1
         elif previous_length >= 3 and length <= previous_length:
             # The match from the previous position is at least as long: take it.
-            _add(writer, data, block, previous_length, previous_distance, position - 1 + previous_length)
+            _add(
+                writer,
+                data,
+                block,
+                previous_length,
+                previous_distance,
+                position - 1 + previous_length,
+            )
             stop = min(position - 1 + previous_length, n - 2)
             for inserted in range(position + 1, stop):
                 hash = _hash(data, inserted)
