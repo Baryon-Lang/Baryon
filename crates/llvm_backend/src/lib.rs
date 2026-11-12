@@ -19,6 +19,9 @@
 //!   passed `Owned`, arrives by value. A borrow of anything else arrives as a `noalias readonly`
 //!   pointer, and an `InOut` as a `noalias` pointer: the exclusivity check guarantees nothing
 //!   else refers to it during the call, which is what lets LLVM vectorize without overlap tests.
+//!   Both pointers are also `dereferenceable` for the value's size, at its alignment, so LLVM
+//!   reads an array's element pointer and strides once before a loop rather than on every
+//!   element (roadmap 3.3.3).
 //! - **Checks panic through the runtime.** A failed [`Assert`](mir::TerminatorKind::Assert), or
 //!   a conversion that loses its value (language reference, "Conversions"), branches to a block
 //!   of its own that calls the runtime's panic function (decision 0021) with the message and the

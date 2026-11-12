@@ -211,7 +211,7 @@ fn element_addresses_use_the_strides() {
     assert_eq!(
         text,
         "\
-define double @get(ptr noalias readonly %a1, i64 %a2, i64 %a3) {
+define double @get(ptr noalias readonly align 8 dereferenceable(40) %a1, i64 %a2, i64 %a3) {
 start:
   br label %bb0
 bb0:

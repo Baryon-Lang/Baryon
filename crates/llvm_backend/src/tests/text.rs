@@ -52,7 +52,7 @@ fn literals_are_flagged_and_drops_free_only_owned_bytes() {
     assert_eq!(
         module.finish(),
         "\
-define void @show(ptr noalias readonly %a1) {
+define void @show(ptr noalias readonly align 8 dereferenceable(16) %a1) {
 start:
   %_2 = alloca { ptr, i64 }
   br label %bb0
@@ -196,7 +196,7 @@ fn comparisons_searches_and_lengths_call_the_runtime() {
     assert_eq!(
         module(&database, &[("facts", body)]),
         "\
-define i1 @facts(ptr noalias readonly %a1) {
+define i1 @facts(ptr noalias readonly align 8 dereferenceable(16) %a1) {
 start:
   %_0 = alloca i1
   %_2 = alloca i64
@@ -276,7 +276,7 @@ fn a_character_borrows_its_bytes_and_moves_the_cursor() {
     assert_eq!(
         module(&database, &[("first", body)]),
         "\
-define { ptr, i64 } @first(ptr noalias readonly %a1) {
+define { ptr, i64 } @first(ptr noalias readonly align 8 dereferenceable(16) %a1) {
 start:
   %_0 = alloca { ptr, i64 }
   %_2 = alloca i64

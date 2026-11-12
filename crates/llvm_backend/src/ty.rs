@@ -143,6 +143,32 @@ impl<'db> Types<'_, 'db> {
         }
     }
 
+    /// What a pointer parameter to a value of `ty` promises LLVM about the memory it points to,
+    /// written before the parameter's name: ` align 8 dereferenceable(24)` for a rank-1 array's
+    /// header, or nothing for a type with no layout or no bytes.
+    ///
+    /// A borrowed or `InOut` parameter always points to a whole value of its type, which the
+    /// caller keeps alive for the call (decision 0006), so these hold. They let LLVM load
+    /// through the pointer before it knows the load is reached: an array's element pointer and
+    /// strides are read once before a loop rather than on every element, which in a loop that
+    /// checks its indices LLVM could not otherwise move past the branch to the panic (roadmap
+    /// 3.3.3). The size and alignment come from [`types::layout`], which the LLVM types of
+    /// [`Types::value`] match.
+    ///
+    /// The promise is about the parameter's own value, such as an array's header, never about
+    /// memory the value points to: an empty array's element pointer may be null or dangling, so
+    /// nothing here lets LLVM read an element before the code that reads it.
+    pub(crate) fn pointee(&self, ty: Type<'db>) -> String {
+        match types::layout(self.db, ty, self.declared) {
+            Ok(layout) if layout.size() > 0 => format!(
+                " align {} dereferenceable({})",
+                layout.align(),
+                layout.size()
+            ),
+            _ => String::new(),
+        }
+    }
+
     /// The error for a type this backend does not represent yet.
     pub(crate) fn unsupported(&self, ty: Type<'db>) -> Unsupported {
         Unsupported::new(format!("values of type `{}`", ty.display(self.db)))

@@ -188,7 +188,7 @@ done:
   ret void
 }
 
-define internal void @total.body0(i64 %a1, i64 %a2, ptr noalias %a3) {
+define internal void @total.body0(i64 %a1, i64 %a2, ptr noalias align 8 dereferenceable(8) %a3) {
 start:
   br label %bb0
 bb0:
