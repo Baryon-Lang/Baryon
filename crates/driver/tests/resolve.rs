@@ -185,6 +185,14 @@ fn standard_library_modules_are_accepted_by_name() {
     );
 }
 
+/// Python 3.14's `compression.zstd` is a module inside a package; `from compression.zstd import
+/// x` and `from compression import zstd` both find it (decision 0049).
+#[test]
+fn a_standard_module_inside_a_package_is_found() {
+    let program = "from compression import zstd\nfrom compression.zstd import decompress\n\n\ndef main() -> Raises[None, OSError]:\n    print(len(zstd.decompress(Array.zeros(0, u8))), len(decompress(Array.zeros(0, u8))))\n";
+    assert_eq!(check_one(program), "");
+}
+
 #[test]
 fn a_relative_import_is_reported() {
     let program = "from . import helpers\n";

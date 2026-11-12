@@ -271,8 +271,8 @@ the REPL, and three external users have written something real.
 | 3.27.4 | `gzip.open` in text and binary modes, read and written in blocks so a file larger than memory streams line by line, as `open` does | 2 | 3.27.3 | Planned | — | — |
 | 3.27.5 | Snappy raw blocks, decoded and encoded, for Parquet pages (decision 0049 keeps it private to Parquet) | 1 | 3.27.1 | Planned | — | — |
 | 3.27.6 | LZ4 raw blocks, decoded and encoded, for Parquet's `LZ4_RAW` pages | 1 | 3.27.1 | Planned | — | — |
-| 3.27.7 | Zstandard decoding (RFC 8878): FSE and Huffman tables, repeated offsets, several frames and skippable frames, the XXH64 content checksum; `compression.zstd.decompress` | 4 | 3.27.1 | In progress | Claude | [#316](https://github.com/Baryon-Lang/Baryon/pull/316) |
-| 3.27.8 | Zstandard encoding: `compression.zstd.compress` with its own FSE and Huffman tables per block | 6 | 3.27.7 | Planned | — | — |
+| 3.27.7 | Zstandard decoding (RFC 8878): FSE and Huffman tables, repeated offsets, several frames and skippable frames, the XXH64 content checksum; `compression.zstd.decompress` | 4 | 3.27.1 | Done | Claude | [#322](https://github.com/Baryon-Lang/Baryon/pull/322) |
+| 3.27.8 | Zstandard encoding: `compression.zstd.compress` with its own FSE and Huffman tables per block; `import compression.zstd`, which 3.27.7 leaves to `from compression import zstd` | 6 | 3.27.7 | Planned | — | — |
 | 3.27.9 | bzip2 (the Burrows-Wheeler transform and its Huffman stages), decoded and encoded: the `bz2` module | 3 | 3.27.1 | Planned | — | — |
 | 3.27.10 | xz files and LZMA2 decoding: `lzma.decompress` and `lzma.open` for reading | 4 | 3.27.1 | Planned | — | — |
 | 3.28 | XML: a streaming parser and a writer for well-formed XML with namespaces, enough for VOTable and similar formats, in place of the expat C library. A base library; AstroPy relies on it (Collins, 2026-11-10) | 25 | 1.13.12 | Planned | — | — |
