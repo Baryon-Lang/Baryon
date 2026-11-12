@@ -243,6 +243,7 @@ What has changed since, on the same machine and program:
 | One module per core, compiled at once, debug builds only (2.6) | 1.0 s | 9.5 s |
 | Number locals as registers (2.7) | 0.9 s | 9.5 s |
 | `baryon`'s own stage profiled and tuned, first pass (2.3) | 0.65 s | 9.2 s |
+| Linking with `lld` when installed, fewer copies of each instruction (2.3) | 0.6 s | 9.2 s |
 
 Splitting the release build too took it to 2.9 s, but `clang` never inlines a call into another
 module, so a small function called in a hot loop could run slower. Release builds stay one
