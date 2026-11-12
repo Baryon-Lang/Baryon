@@ -1,5 +1,5 @@
-//! NetCDF classic files (decision 0047): the header of a CDF-1 or CDF-2 file and the values of
-//! one of its variables, read as Unidata's "NetCDF Classic Format Specification" defines them,
+//! `NetCDF` classic files (decision 0047): the header of a CDF-1 or CDF-2 file and the values of
+//! one of its variables, read as Unidata's "`NetCDF` Classic Format Specification" defines them,
 //! in safe code the exported functions in `abi::netcdf` call. What the dimensions, variables and
 //! attributes mean to a program is parsed in Baryon, in the standard library's `netCDF4`
 //! module, from the description lines [`describe`] writes; this module reads only what it needs
@@ -35,7 +35,7 @@ const ATTRIBUTES: u32 = 0x0C;
 /// would otherwise ask for more memory than a file can describe.
 const LARGEST_HEADER: u64 = 1 << 30;
 
-/// The type of a NetCDF value, numbered as the format numbers it.
+/// The type of a `NetCDF` value, numbered as the format numbers it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
     /// `NC_BYTE`, a signed 8-bit integer.
@@ -204,7 +204,7 @@ impl Header {
 /// # Errors
 ///
 /// Fails as the operating system does, and with `INVALID_DATA` when the file is not a classic
-/// NetCDF file or its header is cut short or names what does not exist.
+/// `NetCDF` file or its header is cut short or names what does not exist.
 pub(crate) fn read_header(path: &str) -> Result<Header, OsFailure> {
     let failed = |error: io::Error| OsFailure::from_io(&error, path);
     let file = fs::File::open(path).map_err(failed)?;

@@ -1,4 +1,4 @@
-//! The functions compiled code calls for NetCDF classic files (decision 0047): the standard
+//! The functions compiled code calls for `NetCDF` classic files (decision 0047): the standard
 //! library's `netCDF4` module calls them, and parses the header's description lines in Baryon.
 //!
 //! Each raises as the array file functions do (the `array_files` module): the last parameter is
@@ -23,10 +23,10 @@ use crate::memory;
 use crate::panic::panic;
 
 /// `Dataset(path)`: writes to `out` a new `list[str]` of the lines that describe the header of
-/// the NetCDF classic file whose path is the `length` bytes at `path`, as
+/// the `NetCDF` classic file whose path is the `length` bytes at `path`, as
 /// `files::netcdf::describe` writes them: its dimensions, attributes and variables. Returns
 /// `true`, with the error at `error`, when the operating system refuses, or with the kind
-/// `INVALID_DATA` when the file is not a classic NetCDF file or its header is cut short.
+/// `INVALID_DATA` when the file is not a classic `NetCDF` file or its header is cut short.
 ///
 /// Cost: the header only; no variable's values are read.
 ///
@@ -64,13 +64,13 @@ pub unsafe extern "C" fn baryon_rt_netcdf_open(
 }
 
 /// `ds.variables[name][:]`: reads every value of the variable whose name is the `name_length`
-/// bytes at `name`, in the NetCDF classic file whose path is the `length` bytes at `path`, into
+/// bytes at `name`, in the `NetCDF` classic file whose path is the `length` bytes at `path`, into
 /// a new row-major array of `rank` dimensions and elements of the type numbered `element`, and
 /// writes its header to `out`. A float type reads any number variable with `scale_factor` and
 /// `add_offset` applied as `netCDF4` applies them; an integer type reads an unscaled integer
 /// variable it can hold. Fill values are read as stored. Returns `true`, with the error at
 /// `error`, when the operating system refuses, or with the kind `INVALID_DATA` when the file is
-/// not a classic NetCDF file, has no such variable, the variable has another rank or does not
+/// not a classic `NetCDF` file, has no such variable, the variable has another rank or does not
 /// read as the type, or the file ends inside it.
 ///
 /// Cost: the header, one allocation, and one pass over the values, converted from big-endian

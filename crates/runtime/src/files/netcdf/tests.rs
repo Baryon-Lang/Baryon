@@ -1,4 +1,4 @@
-//! Tests of NetCDF classic files: the files read are the ones `netCDF4` 1.7.2 wrote for the
+//! Tests of `NetCDF` classic files: the files read are the ones `netCDF4` 1.7.2 wrote for the
 //! driver's build tests (`crates/driver/tests/fixtures/netcdf`), and the corrupt ones are those
 //! files cut short or changed by these tests, under the system's temporary directory.
 

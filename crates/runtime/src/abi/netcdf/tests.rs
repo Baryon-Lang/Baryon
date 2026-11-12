@@ -1,4 +1,4 @@
-//! Tests of the exported NetCDF functions, called as compiled code calls them, on the files
+//! Tests of the exported `NetCDF` functions, called as compiled code calls them, on the files
 //! `netCDF4` 1.7.2 wrote for the driver's build tests.
 
 use super::super::print_array::{ELEMENT_F32, ELEMENT_I16, ELEMENT_I32};
