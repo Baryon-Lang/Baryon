@@ -288,6 +288,56 @@ To run and test without typing commands, add a file `.vscode/tasks.json` to the 
 **Terminal > Run Task... > baryon test** runs the tests. Both use the program you set in
 **Baryon: Path**.
 
+## 10. Debug it
+
+A debug build keeps a line table, which tells a debugger which `.byn` line each machine
+instruction came from. So `lldb` or `gdb` can stop at a line, step line by line, and show the
+chain of calls that led there, with your files open in the editor.
+
+Install a debugger extension: **CodeLLDB** (`vadimcn.vscode-lldb`) on Linux or macOS, which
+brings its own `lldb`. Add a task that builds the program, beside the two of step 9 in
+`.vscode/tasks.json`:
+
+```json
+    {
+      "label": "baryon build",
+      "type": "process",
+      "command": "${config:baryon.path}",
+      "args": ["build", "${workspaceFolder}", "${workspaceFolder}/program"],
+      "problemMatcher": []
+    }
+```
+
+Then add `.vscode/launch.json`, which builds and starts the program under the debugger:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Baryon program",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/program",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "baryon build"
+    }
+  ]
+}
+```
+
+VS Code lets you set breakpoints only in languages a debugger has declared, and none declares
+Baryon yet, so turn on **Debug: Allow Breakpoints Everywhere** (`"debug.allowBreakpointsEverywhere":
+true` in your settings). Now click left of a line number in `period.byn` to set a breakpoint and
+press `F5`: the program stops there, **Step Over** (`F10`) and **Step Into** (`F11`) move a line
+or a call at a time, and the **Call Stack** view shows each `.byn` function and line on the way.
+
+If you prefer `gdb`, use Microsoft's **C/C++** extension instead, with `"type": "cppdbg"`,
+`"MIMode": "gdb"` and the same `program` and `preLaunchTask`.
+
+What it does not show yet: the **Variables** view is empty, because the compiler writes where each
+line is but not where each variable lives. Print a value with `print` while that is missing.
+
 ## Troubleshooting
 
 | What you see | Why, and the fix |

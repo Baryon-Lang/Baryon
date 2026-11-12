@@ -11,7 +11,8 @@ imports and calls.
 
 | Module | Format | Functions |
 | --- | --- | --- |
-| [`zlib`](#zlib) | Deflate streams (RFC 1951), alone or in a zlib (RFC 1950) or gzip (RFC 1952) container | `compress`, `decompress`, `crc32`, `adler32` |
+| [`zlib`](#zlib) | Deflate streams (RFC 1951), alone or in a zlib (RFC 1950) or gzip (RFC 1952) container | `compress`, `decompress`, `decompressobj`, `crc32`, `adler32` |
+| [`gzip`](#gzip) | gzip files (RFC 1952) of one member or several | `compress`, `decompress` |
 
 Python's functions take and give `bytes`. Baryon has no `bytes` type yet, so they take and give
 `Array[u8, 1]`, an array of bytes, which [`Array.fromfile`](files-and-processes.md#array-files)
@@ -86,8 +87,8 @@ times as long as C zlib; making it faster is a later roadmap step. Memory is the
 | 40 to 47, or 32 | A zlib stream or a gzip member, told apart by the first two bytes |
 
 Bytes after the stream are ignored, as in Python. A gzip file may hold several members one
-after another; `decompress` reads the first only, as Python's does, and roadmap 3.27.3's
-`gzip.decompress` reads them all. `bufsize` is the size the output buffer starts at; it doubles as
+after another; `decompress` reads the first only, as Python's does, and
+[`gzip.decompress`](#gzipdecompress) reads them all. `bufsize` is the size the output buffer starts at; it doubles as
 the output grows, so the argument only saves copies when the size is known.
 
 **Cost.** One pass over `data` and one over the output, plus the copies of the output each
@@ -122,3 +123,87 @@ value=1)` the Adler-32 that ends a zlib stream. Each gives a number from 0 to 2 
 Python's do, and each continues from `value`, the checksum of the bytes before `data`, so a
 checksum of data that arrives in pieces is `crc32(second, crc32(first))`. Each costs one pass
 over `data`.
+
+### `zlib.decompressobj`
+
+`decompressobj(wbits=15)` gives a `Decompress`, which takes a stream in pieces, as Python's
+does. Each `d.decompress(piece)` gives the bytes the pieces so far hold that no earlier call
+gave, and `d.flush()`, called once after the last piece, gives the rest. `wbits` names the
+container as for `decompress`. Once the stream ends, `d.eof` is `True` and any bytes after it
+collect in `d.unused_data`. A corrupt stream raises the same `OSError` as `decompress`, from
+the call that reaches it.
+
+```python
+from zlib import decompressobj
+
+
+def main() -> Raises[None, OSError]:
+    data = Array.fromfile("level6.z", u8)
+    d = decompressobj()
+    total = 0
+    for start in range(0, len(data), 1000):
+        total += len(d.decompress(data[start : min(start + 1000, len(data))].copy()))
+    total += len(d.flush())
+    print(total, d.eof)
+```
+
+This prints `11600 True`: the same 11,600 bytes as the example at the top of the chapter, a
+thousand compressed bytes at a time.
+
+**Cost.** A `Decompress` gives out whole deflate blocks. It keeps the part of a block that a
+piece cuts off and decodes that block again, from its start, when the next piece arrives, so
+pieces of 64 KiB or more cost one pass over the data, and pieces much smaller than a block,
+which is often 16 to 64 KiB of output, decode its start several times. It also keeps the last
+32 KiB of output, which a later block may copy from.
+
+## `gzip`
+
+A gzip file is one or more members, each a header, a deflate stream, and the CRC-32 and length
+of what it decompresses to. `gzip` writes and reads them on arrays, as Python's does; reading
+and writing a gzip file piece by piece, larger than memory, is `gzip.open`, roadmap 3.27.4.
+
+```python
+import gzip
+
+
+def main() -> Raises[None, OSError]:
+    gzip.compress(Array.fromfile("text.txt", u8)).tofile("table.txt.gz")
+    packed = Array.fromfile("table.txt.gz", u8)
+    print(len(gzip.decompress(packed)), "bytes from", len(packed))
+```
+
+This compresses the 11,600-byte table at level 9 into a 4,390-byte file and prints
+`11600 bytes from 4390`. `gunzip table.txt.gz` and Python's `gzip.decompress` read it back.
+
+### `gzip.compress`
+
+`compress(data, compresslevel=9, mtime=None)` gives `data` as one gzip member, as Python's does:
+`compresslevel` runs from 0 to 9 as `zlib.compress`'s `level`, and the header records no file
+name, the operating system 255, "unknown", and `mtime`, a time in seconds since 1970. Python
+writes the current time when `mtime` is `None`; Baryon has no clock yet and writes 0, which RFC
+1952 reads as "no time recorded", so the same data always gives the same file. Its cost is
+`zlib.compress`'s.
+
+### `gzip.decompress`
+
+`decompress(data)` gives the bytes every member of `data` holds, joined, as Python's does. It
+skips zero bytes between and after members, and the extra field, file name and comment a header
+may hold. Empty `data` gives an empty array. Data that is not a gzip file raises `OSError` with
+the kind `INVALID_DATA` and Python's message:
+
+| Data | Message |
+| --- | --- |
+| Not gzip | `Not a gzipped file (b'PK')`, with the first two bytes |
+| A method other than deflate | `Unknown compression method` |
+| A member cut short | `Compressed file ended before the end-of-stream marker was reached` |
+| A wrong CRC-32 | `CRC check failed` |
+| A wrong length | `Incorrect length of data produced` |
+| A corrupt deflate stream | `zlib.decompress`'s messages, such as `Error -3 while decompressing data: invalid block type` |
+
+Python raises `gzip.BadGzipFile`, `EOFError` or `zlib.error` for these. Baryon raises
+`OSError` for all of them ([decision 0049](../decisions/0049-compression.md)).
+
+**Cost.** One pass over `data` and one over the output, plus a copy of the bytes after each
+member, as Python's makes, and one of the output to join the members. A file of thousands of
+small members, such as a BGZF file, copies its tail once per member and is better read with
+`gzip.open`.

@@ -1,8 +1,9 @@
-//! The `zlib` module (roadmap 3.27.1 and 3.27.2, decision 0049), built and run:
+//! The `zlib` and `gzip` modules (roadmap 3.27.1 to 3.27.3, decision 0049), built and run:
 //! `zlib.decompress` reads the streams Python's `zlib` and `gzip` wrote, in every container
 //! `wbits` names, `zlib.compress` writes streams it reads back at every level, `crc32` and
-//! `adler32` give Python's checksums, and a corrupt stream raises `OSError` with the kind
-//! `INVALID_DATA` and the message Python's `zlib.error` carries.
+//! `adler32` give Python's checksums, `zlib.decompressobj` reads a stream in pieces, `gzip`
+//! reads and writes files of one member or several, and a corrupt stream raises `OSError` with
+//! the kind `INVALID_DATA` and the message Python's `zlib.error` or `gzip` carries.
 //!
 //! The files in `tests/fixtures/zlib` were written by Python; its `README.md` says how.
 
@@ -134,13 +135,21 @@ def main() -> Raises[None, OSError]:
     );
 }
 
+/// The `index`th Python example of the reference's Compression chapter, counting from 0.
+fn chapter_example(index: usize) -> &'static str {
+    let chapter = include_str!("../../../../docs/reference/compression.md");
+    let block = chapter
+        .split("```python\n")
+        .nth(index + 1)
+        .unwrap_or_default();
+    &block[..block.find("```").unwrap_or_default()]
+}
+
 /// The worked example at the top of the reference's Compression chapter, read from the chapter
 /// itself, prints what the chapter says it prints and writes the decompressed table.
 #[test]
 fn the_reference_example_runs() {
-    let chapter = include_str!("../../../../docs/reference/compression.md");
-    let start = chapter.find("```python\n").unwrap() + "```python\n".len();
-    let program = &chapter[start..start + chapter[start..].find("```").unwrap()];
+    let program = chapter_example(0);
     let (output, directory) = run("zlib_reference", program).unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
@@ -206,5 +215,173 @@ def main() -> Raises[None, OSError]:
          Bad compression level\n\
          Bad compression level\n\
          Bad compression level\n"
+    );
+}
+
+/// A `zlib.decompressobj` fed a stream in pieces of 7, 1000 and 65,535 bytes gives the text
+/// back across its calls and `flush`, in each container, and sets `eof` and `unused_data` as
+/// Python's does: the three bytes after a gzip member land in `unused_data`.
+#[test]
+fn streams_are_decompressed_in_pieces() {
+    let program = "\
+from zlib import decompressobj
+
+
+def check(path: str, wbits: int, piece: int, extra: int) -> Raises[None, OSError]:
+    stream = Array.fromfile(path, u8)
+    data = Array.zeros(len(stream) + extra, u8)
+    for i in range(len(stream)):
+        data[i] = stream[i]
+    text = Array.fromfile(\"text.txt\", u8)
+    decompressor = decompressobj(wbits)
+    same = True
+    position = 0
+    start = 0
+    while start < len(data):
+        stop = min(start + piece, len(data))
+        output = decompressor.decompress(data[start:stop].copy())
+        for i in range(len(output)):
+            same = same and position + i < len(text) and output[i] == text[position + i]
+        position += len(output)
+        start = stop
+    rest = decompressor.flush()
+    position += len(rest)
+    print(path, wbits, piece, same and position == len(text), decompressor.eof, len(decompressor.unused_data))
+
+
+def main() -> Raises[None, OSError]:
+    for piece in [7, 1000, 65535]:
+        check(\"level6.z\", 15, piece, 0)
+        check(\"member.gz\", 31, piece, 3)
+        check(\"raw.deflate\", -15, piece, 0)
+        check(\"member.gz\", 47, piece, 0)
+";
+    let (output, _) = run("zlib_pieces", program).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let expected: String = [7, 1000, 65535]
+        .map(|piece| {
+            format!(
+                "level6.z 15 {piece} True True 0\n\
+                 member.gz 31 {piece} True True 3\n\
+                 raw.deflate -15 {piece} True True 0\n\
+                 member.gz 47 {piece} True True 0\n"
+            )
+        })
+        .concat();
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+}
+
+/// `gzip.decompress` reads one member, two members with zero bytes between and after them,
+/// and a member whose header holds every optional field, all written by Python, back to the
+/// text, and empty input to nothing. `gzip.compress` writes members it reads back, with
+/// Python's header bytes: the modification time given, the level's flag and the system 255.
+#[test]
+fn gzip_files_are_read_and_written() {
+    let program = "\
+import gzip
+
+
+def same(data: Array[u8, 1], text: Array[u8, 1]) -> bool:
+    if len(data) != len(text):
+        return False
+    for i in range(len(text)):
+        if data[i] != text[i]:
+            return False
+    return True
+
+
+def main() -> Raises[None, OSError]:
+    text = Array.fromfile(\"text.txt\", u8)
+    for path in [\"member.gz\", \"members.gz\", \"fields.gz\"]:
+        print(path, same(gzip.decompress(Array.fromfile(path, u8)), text))
+    print(len(gzip.decompress(Array.zeros(0, u8))))
+    for level in [0, 1, 6, 9]:
+        member = gzip.compress(text, level)
+        print(level, len(member), same(gzip.decompress(member), text))
+    header = gzip.compress(text, mtime=1234567890)
+    print([int(header[i]) for i in range(10)])
+";
+    let (output, _) = run("gzip_files", program).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "member.gz True\n\
+         members.gz True\n\
+         fields.gz True\n\
+         0\n\
+         0 11623 True\n\
+         1 4773 True\n\
+         6 4393 True\n\
+         9 4390 True\n\
+         [31, 139, 8, 0, 210, 2, 150, 73, 2, 255]\n"
+    );
+}
+
+/// Data that is not gzip, a member cut short in its header or its stream, a wrong CRC-32 or
+/// length, another method and a corrupt deflate block each raise `OSError` with the kind
+/// `INVALID_DATA` and the message Python's `gzip.decompress` gives, from `BadGzipFile`,
+/// `EOFError` or `zlib.error`.
+#[test]
+fn corrupt_gzip_files_raise_python_s_messages() {
+    let program = "\
+from os import ErrorKind
+import gzip
+
+
+def attempt(data: Array[u8, 1]) -> Raises[None, OSError]:
+    try:
+        gzip.decompress(data)
+        print(\"no error\")
+    except OSError as error:
+        print(error.kind == ErrorKind.INVALID_DATA, error.strerror)
+
+
+def changed(position: int, value: int) -> Raises[Array[u8, 1], OSError]:
+    data = Array.fromfile(\"member.gz\", u8)
+    data[position] = u8(value)
+    return data
+
+
+def main() -> Raises[None, OSError]:
+    member = Array.fromfile(\"member.gz\", u8)
+    other = Array.zeros(4, u8)
+    other[0] = u8(80)
+    other[1] = u8(75)
+    attempt(other)
+    attempt(member[0:1].copy())
+    attempt(member[0:6].copy())
+    attempt(member[0 : len(member) - 3].copy())
+    attempt(changed(len(member) - 8, int(member[len(member) - 8]) ^ 1))
+    attempt(changed(len(member) - 1, int(member[len(member) - 1]) ^ 1))
+    attempt(changed(2, 7))
+    attempt(changed(10, int(member[10]) | 6))
+";
+    let (output, _) = run("gzip_errors", program).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "True Not a gzipped file (b'PK')\n\
+         True Not a gzipped file (b'\\x1f')\n\
+         True Compressed file ended before the end-of-stream marker was reached\n\
+         True Compressed file ended before the end-of-stream marker was reached\n\
+         True CRC check failed\n\
+         True Incorrect length of data produced\n\
+         True Unknown compression method\n\
+         True Error -3 while decompressing data: invalid block type\n"
+    );
+}
+
+/// The chapter's `zlib.decompressobj` and `gzip` examples print what the chapter says they
+/// print, and the gzip file the second writes decompresses to the table it was written from.
+#[test]
+fn the_reference_s_streaming_and_gzip_examples_run() {
+    let (output, _) = run("zlib_pieces_reference", chapter_example(2)).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "11600 True\n");
+    let (output, _) = run("gzip_reference", chapter_example(3)).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "11600 bytes from 4390\n"
     );
 }
