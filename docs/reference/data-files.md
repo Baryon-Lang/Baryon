@@ -289,6 +289,11 @@ as the same lines would in Python.
   are taken whole. `temp[0, :, ::2]` of a variable over `(time, lat, lon)` is an
   `Array[T, 2]`. The rank in the program's type is the number of axes kept; another rank
   raises `OSError`. Items are integers or slices of integers, constant or not.
+- **A subscript that picks nothing raises what `netCDF4` raises**: an index out of bounds
+  raises `IndexError` with `netCDF4`'s message, `index 5 is out of bounds for the dimension time
+  of length 2`, and a step of zero raises `ValueError`, `slice step cannot be zero`. So a
+  subscripted read or write can fail with `OSError | IndexError | ValueError`; `var[:]` only
+  with `OSError`.
 - **Cost.** Opening reads the header only. `var[:]` reads the header again, then makes one pass
   over the variable's values, converting them from big-endian as they are copied into the
   array; a record variable is read one record at a time. A subscript reads only the stretches
@@ -306,9 +311,6 @@ as the same lines would in Python.
   which needs the name known only when the file is read; Baryon reads
   `ds.getncattr("title")`.
 - **`var.dimensions` is a `list[str]`**, where `netCDF4` gives a tuple of the same names.
-- **A subscript out of bounds raises `OSError`** with the kind `INVALID_DATA` and NumPy's
-  message, `index 3 is out of bounds for the dimension t of length 3`, where `netCDF4` raises
-  `IndexError`, which Baryon does not have yet. A step of zero raises it too.
 - **A subscript takes integers and slices.** `netCDF4` also takes arrays of indices, of
   booleans and `...`; those are compile errors so far.
 
@@ -377,6 +379,8 @@ the same calls, fill values and padding included; the tests compare them.
   stop, `temp[2:] = values`, takes as many records as the array has rows. A slice with a
   negative step along the unlimited dimension is refused with `OSError`, where `netCDF4` writes
   the wrong positions.
+  Along any other dimension an index out of bounds raises `IndexError`, and a step of zero
+  raises `ValueError`, as a read's does.
 - **What the format refuses raises `OSError`** with the kind `INVALID_DATA` and `netCDF4`'s
   message: a name already in use, a second unlimited dimension, or the unlimited dimension
   anywhere but first.

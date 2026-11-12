@@ -117,13 +117,15 @@ def main() -> Raises[None, OSError | KeyError]:
 
 /// Slices of a variable written as the `netCDF4` script for `rows.nc` writes them, a row past
 /// the last record and every other value of the first, then read back by index and by slice.
+/// An index out of bounds raises `IndexError` and a zero step `ValueError`, each caught by its
+/// own `except`, which checks that the runtime's tags match the order the checker lists them.
 #[test]
 fn slices_are_written_and_read_as_netcdf4_does() {
     let program = "\
 from netCDF4 import Dataset
 
 
-def main() -> Raises[None, OSError | KeyError]:
+def main() -> Raises[None, OSError | KeyError | IndexError | ValueError]:
     ds = Dataset(\"out.nc\", \"w\", format=\"NETCDF3_CLASSIC\")
     ds.createDimension(\"t\", None)
     ds.createDimension(\"x\", 3)
@@ -142,14 +144,19 @@ def main() -> Raises[None, OSError | KeyError]:
     try:
         wrong: Array[i64, 1] = v[3]
         print(wrong)
-    except OSError as error:
-        print(error.strerror)
+    except IndexError as error:
+        print(error.message)
+    try:
+        a[0, ::0] = Array([1, 2, 3])
+    except ValueError as refused:
+        print(refused.message)
 ";
     let (printed, bytes) = written("netcdf_slices", program).unwrap();
     assert_eq!(
         printed,
         "[4 5 6] [-32767 -32767      5] [[-32767      8]\n [     5      6]]\n\
-         index 3 is out of bounds for the dimension t of length 3\n"
+         index 3 is out of bounds for the dimension t of length 3\n\
+         slice step cannot be zero\n"
     );
     assert_eq!(bytes, fs::read(fixtures().join("rows.nc")).unwrap());
 }

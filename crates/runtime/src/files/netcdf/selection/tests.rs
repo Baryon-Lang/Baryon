@@ -53,23 +53,24 @@ fn indexes_and_slices_pick_as_python_does() {
 }
 
 #[test]
-fn what_netcdf4_refuses_is_refused() {
+fn what_netcdf4_refuses_is_refused_with_its_error() {
     let refused = |items: &[Item]| select("c", items, (&NAMES, &[4, 3]), false, None).unwrap_err();
+    let index = |message: &str| Refusal::Index(message.to_owned());
     assert_eq!(
         refused(&[Item::Index(4)]),
-        "index 4 is out of bounds for the dimension x of length 4"
+        index("index 4 is out of bounds for the dimension x of length 4")
     );
     assert_eq!(
         refused(&[Item::Index(0), Item::Index(-4)]),
-        "index -4 is out of bounds for the dimension y of length 3"
+        index("index -4 is out of bounds for the dimension y of length 3")
     );
     assert_eq!(
         refused(&[Item::Index(0); 3]),
-        "the NetCDF variable c has 2 dimensions, fewer than the 3 indexes given"
+        index("the NetCDF variable c has 2 dimensions, fewer than the 3 indexes given")
     );
     assert_eq!(
         refused(&[slice(None, None, Some(0))]),
-        "slice step cannot be zero"
+        Refusal::Value("slice step cannot be zero".to_owned())
     );
 }
 
@@ -93,11 +94,11 @@ fn a_write_goes_past_the_last_record() {
     assert_eq!(write(&[Item::Index(-1)], &[3]), Ok(vec![1]));
     assert_eq!(
         write(&[slice(None, None, Some(-1))], &[2, 3]),
-        Err(
+        Err(Refusal::Data(
             "the NetCDF variable a is written forwards along its unlimited dimension t, with a \
              positive stride"
                 .to_owned()
-        )
+        ))
     );
 }
 

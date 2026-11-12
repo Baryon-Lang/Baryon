@@ -13,6 +13,7 @@
 
 use super::Body;
 use super::calls::Arguments;
+use super::netcdf::subscript_errors;
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Call, Callee, Key, Type, TypeKind};
 
@@ -250,13 +251,13 @@ impl<'db> Body<'db> {
             type_arguments: Vec::new(),
             arguments: [variable, value]
                 .into_iter()
-                .chain(items)
+                .chain(items.iter().copied())
                 .map(|node| Some(Key(node)))
                 .collect(),
         };
         self.typed.calls.insert(Key(target), call);
         let nothing = Type::new(self.db, TypeKind::None);
-        let ty = self.raises_library_error(target, nothing, "OSError");
+        let ty = self.raises_library_errors(target, nothing, subscript_errors(&items));
         self.fallible_at(target, ty, "writing a NetCDF variable can fail with");
         true
     }

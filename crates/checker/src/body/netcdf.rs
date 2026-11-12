@@ -279,12 +279,12 @@ impl<'db> Body<'db> {
             callee: Callee::Builtin("netCDF4.read".to_owned()),
             type_arguments: Vec::new(),
             arguments: std::iter::once(value)
-                .chain(items)
+                .chain(items.iter().copied())
                 .map(|node| Some(Key(node)))
                 .collect(),
         };
         self.typed.calls.insert(Key(node), call);
-        let ty = self.raises_library_error(node, array, "OSError");
+        let ty = self.raises_library_errors(node, array, subscript_errors(&items));
         self.raised_value(node, ty, "reading a NetCDF variable can fail with")
     }
 
@@ -462,5 +462,17 @@ impl<'db> Body<'db> {
             "cannot be typed",
             Some("the compiler adds the library's files to every package (decision 0038)"),
         )
+    }
+}
+
+/// The error classes a read or write of a variable through `items` can fail with, in the order
+/// the runtime numbers them: `OSError` alone for `var[:]`, which picks every value, and also
+/// `IndexError` for an index out of bounds and `ValueError` for a zero step, as `netCDF4`
+/// raises them, when the subscript has items.
+pub(super) fn subscript_errors(items: &[NodeId]) -> &'static [&'static str] {
+    if items.is_empty() {
+        &["OSError"]
+    } else {
+        &["OSError", "IndexError", "ValueError"]
     }
 }

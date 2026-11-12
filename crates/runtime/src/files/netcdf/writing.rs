@@ -17,7 +17,9 @@
 
 use super::encoding::{encode, store};
 use super::storage::{Contents, load, save, slot};
-use super::{Attribute, Header, Item, Kind, Values, Variable, is_whole, scaling, select};
+use super::{
+    Attribute, Header, Item, Kind, SubscriptFailure, Values, Variable, is_whole, scaling, select,
+};
 use crate::files::fits::Pixel;
 use crate::files::{ErrorKind, OsFailure};
 
@@ -92,16 +94,19 @@ pub(crate) fn define(path: &str, line: &str) -> Result<(), OsFailure> {
 /// # Errors
 ///
 /// Fails as the operating system does, and with `INVALID_DATA` when the file has no variable
-/// `name`, the items do not fit its dimensions, the array's shape differs from the shape of the
-/// values picked, or the variable holds text.
+/// `name`, the array's shape differs from the shape of the values picked, or the variable
+/// holds text; with the `IndexError` or `ValueError` of a [`Refusal`](super::selection::Refusal)
+/// when the items pick no values, as `netCDF4` raises them.
 pub(crate) fn write(
     path: &str,
     (name, items): (&str, &[Item]),
     pixel: Pixel,
     shape: &[usize],
     values: &[u8],
-) -> Result<(), OsFailure> {
-    let invalid = |message: String| OsFailure::new(ErrorKind::InvalidData, message, path);
+) -> Result<(), SubscriptFailure> {
+    let invalid = |message: String| {
+        SubscriptFailure::Os(OsFailure::new(ErrorKind::InvalidData, message, path))
+    };
     let mut contents = load(path)?;
     let header = &contents.header;
     let Some(index) = header
@@ -128,8 +133,8 @@ pub(crate) fn write(
         .iter()
         .map(|&dimension| header.length(dimension))
         .collect();
-    let selection =
-        select(name, items, (&names, &lengths), record, Some(shape)).map_err(invalid)?;
+    let selection = select(name, items, (&names, &lengths), record, Some(shape))
+        .map_err(|refusal| refusal.at(path))?;
     let picked = selection.shape();
     if picked != shape {
         let show = |lengths: &[usize]| {
@@ -186,7 +191,7 @@ pub(crate) fn write(
         taken = from;
         Ok(())
     })?;
-    save(path, &contents)
+    save(path, &contents).map_err(SubscriptFailure::Os)
 }
 
 /// Adds records to `contents` until it has `needed`, each filled for every record variable,
