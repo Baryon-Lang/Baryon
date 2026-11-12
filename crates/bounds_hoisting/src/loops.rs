@@ -198,12 +198,7 @@ pub(crate) fn writes_in(body: &Body<'_>, block: usize, local: Local) -> bool {
 /// Whether `statement` may change `local` as a whole, as [`writes`] describes.
 pub(crate) fn statement_writes(statement: &StatementKind<'_>, local: Local) -> bool {
     match statement {
-        StatementKind::Assign(place, rvalue) => {
-            whole(place, local)
-                || operands(rvalue)
-                    .into_iter()
-                    .any(|operand| moved(operand, local))
-        }
+        StatementKind::Assign(place, rvalue) => whole(place, local) || moves(rvalue, local),
         StatementKind::Drop(place) | StatementKind::Accumulate { place, .. } => whole(place, local),
     }
 }
@@ -259,20 +254,27 @@ fn moved(operand: &Operand<'_>, local: Local) -> bool {
     matches!(operand, Operand::Move(place) if place.local == local)
 }
 
-/// The operands `rvalue` reads, for finding the moves it makes. A ready body holds no
-/// whole-array expression, and the rvalues that name a place only read it.
-fn operands<'a, 'db>(rvalue: &'a Rvalue<'db>) -> Vec<&'a Operand<'db>> {
+/// Whether `rvalue` moves `local`, or a part of it, out of one of its operands. A ready body
+/// holds no whole-array expression, and the rvalues that name a place only read it.
+///
+/// Every statement of a loop is asked this about each local the pass follows, so it looks at
+/// the operands in place rather than collecting them.
+fn moves(rvalue: &Rvalue<'_>, local: Local) -> bool {
     match rvalue {
         Rvalue::Use(operand) | Rvalue::Unary(_, operand) | Rvalue::Convert(operand, _) => {
-            vec![operand]
+            moved(operand, local)
         }
-        Rvalue::Binary(_, left, right) | Rvalue::CheckedBinary(_, left, right) => vec![left, right],
-        Rvalue::Aggregate(_, operands) | Rvalue::NewArray(_, operands) => operands.iter().collect(),
+        Rvalue::Binary(_, left, right) | Rvalue::CheckedBinary(_, left, right) => {
+            moved(left, local) || moved(right, local)
+        }
+        Rvalue::Aggregate(_, operands) | Rvalue::NewArray(_, operands) => {
+            operands.iter().any(|operand| moved(operand, local))
+        }
         Rvalue::Length(..)
         | Rvalue::IsPresent(_)
         | Rvalue::ErrorIndex(_)
         | Rvalue::MemberIndex(_)
         | Rvalue::Elementwise(_)
-        | Rvalue::Format(_) => Vec::new(),
+        | Rvalue::Format(_) => false,
     }
 }
