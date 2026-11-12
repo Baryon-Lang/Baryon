@@ -198,3 +198,65 @@ reached as `df["shape"]`, as in pandas.
 `df.copy()` is a new frame with a copy of every column. It costs one pass over the frame's
 memory. Assigning a frame, `other = trades`, moves it instead and copies nothing; `trades` is
 then no longer usable.
+
+## Printing
+
+`print(df)` writes the table pandas prints for the same frame, and a frame in an f-string,
+`f"{df}"`, becomes the same text:
+
+```python
+trades: DataFrame[Trade] = DataFrame({"price": prices, "volume": volumes})
+print(trades)
+```
+
+```text
+   price  volume
+0   1.50      10
+1   2.25     200
+2  -3.00       3
+```
+
+The first column numbers the rows from 0. The rules are those of pandas 3 at its default
+options:
+
+- **Floats.** A column of floats shows up to 6 decimals, and as many as its longest value
+  needs: 1.5 and 2.25 print as `1.50` and `2.25`. The column switches to powers of ten,
+  `1.500000e+10`, when a value is under 0.000001 in size and not zero, or when one is over
+  1,000,000 and the column would be over 12 characters wide. A missing number prints as `NaN`.
+- **Long frames.** A frame of more than 60 rows prints its first 5 and last 5 rows, with a row
+  of dots between them.
+- **Wide frames.** Columns that do not fit in 80 characters are left out of the middle, with
+  `...` in their place.
+- **The size.** A frame cut either way ends with its size, such as `[100 rows x 2 columns]`.
+- **No rows.** A frame with no rows prints `Empty DataFrame`, then its column names.
+
+```text
+        a   b
+0     0.0   0
+1     1.5   1
+2     3.0   2
+3     4.5   3
+4     6.0   4
+..    ...  ..
+95  142.5  95
+96  144.0  96
+97  145.5  97
+98  147.0  98
+99  148.5  99
+
+[100 rows x 2 columns]
+```
+
+Printing formats only the rows it shows, so it costs the same for ten rows or ten million.
+
+Three limits today:
+
+- The width is always 80 characters. pandas measures the terminal's width when it prints to
+  one.
+- A column of complex numbers prints each value as `print` does, `(1+2j)`, where pandas
+  prints `1.0+2.0j`.
+- A frame inside a list or tuple prints as its columns, one array after another, and not as
+  a table. Print each frame on its own.
+
+The formatting is written in Baryon, in the standard library's `frames.byn`
+([decision 0038](../decisions/0038-standard-library-in-baryon.md)).
