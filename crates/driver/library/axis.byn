@@ -5,21 +5,27 @@ It is internal to the standard library: `pyplot` and the files under it import i
 program cannot, so a program's own `axis.byn` is never hidden by it.
 
 `pyplot` makes one `XAxis` and one `YAxis` for each `Axes` when it draws, from the range each
-shows and where it sits in the figure, in points; `ticker` places and labels the ticks.
+shows, where it sits in the figure, in points, and whether its scale is logarithmic; `ticker`
+places and labels the ticks. A logarithmic axis also has minor ticks, shorter and thinner, at 2
+to 9 times each power of ten, as matplotlib's `"log"` scale draws them.
 """
 
 from backend_svg import RendererSVG
-from ticker import MaxNLocator, ScalarFormatter
+from math import log10
+from ticker import LogFormatterSciNotation, LogLocator, MaxNLocator, ScalarFormatter
 
 FONT_SIZE: Final = 10.0  # tick labels and the offset text, in points
 TICK_LENGTH: Final = 3.5  # a major tick, drawn outward, in points
 TICK_PAD: Final = 3.5  # the gap between a tick and its label, in points
+MINOR_LENGTH: Final = 2.0  # a minor tick, drawn outward, in points
+MINOR_PAD: Final = 3.4  # the gap between a minor tick and its label, in points
 OFFSET_PAD: Final = 3.0  # the gap between the tick labels or the axes and the offset text
 
 
 class XAxis(Struct):
     """The axis along the bottom of an axes: the range `vmin` to `vmax` laid from `left` to
-    `right` along the line at `bottom`, all in points from the figure's top left corner.
+    `right` along the line at `bottom`, all in points from the figure's top left corner, evenly
+    or, when `log` is set, by the logarithm of the value.
     """
 
     vmin: f64  # the value at the left end
@@ -27,39 +33,60 @@ class XAxis(Struct):
     left: f64  # where the left end is, in points
     right: f64  # where the right end is, in points
     bottom: f64  # where the axis line is, in points from the top
+    log: bool  # whether the scale is logarithmic, as `set_xscale("log")` makes it
 
     def get_majorticklocs(self: Self) -> list[f64]:
         """The tick positions, as matplotlib's `get_majorticklocs`: `MaxNLocator` with as many
         intervals as fit one per three font sizes of length, 1 to 9, as matplotlib's
-        `get_tick_space` allows. The first and last may fall outside the range."""
-        return _locate(self.vmin, self.vmax, self.right - self.left, 3.0)
+        `get_tick_space` allows, or on a logarithmic axis `LogLocator` with as many decades,
+        2 to 9. The first and last may fall outside the range."""
+        return _locate(self.vmin, self.vmax, self.right - self.left, 3.0, self.log)
+
+    def get_minorticklocs(self: Self) -> list[f64]:
+        """The minor tick positions, as matplotlib's `get_minorticklocs`: none on an even
+        axis, and `LogLocator`'s with `"auto"` multiples on a logarithmic one, less any at a
+        major tick."""
+        return _minor(self.vmin, self.vmax, self.right - self.left, 3.0, self.log)
 
     def draw(self: Self, renderer: InOut[RendererSVG]) -> f64:
         """Draws the ticks inside the range, pointing down, their labels under them and the
         offset text, if any, under the right end; returns how far down the labels reach, in
         points, where an x label goes."""
         ticks = self.get_majorticklocs()
-        formatter = ScalarFormatter(self.vmin, self.vmax)
-        labels = formatter.format_ticks(ticks)
+        minor = self.get_minorticklocs()
+        labels = _labels(self.vmin, self.vmax, ticks, self.log)
+        for label in _labels(self.vmin, self.vmax, minor, self.log):
+            labels.append(label.copy())
         _, height, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
-        baseline = self.bottom + TICK_LENGTH + TICK_PAD + height - descent
-        scale = (self.right - self.left) / (self.vmax - self.vmin)
-        for k in range(len(ticks)):
-            if _inside(ticks[k], self.vmin, self.vmax):
-                at = self.left + (ticks[k] - self.vmin) * scale
-                ends = Array([self.bottom, self.bottom + TICK_LENGTH])
-                renderer.draw_path(Array([at, at]), ends, "#000000", 0.8, [], "butt", False)
-                renderer.draw_text(at, baseline, labels[k], FONT_SIZE, "middle", False)
-        offset = formatter.get_offset(ticks)
-        if offset != "":
-            under = baseline + height + OFFSET_PAD
-            renderer.draw_text(self.right, under, offset, FONT_SIZE, "end", False)
-        return baseline + descent
+        reach = self.bottom + TICK_LENGTH + TICK_PAD + height
+        low = _scaled(self.vmin, self.log)
+        scale = (self.right - self.left) / (_scaled(self.vmax, self.log) - low)
+        for k in range(len(ticks) + len(minor)):
+            major = k < len(ticks)
+            value = ticks[k] if major else minor[k - len(ticks)]
+            if _inside(value, self.vmin, self.vmax):
+                length = TICK_LENGTH if major else MINOR_LENGTH
+                at = self.left + (_scaled(value, self.log) - low) * scale
+                ends = Array([self.bottom, self.bottom + length])
+                width = 0.8 if major else 0.6
+                renderer.draw_path(Array([at, at]), ends, "#000000", width, [], "butt", False)
+                top = self.bottom + length + (TICK_PAD if major else MINOR_PAD)
+                _, tall, deep = renderer.get_text_width_height_descent(labels[k], FONT_SIZE)
+                renderer.draw_text(at, top + tall - deep, labels[k], FONT_SIZE, "middle", False)
+                if labels[k] != "":
+                    reach = max(reach, top + tall)
+        if not self.log:
+            offset = ScalarFormatter(self.vmin, self.vmax).get_offset(ticks)
+            if offset != "":
+                under = reach - descent + height + OFFSET_PAD
+                renderer.draw_text(self.right, under, offset, FONT_SIZE, "end", False)
+        return reach
 
 
 class YAxis(Struct):
     """The axis along the left of an axes: the range `vmin` to `vmax` laid from `bottom` up to
-    `top` along the line at `left`, all in points from the figure's top left corner.
+    `top` along the line at `left`, all in points from the figure's top left corner, evenly
+    or, when `log` is set, by the logarithm of the value.
     """
 
     vmin: f64  # the value at the bottom end
@@ -67,11 +94,16 @@ class YAxis(Struct):
     bottom: f64  # where the bottom end is, in points from the top
     top: f64  # where the top end is, in points from the top
     left: f64  # where the axis line is, in points from the left
+    log: bool  # whether the scale is logarithmic, as `set_yscale("log")` makes it
 
     def get_majorticklocs(self: Self) -> list[f64]:
         """The tick positions, as `XAxis.get_majorticklocs`, with one interval per two font
         sizes of length, as matplotlib allows a vertical axis."""
-        return _locate(self.vmin, self.vmax, self.bottom - self.top, 2.0)
+        return _locate(self.vmin, self.vmax, self.bottom - self.top, 2.0, self.log)
+
+    def get_minorticklocs(self: Self) -> list[f64]:
+        """The minor tick positions, as `XAxis.get_minorticklocs`."""
+        return _minor(self.vmin, self.vmax, self.bottom - self.top, 2.0, self.log)
 
     def draw(self: Self, renderer: InOut[RendererSVG]) -> f64:
         """Draws the ticks inside the range, pointing left, their labels left of them and the
@@ -90,35 +122,76 @@ class YAxis(Struct):
         """Draws the axis with its ticks and labels on the side `outward` points to: -1 for
         the left, 1 for the right; returns how far out the labels reach."""
         ticks = self.get_majorticklocs()
-        formatter = ScalarFormatter(self.vmin, self.vmax)
-        labels = formatter.format_ticks(ticks)
-        _, height, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
-        edge = self.left + outward * TICK_LENGTH + outward * TICK_PAD
+        minor = self.get_minorticklocs()
+        labels = _labels(self.vmin, self.vmax, ticks, self.log)
+        for label in _labels(self.vmin, self.vmax, minor, self.log):
+            labels.append(label.copy())
         anchor = "end" if outward < 0.0 else "start"
-        scale = (self.bottom - self.top) / (self.vmax - self.vmin)
-        widest = 0.0
-        for k in range(len(ticks)):
-            if _inside(ticks[k], self.vmin, self.vmax):
-                at = self.bottom - (ticks[k] - self.vmin) * scale
-                ends = Array([self.left, self.left + outward * TICK_LENGTH])
-                renderer.draw_path(ends, Array([at, at]), "#000000", 0.8, [], "butt", False)
-                middle = at + 0.5 * (height - descent)
+        low = _scaled(self.vmin, self.log)
+        scale = (self.bottom - self.top) / (_scaled(self.vmax, self.log) - low)
+        reach = self.left + outward * (TICK_LENGTH + TICK_PAD)
+        for k in range(len(ticks) + len(minor)):
+            major = k < len(ticks)
+            value = ticks[k] if major else minor[k - len(ticks)]
+            if _inside(value, self.vmin, self.vmax):
+                length = TICK_LENGTH if major else MINOR_LENGTH
+                at = self.bottom - (_scaled(value, self.log) - low) * scale
+                ends = Array([self.left, self.left + outward * length])
+                width = 0.8 if major else 0.6
+                renderer.draw_path(ends, Array([at, at]), "#000000", width, [], "butt", False)
+                edge = self.left + outward * (length + (TICK_PAD if major else MINOR_PAD))
+                wide, tall, deep = renderer.get_text_width_height_descent(labels[k], FONT_SIZE)
+                middle = at + 0.5 * (tall - deep)
                 renderer.draw_text(edge, middle, labels[k], FONT_SIZE, anchor, False)
-                width, _, _ = renderer.get_text_width_height_descent(labels[k], FONT_SIZE)
-                widest = max(widest, width)
-        offset = formatter.get_offset(ticks)
-        if offset != "":
-            above = self.top - OFFSET_PAD
-            side = "start" if outward < 0.0 else "end"
-            renderer.draw_text(self.left, above, offset, FONT_SIZE, side, False)
-        return edge + outward * widest
+                if labels[k] != "":
+                    reach = min(reach, edge - wide) if outward < 0.0 else max(reach, edge + wide)
+        if not self.log:
+            offset = ScalarFormatter(self.vmin, self.vmax).get_offset(ticks)
+            if offset != "":
+                above = self.top - OFFSET_PAD
+                side = "start" if outward < 0.0 else "end"
+                renderer.draw_text(self.left, above, offset, FONT_SIZE, side, False)
+        return reach
 
 
-def _locate(vmin: f64, vmax: f64, length: f64, spacing: f64) -> list[f64]:
+def _locate(vmin: f64, vmax: f64, length: f64, spacing: f64, log: bool) -> list[f64]:
     """The ticks for `vmin` to `vmax` on an axis `length` points long, with one interval per
-    `spacing` font sizes, 1 to 9."""
-    bins = min(9, max(1, int(length / (spacing * FONT_SIZE))))
-    return MaxNLocator(bins, [1.0, 2.0, 2.5, 5.0, 10.0]).tick_values(vmin, vmax)
+    `spacing` font sizes, 1 to 9, or on a logarithmic axis that many decades, 2 to 9."""
+    space = int(length / (spacing * FONT_SIZE))
+    if log:
+        return LogLocator([1.0], min(9, max(2, space))).tick_values(vmin, vmax)
+    return MaxNLocator(min(9, max(1, space)), [1.0, 2.0, 2.5, 5.0, 10.0]).tick_values(vmin, vmax)
+
+
+def _minor(vmin: f64, vmax: f64, length: f64, spacing: f64, log: bool) -> list[f64]:
+    """The minor ticks for `vmin` to `vmax` on an axis `length` points long: none on an even
+    axis, and on a logarithmic one `LogLocator`'s with `"auto"` multiples, as many decades
+    apart as `_locate` allows, less any within 1e-5 of the axis's length of a major tick, as
+    matplotlib's `remove_overlapping_locs` drops them."""
+    if not log:
+        return []
+    space = min(9, max(2, int(length / (spacing * FONT_SIZE))))
+    ticks = [log10(tick) for tick in _locate(vmin, vmax, length, spacing, log)]
+    tolerance = abs(log10(vmax) - log10(vmin)) * 1e-5
+    minor: list[f64] = []
+    for value in LogLocator([], space).tick_values(vmin, vmax):
+        if len([tick for tick in ticks if abs(log10(value) - tick) <= tolerance]) == 0:
+            minor.append(value)
+    return minor
+
+
+def _labels(vmin: f64, vmax: f64, ticks: list[f64], log: bool) -> list[str]:
+    """The labels of `ticks` on an axis showing `vmin` to `vmax`: `ScalarFormatter`'s, or on a
+    logarithmic axis `LogFormatterSciNotation`'s."""
+    if log:
+        return LogFormatterSciNotation(vmin, vmax).format_ticks(ticks)
+    return ScalarFormatter(vmin, vmax).format_ticks(ticks)
+
+
+def _scaled(value: f64, log: bool) -> f64:
+    """Where `value` falls along an axis, before stretching to its length: the value, or its
+    logarithm on a logarithmic axis."""
+    return log10(value) if log else value
 
 
 def _inside(value: f64, vmin: f64, vmax: f64) -> bool:

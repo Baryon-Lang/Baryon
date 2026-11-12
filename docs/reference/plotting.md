@@ -214,6 +214,8 @@ says `1e−7+1e3` above its top end, meaning "times 10⁻⁷, plus 1000".
 | `ScalarFormatter(vmin, vmax)` | Labels ticks on an axis showing `vmin` to `vmax` | `ticker.ScalarFormatter()`, which reads the range from its axis |
 | `formatter.format_ticks(values)` | The label of each tick, as a `list[str]` | `ScalarFormatter.format_ticks` |
 | `formatter.get_offset(values)` | The offset text for those ticks, such as `1e−7+1e3`, or `""` | `ScalarFormatter.get_offset` |
+| `LogLocator(subs, numticks)` | Places ticks on a logarithmic axis: at powers of ten with `subs` `[1.0]`, at those multiples of each power otherwise, and at 2 to 9 times each with `[]`; at most `numticks` decades are ticked | `ticker.LogLocator(subs=..., numticks=...)`, `[]` for `subs="auto"` |
+| `LogFormatterSciNotation(vmin, vmax)` | Labels ticks on a logarithmic axis showing `vmin` to `vmax`, in matplotlib's mathtext: `$\mathdefault{10^{3}}$`, or `""` for a tick left unlabelled | `ticker.LogFormatterSciNotation()` |
 
 ```python
 from ticker import MaxNLocator, ScalarFormatter
@@ -231,6 +233,15 @@ tests compare both with what matplotlib 3.11 gives for 310 ranges, from `0 10` t
 millionth wide near `-77380925.9`. Struct fields have no defaults, so both items are built with
 every field, where matplotlib's have keyword arguments with defaults.
 
+On a logarithmic axis, `LogLocator` ticks every power of ten, or every second or third when more
+than `numticks` decades show, and puts minor ticks at 2 to 9 times each power when fewer than ten
+do. `LogFormatterSciNotation` labels only the powers when the axis spans more than one decade,
+adds 2, 3, 4 and 6 times a power when it spans more than 0.4 of one, and labels every minor tick
+in a narrower range, as matplotlib does. The tests compare both with matplotlib 3.11 for 176
+ranges, from a tenth of a decade to sixty decades. A tick can differ from matplotlib's in its last
+bit: NumPy raises 10 to a power with a vectorized `pow` on some processors that is not always
+correctly rounded, so matplotlib's own ticks differ between machines. Only base 10 is offered.
+
 ## The files under `pyplot`
 
 `pyplot` draws through these internal files of the standard library. A program cannot import
@@ -238,12 +249,12 @@ them; this table is for those working on the library, and on the PNG and PDF bac
 
 | Item | Does | matplotlib |
 | --- | --- | --- |
-| `XAxis(vmin, vmax, left, right, bottom)` | The axis along the bottom of an axes, laid from `left` to `right` points at `bottom` | `axis.XAxis` |
-| `YAxis(vmin, vmax, bottom, top, left)` | The axis along the left of an axes | `axis.YAxis` |
-| `axis.get_majorticklocs()` | The tick positions, with as many intervals as fit the axis's length | `Axis.get_majorticklocs` |
-| `axis.draw(renderer)` | Draws the ticks, their labels and the offset text; returns where the axis label goes | `Axis.draw` |
+| `XAxis(vmin, vmax, left, right, bottom, log)` | The axis along the bottom of an axes, laid from `left` to `right` points at `bottom`, by the logarithm of the value when `log` is set | `axis.XAxis` |
+| `YAxis(vmin, vmax, bottom, top, left, log)` | The axis along the left of an axes | `axis.YAxis` |
+| `axis.get_majorticklocs()`, `axis.get_minorticklocs()` | The tick positions, with as many intervals as fit the axis's length; minor ticks only on a logarithmic axis | `Axis.get_majorticklocs`, `Axis.get_minorticklocs` |
+| `axis.draw(renderer)` | Draws the ticks, minor ticks shorter and thinner, their labels and the offset text; returns where the axis label goes | `Axis.draw` |
 | `RendererSVG(width, height, [])` | An empty SVG drawing, sizes in points | `backend_svg.RendererSVG` |
-| `renderer.draw_path`, `draw_markers`, `draw_rectangle`, `draw_text` | Draw lines, markers, rectangles and text, in points from the top left corner | The renderer methods of the same names |
+| `renderer.draw_path`, `draw_markers`, `draw_rectangle`, `draw_text` | Draw lines, markers, rectangles and text, in points from the top left corner; `draw_text` draws a `LogFormatterSciNotation` label with its exponent raised | The renderer methods of the same names |
 | `renderer.get_text_width_height_descent(text, size)` | About how wide a text is, and the height and depth of its line | `RendererBase.get_text_width_height_descent` |
 | `renderer.tostring()` | The SVG file's text | What `savefig` writes |
 | `Artist(kind, x, y, widths, color, linewidth, dashes, marker, markersize, label)` | One line, set of markers or set of bars, as an axes keeps it; `kind` is `Kind.LINE`, `Kind.MARKERS` or `Kind.BARS` | `Line2D`, `PathCollection`, `BarContainer` |

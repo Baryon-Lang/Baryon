@@ -36,7 +36,7 @@ def draw_colorbar(
     renderer.draw_image(left, top, width, height, strip, False, False)
     renderer.draw_rectangle(left, top, width, height, "none", 1.0, "#000000", 0.8, False)
     right = left + width
-    axis = YAxis(image.vmin, image.vmax, top + height, top, right)
+    axis = YAxis(image.vmin, image.vmax, top + height, top, right, False)
     beyond = axis.draw_right(renderer)
     if label != "":
         _, line, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)

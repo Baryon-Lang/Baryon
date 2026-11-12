@@ -437,8 +437,8 @@ def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
                 )
         elif artist.kind == Kind.MARKERS:
             renderer.draw_markers(px, py, artist.marker, artist.markersize, artist.color, 1.5, True)
-    xaxis = XAxis(x0, x1, left, right, bottom)
-    yaxis = YAxis(y0, y1, bottom, top, left)
+    xaxis = XAxis(x0, x1, left, right, bottom, False)
+    yaxis = YAxis(y0, y1, bottom, top, left, False)
     if ax.grid_on:
         gray = "#b0b0b0"  # matplotlib's grid color
         for tick in xaxis.get_majorticklocs():
