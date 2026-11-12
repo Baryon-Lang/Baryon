@@ -44,6 +44,7 @@ mod overflow;
 mod parallel;
 mod parts;
 mod paths;
+mod plotting;
 mod print;
 mod process;
 mod reductions;

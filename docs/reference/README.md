@@ -36,6 +36,7 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Linear algebra and FFT](linear-algebra.md) | `linalg` and `fft`: solving systems, factoring matrices and Fourier transforms, with NumPy's names, and `LinAlgError` |
 | [Files and processes](files-and-processes.md) | Command-line arguments, the exit status and environment variables: `sys` and `os` |
 | [Data files](data-files.md) | Text tables of numbers, NumPy's `.npy` files and the other data file formats, with NumPy's names: `Array.loadtxt`, `Array.savetxt`, `Array.load` and `Array.save` |
+| [Plotting](plotting.md) | The `pyplot` and `ticker` modules: line plots with matplotlib's names and look, saved as SVG |
 | [Differences from Python](differences-from-python.md) | Every place a Python programmer will be surprised, with the reason |
 | [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |
 | [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |
