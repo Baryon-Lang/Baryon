@@ -274,8 +274,9 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
 
 /// Compiles the package rooted at `root` with `program`, one of [`Session::compile`] and
 /// [`Session::compile_tests`] giving a module and its test names, and links the module into the
-/// executable `output`, optimized when `profile` is [`Profile::Release`]. Returns the number of files compiled and the test names, or, when the
-/// package has errors, prints them and returns the exit status 1. When `timings` is set and the
+/// executable `output`, optimized when `profile` is [`Profile::Release`]. Returns the number of
+/// files compiled and the test names, or, when the package has errors, prints them and returns the
+/// exit status 1. When `timings` is set and the
 /// executable is linked, prints each stage's time to standard error ([`Timings`]).
 ///
 /// # Errors

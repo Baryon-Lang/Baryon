@@ -74,8 +74,8 @@ const DEBUG: &[&str] = &["-O0"];
 const MATH_LIBRARY: &str = "-lm";
 
 /// Compiles the LLVM module `module`, at `-O2` for a release build and `-O0` for a debug build
-/// (`optimize`, decision 0048), and links it with the runtime into the executable `output`, keeping the module's line tables (`-g`) so debuggers and panic backtraces show
-/// `.byn` lines.
+/// (`optimize`, decision 0048), and links it with the runtime into the executable `output`,
+/// keeping the module's line tables (`-g`) so debuggers and panic backtraces show `.byn` lines.
 ///
 /// The module is compiled to an object file in a scratch directory, then linked. On Linux the
 /// line tables are copied into the executable. On macOS the linker leaves them in the object file
