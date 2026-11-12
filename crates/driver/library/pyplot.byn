@@ -19,9 +19,11 @@ points, colors from the `tab10` cycle, and ticks placed and labelled by `ticker`
 `MaxNLocator` and `ScalarFormatter`, as matplotlib's are.
 """
 
+from artist import Artist, Kind, View
 from axis import XAxis, YAxis
 from backend_svg import RendererSVG
 from colors import to_hex
+from legend import draw_legend, location_code
 from math import inf, isfinite
 from stats import histogram
 
@@ -37,30 +39,6 @@ LABEL_PAD: Final = 4.0  # the gap between the tick labels and the axis label
 TITLE_PAD: Final = 6.0  # the gap between the axes and the title's baseline
 
 
-class _Kind(Enum):
-    """What an `_Artist` draws."""
-
-    LINE = 0  # a line through the points, with or without markers, from `plot`
-    MARKERS = 1  # a marker at each point, from `scatter`
-    BARS = 2  # a bar for each point, from `bar` and `hist`
-
-
-class _Artist(Struct):
-    """One thing drawn on the axes, in data coordinates: a line, a set of markers or a set of
-    bars, as matplotlib's `Line2D`, `PathCollection` and `BarContainer` are."""
-
-    kind: _Kind  # what is drawn
-    x: Array[f64, 1]  # the x of each point, or the left edge of each bar
-    y: Array[f64, 1]  # the y of each point, or the top of each bar, whose base is 0
-    widths: Array[f64, 1]  # each bar's width; empty for lines and markers
-    color: str  # an SVG color, `#rrggbb`
-    linewidth: f64  # a line's width in points; 0 for no line
-    dashes: list[f64]  # a line's on and off lengths in points; empty for a solid line
-    marker: str  # the marker at each point, as `backend_svg` names them; "" for none
-    markersize: f64  # a marker's size across, in points
-    label: str  # the legend's text; "" keeps the artist out of the legend
-
-
 class Axes(Struct):
     """A plot: the data drawn in a rectangle, with an axis below it and one to its left, as
     matplotlib's `Axes`.
@@ -70,7 +48,7 @@ class Axes(Struct):
     the data, with a margin of 5% on each side, until `set_xlim` or `set_ylim` fixes them.
     """
 
-    artists: list[_Artist]  # every line, set of markers and set of bars, in the order drawn
+    artists: list[Artist]  # every line, set of markers and set of bars, in the order drawn
     title: str  # above the axes; "" for none
     xlabel: str  # under the x axis; "" for none
     ylabel: str  # left of the y axis; "" for none
@@ -112,8 +90,20 @@ class Axes(Struct):
         dashes: list[f64] = []
         if width > 0.0:
             dashes = _dashes(linestyle, linewidth)
-        self.artists.append(_Artist(_Kind.LINE, x.copy(), y.copy(), Array.zeros(0),
-            self._color(color, True), width, dashes, marker.copy(), markersize, label.copy()))
+        self.artists.append(
+            Artist(
+                Kind.LINE,
+                x.copy(),
+                y.copy(),
+                Array.zeros(0),
+                self._color(color, True),
+                width,
+                dashes,
+                marker.copy(),
+                markersize,
+                label.copy(),
+            )
+        )
 
     def scatter(
         self: InOut[Self],
@@ -128,8 +118,20 @@ class Axes(Struct):
         marker's area in points squared, so `s=36.0` is 6 points across, and `color` and
         `marker` are `plot`'s. Copies `x` and `y`. Panics as `plot` does."""
         assert len(x) == len(y), "scatter needs x and y of the same length"
-        self.artists.append(_Artist(_Kind.MARKERS, x.copy(), y.copy(), Array.zeros(0),
-            self._color(color, False), 0.0, [], marker.copy(), s**0.5, label.copy()))
+        self.artists.append(
+            Artist(
+                Kind.MARKERS,
+                x.copy(),
+                y.copy(),
+                Array.zeros(0),
+                self._color(color, False),
+                0.0,
+                [],
+                marker.copy(),
+                s**0.5,
+                label.copy(),
+            )
+        )
 
     def bar(
         self: InOut[Self],
@@ -143,8 +145,20 @@ class Axes(Struct):
         matplotlib's `bar`; a negative height hangs below 0. Copies its arguments. Panics when
         `x` and `height` differ in length, or `color` is not a color."""
         assert len(x) == len(height), "bar needs x and height of the same length"
-        self.artists.append(_Artist(_Kind.BARS, x - 0.5 * width, height.copy(),
-            Array.fill(len(x), width), self._color(color, False), 0.0, [], "", 0.0, label.copy()))
+        self.artists.append(
+            Artist(
+                Kind.BARS,
+                x - 0.5 * width,
+                height.copy(),
+                Array.fill(len(x), width),
+                self._color(color, False),
+                0.0,
+                [],
+                "",
+                0.0,
+                label.copy(),
+            )
+        )
 
     def hist(
         self: InOut[Self], x: Array[f64, 1], bins: int = 10, color: str = "", label: str = ""
@@ -160,8 +174,20 @@ class Axes(Struct):
         for k in range(bins):
             heights[k] = f64(counts[k])
             widths[k] = edges[k + 1] - edges[k]
-        self.artists.append(_Artist(_Kind.BARS, edges[0:bins].copy(), heights.copy(), widths,
-            self._color(color, False), 0.0, [], "", 0.0, label.copy()))
+        self.artists.append(
+            Artist(
+                Kind.BARS,
+                edges[0:bins].copy(),
+                heights.copy(),
+                widths,
+                self._color(color, False),
+                0.0,
+                [],
+                "",
+                0.0,
+                label.copy(),
+            )
+        )
         return (heights, edges)
 
     def _color(self: InOut[Self], color: str, line: bool) -> str:
@@ -213,7 +239,7 @@ class Axes(Struct):
         order, that covers the fewest data points, as matplotlib's `"best"` does. Panics on any
         other `loc`.
         """
-        assert _location(loc) >= 0, "legend's loc must be 'best' or one of matplotlib's places"
+        assert location_code(loc) >= 0, "legend's loc must be 'best' or one of matplotlib's places"
         self.legend_loc = loc.copy()
 
     def grid(self: InOut[Self], visible: bool = True) -> None:
@@ -289,28 +315,6 @@ def _dashes(style: str, linewidth: f64) -> list[f64]:
     return [length * linewidth for length in pattern]
 
 
-def _location(loc: str) -> int:
-    """matplotlib's code for a legend location: 0 for `"best"`, 1 to 10 for the places in the
-    order `legend` lists them, and -1 for a name it does not know."""
-    names = [
-        "best",
-        "upper right",
-        "upper left",
-        "lower left",
-        "lower right",
-        "right",
-        "center left",
-        "center right",
-        "lower center",
-        "upper center",
-        "center",
-    ]
-    for code in range(len(names)):
-        if loc == names[code]:
-            return code
-    return -1
-
-
 def _expand(low: f64, high: f64, expander: f64, tiny: f64) -> tuple[f64, f64]:
     """`low` and `high`, widened by `expander` of their size when they are too close to tell
     apart, as matplotlib's `transforms.nonsingular`."""
@@ -345,7 +349,7 @@ def _view(ax: Axes, along_x: bool) -> tuple[f64, f64]:
     high = -inf
     sticky = False
     for artist in ax.artists:
-        bars = artist.kind == _Kind.BARS
+        bars = artist.kind == Kind.BARS
         for i in range(len(artist.x)):
             if isfinite(artist.x[i]) and isfinite(artist.y[i]):
                 first = artist.x[i] if along_x else artist.y[i]
@@ -378,7 +382,7 @@ def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
     for artist in ax.artists:
         px = LEFT + (artist.x - x0) * xscale
         py = BOTTOM - (artist.y - y0) * yscale
-        if artist.kind == _Kind.BARS:
+        if artist.kind == Kind.BARS:
             base = BOTTOM + y0 * yscale
             for i in range(len(px)):
                 width = artist.widths[i] * xscale
@@ -386,7 +390,7 @@ def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
                 renderer.draw_rectangle(
                     px[i], py[i], width, height, artist.color, 1.0, "none", 0.0, True
                 )
-        elif artist.kind == _Kind.MARKERS:
+        elif artist.kind == Kind.MARKERS:
             renderer.draw_markers(px, py, artist.marker, artist.markersize, artist.color, 1.5, True)
     xaxis = XAxis(x0, x1, LEFT, RIGHT, BOTTOM)
     yaxis = YAxis(y0, y1, BOTTOM, TOP, LEFT)
@@ -403,7 +407,7 @@ def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
                 line = Array([at, at])
                 renderer.draw_path(Array([LEFT, RIGHT]), line, gray, 0.8, [], "projecting", True)
     for artist in ax.artists:
-        if artist.kind == _Kind.LINE:
+        if artist.kind == Kind.LINE:
             px = LEFT + (artist.x - x0) * xscale
             py = BOTTOM - (artist.y - y0) * yscale
             if artist.linewidth > 0.0:
@@ -428,132 +432,5 @@ def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
         middle = (LEFT + RIGHT) / 2.0
         renderer.draw_text(middle, TOP - TITLE_PAD, ax.title, TITLE_SIZE, "middle", False)
     if ax.legend_loc != "":
-        _legend(ax, renderer, x0, xscale, y0, yscale)
-
-
-def _legend(
-    ax: Axes, renderer: InOut[RendererSVG], x0: f64, xscale: f64, y0: f64, yscale: f64
-) -> None:
-    """Draws the legend with matplotlib's default spacing: 4 points of padding, a 20 point
-    sample of each artist, 8 points before its label and 5 between rows, 5 points in from the
-    axes' edge, in a white box at 80% opacity with a light gray edge."""
-    widest = 0.0
-    rows = 0
-    for artist in ax.artists:
-        if artist.label != "":
-            width, _, _ = renderer.get_text_width_height_descent(artist.label, FONT_SIZE)
-            widest = max(widest, width)
-            rows += 1
-    if rows == 0:
-        return
-    _, row, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
-    width = 2.0 * 4.0 + 20.0 + 8.0 + widest
-    height = 2.0 * 4.0 + f64(rows) * row + f64(rows - 1) * 5.0
-    code = _location(ax.legend_loc)
-    if code == 0:
-        code = _best(ax, width, height, x0, xscale, y0, yscale)
-    left, top = _corner(code, width, height)
-    renderer.draw_rectangle(left, top, width, height, "#ffffff", 0.8, "#cccccc", 1.0, False)
-    k = 0
-    for artist in ax.artists:
-        if artist.label != "":
-            middle = top + 4.0 + f64(k) * (row + 5.0) + 0.5 * row
-            start = left + 4.0
-            if artist.kind == _Kind.BARS:
-                renderer.draw_rectangle(
-                    start, middle - 3.5, 20.0, 7.0, artist.color, 1.0, "none", 0.0, False
-                )
-            if artist.kind == _Kind.LINE and artist.linewidth > 0.0:
-                across = Array([start, start + 20.0])
-                level = Array([middle, middle])
-                width = artist.linewidth
-                renderer.draw_path(
-                    across, level, artist.color, width, artist.dashes, "projecting", False
-                )
-            if artist.marker != "":
-                edge = 1.5 if artist.kind == _Kind.MARKERS else 1.0
-                at = Array([start + 10.0])
-                level = Array([middle])
-                size = artist.markersize
-                renderer.draw_markers(at, level, artist.marker, size, artist.color, edge, False)
-            baseline = middle + 0.5 * row - descent
-            renderer.draw_text(start + 28.0, baseline, artist.label, FONT_SIZE, "start", False)
-            k += 1
-
-
-def _corner(code: int, width: f64, height: f64) -> tuple[f64, f64]:
-    """The top left corner of a legend `width` by `height` points at matplotlib's location
-    `code`, 5 points inside the axes."""
-    inset = 5.0
-    left = (LEFT + RIGHT - width) / 2.0
-    if code == 2 or code == 3 or code == 6:
-        left = LEFT + inset
-    elif code == 1 or code == 4 or code == 5 or code == 7:
-        left = RIGHT - inset - width
-    top = (TOP + BOTTOM - height) / 2.0
-    if code == 1 or code == 2 or code == 9:
-        top = TOP + inset
-    elif code == 3 or code == 4 or code == 8:
-        top = BOTTOM - inset - height
-    return (left, top)
-
-
-def _best(ax: Axes, width: f64, height: f64, x0: f64, xscale: f64, y0: f64, yscale: f64) -> int:
-    """matplotlib's `"best"` location: the first of the ten places, in `legend`'s order, whose
-    box holds the fewest points of lines and markers, overlaps the fewest bars, and crosses the
-    fewest lines. Costs ten passes over every point drawn."""
-    best = 1
-    least = -1
-    for code in range(1, 11):
-        left, top = _corner(code, width, height)
-        right = left + width
-        bottom = top + height
-        badness = 0
-        for artist in ax.artists:
-            px = LEFT + (artist.x - x0) * xscale
-            py = BOTTOM - (artist.y - y0) * yscale
-            crossed = False
-            for i in range(len(px)):
-                if artist.kind == _Kind.BARS:
-                    base = BOTTOM + y0 * yscale
-                    across = px[i] + artist.widths[i] * xscale
-                    apart_x = min(px[i], across) >= right or max(px[i], across) <= left
-                    apart_y = min(py[i], base) >= bottom or max(py[i], base) <= top
-                    if not apart_x and not apart_y:
-                        badness += 1
-                else:
-                    if left < px[i] and px[i] < right and top < py[i] and py[i] < bottom:
-                        badness += 1
-                    if artist.kind == _Kind.LINE and i > 0 and not crossed:
-                        box = (left, top, right, bottom)
-                        crossed = _crosses(px[i - 1], py[i - 1], px[i], py[i], box)
-            if crossed:
-                badness += 1
-        if badness == 0:
-            return code
-        if least < 0 or badness < least:
-            least = badness
-            best = code
-    return best
-
-
-def _crosses(xa: f64, ya: f64, xb: f64, yb: f64, box: tuple[f64, f64, f64, f64]) -> bool:
-    """Whether the segment from `(xa, ya)` to `(xb, yb)` touches the rectangle `box`, given
-    as its left, top, right and bottom, found by clipping the segment to each side in turn
-    (Liang and Barsky's method)."""
-    left, top, right, bottom = box
-    start = 0.0
-    end = 1.0
-    steps = [-(xb - xa), xb - xa, -(yb - ya), yb - ya]
-    gaps = [xa - left, right - xa, ya - top, bottom - ya]
-    for k in range(4):
-        if steps[k] == 0.0:
-            if gaps[k] < 0.0:
-                return False
-        else:
-            t = gaps[k] / steps[k]
-            if steps[k] < 0.0:
-                start = max(start, t)
-            else:
-                end = min(end, t)
-    return start <= end
+        view = View(LEFT, TOP, RIGHT, BOTTOM, x0, x1, y0, y1)
+        draw_legend(ax.artists, ax.legend_loc, view, renderer)

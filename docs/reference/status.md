@@ -181,7 +181,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim` and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, with matplotlib's results; [`colors.to_hex`](plotting.md#colors-and-line-styles), [`axis`](plotting.md#axis-and-backend_svg) and [`backend_svg`](plotting.md#axis-and-backend_svg) | `imshow` and colormaps (3.15.3); `plt.subplots`, logarithmic axes, `errorbar`, `fill_between` and `text` (3.15.4); contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
+| [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim` and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, with matplotlib's results; [`colors.to_hex`](plotting.md#colors-and-line-styles), [`axis`, `backend_svg`, `artist` and `legend`](plotting.md#axis-backend_svg-artist-and-legend) | `imshow` and colormaps (3.15.3); `plt.subplots`, logarithmic axes, `errorbar`, `fill_between` and `text` (3.15.4); contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
 
 ## Tests
 

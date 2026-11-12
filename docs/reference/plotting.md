@@ -3,9 +3,10 @@
 The `pyplot` module draws plots with matplotlib's names and matplotlib's default look, written in
 Baryon and saved as SVG files that any browser, VS Code or a LaTeX toolchain can show
 ([decision 0046](../decisions/0046-plotting.md)). The `ticker` module beside it places and
-labels the ticks, as `matplotlib.ticker` does. Three more modules hold the parts below them,
-named as matplotlib names its own: `colors` reads color names, `axis` draws an axis's ticks and
-labels, and `backend_svg` writes the SVG file.
+labels the ticks, as `matplotlib.ticker` does. Five more modules hold the parts below them,
+named as matplotlib names its own: `colors` reads color names, `artist` holds what an axes
+draws, `axis` draws an axis's ticks and labels, `legend` draws a legend, and `backend_svg`
+writes the SVG file.
 
 This chapter covers what builds today, roadmap 3.15.1 and 3.15.2: line plots, scatter plots,
 bars, histograms, markers, legends, grid lines, titles, axis labels, axis ranges and SVG output.
@@ -183,9 +184,9 @@ tests compare both with what matplotlib 3.11 gives for 310 ranges, from `0 10` t
 millionth wide near `-77380925.9`. Struct fields have no defaults, so both items are built with
 every field, where matplotlib's have keyword arguments with defaults.
 
-## `axis` and `backend_svg`
+## `axis`, `backend_svg`, `artist` and `legend`
 
-`pyplot` draws through two smaller modules, which can be used on their own to draw something it
+`pyplot` draws through smaller modules, which can be used on their own to draw something it
 does not offer yet.
 
 | Item | Does | matplotlib |
@@ -198,6 +199,10 @@ does not offer yet.
 | `renderer.draw_path`, `draw_markers`, `draw_rectangle`, `draw_text` | Draw lines, markers, rectangles and text, in points from the top left corner | The renderer methods of the same names |
 | `renderer.get_text_width_height_descent(text, size)` | About how wide a text is, and the height and depth of its line | `RendererBase.get_text_width_height_descent` |
 | `renderer.tostring()` | The SVG file's text | What `savefig` writes |
+| `Artist(kind, x, y, widths, color, linewidth, dashes, marker, markersize, label)` | One line, set of markers or set of bars, as an axes keeps it; `kind` is `Kind.LINE`, `Kind.MARKERS` or `Kind.BARS` | `Line2D`, `PathCollection`, `BarContainer` |
+| `View(left, top, right, bottom, x0, x1, y0, y1)` | Where an axes sits, in points, and the data range it shows; `view.to_x(x)` and `view.to_y(y)` map data to points | `Axes.transData` |
+| `draw_legend(artists, loc, view, renderer)` | Draws a legend of the labelled artists at `loc`, `"best"` included | `legend.Legend` |
+| `location_code(loc)` | matplotlib's number for a legend place: 0 for `"best"`, 1 to 10, or -1 | `Legend.codes` |
 
 Coordinates are in points from the figure's top left corner, y growing downwards, as SVG has
 them. The PNG and PDF backends (roadmap 3.15.6 and 3.15.7) will take the same calls.
