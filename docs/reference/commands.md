@@ -226,7 +226,7 @@ the Language Server Protocol, version 3.17
 ([decision 0019](../decisions/0019-language-server-protocol.md)). It loads every `.byn` file under
 the editor's workspace root as one package and reports the same errors and warnings as
 `baryon check`, updated as you type. It also answers three questions about the place the cursor
-is, and shows inlay hints, from the same checked package:
+is, shows inlay hints and renames, from the same checked package:
 
 - **Hover**: what the name under the cursor is, as one line of code, and the documentation string
   of what it names, as `baryon doc` writes it. A variable shows the type the compiler inferred for
@@ -245,6 +245,11 @@ is, and shows inlay hints, from the same checked package:
   the compiler inferred for it, as `energy: f64` where the code says `energy = …`; loop variables
   and the names a tuple is unpacked into get one too. Parameters and variables written
   `x: T = …` already say their type and get none.
+- **Rename**: a variable within its function, or a function, class, constant or type alias
+  defined at the top of a module everywhere the package names it, imports and `module.name`
+  included. The resolver says what each name refers to, so a different thing with the same name
+  is never touched. Parameters (a call may name one as a keyword argument), fields, methods,
+  enum members and modules cannot be renamed yet, and the editor says so.
 
 Answers come from the parts of the file that parse and check, so code half typed still gets them
 where it can, and gets nothing rather than an error where it cannot. Fixes come later (roadmap

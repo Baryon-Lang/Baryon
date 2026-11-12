@@ -9,6 +9,10 @@ use source::Sources;
 /// JSON-RPC error: the request's parameters are not what the method needs.
 const INVALID_PARAMS: i64 = -32602;
 
+/// The protocol's error for a request that was valid but could not be done, such as renaming
+/// something that cannot be renamed; the editor shows its message.
+const REQUEST_FAILED: i64 = -32803;
+
 impl Server {
     /// Answers a question about a place in a document: hover, go to definition or completion.
     /// A document the server does not know gets an empty answer, as one with nothing at the
@@ -87,5 +91,47 @@ impl Server {
                 .map(|hint| convert::inlay_hint(source, hint))
                 .collect(),
         ))
+    }
+
+    /// Answers `textDocument/rename`: the edits that rename what the name at the position
+    /// refers to, in every document it is named in ([`Session::rename`](driver::Session::rename)),
+    /// as a workspace edit. What cannot be renamed is answered with an error the editor shows.
+    pub(super) fn rename(&self, params: &Value) -> Result<Value, (i64, String)> {
+        let malformed = || {
+            (
+                INVALID_PARAMS,
+                "`textDocument/rename` needs a document, a position and a new name".to_owned(),
+            )
+        };
+        let uri = params["textDocument"]["uri"]
+            .as_str()
+            .ok_or_else(malformed)?;
+        let line = params["position"]["line"].as_u64().ok_or_else(malformed)?;
+        let character = params["position"]["character"]
+            .as_u64()
+            .ok_or_else(malformed)?;
+        let new_name = params["newName"].as_str().ok_or_else(malformed)?;
+        let index = self
+            .find(uri)
+            .ok_or_else(|| (REQUEST_FAILED, "this document is not open".to_owned()))?;
+        let file = self.documents[index].file;
+        let source = self.session.file(self.session.file_id(file));
+        let offset = convert::offset(source, line, character);
+        let spans = self
+            .session
+            .rename(file, offset, new_name)
+            .map_err(|message| (REQUEST_FAILED, message))?;
+        let mut changes = serde_json::Map::new();
+        for span in spans {
+            let uri = &self.documents[span.file().index() as usize].uri;
+            let edit = json!({"range": convert::range(&self.session, span), "newText": new_name});
+            if let Value::Array(edits) = changes
+                .entry(uri.clone())
+                .or_insert_with(|| Value::Array(Vec::new()))
+            {
+                edits.push(edit);
+            }
+        }
+        Ok(json!({"changes": changes}))
     }
 }

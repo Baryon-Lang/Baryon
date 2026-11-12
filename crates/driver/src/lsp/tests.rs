@@ -58,6 +58,7 @@ fn initialized_reply() -> Value {
                 "definitionProvider": true,
                 "completionProvider": {"triggerCharacters": ["."]},
                 "inlayHintProvider": true,
+                "renameProvider": true,
             },
             "serverInfo": {"name": "baryon", "version": env!("CARGO_PKG_VERSION")},
         },
@@ -206,7 +207,7 @@ fn requests_follow_the_lifecycle() {
         request(1, "textDocument/hover", &json!({})),
         request(2, "initialize", &json!({"rootUri": null})),
         request(3, "initialize", &json!({"rootUri": null})),
-        request(4, "textDocument/rename", &json!({})),
+        request(4, "textDocument/formatting", &json!({})),
         request(5, "textDocument/hover", &json!({})),
         request(6, "shutdown", &Value::Null),
         request(7, "shutdown", &Value::Null),
@@ -230,7 +231,7 @@ fn requests_follow_the_lifecycle() {
             ),
             (
                 &json!(4),
-                &json!({"code": -32601, "message": "`textDocument/rename` is not supported"})
+                &json!({"code": -32601, "message": "`textDocument/formatting` is not supported"})
             ),
             (
                 &json!(5),
@@ -405,4 +406,56 @@ fn inlay_hints_show_inferred_types() {
         ])
     );
     assert_eq!(result(&replies, 3), &json!([]));
+}
+
+/// A rename answers with an edit of every place the variable is named, and a name that cannot
+/// be renamed with an error the editor shows.
+#[test]
+fn rename_edits_every_use_or_says_why_not() {
+    let uri = "file:///rename/main.byn";
+    let text = "def main(n: i64):\n    total = 1\n    print(total)\n";
+    let rename = |id: u32, line: u32, character: u32| {
+        request(
+            id,
+            "textDocument/rename",
+            &json!({
+                "textDocument": {"uri": uri},
+                "position": {"line": line, "character": character},
+                "newName": "sum",
+            }),
+        )
+    };
+    let [shutdown, exit] = goodbye(4);
+    let (_, replies) = session(&[
+        initialize(None),
+        open(uri, text),
+        rename(2, 2, 11),
+        rename(3, 0, 9),
+        shutdown,
+        exit,
+    ]);
+    let replacement = |line: u32, character: u32| {
+        json!({
+            "range": {
+                "start": {"line": line, "character": character},
+                "end": {"line": line, "character": character + 5},
+            },
+            "newText": "sum",
+        })
+    };
+    assert_eq!(
+        result(&replies, 2),
+        &json!({"changes": {uri: [replacement(1, 4), replacement(2, 10)]}})
+    );
+    let refused = replies
+        .iter()
+        .find(|reply| reply["id"] == json!(3))
+        .unwrap();
+    assert_eq!(
+        refused["error"],
+        json!({
+            "code": -32803,
+            "message": "renaming a parameter is not supported yet: a call may name it",
+        })
+    );
 }

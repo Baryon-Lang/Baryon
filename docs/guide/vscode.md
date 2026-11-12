@@ -196,7 +196,9 @@ The period, in seconds, of a pendulum `length` metres long released at `angle` r
 Hover over `swing` and the box shows the type the compiler worked out for it, `swing: f64`,
 although the program never wrote one. The editor also shows it, greyed, right after the name
 where `swing` is first assigned: an inlay hint, which VS Code shows for every variable whose
-type the compiler inferred (turn them off with the `editor.inlayHints.enabled` setting). **Go to Definition** (`F12`, or `Cmd`-click on macOS and
+type the compiler inferred (turn them off with the `editor.inlayHints.enabled` setting). To
+rename a variable or a function, put the cursor on it and press `F2`: every place the program
+names it changes, in every file, and nothing else does. **Go to Definition** (`F12`, or `Cmd`-click on macOS and
 `Ctrl`-click elsewhere) on `simulated` opens `period.byn` at the `def` line; it works the same on
 variables, constants, fields, methods and enum members, in whichever file of the package they
 are defined. Now type `period.` on a new line inside the loop: the editor offers what `period`

@@ -196,6 +196,7 @@ impl Server {
                 "textDocument/hover" | "textDocument/definition" | "textDocument/completion",
             ) => self.query(method, params),
             (Phase::Running, "textDocument/inlayHint") => self.inlay_hints(params),
+            (Phase::Running, "textDocument/rename") => self.rename(params),
             (Phase::Running, _) => Err((METHOD_NOT_FOUND, format!("`{method}` is not supported"))),
             (Phase::ShutDown, _) => {
                 Err((INVALID_REQUEST, "the server is shutting down".to_owned()))
@@ -256,6 +257,7 @@ impl Server {
                 "definitionProvider": true,
                 "completionProvider": {"triggerCharacters": ["."]},
                 "inlayHintProvider": true,
+                "renameProvider": true,
             },
             "serverInfo": {"name": "baryon", "version": env!("CARGO_PKG_VERSION")},
         })
