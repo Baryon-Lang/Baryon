@@ -1,12 +1,16 @@
-//! The `netCDF4` module (decision 0047): `Dataset(path)` and `var[:]`, each a call of a
-//! [`Builtin::ArrayFile`] that can fail with `OSError`. Everything else a program asks of a
-//! `Dataset`, a `Variable` or a `Dimension` is a call of a library function the checker
+//! The `netCDF4` module (decision 0047): `Dataset(path)`, `var[:]` and `var[:] = values`, each
+//! a call of a [`Builtin::ArrayFile`] that can fail with `OSError`, and `path._apply(line)`,
+//! which the library's own functions call to change a file. Everything else a program asks of
+//! a `Dataset`, a `Variable` or a `Dimension` is a call of a library function the checker
 //! recorded where the program wrote it, lowered as any call is.
 //!
 //! - `Dataset(path)` writes the header's description lines straight into the `Dataset`'s one
-//!   field, a `list[str]`.
+//!   field, a `list[str]`. `Dataset(path, "w", format=...)` does the same after making a new
+//!   file: its change is `C` and the format's version, which the format's text gives.
 //! - `var[:]` passes the path and the name the `Variable` holds, its fields 2 and 0; the element
-//!   type and rank are the destination's.
+//!   type and rank are the destination's. `var[:] = values` passes them with the array,
+//!   borrowed.
+//! - `path._apply(line)` passes both `str`s; its result is the new description lines.
 //!
 //! Each call's error edge goes where any failing call's does (the `errors` module).
 
@@ -37,11 +41,35 @@ impl Builder<'_> {
                 let lines = place.project(Projection::Field(0));
                 (ArrayFile::NetcdfOpen, vec![path], lines)
             }
+            ("netCDF4.create", &[Some(path), Some(format)]) => {
+                let path = self.text_argument(path);
+                // `NETCDF3_CLASSIC` is version 1; `NETCDF3_64BIT_OFFSET`, version 2.
+                let version = if self.text_of(format).contains("CLASSIC") {
+                    1
+                } else {
+                    2
+                };
+                let change = self.text_constant(&format!("C\t{version}"));
+                let lines = place.project(Projection::Field(0));
+                (ArrayFile::NetcdfDefine, vec![path, change], lines)
+            }
+            ("netCDF4.apply", &[Some(path), Some(line)]) => {
+                let path = self.text_argument(path);
+                let line = self.text_argument(line);
+                (ArrayFile::NetcdfDefine, vec![path, line], place)
+            }
             ("netCDF4.read", &[Some(variable)]) => {
                 let variable = self.borrow(variable);
                 let path = Argument::Borrow(variable.clone().project(Projection::Field(PATH)));
                 let name = Argument::Borrow(variable.project(Projection::Field(NAME)));
                 (ArrayFile::NetcdfRead, vec![path, name], place)
+            }
+            ("netCDF4.write", &[Some(variable), Some(array)]) => {
+                let variable = self.borrow(variable);
+                let path = Argument::Borrow(variable.clone().project(Projection::Field(PATH)));
+                let name = Argument::Borrow(variable.project(Projection::Field(NAME)));
+                let array = Argument::Borrow(self.borrow(array));
+                (ArrayFile::NetcdfWrite, vec![path, name, array], place)
             }
             _ => return self.unsupported(node, "these arguments of a `netCDF4` call"),
         };

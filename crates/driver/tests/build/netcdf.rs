@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 /// The directory of files `netCDF4` wrote.
-fn fixtures() -> &'static Path {
+pub(super) fn fixtures() -> &'static Path {
     Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/netcdf"

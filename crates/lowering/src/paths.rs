@@ -269,7 +269,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The `str` constant `text`, passed `Owned`.
-    fn text_constant(&self, text: &str) -> Argument<'db> {
+    pub(crate) fn text_constant(&self, text: &str) -> Argument<'db> {
         Argument::Owned(Operand::Constant(Constant {
             ty: Type::new(self.db, TypeKind::Str),
             value: ConstantValue::Str(text.to_owned()),

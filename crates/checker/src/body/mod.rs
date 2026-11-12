@@ -56,6 +56,7 @@ mod members;
 mod methods;
 mod moves;
 mod netcdf;
+mod netcdf_writing;
 mod npy;
 mod numbers;
 mod operators;

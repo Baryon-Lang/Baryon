@@ -11,6 +11,9 @@
 //! an `Array[T, rank]` whose element type and rank come from the context, as
 //! `fits.getdata`'s do, else `Array[f64, 2]`, and the runtime checks the variable against them.
 //! An attribute is typed by the context too: `units: str = var.getncattr("units")`.
+//!
+//! `Dataset(path, "w", format=...)` makes a new file; the methods that define and fill it are
+//! the `netcdf_writing` module's.
 
 use super::Body;
 use super::calls::Arguments;
@@ -18,8 +21,10 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Call, Callee, Float, Integer, Key, Primitive, Type, TypeKind};
 
 impl<'db> Body<'db> {
-    /// `netCDF4.member(arguments)`: `Dataset(filename, mode="r")`, a `Dataset` that can fail
-    /// with `OSError`. The recorded argument is the path.
+    /// `netCDF4.member(arguments)`: `Dataset(filename, mode="r", format=...)`, a `Dataset`
+    /// that can fail with `OSError`. The mode `"r"`, `"a"` or `"r+"` opens a file, and the
+    /// recorded argument is the path; the mode `"w"` makes a new one, in the format `format`
+    /// names, and the recorded arguments are the path and the format.
     pub(super) fn netcdf_call(
         &mut self,
         node: NodeId,
@@ -38,11 +43,13 @@ impl<'db> Body<'db> {
         }
         let mut path = arguments.positional.first().copied();
         let mut mode = arguments.positional.get(1).copied();
+        let mut format = None;
         let mut wrong = arguments.positional.len() > 2;
         for &(name, value) in &arguments.keywords {
             let slot = match self.tree.text(name, self.text) {
                 "filename" => &mut path,
                 "mode" => &mut mode,
+                "format" => &mut format,
                 _ => {
                     wrong = true;
                     continue;
@@ -55,40 +62,98 @@ impl<'db> Body<'db> {
             self.untyped(arguments);
             return self.lowerer.error(
                 node,
-                "`Dataset` takes `filename` and `mode`",
+                "`Dataset` takes `filename`, `mode` and `format`",
                 "wrong arguments",
                 Some("for example `Dataset(\"air.nc\")` or `Dataset(\"air.nc\", \"r\")`"),
             );
         };
         let found = self.expression(path, Some(str));
         self.expect(path, str, found, "a path is");
+        let mut written = vec![Some(Key(path))];
         if let Some(mode) = mode {
             let found = self.expression(mode, Some(str));
             self.expect(mode, str, found, "a mode is");
-            let text = (self.tree.kind(mode) == SyntaxKind::StringLiteral)
-                .then(|| self.tree.text(mode, self.text));
-            if !matches!(text, Some("\"r\"" | "'r'")) {
-                return self.lowerer.error(
-                    mode,
-                    "`Dataset` opens a file for reading only, so far",
-                    "not built yet",
-                    Some(
-                        "write `\"r\"` or leave the mode out; writing NetCDF files comes next \
-                         under decision 0047",
-                    ),
-                );
+            match self.literal_text(mode) {
+                Some("r" | "a" | "r+") => {}
+                Some("w") => match self.netcdf_format(node, format) {
+                    Some(format) => written.push(Some(Key(format))),
+                    None => return self.lowerer.unknown(),
+                },
+                _ => {
+                    return self.lowerer.error(
+                        mode,
+                        "`Dataset` takes the mode `\"r\"`, `\"a\"`, `\"r+\"` or `\"w\"`",
+                        "not a mode",
+                        Some("write the mode as text in the call, such as `\"w\"`"),
+                    );
+                }
             }
         }
         let Some(dataset) = self.library_class_in("netCDF4", "Dataset") else {
             return self.missing_netcdf_class(node, "Dataset");
         };
+        let name = if written.len() == 2 {
+            "netCDF4.create"
+        } else {
+            "netCDF4.Dataset"
+        };
         let call = Call {
-            callee: Callee::Builtin("netCDF4.Dataset".to_owned()),
+            callee: Callee::Builtin(name.to_owned()),
             type_arguments: Vec::new(),
-            arguments: vec![Some(Key(path))],
+            arguments: written,
         };
         self.typed.calls.insert(Key(node), call);
         self.raises_library_error(node, dataset, "OSError")
+    }
+
+    /// The text of `node` when it is a string literal, without its quotes.
+    pub(super) fn literal_text(&self, node: NodeId) -> Option<&str> {
+        (self.tree.kind(node) == SyntaxKind::StringLiteral)
+            .then(|| self.tree.text(node, self.text))
+            .and_then(|text| text.get(1..text.len().checked_sub(1)?))
+    }
+
+    /// The `format` of `Dataset(path, "w", format=...)` at `node`, after checking that it names
+    /// a classic format: `NETCDF3_CLASSIC`, or `NETCDF3_64BIT_OFFSET` or its other name
+    /// `NETCDF3_64BIT`. `None`, after reporting it, for anything else.
+    fn netcdf_format(&mut self, node: NodeId, format: Option<NodeId>) -> Option<NodeId> {
+        let Some(format) = format else {
+            self.lowerer.error(
+                node,
+                "a new NetCDF file needs its `format`",
+                "no format",
+                Some(
+                    "`netCDF4` writes NetCDF-4 files when the format is left out, which are not \
+                     built yet; write `format=\"NETCDF3_CLASSIC\"` or \
+                     `format=\"NETCDF3_64BIT_OFFSET\"`",
+                ),
+            );
+            return None;
+        };
+        let str = Type::new(self.db, TypeKind::Str);
+        let found = self.expression(format, Some(str));
+        self.expect(format, str, found, "a format is");
+        let (label, help) = match self.literal_text(format) {
+            Some("NETCDF3_CLASSIC" | "NETCDF3_64BIT_OFFSET" | "NETCDF3_64BIT") => {
+                return Some(format);
+            }
+            Some("NETCDF4" | "NETCDF4_CLASSIC") => (
+                "not built yet",
+                "NetCDF-4 files ride on HDF5, which comes later (row 3.14.6); write \
+                 `\"NETCDF3_CLASSIC\"` or `\"NETCDF3_64BIT_OFFSET\"`",
+            ),
+            _ => (
+                "not a format",
+                "write `\"NETCDF3_CLASSIC\"` or `\"NETCDF3_64BIT_OFFSET\"` as text in the call",
+            ),
+        };
+        self.lowerer.error(
+            format,
+            "a NetCDF file is written as a classic file, so far",
+            label,
+            Some(help),
+        );
+        None
     }
 
     /// Whether the class `name` of `file` is the library's `netCDF4.Dataset`, which a program
@@ -100,7 +165,7 @@ impl<'db> Body<'db> {
     }
 
     /// Whether `ty` is the library's `netCDF4` class `name`.
-    fn is_netcdf(&self, ty: Type<'db>, name: &str) -> bool {
+    pub(super) fn is_netcdf(&self, ty: Type<'db>, name: &str) -> bool {
         self.library_class_in("netCDF4", name) == Some(ty)
     }
 
@@ -147,7 +212,7 @@ impl<'db> Body<'db> {
 
     /// Whether `node`, before it is checked, is a value of the library's `netCDF4` class
     /// `class`: a variable that holds one, or for a `Variable` also `ds.variables[name]`.
-    fn names_netcdf(&self, node: NodeId, class: &str) -> bool {
+    pub(super) fn names_netcdf(&self, node: NodeId, class: &str) -> bool {
         match self.tree.kind(node) {
             SyntaxKind::Name => {
                 let Some(&database::Definition::Local(binding)) = self.lowerer.definition(node)
@@ -184,11 +249,7 @@ impl<'db> Body<'db> {
         index: NodeId,
         expected: Option<Type<'db>>,
     ) -> Type<'db> {
-        let whole = self.tree.kind(index) == SyntaxKind::Slice
-            && self.tree.child(index, Role::Lower).is_none()
-            && self.tree.child(index, Role::Upper).is_none()
-            && self.tree.child(index, Role::Step).is_none();
-        if !whole {
+        if !self.is_whole(index) {
             return self.lowerer.error(
                 index,
                 "a NetCDF variable is read whole, as `var[:]`, so far",
@@ -228,9 +289,17 @@ impl<'db> Body<'db> {
         self.raised_value(node, ty, "reading a NetCDF variable can fail with")
     }
 
+    /// Whether the subscript's `index` is `:`, the whole of a variable.
+    pub(super) fn is_whole(&self, index: NodeId) -> bool {
+        self.tree.kind(index) == SyntaxKind::Slice
+            && self.tree.child(index, Role::Lower).is_none()
+            && self.tree.child(index, Role::Upper).is_none()
+            && self.tree.child(index, Role::Step).is_none()
+    }
+
     /// Whether a classic `NetCDF` file's values can be read as elements of type `ty`: a signed
     /// integer or a float.
-    fn is_netcdf_element(&self, ty: Type<'db>) -> bool {
+    pub(super) fn is_netcdf_element(&self, ty: Type<'db>) -> bool {
         matches!(
             ty.kind(self.db),
             TypeKind::Primitive(
@@ -251,6 +320,9 @@ impl<'db> Body<'db> {
         arguments: &Arguments,
         expected: Option<Type<'db>>,
     ) -> Option<Type<'db>> {
+        if method == "_apply" {
+            return self.netcdf_apply(node, (value, base), arguments);
+        }
         let (class, prefix) = if self.is_netcdf(base, "Dataset") {
             ("Dataset", "")
         } else if self.is_netcdf(base, "Variable") {
@@ -260,6 +332,11 @@ impl<'db> Body<'db> {
         } else {
             return None;
         };
+        if let Some(ty) =
+            self.netcdf_definition(node, (value, base), (class, prefix), method, arguments)
+        {
+            return Some(ty);
+        }
         let function = match (class, method) {
             ("Dataset" | "Variable", "getncattr") => {
                 let Some(kind) = expected.and_then(|ty| self.attribute_kind(ty)) else {
@@ -292,7 +369,7 @@ impl<'db> Body<'db> {
 
     /// The name the library's functions give an attribute read as `ty`: `str`, `int` or
     /// `float`, or `None` for a type an attribute is not read as.
-    fn attribute_kind(&self, ty: Type<'db>) -> Option<&'static str> {
+    pub(super) fn attribute_kind(&self, ty: Type<'db>) -> Option<&'static str> {
         match ty.kind(self.db) {
             TypeKind::Str => Some("str"),
             TypeKind::Primitive(Primitive::Integer(Integer::I64)) => Some("int"),
