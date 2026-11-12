@@ -285,3 +285,157 @@ declare zeroext i1 @baryon_rt_array_save(ptr, i64, ptr, i64, i64, ptr, i64, ptr)
 "
     );
 }
+
+/// The types and locals of the FITS tests: a `list[str]` of cards, an `Array[u16, 2]` image,
+/// and the error edge's `Raises[None, OSError]`, with `i64` for `OSError`.
+fn fits_body(database: &Database) -> (Body<'_>, [Local; 3]) {
+    let none = Type::new(database, TypeKind::None);
+    let str = Type::new(database, TypeKind::Str);
+    let element = primitive(database, Primitive::Integer(Integer::U16));
+    let array = Type::new(database, TypeKind::Array { element, rank: 2 });
+    let list = Type::new(database, TypeKind::List(str));
+    let errors = vec![primitive(database, Primitive::Integer(Integer::I64))];
+    let raised = Type::new(
+        database,
+        TypeKind::Fallible {
+            value: none,
+            errors,
+        },
+    );
+    let mut body = Body::new(none, span());
+    let cards = body.push_local(list, LocalKind::Temporary, span());
+    let image = body.push_local(array, LocalKind::Temporary, span());
+    let error = body.push_local(raised, LocalKind::Temporary, span());
+    (body, [cards, image, error])
+}
+
+/// A call of the FITS operation `method` going to block `target`, or to block `failed` with the
+/// error in `error`.
+fn fits_call(
+    method: ArrayFile,
+    arguments: Vec<Argument<'_>>,
+    destination: Local,
+    error: Local,
+    (target, failed): (usize, usize),
+) -> mir::Terminator<'_> {
+    end(TerminatorKind::Call {
+        callee: Callee::Builtin(Builtin::ArrayFile(method)),
+        arguments,
+        destination: destination.into(),
+        target: BlockId::new(target),
+        error: Some(ErrorEdge {
+            error,
+            target: BlockId::new(failed),
+        }),
+    })
+}
+
+/// A constant argument of type `ty`.
+fn constant(ty: Type<'_>, value: ConstantValue) -> Argument<'_> {
+    Argument::Owned(Operand::Constant(Constant { ty, value }))
+}
+
+/// `cards = fits.getheader("in.fits", 1)`, then `image = fits.getdata("in.fits", 1)` of an
+/// `Array[u16, 2]`; either call's failure goes to the last block. The image read passes the
+/// runtime's number for `u16`, 6, and the rank.
+#[test]
+fn fits_reads_pass_the_hdu_and_the_element_number() {
+    let database = Database::default();
+    let (mut body, [cards, image, error]) = fits_body(&database);
+    let str = Type::new(&database, TypeKind::Str);
+    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
+    let arguments = || {
+        vec![
+            constant(str, ConstantValue::Str("in.fits".to_owned())),
+            constant(i64, ConstantValue::Integer(1)),
+        ]
+    };
+    let header = ArrayFile::FitsHeader;
+    body.push_block(fits_call(header, arguments(), cards, error, (1, 3)));
+    let data = ArrayFile::FitsData;
+    body.push_block(fits_call(data, arguments(), image, error, (2, 3)));
+    body.push_block(end(TerminatorKind::Return));
+    body.push_block(end(TerminatorKind::Return));
+    assert_eq!(
+        module(&database, &[("read", body)]),
+        "\
+define void @read() {
+start:
+  %_1 = alloca { ptr, i64, i64 }
+  %_2 = alloca { ptr, [2 x i64], [2 x i64] }
+  %_3 = alloca { i8, [1 x i64] }
+  br label %bb0
+bb0:
+  %t0 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775801 }, 0
+  %t1 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775801 }, 1
+  %t2 = and i64 %t1, 9223372036854775807
+  %t3 = call zeroext i1 @baryon_rt_fits_cards(ptr %t0, i64 %t2, i64 1, ptr %_1, ptr %_3)
+  br i1 %t3, label %bb3, label %bb1
+bb1:
+  %t4 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775801 }, 0
+  %t5 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775801 }, 1
+  %t6 = and i64 %t5, 9223372036854775807
+  %t7 = call zeroext i1 @baryon_rt_fits_read(ptr %t4, i64 %t6, i64 1, i32 6, i64 2, ptr %_2, \
+ptr %_3)
+  br i1 %t7, label %bb3, label %bb2
+bb2:
+  ret void
+bb3:
+  ret void
+}
+
+@baryon.str.0 = private unnamed_addr constant [7 x i8] c\"in.fits\"
+
+declare zeroext i1 @baryon_rt_fits_cards(ptr, i64, i64, ptr, ptr) nounwind
+declare zeroext i1 @baryon_rt_fits_read(ptr, i64, i64, i32, i64, ptr, ptr) nounwind
+"
+    );
+}
+
+/// `fits.writeto("out.fits", image, header, overwrite=True)`: the call passes the cards' data
+/// and length and the flag that a header was given, then the `overwrite` flag.
+#[test]
+fn a_fits_write_passes_the_cards_and_the_flags() {
+    let database = Database::default();
+    let (mut body, [cards, image, error]) = fits_body(&database);
+    let str = Type::new(&database, TypeKind::Str);
+    let bool = primitive(&database, Primitive::Bool);
+    let arguments = vec![
+        constant(str, ConstantValue::Str("out.fits".to_owned())),
+        Argument::Borrow(image.into()),
+        constant(bool, ConstantValue::Bool(true)),
+        Argument::Borrow(cards.into()),
+    ];
+    let write = ArrayFile::FitsWrite;
+    body.push_block(fits_call(write, arguments, Local::RETURN, error, (1, 1)));
+    body.push_block(end(TerminatorKind::Return));
+    assert_eq!(
+        module(&database, &[("write", body)]),
+        "\
+define void @write() {
+start:
+  %_1 = alloca { ptr, i64, i64 }
+  %_2 = alloca { ptr, [2 x i64], [2 x i64] }
+  %_3 = alloca { i8, [1 x i64] }
+  br label %bb0
+bb0:
+  %t0 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775800 }, 0
+  %t1 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775800 }, 1
+  %t2 = and i64 %t1, 9223372036854775807
+  %t3 = load ptr, ptr %_1
+  %t4 = getelementptr inbounds { ptr, i64, i64 }, ptr %_1, i32 0, i32 1
+  %t5 = load i64, ptr %t4
+  %t6 = call zeroext i1 @baryon_rt_fits_write(ptr %t0, i64 %t2, ptr %_2, i64 2, i32 6, \
+ptr %t3, i64 %t5, i1 zeroext true, i1 zeroext true, ptr %_3)
+  br i1 %t6, label %bb1, label %bb1
+bb1:
+  ret void
+}
+
+@baryon.str.0 = private unnamed_addr constant [8 x i8] c\"out.fits\"
+
+declare zeroext i1 @baryon_rt_fits_write(ptr, i64, ptr, i64, i32, ptr, i64, i1 zeroext, \
+i1 zeroext, ptr) nounwind
+"
+    );
+}
