@@ -16,6 +16,7 @@ mod parallel;
 mod paths;
 mod print;
 mod process;
+mod registers;
 mod sorting;
 mod streams;
 mod string_methods;

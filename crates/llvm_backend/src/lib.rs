@@ -8,9 +8,13 @@
 //!
 //! How a body becomes a function:
 //!
-//! - **Every local is a stack slot** (`alloca`), loaded and stored by each use. LLVM's `mem2reg`
-//!   pass turns the slots into registers at `-O1` and above, so the backend never builds SSA
-//!   form itself, as `clang -O0` and `rustc` do.
+//! - **A number local is a register; every other local is a stack slot.** A number or `bool`
+//!   that is only ever assigned and read whole gets SSA form from the backend itself, with a
+//!   `phi` where paths join (the `function::ssa` module, roadmap 2.7), so a debug build at
+//!   `clang -O0`, which runs no `mem2reg`, keeps its loop counters and sums out of memory: the
+//!   `nbody` kernel's debug build runs in 2.1 s instead of 5.5 s. Any other local, or one whose
+//!   address is needed, is a stack slot (`alloca`), loaded and stored by each use, which LLVM's
+//!   `mem2reg` turns into registers at `-O1` and above.
 //! - **Parameters follow decision 0006.** A copy type passed as a read-only borrow, or any value
 //!   passed `Owned`, arrives by value. A borrow of anything else arrives as a `noalias readonly`
 //!   pointer, and an `InOut` as a `noalias` pointer: the exclusivity check guarantees nothing

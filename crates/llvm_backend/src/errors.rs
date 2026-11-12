@@ -38,7 +38,11 @@ impl<'db> Function<'_, '_, 'db> {
             Repr::Empty if self.errors.is_empty() => self.line("ret void"),
             Repr::Empty => self.line("ret i1 false"),
             Repr::Value(llvm) => {
-                let value = self.emit(&format!("load {llvm}, ptr %_0"));
+                let value = if self.promoted(0) {
+                    self.read(0)
+                } else {
+                    self.emit(&format!("load {llvm}, ptr %_0"))
+                };
                 if self.errors.is_empty() {
                     self.line(&format!("ret {llvm} {value}"));
                 } else {

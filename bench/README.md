@@ -241,6 +241,7 @@ What has changed since, on the same machine and program:
 | Baseline (2.0) | 9.5 s | 9.5 s |
 | Debug builds at `clang -O0` (2.5, [decision 0048](../docs/decisions/0048-debug-builds-compile-fast.md)) | 1.85 s | 9.5 s |
 | One module per core, compiled at once, debug builds only (2.6) | 1.0 s | 9.5 s |
+| Number locals as registers (2.7) | 0.9 s | 9.5 s |
 
 Splitting the release build too took it to 2.9 s, but `clang` never inlines a call into another
 module, so a small function called in a hot loop could run slower. Release builds stay one
