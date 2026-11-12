@@ -27,6 +27,11 @@ pub(crate) fn compatible<'db>(db: &'db dyn TypeDb, expected: Type<'db>, found: T
         (TypeKind::Callable { .. }, TypeKind::Function { callable, .. }) => {
             compatible(db, expected, *callable)
         }
+        // Frames with the same columns are one table, whatever names their rows (decision
+        // 0045), on their own or inside another type, such as `list[DataFrame[Trade]]`.
+        _ if holds_frame(db, expected) && holds_frame(db, found) => {
+            unnamed_rows(db, expected) == unnamed_rows(db, found)
+        }
         _ => false,
     }
 }
@@ -42,6 +47,54 @@ pub(crate) fn is_open<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
 /// Whether `ty` contains an unknown type anywhere, from an error already reported.
 pub(crate) fn is_unknown<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
     contains(db, ty, &|ty| matches!(ty.kind(db), TypeKind::Unknown))
+}
+
+/// Whether `ty` is or contains a `DataFrame` type, as `list[DataFrame[Trade]]` does.
+pub(crate) fn holds_frame<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
+    contains(db, ty, &|ty| {
+        matches!(ty.kind(db), TypeKind::DataFrame { .. })
+    })
+}
+
+/// `ty` with every frame type in it replaced by the frame of the same columns whose rows no
+/// struct names, so two types that differ only in what names the rows of their frames become
+/// equal.
+fn unnamed_rows<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> Type<'db> {
+    if !holds_frame(db, ty) {
+        return ty;
+    }
+    let map = |ty: Type<'db>| unnamed_rows(db, ty);
+    let all = |types: &[Type<'db>]| types.iter().map(|&ty| map(ty)).collect::<Vec<_>>();
+    let kind = match ty.kind(db) {
+        TypeKind::DataFrame { columns, .. } => TypeKind::DataFrame {
+            columns: columns.clone(),
+            row: None,
+        },
+        TypeKind::Tuple(items) => TypeKind::Tuple(all(items)),
+        TypeKind::List(item) => TypeKind::List(map(*item)),
+        TypeKind::Optional(value) => TypeKind::Optional(map(*value)),
+        TypeKind::Dict { key, value } => TypeKind::Dict {
+            key: *key,
+            value: map(*value),
+        },
+        TypeKind::Struct(nominal) => TypeKind::Struct(Nominal {
+            arguments: all(&nominal.arguments),
+            ..nominal.clone()
+        }),
+        TypeKind::Callable {
+            parameters,
+            returns,
+        } => TypeKind::Callable {
+            parameters: all(parameters),
+            returns: map(*returns),
+        },
+        TypeKind::Fallible { value, errors } => TypeKind::Fallible {
+            value: map(*value),
+            errors: errors.clone(),
+        },
+        _ => return ty,
+    };
+    Type::new(db, kind)
 }
 
 /// Whether `ty` contains `parameter` anywhere, so `list[T]` mentions `T`.

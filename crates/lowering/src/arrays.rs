@@ -450,6 +450,10 @@ impl<'db> Builder<'db> {
         if matches!(ty.kind(self.db), TypeKind::Str) {
             return self.text_length(place, argument, node);
         }
+        if self.frame_columns(argument).is_some() {
+            let rows = self.frame_length(argument, node);
+            return self.assign(place, Rvalue::Use(rows), node);
+        }
         if !self.is_array(ty)
             && !matches!(ty.kind(self.db), TypeKind::List(_) | TypeKind::Dict { .. })
         {

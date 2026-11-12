@@ -35,7 +35,7 @@ pub(crate) struct Lowerer<'db> {
 }
 
 /// The builtin types that take arguments, each with an example of how to write it.
-const GENERIC_BUILTINS: [(&str, &str); 9] = [
+const GENERIC_BUILTINS: [(&str, &str); 10] = [
     ("list", "list[f64]"),
     ("dict", "dict[str, f64]"),
     ("tuple", "tuple[f64, i64]"),
@@ -45,6 +45,7 @@ const GENERIC_BUILTINS: [(&str, &str); 9] = [
     ("Raises", "Raises[f64, SolverError]"),
     ("InOut", "InOut[Array[f64, 1]]"),
     ("Owned", "Owned[list[f64]]"),
+    ("DataFrame", "DataFrame[Trade]"),
 ];
 
 impl<'db> Lowerer<'db> {
@@ -197,6 +198,7 @@ impl<'db> Lowerer<'db> {
         let written = self.tree.text(name, self.text);
         match self.resolution.definition(name) {
             None | Some(Definition::Standard { .. }) => self.unknown(),
+            Some(Definition::Builtin("DataFrame")) => self.frame(node, subscript),
             Some(Definition::Builtin(builtin)) => self.builtin(node, builtin, subscript),
             Some(&Definition::Item(file, item)) => self.item(node, written, file, item, subscript),
             Some(Definition::Local(local)) if self.type_parameters.contains(local) => {
@@ -398,7 +400,7 @@ impl<'db> Lowerer<'db> {
     }
 
     /// The type arguments of a subscript: the items of `X[A, B]`, or the one index of `X[A]`.
-    fn arguments(&self, subscript: NodeId) -> Vec<NodeId> {
+    pub(crate) fn arguments(&self, subscript: NodeId) -> Vec<NodeId> {
         let Some(index) = self.tree.child(subscript, Role::Index) else {
             return Vec::new();
         };
@@ -418,7 +420,13 @@ impl<'db> Lowerer<'db> {
     }
 
     /// Reports a type given the wrong number of arguments.
-    fn arity(&mut self, node: NodeId, name: &str, expected: usize, found: usize) -> Type<'db> {
+    pub(crate) fn arity(
+        &mut self,
+        node: NodeId,
+        name: &str,
+        expected: usize,
+        found: usize,
+    ) -> Type<'db> {
         let plural = if expected == 1 { "" } else { "s" };
         let message = format!("`{name}` takes {expected} type argument{plural}, found {found}");
         let example = GENERIC_BUILTINS
