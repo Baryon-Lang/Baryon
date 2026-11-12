@@ -30,7 +30,7 @@ mod storage;
 mod writing;
 
 pub(crate) use header::read_header;
-pub(crate) use selection::{Item, Selection, is_whole, select};
+pub(crate) use selection::{Item, Selection, SubscriptFailure, is_whole, select};
 pub(crate) use writing::{define, write};
 
 /// The type of a `NetCDF` value, numbered as the format numbers it.

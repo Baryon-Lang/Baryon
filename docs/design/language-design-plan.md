@@ -22,9 +22,10 @@ to write, faster to run, or harder to get wrong? Interoperability with other lan
 Phase 4 so that nothing in the core is shaped by someone else's ABI.
 
 The compiler is written in Rust. Its front end is query-based (demand-driven) on the `salsa`
-crate, it lowers to an IR of its own, and LLVM is its first code generator; a fast debug backend
-(Cranelift) follows in Phase 2 so compile speed and runtime speed are never traded against each
-other.
+crate, it lowers to an IR of its own, and LLVM is its code generator: unoptimized for a debug
+build, optimized for a release build, so compile speed and runtime speed are never traded against
+each other ([0048](../decisions/0048-debug-builds-compile-fast.md)). Cranelift is planned as the
+REPL's JIT.
 
 The language takes Rust's ownership and RAII, Fortran's array semantics and no-alias guarantees,
 and Python's syntax exactly: every source file is valid Python 3.12, read by an existing Rust
@@ -319,7 +320,7 @@ orchestrates builds. Every stage up to the backends runs as a cached query in on
 database, so the language server and the batch compiler share one engine.
 
 Pipeline: parse → reject unsupported constructs → resolve names → type check → reference check →
-lower to IR → monomorphize → IR passes → backend (Cranelift for debug, LLVM for release) → link.
+lower to IR → monomorphize → IR passes → LLVM backend (`-O0` for debug, `-O2` for release) → link.
 
 ### Crates and modularity
 
@@ -341,7 +342,7 @@ dependency passes the license, advisory and source rules in [`deny.toml`](../../
 | Parser | Ruff's Python parser (`ruff_python_parser`), pinned to an exact version behind the `parser` crate | The files are Python, so an existing fast, error-tolerant parser does the job; writing one would cost weeks and add nothing ([0004](../decisions/0004-python-syntax.md)) |
 | Incremental queries | `salsa`, pinned to an exact version | Memoized, dependency-tracked queries make the IDE fast and incremental builds correct; it is what rust-analyzer uses ([0016](../decisions/0016-salsa-query-engine.md)) |
 | Release backend | LLVM, through its textual IR and `clang` ([0020](../decisions/0020-llvm-backend-emits-text.md)) | Best optimizer available: vectorizer, LTO, PGO, every target |
-| Debug backend | Cranelift (Phase 2) | Generates code 10 to 20 times faster than LLVM |
+| REPL JIT | Cranelift (roadmap 2.1, 3.11) | Compiles one entry at a time into a running process. Not the debug backend: after debug builds moved to `clang -O0` and parallel code generation, a zero-time code generator would make a debug build at most 1.5 times faster ([0048](../decisions/0048-debug-builds-compile-fast.md)) |
 | Linker | `lld` bundled | Linking is often half of a debug build's wall time with the system linker |
 | Interning and arenas | our own | Core to compile speed, so owned and tuned |
 
@@ -391,8 +392,10 @@ Release: the IR lowers to LLVM IR one function at a time, in parallel, one LLVM 
 module. The default is `-O2` with the loop vectorizer; `-O3` and thin LTO are opt-in. Fast-math
 flags are emitted only inside `with fastmath:` blocks. The MVP targets Apple AArch64 and Mach-O.
 
-Debug (Phase 2): the same IR lowers to Cranelift with no optimization beyond register allocation.
-This backend serves the edit-run loop, the REPL and the editor's run-test button.
+Debug: the same LLVM IR, compiled at `clang -O0`, split into one module per core and compiled in
+parallel; the backend writes number locals as registers itself, so the code runs well without
+LLVM's optimizer. This serves the edit-run loop and the editor's run-test button. The REPL (roadmap
+3.11) uses Cranelift as its JIT ([0048](../decisions/0048-debug-builds-compile-fast.md)).
 
 Neither backend ever looks at the syntax tree, so the IR must carry all semantic information.
 
@@ -402,7 +405,7 @@ Neither backend ever looks at the syntax tree, so the IR must carry all semantic
 | --- | --- |
 | Parse at 1M lines/sec across 8 cores | Ruff's parser, one file per task, lowered into a flat arena |
 | Type check at 300k lines/sec across 8 cores | Per-function queries, mandatory signatures, local inference only, no trait objects in the MVP |
-| Debug build 100k lines/sec end to end | Cranelift backend, parallel code generation, bundled `lld` |
+| Debug build 100k lines/sec end to end | `clang -O0`, parallel code generation, less work in `baryon` itself, bundled `lld` |
 | Incremental one-function edit under 200 ms | Query invalidation re-checks and re-generates only the edited function; object files are patched, not rebuilt |
 | Release build within 1.5x of `clang -O2` | Fewer, larger LLVM modules; deduplicated instances; `-O2` by default |
 | Language server cold start under 1 s on 100k lines | Parse and resolve only; type check open files lazily |
@@ -472,7 +475,7 @@ and speaks the protocol over `serde_json` rather than through a framework
 | Completion of names and members | MVP | `resolve`, `type_of` |
 | One-click fixes | MVP | diagnostics carry edits |
 | Rename, inlay hints (including `InOut` at call sites) | Phase 2 | find references, `type_of` |
-| Run and debug a test from the gutter | Phase 2 | Cranelift build and the debug adapter |
+| Run and debug a test from the gutter | Phase 2 | Debug build and the debug adapter |
 | Which loops vectorized, fused or kept bounds checks, and why | Phase 3 | IR pass remarks |
 
 The Phase 3 rows are where this language's IDE can beat Rust's and Python's: the compiler knows
@@ -497,7 +500,7 @@ run it within 5% of the Fortran version, and edit it in VS Code with live diagno
 | --- | --- | --- |
 | 0: specification and foundation | Language reference, example programs, baseline benchmarks, repository foundation | The 20 example programs are frozen and the reference rules are written as a decision procedure |
 | 1: MVP compiler | Front end, query database, name resolution, types, reference check, IR, LLVM backend, driver, runtime, core and array libraries, language server, VS Code extension | The MVP definition above, with all four test suites green |
-| 2: compile speed and the edit loop | Cranelift backend, incremental code generation, speed tuning, Linux x86-64, more editor features | Every number in the compile-speed table met |
+| 2: compile speed and the edit loop | Fast unoptimized builds, incremental code generation, speed tuning, Linux x86-64, more editor features | Every number in the compile-speed table met |
 | 3: optimization and data science | Fusion, bounds hoisting, vectorizer audit, LTO and PGO, trait objects, first-class references, the analytics track | Within 5% of gfortran on every kernel, the 30-line load, group, fit and plot script runs in the REPL, and three external users have written something real |
 | 4: ecosystem and interop | C, C++ and Python interop, automatic differentiation, distributed arrays, GPU offload, more targets | Ongoing |
 

@@ -47,7 +47,7 @@ impl<'db> Function<'_, '_, 'db> {
             written.push(format!("ptr {address}"));
             parameters.push("ptr".to_owned());
         }
-        let (address, ty) = self.place(destination)?;
+        let (address, ty) = self.destination(destination)?;
         let value = match self.types.repr(ty)? {
             Repr::Empty => None,
             Repr::Value(llvm) => Some(llvm),
@@ -72,7 +72,7 @@ impl<'db> Function<'_, '_, 'db> {
             (None, None) => self.line(&call),
             (Some(llvm), None) => {
                 let result = self.emit(&call);
-                self.line(&format!("store {llvm} {result}, ptr {address}"));
+                self.store(&address, &llvm, &result);
             }
             (None, Some(edge)) => {
                 let failed = self.emit(&call);
@@ -92,7 +92,7 @@ impl<'db> Function<'_, '_, 'db> {
                 ));
                 self.line_label(&succeeded);
                 let value = self.emit(&format!("extractvalue {returns} {result}, 0"));
-                self.line(&format!("store {llvm} {value}, ptr {address}"));
+                self.store(&address, &llvm, &value);
             }
         }
         self.line(&format!("br label %{target}"));
@@ -137,6 +137,14 @@ impl<'db> Function<'_, '_, 'db> {
         let mut parameters = Vec::new();
         for argument in arguments {
             let (ty, value) = match argument {
+                Argument::Borrow(place)
+                    if place.projections.is_empty() && self.promoted(place.local.index()) =>
+                {
+                    let Some((value, ty)) = self.place_value(place)? else {
+                        continue;
+                    };
+                    (self.types.value(ty)?, value)
+                }
                 Argument::Borrow(place) => {
                     let (address, ty) = self.place(place)?;
                     if self.types.by_value(ty) {

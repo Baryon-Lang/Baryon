@@ -68,22 +68,34 @@ impl<'db> Body<'db> {
         value: Type<'db>,
         name: &str,
     ) -> Type<'db> {
-        let Some(error) = self.library_class(name) else {
-            let message = format!("`{name}` is missing from the standard library");
-            return self.lowerer.error(
-                node,
-                &message,
-                "cannot be typed",
-                Some("the compiler adds the library's files to every package (decision 0038)"),
-            );
-        };
-        Type::new(
-            self.db,
-            TypeKind::Fallible {
-                value,
-                errors: vec![error],
-            },
-        )
+        self.raises_library_errors(node, value, &[name])
+    }
+
+    /// `Raises[value, A | B | ...]`, with the library's error classes `names` in that order, for
+    /// a built-in call `node` that can fail with any of them. The order is the runtime's: the
+    /// error a call writes carries the position of its class in `names` as its tag, so a
+    /// subscripted `NetCDF` read lists `OSError`, `IndexError` and `ValueError` as the runtime
+    /// numbers them 0, 1 and 2. A missing class is reported at `node`, as above.
+    pub(super) fn raises_library_errors(
+        &mut self,
+        node: NodeId,
+        value: Type<'db>,
+        names: &[&str],
+    ) -> Type<'db> {
+        let mut errors = Vec::with_capacity(names.len());
+        for name in names {
+            let Some(error) = self.library_class(name) else {
+                let message = format!("`{name}` is missing from the standard library");
+                return self.lowerer.error(
+                    node,
+                    &message,
+                    "cannot be typed",
+                    Some("the compiler adds the library's files to every package (decision 0038)"),
+                );
+            };
+            errors.push(error);
+        }
+        Type::new(self.db, TypeKind::Fallible { value, errors })
     }
 
     /// The call `node` of the library function `function` of the standard module `module`'s

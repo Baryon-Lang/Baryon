@@ -2,6 +2,14 @@
 //! field, and the LLVM value of an operand, loading it when it lives in memory.
 
 use super::{Function, Passing};
+
+/// Where an assigned value goes: a promoted local's register, or memory.
+pub(crate) enum Destination {
+    /// The promoted local with this index, which takes the value as a register.
+    Local(usize),
+    /// The address to store the value at.
+    Address(String),
+}
 use crate::Unsupported;
 use crate::literal::{float, wrap};
 use crate::ty::Repr;
@@ -12,6 +20,11 @@ impl<'db> Function<'_, '_, 'db> {
     /// The address of `place` and the type of the value there.
     pub(crate) fn place(&mut self, place: &Place) -> Result<(String, Type<'db>), Unsupported> {
         let local = place.local.index();
+        if self.ssa.is_promoted(local) {
+            // Its address is needed after all: the function is written again with it in a
+            // stack slot (the `ssa` module).
+            self.ssa.escaped.insert(local);
+        }
         let mut ty = self.body.locals[local].ty;
         let mut address = match self.passing[local] {
             Passing::Slot => format!("%_{local}"),
@@ -59,6 +72,44 @@ impl<'db> Function<'_, '_, 'db> {
         Ok((address, ty))
     }
 
+    /// Where to write a value assigned to `place`, and its type: a promoted local, which takes
+    /// the value as a register, or an address to store it at (the `ssa` module).
+    pub(crate) fn destination(
+        &mut self,
+        place: &Place,
+    ) -> Result<(Destination, Type<'db>), Unsupported> {
+        let local = place.local.index();
+        if place.projections.is_empty() && self.ssa.is_promoted(local) {
+            return Ok((Destination::Local(local), self.body.locals[local].ty));
+        }
+        let (address, ty) = self.place(place)?;
+        Ok((Destination::Address(address), ty))
+    }
+
+    /// Writes `value`, of LLVM type `llvm`, to `destination`.
+    pub(crate) fn store(&mut self, destination: &Destination, llvm: &str, value: &str) {
+        match destination {
+            Destination::Local(local) => self.ssa.assign(*local, value.to_owned()),
+            Destination::Address(address) => {
+                self.line(&format!("store {llvm} {value}, ptr {address}"));
+            }
+        }
+    }
+
+    /// The value held at `place` and its type, or `None` for a `None` value: read from a
+    /// promoted local's register, or loaded from the place's address.
+    pub(crate) fn place_value(
+        &mut self,
+        place: &Place,
+    ) -> Result<Option<(String, Type<'db>)>, Unsupported> {
+        let local = place.local.index();
+        if place.projections.is_empty() && self.ssa.is_promoted(local) {
+            return Ok(Some((self.ssa.read(local), self.body.locals[local].ty)));
+        }
+        let (address, ty) = self.place(place)?;
+        Ok(self.load(&address, ty)?.map(|value| (value, ty)))
+    }
+
     /// The type of item or field `position` of the tuple or struct type `ty`, or of part
     /// `position` of a complex number: 0 the real part, 1 the imaginary part.
     pub(crate) fn field(&self, ty: Type<'db>, position: u32) -> Result<Type<'db>, Unsupported> {
@@ -89,10 +140,7 @@ impl<'db> Function<'_, '_, 'db> {
         operand: &Operand<'db>,
     ) -> Result<Option<(String, Type<'db>)>, Unsupported> {
         match operand {
-            Operand::Copy(place) | Operand::Move(place) => {
-                let (address, ty) = self.place(place)?;
-                Ok(self.load(&address, ty)?.map(|value| (value, ty)))
-            }
+            Operand::Copy(place) | Operand::Move(place) => self.place_value(place),
             Operand::Constant(constant) => {
                 let value = match &constant.value {
                     // An absent `T | None` is all zeros, its flag false; `None` itself has no value.

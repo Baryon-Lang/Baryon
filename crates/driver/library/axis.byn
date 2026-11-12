@@ -1,0 +1,124 @@
+"""The `axis` module: draws an axis's ticks, tick labels and offset text, as matplotlib's
+`XAxis` and `YAxis` do (decision 0046).
+
+`pyplot` makes one `XAxis` and one `YAxis` for each `Axes` when it draws, from the range each
+shows and where it sits in the figure, in points; `ticker` places and labels the ticks.
+"""
+
+from backend_svg import RendererSVG
+from ticker import MaxNLocator, ScalarFormatter
+
+FONT_SIZE: Final = 10.0  # tick labels and the offset text, in points
+TICK_LENGTH: Final = 3.5  # a major tick, drawn outward, in points
+TICK_PAD: Final = 3.5  # the gap between a tick and its label, in points
+OFFSET_PAD: Final = 3.0  # the gap between the tick labels or the axes and the offset text
+
+
+class XAxis(Struct):
+    """The axis along the bottom of an axes: the range `vmin` to `vmax` laid from `left` to
+    `right` along the line at `bottom`, all in points from the figure's top left corner.
+
+    ```python
+    from axis import XAxis
+
+    def main():
+        axis = XAxis(0.0, 10.0, 57.6, 414.72, 307.584)
+        print(axis.get_majorticklocs())  # [0.0, 2.0, 4.0, 6.0, 8.0, 10.0]
+    ```
+    """
+
+    vmin: f64  # the value at the left end
+    vmax: f64  # the value at the right end; smaller than `vmin` turns the axis around
+    left: f64  # where the left end is, in points
+    right: f64  # where the right end is, in points
+    bottom: f64  # where the axis line is, in points from the top
+
+    def get_majorticklocs(self: Self) -> list[f64]:
+        """The tick positions, as matplotlib's `get_majorticklocs`: `MaxNLocator` with as many
+        intervals as fit one per three font sizes of length, 1 to 9, as matplotlib's
+        `get_tick_space` allows. The first and last may fall outside the range."""
+        return _locate(self.vmin, self.vmax, self.right - self.left, 3.0)
+
+    def draw(self: Self, renderer: InOut[RendererSVG]) -> f64:
+        """Draws the ticks inside the range, pointing down, their labels under them and the
+        offset text, if any, under the right end; returns how far down the labels reach, in
+        points, where an x label goes."""
+        ticks = self.get_majorticklocs()
+        formatter = ScalarFormatter(self.vmin, self.vmax)
+        labels = formatter.format_ticks(ticks)
+        _, height, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
+        baseline = self.bottom + TICK_LENGTH + TICK_PAD + height - descent
+        scale = (self.right - self.left) / (self.vmax - self.vmin)
+        for k in range(len(ticks)):
+            if _inside(ticks[k], self.vmin, self.vmax):
+                at = self.left + (ticks[k] - self.vmin) * scale
+                ends = Array([self.bottom, self.bottom + TICK_LENGTH])
+                renderer.draw_path(Array([at, at]), ends, "#000000", 0.8, [], "butt", False)
+                renderer.draw_text(at, baseline, labels[k], FONT_SIZE, "middle", False)
+        offset = formatter.get_offset(ticks)
+        if offset != "":
+            under = baseline + height + OFFSET_PAD
+            renderer.draw_text(self.right, under, offset, FONT_SIZE, "end", False)
+        return baseline + descent
+
+
+class YAxis(Struct):
+    """The axis along the left of an axes: the range `vmin` to `vmax` laid from `bottom` up to
+    `top` along the line at `left`, all in points from the figure's top left corner.
+
+    ```python
+    from axis import YAxis
+
+    def main():
+        axis = YAxis(-1.0, 1.0, 307.584, 41.472, 57.6)
+        print(len(axis.get_majorticklocs()))  # 9
+    ```
+    """
+
+    vmin: f64  # the value at the bottom end
+    vmax: f64  # the value at the top end; smaller than `vmin` turns the axis around
+    bottom: f64  # where the bottom end is, in points from the top
+    top: f64  # where the top end is, in points from the top
+    left: f64  # where the axis line is, in points from the left
+
+    def get_majorticklocs(self: Self) -> list[f64]:
+        """The tick positions, as `XAxis.get_majorticklocs`, with one interval per two font
+        sizes of length, as matplotlib allows a vertical axis."""
+        return _locate(self.vmin, self.vmax, self.bottom - self.top, 2.0)
+
+    def draw(self: Self, renderer: InOut[RendererSVG]) -> f64:
+        """Draws the ticks inside the range, pointing left, their labels left of them and the
+        offset text, if any, above the top end; returns how far left the labels reach, in
+        points, where a y label goes."""
+        ticks = self.get_majorticklocs()
+        formatter = ScalarFormatter(self.vmin, self.vmax)
+        labels = formatter.format_ticks(ticks)
+        _, height, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
+        right = self.left - TICK_LENGTH - TICK_PAD
+        scale = (self.bottom - self.top) / (self.vmax - self.vmin)
+        widest = 0.0
+        for k in range(len(ticks)):
+            if _inside(ticks[k], self.vmin, self.vmax):
+                at = self.bottom - (ticks[k] - self.vmin) * scale
+                ends = Array([self.left, self.left - TICK_LENGTH])
+                renderer.draw_path(ends, Array([at, at]), "#000000", 0.8, [], "butt", False)
+                middle = at + 0.5 * (height - descent)
+                renderer.draw_text(right, middle, labels[k], FONT_SIZE, "end", False)
+                width, _, _ = renderer.get_text_width_height_descent(labels[k], FONT_SIZE)
+                widest = max(widest, width)
+        offset = formatter.get_offset(ticks)
+        if offset != "":
+            renderer.draw_text(self.left, self.top - OFFSET_PAD, offset, FONT_SIZE, "start", False)
+        return right - widest
+
+
+def _locate(vmin: f64, vmax: f64, length: f64, spacing: f64) -> list[f64]:
+    """The ticks for `vmin` to `vmax` on an axis `length` points long, with one interval per
+    `spacing` font sizes, 1 to 9."""
+    bins = min(9, max(1, int(length / (spacing * FONT_SIZE))))
+    return MaxNLocator(bins, [1.0, 2.0, 2.5, 5.0, 10.0]).tick_values(vmin, vmax)
+
+
+def _inside(value: f64, vmin: f64, vmax: f64) -> bool:
+    """Whether `value` lies in the range shown, either way round."""
+    return min(vmin, vmax) <= value and value <= max(vmin, vmax)

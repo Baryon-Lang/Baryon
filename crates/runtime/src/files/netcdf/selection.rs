@@ -7,6 +7,53 @@
 //! one. A write may go past the last record: its positions along the unlimited dimension are
 //! not bounded, and a slice there with no end takes as many records as the array has rows.
 
+use crate::files::{ErrorKind, OsFailure};
+
+/// Why a subscript picks no values, sorted by the error `netCDF4` raises for it: an index
+/// past its axis, or more indexes than axes, is an `IndexError`; a step of 0 is a
+/// `ValueError`, as Python's slices raise; the rest, which the format or the array refuses, is
+/// an `OSError` with the kind `INVALID_DATA`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Refusal {
+    /// An `IndexError`, with its message.
+    Index(String),
+    /// A `ValueError`, with its message.
+    Value(String),
+    /// An `OSError` with the kind `INVALID_DATA`, with its message.
+    Data(String),
+}
+
+/// A failed read or write of a subscript of a variable: an `OSError`, or the `IndexError` or
+/// `ValueError` of a [`Refusal`], each with its message.
+#[derive(Debug)]
+pub(crate) enum SubscriptFailure {
+    /// An `OSError`.
+    Os(OsFailure),
+    /// An `IndexError`'s message.
+    Index(String),
+    /// A `ValueError`'s message.
+    Value(String),
+}
+
+impl From<OsFailure> for SubscriptFailure {
+    fn from(failure: OsFailure) -> Self {
+        Self::Os(failure)
+    }
+}
+
+impl Refusal {
+    /// The failure of a read or write of the file at `path` that this refusal stops.
+    pub(crate) fn at(self, path: &str) -> SubscriptFailure {
+        match self {
+            Self::Index(message) => SubscriptFailure::Index(message),
+            Self::Value(message) => SubscriptFailure::Value(message),
+            Self::Data(message) => {
+                SubscriptFailure::Os(OsFailure::new(ErrorKind::InvalidData, message, path))
+            }
+        }
+    }
+}
+
 /// The most records a classic file holds: its record count is a 32-bit field, and the C
 /// library keeps the all-ones value for a file still being written. A write past it is refused
 /// before anything is made for it.
@@ -188,7 +235,7 @@ impl Selection {
 ///
 /// # Errors
 ///
-/// A message when there are more items than axes, an index is past its axis's bounds, a step
+/// A [`Refusal`] when there are more items than axes, an index is past its axis's bounds, a step
 /// is 0, a write steps backwards along the unlimited dimension or past [`MOST_RECORDS`], or a
 /// write's slice picks more positions than its array has rows. Each is found from the items'
 /// numbers before any list of positions is made, so a huge index or stop costs nothing.
@@ -198,13 +245,13 @@ pub(crate) fn select(
     (names, lengths): (&[&str], &[u64]),
     record: bool,
     writing: Option<&[usize]>,
-) -> Result<Selection, String> {
+) -> Result<Selection, Refusal> {
     if items.len() > lengths.len() {
-        return Err(format!(
+        return Err(Refusal::Index(format!(
             "the NetCDF variable {name} has {} dimensions, fewer than the {} indexes given",
             lengths.len(),
             items.len()
-        ));
+        )));
     }
     let whole = Item::Slice {
         start: None,
@@ -230,11 +277,11 @@ pub(crate) fn select(
                     }
                     Some(position) if unbounded || position < length => vec![position],
                     _ => {
-                        return Err(format!(
+                        return Err(Refusal::Index(format!(
                             "index {index} is out of bounds for the dimension {} of length \
                              {length}",
                             names[axis]
-                        ));
+                        )));
                     }
                 }
             }
@@ -245,14 +292,14 @@ pub(crate) fn select(
             } => {
                 let stride = stride.unwrap_or(1);
                 if stride == 0 {
-                    return Err("slice step cannot be zero".to_owned());
+                    return Err(Refusal::Value("slice step cannot be zero".to_owned()));
                 }
                 if unbounded && stride < 0 {
-                    return Err(format!(
+                    return Err(Refusal::Data(format!(
                         "the NetCDF variable {name} is written forwards along its unlimited \
                          dimension {}, with a positive stride",
                         names[axis]
-                    ));
+                    )));
                 }
                 if unbounded && stop.is_none() {
                     let start = resolve(start, length, (0, i64::MAX)).unsigned_abs();
@@ -280,12 +327,12 @@ pub(crate) fn select(
                     // before they are listed; elsewhere the file's own length bounds them.
                     let count = count(start, stop, stride, length);
                     if let Some(rows) = rows.filter(|&rows| unbounded && count > rows as u64) {
-                        return Err(format!(
+                        return Err(Refusal::Data(format!(
                             "the values picked of the NetCDF variable {name} have {count} \
                              positions along its dimension {}, which an array of {rows} \
                              rows does not fill",
                             names[axis]
-                        ));
+                        )));
                     }
                     indices(start, stop, stride, length)
                 }
@@ -302,11 +349,11 @@ pub(crate) fn select(
 }
 
 /// The message for a write past [`MOST_RECORDS`] of the variable `name`.
-fn too_many_records(name: &str) -> String {
-    format!(
+fn too_many_records(name: &str) -> Refusal {
+    Refusal::Data(format!(
         "a NetCDF classic file holds at most {MOST_RECORDS} records, fewer than a write of \
          the variable {name} needs"
-    )
+    ))
 }
 
 /// How many positions `start:stop:stride` takes along an axis of `length`, worked out from

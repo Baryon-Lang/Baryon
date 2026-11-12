@@ -16,6 +16,7 @@ mod parallel;
 mod paths;
 mod print;
 mod process;
+mod registers;
 mod sorting;
 mod streams;
 mod string_methods;
@@ -426,28 +427,22 @@ fn inout_parameters_checked_arithmetic_and_calls() {
         "\
 define void @step(ptr noalias %a1, i64 %a2) {
 start:
-  %_2 = alloca i64
   %_3 = alloca { i64, i1 }
-  %_4 = alloca i1
-  store i64 %a2, ptr %_2
   br label %bb0
 bb0:
   %t0 = load i64, ptr %a1
-  %t1 = load i64, ptr %_2
-  %t2 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t0, i64 %t1)
-  store { i64, i1 } %t2, ptr %_3
-  %t3 = getelementptr inbounds { i64, i1 }, ptr %_3, i32 0, i32 1
-  %t4 = load i1, ptr %t3
-  %t5 = xor i1 %t4, true
-  store i1 %t5, ptr %_4
-  %t6 = load i1, ptr %_4
-  br i1 %t6, label %bb1, label %p0
+  %t1 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t0, i64 %a2)
+  store { i64, i1 } %t1, ptr %_3
+  %t2 = getelementptr inbounds { i64, i1 }, ptr %_3, i32 0, i32 1
+  %t3 = load i1, ptr %t2
+  %t4 = xor i1 %t3, true
+  br i1 %t4, label %bb1, label %p0
 bb1:
-  %t7 = getelementptr inbounds { i64, i1 }, ptr %_3, i32 0, i32 0
-  %t8 = load i64, ptr %t7
-  store i64 %t8, ptr %a1
-  %t9 = load i64, ptr %a1
-  call void @report(i64 %t9)
+  %t5 = getelementptr inbounds { i64, i1 }, ptr %_3, i32 0, i32 0
+  %t6 = load i64, ptr %t5
+  store i64 %t6, ptr %a1
+  %t7 = load i64, ptr %a1
+  call void @report(i64 %t7)
   br label %bb2
 bb2:
   ret void

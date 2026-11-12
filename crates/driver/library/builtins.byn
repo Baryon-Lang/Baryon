@@ -34,6 +34,16 @@ class ValueError(Exception):
     message: str
 
 
+class IndexError(Exception):
+    """A position past the end of what it indexes: what a subscript of a NetCDF `Variable`
+    raises for an index out of bounds, with `netCDF4`'s message, such as `index 5 is out of
+    bounds for the dimension time of length 2` (decision 0047). The runtime writes it.
+    `message` says which index, and which dimension.
+    """
+
+    message: str
+
+
 class KeyError(Exception):
     """A key that is not there: what reading a missing keyword of a FITS `Header` raises, with
     AstroPy's message, such as `Keyword 'EXPTIME' not found.` (decision 0044). `message` says

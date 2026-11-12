@@ -41,6 +41,7 @@ so it is raised, caught and read like one of the program's own.
 | `OSError` | `kind`, `errno`, `strerror`, `filename` | Files, the environment and processes ([Files and processes](files-and-processes.md)) |
 | `EOFError` | none | `input()` at the end of standard input ([Standard streams](files-and-processes.md#standard-streams)) |
 | `KeyError` | `message: str` | Reading a FITS header's card that is missing or of another type ([Data files](data-files.md#headers), [decision 0044](../decisions/0044-fits-images-and-headers.md)), or a NetCDF file's variable or dimension that is missing ([decision 0047](../decisions/0047-netcdf-classic-files.md)), and any program that raises it. A `dict`'s missing key panics instead |
+| `IndexError` | `message: str` | A subscript of a NetCDF variable with an index out of bounds, with `netCDF4`'s message ([Data files](data-files.md#netcdf-files), [decision 0047](../decisions/0047-netcdf-classic-files.md)), and any program that raises it. A list's or an array's index out of bounds panics instead |
 | `AttributeError` | `message: str` | Reading an attribute of a NetCDF file or variable that is missing, with `netCDF4`'s message, or of another type ([Data files](data-files.md#netcdf-files), [decision 0047](../decisions/0047-netcdf-classic-files.md)), and any program that raises it |
 
 ```python

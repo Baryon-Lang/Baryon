@@ -13,15 +13,19 @@
 //!
 //! A subscript of a variable, `var[0, :, ::2]`, is passed as its items, four 64-bit words each:
 //! `0` and an index, or `1` and a slice's start, stop and step, each `i64::MIN` when the program
-//! left it out. No items stand for `var[:]`, the whole variable.
+//! left it out. No items stand for `var[:]`, the whole variable. A read or write with items can
+//! also raise `IndexError` and `ValueError`, as `netCDF4` does, so its error value is a
+//! `Raises[None, OSError | IndexError | ValueError]`: tag 1 or 2, then the error's `message`
+//! where an `OSError` would start.
 
 use super::array_files::{runs, write_header};
-use super::files::{RaisedError, finish};
+use super::files::{RaisedError, finish, raise};
 use super::fits::pixel;
 use super::string_lists::{OwnedList, write_list};
 use super::strings::text;
+use super::text::{OwnedText, owned};
 use crate::files::fits::Pixel;
-use crate::files::netcdf::{self, Header, Item};
+use crate::files::netcdf::{self, Header, Item, SubscriptFailure};
 use crate::files::{ErrorKind, OsFailure};
 use crate::memory;
 use crate::panic::panic;
@@ -74,9 +78,10 @@ pub unsafe extern "C" fn baryon_rt_netcdf_open(
 /// `scale_factor` and `add_offset` applied as `netCDF4` applies them; an integer type reads an
 /// unscaled integer variable it can hold. Fill values are read as stored. Returns `true`, with
 /// the error at `error`, when the operating system refuses, or with the kind `INVALID_DATA`
-/// when the file is not a classic `NetCDF` file, has no such variable, the items do not fit its
-/// dimensions, the values picked have another rank or do not read as the type, or the file
-/// ends inside them.
+/// when the file is not a classic `NetCDF` file, has no such variable, the values picked have
+/// another rank or do not read as the type, or the file ends inside them; and with an
+/// `IndexError` for an index past its axis or more items than axes, or a `ValueError` for a
+/// step of 0, as `netCDF4` raises them.
 ///
 /// Cost: the header, one allocation, and one pass over the values picked, converted from
 /// big-endian as they are read, with one seek for each stretch of them that lies together.
@@ -90,7 +95,8 @@ pub unsafe extern "C" fn baryon_rt_netcdf_open(
 ///
 /// `path` points to `length` and `name` to `name_length` readable bytes of UTF-8, `items` to
 /// `4 * item_count` readable 64-bit words, `out` to `1 + 2 * rank` writable 64-bit words and
-/// `error` to a writable [`RaisedError`].
+/// `error` to a writable [`RaisedError`], a `Raises[None, OSError | IndexError | ValueError]`
+/// in that order when `item_count` is not 0.
 ///
 /// # Example
 ///
@@ -155,12 +161,13 @@ pub unsafe extern "C" fn baryon_rt_netcdf_read(
     // SAFETY: the caller guarantees `4 * item_count` readable words at `items`.
     let items = unsafe { subscript(items, item_count) };
     let result = netcdf::read_header(path)
+        .map_err(SubscriptFailure::Os)
         .and_then(|header| read(path, &header, (name, &items), pixel, rank));
     // SAFETY: the caller guarantees `1 + 2 * rank` writable words at `out`, and `read` gives a
     // shape `rank` long.
     let write = |(data, shape): (*mut u8, Vec<usize>)| unsafe { write_header(out, data, &shape) };
-    // SAFETY: the caller guarantees `error` is writable.
-    unsafe { finish(result, write, error) }
+    // SAFETY: the caller's promises about `error` and its error types, passed on.
+    unsafe { finish_subscript(result, write, error) }
 }
 
 /// `Dataset(path, "w")`, `ds.createDimension(...)`, `ds.createVariable(...)` and
@@ -207,14 +214,18 @@ pub unsafe extern "C" fn baryon_rt_netcdf_define(
     unsafe { finish(result, write, error) }
 }
 
-/// `ds.variables[name][:] = array`: writes every element of the array of `rank` dimensions and
-/// elements of the type numbered `element` whose header is at `array` as all the values of the
-/// variable whose name is the `name_length` bytes at `name`, in the `NetCDF` classic file whose
-/// path is the `length` bytes at `path`. The values are converted to the variable's type and
-/// packed by `scale_factor` and `add_offset` as `netCDF4` does; a record variable takes as many
-/// records as the array's first length. Returns `true`, with the error at `error`, when the
-/// operating system refuses, or with the kind `INVALID_DATA` when the file has no such
-/// variable or the array's rank or a fixed length differs from the variable's.
+/// `ds.variables[name][items] = array`: writes every element of the array of `rank` dimensions
+/// and elements of the type numbered `element` whose header is at `array` as the values
+/// `items` pick of the variable whose name is the `name_length` bytes at `name`, in the
+/// `NetCDF` classic file whose path is the `length` bytes at `path`; `items` are as
+/// [`baryon_rt_netcdf_read`] takes them, and none write all the values, as `var[:] = array`
+/// does. The values are converted to the variable's type and packed by `scale_factor` and
+/// `add_offset` as `netCDF4` does; along the unlimited dimension the items may pick records
+/// past the last one, which the file gains. Returns `true`, with the error at `error`, when
+/// the operating system refuses, or with the kind `INVALID_DATA` when the file has no such
+/// variable, the array's shape differs from the values picked, or the file would hold more
+/// records than the format or memory allows; and with an `IndexError` or a `ValueError` as
+/// [`baryon_rt_netcdf_read`] raises them.
 ///
 /// Cost: the array's elements gathered once, then one read and one write of the whole file.
 ///
@@ -227,7 +238,9 @@ pub unsafe extern "C" fn baryon_rt_netcdf_define(
 ///
 /// `path` points to `length` and `name` to `name_length` readable bytes of UTF-8; `array` to a
 /// readable array header of `rank` dimensions, whose every element its lengths and strides
-/// reach is readable and unchanged during the call; and `error` to a writable [`RaisedError`].
+/// reach is readable and unchanged during the call; `items` to `4 * item_count` readable 64-bit
+/// words; and `error` to a writable [`RaisedError`], a
+/// `Raises[None, OSError | IndexError | ValueError]` in that order when `item_count` is not 0.
 ///
 /// # Example
 ///
@@ -316,10 +329,59 @@ pub unsafe extern "C" fn baryon_rt_netcdf_write(
     // fail.
     let gathered = unsafe { runs(&mut values, data, lengths, strides, pixel.size()) };
     let result = gathered
-        .map_err(|failure| OsFailure::from_io(&failure, path))
+        .map_err(|failure| SubscriptFailure::Os(OsFailure::from_io(&failure, path)))
         .and_then(|()| netcdf::write(path, (name, &items), pixel, &shape, &values));
-    // SAFETY: the caller guarantees `error` is writable.
-    unsafe { finish(result, |()| {}, error) }
+    // SAFETY: the caller's promises about `error` and its error types, passed on.
+    unsafe { finish_subscript(result, |()| {}, error) }
+}
+
+/// Writes `result`'s value with `write` and returns `false`, or raises its failure at `error`
+/// and returns `true`, the failure flag: an `OSError` as every file function raises it, tag 0,
+/// or the `IndexError`, tag 1, or `ValueError`, tag 2, of a subscript that picks no values.
+/// Either of those two is one owned `str`, its `message`, where the `OSError` would start.
+///
+/// # Safety
+///
+/// `error` points to a writable `Raises[None, OSError | IndexError | ValueError]`, its error
+/// types in that order, whenever the result can be an `IndexError` or a `ValueError`: the
+/// checker types a read or write with subscript items so, and only one with items fails so.
+#[allow(unsafe_code, reason = "writes an error compiled code owns")]
+unsafe fn finish_subscript<T>(
+    result: Result<T, SubscriptFailure>,
+    write: impl FnOnce(T),
+    error: *mut RaisedError,
+) -> bool {
+    let (tag, message) = match result {
+        Ok(value) => {
+            write(value);
+            return false;
+        }
+        Err(SubscriptFailure::Os(failure)) => {
+            // SAFETY: the caller's promise about `error`, passed on.
+            return unsafe { raise(&failure, error) };
+        }
+        Err(SubscriptFailure::Index(message)) => (1, message),
+        Err(SubscriptFailure::Value(message)) => (2, message),
+    };
+    let raised = RaisedMessage {
+        tag,
+        message: owned(&message),
+    };
+    // SAFETY: the caller guarantees `error` is writable and holds this error type, which is
+    // laid out as a `RaisedMessage`: an `OSError` and an `OwnedText` both start at offset 8.
+    unsafe { error.cast::<RaisedMessage>().write(raised) };
+    true
+}
+
+/// An `IndexError` or a `ValueError` raised, as compiled code lays out the error value of a
+/// `Raises[None, OSError | IndexError | ValueError]` that holds one: the tag, then the error's
+/// one field, its `message`, an owned `str`, where an `OSError` would start.
+#[repr(C)]
+struct RaisedMessage {
+    /// Which of the error types it is: 1, `IndexError`, or 2, `ValueError`.
+    tag: u8,
+    /// The error's `message`.
+    message: OwnedText,
 }
 
 /// Writes to `out` a new `list[str]` of the lines that describe `header`, the file at `path`:
@@ -347,8 +409,10 @@ fn read(
     (name, items): (&str, &[Item]),
     pixel: Pixel,
     rank: usize,
-) -> Result<(*mut u8, Vec<usize>), OsFailure> {
-    let invalid = |message: String| OsFailure::new(ErrorKind::InvalidData, message, path);
+) -> Result<(*mut u8, Vec<usize>), SubscriptFailure> {
+    let invalid = |message: String| {
+        SubscriptFailure::Os(OsFailure::new(ErrorKind::InvalidData, message, path))
+    };
     let Some(variable) = header
         .variables
         .iter()
@@ -367,8 +431,8 @@ fn read(
         .map(|&dimension| header.length(dimension))
         .collect();
     let record = header.is_record(variable);
-    let selection =
-        netcdf::select(name, items, (&names, &lengths), record, None).map_err(invalid)?;
+    let selection = netcdf::select(name, items, (&names, &lengths), record, None)
+        .map_err(|refusal| refusal.at(path))?;
     let shape = selection.shape();
     if shape.len() != rank {
         let what = if netcdf::is_whole(items) {
@@ -396,7 +460,7 @@ fn read(
     {
         // SAFETY: `pointer` came from `allocate_zeroed` with this layout just above.
         unsafe { memory::deallocate(pointer, layout) };
-        return Err(failure);
+        return Err(SubscriptFailure::Os(failure));
     }
     Ok((pointer.as_ptr(), shape))
 }
