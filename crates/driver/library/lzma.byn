@@ -1,0 +1,768 @@
+"""The `lzma` module: xz files and `.lzma` files on byte arrays, with Python's names, written
+in Baryon (decision 0049). Only decompression is built yet.
+
+An xz file (the `.xz` format of XZ Utils) is a stream of blocks, each LZMA2 data and an
+integrity check (CRC-32, CRC-64 or SHA-256), then an index of the blocks and a footer. LZMA2
+cuts LZMA data into chunks of up to 2 MiB, each compressed or stored. LZMA itself is a
+dictionary coder whose literals, matches and lengths are coded bit by bit with a range coder
+and adaptive probabilities. A `.lzma` file, LZMA_Alone's format, is a 13-byte header and one
+LZMA stream. Data that is neither raises `OSError` with the kind `INVALID_DATA` and the message
+Python's `LZMAError` carries.
+"""
+
+from os import ErrorKind
+import zlib
+
+
+class _Range(Struct):
+    """A range decoder over `data[position:limit]`: `range` and `code` are its two 32-bit
+    registers, and `ended` is set once it needs a byte past the end of the data."""
+
+    position: int
+    limit: int
+    range: int
+    code: int
+    ended: bool
+    over: bool
+
+
+class _Output(Struct):
+    """The bytes decoded so far: the first `length` bytes of `data`, whose length doubles when
+    it fills."""
+
+    data: Array[u8, 1]
+    length: int
+
+
+def _reserve(output: InOut[_Output], extra: int):
+    """Makes room for `extra` more bytes, doubling the buffer as needed."""
+    needed = output.length + extra
+    if needed <= len(output.data):
+        return
+    grown = Array.zeros(max(2 * len(output.data), needed), u8)
+    for i in range(output.length):
+        grown[i] = output.data[i]
+    output.data = grown
+
+
+def _byte(rc: InOut[_Range], data: Array[u8, 1]) -> int:
+    """The next byte for the range decoder, or 0 once the chunk or the data runs out."""
+    if rc.position >= rc.limit:
+        rc.over = True
+        return 0
+    if rc.position >= len(data):
+        rc.ended = True
+        return 0
+    value = int(data[rc.position])
+    rc.position += 1
+    return value
+
+
+def _bit(rc: InOut[_Range], data: Array[u8, 1], probs: InOut[Array[i32, 1]], index: int) -> int:
+    """Decodes one bit with the adaptive probability `probs[index]` and updates it."""
+    if rc.range < 16777216:
+        rc.range = (rc.range << 8) & 0xFFFFFFFF
+        rc.code = ((rc.code << 8) | _byte(rc, data)) & 0xFFFFFFFF
+    prob = int(probs[index])
+    bound = (rc.range >> 11) * prob
+    if rc.code < bound:
+        rc.range = bound
+        probs[index] = i32(prob + ((2048 - prob) >> 5))
+        return 0
+    rc.range -= bound
+    rc.code -= bound
+    probs[index] = i32(prob - (prob >> 5))
+    return 1
+
+
+def _tree(
+    rc: InOut[_Range], data: Array[u8, 1], probs: InOut[Array[i32, 1]], base: int, bits: int
+) -> int:
+    """A `bits`-bit number decoded highest bit first with the bit tree at `probs[base:]`."""
+    m = 1
+    for _ in range(bits):
+        m = (m << 1) | _bit(rc, data, probs, base + m)
+    return m - (1 << bits)
+
+
+def _reverse(
+    rc: InOut[_Range], data: Array[u8, 1], probs: InOut[Array[i32, 1]], base: int, bits: int
+) -> int:
+    """A `bits`-bit number decoded lowest bit first with the bit tree at `probs[base:]`."""
+    m = 1
+    value = 0
+    for i in range(bits):
+        bit = _bit(rc, data, probs, base + m)
+        m = (m << 1) | bit
+        value = value | (bit << i)
+    return value
+
+
+def _direct(rc: InOut[_Range], data: Array[u8, 1], bits: int) -> int:
+    """`bits` bits decoded with probability one half each, highest first."""
+    value = 0
+    for _ in range(bits):
+        if rc.range < 16777216:
+            rc.range = (rc.range << 8) & 0xFFFFFFFF
+            rc.code = ((rc.code << 8) | _byte(rc, data)) & 0xFFFFFFFF
+        rc.range = rc.range >> 1
+        bit = 0
+        if rc.code >= rc.range:
+            rc.code -= rc.range
+            bit = 1
+        value = (value << 1) | bit
+    return value
+
+
+def _length(
+    rc: InOut[_Range], data: Array[u8, 1], probs: InOut[Array[i32, 1]], base: int, state: int
+) -> int:
+    """A match length less 2, from 0 to 271, with the length coder at `probs[base:]`."""
+    if _bit(rc, data, probs, base) == 0:
+        return _tree(rc, data, probs, base + 2 + 8 * state, 3)
+    if _bit(rc, data, probs, base + 1) == 0:
+        return 8 + _tree(rc, data, probs, base + 130 + 8 * state, 3)
+    return 16 + _tree(rc, data, probs, base + 258, 8)
+
+
+class _Lzma(Struct):
+    """The state an LZMA decoder keeps between chunks: the literal context bits `lc` and `lp`,
+    the position bits `pb`, the probabilities, the state machine's `state`, the last four
+    distances `reps`, `start`, where the dictionary begins in the output, and `window`, the
+    dictionary's size: no match reaches further back."""
+
+    lc: int
+    lp: int
+    pb: int
+    probs: Array[i32, 1]
+    state: int
+    reps: Array[int, 1]
+    start: int
+    window: int
+
+
+def _reset(coder: InOut[_Lzma]):
+    """Resets the probabilities, the state and the distances, as a new chunk with a state
+    reset asks."""
+    size = 1846 + (768 << (coder.lc + coder.lp))
+    if len(coder.probs) != size:
+        coder.probs = Array.zeros(size, i32)
+    for i in range(size):
+        coder.probs[i] = i32(1024)
+    coder.state = 0
+    for i in range(4):
+        coder.reps[i] = 0
+
+
+def _lzma(
+    coder: InOut[_Lzma],
+    rc: InOut[_Range],
+    data: Array[u8, 1],
+    output: InOut[_Output],
+    size: int,
+    marker: bool,
+) -> int:
+    """Decodes LZMA symbols onto `output` until it holds `size` more bytes, or, when `size` is
+    -1, until the end marker. Gives 0, 1 when the data ends first, or 2 for corrupt data;
+    with `marker`, an end marker is also allowed once `size` bytes are decoded."""
+    stop = output.length + size
+    pos_mask = (1 << coder.pb) - 1
+    lit_mask = (1 << coder.lp) - 1
+    while size < 0 or output.length < stop:
+        position = output.length - coder.start
+        pos_state = position & pos_mask
+        state = coder.state
+        if _bit(rc, data, coder.probs, (state << 4) + pos_state) == 0:
+            previous = 0
+            if position > 0:
+                previous = int(output.data[output.length - 1])
+            base = 1846 + 768 * (((position & lit_mask) << coder.lc) + (previous >> (8 - coder.lc)))
+            symbol = 1
+            if state >= 7:
+                matched = int(output.data[output.length - coder.reps[0] - 1])
+                while symbol < 256:
+                    match_bit = (matched >> 7) & 1
+                    matched = matched << 1
+                    bit = _bit(rc, data, coder.probs, base + ((1 + match_bit) << 8) + symbol)
+                    symbol = (symbol << 1) | bit
+                    if bit != match_bit:
+                        break
+            while symbol < 256:
+                symbol = (symbol << 1) | _bit(rc, data, coder.probs, base + symbol)
+            if rc.ended or rc.over:
+                return 2 if rc.over else 1
+            _reserve(output, 1)
+            output.data[output.length] = u8(symbol - 256)
+            output.length += 1
+            coder.state = 0 if state < 4 else (state - 3 if state < 10 else state - 6)
+            continue
+        length = 0
+        if _bit(rc, data, coder.probs, 192 + state) == 0:
+            length = _length(rc, data, coder.probs, 818, pos_state)
+            coder.state = 7 if state < 7 else 10
+            slot = _tree(rc, data, coder.probs, 432 + 64 * min(length, 3), 6)
+            distance = slot
+            if slot >= 4:
+                direct = (slot >> 1) - 1
+                distance = (2 | (slot & 1)) << direct
+                if slot < 14:
+                    distance += _reverse(rc, data, coder.probs, 688 + distance - slot, direct)
+                else:
+                    distance += _direct(rc, data, direct - 4) << 4
+                    distance += _reverse(rc, data, coder.probs, 802, 4)
+            if rc.ended or rc.over:
+                return 2 if rc.over else 1
+            if distance == 0xFFFFFFFF:
+                if size >= 0 and not marker:
+                    return 2
+                if size >= 0 and output.length != stop:
+                    return 2
+                return 0
+            coder.reps[3] = coder.reps[2]
+            coder.reps[2] = coder.reps[1]
+            coder.reps[1] = coder.reps[0]
+            coder.reps[0] = distance
+        else:
+            if _bit(rc, data, coder.probs, 204 + state) == 0:
+                if _bit(rc, data, coder.probs, 240 + (state << 4) + pos_state) == 0:
+                    if rc.ended or rc.over:
+                        return 2 if rc.over else 1
+                    if position == 0:
+                        return 2
+                    coder.state = 9 if state < 7 else 11
+                    _reserve(output, 1)
+                    output.data[output.length] = output.data[output.length - coder.reps[0] - 1]
+                    output.length += 1
+                    continue
+            else:
+                distance = 0
+                if _bit(rc, data, coder.probs, 216 + state) == 0:
+                    distance = coder.reps[1]
+                else:
+                    if _bit(rc, data, coder.probs, 228 + state) == 0:
+                        distance = coder.reps[2]
+                    else:
+                        distance = coder.reps[3]
+                        coder.reps[3] = coder.reps[2]
+                    coder.reps[2] = coder.reps[1]
+                coder.reps[1] = coder.reps[0]
+                coder.reps[0] = distance
+            length = _length(rc, data, coder.probs, 1332, pos_state)
+            coder.state = 8 if state < 7 else 11
+        if rc.ended or rc.over:
+            return 2 if rc.over else 1
+        distance = coder.reps[0]
+        if distance >= position or distance >= coder.window:
+            return 2
+        count = length + 2
+        if size >= 0 and output.length + count > stop:
+            return 2
+        _reserve(output, count)
+        for _ in range(count):
+            output.data[output.length] = output.data[output.length - distance - 1]
+            output.length += 1
+    return 0
+
+
+def _start(rc: InOut[_Range], data: Array[u8, 1]) -> int:
+    """Starts the range decoder on its five header bytes: 0, 1 when the data ends first, or 2
+    when the first byte is not 0, as LZMA's encoder always writes it."""
+    first = _byte(rc, data)
+    rc.code = 0
+    for _ in range(4):
+        rc.code = (rc.code << 8) | _byte(rc, data)
+    rc.range = 0xFFFFFFFF
+    if rc.ended or rc.over:
+        return 2 if rc.over else 1
+    if first != 0 or rc.code == 0xFFFFFFFF:
+        return 2
+    return 0
+
+
+def _finish(rc: InOut[_Range], data: Array[u8, 1]) -> bool:
+    """Whether the range decoder ended cleanly: its last bytes read, and its code 0."""
+    if rc.range < 16777216:
+        rc.range = (rc.range << 8) & 0xFFFFFFFF
+        rc.code = ((rc.code << 8) | _byte(rc, data)) & 0xFFFFFFFF
+    return rc.code == 0
+
+
+def _lzma2(
+    data: Array[u8, 1], position: int, output: InOut[_Output], window: int
+) -> tuple[int, int]:
+    """Decodes the LZMA2 chunks at `position` onto `output`. Gives a status, 0, 1 when the
+    data ends first, or 2 for corrupt data, and the position after the end chunk."""
+    coder = _Lzma(0, 0, 0, Array.zeros(0, i32), 0, Array.zeros(4, int), output.length, window)
+    need_dictionary = True
+    need_properties = True
+    need_state = True
+    while True:
+        if position >= len(data):
+            return (1, position)
+        control = int(data[position])
+        position += 1
+        if control == 0:
+            return (0, position)
+        if control == 1 or control == 2:
+            if position + 2 > len(data):
+                return (1, position)
+            if control == 2 and need_dictionary:
+                return (2, position)
+            if control == 1:
+                coder.start = output.length
+                need_dictionary = False
+            count = ((int(data[position]) << 8) | int(data[position + 1])) + 1
+            position += 2
+            need_state = True
+            _reserve(output, count)
+            for i in range(count):
+                if position + i >= len(data):
+                    return (1, position + i)
+                output.data[output.length] = data[position + i]
+                output.length += 1
+            position += count
+            continue
+        if control < 0x80:
+            return (2, position)
+        if position + 4 > len(data):
+            return (1, position)
+        reset = (control >> 5) & 3
+        unpacked = (
+            ((control & 0x1F) << 16) + (int(data[position]) << 8) + int(data[position + 1]) + 1
+        )
+        packed = (int(data[position + 2]) << 8) + int(data[position + 3]) + 1
+        position += 4
+        if reset == 3:
+            coder.start = output.length
+            need_dictionary = False
+        elif need_dictionary:
+            return (2, position)
+        if reset >= 2:
+            if position >= len(data):
+                return (1, position)
+            properties = int(data[position])
+            position += 1
+            if properties >= 225:
+                return (2, position)
+            coder.lc = properties % 9
+            coder.lp = (properties // 9) % 5
+            coder.pb = properties // 45
+            if coder.lc + coder.lp > 4:
+                return (2, position)
+            need_properties = False
+        elif need_properties:
+            return (2, position)
+        if reset >= 1:
+            _reset(coder)
+            need_state = False
+        elif need_state:
+            return (2, position)
+        rc = _Range(position, position + packed, 0, 0, False, False)
+        status = _start(rc, data)
+        if status != 0:
+            return (status, rc.position)
+        status = _lzma(coder, rc, data, output, unpacked, False)
+        if status != 0:
+            return (status, rc.position)
+        if not _finish(rc, data):
+            return (1 if rc.ended and not rc.over else 2, rc.position)
+        if rc.ended or rc.over:
+            return (2 if rc.over else 1, rc.position)
+        if rc.position != position + packed:
+            return (2, rc.position)
+        position += packed
+
+
+def _crc64(data: Array[u8, 1], start: int, stop: int) -> int:
+    """The CRC-64 of `data[start:stop]` (ECMA-182, as xz uses it), as a 64-bit pattern in an
+    `int`: bit 63 is the sign bit."""
+    poly = -0x3693A86A2878F0BE
+    table = Array.zeros(256, int)
+    for i in range(256):
+        c = i
+        for _ in range(8):
+            if c & 1 != 0:
+                c = ((c >> 1) & 0x7FFFFFFFFFFFFFFF) ^ poly
+            else:
+                c = (c >> 1) & 0x7FFFFFFFFFFFFFFF
+        table[i] = c
+    crc = -1
+    for i in range(start, stop):
+        crc = table[(crc ^ int(data[i])) & 255] ^ ((crc >> 8) & 0x00FFFFFFFFFFFFFF)
+    return ~crc
+
+
+def _word(data: Array[u8, 1], position: int) -> int:
+    """The little-endian 32-bit number at `data[position:position + 4]`."""
+    word = 0
+    for i in range(4):
+        word |= int(data[position + i]) << (8 * i)
+    return word
+
+
+def _crc32(data: Array[u8, 1], start: int, stop: int) -> int:
+    """The CRC-32 of `data[start:stop]`, as `zlib.crc32` gives it."""
+    return zlib.crc32(data[start:stop].copy())
+
+
+def _sha256(data: Array[u8, 1], start: int, stop: int) -> Array[u8, 1]:
+    """The SHA-256 digest of `data[start:stop]` (FIPS 180-4)."""
+    k = [
+        0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5, 0x3956C25B, 0x59F111F1, 0x923F82A4,
+        0xAB1C5ED5, 0xD807AA98, 0x12835B01, 0x243185BE, 0x550C7DC3, 0x72BE5D74, 0x80DEB1FE,
+        0x9BDC06A7, 0xC19BF174, 0xE49B69C1, 0xEFBE4786, 0x0FC19DC6, 0x240CA1CC, 0x2DE92C6F,
+        0x4A7484AA, 0x5CB0A9DC, 0x76F988DA, 0x983E5152, 0xA831C66D, 0xB00327C8, 0xBF597FC7,
+        0xC6E00BF3, 0xD5A79147, 0x06CA6351, 0x14292967, 0x27B70A85, 0x2E1B2138, 0x4D2C6DFC,
+        0x53380D13, 0x650A7354, 0x766A0ABB, 0x81C2C92E, 0x92722C85, 0xA2BFE8A1, 0xA81A664B,
+        0xC24B8B70, 0xC76C51A3, 0xD192E819, 0xD6990624, 0xF40E3585, 0x106AA070, 0x19A4C116,
+        0x1E376C08, 0x2748774C, 0x34B0BCB5, 0x391C0CB3, 0x4ED8AA4A, 0x5B9CCA4F, 0x682E6FF3,
+        0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208, 0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7,
+        0xC67178F2,
+    ]
+    hashes = [
+        0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB,
+        0x5BE0CD19,
+    ]
+    length = stop - start
+    padded = ((length + 9 + 63) // 64) * 64
+    message = Array.zeros(padded, u8)
+    for i in range(length):
+        message[i] = data[start + i]
+    message[length] = u8(0x80)
+    bits = 8 * length
+    for i in range(8):
+        message[padded - 1 - i] = u8((bits >> (8 * i)) & 255)
+    w = Array.zeros(64, int)
+    for chunk in range(0, padded, 64):
+        for i in range(16):
+            w[i] = (
+                (int(message[chunk + 4 * i]) << 24)
+                | (int(message[chunk + 4 * i + 1]) << 16)
+                | (int(message[chunk + 4 * i + 2]) << 8)
+                | int(message[chunk + 4 * i + 3])
+            )
+        for i in range(16, 64):
+            s0 = _rotate(w[i - 15], 7) ^ _rotate(w[i - 15], 18) ^ (w[i - 15] >> 3)
+            s1 = _rotate(w[i - 2], 17) ^ _rotate(w[i - 2], 19) ^ (w[i - 2] >> 10)
+            w[i] = (w[i - 16] + s0 + w[i - 7] + s1) & 0xFFFFFFFF
+        a = hashes[0]
+        b = hashes[1]
+        c = hashes[2]
+        d = hashes[3]
+        e = hashes[4]
+        f = hashes[5]
+        g = hashes[6]
+        h = hashes[7]
+        for i in range(64):
+            s1 = _rotate(e, 6) ^ _rotate(e, 11) ^ _rotate(e, 25)
+            choice = (e & f) ^ ((~e & 0xFFFFFFFF) & g)
+            first = (h + s1 + choice + k[i] + w[i]) & 0xFFFFFFFF
+            s0 = _rotate(a, 2) ^ _rotate(a, 13) ^ _rotate(a, 22)
+            majority = (a & b) ^ (a & c) ^ (b & c)
+            second = (s0 + majority) & 0xFFFFFFFF
+            h = g
+            g = f
+            f = e
+            e = (d + first) & 0xFFFFFFFF
+            d = c
+            c = b
+            b = a
+            a = (first + second) & 0xFFFFFFFF
+        hashes[0] = (hashes[0] + a) & 0xFFFFFFFF
+        hashes[1] = (hashes[1] + b) & 0xFFFFFFFF
+        hashes[2] = (hashes[2] + c) & 0xFFFFFFFF
+        hashes[3] = (hashes[3] + d) & 0xFFFFFFFF
+        hashes[4] = (hashes[4] + e) & 0xFFFFFFFF
+        hashes[5] = (hashes[5] + f) & 0xFFFFFFFF
+        hashes[6] = (hashes[6] + g) & 0xFFFFFFFF
+        hashes[7] = (hashes[7] + h) & 0xFFFFFFFF
+    digest = Array.zeros(32, u8)
+    for i in range(8):
+        for j in range(4):
+            digest[4 * i + j] = u8((hashes[i] >> (24 - 8 * j)) & 255)
+    return digest
+
+
+def _rotate(value: int, count: int) -> int:
+    """`value`, 32 bits, rotated right by `count`."""
+    return ((value >> count) | (value << (32 - count))) & 0xFFFFFFFF
+
+
+def _vli(data: Array[u8, 1], position: int, stop: int) -> tuple[int, int]:
+    """The xz variable-length integer at `position`, read no further than `stop`, and the
+    position after it; a position of -1 when the data ends first and -2 for a malformed one."""
+    value = 0
+    for i in range(9):
+        if position + i >= stop:
+            return (0, -1)
+        byte = int(data[position + i])
+        value = value | ((byte & 0x7F) << (7 * i))
+        if byte & 0x80 == 0:
+            if byte == 0 and i > 0:
+                return (0, -2)
+            return (value, position + i + 1)
+    return (0, -2)
+
+
+def _check_size(check: int) -> int:
+    """The size in bytes of the integrity check with the id `check`: 0, 4, 8, 16, 32 or 64."""
+    if check == 0:
+        return 0
+    if check <= 3:
+        return 4
+    if check <= 6:
+        return 8
+    if check <= 9:
+        return 16
+    if check <= 12:
+        return 32
+    return 64
+
+
+def _checked(data: Array[u8, 1], check: int, output: _Output, start: int, position: int) -> bool:
+    """Whether the check at `data[position:]` of the kind `check` matches the bytes
+    `output.data[start:output.length]`; a kind Baryon does not compute passes."""
+    if check == 1:
+        return _word(data, position) == _crc32(output.data, start, output.length)
+    if check == 4:
+        crc = _crc64(output.data, start, output.length)
+        return (
+            _word(data, position) == crc & 0xFFFFFFFF
+            and _word(data, position + 4) == (crc >> 32) & 0xFFFFFFFF
+        )
+    if check == 10:
+        digest = _sha256(output.data, start, output.length)
+        for i in range(32):
+            if data[position + i] != digest[i]:
+                return False
+    return True
+
+
+def _xz(data: Array[u8, 1], position: int, output: InOut[_Output]) -> tuple[int, int]:
+    """Decodes the xz stream at `position` onto `output`. Gives a status, 0, 1 when the data
+    ends first, 2 for corrupt data, 3 when it is not an xz stream and 4 for options Baryon
+    does not decode, and the position after the stream."""
+    magic = [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]
+    for i in range(6):
+        if position + i >= len(data):
+            return (1, position)
+        if int(data[position + i]) != magic[i]:
+            return (3, position)
+    if position + 12 > len(data):
+        return (1, position)
+    if _crc32(data, position + 6, position + 8) != _word(data, position + 8):
+        return (2, position)
+    if data[position + 6] != 0 or int(data[position + 7]) > 15:
+        return (4, position)
+    check = int(data[position + 7])
+    flags = position + 6
+    position += 12
+    sizes: list[int] = []
+    while True:
+        if position >= len(data):
+            return (1, position)
+        if data[position] == 0:
+            return _index(data, position, sizes, flags)
+        start = output.length
+        status, end, unpadded = _block(data, position, check, output)
+        if status != 0:
+            return (status, end)
+        sizes.append(unpadded)
+        sizes.append(output.length - start)
+        position = end
+
+
+def _block(
+    data: Array[u8, 1], position: int, check: int, output: InOut[_Output]
+) -> tuple[int, int, int]:
+    """Decodes the xz block at `position`, whose header's first byte is not 0, onto `output`,
+    and checks it with the check `check`. Gives a status, as `_xz` does, the position after
+    the block, and its unpadded size, which the index records."""
+    header = 4 * (int(data[position]) + 1)
+    if position + header > len(data):
+        return (1, position, 0)
+    stop = position + header - 4
+    if _crc32(data, position, stop) != _word(data, stop):
+        return (2, position, 0)
+    flags = int(data[position + 1])
+    if flags & 0x3F != 0:
+        return (4, position, 0)
+    cursor = position + 2
+    compressed = -1
+    uncompressed = -1
+    if flags & 0x40 != 0:
+        compressed, cursor = _vli(data, cursor, stop)
+        if cursor < 0 or compressed == 0:
+            return (4, position, 0)
+    if flags & 0x80 != 0:
+        uncompressed, cursor = _vli(data, cursor, stop)
+        if cursor < 0:
+            return (4, position, 0)
+    filter_id, cursor = _vli(data, cursor, stop)
+    if cursor < 0:
+        return (4, position, 0)
+    size, cursor = _vli(data, cursor, stop)
+    if cursor < 0 or filter_id != 0x21 or size != 1 or cursor + 1 > stop:
+        return (4, position, 0)
+    dictionary = int(data[cursor])
+    if dictionary > 40:
+        return (4, position, 0)
+    for i in range(cursor + 1, stop):
+        if data[i] != 0:
+            return (4, position, 0)
+    window = 0xFFFFFFFF
+    if dictionary < 40:
+        window = (2 | (dictionary & 1)) << (dictionary // 2 + 11)
+    begin = position + header
+    start = output.length
+    status, end = _lzma2(data, begin, output, window)
+    if status != 0:
+        return (status, end, 0)
+    if compressed >= 0 and end - begin != compressed:
+        return (2, end, 0)
+    if uncompressed >= 0 and output.length - start != uncompressed:
+        return (2, end, 0)
+    check_size = _check_size(check)
+    unpadded = header + end - begin + check_size
+    while (end - begin) % 4 != 0:
+        if end >= len(data):
+            return (1, end, 0)
+        if data[end] != 0:
+            return (2, end, 0)
+        end += 1
+    if end + check_size > len(data):
+        return (1, end, 0)
+    if not _checked(data, check, output, start, end):
+        return (2, end, 0)
+    return (0, end + check_size, unpadded)
+
+
+def _index(data: Array[u8, 1], position: int, sizes: list[int], flags: int) -> tuple[int, int]:
+    """Checks the index at `position` against the unpadded and uncompressed `sizes` of the
+    blocks before it, and the stream footer after it against the stream flags at
+    `data[flags:flags + 2]`. Gives a status, as `_xz` does, and the position after the
+    footer."""
+    count, cursor = _vli(data, position + 1, len(data))
+    if cursor == -1:
+        return (1, position)
+    if cursor < 0 or count != len(sizes) // 2:
+        return (2, position)
+    for i in range(2 * count):
+        value, cursor = _vli(data, cursor, len(data))
+        if cursor == -1:
+            return (1, position)
+        if cursor < 0 or value != sizes[i]:
+            return (2, position)
+    while (cursor - position) % 4 != 0:
+        if cursor >= len(data):
+            return (1, cursor)
+        if data[cursor] != 0:
+            return (2, cursor)
+        cursor += 1
+    if cursor + 4 > len(data):
+        return (1, cursor)
+    if _crc32(data, position, cursor) != _word(data, cursor):
+        return (2, cursor)
+    footer = cursor + 4
+    if footer + 12 > len(data):
+        return (1, footer)
+    if _crc32(data, footer + 4, footer + 10) != _word(data, footer):
+        return (2, footer)
+    if _word(data, footer + 4) != (footer - position) // 4 - 1:
+        return (2, footer)
+    if data[footer + 8] != data[flags] or data[footer + 9] != data[flags + 1]:
+        return (2, footer)
+    if data[footer + 10] != 0x59 or data[footer + 11] != 0x5A:
+        return (2, footer)
+    return (0, footer + 12)
+
+
+def _alone(data: Array[u8, 1], position: int, output: InOut[_Output]) -> tuple[int, int]:
+    """Decodes the `.lzma` file at `position`, LZMA_Alone's format, onto `output`, with the
+    statuses of `_xz`. Its header is checked as liblzma checks it when it guesses the format,
+    so other bytes give status 3."""
+    if position >= len(data):
+        return (1, position)
+    properties = int(data[position])
+    if properties >= 225 or properties % 9 + (properties // 9) % 5 > 4:
+        return (3, position)
+    if position + 13 > len(data):
+        return (1, position)
+    window = _word(data, position + 1)
+    if window != 0xFFFFFFFF:
+        rounded = window - 1
+        rounded |= rounded >> 2
+        rounded |= rounded >> 3
+        rounded |= rounded >> 4
+        rounded |= rounded >> 8
+        rounded |= rounded >> 16
+        if rounded + 1 != window:
+            return (3, position)
+    low = _word(data, position + 5)
+    high = _word(data, position + 9)
+    size = -1
+    if not (low == 0xFFFFFFFF and high == 0xFFFFFFFF):
+        if high >= 64:
+            return (3, position)
+        size = (high << 32) | low
+    coder = _Lzma(
+        properties % 9,
+        (properties // 9) % 5,
+        properties // 45,
+        Array.zeros(0, i32),
+        0,
+        Array.zeros(4, int),
+        output.length,
+        max(window, 4096),
+    )
+    _reset(coder)
+    rc = _Range(position + 13, len(data) + 1, 0, 0, False, False)
+    status = _start(rc, data)
+    if status != 0:
+        return (status, rc.position)
+    status = _lzma(coder, rc, data, output, size, True)
+    if status != 0:
+        return (status, rc.position)
+    if not _finish(rc, data):
+        return (1 if rc.ended and not rc.over else 2, rc.position)
+    if rc.ended or rc.over:
+        return (2 if rc.over else 1, rc.position)
+    return (0, rc.position)
+
+
+def _ended() -> str:
+    """The message of Python's `LZMAError` for a stream cut short."""
+    return "Compressed data ended before the end-of-stream marker was reached"
+
+
+def decompress(data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
+    """The bytes the xz or `.lzma` streams in `data` hold, joined, as `coder.decompress(data)`
+    gives them."""
+    output = _Output(Array.zeros(4 * len(data) + 64, u8), 0)
+    position = 0
+    streams = 0
+    while True:
+        kept = output.length
+        status = 3
+        end = position
+        if position < len(data) and int(data[position]) == 0xFD:
+            status, end = _xz(data, position, output)
+        else:
+            status, end = _alone(data, position, output)
+        if status == 1:
+            raise OSError(ErrorKind.INVALID_DATA, i32(0), _ended(), "")
+        if status != 0:
+            if streams > 0:
+                output.length = kept
+                break
+            message = "Corrupt input data"
+            if status == 3:
+                message = "Input format not supported by decoder"
+            elif status == 4:
+                message = "Invalid or unsupported options"
+            raise OSError(ErrorKind.INVALID_DATA, i32(0), message, "")
+        streams += 1
+        position = end
+        if position >= len(data):
+            break
+    return output.data[: output.length].copy()
