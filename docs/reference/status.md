@@ -24,9 +24,9 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when `df[["a", "b"]]`,
-`assign`, `drop` and `rename` joined it, and before them `for row in df.itertuples()`, and
-before it the rows of a `DataFrame` chosen by
+This page was last brought up to date on 2026-11-12, when `bz2.compress` and
+`bz2.decompress`, and before them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before
+them `for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by
 `df[mask]`, `df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and
 before it `fft2`, `ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`,
 and before it `print(df)`, a frame printed as pandas prints it, and before it
@@ -206,7 +206,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`zlib.compress`](compression.md#zlibcompress) at every level and in each container; [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32); [`zlib.decompressobj`](compression.md#zlibdecompressobj) with `decompress`, `flush`, `eof` and `unused_data`; [`gzip.compress`](compression.md#gzipcompress) and [`gzip.decompress`](compression.md#gzipdecompress) of one member or several; [`compression.zstd.decompress`](compression.md#compressionzstddecompress) of one frame or several and [`compression.zstd.compress`](compression.md#compressionzstdcompress) at every level, imported with `from compression import zstd` or `from compression.zstd import decompress` | `zlib.compressobj` and preset dictionaries; `gzip.open` (3.27.4); `import compression.zstd` (idea I.56), Zstandard dictionaries and `options`; the `bz2` and `lzma` modules (3.27.9 and 3.27.10) |
+| [`zlib.compress`](compression.md#zlibcompress) at every level and in each container; [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32); [`zlib.decompressobj`](compression.md#zlibdecompressobj) with `decompress`, `flush`, `eof` and `unused_data`; [`gzip.compress`](compression.md#gzipcompress) and [`gzip.decompress`](compression.md#gzipdecompress) of one member or several; [`compression.zstd.decompress`](compression.md#compressionzstddecompress) of one frame or several and [`compression.zstd.compress`](compression.md#compressionzstdcompress) at every level, imported with `from compression import zstd` or `from compression.zstd import decompress`; [`bz2.compress`](compression.md#bz2compress) at every level and [`bz2.decompress`](compression.md#bz2decompress) of one stream or several | `zlib.compressobj` and preset dictionaries; `gzip.open` (3.27.4); `import compression.zstd` (idea I.56), Zstandard dictionaries and `options`; bzip2's randomized blocks; the `lzma` module (3.27.10) |
 
 ## Tests
 
