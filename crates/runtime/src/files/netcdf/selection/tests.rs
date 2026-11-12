@@ -167,5 +167,8 @@ fn a_slices_count_is_the_number_of_positions_it_lists() {
         }
     }
     // A huge stop is counted, never listed.
-    assert_eq!(count(Some(0), Some(i64::MAX), 1, u64::MAX), i64::MAX.unsigned_abs());
+    assert_eq!(
+        count(Some(0), Some(i64::MAX), 1, u64::MAX),
+        i64::MAX.unsigned_abs()
+    );
 }
