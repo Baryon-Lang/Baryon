@@ -241,6 +241,12 @@ impl<'db> Layouter<'_, 'db> {
                 Ok(Layout::record([value, flag]).ok_or(too_large)?.layout())
             }
             TypeKind::Array { rank, .. } => WORD.repeat(1 + 2 * u64::from(*rank)).ok_or(too_large),
+            // One rank-1 array per column: a frame is stored as `Type::frame_storage` says.
+            TypeKind::DataFrame { columns, .. } => {
+                let column = WORD.repeat(3).ok_or(too_large)?;
+                let fields = columns.iter().map(|_| column);
+                Ok(Layout::record(fields).ok_or(too_large)?.layout())
+            }
             TypeKind::Fixed { element, shape } => self
                 .layout(*element)?
                 .repeat(shape.elements())

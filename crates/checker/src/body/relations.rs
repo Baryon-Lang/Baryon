@@ -69,6 +69,12 @@ fn contains<'db>(db: &'db dyn TypeDb, ty: Type<'db>, test: &dyn Fn(Type<'db>) ->
         TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
             contains(db, *element, test)
         }
+        TypeKind::DataFrame { columns, row } => {
+            columns
+                .iter()
+                .any(|column| contains(db, column.element, test))
+                || row.is_some_and(|row| contains(db, row, test))
+        }
         TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => all(&nominal.arguments),
         TypeKind::Callable {
             parameters,
@@ -126,6 +132,10 @@ pub(crate) fn substitute<'db>(
         TypeKind::Fixed { element, shape } => TypeKind::Fixed {
             element: map(*element),
             shape: shape.clone(),
+        },
+        TypeKind::DataFrame { columns, row } => TypeKind::DataFrame {
+            columns: columns.iter().map(|column| column.map(map)).collect(),
+            row: row.map(map),
         },
         TypeKind::Struct(nominal) => TypeKind::Struct(Nominal {
             arguments: all(&nominal.arguments),

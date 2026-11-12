@@ -1,6 +1,8 @@
 //! Tests of type display and layout, over a small database.
 
-use crate::{Declared, Layout, LayoutError, Nominal, Primitive, Shape, Type, TypeKind, layout};
+use crate::{
+    Column, Declared, Layout, LayoutError, Nominal, Primitive, Shape, Type, TypeKind, layout,
+};
 use database::{Db, File, Package, ParsedFile, Resolution};
 use source::{FileId, SourceFile};
 use syntax::{NodeId, Role, SyntaxKind, TreeBuilder};
@@ -388,4 +390,66 @@ fn a_union_keeps_one_of_each_member_even_when_two_display_alike() {
     };
     assert_eq!(members.len(), 2);
     assert_eq!(union, crate::union(&database, [twin, periodic, twin]));
+}
+
+/// A frame type of the columns `price: f64` and `volume: i64`, with rows named by `row`.
+fn trades<'db>(database: &'db Database, row: Option<Type<'db>>) -> Type<'db> {
+    let column = |name: &str, element: &str| Column {
+        name: name.to_owned(),
+        element: primitive(database, element),
+    };
+    let columns = vec![column("price", "f64"), column("volume", "i64")];
+    Type::new(database, TypeKind::DataFrame { columns, row })
+}
+
+#[test]
+fn a_frame_shows_its_struct_or_its_columns() {
+    let database = Database::default();
+    let trade = class(&database, "Trade", false);
+    let shown = |ty: Type<'_>| ty.display(&database).to_string();
+    assert_eq!(shown(trades(&database, Some(trade))), "DataFrame[Trade]");
+    assert_eq!(
+        shown(trades(&database, None)),
+        "DataFrame[price: f64, volume: i64]"
+    );
+}
+
+#[test]
+fn a_frame_is_stored_as_one_array_per_column() {
+    let database = Database::default();
+    let frame = trades(&database, None);
+    assert_eq!(layout_of(&database, frame), Ok((48, 8)));
+    let storage = frame.frame_storage(&database).unwrap();
+    assert_eq!(
+        storage.display(&database).to_string(),
+        "tuple[Array[f64, 1], Array[i64, 1]]"
+    );
+    assert_eq!(layout_of(&database, storage), Ok((48, 8)));
+    let empty = TypeKind::DataFrame {
+        columns: Vec::new(),
+        row: None,
+    };
+    assert_eq!(
+        layout_of(&database, Type::new(&database, empty)),
+        Ok((0, 1))
+    );
+}
+
+#[test]
+fn frames_with_the_same_columns_are_one_table() {
+    let database = Database::default();
+    let named = trades(&database, Some(class(&database, "Trade", false)));
+    let unnamed = trades(&database, None);
+    assert_ne!(named, unnamed);
+    assert!(named.same_table(&database, unnamed));
+    let price = Column {
+        name: "price".to_owned(),
+        element: primitive(&database, "f64"),
+    };
+    let narrower = TypeKind::DataFrame {
+        columns: vec![price],
+        row: None,
+    };
+    assert!(!named.same_table(&database, Type::new(&database, narrower)));
+    assert!(!named.same_table(&database, primitive(&database, "f64")));
 }
