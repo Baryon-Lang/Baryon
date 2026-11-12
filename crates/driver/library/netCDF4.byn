@@ -1,9 +1,15 @@
 """The parts of the `netCDF4` module written in Baryon: NetCDF classic files (decision 0047).
 
-`Dataset(path)` and `ds.variables[name][:]` are built into the compiler and the runtime, which
-read the bytes of a file. The runtime describes a file's header as lines of text, which a
-`Dataset` keeps; its dimensions, variables and attributes are found here, line by line, as
-Unidata's `netCDF4` package gives them.
+`Dataset(path)`, `ds.variables[name][:]` and `ds.variables[name][:] = values` are built into
+the compiler and the runtime, which read and write the bytes of a file. The runtime describes a
+file's header as lines of text, which a `Dataset` keeps; its dimensions, variables and
+attributes are found here, line by line, as Unidata's `netCDF4` package gives them.
+
+A file opened with `Dataset(path, "w", format=...)` is changed one line at a time: each of
+`createDimension`, `createVariable` and `setncattr` makes a line here that says what to add, and
+`path._apply(line)`, built into the compiler and the runtime for this file's functions only,
+changes the file at `path` and describes its header again. The file is the only state, so a
+program that stops halfway leaves a valid file with what it defined so far.
 
 A program writes `ds.variables["temp"]`, `ds.dimensions["time"]` and
 `ds.getncattr("title")`, and the checker sends each to the function here that does it:
@@ -19,6 +25,10 @@ The lines, each a tag and fields separated by tabs, are these (the runtime write
   separated by commas;
 - `A`, the variable an attribute belongs to (empty for the file's own), its kind (`str`,
   `int` or `float`), its number of values, its name, and its values, separated by commas.
+
+A change's lines are the same but for these: `C` and the format's version, `1` or `2`, makes a
+new file; a `D` line's length is 0 for the unlimited dimension, with no third field; and an `A`
+line has no number of values, its one value written as Python writes it.
 """
 
 
@@ -212,3 +222,140 @@ def _variable_get_int(variable: Variable, name: str) -> Raises[int, AttributeErr
 def _variable_get_float(variable: Variable, name: str) -> Raises[float, AttributeError]:
     """`var.getncattr(name)` where the context needs a `float`."""
     return _real(_attribute(variable._attributes, variable.name, name))
+
+
+def _define(dataset: InOut[Dataset], line: str) -> Raises[None, OSError]:
+    """Applies the change `line` to the file `dataset` was opened from, and keeps the lines that
+    describe its new header, so a variable or a dimension defined is found by name at once."""
+    dataset._lines = _path(dataset)._apply(line)
+
+
+def _create_dimension(
+    dataset: InOut[Dataset], dimname: str, size: int
+) -> Raises[Dimension, OSError]:
+    """`ds.createDimension(dimname, size)`: a new dimension of `size`, the unlimited (record)
+    one when `size` is 0, as in `netCDF4`."""
+    _define(dataset, f"D\t{dimname}\t{size}")
+    return Dimension(dimname.copy(), size, size == 0)
+
+
+def _create_unlimited(dataset: InOut[Dataset], dimname: str) -> Raises[Dimension, OSError]:
+    """`ds.createDimension(dimname)` or `ds.createDimension(dimname, None)`: the file's
+    unlimited (record) dimension, which has no records yet."""
+    return _create_dimension(dataset, dimname, 0)
+
+
+def _type_code(datatype: str) -> str:
+    """The type `netCDF4` names `f4` and so on for `datatype`, which a program may also write as
+    NumPy names the type (`float32`) or codes it (`f`). Any other name is passed on for the
+    runtime to refuse, with a message that names it."""
+    if datatype == "float32" or datatype == "f":
+        return "f4"
+    if datatype == "float64" or datatype == "d":
+        return "f8"
+    if datatype == "int8" or datatype == "b":
+        return "i1"
+    if datatype == "int16" or datatype == "h":
+        return "i2"
+    if datatype == "int32" or datatype == "i":
+        return "i4"
+    return datatype.copy()
+
+
+def _create_variable(
+    dataset: InOut[Dataset], varname: str, datatype: str, dimensions: Owned[list[str]]
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype, dimensions)`: a new variable over `dimensions`,
+    slowest first, filled with its type's fill value until values are written."""
+    spans = ",".join(dimensions)
+    _define(dataset, f"V\t{varname}\t{_type_code(datatype)}\t{spans}")
+    return Variable(varname.copy(), dimensions, _path(dataset), [])
+
+
+def _create_variable_0(
+    dataset: InOut[Dataset], varname: str, datatype: str
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype)`: a scalar variable, one value."""
+    return _create_variable(dataset, varname, datatype, [])
+
+
+def _create_variable_1(
+    dataset: InOut[Dataset], varname: str, datatype: str, first: str
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype, (first,))`."""
+    return _create_variable(dataset, varname, datatype, [first.copy()])
+
+
+def _create_variable_2(
+    dataset: InOut[Dataset], varname: str, datatype: str, first: str, second: str
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype, (first, second))`."""
+    return _create_variable(dataset, varname, datatype, [first.copy(), second.copy()])
+
+
+def _create_variable_3(
+    dataset: InOut[Dataset], varname: str, datatype: str, first: str, second: str, third: str
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype, (first, second, third))`."""
+    dimensions = [first.copy(), second.copy(), third.copy()]
+    return _create_variable(dataset, varname, datatype, dimensions)
+
+
+def _create_variable_4(
+    dataset: InOut[Dataset],
+    varname: str,
+    datatype: str,
+    first: str,
+    second: str,
+    third: str,
+    fourth: str,
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype, (first, second, third, fourth))`."""
+    dimensions = [first.copy(), second.copy(), third.copy(), fourth.copy()]
+    return _create_variable(dataset, varname, datatype, dimensions)
+
+
+def _set_str(dataset: InOut[Dataset], name: str, value: str) -> Raises[None, OSError]:
+    """`ds.setncattr(name, value)` of a `str`: a text attribute of the file."""
+    _define(dataset, f"A\t\tstr\t{name}\t{value}")
+
+
+def _set_int(dataset: InOut[Dataset], name: str, value: int) -> Raises[None, OSError]:
+    """`ds.setncattr(name, value)` of an `int`, stored as `netCDF4` stores a Python `int`: one
+    32-bit integer, which the runtime refuses when the value does not fit."""
+    _define(dataset, f"A\t\tint\t{name}\t{value}")
+
+
+def _set_float(dataset: InOut[Dataset], name: str, value: float) -> Raises[None, OSError]:
+    """`ds.setncattr(name, value)` of a `float`: one 64-bit float, as `netCDF4` stores a Python
+    `float`."""
+    _define(dataset, f"A\t\tfloat\t{name}\t{value}")
+
+
+def _variable_define(variable: InOut[Variable], line: str) -> Raises[None, OSError]:
+    """Applies the change `line` to the file `variable` belongs to, and keeps its attributes'
+    lines from the new header, so `var.getncattr` finds an attribute just set."""
+    lines = variable._path._apply(line)
+    attributes: list[str] = []
+    for found in lines:
+        if found.startswith("A\t") and _field(found, 1) == variable.name:
+            attributes.append(found.copy())
+    variable._attributes = attributes
+
+
+def _variable_set_str(variable: InOut[Variable], name: str, value: str) -> Raises[None, OSError]:
+    """`var.setncattr(name, value)` of a `str`, such as its `units`."""
+    _variable_define(variable, f"A\t{variable.name}\tstr\t{name}\t{value}")
+
+
+def _variable_set_int(variable: InOut[Variable], name: str, value: int) -> Raises[None, OSError]:
+    """`var.setncattr(name, value)` of an `int`: one 32-bit integer."""
+    _variable_define(variable, f"A\t{variable.name}\tint\t{name}\t{value}")
+
+
+def _variable_set_float(
+    variable: InOut[Variable], name: str, value: float
+) -> Raises[None, OSError]:
+    """`var.setncattr(name, value)` of a `float`: one 64-bit float, as `netCDF4` stores a
+    Python `float`, such as a `scale_factor`."""
+    _variable_define(variable, f"A\t{variable.name}\tfloat\t{name}\t{value}")
