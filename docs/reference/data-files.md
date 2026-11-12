@@ -4,16 +4,18 @@
 into programs yet.
 
 Data comes in files other programs wrote and goes out in files other programs read. Baryon reads
-and writes them with NumPy's names and NumPy's bytes, as `Array` functions beside
+and writes arrays with NumPy's names and NumPy's bytes, as `Array` functions beside
 [`Array.fromfile`](files-and-processes.md#array-files)
 ([decision 0043](../decisions/0043-array-data-files.md)): a program moved from NumPy changes
-`numpy.` to `Array.` and gets the same numbers. Roadmap row 3.14 adds the formats one at a time,
-those that need no outside library first.
+`numpy.` to `Array.` and gets the same numbers. FITS files keep AstroPy's names, in a `fits`
+module ([decision 0044](../decisions/0044-fits-images-and-headers.md)). Roadmap row 3.14 adds the
+formats one at a time, those that need no outside library first.
 
 | Format | Read | Write |
 | --- | --- | --- |
 | [Text tables](#text-tables) of numbers: CSV, whitespace-separated columns | `Array.loadtxt(fname)` | `Array.savetxt(fname, X)` |
 | [`.npy` files](#npy-files), NumPy's own format | `Array.load(file)` | `Array.save(file, arr)` |
+| [FITS images and headers](#fits-files), astronomy's format | `fits.getdata(filename)`, `fits.getheader(filename)` | `fits.writeto(filename, data, header)` |
 | Raw binary arrays | [`Array.fromfile(path, dtype)`](files-and-processes.md#array-files) | [`a.tofile(path)`](files-and-processes.md#array-files) |
 
 ## Text tables
@@ -137,3 +139,87 @@ This prints `(64, 64) 1.0`, and `numpy.load("heat.npy")` gives the same 64 by 64
 - **Cost.** One pass over the bytes, straight into or out of the array's memory, as
   [`Array.fromfile`](files-and-processes.md#array-files) reads and `a.tofile` writes. The header
   is 128 bytes for most arrays.
+
+## FITS files
+
+FITS, the Flexible Image Transport System, is the file format of astronomy: telescope images,
+spectra and catalogues arrive as FITS. A FITS file is a list of HDUs, header and data units. Each
+HDU's header is 80-character text cards, such as `EXPTIME =                 30.0 / seconds`, and
+its data is an image of big-endian numbers. The `fits` module reads and writes images and their
+headers with the names of AstroPy's `astropy.io.fits`, byte for byte as AstroPy does
+([decision 0044](../decisions/0044-fits-images-and-headers.md)).
+
+```python
+import fits
+
+
+def main() -> Raises[None, OSError | KeyError]:
+    image: Array[f32, 2] = fits.getdata("m31.fits")
+    header = fits.getheader("m31.fits")
+    exposure: float = header["EXPTIME"]
+    image /= f32(exposure)
+    header["BUNIT"] = ("counts / s", "rate")
+    fits.writeto("m31_rate.fits", image, header, overwrite=True)
+```
+
+This reads an image as `f32`s, divides it by the exposure time its header gives, and writes it
+with the header and a new card, as the same lines with `from astropy.io import fits` would.
+
+| Call | Gives | Does |
+| --- | --- | --- |
+| `fits.getdata(filename, ext=0)` | `Array[T, rank]` | reads the image of HDU `ext`, the primary HDU 0, into a new array |
+| `fits.getheader(filename, ext=0)` | `fits.Header` | reads the cards of HDU `ext` |
+| `fits.writeto(filename, data, header=None, overwrite=False)` | `None` | writes `data` as the image of a new file, with `header`'s cards after the ones the image needs |
+
+- **The image's element type and rank come from the context**, as `Array.load`'s do:
+  `image: Array[f32, 2] = fits.getdata(path)`. With no context the result is an
+  `Array[f64, 2]`. The shape is the FITS axes reversed, as AstroPy gives it, so `image[y, x]` is
+  the pixel at `NAXIS1 = x + 1`, `NAXIS2 = y + 1`.
+- **Pixels are converted as AstroPy converts them.** A float array reads any image, with
+  `BSCALE` and `BZERO` applied in its own precision: an `Array[f32, 2]` of a 16-bit image gives
+  the `float32` values AstroPy gives. An integer array reads an image stored as its type, or an
+  unsigned one stored with AstroPy's `BZERO` shift, as `Array[u16, 2]` reads a `uint16` image.
+  An image another type cannot hold, of another rank, or an HDU with no image raises `OSError`
+  with the kind `INVALID_DATA`, saying what the file holds.
+- **Images hold integers or floats**: `u8`, `i8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`
+  and `f64`. `fits.writeto` writes each with AstroPy's `BITPIX` and, for the unsigned types and
+  `i8`, its `BZERO`, so AstroPy reads back the array that was written.
+- **Writing never replaces a file by accident**: a file already there raises `OSError` with the
+  kind `FILE_EXISTS` unless `overwrite=True`, as in AstroPy.
+- **Cost.** Reading skips the data of the HDUs before the one asked for, then makes one pass
+  over the pixels, converting them from big-endian as they are copied into the array. Writing
+  makes one pass over the array.
+
+### Headers
+
+A `fits.Header` holds an HDU's cards, in order, with their comments. Its values are read and set
+as AstroPy's are; keywords match in any case.
+
+| Code | Gives | Does |
+| --- | --- | --- |
+| `header[key]` | the type the context needs | the card's value, as a `str`, an `int`, a `float` or a `bool` |
+| `header.get(key, default)` | the type of `default` | the card's value, or `default` when there is no card `key` |
+| `key in header`, `key not in header` | `bool` | whether there is a card `key` |
+| `header[key] = value` | | sets the card's value, keeping its comment, or adds the card at the end |
+| `header[key] = (value, comment)` | | sets the card's value and comment |
+
+- **A value's type comes from where it goes**, since a card can hold text, an integer, a float
+  or a logical value, and a Baryon value has one type:
+  `exposure: float = header["EXPTIME"]`, `name: str = header["OBJECT"]`. A `float` reads an
+  integer card too, as Python's numbers mix. Where nothing gives a type, as in
+  `print(header["EXPTIME"])`, the checker asks for one.
+- **A missing card raises `KeyError`** with AstroPy's message, `Keyword 'EXPTIME' not found.`,
+  and so does a card of another type, such as a `str` read as a `float`. A program handles it, or
+  reads with `get` and a default.
+- **Values are written as AstroPy writes them**: a string in quotes, at least 8 characters,
+  a float as Python's shortest text for it, right-justified to column 30, so a file written
+  from a header matches AstroPy's byte for byte.
+- **The header of a change, or of `in`, is a variable**, such as `header` here. A header kept
+  in a struct's field is read with `header[key]` but changed through a variable.
+
+### Not built yet
+
+`fits.open` and its list of HDUs, binary and ASCII tables, compressed images, memory maps, a
+`(data, header)` pair from `getdata(header=True)`, a new empty header from `fits.Header()`,
+string values longer than one card (the `CONTINUE` convention) and complex values in cards are
+roadmap 4.2.5's or come later. Each is an error that names it, never silently ignored.

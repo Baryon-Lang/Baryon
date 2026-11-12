@@ -246,6 +246,9 @@ impl<'db> Body<'db> {
 
     /// `a < b <= c`: each link compares numbers that mix, or values of one type.
     pub(super) fn compare(&mut self, node: NodeId) -> Type<'db> {
+        if let Some(contains) = self.header_contains(node) {
+            return contains;
+        }
         let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
         let Some(mut left_node) = self.tree.child(node, Role::Left) else {
             return boolean;

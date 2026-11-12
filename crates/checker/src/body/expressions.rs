@@ -32,7 +32,7 @@ impl<'db> Body<'db> {
             }
             SyntaxKind::Name => self.name(node),
             SyntaxKind::Attribute => self.attribute(node),
-            SyntaxKind::Subscript => self.subscript(node),
+            SyntaxKind::Subscript => self.subscript(node, expected),
             SyntaxKind::Call => {
                 let ty = self.call(node, expected);
                 self.fallible(node, ty)
@@ -236,7 +236,7 @@ impl<'db> Body<'db> {
     }
 
     /// `value[index]`: an element of a list, a string, a tuple, an `Array` or a `Fixed`.
-    fn subscript(&mut self, node: NodeId) -> Type<'db> {
+    fn subscript(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
         if let Some(value) = self.tree.child(node, Role::Value)
             && self.is_environ(value)
         {
@@ -247,6 +247,11 @@ impl<'db> Body<'db> {
             && self.maybe_none(value, base)
         {
             return self.lowerer.unknown();
+        }
+        if let Some(value) = self.tree.child(node, Role::Value)
+            && self.is_header(base)
+        {
+            return self.header_item(node, value, base, expected);
         }
         let Some(index) = self.tree.child(node, Role::Index) else {
             return self.lowerer.unknown();

@@ -44,6 +44,8 @@ mod exclusive;
 mod exhaustive;
 mod expressions;
 mod files;
+mod fits;
+mod fits_header;
 mod flow;
 mod formatted;
 mod generics;
