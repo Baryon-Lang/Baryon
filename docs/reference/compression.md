@@ -11,7 +11,7 @@ imports and calls.
 
 | Module | Format | Functions |
 | --- | --- | --- |
-| [`zlib`](#zlib) | Deflate streams (RFC 1951), alone or in a zlib (RFC 1950) or gzip (RFC 1952) container | `decompress`, `crc32`, `adler32` |
+| [`zlib`](#zlib) | Deflate streams (RFC 1951), alone or in a zlib (RFC 1950) or gzip (RFC 1952) container | `compress`, `decompress`, `crc32`, `adler32` |
 
 Python's functions take and give `bytes`. Baryon has no `bytes` type yet, so they take and give
 `Array[u8, 1]`, an array of bytes, which [`Array.fromfile`](files-and-processes.md#array-files)
@@ -31,6 +31,46 @@ This reads `level6.z`, a file Python's `zlib.compress` wrote, decompresses it, p
 `11600 bytes, CRC-32 1019181682` and writes the 11,600 bytes back out as `table.txt`.
 
 ## `zlib`
+
+### `zlib.compress`
+
+`compress(data, level=-1, wbits=15)` gives `data` compressed, as Python's `zlib.compress`
+does. `level` trades time for size: 0 stores the data without compressing it, 1 is the fastest,
+9 the smallest, and -1, the default, means 6. `wbits` names the container as for
+[`decompress`](#zlibdecompress): 9 to 15 a zlib stream whose window is 2 ** `wbits` bytes (8 is
+taken as 9, as zlib takes it), -9 to -15 a raw deflate stream, and 25 to 31 a gzip member with
+no file name and a modification time of 0, the header zlib itself writes.
+
+```python
+from zlib import compress, decompress
+
+
+def round_trip(data: Array[u8, 1]) -> Raises[bool, OSError]:
+    """Whether `data` survives compression at the smallest level."""
+    back = decompress(compress(data, 9))
+    if len(back) != len(data):
+        return False
+    for i in range(len(data)):
+        if back[i] != data[i]:
+            return False
+    return True
+```
+
+The compressor is zlib's algorithm written in Baryon: a hash chain of earlier positions for each
+three bytes, searched up to each level's limit; from level 4, a match is put off by a byte when
+the next position has a longer one; and each block of about 16,000 symbols written in whichever
+of deflate's three block forms (stored, fixed codes or its own codes) is smallest. Its streams
+come within a few bytes of zlib's, and on many inputs they are exactly as long, but they are not
+always the same bytes, so compare what streams decompress to, not the streams themselves
+([decision 0049](../decisions/0049-compression.md)).
+
+A `level` outside -1 to 9, or a `wbits` outside the forms above, raises `OSError` with the kind
+`INVALID_DATA` and Python's message, `Bad compression level`.
+
+**Cost.** One pass over `data`, with a search at each position that grows with the level: at
+most 4 earlier positions at level 1, 128 at level 6 and 4096 at level 9. Level 6 takes about 2.2
+times as long as C zlib; making it faster is a later roadmap step. Memory is the output plus
+256 KiB of tables.
 
 ### `zlib.decompress`
 
