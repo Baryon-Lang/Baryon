@@ -156,7 +156,8 @@ impl<'db> Builder<'db> {
     ) {
         let ty = self.ty(left);
         let element = self.element(ty);
-        if !matches!(element.kind(self.db), TypeKind::Primitive(_)) {
+        let float_parameter = self.is_float_parameter(element);
+        if !float_parameter && !matches!(element.kind(self.db), TypeKind::Primitive(_)) {
             return self.unsupported(node, "`dot` of vectors whose elements are not numbers");
         }
         let (left, right) = (self.borrow(left), self.borrow(right));
@@ -169,7 +170,7 @@ impl<'db> Builder<'db> {
             TypeKind::Fixed { shape, .. } => shape.elements() < PAIRWISE_LANES,
             _ => false,
         };
-        if self.is_float(element) && !short {
+        if (self.is_float(element) || float_parameter) && !short {
             return self.then(node, |target| TerminatorKind::Call {
                 callee: Callee::Builtin(Builtin::Dot),
                 arguments: vec![Argument::Borrow(left), Argument::Borrow(right)],

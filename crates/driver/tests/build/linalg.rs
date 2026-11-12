@@ -565,8 +565,70 @@ def main() -> Raises[None, LinAlgError]:
     );
 }
 
+/// The program `f32_matrices_match_numpy` builds, kept apart so the test stays short.
+const F32_PROGRAM: &str = r#"
+from linalg import LinAlgError, cholesky, det, eigvalsh, inv, qr, solve, svdvals
+from random import Philox
+
+
+def show1(x: Array[f32, 1]):
+    for value in x:
+        print(f"{value:.4g}", end=" ")
+    print()
+
+
+def show(x: Array[f32, 2]):
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            print(f"{x[i, j]:.4g}", end=" ")
+    print()
+
+
+def main() -> Raises[None, LinAlgError]:
+    generator = Philox(5)
+    n = 4
+    a = Array.zeros((n, n), f32)
+    b = Array.zeros(n, f32)
+    for i in range(n):
+        b[i] = f32(generator.uniform())
+        for j in range(n):
+            a[i, j] = f32(generator.uniform())
+    show1(solve(a, b))
+    print(f"{det(a):.4g}")
+    show(inv(a))
+    q, r = qr(a)
+    show(q)
+    show(r)
+    s = Array.zeros((n, n), f32)
+    for i in range(n):
+        for j in range(n):
+            for k in range(n):
+                s[i, j] += a[k, i] * a[k, j]
+    show(cholesky(s))
+    show1(eigvalsh(s))
+    show1(svdvals(a))
+"#;
+
+/// `solve`, `det`, `inv`, `qr`, `cholesky`, `eigvalsh` and `svdvals` of `f32` matrices (roadmap
+/// 3.10.1): each function is generic over its float type, so an `f32` matrix gives an `f32`
+/// result computed in `f32`. `NumPy` prints the same lines, to 4 significant digits, for the same
+/// `float32` matrices, `g = numpy.random.Generator(numpy.random.Philox(key=5))` drawn in the
+/// same order, and `s = a.T @ a`.
+#[test]
+fn f32_matrices_match_numpy() {
+    prints("linalg-f32", F32_PROGRAM.trim_start(), "1.715 -1.853 1.084 -1.504 \n\
+         -0.03239\n\
+         0.5753 2.809 2.154 -3.659 -6.048 3.921 2.358 -1.356 5.083 -4.739 -4.037 4.286 -1.351 -1.495 0.1128 2.176 \n\
+         -0.3998 0.2507 0.7551 -0.4551 -0.5033 -0.5951 -0.3725 -0.5038 -0.5149 0.7064 -0.4842 0.038 -0.5673 -0.2899 0.2378 0.7332 \n\
+         -1.477 -0.87 -1.195 -0.9331 0 -0.5583 -0.4876 0.4793 0 0 0.1166 -0.1203 0 0 0 0.3369 \n\
+         1.477 0 0 0 0.87 0.5583 0 0 1.195 0.4876 0.1166 0 0.9331 -0.4793 -0.1203 0.3369 \n\
+         0.006688 0.03793 0.7749 5.338 \n\
+         2.31 0.8803 0.1948 0.08178 \n").unwrap();
+}
+
 /// A library function is compiled only into a program that calls it: a program that never
-/// calls `solve` has no `solve` in its module, so the library costs it nothing.
+/// calls `solve` has no `solve` in its module, so the library costs it nothing. `solve` is
+/// generic over its float type, so the program that calls it gets its `f64` instance.
 #[test]
 fn library_functions_are_compiled_only_when_called() {
     let compiled = |program: &str| {
@@ -580,7 +642,7 @@ fn library_functions_are_compiled_only_when_called() {
         "from linalg import LinAlgError, solve\n\n\n\
          def main() -> Raises[None, LinAlgError]:\n    print(solve(Array.fill((1, 1), 2.0), Array([1.0])))\n",
     );
-    assert!(used.contains("@\"<std>.linalg.solve\""), "{used}");
+    assert!(used.contains("@\"<std>.linalg.solve[f64]\""), "{used}");
 }
 
 /// The worked example of `linalg.solve` in the reference's Linear algebra chapter, read from
