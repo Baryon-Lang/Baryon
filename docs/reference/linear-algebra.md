@@ -77,7 +77,7 @@ prints
 ```
 
 Differences from NumPy: `b` is one vector, not a matrix of several right-hand sides, and `a`
-holds `f64`s only; both come in later slices of roadmap 3.10. NumPy converts an integer matrix to
+holds `f64`s only; they are roadmap 3.10.3 and 3.10.1. NumPy converts an integer matrix to
 `float64`; here it is a type error, since every conversion is a call.
 
 ## `linalg.lu_factor` and `linalg.lu_solve`
@@ -315,4 +315,4 @@ within a few units in the last place of the largest entry, as NumPy's does.
 Differences from NumPy: `fft` and `ifft` take a `complex128` array, so real samples go through
 `rfft`, or into a complex array first; there is no `n` to pad or cut the input, no `axis` and no
 `norm`; an empty input panics, where NumPy raises `ValueError`. Two-dimensional and N-dimensional
-transforms, `fft2` and `fftn`, come later in roadmap 3.10.
+transforms, `fft2` and `fftn`, are roadmap 3.10.4.
