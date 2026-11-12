@@ -22,6 +22,7 @@ impl<'db> Builder<'db> {
             return self.assign(place, rvalue, node);
         }
         match kind {
+            _ if self.is_library_access(node) => self.call(place, node),
             _ if self.is_literal(node) => {
                 let operand = self.operand(node);
                 self.assign(place, Rvalue::Use(operand), node);
@@ -32,6 +33,10 @@ impl<'db> Builder<'db> {
             SyntaxKind::Subscript if self.is_list_slice(node) => self.list_slice(&place, node),
             SyntaxKind::Name | SyntaxKind::Attribute if self.is_argv(node) => {
                 self.argv(&place, node);
+            }
+            SyntaxKind::Name | SyntaxKind::Attribute if self.standard_stream(node).is_some() => {
+                let stream = self.standard_stream(node).unwrap_or_default();
+                self.stream(place, stream, node);
             }
             SyntaxKind::Attribute if self.is_path_part(node) => self.path_part(place, node),
             SyntaxKind::Subscript if self.is_environ_item(node) => {
@@ -181,8 +186,8 @@ impl<'db> Builder<'db> {
     /// variable that borrows an element reads the element.
     pub(crate) fn place(&mut self, node: NodeId) -> Option<Place> {
         if self.is_computed(node) {
-            // `sys.argv` names no place: each read builds a new list. Neither does a part of
-            // a `Path` or a variable of the environment.
+            // `sys.argv` names no place: each read builds a new list. Neither does a standard
+            // stream, a part of a `Path` or a variable of the environment.
             return None;
         }
         match self.tree.kind(node) {

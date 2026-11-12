@@ -1,0 +1,261 @@
+"""The parts of the `fits` module written in Baryon: FITS headers (decision 0044).
+
+`fits.getheader`, `fits.getdata` and `fits.writeto` are built into the compiler and the
+runtime, which read and write the bytes of a file. A header's cards are kept here as text, and
+read and changed here, card by card, as AstroPy's `Header` reads and changes them.
+
+A program reads a value as `header["EXPTIME"]`, typed by the context, and the checker sends the
+read to the function here for that type: `_get_float` where the context needs an `f64`. The
+functions whose names start with `_` are the compiler's; no program can import them.
+"""
+
+
+class Header(Struct):
+    """The header of one HDU of a FITS file: its cards, in order, as AstroPy's `Header` keeps
+    them (decision 0044).
+
+    `fits.getheader(path)` gives one. `header["EXPTIME"]` reads a value as the type the context
+    needs, `header.get("FILTER", "none")` as the type of the default, `"EXPTIME" in header` asks
+    whether a card is there, and `header["EXPTIME"] = 30.0` or
+    `header["EXPTIME"] = (30.0, "seconds")` sets one, as in AstroPy. Keywords are matched
+    without regard to case.
+    """
+
+    _cards: list[str]  # every card before `END`, each at most 80 characters, in order
+
+
+def _keyword(card: str) -> str:
+    """The keyword of `card`: its first 8 characters without the spaces after them."""
+    return card[:8].rstrip()
+
+
+def _index(header: Header, key: str) -> int:
+    """The position of the first card of `header` whose keyword is `key`, in any case, or -1."""
+    wanted = key.upper()
+    index = 0
+    for card in header._cards:
+        if _keyword(card) == wanted:
+            return index
+        index += 1
+    return -1
+
+
+def _contains(header: Header, key: str) -> bool:
+    """`key in header`: whether a card has the keyword `key`, in any case."""
+    return _index(header, key) >= 0
+
+
+def _lacks(header: Header, key: str) -> bool:
+    """`key not in header`: whether no card has the keyword `key`, in any case."""
+    return _index(header, key) < 0
+
+
+def _field(header: Header, key: str) -> Raises[str, KeyError]:
+    """The text after the value indicator `= ` of the card `key`: the value and any comment.
+    A missing card raises AstroPy's `KeyError`, as does a card with no value, such as
+    `COMMENT`."""
+    index = _index(header, key)
+    if index < 0:
+        raise KeyError(f"Keyword '{key}' not found.")
+    if len(header._cards[index]) < 10 or header._cards[index][8:10] != "= ":
+        raise KeyError(f"Keyword '{key}' has no value.")
+    return header._cards[index][10:].copy()
+
+
+def _quoted(field: str) -> str:
+    """The string a card's `field` starts with: the text between its quotes, each doubled quote
+    read as one, without the spaces at its end, as the FITS standard defines a string."""
+    text = ""
+    opened = False
+    closing = False
+    for c in field.lstrip():
+        if not opened:
+            opened = True
+        elif closing:
+            if c != "'":
+                break
+            text = text + "'"
+            closing = False
+        elif c == "'":
+            closing = True
+        else:
+            text = text + c
+    return text.rstrip()
+
+
+def _plain(field: str) -> str:
+    """The value a card's `field` holds when it is not a string: the text before the comment,
+    without the spaces around it."""
+    found = field.find("/")
+    value = field[:found].copy() if found >= 0 else field.copy()
+    return value.strip()
+
+
+def _comment(field: str) -> str:
+    """The comment of a card's `field`: the text after the `/` that follows the value, without
+    the spaces around it, or "" when there is none. A `/` inside a string is not one."""
+    quotes = 0
+    at = 0
+    for c in field:
+        if c == "'":
+            quotes += 1
+        elif c == "/" and quotes % 2 == 0:
+            return field[at + 1 :].strip()
+        at += 1
+    return ""
+
+
+def _wrong(key: str, kind: str) -> KeyError:
+    """The error for the card `key` whose value is not of the type the program reads."""
+    return KeyError(f"Keyword '{key}' does not hold {kind}.")
+
+
+def _get_str(header: Header, key: str) -> Raises[str, KeyError]:
+    """`header[key]` where the context needs a `str`: the card's string."""
+    field = _field(header, key)
+    if not field.lstrip().startswith("'"):
+        raise _wrong(key, "a string")
+    return _quoted(field)
+
+
+def _get_float(header: Header, key: str) -> Raises[float, KeyError]:
+    """`header[key]` where the context needs a `float`: an integer or a real number, its
+    exponent marked `E` or `D`, as the FITS standard writes one."""
+    value = _plain(_field(header, key)).replace("D", "E")
+    try:
+        return float(value)
+    except ValueError:
+        raise _wrong(key, "a number")
+
+
+def _get_int(header: Header, key: str) -> Raises[int, KeyError]:
+    """`header[key]` where the context needs an `int`: an integer."""
+    value = _plain(_field(header, key))
+    try:
+        return int(value)
+    except ValueError:
+        raise _wrong(key, "an integer")
+
+
+def _get_bool(header: Header, key: str) -> Raises[bool, KeyError]:
+    """`header[key]` where the context needs a `bool`: the logical value `T` or `F`."""
+    value = _plain(_field(header, key))
+    if value == "T":
+        return True
+    if value == "F":
+        return False
+    raise _wrong(key, "a logical value")
+
+
+def _get_str_or(header: Header, key: str, default: str) -> Raises[str, KeyError]:
+    """`header.get(key, default)` of a `str`: `default` when there is no card `key`."""
+    if not _contains(header, key):
+        return default.copy()
+    return _get_str(header, key)
+
+
+def _get_float_or(header: Header, key: str, default: float) -> Raises[float, KeyError]:
+    """`header.get(key, default)` of a `float`."""
+    if not _contains(header, key):
+        return default
+    return _get_float(header, key)
+
+
+def _get_int_or(header: Header, key: str, default: int) -> Raises[int, KeyError]:
+    """`header.get(key, default)` of an `int`."""
+    if not _contains(header, key):
+        return default
+    return _get_int(header, key)
+
+
+def _get_bool_or(header: Header, key: str, default: bool) -> Raises[bool, KeyError]:
+    """`header.get(key, default)` of a `bool`."""
+    if not _contains(header, key):
+        return default
+    return _get_bool(header, key)
+
+
+def _set(header: InOut[Header], key: str, value: str, comment: str, commented: bool):
+    """Sets the card `key` to the formatted `value`, as AstroPy does: in its place when there is
+    one, keeping its comment unless `commented`, else as a new card at the end. The value is
+    written from column 11, after `= `, then ` / comment` when there is a comment."""
+    index = _index(header, key)
+    kept = comment.copy()
+    if index >= 0 and not commented:
+        kept = _comment(header._cards[index][10:].copy())
+    card = f"{key.upper():<8}= {value}"
+    if kept != "":
+        card = card + " / " + kept
+    if index >= 0:
+        header._cards[index] = card
+    else:
+        header._cards.append(card)
+
+
+def _str_text(value: str) -> str:
+    """A string as a card holds it: in quotes, each quote doubled, at least 8 characters between
+    the quotes and 20 in all, or `''` alone for empty text, as AstroPy writes one."""
+    if value == "":
+        return "''"
+    escaped = value.replace("'", "''")
+    quoted = f"'{escaped:<8}'"
+    return f"{quoted:<20}"
+
+
+def _float_text(value: float) -> str:
+    """A float as a card holds it: Python's shortest text for it, with `E` for the exponent, cut
+    to 20 characters, right-justified, as AstroPy writes one."""
+    text = f"{value}".replace("e", "E")
+    if len(text) > 20:
+        found = text.find("E")
+        if found < 0:
+            text = text[:20].copy()
+        else:
+            text = text[: 20 - (len(text) - found)] + text[found:]
+    return f"{text:>20}"
+
+
+def _bool_text(value: bool) -> str:
+    """A logical value as a card holds it: `T` or `F`, right-justified to 20 characters."""
+    return f"{'T' if value else 'F':>20}"
+
+
+def _set_str(header: InOut[Header], key: str, value: str):
+    """`header[key] = value` of a `str`, keeping the card's comment."""
+    _set(header, key, _str_text(value), "", False)
+
+
+def _set_float(header: InOut[Header], key: str, value: float):
+    """`header[key] = value` of a `float`, keeping the card's comment."""
+    _set(header, key, _float_text(value), "", False)
+
+
+def _set_int(header: InOut[Header], key: str, value: int):
+    """`header[key] = value` of an `int`, right-justified to 20 characters, keeping the card's
+    comment."""
+    _set(header, key, f"{value:>20}", "", False)
+
+
+def _set_bool(header: InOut[Header], key: str, value: bool):
+    """`header[key] = value` of a `bool`, keeping the card's comment."""
+    _set(header, key, _bool_text(value), "", False)
+
+
+def _set_str_commented(header: InOut[Header], key: str, value: str, comment: str):
+    """`header[key] = (value, comment)` of a `str`."""
+    _set(header, key, _str_text(value), comment, True)
+
+
+def _set_float_commented(header: InOut[Header], key: str, value: float, comment: str):
+    """`header[key] = (value, comment)` of a `float`."""
+    _set(header, key, _float_text(value), comment, True)
+
+
+def _set_int_commented(header: InOut[Header], key: str, value: int, comment: str):
+    """`header[key] = (value, comment)` of an `int`."""
+    _set(header, key, f"{value:>20}", comment, True)
+
+
+def _set_bool_commented(header: InOut[Header], key: str, value: bool, comment: str):
+    """`header[key] = (value, comment)` of a `bool`."""
+    _set(header, key, _bool_text(value), comment, True)

@@ -15,9 +15,9 @@ use syntax::NodeId;
 /// Python built-ins it keeps (language reference, "Syntax", "Names the language adds"), the
 /// standard traits (language reference, "Types", "Traits"), and the names decision 0031 adds:
 /// `Protocol`, the base of a user trait, `Embed`, which embeds a struct in another, and `Dyn`,
-/// reserved for trait objects (roadmap 3.5). `open` and `File`, the type it returns, are decision
-/// 0036's.
-pub const BUILTINS: [&str; 58] = [
+/// reserved for trait objects (roadmap 3.5). `open`, `File`, the type it returns, and `input` are
+/// decision 0036's.
+pub const BUILTINS: [&str; 59] = [
     "f64",
     "f32",
     "i64",
@@ -68,6 +68,7 @@ pub const BUILTINS: [&str; 58] = [
     "tuple",
     "open",
     "File",
+    "input",
     "Exception",
     "Enum",
     "Number",
@@ -84,8 +85,9 @@ pub const BUILTINS: [&str; 58] = [
 /// environment, and running another program. So is `pathlib`, whose `Path` the library's own
 /// source defines (decision 0038). `linalg` and `fft` are roadmap 3.10's linear algebra and
 /// fast Fourier transforms, named as `numpy.linalg` and `numpy.fft` are. `stats` is roadmap
-/// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042).
-pub const STANDARD_MODULES: [&str; 9] = [
+/// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042). `fits` is
+/// roadmap 3.14.3's FITS files, named as `astropy.io.fits` is (decision 0044).
+pub const STANDARD_MODULES: [&str; 10] = [
     "math",
     "random",
     "sys",
@@ -95,6 +97,7 @@ pub const STANDARD_MODULES: [&str; 9] = [
     "linalg",
     "fft",
     "stats",
+    "fits",
 ];
 
 /// What a name refers to.

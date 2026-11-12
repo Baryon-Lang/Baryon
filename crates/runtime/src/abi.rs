@@ -11,7 +11,9 @@ mod array_files;
 mod complex;
 mod dict;
 mod files;
+mod fits;
 mod memory;
+mod npy;
 mod numbers;
 mod output;
 mod pairwise;
@@ -51,7 +53,9 @@ pub use files::{
     baryon_rt_file_open, baryon_rt_file_read, baryon_rt_file_read_line, baryon_rt_file_read_lines,
     baryon_rt_file_write,
 };
+pub use fits::{baryon_rt_fits_cards, baryon_rt_fits_read, baryon_rt_fits_write};
 pub use memory::{baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_deallocate};
+pub use npy::{baryon_rt_array_load, baryon_rt_array_save};
 pub use numbers::{
     RaisedValueError, ValueError, baryon_rt_str_parse_float, baryon_rt_str_parse_int,
 };

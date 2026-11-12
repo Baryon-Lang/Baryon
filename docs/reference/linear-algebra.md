@@ -173,3 +173,146 @@ differ from NumPy's. Raises `LinAlgError("Eigenvalues did not converge")` if the
 not converge within 30 steps for an eigenvalue, as LAPACK does; panics when `a` is not square.
 
 Differences from NumPy: no `UPLO="U"` argument; `eigvalsh` costs as much as `eigh`.
+
+## `linalg.svd` and `linalg.svdvals`
+
+```python
+def svd(a: Array[f64, 2], full_matrices: bool = True) -> Raises[tuple[Array[f64, 2], Array[f64, 1], Array[f64, 2]], LinAlgError]: ...
+def svdvals(a: Array[f64, 2]) -> Raises[Array[f64, 1], LinAlgError]: ...
+```
+
+`u, s, vh = svd(a)` is the singular value decomposition of an m × n matrix: `a` is
+`u @ diag(s) @ vh`, where `s` holds the k = min(m, n) singular values in descending order and the
+columns of `u` and the rows of `vh` are orthonormal. `u` is m × m and `vh` is n × n, or m × k and
+k × n with `full_matrices=False`, NumPy's reduced form. `svdvals(a)` gives `s` alone. Use them for
+a matrix's rank and condition number (the ratio of the largest singular value to the smallest),
+principal component analysis, and least squares on a matrix that may be rank deficient.
+
+The algorithm is one-sided Jacobi (Hestenes): it rotates pairs of columns until every pair is
+orthogonal to working precision. Each sweep over the pairs costs about 3mn² multiply-adds and 6 to
+10 sweeps are typical, about 0.3 s for a 300 × 300 matrix on one core, ten times NumPy's time.
+Like LAPACK's, its error is small relative to the largest singular value, so a singular value
+near 10⁻¹⁰ of the largest keeps only about six digits. A singular vector's sign is not
+part of the answer, and it can differ from NumPy's. Raises `LinAlgError("SVD did not converge")`
+after 60 sweeps, as NumPy raises the same message.
+
+Differences from NumPy: no `compute_uv` argument, so call `svdvals` for the values alone;
+`svdvals` costs about as much as `svd`, where NumPy's skips the vectors.
+
+## `linalg.eig` and `linalg.eigvals`
+
+```python
+def eig(a: Array[f64, 2]) -> Raises[tuple[Array[complex128, 1], Array[complex128, 2]], LinAlgError]: ...
+def eigvals(a: Array[f64, 2]) -> Raises[Array[complex128, 1], LinAlgError]: ...
+```
+
+`w, v = eig(a)` gives the eigenvalues of a square matrix that need not be symmetric, and as the
+columns of `v` their eigenvectors: `a @ v[:, i]` is `w[i] * v[:, i]`. Both are `complex128`,
+since a real matrix can have complex eigenvalues; they come in conjugate pairs, the one with
+positive imaginary part first. Each eigenvector has length 1 and its largest entry real, as
+LAPACK's `geev` returns them. `eigvals(a)` gives `w` alone. Use them for the stability of a
+linear system, a Markov chain's stationary distribution, or the roots of a polynomial, which are
+the eigenvalues of its companion matrix. For a symmetric matrix call [`eigh`](#linalgeigh-and-linalgeigvalsh),
+which is faster and returns real values in order.
+
+```python
+from linalg import LinAlgError, eigvals, svdvals
+
+
+def main():
+    spring = Array.zeros((2, 2))  # x'' = -4x as a first-order system
+    spring[0, 1] = 1.0
+    spring[1, 0] = -4.0
+    a = Array.zeros((3, 2))
+    a[0, 0] = 3.0
+    a[1, 1] = 2.0
+    a[2, 0] = 4.0
+    try:
+        print(eigvals(spring))
+        print(svdvals(a))
+    except LinAlgError as error:
+        print("failed:", error.message)
+```
+
+prints
+
+```text
+[0.+2.j 0.-2.j]
+[5. 2.]
+```
+
+The algorithm balances `a` by powers of two, so that rows and columns of very different sizes do
+not lose digits, reduces it to Hessenberg form with Householder reflections, then runs the shifted
+double QR iteration and finds the eigenvectors by back-substitution: EISPACK's `balanc`, `orthes`
+and `hqr2`. It costs about 25n³ multiply-adds. Raises
+`LinAlgError("Array must not contain infs or NaNs")` for such an entry, as NumPy does, and
+`LinAlgError("Eigenvalues did not converge")` if the iteration does not converge within 100 steps
+for an eigenvalue; panics when `a` is not square.
+
+Accuracy: the eigenvalues match NumPy's on matrices that break simple eigenvalue codes, among them
+Jordan blocks, a matrix with entries from 10⁻¹⁰ to 10¹⁰, two eigenvalues 10⁻¹² apart and the
+companion matrix of Wilkinson's polynomial, whose roots it finds closer to the exact ones than
+NumPy does. A defective matrix, one without a full set of eigenvectors, gives eigenvalues with
+error near the square root of the rounding error, in NumPy as here.
+
+Differences from NumPy: the order of the eigenvalues is the algorithm's, and can differ from
+NumPy's; sort them when the order matters.
+
+## `fft`
+
+```python
+def fft(x: Array[complex128, 1]) -> Array[complex128, 1]: ...
+def ifft(x: Array[complex128, 1]) -> Array[complex128, 1]: ...
+def rfft(x: Array[f64, 1]) -> Array[complex128, 1]: ...
+def irfft(x: Array[complex128, 1], n: int | None = None) -> Array[f64, 1]: ...
+def fftfreq(n: int, d: f64 = 1.0) -> Array[f64, 1]: ...
+def rfftfreq(n: int, d: f64 = 1.0) -> Array[f64, 1]: ...
+```
+
+The module `fft` holds the discrete Fourier transform and its inverse, with NumPy's names and
+its default scaling, `norm="backward"`:
+
+- `fft(x)[k]` is the sum over `j` of `x[j] * exp(-2πi jk / n)`, not scaled.
+- `ifft(x)` is the same sum with `+2πi`, divided by n, so `ifft(fft(x))` gives back `x` up to
+  rounding.
+- `rfft(x)` transforms real samples and keeps the first n // 2 + 1 frequencies, since the rest
+  are their complex conjugates. `irfft(x, n)` turns such a half spectrum back into n real
+  samples; `n` defaults to 2 * (len(x) - 1), so give it for an odd number of samples.
+- `fftfreq(n, d)` and `rfftfreq(n, d)` give the frequency of each entry, in cycles per unit of
+  `d`, the spacing of the samples.
+
+```python
+from math import cos, pi
+from fft import rfft, rfftfreq
+
+
+def main():
+    n = 64
+    samples = Array.zeros(n)
+    for j in range(n):
+        samples[j] = cos(2.0 * pi * 5.0 * j / n)  # 5 cycles over the window
+    spectrum = rfft(samples)
+    frequencies = rfftfreq(n, 1.0 / n)
+    peak = 0
+    for k in range(len(spectrum)):
+        if abs(spectrum[k]) > abs(spectrum[peak]):
+            peak = k
+    print(frequencies[peak], round(abs(spectrum[peak]), 6))
+```
+
+prints
+
+```text
+5.0 32.0
+```
+
+Any length works. A power of two uses the radix-2 algorithm, 0.08 s for 2²⁰ points on one core,
+about twice NumPy's time. Any other length uses Bluestein's algorithm, three power-of-two
+transforms of at least twice the length, so it costs about six times as much. The twiddle factors
+come from `cos` and `sin` for each angle, never from repeated multiplication, so the error stays
+within a few units in the last place of the largest entry, as NumPy's does.
+
+Differences from NumPy: `fft` and `ifft` take a `complex128` array, so real samples go through
+`rfft`, or into a complex array first; there is no `n` to pad or cut the input, no `axis` and no
+`norm`; an empty input panics, where NumPy raises `ValueError`. Two-dimensional and N-dimensional
+transforms, `fft2` and `fftn`, come later in roadmap 3.10.

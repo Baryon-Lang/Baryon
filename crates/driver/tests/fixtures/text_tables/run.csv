@@ -1,0 +1,6 @@
+# run 7: time, energy, pressure
+time,energy,pressure
+
+0.0, -1.5, 101325
+0.5,-1.25e-3 ,1.0e5  # restart
+1.0,inf,nan

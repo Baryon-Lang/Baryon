@@ -1,6 +1,6 @@
 # 0045. A `DataFrame` has a schema the compiler checks, columns that are arrays, and pandas's names
 
-Status: Proposed
+Status: Accepted (Collins, 2026-11-12)
 Date: 2026-11-11
 Roadmap: 3.13, 3.13.1 to 3.13.10, 3.14.4, D.21
 
@@ -63,6 +63,10 @@ and runs on today's compiler, and it found what is missing:
   not known.
 
 ## Decision
+
+Collins accepted this on 2026-11-12, choosing the schema in the type over columns found at run
+time, `None` with a validity bit over `NaN` as missing and over masked arrays, and pandas's
+names without a row index over Polars's names and over a row index.
 
 ### 1. The schema is part of the type (way A)
 

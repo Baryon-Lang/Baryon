@@ -1,0 +1,181 @@
+"""The `fft` module: discrete Fourier transforms written in Baryon (decision 0040), with NumPy's
+names and its default normalization, `norm="backward"`: the forward transform is not scaled and the
+inverse divides by n.
+
+Every transform fixes its order of operations, so a result has the same bits on every machine.
+"""
+
+from math import cos, pi, sin
+
+
+def fft(x: Array[complex128, 1]) -> Array[complex128, 1]:
+    """The discrete Fourier transform of `x`, as `numpy.fft.fft(x)`: entry `k` is the sum over
+    `j` of `x[j] * exp(-2πi jk / n)`.
+
+    Any length: a radix-2 transform when n is a power of two, Bluestein's algorithm otherwise.
+    Both cost O(n log n); a length that is not a power of two costs about six times as much.
+    Panics when `x` is empty, where NumPy raises `ValueError`.
+    """
+    return _transform(x, -1.0)
+
+
+def ifft(x: Array[complex128, 1]) -> Array[complex128, 1]:
+    """The inverse discrete Fourier transform of `x`, as `numpy.fft.ifft(x)`: entry `k` is the sum
+    over `j` of `x[j] * exp(2πi jk / n)`, divided by n, so `ifft(fft(x))` is `x` up to rounding.
+    Costs what `fft` costs; panics when `x` is empty.
+    """
+    result = _transform(x, 1.0)
+    scale = 1.0 / len(x)
+    for k in range(len(result)):
+        result[k] = result[k] * scale
+    return result
+
+
+def rfft(x: Array[f64, 1]) -> Array[complex128, 1]:
+    """The discrete Fourier transform of real `x`, as `numpy.fft.rfft(x)`: the first n // 2 + 1
+    entries of `fft`, since the rest are their complex conjugates, with the imaginary part of the
+    first entry, and of the last for an even length, exactly zero. Costs what `fft` of n complex
+    numbers costs. Panics when `x` is empty.
+    """
+    n = len(x)
+    full = Array.zeros(n, complex128)
+    for j in range(n):
+        full[j] = complex(x[j], 0.0)
+    transformed = _transform(full, -1.0)
+    half = Array.zeros(n // 2 + 1, complex128)
+    for k in range(n // 2 + 1):
+        half[k] = transformed[k]
+    # The sums for the first entry, and the middle one of an even length, are real; rounding in
+    # Bluestein's algorithm can leave a tiny imaginary part, which NumPy never shows.
+    half[0] = complex(half[0].real, 0.0)
+    if n % 2 == 0:
+        half[n // 2] = complex(half[n // 2].real, 0.0)
+    return half
+
+
+def irfft(x: Array[complex128, 1], n: int | None = None) -> Array[f64, 1]:
+    """The real signal of length `n` whose `rfft` is `x`, as `numpy.fft.irfft(x, n)`. `n` defaults
+    to 2 * (len(x) - 1), so `irfft(rfft(signal))` is `signal` for an even length; give `n` for an
+    odd one. Entries of `x` past n // 2 are ignored and missing ones count as zero, and the
+    imaginary parts of the first entry, and of the last for an even `n`, are ignored, as in NumPy.
+    Panics when the length is less than 1.
+    """
+    length = 2 * (len(x) - 1)
+    if n is not None:
+        length = n
+    assert length >= 1, "irfft needs an output length of at least 1"
+    full = Array.zeros(length, complex128)
+    for k in range(min(len(x), length // 2 + 1)):
+        full[k] = x[k]
+        if k > 0:
+            full[length - k] = x[k].conjugate()
+    transformed = _transform(full, 1.0)
+    result = Array.zeros(length)
+    for j in range(length):
+        result[j] = transformed[j].real / length
+    return result
+
+
+def fftfreq(n: int, d: f64 = 1.0) -> Array[f64, 1]:
+    """The frequency of each entry of an `fft` of length `n` whose samples are `d` apart, as
+    `numpy.fft.fftfreq(n, d)`: `[0, 1, ..., (n - 1) // 2, -(n // 2), ..., -1] / (d * n)`, in
+    cycles per unit of `d`.
+    """
+    result = Array.zeros(n)
+    scale = 1.0 / (n * d)
+    for k in range(n):
+        index = k
+        if k > (n - 1) // 2:
+            index = k - n
+        result[k] = index * scale
+    return result
+
+
+def rfftfreq(n: int, d: f64 = 1.0) -> Array[f64, 1]:
+    """The frequency of each entry of an `rfft` of length `n`, as `numpy.fft.rfftfreq(n, d)`:
+    `[0, 1, ..., n // 2] / (d * n)`.
+    """
+    result = Array.zeros(n // 2 + 1)
+    scale = 1.0 / (n * d)
+    for k in range(n // 2 + 1):
+        result[k] = k * scale
+    return result
+
+
+def _transform(x: Array[complex128, 1], sign: f64) -> Array[complex128, 1]:
+    """The sum over `j` of `x[j] * exp(sign * 2πi jk / n)` for each `k`, unscaled: the radix-2
+    transform for a power-of-two length, Bluestein's otherwise.
+    """
+    n = len(x)
+    assert n > 0, "an FFT needs at least one point"
+    if n & (n - 1) == 0:
+        result = x.copy()
+        _power_of_two(result, sign)
+        return result
+    return _bluestein(x, sign)
+
+
+def _power_of_two(x: InOut[Array[complex128, 1]], sign: f64):
+    """Transforms `x`, whose length is a power of two, in place: bit-reversal order, then
+    log2(n) passes of butterflies, each twiddle factor read from one table of n / 2 entries
+    computed with `cos` and `sin`, never by repeated multiplication, so errors do not grow.
+    """
+    n = len(x)
+    j = 0
+    for i in range(1, n):
+        bit = n >> 1
+        while j & bit != 0:
+            j ^= bit
+            bit >>= 1
+        j |= bit
+        if i < j:
+            swap = x[i]
+            x[i] = x[j]
+            x[j] = swap
+    twiddles = Array.zeros(n // 2, complex128)
+    for k in range(n // 2):
+        angle = 2.0 * pi * k / n
+        twiddles[k] = complex(cos(angle), sign * sin(angle))
+    size = 2
+    while size <= n:
+        half = size // 2
+        stride = n // size
+        for start in range(0, n, size):
+            for k in range(half):
+                top = start + k
+                product = x[top + half] * twiddles[k * stride]
+                x[top + half] = x[top] - product
+                x[top] = x[top] + product
+        size *= 2
+
+
+def _bluestein(x: Array[complex128, 1], sign: f64) -> Array[complex128, 1]:
+    """Transforms `x` of any length n by Bluestein's algorithm: `jk = (j² + k² - (k - j)²) / 2`
+    turns the transform into a convolution with a chirp, done by power-of-two transforms of a
+    length at least 2n - 1. The chirp's angle uses `j²` modulo `2n`, so it stays exact for any n.
+    """
+    n = len(x)
+    m = 1
+    while m < 2 * n - 1:
+        m *= 2
+    chirp = Array.zeros(n, complex128)
+    for j in range(n):
+        angle = pi * ((j * j) % (2 * n)) / n
+        chirp[j] = complex(cos(angle), sign * sin(angle))
+    a = Array.zeros(m, complex128)
+    b = Array.zeros(m, complex128)
+    for j in range(n):
+        a[j] = x[j] * chirp[j]
+        b[j] = chirp[j].conjugate()
+        if j > 0:
+            b[m - j] = chirp[j].conjugate()
+    _power_of_two(a, -1.0)
+    _power_of_two(b, -1.0)
+    for k in range(m):
+        a[k] = a[k] * b[k]
+    _power_of_two(a, 1.0)
+    result = Array.zeros(n, complex128)
+    scale = 1.0 / m
+    for k in range(n):
+        result[k] = a[k] * chirp[k] * scale
+    return result

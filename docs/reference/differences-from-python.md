@@ -33,6 +33,8 @@ reason in a line.
 | `os.environ[name] = value` changes the program's environment | The environment is read-only | Changing it while another thread reads it is a data race in the C library, and `prange` loops run on several threads. [Environment variables](files-and-processes.md#environment-variables) |
 | `subprocess.run("ls -l *.dat", shell=True)` hands a line to a shell | `subprocess.run` takes a `list[str]` and has no shell | A shell splits a file name with a space and lets a value become a command. [Running a program](files-and-processes.md#running-a-program) |
 | `result.stdout` is `None` when output was not captured, and a timeout raises `TimeoutExpired` | `stdout` and `stderr` are `""` when not captured, and a timeout raises `OSError` with the kind `TIMEOUT` | A field has one type, and one error type covers every failure of the operating system. [Running a program](files-and-processes.md#running-a-program) |
+| `sys.stdout = log` sends every later `print` to `log` | `sys.stdout`, `sys.stdin` and `sys.stderr` cannot be assigned; pass the file: `print(..., file=log)` | A module has no variables, so no function's output can be redirected from far away. [Standard streams](files-and-processes.md#standard-streams) |
+| `print` to a closed pipe raises `BrokenPipeError`; `input()` raises `UnicodeDecodeError` on a byte that is not UTF-8 | A closed pipe ends the program quietly, as it ends a C program, and `input()` reads the byte as U+FFFD | `print` to standard output never raises, and `input` raises only `EOFError`. [Standard streams](files-and-processes.md#standard-streams) |
 | Every failure is an exception and can be caught | Bugs such as an index out of range panic, and panics cannot be caught | A caught bug is an ignored bug. [Panics](errors.md#panics) |
 | `assert` is removed by `python -O` | `assert` is checked in every build | [Syntax](syntax.md#statements) |
 | Classes have inheritance and reference semantics | A class is a struct, an error type or an enum: a value type with no inheritance. Types share behavior through traits | Inheritance would make struct sizes unknown and method calls indirect, which stops arrays of structs being contiguous and loops vectorizing. [Decision 0015](../decisions/0015-no-class-inheritance.md) |
@@ -42,6 +44,7 @@ reason in a line.
 | A second `def f` at the top level silently replaces the first | Each top-level name is defined once per module | A replaced definition is almost always a mistake. [Source files](syntax.md#source-files) |
 | `from . import x` imports relative to the current package | Imports always name modules from the package root | An import reads the same wherever the file sits. [Source files](syntax.md#source-files) |
 | A leading `_` marks a name private by convention only | A leading `_` makes a name private to its module; importing it is an error | A module's private helpers stay free to change. [Source files](syntax.md#source-files) |
+| `numpy.loadtxt` gives a rank-1 array for a file of one row or column and a table otherwise | `Array.loadtxt` gives a table, `Array[f64, 2]`, unless the context asks for `Array[f64, 1]`; a rank-1 result from a table raises `ValueError` | The rank is part of an array's type, so it is known before the file is read. [Text tables](data-files.md#text-tables) |
 
 ## What Python has that version 0 does not
 

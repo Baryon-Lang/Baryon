@@ -31,7 +31,7 @@ in `except` as a tuple.
 
 ### Error types the language provides
 
-Two error types need no declaration or import, as in Python. Each is an ordinary class of the
+Four error types need no declaration or import, as in Python. Each is an ordinary class of the
 standard library's own Baryon source ([decision 0038](../decisions/0038-standard-library-in-baryon.md)),
 so it is raised, caught and read like one of the program's own.
 
@@ -39,6 +39,8 @@ so it is raised, caught and read like one of the program's own.
 | --- | --- | --- |
 | `ValueError` | `message: str` | `int(text)` and `float(text)` of text that is not a number ([decision 0037](../decisions/0037-reading-numbers-from-text.md)), and any program that raises it |
 | `OSError` | `kind`, `errno`, `strerror`, `filename` | Files, the environment and processes ([Files and processes](files-and-processes.md)) |
+| `EOFError` | none | `input()` at the end of standard input ([Standard streams](files-and-processes.md#standard-streams)) |
+| `KeyError` | `message: str` | Reading a FITS header's card that is missing or of another type ([Data files](data-files.md#headers), [decision 0044](../decisions/0044-fits-images-and-headers.md)), and any program that raises it. A `dict`'s missing key panics instead |
 
 ```python
 def positive(mass: f64) -> Raises[f64, ValueError]:

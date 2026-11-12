@@ -106,14 +106,18 @@ fn text_that_is_not_utf8_names_its_byte_offset() {
     assert_eq!(failure.strerror, "invalid UTF-8 at byte 7");
 }
 
+/// The registry lists an open writer, and a flush through it writes the writer out. The test
+/// flushes only its own file: `flush_all` would also flush the files other tests are writing on
+/// their own threads at the same moment, which is a data race on their buffers.
 #[test]
-fn flush_all_writes_out_every_open_writer() {
+fn flushing_the_registry_writes_out_an_open_writer() {
     let directory = directory("flush");
     let file = path(&directory, "held.txt");
     let mut out = OpenFile::open(&file, Mode::Write).unwrap();
     out.write("held").unwrap();
     assert_eq!(fs::read_to_string(&file).unwrap(), "");
-    flush_all();
+    let own = out.address();
+    flush_where(|address| address == own);
     assert_eq!(fs::read_to_string(&file).unwrap(), "held");
     out.close().unwrap();
 }

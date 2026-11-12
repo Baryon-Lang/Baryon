@@ -17,6 +17,7 @@ mod paths;
 mod process;
 mod random;
 mod slices;
+mod streams;
 mod unpacking;
 mod values;
 

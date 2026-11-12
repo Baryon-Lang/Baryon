@@ -1,5 +1,7 @@
 //! The operations on array files a [`Builtin::ArrayFile`](crate::Builtin::ArrayFile) call
-//! performs (decision 0036, part 4): `Array.fromfile` and `a.tofile`.
+//! performs: `Array.fromfile` and `a.tofile` (decision 0036, part 4), `Array.load` and
+//! `Array.save` of `NumPy`'s `.npy` files (decision 0043), and the `fits` module's
+//! `getheader`, `getdata` and `writeto` of FITS files (decision 0044).
 
 /// An operation on an array file, called by [`Builtin::ArrayFile`](crate::Builtin::ArrayFile).
 ///
@@ -24,6 +26,41 @@ pub enum ArrayFile {
     /// writes every element the array sees, so a view writes only its own elements, in
     /// row-major order.
     ToFile,
+    /// `Array.load(path)`: one argument, the path, a `str`. The destination is a new
+    /// `Array[T, rank]` of any rank, and its `T` is a number or a `bool`. The call reads a
+    /// `.npy` file, `NumPy`'s format versions 1.0 to 3.0, and fails with the kind
+    /// `INVALID_DATA` when the file is not one, or when its header names another element type
+    /// or rank than the destination's, Fortran order or big-endian bytes. Its elements are read
+    /// straight into the array, as `FromFile` reads them.
+    Load,
+    /// `Array.save(path, a)`: two arguments, the path, a `str`, and the array, passed `Borrow`;
+    /// the destination has type `None`. The call makes the file, or empties the one there, and
+    /// writes a `.npy` file in `NumPy`'s format version 1.0: the header that names the element
+    /// type, as `NumPy` spells it (`'<f8'`), and the shape, then every element the array sees
+    /// in row-major order, as `ToFile` writes them.
+    Save,
+    /// `fits.getheader(path, ext)`: two arguments, the path, a `str`, and the number of the
+    /// HDU, an `i64` passed `Owned`, the primary HDU 0. The destination is a new `list[str]`:
+    /// the HDU's header cards, each 80 characters, `END` left out. The call fails with the kind
+    /// `INVALID_DATA` when the file is not FITS or has no such HDU. It reads the headers up to
+    /// the HDU and skips the data before it.
+    FitsHeader,
+    /// `fits.getdata(path, ext)`: the arguments of `FitsHeader`. The destination is a new
+    /// `Array[T, rank]`, its `T` a number type other than a complex one, its shape the HDU's
+    /// axes reversed, as `AstroPy` gives them. An integer `T` reads an image stored as `T`, or
+    /// as its other signedness shifted by `BZERO` as `AstroPy` writes it; a float `T` reads
+    /// any image, with `BSCALE` and `BZERO` applied in `T`'s precision. The call fails with
+    /// the kind `INVALID_DATA` when the HDU holds no image, one of another rank, or one `T`
+    /// cannot read. It costs one pass over the pixels.
+    FitsData,
+    /// `fits.writeto(path, data, header, overwrite)`: three or four arguments, the path, a
+    /// `str`, the array, passed `Borrow`, whose element type is one `FitsData` reads, the
+    /// `overwrite` flag, a `bool` passed `Owned`, then, when the program gave a header, its
+    /// cards, a `list[str]` passed `Borrow`; the destination has type `None`. The call writes
+    /// a FITS file of one image as `AstroPy`'s `writeto` does, the program's cards after the
+    /// mandatory ones, and fails with the kind `FILE_EXISTS` when the file exists and
+    /// `overwrite` is false. It costs one pass over the array's elements.
+    FitsWrite,
 }
 
 impl ArrayFile {
@@ -32,12 +69,22 @@ impl ArrayFile {
     /// ```
     /// assert_eq!(mir::ArrayFile::FromFile.name(), "Array.fromfile");
     /// assert_eq!(mir::ArrayFile::ToFile.name(), "Array.tofile");
+    /// assert_eq!(mir::ArrayFile::Load.name(), "Array.load");
+    /// assert_eq!(mir::ArrayFile::Save.name(), "Array.save");
+    /// assert_eq!(mir::ArrayFile::FitsHeader.name(), "fits.getheader");
+    /// assert_eq!(mir::ArrayFile::FitsData.name(), "fits.getdata");
+    /// assert_eq!(mir::ArrayFile::FitsWrite.name(), "fits.writeto");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             Self::FromFile => "Array.fromfile",
             Self::ToFile => "Array.tofile",
+            Self::Load => "Array.load",
+            Self::Save => "Array.save",
+            Self::FitsHeader => "fits.getheader",
+            Self::FitsData => "fits.getdata",
+            Self::FitsWrite => "fits.writeto",
         }
     }
 }

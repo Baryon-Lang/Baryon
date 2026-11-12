@@ -1,5 +1,7 @@
-//! Array files (decision 0036, part 4): `Array.fromfile` and `a.tofile`, each a call of the
-//! runtime that can fail with `OSError`.
+//! Array files: `Array.fromfile` and `a.tofile` (decision 0036, part 4), `Array.load` and
+//! `Array.save` of `NumPy`'s `.npy` files (decision 0043), and `fits.getheader`,
+//! `fits.getdata` and `fits.writeto` of FITS files (decision 0044), each a call of the runtime
+//! that can fail with `OSError`.
 //!
 //! Both raise as a file call does (the `files` module): the last parameter is the address of the
 //! error edge's local, and the `i1` result is true when the call failed.
@@ -8,18 +10,27 @@
 //! | --- | --- |
 //! | [`FromFile`](mir::ArrayFile::FromFile) | `baryon_rt_array_from_file(path, length, element, count, offset, out, error)` |
 //! | [`ToFile`](mir::ArrayFile::ToFile) | `baryon_rt_array_to_file(path, length, array, rank, element_size, error)` |
+//! | [`Load`](mir::ArrayFile::Load) | `baryon_rt_array_load(path, length, element, descr, descr_length, rank, out, error)` |
+//! | [`Save`](mir::ArrayFile::Save) | `baryon_rt_array_save(path, length, array, rank, element_size, descr, descr_length, error)` |
+//! | [`FitsHeader`](mir::ArrayFile::FitsHeader) | `baryon_rt_fits_cards(path, length, ext, out, error)` |
+//! | [`FitsData`](mir::ArrayFile::FitsData) | `baryon_rt_fits_read(path, length, ext, element, rank, out, error)` |
+//! | [`FitsWrite`](mir::ArrayFile::FitsWrite) | `baryon_rt_fits_write(path, length, array, rank, element, cards, card_count, header, overwrite, error)` |
 //!
 //! A read writes the header of the new rank-1 array through `out`, the destination's address.
 //! `element` is the address of a stack slot holding the runtime's `ElementLayout`,
 //! `{ i64 size, i64 align, i64 bool_count, ptr bools }`: the element's size and alignment, and
 //! the offset of every `bool` in it, which the runtime makes 0 or 1 whatever byte the file
 //! holds. A write passes the address of the array's header, which holds its pointer, lengths and
-//! strides, so a view writes the elements it sees.
+//! strides, so a view writes the elements it sees. A `.npy` call also passes the element type
+//! in `NumPy`'s spelling, such as `<f8`, a constant this module works out from the type; a load
+//! writes the header of a new array of the destination's rank. A FITS call passes the element
+//! type as the runtime's `ELEMENT_*` number, and a write passes the program's header cards, the
+//! data and length of a `list[str]`, with a flag that says whether there was a header.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
 use mir::{Argument, ArrayFile, BlockId, ErrorEdge, Place};
-use types::{Declared, Layout, Primitive, Type, TypeKind};
+use types::{Complex, Declared, Float, Integer, Layout, Primitive, Type, TypeKind};
 
 impl<'db> Function<'_, '_, 'db> {
     /// Writes a call of the array file operation `method`, storing its result at `destination`
@@ -70,6 +81,12 @@ impl<'db> Function<'_, '_, 'db> {
                     format!("i64 {size}"),
                 ];
                 ("baryon_rt_array_to_file", parameters)
+            }
+            (ArrayFile::Load | ArrayFile::Save, _) => {
+                self.npy_parameters(method, arguments, destination)?
+            }
+            (ArrayFile::FitsHeader | ArrayFile::FitsData | ArrayFile::FitsWrite, _) => {
+                self.fits_parameters(method, arguments, destination)?
             }
             _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
         };
@@ -167,6 +184,185 @@ impl<'db> Function<'_, '_, 'db> {
             _ => return Err(self.reading(ty)),
         }
         Ok(())
+    }
+
+    /// The element type `element` as `NumPy` spells it in a `.npy` header (its `dtype.str`):
+    /// the byte order, `<` for little-endian or `|` for one byte, the kind, and the size in
+    /// bytes. Every platform Baryon supports is little-endian. `name` is the call, for the
+    /// report of a type `.npy` files cannot hold yet, such as a struct, which needs `NumPy`'s
+    /// structured types (roadmap 3.25).
+    fn descr(&self, element: Type<'db>, name: &str) -> Result<&'static str, Unsupported> {
+        let descr = match element.kind(self.types.db) {
+            TypeKind::Primitive(primitive) => match primitive {
+                Primitive::Bool => "|b1",
+                Primitive::Integer(integer) => match integer {
+                    Integer::I8 => "|i1",
+                    Integer::I16 => "<i2",
+                    Integer::I32 => "<i4",
+                    Integer::I64 => "<i8",
+                    Integer::U8 => "|u1",
+                    Integer::U16 => "<u2",
+                    Integer::U32 => "<u4",
+                    Integer::U64 => "<u8",
+                },
+                Primitive::Float(Float::F32) => "<f4",
+                Primitive::Float(Float::F64) => "<f8",
+                Primitive::Complex(Complex::C64) => "<c8",
+                Primitive::Complex(Complex::C128) => "<c16",
+            },
+            _ => {
+                return Err(Unsupported::new(format!(
+                    "`{name}` of elements of type `{}`",
+                    element.display(self.types.db)
+                )));
+            }
+        };
+        Ok(descr)
+    }
+
+    /// The runtime function a `.npy` call of `method` calls, and its parameters before the
+    /// error's address, for `arguments` and the result's place `destination`.
+    fn npy_parameters(
+        &mut self,
+        method: ArrayFile,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+    ) -> Result<(&'static str, Vec<String>), Unsupported> {
+        let name = method.name();
+        let call = match (method, arguments) {
+            (ArrayFile::Load, [path]) => {
+                let (bytes, length) = self.text_argument(path)?;
+                let (out, ty) = self.place(destination)?;
+                let (element, rank) = self.array(ty)?;
+                let descr = self.descr(element, name)?;
+                let layout = self.element_layout(element)?;
+                let constant = self.constants.bytes(descr.as_bytes());
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("ptr {layout}"),
+                    format!("ptr {constant}"),
+                    format!("i64 {}", descr.len()),
+                    format!("i64 {rank}"),
+                    format!("ptr {out}"),
+                ];
+                ("baryon_rt_array_load", parameters)
+            }
+            (ArrayFile::Save, [path, Argument::Borrow(array)]) => {
+                let (address, ty) = self.place(array)?;
+                let (element, rank) = self.array(ty)?;
+                let size = self.layout(element)?.size();
+                let descr = self.descr(element, name)?;
+                let constant = self.constants.bytes(descr.as_bytes());
+                let (bytes, length) = self.text_argument(path)?;
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("ptr {address}"),
+                    format!("i64 {rank}"),
+                    format!("i64 {size}"),
+                    format!("ptr {constant}"),
+                    format!("i64 {}", descr.len()),
+                ];
+                ("baryon_rt_array_save", parameters)
+            }
+            _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
+        };
+        Ok(call)
+    }
+
+    /// The runtime function a FITS call of `method` calls, and its parameters before the
+    /// error's address, for `arguments` and the result's place `destination`.
+    fn fits_parameters(
+        &mut self,
+        method: ArrayFile,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+    ) -> Result<(&'static str, Vec<String>), Unsupported> {
+        let name = method.name();
+        let call = match (method, arguments) {
+            (ArrayFile::FitsHeader, [path, Argument::Owned(ext)]) => {
+                let (bytes, length) = self.text_argument(path)?;
+                let (ext, _) = self.value(ext)?;
+                let (out, _) = self.place(destination)?;
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("i64 {ext}"),
+                    format!("ptr {out}"),
+                ];
+                ("baryon_rt_fits_cards", parameters)
+            }
+            (ArrayFile::FitsData, [path, Argument::Owned(ext)]) => {
+                let (bytes, length) = self.text_argument(path)?;
+                let (ext, _) = self.value(ext)?;
+                let (out, ty) = self.place(destination)?;
+                let (element, rank) = self.array(ty)?;
+                let code = self.fits_code(element, name)?;
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("i64 {ext}"),
+                    format!("i32 {code}"),
+                    format!("i64 {rank}"),
+                    format!("ptr {out}"),
+                ];
+                ("baryon_rt_fits_read", parameters)
+            }
+            (
+                ArrayFile::FitsWrite,
+                [
+                    path,
+                    Argument::Borrow(array),
+                    Argument::Owned(overwrite),
+                    cards @ ..,
+                ],
+            ) => {
+                let (address, ty) = self.place(array)?;
+                let (element, rank) = self.array(ty)?;
+                let code = self.fits_code(element, name)?;
+                let (bytes, length) = self.text_argument(path)?;
+                let (overwrite, _) = self.value(overwrite)?;
+                let (data, count, header) = match cards {
+                    [] => ("null".to_owned(), "0".to_owned(), "false"),
+                    [Argument::Borrow(cards)] => {
+                        let (list, _) = self.place(cards)?;
+                        let data = self.emit(&format!("load ptr, ptr {list}"));
+                        (data, self.list_length(&list), "true")
+                    }
+                    _ => return Err(Unsupported::new(format!("`{name}` with these cards"))),
+                };
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("ptr {address}"),
+                    format!("i64 {rank}"),
+                    format!("i32 {code}"),
+                    format!("ptr {data}"),
+                    format!("i64 {count}"),
+                    format!("i1 zeroext {header}"),
+                    format!("i1 zeroext {overwrite}"),
+                ];
+                ("baryon_rt_fits_write", parameters)
+            }
+            _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
+        };
+        Ok(call)
+    }
+
+    /// The runtime's `ELEMENT_*` number for a FITS image of `element`s: a number type other
+    /// than a complex one, which the checker allows. `name` is the call, for the report of
+    /// another type.
+    fn fits_code(&self, element: Type<'db>, name: &str) -> Result<u32, Unsupported> {
+        match (element.kind(self.types.db), self.element_code(element)) {
+            (TypeKind::Primitive(Primitive::Integer(_) | Primitive::Float(_)), Some(code)) => {
+                Ok(code)
+            }
+            _ => Err(Unsupported::new(format!(
+                "`{name}` of elements of type `{}`",
+                element.display(self.types.db)
+            ))),
+        }
     }
 
     /// What is reported for an element type `Array.fromfile` cannot read.

@@ -2,9 +2,9 @@
 //! constructor; of a number type, which converts; and of the built-ins lowering handles.
 
 use crate::builder::Builder;
+use crate::streams::PrintTarget;
 use mir::{
-    Argument, Builtin, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue,
-    TerminatorKind,
+    Argument, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue, TerminatorKind,
 };
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
@@ -28,6 +28,20 @@ impl<'db> Builder<'db> {
         }
         if matches!(&call.callee, types::Callee::Builtin(name) if name == "Array.fromfile") {
             return self.array_fromfile(place, &given, node);
+        }
+        if let types::Callee::Builtin(name) = &call.callee
+            && name.starts_with("fits.")
+        {
+            let name = name.clone();
+            return self.fits_call(place, &name, &given, node);
+        }
+        if let types::Callee::Builtin(name) = &call.callee
+            && let ("Array.load" | "Array.save", Some(arguments)) = (
+                name.as_str(),
+                given.iter().copied().collect::<Option<Vec<_>>>(),
+            )
+        {
+            return self.array_npy(place, name, &arguments, node);
         }
         let Some(arguments) = given.into_iter().collect::<Option<Vec<NodeId>>>() else {
             return self.unsupported(node, "calls that leave out a defaulted argument");
@@ -108,6 +122,9 @@ impl<'db> Builder<'db> {
                 }
             }
             (Some(("pathlib", "Path")), _) => self.path_new(place, arguments, node),
+            (None, [] | [_]) if name == "input" => {
+                self.input(place, arguments.first().copied(), node);
+            }
             (None, [values, rest @ ..]) if self.reduces(name, (*values, rest), node) => {
                 self.reduce(place, name, (*values, rest), node);
             }
@@ -340,8 +357,9 @@ impl<'db> Builder<'db> {
         }
     }
 
-    /// `print(arguments…, sep=…, end=…)`, its `None` result written into `place`. The call
-    /// writes its arguments with nothing between them ([`Builtin::Print`]), so the separator
+    /// `print(arguments…, sep=…, end=…, file=…, flush=…)`, its `None` result written into
+    /// `place`. `file=` and `flush=` choose where it writes (the `streams` module). The call
+    /// writes its arguments with nothing between them ([`mir::Builtin::Print`]), so the separator
     /// goes between each pair of values and the line end after the last: a space and `"\n"`
     /// unless `sep=` or `end=` gives another `str`, and also when it gives `None`, as in Python.
     ///
@@ -363,6 +381,7 @@ impl<'db> Builder<'db> {
             .map(|&argument| self.print_argument(argument))
             .collect();
         let (mut separator, mut end) = (self.text(" "), self.text("\n"));
+        let (mut target, mut flush) = (PrintTarget::Output, None);
         for keyword in keywords {
             let (Some(name), Some(value)) = (
                 self.tree.child(keyword, Role::Name),
@@ -370,6 +389,17 @@ impl<'db> Builder<'db> {
             ) else {
                 return self.unsupported(keyword, "this keyword argument");
             };
+            match self.text_of(name) {
+                "file" => {
+                    target = self.print_target(value);
+                    continue;
+                }
+                "flush" => {
+                    flush = Some(value);
+                    continue;
+                }
+                _ => {}
+            }
             let given = if matches!(self.ty(value).kind(self.db), TypeKind::None) {
                 if !self.is_literal(value) {
                     self.borrow(value);
@@ -393,18 +423,7 @@ impl<'db> Builder<'db> {
             passed.push(value);
         }
         passed.push(end);
-        let next = self.new_block();
-        self.terminate(
-            TerminatorKind::Call {
-                callee: Callee::Builtin(Builtin::Print),
-                arguments: passed,
-                destination: place,
-                target: next,
-                error: None,
-            },
-            node,
-        );
-        self.start(next);
+        self.print_to(&target, flush, passed, place, node);
     }
 
     /// One value `print` writes: a literal as its constant, anything else borrowed.

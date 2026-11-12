@@ -4,11 +4,11 @@
 builds into programs yet.
 
 A program talks to the system that runs it through Python's modules and names: `sys` for its
-command-line arguments and exit status, `os` for its environment and directories, `pathlib` for
-paths, `open` for text files, `subprocess` for running another program, and `Array.fromfile` and
-`a.tofile` for binary files of arrays ([decision 0036](../decisions/0036-files-and-processes.md)).
-They are this language's own modules, built into the compiler and the runtime, not CPython's: no
-Python runs underneath. The standard streams come next, with the names that decision gives them.
+command-line arguments, exit status and standard streams, `os` for its environment and
+directories, `pathlib` for paths, `open` for text files, `subprocess` for running another
+program, and `Array.fromfile` and `a.tofile` for binary files of arrays
+([decision 0036](../decisions/0036-files-and-processes.md)). They are this language's own
+modules, built into the compiler and the runtime, not CPython's: no Python runs underneath.
 
 ## Command-line arguments
 
@@ -211,6 +211,62 @@ The modes Python has and Baryon does not are errors that say what to write inste
 points to `Array.fromfile` and `a.tofile`, since binary data is whole arrays
 ([decision 0036](../decisions/0036-files-and-processes.md)). A `"+"` mode says a file is opened to
 read or to write, not both.
+
+## Standard streams
+
+Every program starts with three streams: standard input, which it reads, and standard output and
+standard error, which it writes. They are `sys.stdin`, `sys.stdout` and `sys.stderr`, each a
+`File` like one from `open`, with the same methods.
+
+```python
+import sys
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    total = 0.0
+    count = 0
+    for line in sys.stdin:
+        total += float(line)
+        count += 1
+    if count == 0:
+        print("no numbers given", file=sys.stderr)
+        sys.exit(1)
+    print(total / count)
+```
+
+Run as `baryon run < energies.txt`, with `energies.txt` holding the lines `1.5` and `2.5`, this
+prints `2.0`. With an empty file it writes `no numbers given` to standard error and exits with
+status 1, so a shell that collects the program's output with `>` still shows the message.
+
+- **`print(..., file=f)` writes to a file.** `f` is any `File` open to write. The values, `sep=`
+  and `end=` are as without `file=`. Writing to a file can fail, so this `print` raises `OSError`
+  as `f.write` does, and it changes the file, so a function that prints to a parameter declares
+  it `InOut[File]`.
+- **`print(..., file=sys.stderr)` never fails.** Where `file=` names `sys.stderr` or `sys.stdout`
+  itself, `print` raises nothing, as `print` without `file=` raises nothing, so a function that
+  reports a warning needs no `Raises`. A stream held in a variable is a file like any other:
+  after `out = sys.stderr`, `print("x", file=out)` raises `OSError`.
+- **`flush=True` writes the output out now.** Standard output holds what is printed and writes
+  it when its buffer fills, when the program ends, at `sys.exit` and before a panic's message.
+  `print(..., flush=True)` writes it at once, for a progress line that must appear while the
+  program still runs. `flush=` takes any `bool`. Standard error holds nothing back, so it needs
+  no flush.
+- **`input()` reads one line.** `input(prompt)` writes the prompt to standard output with no
+  line end, writes standard output out, and returns the next line of standard input without its
+  line end. At the end of the input it raises `EOFError`, an error type with no fields that
+  needs no import: `Raises[str, EOFError]`. A byte that is not UTF-8 is read as `�` (U+FFFD),
+  where `sys.stdin.readline()` raises `OSError` with the kind `INVALID_DATA`.
+- **Each read of `sys.stdout` gives a new handle on the one stream.** `out = sys.stdout` then
+  `out.write("x")` and `print("y")` write `xy` in that order: there is one buffer, whichever
+  handle writes. `close()` on a handle writes the stream out and leaves it open, and dropping a
+  handle does nothing, so the stream outlives every handle.
+- **The streams cannot be replaced.** `sys.stdout = log` is a compile error, since a module has
+  no variables. To send output somewhere else, pass the file: `print(..., file=log)`.
+- **Writing to `sys.stdin` or reading `sys.stdout` raises `OSError`**, as it does for a file
+  opened the other way. `print(..., file=sys.stdin)` is a compile error.
+- **A closed pipe ends the program.** When the reader of standard output goes away, as in
+  `baryon run | head -1`, the next write ends the program quietly, as it ends a C program.
+  Python instead raises `BrokenPipeError` and prints a traceback.
 
 ## Paths and directories
 
@@ -454,9 +510,8 @@ NumPy's text mode, `sep=`, is not in Baryon: an array file is binary, and text i
 
 ## What is not built yet
 
-Decision 0036 settles the rest of this chapter's surface, and the compiler reports each part by
-name until it is built: `` `sys.stdin` is not in Baryon yet ``. In order, the next parts are
-`sys.stdin`, `sys.stdout`, `sys.stderr`, `input` and `print(..., file=)`. Past that, idea I.39
-lists what comes later, `subprocess.run(check=True)` and a keyword of `subprocess.run` given a
-value that may be `None` among them. The rest of `os` and `pathlib`, such as `os.chdir`,
-`Path.unlink` and `Path.glob`, is not part of decision 0036 and is reported the same way.
+Every part of decision 0036 now builds. A name the decision leaves for later is reported by
+name: `` `sys.path` is not in Baryon yet ``. Idea I.39 lists what comes later,
+`subprocess.run(check=True)` and a keyword of `subprocess.run` given a value that may be `None`
+among them. The rest of `os` and `pathlib`, such as `os.chdir`, `Path.unlink` and `Path.glob`,
+is not part of decision 0036 and is reported the same way.

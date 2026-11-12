@@ -119,13 +119,20 @@ impl<'db> Builder<'db> {
         }
         let value = match self.default_value(item, position, node)? {
             DefaultArgument::Constant(constant) => {
-                if mode == Mode::Owned {
+                // The constant has its literal's type, which can be narrower than the
+                // parameter's: `None` or `5` for an `int | None`.
+                let from = constant.ty;
+                if mode == Mode::Owned && from == ty {
                     return Some(Argument::Owned(Operand::Constant(constant)));
                 }
                 let temporary = self.temporary(ty, node);
-                let value = mir::Rvalue::Use(Operand::Constant(constant));
+                let value = self.coerce(Operand::Constant(constant), from, ty);
                 self.assign(Place::from(temporary), value, node);
-                return Some(Argument::Borrow(Place::from(temporary)));
+                return Some(if mode == Mode::Owned {
+                    Argument::Owned(self.take(Place::from(temporary), ty))
+                } else {
+                    Argument::Borrow(Place::from(temporary))
+                });
             }
             DefaultArgument::Computed(function) => function,
         };

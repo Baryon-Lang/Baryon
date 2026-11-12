@@ -259,6 +259,6 @@ error: `os.chdir` is not in Baryon yet
    |
 21 |     os.chdir("x")
    |     ^^^^^^^^^^^^^ not built
-   = note: so far `sys` has `argv` and `exit`, and `os` has `environ`, `getenv`, `listdir`, `remove`, `rename`, `mkdir`, `makedirs`, `getcwd` and `ErrorKind` (decision 0036)"#
+   = note: so far `sys` has `argv`, `exit`, `stdin`, `stdout` and `stderr`, and `os` has `environ`, `getenv`, `listdir`, `remove`, `rename`, `mkdir`, `makedirs`, `getcwd` and `ErrorKind` (decision 0036)"#
     );
 }

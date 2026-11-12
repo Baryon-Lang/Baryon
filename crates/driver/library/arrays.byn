@@ -1,0 +1,169 @@
+"""Array functions written in Baryon (decision 0038): text tables of numbers (decision 0043).
+
+A program calls these as `Array.loadtxt(path)` and `Array.savetxt(path, a)`, with NumPy's names.
+The checker sends each call to the function here that fits: `loadtxt` for a table and
+`loadtxt_vector` where the context needs a rank-1 array, `savetxt` for a table and
+`savetxt_vector` for a rank-1 array. No program can import this file.
+
+Each reads and writes what NumPy's `loadtxt` and `savetxt` do, byte for byte, and fails with
+NumPy's `ValueError` messages, word for word.
+"""
+
+
+class _Table(Struct):
+    """The numbers of a text table, read row by row, before they become an array."""
+
+    values: list[f64]  # every number, row after row
+    rows: int  # how many rows were read
+    columns: int  # how many numbers each row holds; 0 until the first row is read
+
+
+def _number(field: str, row: int, column: int) -> Raises[f64, ValueError]:
+    """The number `field` holds, read as NumPy reads a `float64`, at the 0-based data row `row`
+    and the 1-based `column`, which only the message names.
+
+    `float(text)` reads it (decision 0037). NumPy refuses the underscores between digits that
+    Python's `float` accepts, so a field with one is refused here too.
+    """
+    message = f"could not convert string '{field}' to float64 at row {row}, column {column}."
+    if "_" in field:
+        raise ValueError(message)
+    try:
+        return float(field)
+    except ValueError:
+        raise ValueError(message)
+
+
+def _read(
+    fname: str, comments: str, delimiter: str, skiprows: int, max_rows: int
+) -> Raises[_Table, OSError | ValueError]:
+    """The numbers of the text file `fname`, read as `numpy.loadtxt` reads them.
+
+    The first `skiprows` lines are skipped whatever they hold. On every other line, the text
+    from `comments` on is dropped, unless `comments` is empty; a line with nothing left but
+    whitespace is skipped. The rest is split on `delimiter`, or on runs of whitespace when it is
+    empty, and each field, stripped of whitespace, is one number. Reading stops after
+    `max_rows` rows when it is not negative. Every row must have as many numbers as the first.
+
+    Reads one line at a time, so the cost is the numbers kept plus the longest line.
+    """
+    table = _Table([], 0, 0)
+    skipped = 0
+    with open(fname) as source:
+        for line in source:
+            if skipped < skiprows:
+                skipped += 1
+                continue
+            if max_rows >= 0 and table.rows >= max_rows:
+                break
+            text = line
+            if comments != "":
+                found = text.find(comments)
+                if found >= 0:
+                    text = text[:found].copy()
+            text = text.strip()
+            if text == "":
+                continue
+            fields = text.split() if delimiter == "" else text.split(delimiter)
+            if table.rows == 0:
+                table.columns = len(fields)
+            elif len(fields) != table.columns:
+                raise ValueError(
+                    f"the number of columns changed from {table.columns} to {len(fields)} "
+                    f"at row {table.rows + 1}; use `usecols` to select a subset and avoid this "
+                    "error"
+                )
+            column = 0
+            for field in fields:
+                column += 1
+                table.values.append(_number(field.strip(), table.rows, column))
+            table.rows += 1
+    return table
+
+
+def loadtxt(
+    fname: str, comments: str = "#", delimiter: str = "", skiprows: int = 0, max_rows: int = -1
+) -> Raises[Array[f64, 2], OSError | ValueError]:
+    """`Array.loadtxt(fname)` as a table: an `Array[f64, 2]` of one row per data line, as
+    `numpy.loadtxt(fname, ndmin=2)` gives. A file with no data gives the shape `(0, 1)`, as
+    NumPy's does.
+    """
+    table = _read(fname, comments, delimiter, skiprows, max_rows)
+    columns = table.columns if table.rows > 0 else 1
+    result = Array.zeros((table.rows, columns))
+    for i in range(table.rows):
+        for j in range(table.columns):
+            result[i, j] = table.values[i * table.columns + j]
+    return result
+
+
+def loadtxt_vector(
+    fname: str, comments: str = "#", delimiter: str = "", skiprows: int = 0, max_rows: int = -1
+) -> Raises[Array[f64, 1], OSError | ValueError]:
+    """`Array.loadtxt(fname)` where the context needs a rank-1 array: the numbers of a file of
+    one column or one row, as `numpy.loadtxt` squeezes them. A table of more than one row and
+    column raises `ValueError`, since NumPy would give a table there.
+    """
+    table = _read(fname, comments, delimiter, skiprows, max_rows)
+    if table.rows > 1 and table.columns > 1:
+        raise ValueError(
+            f"`Array.loadtxt` read {table.rows} rows of {table.columns} columns, which need "
+            "an `Array[f64, 2]`, not a rank-1 array"
+        )
+    return Array(table.values)
+
+
+def _comment(out: InOut[File], text: str, comments: str, newline: str) -> Raises[None, OSError]:
+    """Writes `text` behind `comments`, each of its lines, then `newline`, as `numpy.savetxt`
+    writes a header and a footer."""
+    out.write(comments)
+    out.write(text.replace("\n", "\n" + comments))
+    out.write(newline)
+
+
+def savetxt(
+    X: Array[f64, 2],  # NumPy's name, so `X=` works as a keyword
+    fname: str,
+    delimiter: str = " ",
+    newline: str = "\n",
+    header: str = "",
+    footer: str = "",
+    comments: str = "# ",
+) -> Raises[None, OSError]:
+    """`Array.savetxt(fname, X)` of a table: one line per row, each number written as
+    `numpy.savetxt` writes it with its default format, `%.18e`, separated by `delimiter`.
+    """
+    with open(fname, "w") as out:
+        if header != "":
+            _comment(out, header, comments, newline)
+        rows, columns = X.shape
+        for i in range(rows):
+            for j in range(columns):
+                if j > 0:
+                    out.write(delimiter)
+                out.write(f"{X[i, j]:.18e}")
+            out.write(newline)
+        if footer != "":
+            _comment(out, footer, comments, newline)
+
+
+def savetxt_vector(
+    X: Array[f64, 1],  # NumPy's name, so `X=` works as a keyword
+    fname: str,
+    delimiter: str = " ",
+    newline: str = "\n",
+    header: str = "",
+    footer: str = "",
+    comments: str = "# ",
+) -> Raises[None, OSError]:
+    """`Array.savetxt(fname, X)` of a rank-1 array: one number per line, as `numpy.savetxt`
+    writes a rank-1 array as a column. `delimiter` is never written, as in NumPy.
+    """
+    with open(fname, "w") as out:
+        if header != "":
+            _comment(out, header, comments, newline)
+        for i in range(len(X)):
+            out.write(f"{X[i]:.18e}")
+            out.write(newline)
+        if footer != "":
+            _comment(out, footer, comments, newline)

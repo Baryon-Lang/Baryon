@@ -3,7 +3,7 @@
 //! `ValueError` from `int(text)` (decision 0037).
 
 use super::Body;
-use database::LIBRARY_ROOT;
+use database::{File, LIBRARY_ROOT};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Nominal, Type, TypeKind};
 
@@ -38,6 +38,22 @@ impl<'db> Body<'db> {
                 arguments: Vec::new(),
             }),
         ))
+    }
+
+    /// The function `name` that the library's file `module` defines at its top level, such as
+    /// `loadtxt` in `<std>/arrays.byn` (decision 0043): its file and its name's node, which
+    /// together name its item. `None` when the package has no such file or function. Costs one
+    /// pass over the file's top-level statements, as [`Self::library_class_in`] does.
+    pub(super) fn library_function(&self, module: &str, name: &str) -> Option<(File, NodeId)> {
+        let file = database::modules(self.db, self.lowerer.package).library(module)?;
+        let tree = self.db.parse(file).tree();
+        let text = file.source(self.db).text();
+        let function = tree
+            .children_with(tree.root(), Role::Body)
+            .filter(|&statement| tree.kind(statement) == SyntaxKind::FunctionDefinition)
+            .filter_map(|function| tree.child(function, Role::Name))
+            .find(|&function| tree.text(function, text) == name)?;
+        Some((file, function))
     }
 
     /// `Raises[value, E]`, with `E` the library's error class `name`, for a built-in call `node`

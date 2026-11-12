@@ -56,9 +56,11 @@ impl<'db> Body<'db> {
                 for (&argument, &ty) in all.iter().zip(&types) {
                     self.shows_no_path(argument, ty);
                 }
-                self.print_keywords(arguments, &types[arguments.positional.len()..]);
-                Type::new(self.db, TypeKind::None)
+                let keywords = &types[arguments.positional.len()..];
+                self.print_keywords(arguments, keywords);
+                self.print_target(node, arguments, keywords)
             }
+            ("input", _) => self.input(node, arguments, &types),
             ("len", [_]) => int,
             ("round", [value]) if self.is_number(*value) => int,
             ("abs", [value]) => *value,
@@ -115,19 +117,25 @@ impl<'db> Body<'db> {
         self.raises_library_error(node, value, "ValueError")
     }
 
-    /// Checks `print`'s keyword arguments, whose types are `types`: only `sep=` and `end=`, each
-    /// a `str` or `None`, as Python allows. Python's `file=` and `flush=` are not part of the
-    /// language yet: `print` always writes to standard output.
+    /// Checks `print`'s keyword arguments, whose types are `types`: `sep=` and `end=`, each a
+    /// `str` or `None`, as Python allows. `file=` and `flush=`, the only others, are checked
+    /// with the standard streams (the `streams` module).
     fn print_keywords(&mut self, arguments: &Arguments, types: &[Type<'db>]) {
         for (&(name, value), &ty) in arguments.keywords.iter().zip(types) {
             let written = self.tree.text(name, self.text);
+            if written == "file" || written == "flush" {
+                continue;
+            }
             if written != "sep" && written != "end" {
                 let message = format!("`print` has no parameter `{written}`");
                 self.lowerer.error(
                     name,
                     &message,
                     "unknown parameter",
-                    Some("`print` takes the values to write, then `sep=` and `end=`"),
+                    Some(
+                        "`print` takes the values to write, then `sep=`, `end=`, `file=` and \
+                         `flush=`",
+                    ),
                 );
                 continue;
             }
