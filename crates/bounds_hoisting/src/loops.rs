@@ -198,9 +198,7 @@ pub(crate) fn writes_in(body: &Body<'_>, block: usize, local: Local) -> bool {
 /// Whether `statement` may change `local` as a whole, as [`writes`] describes.
 pub(crate) fn statement_writes(statement: &StatementKind<'_>, local: Local) -> bool {
     match statement {
-        StatementKind::Assign(place, rvalue) => {
-            whole(place, local) || moves(rvalue, local)
-        }
+        StatementKind::Assign(place, rvalue) => whole(place, local) || moves(rvalue, local),
         StatementKind::Drop(place) | StatementKind::Accumulate { place, .. } => whole(place, local),
     }
 }

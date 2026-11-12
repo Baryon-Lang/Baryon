@@ -440,11 +440,17 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             return Some(location);
         }
         let scope = self.scope.as_ref()?;
-        if self.location.as_ref().is_none_or(|(span, _)| *span != self.span) {
+        if self
+            .location
+            .as_ref()
+            .is_none_or(|(span, _)| *span != self.span)
+        {
             let location = self.constants.debug_location(scope, self.span);
             self.location = Some((self.span, location));
         }
-        self.location.as_ref().map(|(_, location)| location.as_str())
+        self.location
+            .as_ref()
+            .map(|(_, location)| location.as_str())
     }
 
     /// Writes one instruction.
@@ -454,10 +460,11 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         self.code.push_str(instruction);
         if self.location().is_some() {
             // Read again from the fields, since `location` borrows all of `self`.
-            let location = self
-                .fixed_location
-                .as_deref()
-                .or_else(|| self.location.as_ref().map(|(_, location)| location.as_str()));
+            let location = self.fixed_location.as_deref().or_else(|| {
+                self.location
+                    .as_ref()
+                    .map(|(_, location)| location.as_str())
+            });
             if let Some(location) = location {
                 let _ = write!(self.code, ", !dbg {location}");
             }

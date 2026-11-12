@@ -186,7 +186,12 @@ impl Ssa {
     /// replaced by it, until none is left, so a local that does not change around a loop needs
     /// no `phi`.
     pub(crate) fn finish(&self, code: &str) -> String {
-        let blocks = self.edges.iter().map(|edge| edge.target + 1).max().unwrap_or(0);
+        let blocks = self
+            .edges
+            .iter()
+            .map(|edge| edge.target + 1)
+            .max()
+            .unwrap_or(0);
         let mut edges: Vec<Vec<&Edge>> = vec![Vec::new(); blocks];
         for edge in &self.edges {
             edges[edge.target].push(edge);
