@@ -12,8 +12,9 @@
 //! adding a row of `right` times one number to a row of the result, so the innermost loop reads
 //! and writes contiguous memory and vectorizes. Each entry still adds its products in the
 //! textbook order, from `p = 0`, so the bits do not depend on the loop order (roadmap 3.10).
-//! When `right` is a vector, each entry is summed in a local along a row of `left`. The result is built in a temporary and moved to its place at the end, so
-//! `x = m @ x` reads the old `x` throughout.
+//! When `right` is a vector, each entry is summed in a local along a row of `left`. The result
+//! is built in a temporary and moved to its place at the end, so `x = m @ x` reads the old `x`
+//! throughout.
 
 use crate::builder::Builder;
 use mir::{BinaryOperator, Local, Operand, Place, Projection, Rvalue};
@@ -151,7 +152,8 @@ impl<'db> Builder<'db> {
     /// for each `p` the row `left[i, p] * right[p, :]` is added to it. Each entry still adds its
     /// products one at a time from `p = 0`, so the result has the same bits as the textbook
     /// order, but the innermost loop runs along a row of `right` and of the result, contiguous
-    /// in memory, which the backend vectorizes: 0.36 s instead of 0.92 s for two 1000 × 1000 matrices.
+    /// in memory, which the backend vectorizes: 0.36 s instead of 0.92 s for two 1000 × 1000
+    /// matrices.
     fn by_rows(
         &mut self,
         operands: &Operands<'_, 'db>,
