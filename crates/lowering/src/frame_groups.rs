@@ -229,7 +229,7 @@ impl<'db> Builder<'db> {
 
     /// A new array of rank 1 holding each element of `array` converted to the number type
     /// `to`, which the caller owns. An array made into `bool` is one of `i64`.
-    fn converted_new(&mut self, array: &Place, to: Type<'db>, node: NodeId) -> Local {
+    pub(crate) fn converted_new(&mut self, array: &Place, to: Type<'db>, node: NodeId) -> Local {
         let length = self.temporary(self.int_type(), node);
         self.assign(Place::from(length), Rvalue::Length(array.clone(), 0), node);
         let length = Operand::Copy(Place::from(length));

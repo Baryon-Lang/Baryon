@@ -35,6 +35,7 @@ mod frame_groups;
 mod frame_joins;
 mod frame_rows;
 mod frame_sort;
+mod frame_stack;
 mod frames;
 mod fusion;
 mod generic_methods;
