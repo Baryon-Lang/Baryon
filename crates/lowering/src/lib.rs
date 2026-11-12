@@ -33,7 +33,9 @@
 //!   `+`, `-` and `*` on a `T: Number` and its number literals become the instance's arithmetic
 //!   and constants once monomorphization substitutes `T`. A call of a trait's method on a `T`
 //!   stays a call of the trait's method, with `T` as its type argument, until monomorphization
-//!   sends it to the type's own method (decision 0031).
+//!   sends it to the type's own method (decision 0031). A call of a generic function from any
+//!   body passes each argument at its parameter's type with the call's type arguments in
+//!   place, `int` for the `Owned[T]` of `first(3)` (the `generics` module).
 //! - **Embedded structs.** A name the checker found through `Embed` fields (decision 0031)
 //!   steps into each one: `ion.m` is the place `ion.particle.m`, and `ion.energy()` passes
 //!   `ion.particle` as `self`.
@@ -291,6 +293,8 @@ mod expressions;
 mod facts;
 mod files;
 mod fits;
+mod frames;
+mod generics;
 mod in_place;
 mod iterators;
 mod lanes;

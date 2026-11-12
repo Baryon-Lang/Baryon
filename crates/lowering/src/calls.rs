@@ -2,6 +2,7 @@
 //! constructor; of a number type, which converts; and of the built-ins lowering handles.
 
 use crate::builder::Builder;
+use crate::frames::erase;
 use crate::streams::PrintTarget;
 use mir::{
     Argument, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue, TerminatorKind,
@@ -121,6 +122,8 @@ impl<'db> Builder<'db> {
             (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
             (None, _) if name == "print" => self.print(place, arguments, node),
             (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
+            (None, [table]) if name == "DataFrame" => self.frame_new(&place, *table, node),
+            (Some(("DataFrame", "copy")), [frame]) => self.frame_copy(place, *frame, node),
             (None, _) if name == "open" => self.open(place, arguments, node),
             (None, [value]) if name == "str" => {
                 if !self.text_of_value(&place, *value, node) {
@@ -180,7 +183,11 @@ impl<'db> Builder<'db> {
         let parameters: Vec<(Mode, types::Type<'db>)> = signature
             .parameters
             .iter()
-            .map(|parameter| (parameter.mode, parameter.ty))
+            .map(|parameter| (parameter.mode, erase(self.db, parameter.ty)))
+            .collect();
+        let type_arguments: Vec<_> = type_arguments
+            .into_iter()
+            .map(|argument| erase(self.db, argument))
             .collect();
         // A method of a generic class is generic in the class's type parameters, which come
         // first: the receiver's type arguments (roadmap 1.9.18).
@@ -188,6 +195,17 @@ impl<'db> Builder<'db> {
             Some(class) => class.into_iter().chain(type_arguments).collect::<Vec<_>>(),
             None => return self.unsupported(node, "a method call on this receiver"),
         };
+        // Each argument is moved, converted or borrowed at the parameter's type with this
+        // call's type arguments in place; in a generic caller they may be its own type
+        // parameters (the `generics` module).
+        let generic = self.type_parameters(item, signature);
+        let parameters: Vec<(Mode, types::Type<'db>)> = parameters
+            .into_iter()
+            .map(|(mode, ty)| match ty.kind(self.db) {
+                TypeKind::Callable { .. } => (mode, ty),
+                _ => (mode, self.instantiate(ty, &generic, &type_arguments)),
+            })
+            .collect();
         // Each `Callable` parameter is an implicit type parameter after the written ones, and
         // its argument is the type of the function passed (decision 0026).
         for (&argument, (_, ty)) in arguments.iter().zip(&parameters) {

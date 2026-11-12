@@ -27,6 +27,7 @@ mod examples;
 mod fft;
 mod files;
 mod fits;
+mod frames;
 mod fusion;
 mod generic_methods;
 mod guide;
@@ -65,6 +66,7 @@ mod timings;
 mod traits;
 mod unions;
 mod vector;
+mod zlib;
 
 /// The `baryon` executable cargo built for these tests.
 const BARYON: &str = env!("CARGO_BIN_EXE_baryon");

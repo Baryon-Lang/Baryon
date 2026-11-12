@@ -24,7 +24,9 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when scatter plots, bars, histograms, legends
+This page was last brought up to date on 2026-11-12, when `DataFrame[S]` built from arrays, with
+its columns, and before them `zlib.decompress`, `zlib.crc32` and
+`zlib.adler32`, and before them scatter plots, bars, histograms, legends
 and grid lines, and before them comparisons of arrays and `a[mask]`, and before them line plots
 with `pyplot` and `ticker`, saved as SVG, and before them slices of a NetCDF variable,
 `var[0, :, ::2]` read and written, and before them writing NetCDF classic files,
@@ -139,6 +141,14 @@ out of a function, including through a `raise`.
 | [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), the float sum of a whole-array expression, `(a * b).sum()`, without storing it, `a.min()`, `a.max()`, [`sum`, `min` and `max` along an axis](arrays.md#reductions-along-an-axis) with NumPy's bits, [`a.mean()`, `a.var(ddof)` and `a.std(ddof)`](arrays.md#means-and-variances), of the whole array and along an axis, with NumPy's bits, `a.round()` and `a.fill(value)`; [`print(a)`](arrays.md#printing), as NumPy writes it | Printing an array of `str` or structs; `var` and `std` of integers or complex numbers, and `mean` of integers along an axis |
 | [The `stats` module](statistics.md): `median`, `quantile`, `percentile`, `average` and `histogram` of an `Array[f64, 1]`, with NumPy's bits; `cov` and `corrcoef` of two, to NumPy's last bit but one | `axis=`, several quantiles at once, the other quantile methods and other element types; `histogram` with other bins or `range=`, `weights=` and `density=`; `cov` and `corrcoef` of more than two variables |
 
+## DataFrames
+
+| Builds today | Not built yet |
+| --- | --- |
+| [`DataFrame[S]`](dataframes.md) with number and `bool` columns, as a variable, parameter, return value and item of a list, tuple or `T \| None`; frames with the same columns passed for one another | Text columns (roadmap 3.13.3) and missing values (3.13.6); a frame as a struct field |
+| [Building a frame](dataframes.md#building-a-frame) from arrays, `DataFrame({"price": prices})`, with the panic for columns of two lengths | Building from a list of rows, `DataFrame(rows)` |
+| [Columns](dataframes.md#columns) read as `df.price` and `df["price"]`, used as arrays, changed in place and replaced, with the panic for a new column of another length; `len(df)`, `df.shape`, `df.columns`, `df.copy()` | A row, `df[i]`; `print(df)`; `df[mask]`, `df[i:j]`, `head`, `tail`, `itertuples`, `df[["a", "b"]]`, `assign`, `drop`, `rename` (3.13.4); `sort_values` (3.13.5); `groupby` (3.13.7); `merge` (3.13.8); `concat`, `drop_duplicates`, `value_counts`, `unique`, `nunique`, `describe` (3.13.9) |
+
 ## Errors and panics
 
 Everything in this chapter builds: error types, `Raises`, `raise`, errors passed on through
@@ -182,6 +192,12 @@ today, before it can be built.
 | Builds today | Not built yet |
 | --- | --- |
 | [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim` and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, with matplotlib's results; [`colors.to_hex`](plotting.md#colors-and-line-styles), [`axis`, `backend_svg`, `artist` and `legend`](plotting.md#axis-backend_svg-artist-and-legend) | `imshow` and colormaps (3.15.3); `plt.subplots`, logarithmic axes, `errorbar`, `fill_between` and `text` (3.15.4); contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
+
+## Compression
+
+| Builds today | Not built yet |
+| --- | --- |
+| [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32) | `zlib.compress` (roadmap 3.27.2), `zlib.decompressobj` and `compressobj`, preset dictionaries; the `gzip`, `bz2`, `lzma` and `compression.zstd` modules (3.27.3 to 3.27.10) |
 
 ## Tests
 

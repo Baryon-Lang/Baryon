@@ -54,6 +54,11 @@ impl<'db> Body<'db> {
         if let Some(ty) = self.complex_attribute(node, base, name) {
             return ty;
         }
+        let name = name.to_owned();
+        if let Some(ty) = self.frame_attribute(node, base, &name) {
+            return ty;
+        }
+        let name = name.as_str();
         if self.is_path(base) {
             return self.path_attribute(node, name);
         }
