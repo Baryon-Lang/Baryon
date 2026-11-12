@@ -3,7 +3,7 @@
 //! `ones` and `fill`.
 
 use crate::builder::Builder;
-use crate::operators::arithmetic;
+use crate::operators::{arithmetic, comparison};
 use mir::{
     BinaryOperator, Check, Constant, ConstantValue, Elementwise, Local, Operand, Place, Projection,
     Rvalue, TerminatorKind, UnaryOperator,
@@ -253,7 +253,8 @@ impl<'db> Builder<'db> {
     }
 
     /// The [`Elementwise`] tree of `node`: operators whose result is an array become nodes,
-    /// arrays and scalars leaves. A scalar converts to the arrays' element type, `element`.
+    /// arrays and scalars leaves. A scalar converts to the arrays' element type, `element`. A
+    /// comparison is a node whose sides have their own element type, not `bool`.
     pub(crate) fn tree_of(&mut self, node: NodeId, element: Type<'db>) -> Option<Elementwise<'db>> {
         let ty = self.ty(node);
         let child = |role| self.tree.child(node, role);
@@ -279,11 +280,25 @@ impl<'db> Builder<'db> {
                 let value = self.tree_of(child(Role::Value)?, element)?;
                 Some(Elementwise::Unary(UnaryOperator::Negate, Box::new(value)))
             }
+            SyntaxKind::UnaryOperation
+                if self.is_array(ty) && self.tree.node(node).operator() == Operator::Invert =>
+            {
+                // `~mask` is `not` of each `bool`; of integers it flips every bit.
+                let operator = if element == self.boolean_type() {
+                    UnaryOperator::Not
+                } else {
+                    UnaryOperator::BitNot
+                };
+                let value = self.tree_of(child(Role::Value)?, element)?;
+                Some(Elementwise::Unary(operator, Box::new(value)))
+            }
+            SyntaxKind::Compare if self.is_array(ty) => self.comparison_tree(node),
             _ if self.is_array(ty) => {
                 if matches!(
                     self.tree.kind(node),
                     SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
-                ) && let Some(place) = self.place(node)
+                ) && !self.is_selection(node)
+                    && let Some(place) = self.place(node)
                 {
                     return Some(Elementwise::Leaf(Operand::Copy(place)));
                 }
@@ -291,6 +306,45 @@ impl<'db> Builder<'db> {
             }
             _ => Some(Elementwise::Leaf(self.operand_as(node, element))),
         }
+    }
+
+    /// The [`Elementwise`] tree of `a > b`, a comparison with an array on either side, which
+    /// gives an array of `bool`s (roadmap 3.13.1). Each side is a tree of its own element type,
+    /// and a side that is a single value converts to the type the two sides' elements meet in,
+    /// so `counts > 1.5` compares as floats. The checker allows one comparison, not a chain.
+    fn comparison_tree(&mut self, node: NodeId) -> Option<Elementwise<'db>> {
+        let comparator = self.tree.children_with(node, Role::Item).next()?;
+        let syntax = self.tree.node(comparator).operator();
+        let Some(operator) = comparison(syntax) else {
+            self.unsupported(node, &format!("`{}` on arrays", syntax.symbol()));
+            return None;
+        };
+        let left = self.tree.child(node, Role::Left)?;
+        let right = self.tree.child(comparator, Role::Right)?;
+        let element = |builder: &Self, side: NodeId| {
+            let ty = builder.ty(side);
+            if builder.is_array(ty) {
+                builder.element(ty)
+            } else {
+                ty
+            }
+        };
+        let (left_element, right_element) = (element(self, left), element(self, right));
+        let common = self.common(left_element, right_element);
+        let side = |builder: &mut Self, side: NodeId, own: Type<'db>| {
+            if builder.is_array(builder.ty(side)) {
+                builder.tree_of(side, own)
+            } else {
+                Some(Elementwise::Leaf(builder.operand_as(side, common)))
+            }
+        };
+        let left = side(self, left, left_element)?;
+        let right = side(self, right, right_element)?;
+        Some(Elementwise::Binary(
+            operator,
+            Box::new(left),
+            Box::new(right),
+        ))
     }
 
     /// Whether `node` is the binary operation `a @ b`.

@@ -18,6 +18,7 @@ mod axes;
 mod broadcast;
 mod builtins;
 mod clang;
+mod comparisons;
 mod complex;
 mod defaults;
 mod dicts;
