@@ -1,0 +1,114 @@
+"""The parts of the `math` module written in Baryon (decision 0038).
+
+The rest of `math`, such as `math.sqrt` and `math.pi`, is built into the compiler, which calls
+the C math library for each function. What lives here is `fsum`, the exactly rounded sum
+(roadmap 1.13.16). The compiler checks a call of `math.fsum` and picks the function here that
+fits its argument: `_fsum_list` for a list and `_fsum_array` for a rank-1 array.
+"""
+
+from math import isfinite
+
+
+class _Partials(Struct):
+    """A running sum held exactly, as Shewchuk's algorithm keeps it.
+
+    The exact sum of the values added so far is the sum of `values[0]` to `values[count - 1]`.
+    These partials are non-zero, do not overlap and increase in size, so no digit of the true sum
+    is lost however many values are added and however they cancel. `values` may hold stale
+    entries past `count`, which the next additions write over, so the list grows only to the
+    largest number of partials needed at once: a few for typical data, at most about 40 for any
+    `f64`s.
+
+    A value that is infinite or NaN cannot be held this way. `special` adds those up plainly, as
+    CPython's `fsum` does, and a sum whose partials overflow is added to it too, as the infinity
+    it rounds to. Either way the partials start again from nothing, since `special` decides the
+    result.
+    """
+
+    values: list[f64]
+    count: int
+    special: f64
+
+
+def _add(sums: InOut[_Partials], value: f64):
+    """Adds `value` to `sums` exactly.
+
+    Each partial in turn is added to `value` with Knuth's two-sum, `high + low == x + y`
+    exactly, the smaller of the two second so it holds. Each `low` that is not zero is kept as a
+    partial, and the last `high` is the largest. Costs about six float operations per partial.
+    """
+    x = value
+    kept = 0
+    for j in range(sums.count):
+        y = sums.values[j]
+        if abs(x) < abs(y):
+            swap = x
+            x = y
+            y = swap
+        high = x + y
+        low = y - (high - x)
+        if low != 0.0:
+            sums.values[kept] = low
+            kept += 1
+        x = high
+    if x == 0.0:
+        sums.count = kept
+    elif not isfinite(x):
+        sums.special += x
+        sums.count = 0
+    else:
+        if kept < len(sums.values):
+            sums.values[kept] = x
+        else:
+            sums.values.append(x)
+        sums.count = kept + 1
+
+
+def _round(sums: _Partials) -> f64:
+    """The exact sum `sums` holds, rounded once to the nearest `f64`, ties to even.
+
+    Adds the partials from the largest down until one sum is inexact, then checks the next
+    partial so a value exactly halfway between two `f64`s rounds as one sum would, as CPython's
+    `fsum` does. A sum that met an infinity or a NaN is `special`, the IEEE 754 sum of those
+    values: `inf - inf` is NaN.
+    """
+    if sums.special != 0.0:
+        return sums.special
+    n = sums.count
+    if n == 0:
+        return 0.0
+    n -= 1
+    high = sums.values[n]
+    low = 0.0
+    while n > 0:
+        x = high
+        n -= 1
+        y = sums.values[n]
+        high = x + y
+        low = y - (high - x)
+        if low != 0.0:
+            break
+    if n > 0 and (
+        (low < 0.0 and sums.values[n - 1] < 0.0) or (low > 0.0 and sums.values[n - 1] > 0.0)
+    ):
+        y = low * 2.0
+        x = high + y
+        if y == x - high:
+            high = x
+    return high
+
+
+def _fsum_list(values: list[f64]) -> f64:
+    """`math.fsum(values)` of a list of `f64`s: the exact sum, rounded once."""
+    sums = _Partials([], 0, 0.0)
+    for value in values:
+        _add(sums, value)
+    return _round(sums)
+
+
+def _fsum_array(values: Array[f64, 1]) -> f64:
+    """`math.fsum(values)` of a rank-1 array of `f64`s: the exact sum, rounded once."""
+    sums = _Partials([], 0, 0.0)
+    for i in range(len(values)):
+        _add(sums, values[i])
+    return _round(sums)

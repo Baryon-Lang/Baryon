@@ -40,6 +40,7 @@ mod complex;
 mod dicts;
 mod elementwise;
 mod errors;
+mod exact_sums;
 mod exclusive;
 mod exhaustive;
 mod expressions;
