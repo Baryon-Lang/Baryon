@@ -84,3 +84,12 @@ Collins chose this on 2026-11-12.
 - The plan's 100,000 lines per second is still 50 times away after this. The rest has to come
   from emitting less LLVM IR (about 80 lines per source line today), parallel code generation,
   and incremental rebuilds (2.2).
+
+## Notes
+
+- 2026-11-12, after roadmap 2.5 to 2.7: a debug build of the 4,706-line program takes 0.9 s, of
+  which `clang -O0` on 4 cores is 0.3 s, `baryon` itself 0.45 s and the link 0.17 s. A code
+  generator that took no time at all would make it 0.9 / 0.6 = 1.5 times faster, so no
+  Cranelift prototype can pass the twice test above. Roadmap 2.1 stays planned for its other
+  role, the REPL's JIT (3.11, decision 0020). Collins chose the same day to drop Cranelift as
+  the debug backend; the design plan names it only as the REPL's JIT.

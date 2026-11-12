@@ -17,7 +17,7 @@
 
 use super::Body;
 use super::calls::Arguments;
-use syntax::{NodeId, Role, SyntaxKind};
+use syntax::{Flags, NodeId, Role, SyntaxKind};
 use types::{Call, Callee, Float, Integer, Key, Primitive, Type, TypeKind};
 
 impl<'db> Body<'db> {
@@ -240,8 +240,9 @@ impl<'db> Body<'db> {
         }
     }
 
-    /// `var[:]`, the subscript `node` of the `Variable` `value` with the index `index`: every
-    /// value of the variable, as an array of the type `expected` the context needs.
+    /// `var[:]` or `var[0, :, ::2]`, the subscript `node` of the `Variable` `value` with the
+    /// index `index`: the values it picks, as an array of the type `expected` the context needs.
+    /// The runtime checks the array's rank against the axes the subscript keeps.
     fn netcdf_read(
         &mut self,
         node: NodeId,
@@ -249,14 +250,9 @@ impl<'db> Body<'db> {
         index: NodeId,
         expected: Option<Type<'db>>,
     ) -> Type<'db> {
-        if !self.is_whole(index) {
-            return self.lowerer.error(
-                index,
-                "a NetCDF variable is read whole, as `var[:]`, so far",
-                "not built yet",
-                Some("slices of a variable come later under decision 0047; read it whole, then slice the array"),
-            );
-        }
+        let Some(items) = self.netcdf_items(index) else {
+            return self.lowerer.unknown();
+        };
         let array = match expected.map(|ty| (ty, ty.kind(self.db))) {
             Some((ty, TypeKind::Array { element, .. })) if self.is_netcdf_element(*element) => ty,
             Some((ty, TypeKind::Array { .. })) => {
@@ -282,19 +278,66 @@ impl<'db> Body<'db> {
         let call = Call {
             callee: Callee::Builtin("netCDF4.read".to_owned()),
             type_arguments: Vec::new(),
-            arguments: vec![Some(Key(value))],
+            arguments: std::iter::once(value)
+                .chain(items.iter().copied())
+                .map(|node| Some(Key(node)))
+                .collect(),
         };
         self.typed.calls.insert(Key(node), call);
-        let ty = self.raises_library_error(node, array, "OSError");
+        let ty = self.raises_library_errors(node, array, subscript_errors(&items));
         self.raised_value(node, ty, "reading a NetCDF variable can fail with")
     }
 
-    /// Whether the subscript's `index` is `:`, the whole of a variable.
-    pub(super) fn is_whole(&self, index: NodeId) -> bool {
-        self.tree.kind(index) == SyntaxKind::Slice
-            && self.tree.child(index, Role::Lower).is_none()
-            && self.tree.child(index, Role::Upper).is_none()
-            && self.tree.child(index, Role::Step).is_none()
+    /// The items of the subscript's `index` that pick part of a variable, `var[0, :, ::2]`,
+    /// each an integer or a slice of integers, as `netCDF4` takes them: none for `:`, the whole
+    /// variable, which the runtime reads or writes without a selection. `None`, after reporting
+    /// it, when an item is anything else, such as an array of indices `netCDF4` would also take.
+    pub(super) fn netcdf_items(&mut self, index: NodeId) -> Option<Vec<NodeId>> {
+        let whole = self.tree.kind(index) == SyntaxKind::Slice
+            && self.tree.children(index).next().is_none();
+        if whole {
+            return Some(Vec::new());
+        }
+        let items: Vec<NodeId> = if self.tree.kind(index) == SyntaxKind::Tuple
+            && !self.tree.node(index).flags().contains(Flags::PARENTHESIZED)
+        {
+            self.tree.children_with(index, Role::Item).collect()
+        } else {
+            vec![index]
+        };
+        let int = Type::new(
+            self.db,
+            TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+        );
+        let mut integers = true;
+        for &item in &items {
+            let parts: Vec<NodeId> = if self.tree.kind(item) == SyntaxKind::Slice {
+                self.tree.children(item).collect()
+            } else {
+                vec![item]
+            };
+            for part in parts {
+                let ty = self.expression(part, Some(int));
+                if matches!(
+                    ty.kind(self.db),
+                    TypeKind::Primitive(Primitive::Integer(_)) | TypeKind::Unknown
+                ) {
+                    continue;
+                }
+                integers = false;
+                let message = format!(
+                    "a NetCDF variable is indexed by integers and slices, found `{}`",
+                    self.show(ty)
+                );
+                self.lowerer.error(
+                    part,
+                    &message,
+                    "not an integer",
+                    Some("for example `var[0, :, ::2]`; other indexes come later under decision 0047"),
+                );
+            }
+        }
+        integers.then_some(items)
     }
 
     /// Whether a classic `NetCDF` file's values can be read as elements of type `ty`: a signed
@@ -419,5 +462,17 @@ impl<'db> Body<'db> {
             "cannot be typed",
             Some("the compiler adds the library's files to every package (decision 0038)"),
         )
+    }
+}
+
+/// The error classes a read or write of a variable through `items` can fail with, in the order
+/// the runtime numbers them: `OSError` alone for `var[:]`, which picks every value, and also
+/// `IndexError` for an index out of bounds and `ValueError` for a zero step, as `netCDF4`
+/// raises them, when the subscript has items.
+pub(super) fn subscript_errors(items: &[NodeId]) -> &'static [&'static str] {
+    if items.is_empty() {
+        &["OSError"]
+    } else {
+        &["OSError", "IndexError", "ValueError"]
     }
 }

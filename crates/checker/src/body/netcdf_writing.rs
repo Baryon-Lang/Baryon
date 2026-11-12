@@ -9,10 +9,11 @@
 //! attribute's value picks `_set_str`, `_set_int` or `_set_float`. Each changes the file at once
 //! through `path._apply(line)`, a built-in call that only the library's own functions can make.
 //! `var[:] = values` is the other built-in call: it writes an array of numbers as all the
-//! variable's values.
+//! variable's values, or the values a subscript such as `var[0, :]` picks.
 
 use super::Body;
 use super::calls::Arguments;
+use super::netcdf::subscript_errors;
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Call, Callee, Key, Type, TypeKind};
 
@@ -204,9 +205,10 @@ impl<'db> Body<'db> {
         Some(self.raises_library_error(node, lines, "OSError"))
     }
 
-    /// `var[:] = values`, the assignment of `value` to the subscript `target`, when it names a
-    /// `Variable`; returns whether it did. `values` is an array of numbers, whose rank and
-    /// lengths the runtime checks against the variable's.
+    /// `var[:] = values` or `var[0, :] = values`, the assignment of `value` to the subscript
+    /// `target`, when it names a `Variable`; returns whether it did. `values` is an array of
+    /// numbers, whose rank and lengths the runtime checks against the positions the subscript
+    /// picks. A write past the last record adds records, as `netCDF4` does.
     pub(super) fn netcdf_store(&mut self, target: NodeId, value: NodeId) -> bool {
         let (Some(variable), Some(index)) = (
             self.tree.child(target, Role::Value),
@@ -220,16 +222,10 @@ impl<'db> Body<'db> {
             return false;
         }
         self.expression(variable, None);
-        if !self.is_whole(index) {
+        let Some(items) = self.netcdf_items(index) else {
             self.expression(value, None);
-            self.lowerer.error(
-                index,
-                "a NetCDF variable is written whole, as `var[:] = values`, so far",
-                "not built yet",
-                Some("slices of a variable come later under decision 0047"),
-            );
             return true;
-        }
+        };
         let found = self.expression(value, None);
         let element = match found.kind(self.db) {
             TypeKind::Array { element, .. } => Some(*element),
@@ -253,11 +249,15 @@ impl<'db> Body<'db> {
         let call = Call {
             callee: Callee::Builtin("netCDF4.write".to_owned()),
             type_arguments: Vec::new(),
-            arguments: vec![Some(Key(variable)), Some(Key(value))],
+            arguments: [variable, value]
+                .into_iter()
+                .chain(items.iter().copied())
+                .map(|node| Some(Key(node)))
+                .collect(),
         };
         self.typed.calls.insert(Key(target), call);
         let nothing = Type::new(self.db, TypeKind::None);
-        let ty = self.raises_library_error(target, nothing, "OSError");
+        let ty = self.raises_library_errors(target, nothing, subscript_errors(&items));
         self.fallible_at(target, ty, "writing a NetCDF variable can fail with");
         true
     }

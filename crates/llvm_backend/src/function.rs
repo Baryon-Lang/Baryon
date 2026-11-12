@@ -8,11 +8,14 @@ use crate::panic::Constants;
 use crate::ty::{Repr, Types};
 use mir::{BlockId, Body, LocalKind, Statement, StatementKind, Terminator, TerminatorKind};
 use source::Span;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 use types::{Item, Mode, Type, TypeKind};
 
 mod places;
+
+pub(crate) use places::Destination;
+mod ssa;
 
 /// How a parameter arrives, which decides where its local lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,6 +70,8 @@ pub(crate) struct Function<'f, 'a, 'db> {
     /// a view's header, written in the entry block so an instruction inside a loop does not
     /// grow the stack each time.
     pub(crate) slots: String,
+    /// Which locals are registers instead of stack slots, and their values (roadmap 2.7).
+    ssa: ssa::Ssa,
 }
 
 impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
@@ -97,6 +102,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             name: String::new(),
             helpers: Vec::new(),
             slots: String::new(),
+            ssa: ssa::Ssa::default(),
         }
     }
 
@@ -112,14 +118,61 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         errors: &'f [Type<'db>],
         internal: bool,
     ) -> Result<(String, BTreeMap<String, String>), Unsupported> {
-        let mut function = Self::new(types, symbol, constants, body, errors);
-        name.clone_into(&mut function.name);
-        function.scope = function.constants.subprogram(name, body.span);
-        let (mut signature, entry) = function.prologue(name)?;
+        let mut demoted = std::collections::BTreeSet::new();
+        loop {
+            let mark = constants.mark();
+            let mut function = Function::new(types, symbol, &mut *constants, body, errors);
+            function.ssa = function.candidates(&demoted)?;
+            let written = function.write_body(name, internal)?;
+            if function.ssa.escaped.is_empty() {
+                return Ok((written, function.calls));
+            }
+            // A promoted local's address was needed: write the function again with it, and
+            // every other such local, in a stack slot.
+            demoted.extend(function.ssa.escaped.iter().copied());
+            constants.roll_back(mark);
+        }
+    }
+
+    /// The locals to promote to registers (the `ssa` module): every number or `bool` that is
+    /// not passed by pointer and not in `demoted`, with its LLVM type, and each promoted
+    /// parameter's argument.
+    fn candidates(
+        &self,
+        demoted: &std::collections::BTreeSet<usize>,
+    ) -> Result<ssa::Ssa, Unsupported> {
+        let mut promoted = HashMap::new();
+        let mut arguments = HashMap::new();
+        for (index, local) in self.body.locals.iter().enumerate() {
+            if demoted.contains(&index) || self.types.number(local.ty).is_none() {
+                continue;
+            }
+            let Repr::Value(ty) = self.types.repr(local.ty)? else {
+                continue;
+            };
+            if let LocalKind::Parameter { mode, .. } = &local.kind {
+                if *mode == Mode::InOut {
+                    continue;
+                }
+                arguments.insert(index, format!("%a{index}"));
+            }
+            promoted.insert(index, ty);
+        }
+        Ok(ssa::Ssa::new(self.body.locals.len(), promoted, arguments))
+    }
+
+    /// Writes the body as the function `name`, `internal` or not, with the locals in
+    /// `self.ssa` promoted, and returns its text with its helpers after it.
+    fn write_body(&mut self, name: &str, internal: bool) -> Result<String, Unsupported> {
+        let body = self.body;
+        name.clone_into(&mut self.name);
+        self.scope = self.constants.subprogram(name, body.span);
+        let (mut signature, entry) = self.prologue(name)?;
+        self.ssa.enter();
         if internal {
             signature = signature.replacen("define ", "define internal ", 1);
         }
-        if let Some(scope) = &function.scope {
+        if let Some(scope) = &self.scope {
             let _ = write!(signature, " {UNWIND_TABLE} !dbg {scope}");
         }
         // The loop metadata of each `simd` loop, by its header block, made at its first
@@ -127,12 +180,15 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         let mut loops: BTreeMap<BlockId, String> = BTreeMap::new();
         for (index, block) in body.blocks.iter().enumerate() {
             let id = BlockId::new(index);
-            function.line_label(&block_label(id));
+            let label = block_label(id);
+            let _ = writeln!(self.code, "{label}:");
+            let marker = self.ssa.start_block(index, &label);
+            self.code.push_str(&marker);
             for statement in &block.statements {
-                function.span = statement.span;
-                function.statement(statement)?;
+                self.span = statement.span;
+                self.statement(statement)?;
             }
-            function.span = block.terminator.span;
+            self.span = block.terminator.span;
             match block.terminator.kind {
                 // A jump back to a `simd` loop's header, from a block after it, is the loop's
                 // back edge, where LLVM reads the request to vectorize.
@@ -141,25 +197,25 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 {
                     let metadata = loops
                         .entry(header)
-                        .or_insert_with(|| function.constants.vectorize());
+                        .or_insert_with(|| self.constants.vectorize());
                     let metadata = metadata.clone();
-                    function.line(&format!(
+                    self.line(&format!(
                         "br label %{}, !llvm.loop {metadata}",
                         block_label(header)
                     ));
                 }
-                _ => function.terminator(&block.terminator)?,
+                _ => self.terminator(&block.terminator)?,
             }
         }
-        let mut text = format!(
-            "{signature} {{\nstart:\n{}{entry}{}{}}}\n",
-            function.slots, function.code, function.failures
-        );
-        for helper in &function.helpers {
+        // The failure blocks pass values to the panic they report, so they are rewritten too.
+        self.code.push_str(&self.failures);
+        let code = self.ssa.finish(&self.code);
+        let mut text = format!("{signature} {{\nstart:\n{}{entry}{code}}}\n", self.slots);
+        for helper in &self.helpers {
             text.push('\n');
             text.push_str(helper);
         }
-        Ok((text, function.calls))
+        Ok(text)
     }
 
     /// The `define` line, and the entry block: a slot per local, each by-value parameter stored
@@ -173,8 +229,11 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 continue;
             };
             let slot = format!("%_{index}");
+            let promoted = self.ssa.is_promoted(index);
             let LocalKind::Parameter { mode, .. } = &local.kind else {
-                let _ = writeln!(entry, "  {slot} = alloca {ty}");
+                if !promoted {
+                    let _ = writeln!(entry, "  {slot} = alloca {ty}");
+                }
                 continue;
             };
             let argument = format!("%a{index}");
@@ -189,14 +248,19 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
                 }
                 Mode::Borrow | Mode::Owned => {
                     parameters.push(format!("{ty} {argument}"));
-                    let _ = writeln!(entry, "  {slot} = alloca {ty}");
+                    if !promoted {
+                        let _ = writeln!(entry, "  {slot} = alloca {ty}");
+                    }
                 }
             }
         }
         for (index, local) in self.body.locals.iter().enumerate() {
-            if let (LocalKind::Parameter { .. }, Passing::Slot, Repr::Value(ty)) =
-                (&local.kind, self.passing[index], self.types.repr(local.ty)?)
-            {
+            if let (LocalKind::Parameter { .. }, Passing::Slot, Repr::Value(ty), false) = (
+                &local.kind,
+                self.passing[index],
+                self.types.repr(local.ty)?,
+                self.ssa.is_promoted(index),
+            ) {
                 let _ = writeln!(entry, "  store {ty} %a{index}, ptr %_{index}");
             }
         }
@@ -215,6 +279,15 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
     /// Writes one statement.
     fn statement(&mut self, statement: &Statement<'db>) -> Result<(), Unsupported> {
         match &statement.kind {
+            StatementKind::Assign(place, rvalue)
+                if place.projections.is_empty() && self.ssa.is_promoted(place.local.index()) =>
+            {
+                let ty = self.body.locals[place.local.index()].ty;
+                if let Some(value) = self.rvalue(rvalue, ty)? {
+                    self.ssa.assign(place.local.index(), value);
+                }
+                Ok(())
+            }
             StatementKind::Assign(place, rvalue) => {
                 let (address, ty) = self.place(place)?;
                 // A union is written in parts: its tag, then its member in the payload.
@@ -322,6 +395,16 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         }
         Ok(())
     }
+    /// Whether `local` is a register instead of a stack slot (the `ssa` module).
+    pub(crate) fn promoted(&self, local: usize) -> bool {
+        self.ssa.is_promoted(local)
+    }
+
+    /// The value the promoted `local` holds here (the `ssa` module).
+    pub(crate) fn read(&mut self, local: usize) -> String {
+        self.ssa.read(local)
+    }
+
     /// A new temporary value's name.
     pub(crate) fn fresh(&mut self) -> String {
         let name = format!("%t{}", self.next_value);
@@ -353,12 +436,14 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
 
     /// Writes one instruction.
     pub(crate) fn line(&mut self, instruction: &str) {
+        self.ssa.record(instruction);
         let located = self.located(instruction);
         let _ = writeln!(self.code, "  {located}");
     }
 
     /// Starts the block `label`.
     pub(crate) fn line_label(&mut self, label: &str) {
+        self.ssa.start_label(label);
         let _ = writeln!(self.code, "{label}:");
     }
 

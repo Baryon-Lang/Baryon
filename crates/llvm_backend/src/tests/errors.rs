@@ -26,15 +26,12 @@ fn raising_writes_the_error_and_returns_the_flag() {
         "\
 define i1 @fail(i64 %a1, ptr noalias %error) {
 start:
-  %_1 = alloca i64
-  store i64 %a1, ptr %_1
   br label %bb0
 bb0:
-  %t0 = load i64, ptr %_1
-  %t1 = getelementptr inbounds { i8, [1 x i64] }, ptr %error, i32 0, i32 0
-  store i8 0, ptr %t1
-  %t2 = getelementptr inbounds { i8, [1 x i64] }, ptr %error, i32 0, i32 1
-  store i64 %t0, ptr %t2
+  %t0 = getelementptr inbounds { i8, [1 x i64] }, ptr %error, i32 0, i32 0
+  store i8 0, ptr %t0
+  %t1 = getelementptr inbounds { i8, [1 x i64] }, ptr %error, i32 0, i32 1
+  store i64 %a1, ptr %t1
   ret i1 true
 }
 "

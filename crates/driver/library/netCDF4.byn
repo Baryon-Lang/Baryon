@@ -1,6 +1,6 @@
 """The parts of the `netCDF4` module written in Baryon: NetCDF classic files (decision 0047).
 
-`Dataset(path)`, `ds.variables[name][:]` and `ds.variables[name][:] = values` are built into
+`Dataset(path)`, `ds.variables[name][:]`, `var[0, :, ::2]` and `var[...] = values` are built into
 the compiler and the runtime, which read and write the bytes of a file. The runtime describes a
 file's header as lines of text, which a `Dataset` keeps; its dimensions, variables and
 attributes are found here, line by line, as Unidata's `netCDF4` package gives them.
@@ -55,8 +55,8 @@ class Dimension(Struct):
 
 class Variable(Struct):
     """A variable of a NetCDF file: its `name` and the names of its `dimensions`, slowest first.
-    `var[:]` reads its values into an array typed by where they go, and `var.getncattr(name)`
-    reads one of its attributes."""
+    `var[:]` or `var[0, :, ::2]` reads its values into an array typed by where they go, and
+    `var.getncattr(name)` reads one of its attributes."""
 
     name: str
     dimensions: list[str]
