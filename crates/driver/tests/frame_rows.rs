@@ -1,6 +1,6 @@
 //! Choosing rows of a frame (roadmap 3.13.4, decision 0045), through every stage up to the
-//! type checker: `df[mask]`, `df[i:j]`, `head` and `tail`, the type each gives, and the
-//! mistakes each reports.
+//! type checker: `df[mask]`, `df[i:j]`, `head` and `tail`, the type each gives, the mistakes
+//! each reports, and the mistakes a loop over `itertuples` reports.
 //!
 //! These tests live in the driver because they need several implementations, and only an
 //! application crate may depend on more than one (decision 0001).
@@ -130,5 +130,61 @@ error: rows of a `DataFrame` cannot be assigned
 18 |     trades[1:2] = other
    |     ^^^^^^^^^^^ whole rows
    = note: assign their values by column: `df.price[0] = 1.0`, or `df.price[mask] = 1.0` for the rows a mask chooses"#
+    );
+}
+
+/// `itertuples` outside a `for` loop, with an argument, on a frame with no struct for its
+/// rows, and a frame changed while a loop goes over its rows are each reported.
+#[test]
+fn row_loop_mistakes_are_reported() {
+    let program = r#"
+class Trade(Struct):
+    price: f64
+    volume: i64
+
+
+def rows(trades: InOut[DataFrame[Trade]], prices: Array[f64, 1]):
+    a = trades.itertuples()
+    for row in trades.itertuples(index=False):
+        print(row)
+    plain = DataFrame({"price": prices.copy()})
+    for row in plain.itertuples():
+        print(row)
+    for row in trades.itertuples():
+        trades.price[0] = row.price
+"#;
+    assert_eq!(
+        check_one(program),
+        r"error: `itertuples` gives the rows of a `DataFrame` to a `for` loop
+ --> main.byn:7:9
+  |
+7 |     a = trades.itertuples()
+  |         ^^^^^^^^^^^^^^^^^^^ not looped over
+  = note: write `for row in df.itertuples():`; to keep the rows, build a list, `[row for row in df.itertuples()]`
+
+error: `itertuples` of a `DataFrame` takes no arguments
+ --> main.byn:8:16
+  |
+8 |     for row in trades.itertuples(index=False):
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+  = note: each row is the struct of the frame's schema; a frame has no row index to leave out and its rows need no other name
+
+error: no struct names the rows of `DataFrame[price: f64]`
+  --> main.byn:11:16
+   |
+11 |     for row in plain.itertuples():
+   |                ^^^^^^^^^^^^^^^^^^ a row needs a type
+   = note: loop over the columns instead, `for price in df.price:`, or give the frame a schema: assign it to a variable declared `DataFrame[Trade]`, whose struct lists these columns
+
+error: `trades` cannot be changed while a loop goes over it
+  --> main.byn:14:9
+   |
+14 |         trades.price[0] = row.price
+   |         ^^^^^^^^^^^^^^^ changed here
+  ::: main.byn:13:16
+   |
+13 |     for row in trades.itertuples():
+   |                ------ the loop goes over `trades` here
+   = note: loop over the indices instead: `for i in range(len(trades)):`"
     );
 }

@@ -229,6 +229,36 @@ print(trades[::-1].head(2))
 - **Rows chosen cannot be assigned.** `df[mask] = ...` is a compile error; assign by column,
   `df.price[mask] = 0.0`.
 
+## Looping over rows
+
+`for row in df.itertuples():` runs once for each row, with `row` the schema's struct, as
+`df[i]` gives it:
+
+```python
+for row in trades.itertuples():
+    print(row.price, row.volume)
+
+busy = [row for row in trades.itertuples() if row.volume >= 100]
+```
+
+```text
+189.5 100
+410.0 250
+171.0 50
+```
+
+- **Each row is a new struct**, a copy of one element of each column, so the loop may keep
+  it, as the comprehension above does. Changing it does not change the frame.
+- **The frame is borrowed for the loop.** The body cannot change the frame it loops over; to
+  change a column row by row, loop over the numbers, `for i in range(len(df)):`.
+- **`itertuples` takes no arguments and belongs in a loop.** A frame has no row index to
+  leave out, and its rows are already named by the struct. It works inside `enumerate` and
+  `zip` and in a comprehension; `rows = df.itertuples()` on its own is a compile error.
+- **Prefer columns for arithmetic.** A loop over rows reads every column for every row.
+  `(df.price * df.volume).sum()` does the same work as one pass over two arrays, and is the
+  form the compiler vectorizes.
+- **The frame needs a struct to give**, as for `df[i]`.
+
 ## `len`, `shape` and `columns`
 
 | Expression | Result |

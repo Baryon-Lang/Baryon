@@ -1,5 +1,6 @@
 //! Choosing rows of a frame (roadmap 3.13.4, decision 0045), built and run: `df[mask]`,
-//! `df[i:j]`, `head` and `tail`, and the panics for a mask of another length and a step of 0.
+//! `df[i:j]`, `head` and `tail`, the panics for a mask of another length and a step of 0, and
+//! loops over the rows `itertuples` gives.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -138,4 +139,60 @@ def main():
         report,
         "panic: slice step cannot be zero\n  --> main.byn:5:17\n"
     );
+}
+
+/// A `for` loop over `df.itertuples()` sees each row as the schema's struct: in a function,
+/// inside `enumerate` and `zip`, in comprehensions that keep rows or one field, over the
+/// frame `head` gives, and with the row kept in a list.
+#[test]
+fn loops_go_over_the_rows_of_a_frame() {
+    let program = r#"
+class Trade(Struct):
+    price: f64
+    volume: i64
+
+def total(trades: DataFrame[Trade]) -> f64:
+    value = 0.0
+    for row in trades.itertuples():
+        value += row.price * f64(row.volume)
+    return value
+
+def main():
+    trades: DataFrame[Trade] = DataFrame({
+        "price": Array([189.5, 410.0, 171.0]),
+        "volume": Array([100, 250, 50]),
+    })
+    for row in trades.itertuples():
+        print(row.price, row.volume)
+    print(total(trades))
+    for position, row in enumerate(trades.itertuples()):
+        print(position, row)
+    kept = [row for row in trades.itertuples() if row.volume > 75]
+    print(kept)
+    prices = [row.price for row in trades.itertuples()]
+    print(prices)
+    rows: list[Trade] = []
+    for row in trades.head(2).itertuples():
+        rows.append(row)
+    print(len(rows), rows[1])
+    for a, b in zip(trades.itertuples(), trades.volume):
+        print(a.volume == b)
+        break
+"#;
+    let expected = [
+        "189.5 100\n",
+        "410.0 250\n",
+        "171.0 50\n",
+        "130000.0\n",
+        "0 Trade(price=189.5, volume=100)\n",
+        "1 Trade(price=410.0, volume=250)\n",
+        "2 Trade(price=171.0, volume=50)\n",
+        "[Trade(price=189.5, volume=100), Trade(price=410.0, volume=250)]\n",
+        "[189.5, 410.0, 171.0]\n",
+        "2 Trade(price=410.0, volume=250)\n",
+        "True\n",
+    ];
+    let (code, stdout, report) = run("frames-itertuples", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, expected.concat());
 }
