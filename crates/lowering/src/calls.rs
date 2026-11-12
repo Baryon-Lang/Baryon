@@ -126,7 +126,9 @@ impl<'db> Builder<'db> {
                 self.frame_new(&place, *table, node);
             }
             (None, [rows]) if name == "DataFrame" => self.frame_from_rows(place, *rows, node),
-            (Some(("DataFrame", "copy")), [frame]) => self.frame_copy(place, *frame, node),
+            (Some(("DataFrame", method)), [frame, rest @ ..]) => {
+                self.frame_method(place, method, (*frame, rest), node);
+            }
             (None, _) if name == "open" => self.open(place, arguments, node),
             (None, [value]) if name == "str" => {
                 if !self.text_of_value(&place, *value, node) {

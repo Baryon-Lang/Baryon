@@ -149,7 +149,7 @@ def reprice(trades: InOut[DataFrame[Trade]], factor: f64):
 the column. The array moves in and the old column is freed. Its length must be the frame's number
 of rows, or the assignment panics. Its element type must be the column's: a frame's type never
 changes, so assignment cannot add a column. Adding and removing columns give a new frame
-(`assign` and `drop`, roadmap 3.13.4).
+(`assign` and `drop`, a later part of roadmap 3.13.4).
 
 **A column cannot be moved out of its frame.** `kept = trades.price` is an error, since it would
 leave the frame with a column missing. Copy the column to keep it on its own:
@@ -181,6 +181,53 @@ Trade(price=171.0, volume=50)
 - **The frame needs a struct to give.** A frame whose columns the compiler worked out, such as
   `DataFrame({"price": prices})`, has no struct for a row, and `df[i]` on it is a compile error.
   Declare it with one, `trades: DataFrame[Trade] = DataFrame({...})`, to read its rows.
+
+## Choosing rows
+
+A mask, a slice, `head` and `tail` each give a new frame with the same columns and some of the
+rows:
+
+| Expression | The rows it keeps |
+| --- | --- |
+| `df[mask]` | The rows where `mask`, an `Array[bool, 1]`, is `True` |
+| `df[i:j]`, `df[i:j:k]` | The rows a slice chooses, as Python's slice of a list does |
+| `df.head(n)` | The first `n` rows; all but the last `-n` when `n` is negative |
+| `df.tail(n)` | The last `n` rows; all but the first `-n` when `n` is negative |
+
+`n` is 5 when left out, and can be given by name, `df.head(n=3)`.
+
+```python
+costly = trades[trades.price > 180.0]
+busy = trades[(trades.price > 180.0) & (trades.volume >= 200)]
+print(costly)
+print(busy)
+print(trades[::-1].head(2))
+```
+
+```text
+   price  volume
+0  189.5     100
+1  410.0     250
+   price  volume
+0  410.0     250
+   price  volume
+0  171.0      50
+1  410.0     250
+```
+
+- **A mask is built from columns.** A comparison of a column is an array of `bool`, and `&`,
+  `|` and `~` combine such arrays; each comparison needs its own parentheses, as in pandas. A
+  mask of another length than the frame panics.
+- **The result is a new frame.** Its columns are copies of the rows chosen, at the cost of one
+  pass over each column, so changing it does not change the frame it came from. To keep only
+  some rows of a frame, assign the result back: `trades = trades[trades.volume > 0]`.
+- **Rows are numbered again from 0**, since a frame has no row index
+  ([decision 0045](../decisions/0045-dataframe.md)). pandas would print `busy` with the number
+  1, the row's number in `trades`.
+- **A slice never panics for its bounds.** Bounds past either end stop at the end, as for a
+  Python list, so `df[:100]` of a frame of 3 rows is all 3. A step of 0 panics.
+- **Rows chosen cannot be assigned.** `df[mask] = ...` is a compile error; assign by column,
+  `df.price[mask] = 0.0`.
 
 ## `len`, `shape` and `columns`
 

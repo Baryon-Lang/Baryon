@@ -221,25 +221,33 @@ impl<'db> Body<'db> {
     /// value of the struct `row` that names the rows of the frame type `base`. A frame whose
     /// columns the compiler worked out has no such struct, so its rows are reached by column.
     fn frame_row(&mut self, index: NodeId, base: Type<'db>, row: Option<Type<'db>>) -> Type<'db> {
+        if self.chooses_rows(index, None) {
+            return base;
+        }
         let found = self.expression(index, None);
         if relations::is_open(self.db, found) {
             return found;
+        }
+        if self.chooses_rows(index, Some(found)) {
+            return base;
         }
         if !matches!(
             found.kind(self.db),
             TypeKind::Primitive(Primitive::Integer(_))
         ) {
             let message = format!(
-                "a `DataFrame` is indexed by a column's name or a row's number, found `{}`",
+                "a `DataFrame` is indexed by a column's name, a row's number, a mask or a slice, \
+                 found `{}`",
                 self.show(found)
             );
             return self.lowerer.error(
                 index,
                 &message,
-                "neither a name nor a number",
+                "does not choose a column or rows",
                 Some(
-                    "write a column's name as a string literal, `df[\"price\"]`, or a row's \
-                     number, `df[0]`; masks and slices come with roadmap item 3.13.4",
+                    "write a column's name as a string literal, `df[\"price\"]`, a row's number, \
+                     `df[0]`, a mask, an `Array[bool, 1]` such as `df[df.price > 100.0]`, or a \
+                     slice, `df[1:3]`",
                 ),
             );
         }
@@ -299,9 +307,12 @@ impl<'db> Body<'db> {
         if self.is_frame_row(target) {
             self.lowerer.error(
                 target,
-                "a row of a `DataFrame` cannot be assigned",
-                "a whole row",
-                Some("assign its values by column: `df.price[0] = 1.0`"),
+                "rows of a `DataFrame` cannot be assigned",
+                "whole rows",
+                Some(
+                    "assign their values by column: `df.price[0] = 1.0`, or \
+                     `df.price[mask] = 1.0` for the rows a mask chooses",
+                ),
             );
             return true;
         }
@@ -383,6 +394,9 @@ impl<'db> Body<'db> {
         callee: &str,
         arguments: &Arguments,
     ) -> Type<'db> {
+        if let Some(rows) = self.rows_method(function, base, callee, arguments) {
+            return rows;
+        }
         let given = arguments.positional.len() + arguments.keywords.len();
         self.untyped(arguments);
         match (callee, given) {
@@ -400,8 +414,8 @@ impl<'db> Body<'db> {
                     &message,
                     "not defined yet",
                     Some(
-                        "a `DataFrame` has `copy()` today; the rest of decision 0045's methods \
-                         come with roadmap items 3.13.4 to 3.13.9",
+                        "a `DataFrame` has `copy()`, `head()` and `tail()` today; the rest of \
+                         decision 0045's methods come with roadmap items 3.13.4 to 3.13.9",
                     ),
                 )
             }
