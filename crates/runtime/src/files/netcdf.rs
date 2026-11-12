@@ -22,9 +22,12 @@ use super::{BUFFER, ErrorKind, OsFailure};
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
 
+mod encoding;
 mod header;
+mod writing;
 
 pub(crate) use header::read_header;
+pub(crate) use writing::{define, write};
 
 /// The type of a `NetCDF` value, numbered as the format numbers it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +137,8 @@ pub(crate) struct Variable {
 /// What a classic file's header says.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Header {
+    /// Whether the file is CDF-2, whose variables begin at 64-bit offsets, or else CDF-1.
+    pub(crate) wide: bool,
     /// The number of records written.
     pub(crate) records: u64,
     /// Each dimension's name and length, 0 for the unlimited one.
