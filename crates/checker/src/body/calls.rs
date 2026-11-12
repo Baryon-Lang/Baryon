@@ -44,6 +44,7 @@ impl<'db> Body<'db> {
                 self.call_item(node, &callee, file, name, &arguments)
             }
             Some(Definition::Builtin("Array")) => self.array_from_list(node, &arguments, expected),
+            Some(Definition::Builtin("DataFrame")) => self.frame_new(node, &arguments, expected),
             Some(Definition::Builtin("open")) => {
                 let ty = self.open(node, &arguments);
                 self.record_open(node, &arguments, ty);

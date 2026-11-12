@@ -160,6 +160,7 @@ mod constant;
 mod declare;
 mod embed;
 mod forms;
+mod frames;
 mod lower;
 mod outline;
 mod padding;

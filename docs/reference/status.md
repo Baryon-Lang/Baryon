@@ -24,7 +24,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when `zlib.decompress`, `zlib.crc32` and
+This page was last brought up to date on 2026-11-12, when `DataFrame[S]` built from arrays, with
+its columns, and before them `zlib.decompress`, `zlib.crc32` and
 `zlib.adler32`, and before them scatter plots, bars, histograms, legends
 and grid lines, and before them comparisons of arrays and `a[mask]`, and before them line plots
 with `pyplot` and `ticker`, saved as SVG, and before them slices of a NetCDF variable,
@@ -139,6 +140,14 @@ out of a function, including through a `raise`.
 | [`@`, the matrix product](arrays.md#the-matrix-product), of `Array`s and of `Fixed` arrays: matrix by matrix, matrix by vector and vector by matrix, as a loop nest | `@=`; calling BLAS (roadmap 3.10.2) |
 | [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), the float sum of a whole-array expression, `(a * b).sum()`, without storing it, `a.min()`, `a.max()`, [`sum`, `min` and `max` along an axis](arrays.md#reductions-along-an-axis) with NumPy's bits, [`a.mean()`, `a.var(ddof)` and `a.std(ddof)`](arrays.md#means-and-variances), of the whole array and along an axis, with NumPy's bits, `a.round()` and `a.fill(value)`; [`print(a)`](arrays.md#printing), as NumPy writes it | Printing an array of `str` or structs; `var` and `std` of integers or complex numbers, and `mean` of integers along an axis |
 | [The `stats` module](statistics.md): `median`, `quantile`, `percentile`, `average` and `histogram` of an `Array[f64, 1]`, with NumPy's bits; `cov` and `corrcoef` of two, to NumPy's last bit but one | `axis=`, several quantiles at once, the other quantile methods and other element types; `histogram` with other bins or `range=`, `weights=` and `density=`; `cov` and `corrcoef` of more than two variables |
+
+## DataFrames
+
+| Builds today | Not built yet |
+| --- | --- |
+| [`DataFrame[S]`](dataframes.md) with number and `bool` columns, as a variable, parameter, return value and item of a list, tuple or `T \| None`; frames with the same columns passed for one another | Text columns (roadmap 3.13.3) and missing values (3.13.6); a frame as a struct field |
+| [Building a frame](dataframes.md#building-a-frame) from arrays, `DataFrame({"price": prices})`, with the panic for columns of two lengths | Building from a list of rows, `DataFrame(rows)` |
+| [Columns](dataframes.md#columns) read as `df.price` and `df["price"]`, used as arrays, changed in place and replaced, with the panic for a new column of another length; `len(df)`, `df.shape`, `df.columns`, `df.copy()` | A row, `df[i]`; `print(df)`; `df[mask]`, `df[i:j]`, `head`, `tail`, `itertuples`, `df[["a", "b"]]`, `assign`, `drop`, `rename` (3.13.4); `sort_values` (3.13.5); `groupby` (3.13.7); `merge` (3.13.8); `concat`, `drop_duplicates`, `value_counts`, `unique`, `nunique`, `describe` (3.13.9) |
 
 ## Errors and panics
 
