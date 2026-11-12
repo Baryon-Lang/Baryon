@@ -234,6 +234,14 @@ almost all `clang -O2`: `baryon` writes about 80 lines of LLVM IR per source lin
 a stack slot for LLVM to promote ([decision 0018](../docs/decisions/0018-mid-level-ir.md)), and
 `clang` optimizes them one module at a time on one core.
 
+What has changed since, on the same machine and program:
+
+| Change | Debug build | Release build |
+| --- | --- | --- |
+| Baseline (2.0) | 9.5 s | 9.5 s |
+| Debug builds at `clang -O0` (2.5, [decision 0048](../docs/decisions/0048-debug-builds-compile-fast.md)) | 1.85 s | 9.5 s |
+| One module per core, compiled at once (2.6) | 1.0 s | 2.9 s |
+
 ## Output protocol
 
 A kernel is an executable that takes positive integer arguments and prints exactly two lines:

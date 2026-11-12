@@ -202,8 +202,8 @@ fn check(root: &Path) -> Result<ExitCode, String> {
 fn build(root: &Path, output: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String> {
     let files = match compile(root, output, profile, timings, |session, directory| {
         session
-            .compile(directory, profile)
-            .map(|module| (module, Vec::new()))
+            .compile_parts(directory, profile, cores())
+            .map(|modules| (modules, Vec::new()))
     })? {
         Ok((files, _)) => files,
         Err(code) => return Ok(code),
@@ -232,8 +232,8 @@ fn run(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String>
     let program = scratch.join("program");
     let built = compile(root, &program, profile, timings, |session, directory| {
         session
-            .compile(directory, profile)
-            .map(|module| (module, Vec::new()))
+            .compile_parts(directory, profile, cores())
+            .map(|modules| (modules, Vec::new()))
     });
     let ran = built.and_then(|built| match built {
         Ok(_) => Command::new(&program)
@@ -262,7 +262,7 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("tests");
     let built = compile(root, &program, profile, timings, |session, directory| {
-        session.compile_tests(directory, profile)
+        session.compile_tests_parts(directory, profile, cores())
     });
     let ran = built.and_then(|built| match built {
         Ok((_, tests)) => runner::run(&program, &tests, &mut io::stdout().lock()),
@@ -272,11 +272,11 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
     ran
 }
 
-/// Compiles the package rooted at `root` with `program`, one of [`Session::compile`] and
-/// [`Session::compile_tests`] giving a module and its test names, and links the module into the
-/// executable `output`, optimized when `profile` is [`Profile::Release`]. Returns the number of
-/// files compiled and the test names, or, when the package has errors, prints them and returns the
-/// exit status 1. When `timings` is set and the
+/// Compiles the package rooted at `root` with `program`, one of [`Session::compile_parts`] and
+/// [`Session::compile_tests_parts`] giving the modules and the test names, and links the modules
+/// into the executable `output`, optimized when `profile` is [`Profile::Release`]. Returns the
+/// number of files compiled and the test names, or, when the package has errors, prints them and
+/// returns the exit status 1. When `timings` is set and the
 /// executable is linked, prints each stage's time to standard error ([`Timings`]).
 ///
 /// # Errors
@@ -288,14 +288,14 @@ fn compile(
     output: &Path,
     profile: Profile,
     timings: bool,
-    program: impl FnOnce(&Session, Option<&str>) -> Result<(String, Vec<String>), Vec<Diagnostic>>,
+    program: impl FnOnce(&Session, Option<&str>) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>>,
 ) -> Result<Result<(usize, Vec<String>), ExitCode>, String> {
     let started = Instant::now();
     let (session, files, lines) = load(root)?;
     let loaded = Instant::now();
     let directory =
         fs::canonicalize(root).map_err(|error| format!("{}: {error}", root.display()))?;
-    let (module, tests) = match program(&session, Some(&directory.to_string_lossy())) {
+    let (modules, tests) = match program(&session, Some(&directory.to_string_lossy())) {
         Ok(compiled) => compiled,
         Err(problems) => {
             let mut stderr = io::stderr().lock();
@@ -309,7 +309,7 @@ fn compile(
         }
     };
     let compiled = Instant::now();
-    let linked = link::link(&module, output, profile == Profile::Release)?;
+    let linked = link::link(&modules, output, profile == Profile::Release)?;
     if timings {
         let report = Timings {
             files,
@@ -322,6 +322,12 @@ fn compile(
         writeln!(io::stderr(), "{report}").map_err(|error| error.to_string())?;
     }
     Ok(Ok((files, tests)))
+}
+
+/// How many LLVM modules to split a program into: one per core the operating system lets this
+/// process use, so each gets a `clang` of its own (roadmap 2.6), or one when that is unknown.
+fn cores() -> usize {
+    std::thread::available_parallelism().map_or(1, usize::from)
 }
 
 /// Runs `baryon doc` on the package rooted at `root`, writing its pages into `output`.

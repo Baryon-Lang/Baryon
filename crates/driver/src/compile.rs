@@ -98,8 +98,35 @@ impl Session {
     /// module defines one, or when it takes parameters or returns a value. `main` may raise; an
     /// error that reaches its end is printed and the program exits with status 1.
     pub fn compile(&self, root: Option<&str>, profile: Profile) -> Result<String, Vec<Diagnostic>> {
-        self.program(root, profile, Program::Main)
-            .map(|(module, _)| module)
+        self.program(root, profile, Program::Main, 1)
+            .map(|(modules, _)| modules.concat())
+    }
+
+    /// The package as [`compile`](Self::compile) writes it, split into at most `parts` LLVM
+    /// modules that `clang` can compile at once, one per core, and link together (roadmap 2.6,
+    /// [`llvm_backend::Module::finish_parts`]). A small package comes back as one module.
+    ///
+    /// ```
+    /// use driver::{Profile, Session};
+    ///
+    /// let mut session = Session::new();
+    /// session.add_file("main.byn", "def main():\n    assert 6 * 7 == 42\n")?;
+    /// let modules = session.compile_parts(None, Profile::Debug, 4).unwrap();
+    /// assert_eq!(modules, [session.compile(None, Profile::Debug).unwrap()]);
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The same as [`compile`](Self::compile).
+    pub fn compile_parts(
+        &self,
+        root: Option<&str>,
+        profile: Profile,
+        parts: usize,
+    ) -> Result<Vec<String>, Vec<Diagnostic>> {
+        self.program(root, profile, Program::Main, parts)
+            .map(|(modules, _)| modules)
     }
 
     /// The package as one LLVM module for `baryon test`, with the name of each `@test` function
@@ -136,7 +163,34 @@ impl Session {
         root: Option<&str>,
         profile: Profile,
     ) -> Result<(String, Vec<String>), Vec<Diagnostic>> {
-        self.program(root, profile, Program::Tests)
+        self.program(root, profile, Program::Tests, 1)
+            .map(|(modules, tests)| (modules.concat(), tests))
+    }
+
+    /// The test program as [`compile_tests`](Self::compile_tests) writes it, split into at most
+    /// `parts` LLVM modules as [`compile_parts`](Self::compile_parts) splits a program.
+    ///
+    /// ```
+    /// use driver::{Profile, Session};
+    ///
+    /// let mut session = Session::new();
+    /// session.add_file("heat.byn", "@test\ndef test_flux():\n    assert 2 + 2 == 4\n")?;
+    /// let (modules, tests) = session.compile_tests_parts(None, Profile::Debug, 4).unwrap();
+    /// assert_eq!(modules.len(), 1);
+    /// assert_eq!(tests, ["heat.test_flux"]);
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The same as [`compile_tests`](Self::compile_tests).
+    pub fn compile_tests_parts(
+        &self,
+        root: Option<&str>,
+        profile: Profile,
+        parts: usize,
+    ) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>> {
+        self.program(root, profile, Program::Tests, parts)
     }
 
     /// The error for a `main` function outside the package's `main.byn`.
@@ -148,14 +202,16 @@ impl Session {
             )
     }
 
-    /// The package as one LLVM module whose C `main` starts `program`, built for `profile`, with
-    /// the names of the tests it runs, which are none for [`Program::Main`].
+    /// The package as at most `parts` LLVM modules whose C `main` starts `program`, built for
+    /// `profile`, with the names of the tests it runs, which are none for [`Program::Main`].
+    /// With `parts` 1 it is exactly one module.
     fn program(
         &self,
         root: Option<&str>,
         profile: Profile,
         program: Program,
-    ) -> Result<(String, Vec<String>), Vec<Diagnostic>> {
+        parts: usize,
+    ) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>> {
         let errors: Vec<Diagnostic> = self
             .check()
             .into_iter()
@@ -255,7 +311,7 @@ impl Session {
         errors.extend(self.define(&mut module, roots, &declared, &symbol, &owners));
         let tests = self.start(&mut module, program, &entries, &mut errors);
         if errors.is_empty() {
-            Ok((module.finish(), tests))
+            Ok((module.finish_parts(parts), tests))
         } else {
             Err(errors)
         }
