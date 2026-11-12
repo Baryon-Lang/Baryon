@@ -314,5 +314,54 @@ within a few units in the last place of the largest entry, as NumPy's does.
 
 Differences from NumPy: `fft` and `ifft` take a `complex128` array, so real samples go through
 `rfft`, or into a complex array first; there is no `n` to pad or cut the input, no `axis` and no
-`norm`; an empty input panics, where NumPy raises `ValueError`. Two-dimensional and N-dimensional
-transforms, `fft2` and `fftn`, are roadmap 3.10.4.
+`norm`; an empty input panics, where NumPy raises `ValueError`.
+
+## `fft.fft2` and the other two-dimensional transforms
+
+```python
+def fft2(x: Array[complex128, 2]) -> Array[complex128, 2]: ...
+def ifft2(x: Array[complex128, 2]) -> Array[complex128, 2]: ...
+def rfft2(x: Array[f64, 2]) -> Array[complex128, 2]: ...
+def irfft2(x: Array[complex128, 2], n: int | None = None) -> Array[f64, 2]: ...
+```
+
+The transforms of a matrix, such as an image or a field on a grid, with NumPy's names and
+scaling. `fft2(x)` is `fft` of each row, then of each column of the result; `ifft2` inverts it,
+divided by the number of entries. `rfft2(x)` transforms a real m × n array and keeps n // 2 + 1
+columns, the rest being complex conjugates; `irfft2(x, n)` turns it back into n real columns,
+with `n` defaulting to 2 * (columns - 1) as for `irfft`. Each side can have any length, a power
+of two being the cheapest; an m × n transform costs about m n (log m + log n) operations.
+
+```python
+from math import cos, pi
+from fft import irfft2, rfft2
+
+
+def main():
+    n = 8
+    image = Array.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            image[i, j] = cos(2.0 * pi * (2 * i + 3 * j) / n)  # a wave 2 rows, 3 columns per window
+    spectrum = rfft2(image)
+    peak = (0, 0)
+    for k in range(spectrum.shape[0]):
+        for m in range(spectrum.shape[1]):
+            if abs(spectrum[k, m]) > abs(spectrum[peak[0], peak[1]]):
+                peak = (k, m)
+    print(peak, round(abs(spectrum[peak[0], peak[1]]), 6))
+    back = irfft2(spectrum)
+    print(round(abs(back[5, 1] - image[5, 1]), 12))
+```
+
+prints
+
+```text
+(2, 3) 32.0
+0.0
+```
+
+Differences from NumPy: `irfft2` takes the number of columns `n`, where NumPy takes the shape
+`s=(m, n)`; the number of rows is always `x`'s. There is no `axes` argument. `fftn` and `ifftn`,
+for any number of dimensions, wait for functions that take an array of any rank (idea I.51).
+
