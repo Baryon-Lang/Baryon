@@ -1,8 +1,8 @@
 //! Array files: `Array.fromfile` and `a.tofile` (decision 0036, part 4), `Array.load` and
 //! `Array.save` of `NumPy`'s `.npy` files (decision 0043), and `fits.getheader`,
 //! `fits.getdata` and `fits.writeto` of FITS files (decision 0044), and the `netCDF4`
-//! module's reads of `NetCDF` classic files (decision 0047), each a call of the runtime that can
-//! fail with `OSError`.
+//! module's reads and writes of `NetCDF` classic files (decision 0047), each a call of the
+//! runtime that can fail with `OSError`.
 //!
 //! Both raise as a file call does (the `files` module): the last parameter is the address of the
 //! error edge's local, and the `i1` result is true when the call failed.
@@ -18,6 +18,8 @@
 //! | [`FitsWrite`](mir::ArrayFile::FitsWrite) | `baryon_rt_fits_write(path, length, array, rank, element, cards, card_count, header, overwrite, error)` |
 //! | [`NetcdfOpen`](mir::ArrayFile::NetcdfOpen) | `baryon_rt_netcdf_open(path, length, out, error)` |
 //! | [`NetcdfRead`](mir::ArrayFile::NetcdfRead) | `baryon_rt_netcdf_read(path, length, name, name_length, element, rank, out, error)` |
+//! | [`NetcdfDefine`](mir::ArrayFile::NetcdfDefine) | `baryon_rt_netcdf_define(path, length, line, line_length, out, error)` |
+//! | [`NetcdfWrite`](mir::ArrayFile::NetcdfWrite) | `baryon_rt_netcdf_write(path, length, name, name_length, array, rank, element, error)` |
 //!
 //! A read writes the header of the new rank-1 array through `out`, the destination's address.
 //! `element` is the address of a stack slot holding the runtime's `ElementLayout`,
@@ -29,7 +31,8 @@
 //! writes the header of a new array of the destination's rank. A FITS call passes the element
 //! type as the runtime's `ELEMENT_*` number, and a write passes the program's header cards, the
 //! data and length of a `list[str]`, with a flag that says whether there was a header. A
-//! `NetCDF` read passes the element type as a FITS read does, with the variable's name.
+//! `NetCDF` read or write passes the element type as a FITS call does, with the variable's
+//! name, and a `NetCDF` change passes its line of text.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -92,33 +95,13 @@ impl<'db> Function<'_, '_, 'db> {
             (ArrayFile::FitsHeader | ArrayFile::FitsData | ArrayFile::FitsWrite, _) => {
                 self.fits_parameters(method, arguments, destination)?
             }
-            (ArrayFile::NetcdfOpen, [path]) => {
-                let (bytes, length) = self.text_argument(path)?;
-                let (out, _) = self.place(destination)?;
-                let parameters = vec![
-                    format!("ptr {bytes}"),
-                    format!("i64 {length}"),
-                    format!("ptr {out}"),
-                ];
-                ("baryon_rt_netcdf_open", parameters)
-            }
-            (ArrayFile::NetcdfRead, [path, variable]) => {
-                let (bytes, length) = self.text_argument(path)?;
-                let (variable, variable_length) = self.text_argument(variable)?;
-                let (out, ty) = self.place(destination)?;
-                let (element, rank) = self.array(ty)?;
-                let code = self.fits_code(element, name)?;
-                let parameters = vec![
-                    format!("ptr {bytes}"),
-                    format!("i64 {length}"),
-                    format!("ptr {variable}"),
-                    format!("i64 {variable_length}"),
-                    format!("i32 {code}"),
-                    format!("i64 {rank}"),
-                    format!("ptr {out}"),
-                ];
-                ("baryon_rt_netcdf_read", parameters)
-            }
+            (
+                ArrayFile::NetcdfOpen
+                | ArrayFile::NetcdfRead
+                | ArrayFile::NetcdfDefine
+                | ArrayFile::NetcdfWrite,
+                _,
+            ) => self.netcdf_parameters(method, arguments, destination)?,
             _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
         };
         let (address, _) = self.place(&edge.error.into())?;
@@ -296,6 +279,78 @@ impl<'db> Function<'_, '_, 'db> {
                     format!("i64 {}", descr.len()),
                 ];
                 ("baryon_rt_array_save", parameters)
+            }
+            _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
+        };
+        Ok(call)
+    }
+
+    /// The runtime function a `NetCDF` call of `method` calls, and its parameters before the
+    /// error's address, for `arguments` and the result's place `destination`.
+    fn netcdf_parameters(
+        &mut self,
+        method: ArrayFile,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+    ) -> Result<(&'static str, Vec<String>), Unsupported> {
+        let name = method.name();
+        let call = match (method, arguments) {
+            (ArrayFile::NetcdfOpen, [path]) => {
+                let (bytes, length) = self.text_argument(path)?;
+                let (out, _) = self.place(destination)?;
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("ptr {out}"),
+                ];
+                ("baryon_rt_netcdf_open", parameters)
+            }
+            (ArrayFile::NetcdfRead, [path, variable]) => {
+                let (bytes, length) = self.text_argument(path)?;
+                let (variable, variable_length) = self.text_argument(variable)?;
+                let (out, ty) = self.place(destination)?;
+                let (element, rank) = self.array(ty)?;
+                let code = self.fits_code(element, name)?;
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("ptr {variable}"),
+                    format!("i64 {variable_length}"),
+                    format!("i32 {code}"),
+                    format!("i64 {rank}"),
+                    format!("ptr {out}"),
+                ];
+                ("baryon_rt_netcdf_read", parameters)
+            }
+            (ArrayFile::NetcdfDefine, [path, line]) => {
+                let (bytes, length) = self.text_argument(path)?;
+                let (line, line_length) = self.text_argument(line)?;
+                let (out, _) = self.place(destination)?;
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("ptr {line}"),
+                    format!("i64 {line_length}"),
+                    format!("ptr {out}"),
+                ];
+                ("baryon_rt_netcdf_define", parameters)
+            }
+            (ArrayFile::NetcdfWrite, [path, variable, Argument::Borrow(array)]) => {
+                let (bytes, length) = self.text_argument(path)?;
+                let (variable, variable_length) = self.text_argument(variable)?;
+                let (address, ty) = self.place(array)?;
+                let (element, rank) = self.array(ty)?;
+                let code = self.fits_code(element, name)?;
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("ptr {variable}"),
+                    format!("i64 {variable_length}"),
+                    format!("ptr {address}"),
+                    format!("i64 {rank}"),
+                    format!("i32 {code}"),
+                ];
+                ("baryon_rt_netcdf_write", parameters)
             }
             _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
         };
