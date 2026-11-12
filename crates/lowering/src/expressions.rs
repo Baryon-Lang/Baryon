@@ -281,6 +281,25 @@ impl<'db> Builder<'db> {
         Place::from(temporary)
     }
 
+    /// The place a changing use of `node` works on: an `InOut` argument, or the receiver of a
+    /// method that changes it, such as `append`, `pop` or `d[k] = v`. A place, such as `xs`,
+    /// is changed where it is. Anything else, such as `numbers(3)` in `numbers(3).pop()`, is
+    /// computed into a temporary that the change works on and the statement then drops, as
+    /// Python changes the new object and discards it ("The procedure" in the reference's
+    /// "Values and references": a temporary cannot conflict). Before, lowering skipped the
+    /// call, and its result was never written.
+    ///
+    /// A conditional expression, `(a if c else b).pop()` or `bump(a if c else b)`, would
+    /// change the variable its branch names, of any type; lowering does not build that yet and
+    /// reports it, rather than change a temporary and lose the change.
+    pub(crate) fn changed_place(&mut self, node: NodeId) -> Option<Place> {
+        if self.tree.kind(node) == SyntaxKind::Conditional {
+            self.unsupported(node, "changing the value of a conditional expression");
+            return None;
+        }
+        Some(self.borrow(node))
+    }
+
     /// The positions of the fields to step through for `attribute` on the struct `value`
     /// holds: the embedded fields the checker found the name through (decision 0031), then the
     /// field itself, so `ion.m` is `ion.particle.m`; or the part `attribute` names of a complex

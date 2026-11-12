@@ -239,7 +239,7 @@ impl<'db> Builder<'db> {
                     Some(place) => Argument::Borrow(place),
                     None => return,
                 },
-                Mode::InOut => match self.place(argument) {
+                Mode::InOut => match self.changed_place(argument) {
                     Some(place) => {
                         let (passed, view) = self.in_out(place, ty, argument);
                         views.extend(view);
@@ -337,7 +337,7 @@ impl<'db> Builder<'db> {
         };
         Some(match mode {
             Mode::Borrow => Argument::Borrow(project(self.borrow(argument))),
-            Mode::InOut => Argument::InOut(project(self.place(argument)?)),
+            Mode::InOut => Argument::InOut(project(self.changed_place(argument)?)),
             Mode::Owned => {
                 self.unsupported(argument, "moving an embedded field out of its struct");
                 return None;

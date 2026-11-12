@@ -40,7 +40,7 @@ impl<'db> Builder<'db> {
             return;
         };
         let value = self.operand_as(value, element);
-        let Some(list) = self.place(list) else {
+        let Some(list) = self.changed_place(list) else {
             return;
         };
         let next = self.new_block();
@@ -64,7 +64,7 @@ impl<'db> Builder<'db> {
         if self.list_element(self.ty(list), node).is_none() {
             return;
         }
-        let Some(list) = self.place(list) else {
+        let Some(list) = self.changed_place(list) else {
             return;
         };
         let next = self.new_block();
@@ -279,7 +279,7 @@ impl<'db> Builder<'db> {
             return self.unsupported(target, &what);
         }
         let source = self.borrow(values);
-        let Some(destination) = self.place(list) else {
+        let Some(destination) = self.changed_place(list) else {
             return;
         };
         let SliceIndex::Range { start, length, .. } = self.slice_range(&destination, ty, 0, slice)
