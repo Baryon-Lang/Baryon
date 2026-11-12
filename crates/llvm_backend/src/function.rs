@@ -2,9 +2,9 @@
 //! statements and terminator, and a block of its own for each check that can fail.
 
 use crate::Unsupported;
+use crate::constants::Constants;
 use crate::debug::UNWIND_TABLE;
 use crate::literal::{global, wrap};
-use crate::panic::Constants;
 use crate::ty::{Repr, Types};
 use mir::{BlockId, Body, LocalKind, Statement, StatementKind, Terminator, TerminatorKind};
 use source::Span;
