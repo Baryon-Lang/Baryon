@@ -381,9 +381,9 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(call)
     }
 
-    /// The runtime's `ELEMENT_*` number for a FITS image or a `NetCDF` variable of `element`s: a
-    /// number type other than a complex one, which the checker allows. `name` is the call, for the report of
-    /// another type.
+    /// The runtime's `ELEMENT_*` number for a FITS image or a `NetCDF` variable of `element`s:
+    /// a number type other than a complex one, which the checker allows. `name` is the call,
+    /// for the report of another type.
     fn fits_code(&self, element: Type<'db>, name: &str) -> Result<u32, Unsupported> {
         match (element.kind(self.types.db), self.element_code(element)) {
             (TypeKind::Primitive(Primitive::Integer(_) | Primitive::Float(_)), Some(code)) => {
