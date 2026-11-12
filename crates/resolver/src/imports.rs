@@ -73,6 +73,12 @@ impl<'a> Importer<'a> {
 
     /// The module or package `path` names, a standard library module or one of the program's.
     fn module(&self, path: &str, at: At) -> Result<Definition, Failure> {
+        if let Some(module) = standard(path).filter(|module| module.contains('.')) {
+            return Ok(Definition::Standard {
+                module,
+                member: None,
+            });
+        }
         let mut components = path.split('.');
         if let Some(module) = standard(components.next().unwrap_or_default()) {
             return if components.next().is_none() {
@@ -107,6 +113,12 @@ impl<'a> Importer<'a> {
     fn member(&self, module: &str, member: &str, depth: usize) -> Result<Definition, Failure> {
         if let Some(standard) = standard(module) {
             return Ok(self.standard_member(standard, member));
+        }
+        if let Some(submodule) = standard(&format!("{module}.{member}")) {
+            return Ok(Definition::Standard {
+                module: submodule,
+                member: None,
+            });
         }
         let Definition::Module(name) = self.module(module, At::Module)? else {
             return Err(Failure::new(
