@@ -76,6 +76,8 @@ pub(crate) struct Function<'f, 'a, 'db> {
     pub(crate) slots: String,
     /// Which locals are registers instead of stack slots, and their values (roadmap 2.7).
     ssa: ssa::Ssa,
+    /// The block being written, whose arrays of unit stride `Body::unit_strides` lists.
+    block: BlockId,
 }
 
 impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
@@ -108,6 +110,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             helpers: Vec::new(),
             slots: String::new(),
             ssa: ssa::Ssa::default(),
+            block: BlockId::new(0),
         }
     }
 
@@ -185,6 +188,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         let mut loops: BTreeMap<BlockId, String> = BTreeMap::new();
         for (index, block) in body.blocks.iter().enumerate() {
             let id = BlockId::new(index);
+            self.block = id;
             let label = block_label(id);
             let _ = writeln!(self.code, "{label}:");
             let marker = self.ssa.start_block(index, &label);

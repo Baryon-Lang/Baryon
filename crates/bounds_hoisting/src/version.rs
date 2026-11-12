@@ -57,6 +57,16 @@ pub(crate) fn version<'db>(
         if body.vectorized.contains(&BlockId::new(block)) {
             body.vectorized.push(BlockId::new(first + position));
         }
+        let marks: Vec<Place> = body
+            .unit_strides
+            .iter()
+            .filter(|(marked, _)| marked.index() == block)
+            .map(|(_, place)| place.clone())
+            .collect();
+        for place in marks {
+            body.unit_strides
+                .push((BlockId::new(first + position), place));
+        }
         if block == counted.header || done.contains(&block) {
             done.push(first + position);
         }
