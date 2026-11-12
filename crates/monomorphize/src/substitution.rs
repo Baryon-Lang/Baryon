@@ -78,6 +78,13 @@ impl<'db> Substitution<'_, 'db> {
                 element: self.ty(*element),
                 shape: shape.clone(),
             },
+            TypeKind::DataFrame { columns, row } => TypeKind::DataFrame {
+                columns: columns
+                    .iter()
+                    .map(|column| column.map(|ty| self.ty(ty)))
+                    .collect(),
+                row: row.map(|row| self.ty(row)),
+            },
             TypeKind::Struct(nominal) => TypeKind::Struct(self.nominal(nominal)),
             TypeKind::Enum(nominal) => TypeKind::Enum(self.nominal(nominal)),
             TypeKind::Callable {

@@ -16,8 +16,8 @@ use syntax::NodeId;
 /// standard traits (language reference, "Types", "Traits"), and the names decision 0031 adds:
 /// `Protocol`, the base of a user trait, `Embed`, which embeds a struct in another, and `Dyn`,
 /// reserved for trait objects (roadmap 3.5). `open`, `File`, the type it returns, and `input` are
-/// decision 0036's.
-pub const BUILTINS: [&str; 59] = [
+/// decision 0036's, and `DataFrame` is decision 0045's.
+pub const BUILTINS: [&str; 60] = [
     "f64",
     "f32",
     "i64",
@@ -77,6 +77,7 @@ pub const BUILTINS: [&str; 59] = [
     "Protocol",
     "Embed",
     "Dyn",
+    "DataFrame",
 ];
 
 /// The standard library's modules. Until the standard library is written (roadmap 1.13),
