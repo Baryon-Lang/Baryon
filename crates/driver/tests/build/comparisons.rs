@@ -182,3 +182,75 @@ fn a_choice_out_of_range_panics() {
         assert_eq!(report, expected);
     }
 }
+
+/// `a.argsort()` gives the positions that sort a float array with a NaN, which goes last, and
+/// with two equal elements, which keep their order; it sorts integers, `bool`s and `f32`s, an
+/// empty array and an expression, and leaves the array as it was. Every line is what `NumPy`
+/// prints for `argsort(kind="stable")`.
+#[test]
+fn argsort_gives_the_positions_that_sort_an_array() {
+    let program = r"
+import math
+
+
+def order(values: Array[f64, 1]) -> Array[i64, 1]:
+    return values.argsort()
+
+
+def main():
+    prices = Array([189.5, 410.0, math.nan, 171.0, 189.5, 20.0])
+    by_price = prices.argsort()
+    print(by_price)
+    print(prices[by_price])
+    print(order(prices)[0], prices[prices.argsort()[0]])
+    print(Array([3, 1, 2, 1]).argsort())
+    print(Array([True, False, True, False]).argsort())
+    print(Array([f32(2.5), f32(-1.0)]).argsort())
+    print(prices[prices > 1000.0].argsort())
+    print((prices * -1.0).argsort())
+    print(prices)
+";
+    let expected = [
+        "[5 3 0 4 1 2]\n",
+        "[ 20.  171.  189.5 189.5 410.    nan]\n",
+        "5 20.0\n",
+        "[1 3 2 0]\n",
+        "[1 3 0 2]\n",
+        "[1 0]\n",
+        "[]\n",
+        "[1 0 4 3 5 2]\n",
+        "[189.5 410.    nan 171.  189.5  20. ]\n",
+    ];
+    let (code, stdout, report) = run("comparisons-argsort", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, expected.concat());
+}
+
+/// `Array.zeros` of a type parameter builds in a generic function under a `Number` bound
+/// (roadmap 3.13.1), which is how a column loop written once serves every column type: the
+/// element type named, `Array.zeros(n, T)`, and taken from the annotation. Each call builds
+/// the function at its own element type, integers and complex numbers included.
+#[test]
+fn zeros_of_a_type_parameter_builds_at_every_number_type() {
+    let program = r"
+def twice[T: Number](values: Array[T, 1]) -> Array[T, 1]:
+    result = Array.zeros(len(values), T)
+    for at in range(len(values)):
+        result[at] = values[at] + values[at]
+    return result
+
+
+def blank[T: Number](values: Array[T, 1]) -> Array[T, 1]:
+    result: Array[T, 1] = Array.zeros(len(values))
+    return result
+
+
+def main():
+    print(twice(Array([1.5, 2.0])), twice(Array([1, 2, 3])), twice(Array([f32(0.5)])))
+    print(blank(Array([1.5, 2.0])), blank(Array([7])), blank(Array([1j])))
+";
+    let expected = ["[3. 4.] [2 4 6] [1.]\n", "[0. 0.] [0] [0.+0.j]\n"];
+    let (code, stdout, report) = run("comparisons-zeros", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, expected.concat());
+}

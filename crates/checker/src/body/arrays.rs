@@ -22,8 +22,8 @@ const FIXED_METHODS: &str =
     "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round` and `fill`";
 
 /// The methods version 0 defines on an `Array`, for messages.
-const ARRAY_METHODS: &str =
-    "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill` and `tofile`";
+const ARRAY_METHODS: &str = "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, \
+     for one dimension, `argsort`";
 
 impl<'db> Body<'db> {
     /// `Array.zeros(shape)`, `Array.ones(shape)`, `Array.fill(shape, value)`, each with an
@@ -333,6 +333,9 @@ impl<'db> Body<'db> {
                 let axis = self.axis_argument(arguments);
                 self.axis_reduction(node, (base, element), name, axis, arguments)
             }
+            ("argsort", []) if is_array && rank_one && arguments.keywords.is_empty() => {
+                self.argsort(node, base, element)
+            }
             ("dot", [other]) => {
                 let found = self.expression(*other, Some(base));
                 self.expect(*other, base, found, "the dot product needs");
@@ -368,6 +371,32 @@ impl<'db> Body<'db> {
                     .error(node, &message, "not defined", Some(&hint))
             }
         })
+    }
+
+    /// `a.argsort()` on the rank-1 array `base` of `element`: the positions that put its
+    /// elements in rising order, an `Array[i64, 1]`. Complex numbers have no order.
+    fn argsort(&mut self, node: NodeId, base: Type<'db>, element: Type<'db>) -> Type<'db> {
+        if matches!(
+            element.kind(self.db),
+            TypeKind::Primitive(Primitive::Complex(_))
+        ) {
+            let message = format!(
+                "`argsort` needs elements with an order, found `{}`",
+                self.show(base)
+            );
+            return self.lowerer.error(node, &message, "complex numbers", None);
+        }
+        let int = Type::new(
+            self.db,
+            TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+        );
+        Type::new(
+            self.db,
+            TypeKind::Array {
+                element: int,
+                rank: 1,
+            },
+        )
     }
 
     /// `a.shape` or `a.size` on an array, or `None` when `base` is not an array.

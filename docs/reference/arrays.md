@@ -67,6 +67,20 @@ The element type, when the expression does not fix it, is decided in this order:
    `Array.zeros((n,), Vec3)` or `Array.zeros((n,), dtype=Vec3)`;
 3. otherwise `f64`, as NumPy's default is `float64`.
 
+In a generic function the element type may be the function's type parameter, when the parameter
+is bounded by `Number` or `Float`. The array is then built at the type of each call:
+
+```python
+def twice[T: Number](values: Array[T, 1]) -> Array[T, 1]:
+    result = Array.zeros(len(values), T)
+    for at in range(len(values)):
+        result[at] = values[at] + values[at]
+    return result
+```
+
+`twice(Array([1, 2, 3]))` gives `[2 4 6]`, an array of `int`, and `twice(Array([1.5, 2.0]))`
+gives `[3. 4.]`. A parameter with no bound has no zero, so `Array.zeros(n, T)` is an error there.
+
 A `Fixed` array is created by calling its type with its elements, or with one of the same
 functions without the shape:
 
@@ -318,6 +332,7 @@ set.
 | `a.mean()`, `a.mean(axis=k)` | The mean of the elements, or of each line along axis `k`, with NumPy's bits. See [Means and variances](#means-and-variances) |
 | `a.var(ddof=0)`, `a.std(ddof=0)`, each with `axis=k` | The variance and standard deviation of float elements, dividing by `n - ddof`, with NumPy's bits |
 | `a.dot(b)` | The dot product of two rank-1 arrays or vectors of the same length |
+| `a.argsort()` | The positions that put a rank-1 `Array` in rising order, an `Array[i64, 1]`. See [Sorting positions](#sorting-positions) |
 | `a.round()` | A new array with each element rounded to the nearest whole number, ties to even |
 | `a.fill(value)` | Sets every element to `value`; `a` must be changeable |
 | `a.tofile(path)` | Writes every element to a binary file, as NumPy's `tofile` does; an `Array` only. See [Array files](files-and-processes.md#array-files) |
@@ -347,6 +362,28 @@ def residual_norm(residual: Array[f64, 1]) -> f64:
 def reset(forces: InOut[Array[f64, 1]]):
     forces.fill(0.0)
 ```
+
+### Sorting positions
+
+`a.argsort()` gives the positions of the elements of a rank-1 `Array` in rising order, so
+`a[a.argsort()]` is `a` sorted and `a.argsort()[0]` is where its smallest element stands.
+
+```python
+prices = Array([189.5, 410.0, 171.0])
+order = prices.argsort()
+print(order, prices[order])
+```
+
+This prints `[2 0 1] [171.  189.5 410. ]`.
+
+- **Equal elements keep the order they stand in**: the sort is stable, as NumPy's is with
+  `kind="stable"`. NumPy's default sort may order equal elements another way.
+- **NaN goes last**, as in NumPy. `False` comes before `True`.
+- **Complex elements have no order** and are a compile error; NumPy sorts them by their
+  real part.
+- `a` is read, not changed. Arrays of higher rank and NumPy's `axis=` and `kind=` are not
+  built.
+- **Cost:** about `n log n` comparisons, and two arrays of `n` positions while it runs.
 
 ### The order `sum` adds in
 

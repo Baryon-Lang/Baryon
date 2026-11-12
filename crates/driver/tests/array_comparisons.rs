@@ -182,3 +182,52 @@ error: expected `f64`, found `str`
   |                  ^^^ each chosen element holds `f64`"#
     );
 }
+
+/// `a.argsort()` of a rank-1 array is an `Array[i64, 1]`. An array of higher rank, complex
+/// elements, which have no order, and `NumPy`'s `kind=` and `axis` arguments are reported.
+#[test]
+fn argsort_gives_positions_and_reports_mistakes() {
+    let program = r#"
+def sorting(grid: Array[f64, 2], waves: Array[complex, 1], prices: Array[f64, 1]):
+    a = grid.argsort()
+    b = waves.argsort()
+    c = prices.argsort(kind="stable")
+    d = prices.argsort(0)
+    wrong: f64 = prices.argsort()
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: `Array[f64, 2]` has no method `argsort` taking these arguments
+ --> main.byn:2:9
+  |
+2 |     a = grid.argsort()
+  |         ^^^^^^^^^^^^^^ not defined
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`
+
+error: `argsort` needs elements with an order, found `Array[complex128, 1]`
+ --> main.byn:3:9
+  |
+3 |     b = waves.argsort()
+  |         ^^^^^^^^^^^^^^^ complex numbers
+
+error: `Array[f64, 1]` has no method `argsort` taking these arguments
+ --> main.byn:4:9
+  |
+4 |     c = prices.argsort(kind="stable")
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not defined
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`
+
+error: `Array[f64, 1]` has no method `argsort` taking these arguments
+ --> main.byn:5:9
+  |
+5 |     d = prices.argsort(0)
+  |         ^^^^^^^^^^^^^^^^^ not defined
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`
+
+error: expected `f64`, found `Array[i64, 1]`
+ --> main.byn:6:18
+  |
+6 |     wrong: f64 = prices.argsort()
+  |                  ^^^^^^^^^^^^^^^^ the annotation says `f64`"#
+    );
+}
