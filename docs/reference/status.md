@@ -24,7 +24,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when scatter plots, bars, histograms, legends
+This page was last brought up to date on 2026-11-12, when `zlib.decompress`, `zlib.crc32` and
+`zlib.adler32`, and before them scatter plots, bars, histograms, legends
 and grid lines, and before them comparisons of arrays and `a[mask]`, and before them line plots
 with `pyplot` and `ticker`, saved as SVG, and before them slices of a NetCDF variable,
 `var[0, :, ::2]` read and written, and before them writing NetCDF classic files,
@@ -182,6 +183,12 @@ today, before it can be built.
 | Builds today | Not built yet |
 | --- | --- |
 | [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim` and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, with matplotlib's results; [`colors.to_hex`](plotting.md#colors-and-line-styles), [`axis`, `backend_svg`, `artist` and `legend`](plotting.md#axis-backend_svg-artist-and-legend) | `imshow` and colormaps (3.15.3); `plt.subplots`, logarithmic axes, `errorbar`, `fill_between` and `text` (3.15.4); contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
+
+## Compression
+
+| Builds today | Not built yet |
+| --- | --- |
+| [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32) | `zlib.compress` (roadmap 3.27.2), `zlib.decompressobj` and `compressobj`, preset dictionaries; the `gzip`, `bz2`, `lzma` and `compression.zstd` modules (3.27.3 to 3.27.10) |
 
 ## Tests
 
