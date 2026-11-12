@@ -163,6 +163,9 @@ impl<'db> Builder<'db> {
         if self.is_selection(target) {
             return self.selection_store(target, value);
         }
+        if self.is_column(target) {
+            return self.column_store(target, value);
+        }
         let Some((place, ty)) = self.target(target) else {
             return;
         };

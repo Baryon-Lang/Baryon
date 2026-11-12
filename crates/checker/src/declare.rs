@@ -153,6 +153,10 @@ impl<'db> Lowerer<'db> {
                         Some(annotation) => self.field_type(annotation),
                         None => (self.unknown(), false),
                     };
+                    let ty = match self.tree.child(statement, Role::Annotation) {
+                        Some(annotation) => self.without_frame(annotation, ty),
+                        None => ty,
+                    };
                     if let Some(value) = self.tree.child(statement, Role::Value) {
                         self.error(
                             value,

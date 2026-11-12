@@ -2,6 +2,7 @@
 //! constructor; of a number type, which converts; and of the built-ins lowering handles.
 
 use crate::builder::Builder;
+use crate::frames::erase;
 use crate::streams::PrintTarget;
 use mir::{
     Argument, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue, TerminatorKind,
@@ -121,6 +122,8 @@ impl<'db> Builder<'db> {
             (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
             (None, _) if name == "print" => self.print(place, arguments, node),
             (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
+            (None, [table]) if name == "DataFrame" => self.frame_new(&place, *table, node),
+            (Some(("DataFrame", "copy")), [frame]) => self.frame_copy(place, *frame, node),
             (None, _) if name == "open" => self.open(place, arguments, node),
             (None, [value]) if name == "str" => {
                 if !self.text_of_value(&place, *value, node) {
@@ -180,7 +183,11 @@ impl<'db> Builder<'db> {
         let parameters: Vec<(Mode, types::Type<'db>)> = signature
             .parameters
             .iter()
-            .map(|parameter| (parameter.mode, parameter.ty))
+            .map(|parameter| (parameter.mode, erase(self.db, parameter.ty)))
+            .collect();
+        let type_arguments: Vec<_> = type_arguments
+            .into_iter()
+            .map(|argument| erase(self.db, argument))
             .collect();
         // A method of a generic class is generic in the class's type parameters, which come
         // first: the receiver's type arguments (roadmap 1.9.18).

@@ -40,6 +40,9 @@ impl<'db> Builder<'db> {
                 self.stream(place, stream, node);
             }
             SyntaxKind::Attribute if self.is_path_part(node) => self.path_part(place, node),
+            SyntaxKind::Attribute if self.is_frame_attribute(node) => {
+                self.frame_attribute(place, node);
+            }
             SyntaxKind::Subscript if self.is_environ_item(node) => {
                 self.environ_item(place, node);
             }
@@ -215,6 +218,14 @@ impl<'db> Builder<'db> {
                     }
                     _ => place,
                 })
+            }
+            SyntaxKind::Attribute | SyntaxKind::Subscript
+                if self
+                    .tree
+                    .child(node, Role::Value)
+                    .is_some_and(|value| self.column_position(value, node).is_some()) =>
+            {
+                self.column(node)
             }
             SyntaxKind::Attribute => {
                 let value = self.tree.child(node, Role::Value)?;
