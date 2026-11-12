@@ -148,6 +148,11 @@ In the order AstroBaryon's milestones need them.
 
 ## Building AstroBaryon
 
+AstroBaryon is built late in Baryon's order: after the native libraries it needs and Phase 2's
+faster compiling, and directly before Python interop (3.17), with nothing between them (Collins,
+2026-11-12). The base libraries above, ERFA (3.31) among them, are built earlier, as Phase 3 work
+in their own right.
+
 Five milestones, each a usable library on its own. A milestone is done when its rows are `Done`
 in `ROADMAP.md`, which includes their documentation.
 
