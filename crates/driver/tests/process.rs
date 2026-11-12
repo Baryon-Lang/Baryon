@@ -39,7 +39,7 @@ def f() -> str:
     threads: str = os.environ.get("OMP_NUM_THREADS", "1")
     bad: str = os.getenv("HOME")
     os.getenv(3)
-    line = sys.stdin.readline()
+    line = sys.path
     os.environ.setdefault("A", "B")
     return threads
 "#;
@@ -77,19 +77,19 @@ error: expected `str`, found `i64`
 13 |     os.getenv(3)
    |               ^ a variable's name and default are `str`
 
-error: `sys.stdin` is not in Baryon yet
+error: `sys.path` is not in Baryon yet
   --> main.byn:14:16
    |
-14 |     line = sys.stdin.readline()
-   |                ^^^^^ not built
-   = note: so far `sys` has `argv` and `exit`, and `os` has `environ`, `getenv`, `listdir`, `remove`, `rename`, `mkdir`, `makedirs`, `getcwd` and `ErrorKind` (decision 0036)
+14 |     line = sys.path
+   |                ^^^^ not built
+   = note: so far `sys` has `argv`, `exit`, `stdin`, `stdout` and `stderr`, and `os` has `environ`, `getenv`, `listdir`, `remove`, `rename`, `mkdir`, `makedirs`, `getcwd` and `ErrorKind` (decision 0036)
 
 error: `os.environ.setdefault` is not in Baryon yet
   --> main.byn:15:5
    |
 15 |     os.environ.setdefault("A", "B")
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not built
-   = note: so far `sys` has `argv` and `exit`, and `os` has `environ`, `getenv`, `listdir`, `remove`, `rename`, `mkdir`, `makedirs`, `getcwd` and `ErrorKind` (decision 0036)"#
+   = note: so far `sys` has `argv`, `exit`, `stdin`, `stdout` and `stderr`, and `os` has `environ`, `getenv`, `listdir`, `remove`, `rename`, `mkdir`, `makedirs`, `getcwd` and `ErrorKind` (decision 0036)"#
     );
 }
 

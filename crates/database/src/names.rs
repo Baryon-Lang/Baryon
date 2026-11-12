@@ -15,9 +15,9 @@ use syntax::NodeId;
 /// Python built-ins it keeps (language reference, "Syntax", "Names the language adds"), the
 /// standard traits (language reference, "Types", "Traits"), and the names decision 0031 adds:
 /// `Protocol`, the base of a user trait, `Embed`, which embeds a struct in another, and `Dyn`,
-/// reserved for trait objects (roadmap 3.5). `open` and `File`, the type it returns, are decision
-/// 0036's.
-pub const BUILTINS: [&str; 58] = [
+/// reserved for trait objects (roadmap 3.5). `open`, `File`, the type it returns, and `input` are
+/// decision 0036's.
+pub const BUILTINS: [&str; 59] = [
     "f64",
     "f32",
     "i64",
@@ -68,6 +68,7 @@ pub const BUILTINS: [&str; 58] = [
     "tuple",
     "open",
     "File",
+    "input",
     "Exception",
     "Enum",
     "Number",

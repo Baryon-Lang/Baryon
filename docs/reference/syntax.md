@@ -194,8 +194,10 @@ elements.
 ### `sep=` and `end=`
 
 `sep=` replaces the space between values and `end=` replaces the line end, each with a `str`.
-`None` keeps the default, as in Python. Any other keyword, such as Python's `file=` or `flush=`,
-is a compile error, and so is a `sep=` or `end=` of another type.
+`None` keeps the default, as in Python. A `sep=` or `end=` of another type is a compile error.
+`file=` sends the output to a file or to standard error, and `flush=True` writes it out at once:
+see [Standard streams](files-and-processes.md#standard-streams). Any other keyword is a compile
+error.
 
 ```python
 class Point(Struct, Copy):

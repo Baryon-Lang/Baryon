@@ -24,9 +24,10 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-11, when `.npy` files, `Array.load` and
-`Array.save`, and before them `linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables,
-`Array.loadtxt` and `Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and
+This page was last brought up to date on 2026-11-11, when the standard streams,
+`print(..., file=)` and `input`, and before them `.npy` files, `Array.load` and `Array.save`,
+`linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables, `Array.loadtxt` and
+`Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and
 `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files,
 `Array.fromfile` and
 `a.tofile`, and before them `for line in f` over a text file, `int(text)` and `float(text)`, began
@@ -60,7 +61,7 @@ checks what it prints.
 | Builds today | Not built yet |
 | --- | --- |
 | Packages of several modules; `import m`, `from m import x`, `as`; calling a function, reading a constant and naming an enum member through its module, `physics.units.twice(x)`, `units.C`, `units.Phase.GAS` | |
-| `main` in `main.byn`; [`print`](syntax.md#what-print-writes-for-each-value) of numbers, `bool`, `str`, `None`, `T \| None`, tuples, enum members, structs, lists and dicts, with `sep=` and `end=`; arrays of numbers and `bool`, [as NumPy writes them](arrays.md#printing) | `print` of arrays of `str` or structs; a tuple holding `None` |
+| `main` in `main.byn`; [`print`](syntax.md#what-print-writes-for-each-value) of numbers, `bool`, `str`, `None`, `T \| None`, tuples, enum members, structs, lists and dicts, with `sep=`, `end=`, [`file=` and `flush=`](files-and-processes.md#standard-streams); arrays of numbers and `bool`, [as NumPy writes them](arrays.md#printing) | `print` of arrays of `str` or structs; a tuple holding `None` |
 | Assignment, annotated assignment, augmented assignment including `**=`; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a`, and nested unpacking, `a, (b, c) = e` | |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
 | `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a list, such as `list[f64]` or `list[str]`; over a tuple whose items have one type, such as `(2, 3, 5)`; over the characters of a `str`, each a one-character `str`; over `enumerate`, `zip` and `reversed` of these, nested in each other; a loop over values that are not copied, such as `str`s, borrows each element; with a target that unpacks, `for x, y in points` | A `prange` step that is not a constant; `reversed` of a `str`; a `range` step that is not a constant inside `enumerate`, `zip` or `reversed`; `enumerate`, `zip` and `reversed` outside a `for` loop or comprehension, such as `list(zip(a, b))` |
@@ -136,7 +137,7 @@ out of a function, including through a `raise`.
 Everything in this chapter builds: error types, `Raises`, `raise`, errors passed on through
 callers, `try` with `except` naming one type or a tuple of them, `as`, bare `raise`, `main`
 ending with an error, and every panic in the table, with its message, location and backtrace.
-`ValueError` and `OSError` build like a program's own error types, and so do `int(text)` and
+`ValueError`, `OSError` and `EOFError` build like a program's own error types, and so do `int(text)` and
 `float(text)`, which raise `ValueError`. The one exception is the overflow panic: it names the
 operator but not yet its operands (roadmap idea I.18), and [Types](#types) lists the operations
 it does not check yet.
@@ -161,7 +162,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`sys.argv`](files-and-processes.md#command-line-arguments), a new `list[str]` at each read; [`sys.exit()` and `sys.exit(status)`](files-and-processes.md#exit-status), which panics outside 0 to 255; [`os.getenv`, `os.environ.get`, `os.environ[name]`, `in` and `copy()`](files-and-processes.md#environment-variables); [`OSError` and `os.ErrorKind`](files-and-processes.md#errors-oserror), built, raised, caught and printed; [text files](files-and-processes.md#text-files): `open` in the modes `"r"`, `"w"`, `"a"` and `"x"`, `read`, `readline`, `readlines`, `write`, `flush`, `close`, `with open(...) as f` and `for line in f`, in a loop or a comprehension; [`subprocess.run`](files-and-processes.md#running-a-program) with `capture_output`, `input`, `cwd`, `env` and `timeout`, and `CompletedProcess`; [array files](files-and-processes.md#array-files): `Array.fromfile` with `dtype`, `count` and `offset`, reading numbers, `bool`s, `Fixed` arrays and `Copy` structs of them, and `a.tofile` of any `Array`, a view included; [`pathlib.Path` and the directory functions of `os`](files-and-processes.md#paths-and-directories) | the standard streams and `input`; printing a `Path` inside another value (roadmap 1.13.6); `subprocess.run(check=True)` and `subprocess.Popen`, `Array.fromfile` of a type parameter, and the `.npy` format (idea I.39) |
+| [`sys.argv`](files-and-processes.md#command-line-arguments), a new `list[str]` at each read; [`sys.exit()` and `sys.exit(status)`](files-and-processes.md#exit-status), which panics outside 0 to 255; [`os.getenv`, `os.environ.get`, `os.environ[name]`, `in` and `copy()`](files-and-processes.md#environment-variables); [`OSError` and `os.ErrorKind`](files-and-processes.md#errors-oserror), built, raised, caught and printed; [text files](files-and-processes.md#text-files): `open` in the modes `"r"`, `"w"`, `"a"` and `"x"`, `read`, `readline`, `readlines`, `write`, `flush`, `close`, `with open(...) as f` and `for line in f`, in a loop or a comprehension; [`subprocess.run`](files-and-processes.md#running-a-program) with `capture_output`, `input`, `cwd`, `env` and `timeout`, and `CompletedProcess`; [array files](files-and-processes.md#array-files): `Array.fromfile` with `dtype`, `count` and `offset`, reading numbers, `bool`s, `Fixed` arrays and `Copy` structs of them, and `a.tofile` of any `Array`, a view included; [`pathlib.Path` and the directory functions of `os`](files-and-processes.md#paths-and-directories); [the standard streams](files-and-processes.md#standard-streams): `sys.stdin`, `sys.stdout` and `sys.stderr` as files, `print(..., file=, flush=)`, and `input`, which raises `EOFError` | printing a `Path` inside another value (roadmap 1.13.6); `subprocess.run(check=True)` and `subprocess.Popen`, `Array.fromfile` of a type parameter, and the `.npy` format (idea I.39) |
 
 ## Data files
 

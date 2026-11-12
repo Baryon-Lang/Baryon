@@ -193,6 +193,7 @@ impl<'db> Body<'db> {
     pub(super) fn process_value(&mut self, node: NodeId, module: &str, member: &str) -> Type<'db> {
         match (module, member) {
             ("sys", "argv") => self.argv(),
+            ("sys", "stdin" | "stdout" | "stderr") => self.standard_stream(),
             ("os", "environ") => self.environ_alone(node),
             _ => self.not_built(node, module, member),
         }
@@ -204,8 +205,9 @@ impl<'db> Body<'db> {
         let built = if module == "subprocess" {
             "`subprocess` has `run` and `CompletedProcess` (decision 0036)"
         } else {
-            "so far `sys` has `argv` and `exit`, and `os` has `environ`, `getenv`, `listdir`, \
-             `remove`, `rename`, `mkdir`, `makedirs`, `getcwd` and `ErrorKind` (decision 0036)"
+            "so far `sys` has `argv`, `exit`, `stdin`, `stdout` and `stderr`, and `os` has \
+             `environ`, `getenv`, `listdir`, `remove`, `rename`, `mkdir`, `makedirs`, `getcwd` and \
+             `ErrorKind` (decision 0036)"
         };
         self.lowerer.error(node, &message, "not built", Some(built))
     }

@@ -48,6 +48,7 @@ mod sorting;
 mod statements;
 mod statistics;
 mod stats;
+mod streams;
 mod structs;
 mod subprocess;
 mod testing;

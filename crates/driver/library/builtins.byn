@@ -19,6 +19,12 @@ class OSError(Exception):
     filename: str  # the path involved, or "" when there is none
 
 
+class EOFError(Exception):
+    """The end of standard input, where `input` has no line left to give (decision 0036,
+    part 6). It has no fields: there is nothing more to say about it.
+    """
+
+
 class ValueError(Exception):
     """A value of the right type whose content is wrong, such as text that is not a number:
     what `int(text)` and `float(text)` raise (decision 0037). `message` says what was wrong, in

@@ -65,6 +65,7 @@ mod reductions;
 pub(crate) mod relations;
 mod shared;
 mod statistics;
+mod streams;
 mod subprocess;
 mod text;
 mod text_tables;

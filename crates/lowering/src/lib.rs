@@ -308,6 +308,7 @@ mod reductions;
 mod slices;
 mod statements;
 mod statistics;
+mod streams;
 mod subprocess;
 #[cfg(test)]
 mod tests;
