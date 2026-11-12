@@ -2,9 +2,9 @@
 //!
 //! ```text
 //! baryon check <directory>
-//! baryon build [--release] <directory> <output>
-//! baryon run [--release] <directory>
-//! baryon test [--release] <directory>
+//! baryon build [--release] [--timings] <directory> <output>
+//! baryon run [--release] [--timings] <directory>
+//! baryon test [--release] [--timings] <directory>
 //! baryon doc <directory> <output>
 //! baryon lsp
 //! baryon --version
@@ -30,8 +30,14 @@
 //! type it is called at (roadmap 1.9.5).
 //!
 //! `build`, `run` and `test` make a debug build unless given `--release`, anywhere after the
-//! command. Both are optimized and carry line tables; in a debug build, integer arithmetic that
-//! overflows panics, and in a release build it wraps around ([`Profile`], decision 0030).
+//! command. A debug build compiles fast and runs unoptimized (`clang -O0`); a release build is
+//! optimized (`clang -O2`) (decision 0048). Both carry line tables; in a debug build, integer
+//! arithmetic that overflows panics, and in a release build it wraps around ([`Profile`],
+//! decision 0030).
+//!
+//! `--timings`, also anywhere after `build`, `run` or `test`, prints to standard error how long
+//! each stage of the build took, once the executable is linked ([`Timings`]). It is how a
+//! compile-speed change measures its gain (roadmap 2.0).
 //!
 //! `baryon run` builds the package the same way into a scratch directory, runs the program with
 //! the terminal's standard input and output, removes it, and exits with the program's own exit
@@ -57,41 +63,47 @@ mod link;
 mod lsp;
 mod package;
 mod runner;
+mod timings;
 
 use diagnostics::{Diagnostic, Severity};
 use driver::{Profile, Session};
 use std::io::{self, Write as _};
 use std::path::Path;
 use std::process::{Command, ExitCode};
+use std::time::Instant;
 use std::{env, fs};
+use timings::Timings;
 
 /// How to call the command, printed when the arguments are wrong.
-const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] <directory> <output> | baryon run [--release] <directory> | baryon test [--release] <directory> | baryon doc <directory> <output> | baryon lsp";
+const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] <directory> | baryon doc <directory> <output> | baryon lsp";
 
 /// The flag that makes `build`, `run` and `test` compile a release build.
 const RELEASE: &str = "--release";
+
+/// The flag that makes `build`, `run` and `test` print how long each stage of the build took.
+const TIMINGS: &str = "--timings";
 
 fn main() -> ExitCode {
     let mut arguments: Vec<String> = env::args().skip(1).collect();
     let builds = arguments
         .first()
         .is_some_and(|command| ["build", "run", "test"].contains(&command.as_str()));
-    let profile = if builds && arguments.iter().any(|argument| argument == RELEASE) {
-        arguments.retain(|argument| argument != RELEASE);
+    let profile = if take_flag(&mut arguments, builds, RELEASE) {
         Profile::Release
     } else {
         Profile::Debug
     };
+    let timings = take_flag(&mut arguments, builds, TIMINGS);
     let outcome = match arguments.as_slice() {
         [command, directory] if command == "check" => check(Path::new(directory)),
         [command, directory, output] if command == "build" => {
-            build(Path::new(directory), Path::new(output), profile)
+            build(Path::new(directory), Path::new(output), profile, timings)
         }
-        [command, directory] if command == "run" => run(Path::new(directory), profile),
+        [command, directory] if command == "run" => run(Path::new(directory), profile, timings),
         [command, directory, output] if command == "doc" => {
             document(Path::new(directory), Path::new(output))
         }
-        [command, directory] if command == "test" => test(Path::new(directory), profile),
+        [command, directory] if command == "test" => test(Path::new(directory), profile, timings),
         [flag] if flag == "--version" || flag == "-V" => {
             // A tester's bug report starts with this line.
             println_to_stdout(&format!("baryon {}", env!("CARGO_PKG_VERSION")))
@@ -112,6 +124,18 @@ fn main() -> ExitCode {
     }
 }
 
+/// Removes every `flag` from `arguments` and says whether there was one, when `builds`, the
+/// command being `build`, `run` or `test`; otherwise leaves `arguments` alone and says no, so a
+/// flag given to another command is reported as wrong usage.
+fn take_flag(arguments: &mut Vec<String>, builds: bool, flag: &str) -> bool {
+    if builds && arguments.iter().any(|argument| argument == flag) {
+        arguments.retain(|argument| argument != flag);
+        true
+    } else {
+        false
+    }
+}
+
 /// Prints `line` to standard output, for `--version` and `--help`, and succeeds.
 ///
 /// # Errors
@@ -123,22 +147,24 @@ fn println_to_stdout(line: &str) -> Result<ExitCode, String> {
 }
 
 /// Loads the package rooted at `root` into a new session, and returns it with the number of
-/// files loaded.
+/// files loaded and the number of lines in them.
 ///
 /// # Errors
 ///
 /// Fails with a message when a file cannot be read or is too large.
-fn load(root: &Path) -> Result<(Session, usize), String> {
+fn load(root: &Path) -> Result<(Session, usize, usize), String> {
     let paths = package::files(root).map_err(|error| format!("{}: {error}", root.display()))?;
     let mut session = Session::new();
+    let mut lines = 0;
     for path in &paths {
         let text =
             fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
+        lines += text.lines().count();
         session
             .add_file(package::module_path(root, path), text)
             .map_err(|error| error.to_string())?;
     }
-    Ok((session, paths.len()))
+    Ok((session, paths.len(), lines))
 }
 
 /// Runs `baryon check` on the package rooted at `root`.
@@ -147,7 +173,7 @@ fn load(root: &Path) -> Result<(Session, usize), String> {
 ///
 /// Fails with a message when a file cannot be read or is too large.
 fn check(root: &Path) -> Result<ExitCode, String> {
-    let (session, files) = load(root)?;
+    let (session, files, _) = load(root)?;
     let problems = session.check();
     let errors = problems
         .iter()
@@ -167,17 +193,17 @@ fn check(root: &Path) -> Result<ExitCode, String> {
 }
 
 /// Runs `baryon build` on the package rooted at `root`, writing the executable `output` built
-/// for `profile`.
+/// for `profile`, and printing each stage's time when `timings` is set.
 ///
 /// # Errors
 ///
 /// Fails with a message when a file cannot be read, or when `clang` or the runtime archive is
 /// missing or the link fails.
-fn build(root: &Path, output: &Path, profile: Profile) -> Result<ExitCode, String> {
-    let files = match compile(root, output, |session, directory| {
+fn build(root: &Path, output: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String> {
+    let files = match compile(root, output, profile, timings, |session, directory| {
         session
-            .compile(directory, profile)
-            .map(|module| (module, Vec::new()))
+            .compile_parts(directory, profile, parts(profile))
+            .map(|modules| (modules, Vec::new()))
     })? {
         Ok((files, _)) => files,
         Err(code) => return Ok(code),
@@ -192,21 +218,22 @@ fn build(root: &Path, output: &Path, profile: Profile) -> Result<ExitCode, Strin
 }
 
 /// Runs `baryon run` on the package rooted at `root`: builds it for `profile` into a scratch
-/// directory, runs it, and returns its exit status. A program ended by a signal, which has no
+/// directory, printing each stage's time when `timings` is set, runs it, and returns its exit
+/// status. A program ended by a signal, which has no
 /// status, gives 1.
 ///
 /// # Errors
 ///
 /// Fails with a message when the package cannot be built for the reasons [`build`] gives, or
 /// the program cannot be started.
-fn run(root: &Path, profile: Profile) -> Result<ExitCode, String> {
+fn run(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String> {
     let scratch = env::temp_dir().join(format!("baryon-run-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("program");
-    let built = compile(root, &program, |session, directory| {
+    let built = compile(root, &program, profile, timings, |session, directory| {
         session
-            .compile(directory, profile)
-            .map(|module| (module, Vec::new()))
+            .compile_parts(directory, profile, parts(profile))
+            .map(|modules| (modules, Vec::new()))
     });
     let ran = built.and_then(|built| match built {
         Ok(_) => Command::new(&program)
@@ -223,18 +250,19 @@ fn run(root: &Path, profile: Profile) -> Result<ExitCode, String> {
 }
 
 /// Runs `baryon test` on the package rooted at `root`: builds its test program for `profile` into
-/// a scratch directory and runs each test ([`runner::run`]).
+/// a scratch directory, printing each stage's time when `timings` is set, and runs each test
+/// ([`runner::run`]).
 ///
 /// # Errors
 ///
 /// Fails with a message when the package cannot be built for the reasons [`build`] gives, the
 /// program cannot be started, or the report cannot be written.
-fn test(root: &Path, profile: Profile) -> Result<ExitCode, String> {
+fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String> {
     let scratch = env::temp_dir().join(format!("baryon-test-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("tests");
-    let built = compile(root, &program, |session, directory| {
-        session.compile_tests(directory, profile)
+    let built = compile(root, &program, profile, timings, |session, directory| {
+        session.compile_tests_parts(directory, profile, parts(profile))
     });
     let ran = built.and_then(|built| match built {
         Ok((_, tests)) => runner::run(&program, &tests, &mut io::stdout().lock()),
@@ -244,10 +272,12 @@ fn test(root: &Path, profile: Profile) -> Result<ExitCode, String> {
     ran
 }
 
-/// Compiles the package rooted at `root` with `program`, one of [`Session::compile`] and
-/// [`Session::compile_tests`] giving a module and its test names, and links the module into the
-/// executable `output`. Returns the number of files compiled and the test names, or, when the
-/// package has errors, prints them and returns the exit status 1.
+/// Compiles the package rooted at `root` with `program`, one of [`Session::compile_parts`] and
+/// [`Session::compile_tests_parts`] giving the modules and the test names, and links the modules
+/// into the executable `output`, optimized when `profile` is [`Profile::Release`]. Returns the
+/// number of files compiled and the test names, or, when the package has errors, prints them and
+/// returns the exit status 1. When `timings` is set and the
+/// executable is linked, prints each stage's time to standard error ([`Timings`]).
 ///
 /// # Errors
 ///
@@ -256,12 +286,16 @@ fn test(root: &Path, profile: Profile) -> Result<ExitCode, String> {
 fn compile(
     root: &Path,
     output: &Path,
-    program: impl FnOnce(&Session, Option<&str>) -> Result<(String, Vec<String>), Vec<Diagnostic>>,
+    profile: Profile,
+    timings: bool,
+    program: impl FnOnce(&Session, Option<&str>) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>>,
 ) -> Result<Result<(usize, Vec<String>), ExitCode>, String> {
-    let (session, files) = load(root)?;
+    let started = Instant::now();
+    let (session, files, lines) = load(root)?;
+    let loaded = Instant::now();
     let directory =
         fs::canonicalize(root).map_err(|error| format!("{}: {error}", root.display()))?;
-    let (module, tests) = match program(&session, Some(&directory.to_string_lossy())) {
+    let (modules, tests) = match program(&session, Some(&directory.to_string_lossy())) {
         Ok(compiled) => compiled,
         Err(problems) => {
             let mut stderr = io::stderr().lock();
@@ -274,8 +308,34 @@ fn compile(
             return Ok(Err(ExitCode::FAILURE));
         }
     };
-    link::link(&module, output)?;
+    let compiled = Instant::now();
+    let linked = link::link(&modules, output, profile == Profile::Release)?;
+    if timings {
+        let report = Timings {
+            files,
+            lines,
+            load: loaded - started,
+            compile: compiled - loaded,
+            machine_code: linked.machine_code,
+            link: linked.link,
+        };
+        writeln!(io::stderr(), "{report}").map_err(|error| error.to_string())?;
+    }
     Ok(Ok((files, tests)))
+}
+
+/// How many LLVM modules to split a program built for `profile` into (roadmap 2.6).
+///
+/// A debug build gets one per core the operating system lets this process use, so each gets a
+/// `clang` of its own, or one when that is unknown. A release build stays one module: `clang`
+/// never inlines a call into another module, and at `-O2` a small function called from a hot
+/// loop in another part would run slower, a cost no benchmark measures yet. At `-O0` nothing
+/// is inlined, so splitting a debug build costs nothing.
+fn parts(profile: Profile) -> usize {
+    match profile {
+        Profile::Debug => std::thread::available_parallelism().map_or(1, usize::from),
+        Profile::Release => 1,
+    }
 }
 
 /// Runs `baryon doc` on the package rooted at `root`, writing its pages into `output`.
@@ -285,7 +345,7 @@ fn compile(
 /// Fails with a message when a file cannot be read, or the output directory or a page cannot
 /// be written.
 fn document(root: &Path, output: &Path) -> Result<ExitCode, String> {
-    let (session, _) = load(root)?;
+    let (session, _, _) = load(root)?;
     let mut stderr = io::stderr().lock();
     let modules = match session.document() {
         Ok(modules) => modules,

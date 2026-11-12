@@ -52,6 +52,37 @@ STRASSE ångström
     .unwrap();
 }
 
+/// A slice of a `str` is a new `str`, as the reference says, so it can be kept in a variable,
+/// returned and stored in a list, and it outlives the text it was cut from. Before, the
+/// checker took it for a view of an array and rejected `head = text[0:3]`.
+#[test]
+fn text_slices_are_new_strs_that_can_be_kept() {
+    let program = "\
+def tail(text: str) -> str:
+    rest = text[1:]
+    return rest
+
+
+def main():
+    pieces: list[str] = []
+    for word in [\"argon\", \"neon\", \"xenon\"]:
+        head = word[0:2]
+        pieces.append(head)
+        pieces.append(word[::-1])
+    keep = \"\"
+    if len(pieces) > 0:
+        line = \"Ångström\"
+        keep = line[1:4]
+    print(pieces, keep, tail(\"helium\"))
+";
+    prints(
+        "text-slices-kept",
+        program,
+        "['ar', 'nogra', 'ne', 'noen', 'xe', 'nonex'] ngs elium\n",
+    )
+    .unwrap();
+}
+
 /// The worked example of the reference's "Indexing, slicing and methods": a comprehension over
 /// the pieces of a split, each stripped and put in upper case.
 #[test]

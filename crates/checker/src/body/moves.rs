@@ -93,9 +93,11 @@ impl<'db> Body<'db> {
                     .is_some_and(|value| self.is_environ(value)) => {}
             // `header["OBJECT"]` is a call of a library function, which gives a new value.
             SyntaxKind::Subscript if self.typed.calls.contains_key(&Key(node)) => {}
-            // A slice of a list is a new list, as in Python, so keeping it moves nothing.
+            // A slice of a list is a new list, and a slice of a `str` a new `str`, as in
+            // Python, so keeping either moves nothing.
             SyntaxKind::Subscript
-                if self.is_view(node) && matches!(ty.kind(self.db), TypeKind::List(_)) => {}
+                if self.is_view(node)
+                    && matches!(ty.kind(self.db), TypeKind::List(_) | TypeKind::Str) => {}
             SyntaxKind::Subscript if self.is_view(node) => {
                 // A view borrows the array, and a borrow cannot be stored (reference,
                 // "Slices").

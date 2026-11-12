@@ -232,11 +232,15 @@ impl<'db> Body<'db> {
 
     /// `with value as name:`, where `value` is a `File`, such as `open(path, "w")`: binds `name`
     /// to the file for the body and closes it at the end, which can fail with `OSError` as
-    /// `close()` can. Returns the type of `value`, `None` when it is not a `File`, which is
-    /// reported.
+    /// `close()` can. A `NetCDF` `Dataset` binds too, and closing it does nothing, as
+    /// `ds.close()` does nothing (decision 0047). Returns the type of `value`, `None` when it is
+    /// neither, which is reported.
     pub(super) fn with_file(&mut self, statement: NodeId, item: NodeId) -> Option<Type<'db>> {
         let value = self.tree.child(item, Role::Value)?;
         let ty = self.expression(value, None);
+        if self.is_netcdf(ty, "Dataset") {
+            return Some(ty);
+        }
         let is_file = matches!(ty.kind(self.db), TypeKind::Standard(StandardType::File));
         if !is_file && !matches!(ty.kind(self.db), TypeKind::Unknown) {
             let message = format!("`with` needs a `File`, found `{}`", self.show(ty));

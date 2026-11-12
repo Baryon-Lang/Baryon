@@ -1,0 +1,361 @@
+"""The parts of the `netCDF4` module written in Baryon: NetCDF classic files (decision 0047).
+
+`Dataset(path)`, `ds.variables[name][:]` and `ds.variables[name][:] = values` are built into
+the compiler and the runtime, which read and write the bytes of a file. The runtime describes a
+file's header as lines of text, which a `Dataset` keeps; its dimensions, variables and
+attributes are found here, line by line, as Unidata's `netCDF4` package gives them.
+
+A file opened with `Dataset(path, "w", format=...)` is changed one line at a time: each of
+`createDimension`, `createVariable` and `setncattr` makes a line here that says what to add, and
+`path._apply(line)`, built into the compiler and the runtime for this file's functions only,
+changes the file at `path` and describes its header again. The file is the only state, so a
+program that stops halfway leaves a valid file with what it defined so far.
+
+A program writes `ds.variables["temp"]`, `ds.dimensions["time"]` and
+`ds.getncattr("title")`, and the checker sends each to the function here that does it:
+`_get_float` where the context needs an `f64` attribute. The functions whose names start with
+`_` are the compiler's; no program can import them.
+
+The lines, each a tag and fields separated by tabs, are these (the runtime writes them):
+
+- `P`, the file's path, first;
+- `D`, a dimension's name, its length (the number of records for the unlimited one), and `1`
+  when it is unlimited or `0`;
+- `V`, a variable's name, its type as `netCDF4` names it (`f4`), and its dimensions' names
+  separated by commas;
+- `A`, the variable an attribute belongs to (empty for the file's own), its kind (`str`,
+  `int` or `float`), its number of values, its name, and its values, separated by commas.
+
+A change's lines are the same but for these: `C` and the format's version, `1` or `2`, makes a
+new file; a `D` line's length is 0 for the unlimited dimension, with no third field; and an `A`
+line has no number of values, its one value written as Python writes it.
+"""
+
+
+class Dataset(Struct):
+    """A NetCDF file opened for reading, as `netCDF4`'s `Dataset` is (decision 0047).
+
+    `Dataset(path)` opens one and reads its header. `ds.variables[name]` is a `Variable`,
+    `ds.dimensions[name]` a `Dimension`, and `ds.getncattr(name)` a file attribute typed by
+    where it goes. A missing variable or dimension raises `KeyError`, and a missing attribute
+    `AttributeError`, as in `netCDF4`.
+    """
+
+    _lines: list[str]  # the header's description lines, the path first; the compiler's to fill
+
+
+class Dimension(Struct):
+    """A dimension of a NetCDF file: its `name` and `size`, the number of records written for
+    the unlimited one, as `netCDF4`'s `Dimension` gives them."""
+
+    name: str
+    size: int
+    _unlimited: bool  # whether it is the file's unlimited (record) dimension
+
+
+class Variable(Struct):
+    """A variable of a NetCDF file: its `name` and the names of its `dimensions`, slowest first.
+    `var[:]` reads its values into an array typed by where they go, and `var.getncattr(name)`
+    reads one of its attributes."""
+
+    name: str
+    dimensions: list[str]
+    _path: str  # the file's path, which `var[:]` reads; the compiler's to read
+    _attributes: list[str]  # the `A` lines of its attributes
+
+
+def _field(line: str, index: int) -> str:
+    """Field `index` of a description `line`, counting the tag as 0; the last field is the rest
+    of the line, tabs and all, since an attribute's text may hold one."""
+    rest = line.copy()
+    count = 0
+    while count < index:
+        found = rest.find("\t")
+        if found < 0:
+            return ""
+        rest = rest[found + 1 :].copy()
+        count += 1
+    if index < 5:
+        found = rest.find("\t")
+        if found >= 0:
+            return rest[:found].copy()
+    return rest
+
+
+def _whole(text: str) -> int:
+    """The integer the runtime wrote as `text`."""
+    try:
+        return int(text)
+    except ValueError:
+        return 0
+
+
+def _path(dataset: Dataset) -> str:
+    """The path of the file `dataset` was opened from: its first line after the tag `P`."""
+    return dataset._lines[0][2:].copy()
+
+
+def _variable(dataset: Dataset, name: str) -> Raises[Variable, KeyError]:
+    """`ds.variables[name]`: the variable `name`, with its attributes, or `KeyError` with the
+    name quoted as Python quotes a missing key."""
+    for line in dataset._lines:
+        if line.startswith("V\t") and _field(line, 1) == name:
+            spans = _field(line, 3)
+            dimensions: list[str] = [] if spans == "" else spans.split(",")
+            attributes: list[str] = []
+            for attribute in dataset._lines:
+                if attribute.startswith("A\t") and _field(attribute, 1) == name:
+                    attributes.append(attribute.copy())
+            return Variable(name.copy(), dimensions, _path(dataset), attributes)
+    raise KeyError(f"'{name}'")
+
+
+def _dimension(dataset: Dataset, name: str) -> Raises[Dimension, KeyError]:
+    """`ds.dimensions[name]`: the dimension `name`, or `KeyError` with the name quoted."""
+    for line in dataset._lines:
+        if line.startswith("D\t") and _field(line, 1) == name:
+            return Dimension(name.copy(), _whole(_field(line, 2)), _field(line, 3) == "1")
+    raise KeyError(f"'{name}'")
+
+
+def _isunlimited(dimension: Dimension) -> bool:
+    """`dim.isunlimited()`: whether it is the file's unlimited (record) dimension."""
+    return dimension._unlimited
+
+
+def _close(dataset: Dataset):
+    """`ds.close()`: nothing to do, since the header was read when the file was opened and each
+    variable's values are read when the program asks for them."""
+    return
+
+
+def _names(lines: list[str], owner: str) -> list[str]:
+    """The names of the attributes in `lines` whose owner is `owner`, in the file's order."""
+    names: list[str] = []
+    for line in lines:
+        if line.startswith("A\t") and _field(line, 1) == owner:
+            names.append(_field(line, 4))
+    return names
+
+
+def _ncattrs(dataset: Dataset) -> list[str]:
+    """`ds.ncattrs()`: the names of the file's own attributes."""
+    return _names(dataset._lines, "")
+
+
+def _variable_ncattrs(variable: Variable) -> list[str]:
+    """`var.ncattrs()`: the names of the variable's attributes."""
+    return _names(variable._attributes, variable.name)
+
+
+def _attribute(lines: list[str], owner: str, name: str) -> Raises[str, AttributeError]:
+    """The `A` line of the attribute `name` of `owner` in `lines`, or `netCDF4`'s
+    `AttributeError` when there is none."""
+    for line in lines:
+        if line.startswith("A\t") and _field(line, 1) == owner and _field(line, 4) == name:
+            return line.copy()
+    raise AttributeError("NetCDF: Attribute not found")
+
+
+def _wrong(line: str, wanted: str) -> AttributeError:
+    """The error for the attribute on `line` when it does not hold the value `wanted` names."""
+    held = _field(line, 2)
+    count = _field(line, 3)
+    if held == "str":
+        what = "text"
+    elif count == "1":
+        what = f"one {held}"
+    else:
+        what = f"{count} {held}s"
+    return AttributeError(f"the attribute {_field(line, 4)} holds {what}, not {wanted}")
+
+
+def _text(line: str) -> Raises[str, AttributeError]:
+    """The text of the attribute on `line`, which must hold text."""
+    if _field(line, 2) != "str":
+        raise _wrong(line, "text")
+    return _field(line, 5)
+
+
+def _integer(line: str) -> Raises[int, AttributeError]:
+    """The one integer of the attribute on `line`."""
+    if _field(line, 2) != "int" or _field(line, 3) != "1":
+        raise _wrong(line, "one int")
+    return _whole(_field(line, 5))
+
+
+def _real(line: str) -> Raises[float, AttributeError]:
+    """The one number of the attribute on `line`, an integer or a float, as a float."""
+    if _field(line, 2) == "str" or _field(line, 3) != "1":
+        raise _wrong(line, "one float")
+    try:
+        return float(_field(line, 5))
+    except ValueError:
+        raise _wrong(line, "one float")
+
+
+def _get_str(dataset: Dataset, name: str) -> Raises[str, AttributeError]:
+    """`ds.getncattr(name)` where the context needs a `str`."""
+    return _text(_attribute(dataset._lines, "", name))
+
+
+def _get_int(dataset: Dataset, name: str) -> Raises[int, AttributeError]:
+    """`ds.getncattr(name)` where the context needs an `int`."""
+    return _integer(_attribute(dataset._lines, "", name))
+
+
+def _get_float(dataset: Dataset, name: str) -> Raises[float, AttributeError]:
+    """`ds.getncattr(name)` where the context needs a `float`."""
+    return _real(_attribute(dataset._lines, "", name))
+
+
+def _variable_get_str(variable: Variable, name: str) -> Raises[str, AttributeError]:
+    """`var.getncattr(name)` where the context needs a `str`."""
+    return _text(_attribute(variable._attributes, variable.name, name))
+
+
+def _variable_get_int(variable: Variable, name: str) -> Raises[int, AttributeError]:
+    """`var.getncattr(name)` where the context needs an `int`."""
+    return _integer(_attribute(variable._attributes, variable.name, name))
+
+
+def _variable_get_float(variable: Variable, name: str) -> Raises[float, AttributeError]:
+    """`var.getncattr(name)` where the context needs a `float`."""
+    return _real(_attribute(variable._attributes, variable.name, name))
+
+
+def _define(dataset: InOut[Dataset], line: str) -> Raises[None, OSError]:
+    """Applies the change `line` to the file `dataset` was opened from, and keeps the lines that
+    describe its new header, so a variable or a dimension defined is found by name at once."""
+    dataset._lines = _path(dataset)._apply(line)
+
+
+def _create_dimension(
+    dataset: InOut[Dataset], dimname: str, size: int
+) -> Raises[Dimension, OSError]:
+    """`ds.createDimension(dimname, size)`: a new dimension of `size`, the unlimited (record)
+    one when `size` is 0, as in `netCDF4`."""
+    _define(dataset, f"D\t{dimname}\t{size}")
+    return Dimension(dimname.copy(), size, size == 0)
+
+
+def _create_unlimited(dataset: InOut[Dataset], dimname: str) -> Raises[Dimension, OSError]:
+    """`ds.createDimension(dimname)` or `ds.createDimension(dimname, None)`: the file's
+    unlimited (record) dimension, which has no records yet."""
+    return _create_dimension(dataset, dimname, 0)
+
+
+def _type_code(datatype: str) -> str:
+    """The type `netCDF4` names `f4` and so on for `datatype`, which a program may also write as
+    NumPy names the type (`float32`) or codes it (`f`). Any other name is passed on for the
+    runtime to refuse, with a message that names it."""
+    if datatype == "float32" or datatype == "f":
+        return "f4"
+    if datatype == "float64" or datatype == "d":
+        return "f8"
+    if datatype == "int8" or datatype == "b":
+        return "i1"
+    if datatype == "int16" or datatype == "h":
+        return "i2"
+    if datatype == "int32" or datatype == "i":
+        return "i4"
+    return datatype.copy()
+
+
+def _create_variable(
+    dataset: InOut[Dataset], varname: str, datatype: str, dimensions: Owned[list[str]]
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype, dimensions)`: a new variable over `dimensions`,
+    slowest first, filled with its type's fill value until values are written."""
+    spans = ",".join(dimensions)
+    _define(dataset, f"V\t{varname}\t{_type_code(datatype)}\t{spans}")
+    return Variable(varname.copy(), dimensions, _path(dataset), [])
+
+
+def _create_variable_0(
+    dataset: InOut[Dataset], varname: str, datatype: str
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype)`: a scalar variable, one value."""
+    return _create_variable(dataset, varname, datatype, [])
+
+
+def _create_variable_1(
+    dataset: InOut[Dataset], varname: str, datatype: str, first: str
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype, (first,))`."""
+    return _create_variable(dataset, varname, datatype, [first.copy()])
+
+
+def _create_variable_2(
+    dataset: InOut[Dataset], varname: str, datatype: str, first: str, second: str
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype, (first, second))`."""
+    return _create_variable(dataset, varname, datatype, [first.copy(), second.copy()])
+
+
+def _create_variable_3(
+    dataset: InOut[Dataset], varname: str, datatype: str, first: str, second: str, third: str
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype, (first, second, third))`."""
+    dimensions = [first.copy(), second.copy(), third.copy()]
+    return _create_variable(dataset, varname, datatype, dimensions)
+
+
+def _create_variable_4(
+    dataset: InOut[Dataset],
+    varname: str,
+    datatype: str,
+    first: str,
+    second: str,
+    third: str,
+    fourth: str,
+) -> Raises[Variable, OSError]:
+    """`ds.createVariable(varname, datatype, (first, second, third, fourth))`."""
+    dimensions = [first.copy(), second.copy(), third.copy(), fourth.copy()]
+    return _create_variable(dataset, varname, datatype, dimensions)
+
+
+def _set_str(dataset: InOut[Dataset], name: str, value: str) -> Raises[None, OSError]:
+    """`ds.setncattr(name, value)` of a `str`: a text attribute of the file."""
+    _define(dataset, f"A\t\tstr\t{name}\t{value}")
+
+
+def _set_int(dataset: InOut[Dataset], name: str, value: int) -> Raises[None, OSError]:
+    """`ds.setncattr(name, value)` of an `int`, stored as `netCDF4` stores a Python `int`: one
+    32-bit integer, which the runtime refuses when the value does not fit."""
+    _define(dataset, f"A\t\tint\t{name}\t{value}")
+
+
+def _set_float(dataset: InOut[Dataset], name: str, value: float) -> Raises[None, OSError]:
+    """`ds.setncattr(name, value)` of a `float`: one 64-bit float, as `netCDF4` stores a Python
+    `float`."""
+    _define(dataset, f"A\t\tfloat\t{name}\t{value}")
+
+
+def _variable_define(variable: InOut[Variable], line: str) -> Raises[None, OSError]:
+    """Applies the change `line` to the file `variable` belongs to, and keeps its attributes'
+    lines from the new header, so `var.getncattr` finds an attribute just set."""
+    lines = variable._path._apply(line)
+    attributes: list[str] = []
+    for found in lines:
+        if found.startswith("A\t") and _field(found, 1) == variable.name:
+            attributes.append(found.copy())
+    variable._attributes = attributes
+
+
+def _variable_set_str(variable: InOut[Variable], name: str, value: str) -> Raises[None, OSError]:
+    """`var.setncattr(name, value)` of a `str`, such as its `units`."""
+    _variable_define(variable, f"A\t{variable.name}\tstr\t{name}\t{value}")
+
+
+def _variable_set_int(variable: InOut[Variable], name: str, value: int) -> Raises[None, OSError]:
+    """`var.setncattr(name, value)` of an `int`: one 32-bit integer."""
+    _variable_define(variable, f"A\t{variable.name}\tint\t{name}\t{value}")
+
+
+def _variable_set_float(
+    variable: InOut[Variable], name: str, value: float
+) -> Raises[None, OSError]:
+    """`var.setncattr(name, value)` of a `float`: one 64-bit float, as `netCDF4` stores a
+    Python `float`, such as a `scale_factor`."""
+    _variable_define(variable, f"A\t{variable.name}\tfloat\t{name}\t{value}")

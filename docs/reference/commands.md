@@ -3,14 +3,14 @@
 `baryon` is the one tool for a Baryon program: it checks, builds, runs, tests and documents a
 package, and serves an editor. This chapter lists every command, what it needs, what it prints and
 the exit status it ends with. It is a prototype (roadmap 1.11): arguments are positional, and the
-one option is `--release`.
+two options are `--release` and `--timings`.
 
 | Command | What it does |
 | --- | --- |
 | [`baryon check <directory>`](#baryon-check) | Reports every error and warning in the package |
-| [`baryon build [--release] <directory> <output>`](#baryon-build) | Compiles the package into the executable `output` |
-| [`baryon run [--release] <directory>`](#baryon-run) | Builds the package and runs it |
-| [`baryon test [--release] <directory>`](#baryon-test) | Builds and runs every `@test` function |
+| [`baryon build [--release] [--timings] <directory> <output>`](#baryon-build) | Compiles the package into the executable `output` |
+| [`baryon run [--release] [--timings] <directory>`](#baryon-run) | Builds the package and runs it |
+| [`baryon test [--release] [--timings] <directory>`](#baryon-test) | Builds and runs every `@test` function |
 | [`baryon doc <directory> <output>`](#baryon-doc) | Writes the package's documentation as Markdown |
 | [`baryon lsp`](#baryon-lsp) | Runs the language server an editor talks to |
 | `baryon --version` | Prints the release, such as `baryon 0.2.0`; put it in a bug report |
@@ -70,7 +70,7 @@ standard output and exit with 0. Called with no arguments or wrong ones, `baryon
 line to standard error and exits with 2:
 
 ```text
-baryon: usage: baryon check <directory> | baryon build [--release] <directory> <output> | baryon run [--release] <directory> | baryon test [--release] <directory> | baryon doc <directory> <output> | baryon lsp
+baryon: usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] <directory> | baryon doc <directory> <output> | baryon lsp
 ```
 
 ## `baryon check`
@@ -105,7 +105,7 @@ that checks may still use a feature `build` cannot compile yet; see
 ## `baryon build`
 
 ```text
-baryon build [--release] <directory> <output>
+baryon build [--release] [--timings] <directory> <output>
 ```
 
 Checks the package as `check` does, compiles it, and writes the executable `output`, linked with
@@ -113,25 +113,51 @@ the runtime. On success it prints `built <output> from <n> file(s)` to standard 
 with 0. A package with errors, or that uses a feature the compiler cannot build yet, gets its
 errors printed and exits with 1, with nothing written. Warnings are shown only by `check` today.
 
-The program is optimized (`clang -O2`, with loops that sum floats vectorized while still adding
-in order, so results match an unoptimized build to the bit) and keeps its line tables, so a panic prints a backtrace of
+A debug build is compiled fast and not optimized (`clang -O0`); a release build is optimized
+(`clang -O2`, with loops that sum floats vectorized while still adding in order, so results match
+the debug build to the bit). Both keep their line tables, so a panic prints a backtrace of
 `.byn` lines and `gdb` and `lldb` stop at and show them. On macOS the line tables are written to
 `<output>.dSYM` beside the executable; keep it with the executable for backtraces to name lines.
 
 ### Debug and release builds
 
 `build` makes a *debug build* unless given `--release`, anywhere after the command; `run` and
-`test` take the same flag. Both builds are optimized and keep their line tables. They differ in one
-thing ([decision 0030](../decisions/0030-integer-overflow.md)):
+`test` take the same flag. Both keep their line tables. They differ in two things
+([decision 0030](../decisions/0030-integer-overflow.md),
+[decision 0048](../decisions/0048-debug-builds-compile-fast.md)):
 
-| Build | Integer arithmetic that overflows |
-| --- | --- |
-| Debug, the default | Panics with the operator and its location: ``panic: integer overflow in `+` `` |
-| Release, `--release` | Wraps around in two's complement, and the check costs nothing |
+| Build | Compiled | Integer arithmetic that overflows |
+| --- | --- | --- |
+| Debug, the default | Fast, not optimized: runs up to ten times slower | Panics with the operator and its location: ``panic: integer overflow in `+` `` |
+| Release, `--release` | Optimized: takes about five times longer to compile | Wraps around in two's complement, and the check costs nothing |
 
-Develop and test in a debug build, where an overflow stops at the line that caused it. Time and
-ship a release build: a debug build cannot vectorize a loop that adds integers. Every other check,
+Develop and test in a debug build, which compiles quickly and stops an overflow at the line that
+caused it. Time, run long simulations in, and ship a release build. Every other check,
 such as array bounds, stays on in both ([Integer overflow](types.md#integer-overflow)).
+
+### Timing a build
+
+`--timings`, anywhere after `build`, `run` or `test`, prints to standard error how long each
+stage of the build took, once the executable is linked, then the package's lines per second:
+
+```text
+$ baryon build --timings nbody nbody.out
+timings for 106 line(s) in 1 file(s):
+  load              0 ms
+  compile          21 ms  check, lower, IR passes, LLVM text
+  machine code    239 ms  clang: optimize, generate code
+  link            136 ms  clang: link with the runtime
+  total           397 ms  267 lines/s
+built nbody.out from 1 file(s)
+```
+
+`compile` is the time spent in `baryon` itself; `machine code` and `link` are `clang`. In a
+debug build, a program with enough code is split into one LLVM module per core and each is
+compiled by a `clang` of its own at the same time, so `machine code` is the time the slowest of
+them took. A release build stays one module, so `clang` can inline any call into any function. Standard
+library modules a program uses, such as `linalg`, are compiled too but not counted in its lines.
+The [compile-speed baseline](../../bench/README.md#compile-speed) lists these numbers for the
+benchmark kernels.
 
 Running the executable runs `main`. It exits with:
 
@@ -144,7 +170,7 @@ Running the executable runs `main`. It exits with:
 ## `baryon run`
 
 ```text
-baryon run [--release] <directory>
+baryon run [--release] [--timings] <directory>
 ```
 
 Builds the package as `build` does, into a scratch directory, runs it with the terminal's standard
@@ -161,7 +187,7 @@ hello, world
 ## `baryon test`
 
 ```text
-baryon test [--release] <directory>
+baryon test [--release] [--timings] <directory>
 ```
 
 Builds every top-level function decorated `@test` into one test program and runs each test in its

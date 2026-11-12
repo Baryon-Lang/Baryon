@@ -189,6 +189,63 @@ What the audit found, and what came of it:
 - **Indices that add two values.** The FFT's `top = block + k` is not hoisted by roadmap 3.2;
   idea I.45.
 
+## Compile speed
+
+The design plan sets numbers for how fast `baryon` compiles, as well as for how fast the result
+runs: a debug build at 100,000 lines per second, and a one-function edit rebuilt in under 200 ms
+([Compile-speed targets](../docs/design/language-design-plan.md#compile-speed-targets-and-how-each-is-met)).
+Phase 2 of the [roadmap](../ROADMAP.md) works toward them, and every change there starts and ends
+with a measurement. `--timings` on `build`, `run` or `test` prints how long each stage took:
+
+```text
+$ target/release/baryon build --timings bench/kernels/nbody/baryon nbody
+timings for 106 line(s) in 1 file(s):
+  load              0 ms
+  compile          21 ms  check, lower, IR passes, LLVM text
+  machine code    239 ms  clang: optimize, generate code
+  link            136 ms  clang: link with the runtime
+  total           397 ms  267 lines/s
+built nbody from 1 file(s)
+```
+
+`compile` is everything inside `baryon`. `machine code` is `clang` optimizing the LLVM module
+and writing an object file, and `link` is `clang` linking it with the runtime, about 120 ms
+whatever the program, since the runtime is a 24 MB static library the linker searches.
+
+The baseline, recorded for roadmap item 2.0 on Linux x86-64 in a shared cloud VM with 4 cores,
+debug builds, best of 3, in milliseconds:
+
+| Program | Lines | compile | machine code | link | total |
+| --- | --- | --- | --- | --- | --- |
+| `nbody` | 106 | 21 | 239 | 136 | 397 |
+| `lennard_jones` | 190 | 22 | 321 | 130 | 475 |
+| `heat_stencil` | 51 | 20 | 322 | 114 | 457 |
+| `conjugate_gradient` | 99 | 10 | 154 | 116 | 282 |
+| `runge_kutta` | 77 | 8 | 74 | 126 | 209 |
+| `monte_carlo` | 45 | 9 | 45 | 121 | 176 |
+| `matmul` | 66 | 10 | 135 | 117 | 263 |
+| `fft` | 100 | 9 | 102 | 121 | 233 |
+| `nbody`, scaled | 4,706 | 300 | 9,039 | 130 | 9,471 |
+
+The last row is the `nbody` kernel with its `accelerate` function copied 200 times under new
+names, each called once from `main`, so the compiler sees 200 times the code of its hottest
+function. It runs at about 500 lines per second, 200 times short of the target, and the time is
+almost all `clang -O2`: `baryon` writes about 80 lines of LLVM IR per source line, every local
+a stack slot for LLVM to promote ([decision 0018](../docs/decisions/0018-mid-level-ir.md)), and
+`clang` optimizes them one module at a time on one core.
+
+What has changed since, on the same machine and program:
+
+| Change | Debug build | Release build |
+| --- | --- | --- |
+| Baseline (2.0) | 9.5 s | 9.5 s |
+| Debug builds at `clang -O0` (2.5, [decision 0048](../docs/decisions/0048-debug-builds-compile-fast.md)) | 1.85 s | 9.5 s |
+| One module per core, compiled at once, debug builds only (2.6) | 1.0 s | 9.5 s |
+
+Splitting the release build too took it to 2.9 s, but `clang` never inlines a call into another
+module, so a small function called in a hot loop could run slower. Release builds stay one
+module until a benchmark of run time shows the split costs nothing.
+
 ## Output protocol
 
 A kernel is an executable that takes positive integer arguments and prints exactly two lines:

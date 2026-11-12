@@ -8,6 +8,8 @@ use mir::{Argument, ArrayFile, BlockId, Body, Builtin, Callee, Constant, Constan
 use mir::{FileMethod, Local, LocalKind, Operand, Statement, StatementKind, TerminatorKind};
 use types::{Float, Integer, Primitive, StandardType, Type, TypeKind};
 
+mod netcdf;
+
 /// `out = open("out.txt", "w")`, then `out.write("hi")`, then the drop of `out`; either call's
 /// failure goes to the last block with the error in its local. `i64` stands for `OSError`,
 /// since the backend only passes the local's address.
