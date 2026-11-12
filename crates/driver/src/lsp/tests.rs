@@ -57,6 +57,7 @@ fn initialized_reply() -> Value {
                 "hoverProvider": true,
                 "definitionProvider": true,
                 "completionProvider": {"triggerCharacters": ["."]},
+                "inlayHintProvider": true,
             },
             "serverInfo": {"name": "baryon", "version": env!("CARGO_PKG_VERSION")},
         },
@@ -371,4 +372,37 @@ fn hover_definition_and_completion_answer_across_the_workspace() {
     assert_eq!(result(&replies, 6), &Value::Null);
     assert_eq!(result(&replies, 7), &Value::Null);
     assert_eq!(result(&replies, 8), &Value::Null);
+}
+
+/// The inlay hints of a document are each inferred variable's type, at the end of its name,
+/// with the position counted in UTF-16 code units; an unknown document has none.
+#[test]
+fn inlay_hints_show_inferred_types() {
+    let uri = "file:///hints/main.byn";
+    let text = "def main():\n    ψ = 2.0\n    n = 3\n";
+    let [shutdown, exit] = goodbye(4);
+    let (_, replies) = session(&[
+        initialize(None),
+        open(uri, text),
+        request(
+            2,
+            "textDocument/inlayHint",
+            &json!({"textDocument": {"uri": uri}}),
+        ),
+        request(
+            3,
+            "textDocument/inlayHint",
+            &json!({"textDocument": {"uri": "file:///elsewhere.byn"}}),
+        ),
+        shutdown,
+        exit,
+    ]);
+    assert_eq!(
+        result(&replies, 2),
+        &json!([
+            {"position": {"line": 1, "character": 5}, "label": ": f64", "kind": 1},
+            {"position": {"line": 2, "character": 5}, "label": ": i64", "kind": 1},
+        ])
+    );
+    assert_eq!(result(&replies, 3), &json!([]));
 }

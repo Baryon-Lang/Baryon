@@ -1,6 +1,7 @@
 //! What an editor asks about a place in the code: what the name under the cursor is
 //! ([`Session::hover`]), where it is defined ([`Session::definition`]), and what could be typed
-//! there ([`Session::complete`]).
+//! there ([`Session::complete`]); and, for a whole file, the inferred types of its variables
+//! ([`Session::inlay_hints`]).
 //!
 //! Each answer is read from the queries `baryon check` already runs, so it costs a lookup in
 //! cached results after the first check: the parser's tree for where the cursor is, the
@@ -35,10 +36,12 @@
 //! ```
 
 mod complete;
+mod hints;
 mod hover;
 mod outline;
 
 pub use complete::{Completion, CompletionKind};
+pub use hints::InlayHint;
 pub use hover::Hover;
 
 use crate::{Database, Session};
