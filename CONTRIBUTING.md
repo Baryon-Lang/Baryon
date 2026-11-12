@@ -112,6 +112,11 @@ The repository should look like someone obsessive built it, because someone did.
 - Every crate has unit tests. Every bug fix adds a test that fails without the fix.
 - Tests are deterministic and fast. Diagnostics are tested by their full rendered text.
 - Never weaken, skip or delete a test to make a change pass.
+- The ownership sweep (`crates/driver/tests/build/ownership.rs`) builds every kind of value that
+  owns memory through every place a program can own, borrow, move or drop one, and runs the
+  programs under Valgrind on Linux. A new type that owns memory, or a new way to move or drop a
+  value, gets a kind or a site in it. A bug it finds is listed in its `KNOWN` table with the fix's
+  owner, and the fix deletes the entry.
 
 ## Rule 6: few dependencies
 

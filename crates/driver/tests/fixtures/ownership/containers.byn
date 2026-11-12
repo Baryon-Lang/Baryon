@@ -1,0 +1,287 @@
+# Ownership sweep sites (roadmap 1.18.2): Lists, dicts, tuples, struct fields and optionals: insertion, replacement, removal, slices and copies.
+# Each `# site:` block is one function the test calls; `once` marks a site that does not use
+# `ITEM` and runs only in the first kind's program. See crates/driver/tests/build/ownership.rs.
+
+
+# site: append_named
+# A variable and a new value appended to a list.
+def append_named():
+    xs: list[ITEM] = []
+    a = NEW1
+    xs.append(a)
+    xs.append(NEW2)
+    show(xs[0])
+    show(xs[1])
+
+
+# site: element_replace
+# A list element replaced by a new value, dropping the old one.
+def element_replace():
+    xs = [NEW1, NEW2]
+    xs[0] = NEW3
+    show(xs[0])
+    show(xs[1])
+
+
+# site: element_replace_named
+# A list element replaced by a variable.
+def element_replace_named():
+    xs = [NEW1, NEW2]
+    b = NEW3
+    xs[1] = b
+    show(xs[1])
+
+
+# site: element_borrow_temp
+# An element of a list that only the expression holds, borrowed by a call.
+def element_borrow_temp():
+    show(make_list(3)[1])
+
+
+# site: pop_named
+# `pop` moving the last element out of a variable.
+def pop_named():
+    xs = [NEW1, NEW2]
+    y = xs.pop()
+    show(y)
+    show(xs[0])
+
+
+# site: pop_discard
+# `pop` whose result nothing uses.
+def pop_discard():
+    xs = [NEW1, NEW2]
+    xs.pop()
+    show(xs[0])
+
+
+# site: pop_temp
+# `pop` on a list that only the expression holds.
+def pop_temp():
+    show(make_list(2).pop())
+
+
+# site: dict_insert
+# Values stored in a dict, one key written twice.
+def dict_insert():
+    d: dict[str, ITEM] = {}
+    d[f"k{1}"] = NEW1
+    d[f"k{1}"] = NEW2
+    d["j"] = NEW3
+    show(d["k1"])
+    print(len(d))
+
+
+# site: dict_pop
+# `pop` with and without a default, and `del`, on a dict.
+def dict_pop():
+    d: dict[str, ITEM] = {}
+    d["a"] = NEW1
+    d["b"] = NEW2
+    y = d.pop("a")
+    show(y)
+    z = d.pop("zz", NEW3)
+    show(z)
+    del d["b"]
+    print(len(d))
+
+
+# site: dict_values
+# Loops borrowing a dict's values and items.
+def dict_values():
+    d: dict[str, ITEM] = {}
+    d["a"] = NEW1
+    d["b"] = NEW2
+    for v in d.values():
+        show(v)
+    for k, v in d.items():
+        print(k)
+        show(v)
+
+
+# site: dict_comp
+# A dict comprehension of new values.
+def dict_comp():
+    d = {f"k{i}": make(i) for i in range(3)}
+    show(d["k2"])
+
+
+# site: dict_clear
+# `clear` drops every value, and the dict is filled again.
+def dict_clear():
+    d: dict[str, ITEM] = {}
+    d["a"] = NEW1
+    d.clear()
+    d["a"] = NEW2
+    show(d["a"])
+
+
+# site: tuple_unpack
+# A tuple of two values unpacked into two variables.
+def tuple_unpack():
+    t = (NEW1, NEW2)
+    a, b = t
+    show(a)
+    show(b)
+
+
+# site: tuple_swap
+# Two variables swapped through a tuple.
+def tuple_swap():
+    a = NEW1
+    b = NEW2
+    a, b = b, a
+    show(a)
+    show(b)
+
+
+# site: list_slice
+# A slice of a variable, a new list.
+def list_slice():
+    xs = [NEW1, NEW2, NEW3]
+    ys = xs[0:2]
+    show(ys[1])
+    show(xs[1])
+
+
+# site: list_slice_temp
+# A slice of a list that only the expression holds.
+def list_slice_temp():
+    ys = make_list(3)[1:]
+    show(ys[0])
+
+
+# site: list_copy
+# `copy` of a list.
+def list_copy():
+    xs = make_list(2)
+    ys = xs.copy()
+    show(ys[1])
+    show(xs[1])
+
+
+# site: nested_list_of
+# A list of lists whose inner list is replaced.
+def nested_list_of():
+    xs = [make_list(2), make_list(1)]
+    show(xs[0][1])
+    xs[0] = make_list(3)
+    show(xs[0][2])
+
+
+# site: in_list
+# `in` testing a new value and a variable against a list.
+def in_list():
+    xs = make_list(3)
+    print(make(1) in xs)
+    a = make(2)
+    print(a in xs)
+    show(a)
+
+
+# site: dict_setdefault
+# `setdefault` given a new value, used and unused.
+def dict_setdefault():
+    d: dict[str, ITEM] = {}
+    d.setdefault("a", NEW1)
+    d.setdefault("a", NEW2)
+    show(d["a"])
+
+
+# site: dict_get_default
+# `get` with a default, used and unused.
+def dict_get_default():
+    d: dict[str, ITEM] = {}
+    d["a"] = NEW1
+    v = d.get("a", NEW2)
+    show(v)
+    w = d.get("b", NEW3)
+    show(w)
+
+
+# site: dict_update
+# `update` copying values from another dict.
+def dict_update():
+    d: dict[str, ITEM] = {}
+    d["a"] = NEW1
+    e: dict[str, ITEM] = {}
+    e["a"] = NEW2
+    e["b"] = NEW3
+    d.update(e)
+    show(d["a"])
+    show(e["b"])
+
+
+# site: dict_key_owned once
+# Keys moved in from a variable, a new value and a copy.
+def dict_key_owned():
+    d: dict[str, int] = {}
+    key = f"k{1}"
+    d[key] = 1
+    d[f"k{2}"] = 2
+    d[key.copy()] = 3
+    print(len(d), d["k1"])
+
+
+# site: list_display_moves
+# Two variables moved into a list display.
+def list_display_moves():
+    a = NEW1
+    b = NEW2
+    xs = [a, b]
+    show(xs[1])
+
+
+# site: list_assign_slice
+# Assigning a new list into a slice of a list.
+def list_assign_slice():
+    xs = make_list(4)
+    xs[1:3] = make_list(1)
+    print(len(xs))
+    show(xs[1])
+
+
+# site: sorted_list
+# `sorted` of a variable, a new list.
+def sorted_list():
+    xs = make_list(3)
+    ys = sorted(xs)
+    show(ys[0])
+    show(xs[0])
+
+
+# site: union_in_list once
+# A list of unions of structs, borrowed by a loop and a `match`.
+def union_in_list():
+    shapes: list[Shape] = []
+    for k in range(4):
+        shapes.append(make_shape(k))
+    for s in shapes:
+        match s:
+            case Circle():
+                print("c")
+            case Square(count):
+                print(count)
+
+
+# site: optional_field
+# An optional field assigned a value, another value and `None`.
+class Slot(Struct):
+    value: ITEM | None
+
+
+def optional_field():
+    s = Slot(None)
+    s.value = NEW1
+    s.value = NEW2
+    s.value = None
+    print(s.value is None)
+
+
+# site: optional_list
+# A list of optional values written in place.
+def optional_list():
+    xs: list[ITEM | None] = [None, NEW1]
+    xs[0] = NEW2
+    xs[1] = None
+    print(len(xs))

@@ -1,0 +1,286 @@
+# Ownership sweep sites (roadmap 1.18.2): Parameters in each mode, returns, methods, generic functions and functions passed as arguments.
+# Each `# site:` block is one function the test calls; `once` marks a site that does not use
+# `ITEM` and runs only in the first kind's program. See crates/driver/tests/build/ownership.rs.
+
+
+# site: return_local
+# A function's result held in a variable.
+def return_local():
+    a = make(3)
+    show(a)
+
+
+# site: return_early
+# Two locals, one returned early and the other dropped.
+def return_early_pick(k: int) -> ITEM:
+    a = make(k)
+    b = make(k + 1)
+    if k > 0:
+        return a
+    return b
+
+
+def return_early():
+    show(return_early_pick(1))
+    show(return_early_pick(0))
+
+
+# site: cond_return
+# Returning a conditional expression of two locals.
+def cond_return_choose(k: int) -> ITEM:
+    a = make(k)
+    b = make(k + 1)
+    return a if flag(k) else b
+
+
+def cond_return():
+    show(cond_return_choose(1))
+    show(cond_return_choose(2))
+
+
+# site: cond_return_temp
+# Returning a conditional expression of two new values.
+def cond_return_temp_choose(k: int) -> ITEM:
+    return make(k) if flag(k) else make(k + 1)
+
+
+def cond_return_temp():
+    show(cond_return_temp_choose(1))
+    show(cond_return_temp_choose(2))
+
+
+# site: owned_named
+# A variable moved into an `Owned` parameter.
+def owned_named_take(x: Owned[ITEM]) -> int:
+    show(x)
+    return 1
+
+
+def owned_named():
+    a = NEW1
+    print(owned_named_take(a))
+
+
+# site: owned_temp
+# A new value moved into an `Owned` parameter.
+def owned_temp_take(x: Owned[ITEM]) -> int:
+    show(x)
+    return 1
+
+
+def owned_temp():
+    print(owned_temp_take(NEW1))
+
+
+# site: owned_through
+# An `Owned` parameter returned to the caller.
+def owned_through_through(x: Owned[ITEM]) -> ITEM:
+    return x
+
+
+def owned_through():
+    b = owned_through_through(NEW1)
+    show(b)
+    c = NEW2
+    d = owned_through_through(c)
+    show(d)
+
+
+# site: owned_conditional
+# A conditional expression of two variables moved into an `Owned` parameter.
+def owned_conditional_take(x: Owned[ITEM]) -> int:
+    show(x)
+    return 1
+
+
+def owned_conditional():
+    a = NEW1
+    b = NEW2
+    print(owned_conditional_take(a if flag(1) else b))
+
+
+# site: inout_reassign
+# An `InOut` parameter assigned a new value, dropping the caller's old one.
+def inout_reassign_reset(x: InOut[ITEM], k: int):
+    x = make(k)
+
+
+def inout_reassign():
+    a = NEW1
+    inout_reassign_reset(a, 5)
+    show(a)
+
+
+# site: inout_element
+# A list element passed `InOut` and replaced.
+def inout_element_reset(x: InOut[ITEM], k: int):
+    x = make(k)
+
+
+def inout_element():
+    xs = make_list(2)
+    inout_element_reset(xs[0], 5)
+    show(xs[0])
+    show(xs[1])
+
+
+# site: inout_field
+# A struct field passed `InOut` and replaced.
+def inout_field_reset(x: InOut[ITEM], k: int):
+    x = make(k)
+
+
+def inout_field():
+    h = Holder(NEW1)
+    inout_field_reset(h.item, 5)
+    show(h.item)
+
+
+# site: field_assign
+# A field assigned a new value, dropping the old one.
+def field_assign():
+    h = Holder(NEW1)
+    h.item = NEW2
+    show(h.item)
+
+
+# site: field_move_out
+# A field moved out of a struct held by a variable.
+def field_move_out():
+    h = Holder(NEW1)
+    c = h.item
+    show(c)
+
+
+# site: field_of_temp
+# A field of a struct that only the expression holds, borrowed by a call.
+def field_of_temp():
+    show(Holder(NEW1).item)
+
+
+# site: field_list
+# Appending to a list held in a field.
+def field_list():
+    h = Holder(make_list(2))
+    h.item.append(NEW3)
+    show(h.item[2])
+
+
+# site: callable_borrow
+# A function passed as an argument, borrowing a new value and a variable.
+def callable_borrow_apply(f: Callable[[ITEM], None], x: ITEM):
+    f(x)
+
+
+def callable_borrow():
+    callable_borrow_apply(show, NEW1)
+    a = NEW2
+    callable_borrow_apply(show, a)
+    show(a)
+
+
+# site: callable_maker
+# A function passed as an argument that makes the value returned.
+def callable_maker_build(f: Callable[[int], ITEM], k: int) -> ITEM:
+    return f(k)
+
+
+def callable_maker():
+    a = callable_maker_build(make, 3)
+    show(a)
+    show(callable_maker_build(make, 4))
+
+
+# site: method_chain
+# `copy` of a function's result.
+def method_chain():
+    show(make(2).copy())
+
+
+# site: nested_call_chain
+# A new value moved through two `Owned` calls in one expression.
+def nested_call_chain_through(x: Owned[ITEM]) -> ITEM:
+    return x
+
+
+def nested_call_chain():
+    show(nested_call_chain_through(nested_call_chain_through(make(1))))
+
+
+# site: method_owned_self
+# Methods taking `self` read-only, `InOut` and `Owned`.
+class Wrap(Struct):
+    inner: ITEM
+    note: str
+
+    def take(self: Owned[Self]) -> ITEM:
+        return self.inner
+
+    def peek(self) -> int:
+        return size(self.inner)
+
+    def swap(self: InOut[Self], k: int):
+        self.inner = make(k)
+
+
+def method_owned_self():
+    w = Wrap(NEW1, f"n{1}")
+    print(w.peek())
+    w.swap(4)
+    show(w.inner)
+    v = w.take()
+    show(v)
+    show(Wrap(NEW2, f"n{2}").take())
+
+
+# site: struct_temp_method
+# A read-only method called on a struct that only the expression holds.
+class Peeker(Struct):
+    inner: ITEM
+
+    def peek(self) -> int:
+        return size(self.inner)
+
+
+def struct_temp_method():
+    print(Peeker(NEW1).peek())
+    print(Peeker(make(2)).peek())
+
+
+# site: default_argument once
+# A default parameter value, a new `str` made at each call that leaves it out.
+def default_argument_greet(name: str = f"d{1}") -> int:
+    print(name)
+    return 1
+
+
+def default_argument():
+    default_argument_greet()
+    default_argument_greet(f"e{2}")
+    default_argument_greet()
+
+
+# site: generic_owned
+# A generic function taking and returning an `Owned` value.
+def keep[U](x: Owned[U]) -> U:
+    return x
+
+
+def generic_owned():
+    show(keep(make(1)))
+    a = NEW2
+    show(keep(a))
+
+
+# site: callable_owned
+# A function passed as an argument, whose results are appended to a list.
+def callable_owned_apply(f: Callable[[int], ITEM], n: int) -> list[ITEM]:
+    result: list[ITEM] = []
+    for i in range(n):
+        result.append(f(i))
+    return result
+
+
+def callable_owned():
+    xs = callable_owned_apply(make, 3)
+    show(xs[2])

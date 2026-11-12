@@ -1,0 +1,144 @@
+# Ownership sweep sites (roadmap 1.18.2): `raise`, `try`, `except` and `assert` paths with values alive.
+# Each `# site:` block is one function the test calls; `once` marks a site that does not use
+# `ITEM` and runs only in the first kind's program. See crates/driver/tests/build/ownership.rs.
+
+
+# site: raise_path
+# A function raising with two locals alive, caught by its caller.
+def raise_path_risky(k: int) -> Raises[ITEM, Oops]:
+    a = make(k)
+    b = make(k + 1)
+    if k > 1:
+        raise Oops(f"bad{k}")
+    return a
+
+
+def raise_path():
+    try:
+        b = raise_path_risky(1)
+        show(b)
+        c = raise_path_risky(5)
+        show(c)
+    except Oops as e:
+        print("caught", e.what)
+
+
+# site: raise_in_loop
+# A `raise` from inside a loop over a variable, with a copy alive.
+def raise_in_loop_risky(k: int) -> Raises[int, Oops]:
+    xs = make_list(k)
+    for x in xs:
+        held = x.copy()
+        if k > 1:
+            raise Oops(f"bad{k}")
+    return len(xs)
+
+
+def raise_in_loop():
+    try:
+        print(raise_in_loop_risky(1))
+        print(raise_in_loop_risky(3))
+    except Oops as e:
+        print("caught", e.what)
+
+
+# site: raise_from_temp_loop
+# A `raise` from inside a loop over a list that only the loop holds.
+def raise_from_temp_loop_risky(k: int) -> Raises[int, Oops]:
+    for x in make_list(k):
+        if k > 1:
+            raise Oops(f"bad{k}")
+    return k
+
+
+def raise_from_temp_loop():
+    try:
+        print(raise_from_temp_loop_risky(1))
+        print(raise_from_temp_loop_risky(3))
+    except Oops as e:
+        print("caught", e.what)
+
+
+# site: except_rebind
+# A variable assigned in `try`, which raises, and again in `except`.
+def except_rebind_risky(k: int) -> Raises[ITEM, Oops]:
+    if k > 1:
+        raise Oops(f"bad{k}")
+    return make(k)
+
+
+def except_rebind():
+    a = NEW1
+    try:
+        a = except_rebind_risky(5)
+    except Oops:
+        a = NEW2
+    show(a)
+
+
+# site: try_return
+# A `return` from inside `try` and from its `except`.
+def try_return_risky(k: int) -> Raises[ITEM, Oops]:
+    a = make(k)
+    try:
+        if k > 1:
+            raise Oops(f"bad{k}")
+        return a.copy()
+    except Oops:
+        return make(k + 10)
+
+
+def try_return():
+    try:
+        show(try_return_risky(1))
+        show(try_return_risky(5))
+    except Oops:
+        print("no")
+
+
+# site: reraise
+# A bare `raise` from `except`, with locals alive in both functions.
+def reraise_inner(k: int) -> Raises[int, Oops]:
+    a = make(k)
+    if k > 1:
+        raise Oops(f"in{k}")
+    return size(a)
+
+
+def reraise_outer(k: int) -> Raises[int, Oops]:
+    b = make(k)
+    try:
+        return reraise_inner(k)
+    except Oops:
+        c = make(k)
+        raise
+
+
+def reraise():
+    try:
+        print(reraise_outer(1))
+        print(reraise_outer(3))
+    except Oops as e:
+        print(e.what)
+
+
+# site: raise_owned_field once
+# An error holding a `str` raised and read in `except`.
+def raise_owned_field_fail(k: int) -> Raises[int, Oops]:
+    message = f"m{k}"
+    raise Oops(message)
+
+
+def raise_owned_field():
+    for k in range(3):
+        try:
+            print(raise_owned_field_fail(k))
+        except Oops as e:
+            print(e.what)
+
+
+# site: assert_temp
+# New values borrowed by `assert` and its message.
+def assert_temp():
+    assert size(NEW1) >= 0
+    assert size(make(2)) >= 0, f"bad{1}"

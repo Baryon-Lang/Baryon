@@ -1,0 +1,258 @@
+# Ownership sweep sites (roadmap 1.18.2): Loops and comprehensions over variables and temporaries, with `break`, `continue`, early `return` and `prange`.
+# Each `# site:` block is one function the test calls; `once` marks a site that does not use
+# `ITEM` and runs only in the first kind's program. See crates/driver/tests/build/ownership.rs.
+
+
+# site: for_named
+# A loop borrowing each element of a variable.
+def for_named():
+    xs = [NEW1, NEW2]
+    for x in xs:
+        show(x)
+    show(xs[0])
+
+
+# site: for_temp
+# A loop borrowing each element of a list that only the loop holds.
+def for_temp():
+    for x in make_list(3):
+        show(x)
+
+
+# site: for_temp_keep
+# A loop moving each element out of a list that only the loop holds.
+def for_temp_keep():
+    kept: list[ITEM] = []
+    for x in make_list(3):
+        kept.append(x)
+    show(kept[2])
+
+
+# site: for_temp_keep_copy
+# A loop keeping a copy of each element of a list that only the loop holds.
+def for_temp_keep_copy():
+    kept: list[ITEM] = []
+    for x in make_list(3):
+        kept.append(x.copy())
+    show(kept[2])
+
+
+# site: for_named_keep_copy
+# A loop keeping a copy of each element of a variable.
+def for_named_keep_copy():
+    xs = make_list(3)
+    kept: list[ITEM] = []
+    for x in xs:
+        kept.append(x.copy())
+    show(kept[1])
+    show(xs[1])
+
+
+# site: for_named_rebind
+# A loop assigning a copy of each element to a variable declared before it.
+def for_named_rebind():
+    xs = make_list(3)
+    last = make(9)
+    for x in xs:
+        last = x.copy()
+    show(last)
+
+
+# site: comp_make
+# A comprehension of new values.
+def comp_make():
+    ys = [make(i) for i in range(3)]
+    show(ys[2])
+
+
+# site: comp_copy
+# A comprehension copying each element of a variable.
+def comp_copy():
+    xs = make_list(3)
+    ys = [x.copy() for x in xs]
+    show(ys[1])
+    show(xs[1])
+
+
+# site: comp_temp
+# A comprehension moving each element out of a list that only it holds.
+def comp_temp():
+    ys = [x for x in make_list(3)]
+    show(ys[1])
+
+
+# site: comp_temp_size
+# A comprehension reading each element of a list that only it holds.
+def comp_temp_size():
+    ys = [size(x) for x in make_list(3)]
+    print(ys[1])
+
+
+# site: comp_filter
+# A comprehension with a condition that leaves values out.
+def comp_filter():
+    ys = [make(i) for i in range(4) if flag(i)]
+    show(ys[1])
+
+
+# site: comp_nested
+# A comprehension with two `for` clauses, the outer one over a display of new lists.
+def comp_nested():
+    ys = [x.copy() for xs in [make_list(2), make_list(1)] for x in xs]
+    show(ys[2])
+
+
+# site: early_return_loop
+# A `return` from inside a loop, with locals inside and outside it.
+def early_return_loop_find(n: int) -> ITEM:
+    keep = make(50)
+    for i in range(n):
+        a = make(i)
+        if i == 2:
+            return a
+    return make(99)
+
+
+def early_return_loop():
+    show(early_return_loop_find(5))
+    show(early_return_loop_find(1))
+
+
+# site: break_loop
+# A `break` leaving a loop whose body holds a value.
+def break_loop():
+    for i in range(5):
+        a = make(i)
+        if i == 2:
+            break
+        show(a)
+
+
+# site: continue_loop
+# A `continue` skipping the rest of a body that holds a value.
+def continue_loop():
+    for i in range(5):
+        a = make(i)
+        if flag(i):
+            continue
+        show(a)
+
+
+# site: while_rebind
+# A variable assigned a new value on each pass of a `while` loop.
+def while_rebind():
+    a = NEW1
+    i = 0
+    while i < 3:
+        a = make(i)
+        i += 1
+    show(a)
+
+
+# site: prange_body
+# A value made and dropped in each iteration of a parallel loop.
+def prange_body():
+    total = 0
+    for i in prange(8):
+        a = make(i)
+        total += size(a)
+    print(total)
+
+
+# site: prange_borrow
+# A parallel loop borrowing the elements of a variable.
+def prange_borrow():
+    xs = make_list(4)
+    total = 0
+    for i in prange(4):
+        total += size(xs[i])
+    print(total)
+
+
+# site: enumerate_named
+# `enumerate` over a variable.
+def enumerate_named():
+    xs = make_list(3)
+    for i, x in enumerate(xs):
+        print(i)
+        show(x)
+    show(xs[0])
+
+
+# site: enumerate_temp
+# `enumerate` over a list that only the loop holds.
+def enumerate_temp():
+    for i, x in enumerate(make_list(3)):
+        print(i)
+        show(x)
+
+
+# site: zip_named
+# `zip` over two variables.
+def zip_named():
+    xs = make_list(2)
+    ys = make_list(2)
+    for x, y in zip(xs, ys):
+        show(x)
+        show(y)
+    show(ys[1])
+
+
+# site: zip_temp
+# `zip` over two lists that only the loop holds.
+def zip_temp():
+    for x, y in zip(make_list(2), make_list(2)):
+        show(x)
+        show(y)
+
+
+# site: reversed_named
+# `reversed` over a variable.
+def reversed_named():
+    xs = make_list(3)
+    for x in reversed(xs):
+        show(x)
+    show(xs[0])
+
+
+# site: reversed_temp
+# `reversed` over a list that only the loop holds.
+def reversed_temp():
+    for x in reversed(make_list(3)):
+        show(x)
+
+
+# site: while_break
+# A `break` out of `while True` with two values alive.
+def while_break():
+    i = 0
+    while True:
+        a = make(i)
+        b = make(i + 1)
+        if i == 2:
+            show(b)
+            break
+        i += 1
+
+
+# site: nested_loops_break
+# A `break` out of an inner loop over a list that only the loop holds.
+def nested_loops_break():
+    for i in range(3):
+        a = make(i)
+        for x in make_list(2):
+            b = make(i)
+            if i == 1:
+                break
+        show(a)
+
+
+# site: prange_shared_list
+# A parallel loop copying the elements of a shared variable.
+def prange_shared_list():
+    xs = make_list(8)
+    total = 0
+    for i in prange(8):
+        b = xs[i].copy()
+        total += size(b)
+    print(total)
