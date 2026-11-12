@@ -73,7 +73,10 @@ Three ways were weighed:
    positions are the ones matplotlib's `AutoLocator` picks, and tick labels are written as its
    `ScalarFormatter` writes them, minus sign U+2212 included. Tests check the tick positions
    against numbers recorded from matplotlib, and each plot type against a stored reference file
-   of Baryon's own output. Pixel-identical output to matplotlib is a non-goal.
+   of Baryon's own output. Pixel-identical output to matplotlib is a non-goal. Tick placement
+   and labels live in a second module, `ticker`, as matplotlib's `matplotlib.ticker`, with its
+   `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, so they can be
+   used and tested on their own; `colors`, with the colormaps, follows with images (3.15.3).
 6. **Formats, in order: SVG, then PNG, then PDF**, chosen by the file name's extension as
    `savefig` chooses them; any other extension raises `ValueError`. SVG is text, so it needs
    nothing outside Baryon; text is written as SVG text, as matplotlib's `svg.fonttype = "none"`
