@@ -244,11 +244,13 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             let argument = format!("%a{index}");
             match mode {
                 Mode::Borrow if !self.types.by_value(local.ty) => {
-                    parameters.push(format!("ptr noalias readonly {argument}"));
+                    let pointee = self.types.pointee(local.ty);
+                    parameters.push(format!("ptr noalias readonly{pointee} {argument}"));
                     self.passing[index] = Passing::Pointer;
                 }
                 Mode::InOut => {
-                    parameters.push(format!("ptr noalias {argument}"));
+                    let pointee = self.types.pointee(local.ty);
+                    parameters.push(format!("ptr noalias{pointee} {argument}"));
                     self.passing[index] = Passing::Pointer;
                 }
                 Mode::Borrow | Mode::Owned => {
