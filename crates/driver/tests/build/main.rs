@@ -40,6 +40,7 @@ mod one_pass;
 mod overflow;
 mod parallel;
 mod paths;
+mod plotting;
 mod print;
 mod process;
 mod reductions;
