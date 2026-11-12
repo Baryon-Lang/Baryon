@@ -17,6 +17,7 @@ mod array_methods;
 mod axes;
 mod broadcast;
 mod builtins;
+mod bz2;
 mod clang;
 mod comparisons;
 mod complex;

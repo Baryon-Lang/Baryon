@@ -14,6 +14,7 @@ imports and calls.
 | [`zlib`](#zlib) | Deflate streams (RFC 1951), alone or in a zlib (RFC 1950) or gzip (RFC 1952) container | `compress`, `decompress`, `decompressobj`, `crc32`, `adler32` |
 | [`gzip`](#gzip) | gzip files (RFC 1952) of one member or several | `compress`, `decompress` |
 | [`compression.zstd`](#compressionzstd) | Zstandard frames (RFC 8878) | `compress`, `decompress` |
+| [`bz2`](#bz2) | bzip2 streams of one block or several | `compress`, `decompress` |
 
 Python's functions take and give `bytes`. Baryon has no `bytes` type yet, so they take and give
 `Array[u8, 1]`, an array of bytes, which [`Array.fromfile`](files-and-processes.md#array-files)
@@ -278,3 +279,62 @@ third at level 19. The bytes are Baryon's own, as for `zlib.compress`
 
 **Cost.** One pass over `data`, each position following up to the level's number of chain
 links, plus about 4.5 MiB of tables for data of 1 MiB or more, less for smaller data.
+
+## `bz2`
+
+bzip2 compresses text and tables tighter than gzip, at several times the cost; many catalogues,
+logs and archives are kept as `.bz2` files. Baryon's `bz2` module keeps Python's name and
+functions.
+
+```python
+import bz2
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    table = Array.fromfile("text.txt", u8)
+    packed = bz2.compress(table)
+    print(len(packed), "bytes, back to", len(bz2.decompress(packed)))
+```
+
+This compresses the table at the top of the chapter to 3,918 bytes, reads it back and prints
+`3918 bytes, back to 11600`.
+
+### `bz2.decompress`
+
+`decompress(data)` gives the bytes the bzip2 streams in `data` hold, joined, as Python's does;
+empty `data` gives an empty array. As in Python, bytes after the first stream that start no
+other stream are ignored. Each block's CRC and each stream's combined CRC are checked.
+
+Data Python refuses raises `OSError` with the kind `INVALID_DATA` and, in `strerror`, the
+message Python's error carries:
+
+| Data | Message |
+| --- | --- |
+| A stream cut short, the first or a later one | `Compressed data ended before the end-of-stream marker was reached` |
+| Bytes that are not bzip2, a damaged block or a wrong CRC | `Invalid data stream` |
+
+Python raises `ValueError` for the first and `OSError` for the second; Baryon raises `OSError`
+for both ([decision 0049](../decisions/0049-compression.md)). The decoder checks each part of a
+stream in the order libbzip2 checks it, so a stream damaged and cut short gets Python's message:
+all of 2,316 damaged and cut streams in tests did. Blocks in the randomized form bzip2 stopped
+writing in 1999 raise `Invalid data stream`, where Python reads them.
+
+**Cost.** One pass over `data`, and for each block of n bytes about 5n bytes of tables and one
+pass over them; the output is copied each time its buffer doubles. About as fast as Python's
+`bz2.decompress`.
+
+### `bz2.compress`
+
+`compress(data, compresslevel=9)` gives `data` as one bzip2 stream, which any bzip2 decoder
+reads, Python's included. `compresslevel` runs from 1 to 9 and sets the block size, 100,000
+bytes times the level; 9 compresses best, and a level outside 1 to 9 raises `ValueError` with
+Python's message, `compresslevel must be between 1 and 9`.
+
+The blocks are bzip2's: the same run-length coding, the same Burrows-Wheeler sort and the same
+move-to-front stage. The Huffman tables are chosen as bzip2 chooses them, so streams come
+within a fraction of a percent of the C library's size, larger or smaller. The bytes are
+Baryon's own, as for `zlib.compress` ([decision 0049](../decisions/0049-compression.md)).
+
+**Cost.** O(n log n) for n bytes: each block is sorted by prefix doubling, which takes about
+13 bytes of tables for each byte of the block. Compressing takes about 1.6 times the time
+Python's `bz2.compress` takes.

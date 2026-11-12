@@ -273,7 +273,7 @@ the REPL, and three external users have written something real.
 | 3.27.6 | LZ4 raw blocks, decoded and encoded, for Parquet's `LZ4_RAW` pages | 1 | 3.27.1 | Planned | — | — |
 | 3.27.7 | Zstandard decoding (RFC 8878): FSE and Huffman tables, repeated offsets, several frames and skippable frames, the XXH64 content checksum; `compression.zstd.decompress` | 4 | 3.27.1 | Done | Claude | [#322](https://github.com/Baryon-Lang/Baryon/pull/322) |
 | 3.27.8 | Zstandard encoding: `compression.zstd.compress` with its own FSE and Huffman tables per block | 6 | 3.27.7 | Done | Claude | [#327](https://github.com/Baryon-Lang/Baryon/pull/327) |
-| 3.27.9 | bzip2 (the Burrows-Wheeler transform and its Huffman stages), decoded and encoded: the `bz2` module | 3 | 3.27.1 | In progress | Claude | [#329](https://github.com/Baryon-Lang/Baryon/pull/329) |
+| 3.27.9 | bzip2 (the Burrows-Wheeler transform and its Huffman stages), decoded and encoded: the `bz2` module | 3 | 3.27.1 | Done | Claude | [#329](https://github.com/Baryon-Lang/Baryon/pull/329), [#334](https://github.com/Baryon-Lang/Baryon/pull/334) |
 | 3.27.10 | xz files and LZMA2 decoding: `lzma.decompress` and `lzma.open` for reading | 4 | 3.27.1 | Planned | — | — |
 | 3.28 | XML: a streaming parser and a writer for well-formed XML with namespaces, enough for VOTable and similar formats, in place of the expat C library. A base library; AstroPy relies on it (Collins, 2026-11-10) | 25 | 1.13.12 | Planned | — | — |
 | 3.29 | Structured text: JSON, a safe subset of YAML, and base64, as Python's `json`, `yaml.safe_load` and `base64` read and write them. A base library; AstroPy relies on it (Collins, 2026-11-10) | 15 | 1.13.12 | Planned | — | — |
