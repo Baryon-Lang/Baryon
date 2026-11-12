@@ -171,23 +171,39 @@ impl<'db> Body<'db> {
         if relations::is_open(self.db, operand) {
             return self.lowerer.unknown();
         }
-        if matches!(operator, Operator::Negate | Operator::Plus)
-            && let TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } =
-                operand.kind(self.db)
+        if matches!(
+            operator,
+            Operator::Negate | Operator::Plus | Operator::Invert
+        ) && let TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } =
+            operand.kind(self.db)
         {
-            // Element by element, like the binary operators on arrays.
-            if matches!(element.kind(self.db), TypeKind::Primitive(primitive) if numbers::is_number(*primitive))
-            {
+            // Element by element, like the binary operators on arrays: `-a` and `+a` of numbers,
+            // `~a` of `bool`s, which is `not` of each, and of integers.
+            let applies = match element.kind(self.db) {
+                TypeKind::Primitive(Primitive::Bool | Primitive::Integer(_))
+                    if operator == Operator::Invert =>
+                {
+                    true
+                }
+                TypeKind::Primitive(primitive) if operator != Operator::Invert => {
+                    numbers::is_number(*primitive)
+                }
+                _ => false,
+            };
+            if applies {
                 return operand;
             }
+            let label = if operator == Operator::Invert {
+                "its elements are not `bool`s or integers"
+            } else {
+                "its elements are not numbers"
+            };
             let message = format!(
                 "`{}` does not apply to `{}`",
                 operator.symbol(),
                 self.show(operand)
             );
-            return self
-                .lowerer
-                .error(node, &message, "its elements are not numbers", None);
+            return self.lowerer.error(node, &message, label, None);
         }
         let valid = match (operator, operand.kind(self.db)) {
             (Operator::Not, TypeKind::Primitive(Primitive::Bool))
@@ -244,7 +260,9 @@ impl<'db> Body<'db> {
         boolean
     }
 
-    /// `a < b <= c`: each link compares numbers that mix, or values of one type.
+    /// `a < b <= c`: each link compares numbers that mix, or values of one type. A single
+    /// comparison with an array on either side compares element by element and gives an array
+    /// of `bool`s (the `elementwise` module).
     pub(super) fn compare(&mut self, node: NodeId) -> Type<'db> {
         if let Some(contains) = self.header_contains(node) {
             return contains;
@@ -254,6 +272,7 @@ impl<'db> Body<'db> {
             return boolean;
         };
         let comparators: Vec<NodeId> = self.tree.children_with(node, Role::Item).collect();
+        let count = comparators.len();
         let mut left: Option<Type<'db>> = None;
         for comparator in comparators {
             let operator = self.tree.node(comparator).operator();
@@ -287,6 +306,22 @@ impl<'db> Body<'db> {
                 operator,
                 Operator::Is | Operator::IsNot | Operator::In | Operator::NotIn
             );
+            if !unchecked
+                && !identity
+                && let Some(array) =
+                    self.array_comparison(comparator, operator, left_type, right_type)
+            {
+                // Element by element, giving an array, which no further link can read.
+                if count > 1 {
+                    self.lowerer.error(
+                        node,
+                        "a chain of comparisons cannot compare arrays",
+                        "more than one comparison",
+                        Some("compare in pairs and combine them: `(a < b) & (b < c)`"),
+                    );
+                }
+                return array;
+            }
             if !unchecked && !identity {
                 self.comparable(comparator, operator, left_type, right_type);
             }
@@ -300,7 +335,13 @@ impl<'db> Body<'db> {
     }
 
     /// Reports two values one comparison cannot compare.
-    fn comparable(&mut self, node: NodeId, operator: Operator, left: Type<'db>, right: Type<'db>) {
+    pub(super) fn comparable(
+        &mut self,
+        node: NodeId,
+        operator: Operator,
+        left: Type<'db>,
+        right: Type<'db>,
+    ) {
         let symbol = operator.symbol();
         let ordering = matches!(
             operator,

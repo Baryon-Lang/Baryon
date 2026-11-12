@@ -61,6 +61,10 @@ pub(crate) struct Function<'f, 'a, 'db> {
     /// The location every instruction gets in place of its statement's, for a function written
     /// without a body, such as the C `main`.
     pub(crate) fixed_location: Option<String>,
+    /// The `!dbg` location last written, with the span it is for. Every instruction of a
+    /// statement carries the same one, so it is worked out once per statement rather than once
+    /// per instruction.
+    location: Option<(Span, String)>,
     /// The function's symbol, which names the functions written for its `prange` loops.
     pub(crate) name: String,
     /// The functions written alongside this one, such as a `prange` loop's chunk function, each
@@ -99,6 +103,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             calls: BTreeMap::new(),
             scope: None,
             fixed_location: None,
+            location: None,
             name: String::new(),
             helpers: Vec::new(),
             slots: String::new(),
@@ -421,24 +426,50 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
 
     /// `instruction` with the `!dbg` location of the statement being written, when the module
     /// has debug information.
-    pub(crate) fn located(&self, instruction: &str) -> String {
-        if let Some(location) = &self.fixed_location {
-            return format!("{instruction}, !dbg {location}");
-        }
-        match &self.scope {
-            Some(scope) => format!(
-                "{instruction}, !dbg {}",
-                self.constants.debug_location(scope, self.span)
-            ),
+    pub(crate) fn located(&mut self, instruction: &str) -> String {
+        match self.location() {
+            Some(location) => format!("{instruction}, !dbg {location}"),
             None => instruction.to_owned(),
         }
+    }
+
+    /// The `!dbg` location of the statement being written, when the module has debug
+    /// information.
+    fn location(&mut self) -> Option<&str> {
+        if let Some(location) = &self.fixed_location {
+            return Some(location);
+        }
+        let scope = self.scope.as_ref()?;
+        if self
+            .location
+            .as_ref()
+            .is_none_or(|(span, _)| *span != self.span)
+        {
+            let location = self.constants.debug_location(scope, self.span);
+            self.location = Some((self.span, location));
+        }
+        self.location
+            .as_ref()
+            .map(|(_, location)| location.as_str())
     }
 
     /// Writes one instruction.
     pub(crate) fn line(&mut self, instruction: &str) {
         self.ssa.record(instruction);
-        let located = self.located(instruction);
-        let _ = writeln!(self.code, "  {located}");
+        self.code.push_str("  ");
+        self.code.push_str(instruction);
+        if self.location().is_some() {
+            // Read again from the fields, since `location` borrows all of `self`.
+            let location = self.fixed_location.as_deref().or_else(|| {
+                self.location
+                    .as_ref()
+                    .map(|(_, location)| location.as_str())
+            });
+            if let Some(location) = location {
+                let _ = write!(self.code, ", !dbg {location}");
+            }
+        }
+        self.code.push('\n');
     }
 
     /// Starts the block `label`.

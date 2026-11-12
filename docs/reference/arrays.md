@@ -244,6 +244,67 @@ Cost: an operand that repeats is read again from memory, never copied, so `grid 
 line, before the loop, whether anything repeats; when nothing does, the loop is the same one
 arrays of equal shapes run, so broadcasting costs nothing where it is not used.
 
+### Comparisons
+
+A comparison with an array on either side compares element by element and gives an array of
+`bool`s, as in NumPy:
+
+```python
+def main():
+    prices = Array([189.5, 410.0, 190.25, 171.0])
+    volume = Array([100, 250, 300, 50])
+    print(volume > 75)                          # [ True  True  True False]
+    print((prices > 180.0) & (volume >= 250))   # [False  True  True False]
+    print(~(prices == 410.0))                   # [ True False  True  True]
+```
+
+- `==`, `!=`, `<`, `<=`, `>` and `>=` compare two arrays whose shapes
+  [broadcast](#broadcasting), or an array and a single value. The result is an
+  `Array[bool, n]`, or a `Fixed` array of `bool`s, of the broadcast shape. Elements compare as
+  two single values do, so the [number mixing](types.md#number-mixing) rules apply:
+  `counts > 1.5` compares an integer array as floats.
+- `&`, `|` and `^` combine two arrays of `bool`s element by element: and, or, and exclusive or.
+  `~mask` is `not` of each element. All four also apply to integer arrays, bit by bit.
+- Python's `and`, `or` and `not` take one `bool`, not an array, so write `&`, `|` and `~`.
+  They bind tighter than comparisons, as in Python: the parentheses in
+  `(prices > 180.0) & (volume >= 250)` are needed.
+- A chain, `0.0 < a < 1.0`, is an error on arrays, since it means `and`. Write
+  `(0.0 < a) & (a < 1.0)`.
+- An array of `bool`s is not a condition: `if a > 0.0:` is an error, as it is ambiguous in
+  NumPy.
+
+A comparison is one loop that writes one byte per element. A comparison of two expressions,
+`a * 2.0 <= b + 1.0`, computes both sides inside that loop and stores neither.
+
+### Choosing elements
+
+An array in a subscript chooses elements of a rank-1 `Array`, as in NumPy:
+
+```python
+def main():
+    prices = Array([189.5, 410.0, 190.25, 171.0])
+    volume = Array([100, 250, 300, 50])
+    print(prices[volume > 75])     # [189.5  410.   190.25]
+    order = Array([3, 0, 0, 2])
+    print(prices[order])           # [171.   189.5  189.5  190.25]
+    prices[prices > 400.0] = 400.0
+    print(prices)                  # [189.5  400.   190.25 171.  ]
+```
+
+- `a[mask]`, with `mask` an `Array[bool, 1]` of the same length, is the elements of `a` where
+  `mask` is `True`, in order. A mask of another length panics.
+- `a[positions]`, with `positions` an `Array[i64, 1]`, is the elements at those positions, in
+  that order; a position may repeat. Each position is bounds-checked as an index is, so one
+  below 0 or past the end panics. NumPy counts a negative position from the end; here only a
+  negative literal index does, as in [Indexing](#indexing).
+- Either is a new array that owns its elements, not a view, so it can be kept in a name,
+  returned, or chosen from again: `volume[order][volume[order] > 60]`.
+- `a[mask] = value` and `a[positions] = value` set every chosen element to one value, which is
+  computed first.
+
+Cost: `a[positions]` is one loop and one allocation. `a[mask]` reads the mask twice, once to
+count and once to copy, so the result is allocated once at its final size.
+
 ## Methods
 
 Version 0 defines these. The standard library (roadmap 1.14) adds the rest of NumPy's familiar

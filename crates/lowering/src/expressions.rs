@@ -31,6 +31,7 @@ impl<'db> Builder<'db> {
                 self.array_attribute(place, node);
             }
             SyntaxKind::Subscript if self.is_list_slice(node) => self.list_slice(&place, node),
+            SyntaxKind::Subscript if self.is_selection(node) => self.selection(place, node),
             SyntaxKind::Name | SyntaxKind::Attribute if self.is_argv(node) => {
                 self.argv(&place, node);
             }
@@ -49,7 +50,9 @@ impl<'db> Builder<'db> {
                 let operand = self.operand(node);
                 self.assign(place, Rvalue::Use(operand), node);
             }
-            SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation if self.is_array(ty) => {
+            SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation | SyntaxKind::Compare
+                if self.is_array(ty) =>
+            {
                 self.elementwise(place, node);
             }
             SyntaxKind::BinaryOperation if self.is_path_join(node) => self.path_join(place, node),
@@ -84,6 +87,7 @@ impl<'db> Builder<'db> {
         let ty = self.ty(node);
         if !self.is_array_attribute(node)
             && !self.is_list_slice(node)
+            && !self.is_selection(node)
             && !self.is_text_subscript(node)
             && let Some(place) = self.place(node)
         {
@@ -99,6 +103,7 @@ impl<'db> Builder<'db> {
             SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
         ) && !self.is_array_attribute(node)
             && !self.is_list_slice(node)
+            && !self.is_selection(node)
             && !self.is_computed(node)
             && !self.is_text_subscript(node)
         {
@@ -254,6 +259,7 @@ impl<'db> Builder<'db> {
             && self.named_constant(node).is_none()
             && !self.is_array_attribute(node)
             && !self.is_list_slice(node)
+            && !self.is_selection(node)
             && !self.is_text_subscript(node)
             && let Some(place) = self.place(node)
         {

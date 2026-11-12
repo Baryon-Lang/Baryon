@@ -19,8 +19,13 @@ points, colors from the `tab10` cycle, and ticks placed and labelled by `ticker`
 `MaxNLocator` and `ScalarFormatter`, as matplotlib's are.
 """
 
-from math import isfinite
-from ticker import MaxNLocator, ScalarFormatter
+from artist import Artist, Kind, View
+from axis import XAxis, YAxis
+from backend_svg import RendererSVG
+from colors import to_hex
+from legend import draw_legend, location_code
+from math import inf, isfinite
+from stats import histogram
 
 WIDTH: Final = 460.8  # the figure's width in points: 6.4 inches
 HEIGHT: Final = 345.6  # the figure's height in points: 4.8 inches
@@ -30,22 +35,8 @@ TOP: Final = 41.472  # the axes' top edge, 0.12 of the height, from the figure's
 BOTTOM: Final = 307.584  # the axes' bottom edge, 0.89 of the height
 FONT_SIZE: Final = 10.0  # tick labels and axis labels, in points
 TITLE_SIZE: Final = 12.0  # the title, matplotlib's "large"
-TICK_LENGTH: Final = 3.5  # a major tick, drawn outward, in points
-TICK_PAD: Final = 3.5  # the gap between a tick and its label
 LABEL_PAD: Final = 4.0  # the gap between the tick labels and the axis label
 TITLE_PAD: Final = 6.0  # the gap between the axes and the title's baseline
-ASCENT: Final = 0.76  # DejaVu Sans's height above the baseline, as a fraction of the size
-
-
-class _Line(Struct):
-    """One line drawn by `Axes.plot`: its points, in data coordinates, and how it is stroked."""
-
-    x: Array[f64, 1]  # the x of each point
-    y: Array[f64, 1]  # the y of each point, as long as `x`
-    color: str  # an SVG color, `#rrggbb`
-    linewidth: f64  # in points
-    dashes: list[f64]  # on and off lengths in points; empty for a solid line
-    label: str  # the legend's text, kept for `legend` (roadmap 3.15.2); "" for none
 
 
 class Axes(Struct):
@@ -57,13 +48,16 @@ class Axes(Struct):
     the data, with a margin of 5% on each side, until `set_xlim` or `set_ylim` fixes them.
     """
 
-    lines: list[_Line]  # every line, in the order drawn
+    artists: list[Artist]  # every line, set of markers and set of bars, in the order drawn
     title: str  # above the axes; "" for none
     xlabel: str  # under the x axis; "" for none
     ylabel: str  # left of the y axis; "" for none
     xlim: tuple[f64, f64] | None  # the x range shown when fixed, `None` to follow the data
     ylim: tuple[f64, f64] | None  # the y range shown when fixed, `None` to follow the data
-    colors_used: int  # how many colors of the cycle `plot` has taken
+    line_colors: int  # how many colors of the cycle `plot` has taken
+    patch_colors: int  # how many `scatter`, `bar` and `hist` have taken, from their own cycle
+    legend_loc: str  # where the legend goes, as `legend`'s `loc`; "" for no legend
+    grid_on: bool  # whether grid lines are drawn at the ticks
 
     def plot(
         self: InOut[Self],
@@ -72,30 +66,141 @@ class Axes(Struct):
         color: str = "",
         linewidth: f64 = 1.5,
         linestyle: str = "-",
+        marker: str = "",
+        markersize: f64 = 6.0,
         label: str = "",
     ) -> None:
         """Draws the points `(x[i], y[i])` joined by straight lines, as matplotlib's `plot`.
 
-        `color` is a name matplotlib knows: `"#rrggbb"`, `"C0"` to `"C9"`, one of the letters
-        `"bgrcmykw"`, or a `tab10` name such as `"tab:orange"`; left out, or `""`, each line
-        takes the next color of the cycle. `linestyle` is `"-"`, `"--"`, `":"` or `"-."`, or their
-        names `"solid"`, `"dashed"`, `"dotted"` and `"dashdot"`, with dashes that grow with
-        `linewidth` as matplotlib's do. A point with a NaN or infinite coordinate breaks the
-        line there. Copies `x` and `y`, so they can change afterwards.
+        `color` is a name `colors.to_hex` knows: `"#rrggbb"`, `"C0"` to `"C9"`, one of the
+        letters `"bgrcmykw"`, or a `tab10` name such as `"tab:orange"`; left out, or `""`, each
+        line takes the next color of the cycle. `linestyle` is `"-"`, `"--"`, `":"` or
+        `"-."`, or their names `"solid"`, `"dashed"`, `"dotted"` and `"dashdot"`, with dashes
+        that grow with `linewidth` as matplotlib's do, or `""` or `"None"` for no line.
+        `marker` puts a marker `markersize` points across at each point: `"o"`, `"."`, `"s"`,
+        `"^"`, `"v"`, `"D"`, `"+"` or `"x"`. A point with a NaN or infinite coordinate breaks
+        the line there. Copies `x` and `y`, so they can change afterwards.
 
         Panics when `x` and `y` differ in length, or `color` or `linestyle` is not one of
-        those, where matplotlib raises `ValueError`: a mistake in the program, not its data.
+        those, and `savefig` panics on a `marker` that is not, where matplotlib raises
+        `ValueError`: a mistake in the program, not its data.
         """
         assert len(x) == len(y), "plot needs x and y of the same length"
-        chosen = ""
-        if color == "":
-            chosen = _cycle(self.colors_used)
-            self.colors_used += 1
-        else:
-            chosen = _color(color)
-        self.lines.append(
-            _Line(x.copy(), y.copy(), chosen, linewidth, _dashes(linestyle, linewidth), label.copy())
+        width = 0.0 if linestyle == "" or linestyle == "None" else linewidth
+        dashes: list[f64] = []
+        if width > 0.0:
+            dashes = _dashes(linestyle, linewidth)
+        self.artists.append(
+            Artist(
+                Kind.LINE,
+                x.copy(),
+                y.copy(),
+                Array.zeros(0),
+                self._color(color, True),
+                width,
+                dashes,
+                marker.copy(),
+                markersize,
+                label.copy(),
+            )
         )
+
+    def scatter(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        s: f64 = 36.0,
+        color: str = "",
+        marker: str = "o",
+        label: str = "",
+    ) -> None:
+        """Draws a marker at each point `(x[i], y[i])`, as matplotlib's `scatter`: `s` is the
+        marker's area in points squared, so `s=36.0` is 6 points across, and `color` and
+        `marker` are `plot`'s. Copies `x` and `y`. Panics as `plot` does."""
+        assert len(x) == len(y), "scatter needs x and y of the same length"
+        self.artists.append(
+            Artist(
+                Kind.MARKERS,
+                x.copy(),
+                y.copy(),
+                Array.zeros(0),
+                self._color(color, False),
+                0.0,
+                [],
+                marker.copy(),
+                s**0.5,
+                label.copy(),
+            )
+        )
+
+    def bar(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        height: Array[f64, 1],
+        width: f64 = 0.8,
+        color: str = "",
+        label: str = "",
+    ) -> None:
+        """Draws a bar from 0 to `height[i]` centred on each `x[i]`, `width` wide, as
+        matplotlib's `bar`; a negative height hangs below 0. Copies its arguments. Panics when
+        `x` and `height` differ in length, or `color` is not a color."""
+        assert len(x) == len(height), "bar needs x and height of the same length"
+        self.artists.append(
+            Artist(
+                Kind.BARS,
+                x - 0.5 * width,
+                height.copy(),
+                Array.fill(len(x), width),
+                self._color(color, False),
+                0.0,
+                [],
+                "",
+                0.0,
+                label.copy(),
+            )
+        )
+
+    def hist(
+        self: InOut[Self], x: Array[f64, 1], bins: int = 10, color: str = "", label: str = ""
+    ) -> tuple[Array[f64, 1], Array[f64, 1]]:
+        """Draws the histogram of `x` in `bins` equal bins from its smallest to its largest
+        element, as matplotlib's `hist`, and returns the counts and the `bins + 1` edges, which
+        `stats.histogram` computes with NumPy's bits. matplotlib returns its bars too, as a
+        third value; here they stay in the axes. Panics as `stats.histogram` does, on fewer than
+        one bin or a NaN or infinite element."""
+        counts, edges = histogram(x, bins)
+        heights = Array.zeros(bins)
+        widths = Array.zeros(bins)
+        for k in range(bins):
+            heights[k] = f64(counts[k])
+            widths[k] = edges[k + 1] - edges[k]
+        self.artists.append(
+            Artist(
+                Kind.BARS,
+                edges[0:bins].copy(),
+                heights.copy(),
+                widths,
+                self._color(color, False),
+                0.0,
+                [],
+                "",
+                0.0,
+                label.copy(),
+            )
+        )
+        return (heights, edges)
+
+    def _color(self: InOut[Self], color: str, line: bool) -> str:
+        """The SVG color of `color`, or when it is `""` the next color of the cycle: the lines'
+        cycle or the one `scatter`, `bar` and `hist` share. matplotlib keeps the two apart, so a
+        plot's first line and its first bars are both blue."""
+        if color != "":
+            return to_hex(color)
+        if line:
+            self.line_colors += 1
+            return to_hex(f"C{(self.line_colors - 1) % 10}")
+        self.patch_colors += 1
+        return to_hex(f"C{(self.patch_colors - 1) % 10}")
 
     def set_title(self: InOut[Self], label: str) -> None:
         """Sets the title, centred above the axes."""
@@ -124,13 +229,32 @@ class Axes(Struct):
         assert isfinite(bottom) and isfinite(top), "Axis limits cannot be NaN or Inf"
         self.ylim = _limits(bottom, top)
 
+    def legend(self: InOut[Self], loc: str = "best") -> None:
+        """Shows a legend of every artist with a label, as matplotlib's `legend`: a sample of
+        each beside its label, in the order drawn, in a white box inside the axes.
+
+        `loc` is matplotlib's: `"upper right"`, `"upper left"`, `"lower left"`,
+        `"lower right"`, `"right"`, `"center left"`, `"center right"`, `"lower center"`,
+        `"upper center"` or `"center"`, or `"best"`, which takes the first of those, in that
+        order, that covers the fewest data points, as matplotlib's `"best"` does. Panics on any
+        other `loc`.
+        """
+        assert location_code(loc) >= 0, "legend's loc must be 'best' or one of matplotlib's places"
+        self.legend_loc = loc.copy()
+
+    def grid(self: InOut[Self], visible: bool = True) -> None:
+        """Draws light gray grid lines across the axes at every tick, or stops drawing them, as
+        matplotlib's `grid`. They lie above bars and markers and below lines, as matplotlib's
+        default puts them."""
+        self.grid_on = visible
+
     def savefig(self: Self, fname: str) -> Raises[None, OSError | ValueError]:
         """Writes a figure holding these axes to the file `fname`, as matplotlib's
         `Figure.savefig`; the extension picks the format.
 
         The SVG's text is left as text, as matplotlib's `svg.fonttype = "none"` leaves it, so
         the viewer draws it in DejaVu Sans or the nearest font it has. The file holds every
-        point of every line: about 15 bytes a point.
+        point of every artist: about 15 bytes a point of a line and 60 a marker.
 
         # Errors
 
@@ -141,9 +265,10 @@ class Axes(Struct):
         extension = fname[dot + 1 :].lower() if dot >= 0 else ""
         if extension != "svg":
             raise ValueError(f"Format '{extension}' is not supported (supported formats: svg)")
-        text = _render(self)
+        renderer = RendererSVG(WIDTH, HEIGHT, [])
+        _draw(self, renderer)
         with open(fname, "w") as file:
-            file.write(text)
+            file.write(renderer.tostring())
 
 
 def axes() -> Axes:
@@ -157,7 +282,7 @@ def axes() -> Axes:
         ax.set_title("empty")
     ```
     """
-    return Axes([], "", "", "", None, None, 0)
+    return Axes([], "", "", "", None, None, 0, 0, "", False)
 
 
 def _last_dot(path: str) -> int:
@@ -174,60 +299,6 @@ def _last_dot(path: str) -> int:
     return found
 
 
-def _cycle(k: int) -> str:
-    """The `k`th color of matplotlib's default cycle, `tab10`, counting from 0 and wrapping."""
-    return _tab10(k % 10)
-
-
-def _tab10(k: int) -> str:
-    """The `k`th of the ten `tab10` colors, from 0: blue, orange, green, red, purple, brown,
-    pink, gray, olive and cyan."""
-    colors = [
-        "#1f77b4",
-        "#ff7f0e",
-        "#2ca02c",
-        "#d62728",
-        "#9467bd",
-        "#8c564b",
-        "#e377c2",
-        "#7f7f7f",
-        "#bcbd22",
-        "#17becf",
-    ]
-    return colors[k].copy()
-
-
-def _color(name: str) -> str:
-    """The SVG color of a matplotlib color name: `#rrggbb` as it is, `C0` to `C9` from the
-    cycle, a letter of `bgrcmykw`, or a `tab10` name such as `tab:blue`. Panics on any other."""
-    if len(name) == 7 and name.startswith("#"):
-        return name.lower()
-    digits = "0123456789"
-    for k in range(10):
-        if name == "C" + digits[k]:
-            return _tab10(k)
-    letters = "bgrcmykw"
-    values = [
-        "#0000ff",
-        "#008000",
-        "#ff0000",
-        "#00bfbf",
-        "#bf00bf",
-        "#bfbf00",
-        "#000000",
-        "#ffffff",
-    ]
-    for k in range(len(letters)):
-        if name == letters[k]:
-            return values[k].copy()
-    names = ["blue", "orange", "green", "red", "purple", "brown", "pink", "gray", "olive", "cyan"]
-    for k in range(len(names)):
-        if name == "tab:" + names[k]:
-            return _tab10(k)
-    assert False, f"{name!r} is not a color pyplot knows: use '#rrggbb', 'C0' to 'C9', a letter of 'bgrcmykw' or a 'tab:' name"
-    return ""
-
-
 def _dashes(style: str, linewidth: f64) -> list[f64]:
     """The on and off lengths, in points, of a matplotlib line style: its pattern for a line
     one point wide, scaled by `linewidth`. Empty for a solid line. Panics on an unknown style."""
@@ -239,7 +310,8 @@ def _dashes(style: str, linewidth: f64) -> list[f64]:
     elif style == "-." or style == "dashdot":
         pattern = [6.4, 1.6, 1.0, 1.6]
     else:
-        assert style == "-" or style == "solid", f"{style!r} is not a line style: use '-', '--', ':' or '-.'"
+        known = style == "-" or style == "solid"
+        assert known, f"{style!r} is not a line style: use '-', '--', ':', '-.' or ''"
     return [length * linewidth for length in pattern]
 
 
@@ -266,168 +338,99 @@ def _limits(first: f64, second: f64) -> tuple[f64, f64]:
     return (low, high)
 
 
-def _view(lines: list[_Line], along_x: bool, fixed: tuple[f64, f64] | None) -> tuple[f64, f64]:
-    """The range one axis shows: `fixed` when set; otherwise the finite data with a margin of 5%
-    on each side, as matplotlib's `autoscale_view`, and 0 to 1 when there is no data."""
+def _view(ax: Axes, along_x: bool) -> tuple[f64, f64]:
+    """The range one axis shows, as matplotlib's `autoscale_view`: the fixed range when set;
+    otherwise the finite data, bars from their base at 0, with a margin of 5% on each side
+    that never crosses 0 into a range of bars that all stand on it; 0 to 1 with no data."""
+    fixed = ax.xlim if along_x else ax.ylim
     if fixed is not None:
         return fixed
-    low = 0.0
-    high = 0.0
-    found = False
-    for line in lines:
-        for i in range(len(line.x)):
-            value = line.x[i] if along_x else line.y[i]
-            if isfinite(line.x[i]) and isfinite(line.y[i]):
-                if not found or value < low:
-                    low = value
-                if not found or value > high:
-                    high = value
-                found = True
-    if not found:
+    low = inf
+    high = -inf
+    sticky = False
+    for artist in ax.artists:
+        bars = artist.kind == Kind.BARS
+        for i in range(len(artist.x)):
+            if isfinite(artist.x[i]) and isfinite(artist.y[i]):
+                first = artist.x[i] if along_x else artist.y[i]
+                last = first
+                if bars and along_x:
+                    last = first + artist.widths[i]
+                elif bars:
+                    first = min(0.0, artist.y[i])
+                    last = max(0.0, artist.y[i])
+                    sticky = True
+                low = min(low, first)
+                high = max(high, last)
+    if low > high:
         return (0.0, 1.0)
     low, high = _expand(low, high, 0.05, 1e-15)
     margin = 0.05 * (high - low)
-    return _expand(low - margin, high + margin, 0.001, 1e-15)
+    bottom = low if sticky and low == 0.0 else low - margin
+    top = high if sticky and high == 0.0 else high + margin
+    return _expand(bottom, top, 0.001, 1e-15)
 
 
-def _number(value: f64) -> str:
-    """A coordinate in the SVG, to a thousandth of a point."""
-    return f"{value:.3f}"
-
-
-def _escape(text: str) -> str:
-    """`text` with XML's special characters escaped, so it is safe inside an element."""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _text(x: f64, y: f64, size: f64, anchor: str, text: str, rotate: bool = False) -> str:
-    """An SVG text element with its baseline at `(x, y)`, anchored at `anchor`: `start`,
-    `middle` or `end`. `rotate` turns it to read upwards, as a y label does."""
-    place = f'x="{_number(x)}" y="{_number(y)}"'
-    if rotate:
-        place = f'transform="translate({_number(x)} {_number(y)}) rotate(-90)"'
-    return (
-        f'<text {place} font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="{size}" text-anchor="{anchor}" '
-        + f'fill="#000000">{_escape(text)}</text>'
-    )
-
-
-def _width(text: str, size: f64) -> f64:
-    """About how wide `text` is in DejaVu Sans at `size` points, from the widths of its
-    digits, which tick labels are made of, and an average for other characters."""
-    width = 0.0
-    for character in text:
-        if "0" <= character and character <= "9":
-            width += 0.636
-        elif character == "." or character == " ":
-            width += 0.318
-        elif character == "−":
-            width += 0.838
-        else:
-            width += 0.6
-    return width * size
-
-
-def _render(ax: Axes) -> str:
-    """The SVG text of the default figure holding `ax`."""
-    x0, x1 = _view(ax.lines, True, ax.xlim)
-    y0, y1 = _view(ax.lines, False, ax.ylim)
+def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
+    """Draws `ax` in the default figure: bars and markers, the grid, lines, the frame, the axes'
+    ticks and labels, the title and the legend, in matplotlib's order."""
+    x0, x1 = _view(ax, True)
+    y0, y1 = _view(ax, False)
     xscale = (RIGHT - LEFT) / (x1 - x0)
     yscale = (BOTTOM - TOP) / (y1 - y0)
-    out: list[str] = [
-        '<?xml version="1.0" encoding="utf-8" standalone="no"?>',
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}pt" height="{HEIGHT}pt" '
-        + f'viewBox="0 0 {WIDTH} {HEIGHT}" version="1.1">',
-        f'<rect width="{WIDTH}" height="{HEIGHT}" fill="#ffffff"/>',
-        f'<clipPath id="axes"><rect x="{LEFT}" y="{TOP}" width="{_number(RIGHT - LEFT)}" '
-        + f'height="{_number(BOTTOM - TOP)}"/></clipPath>',
-    ]
-    for line in ax.lines:
-        path = ""
-        pen_down = False
-        for i in range(len(line.x)):
-            if isfinite(line.x[i]) and isfinite(line.y[i]):
-                px = LEFT + (line.x[i] - x0) * xscale
-                py = BOTTOM - (line.y[i] - y0) * yscale
-                command = "L" if pen_down else "M"
-                path = path + f"{command}{_number(px)} {_number(py)}"
-                pen_down = True
-            else:
-                pen_down = False
-        dashes = ""
-        if len(line.dashes) > 0:
-            dashes = ' stroke-dasharray="' + ",".join([_number(d) for d in line.dashes]) + '"'
-        out.append(
-            f'<path d="{path}" clip-path="url(#axes)" fill="none" stroke="{line.color}" '
-            + f'stroke-width="{line.linewidth}" stroke-linecap="square" '
-            + f'stroke-linejoin="round"{dashes}/>'
-        )
-    out.append(
-        f'<rect x="{LEFT}" y="{TOP}" width="{_number(RIGHT - LEFT)}" '
-        + f'height="{_number(BOTTOM - TOP)}" fill="none" stroke="#000000" stroke-width="0.8" '
-        + 'stroke-linejoin="miter" stroke-linecap="square"/>'
-    )
-    below = _x_axis(x0, x1, xscale, out)
-    beside = _y_axis(y0, y1, yscale, out)
+    renderer.set_clip(LEFT, TOP, RIGHT - LEFT, BOTTOM - TOP)
+    for artist in ax.artists:
+        px = LEFT + (artist.x - x0) * xscale
+        py = BOTTOM - (artist.y - y0) * yscale
+        if artist.kind == Kind.BARS:
+            base = BOTTOM + y0 * yscale
+            for i in range(len(px)):
+                width = artist.widths[i] * xscale
+                height = base - py[i]
+                renderer.draw_rectangle(
+                    px[i], py[i], width, height, artist.color, 1.0, "none", 0.0, True
+                )
+        elif artist.kind == Kind.MARKERS:
+            renderer.draw_markers(px, py, artist.marker, artist.markersize, artist.color, 1.5, True)
+    xaxis = XAxis(x0, x1, LEFT, RIGHT, BOTTOM)
+    yaxis = YAxis(y0, y1, BOTTOM, TOP, LEFT)
+    if ax.grid_on:
+        gray = "#b0b0b0"  # matplotlib's grid color
+        for tick in xaxis.get_majorticklocs():
+            if min(x0, x1) <= tick and tick <= max(x0, x1):
+                at = LEFT + (tick - x0) * xscale
+                line = Array([at, at])
+                renderer.draw_path(line, Array([TOP, BOTTOM]), gray, 0.8, [], "projecting", True)
+        for tick in yaxis.get_majorticklocs():
+            if min(y0, y1) <= tick and tick <= max(y0, y1):
+                at = BOTTOM - (tick - y0) * yscale
+                line = Array([at, at])
+                renderer.draw_path(Array([LEFT, RIGHT]), line, gray, 0.8, [], "projecting", True)
+    for artist in ax.artists:
+        if artist.kind == Kind.LINE:
+            px = LEFT + (artist.x - x0) * xscale
+            py = BOTTOM - (artist.y - y0) * yscale
+            if artist.linewidth > 0.0:
+                renderer.draw_path(
+                    px, py, artist.color, artist.linewidth, artist.dashes, "projecting", True
+                )
+            if artist.marker != "":
+                size = artist.markersize
+                renderer.draw_markers(px, py, artist.marker, size, artist.color, 1.0, True)
+    width = RIGHT - LEFT
+    renderer.draw_rectangle(LEFT, TOP, width, BOTTOM - TOP, "none", 1.0, "#000000", 0.8, False)
+    below = xaxis.draw(renderer)
+    beside = yaxis.draw(renderer)
+    _, height, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
     if ax.xlabel != "":
-        out.append(
-            _text((LEFT + RIGHT) / 2.0, below + LABEL_PAD + ASCENT * FONT_SIZE, FONT_SIZE, "middle", ax.xlabel)
-        )
+        baseline = below + LABEL_PAD + height - descent
+        renderer.draw_text((LEFT + RIGHT) / 2.0, baseline, ax.xlabel, FONT_SIZE, "middle", False)
     if ax.ylabel != "":
-        x = beside - LABEL_PAD - (1.0 - ASCENT) * FONT_SIZE
-        out.append(_text(x, (TOP + BOTTOM) / 2.0, FONT_SIZE, "middle", ax.ylabel, True))
+        across = beside - LABEL_PAD - descent
+        renderer.draw_text(across, (TOP + BOTTOM) / 2.0, ax.ylabel, FONT_SIZE, "middle", True)
     if ax.title != "":
-        out.append(_text((LEFT + RIGHT) / 2.0, TOP - TITLE_PAD, TITLE_SIZE, "middle", ax.title))
-    out.append("</svg>")
-    return "\n".join(out) + "\n"
-
-
-def _bins(length: f64, spacing: f64) -> int:
-    """The most tick intervals an axis `length` points long holds, as matplotlib's
-    `get_tick_space` and `MaxNLocator` work it out: one per `spacing` font sizes, 1 to 9."""
-    return min(9, max(1, int(length / (spacing * FONT_SIZE))))
-
-
-def _x_axis(x0: f64, x1: f64, scale: f64, out: InOut[list[str]]) -> f64:
-    """Draws the x axis's ticks, their labels and its offset text, and returns how far down the
-    labels reach, where the x label goes."""
-    ticks = MaxNLocator(_bins(RIGHT - LEFT, 3.0), [1.0, 2.0, 2.5, 5.0, 10.0]).tick_values(x0, x1)
-    formatter = ScalarFormatter(x0, x1)
-    labels = formatter.format_ticks(ticks)
-    top = BOTTOM + TICK_LENGTH + TICK_PAD
-    baseline = top + ASCENT * FONT_SIZE
-    for k in range(len(ticks)):
-        if min(x0, x1) <= ticks[k] and ticks[k] <= max(x0, x1):
-            px = LEFT + (ticks[k] - x0) * scale
-            out.append(
-                f'<path d="M{_number(px)} {BOTTOM}v{TICK_LENGTH}" stroke="#000000" stroke-width="0.8"/>'
-            )
-            out.append(_text(px, baseline, FONT_SIZE, "middle", labels[k]))
-    offset = formatter.get_offset(ticks)
-    below = baseline + (1.17 - ASCENT) * FONT_SIZE
-    if offset != "":
-        out.append(_text(RIGHT, below + ASCENT * FONT_SIZE, FONT_SIZE, "end", offset))
-    return below
-
-
-def _y_axis(y0: f64, y1: f64, scale: f64, out: InOut[list[str]]) -> f64:
-    """Draws the y axis's ticks, their labels and its offset text, and returns how far left the
-    labels reach, where the y label goes."""
-    ticks = MaxNLocator(_bins(BOTTOM - TOP, 2.0), [1.0, 2.0, 2.5, 5.0, 10.0]).tick_values(y0, y1)
-    formatter = ScalarFormatter(y0, y1)
-    labels = formatter.format_ticks(ticks)
-    right = LEFT - TICK_LENGTH - TICK_PAD
-    widest = 0.0
-    for k in range(len(ticks)):
-        if min(y0, y1) <= ticks[k] and ticks[k] <= max(y0, y1):
-            py = BOTTOM - (ticks[k] - y0) * scale
-            out.append(
-                f'<path d="M{LEFT} {_number(py)}h-{TICK_LENGTH}" stroke="#000000" stroke-width="0.8"/>'
-            )
-            middle = py + (ASCENT / 2.0) * FONT_SIZE
-            out.append(_text(right, middle, FONT_SIZE, "end", labels[k]))
-            widest = max(widest, _width(labels[k], FONT_SIZE))
-    offset = formatter.get_offset(ticks)
-    if offset != "":
-        out.append(_text(LEFT, TOP - 4.0, FONT_SIZE, "start", offset))
-    return right - widest
+        middle = (LEFT + RIGHT) / 2.0
+        renderer.draw_text(middle, TOP - TITLE_PAD, ax.title, TITLE_SIZE, "middle", False)
+    if ax.legend_loc != "":
+        view = View(LEFT, TOP, RIGHT, BOTTOM, x0, x1, y0, y1)
+        draw_legend(ax.artists, ax.legend_loc, view, renderer)
