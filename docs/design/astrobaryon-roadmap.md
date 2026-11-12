@@ -148,6 +148,9 @@ In the order AstroBaryon's milestones need them.
 
 ## Building AstroBaryon
 
+AstroBaryon comes before any interop with other languages: Python interop (3.17) and C++
+interop (4.1) both wait for it (Collins, 2026-11-12).
+
 Five milestones, each a usable library on its own. A milestone is done when its rows are `Done`
 in `ROADMAP.md`, which includes their documentation.
 

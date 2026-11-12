@@ -271,7 +271,7 @@ the astronomy library (4.2), has its own plan in the
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
 | 3.17 | Python interop with zero-copy arrays, for Python libraries that will never be rewritten. Comes late, after the native stack: Phase 2's faster compiling, the native numeric, data and plotting libraries, the base libraries and AstroBaryon. Native Baryon covers most work, and interop is never a way to wrap Baryon in Python (Collins, 2026-11-10 and 2026-11-12) | 3 | 2.3, 3.10, 3.13, 3.14, 3.15, 3.16, 3.18, 3.19, 3.20, 3.21, 3.22, 3.23, 3.26, 3.27, 3.28, 3.29, 3.30, 4.2 | Planned | — | [#275](https://github.com/Baryon-Lang/Baryon/pull/275) |
-| 4.1 | C++ interop: header import, templates by instantiation, exceptions at the boundary | 12+ | 3.5 | Planned | — | — |
+| 4.1 | C++ interop: header import, templates by instantiation, exceptions at the boundary. Comes after AstroBaryon, like all interop (Collins, 2026-11-12) | 12+ | 3.5, 4.2 | Planned | — | [#279](https://github.com/Baryon-Lang/Baryon/pull/279) |
 | 4.2 | AstroBaryon, the astronomy library: AstroPy's capability designed natively from the astronomy standards, not by translating AstroPy's Python (D.23 decides where it lives). Tested against reference data recorded from AstroPy, and documented so that moving from AstroPy is easy: no sub-row is `Done` without its reference documentation, transition guide entries, worked example and validation. The [AstroBaryon roadmap](docs/design/astrobaryon-roadmap.md) gives the scope, build order, prerequisites and documentation rules. The study behind it estimates 22 to 28 person-years once the Phase 3 libraries exist (Collins, 2026-11-10) | 1120 | 3.31, 3.32, D.23, D.24 | Planned | — | — |
 | 4.2.1 | Reference data: run AstroPy's tests and examples, and record their inputs and outputs as data files the Baryon library is checked against, since AstroPy's tests are written against its Python API | 90 | — | Planned | — | — |
 | 4.2.2 | Time: time scales and formats with two-part Julian dates for full precision, leap seconds and Earth orientation tables, kept current through the download cache | 70 | 3.25, 3.30, 3.31 | Planned | — | — |
@@ -322,9 +322,12 @@ missing values, record and date arrays, regular expressions, compression, XML, s
 networking, ERFA and world coordinate systems; ERFA (3.31) can start early, since it needs little
 beyond what builds today. AstroBaryon, the native astronomy library (4.2), builds on them
 (Collins, 2026-11-10). Phase 2's faster compiling follows, unless compile times start to slow
-users down first. Python interop (3.17) comes last, well after all of these: native Baryon is how
-most work gets done, and interop is only for Python libraries that will never be rewritten
-(Collins, 2026-11-10 and 2026-11-12).
+users down first. Interop with other languages comes last, after AstroBaryon: Python interop
+(3.17) and C++ interop (4.1) both wait for it. Native Baryon is how most work gets done, and
+interop is only for libraries that will never be rewritten (Collins, 2026-11-10 and 2026-11-12).
+The standard library's own calls into system libraries, such as the opt-in system BLAS of
+`--blas` (3.10.2), are internal and not interop
+([decision 0012](docs/decisions/0012-no-ffi-in-mvp.md)).
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
