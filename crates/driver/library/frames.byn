@@ -194,7 +194,16 @@ def _floats(values: list[f64], small: bool) -> list[str]:
     down to one decimal: 1.5 and 2.25 give `1.50` and `2.25`. The column is written in powers
     of ten instead when `small`, which says a value is under 0.000001 in size and not zero,
     or when a value is over 1,000,000 in size and the longest cell is over 12 characters.
+
+    A column whose every value is NaN has no number to line up with, so its cells are `NaN`
+    with no space in front for a sign, as pandas prints it.
     """
+    numbers = 0
+    for value in values:
+        if not isnan(value):
+            numbers += 1
+    if numbers == 0:
+        return ["NaN" for value in values]
     cells = [_float(value, False) for value in values]
     trimming = True
     while trimming:

@@ -372,3 +372,31 @@ def main():
     assert_eq!((code, report.as_str()), (Some(0), ""));
     assert_eq!(stdout, expected.concat());
 }
+
+/// A float column whose every value is NaN prints `NaN` with no space in front for a sign,
+/// as pandas 3.0.5 prints it, in `f64` and in `f32`; a column with one number beside its
+/// NaN keeps the space. It used to be one space wider than pandas's.
+#[test]
+fn a_column_of_only_nan_prints_as_pandas_prints_it() {
+    let program = r#"
+import math
+
+def main():
+    print(DataFrame({"a": Array([math.nan, math.nan]), "b": Array([1, 2])}))
+    print(DataFrame({"a": Array([f32(math.nan)]), "b": Array([math.nan]), "c": Array([math.inf])}))
+    print(DataFrame({"a": Array([math.nan, 1.5])}))
+"#;
+    let expected = [
+        "    a  b\n",
+        "0 NaN  1\n",
+        "1 NaN  2\n",
+        "    a   b    c\n",
+        "0 NaN NaN  inf\n",
+        "     a\n",
+        "0  NaN\n",
+        "1  1.5\n",
+    ];
+    let (code, stdout, report) = run("frames-print-nan", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, expected.concat());
+}
