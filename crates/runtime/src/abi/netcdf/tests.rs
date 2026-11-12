@@ -122,11 +122,16 @@ fn the_header_lines_describe_the_file() {
     assert!(!failed);
     // SAFETY: a call that did not fail wrote the list.
     let list = unsafe { list.assume_init() };
-    assert_eq!(list.length, 15);
-    // SAFETY: the list holds 15 owned `str`s; the first is read.
+    assert_eq!(list.length, 16);
+    // SAFETY: the list holds 16 owned `str`s; the first is read.
     let first = unsafe { &*list.elements };
-    // SAFETY: an owned `str` is `length` bytes at `bytes`; `D\ttime\t2\t1` is 10.
-    let text = unsafe { std::slice::from_raw_parts(first.bytes, 10) };
+    // SAFETY: and the second.
+    let second = unsafe { &*list.elements.wrapping_add(1) };
+    // SAFETY: an owned `str` is `length` bytes at `bytes`.
+    let path = unsafe { std::slice::from_raw_parts(first.bytes, 2 + CLASSIC.len()) };
+    assert_eq!(path, format!("P\t{CLASSIC}").as_bytes());
+    // SAFETY: as above; `D\ttime\t2\t1` is 10 bytes.
+    let text = unsafe { std::slice::from_raw_parts(second.bytes, 10) };
     assert_eq!(text, b"D\ttime\t2\t1");
 }
 

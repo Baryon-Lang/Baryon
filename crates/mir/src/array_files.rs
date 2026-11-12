@@ -65,8 +65,9 @@ pub enum ArrayFile {
     /// `Dataset(path)` of the `netCDF4` module: one argument, the path, a `str`. The
     /// destination is a new `list[str]`: lines that describe the header of a `NetCDF` classic
     /// file (CDF-1 or CDF-2), each a tag and fields separated by tabs, which the standard
-    /// library parses. The `D` lines come first, then the file's `A` lines, then each `V` line
-    /// followed by its variable's `A` lines. A `D` line is a dimension's name, its length and
+    /// library parses. A `P` line, the path, comes first, so the library can read variables
+    /// later; then the `D` lines, then the file's `A` lines, then each `V` line followed by its
+    /// variable's `A` lines. A `D` line is a dimension's name, its length and
     /// `1` when it is the unlimited one or `0`; a `V` line a variable's name, its type as
     /// `netCDF4` names it (`f4`) and its dimensions' names separated by commas; an `A` line an
     /// attribute's variable (empty for the file's own), its kind (`str`, `int` or `float`), its

@@ -23,8 +23,9 @@ use crate::memory;
 use crate::panic::panic;
 
 /// `Dataset(path)`: writes to `out` a new `list[str]` of the lines that describe the header of
-/// the `NetCDF` classic file whose path is the `length` bytes at `path`, as
-/// `files::netcdf::describe` writes them: its dimensions, attributes and variables. Returns
+/// the `NetCDF` classic file whose path is the `length` bytes at `path`: `P`, a tab and the
+/// path, which the library's `Dataset` keeps to read variables later, then the lines
+/// `files::netcdf::describe` writes, for its dimensions, attributes and variables. Returns
 /// `true`, with the error at `error`, when the operating system refuses, or with the kind
 /// `INVALID_DATA` when the file is not a classic `NetCDF` file or its header is cut short.
 ///
@@ -54,7 +55,8 @@ pub unsafe extern "C" fn baryon_rt_netcdf_open(
     let path = unsafe { text(path, length) };
     let result = netcdf::read_header(path);
     let write = |header: Header| {
-        let lines = netcdf::describe(&header);
+        let mut lines = vec![format!("P\t{path}")];
+        lines.extend(netcdf::describe(&header));
         let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
         // SAFETY: the caller guarantees `out` is writable.
         unsafe { write_list(&lines, out) };
@@ -107,8 +109,9 @@ pub unsafe extern "C" fn baryon_rt_netcdf_open(
 ///     let failed =
 ///         baryon_rt_netcdf_open(path.as_ptr(), path.len(), lines.as_mut_ptr(), error.as_mut_ptr());
 ///     assert!(!failed);
-///     // Three dimensions, three file attributes, five variables and their four attributes.
-///     assert_eq!(lines.assume_init().length, 15);
+///     // The path, three dimensions, three file attributes, five variables and their four
+///     // attributes.
+///     assert_eq!(lines.assume_init().length, 16);
 ///     let failed = baryon_rt_netcdf_read(
 ///         path.as_ptr(), path.len(), name.as_ptr(), name.len(), ELEMENT_F64, 1,
 ///         loaded.as_mut_ptr(), error.as_mut_ptr(),

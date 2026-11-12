@@ -72,7 +72,8 @@ impl Builder<'_> {
     }
 
     /// Whether `node`, a subscript or a comparison, is a read of a `Header`, or the target of a
-    /// write to one: a call of a library function the checker recorded at it.
+    /// write to one: a call of a library function the checker recorded at it. A `NetCDF`
+    /// `ds.variables[name]` is one too, and `var[:]`, a built-in call (decision 0047).
     pub(crate) fn is_library_access(&self, node: NodeId) -> bool {
         matches!(
             self.tree.kind(node),
@@ -80,7 +81,11 @@ impl Builder<'_> {
         ) && self
             .typed
             .call(node)
-            .is_some_and(|call| matches!(call.callee, types::Callee::Function(_)))
+            .is_some_and(|call| match &call.callee {
+                types::Callee::Function(_) => true,
+                types::Callee::Builtin(name) => name == "netCDF4.read",
+                _ => false,
+            })
     }
 
     /// `header[key] = value`, the assignment to the subscript `target`, as the call of a
