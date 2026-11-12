@@ -54,7 +54,7 @@ fn attributes_and_a_record_match_netcdf4() {
             "V\tv\ti2\tt,x",
         ],
     );
-    write(&path, "v", Pixel::I64, &[1, 3], &longs(&[1, 2, 3])).unwrap();
+    write(&path, ("v", &[]), Pixel::I64, &[1, 3], &longs(&[1, 2, 3])).unwrap();
     apply(&path, &["V\tw\tf4\tx", "V\tz\tf8\tt"]);
     assert_eq!(fs::read(&path).unwrap(), fixture("written.nc"));
 }
@@ -78,7 +78,7 @@ fn values_not_written_are_filled_as_netcdf4_fills() {
         .iter()
         .flat_map(|value| value.to_ne_bytes())
         .collect();
-    write(&path, "d", Pixel::F64, &[2], &doubles).unwrap();
+    write(&path, ("d", &[]), Pixel::F64, &[2], &doubles).unwrap();
     apply(&path, &["A\ta\tstr\tunits\tm"]);
     assert_eq!(fs::read(&path).unwrap(), fixture("filled.nc"));
 }
@@ -90,7 +90,7 @@ fn a_new_record_is_filled_padding_and_all_before_it_is_written() {
         &path,
         &["C\t1", "D\tt\t0", "D\tx\t3", "V\ta\ti2\tt,x", "V\tb\ti1\tt"],
     );
-    write(&path, "a", Pixel::I64, &[1, 3], &longs(&[4, 5, 6])).unwrap();
+    write(&path, ("a", &[]), Pixel::I64, &[1, 3], &longs(&[4, 5, 6])).unwrap();
     assert_eq!(fs::read(&path).unwrap(), fixture("padded.nc"));
 }
 
@@ -98,16 +98,18 @@ fn a_new_record_is_filled_padding_and_all_before_it_is_written() {
 fn the_only_record_variable_is_unpadded_until_another_joins() {
     let path = file("single");
     apply(&path, &["C\t1", "D\tt\t0", "V\te\ti2\tt"]);
-    write(&path, "e", Pixel::I64, &[3], &longs(&[5, 6, 7])).unwrap();
+    write(&path, ("e", &[]), Pixel::I64, &[3], &longs(&[5, 6, 7])).unwrap();
     assert_eq!(fs::read(&path).unwrap(), fixture("single.nc"));
     apply(&path, &["V\tf\ti2\tt"]);
     assert_eq!(fs::read(&path).unwrap(), fixture("moved.nc"));
     let header = read_header(&path).unwrap();
     let mut memory = vec![0_u8; 3 * 8];
+    let variable = &header.variables[0];
+    let selection = header.everything(variable);
     read_variable(
         &path,
         &header,
-        &header.variables[0],
+        (variable, &selection),
         Pixel::I64,
         &mut memory,
     )
@@ -139,7 +141,7 @@ fn what_the_format_refuses_is_refused() {
         assert_eq!(failure.kind, ErrorKind::InvalidData, "{line}");
         assert_eq!(failure.strerror, message, "{line}");
     }
-    let failure = write(&path, "v", Pixel::F64, &[3], &[0; 24]).unwrap_err();
+    let failure = write(&path, ("v", &[]), Pixel::F64, &[3], &[0; 24]).unwrap_err();
     assert_eq!(
         failure.strerror,
         "the NetCDF variable v has the shape (2), which an array of shape (3) does not fill"
@@ -167,7 +169,7 @@ fn a_header_that_claims_more_than_the_file_holds_is_refused() {
     fs::write(&path, bytes).unwrap();
     for failure in [
         define(&path, "D\ty\t2").unwrap_err(),
-        write(&path, "w", Pixel::F64, &[3], &[0; 24]).unwrap_err(),
+        write(&path, ("w", &[]), Pixel::F64, &[3], &[0; 24]).unwrap_err(),
     ] {
         assert_eq!(failure.kind, ErrorKind::InvalidData);
         assert_eq!(
@@ -194,4 +196,70 @@ fn sizes_past_the_formats_32_bits_are_refused() {
         assert_eq!(failure.strerror, message, "{line}");
     }
     assert!(read_header(&path).unwrap().variables.is_empty());
+}
+
+#[test]
+fn slices_write_what_netcdf4_writes() {
+    let every = Item::Slice {
+        start: None,
+        stop: None,
+        stride: None,
+    };
+    // `a[2] = [4, 5, 6]`, which adds three records, then `a[0, ::2] = [7, 8]`.
+    let path = file("rows");
+    apply(
+        &path,
+        &["C\t1", "D\tt\t0", "D\tx\t3", "V\ta\ti2\tt,x", "V\tb\ti1\tt"],
+    );
+    write(
+        &path,
+        ("a", &[Item::Index(2)]),
+        Pixel::I64,
+        &[3],
+        &longs(&[4, 5, 6]),
+    )
+    .unwrap();
+    let alternate = Item::Slice {
+        start: None,
+        stop: None,
+        stride: Some(2),
+    };
+    let items = [Item::Index(0), alternate];
+    write(&path, ("a", &items), Pixel::I64, &[2], &longs(&[7, 8])).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), fixture("rows.nc"));
+    // `a[1, 1] = 9` of the only record variable.
+    let path = file("point");
+    apply(&path, &["C\t1", "D\tt\t0", "D\tx\t3", "V\ta\ti2\tt,x"]);
+    let items = [Item::Index(1), Item::Index(1)];
+    write(&path, ("a", &items), Pixel::I64, &[], &longs(&[9])).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), fixture("point.nc"));
+    // `c[1:3, -1] = [1.5, 2.5]` of a fixed variable.
+    let path = file("grid");
+    apply(&path, &["C\t1", "D\tx\t4", "D\ty\t3", "V\tc\tf4\tx,y"]);
+    let middle = Item::Slice {
+        start: Some(1),
+        stop: Some(3),
+        stride: None,
+    };
+    let values: Vec<u8> = [1.5_f64, 2.5]
+        .iter()
+        .flat_map(|value| value.to_ne_bytes())
+        .collect();
+    let items = [middle, Item::Index(-1)];
+    write(&path, ("c", &items), Pixel::F64, &[2], &values).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), fixture("grid.nc"));
+    // An array of another shape than the values picked is refused.
+    let failure = write(
+        &path,
+        ("c", &[every, Item::Index(0)]),
+        Pixel::F64,
+        &[2],
+        &values,
+    )
+    .unwrap_err();
+    assert_eq!(
+        failure.strerror,
+        "the values picked of the NetCDF variable c have the shape (4), which an array of shape \
+         (2) does not fill"
+    );
 }

@@ -17,9 +17,9 @@
 //! | [`FitsData`](mir::ArrayFile::FitsData) | `baryon_rt_fits_read(path, length, ext, element, rank, out, error)` |
 //! | [`FitsWrite`](mir::ArrayFile::FitsWrite) | `baryon_rt_fits_write(path, length, array, rank, element, cards, card_count, header, overwrite, error)` |
 //! | [`NetcdfOpen`](mir::ArrayFile::NetcdfOpen) | `baryon_rt_netcdf_open(path, length, out, error)` |
-//! | [`NetcdfRead`](mir::ArrayFile::NetcdfRead) | `baryon_rt_netcdf_read(path, length, name, name_length, element, rank, out, error)` |
+//! | [`NetcdfRead`](mir::ArrayFile::NetcdfRead) | `baryon_rt_netcdf_read(path, length, name, name_length, items, item_count, element, rank, out, error)` |
 //! | [`NetcdfDefine`](mir::ArrayFile::NetcdfDefine) | `baryon_rt_netcdf_define(path, length, line, line_length, out, error)` |
-//! | [`NetcdfWrite`](mir::ArrayFile::NetcdfWrite) | `baryon_rt_netcdf_write(path, length, name, name_length, array, rank, element, error)` |
+//! | [`NetcdfWrite`](mir::ArrayFile::NetcdfWrite) | `baryon_rt_netcdf_write(path, length, name, name_length, items, item_count, array, rank, element, error)` |
 //!
 //! A read writes the header of the new rank-1 array through `out`, the destination's address.
 //! `element` is the address of a stack slot holding the runtime's `ElementLayout`,
@@ -311,11 +311,14 @@ impl<'db> Function<'_, '_, 'db> {
                 let (out, ty) = self.place(destination)?;
                 let (element, rank) = self.array(ty)?;
                 let code = self.fits_code(element, name)?;
+                // No subscript items: the whole variable.
                 let parameters = vec![
                     format!("ptr {bytes}"),
                     format!("i64 {length}"),
                     format!("ptr {variable}"),
                     format!("i64 {variable_length}"),
+                    "ptr null".to_owned(),
+                    "i64 0".to_owned(),
                     format!("i32 {code}"),
                     format!("i64 {rank}"),
                     format!("ptr {out}"),
@@ -341,11 +344,14 @@ impl<'db> Function<'_, '_, 'db> {
                 let (address, ty) = self.place(array)?;
                 let (element, rank) = self.array(ty)?;
                 let code = self.fits_code(element, name)?;
+                // No subscript items: the whole variable.
                 let parameters = vec![
                     format!("ptr {bytes}"),
                     format!("i64 {length}"),
                     format!("ptr {variable}"),
                     format!("i64 {variable_length}"),
+                    "ptr null".to_owned(),
+                    "i64 0".to_owned(),
                     format!("ptr {address}"),
                     format!("i64 {rank}"),
                     format!("i32 {code}"),
