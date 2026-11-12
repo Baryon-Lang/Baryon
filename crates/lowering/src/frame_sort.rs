@@ -112,7 +112,7 @@ impl Builder<'_> {
 
     /// The items of the list `node`, or `node` itself when it is not a list written out:
     /// `"price"` and `["price"]` both name one column.
-    fn listed(&self, node: NodeId) -> Vec<NodeId> {
+    pub(crate) fn listed(&self, node: NodeId) -> Vec<NodeId> {
         if self.tree.kind(node) == SyntaxKind::List {
             self.tree.children_with(node, Role::Item).collect()
         } else {

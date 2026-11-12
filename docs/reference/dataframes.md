@@ -367,6 +367,69 @@ print(trades.sort_values(["price", "volume"], ascending=[False, True]))
 - **A complex column has no order**, so sorting by one is a compile error. pandas's other
   arguments, such as `na_position=`, `key=` and `inplace=`, are not built.
 
+## Grouping
+
+`df.groupby(keys).agg(...)` gives a new frame with one row for each group: the rows of `df`
+that have one value of the key column, or one combination of values of several. Each argument
+of `agg` names a new column and says, as a pair, which column to read and how to make one
+value of a group's values:
+
+```python
+by_symbol = trades.groupby("symbol").agg(
+    total=("volume", "sum"),
+    mean_price=("price", "mean"),
+    trades=("price", "count"),
+)
+print(by_symbol)
+print(by_symbol.sort_values("total", ascending=False).head(1))
+```
+
+With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
+
+```text
+   symbol  total  mean_price  trades
+0       3    300      407.75       2
+1       7    400      190.25       2
+2       9     75      171.00       1
+   symbol  total  mean_price  trades
+0       7    400      190.25       2
+```
+
+| Reduction | The value for a group | Its type |
+| --- | --- | --- |
+| `"sum"` | The sum of the values | `i64` for integers and `bool`; the column's type for floats |
+| `"min"`, `"max"` | The least and the greatest value | The column's type |
+| `"first"`, `"last"` | The first and the last value, in the frame's order | The column's type |
+| `"count"` | How many values there are | `i64` |
+| `"mean"` | The mean | `f64`; `f32` for an `f32` column |
+| `"var"`, `"std"` | The sample variance and standard deviation, dividing by one less than the count | The same |
+| `"median"` | The middle value, or the mean of the two middle values | The same |
+
+- **The result's columns** are the key columns, in the order given to `groupby`, then the
+  new columns, in the order given to `agg`. The keys are ordinary columns, since a frame has
+  no row index; pandas makes them the index, and shows this frame after `reset_index()`.
+- **The groups come out sorted by their keys**, rising, and rows keep their order inside a
+  group, which is what `first` and `last` see.
+- **NaN is left out, as in pandas.** A row whose key is NaN belongs to no group. A NaN
+  value is skipped by every reduction, so `count` counts the values that are numbers. A
+  group with no numbers has the sum 0, the count 0, and NaN for the rest; `var` and `std`
+  of one value are NaN.
+- **`groupby` and `agg` are written together.** The groups are not a value: `g =
+  df.groupby("symbol")` is a compile error. Group by several columns with a list,
+  `df.groupby(["symbol", "day"])`.
+- **Every name is a string literal**, checked when compiling: the keys, the columns read
+  and the reductions. A key column cannot be read by `agg`, since the result holds it
+  already, and a complex column can be neither a key nor a value.
+- **The result is a new frame**, with no struct for its rows until it meets one, as for
+  [`assign`](#choosing-and-changing-columns).
+- **Cost:** for `n` rows, a sort by the keys, about `n log n` comparisons for each key
+  column, then one pass over a column for each argument of `agg`. A column that is not
+  `f64` or `i64` is converted to one of them first, which copies it.
+- **Sums of floats are correctly rounded**: they use `math.fsum`, which loses nothing to
+  the order of the values. pandas's sums are compensated but not exact, so a last digit can
+  differ; so can that of `var` and `std` of an `f32` column, which are worked out in `f64`
+  here and then rounded.
+
 ## `len`, `shape` and `columns`
 
 | Expression | Result |

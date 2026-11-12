@@ -305,7 +305,7 @@ impl<'db> Body<'db> {
 
     /// The text of the string literal `node`, a column's name. `None`, after an error, when
     /// `node` is anything else, since a frame's type lists its columns.
-    fn written_name(&mut self, node: NodeId) -> Option<String> {
+    pub(super) fn written_name(&mut self, node: NodeId) -> Option<String> {
         if let Some(name) = self.literal_text(node) {
             return Some(name.to_owned());
         }

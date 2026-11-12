@@ -24,8 +24,9 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when `sort_values` on a
-`DataFrame` joined it, and before it `bz2.compress` and `bz2.decompress`, and before them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before
+This page was last brought up to date on 2026-11-12, when `groupby(...).agg(...)` on
+a `DataFrame` joined it, and before it `sort_values`, and before it `bz2.compress` and
+`bz2.decompress`, and before them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before
 them `for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by
 `df[mask]`, `df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and
 before it `fft2`, `ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`,
@@ -154,10 +155,11 @@ out of a function, including through a `raise`.
 | --- | --- |
 | [`DataFrame[S]`](dataframes.md) with number and `bool` columns, as a variable, parameter, return value and item of a list, tuple or `T \| None`; frames with the same columns passed for one another | Text columns (roadmap 3.13.3) and missing values (3.13.6); a frame as a struct field |
 | [Building a frame](dataframes.md#building-a-frame) from arrays, `DataFrame({"price": prices})`, with the panic for columns of two lengths, and from a list of rows, `DataFrame(rows)` | |
-| [Columns](dataframes.md#columns) read as `df.price` and `df["price"]`, used as arrays, changed in place and replaced, with the panic for a new column of another length; `len(df)`, `df.shape`, `df.columns`, `df.copy()`; [a row](dataframes.md#rows), `df[i]`, as the schema's struct; [`print(df)` and a frame in an f-string](dataframes.md#printing), as the table pandas prints | pandas's text for a complex column and for a frame inside a list, and the terminal's width when printing (idea I.49); `groupby` (3.13.7); `merge` (3.13.8); `concat`, `drop_duplicates`, `value_counts`, `unique`, `nunique`, `describe` (3.13.9) |
+| [Columns](dataframes.md#columns) read as `df.price` and `df["price"]`, used as arrays, changed in place and replaced, with the panic for a new column of another length; `len(df)`, `df.shape`, `df.columns`, `df.copy()`; [a row](dataframes.md#rows), `df[i]`, as the schema's struct; [`print(df)` and a frame in an f-string](dataframes.md#printing), as the table pandas prints | pandas's text for a complex column and for a frame inside a list, and the terminal's width when printing (idea I.49); `merge` (3.13.8); `concat`, `drop_duplicates`, `value_counts`, `unique`, `nunique`, `describe` (3.13.9) |
 | [Choosing rows](dataframes.md#choosing-rows): `df[mask]`, `df[i:j]` with a step, `df.head(n)` and `df.tail(n)`, each a new frame, with the panics for a mask of another length and a step of 0; [`for row in df.itertuples()`](dataframes.md#looping-over-rows), also inside `enumerate`, `zip` and a comprehension | Assigning to the rows chosen, `df[mask] = ...`; `itertuples()` kept outside a loop |
 | [Choosing and changing columns](dataframes.md#choosing-and-changing-columns): `df[["a", "b"]]`, `df.assign(name=values)`, `df.drop(columns=...)` and `df.rename(columns=...)`, each a new frame whose type the compiler works out, with the panic for a new column of another length | A column name that is not a string literal; `assign` of one value for every row or of a function, and an argument that reads a column added earlier in the same call; `drop` and `rename` in pandas's other forms (`axis=`, `index=`, `inplace=`, a function) |
 | [Sorting](dataframes.md#sorting): `df.sort_values(by)` by one column or several, stable, with `ascending` one `bool` or one for each column, and NaN last | pandas's other arguments: `na_position=`, `key=`, `kind=`, `inplace=`, `ignore_index=` |
+| [Grouping](dataframes.md#grouping): `df.groupby(keys).agg(name=("column", "reduction"))` by one key column or several, with `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std` and `median`, the keys returned as columns and NaN left out as in pandas | The groups as a value, `g = df.groupby(...)`; `agg` in pandas's other forms (a dict, a function, one name for every column); `df.groupby(...).sum()` and the like; `size`, `nunique`, `transform`, `apply` |
 
 ## Errors and panics
 
