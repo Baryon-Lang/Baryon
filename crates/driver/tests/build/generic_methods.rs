@@ -1,5 +1,5 @@
-//! Methods of generic structs and `Callable` parameters passed on, built and run (roadmap
-//! 1.9.18, decision 0026).
+//! Methods of generic structs, `Callable` parameters passed on, and arguments to generic
+//! parameters, built and run (roadmap 1.9.18, decision 0026).
 
 use super::{baryon_build, package, stderr};
 use std::io;
@@ -171,5 +171,48 @@ error: the LLVM backend does not compile calls of `Callable` values yet
   |     ^^^^ the LLVM backend does not compile calls of `Callable` values yet
 
 "
+    );
+}
+
+/// An argument is passed at its parameter's type with the call's type arguments in place: an
+/// `Owned[T]` argument moves a `list[int]`, an `Array[f64, 1]` or an `int` widened to the `f64`
+/// that `T` stands for, an `Owned[T]` method parameter of a generic struct takes the struct's
+/// `T`, and a borrowed `T | None` receives an `int | None`. Before, the caller built a temporary
+/// of type `T` itself: each `Owned` call failed with "the LLVM backend does not compile values
+/// of type `T` yet" after `baryon check` passed, and `present(3)` returned `False`.
+#[test]
+fn arguments_take_the_instantiated_parameter_type() {
+    let program = "\
+def first[T](x: Owned[T]) -> T:
+    return x
+
+
+def pick[T](x: Owned[T], y: Owned[T]) -> T:
+    return y
+
+
+def present[T](x: T | None) -> bool:
+    return x is not None
+
+
+class Bag[T](Struct):
+    items: list[T]
+
+    def put(self: InOut[Self], item: Owned[T]) -> None:
+        self.items.append(item)
+
+
+def main():
+    xs = [1, 2]
+    same = first(xs)
+    values = first(Array.fill(2, 0.5))
+    print(same, values[1], pick(1.5, 2))
+    bag = Bag([1])
+    bag.put(2)
+    print(bag.items, present(3))
+";
+    assert_eq!(
+        output("generic-arguments", program).unwrap(),
+        "[1, 2] 0.5 2.0\n[1, 2] True\n"
     );
 }
