@@ -43,6 +43,7 @@ impl<'db> Builder<'db> {
             SyntaxKind::Attribute if self.is_frame_attribute(node) => {
                 self.frame_attribute(place, node);
             }
+            SyntaxKind::Subscript if self.is_frame_row(node) => self.frame_row(place, node),
             SyntaxKind::Subscript if self.is_environ_item(node) => {
                 self.environ_item(place, node);
             }

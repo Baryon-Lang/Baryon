@@ -97,6 +97,18 @@ Where the context names the type, as in `trades: DataFrame[Trade] = DataFrame({.
 `return` from a function that returns `DataFrame[Trade]`, a literal column takes its element
 type from the schema: `Array([1, 2])` for the column `price: f64` holds `f64`s.
 
+`DataFrame(rows)` builds a frame from a list of structs, one row for each, in order. The struct
+is the frame's schema, so `DataFrame(rows)` with `rows: list[Trade]` is a `DataFrame[Trade]`.
+
+```python
+rows = [Trade(189.5, 100), Trade(410.0, 250), Trade(171.0, 50)]
+trades = DataFrame(rows)
+```
+
+The list is read, not moved: each field is copied into its column in one pass over the list, and
+`rows` is still usable afterwards. An empty list gives a frame of no rows; `DataFrame([])` needs
+the context to name the type, as `empty: DataFrame[Trade] = DataFrame([])` does.
+
 ## Columns
 
 `df.name` and `df["name"]` both read the column `name`, as in pandas. Each is an array of rank 1
@@ -142,6 +154,33 @@ changes, so assignment cannot add a column. Adding and removing columns give a n
 **A column cannot be moved out of its frame.** `kept = trades.price` is an error, since it would
 leave the frame with a column missing. Copy the column to keep it on its own:
 `kept = trades.price.copy()`.
+
+## Rows
+
+`df[i]` is row `i` as a value of the schema's struct: `trades[0]` is a `Trade`. Rows are numbered
+from 0, and a negative literal counts from the end, so `trades[-1]` is the last row.
+
+```python
+first = trades[0]
+print(first.price, first.volume)
+print(trades[-1])
+```
+
+```text
+189.5 100
+Trade(price=171.0, volume=50)
+```
+
+- **A row is a copy.** The frame stores columns, not rows, so `df[i]` builds a new struct from
+  element `i` of each column. Changing the struct does not change the frame, and a row cannot be
+  assigned: write `df.price[i] = 200.0` to change one value.
+- **A row number out of range panics**, as an array index does.
+- **Prefer columns in a hot loop.** `df[i]` reads every column to build one struct. A loop that
+  needs two columns of a wide frame is faster reading `df.price[i]` and `df.volume[i]`, and
+  faster still as whole-array arithmetic on the columns.
+- **The frame needs a struct to give.** A frame whose columns the compiler worked out, such as
+  `DataFrame({"price": prices})`, has no struct for a row, and `df[i]` on it is a compile error.
+  Declare it with one, `trades: DataFrame[Trade] = DataFrame({...})`, to read its rows.
 
 ## `len`, `shape` and `columns`
 

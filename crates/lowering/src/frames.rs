@@ -232,4 +232,89 @@ impl<'db> Builder<'db> {
         }
         self.assign(place, Rvalue::Aggregate(ty, columns), node);
     }
+
+    /// Whether `node` reads a row of a frame, `df[i]`: a subscript of a frame that names no
+    /// column. It is a new struct at each read, so it names no place.
+    pub(crate) fn is_frame_row(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::Subscript
+            && self
+                .tree
+                .child(node, Role::Value)
+                .is_some_and(|value| self.frame_columns(value).is_some())
+            && !self.is_column(node)
+    }
+
+    /// `df[i]` into `place`: a struct holding element `i` of each column, in the schema's
+    /// order, which is the struct's field order. The index is checked against the number of
+    /// rows as an array index is, and a negative literal counts from the end.
+    pub(crate) fn frame_row(&mut self, place: Place, node: NodeId) {
+        let ty = self.ty(node);
+        let (Some(value), Some(index)) = (
+            self.tree.child(node, Role::Value),
+            self.tree.child(node, Role::Index),
+        ) else {
+            return;
+        };
+        let Some(columns) = self.frame_columns(value) else {
+            return;
+        };
+        let frame = self.borrow(value);
+        let first = frame.clone().project(Projection::Field(0));
+        let Some(first_type) = columns.first().map(|column| self.column_type(column)) else {
+            return;
+        };
+        let row = self.index(&first, first_type, 0, index, false);
+        let fields = (0_u32..)
+            .zip(columns)
+            .map(|(position, _)| {
+                let column = frame.clone().project(Projection::Field(position));
+                Operand::Copy(column.project(Projection::Index(vec![row])))
+            })
+            .collect();
+        self.assign(place, Rvalue::Aggregate(ty, fields), node);
+    }
+
+    /// `DataFrame(rows)` into `place`, where `rows` is a list of the struct that names the
+    /// frame's rows: one new array per field, of the list's length, filled in one pass over
+    /// the list, so the cost is one read of the list and one write of the frame.
+    pub(crate) fn frame_from_rows(&mut self, place: Place, rows: NodeId, node: NodeId) {
+        let ty = self.ty(node);
+        let Some(columns) = self.frame_columns(node) else {
+            return self.unsupported(node, "this `DataFrame`");
+        };
+        let list = self.borrow(rows);
+        let length = self.temporary(self.int_type(), node);
+        self.assign(Place::from(length), Rvalue::Length(list.clone(), 0), node);
+        let length = Operand::Copy(Place::from(length));
+        let arrays: Vec<_> = columns
+            .iter()
+            .map(|column| {
+                let array = self.column_type(column);
+                let local = self.temporary(array, node);
+                let lengths = vec![length.clone()];
+                self.assign(Place::from(local), Rvalue::NewArray(array, lengths), node);
+                local
+            })
+            .collect();
+        self.loop_nest(&[length], &mut Vec::new(), node, &mut |builder, indices| {
+            let row = list.clone().project(Projection::Index(indices.to_vec()));
+            for (position, &array) in (0_u32..).zip(&arrays) {
+                let field = row.clone().project(Projection::Field(position));
+                let element = Place::from(array).project(Projection::Index(indices.to_vec()));
+                builder.assign(element, Rvalue::Use(Operand::Copy(field)), node);
+            }
+        });
+        let columns = arrays
+            .into_iter()
+            .map(|array| Operand::Move(Place::from(array)))
+            .collect();
+        self.assign(place, Rvalue::Aggregate(ty, columns), node);
+    }
+
+    /// The type of a column as lowering stores it: an array of rank 1 of the column's
+    /// elements.
+    fn column_type(&self, column: &Column<'db>) -> Type<'db> {
+        let element = column.element;
+        Type::new(self.db, TypeKind::Array { element, rank: 1 })
+    }
 }

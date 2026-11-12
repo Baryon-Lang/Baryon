@@ -24,6 +24,12 @@ impl<'db> Lowerer<'db> {
             return self.arity(node, "DataFrame", 1, found);
         };
         let row = self.lower(schema);
+        self.frame_of(schema, row)
+    }
+
+    /// The frame type whose rows are the struct `row`: one column for each of its fields. An
+    /// error, reported at `schema`, when `row` is not a struct of columns.
+    pub(crate) fn frame_of(&mut self, schema: NodeId, row: Type<'db>) -> Type<'db> {
         let TypeKind::Struct(nominal) = row.kind(self.db) else {
             if matches!(row.kind(self.db), TypeKind::Unknown) {
                 return row;

@@ -154,3 +154,81 @@ def main():
         "panic: array lengths differ in dimension 0: 2 and 3\n  --> main.byn:4:5\n"
     );
 }
+
+/// A frame built from a list of rows has the rows' struct as its schema and leaves the list
+/// usable; `df[i]` is that struct again, with a negative literal counting from the end, kept,
+/// passed on and collected into a new list; and an empty list gives a frame of no rows.
+#[test]
+fn frames_are_built_from_rows_and_give_rows_back() {
+    let program = r#"
+class Trade(Struct):
+    price: f64
+    volume: i64
+    buy: bool
+
+
+def worth(trade: Trade) -> f64:
+    return trade.price * trade.volume
+
+
+def main():
+    rows = [Trade(189.5, 100, True), Trade(410.0, 250, False), Trade(171.0, 50, True)]
+    trades = DataFrame(rows)
+    print(trades.shape, trades.columns, len(rows))
+    print(trades.price, trades.volume, trades.buy)
+    first = trades[0]
+    last = trades[-1]
+    print(first.price, first.volume, first.buy, last)
+    total = 0.0
+    for i in range(len(trades)):
+        total += worth(trades[i])
+    print(total)
+    kept = [trades[1], trades[2]]
+    again = DataFrame(kept)
+    print(again.price)
+    declared: DataFrame[Trade] = DataFrame({
+        "price": Array([1.0]),
+        "volume": Array([2]),
+        "buy": Array([True]),
+    })
+    print(declared[0])
+    empty: DataFrame[Trade] = DataFrame([])
+    print(empty.shape, empty.price)
+"#;
+    let (code, stdout, report) = run("frames-rows", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(
+        stdout,
+        "\
+(3, 3) ['price', 'volume', 'buy'] 3
+[189.5 410.  171. ] [100 250  50] [ True False  True]
+189.5 100 True Trade(price=171.0, volume=50, buy=True)
+130000.0
+[410. 171.]
+Trade(price=1.0, volume=2, buy=True)
+(0, 3) []
+"
+    );
+}
+
+/// A row number past the end panics as an array index does.
+#[test]
+fn a_row_out_of_range_panics() {
+    let program = r"
+class Trade(Struct):
+    price: f64
+    volume: i64
+
+
+def main():
+    trades = DataFrame([Trade(189.5, 100), Trade(410.0, 250)])
+    row = 2
+    print(trades[row])
+";
+    let (code, stdout, report) = run("frames-row-range", program).unwrap();
+    assert_eq!((code, stdout.as_str()), (Some(101), ""));
+    assert_eq!(
+        report,
+        "panic: index 2 is out of range for dimension 0 of length 2\n  --> main.byn:10:18\n"
+    );
+}

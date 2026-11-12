@@ -122,7 +122,12 @@ impl<'db> Builder<'db> {
             (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
             (None, _) if name == "print" => self.print(place, arguments, node),
             (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
-            (None, [table]) if name == "DataFrame" => self.frame_new(&place, *table, node),
+            (None, [table])
+                if name == "DataFrame" && self.tree.kind(*table) == SyntaxKind::Dictionary =>
+            {
+                self.frame_new(&place, *table, node);
+            }
+            (None, [rows]) if name == "DataFrame" => self.frame_from_rows(place, *rows, node),
             (Some(("DataFrame", "copy")), [frame]) => self.frame_copy(place, *frame, node),
             (None, _) if name == "open" => self.open(place, arguments, node),
             (None, [value]) if name == "str" => {
