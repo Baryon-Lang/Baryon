@@ -73,7 +73,8 @@ impl Builder<'_> {
 
     /// Whether `node`, a subscript or a comparison, is a read of a `Header`, or the target of a
     /// write to one: a call of a library function the checker recorded at it. A `NetCDF`
-    /// `ds.variables[name]` is one too, and `var[:]`, a built-in call (decision 0047).
+    /// `ds.variables[name]` is one too, and `var[:]` and the target of `var[:] = values`, each
+    /// a built-in call (decision 0047).
     pub(crate) fn is_library_access(&self, node: NodeId) -> bool {
         matches!(
             self.tree.kind(node),
@@ -83,13 +84,15 @@ impl Builder<'_> {
             .call(node)
             .is_some_and(|call| match &call.callee {
                 types::Callee::Function(_) => true,
-                types::Callee::Builtin(name) => name == "netCDF4.read",
+                types::Callee::Builtin(name) => {
+                    matches!(name.as_str(), "netCDF4.read" | "netCDF4.write")
+                }
                 _ => false,
             })
     }
 
-    /// `header[key] = value`, the assignment to the subscript `target`, as the call of a
-    /// library function the checker recorded at the target, whose result is `None`.
+    /// `header[key] = value` or `var[:] = values`, the assignment to the subscript `target`, as
+    /// the call the checker recorded at the target, whose result is `None`.
     pub(crate) fn library_store(&mut self, target: NodeId) {
         let nothing = Type::new(self.db, TypeKind::None);
         let result = self.temporary(nothing, target);

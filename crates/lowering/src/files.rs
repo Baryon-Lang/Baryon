@@ -21,7 +21,7 @@ use mir::{
     Rvalue, StatementKind, TerminatorKind,
 };
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Integer, Primitive, Type, TypeKind};
+use types::{Integer, Primitive, StandardType, Type, TypeKind};
 
 /// The modes `open` takes and the number each passes, as the checker accepts them.
 const MODES: [(&str, i128); 4] = [("r", 0), ("w", 1), ("a", 2), ("x", 3)];
@@ -83,7 +83,8 @@ impl<'db> Builder<'db> {
         self.file_call(method, passed, place, node);
     }
 
-    /// `with value as name:` and its body, the file closed where the body falls through.
+    /// `with value as name:` and its body, the file closed where the body falls through; a
+    /// `NetCDF` `Dataset` is bound and left as it is, since its file is closed after each call.
     pub(crate) fn with_file(&mut self, statement: NodeId, item: NodeId) {
         let (Some(value), Some(target)) = (
             self.tree.child(item, Role::Value),
@@ -94,11 +95,16 @@ impl<'db> Builder<'db> {
         let Some(file) = self.target_variable(target) else {
             return self.unsupported(target, "this `with` target");
         };
+        // A `NetCDF` `Dataset`, the other value `with` binds, has nothing to close.
+        let is_file = matches!(
+            self.ty(value).kind(self.db),
+            TypeKind::Standard(StandardType::File)
+        );
         self.enter();
         self.store(target, value);
         self.leave(statement);
         self.block(statement, Role::Body);
-        if self.is_dead() {
+        if self.is_dead() || !is_file {
             return;
         }
         let none = Type::new(self.db, TypeKind::None);

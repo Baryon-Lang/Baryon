@@ -26,7 +26,8 @@ fn read(path: &str, name: &str, pixel: Pixel, count: usize) -> Result<Vec<u8>, O
         .find(|variable| variable.name == name)
         .unwrap();
     let mut memory = vec![0_u8; count * pixel.size()];
-    read_variable(path, &header, variable, pixel, &mut memory)?;
+    let selection = header.everything(variable);
+    read_variable(path, &header, (variable, &selection), pixel, &mut memory)?;
     Ok(memory)
 }
 
@@ -206,4 +207,82 @@ fn python_floats_are_printed_as_python_prints_them() {
     assert_eq!(python_float(1.5e-7), "1.5e-07");
     assert_eq!(python_float(f64::NEG_INFINITY), "-inf");
     assert_eq!(python_float(f64::NAN), "nan");
+}
+
+/// Reads the values `items` pick of `name` of the file at `path` as `count` elements of `pixel`.
+fn read_picked(path: &str, name: &str, items: &[Item], pixel: Pixel, count: usize) -> Vec<u8> {
+    let header = read_header(path).unwrap();
+    let variable = header
+        .variables
+        .iter()
+        .find(|variable| variable.name == name)
+        .unwrap();
+    let names: Vec<&str> = variable
+        .dimensions
+        .iter()
+        .map(|&dimension| header.dimensions[dimension].0.as_str())
+        .collect();
+    let lengths: Vec<u64> = variable
+        .dimensions
+        .iter()
+        .map(|&dimension| header.length(dimension))
+        .collect();
+    let record = header.is_record(variable);
+    let selection = select(name, items, (&names, &lengths), record, None).unwrap();
+    assert_eq!(selection.count(), count);
+    let mut memory = vec![0_u8; count * pixel.size()];
+    read_variable(path, &header, (variable, &selection), pixel, &mut memory).unwrap();
+    memory
+}
+
+#[test]
+fn slices_read_what_netcdf4_reads() {
+    let path = file("slices", CLASSIC);
+    let every = Item::Slice {
+        start: None,
+        stop: None,
+        stride: None,
+    };
+    let from = |start: i64| Item::Slice {
+        start: Some(start),
+        stop: None,
+        stride: None,
+    };
+    let by = |stride: i64| Item::Slice {
+        start: None,
+        stop: None,
+        stride: Some(stride),
+    };
+    let temp = |items: &[Item], count: usize| {
+        floats(&read_picked(&path, "temp", items, Pixel::F32, count))
+    };
+    // `temp[1, :, ::2]`, `temp[-1, 1]`, `temp[:, 0, 1]` and `temp[0, ::-1, 2]`, as `netCDF4`
+    // 1.7.2 reads them.
+    assert_eq!(
+        temp(&[Item::Index(1), every, by(2)], 4),
+        [276.5, 278.5, 279.5, 281.5]
+    );
+    assert_eq!(
+        temp(&[Item::Index(-1), Item::Index(1)], 3),
+        [279.5, 280.5, 281.5]
+    );
+    assert_eq!(
+        temp(&[every, Item::Index(0), Item::Index(1)], 2),
+        [271.5, 277.5]
+    );
+    assert_eq!(
+        temp(&[Item::Index(0), by(-1), Item::Index(2)], 2),
+        [275.5, 272.5]
+    );
+    // `packed[1, 1, 1:]`, unpacked in `float32` as `netCDF4` unpacks it.
+    let packed = floats(&read_picked(
+        &path,
+        "packed",
+        &[Item::Index(1), Item::Index(1), from(1)],
+        Pixel::F32,
+        2,
+    ));
+    assert_eq!(packed, [0x4380_599A, 0x4380_B333].map(f32::from_bits));
+    let lat = read_picked(&path, "lat", &[from(1)], Pixel::F64, 1);
+    assert_eq!(lat, 20.0_f64.to_ne_bytes());
 }

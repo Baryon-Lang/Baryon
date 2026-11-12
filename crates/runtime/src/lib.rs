@@ -46,6 +46,7 @@
 //! | [`baryon_rt_array_load`], [`baryon_rt_array_save`] | Read a `.npy` file into a new array of the element type and rank the program names, and write an array as one, as `NumPy`'s `load` and `save` do, each failure an `OSError` (decision 0043) |
 //! | [`baryon_rt_fits_cards`], [`baryon_rt_fits_read`], [`baryon_rt_fits_write`] | Read the header cards and the image of one HDU of a FITS file, and write an array as a FITS image with a program's cards, as `AstroPy`'s `getheader`, `getdata` and `writeto` do, each failure an `OSError` (decision 0044) |
 //! | [`baryon_rt_netcdf_open`], [`baryon_rt_netcdf_read`] | Describe the header of a `NetCDF` classic file and read one of its variables into a new array, scaled as `netCDF4` scales it, for the `netCDF4` module's `Dataset`, each failure an `OSError` (decision 0047) |
+//! | [`baryon_rt_netcdf_define`], [`baryon_rt_netcdf_write`] | Apply one change (a new file, a dimension, a variable or an attribute) to a `NetCDF` classic file, and write an array as all the values of one of its variables, packed as `netCDF4` packs them, each failure an `OSError` (decision 0047) |
 //! | [`baryon_rt_file_standard`], [`baryon_rt_file_print`], [`baryon_rt_input`] | Make the `File` that `sys.stdin`, `sys.stdout` or `sys.stderr` gives, write a `print(..., file=f)` to its file, and read a line for `input`, raising `EOFError` at the end of the input (decision 0036) |
 //! | [`baryon_rt_subprocess_run`] | Run another program from an argument list, with no shell, wait for it and write a [`CompletedProcess`]: its exit status and, when asked, its output, for `subprocess.run` (decision 0036) |
 //! | [`baryon_rt_flush`] | Write out a line `print(..., end="")` left unended, before the C `main` returns |
@@ -123,27 +124,28 @@ pub use abi::{
     baryon_rt_file_drop, baryon_rt_file_flush, baryon_rt_file_open, baryon_rt_file_print,
     baryon_rt_file_read, baryon_rt_file_read_line, baryon_rt_file_read_lines,
     baryon_rt_file_standard, baryon_rt_file_write, baryon_rt_fits_cards, baryon_rt_fits_read,
-    baryon_rt_fits_write, baryon_rt_flush, baryon_rt_input, baryon_rt_netcdf_open,
-    baryon_rt_netcdf_read, baryon_rt_pairwise_combine_f32, baryon_rt_pairwise_combine_f64,
-    baryon_rt_pairwise_leaf_end, baryon_rt_pairwise_leaves, baryon_rt_panic,
-    baryon_rt_panic_exponent, baryon_rt_panic_index, baryon_rt_panic_key,
-    baryon_rt_panic_length_mismatch, baryon_rt_panic_slice, baryon_rt_parallel_for,
-    baryon_rt_path_is, baryon_rt_path_join, baryon_rt_path_list, baryon_rt_path_make_directory,
-    baryon_rt_path_part, baryon_rt_path_remove, baryon_rt_path_rename, baryon_rt_philox_new,
-    baryon_rt_philox_uniform, baryon_rt_power_complex64, baryon_rt_power_complex128,
-    baryon_rt_print_array, baryon_rt_print_bool, baryon_rt_print_complex64,
-    baryon_rt_print_complex128, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
-    baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64, baryon_rt_round_f32,
-    baryon_rt_round_f64, baryon_rt_round_i64, baryon_rt_sort, baryon_rt_sort_str,
-    baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_ends_with, baryon_rt_str_find,
-    baryon_rt_str_join, baryon_rt_str_length, baryon_rt_str_lower, baryon_rt_str_parse_float,
-    baryon_rt_str_parse_int, baryon_rt_str_replace, baryon_rt_str_split,
-    baryon_rt_str_split_whitespace, baryon_rt_str_starts_with, baryon_rt_str_strip,
-    baryon_rt_str_strip_characters, baryon_rt_str_take, baryon_rt_str_upper,
-    baryon_rt_subprocess_run, baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_sum_strided_f32,
-    baryon_rt_sum_strided_f64, baryon_rt_text_bool, baryon_rt_text_complex64,
-    baryon_rt_text_complex128, baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish,
-    baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
+    baryon_rt_fits_write, baryon_rt_flush, baryon_rt_input, baryon_rt_netcdf_define,
+    baryon_rt_netcdf_open, baryon_rt_netcdf_read, baryon_rt_netcdf_write,
+    baryon_rt_pairwise_combine_f32, baryon_rt_pairwise_combine_f64, baryon_rt_pairwise_leaf_end,
+    baryon_rt_pairwise_leaves, baryon_rt_panic, baryon_rt_panic_exponent, baryon_rt_panic_index,
+    baryon_rt_panic_key, baryon_rt_panic_length_mismatch, baryon_rt_panic_slice,
+    baryon_rt_parallel_for, baryon_rt_path_is, baryon_rt_path_join, baryon_rt_path_list,
+    baryon_rt_path_make_directory, baryon_rt_path_part, baryon_rt_path_remove,
+    baryon_rt_path_rename, baryon_rt_philox_new, baryon_rt_philox_uniform,
+    baryon_rt_power_complex64, baryon_rt_power_complex128, baryon_rt_print_array,
+    baryon_rt_print_bool, baryon_rt_print_complex64, baryon_rt_print_complex128,
+    baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64, baryon_rt_print_str,
+    baryon_rt_print_str_quoted, baryon_rt_print_u64, baryon_rt_round_f32, baryon_rt_round_f64,
+    baryon_rt_round_i64, baryon_rt_sort, baryon_rt_sort_str, baryon_rt_str_compare,
+    baryon_rt_str_contains, baryon_rt_str_ends_with, baryon_rt_str_find, baryon_rt_str_join,
+    baryon_rt_str_length, baryon_rt_str_lower, baryon_rt_str_parse_float, baryon_rt_str_parse_int,
+    baryon_rt_str_replace, baryon_rt_str_split, baryon_rt_str_split_whitespace,
+    baryon_rt_str_starts_with, baryon_rt_str_strip, baryon_rt_str_strip_characters,
+    baryon_rt_str_take, baryon_rt_str_upper, baryon_rt_subprocess_run, baryon_rt_sum_f32,
+    baryon_rt_sum_f64, baryon_rt_sum_strided_f32, baryon_rt_sum_strided_f64, baryon_rt_text_bool,
+    baryon_rt_text_complex64, baryon_rt_text_complex128, baryon_rt_text_f32, baryon_rt_text_f64,
+    baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,
+    baryon_rt_text_u64,
 };
 pub use accumulate::Accumulator;
 pub use dict::{DictLayout, KeyPart, STR_PART, Table};

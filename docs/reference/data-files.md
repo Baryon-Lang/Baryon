@@ -18,7 +18,7 @@ formats one at a time, those that need no outside library first.
 | [Text tables](#text-tables) of numbers: CSV, whitespace-separated columns | `Array.loadtxt(fname)` | `Array.savetxt(fname, X)` |
 | [`.npy` files](#npy-files), NumPy's own format | `Array.load(file)` | `Array.save(file, arr)` |
 | [FITS images and headers](#fits-files), astronomy's format | `fits.getdata(filename)`, `fits.getheader(filename)` | `fits.writeto(filename, data, header)` |
-| [NetCDF classic files](#netcdf-files), the format of climate and weather data | `Dataset(filename).variables[name][:]` | not yet |
+| [NetCDF classic files](#netcdf-files), the format of climate and weather data | `Dataset(filename).variables[name][:]` | `ds.variables[name][:] = values` |
 | Raw binary arrays | [`Array.fromfile(path, dtype)`](files-and-processes.md#array-files) | [`a.tofile(path)`](files-and-processes.md#array-files) |
 
 ## Text tables
@@ -232,10 +232,10 @@ roadmap 4.2.5's or come later. Each is an error that names it, never silently ig
 NetCDF is the file format of climate, weather, ocean and much of earth science: model output,
 reanalyses and satellite products arrive as `.nc` files. A NetCDF file holds named dimensions,
 named variables, each an array over some of the dimensions, and attributes, small named values
-on the file or on a variable such as `units = "K"`. The `netCDF4` module reads the classic
-formats, CDF-1 and the 64-bit offset CDF-2, with the names of Unidata's `netCDF4` package
-([decision 0047](../decisions/0047-netcdf-classic-files.md)). One dimension may be unlimited:
-the records, usually time, that a model appends as it runs.
+on the file or on a variable such as `units = "K"`. The `netCDF4` module reads and writes the
+classic formats, CDF-1 and the 64-bit offset CDF-2, with the names of Unidata's `netCDF4`
+package ([decision 0047](../decisions/0047-netcdf-classic-files.md)). One dimension may be
+unlimited: the records, usually time, that a model appends as it runs.
 
 ```python
 from netCDF4 import Dataset
@@ -299,11 +299,68 @@ as the same lines would in Python.
   `ds.getncattr("title")`.
 - **`var.dimensions` is a `list[str]`**, where `netCDF4` gives a tuple of the same names.
 
+### Writing a NetCDF file
+
+`Dataset(path, "w", format=...)` makes a new classic file, replacing any file there, and the
+same calls as in Python define and fill it:
+
+```python
+from netCDF4 import Dataset
+
+
+def main() -> Raises[None, OSError]:
+    ds = Dataset("grid.nc", "w", format="NETCDF3_CLASSIC")
+    ds.setncattr("title", "test grid")
+    ds.createDimension("time", None)
+    ds.createDimension("lat", 2)
+    temp = ds.createVariable("temp", "f4", ("time", "lat"))
+    temp.setncattr("units", "K")
+    values: Array[f32, 2] = Array.zeros((3, 2))
+    temp[:] = values
+    ds.close()
+```
+
+This writes three records of a two-point grid, and its bytes are the bytes `netCDF4` writes for
+the same calls, fill values and padding included; the tests compare them.
+
+| Code | Gives | Does |
+| --- | --- | --- |
+| `Dataset(filename, "w", format=...)` | `Dataset` | makes a new file: `format` is `"NETCDF3_CLASSIC"` or `"NETCDF3_64BIT_OFFSET"` |
+| `Dataset(filename, "a")` or `"r+"` | `Dataset` | opens a file to add to it |
+| `ds.createDimension(dimname, size=None)` | `Dimension` | a new dimension; `None` or `0` makes it the unlimited one |
+| `ds.createVariable(varname, datatype, dimensions=())` | `Variable` | a new variable over the dimensions named, slowest first |
+| `ds.setncattr(name, value)`, `var.setncattr(name, value)` | `None` | sets an attribute of the file or of a variable |
+| `var[:] = values` | `None` | writes an array as all the variable's values |
+| `with Dataset(...) as ds:` | | binds `ds` for the block, as `ds = Dataset(...)` does |
+
+- **Each call changes the file at once.** The file is the only state, so `ds.close()` and the
+  end of a `with` block have nothing left to write, and a program that stops halfway leaves a
+  valid file with what it defined and wrote so far. Each change writes the new file beside the
+  old one and then renames it over it, so even a crash or a full disk in the middle of a change
+  leaves the old file or the new one, never one cut short, and the file keeps its permissions.
+  A variable is filled with its type's fill value until it is
+  written. Defining reads and writes the whole file each time, which is quick for the small
+  headers of classic files but makes many small definitions of a large file slow: define
+  everything first, then write the values.
+- **A type is named as `netCDF4` names it** (`"f4"`, `"f8"`, `"i1"`, `"i2"`, `"i4"`) or as NumPy
+  names or codes it (`"float32"`, `"f"`, `"int16"`, `"h"` and so on). `dimensions` is a tuple of
+  names, or one name, and up to four of them so far.
+- **An attribute is a `str`, an `int` or a `float`**, stored as `netCDF4` stores a Python value
+  of that type: text, one 32-bit integer, or one 64-bit float. An integer too big for 32 bits
+  raises `OSError` with the kind `INVALID_DATA`.
+- **`var[:] = values` takes an array of signed integers or floats** of the variable's rank,
+  converted to the variable's type as NumPy converts, and packed by `scale_factor` and
+  `add_offset` as `netCDF4` packs. A record variable takes as many records as the array's first
+  length, adding records to the file; every other length must be the dimension's.
+  `ds.variables[name][:] = values` writes a variable found by name.
+- **What the format refuses raises `OSError`** with the kind `INVALID_DATA` and `netCDF4`'s
+  message: a name already in use, a second unlimited dimension, or the unlimited dimension
+  anywhere but first.
+
 ### Not built yet
 
-Writing NetCDF files (`Dataset(path, "w", format=...)`, `createDimension`, `createVariable`,
-`setncattr`) comes next under decision 0047, then slices of a variable, such as
-`var[0, :, :]`. Listing `ds.variables` and `ds.dimensions`, `with Dataset(...) as ds`, text
-variables, attributes of several values read as an array, CDF-5 files and NetCDF-4 files, which
-are HDF5 files (roadmap 3.14.6), come later. Each is an error that names it, never silently
-ignored.
+Slices of a variable, such as `var[0, :, :]`, come next under decision 0047. Listing
+`ds.variables` and `ds.dimensions`, attributes set as `var.units = "K"`, `fill_value=` and
+compression in `createVariable`, text variables, attributes of several values, CDF-5 files and
+NetCDF-4 files, which are HDF5 files (roadmap 3.14.6), come later. Each is an error that names
+it, never silently ignored.

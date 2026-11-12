@@ -36,6 +36,7 @@ mod list_slices;
 mod math;
 mod modules;
 mod netcdf;
+mod netcdf_writing;
 mod npy;
 mod one_pass;
 mod overflow;
