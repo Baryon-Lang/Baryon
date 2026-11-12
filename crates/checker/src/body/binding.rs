@@ -42,11 +42,33 @@ impl<'db> Body<'db> {
             self.assigned_complex_part(target);
             self.assigned_module_member(target);
             // A slice takes a number for every element, `a[1:n] = 0.0` (reference, "Slices").
+            // So do the elements an array chooses, `a[a < 0.0] = 0.0` (roadmap 3.13.1).
+            let chosen = self.is_selection(target);
             let filled = match held.kind(self.db) {
-                TypeKind::Array { element, .. } if self.is_view(target) => Some(*element),
+                TypeKind::Array { element, .. } if self.is_view(target) || chosen => Some(*element),
                 _ => None,
             };
             let ty = self.expression(value, Some(filled.unwrap_or(held)));
+            if let Some(element) = filled
+                && chosen
+            {
+                if self.is_scalar(ty) || ty == element {
+                    self.expect(value, element, ty, "each chosen element holds");
+                } else if !relations::is_open(self.db, ty) {
+                    let message = format!(
+                        "the chosen elements take one `{}`, found `{}`",
+                        self.show(element),
+                        self.show(ty)
+                    );
+                    self.lowerer.error(
+                        value,
+                        &message,
+                        "not a single value",
+                        Some("every chosen element is set to the same value, as in `a[a < 0.0] = 0.0`"),
+                    );
+                }
+                return;
+            }
             // An array is read element by element into an array slice, as `NumPy` copies it,
             // and a list slice takes copies of the elements of its list, `xs[i:j] = ys`, as
             // Python's does: nothing moves.
