@@ -50,6 +50,7 @@ mod fits_header;
 mod flow;
 mod formatted;
 mod frame_rows;
+mod frame_schema;
 mod frames;
 mod generics;
 mod library;

@@ -28,7 +28,8 @@ pub(crate) struct Rows<'db> {
 
 impl<'db> Builder<'db> {
     /// The call `node` of the method `method` of the frame `frame`, with the arguments
-    /// `rest`, into `place`: `copy()`, `head(n)` or `tail(n)`.
+    /// `rest`, into `place`: `copy()`, `head(n)` or `tail(n)`, or a method that changes the
+    /// columns (the `frame_schema` module).
     pub(crate) fn frame_method(
         &mut self,
         place: Place,
@@ -36,6 +37,9 @@ impl<'db> Builder<'db> {
         (frame, rest): (NodeId, &[NodeId]),
         node: NodeId,
     ) {
+        if self.schema_method(&place, method, frame, node) {
+            return;
+        }
         let function = match (method, rest.len()) {
             ("copy", 0) => return self.frame_copy(place, frame, node),
             ("head", 0 | 1) => "head_positions",
