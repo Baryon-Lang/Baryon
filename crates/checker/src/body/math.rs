@@ -5,7 +5,8 @@
 //! `sqrt(x)` on an `f32` is an `f32`, as `numpy.sqrt` gives. An integer argument converts to
 //! `f64`, as Python's `math.sqrt(2)` gives `1.4142135623730951`. A function of two or three
 //! numbers, such as `pow(x, y)` or `fma(x, y, z)`, mixes them as `x ** y` does, except that
-//! integers alone give an `f64`. `floor`, `ceil` and `trunc` return an `int`, as in Python, and
+//! integers alone give an `f64`. Inside `def f[T: Float]`, an argument of type `T` makes the
+//! call take and return `T`, so one generic function serves `f32` and `f64`. `floor`, `ceil` and `trunc` return an `int`, as in Python, and
 //! `isnan`, `isinf` and `isfinite` a `bool`.
 //!
 //! The constants `pi`, `e`, `tau`, `inf` and `nan` are `f64`s with Python's values.
@@ -16,6 +17,7 @@
 use super::Body;
 use super::calls::Arguments;
 use super::numbers;
+use crate::traits::Trait;
 use syntax::NodeId;
 use types::{Float, Integer, Primitive, Type, TypeKind};
 
@@ -66,6 +68,16 @@ impl<'db> Body<'db> {
             );
             return Some(self.lowerer.error(node, &message, &found, None));
         }
+        if let Some(parameter) = self.float_parameter(member, &types, &arguments.positional) {
+            return Some(match result {
+                Returns::Float => parameter,
+                Returns::Integer => Type::new(
+                    self.db,
+                    TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+                ),
+                Returns::Bool => Type::new(self.db, TypeKind::Primitive(Primitive::Bool)),
+            });
+        }
         let mut mixed: Option<Primitive> = None;
         for (&ty, &argument) in types.iter().zip(&arguments.positional) {
             let primitive = match ty.kind(self.db) {
@@ -101,6 +113,34 @@ impl<'db> Body<'db> {
             (Returns::Float, _) => Primitive::Float(Float::F64),
         };
         Some(Type::new(self.db, TypeKind::Primitive(primitive)))
+    }
+
+    /// The type parameter `T` bounded by `Float` that every argument has, for a call such as
+    /// `sqrt(x)` or `hypot(x, y)` inside `def f[T: Float]`, so one generic function serves `f32`
+    /// and `f64` (language reference, "Generic functions": `Float` allows the `math`
+    /// functions). `None` when no argument has such a type; an error type when one does and
+    /// another argument has a different type, since `T` and `f64` do not mix.
+    fn float_parameter(
+        &mut self,
+        member: &str,
+        types: &[Type<'db>],
+        arguments: &[NodeId],
+    ) -> Option<Type<'db>> {
+        let parameter = *types
+            .iter()
+            .find(|&&ty| self.trait_of(ty) == Some(Trait::Float))?;
+        for (&ty, &argument) in types.iter().zip(arguments) {
+            if ty != parameter && !matches!(ty.kind(self.db), TypeKind::Unknown) {
+                let message = format!(
+                    "`{member}` cannot mix `{}` and `{}`",
+                    parameter.display(self.db),
+                    ty.display(self.db)
+                );
+                let hint = format!("not a `{}`", parameter.display(self.db));
+                return Some(self.lowerer.error(argument, &message, &hint, None));
+            }
+        }
+        Some(parameter)
     }
 }
 
