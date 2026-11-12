@@ -14,7 +14,7 @@ Baryon source files end in `.byn` ([decision 0023](../decisions/0023-language-na
 | Program | Physics or mathematics | Language features it exercises |
 | --- | --- | --- |
 | [`heat_equation.byn`](heat_equation.byn) | 3D heat equation, explicit 7-point stencil | `Array[f64, 3]`, `InOut`, `prange`, swapping arrays by move |
-| [`lennard_jones.byn`](lennard_jones.byn) | Lennard-Jones molecular dynamics, velocity Verlet | `Fixed` vectors, arrays of vectors, `Struct` state, disjoint field borrows, inferred reductions |
+| [`lennard_jones.byn`](lennard_jones.byn) | Lennard-Jones molecular dynamics, velocity Verlet | `Fixed` vectors, arrays of vectors, `Struct` state, disjoint field borrows, inferred reductions, `accumulate=` |
 | [`conjugate_gradient.byn`](conjugate_gradient.byn) | Poisson's equation, sparse CSR matrix, conjugate gradient | `Struct` methods, `list` to `Array`, `Raises`, `try`/`except` |
 | [`lorenz_rk4.byn`](lorenz_rk4.byn) | Lorenz system, fourth-order Runge-Kutta | generic functions with trait bounds, functions as arguments |
 | [`monte_carlo_pi.byn`](monte_carlo_pi.byn) | Monte Carlo estimate of pi | reproducible parallel random streams, integer reductions, number mixing |
@@ -29,7 +29,7 @@ Writing these programs surfaced questions the language reference (roadmap 0.1) h
 
 | Program | Finding | Where it stands |
 | --- | --- | --- |
-| `lennard_jones.byn` | Newton's third law writes `forces[i]` and `forces[j]` from one parallel iteration, which the disjoint-write rule rejects. The example computes each pair twice instead, doubling the work. | Decided: [0013](../decisions/0013-parallel-accumulation.md); see [adding into shared arrays](../reference/parallel-loops.md#adding-into-shared-arrays). The example switches to it in roadmap 1.14.1 |
+| `lennard_jones.byn` | Newton's third law writes `forces[i]` and `forces[j]` from one parallel iteration, which the disjoint-write rule rejects. The example computes each pair twice instead, doubling the work. | Decided: [0013](../decisions/0013-parallel-accumulation.md); see [adding into shared arrays](../reference/parallel-loops.md#adding-into-shared-arrays). Built: the example computes each pair once in `prange(N, accumulate=forces)` (roadmap 1.14.1) |
 | `lennard_jones.byn` | Built and run, the first version never moved: a perfect lattice at rest is in balance, so every force cancels. | Fixed: each atom starts a small fixed displacement off its site, from a formula. A seeded random start waits on the `random` module (roadmap 1.14) |
 | `lennard_jones.byn` | `atoms.positions` and `atoms.forces` are passed to one call, one read-only and one `InOut`. The exclusivity check must accept disjoint fields of one struct, not just distinct variables. | Settled: [places and overlap](../reference/values-and-references.md#places-and-overlap) |
 | `lennard_jones.byn` | `Array.zeros((N,), Vec3)` names the element type as an argument. The reference needs one way to give an array's element type at construction. | Settled: [creating arrays](../reference/arrays.md#creating-arrays) |
