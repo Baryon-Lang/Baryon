@@ -325,8 +325,8 @@ beyond what builds today. AstroBaryon, the native astronomy library (4.2), build
 users down first. Interop with other languages comes last, after AstroBaryon: Python interop
 (3.17) and C++ interop (4.1) both wait for it. Native Baryon is how most work gets done, and
 interop is only for libraries that will never be rewritten (Collins, 2026-11-10 and 2026-11-12).
-The standard library's own calls into system libraries, such as LAPACK for general eigenvalues
-and the opt-in `--blas` (3.10.2), are internal and not interop
+The standard library's own calls into system libraries, such as the opt-in system BLAS of
+`--blas` (3.10.2), are internal and not interop
 ([decision 0012](docs/decisions/0012-no-ffi-in-mvp.md)).
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
