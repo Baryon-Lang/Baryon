@@ -183,8 +183,8 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 
 Gate: every number in the design plan's compile-speed table is met on the reference project.
 
-Comes after Phase 3's native capability work (Collins, 2026-11-10): see the order in
-[Releases](#releases).
+Comes right after plotting (3.15), the last of Phase 3's native capability work, and before the
+base libraries 3.18 to 3.32 (Collins, 2026-11-12): see the order in [Releases](#releases).
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -315,14 +315,14 @@ way to wrap Baryon in Python. A self-hosted compiler stays a non-goal, as the
 
 After the real-data checkpoint (R.3), native capability comes before compile speed (Collins, 2026-11-10): speed of the
 compiled code (3.1, 3.2, 3.3), then broadcasting and axis reductions (3.9), linear algebra and FFT
-(3.10), statistics (3.16), file formats (3.14), DataFrame (3.13) and plotting (3.15). The base
-libraries AstroPy relies on join them as Baryon's own (3.18 to 3.32): special functions,
-integration, optimization, interpolation, spatial search and image processing, distributions,
-missing values, record and date arrays, regular expressions, compression, XML, structured text,
-networking, ERFA and world coordinate systems; ERFA (3.31) can start early, since it needs little
-beyond what builds today. AstroBaryon, the native astronomy library (4.2), builds on them
-(Collins, 2026-11-10). Phase 2's faster compiling follows, unless compile times start to slow
-users down first. Interop with other languages comes last, after AstroBaryon: Python interop
+(3.10), statistics (3.16), file formats (3.14), DataFrame (3.13) and plotting (3.15). Phase 2's
+faster compiling comes right after plotting (Collins, 2026-11-12), so the long library work that
+follows is written with fast builds. Then the base libraries AstroPy relies on, as Baryon's own
+(3.18 to 3.32): special functions, integration, optimization, interpolation, spatial search and
+image processing, distributions, missing values, record and date arrays, regular expressions,
+compression, XML, structured text, networking, ERFA and world coordinate systems; ERFA (3.31) can
+start early, since it needs little beyond what builds today. AstroBaryon, the native astronomy
+library (4.2), builds on them (Collins, 2026-11-10). Interop with other languages comes last, after AstroBaryon: Python interop
 (3.17) and C++ interop (4.1) both wait for it. Native Baryon is how most work gets done, and
 interop is only for libraries that will never be rewritten (Collins, 2026-11-10 and 2026-11-12).
 The standard library's own calls into system libraries, such as the opt-in system BLAS of
