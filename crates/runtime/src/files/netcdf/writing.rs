@@ -7,28 +7,19 @@
 //! in the order they were defined, each padded to a multiple of 4 bytes; then the records, each
 //! holding one slot of every record variable in the order they were defined. A slot is padded
 //! to a multiple of 4 bytes, unless there is only one record variable. Values not written hold
-//! the type's fill value, padding included, except the padding after values a program wrote
-//! into a new record, which is zero, as the C library leaves it.
+//! the type's fill value, padding included: a write that adds records fills them for every
+//! record variable before it writes its values, as the C library does. The `storage` module
+//! reads a file into memory and writes it out again in this layout.
 //!
 //! Cost: each change reads and writes the whole file. A program defines its dimensions and
 //! variables while the file is small, then writes each variable once, so each variable's
 //! values are copied about as many times as variables are written after it.
 
-use super::encoding::{encode, encode_header, store};
-use super::{Attribute, Header, Kind, Values, Variable, read_header, scaling};
+use super::encoding::{encode, store};
+use super::storage::{Contents, load, save, slot};
+use super::{Attribute, Header, Kind, Values, Variable, scaling};
 use crate::files::fits::Pixel;
 use crate::files::{ErrorKind, OsFailure};
-use std::fs;
-use std::io::{self, Read, Seek, SeekFrom};
-
-/// A file in memory: its header and every variable's slots.
-struct Contents {
-    /// The header. The variables' sizes and beginnings are worked out again when it is written.
-    header: Header,
-    /// For each variable, in the header's order, its stored bytes: one slot for a fixed-size
-    /// variable, and one slot for each record of a record variable, each [`slot`] bytes long.
-    slots: Vec<Vec<u8>>,
-}
 
 /// One change to a file, as a line of text the standard library's `netCDF4` module writes,
 /// a tag and fields separated by tabs.
@@ -185,23 +176,6 @@ pub(crate) fn write(
     save(path, &contents)
 }
 
-/// The bytes of one slot of `variable` of `header`: its values' size padded to a multiple of
-/// 4, or unpadded for the only record variable.
-fn slot(header: &Header, variable: &Variable) -> usize {
-    let size = header
-        .values(variable)
-        .saturating_mul(variable.kind.size() as u64);
-    let only = header.is_record(variable)
-        && header
-            .variables
-            .iter()
-            .filter(|other| header.is_record(other))
-            .count()
-            == 1;
-    let size = if only { size } else { size.next_multiple_of(4) };
-    usize::try_from(size).unwrap_or(usize::MAX)
-}
-
 /// The big-endian bytes of `variable`'s fill value: its `_FillValue` attribute's, or the
 /// type's default, as the C library fills.
 fn fill(variable: &Variable) -> Vec<u8> {
@@ -231,104 +205,6 @@ fn filled(fill: &[u8], size: usize) -> Vec<u8> {
     fill.iter().copied().cycle().take(size).collect()
 }
 
-/// Reads the whole file at `path` into memory.
-fn load(path: &str) -> Result<Contents, OsFailure> {
-    let header = read_header(path)?;
-    let failed = |error: io::Error| OsFailure::from_io(&error, path);
-    let mut file = fs::File::open(path).map_err(failed)?;
-    let step = header.record_size();
-    let mut slots = Vec::new();
-    for variable in &header.variables {
-        let size = slot(&header, variable);
-        let starts: Vec<u64> = if header.is_record(variable) {
-            (0..header.records)
-                .map(|record| variable.begin + record * step)
-                .collect()
-        } else {
-            vec![variable.begin]
-        };
-        let mut bytes = vec![0_u8; size * starts.len()];
-        for (start, chunk) in starts.iter().zip(bytes.chunks_mut(size.max(1))) {
-            file.seek(SeekFrom::Start(*start)).map_err(failed)?;
-            file.read_exact(chunk).map_err(|error| {
-                if error.kind() == io::ErrorKind::UnexpectedEof {
-                    OsFailure::new(
-                        ErrorKind::InvalidData,
-                        format!("the file ends inside the NetCDF variable {}", variable.name),
-                        path,
-                    )
-                } else {
-                    failed(error)
-                }
-            })?;
-        }
-        slots.push(bytes);
-    }
-    Ok(Contents { header, slots })
-}
-
-/// Writes `contents` to `path`, laid out as the module's documentation says, replacing the file.
-fn save(path: &str, contents: &Contents) -> Result<(), OsFailure> {
-    let invalid = |message: &str| OsFailure::new(ErrorKind::InvalidData, message, path);
-    let mut header = contents.header.clone();
-    let slots: Vec<usize> = header
-        .variables
-        .iter()
-        .map(|variable| slot(&header, variable))
-        .collect();
-    for (variable, &size) in header.variables.iter_mut().zip(&slots) {
-        variable.size = (size as u64).next_multiple_of(4);
-    }
-    let length = encode_header(&header).len() as u64;
-    let mut at = length;
-    for (variable, &size) in header.variables.iter_mut().zip(&slots) {
-        if variable
-            .dimensions
-            .first()
-            .is_none_or(|&dimension| contents.header.dimensions[dimension].1 != 0)
-        {
-            variable.begin = at;
-            at += size as u64;
-        }
-    }
-    for (variable, &size) in header.variables.iter_mut().zip(&slots) {
-        if variable
-            .dimensions
-            .first()
-            .is_some_and(|&dimension| contents.header.dimensions[dimension].1 == 0)
-        {
-            variable.begin = at;
-            at += size as u64;
-        }
-    }
-    if !header.wide
-        && header
-            .variables
-            .iter()
-            .any(|variable| variable.begin > u64::from(u32::MAX))
-    {
-        return Err(invalid(
-            "the file is too large for the classic format; write it with \
-             format=\"NETCDF3_64BIT_OFFSET\"",
-        ));
-    }
-    let mut bytes = encode_header(&header);
-    for (index, variable) in header.variables.iter().enumerate() {
-        if !header.is_record(variable) {
-            bytes.extend_from_slice(&contents.slots[index]);
-        }
-    }
-    for record in 0..usize::try_from(header.records).unwrap_or(0) {
-        for (index, variable) in header.variables.iter().enumerate() {
-            if header.is_record(variable) {
-                let size = slots[index];
-                bytes.extend_from_slice(&contents.slots[index][record * size..(record + 1) * size]);
-            }
-        }
-    }
-    fs::write(path, bytes).map_err(|error| OsFailure::from_io(&error, path))
-}
-
 /// Adds the dimension `name` of `length`, 0 for the unlimited one, to `header`.
 fn add_dimension(header: &mut Header, name: &str, length: u64) -> Result<(), String> {
     if header.dimensions.iter().any(|(known, _)| known == name) {
@@ -336,6 +212,10 @@ fn add_dimension(header: &mut Header, name: &str, length: u64) -> Result<(), Str
     }
     if length == 0 && header.dimensions.iter().any(|&(_, known)| known == 0) {
         return Err("NetCDF: NC_UNLIMITED size already in use".to_owned());
+    }
+    // The header stores a length in 32 bits.
+    if u32::try_from(length).is_err() {
+        return Err("NetCDF: Invalid dimension size".to_owned());
     }
     header.dimensions.push((name.to_owned(), length));
     Ok(())
@@ -396,6 +276,12 @@ fn add_variable(
     header.variables.push(variable);
     let added = &header.variables[header.variables.len() - 1];
     let size = slot(header, added);
+    // The header stores a variable's size in 32 bits, so a larger one, whose fill values this
+    // would also have to hold in memory, is refused before anything is allocated.
+    if u32::try_from(size).is_err() {
+        header.variables.pop();
+        return Err("NetCDF: One or more variable sizes violate format constraints".to_owned());
+    }
     let count = if header.is_record(added) {
         header.records
     } else {

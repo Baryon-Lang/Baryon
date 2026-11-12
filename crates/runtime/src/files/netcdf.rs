@@ -24,6 +24,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 
 mod encoding;
 mod header;
+mod storage;
 mod writing;
 
 pub(crate) use header::read_header;

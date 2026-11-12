@@ -3,7 +3,8 @@
 //! script), and compares the bytes.
 
 use super::*;
-use crate::files::netcdf::read_variable;
+use crate::files::netcdf::{read_header, read_variable};
+use std::fs;
 
 /// A path for one test's file, named after it and this process.
 fn file(test: &str) -> String {
@@ -154,4 +155,43 @@ fn an_attributes_text_may_hold_tabs() {
         crate::files::netcdf::describe(&header),
         ["A\t\tstr\t1\tnote\ta\tb"]
     );
+}
+
+#[test]
+fn a_header_that_claims_more_than_the_file_holds_is_refused() {
+    // `written.nc` with its record count, bytes 4 to 8, raised to 2^31 - 1: a write must report
+    // the short file, not try to hold two billion records in memory.
+    let mut bytes = fixture("written.nc");
+    bytes[4..8].copy_from_slice(&0x7FFF_FFFF_u32.to_be_bytes());
+    let path = file("claims");
+    fs::write(&path, bytes).unwrap();
+    for failure in [
+        define(&path, "D\ty\t2").unwrap_err(),
+        write(&path, "w", Pixel::F64, &[3], &[0; 24]).unwrap_err(),
+    ] {
+        assert_eq!(failure.kind, ErrorKind::InvalidData);
+        assert_eq!(
+            failure.strerror,
+            "the file ends inside the NetCDF variable v"
+        );
+    }
+}
+
+#[test]
+fn sizes_past_the_formats_32_bits_are_refused() {
+    let path = file("sizes");
+    apply(&path, &["C\t2", "D\tx\t4000000000", "D\ty\t4"]);
+    let cases = [
+        ("D\tz\t5000000000", "NetCDF: Invalid dimension size"),
+        (
+            "V\tv\tf8\tx,y",
+            "NetCDF: One or more variable sizes violate format constraints",
+        ),
+    ];
+    for (line, message) in cases {
+        let failure = define(&path, line).unwrap_err();
+        assert_eq!(failure.kind, ErrorKind::InvalidData, "{line}");
+        assert_eq!(failure.strerror, message, "{line}");
+    }
+    assert!(read_header(&path).unwrap().variables.is_empty());
 }
