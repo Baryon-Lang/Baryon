@@ -118,6 +118,11 @@ impl Ssa {
     /// Records the instruction `instruction` as written in the current LLVM block: each label
     /// of a body block it names is an edge into that block.
     pub(crate) fn record(&mut self, instruction: &str) {
+        // Only a `br` or a `switch` names a block; checking the opening word first spares a
+        // search of every other instruction.
+        if !(instruction.starts_with("br ") || instruction.starts_with("switch ")) {
+            return;
+        }
         let mut rest = instruction;
         while let Some(position) = rest.find(BRANCH) {
             rest = &rest[position + BRANCH.len()..];
@@ -181,13 +186,16 @@ impl Ssa {
     /// replaced by it, until none is left, so a local that does not change around a loop needs
     /// no `phi`.
     pub(crate) fn finish(&self, code: &str) -> String {
-        let mut edges: HashMap<usize, Vec<&Edge>> = HashMap::new();
+        let blocks = self.edges.iter().map(|edge| edge.target + 1).max().unwrap_or(0);
+        let mut edges: Vec<Vec<&Edge>> = vec![Vec::new(); blocks];
         for edge in &self.edges {
-            edges.entry(edge.target).or_default().push(edge);
+            edges[edge.target].push(edge);
         }
         let mut resolver = Resolver {
             ssa: self,
             edges,
+            walked: vec![0; blocks],
+            walk: 0,
             entries: HashMap::new(),
             phis: Vec::new(),
             pending: Vec::new(),
@@ -243,8 +251,14 @@ impl Ssa {
 struct Resolver<'s> {
     /// The function's SSA state.
     ssa: &'s Ssa,
-    /// The edges into each body block, in the order they were written.
-    edges: HashMap<usize, Vec<&'s Edge>>,
+    /// The edges into each body block, in the order they were written, by block; a block past
+    /// the end has none.
+    edges: Vec<Vec<&'s Edge>>,
+    /// The number of the last walk [`entry`](Self::entry) made through each block, by block, so
+    /// a walk knows the blocks it has passed without a set of its own.
+    walked: Vec<u32>,
+    /// The number of the walk being made.
+    walk: u32,
     /// The value of each (block, local) on entry, once found.
     entries: HashMap<(usize, usize), Value>,
     /// Every `phi` made so far.
@@ -262,16 +276,17 @@ impl<'s> Resolver<'s> {
     /// the value found.
     fn entry(&mut self, block: usize, local: usize) -> Value {
         let mut chain: Vec<usize> = Vec::new();
-        let mut walked: BTreeSet<usize> = BTreeSet::new();
+        self.walk += 1;
         let mut current = block;
         let value = loop {
             if let Some(value) = self.entries.get(&(current, local)) {
                 break value.clone();
             }
-            let incoming = self.edges.get(&current).map_or(&[][..], Vec::as_slice);
+            let incoming = self.edges.get(current).map_or(&[][..], Vec::as_slice);
             if let [edge] = incoming
-                && walked.insert(current)
+                && self.walked[current] != self.walk
             {
+                self.walked[current] = self.walk;
                 chain.push(current);
                 match self.at_source(edge, local) {
                     Ok(value) => break value,
@@ -314,7 +329,7 @@ impl<'s> Resolver<'s> {
     /// Finds the operands of `phi` number `number`, one per edge into its block.
     fn fill(&mut self, number: usize) {
         let (block, local) = (self.phis[number].block, self.phis[number].local);
-        let incoming: Vec<&'s Edge> = self.edges.get(&block).cloned().unwrap_or_default();
+        let incoming: Vec<&'s Edge> = self.edges.get(block).cloned().unwrap_or_default();
         let mut operands = Vec::with_capacity(incoming.len());
         for edge in incoming {
             let value = match self.at_source(edge, local) {
@@ -370,8 +385,9 @@ fn phi_name(local: usize, block: usize) -> String {
     format!("{PHI_PREFIX}{local}.{block}")
 }
 
-/// How the name of every `phi` this module makes starts.
-const PHI_PREFIX: &str = "%ssa.";
+/// How the name of every `phi` this module makes starts. The `$` appears nowhere else the
+/// backend writes, outside text constants, so [`rewrite`] finds names by looking for it.
+const PHI_PREFIX: &str = "%ssa$";
 
 /// For each of `phis`, by number, the value it stands for when it is one value, or `None`
 /// when it stays a `phi`: a `phi` whose operands, once each replaced `phi` is followed, are all
@@ -434,11 +450,41 @@ fn trivial(phis: &[Phi<'_>]) -> Vec<Option<String>> {
 
 /// `code` with each block's marker replaced by its `phi`s in `phis`, and the name of each `phi`
 /// that turned out to be one value replaced by that value, as `names` says.
+///
+/// Scans `code` once for each pattern, keeping the next place each occurs, rather than line by
+/// line: the function's text is most of what the backend writes, and markers and `phi` names
+/// are rare in it.
 fn rewrite(code: &str, phis: &BTreeMap<usize, String>, names: &HashMap<String, String>) -> String {
+    // Each pattern is found by its one rare character, `;` or `$`, which a byte search finds
+    // far faster than a search for the whole pattern, then checked whole.
+    let next = |pattern: &str, from: usize| {
+        let key = pattern.find([';', '$'])?;
+        let character = char::from(pattern.as_bytes()[key]);
+        let mut start = from + key;
+        loop {
+            let at = start + code.get(start..)?.find(character)?;
+            if at - key >= from && code[at - key..].starts_with(pattern) {
+                return Some(at - key);
+            }
+            start = at + 1;
+        }
+    };
     let mut text = String::with_capacity(code.len());
-    for line in code.split_inclusive('\n') {
-        if let Some(block) = line.strip_prefix(MARKER) {
-            let block_phis = block
+    let mut done = 0;
+    let mut marker = next(MARKER, 0);
+    let mut name = next(PHI_PREFIX, 0);
+    loop {
+        let position = match (marker, name) {
+            (None, None) => break,
+            (Some(marker), Some(name)) => marker.min(name),
+            (Some(position), None) | (None, Some(position)) => position,
+        };
+        text.push_str(&code[done..position]);
+        if marker == Some(position) {
+            // A marker line is `MARKER`, the block's number and a line end.
+            let after = &code[position + MARKER.len()..];
+            let end = after.find('\n').map_or(after.len(), |end| end + 1);
+            let block_phis = after[..end]
                 .trim_end()
                 .parse()
                 .ok()
@@ -446,20 +492,19 @@ fn rewrite(code: &str, phis: &BTreeMap<usize, String>, names: &HashMap<String, S
             if let Some(block_phis) = block_phis {
                 text.push_str(block_phis);
             }
-            continue;
+            done = position + MARKER.len() + end;
+            marker = next(MARKER, done);
+        } else {
+            let rest = &code[position..];
+            let end = rest[PHI_PREFIX.len()..]
+                .find(|character: char| !(character.is_ascii_digit() || character == '.'))
+                .map_or(rest.len(), |end| end + PHI_PREFIX.len());
+            let found = &rest[..end];
+            text.push_str(names.get(found).map_or(found, String::as_str));
+            done = position + end;
+            name = next(PHI_PREFIX, done);
         }
-        let mut rest = line;
-        while let Some(position) = rest.find(PHI_PREFIX) {
-            text.push_str(&rest[..position]);
-            rest = &rest[position..];
-            let end = rest[1..]
-                .find(|character: char| !(character.is_ascii_alphanumeric() || character == '.'))
-                .map_or(rest.len(), |end| end + 1);
-            let name = &rest[..end];
-            text.push_str(names.get(name).map_or(name, String::as_str));
-            rest = &rest[end..];
-        }
-        text.push_str(rest);
     }
+    text.push_str(&code[done..]);
     text
 }
