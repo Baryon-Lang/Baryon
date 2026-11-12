@@ -123,7 +123,7 @@ error: `DataFrame` needs type arguments
     );
 }
 
-/// A column the frame does not have, a name that is not a literal, a row by number, a column
+/// A column the frame does not have, an index that is a `str` but not a literal, a column
 /// moved out, a method not built yet and a frame moved out of a borrow are errors.
 #[test]
 fn column_mistakes_are_reported() {
@@ -160,19 +160,12 @@ error: `DataFrame[Trade]` has no column `cost`
   |                ^^^^^^ not a column
   = note: its columns are `price`, `volume`
 
-error: a `DataFrame` is indexed by a column's name, found `str`
+error: a `DataFrame` is indexed by a column's name or a row's number, found `str`
  --> main.byn:9:16
   |
 9 |     c = trades[name]
-  |                ^^^^ not a column's name
-  = note: write the name as a string literal, `df["price"]`; rows by number, masks and slices come with roadmap items 3.13.2 and 3.13.4
-
-error: a `DataFrame` is indexed by a column's name, found `i64`
-  --> main.byn:10:16
-   |
-10 |     d = trades[0]
-   |                ^ not a column's name
-   = note: write the name as a string literal, `df["price"]`; rows by number, masks and slices come with roadmap items 3.13.2 and 3.13.4
+  |                ^^^^ neither a name nor a number
+  = note: write a column's name as a string literal, `df["price"]`, or a row's number, `df[0]`; masks and slices come with roadmap item 3.13.4
 
 error: a column cannot be moved out of its `DataFrame`
   --> main.byn:11:9
@@ -271,12 +264,12 @@ def building(name: str, grid: Array[f64, 2], column: Array[f64, 1]):
 "#;
     assert_eq!(
         check_one(program),
-        r#"error: `DataFrame(...)` takes a dict of its columns
- --> main.byn:7:9
+        r#"error: `DataFrame(...)` takes a dict of its columns or a list of its rows, found `Array[f64, 1]`
+ --> main.byn:7:19
   |
 7 |     a = DataFrame(column.copy())
-  |         ^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-  = note: for example `DataFrame({"price": prices, "volume": volumes})`
+  |                   ^^^^^^^^^^^^^ neither a dict of columns nor a list of rows
+  = note: for example `DataFrame({"price": prices, "volume": volumes})`, or `DataFrame(trades)` with `trades: list[Trade]`
 
 error: a column's name is written as a string literal
  --> main.byn:8:20
@@ -321,5 +314,115 @@ error: `column` is borrowed from the caller, so it cannot be moved
 13 |     g = DataFrame({"a": column})
    |                         ^^^^^^ moved here
    = note: move a copy instead: `column.copy()`, or take the parameter as `Owned[...]`"#
+    );
+}
+
+/// A frame built from a list of rows is the frame of the rows' struct, and a row read from a
+/// frame declared with a struct is that struct, whatever integer type numbers it.
+#[test]
+fn rows_have_the_type_of_the_schema() {
+    let program = r"
+class Trade(Struct):
+    price: f64
+    volume: i64
+
+
+def rows(trades: list[Trade], which: i32) -> Trade:
+    frame: DataFrame[Trade] = DataFrame(trades)
+    empty: DataFrame[Trade] = DataFrame([])
+    first: Trade = frame[0]
+    last: Trade = DataFrame(trades)[-1]
+    several: list[Trade] = [frame[which], empty[0]]
+    return frame[len(frame) - 1]
+";
+    assert_eq!(check_one(program), "");
+}
+
+/// A row of a frame no struct names, an index that is neither a name nor a number, rows
+/// that cannot be a schema, something that is neither columns nor rows, and a row assigned
+/// are errors.
+#[test]
+fn row_mistakes_are_reported() {
+    let program = r#"
+class Trade(Struct):
+    price: f64
+    volume: i64
+
+
+class Tagged(Struct):
+    name: str
+
+
+def rows(trades: DataFrame[Trade], names: list[Tagged], prices: Array[f64, 1], name: str):
+    a = DataFrame({"price": prices.copy()})
+    b = a[0]
+    c = trades[1.5]
+    d = trades[name]
+    e = DataFrame(names)
+    f = DataFrame(prices)
+    g = DataFrame([1.0, 2.0])
+    h = DataFrame(trades[0], trades[1])
+
+
+def assigning(trades: InOut[DataFrame[Trade]], trade: Trade):
+    trades[0] = trade
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: no struct names the rows of `DataFrame[price: f64]`
+  --> main.byn:12:11
+   |
+12 |     b = a[0]
+   |           ^ a row needs a type
+   = note: read the row's values by column, `df.price[0]`, or give the frame a schema: assign it to a variable declared `DataFrame[Trade]`, whose struct lists these columns
+
+error: a `DataFrame` is indexed by a column's name or a row's number, found `f64`
+  --> main.byn:13:16
+   |
+13 |     c = trades[1.5]
+   |                ^^^ neither a name nor a number
+   = note: write a column's name as a string literal, `df["price"]`, or a row's number, `df[0]`; masks and slices come with roadmap item 3.13.4
+
+error: a `DataFrame` is indexed by a column's name or a row's number, found `str`
+  --> main.byn:14:16
+   |
+14 |     d = trades[name]
+   |                ^^^^ neither a name nor a number
+   = note: write a column's name as a string literal, `df["price"]`, or a row's number, `df[0]`; masks and slices come with roadmap item 3.13.4
+
+error: a column of a `DataFrame` cannot hold `str` yet
+  --> main.byn:15:19
+   |
+15 |     e = DataFrame(names)
+   |                   ^^^^^ the field `name` would be such a column
+   = note: a column holds numbers or `bool` today; text columns come with roadmap item 3.13.3 and missing values with 3.13.6
+
+error: `DataFrame(...)` takes a dict of its columns or a list of its rows, found `Array[f64, 1]`
+  --> main.byn:16:19
+   |
+16 |     f = DataFrame(prices)
+   |                   ^^^^^^ neither a dict of columns nor a list of rows
+   = note: for example `DataFrame({"price": prices, "volume": volumes})`, or `DataFrame(trades)` with `trades: list[Trade]`
+
+error: a `DataFrame`'s schema is a struct that lists its columns, found `f64`
+  --> main.byn:17:19
+   |
+17 |     g = DataFrame([1.0, 2.0])
+   |                   ^^^^^^^^^^ not a struct
+   = note: declare the columns as the fields of a struct, `class Trade(Struct):` with `price: f64` and `volume: i64`, then write `DataFrame[Trade]`
+
+error: `DataFrame(...)` takes a dict of its columns or a list of its rows
+  --> main.byn:18:9
+   |
+18 |     h = DataFrame(trades[0], trades[1])
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+   = note: for example `DataFrame({"price": prices, "volume": volumes})`, or `DataFrame(trades)` with `trades: list[Trade]`
+
+error: a row of a `DataFrame` cannot be assigned
+  --> main.byn:22:5
+   |
+22 |     trades[0] = trade
+   |     ^^^^^^^^^ a whole row
+   = note: assign its values by column: `df.price[0] = 1.0`"#
     );
 }

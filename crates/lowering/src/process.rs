@@ -40,7 +40,7 @@ impl<'db> Builder<'db> {
 
     /// Whether `node` is a value that names no place because each read computes it: `sys.argv`,
     /// `sys.stdout` and the other standard streams, `os.environ[name]`, or a part of a `Path`
-    /// such as `path.name`, or `shape` or `columns` of a `DataFrame`.
+    /// such as `path.name`, or `shape`, `columns` or a row of a `DataFrame`.
     pub(crate) fn is_computed(&self, node: NodeId) -> bool {
         self.is_argv(node)
             || self.is_environ_item(node)
@@ -48,6 +48,7 @@ impl<'db> Builder<'db> {
             || self.standard_stream(node).is_some()
             || self.is_library_access(node)
             || self.is_frame_attribute(node)
+            || self.is_frame_row(node)
     }
 
     /// Whether `node` names the member `member` of the standard module `module`, as

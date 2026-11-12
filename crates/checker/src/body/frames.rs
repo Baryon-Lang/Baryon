@@ -28,13 +28,17 @@ impl<'db> Body<'db> {
         };
         let table = match (arguments.positional.as_slice(), arguments.keywords.len()) {
             (&[table], 0) if self.tree.kind(table) == SyntaxKind::Dictionary => table,
+            (&[rows], 0) => return self.frame_from_rows(rows, expected),
             _ => {
                 self.untyped(arguments);
                 return self.lowerer.error(
                     node,
-                    "`DataFrame(...)` takes a dict of its columns",
+                    "`DataFrame(...)` takes a dict of its columns or a list of its rows",
                     "wrong arguments",
-                    Some("for example `DataFrame({\"price\": prices, \"volume\": volumes})`"),
+                    Some(
+                        "for example `DataFrame({\"price\": prices, \"volume\": volumes})`, or \
+                         `DataFrame(trades)` with `trades: list[Trade]`",
+                    ),
                 );
             }
         };
@@ -67,6 +71,40 @@ impl<'db> Body<'db> {
         match expected {
             Some(expected) if wanted == columns => expected,
             _ => Type::new(self.db, TypeKind::DataFrame { columns, row: None }),
+        }
+    }
+
+    /// `DataFrame(rows)`: a frame with one row for each struct of the list `rows`, in order,
+    /// and one column for each field of the struct, which is the frame's schema. The list is
+    /// read, not moved: each field is copied into its column. The context's row struct gives
+    /// an empty list, `DataFrame([])`, its type.
+    fn frame_from_rows(&mut self, rows: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
+        let wanted = match expected.map(|ty| ty.kind(self.db)) {
+            Some(&TypeKind::DataFrame { row: Some(row), .. }) => {
+                Some(Type::new(self.db, TypeKind::List(row)))
+            }
+            _ => None,
+        };
+        let found = self.expression(rows, wanted);
+        match found.kind(self.db) {
+            &TypeKind::List(row) => self.lowerer.frame_of(rows, row),
+            _ if relations::is_open(self.db, found) => self.lowerer.unknown(),
+            _ => {
+                let message = format!(
+                    "`DataFrame(...)` takes a dict of its columns or a list of its rows, found \
+                     `{}`",
+                    self.show(found)
+                );
+                self.lowerer.error(
+                    rows,
+                    &message,
+                    "neither a dict of columns nor a list of rows",
+                    Some(
+                        "for example `DataFrame({\"price\": prices, \"volume\": volumes})`, or \
+                         `DataFrame(trades)` with `trades: list[Trade]`",
+                    ),
+                )
+            }
         }
     }
 
@@ -161,30 +199,15 @@ impl<'db> Body<'db> {
         })
     }
 
-    /// `df["name"]` on a frame: the column of that name. `None` when `base` is not a frame.
+    /// `df["name"]` on a frame, the column of that name, or `df[i]`, row `i` as a value of the
+    /// struct that names the frame's rows (decision 0045). `None` when `base` is not a frame.
     pub(super) fn frame_item(&mut self, node: NodeId, base: Type<'db>) -> Option<Type<'db>> {
-        let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
+        let TypeKind::DataFrame { columns, row } = base.kind(self.db) else {
             return None;
         };
         let index = self.tree.child(node, Role::Index)?;
         let Some(name) = self.literal_text(index) else {
-            let found = self.expression(index, None);
-            if relations::is_open(self.db, found) {
-                return Some(found);
-            }
-            let message = format!(
-                "a `DataFrame` is indexed by a column's name, found `{}`",
-                self.show(found)
-            );
-            return Some(self.lowerer.error(
-                index,
-                &message,
-                "not a column's name",
-                Some(
-                    "write the name as a string literal, `df[\"price\"]`; rows by number, masks \
-                     and slices come with roadmap items 3.13.2 and 3.13.4",
-                ),
-            ));
+            return Some(self.frame_row(index, base, *row));
         };
         let name = name.to_owned();
         let column = columns.iter().find(|column| column.name == name);
@@ -194,14 +217,67 @@ impl<'db> Body<'db> {
         })
     }
 
+    /// `df[index]` where `index` is not a column's name: a whole number gives that row, a new
+    /// value of the struct `row` that names the rows of the frame type `base`. A frame whose
+    /// columns the compiler worked out has no such struct, so its rows are reached by column.
+    fn frame_row(&mut self, index: NodeId, base: Type<'db>, row: Option<Type<'db>>) -> Type<'db> {
+        let found = self.expression(index, None);
+        if relations::is_open(self.db, found) {
+            return found;
+        }
+        if !matches!(
+            found.kind(self.db),
+            TypeKind::Primitive(Primitive::Integer(_))
+        ) {
+            let message = format!(
+                "a `DataFrame` is indexed by a column's name or a row's number, found `{}`",
+                self.show(found)
+            );
+            return self.lowerer.error(
+                index,
+                &message,
+                "neither a name nor a number",
+                Some(
+                    "write a column's name as a string literal, `df[\"price\"]`, or a row's \
+                     number, `df[0]`; masks and slices come with roadmap item 3.13.4",
+                ),
+            );
+        }
+        row.unwrap_or_else(|| {
+            let message = format!("no struct names the rows of `{}`", self.show(base));
+            self.lowerer.error(
+                index,
+                &message,
+                "a row needs a type",
+                Some(
+                    "read the row's values by column, `df.price[0]`, or give the frame a schema: \
+                     assign it to a variable declared `DataFrame[Trade]`, whose struct lists \
+                     these columns",
+                ),
+            )
+        })
+    }
+
     /// Whether `node` reads a column of a frame, `df.price` or `df["price"]`: a place inside
     /// the frame, which can be borrowed but not moved out.
     pub(super) fn is_column_read(&self, node: NodeId) -> bool {
-        matches!(
-            self.tree.kind(node),
-            SyntaxKind::Attribute | SyntaxKind::Subscript
-        ) && self.reads_frame(node)
-            && !self.is_frame_attribute(node)
+        let named = match self.tree.kind(node) {
+            SyntaxKind::Attribute => !self.is_frame_attribute(node),
+            // `df[i]` is a new struct, so keeping it moves nothing.
+            SyntaxKind::Subscript => self
+                .tree
+                .child(node, Role::Index)
+                .is_some_and(|index| self.literal_text(index).is_some()),
+            _ => false,
+        };
+        named && self.reads_frame(node)
+    }
+
+    /// Whether `node` reads a row of a frame, `df[i]`: a new struct at each read.
+    pub(super) fn is_frame_row(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::Subscript
+            && self.reads_frame(node)
+            && !self.is_column_read(node)
     }
 
     /// Whether `node` reads `shape` or `columns` of a frame: a value computed at each read,
@@ -215,10 +291,20 @@ impl<'db> Body<'db> {
                 .is_some_and(|name| matches!(self.tree.text(name, self.text), "shape" | "columns"))
     }
 
-    /// Reports an assignment to `df.shape` or `df.columns` at `target`, and returns whether it
-    /// was one. Both are computed from the frame: its shape changes only with its columns, and
-    /// its column names are part of its type.
+    /// Reports an assignment to `df.shape`, `df.columns` or a row, `df[i]`, at `target`, and
+    /// returns whether it was one. The first two are computed from the frame: its shape
+    /// changes only with its columns, and its column names are part of its type. A row is
+    /// a new struct at each read, not a place in the frame, whose memory is its columns.
     pub(super) fn frame_attribute_assigned(&mut self, target: NodeId) -> bool {
+        if self.is_frame_row(target) {
+            self.lowerer.error(
+                target,
+                "a row of a `DataFrame` cannot be assigned",
+                "a whole row",
+                Some("assign its values by column: `df.price[0] = 1.0`"),
+            );
+            return true;
+        }
         if !self.is_frame_attribute(target) {
             return false;
         }

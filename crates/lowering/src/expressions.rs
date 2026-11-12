@@ -43,6 +43,7 @@ impl<'db> Builder<'db> {
             SyntaxKind::Attribute if self.is_frame_attribute(node) => {
                 self.frame_attribute(place, node);
             }
+            SyntaxKind::Subscript if self.is_frame_row(node) => self.frame_row(place, node),
             SyntaxKind::Subscript if self.is_environ_item(node) => {
                 self.environ_item(place, node);
             }
@@ -232,8 +233,9 @@ impl<'db> Builder<'db> {
                 let fields = self.field(value, node)?;
                 // A part of any complex value, such as `(z * w).real`, reads the value's
                 // temporary, as does a field of a library call's result, such as
-                // `ds.dimensions["time"].size`.
-                let base = if self.is_complex(self.ty(value)) || self.is_library_access(value) {
+                // `ds.dimensions["time"].size`, and a field of a frame's row, `df[0].price`.
+                let computed = self.is_library_access(value) || self.is_frame_row(value);
+                let base = if self.is_complex(self.ty(value)) || computed {
                     self.borrow(value)
                 } else if matches!(
                     self.tree.kind(value),
