@@ -25,9 +25,10 @@ the language that is specified and checked, but not built yet. The editor sees t
 type, while `baryon run` builds only what this page lists.
 
 This page was last brought up to date on 2026-11-11, when `.npy` files, `Array.load` and
-`Array.save`, and before them `fft`, text tables, `Array.loadtxt` and `Array.savetxt`, and before
-them `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and
-`inv` and, before them, array files, `Array.fromfile` and
+`Array.save`, and before them `linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables,
+`Array.loadtxt` and `Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and
+`qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files,
+`Array.fromfile` and
 `a.tofile`, and before them `for line in f` over a text file, `int(text)` and `float(text)`, began
 to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
 `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
@@ -154,7 +155,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix; [`fft`](linear-algebra.md#fft): `fft`, `ifft`, `rfft`, `irfft`, `fftfreq` and `rfftfreq` of any length | Several right-hand sides, other element types, `eig`, `svd`, `fft2` and `fftn`, and `--blas` (roadmap 3.10) |
+| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), [`svd` and `svdvals`](linear-algebra.md#linalgsvd-and-linalgsvdvals), [`eig` and `eigvals`](linear-algebra.md#linalgeig-and-linalgeigvals), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix; [`fft`](linear-algebra.md#fft): `fft`, `ifft`, `rfft`, `irfft`, `fftfreq` and `rfftfreq` of any length | Several right-hand sides, other element types, `fft2` and `fftn`, and `--blas` (roadmap 3.10) |
 
 ## Files and processes
 
