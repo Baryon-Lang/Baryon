@@ -34,6 +34,7 @@ mod linalg;
 mod list_slices;
 mod math;
 mod modules;
+mod npy;
 mod one_pass;
 mod overflow;
 mod parallel;

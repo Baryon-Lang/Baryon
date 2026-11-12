@@ -53,6 +53,7 @@ view can skip elements or pick a column without copying.
 | `a.copy()` | A new contiguous array with `a`'s elements |
 | `Array.fromfile(path, dtype)` | A rank-1 array of the elements in a binary file; see [Array files](files-and-processes.md#array-files) |
 | `Array.loadtxt(fname)` | An array of the numbers in a text table, such as a CSV file; see [Text tables](data-files.md#text-tables) |
+| `Array.load(file)` | An array read from NumPy's `.npy` file; see [`.npy` files](data-files.md#npy-files) |
 
 `shape` is a tuple of integers with one entry per dimension, `(nx, ny, nz)`, or a single integer
 for rank 1. The rank is the tuple's length, so the tuple must be written out where the array is

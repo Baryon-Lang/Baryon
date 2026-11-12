@@ -24,7 +24,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-11, when `linalg.svd`, `svdvals`, `eig` and `eigvals` and, before them, `fft` and text tables,
+This page was last brought up to date on 2026-11-11, when `.npy` files, `Array.load` and
+`Array.save`, and before them `linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables,
 `Array.loadtxt` and `Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and
 `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files,
 `Array.fromfile` and
@@ -166,7 +167,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments` | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files, FITS, CSV into a DataFrame, NetCDF, Parquet and HDF5 (roadmap 3.14.2 to 3.14.6) |
+| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments`; [`.npy` files](data-files.md#npy-files): `Array.load` and `Array.save` of arrays of numbers, `bool`s and complex numbers of any rank, a view included | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files of structs, in Fortran order or big-endian, and `.npz` archives; FITS, CSV into a DataFrame, NetCDF, Parquet and HDF5 (roadmap 3.14.3 to 3.14.6) |
 
 ## Tests
 

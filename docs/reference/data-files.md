@@ -13,6 +13,7 @@ those that need no outside library first.
 | Format | Read | Write |
 | --- | --- | --- |
 | [Text tables](#text-tables) of numbers: CSV, whitespace-separated columns | `Array.loadtxt(fname)` | `Array.savetxt(fname, X)` |
+| [`.npy` files](#npy-files), NumPy's own format | `Array.load(file)` | `Array.save(file, arr)` |
 | Raw binary arrays | [`Array.fromfile(path, dtype)`](files-and-processes.md#array-files) | [`a.tofile(path)`](files-and-processes.md#array-files) |
 
 ## Text tables
@@ -93,5 +94,46 @@ The first version reads and writes `f64` only. NumPy's other keywords, `usecols`
 `converters`, `ndmin`, `encoding`, `quotechar` and `like` for `loadtxt`, and `fmt` and `encoding`
 for `savetxt`, are compile errors that name the keyword, never ignored. Until they come, `open`,
 the `str` methods and f-strings do the same work by hand
-([Text files](files-and-processes.md#text-files)). `comments=None` and `delimiter=None`, which
-NumPy accepts, are written `comments=""` and `delimiter=""`.
+([Text files](files-and-processes.md#text-files)). NumPy also accepts `comments=None` and
+`delimiter=None`; a `str` argument cannot be `None` yet, so for now they are written
+`comments=""` and `delimiter=""`.
+
+## `.npy` files
+
+A `.npy` file is NumPy's own format for one array: a short header that names the element type
+and the shape, then the elements as they lie in memory. `Array.save` writes one and
+`Array.load` reads one, byte for byte as `numpy.save` and `numpy.load` do, so an array moves
+between Baryon and NumPy with its type and shape intact.
+
+```python
+def main() -> Raises[None, OSError]:
+    grid = Array.zeros((64, 64))
+    grid[32, 32] = 1.0
+    Array.save("heat.npy", grid)
+    again: Array[f64, 2] = Array.load("heat.npy")
+    print(again.shape, again[32, 32])
+```
+
+This prints `(64, 64) 1.0`, and `numpy.load("heat.npy")` gives the same 64 by 64 array of
+`float64`.
+
+| Call | Gives | Does |
+| --- | --- | --- |
+| `Array.save(file, arr)` | `None` | makes the file, or empties the one there, and writes NumPy's header, then every element of `arr` in row-major order; a view writes the elements it sees |
+| `Array.load(file)` | `Array[T, rank]` | reads the file into a new array, with the shape the file names |
+
+- **The element type and rank come from the context**, as they do for `Array.zeros`:
+  `grid: Array[f64, 2] = Array.load("heat.npy")`. With no context the result is an
+  `Array[f64, 1]`. The file names its own type and shape, and `Array.load` checks them: a file
+  of another element type or rank raises `OSError` with the kind `INVALID_DATA`, saying what the
+  file holds, where NumPy would hand back whatever the file holds.
+- **Elements are numbers, `bool`s or complex numbers**, each written with NumPy's name for it:
+  `'<f8'` for `f64`, `'<i4'` for `i32`, `'|b1'` for `bool`, `'<c16'` for `complex128`. Arrays
+  of structs need NumPy's structured types, which roadmap 3.25 adds.
+- **Files NumPy writes are read**: format versions 1.0, 2.0 and 3.0, little-endian, in row-major
+  order. A file in Fortran order, of big-endian numbers, of records or of Python objects raises
+  `OSError` with the kind `INVALID_DATA`; `numpy.ascontiguousarray(a).astype("<f8")` makes one
+  Baryon reads. `.npz` archives, which hold several arrays zipped, are not read yet.
+- **Cost.** One pass over the bytes, straight into or out of the array's memory, as
+  [`Array.fromfile`](files-and-processes.md#array-files) reads and `a.tofile` writes. The header
+  is 128 bytes for most arrays.
