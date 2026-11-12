@@ -210,10 +210,11 @@ That cost is why an array must be named while a scalar, whose private copy costs
 inferred: privatizing a whole array should be visible in the source.
 
 The alternative that needs no `accumulate=` and no extra memory is to compute every pair twice, so
-iteration `i` writes only `forces[i]`. That is what the
-[Lennard-Jones example](../examples/lennard_jones.byn) does today, at twice the arithmetic.
-Molecular dynamics codes such as LAMMPS find the add-into form faster on CPUs; a benchmark
-decides for a given kernel.
+iteration `i` writes only `forces[i]`, at twice the arithmetic. Molecular dynamics codes such as
+LAMMPS find the add-into form faster on CPUs; a benchmark decides for a given kernel. The
+[Lennard-Jones example](../examples/lennard_jones.byn) uses the add-into form. At its 512 atoms
+both forms take about the same time: each of its 512 chunks runs one iteration, so the private
+blocks it makes and combines cost as much as the pair arithmetic it saves.
 
 ### Random numbers
 
