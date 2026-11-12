@@ -1,32 +1,32 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="460.8pt" height="345.6pt" viewBox="0 0 460.8 345.6" version="1.1">
 <rect width="460.8" height="345.6" fill="#ffffff"/>
-<clipPath id="axes"><rect x="57.6" y="41.472" width="357.120" height="266.112"/></clipPath>
+<clipPath id="axes"><rect x="57.600" y="41.472" width="357.120" height="266.112"/></clipPath>
 <path d="M414.720 295.488L405.792 258.318L396.864 225.936L387.936 198.090L379.008 174.528L370.080 154.998L361.152 139.248L352.224 127.026L343.296 118.080L334.368 112.158L325.440 109.008L316.512 108.378L307.584 110.016L298.656 113.670L289.728 119.088L280.800 126.018L271.872 134.208L262.944 143.406L254.016 153.360L245.088 163.818L236.160 174.528L227.232 185.238L218.304 195.696L209.376 205.650L200.448 214.848L191.520 223.038L182.592 229.968L173.664 235.386L164.736 239.040L155.808 240.678L146.880 240.048L137.952 236.898L129.024 230.976L120.096 222.030L111.168 209.808L102.240 194.058L93.312 174.528L84.384 150.966L75.456 123.120L66.528 90.738L57.600 53.568" clip-path="url(#axes)" fill="none" stroke="#2ca02c" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="round"/>
-<rect x="57.6" y="41.472" width="357.120" height="266.112" fill="none" stroke="#000000" stroke-width="0.8" stroke-linejoin="miter" stroke-linecap="square"/>
-<path d="M379.008 307.584v3.5" stroke="#000000" stroke-width="0.8"/>
+<rect x="57.600" y="41.472" width="357.120" height="266.112" fill="none" stroke="#000000" stroke-width="0.8" stroke-linejoin="miter"/>
+<path d="M379.008 307.584L379.008 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="379.008" y="322.184" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">−4</text>
-<path d="M307.584 307.584v3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M307.584 307.584L307.584 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="307.584" y="322.184" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">−2</text>
-<path d="M236.160 307.584v3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M236.160 307.584L236.160 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="236.160" y="322.184" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">0</text>
-<path d="M164.736 307.584v3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M164.736 307.584L164.736 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="164.736" y="322.184" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">2</text>
-<path d="M93.312 307.584v3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M93.312 307.584L93.312 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="93.312" y="322.184" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">4</text>
-<path d="M57.6 303.552h-3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M57.600 303.552L54.100 303.552" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="50.600" y="307.352" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">−0.6</text>
-<path d="M57.6 260.544h-3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M57.600 260.544L54.100 260.544" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="50.600" y="264.344" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">−0.4</text>
-<path d="M57.6 217.536h-3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M57.600 217.536L54.100 217.536" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="50.600" y="221.336" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">−0.2</text>
-<path d="M57.6 174.528h-3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M57.600 174.528L54.100 174.528" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="50.600" y="178.328" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">0.0</text>
-<path d="M57.6 131.520h-3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M57.600 131.520L54.100 131.520" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="50.600" y="135.320" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">0.2</text>
-<path d="M57.6 88.512h-3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M57.600 88.512L54.100 88.512" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="50.600" y="92.312" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">0.4</text>
-<path d="M57.6 45.504h-3.5" stroke="#000000" stroke-width="0.8"/>
+<path d="M57.600 45.504L54.100 45.504" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
 <text x="50.600" y="49.304" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">0.6</text>
-<text x="57.600" y="37.472" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="start" fill="#000000">1e−6+1e3</text>
+<text x="57.600" y="38.472" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="start" fill="#000000">1e−6+1e3</text>
 </svg>
