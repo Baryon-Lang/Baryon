@@ -30,8 +30,10 @@
 //! type it is called at (roadmap 1.9.5).
 //!
 //! `build`, `run` and `test` make a debug build unless given `--release`, anywhere after the
-//! command. Both are optimized and carry line tables; in a debug build, integer arithmetic that
-//! overflows panics, and in a release build it wraps around ([`Profile`], decision 0030).
+//! command. A debug build compiles fast and runs unoptimized (`clang -O0`); a release build is
+//! optimized (`clang -O2`) (decision 0048). Both carry line tables; in a debug build, integer
+//! arithmetic that overflows panics, and in a release build it wraps around ([`Profile`],
+//! decision 0030).
 //!
 //! `--timings`, also anywhere after `build`, `run` or `test`, prints to standard error how long
 //! each stage of the build took, once the executable is linked ([`Timings`]). It is how a
@@ -198,10 +200,10 @@ fn check(root: &Path) -> Result<ExitCode, String> {
 /// Fails with a message when a file cannot be read, or when `clang` or the runtime archive is
 /// missing or the link fails.
 fn build(root: &Path, output: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String> {
-    let files = match compile(root, output, timings, |session, directory| {
+    let files = match compile(root, output, profile, timings, |session, directory| {
         session
-            .compile(directory, profile)
-            .map(|module| (module, Vec::new()))
+            .compile_parts(directory, profile, parts(profile))
+            .map(|modules| (modules, Vec::new()))
     })? {
         Ok((files, _)) => files,
         Err(code) => return Ok(code),
@@ -228,10 +230,10 @@ fn run(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String>
     let scratch = env::temp_dir().join(format!("baryon-run-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("program");
-    let built = compile(root, &program, timings, |session, directory| {
+    let built = compile(root, &program, profile, timings, |session, directory| {
         session
-            .compile(directory, profile)
-            .map(|module| (module, Vec::new()))
+            .compile_parts(directory, profile, parts(profile))
+            .map(|modules| (modules, Vec::new()))
     });
     let ran = built.and_then(|built| match built {
         Ok(_) => Command::new(&program)
@@ -259,8 +261,8 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
     let scratch = env::temp_dir().join(format!("baryon-test-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("tests");
-    let built = compile(root, &program, timings, |session, directory| {
-        session.compile_tests(directory, profile)
+    let built = compile(root, &program, profile, timings, |session, directory| {
+        session.compile_tests_parts(directory, profile, parts(profile))
     });
     let ran = built.and_then(|built| match built {
         Ok((_, tests)) => runner::run(&program, &tests, &mut io::stdout().lock()),
@@ -270,10 +272,11 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
     ran
 }
 
-/// Compiles the package rooted at `root` with `program`, one of [`Session::compile`] and
-/// [`Session::compile_tests`] giving a module and its test names, and links the module into the
-/// executable `output`. Returns the number of files compiled and the test names, or, when the
-/// package has errors, prints them and returns the exit status 1. When `timings` is set and the
+/// Compiles the package rooted at `root` with `program`, one of [`Session::compile_parts`] and
+/// [`Session::compile_tests_parts`] giving the modules and the test names, and links the modules
+/// into the executable `output`, optimized when `profile` is [`Profile::Release`]. Returns the
+/// number of files compiled and the test names, or, when the package has errors, prints them and
+/// returns the exit status 1. When `timings` is set and the
 /// executable is linked, prints each stage's time to standard error ([`Timings`]).
 ///
 /// # Errors
@@ -283,15 +286,16 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
 fn compile(
     root: &Path,
     output: &Path,
+    profile: Profile,
     timings: bool,
-    program: impl FnOnce(&Session, Option<&str>) -> Result<(String, Vec<String>), Vec<Diagnostic>>,
+    program: impl FnOnce(&Session, Option<&str>) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>>,
 ) -> Result<Result<(usize, Vec<String>), ExitCode>, String> {
     let started = Instant::now();
     let (session, files, lines) = load(root)?;
     let loaded = Instant::now();
     let directory =
         fs::canonicalize(root).map_err(|error| format!("{}: {error}", root.display()))?;
-    let (module, tests) = match program(&session, Some(&directory.to_string_lossy())) {
+    let (modules, tests) = match program(&session, Some(&directory.to_string_lossy())) {
         Ok(compiled) => compiled,
         Err(problems) => {
             let mut stderr = io::stderr().lock();
@@ -305,7 +309,7 @@ fn compile(
         }
     };
     let compiled = Instant::now();
-    let linked = link::link(&module, output)?;
+    let linked = link::link(&modules, output, profile == Profile::Release)?;
     if timings {
         let report = Timings {
             files,
@@ -318,6 +322,20 @@ fn compile(
         writeln!(io::stderr(), "{report}").map_err(|error| error.to_string())?;
     }
     Ok(Ok((files, tests)))
+}
+
+/// How many LLVM modules to split a program built for `profile` into (roadmap 2.6).
+///
+/// A debug build gets one per core the operating system lets this process use, so each gets a
+/// `clang` of its own, or one when that is unknown. A release build stays one module: `clang`
+/// never inlines a call into another module, and at `-O2` a small function called from a hot
+/// loop in another part would run slower, a cost no benchmark measures yet. At `-O0` nothing
+/// is inlined, so splitting a debug build costs nothing.
+fn parts(profile: Profile) -> usize {
+    match profile {
+        Profile::Debug => std::thread::available_parallelism().map_or(1, usize::from),
+        Profile::Release => 1,
+    }
 }
 
 /// Runs `baryon doc` on the package rooted at `root`, writing its pages into `output`.

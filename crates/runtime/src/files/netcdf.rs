@@ -14,17 +14,24 @@
 //! record variable: its values for record `r` begin at `begin + r * record_size`, where the
 //! record size is the sum of the sizes of every record variable.
 //!
-//! Cost: a read is the header, then one pass over the variable's values, converted from
-//! big-endian as they are copied into the array.
+//! Cost: a read is the header, then one pass over the values a subscript picks, converted from
+//! big-endian as they are copied into the array, with one seek for each stretch of them that
+//! lies together in the file.
 
 use super::fits::Pixel;
 use super::{BUFFER, ErrorKind, OsFailure};
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
 
+mod encoding;
 mod header;
+mod selection;
+mod storage;
+mod writing;
 
 pub(crate) use header::read_header;
+pub(crate) use selection::{Item, Selection, is_whole, select};
+pub(crate) use writing::{define, write};
 
 /// The type of a `NetCDF` value, numbered as the format numbers it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +141,8 @@ pub(crate) struct Variable {
 /// What a classic file's header says.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Header {
+    /// Whether the file is CDF-2, whose variables begin at 64-bit offsets, or else CDF-1.
+    pub(crate) wide: bool,
     /// The number of records written.
     pub(crate) records: u64,
     /// Each dimension's name and length, 0 for the unlimited one.
@@ -146,11 +155,30 @@ pub(crate) struct Header {
 
 impl Header {
     /// Whether `variable` is a record variable: its first dimension is the unlimited one.
-    fn is_record(&self, variable: &Variable) -> bool {
+    pub(crate) fn is_record(&self, variable: &Variable) -> bool {
         variable
             .dimensions
             .first()
             .is_some_and(|&dimension| self.dimensions[dimension].1 == 0)
+    }
+
+    /// Every value of `variable`, as `var[:]` picks them, for the tests that read a whole
+    /// variable.
+    #[cfg(test)]
+    pub(crate) fn everything(&self, variable: &Variable) -> Selection {
+        let names: Vec<&str> = variable
+            .dimensions
+            .iter()
+            .map(|&dimension| self.dimensions[dimension].0.as_str())
+            .collect();
+        let lengths: Vec<u64> = variable
+            .dimensions
+            .iter()
+            .map(|&dimension| self.length(dimension))
+            .collect();
+        let record = self.is_record(variable);
+        select(&variable.name, &[], (&names, &lengths), record, None)
+            .unwrap_or(Selection { axes: Vec::new() })
     }
 
     /// The length of dimension `index`: the number of records for the unlimited one.
@@ -294,10 +322,11 @@ fn python_float(value: f64) -> String {
     }
 }
 
-/// Reads every value of `variable` of `header`, in the file at `path`, into `memory` as
-/// elements of `pixel`, after checking that `pixel` can hold them: with `scale_factor` and
-/// `add_offset` applied, as `netCDF4` applies them, for a float `pixel`. `memory` holds one
-/// element for each value of the variable, row-major.
+/// Reads the values `selection` picks of `variable` of `header`, in the file at `path`, into
+/// `memory` as elements of `pixel`, after checking that `pixel` can hold them: with
+/// `scale_factor` and `add_offset` applied, as `netCDF4` applies them, for a float `pixel`.
+/// `memory` holds one element for each value picked, row-major. Each stretch of neighbouring
+/// values is read with one seek, so `var[:]` of a fixed variable is one read.
 ///
 /// # Errors
 ///
@@ -306,7 +335,7 @@ fn python_float(value: f64) -> String {
 pub(crate) fn read_variable(
     path: &str,
     header: &Header,
-    variable: &Variable,
+    (variable, selection): (&Variable, &Selection),
     pixel: Pixel,
     memory: &mut [u8],
 ) -> Result<(), OsFailure> {
@@ -328,24 +357,26 @@ pub(crate) fn read_variable(
             pixel.name()
         )));
     }
-    let width = variable.kind.size();
-    let chunk = header.values(variable).saturating_mul(width as u64);
-    let starts: Vec<u64> = if header.is_record(variable) {
-        let step = header.record_size();
-        (0..header.records)
-            .map(|record| variable.begin.saturating_add(record.saturating_mul(step)))
-            .collect()
-    } else {
-        vec![variable.begin]
-    };
+    let width = variable.kind.size() as u64;
+    let record = header.is_record(variable);
+    let lengths: Vec<u64> = variable.dimensions[usize::from(record)..]
+        .iter()
+        .map(|&dimension| header.length(dimension))
+        .collect();
+    let step = header.record_size();
     let mut file = fs::File::open(path).map_err(failed)?;
     let mut elements = memory.chunks_exact_mut(pixel.size());
-    // A piece of whole values at a time, so a large variable needs no second copy in memory.
-    let piece = BUFFER - BUFFER % width;
+    // A piece of whole values at a time, so a large stretch needs no second copy in memory.
+    let piece = BUFFER - BUFFER % variable.kind.size();
     let mut stored = vec![0_u8; piece];
-    for start in starts {
+    selection.runs(record, &lengths, |at, offset, count| {
+        let start = at
+            .unwrap_or(0)
+            .saturating_mul(step)
+            .saturating_add(offset.saturating_mul(width))
+            .saturating_add(variable.begin);
         file.seek(SeekFrom::Start(start)).map_err(failed)?;
-        let mut left = chunk;
+        let mut left = count.saturating_mul(width);
         while left > 0 {
             let size = usize::try_from(left).map_or(piece, |left| left.min(piece));
             file.read_exact(&mut stored[..size]).map_err(|error| {
@@ -358,13 +389,16 @@ pub(crate) fn read_variable(
                     failed(error)
                 }
             })?;
-            for (value, element) in stored[..size].chunks_exact(width).zip(&mut elements) {
+            for (value, element) in stored[..size]
+                .chunks_exact(variable.kind.size())
+                .zip(&mut elements)
+            {
                 convert(value, variable.kind, scale, pixel, element);
             }
             left -= size as u64;
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 /// How a variable's values are scaled, as `netCDF4` scales them.

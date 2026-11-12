@@ -10,7 +10,7 @@
 //! is 14.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 use std::{env, fs};
 
@@ -58,6 +58,13 @@ const DROP_UNUSED: &str = if cfg!(target_os = "macos") {
 /// every `clang` from 15, the oldest this driver accepts, knows it.
 const OPTIMIZE: &[&str] = &["-O2", "-mllvm", "-force-ordered-reductions=true"];
 
+/// What `clang` is asked for in a debug build: no optimization, so the module becomes machine
+/// code about five times sooner, and the program runs up to an order of magnitude slower
+/// (decision 0048). A 4,706-line program's object file took 9.0 s at `-O2` and 1.8 s at `-O0`.
+/// Results are the same to the bit: `-O0` never reorders arithmetic, and [`OPTIMIZE`] keeps
+/// float sums in order.
+const DEBUG: &[&str] = &["-O0"];
+
 /// The C math library, linked before the runtime. LLVM calls `floor` and `trunc` for those
 /// operations on CPUs without an instruction for them, and the runtime, a Rust static library,
 /// carries portable versions under the same names. Naming the system library first makes the
@@ -66,45 +73,39 @@ const OPTIMIZE: &[&str] = &["-O2", "-mllvm", "-force-ordered-reductions=true"];
 /// exact, so results do not change.
 const MATH_LIBRARY: &str = "-lm";
 
-/// Compiles the LLVM module `module` at `-O2` and links it with the runtime into the executable
-/// `output`, keeping the module's line tables (`-g`) so debuggers and panic backtraces show
-/// `.byn` lines.
+/// Compiles the LLVM modules `modules`, at `-O2` for a release build and `-O0` for a debug build
+/// (`optimize`, decision 0048), and links them with the runtime into the executable `output`,
+/// keeping the modules' line tables (`-g`) so debuggers and panic backtraces show `.byn` lines.
 ///
-/// The module is compiled to an object file in a scratch directory, then linked. On Linux the
-/// line tables are copied into the executable. On macOS the linker leaves them in the object file
-/// and records where it was, so `dsymutil` collects them into `output.dSYM` beside the
-/// executable before the scratch directory, and the object file with it, is removed. `clang`
-/// runs `dsymutil` itself only for source files it compiles, not for an LLVM module.
+/// Each module is compiled to an object file in a scratch directory by a `clang` of its own,
+/// all at once, so a program split into one module per core ([`Session::compile_parts`]) uses
+/// every core (roadmap 2.6); then the objects are linked. On Linux the line tables are copied
+/// into the executable. On macOS the linker leaves them in the object files and records where
+/// they were, so `dsymutil` collects them into `output.dSYM` beside the executable before the
+/// scratch directory, and the object files with it, is removed. `clang` runs `dsymutil` itself
+/// only for source files it compiles, not for an LLVM module.
 ///
-/// Returns how long the object file and the link took ([`Linked`]); writing the module to the
-/// scratch directory counts toward the object file.
-pub(crate) fn link(module: &str, output: &Path) -> Result<Linked, String> {
+/// Returns how long the object files and the link took ([`Linked`]); writing the modules to the
+/// scratch directory counts toward the object files.
+///
+/// [`Session::compile_parts`]: driver::Session::compile_parts
+pub(crate) fn link(modules: &[String], output: &Path, optimize: bool) -> Result<Linked, String> {
     let runtime = runtime()?;
     let clang = find_clang()?;
     let scratch = env::temp_dir().join(format!("baryon-build-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
-    let source = scratch.join("module.ll");
-    let object = scratch.join("module.o");
+    let objects: Vec<PathBuf> = (0..modules.len())
+        .map(|index| scratch.join(format!("module{index}.o")))
+        .collect();
     let started = Instant::now();
     let mut compiled = started;
-    let result = fs::write(&source, module)
-        .map_err(|error| format!("{}: {error}", source.display()))
-        .and_then(|()| {
-            run_clang(&clang, |command| {
-                command
-                    .args(OPTIMIZE)
-                    .args(["-g", "-Wno-override-module", "-c"])
-                    .arg(&source)
-                    .arg("-o")
-                    .arg(&object);
-            })
-        })
+    let result = compile_objects(&clang, &scratch, modules, &objects, optimize)
         .and_then(|()| {
             compiled = Instant::now();
             run_clang(&clang, |command| {
                 command
                     .arg("-g")
-                    .arg(&object)
+                    .args(&objects)
                     .arg(MATH_LIBRARY)
                     .arg(&runtime)
                     .args(SYSTEM_LIBRARIES)
@@ -126,6 +127,52 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<Linked, String> {
         machine_code: compiled - started,
         link: linked - compiled,
     })
+}
+
+/// Writes each of `modules` into `scratch` and compiles it into the object file at the same
+/// position in `objects`, one `clang` per module, all running at once, and waits for every one.
+///
+/// # Errors
+///
+/// Fails with a message when a module cannot be written, a `clang` cannot be started, or one
+/// fails; the first failure in module order is the one reported.
+fn compile_objects(
+    clang: &str,
+    scratch: &Path,
+    modules: &[String],
+    objects: &[PathBuf],
+    optimize: bool,
+) -> Result<(), String> {
+    let mut running = Vec::new();
+    for (index, (module, object)) in modules.iter().zip(objects).enumerate() {
+        let source = scratch.join(format!("module{index}.ll"));
+        fs::write(&source, module).map_err(|error| format!("{}: {error}", source.display()))?;
+        let child = Command::new(clang)
+            .args(if optimize { OPTIMIZE } else { DEBUG })
+            .args(["-g", "-Wno-override-module", "-c"])
+            .arg(&source)
+            .arg("-o")
+            .arg(object)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("{clang}: {error}"));
+        running.push(child);
+    }
+    // Every started `clang` is waited for, even after one fails, so none outlives the scratch
+    // directory it writes into.
+    let finished: Vec<Result<(), String>> = running
+        .into_iter()
+        .map(|child| {
+            child.and_then(|child| {
+                child
+                    .wait_with_output()
+                    .map_err(|error| format!("{clang}: {error}"))
+                    .and_then(|finished| clang_failure(clang, &finished))
+            })
+        })
+        .collect();
+    finished.into_iter().collect()
 }
 
 /// The oldest `clang` major version that accepts the LLVM text the backend emits: opaque
@@ -201,12 +248,21 @@ fn run_clang(clang: &str, arguments: impl FnOnce(&mut Command)) -> Result<(), St
     let mut command = Command::new(clang);
     arguments(&mut command);
     match command.output() {
-        Ok(finished) if finished.status.success() => Ok(()),
-        Ok(finished) => Err(format!(
+        Ok(finished) => clang_failure(clang, &finished),
+        Err(error) => Err(format!("{clang}: {error}")),
+    }
+}
+
+/// Nothing when the `clang` named `clang` that ended with `finished` succeeded, and otherwise
+/// the message saying it failed, with what it printed to standard error.
+fn clang_failure(clang: &str, finished: &Output) -> Result<(), String> {
+    if finished.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
             "{clang} could not compile the program, which is a bug in baryon:\n{}",
             String::from_utf8_lossy(&finished.stderr)
-        )),
-        Err(error) => Err(format!("{clang}: {error}")),
+        ))
     }
 }
 

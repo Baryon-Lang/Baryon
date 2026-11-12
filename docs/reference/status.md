@@ -25,8 +25,12 @@ the language that is specified and checked, but not built yet. The editor sees t
 type, while `baryon run` builds only what this page lists.
 
 This page was last brought up to date on 2026-11-12, when line plots with `pyplot` and `ticker`,
-saved as SVG, and before them FITS images and headers,
-`fits.getdata`, `fits.getheader`, `fits.writeto` and `KeyError`, and before them, on 2026-11-11,
+saved as SVG, and before them writing NetCDF classic files,
+`Dataset(path, "w", format=...)`, `createDimension`, `createVariable`, `setncattr` and
+`var[:] = values`, and before them reading NetCDF classic files, `netCDF4.Dataset`, its
+variables, dimensions and attributes, and `AttributeError`, and before them
+FITS images and headers, `fits.getdata`, `fits.getheader`, `fits.writeto` and `KeyError`, and
+before them, on 2026-11-11,
 the standard streams, `print(..., file=)` and `input`, `.npy` files, `Array.load` and
 `Array.save`, `linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables, `Array.loadtxt`
 and `Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`,
@@ -169,7 +173,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments`; [`.npy` files](data-files.md#npy-files): `Array.load` and `Array.save` of arrays of numbers, `bool`s and complex numbers of any rank, a view included; [FITS files](data-files.md#fits-files): `fits.getdata` of any HDU's image as integers or floats of any rank, scaled as AstroPy scales, `fits.getheader`, `fits.writeto` with a header and `overwrite`, and a `Header`'s `header[key]` typed by the context, `get`, `in` and `header[key] = value` or `(value, comment)`, raising `KeyError` | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files of structs, in Fortran order or big-endian, and `.npz` archives; `fits.open`, FITS tables, compressed images and `fits.Header()`; CSV into a DataFrame, NetCDF, Parquet and HDF5 (roadmap 3.14.4 to 3.14.6) |
+| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments`; [`.npy` files](data-files.md#npy-files): `Array.load` and `Array.save` of arrays of numbers, `bool`s and complex numbers of any rank, a view included; [FITS files](data-files.md#fits-files): `fits.getdata` of any HDU's image as integers or floats of any rank, scaled as AstroPy scales, `fits.getheader`, `fits.writeto` with a header and `overwrite`, and a `Header`'s `header[key]` typed by the context, `get`, `in` and `header[key] = value` or `(value, comment)`, raising `KeyError`; [NetCDF classic files](data-files.md#netcdf-files): `Dataset(path)`, `ds.variables[name][:]` of a whole variable as signed integers or floats of any rank, unpacked as `netCDF4` unpacks, `ds.dimensions[name]` with `name`, `size` and `isunlimited()`, `getncattr` typed by the context and `ncattrs` of a file or a variable, raising `KeyError` and `AttributeError`; writing them with `Dataset(path, "w", format=...)` of either classic format or the mode `"a"`, alone or in a `with` block, `createDimension`, `createVariable` of up to four dimensions, `setncattr` of a `str`, `int` or `float`, and `var[:] = values` of signed integers or floats, packed as `netCDF4` packs, byte for byte as `netCDF4` writes | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files of structs, in Fortran order or big-endian, and `.npz` archives; `fits.open`, FITS tables, compressed images and `fits.Header()`; slices of a NetCDF variable, listing its variables and dimensions, and NetCDF-4 files; CSV into a DataFrame, Parquet and HDF5 (roadmap 3.14.4 and 3.14.6) |
 
 ## Plotting
 

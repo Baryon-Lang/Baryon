@@ -41,3 +41,12 @@ class KeyError(Exception):
     """
 
     message: str
+
+
+class AttributeError(Exception):
+    """An attribute that is not there: what reading a missing attribute of a NetCDF file or
+    variable raises, with `netCDF4`'s message, `NetCDF: Attribute not found` (decision 0047),
+    or one that does not hold the type the program reads. `message` says which, and why.
+    """
+
+    message: str

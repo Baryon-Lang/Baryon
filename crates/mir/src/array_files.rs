@@ -1,7 +1,8 @@
 //! The operations on array files a [`Builtin::ArrayFile`](crate::Builtin::ArrayFile) call
 //! performs: `Array.fromfile` and `a.tofile` (decision 0036, part 4), `Array.load` and
 //! `Array.save` of `NumPy`'s `.npy` files (decision 0043), and the `fits` module's
-//! `getheader`, `getdata` and `writeto` of FITS files (decision 0044).
+//! `getheader`, `getdata` and `writeto` of FITS files (decision 0044), and the `netCDF4`
+//! module's reads of `NetCDF` classic files (decision 0047).
 
 /// An operation on an array file, called by [`Builtin::ArrayFile`](crate::Builtin::ArrayFile).
 ///
@@ -61,6 +62,55 @@ pub enum ArrayFile {
     /// mandatory ones, and fails with the kind `FILE_EXISTS` when the file exists and
     /// `overwrite` is false. It costs one pass over the array's elements.
     FitsWrite,
+    /// `Dataset(path)` of the `netCDF4` module: one argument, the path, a `str`. The
+    /// destination is a new `list[str]`: lines that describe the header of a `NetCDF` classic
+    /// file (CDF-1 or CDF-2), each a tag and fields separated by tabs, which the standard
+    /// library parses. A `P` line, the path, comes first, so the library can read variables
+    /// later; then the `D` lines, then the file's `A` lines, then each `V` line followed by its
+    /// variable's `A` lines. A `D` line is a dimension's name, its length and
+    /// `1` when it is the unlimited one or `0`; a `V` line a variable's name, its type as
+    /// `netCDF4` names it (`f4`) and its dimensions' names separated by commas; an `A` line an
+    /// attribute's variable (empty for the file's own), its kind (`str`, `int` or `float`), its
+    /// number of values, its name and its values separated by commas. The call fails with the
+    /// kind `INVALID_DATA` when the file is not a classic `NetCDF` file. It reads the header
+    /// only.
+    NetcdfOpen,
+    /// `ds.variables[name][items]` of the `netCDF4` module: the path and the variable's name,
+    /// each a `str`, then four `int`s for each item of the subscript, which picks the values
+    /// read: `0` and an index, or `1` and a slice's start, stop and step, each `i64::MIN` when
+    /// the program left it out. No items read the whole variable, as `var[:]` does. The
+    /// destination is a new `Array[T, rank]`, its `T` a signed integer or float type, its shape
+    /// the lengths picked along the axes a slice keeps, in the file's order. A float `T` reads
+    /// any number variable, with `scale_factor` and `add_offset` applied as `netCDF4` applies
+    /// them; an integer `T` reads an unscaled integer variable it can hold. Fill values are read
+    /// as stored. The call fails with the kind `INVALID_DATA` when the file has no such
+    /// variable, the items do not fit its dimensions, or the values picked have another rank or
+    /// `T` cannot read them. It costs one pass over the values picked.
+    NetcdfRead,
+    /// One change to a `NetCDF` classic file opened for writing, which the `netCDF4` module's
+    /// `Dataset(path, "w")`, `createDimension`, `createVariable` and `setncattr` make: two
+    /// arguments, the path and the change, each a `str`. The change is a line of a tag and
+    /// fields separated by tabs: `C` and the format's version, `1` or `2`, for a new empty file;
+    /// `D`, a dimension's name and its length, `0` for the unlimited one; `V`, a variable's
+    /// name, its type as `netCDF4` names it (`f4`) and its dimensions' names separated by
+    /// commas; `A`, an attribute's variable (empty for the file's own), its kind (`str`, `int`
+    /// or `float`), its name and its value. The destination is a new `list[str]`, the lines
+    /// that describe the file's header after the change, as [`Self::NetcdfOpen`] writes them,
+    /// so the library's `Dataset` stays in step with its file. The file is the only state: each
+    /// change reads it, writes it again and reads its header. The call fails with the kind
+    /// `INVALID_DATA` when the format refuses the change.
+    NetcdfDefine,
+    /// `ds.variables[name][items] = array` of the `netCDF4` module: the path and the
+    /// variable's name, each a `str`, the array, an `Array[T, rank]` borrowed, its `T` a number
+    /// type, then four `int`s for each item of the subscript, as [`Self::NetcdfRead`] takes
+    /// them; no items write the whole variable. The destination is `None`. The array's values
+    /// become the values picked, converted to the variable's type and packed by `scale_factor`
+    /// and `add_offset` as `netCDF4` packs them. Along the unlimited dimension the items may
+    /// pass the last record, and a slice with no end takes as many records as the array has
+    /// rows. The call fails with the kind `INVALID_DATA` when the file has no such variable, the
+    /// items do not fit its dimensions, or the array's shape differs from the shape picked. It
+    /// costs one pass over the values and one read and write of the file.
+    NetcdfWrite,
 }
 
 impl ArrayFile {
@@ -74,6 +124,10 @@ impl ArrayFile {
     /// assert_eq!(mir::ArrayFile::FitsHeader.name(), "fits.getheader");
     /// assert_eq!(mir::ArrayFile::FitsData.name(), "fits.getdata");
     /// assert_eq!(mir::ArrayFile::FitsWrite.name(), "fits.writeto");
+    /// assert_eq!(mir::ArrayFile::NetcdfOpen.name(), "netCDF4.Dataset");
+    /// assert_eq!(mir::ArrayFile::NetcdfRead.name(), "netCDF4.Variable[:]");
+    /// assert_eq!(mir::ArrayFile::NetcdfDefine.name(), "netCDF4.define");
+    /// assert_eq!(mir::ArrayFile::NetcdfWrite.name(), "netCDF4.Variable[:] =");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -85,6 +139,10 @@ impl ArrayFile {
             Self::FitsHeader => "fits.getheader",
             Self::FitsData => "fits.getdata",
             Self::FitsWrite => "fits.writeto",
+            Self::NetcdfOpen => "netCDF4.Dataset",
+            Self::NetcdfRead => "netCDF4.Variable[:]",
+            Self::NetcdfDefine => "netCDF4.define",
+            Self::NetcdfWrite => "netCDF4.Variable[:] =",
         }
     }
 }

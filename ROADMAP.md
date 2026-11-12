@@ -183,8 +183,8 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 
 Gate: every number in the design plan's compile-speed table is met on the reference project.
 
-Comes after Phase 3's native capability work (Collins, 2026-11-10): see the order in
-[Releases](#releases).
+Comes right after plotting (3.15), the last of Phase 3's native capability work, and before the
+base libraries 3.18 to 3.32 (Collins, 2026-11-12): see the order in [Releases](#releases).
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -193,6 +193,9 @@ Comes after Phase 3's native capability work (Collins, 2026-11-10): see the orde
 | 2.2 | Incremental code generation and object patching | 3 | 2.1 | Planned | — | — |
 | 2.3 | Compile-speed profiling and tuning to the targets | 3 | 2.2 | Planned | — | — |
 | 2.4 | Language server: rename, inlay hints, run tests from the editor, debugger hookup | 2 | 1.16 | Planned | — | — |
+| 2.5 | Debug builds compile at `clang -O0` and release builds at `-O2` (decision 0048, replacing 0030's "both are optimized"): a 4,706-line program's debug build went from 9.5 s to 1.85 s, and the `nbody` kernel's from 0.40 s to 0.20 s; debug programs run up to ten times slower, so timing runs use `--release` | — | 2.0 | Done | Claude | [0048](docs/decisions/0048-debug-builds-compile-fast.md), [#280](https://github.com/Baryon-Lang/Baryon/pull/280) |
+| 2.6 | Parallel code generation: the LLVM backend writes a program with enough code as several modules, one per core, each function whole in one of them, and the driver runs one `clang` per module at once, then links them. A part must hold about 200 KB of function text to be worth a `clang` of its own, so small programs stay one module. Debug builds only: `clang` never inlines a call into another module, so a release build stays one module until a run-time benchmark shows splitting it costs nothing (splitting the 4,706-line release build took it from 9.5 s to 2.9 s). Measured on 4 cores, the 4,706-line program of 2.0: debug build 1.85 s to 1.0 s, results the same to the bit | — | 2.5 | Done | Claude | [#284](https://github.com/Baryon-Lang/Baryon/pull/284) |
+| 2.7 | The LLVM backend writes scalar locals as registers instead of stack slots, so a debug build at `-O0` runs closer to an optimized one without a slower build (decision 0048) | — | 2.5 | Planned | — | — |
 
 ## Phase 3: optimization and data science
 
@@ -233,7 +236,7 @@ the REPL, and three external users have written something real.
 | 3.14.2 | NumPy's `.npy` files (decision 0043): `Array.save(path, a)` and `Array.load(path)`, the element type and rank checked against the file's header; the header read and written by the runtime | 0.5 | 3.14.1 | Done | Claude | [#259](https://github.com/Baryon-Lang/Baryon/pull/259), [#260](https://github.com/Baryon-Lang/Baryon/pull/260), [#262](https://github.com/Baryon-Lang/Baryon/pull/262), [0043](docs/decisions/0043-array-data-files.md) |
 | 3.14.3 | FITS images and headers: primary and image extensions, header cards read and written, big-endian pixel data of every BITPIX, as the FITS standard 4.0 defines them; tile compression and binary tables are 4.2.5's. Built as a `fits` module with AstroPy's names (decision 0044): `getdata` typed by the context, `getheader`, `writeto` with AstroPy's bytes, and a `Header` written in Baryon whose values are typed by the context and raise `KeyError`; tested against files AstroPy 8.0.2 wrote | 2 | 3.14.2 | Done | Claude | [#265](https://github.com/Baryon-Lang/Baryon/pull/265), [#266](https://github.com/Baryon-Lang/Baryon/pull/266), [#268](https://github.com/Baryon-Lang/Baryon/pull/268), [#269](https://github.com/Baryon-Lang/Baryon/pull/269), [#270](https://github.com/Baryon-Lang/Baryon/pull/270), [#271](https://github.com/Baryon-Lang/Baryon/pull/271), [0044](docs/decisions/0044-fits-images-and-headers.md) |
 | 3.14.4 | CSV with a header row and columns of mixed types, read into and written from a DataFrame, as `pandas.read_csv` and `to_csv` do, the schema taken from the context (decision 0045): quoted fields, numbers, text, and empty cells into optional columns. Sized 1 week at first; 3 once the DataFrame was designed | 3 | 3.13.3, 3.13.6 | Planned | — | — |
-| 3.14.5 | NetCDF classic and 64-bit offset files (CDF-1 and CDF-2): dimensions, variables and attributes read and written; NetCDF-4 rides on HDF5 (3.14.6) | 2 | 3.14.2 | In progress | Claude | [#272](https://github.com/Baryon-Lang/Baryon/pull/272), [#276](https://github.com/Baryon-Lang/Baryon/pull/276), [0047](docs/decisions/0047-netcdf-classic-files.md) |
+| 3.14.5 | NetCDF classic and 64-bit offset files (CDF-1 and CDF-2): dimensions, variables and attributes read and written; NetCDF-4 rides on HDF5 (3.14.6) | 2 | 3.14.2 | In progress | Claude | [#272](https://github.com/Baryon-Lang/Baryon/pull/272), [#276](https://github.com/Baryon-Lang/Baryon/pull/276), [#282](https://github.com/Baryon-Lang/Baryon/pull/282), [#285](https://github.com/Baryon-Lang/Baryon/pull/285), [#286](https://github.com/Baryon-Lang/Baryon/pull/286), [#287](https://github.com/Baryon-Lang/Baryon/pull/287), [#288](https://github.com/Baryon-Lang/Baryon/pull/288), [#290](https://github.com/Baryon-Lang/Baryon/pull/290), [#291](https://github.com/Baryon-Lang/Baryon/pull/291), [#292](https://github.com/Baryon-Lang/Baryon/pull/292), [#293](https://github.com/Baryon-Lang/Baryon/pull/293), [#294](https://github.com/Baryon-Lang/Baryon/pull/294), [#295](https://github.com/Baryon-Lang/Baryon/pull/295), [#296](https://github.com/Baryon-Lang/Baryon/pull/296), [0047](docs/decisions/0047-netcdf-classic-files.md) |
 | 3.14.6 | Parquet and HDF5, each read and written in Baryon from its specification; both need the compression of 3.27, and Parquet the DataFrame | 12 | 3.13, 3.27 | Planned | — | — |
 | 3.15 | Plotting with matplotlib's object-oriented names in a `pyplot` module, written in Baryon, drawn to SVG first, then PNG and PDF (decision 0046). Built in the sub-rows below. Sized 4 weeks at first; 14.5 once split | 14.5 | 3.9 | In progress | Claude | [0046](docs/decisions/0046-plotting.md) |
 | 3.15.1 | The `pyplot` core, drawn to SVG: `plt.axes()`, `Axes.plot` with colors from the `tab10` cycle, line widths and line styles, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim` and `set_ylim`, ticks where matplotlib's `AutoLocator` puts them and labelled as its `ScalarFormatter` writes them, and `savefig` to a `.svg` file | 2 | 3.9 | Done | Claude | [0046](docs/decisions/0046-plotting.md), [#283](https://github.com/Baryon-Lang/Baryon/pull/283) |
@@ -315,14 +318,14 @@ way to wrap Baryon in Python. A self-hosted compiler stays a non-goal, as the
 
 After the real-data checkpoint (R.3), native capability comes before compile speed (Collins, 2026-11-10): speed of the
 compiled code (3.1, 3.2, 3.3), then broadcasting and axis reductions (3.9), linear algebra and FFT
-(3.10), statistics (3.16), file formats (3.14), DataFrame (3.13) and plotting (3.15). The base
-libraries AstroPy relies on join them as Baryon's own (3.18 to 3.32): special functions,
-integration, optimization, interpolation, spatial search and image processing, distributions,
-missing values, record and date arrays, regular expressions, compression, XML, structured text,
-networking, ERFA and world coordinate systems; ERFA (3.31) can start early, since it needs little
-beyond what builds today. AstroBaryon, the native astronomy library (4.2), builds on them
-(Collins, 2026-11-10). Phase 2's faster compiling follows, unless compile times start to slow
-users down first. Interop with other languages comes last, after AstroBaryon: Python interop
+(3.10), statistics (3.16), file formats (3.14), DataFrame (3.13) and plotting (3.15). Phase 2's
+faster compiling comes right after plotting (Collins, 2026-11-12), so the long library work that
+follows is written with fast builds. Then the base libraries AstroPy relies on, as Baryon's own
+(3.18 to 3.32): special functions, integration, optimization, interpolation, spatial search and
+image processing, distributions, missing values, record and date arrays, regular expressions,
+compression, XML, structured text, networking, ERFA and world coordinate systems; ERFA (3.31) can
+start early, since it needs little beyond what builds today. AstroBaryon, the native astronomy
+library (4.2), builds on them (Collins, 2026-11-10). Interop with other languages comes last, after AstroBaryon: Python interop
 (3.17) and C++ interop (4.1) both wait for it. Native Baryon is how most work gets done, and
 interop is only for libraries that will never be rewritten (Collins, 2026-11-10 and 2026-11-12).
 The standard library's own calls into system libraries, such as the opt-in system BLAS of

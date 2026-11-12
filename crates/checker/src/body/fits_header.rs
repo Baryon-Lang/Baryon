@@ -13,10 +13,9 @@
 
 use super::Body;
 use super::calls::Arguments;
-use super::exclusive::Passed;
 use database::Definition;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Callee, Declaration, Float, Integer, Item, Key, Mode, Primitive, Type, TypeKind};
+use types::{Float, Integer, Primitive, Type, TypeKind};
 
 impl<'db> Body<'db> {
     /// Whether `ty` is the library's `fits.Header`.
@@ -206,50 +205,14 @@ impl<'db> Body<'db> {
     }
 
     /// The call `node` of the library function `function` of `<std>/fits.byn`, with the
-    /// `Header` `header` of type `base` as its receiver, then `arguments`. The checker checks it
-    /// as a call of that function and records it at `node`.
+    /// `Header` `header` of type `base` as its receiver, then `arguments`.
     fn header_call(
         &mut self,
         node: NodeId,
         function: &str,
-        (header, base): (NodeId, Type<'db>),
+        receiver: (NodeId, Type<'db>),
         arguments: &Arguments,
     ) -> Type<'db> {
-        let signature = self
-            .library_function("fits", function)
-            .map(|(file, name)| Item::new(self.db, self.lowerer.package, file, name))
-            .and_then(|item| match self.db.declaration(item).declaration.clone() {
-                Declaration::Function(signature) => Some((item, signature)),
-                _ => None,
-            });
-        let Some((item, signature)) = signature else {
-            self.untyped(arguments);
-            let message = format!("`fits.{function}` is missing from the standard library");
-            return self.lowerer.error(
-                node,
-                &message,
-                "cannot be typed",
-                Some("the compiler adds the library's files to every package (decision 0038)"),
-            );
-        };
-        let mode = signature
-            .parameters
-            .first()
-            .map_or(Mode::Borrow, |parameter| parameter.mode);
-        let receiver = Passed {
-            node: header,
-            mode,
-            ty: base,
-        };
-        let ty = self.check_call(
-            node,
-            "Header",
-            &signature,
-            Some(receiver),
-            Callee::Function(item),
-            arguments,
-        );
-        debug_assert!(self.typed.calls.contains_key(&Key(node)));
-        ty
+        self.library_method(node, ("fits", "Header", function), receiver, arguments)
     }
 }

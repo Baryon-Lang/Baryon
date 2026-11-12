@@ -37,6 +37,9 @@ impl<'db> Body<'db> {
             Some(&Definition::Item(file, name)) if self.is_path_class(file, name) => {
                 self.path_new(node, &arguments)
             }
+            Some(&Definition::Item(file, name)) if self.is_dataset_class(file, name) => {
+                self.netcdf_call(node, "Dataset", &arguments)
+            }
             Some(&Definition::Item(file, name)) => {
                 self.call_item(node, &callee, file, name, &arguments)
             }
@@ -74,6 +77,13 @@ impl<'db> Body<'db> {
             }) => {
                 let member = member.clone();
                 self.fits_call(node, &member, &arguments, expected)
+            }
+            Some(Definition::Standard {
+                module: "netCDF4",
+                member: Some(member),
+            }) => {
+                let member = member.clone();
+                self.netcdf_call(node, &member, &arguments)
             }
             Some(Definition::Standard {
                 module: "subprocess",
