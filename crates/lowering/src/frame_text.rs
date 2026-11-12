@@ -71,7 +71,7 @@ impl<'db> Builder<'db> {
         Some(Place::from(result))
     }
 
-    /// Calls the function `name` of `<std>/frames.byn` with `type_arguments`, borrowing each
+    /// Calls the function `name` of `<std>/frames.byn` or `<std>/frame_joins.byn` with `type_arguments`, borrowing each
     /// of `arguments`, and gives the temporary of type `returns` that holds its result. The
     /// functions called this way take every parameter borrowed and raise nothing. `None`
     /// after reporting that the library's file or the function is missing, which happens only
@@ -102,17 +102,19 @@ impl<'db> Builder<'db> {
         Some(result)
     }
 
-    /// The function `name` that `<std>/frames.byn` defines at its top level. Costs one pass
-    /// over the file's top-level statements.
+    /// The function `name` that `<std>/frames.byn` or `<std>/frame_joins.byn` defines at its
+    /// top level. Costs one pass over the top-level statements of each file looked in.
     fn frame_function(&self, name: &str) -> Option<Item<'db>> {
-        let file = database::modules(self.db, self.package).library("frames")?;
-        let tree = self.db.parse(file).tree();
-        let text = file.source(self.db).text();
-        let function = tree
-            .children_with(tree.root(), Role::Body)
-            .filter(|&statement| tree.kind(statement) == SyntaxKind::FunctionDefinition)
-            .filter_map(|function| tree.child(function, Role::Name))
-            .find(|&function| tree.text(function, text) == name)?;
-        Some(Item::new(self.db, self.package, file, function))
+        ["frames", "frame_joins"].into_iter().find_map(|module| {
+            let file = database::modules(self.db, self.package).library(module)?;
+            let tree = self.db.parse(file).tree();
+            let text = file.source(self.db).text();
+            let function = tree
+                .children_with(tree.root(), Role::Body)
+                .filter(|&statement| tree.kind(statement) == SyntaxKind::FunctionDefinition)
+                .filter_map(|function| tree.child(function, Role::Name))
+                .find(|&function| tree.text(function, text) == name)?;
+            Some(Item::new(self.db, self.package, file, function))
+        })
     }
 }

@@ -31,6 +31,7 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Arrays](arrays.md) | `Array` and `Fixed`: construction, layout, indexing, slicing, whole-array arithmetic |
 | [Statistics](statistics.md) | The `stats` module: `median`, `quantile`, `percentile`, `average`, `histogram`, `cov` and `corrcoef`, with NumPy's bits |
 | [DataFrames](dataframes.md) | `DataFrame[S]`: a table whose columns are arrays and whose column names the compiler checks, with pandas's names |
+| [Sorting, grouping and joining DataFrames](dataframe-operations.md) | `sort_values`, `groupby(...).agg(...)` and the inner `merge`, with what each costs and where it differs from pandas |
 | [Errors and panics](errors.md) | `Raises`, `raise`, `try`/`except`, and failures that stop the program |
 | [Parallel and vector loops](parallel-loops.md) | `prange`, reductions, the disjoint-write rule, adding into shared arrays with `accumulate=`, and `simd` |
 | [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |
