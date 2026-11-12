@@ -112,7 +112,7 @@ impl Pixel {
     }
 
     /// The name of the type, for messages.
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::U8 => "u8",
             Self::I8 => "i8",

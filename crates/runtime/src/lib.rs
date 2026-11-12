@@ -45,6 +45,7 @@
 //! | [`baryon_rt_array_from_file`], [`baryon_rt_array_to_file`] | Read a file of raw elements into a new array and write an array's elements to a file, as `NumPy`'s `fromfile` and `tofile` do, each failure an `OSError` (decision 0036) |
 //! | [`baryon_rt_array_load`], [`baryon_rt_array_save`] | Read a `.npy` file into a new array of the element type and rank the program names, and write an array as one, as `NumPy`'s `load` and `save` do, each failure an `OSError` (decision 0043) |
 //! | [`baryon_rt_fits_cards`], [`baryon_rt_fits_read`], [`baryon_rt_fits_write`] | Read the header cards and the image of one HDU of a FITS file, and write an array as a FITS image with a program's cards, as `AstroPy`'s `getheader`, `getdata` and `writeto` do, each failure an `OSError` (decision 0044) |
+//! | [`baryon_rt_netcdf_open`], [`baryon_rt_netcdf_read`] | Describe the header of a `NetCDF` classic file and read one of its variables into a new array, scaled as `netCDF4` scales it, for the `netCDF4` module's `Dataset`, each failure an `OSError` (decision 0047) |
 //! | [`baryon_rt_file_standard`], [`baryon_rt_file_print`], [`baryon_rt_input`] | Make the `File` that `sys.stdin`, `sys.stdout` or `sys.stderr` gives, write a `print(..., file=f)` to its file, and read a line for `input`, raising `EOFError` at the end of the input (decision 0036) |
 //! | [`baryon_rt_subprocess_run`] | Run another program from an argument list, with no shell, wait for it and write a [`CompletedProcess`]: its exit status and, when asked, its output, for `subprocess.run` (decision 0036) |
 //! | [`baryon_rt_flush`] | Write out a line `print(..., end="")` left unended, before the C `main` returns |
@@ -122,9 +123,10 @@ pub use abi::{
     baryon_rt_file_drop, baryon_rt_file_flush, baryon_rt_file_open, baryon_rt_file_print,
     baryon_rt_file_read, baryon_rt_file_read_line, baryon_rt_file_read_lines,
     baryon_rt_file_standard, baryon_rt_file_write, baryon_rt_fits_cards, baryon_rt_fits_read,
-    baryon_rt_fits_write, baryon_rt_flush, baryon_rt_input, baryon_rt_pairwise_combine_f32,
-    baryon_rt_pairwise_combine_f64, baryon_rt_pairwise_leaf_end, baryon_rt_pairwise_leaves,
-    baryon_rt_panic, baryon_rt_panic_exponent, baryon_rt_panic_index, baryon_rt_panic_key,
+    baryon_rt_fits_write, baryon_rt_flush, baryon_rt_input, baryon_rt_netcdf_open,
+    baryon_rt_netcdf_read, baryon_rt_pairwise_combine_f32, baryon_rt_pairwise_combine_f64,
+    baryon_rt_pairwise_leaf_end, baryon_rt_pairwise_leaves, baryon_rt_panic,
+    baryon_rt_panic_exponent, baryon_rt_panic_index, baryon_rt_panic_key,
     baryon_rt_panic_length_mismatch, baryon_rt_panic_slice, baryon_rt_parallel_for,
     baryon_rt_path_is, baryon_rt_path_join, baryon_rt_path_list, baryon_rt_path_make_directory,
     baryon_rt_path_part, baryon_rt_path_remove, baryon_rt_path_rename, baryon_rt_philox_new,
