@@ -86,7 +86,10 @@ impl<'db> Function<'_, '_, 'db> {
     /// local name written, so several runs fit in one function.
     fn run(&mut self, symbol: &str, errors: &[Type<'db>], prefix: &str) -> Result<(), Unsupported> {
         let callee = global(symbol);
+        // Declared for when the program is split into modules and `symbol` is defined in
+        // another one; a module that defines it leaves the declaration out.
         if errors.is_empty() {
+            self.declare(symbol, &format!("declare void {callee}()"));
             self.line(&format!("call void {callee}()"));
             self.exit(0);
             return Ok(());
@@ -102,6 +105,7 @@ impl<'db> Function<'_, '_, 'db> {
         let llvm = self.types.value(fallible)?;
         let error = format!("%{prefix}error");
         self.line(&format!("{error} = alloca {llvm}"));
+        self.declare(symbol, &format!("declare i1 {callee}(ptr)"));
         let failed = self.emit(&format!("call i1 {callee}(ptr {error})"));
         self.line(&format!(
             "br i1 {failed}, label %{prefix}failed, label %{prefix}done"

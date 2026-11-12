@@ -40,6 +40,7 @@ mod npy;
 mod one_pass;
 mod overflow;
 mod parallel;
+mod parts;
 mod paths;
 mod print;
 mod process;

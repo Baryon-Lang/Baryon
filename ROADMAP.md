@@ -194,6 +194,8 @@ base libraries 3.18 to 3.32 (Collins, 2026-11-12): see the order in [Releases](#
 | 2.3 | Compile-speed profiling and tuning to the targets | 3 | 2.2 | Planned | — | — |
 | 2.4 | Language server: rename, inlay hints, run tests from the editor, debugger hookup | 2 | 1.16 | Planned | — | — |
 | 2.5 | Debug builds compile at `clang -O0` and release builds at `-O2` (decision 0048, replacing 0030's "both are optimized"): a 4,706-line program's debug build went from 9.5 s to 1.85 s, and the `nbody` kernel's from 0.40 s to 0.20 s; debug programs run up to ten times slower, so timing runs use `--release` | — | 2.0 | Done | Claude | [0048](docs/decisions/0048-debug-builds-compile-fast.md), [#280](https://github.com/Baryon-Lang/Baryon/pull/280) |
+| 2.6 | Parallel code generation: the LLVM backend writes a program with enough code as several modules, one per core, each function whole in one of them, and the driver runs one `clang` per module at once, then links them. A part must hold about 200 KB of function text to be worth a `clang` of its own, so small programs stay one module. Debug builds only: `clang` never inlines a call into another module, so a release build stays one module until a run-time benchmark shows splitting it costs nothing (splitting the 4,706-line release build took it from 9.5 s to 2.9 s). Measured on 4 cores, the 4,706-line program of 2.0: debug build 1.85 s to 1.0 s, results the same to the bit | — | 2.5 | Done | Claude | [#284](https://github.com/Baryon-Lang/Baryon/pull/284) |
+| 2.7 | The LLVM backend writes scalar locals as registers instead of stack slots, so a debug build at `-O0` runs closer to an optimized one without a slower build (decision 0048) | — | 2.5 | Planned | — | — |
 
 ## Phase 3: optimization and data science
 

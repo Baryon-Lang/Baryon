@@ -3,7 +3,7 @@
 //! writes them out as one textual LLVM IR module (decision 0020). Each function body is written
 //! by the `function` module and the modules beside it; this one only gathers their text.
 
-use crate::{ClassNames, Test, Unsupported, debug, entry, function, panic, ty};
+use crate::{ClassNames, Test, Unsupported, debug, entry, function, panic, parts, ty};
 use mir::Body;
 use std::collections::{BTreeMap, BTreeSet};
 use types::{Declared, Item, Nominal, Type};
@@ -15,12 +15,11 @@ pub struct Module<'a, 'db> {
     types: ty::Types<'a, 'db>,
     /// The symbol of a function instance: an item with its type arguments.
     symbol: &'a dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
-    /// Each function definition's text, in the order they were defined.
-    definitions: Vec<String>,
+    /// Each definition, in the order they were made: a function with the outlined `prange`
+    /// bodies only it calls, or the C `main`.
+    definitions: Vec<Definition>,
     /// The messages and source locations failed checks point to.
     constants: panic::Constants<'a>,
-    /// The symbols this module defines, so they are not declared too.
-    defined: BTreeSet<String>,
     /// The declaration of each symbol called, written from the call, by symbol.
     declarations: BTreeMap<String, String>,
 }
@@ -47,7 +46,6 @@ impl<'a, 'db> Module<'a, 'db> {
             symbol,
             definitions: Vec::new(),
             constants: panic::Constants::new(sources),
-            defined: BTreeSet::new(),
             declarations: BTreeMap::new(),
         }
     }
@@ -94,8 +92,10 @@ impl<'a, 'db> Module<'a, 'db> {
             written.push(text);
             calls.extend(called);
         }
-        self.definitions.extend(written);
-        self.defined.insert(symbol.to_owned());
+        self.definitions.push(Definition {
+            symbol: symbol.to_owned(),
+            text: written.join("\n"),
+        });
         self.declarations.extend(calls);
         Ok(())
     }
@@ -104,6 +104,10 @@ impl<'a, 'db> Module<'a, 'db> {
     /// returns 0, the exit status of a program that ran to its end, after the runtime writes out
     /// a line `print(..., end="")` left unended. `symbol` takes no arguments and returns `None`;
     /// a failed check inside it ends the program through the runtime with status 101 instead.
+    ///
+    /// `symbol` is declared, so the C `main` can sit in a different module from it
+    /// ([`finish_parts`](Self::finish_parts)); a module that defines `symbol` leaves the
+    /// declaration out.
     ///
     /// `errors` are the error types `symbol` can raise, in its `Raises` order; empty when it
     /// cannot fail. An error that reaches the end of `main` is printed to standard error as
@@ -140,7 +144,8 @@ impl<'a, 'db> Module<'a, 'db> {
     ///     module.finish(),
     ///     "define i32 @main() {\nstart:\n  call void @main.main()\n  \
     ///      call void @baryon_rt_flush()\n  ret i32 0\n}\n\n\
-    ///      declare void @baryon_rt_flush() nounwind\n"
+    ///      declare void @baryon_rt_flush() nounwind\n\
+    ///      declare void @main.main()\n"
     /// );
     /// # Ok::<(), llvm_backend::Unsupported>(())
     /// ```
@@ -152,8 +157,10 @@ impl<'a, 'db> Module<'a, 'db> {
         let (text, calls) = function
             .entry(symbol, errors)
             .inspect_err(|_| self.constants.roll_back(mark))?;
-        self.definitions.push(text);
-        self.defined.insert("main".to_owned());
+        self.definitions.push(Definition {
+            symbol: "main".to_owned(),
+            text,
+        });
         self.declarations.extend(calls);
         Ok(())
     }
@@ -208,41 +215,111 @@ impl<'a, 'db> Module<'a, 'db> {
         let (text, calls) = function
             .tests(tests)
             .inspect_err(|_| self.constants.roll_back(mark))?;
-        self.definitions.push(text);
-        self.defined.insert("main".to_owned());
+        self.definitions.push(Definition {
+            symbol: "main".to_owned(),
+            text,
+        });
         self.declarations.extend(calls);
         Ok(())
     }
 
     /// The module's text: every definition in order, then the message and location constants
-    /// their checks point to, then a declaration of each function called and not defined here, in symbol order, so the text is the same on every run.
+    /// their checks point to, then a declaration of each function called and not defined here,
+    /// in symbol order, so the text is the same on every run.
     #[must_use]
     pub fn finish(self) -> String {
-        let mut text = self.definitions.join("\n");
+        let all: Vec<usize> = (0..self.definitions.len()).collect();
+        self.parts(&[all]).concat()
+    }
+
+    /// The program as at most `parts` modules that `clang` can compile at once, one per core,
+    /// and link together (roadmap 2.6). Each module holds some of the definitions, whole, with
+    /// every constant, a declaration of each function called and defined in another module, and
+    /// the line tables; each function is defined in exactly one module. A program with little
+    /// code comes back as one module, the same text [`finish`](Self::finish) writes, since a
+    /// module of its own is worth a `clang` only past about 200 KB of function text.
+    ///
+    /// Splitting changes no result: each function's text is the same in any module.
+    ///
+    /// Cost: the constants and line-table metadata are written once per module.
+    ///
+    /// ```
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// let database = Database::default();
+    /// let sources = source::SourceMap::new();
+    /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
+    /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
+    /// let names = |_: &types::Nominal<'_>| llvm_backend::ClassNames::default();
+    /// let mut module =
+    ///     llvm_backend::Module::new(&database, &sources, &declared, &names, &symbol);
+    /// module.entry("main.main", &[])?;
+    /// let parts = module.finish_parts(4);
+    /// assert_eq!(parts.len(), 1, "a C `main` alone is too small to split");
+    /// assert!(parts[0].starts_with("define i32 @main()"), "{}", parts[0]);
+    /// # Ok::<(), llvm_backend::Unsupported>(())
+    /// ```
+    #[must_use]
+    pub fn finish_parts(self, parts: usize) -> Vec<String> {
+        let sizes: Vec<usize> = self
+            .definitions
+            .iter()
+            .map(|definition| definition.text.len())
+            .collect();
+        let assigned = parts::assign(&sizes, parts);
+        self.parts(&assigned)
+    }
+
+    /// One module's text for each list of definition indices in `assigned`.
+    fn parts(self, assigned: &[Vec<usize>]) -> Vec<String> {
         let metadata = self.constants.metadata();
         let constants = self.constants.finish();
-        if !constants.is_empty() {
-            text.push('\n');
-            text.push_str(&constants);
-        }
-        let declared: Vec<&String> = self
-            .declarations
+        assigned
             .iter()
-            .filter(|(symbol, _)| !self.defined.contains(*symbol))
-            .map(|(_, declaration)| declaration)
-            .collect();
-        if !declared.is_empty() {
-            text.push('\n');
-            for declaration in declared {
-                text.push_str(declaration);
-                text.push('\n');
-            }
-        }
-        if !metadata.is_empty() {
-            text.push('\n');
-            text.push_str(&metadata);
-        }
-        text
+            .map(|indices| {
+                let defined: BTreeSet<&str> = indices
+                    .iter()
+                    .map(|&index| self.definitions[index].symbol.as_str())
+                    .collect();
+                let texts: Vec<&str> = indices
+                    .iter()
+                    .map(|&index| self.definitions[index].text.as_str())
+                    .collect();
+                let mut text = texts.join("\n");
+                if !constants.is_empty() {
+                    text.push('\n');
+                    text.push_str(&constants);
+                }
+                let declared: Vec<&String> = self
+                    .declarations
+                    .iter()
+                    .filter(|(symbol, _)| !defined.contains(symbol.as_str()))
+                    .map(|(_, declaration)| declaration)
+                    .collect();
+                if !declared.is_empty() {
+                    text.push('\n');
+                    for declaration in declared {
+                        text.push_str(declaration);
+                        text.push('\n');
+                    }
+                }
+                if !metadata.is_empty() {
+                    text.push('\n');
+                    text.push_str(&metadata);
+                }
+                text
+            })
+            .collect()
     }
 
     /// Adds line tables to the module: each function and the instructions written from each
@@ -317,4 +394,14 @@ impl<'a, 'db> Module<'a, 'db> {
     pub fn wrap_on_overflow(&mut self) {
         self.constants.wraps = true;
     }
+}
+
+/// One definition in a [`Module`]: a function, with the outlined `prange` bodies and chunk
+/// functions only it calls, or the C `main`. A definition is never split across modules, since
+/// its outlined functions are internal to the module that holds it.
+struct Definition {
+    /// The symbol of the function, or `main` for the C `main`; other modules declare it.
+    symbol: String,
+    /// The text of every function in the definition.
+    text: String,
 }

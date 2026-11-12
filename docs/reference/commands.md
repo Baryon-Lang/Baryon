@@ -151,7 +151,10 @@ timings for 106 line(s) in 1 file(s):
 built nbody.out from 1 file(s)
 ```
 
-`compile` is the time spent in `baryon` itself; `machine code` and `link` are `clang`. Standard
+`compile` is the time spent in `baryon` itself; `machine code` and `link` are `clang`. In a
+debug build, a program with enough code is split into one LLVM module per core and each is
+compiled by a `clang` of its own at the same time, so `machine code` is the time the slowest of
+them took. A release build stays one module, so `clang` can inline any call into any function. Standard
 library modules a program uses, such as `linalg`, are compiled too but not counted in its lines.
 The [compile-speed baseline](../../bench/README.md#compile-speed) lists these numbers for the
 benchmark kernels.

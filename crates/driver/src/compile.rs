@@ -11,50 +11,16 @@
 //! An instance's symbol is its function's with the type arguments after it: `main.square[f64]`.
 //! A function lowering or the backend cannot handle yet is reported once, at its name.
 
+mod functions;
 mod instances;
 
 use crate::{Profile, Session};
 use database::Db;
 use diagnostics::{Diagnostic, Severity};
+use functions::{Function, Test, is_generic, owners};
 use instances::{Instance, Instances, ready};
 use std::collections::HashMap;
-use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Nominal, TypeDb, TypeKind};
-
-/// One function to compile: the item, its symbol and the span of its name.
-struct Function<'db> {
-    /// The function or method.
-    item: Item<'db>,
-    /// Its symbol in the module.
-    symbol: String,
-    /// Whether it is a top-level function named `main`.
-    main: bool,
-    /// Whether its module is the package's `main`, from `main.byn` at the root: the only module
-    /// whose `main` function a program starts at.
-    in_main_module: bool,
-    /// Whether it is decorated `@test`, and where.
-    test: Test,
-    /// The function that computes each default of a parameter, named by the parameter's
-    /// `Name` node, with its symbol: the function's own with the
-    /// parameter's name after a colon, `main.drift:buffer`, which no name can spell (decision
-    /// 0027).
-    defaults: Vec<(Item<'db>, String)>,
-    /// Whether it is the standard library's (decision 0038). A library function is compiled
-    /// only into a program that calls it, never as a root, so an unused one costs nothing.
-    library: bool,
-}
-
-/// Whether a function is decorated `@test`.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Test {
-    /// It is not a test.
-    No,
-    /// A top-level function decorated `@test`: a test.
-    Function,
-    /// A method decorated `@test`, which is an error, since nothing gives the runner a value to
-    /// call it on.
-    Method,
-}
 
 /// What a compiled program starts at.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -98,8 +64,36 @@ impl Session {
     /// module defines one, or when it takes parameters or returns a value. `main` may raise; an
     /// error that reaches its end is printed and the program exits with status 1.
     pub fn compile(&self, root: Option<&str>, profile: Profile) -> Result<String, Vec<Diagnostic>> {
-        self.program(root, profile, Program::Main)
-            .map(|(module, _)| module)
+        self.program(root, profile, Program::Main, 1)
+            .map(|(modules, _)| modules.concat())
+    }
+
+    /// The package as [`compile`](Self::compile) writes it, split into at most `parts` LLVM
+    /// modules that `clang` can compile at once, one per core, and link together (roadmap 2.6,
+    /// [`llvm_backend::Module::finish_parts`]). A small package comes back as one module.
+    /// `baryon` splits only debug builds: `clang` never inlines a call into another module.
+    ///
+    /// ```
+    /// use driver::{Profile, Session};
+    ///
+    /// let mut session = Session::new();
+    /// session.add_file("main.byn", "def main():\n    assert 6 * 7 == 42\n")?;
+    /// let modules = session.compile_parts(None, Profile::Debug, 4).unwrap();
+    /// assert_eq!(modules, [session.compile(None, Profile::Debug).unwrap()]);
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The same as [`compile`](Self::compile).
+    pub fn compile_parts(
+        &self,
+        root: Option<&str>,
+        profile: Profile,
+        parts: usize,
+    ) -> Result<Vec<String>, Vec<Diagnostic>> {
+        self.program(root, profile, Program::Main, parts)
+            .map(|(modules, _)| modules)
     }
 
     /// The package as one LLVM module for `baryon test`, with the name of each `@test` function
@@ -136,7 +130,34 @@ impl Session {
         root: Option<&str>,
         profile: Profile,
     ) -> Result<(String, Vec<String>), Vec<Diagnostic>> {
-        self.program(root, profile, Program::Tests)
+        self.program(root, profile, Program::Tests, 1)
+            .map(|(modules, tests)| (modules.concat(), tests))
+    }
+
+    /// The test program as [`compile_tests`](Self::compile_tests) writes it, split into at most
+    /// `parts` LLVM modules as [`compile_parts`](Self::compile_parts) splits a program.
+    ///
+    /// ```
+    /// use driver::{Profile, Session};
+    ///
+    /// let mut session = Session::new();
+    /// session.add_file("heat.byn", "@test\ndef test_flux():\n    assert 2 + 2 == 4\n")?;
+    /// let (modules, tests) = session.compile_tests_parts(None, Profile::Debug, 4).unwrap();
+    /// assert_eq!(modules.len(), 1);
+    /// assert_eq!(tests, ["heat.test_flux"]);
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The same as [`compile_tests`](Self::compile_tests).
+    pub fn compile_tests_parts(
+        &self,
+        root: Option<&str>,
+        profile: Profile,
+        parts: usize,
+    ) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>> {
+        self.program(root, profile, Program::Tests, parts)
     }
 
     /// The error for a `main` function outside the package's `main.byn`.
@@ -148,14 +169,16 @@ impl Session {
             )
     }
 
-    /// The package as one LLVM module whose C `main` starts `program`, built for `profile`, with
-    /// the names of the tests it runs, which are none for [`Program::Main`].
+    /// The package as at most `parts` LLVM modules whose C `main` starts `program`, built for
+    /// `profile`, with the names of the tests it runs, which are none for [`Program::Main`].
+    /// With `parts` 1 it is exactly one module.
     fn program(
         &self,
         root: Option<&str>,
         profile: Profile,
         program: Program,
-    ) -> Result<(String, Vec<String>), Vec<Diagnostic>> {
+        parts: usize,
+    ) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>> {
         let errors: Vec<Diagnostic> = self
             .check()
             .into_iter()
@@ -255,7 +278,7 @@ impl Session {
         errors.extend(self.define(&mut module, roots, &declared, &symbol, &owners));
         let tests = self.start(&mut module, program, &entries, &mut errors);
         if errors.is_empty() {
-            Ok((module.finish(), tests))
+            Ok((module.finish_parts(parts), tests))
         } else {
             Err(errors)
         }
@@ -359,102 +382,6 @@ impl Session {
         errors
     }
 
-    /// Every function and method of the package, with its symbol, in file and source order.
-    fn functions(&self) -> Vec<Function<'_>> {
-        let database = &self.database;
-        let mut functions = Vec::new();
-        for &file in self.library.iter().chain(&self.files) {
-            // A library file's module is `<std>.linalg`, which no program's module can spell, so
-            // its symbols never clash with the program's own.
-            let library = database::library_module(file.source(database).name());
-            let module = match library {
-                Some(name) => format!("<std>.{name}"),
-                None => match database::module_name(database, file) {
-                    Ok(module) => module.to_string(),
-                    Err(_) => continue,
-                },
-            };
-            let tree = database.parse(file).tree();
-            let text = file.source(database).text();
-            let name = |statement: NodeId| {
-                tree.child(statement, Role::Name)
-                    .filter(|&name| tree.kind(name) == SyntaxKind::Name)
-            };
-            let in_main_module = module == "main";
-            let is_test = |statement: NodeId| {
-                tree.children_with(statement, Role::Decorator)
-                    .any(|decorator| {
-                        tree.child(decorator, Role::Value).is_some_and(|value| {
-                            tree.kind(value) == SyntaxKind::Name && tree.text(value, text) == "test"
-                        })
-                    })
-            };
-            let mut push =
-                |statement: NodeId, node: NodeId, symbol: String, main: bool, method: bool| {
-                    let decorated = match (is_test(statement), method) {
-                        (false, _) => Test::No,
-                        (true, false) => Test::Function,
-                        (true, true) => Test::Method,
-                    };
-                    let defaults = defaulted(tree, statement)
-                        .map(|name| {
-                            let item = Item::new(database, self.package, file, name);
-                            (item, format!("{symbol}:{}", tree.text(name, text)))
-                        })
-                        .collect();
-                    functions.push(Function {
-                        item: Item::new(database, self.package, file, node),
-                        symbol,
-                        main,
-                        in_main_module,
-                        test: decorated,
-                        defaults,
-                        library: library.is_some(),
-                    });
-                };
-            for statement in tree.children_with(tree.root(), Role::Body) {
-                let Some(node) = name(statement) else {
-                    continue;
-                };
-                let own = tree.text(node, text);
-                match tree.kind(statement) {
-                    SyntaxKind::FunctionDefinition => {
-                        push(
-                            statement,
-                            node,
-                            format!("{module}.{own}"),
-                            own == "main",
-                            false,
-                        );
-                    }
-                    SyntaxKind::ClassDefinition => {
-                        // A trait's methods have no bodies: each instance of a generic function
-                        // calls the implementing type's method instead (decision 0031).
-                        let class = Item::new(database, self.package, file, node);
-                        if matches!(
-                            database.declaration(class).declaration,
-                            Declaration::Trait { .. }
-                        ) {
-                            continue;
-                        }
-                        for method in tree.children_with(statement, Role::Body) {
-                            if tree.kind(method) != SyntaxKind::FunctionDefinition {
-                                continue;
-                            }
-                            if let Some(method_name) = name(method) {
-                                let symbol =
-                                    format!("{module}.{own}.{}", tree.text(method_name, text));
-                                push(method, method_name, symbol, false, true);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        functions
-    }
-
     /// The error types a `main` returning `returns` can raise, for the report of an error that
     /// ends the program; empty when it cannot fail.
     fn reported<'db>(&'db self, returns: types::Type<'db>) -> Vec<types::Type<'db>> {
@@ -471,30 +398,6 @@ impl Session {
         Diagnostic::error(message.clone())
             .with_primary(tree.span(item.name(&self.database)), message)
     }
-}
-
-/// The function each default's function in `functions` belongs to.
-fn owners<'db>(functions: &[Function<'db>]) -> HashMap<Item<'db>, Item<'db>> {
-    functions
-        .iter()
-        .flat_map(|function| {
-            function
-                .defaults
-                .iter()
-                .map(|(default, _)| (*default, function.item))
-        })
-        .collect()
-}
-
-/// The `Name` node of each parameter of the function `function` declares that has a default,
-/// which names the function that computes it.
-fn defaulted(tree: &syntax::SyntaxTree, function: NodeId) -> impl Iterator<Item = NodeId> + '_ {
-    tree.child(function, Role::Parameters)
-        .into_iter()
-        .flat_map(|parameters| tree.children(parameters))
-        .filter(|&parameter| tree.kind(parameter) == SyntaxKind::Parameter)
-        .filter(|&parameter| tree.child(parameter, Role::Default).is_some())
-        .filter_map(|parameter| tree.child(parameter, Role::Name))
 }
 
 /// What each struct or enum of `package` declares, as layouts, the passes and the backend read it.
@@ -531,21 +434,4 @@ fn names<'db>(
             members,
         }
     }
-}
-
-/// Whether the function `item`, whose signature is `signature`, is compiled once per call's
-/// arguments, from the calls that reach it, rather than once on its own: it has type
-/// parameters, it is a method of a class that has them (roadmap 1.9.18), or it has a
-/// `Callable` parameter, which is an implicit one (decision 0026).
-fn is_generic<'db>(
-    database: &'db dyn TypeDb,
-    item: Item<'db>,
-    signature: &types::Signature<'db>,
-) -> bool {
-    !signature.type_parameters.is_empty()
-        || !instances::class_parameters(database, item).is_empty()
-        || signature
-            .parameters
-            .iter()
-            .any(|parameter| matches!(parameter.ty.kind(database), TypeKind::Callable { .. }))
 }
