@@ -6,8 +6,10 @@
 use super::encoding::encode_header;
 use super::{Header, Variable, read_header};
 use crate::files::{ErrorKind, OsFailure};
+use std::ffi::OsString;
 use std::fs;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::Path;
 
 /// A file in memory: its header and every variable's slots.
 pub(super) struct Contents {
@@ -152,5 +154,113 @@ pub(super) fn save(path: &str, contents: &Contents) -> Result<(), OsFailure> {
             }
         }
     }
-    fs::write(path, bytes).map_err(|error| OsFailure::from_io(&error, path))
+    replace(path, &bytes).map_err(|error| OsFailure::from_io(&error, path))
+}
+
+/// Makes `bytes` the file at `path` in one step: they are written to a new file beside it,
+/// flushed to the disk, then renamed over it, so a program that stops partway, a crash or a
+/// full disk leave the old file or the new one, never one cut short. Each change rewrites the
+/// whole file, so a file cut short would lose everything written before it, not just the
+/// change.
+///
+/// The new file is `.<name>.baryon-<process>` in the same directory, since a rename is atomic
+/// only within one file system, and it takes the old file's permissions. It is removed when
+/// anything fails. A symbolic link at `path` is replaced by the file, not followed.
+///
+/// # Errors
+///
+/// The first error the operating system gives: making, writing or flushing the new file, or
+/// renaming it.
+fn replace(path: &str, bytes: &[u8]) -> io::Result<()> {
+    let target = Path::new(path);
+    let name = target
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "the path names no file"))?;
+    let mut temporary = OsString::from(".");
+    temporary.push(name);
+    temporary.push(format!(".baryon-{}", std::process::id()));
+    let temporary = target.with_file_name(temporary);
+    let written = (|| {
+        let mut file = fs::File::create(&temporary)?;
+        file.write_all(bytes)?;
+        if let Ok(old) = fs::metadata(target) {
+            file.set_permissions(old.permissions())?;
+        }
+        file.sync_all()?;
+        fs::rename(&temporary, target)
+    })();
+    if written.is_err() {
+        // The first error is the one to report; the new file may not exist at all.
+        let _ = fs::remove_file(&temporary);
+    }
+    written
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replace;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// A new empty directory for one test, named after it and this process.
+    fn directory(test: &str) -> PathBuf {
+        let name = format!("baryon-netcdf-storage-{}-{test}", std::process::id());
+        let path = std::env::temp_dir().join(name);
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    /// The names of the files in `directory`, sorted.
+    fn names(directory: &PathBuf) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn a_file_is_replaced_whole_and_nothing_is_left_beside_it() {
+        let directory = directory("replaced");
+        let path = directory.join("out.nc");
+        fs::write(&path, b"old bytes, longer than the new").unwrap();
+        replace(path.to_str().unwrap(), b"new").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+        replace(directory.join("fresh.nc").to_str().unwrap(), b"made").unwrap();
+        assert_eq!(names(&directory), ["fresh.nc", "out.nc"]);
+        fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn a_failed_replace_leaves_the_old_file_and_no_new_one() {
+        let directory = directory("failed");
+        // A rename cannot put a file over a directory, so the new file is written and then
+        // the rename fails.
+        let target = directory.join("data.nc");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("inside"), b"kept").unwrap();
+        assert!(replace(target.to_str().unwrap(), b"new").is_err());
+        assert_eq!(names(&directory), ["data.nc"]);
+        assert_eq!(fs::read(target.join("inside")).unwrap(), b"kept");
+        let missing = directory.join("missing").join("data.nc");
+        assert!(replace(missing.to_str().unwrap(), b"new").is_err());
+        assert_eq!(names(&directory), ["data.nc"]);
+        fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_new_file_keeps_the_old_ones_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = directory("permissions");
+        let path = directory.join("out.nc");
+        fs::write(&path, b"old").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+        replace(path.to_str().unwrap(), b"new").unwrap();
+        let mode = fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o640);
+        fs::remove_dir_all(&directory).unwrap();
+    }
 }
