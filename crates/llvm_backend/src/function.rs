@@ -458,6 +458,19 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         self.ssa.record(instruction);
         self.code.push_str("  ");
         self.code.push_str(instruction);
+        self.end_line();
+    }
+
+    /// Writes `result = instruction`, an instruction that gives a value and so never branches,
+    /// straight into the function's text.
+    pub(crate) fn line_with_result(&mut self, result: &str, instruction: &str) {
+        let _ = write!(self.code, "  {result} = {instruction}");
+        self.end_line();
+    }
+
+    /// Ends the instruction just written with its `!dbg` location, when the module has debug
+    /// information, and a line end.
+    fn end_line(&mut self) {
         if self.location().is_some() {
             // Read again from the fields, since `location` borrows all of `self`.
             let location = self.fixed_location.as_deref().or_else(|| {
