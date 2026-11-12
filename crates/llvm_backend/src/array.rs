@@ -110,6 +110,20 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(self.emit(&format!("load i64, ptr {field}")))
     }
 
+    /// The stride of `dimension` of the `Array` at `place`, in elements, an `i64`: the third
+    /// part of its header.
+    pub(crate) fn stride(&mut self, place: &Place, dimension: u32) -> Result<String, Unsupported> {
+        let (address, ty) = self.place(place)?;
+        if !matches!(ty.kind(self.types.db), TypeKind::Array { .. }) {
+            return Err(self.types.unsupported(ty));
+        }
+        let header = self.types.value(ty)?;
+        let field = self.emit(&format!(
+            "getelementptr inbounds {header}, ptr {address}, i32 0, i32 2, i32 {dimension}"
+        ));
+        Ok(self.emit(&format!("load i64, ptr {field}")))
+    }
+
     /// The address of the element at `indices` of the array of type `ty` at `address`, and the
     /// element type. A `Fixed` array holds its elements in place, so that is one
     /// `getelementptr` through its nested LLVM arrays; an `Array` or a list goes through its

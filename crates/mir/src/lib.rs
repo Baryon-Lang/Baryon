@@ -32,6 +32,9 @@
 //!   only through [`Accumulate`](StatementKind::Accumulate) statements.
 //! - **Vector loops**: a `simd` loop stays an ordinary loop whose header block is listed in
 //!   [`Body::vectorized`], for the backend to vectorize.
+//! - **Unit strides**: [`Body::unit_strides`] lists, block by block, arrays whose last stride
+//!   a pass has proved is 1, so the backend can find their elements without multiplying by it;
+//!   [`Stride`](Rvalue::Stride) reads a stride for that proof.
 //!
 //! [`Body::validate`] checks the structural rules every body keeps, and [`Body::display`] writes
 //! the text form used in tests and when debugging the compiler.
@@ -155,6 +158,14 @@ pub struct Body<'db> {
     /// that running its iterations several at a time is safe (decision 0011). Passes that add
     /// blocks keep every existing block's id, so the marks stay on their headers.
     pub vectorized: Vec<BlockId>,
+    /// Arrays whose last dimension has stride 1 throughout a block: in block `.0`, the `Array`
+    /// at place `.1`, a local or a field of one, has a last stride of 1, so an element's
+    /// address needs no multiplication by it, and a backend may leave it out. The pass that
+    /// adds an entry has proved it: it tested the stride with [`Stride`](Rvalue::Stride)
+    /// before the block runs, and nothing in between can replace the array (roadmap 3.3.1).
+    /// Empty until bounds-check hoisting runs; passes that add blocks keep every existing
+    /// block's id, so the entries stay on their blocks.
+    pub unit_strides: Vec<(BlockId, Place)>,
 }
 
 impl<'db> Body<'db> {
@@ -199,6 +210,7 @@ impl<'db> Body<'db> {
             span,
             outlined: Vec::new(),
             vectorized: Vec::new(),
+            unit_strides: Vec::new(),
         }
     }
 
