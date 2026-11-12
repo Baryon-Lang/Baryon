@@ -293,6 +293,7 @@ mod expressions;
 mod facts;
 mod files;
 mod fits;
+mod frame_rows;
 mod frame_text;
 mod frames;
 mod generics;

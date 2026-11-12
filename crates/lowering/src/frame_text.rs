@@ -76,7 +76,7 @@ impl<'db> Builder<'db> {
     /// functions called this way take every parameter borrowed and raise nothing. `None`
     /// after reporting that the library's file or the function is missing, which happens only
     /// when the library's files were left out of the package.
-    fn frame_call(
+    pub(crate) fn frame_call(
         &mut self,
         name: &str,
         type_arguments: Vec<Type<'db>>,

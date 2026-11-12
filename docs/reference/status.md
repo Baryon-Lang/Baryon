@@ -24,7 +24,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when `compression.zstd.compress`, and
+This page was last brought up to date on 2026-11-12, when the rows of a `DataFrame` chosen by
+`df[mask]`, `df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and
 before it `fft2`, `ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`,
 and before it `print(df)`, a frame printed as pandas prints it, and before it
 `zlib.decompressobj` and `gzip`, and before them a `DataFrame` built from rows and `df[i]`, and
@@ -151,7 +152,8 @@ out of a function, including through a `raise`.
 | --- | --- |
 | [`DataFrame[S]`](dataframes.md) with number and `bool` columns, as a variable, parameter, return value and item of a list, tuple or `T \| None`; frames with the same columns passed for one another | Text columns (roadmap 3.13.3) and missing values (3.13.6); a frame as a struct field |
 | [Building a frame](dataframes.md#building-a-frame) from arrays, `DataFrame({"price": prices})`, with the panic for columns of two lengths, and from a list of rows, `DataFrame(rows)` | |
-| [Columns](dataframes.md#columns) read as `df.price` and `df["price"]`, used as arrays, changed in place and replaced, with the panic for a new column of another length; `len(df)`, `df.shape`, `df.columns`, `df.copy()`; [a row](dataframes.md#rows), `df[i]`, as the schema's struct; [`print(df)` and a frame in an f-string](dataframes.md#printing), as the table pandas prints | pandas's text for a complex column and for a frame inside a list, and the terminal's width when printing (idea I.49); `df[mask]`, `df[i:j]`, `head`, `tail`, `itertuples`, `df[["a", "b"]]`, `assign`, `drop`, `rename` (3.13.4); `sort_values` (3.13.5); `groupby` (3.13.7); `merge` (3.13.8); `concat`, `drop_duplicates`, `value_counts`, `unique`, `nunique`, `describe` (3.13.9) |
+| [Columns](dataframes.md#columns) read as `df.price` and `df["price"]`, used as arrays, changed in place and replaced, with the panic for a new column of another length; `len(df)`, `df.shape`, `df.columns`, `df.copy()`; [a row](dataframes.md#rows), `df[i]`, as the schema's struct; [`print(df)` and a frame in an f-string](dataframes.md#printing), as the table pandas prints | pandas's text for a complex column and for a frame inside a list, and the terminal's width when printing (idea I.49); `itertuples`, `df[["a", "b"]]`, `assign`, `drop`, `rename` (3.13.4); `sort_values` (3.13.5); `groupby` (3.13.7); `merge` (3.13.8); `concat`, `drop_duplicates`, `value_counts`, `unique`, `nunique`, `describe` (3.13.9) |
+| [Choosing rows](dataframes.md#choosing-rows): `df[mask]`, `df[i:j]` with a step, `df.head(n)` and `df.tail(n)`, each a new frame, with the panics for a mask of another length and a step of 0 | Assigning to the rows chosen, `df[mask] = ...` |
 
 ## Errors and panics
 

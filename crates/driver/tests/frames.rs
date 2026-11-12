@@ -160,12 +160,12 @@ error: `DataFrame[Trade]` has no column `cost`
   |                ^^^^^^ not a column
   = note: its columns are `price`, `volume`
 
-error: a `DataFrame` is indexed by a column's name or a row's number, found `str`
+error: a `DataFrame` is indexed by a column's name, a row's number, a mask or a slice, found `str`
  --> main.byn:9:16
   |
 9 |     c = trades[name]
-  |                ^^^^ neither a name nor a number
-  = note: write a column's name as a string literal, `df["price"]`, or a row's number, `df[0]`; masks and slices come with roadmap item 3.13.4
+  |                ^^^^ does not choose a column or rows
+  = note: write a column's name as a string literal, `df["price"]`, a row's number, `df[0]`, a mask, an `Array[bool, 1]` such as `df[df.price > 100.0]`, or a slice, `df[1:3]`
 
 error: a column cannot be moved out of its `DataFrame`
   --> main.byn:11:9
@@ -180,13 +180,6 @@ error: a column cannot be moved out of its `DataFrame`
 12 |     f = [trades["volume"]]
    |          ^^^^^^^^^^^^^^^^ moved out of the frame
    = note: a column can be read, passed to a call or assigned to; to keep it on its own, copy it: `trades["volume"].copy()`
-
-error: a `DataFrame` has no method `head` yet
-  --> main.byn:13:9
-   |
-13 |     g = trades.head(2)
-   |         ^^^^^^^^^^^^^^ not defined yet
-   = note: a `DataFrame` has `copy()` today; the rest of decision 0045's methods come with roadmap items 3.13.4 to 3.13.9
 
 error: `copy` of a `DataFrame` takes no arguments
   --> main.byn:14:9
@@ -376,19 +369,19 @@ def assigning(trades: InOut[DataFrame[Trade]], trade: Trade):
    |           ^ a row needs a type
    = note: read the row's values by column, `df.price[0]`, or give the frame a schema: assign it to a variable declared `DataFrame[Trade]`, whose struct lists these columns
 
-error: a `DataFrame` is indexed by a column's name or a row's number, found `f64`
+error: a `DataFrame` is indexed by a column's name, a row's number, a mask or a slice, found `f64`
   --> main.byn:13:16
    |
 13 |     c = trades[1.5]
-   |                ^^^ neither a name nor a number
-   = note: write a column's name as a string literal, `df["price"]`, or a row's number, `df[0]`; masks and slices come with roadmap item 3.13.4
+   |                ^^^ does not choose a column or rows
+   = note: write a column's name as a string literal, `df["price"]`, a row's number, `df[0]`, a mask, an `Array[bool, 1]` such as `df[df.price > 100.0]`, or a slice, `df[1:3]`
 
-error: a `DataFrame` is indexed by a column's name or a row's number, found `str`
+error: a `DataFrame` is indexed by a column's name, a row's number, a mask or a slice, found `str`
   --> main.byn:14:16
    |
 14 |     d = trades[name]
-   |                ^^^^ neither a name nor a number
-   = note: write a column's name as a string literal, `df["price"]`, or a row's number, `df[0]`; masks and slices come with roadmap item 3.13.4
+   |                ^^^^ does not choose a column or rows
+   = note: write a column's name as a string literal, `df["price"]`, a row's number, `df[0]`, a mask, an `Array[bool, 1]` such as `df[df.price > 100.0]`, or a slice, `df[1:3]`
 
 error: a column of a `DataFrame` cannot hold `str` yet
   --> main.byn:15:19
@@ -418,11 +411,11 @@ error: `DataFrame(...)` takes a dict of its columns or a list of its rows
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
    = note: for example `DataFrame({"price": prices, "volume": volumes})`, or `DataFrame(trades)` with `trades: list[Trade]`
 
-error: a row of a `DataFrame` cannot be assigned
+error: rows of a `DataFrame` cannot be assigned
   --> main.byn:22:5
    |
 22 |     trades[0] = trade
-   |     ^^^^^^^^^ a whole row
-   = note: assign its values by column: `df.price[0] = 1.0`"#
+   |     ^^^^^^^^^ whole rows
+   = note: assign their values by column: `df.price[0] = 1.0`, or `df.price[mask] = 1.0` for the rows a mask chooses"#
     );
 }

@@ -370,7 +370,7 @@ impl<'db> Body<'db> {
     }
 
     /// Checks one index of a subscript: an integer, or a slice of integers.
-    fn index(&mut self, index: NodeId) {
+    pub(super) fn index(&mut self, index: NodeId) {
         let parts: Vec<NodeId> = if self.tree.kind(index) == SyntaxKind::Slice {
             self.tree.children(index).collect()
         } else {

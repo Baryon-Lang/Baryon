@@ -258,6 +258,9 @@ impl<'db> Builder<'db> {
         let Some(columns) = self.frame_columns(value) else {
             return;
         };
+        if self.tree.kind(index) == SyntaxKind::Slice || self.is_array(self.ty(index)) {
+            return self.frame_rows(place, value, index, node);
+        }
         let frame = self.borrow(value);
         let first = frame.clone().project(Projection::Field(0));
         let Some(first_type) = columns.first().map(|column| self.column_type(column)) else {
