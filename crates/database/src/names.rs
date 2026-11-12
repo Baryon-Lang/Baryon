@@ -92,8 +92,12 @@ pub const BUILTINS: [&str; 60] = [
 /// `pyplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046), as are
 /// `colors`, the color names, `axis`, which draws an axis, `backend_svg`, which writes SVG
 /// files, `artist`, what an axes holds, and `legend`, which draws a legend. `zlib` is roadmap
-/// 3.27's deflate streams, named as Python's `zlib` is (decision 0049).
-pub const STANDARD_MODULES: [&str; 19] = [
+/// 3.27's deflate streams, named as Python's `zlib` is (decision 0049), `gzip` its gzip
+/// files, named as Python's `gzip` is, and `compression.zstd` roadmap 3.27.7's Zstandard
+/// frames, named as Python 3.14's `compression.zstd` is. Its file is
+/// `<std>/compression.zstd.byn`, so [`library_module`](crate::library_module) gives its dotted
+/// name.
+pub const STANDARD_MODULES: [&str; 21] = [
     "math",
     "random",
     "sys",
@@ -113,6 +117,8 @@ pub const STANDARD_MODULES: [&str; 19] = [
     "artist",
     "legend",
     "zlib",
+    "gzip",
+    "compression.zstd",
 ];
 
 /// What a name refers to.
