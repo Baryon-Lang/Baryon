@@ -137,3 +137,75 @@ nounwind
 "
     );
 }
+
+/// `variables["temp"][1, :]` of an `Array[i16, 1]`: the subscript's two items, four words
+/// each, go into a stack array whose address and item count follow the name.
+#[test]
+fn netcdf_subscripts_pass_their_items_in_a_stack_array() {
+    let database = Database::default();
+    let (mut body, [_, _, error]) = fits_body(&database);
+    let element = primitive(&database, Primitive::Integer(Integer::I16));
+    let array = Type::new(&database, TypeKind::Array { element, rank: 1 });
+    let values = body.push_local(array, LocalKind::Temporary, span());
+    let str = Type::new(&database, TypeKind::Str);
+    let int = primitive(&database, Primitive::Integer(Integer::I64));
+    let text = |text: &str| constant(str, ConstantValue::Str(text.to_owned()));
+    let word = |value: i64| constant(int, ConstantValue::Integer(value.into()));
+    let mut arguments = vec![text("in.nc"), text("temp")];
+    arguments.extend([0, 1, i64::MIN, i64::MIN].map(word));
+    arguments.extend([1, i64::MIN, i64::MIN, i64::MIN].map(word));
+    let read = ArrayFile::NetcdfRead;
+    body.push_block(fits_call(read, arguments, values, error, (1, 2)));
+    body.push_block(end(TerminatorKind::Return));
+    body.push_block(end(TerminatorKind::Return));
+    assert_eq!(
+        module(&database, &[("read", body)]),
+        "\
+define void @read() {
+start:
+  %t6 = alloca [8 x i64]
+  %_1 = alloca { ptr, i64, i64 }
+  %_2 = alloca { ptr, [2 x i64], [2 x i64] }
+  %_3 = alloca { i8, [1 x i64] }
+  %_4 = alloca { ptr, [1 x i64], [1 x i64] }
+  br label %bb0
+bb0:
+  %t0 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775803 }, 0
+  %t1 = extractvalue { ptr, i64 } { ptr @baryon.str.0, i64 -9223372036854775803 }, 1
+  %t2 = and i64 %t1, 9223372036854775807
+  %t3 = extractvalue { ptr, i64 } { ptr @baryon.str.1, i64 -9223372036854775804 }, 0
+  %t4 = extractvalue { ptr, i64 } { ptr @baryon.str.1, i64 -9223372036854775804 }, 1
+  %t5 = and i64 %t4, 9223372036854775807
+  %t7 = getelementptr inbounds [8 x i64], ptr %t6, i64 0, i64 0
+  store i64 0, ptr %t7
+  %t8 = getelementptr inbounds [8 x i64], ptr %t6, i64 0, i64 1
+  store i64 1, ptr %t8
+  %t9 = getelementptr inbounds [8 x i64], ptr %t6, i64 0, i64 2
+  store i64 -9223372036854775808, ptr %t9
+  %t10 = getelementptr inbounds [8 x i64], ptr %t6, i64 0, i64 3
+  store i64 -9223372036854775808, ptr %t10
+  %t11 = getelementptr inbounds [8 x i64], ptr %t6, i64 0, i64 4
+  store i64 1, ptr %t11
+  %t12 = getelementptr inbounds [8 x i64], ptr %t6, i64 0, i64 5
+  store i64 -9223372036854775808, ptr %t12
+  %t13 = getelementptr inbounds [8 x i64], ptr %t6, i64 0, i64 6
+  store i64 -9223372036854775808, ptr %t13
+  %t14 = getelementptr inbounds [8 x i64], ptr %t6, i64 0, i64 7
+  store i64 -9223372036854775808, ptr %t14
+  %t15 = call zeroext i1 @baryon_rt_netcdf_read(ptr %t0, i64 %t2, ptr %t3, i64 %t5, ptr %t6, \
+i64 2, i32 2, i64 1, ptr %_4, ptr %_3)
+  br i1 %t15, label %bb2, label %bb1
+bb1:
+  ret void
+bb2:
+  ret void
+}
+
+@baryon.str.0 = private unnamed_addr constant [5 x i8] c\"in.nc\"
+@baryon.str.1 = private unnamed_addr constant [4 x i8] c\"temp\"
+
+declare zeroext i1 @baryon_rt_netcdf_read(ptr, i64, ptr, i64, ptr, i64, i32, i64, ptr, ptr) \
+nounwind
+"
+    );
+}
