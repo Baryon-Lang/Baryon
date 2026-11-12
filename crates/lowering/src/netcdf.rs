@@ -9,14 +9,15 @@
 //!   file: its change is `C` and the format's version, which the format's text gives.
 //! - `var[:]` passes the path and the name the `Variable` holds, its fields 2 and 0; the element
 //!   type and rank are the destination's. `var[:] = values` passes them with the array,
-//!   borrowed.
+//!   borrowed. A subscript that picks part of the variable, `var[0, :, ::2]`, adds four `int`s
+//!   for each item.
 //! - `path._apply(line)` passes both `str`s; its result is the new description lines.
 //!
 //! Each call's error edge goes where any failing call's does (the `errors` module).
 
 use crate::builder::Builder;
-use mir::{Argument, ArrayFile, Builtin, Place, Projection};
-use syntax::NodeId;
+use mir::{Argument, ArrayFile, Builtin, Constant, Operand, Place, Projection};
+use syntax::{NodeId, Role, SyntaxKind};
 
 /// The position of a `Variable`'s `name` field in `<std>/netCDF4.byn`.
 const NAME: u32 = 0;
@@ -24,7 +25,7 @@ const NAME: u32 = 0;
 /// The position of a `Variable`'s `_path` field in `<std>/netCDF4.byn`.
 const PATH: u32 = 2;
 
-impl Builder<'_> {
+impl<'db> Builder<'db> {
     /// The call `node` of the `netCDF4` built-in `name` into `place`; `arguments` are as the
     /// checker recorded them.
     pub(crate) fn netcdf_call(
@@ -58,21 +59,48 @@ impl Builder<'_> {
                 let line = self.text_argument(line);
                 (ArrayFile::NetcdfDefine, vec![path, line], place)
             }
-            ("netCDF4.read", &[Some(variable)]) => {
-                let variable = self.borrow(variable);
+            ("netCDF4.read", [Some(variable), items @ ..]) => {
+                let variable = self.borrow(*variable);
                 let path = Argument::Borrow(variable.clone().project(Projection::Field(PATH)));
                 let name = Argument::Borrow(variable.project(Projection::Field(NAME)));
-                (ArrayFile::NetcdfRead, vec![path, name], place)
+                let mut given = vec![path, name];
+                given.extend(self.subscript_words(items));
+                (ArrayFile::NetcdfRead, given, place)
             }
-            ("netCDF4.write", &[Some(variable), Some(array)]) => {
-                let variable = self.borrow(variable);
+            ("netCDF4.write", [Some(variable), Some(array), items @ ..]) => {
+                let variable = self.borrow(*variable);
                 let path = Argument::Borrow(variable.clone().project(Projection::Field(PATH)));
                 let name = Argument::Borrow(variable.project(Projection::Field(NAME)));
-                let array = Argument::Borrow(self.borrow(array));
-                (ArrayFile::NetcdfWrite, vec![path, name, array], place)
+                let array = Argument::Borrow(self.borrow(*array));
+                let mut given = vec![path, name, array];
+                given.extend(self.subscript_words(items));
+                (ArrayFile::NetcdfWrite, given, place)
             }
             _ => return self.unsupported(node, "these arguments of a `netCDF4` call"),
         };
         self.raising_call(Builtin::ArrayFile(method), given, place, node);
+    }
+
+    /// The four `int` words of each subscript item in `items`, as the runtime reads them: `0`
+    /// and the index for an integer, `1` and the start, stop and step for a slice, with
+    /// `i64::MIN` for a part the program left out.
+    fn subscript_words(&mut self, items: &[Option<NodeId>]) -> Vec<Argument<'db>> {
+        let int = self.int_type();
+        let left_out = || Operand::Constant(Constant::integer(int, i128::from(i64::MIN)));
+        let mut words = Vec::with_capacity(items.len() * 4);
+        for &item in items.iter().flatten() {
+            if self.tree.kind(item) == SyntaxKind::Slice {
+                words.push(Operand::Constant(Constant::integer(int, 1)));
+                for role in [Role::Lower, Role::Upper, Role::Step] {
+                    let part = self.tree.child(item, role);
+                    words.push(part.map_or_else(left_out, |part| self.operand_as(part, int)));
+                }
+            } else {
+                words.push(Operand::Constant(Constant::integer(int, 0)));
+                words.push(self.operand_as(item, int));
+                words.extend([left_out(), left_out()]);
+            }
+        }
+        words.into_iter().map(Argument::Owned).collect()
     }
 }
