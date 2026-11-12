@@ -27,6 +27,9 @@ impl<'db> Body<'db> {
                 self.expression(value, None);
                 return;
             }
+            if self.header_store(target, value) {
+                return;
+            }
             self.change(target);
             let held = self.expression(target, None);
             if self.path_part_changed(target) {

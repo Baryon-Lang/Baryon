@@ -32,3 +32,12 @@ class ValueError(Exception):
     """
 
     message: str
+
+
+class KeyError(Exception):
+    """A key that is not there: what reading a missing keyword of a FITS `Header` raises, with
+    AstroPy's message, such as `Keyword 'EXPTIME' not found.` (decision 0044). `message` says
+    which key, and why.
+    """
+
+    message: str
