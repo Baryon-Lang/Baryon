@@ -1,8 +1,8 @@
 """The `artist` module: the things an axes holds and where they land on the page, as
 matplotlib's `Artist` classes and its data-to-display transform (decision 0046).
 
-`pyplot`'s `Axes` keeps one `Artist` for each line, set of markers or set of bars; when a
-figure is drawn, a `View` maps data to points on the page, and
+`pyplot`'s `Axes` keeps one `Artist` for each line, set of markers or set of bars, and one
+`Image` for each image; when a figure is drawn, a `View` maps data to points on the page, and
 the `legend` module reads the artists to draw a legend.
 """
 
@@ -40,6 +40,30 @@ class Artist(Struct):
     marker: str  # the marker at each point, as `backend_svg` names them; "" for none
     markersize: f64  # a marker's size across, in points
     label: str  # the legend's text; "" keeps the artist out of the legend
+
+
+class Image(Struct):
+    """An image on an axes, as matplotlib's `AxesImage`: the values of `data`, colored by the
+    colormap `cmap` from `vmin` to `vmax`, stretched over the rectangle `extent` gives as its
+    left, right, bottom and top in data coordinates, column 0 at the left and row 0 at the top
+    when `upper` is set, as matplotlib's `origin="upper"` puts it, or at the bottom. imshow's
+    default extent centres cell `(i, j)` on x = `j` and y = `i`.
+
+    ```python
+    from artist import Image
+
+    def main():
+        image = Image(Array.zeros((2, 3)), "viridis", 0.0, 1.0, (-0.5, 2.5, 1.5, -0.5), True)
+        print(image.data.shape)  # (2, 3)
+    ```
+    """
+
+    data: Array[f64, 2]  # the values, rows by columns
+    cmap: str  # the colormap's name, as `cm.get_cmap` takes it
+    vmin: f64  # the value drawn in the colormap's first color
+    vmax: f64  # the value drawn in its last color
+    extent: tuple[f64, f64, f64, f64]  # left, right, bottom and top, in data coordinates
+    upper: bool  # row 0 at the top edge, matplotlib's default `origin="upper"`; else the bottom
 
 
 class View(Struct):

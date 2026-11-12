@@ -1,0 +1,53 @@
+"""The `colorbar` module: draws the bar beside an image that shows which color stands for which
+value, as matplotlib's `Colorbar` does (decision 0046).
+
+`pyplot`'s `Axes.colorbar` asks for one; when the figure is drawn, it takes a slice of the
+space on the right of the axes, and `draw_colorbar` draws it there.
+"""
+
+from artist import Image
+from axis import YAxis
+from backend_svg import RendererSVG
+from cm import get_cmap
+from image import colormap_strip
+
+FONT_SIZE: Final = 10.0  # the label, in points
+LABEL_PAD: Final = 4.0  # the gap between the tick labels and the label, in points
+
+
+def draw_colorbar(
+    image: Image,
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+    label: str,
+    renderer: InOut[RendererSVG],
+) -> None:
+    """Draws the colorbar of `image` in the rectangle with its top left corner at `(left, top)`,
+    `width` by `height` points: the colormap's 256 colors from `vmin` at the bottom to `vmax`
+    at the top, a black outline, ticks and their labels on the right, placed and written as
+    `ticker` places and writes them, and `label` beside them, reading upwards.
+
+    ```python
+    from artist import Image
+    from backend_svg import RendererSVG
+    from colorbar import draw_colorbar
+
+    def main():
+        image = Image(Array.zeros((2, 2)), "viridis", 0.0, 1.0, (-0.5, 1.5, 1.5, -0.5), True)
+        renderer = RendererSVG(100.0, 300.0, [])
+        draw_colorbar(image, 10.0, 10.0, 13.0, 266.0, "counts", renderer)
+        print(len(renderer.elements) > 2)  # True
+    ```
+    """
+    strip = colormap_strip(get_cmap(image.cmap))
+    renderer.draw_image(left, top, width, height, strip, False, False)
+    renderer.draw_rectangle(left, top, width, height, "none", 1.0, "#000000", 0.8, False)
+    right = left + width
+    axis = YAxis(image.vmin, image.vmax, top + height, top, right)
+    beyond = axis.draw_right(renderer)
+    if label != "":
+        _, line, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
+        across = beyond + LABEL_PAD + line - descent
+        renderer.draw_text(across, top + 0.5 * height, label, FONT_SIZE, "middle", True)

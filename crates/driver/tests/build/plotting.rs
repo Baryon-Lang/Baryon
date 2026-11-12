@@ -305,3 +305,158 @@ def main():
         panic_report(&ran)
     );
 }
+
+/// The program that draws the reference images (roadmap 3.15.3), from data that is exact in
+/// binary.
+const IMAGES: &str = "\
+import pyplot as plt
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    grid = Array.zeros((3, 4))
+    for i in range(3):
+        for j in range(4):
+            grid[i, j] = f64(4 * i + j)
+    ax = plt.axes()
+    ax.imshow(grid)
+    ax.colorbar()
+    ax.savefig(\"grid.svg\")
+    rows = 24
+    columns = 40
+    field = Array.zeros((rows, columns))
+    for i in range(rows):
+        for j in range(columns):
+            x = 0.125 * f64(j - 20)
+            y = 0.125 * f64(i - 12)
+            field[i, j] = x * x - y * y
+    field[3, 5] = 0.0 / 0.0
+    saddle = plt.axes()
+    saddle.imshow(field, cmap=\"RdBu_r\", vmin=-4.0, vmax=4.0, origin=\"lower\")
+    saddle.colorbar(label=\"height (m)\")
+    saddle.set_title(\"A saddle\")
+    saddle.set_xlabel(\"column\")
+    saddle.savefig(\"saddle.svg\")
+    wide = plt.axes()
+    wide.imshow(grid, cmap=\"gray_r\", aspect=\"auto\", extent=(0.0, 8.0, 0.0, 3.0))
+    wide.plot(Array([0.0, 8.0]), Array([0.0, 3.0]), color=\"tab:red\")
+    wide.savefig(\"auto.svg\")
+";
+
+/// Three images are drawn as the stored reference files: `viridis` with a colorbar and square
+/// cells, row 0 at the top; a saddle in `RdBu_r` with fixed `vmin` and `vmax`, row 0 at the
+/// bottom, a NaN left transparent, a title and a labelled colorbar; and `gray_r` stretched
+/// over `extent=(0, 8, 0, 3)` and filling the axes with `aspect="auto"`, under a line. Each image is a PNG inside the SVG, so the files
+/// also fix the PNG encoder's output.
+#[test]
+fn images_are_drawn_as_the_reference_files() {
+    let (ran, directory) = run("plotting-images", IMAGES).unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(ran.status.code(), Some(0));
+    compare(&directory, &["grid.svg", "saddle.svg", "auto.svg"]).unwrap();
+}
+
+/// Every colormap gives the bytes matplotlib 3.11 gives, recorded in
+/// `matplotlib_colormaps.txt`, at 0 and 1, between them, outside them and at NaN, and so does
+/// each one reversed.
+#[test]
+fn colormaps_match_matplotlib() {
+    let program = "\
+from cm import get_cmap
+
+
+def main() -> Raises[None, OSError]:
+    values = [-0.5, 0.0, 0.001, 0.1, 0.25, 0.5, 0.7, 0.999, 1.0, 1.5, 0.0 / 0.0]
+    with open(\"matplotlib_colormaps.txt\") as f:
+        for line in f:
+            name = line.split()[0].copy()
+            cmap = get_cmap(name)
+            colors: list[str] = []
+            for x in values:
+                red, green, blue, alpha = cmap.to_rgba_bytes(x)
+                colors.append(f\"{red},{green},{blue},{alpha}\")
+            print(name, \" \".join(colors))
+";
+    let directory = package("plotting-colormaps", &[("main.byn", program)]).unwrap();
+    fs::copy(
+        fixtures().join("matplotlib_colormaps.txt"),
+        directory.join("matplotlib_colormaps.txt"),
+    )
+    .unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&executable)
+        .current_dir(&directory)
+        .output()
+        .unwrap();
+    assert_eq!(stderr(&ran), "");
+    let expected = fs::read_to_string(fixtures().join("matplotlib_colormaps.txt")).unwrap();
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), expected);
+}
+
+/// A two-pixel image is embedded as the PNG a PNG reader decodes to black then red: the
+/// signature, the header, one stored deflate block with its Adler-32, each chunk's CRC-32, and
+/// the end, checked once with Pillow and kept here byte for byte in base64.
+#[test]
+fn images_are_embedded_as_png() {
+    let program = "\
+from backend_svg import RendererSVG
+
+
+def main():
+    pixels: Array[u8, 3] = Array.zeros((1, 2, 4))
+    pixels[0, 0, 3] = u8(255)
+    pixels[0, 1, 0] = u8(255)
+    pixels[0, 1, 3] = u8(255)
+    renderer = RendererSVG(2.0, 1.0, [])
+    renderer.draw_image(0.0, 0.0, 2.0, 1.0, pixels, False, False)
+    print(renderer.elements[0])
+";
+    let (ran, _directory) = run("plotting-png", program).unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "<image x=\"0.000\" y=\"0.000\" width=\"2.000\" height=\"1.000\" \
+         preserveAspectRatio=\"none\" style=\"image-rendering:pixelated\" \
+         href=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAFElEQVR4AQEJAPb/\
+         AAAAAP//AAD/Cf8C/vNM74sAAAAASUVORK5CYII=\"/>\n"
+    );
+}
+
+/// An unknown colormap panics at `imshow`, and a colorbar with no image panics at
+/// `colorbar`, where matplotlib raises `ValueError` and `RuntimeError`.
+#[test]
+fn unknown_colormaps_and_lonely_colorbars_panic() {
+    let program = "\
+import pyplot as plt
+
+
+def main():
+    ax = plt.axes()
+    ax.imshow(Array.zeros((2, 2)), cmap=\"jet\")
+";
+    let (ran, _directory) = run("plotting-cmap", program).unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert!(
+        panic_report(&ran).starts_with("panic: assertion failed: known, ("),
+        "{}",
+        panic_report(&ran)
+    );
+    let program = "\
+import pyplot as plt
+
+
+def main():
+    ax = plt.axes()
+    ax.colorbar()
+";
+    let (ran, _directory) = run("plotting-colorbar", program).unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert!(
+        panic_report(&ran).starts_with(
+            "panic: assertion failed: len(self.images) > 0, \
+             \"colorbar needs an image: call imshow first\""
+        ),
+        "{}",
+        panic_report(&ran)
+    );
+}

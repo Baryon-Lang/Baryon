@@ -1,0 +1,112 @@
+"""The `transforms` module: the ranges an axes shows, as matplotlib's `transforms.nonsingular`
+and `Axes.autoscale_view` find them (decision 0046).
+
+`pyplot` keeps the limits `set_xlim` and `set_ylim` fix through `fixed_limits`, and finds the
+others from the data with `autoscale` when a figure is drawn.
+"""
+
+from artist import Artist, Image, Kind
+from math import inf, isfinite
+
+
+def nonsingular(low: f64, high: f64, expander: f64, tiny: f64) -> tuple[f64, f64]:
+    """`low` and `high`, widened by `expander` of their size when they are within `tiny` of
+    their size of each other, as matplotlib's `transforms.nonsingular`; both 0, or both too
+    small to tell from 0, become `-expander` to `expander`. `low` must not exceed `high`.
+
+    ```python
+    from transforms import nonsingular
+
+    def main():
+        print(nonsingular(1.0, 1.0, 0.05, 1e-15))  # (0.95, 1.05)
+    ```
+    """
+    largest = max(abs(low), abs(high))
+    if largest < 1e6 / tiny * 2.2250738585072014e-308:
+        return (-expander, expander)
+    if high - low <= largest * tiny:
+        if high == 0.0 and low == 0.0:
+            return (-expander, expander)
+        return (low - expander * abs(low), high + expander * abs(high))
+    return (low, high)
+
+
+def fixed_limits(first: f64, second: f64) -> tuple[f64, f64]:
+    """Limits as matplotlib's `set_xlim` keeps them: put in order, widened by `nonsingular`
+    with an expander of 5% when too close to tell apart, then turned back round if `first` was
+    the larger.
+
+    ```python
+    from transforms import fixed_limits
+
+    def main():
+        print(fixed_limits(5.0, -5.0), fixed_limits(0.0, 0.0))  # (5.0, -5.0) (-0.05, 0.05)
+    ```
+    """
+    low, high = nonsingular(min(first, second), max(first, second), 0.05, 1e-15)
+    if first > second:
+        return (high, low)
+    return (low, high)
+
+
+def autoscale(artists: list[Artist], images: list[Image], along_x: bool) -> tuple[f64, f64]:
+    """The range one axis of an axes holding `artists` and `images` shows when its limits are
+    not fixed, as matplotlib's `autoscale_view` finds it: the finite data, bars from their
+    base at 0 and images to their outer edges, with a margin of 5% on each side that stops at
+    a sticky edge, a bar's base or an image's edge, as matplotlib's sticky edges stop it; 0 to
+    1 with no data. The last image's extent turns an axis around when it runs backwards, as
+    the default extent of an image with row 0 at the top runs y downwards. Costs one pass over
+    the data.
+
+    ```python
+    from artist import Artist, Kind
+    from transforms import autoscale
+
+    def main():
+        x = Array([0.0, 10.0])
+        line = Artist(Kind.LINE, x, x.copy(), Array.zeros(0), "#1f77b4", 1.5, [], "", 6.0, "")
+        print(autoscale([line], [], True))  # (-0.5, 10.5)
+    ```
+    """
+    low = inf
+    high = -inf
+    sticky: list[f64] = []
+    for artist in artists:
+        bars = artist.kind == Kind.BARS
+        for i in range(len(artist.x)):
+            if isfinite(artist.x[i]) and isfinite(artist.y[i]):
+                first = artist.x[i] if along_x else artist.y[i]
+                last = first
+                if bars and along_x:
+                    last = first + artist.widths[i]
+                elif bars:
+                    first = min(0.0, artist.y[i])
+                    last = max(0.0, artist.y[i])
+                    sticky.append(0.0)
+                low = min(low, first)
+                high = max(high, last)
+    for image in images:
+        left_edge, right_edge, bottom_edge, top_edge = image.extent
+        first = left_edge if along_x else bottom_edge
+        last = right_edge if along_x else top_edge
+        low = min(low, min(first, last))
+        high = max(high, max(first, last))
+        sticky.append(first)
+        sticky.append(last)
+    if low > high:
+        return (0.0, 1.0)
+    low, high = nonsingular(low, high, 0.05, 1e-15)
+    margin = 0.05 * (high - low)
+    bottom = low - margin
+    top = high + margin
+    for edge in sticky:
+        if edge <= low and edge > bottom:
+            bottom = edge
+        if edge >= high and edge < top:
+            top = edge
+    bottom, top = nonsingular(bottom, top, 0.001, 1e-15)
+    if len(images) > 0:
+        left_edge, right_edge, bottom_edge, top_edge = images[len(images) - 1].extent
+        if (along_x and left_edge > right_edge) or (not along_x and bottom_edge > top_edge):
+            return (top, bottom)
+    return (bottom, top)

@@ -90,8 +90,10 @@ pub const BUILTINS: [&str; 59] = [
 /// roadmap 3.14.5's `NetCDF` files, named as Unidata's `netCDF4` package is (decision 0047), and
 /// `pyplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046), as are
 /// `colors`, the color names, `axis`, which draws an axis, `backend_svg`, which writes SVG
-/// files, `artist`, what an axes holds, and `legend`, which draws a legend.
-pub const STANDARD_MODULES: [&str; 18] = [
+/// files, `png`, which writes PNG images, `cm`, the colormaps, `artist`, what an axes holds, and
+/// `legend`, `image` and `colorbar`, which draw a legend, an image and a colorbar, and
+/// `transforms`, the ranges an axes shows.
+pub const STANDARD_MODULES: [&str; 23] = [
     "math",
     "random",
     "sys",
@@ -108,8 +110,13 @@ pub const STANDARD_MODULES: [&str; 18] = [
     "colors",
     "axis",
     "backend_svg",
+    "png",
+    "cm",
     "artist",
     "legend",
+    "image",
+    "colorbar",
+    "transforms",
 ];
 
 /// What a name refers to.

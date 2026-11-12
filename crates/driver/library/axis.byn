@@ -90,26 +90,41 @@ class YAxis(Struct):
         """Draws the ticks inside the range, pointing left, their labels left of them and the
         offset text, if any, above the top end; returns how far left the labels reach, in
         points, where a y label goes."""
+        return self._draw_side(renderer, -1.0)
+
+    def draw_right(self: Self, renderer: InOut[RendererSVG]) -> f64:
+        """Draws the axis on the right of the line at `left`, as matplotlib's
+        `set_ticks_position("right")` puts it on a colorbar: ticks pointing right, their labels
+        right of them, and the offset text, if any, above the top end, ending at the line;
+        returns how far right the labels reach, in points, where a colorbar's label goes."""
+        return self._draw_side(renderer, 1.0)
+
+    def _draw_side(self: Self, renderer: InOut[RendererSVG], outward: f64) -> f64:
+        """Draws the axis with its ticks and labels on the side `outward` points to: -1 for
+        the left, 1 for the right; returns how far out the labels reach."""
         ticks = self.get_majorticklocs()
         formatter = ScalarFormatter(self.vmin, self.vmax)
         labels = formatter.format_ticks(ticks)
         _, height, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
-        right = self.left - TICK_LENGTH - TICK_PAD
+        edge = self.left + outward * TICK_LENGTH + outward * TICK_PAD
+        anchor = "end" if outward < 0.0 else "start"
         scale = (self.bottom - self.top) / (self.vmax - self.vmin)
         widest = 0.0
         for k in range(len(ticks)):
             if _inside(ticks[k], self.vmin, self.vmax):
                 at = self.bottom - (ticks[k] - self.vmin) * scale
-                ends = Array([self.left, self.left - TICK_LENGTH])
+                ends = Array([self.left, self.left + outward * TICK_LENGTH])
                 renderer.draw_path(ends, Array([at, at]), "#000000", 0.8, [], "butt", False)
                 middle = at + 0.5 * (height - descent)
-                renderer.draw_text(right, middle, labels[k], FONT_SIZE, "end", False)
+                renderer.draw_text(edge, middle, labels[k], FONT_SIZE, anchor, False)
                 width, _, _ = renderer.get_text_width_height_descent(labels[k], FONT_SIZE)
                 widest = max(widest, width)
         offset = formatter.get_offset(ticks)
         if offset != "":
-            renderer.draw_text(self.left, self.top - OFFSET_PAD, offset, FONT_SIZE, "start", False)
-        return right - widest
+            above = self.top - OFFSET_PAD
+            side = "start" if outward < 0.0 else "end"
+            renderer.draw_text(self.left, above, offset, FONT_SIZE, side, False)
+        return edge + outward * widest
 
 
 def _locate(vmin: f64, vmax: f64, length: f64, spacing: f64) -> list[f64]:

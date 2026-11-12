@@ -1,0 +1,112 @@
+"""The `png` module: writes RGBA images in the PNG format, as matplotlib writes the images it
+embeds in an SVG file and saves as PNG (decision 0046).
+
+The image data go in uncompressed deflate blocks, which every PNG reader takes: the file is
+about four times larger than a compressed one, until compression (roadmap 3.27) lands. The
+checksums PNG and zlib need, CRC-32 and Adler-32, are computed here.
+"""
+
+
+def encode(pixels: Array[u8, 3]) -> list[u8]:
+    """The bytes of a PNG file holding `pixels`, an image `height` by `width` by 4: red, green,
+    blue and alpha, 0 to 255, rows from the top. Costs about 4 bytes and a few operations a
+    pixel.
+
+    ```python
+    from png import encode
+
+    def main():
+        pixels: Array[u8, 3] = Array.zeros((1, 2, 4))
+        pixels[0, 1, 0] = u8(255)
+        print(len(encode(pixels)))  # 77
+    ```
+    """
+    height = pixels.shape[0]
+    width = pixels.shape[1]
+    out: list[u8] = [u8(137), u8(80), u8(78), u8(71), u8(13), u8(10), u8(26), u8(10)]
+    header: list[u8] = []
+    _put32(header, u32(width))
+    _put32(header, u32(height))
+    for value in [8, 6, 0, 0, 0]:  # 8 bits a channel, RGBA, deflate, no filter, no interlace
+        header.append(u8(value))
+    table = _crc_table()
+    _chunk(out, "IHDR", header, table)
+    raw: list[u8] = []
+    for row in range(height):
+        raw.append(u8(0))  # no filter on the row
+        for column in range(width):
+            for channel in range(4):
+                raw.append(pixels[row, column, channel])
+    _chunk(out, "IDAT", _zlib_stored(raw), table)
+    _chunk(out, "IEND", [], table)
+    return out
+
+
+def _put32(data: InOut[list[u8]], value: u32) -> None:
+    """Appends `value` to `data` as four bytes, most significant first, as PNG writes numbers."""
+    for shift in [24, 16, 8, 0]:
+        data.append(u8((value >> u32(shift)) & u32(255)))
+
+
+def _chunk(out: InOut[list[u8]], kind: str, data: list[u8], table: list[u32]) -> None:
+    """Appends a PNG chunk to `out`: its length, its four-letter `kind`, `data`, and the CRC-32
+    of the kind and the data. The kinds written here are all capitals, so the letters are found
+    by their place in the alphabet, as `str` has no `encode` yet."""
+    _put32(out, u32(len(data)))
+    named: list[u8] = []
+    for letter in kind:
+        named.append(u8(65 + "ABCDEFGHIJKLMNOPQRSTUVWXYZ".find(letter)))
+    for byte in data:
+        named.append(byte)
+    for byte in named:
+        out.append(byte)
+    _put32(out, _crc(named, table))
+
+
+def _crc_table() -> list[u32]:
+    """The 256 entries that make CRC-32 a byte at a time, for the polynomial PNG and zlib use."""
+    table: list[u32] = []
+    for n in range(256):
+        c = u32(n)
+        for _ in range(8):
+            if c & u32(1) == u32(1):
+                c = u32(0xEDB88320) ^ (c >> u32(1))
+            else:
+                c = c >> u32(1)
+        table.append(c)
+    return table
+
+
+def _crc(data: list[u8], table: list[u32]) -> u32:
+    """The CRC-32 of `data`, as PNG's specification computes it."""
+    c = u32(0xFFFFFFFF)
+    for byte in data:
+        c = table[int((c ^ u32(byte)) & u32(255))] ^ (c >> u32(8))
+    return c ^ u32(0xFFFFFFFF)
+
+
+def _zlib_stored(raw: list[u8]) -> list[u8]:
+    """`raw` as a zlib stream of uncompressed deflate blocks of at most 65535 bytes, ended by its
+    Adler-32 checksum."""
+    out: list[u8] = [u8(0x78), u8(0x01)]
+    start = 0
+    while True:
+        size = min(65535, len(raw) - start)
+        last = start + size == len(raw)
+        out.append(u8(1) if last else u8(0))
+        out.append(u8(size & 255))
+        out.append(u8(size >> 8))
+        out.append(u8((65535 - size) & 255))
+        out.append(u8((65535 - size) >> 8))
+        for k in range(start, start + size):
+            out.append(raw[k])
+        start += size
+        if last:
+            break
+    a = u32(1)
+    b = u32(0)
+    for byte in raw:
+        a = (a + u32(byte)) % u32(65521)
+        b = (b + a) % u32(65521)
+    _put32(out, (b << u32(16)) | a)
+    return out

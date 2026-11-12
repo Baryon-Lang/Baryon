@@ -7,6 +7,7 @@ roadmap 3.15.6 and 3.15.7 take the same calls, so `pyplot` draws once for every 
 """
 
 from math import isfinite
+from png import encode
 
 
 class RendererSVG(Struct):
@@ -132,6 +133,29 @@ class RendererSVG(Struct):
             + f'height="{_number(abs(height))}"{_clip(clip)} fill="{fill}"{shade}{stroke}/>'
         )
 
+    def draw_image(
+        self: InOut[Self],
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        pixels: Array[u8, 3],
+        smooth: bool,
+        clip: bool,
+    ) -> None:
+        """Draws the RGBA image `pixels`, rows from the top, stretched over the rectangle with
+        its top left corner at `(x, y)`, `width` by `height` points, as a PNG embedded in the
+        file, as matplotlib embeds images. `smooth` lets the viewer blend neighbouring pixels,
+        as matplotlib's antialiasing does when it shrinks an image; otherwise each pixel stays
+        a sharp rectangle, as its `"nearest"` interpolation draws an image it enlarges. Costs
+        about 5.5 bytes of the file a pixel, until PNG data are compressed (roadmap 3.27)."""
+        sharp = "" if smooth else ' style="image-rendering:pixelated"'
+        self.elements.append(
+            f'<image x="{_number(x)}" y="{_number(y)}" width="{_number(width)}" '
+            + f'height="{_number(height)}" preserveAspectRatio="none"{_clip(clip)}{sharp} '
+            + f'href="data:image/png;base64,{_base64(encode(pixels))}"/>'
+        )
+
     def draw_text(
         self: InOut[Self], x: f64, y: f64, text: str, size: f64, anchor: str, rotate: bool
     ) -> None:
@@ -185,6 +209,25 @@ class RendererSVG(Struct):
 def _number(value: f64) -> str:
     """A coordinate in the SVG, to a thousandth of a point."""
     return f"{value:.3f}"
+
+
+def _base64(data: list[u8]) -> str:
+    """`data` in base64, as a `data:` URL holds it: each three bytes as four characters of
+    `A` to `Z`, `a` to `z`, `0` to `9`, `+` and `/`, and `=` padding the end."""
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    out: list[str] = []
+    for start in range(0, len(data), 3):
+        left = len(data) - start
+        group = int(data[start]) << 16
+        if left > 1:
+            group = group | (int(data[start + 1]) << 8)
+        if left > 2:
+            group = group | int(data[start + 2])
+        out.append(alphabet[(group >> 18) & 63].copy())
+        out.append(alphabet[(group >> 12) & 63].copy())
+        out.append(alphabet[(group >> 6) & 63].copy() if left > 1 else "=")
+        out.append(alphabet[group & 63].copy() if left > 2 else "=")
+    return "".join(out)
 
 
 def _cap(capstyle: str) -> str:

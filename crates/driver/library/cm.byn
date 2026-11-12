@@ -1,0 +1,272 @@
+"""The `cm` module: matplotlib's colormaps, which turn a number from 0 to 1 into a color, for
+images and their colorbars (decision 0046).
+
+Each colormap is matplotlib's table of 256 colors, written here as the bytes matplotlib's
+`cmap(x, bytes=True)` gives, so an image is colored exactly as matplotlib colors it. The
+perceptually uniform maps `viridis` (the default), `plasma`, `inferno`, `magma` and `cividis`
+are here, with `gray` and `Greys`, and the diverging `coolwarm` and `RdBu`; a name ending in
+`_r` is the same map reversed.
+"""
+
+from math import isnan
+
+
+class Colormap(Struct):
+    """A colormap: its `name` and its 256 colors, as matplotlib's `Colormap`. Get one by name
+    with `get_cmap`.
+
+    ```python
+    from cm import get_cmap
+
+    def main():
+        cmap = get_cmap("viridis")
+        print(cmap.to_rgba_bytes(0.0))  # (68, 1, 84, 255)
+    ```
+    """
+
+    name: str  # matplotlib's name for it, such as "viridis"
+    colors: Array[u8, 2]  # 256 rows of red, green and blue, 0 to 255, from 0 up to 1
+
+    def to_rgba_bytes(self: Self, x: f64) -> tuple[u8, u8, u8, u8]:
+        """The color of `x`, as matplotlib's `cmap(x, bytes=True)` gives it: the table entry
+        `int(x * 256)`, with 1 itself the last entry; below 0 the first color and above 1 the
+        last, as matplotlib's default under and over colors are; NaN fully transparent black,
+        its default bad color."""
+        if isnan(x):
+            return (u8(0), u8(0), u8(0), u8(0))
+        index = 0
+        if x >= 1.0:
+            index = 255
+        elif x > 0.0:
+            index = int(x * 256.0)
+        return (self.colors[index, 0], self.colors[index, 1], self.colors[index, 2], u8(255))
+
+
+def get_cmap(name: str) -> Colormap:
+    """The colormap called `name`, as matplotlib's `colormaps[name]`, or reversed when `name`
+    ends in `"_r"`. Builds its table of 256 colors, about 2,000 operations.
+
+    Panics on a name it does not know, where matplotlib raises `ValueError`.
+    """
+    reverse = name.endswith("_r")
+    base = name[0 : len(name) - 2] if reverse else name.copy()
+    table = _table(base)
+    known = len(table) == 1536
+    assert known, (
+        f"{name!r} is not a colormap: use 'viridis', 'plasma', 'inferno', 'magma', 'cividis', "
+        + "'gray', 'Greys', 'coolwarm' or 'RdBu', or one of them with '_r'"
+    )
+    colors: Array[u8, 2] = Array.zeros((256, 3))
+    digits = "0123456789abcdef"
+    for k in range(256):
+        row = 255 - k if reverse else k
+        for channel in range(3):
+            at = 6 * k + 2 * channel
+            high = digits.find(table[at])
+            low = digits.find(table[at + 1])
+            colors[row, channel] = u8(16 * high + low)
+    return Colormap(name.copy(), colors)
+
+
+def _table(name: str) -> str:
+    """The 256 colors of the colormap `name` as hexadecimal text, six digits a color, recorded
+    from matplotlib 3.11, or `""` for a name it does not know."""
+    if name == "viridis":
+        return (
+            "44015444025544035745055845065a45085b46095c460b5e460c5f460e61470f62471163471265471466"
+            + "47156747166947186a48196b481a6c481c6e481d6f481e70482071482172482273482374472575472676"
+            + "472777472878472a79472b7a472c7b462d7c462f7c46307d46317e45327f45347f453580453681443781"
+            + "443982433a83433b83433c84423d84423e854240854141864142864043874044873f45873f47883e4888"
+            + "3e49893d4a893d4b893d4c893c4d8a3c4e8a3b508a3b518a3a528b3a538b39548b39558b38568b38578c"
+            + "37588c37598c365a8c365b8c355c8c355d8c345e8d345f8d33608d33618d32628d32638d31648d31658d"
+            + "31668d30678d30688d2f698d2f6a8d2e6b8e2e6c8e2e6d8e2d6e8e2d6f8e2c708e2c718e2c728e2b738e"
+            + "2b748e2a758e2a768e2a778e29788e29798e287a8e287a8e287b8e277c8e277d8e277e8e267f8e26808e"
+            + "26818e25828e25838d24848d24858d24868d23878d23888d23898d22898d228a8d228b8d218c8d218d8c"
+            + "218e8c208f8c20908c20918c1f928c1f938b1f948b1f958b1f968b1e978a1e988a1e998a1e998a1e9a89"
+            + "1e9b891e9c891e9d881e9e881e9f881ea0871fa1871fa2861fa38620a48520a58521a68521a78422a784"
+            + "23a88323a98224aa8225ab8126ac8127ad8028ae7f29af7f2ab07e2bb17d2cb17d2eb27c2fb37b30b47a"
+            + "32b57a33b67935b77836b87738b97639b9763bba753dbb743ebc7340bd7242be7144be7045bf6f47c06e"
+            + "49c16d4bc26c4dc26b4fc36951c46853c56755c66657c66559c7645bc8625ec96160c96062ca5f64cb5d"
+            + "67cc5c69cc5b6bcd596dce5870ce5672cf5574d05477d05279d1517cd24f7ed24e81d34c83d34b86d449"
+            + "88d5478bd5468dd64490d64392d74195d73f97d83e9ad83c9dd93a9fd938a2da37a5da35a7db33aadb32"
+            + "addc30afdc2eb2dd2cb5dd2bb7dd29bade27bdde26bfdf24c2df22c5df21c7e01fcae01ecde01dcfe11c"
+            + "d2e11bd4e11ad7e219dae218dce218dfe318e1e318e4e318e7e419e9e419ece41aeee51bf1e51cf3e51e"
+            + "f6e61ff8e621fae622fde724"
+        )
+    if name == "plasma":
+        return (
+            "0c078610078713068915068a18068b1b068c1d068d1f058e21058f2305902505912705922905932b0594"
+            + "2d04942f04953104963304973404983604983804993a049a3b039a3d039b3f039c40039c42039d44039e"
+            + "45039e47029f49029f4a02a04c02a14e02a14f02a25101a25201a35401a35601a35701a45901a45a00a5"
+            + "5c00a55e00a55f00a66100a66200a66400a76500a76700a76800a76a00a76c00a86d00a86f00a87000a8"
+            + "7200a87300a87500a87601a87801a87901a87b02a87c02a77e03a77f03a78104a78204a78405a68506a6"
+            + "8607a68807a58908a58b09a48c0aa48e0ca48f0da3900ea3920fa29310a19511a19612a09713a099149f"
+            + "9a159e9b179e9d189d9e199c9f1a9ba01b9ba21c9aa31d99a41e98a51f97a72197a82296a92395aa2494"
+            + "ac2593ad2692ae2791af2890b02a8fb12b8fb22c8eb42d8db52e8cb62f8bb7308ab83289b93388ba3487"
+            + "bb3586bc3685bd3784be3883bf3982c03b81c13c80c23d80c33e7fc43f7ec5407dc6417cc7427bc8447a"
+            + "c94579ca4678cb4777cc4876cd4975ce4a75cf4b74d04d73d14e72d14f71d25070d3516fd4526ed5536d"
+            + "d6556dd7566cd7576bd8586ad95969da5a68db5b67dc5d66dc5e66dd5f65de6064df6163df6262e06461"
+            + "e16560e26660e3675fe3685ee46a5de56b5ce56c5be66d5ae76e5ae87059e87158e97257ea7356ea7455"
+            + "eb7654ec7754ec7853ed7952ed7b51ee7c50ef7d4fef7e4ef0804df0814df1824cf2844bf2854af38649"
+            + "f38748f48947f48a47f58b46f58d45f68e44f68f43f69142f79241f79341f89540f8963ff8983ef9993d"
+            + "f99a3cfa9c3bfa9d3afa9f3afaa039fba238fba337fba436fca635fca735fca934fcaa33fcac32fcad31"
+            + "fdaf31fdb030fdb22ffdb32efdb52dfdb62dfdb82cfdb92bfdbb2bfdbc2afdbe29fdc029fdc128fdc328"
+            + "fdc427fdc626fcc726fcc926fccb25fccc25fcce25fbd024fbd124fbd324fad524fad624fad824f9d924"
+            + "f9db24f8dd24f8df24f7e024f7e225f6e425f6e525f5e726f5e926f4ea26f3ec26f3ee26f2f026f2f126"
+            + "f1f326f0f525f0f623eff821"
+        )
+    if name == "inferno":
+        return (
+            "00000300000400000601000701010901010b02010e02021003021204031404031605041806041b07051d"
+            + "08061f0906210a07230b07260d08280e082a0f092d10092f120a32130a34140b36160b39170b3b190b3e"
+            + "1a0b401c0c431d0c451f0c47200c4a220b4c240b4e260b50270b52290b542b0a562d0a582e0a5a300a5c"
+            + "32095d34095f3509603709613909623b09643c09653e0966400966410967430a68450a69460a69480b6a"
+            + "4a0b6a4b0c6b4d0c6b4f0d6c500d6c520e6c530e6d550f6d570f6d58106d5a116d5b116e5d126e5f126e"
+            + "60136e62146e63146e65156e66156e68166e6a176e6b176e6d186e6e186e70196e72196d731a6d751b6d"
+            + "761b6d781c6d7a1c6d7b1d6c7d1d6c7e1e6c801f6b811f6b83206b85206a86216a88216a8922698b2269"
+            + "8d23698e24689024689125679325679526669626669827659928649b28649c29639e2963a02a62a12b61"
+            + "a32b61a42c60a62c5fa72d5fa92e5eab2e5dac2f5cae305baf315bb1315ab23259b43358b53357b73456"
+            + "b83556ba3655bb3754bd3753be3852bf3951c13a50c23b4fc43c4ec53d4dc73e4cc83e4bc93f4acb4049"
+            + "cc4148cd4247cf4446d04544d14643d24742d44841d54940d64a3fd74b3ed94d3dda4e3bdb4f3adc5039"
+            + "dd5238de5337df5436e05634e25733e35832e45a31e55b30e65c2ee65e2de75f2ce8612be9622aea6428"
+            + "eb6527ec6726ed6825ed6a23ee6c22ef6d21f06f1ff0701ef1721df2741cf2751af37719f37918f47a16"
+            + "f57c15f57e14f68012f68111f78310f7850ef8870df8880cf88a0bf98c09f98e08f99008fa9107fa9306"
+            + "fa9506fa9706fb9906fb9b06fb9d06fb9e07fba007fba208fba40afba60bfba80dfbaa0efbac10fbae12"
+            + "fbb014fbb116fbb318fbb51afbb71cfbb91efabb21fabd23fabf25fac128f9c32af9c52cf9c72ff8c931"
+            + "f8cb34f8cd37f7cf3af7d13cf6d33ff6d542f5d745f5d948f4db4bf4dc4ff3de52f3e056f3e259f2e45d"
+            + "f2e660f1e864f1e968f1eb6cf1ed70f1ee74f1f079f1f27df2f381f2f485f3f689f4f78df5f891f6fa95"
+            + "f7fb99f9fc9dfafda0fcfea4"
+        )
+    if name == "magma":
+        return (
+            "00000300000400000601000701010901010b02020d02020f03031104031304041505041706051907051b"
+            + "08061d09071f0a07220b08240c09260d0a280e0a2a0f0b2c100c2f110c31120d33140d35150e38160e3a"
+            + "170f3c180f3f1a10411b10441c10461e10491f114b20114d2211502311522511552611572811592a115c"
+            + "2b115e2d10602f1062301065321067341068350f6a370f6c390f6e3b0f6f3c0f713e0f72400f73420f74"
+            + "430f75450f76470f774810784a10794b10794d117a4f117b50127b52127c53137c55137d57147d58157e"
+            + "5a157e5b167e5d177e5e177f60187f61187f63197f651a80661a80681b80691c806b1c806c1d806e1e81"
+            + "6f1e81711f81731f817420817621817721817922817a22817c23817e24817f2481812581822581842681"
+            + "8526818727818928818a28818c29808d29808f2a80912a80922b80942b80952c80972c7f992d7f9a2d7f"
+            + "9c2e7f9e2e7e9f2f7ea12f7ea3307ea4307da6317da7317da9327cab337cac337bae347bb0347bb1357a"
+            + "b3357ab53679b63679b83778b93778bb3877bd3977be3976c03a75c23a75c33b74c53c74c63c73c83d72"
+            + "ca3e72cb3e71cd3f70ce4070d0416fd1426ed3426dd4436dd6446cd7456bd9466ada4769dc4869dd4968"
+            + "de4a67e04b66e14c66e24d65e44e64e55063e65162e75262e85461ea5560eb5660ec585fed595fee5b5e"
+            + "ee5d5def5e5df0605df1615cf2635cf3655cf3675bf4685bf56a5bf56c5bf66e5bf6705bf7715bf7735c"
+            + "f8755cf8775cf9795cf97b5df97d5dfa7f5efa805efa825ffb8460fb8660fb8861fb8a62fc8c63fc8e63"
+            + "fc9064fc9265fc9366fd9567fd9768fd9969fd9b6afd9d6bfd9f6cfda16efda26ffda470fea671fea873"
+            + "feaa74feac75feae76feaf78feb179feb37bfeb57cfeb77dfeb97ffebb80febc82febe83fec085fec286"
+            + "fec488fec689fec78bfec98dfecb8efdcd90fdcf92fdd193fdd295fdd497fdd698fdd89afdda9cfddc9d"
+            + "fddd9ffddfa1fde1a3fce3a5fce5a6fce6a8fce8aafceaacfcecaefceeb0fcf0b1fcf1b3fcf3b5fcf5b7"
+            + "fbf7b9fbf9bbfbfabdfbfcbf"
+        )
+    if name == "cividis":
+        return (
+            "00224d00234f00235000245200255400265500265700275900285b00285c00295e002a60002a62002b64"
+            + "002c66002c67002d69002e6b002f6d002f6f0030700030700031700031700432700833700b33700e3470"
+            + "11356f14366f16366f18376f1a386f1c386e1d396e1f3a6e213b6e223b6e243c6e253d6d273d6d283e6d"
+            + "2a3f6d2b3f6d2c406d2e416c2f426c30426c31436c32446c34446c35456c36466c37466c38476c39486c"
+            + "3a486b3b496b3d4a6b3e4b6b3f4b6b404c6b414d6b424d6b434e6b444f6b454f6b46506b47516b48516b"
+            + "49526b4a536b4b546c4c546c4d556c4e566c4e566c4f576c50586c51586c52596c535a6c545a6c555b6d"
+            + "565c6d575d6d585d6d595e6d595f6d5a5f6d5b606e5c616e5d616e5e626e5f636e60646e61646f61656f"
+            + "62666f63666f64676f656870666970676970686a70686b71696b716a6c716b6d716c6d726d6e726e6f72"
+            + "6e70736f7073707173717273727374737374747475747575757575767676777776787876797877797977"
+            + "7a7a777b7b777c7b787d7c787e7d787f7d78807e78817f78828078838078848178858278858378868378"
+            + "8784788885788986788a86788b87788c88788d89788e89788f8a77908b77918c77928c77938d77948e77"
+            + "958f77968f779790769891769992769a93769b93769c94769d95759e96759f9675a09775a19874a29974"
+            + "a39a74a49a74a59b73a69c73a79d73a89e73a99e72aa9f72aba072aca171ada271aea271afa370b0a470"
+            + "b1a570b2a66fb3a66fb4a76fb5a86eb6a96eb7aa6db8ab6db9ab6dbaac6cbbad6cbcae6bbdaf6bbeb06a"
+            + "bfb06ac1b169c2b269c3b368c4b468c5b567c6b567c7b666c8b765c9b865cab964cbba64ccbb63cdbc62"
+            + "cebc62cfbd61d0be60d2bf60d3c05fd4c15ed5c25ed6c35dd7c35cd8c45bd9c55adac65adbc759dcc858"
+            + "dec957dfca56e0cb55e1cc54e2cc53e3cd52e4ce51e5cf50e6d04fe8d14ee9d24dead34cebd44becd54a"
+            + "edd648eed747efd846f1d944f2da43f3da42f4db40f5dc3ff6dd3df8de3bf9df3afae038fbe136fde234"
+            + "fde333fde534fde636fde737"
+        )
+    if name == "gray":
+        return (
+            "0000000101010202020303030404040505050606060707070808080909090a0a0a0b0b0b0c0c0c0d0d0d"
+            + "0e0e0e0f0f0f1010101111111212121313131414141515151616161717171818181919191a1a1a1b1b1b"
+            + "1c1c1c1d1d1d1e1e1e1f1f1f202020202020222222232323242424242424262626272727282828282828"
+            + "2a2a2a2b2b2b2c2c2c2c2c2c2e2e2e2f2f2f303030303030323232333333343434343434363636373737"
+            + "3838383838383a3a3a3b3b3b3c3c3c3c3c3c3e3e3e3f3f3f404040414141414141434343444444454545"
+            + "4646464747474848484949494949494b4b4b4c4c4c4d4d4d4e4e4e4f4f4f505050515151515151535353"
+            + "5454545555555656565757575858585959595959595b5b5b5c5c5c5d5d5d5e5e5e5f5f5f606060616161"
+            + "6161616363636464646565656666666767676868686969696969696b6b6b6c6c6c6d6d6d6e6e6e6f6f6f"
+            + "7070707171717171717373737474747575757676767777777878787979797979797b7b7b7c7c7c7d7d7d"
+            + "7e7e7e7f7f7f8080808181818282828383838383838585858686868787878888888989898a8a8a8b8b8b"
+            + "8c8c8c8d8d8d8e8e8e8f8f8f909090919191929292939393939393959595969696979797989898999999"
+            + "9a9a9a9b9b9b9c9c9c9d9d9d9e9e9e9f9f9fa0a0a0a1a1a1a2a2a2a3a3a3a3a3a3a5a5a5a6a6a6a7a7a7"
+            + "a8a8a8a9a9a9aaaaaaabababacacacadadadaeaeaeafafafb0b0b0b1b1b1b2b2b2b3b3b3b3b3b3b5b5b5"
+            + "b6b6b6b7b7b7b8b8b8b9b9b9babababbbbbbbcbcbcbdbdbdbebebebfbfbfc0c0c0c1c1c1c2c2c2c3c3c3"
+            + "c3c3c3c5c5c5c6c6c6c7c7c7c8c8c8c9c9c9cacacacbcbcbcccccccdcdcdcecececfcfcfd0d0d0d1d1d1"
+            + "d2d2d2d3d3d3d3d3d3d5d5d5d6d6d6d7d7d7d8d8d8d9d9d9dadadadbdbdbdcdcdcdddddddedededfdfdf"
+            + "e0e0e0e1e1e1e2e2e2e3e3e3e3e3e3e5e5e5e6e6e6e7e7e7e8e8e8e9e9e9eaeaeaebebebecececededed"
+            + "eeeeeeefefeff0f0f0f1f1f1f2f2f2f3f3f3f3f3f3f5f5f5f6f6f6f7f7f7f8f8f8f9f9f9fafafafbfbfb"
+            + "fcfcfcfdfdfdfefefeffffff"
+        )
+    if name == "Greys":
+        return (
+            "fffffffefefefefefefdfdfdfdfdfdfcfcfcfcfcfcfbfbfbfbfbfbfafafafafafaf9f9f9f9f9f9f8f8f8"
+            + "f8f8f8f7f7f7f7f7f7f7f7f7f6f6f6f6f6f6f5f5f5f5f5f5f4f4f4f4f4f4f3f3f3f3f3f3f2f2f2f2f2f2"
+            + "f1f1f1f1f1f1f0f0f0f0f0f0efefefefefefeeeeeeededededededecececebebebeaeaeaeaeaeae9e9e9"
+            + "e8e8e8e7e7e7e7e7e7e6e6e6e5e5e5e5e5e5e4e4e4e3e3e3e2e2e2e2e2e2e1e1e1e0e0e0e0e0e0dfdfdf"
+            + "dedededddddddddddddcdcdcdbdbdbdadadadadadad9d9d9d8d8d8d7d7d7d7d7d7d6d6d6d5d5d5d4d4d4"
+            + "d3d3d3d2d2d2d1d1d1d0d0d0cfcfcfcfcfcfcecececdcdcdcccccccbcbcbcacacac9c9c9c8c8c8c8c8c8"
+            + "c7c7c7c6c6c6c5c5c5c4c4c4c3c3c3c2c2c2c1c1c1c1c1c1c0c0c0bfbfbfbebebebdbdbdbcbcbcbbbbbb"
+            + "bababab8b8b8b7b7b7b6b6b6b5b5b5b3b3b3b2b2b2b1b1b1b0b0b0afafafadadadacacacabababaaaaaa"
+            + "a8a8a8a7a7a7a6a6a6a5a5a5a4a4a4a2a2a2a1a1a1a0a0a09f9f9f9d9d9d9c9c9c9b9b9b9a9a9a999999"
+            + "9797979696969595959494949393939292929191918f8f8f8e8e8e8d8d8d8c8c8c8b8b8b8a8a8a898989"
+            + "8888888787878686868484848383838282828181818080807f7f7f7e7e7e7d7d7d7c7c7c7b7b7b7a7a7a"
+            + "7878787777777676767575757474747373737272727171717070706f6f6f6e6e6e6d6d6d6c6c6c6b6b6b"
+            + "6a6a6a6969696868686666666565656464646363636262626161616060605f5f5f5e5e5e5d5d5d5c5c5c"
+            + "5b5b5b5a5a5a5959595858585757575656565555555454545353535252525050504f4f4f4e4e4e4c4c4c"
+            + "4b4b4b4949494848484747474545454444444242424141414040403e3e3e3d3d3d3b3b3b3a3a3a383838"
+            + "3737373636363434343333333131313030302f2f2f2d2d2d2c2c2c2a2a2a292929282828262626252525"
+            + "2323232222222121212020201f1f1f1e1e1e1d1d1d1b1b1b1a1a1a191919181818171717161616141414"
+            + "1313131212121111111010100f0f0f0d0d0d0c0c0c0b0b0b0a0a0a090909080808060606050505040404"
+            + "030303020202010101000000"
+        )
+    if name == "coolwarm":
+        return (
+            "3a4cc03b4dc13c4fc33e51c43f53c64054c74156c94258ca435acc455bcd465dcf475fd04860d14962d3"
+            + "4b64d44c66d64d67d74e69d8506bda516cdb526edc5370dd5571de5673e05775e15876e25a78e35b79e4"
+            + "5c7be55d7de65f7ee76080e86182ea6383ea6485eb6586ec6788ed6889ee698bef6b8df06c8ef16d90f1"
+            + "6f91f27093f37194f47395f47497f57598f6779af6789bf77a9df87b9ef87ca0f97ea1f97fa2fa80a4fa"
+            + "82a5fb83a6fb85a8fb86a9fc87aafc89acfc8aadfd8baefd8daffd8eb1fd90b2fe91b3fe92b4fe94b5fe"
+            + "95b7fe97b8fe98b9fe99bafe9bbbfe9cbcfe9dbdfe9fbefea0bffea2c0fea3c1fea4c2fea6c3fda7c4fd"
+            + "a8c5fdaac6fdabc7fcacc8fcaec9fcafcafbb0cbfbb2cbfbb3ccfab4cdfab6cef9b7cff9b8cff8b9d0f8"
+            + "bbd1f7bcd1f6bdd2f6bed3f5c0d3f5c1d4f4c2d4f3c3d5f2c5d5f2c6d6f1c7d6f0c8d7efc9d7eecad8ee"
+            + "ccd8edcdd9ecced9ebcfd9ead0dae9d1dae8d2dae7d3dbe6d5dbe5d6dbe4d7dbe2d8dbe1d9dce0dadcdf"
+            + "dbdcdedcdcdddddcdbdedbdadfdbd9e0dad7e1dad6e2d9d4e3d9d3e4d8d1e5d8d0e6d7cfe7d6cde7d6cc"
+            + "e8d5cae9d4c9ead3c7ebd3c6ecd2c4ecd1c3edd0c1edcfc0eecfbeefcebcefcdbbf0ccb9f1cbb8f1cab6"
+            + "f2c9b5f2c8b3f2c7b2f3c6b0f3c5aff4c4adf4c3abf4c2aaf5c1a8f5c0a7f5bfa5f6bda4f6bca2f6bba0"
+            + "f6ba9ff6b99df6b79cf6b69af7b598f7b397f7b295f7b194f7b092f7ae91f7ad8ff6ab8df6aa8cf6a98a"
+            + "f6a789f6a687f6a486f6a384f5a182f5a081f59e7ff49d7ef49b7cf49a7bf39879f39678f39576f29375"
+            + "f29173f19072f18e70f08d6ff08b6def896cee876aee8669ed8467ec8266ec8064eb7f63ea7d61ea7b60"
+            + "e9795ee8775de7755ce6745ae67259e57057e46e56e36c54e26a53e16852e06650df644fde624edd604c"
+            + "dc5e4bdb5c4ada5a48d95847d85646d75444d65243d44f42d34d40d24b3fd1493ecf463dce443ccd423a"
+            + "cc3f39ca3d38c93b37c83835c63534c53233c43032c22d31c12a30bf282ebe232dbc1f2cbb1a2bb9162a"
+            + "b81129b60d28b50827b30326"
+        )
+    if name == "RdBu":
+        return (
+            "67001f69001f6c011f6f02207203207504217805217b06227e0722810823840923870a248a0b248d0c25"
+            + "900d25930e26960f269910279b10279e1127a11228a41328a71429aa1529ad162ab0172ab2192bb41c2d"
+            + "b51f2eb6212fb82431b92732bb2a33bc2d34be3036bf3237c03538c2383ac33b3bc53e3cc6403ec7433f"
+            + "c94641ca4942cc4c43cd4f44ce5146d05447d15749d35a4ad45d4bd6604dd7624fd86551d96853da6a55"
+            + "db6d57dd7059de725bdf755de0785fe17b61e27d63e48065e58368e6856ae7886ce88b6eea8d70eb9072"
+            + "ec9374ed9676ee9878ef9b7af19e7cf2a07ef3a380f4a683f4a886f4aa88f5ac8bf5ae8ef5b090f6b293"
+            + "f6b496f7b698f7b99bf7bb9ef8bda1f8bfa3f8c1a6f9c3a9f9c5abf9c7aefacab1faccb4faceb6fbd0b9"
+            + "fbd2bcfbd4befcd6c1fcd8c4fddbc7fcdcc8fcddcafcdeccfcdfcefbe0d0fbe1d2fbe2d4fbe3d6fae4d7"
+            + "fae5d9fae7dbfae8ddf9e9dff9eae1f9ebe3f9ece5f9ede7f8eee8f8efeaf8f0ecf8f2eef7f3f0f7f4f2"
+            + "f7f5f4f7f6f6f6f6f6f4f5f6f3f5f6f1f4f6f0f3f5eef3f5edf2f5ebf1f4eaf1f4e8f0f4e7eff4e5eef3"
+            + "e4eef3e2edf3e1ecf3dfecf2deebf2dceaf2dbe9f1d9e9f1d8e8f1d6e7f1d5e7f0d3e6f0d2e5f0d1e5f0"
+            + "cee3efcce2eec9e1edc7dfedc4deecc2ddebbfdcebbddaeabad9e9b8d8e8b5d7e8b3d5e7b0d4e6aed3e6"
+            + "abd2e5a9d0e4a7cfe4a4cee3a2cde29fcbe19dcae19ac9e098c8df95c6df93c5de90c4dd8dc2dc8ac0db"
+            + "87beda84bcd980bad87db8d77ab6d677b4d574b2d371b0d26eaed16bacd068aacf65a8ce61a6cd5ea4cc"
+            + "5ba2cb58a0ca559ec9529cc84f9ac74c98c64996c54694c44393c34191c2408fc13f8dc03d8bbf3c8abe"
+            + "3b88bd3986bc3884bb3783ba3581b9347fb9337db8317cb7307ab62f78b52d76b42c75b32b73b22971b1"
+            + "286fb0276db0256caf246aae2368ad2166ac2064aa1f62a71e60a41d5ea11c5c9e1a5a9b195898185695"
+            + "175493165190154f8d144d8a134b871249841147810f457e0e437b0d40780c3e750b3c720a3a6f09386c"
+            + "083669073466063263053061"
+        )
+    return ""
