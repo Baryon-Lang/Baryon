@@ -25,7 +25,9 @@
 //!   parameter, which the call calls each time (decision 0027, the `defaults` module).
 //! - **Drops.** Every exit from the function drops each variable and `Owned` parameter that
 //!   owns memory, and each statement drops the owning temporaries it made. In a built body a
-//!   drop of a value that was moved out does nothing; drop elaboration makes that exact.
+//!   drop of a value that was moved out does nothing; drop elaboration makes that exact. A
+//!   borrowed conditional expression lends the branch it takes and gets it back when the
+//!   statement ends, so a variable it names is never dropped by it (the `lending` module).
 //! - **Checks.** Integer `//` and `%` assert a non-zero divisor; each array index asserts it is
 //!   in bounds, except under `a.unchecked` and for a constant index into a `Fixed` array, which
 //!   the checker already proved; `assert` becomes an [`Assert`](mir::TerminatorKind::Assert).
@@ -294,6 +296,7 @@ mod fits;
 mod in_place;
 mod iterators;
 mod lanes;
+mod lending;
 mod lists;
 mod loops;
 mod math;

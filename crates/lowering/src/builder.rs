@@ -1,6 +1,7 @@
 //! The state of lowering one function: the body being built, the block being filled, and what
 //! each name of the function became.
 
+use crate::lending::Temporary;
 use crate::parallel::Passed;
 use database::{Definition, File, Package, Resolution};
 use diagnostics::Diagnostic;
@@ -43,8 +44,9 @@ pub(crate) struct Builder<'db> {
     /// The local of each parameter and variable, by the `Name` node of its first binding.
     variables: BTreeMap<NodeId, Local>,
     /// For each statement being lowered, outermost first, the temporaries it made that own
-    /// memory and were not moved, which it drops when it ends.
-    temporaries: Vec<Vec<Local>>,
+    /// memory and were not moved, which it drops when it ends, and the views it lent (the
+    /// `lending` module).
+    temporaries: Vec<Vec<Temporary>>,
     /// The enclosing loops, innermost last.
     pub(crate) loops: Vec<Loop>,
     /// The `try` statements whose bodies are being lowered, innermost last: where an error
@@ -325,10 +327,15 @@ impl<'db> Builder<'db> {
     /// Marks the temporary `local` to be dropped when the current statement ends, if its type
     /// owns memory.
     pub(crate) fn drop_later(&mut self, local: Local) {
-        if self.needs_drop(self.local_type(local))
-            && let Some(scope) = self.temporaries.last_mut()
-        {
-            scope.push(local);
+        if self.needs_drop(self.local_type(local)) {
+            self.end_with_statement(Temporary::Owned(local));
+        }
+    }
+
+    /// Marks `temporary` to be ended when the current statement ends.
+    pub(crate) fn end_with_statement(&mut self, temporary: Temporary) {
+        if let Some(scope) = self.temporaries.last_mut() {
+            scope.push(temporary);
         }
     }
 
@@ -419,10 +426,10 @@ impl<'db> Builder<'db> {
     /// last made first, unless control cannot get here, when the exit that left already dropped
     /// them.
     pub(crate) fn leave(&mut self, node: NodeId) {
-        let locals = self.temporaries.pop().unwrap_or_default();
+        let temporaries = self.temporaries.pop().unwrap_or_default();
         if !self.dead {
-            for local in locals.into_iter().rev() {
-                self.push(StatementKind::Drop(Place::from(local)), node);
+            for temporary in temporaries.iter().rev() {
+                self.end_temporary(temporary, node);
             }
         }
     }
@@ -433,7 +440,7 @@ impl<'db> Builder<'db> {
         self.temporaries
             .iter()
             .flatten()
-            .any(|&temporary| temporary == local)
+            .any(|temporary| *temporary == Temporary::Owned(local))
             || self.owners().contains(&local)
     }
 
@@ -446,17 +453,17 @@ impl<'db> Builder<'db> {
     /// a jump out of those scopes to `node`'s handler. The scopes stay open: the code after the
     /// jump is unreachable, and each scope still ends where it was entered.
     pub(crate) fn drop_temporaries(&mut self, depth: usize, node: NodeId) {
-        let temporaries: Vec<Local> = self
+        let temporaries: Vec<Temporary> = self
             .temporaries
             .get(depth..)
             .unwrap_or_default()
             .iter()
             .flatten()
             .rev()
-            .copied()
+            .cloned()
             .collect();
-        for local in temporaries {
-            self.push(StatementKind::Drop(Place::from(local)), node);
+        for temporary in &temporaries {
+            self.end_temporary(temporary, node);
         }
     }
 
@@ -464,9 +471,10 @@ impl<'db> Builder<'db> {
     /// being lowered, then every variable and `Owned` parameter that owns memory, the last
     /// declared first. Borrowed parameters belong to the caller.
     pub(crate) fn drop_all(&mut self, node: NodeId) {
-        let temporaries: Vec<Local> = self.temporaries.iter().flatten().rev().copied().collect();
-        for local in temporaries {
-            self.push(StatementKind::Drop(Place::from(local)), node);
+        let temporaries: Vec<Temporary> =
+            self.temporaries.iter().flatten().rev().cloned().collect();
+        for temporary in &temporaries {
+            self.end_temporary(temporary, node);
         }
         for local in self.owners() {
             self.push(StatementKind::Drop(Place::from(local)), node);

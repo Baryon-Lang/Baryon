@@ -242,8 +242,13 @@ impl<'db> Builder<'db> {
     /// A place holding the value of `node`, for a borrow: the place it names, or a temporary
     /// it is computed into, dropped when the statement ends. `a.shape` and `a.size` name no place,
     /// so they are computed too. When `node` names a place this
-    /// slice cannot lower, the error is reported once, and the value is not computed again.
+    /// slice cannot lower, the error is reported once, and the value is not computed again. A
+    /// conditional expression whose value owns memory lends the branch taken through one view
+    /// (the `lending` module).
     pub(crate) fn borrow(&mut self, node: NodeId) -> Place {
+        if self.lends(node) {
+            return self.lend(node);
+        }
         let reported = self.reported();
         if !self.is_literal(node)
             && self.named_constant(node).is_none()

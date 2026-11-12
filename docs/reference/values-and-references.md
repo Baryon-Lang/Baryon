@@ -136,6 +136,10 @@ A function says, for each parameter, how it receives its argument
 
 Call sites look the same in every mode: `saxpy(2.0, x, y)`.
 
+A conditional expression passed to a read-only parameter borrows whichever branch is taken and
+copies nothing: `size(name[0:1] if len(name) > 9 else name)` borrows `name` itself on the second
+branch, and `name` keeps its value after the call.
+
 A borrow lasts exactly as long as the call. A function cannot store a borrowed parameter in a
 struct, return it, or put it in a list; it can copy it, or pass it on to another call. This is what
 lets the language skip Rust's lifetime annotations: every borrow ends where the call ends, so the
