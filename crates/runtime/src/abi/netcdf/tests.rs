@@ -154,3 +154,51 @@ fn a_missing_file_raises_not_found() {
     let error = unsafe { error.assume_init() };
     assert_eq!(raised(&error).0, ErrorKind::FileNotFound as u8);
 }
+
+#[test]
+fn writing_a_variable_the_file_does_not_have_raises_invalid_data() {
+    let path =
+        std::env::temp_dir().join(format!("baryon-netcdf-abi-write-{}.nc", std::process::id()));
+    let path = path.to_str().unwrap();
+    let mut error = MaybeUninit::<RaisedError>::uninit();
+    let line = "C\t1";
+    let mut lines = MaybeUninit::<OwnedList>::uninit();
+    // SAFETY: the path and the line are the strings' bytes; `lines` and `error` are locals.
+    let failed = unsafe {
+        baryon_rt_netcdf_define(
+            path.as_ptr(),
+            path.len(),
+            line.as_ptr(),
+            line.len(),
+            lines.as_mut_ptr(),
+            error.as_mut_ptr(),
+        )
+    };
+    assert!(!failed);
+    let mut values = [1_i32, 2];
+    let array = [values.as_mut_ptr() as i64, 2, 1];
+    // SAFETY: as above, and `array` describes `values`.
+    let failed = unsafe {
+        baryon_rt_netcdf_write(
+            path.as_ptr(),
+            path.len(),
+            "v".as_ptr(),
+            1,
+            array.as_ptr(),
+            1,
+            ELEMENT_I32,
+            error.as_mut_ptr(),
+        )
+    };
+    assert!(failed);
+    // SAFETY: a failed call wrote the error.
+    let error = unsafe { error.assume_init() };
+    assert_eq!(
+        raised(&error),
+        (
+            ErrorKind::InvalidData as u8,
+            "the NetCDF file has no variable v".to_owned()
+        )
+    );
+    std::fs::remove_file(path).unwrap();
+}

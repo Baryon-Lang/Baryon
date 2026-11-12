@@ -9,13 +9,13 @@ use std::fs;
 use std::io::{self, Read};
 
 /// The tag before a list of dimensions.
-const DIMENSIONS: u32 = 0x0A;
+pub(super) const DIMENSIONS: u32 = 0x0A;
 
 /// The tag before a list of variables.
-const VARIABLES: u32 = 0x0B;
+pub(super) const VARIABLES: u32 = 0x0B;
 
 /// The tag before a list of attributes.
-const ATTRIBUTES: u32 = 0x0C;
+pub(super) const ATTRIBUTES: u32 = 0x0C;
 
 /// The largest header this reader follows, in bytes: a guard against a corrupt count that
 /// would otherwise ask for more memory than a file can describe.
@@ -233,6 +233,7 @@ fn parse(reader: &mut Reader<impl Read>) -> Result<Header, Failure> {
         });
     }
     Ok(Header {
+        wide,
         records,
         dimensions,
         attributes,
