@@ -10,8 +10,8 @@
 //!
 //! The constants `pi`, `e`, `tau`, `inf` and `nan` are `f64`s with Python's values.
 //!
-//! The functions of integers alone, such as `gcd`, and those of sequences, such as `fsum`, are
-//! not checked yet; a call of one stays unchecked.
+//! `fsum`, the exactly rounded sum of a sequence, is the `exact_sums` module's. The functions of
+//! integers alone, such as `gcd`, and `prod` are not checked yet; a call of one stays unchecked.
 
 use super::Body;
 use super::calls::Arguments;

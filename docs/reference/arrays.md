@@ -610,8 +610,8 @@ real numbers, with Python's names:
 sign of `x`, as C's does, where `x % y` takes the sign of `y`, as Python's does: `fmod(-7.5, 2.0)`
 is `-1.5` and `-7.5 % 2.0` is `0.5`. `lgamma` is safe to call from a `prange` loop.
 
-The functions of integers alone, such as `gcd`, `factorial` and `isqrt`, and those of
-sequences, such as `fsum` and `prod`, come later in the standard library (roadmap 1.13).
+The functions of integers alone, such as `gcd`, `factorial` and `isqrt`, and `prod` come later
+in the standard library (roadmap 1.13).
 
 The constants `pi`, `e`, `tau`, `inf` and `nan` are each an `f64` with Python's value.
 
@@ -657,6 +657,48 @@ follows:
 
 A negative base with a whole-number exponent gives a real result, as in Python. `x ** y` on
 floats is C's `pow(x, y)`. `**` on integers needs a non-negative exponent; a negative one panics.
+
+### Exact sums
+
+`fsum(values)` adds a `list[f64]` or an `Array[f64, 1]` as if with infinite precision and rounds
+the result once, to the nearest `f64`, as Python's `math.fsum` does (Shewchuk's algorithm). No
+digit is lost to cancellation, however large the terms and in whatever order they come:
+
+```python
+from math import fsum
+
+
+def total_energy(kinetic: list[f64], potential: list[f64]) -> f64:
+    return fsum(kinetic) + fsum(potential)
+```
+
+| Expression | `sum` | `fsum` |
+| --- | --- | --- |
+| `[1e100, 1.0, -1e100]` | `0.0` | `1.0` |
+| `Array([1.0, 1e-16, 1e-16, 1e-16])` | `1.0` | `1.0000000000000002` |
+
+Use it where terms cancel: an energy summed over a long orbital integration, a residual, the
+check of a result computed another way. `sum` is the fast default: it compensates a list's sum
+and adds an array's [pairwise](#the-order-sum-adds-in),
+which is accurate enough for most data but can still lose digits when large terms cancel.
+`fsum` is several times slower than `sum`, about six float operations per element for each
+partial sum it keeps, and it keeps only a few for typical data. It allocates one small list.
+
+A list display such as `fsum([1, 2.5])` reads its numbers as `f64`s, as Python converts them.
+Other element types are an error that asks for a conversion: `f64(n)` of each `int`. A table,
+`Array[f64, 2]`, is summed one row at a time.
+
+Infinities and NaN give their IEEE 754 sum, as the [other `math` functions](#math-functions) do,
+where Python raises:
+
+| Expression | Python | Here |
+| --- | --- | --- |
+| `fsum([inf, 1.0])` | `inf` | `inf` |
+| `fsum([inf, -inf])` | `ValueError` | `nan` |
+| `fsum([1e308, 1e308, -1e308])` | `OverflowError` | `inf` |
+
+The last row is a sum whose running total overflows although the exact sum, `1e308`, is an
+`f64`; both languages give up on it.
 
 ## Random numbers
 

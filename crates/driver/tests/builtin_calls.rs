@@ -323,6 +323,64 @@ error: `sum` adds a list or an array of numbers, found `i64`
     );
 }
 
+/// `math.fsum` takes one list or rank-1 array of `f64`s by position (roadmap 1.13.16): integer
+/// elements, a table, a value that is not a sequence, a second argument and a keyword are each
+/// an error that says what to pass instead.
+#[test]
+fn fsum_checks_its_values() {
+    let program = "
+import math
+from math import fsum
+
+
+def f(counts: list[int], grid: Array[f64, 2], text: str, xs: list[f64]) -> f64:
+    a = fsum(counts)
+    b = math.fsum(grid)
+    c = fsum(text)
+    d = fsum(xs, 0.0)
+    e = fsum(values=xs)
+    return fsum(xs) + fsum(Array([1.0, 2.0]))
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `fsum` adds a list or rank-1 array of `f64`s, found `list[i64]`
+ --> main.byn:6:14
+  |
+6 |     a = fsum(counts)
+  |              ^^^^^^ cannot be added exactly
+  = note: convert the elements to `f64` first, such as `[f64(n) for n in counts]`
+
+error: `fsum` adds a list or rank-1 array of `f64`s, found `Array[f64, 2]`
+ --> main.byn:7:19
+  |
+7 |     b = math.fsum(grid)
+  |                   ^^^^ cannot be added exactly
+  = note: add one row at a time, such as `fsum(grid[i, :])`
+
+error: `fsum` adds a list or rank-1 array of `f64`s, found `str`
+ --> main.byn:8:14
+  |
+8 |     c = fsum(text)
+  |              ^^^^ cannot be added exactly
+  = note: pass a `list[f64]` or an `Array[f64, 1]`
+
+error: `fsum` takes one list or array, found 2 arguments
+ --> main.byn:9:9
+  |
+9 |     d = fsum(xs, 0.0)
+  |         ^^^^^^^^^^^^^ wrong number of arguments
+  = note: pass the values to add, such as `fsum(energies)`
+
+error: `fsum` takes its values by position, as Python's does
+  --> main.byn:10:9
+   |
+10 |     e = fsum(values=xs)
+   |         ^^^^^^^^^^^^^^^ a keyword argument
+   = note: pass the values to add by position, such as `fsum(energies)`"
+    );
+}
+
 /// `sorted` takes one list and a `bool` `reverse=` by keyword, as Python does, and complex
 /// numbers have no order; `round` takes a whole number of digits (roadmap 1.13.13).
 #[test]

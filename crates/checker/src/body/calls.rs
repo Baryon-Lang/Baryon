@@ -54,6 +54,10 @@ impl<'db> Body<'db> {
             Some(Definition::Standard {
                 module: "math",
                 member: Some(member),
+            }) if member == "fsum" => self.fsum(node, &arguments),
+            Some(Definition::Standard {
+                module: "math",
+                member: Some(member),
             }) => {
                 let member = member.clone();
                 match self.math(node, &member, &arguments) {
