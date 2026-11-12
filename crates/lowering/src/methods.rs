@@ -421,7 +421,7 @@ impl<'db> Builder<'db> {
         let ty = self.ty(array);
         let element = self.element(ty);
         let value = self.operand_as(value, element);
-        let Some(target) = self.place(array) else {
+        let Some(target) = self.changed_place(array) else {
             return;
         };
         let lengths: Vec<Operand<'db>> = (0..self.rank(ty))

@@ -58,6 +58,7 @@ mod stats;
 mod streams;
 mod structs;
 mod subprocess;
+mod temporaries;
 mod testing;
 mod text;
 mod text_methods;

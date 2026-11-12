@@ -29,7 +29,7 @@ impl<'db> Builder<'db> {
     /// `generator.uniform()` into `place`: a call of [`Builtin::Uniform`] with the generator
     /// passed `InOut`, since drawing changes it.
     pub(crate) fn uniform(&mut self, place: Place, generator: NodeId, node: NodeId) {
-        let Some(generator) = self.place(generator) else {
+        let Some(generator) = self.changed_place(generator) else {
             return;
         };
         self.builtin_call(
