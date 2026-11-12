@@ -136,7 +136,7 @@ def main() -> Raises[None, OSError]:
 }
 
 /// The `index`th Python example of the reference's Compression chapter, counting from 0.
-fn chapter_example(index: usize) -> &'static str {
+pub(super) fn chapter_example(index: usize) -> &'static str {
     let chapter = include_str!("../../../../docs/reference/compression.md");
     let block = chapter
         .split("```python\n")

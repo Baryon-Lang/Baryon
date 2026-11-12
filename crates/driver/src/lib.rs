@@ -47,7 +47,7 @@ use types::{Checked, Item, TypeDb, TypedBody};
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-const LIBRARY: [(&str, &str); 19] = [
+const LIBRARY: [(&str, &str); 20] = [
     ("<std>/arrays.byn", include_str!("../library/arrays.byn")),
     ("<std>/artist.byn", include_str!("../library/artist.byn")),
     ("<std>/axis.byn", include_str!("../library/axis.byn")),
@@ -76,6 +76,10 @@ const LIBRARY: [(&str, &str); 19] = [
     ("<std>/ticker.byn", include_str!("../library/ticker.byn")),
     ("<std>/zlib.byn", include_str!("../library/zlib.byn")),
     ("<std>/gzip.byn", include_str!("../library/gzip.byn")),
+    (
+        "<std>/compression.zstd.byn",
+        include_str!("../library/compression.zstd.byn"),
+    ),
 ];
 
 /// The compiler's incremental database: every input and every cached query result.

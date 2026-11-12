@@ -68,6 +68,7 @@ mod traits;
 mod unions;
 mod vector;
 mod zlib;
+mod zstd;
 
 /// The `baryon` executable cargo built for these tests.
 const BARYON: &str = env!("CARGO_BIN_EXE_baryon");
