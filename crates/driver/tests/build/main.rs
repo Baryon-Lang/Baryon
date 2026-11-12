@@ -30,6 +30,7 @@ mod fits;
 mod float_generics;
 mod frame_columns;
 mod frame_rows;
+mod frame_sort;
 mod frames;
 mod fusion;
 mod generic_methods;

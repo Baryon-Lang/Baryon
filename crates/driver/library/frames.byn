@@ -1,5 +1,5 @@
-"""The parts of a `DataFrame` written in Baryon (decision 0045): choosing rows, and the
-text a frame prints as.
+"""The parts of a `DataFrame` written in Baryon (decision 0045): choosing rows, sorting
+them, and the text a frame prints as.
 
 The compiler calls these functions; a program cannot import this file. A frame's columns
 are known when compiling, so the compiler calls a function once for each column, with the
@@ -9,6 +9,10 @@ Choosing rows, for `df[mask]`, `df[i:j]`, `df.head(n)` and `df.tail(n)`: `masked
 elements of one column where a mask is true. For the others the positions of the rows are
 worked out once, by `slice_positions`, `head_positions` or `tail_positions`, and `taken`
 copies those elements of each column.
+
+Sorting, for `df.sort_values(...)`: `row_positions` gives the rows in their order, `ordered`
+(`ordered_flags` for a column of `bool`) puts them in the order of one column, once for each
+column sorted by, the last one first, and `taken` copies each column in that order.
 
 Printing, for `print(df)` and a frame in an f-string: each column is formatted with
 `float_cells`, `single_cells` or `cells`, by the type of its elements, and `frame_text` lays
@@ -76,6 +80,75 @@ def tail_positions(count: int, rows: int) -> Array[i64, 1]:
     if rows >= 0:
         return slice_positions(count, max(count - rows, 0), 0, 1, True, False)
     return slice_positions(count, min(-rows, count), 0, 1, True, False)
+
+
+def row_positions(count: int) -> Array[i64, 1]:
+    """The positions of all `count` rows of a frame, in order: where a sort starts."""
+    return Array([at for at in range(count)])
+
+
+def ordered[T: Number](
+    column: Array[T, 1], start: Array[i64, 1], ascending: bool
+) -> Array[i64, 1]:
+    """The positions `start` put in the order of the values of `column` they name: rising when
+    `ascending`, falling when not. The sort is stable, so rows with equal values keep the order
+    they have in `start`; sorting by the last key first and the first key last therefore
+    sorts by several keys. NaN goes last in both directions, as in pandas.
+
+    A merge sort from the bottom up: `n log n` comparisons and two arrays of `n` positions,
+    whatever the values are."""
+    count = len(start)
+    order = start.copy()
+    spare = start.copy()
+    valid = 0
+    for at in range(count):
+        value = column[start[at]]
+        if value == value:
+            order[valid] = start[at]
+            valid += 1
+    missing = valid
+    for at in range(count):
+        value = column[start[at]]
+        if value != value:
+            order[missing] = start[at]
+            missing += 1
+    width = 1
+    while width < valid:
+        low = 0
+        while low < valid:
+            middle = min(low + width, valid)
+            high = min(low + 2 * width, valid)
+            left = low
+            right = middle
+            for at in range(low, high):
+                from_left = right >= high
+                if left < middle and right < high:
+                    first = column[order[left]]
+                    second = column[order[right]]
+                    if ascending:
+                        from_left = not (second < first)
+                    else:
+                        from_left = not (second > first)
+                if from_left:
+                    spare[at] = order[left]
+                    left += 1
+                else:
+                    spare[at] = order[right]
+                    right += 1
+            low = high
+        for at in range(valid):
+            order[at] = spare[at]
+        width *= 2
+    return order
+
+
+def ordered_flags(
+    column: Array[bool, 1], start: Array[i64, 1], ascending: bool
+) -> Array[i64, 1]:
+    """`ordered` for a column of `bool`, where `False` comes before `True`. Cost: one more
+    array of `n` integers."""
+    numbers = Array([1 if flag else 0 for flag in column])
+    return ordered(numbers, start, ascending)
 
 
 def _shown(count: int) -> list[int]:

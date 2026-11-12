@@ -401,6 +401,9 @@ impl<'db> Body<'db> {
         if let Some(frame) = self.schema_method(function, base, callee, arguments) {
             return frame;
         }
+        if let Some(frame) = self.sort_method(function, base, callee, arguments) {
+            return frame;
+        }
         let given = arguments.positional.len() + arguments.keywords.len();
         self.untyped(arguments);
         match (callee, given) {
@@ -418,9 +421,9 @@ impl<'db> Body<'db> {
                     &message,
                     "not defined yet",
                     Some(
-                        "a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop` \
-                         and `rename` today; the rest of decision 0045's methods come with \
-                         roadmap items 3.13.5 to 3.13.9",
+                        "a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop`, \
+                         `rename` and `sort_values` today; the rest of decision 0045's methods \
+                         come with roadmap items 3.13.6 to 3.13.9",
                     ),
                 )
             }

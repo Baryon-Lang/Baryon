@@ -295,6 +295,7 @@ mod files;
 mod fits;
 mod frame_rows;
 mod frame_schema;
+mod frame_sort;
 mod frame_text;
 mod frames;
 mod generics;

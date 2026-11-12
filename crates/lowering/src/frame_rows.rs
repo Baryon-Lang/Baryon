@@ -28,8 +28,8 @@ pub(crate) struct Rows<'db> {
 
 impl<'db> Builder<'db> {
     /// The call `node` of the method `method` of the frame `frame`, with the arguments
-    /// `rest`, into `place`: `copy()`, `head(n)` or `tail(n)`, or a method that changes the
-    /// columns (the `frame_schema` module).
+    /// `rest`, into `place`: `copy()`, `head(n)` or `tail(n)`, a method that changes the
+    /// columns (the `frame_schema` module) or `sort_values` (the `frame_sort` module).
     pub(crate) fn frame_method(
         &mut self,
         place: Place,
@@ -39,6 +39,9 @@ impl<'db> Builder<'db> {
     ) {
         if self.schema_method(&place, method, frame, node) {
             return;
+        }
+        if method == "sort_values" {
+            return self.frame_sort(place, frame, node);
         }
         let function = match (method, rest.len()) {
             ("copy", 0) => return self.frame_copy(place, frame, node),
@@ -143,7 +146,7 @@ impl<'db> Builder<'db> {
     /// A new frame into `place` whose columns are the library function `kernel.0` of each
     /// column of the frame `value`, borrowed at `source`, and of `kernel.1`: `masked` with a
     /// mask, or `taken` with positions.
-    fn each_column(
+    pub(crate) fn each_column(
         &mut self,
         place: Place,
         value: NodeId,
@@ -171,7 +174,7 @@ impl<'db> Builder<'db> {
 
     /// A temporary of type `ty` holding `operand`, for an argument a library function
     /// borrows.
-    fn held(&mut self, ty: Type<'db>, operand: Operand<'db>, node: NodeId) -> Local {
+    pub(crate) fn held(&mut self, ty: Type<'db>, operand: Operand<'db>, node: NodeId) -> Local {
         let local = self.temporary(ty, node);
         self.assign(Place::from(local), Rvalue::Use(operand), node);
         local
@@ -232,7 +235,7 @@ impl<'db> Builder<'db> {
 
     /// A temporary holding the number of rows of the frame at `source`: the length of its
     /// first column.
-    fn row_count(&mut self, source: &Place, node: NodeId) -> Local {
+    pub(crate) fn row_count(&mut self, source: &Place, node: NodeId) -> Local {
         let count = self.temporary(self.int_type(), node);
         let first = source.clone().project(Projection::Field(0));
         self.assign(Place::from(count), Rvalue::Length(first, 0), node);

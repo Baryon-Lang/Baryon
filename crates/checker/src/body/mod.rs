@@ -51,6 +51,7 @@ mod flow;
 mod formatted;
 mod frame_rows;
 mod frame_schema;
+mod frame_sort;
 mod frames;
 mod generics;
 mod library;

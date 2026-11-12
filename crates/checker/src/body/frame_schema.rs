@@ -271,7 +271,7 @@ impl<'db> Body<'db> {
 
     /// The column names the list `list` writes, each a string literal that names a column of
     /// the frame of type `base`, none of them twice. `None` after an error.
-    fn column_names(&mut self, list: NodeId, base: Type<'db>) -> Option<Vec<String>> {
+    pub(super) fn column_names(&mut self, list: NodeId, base: Type<'db>) -> Option<Vec<String>> {
         let items: Vec<NodeId> = self.tree.children_with(list, Role::Item).collect();
         let mut names: Vec<String> = Vec::with_capacity(items.len());
         let mut complete = true;
@@ -291,7 +291,7 @@ impl<'db> Body<'db> {
 
     /// The name the string literal `node` writes, which must be a column of the frame of
     /// type `base`. `None` after an error.
-    fn column_name(&mut self, node: NodeId, base: Type<'db>) -> Option<String> {
+    pub(super) fn column_name(&mut self, node: NodeId, base: Type<'db>) -> Option<String> {
         let name = self.written_name(node)?;
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return None;
