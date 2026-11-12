@@ -32,7 +32,8 @@
 //! type as the runtime's `ELEMENT_*` number, and a write passes the program's header cards, the
 //! data and length of a `list[str]`, with a flag that says whether there was a header. A
 //! `NetCDF` read or write passes the element type as a FITS call does, with the variable's
-//! name, and a `NetCDF` change passes its line of text.
+//! name and the items of its subscript, four `i64`s each in a stack slot, and a `NetCDF`
+//! change passes its line of text.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -305,20 +306,20 @@ impl<'db> Function<'_, '_, 'db> {
                 ];
                 ("baryon_rt_netcdf_open", parameters)
             }
-            (ArrayFile::NetcdfRead, [path, variable]) => {
+            (ArrayFile::NetcdfRead, [path, variable, items @ ..]) => {
                 let (bytes, length) = self.text_argument(path)?;
                 let (variable, variable_length) = self.text_argument(variable)?;
                 let (out, ty) = self.place(destination)?;
                 let (element, rank) = self.array(ty)?;
                 let code = self.fits_code(element, name)?;
-                // No subscript items: the whole variable.
+                let (items, item_count) = self.subscript_items(items, name)?;
                 let parameters = vec![
                     format!("ptr {bytes}"),
                     format!("i64 {length}"),
                     format!("ptr {variable}"),
                     format!("i64 {variable_length}"),
-                    "ptr null".to_owned(),
-                    "i64 0".to_owned(),
+                    format!("ptr {items}"),
+                    format!("i64 {item_count}"),
                     format!("i32 {code}"),
                     format!("i64 {rank}"),
                     format!("ptr {out}"),
@@ -338,20 +339,20 @@ impl<'db> Function<'_, '_, 'db> {
                 ];
                 ("baryon_rt_netcdf_define", parameters)
             }
-            (ArrayFile::NetcdfWrite, [path, variable, Argument::Borrow(array)]) => {
+            (ArrayFile::NetcdfWrite, [path, variable, Argument::Borrow(array), items @ ..]) => {
                 let (bytes, length) = self.text_argument(path)?;
                 let (variable, variable_length) = self.text_argument(variable)?;
                 let (address, ty) = self.place(array)?;
                 let (element, rank) = self.array(ty)?;
                 let code = self.fits_code(element, name)?;
-                // No subscript items: the whole variable.
+                let (items, item_count) = self.subscript_items(items, name)?;
                 let parameters = vec![
                     format!("ptr {bytes}"),
                     format!("i64 {length}"),
                     format!("ptr {variable}"),
                     format!("i64 {variable_length}"),
-                    "ptr null".to_owned(),
-                    "i64 0".to_owned(),
+                    format!("ptr {items}"),
+                    format!("i64 {item_count}"),
                     format!("ptr {address}"),
                     format!("i64 {rank}"),
                     format!("i32 {code}"),
@@ -361,6 +362,38 @@ impl<'db> Function<'_, '_, 'db> {
             _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
         };
         Ok(call)
+    }
+
+    /// The items of a `NetCDF` subscript, `words` four `int`s each, stored in a stack slot of
+    /// `i64`s: its address and the number of items, or `null` and 0 for none, as `var[:]` has.
+    /// `name` is the call's, for the error when the words are not whole items.
+    fn subscript_items(
+        &mut self,
+        words: &[Argument<'db>],
+        name: &str,
+    ) -> Result<(String, usize), Unsupported> {
+        if words.is_empty() {
+            return Ok(("null".to_owned(), 0));
+        }
+        if !words.len().is_multiple_of(4) {
+            return Err(Unsupported::new(format!(
+                "`{name}` with {} subscript words",
+                words.len()
+            )));
+        }
+        let llvm = format!("[{} x i64]", words.len());
+        let slot = self.slot(&llvm);
+        for (at, word) in words.iter().enumerate() {
+            let Argument::Owned(word) = word else {
+                return Err(Unsupported::new(format!("`{name}` with a borrowed index")));
+            };
+            let (value, _) = self.value(word)?;
+            let address = self.emit(&format!(
+                "getelementptr inbounds {llvm}, ptr {slot}, i64 0, i64 {at}"
+            ));
+            self.line(&format!("store i64 {value}, ptr {address}"));
+        }
+        Ok((slot, words.len() / 4))
     }
 
     /// The runtime function a FITS call of `method` calls, and its parameters before the
