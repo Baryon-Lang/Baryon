@@ -232,3 +232,32 @@ def main():
         "panic: index 2 is out of range for dimension 0 of length 2\n  --> main.byn:10:18\n"
     );
 }
+
+/// A field read straight off a row, `df[0].price`, reads the row's new struct: in a call's
+/// arguments, in arithmetic, in a condition, and from a frame held in a list.
+#[test]
+fn fields_are_read_straight_off_a_row() {
+    let program = r#"
+class Trade(Struct):
+    price: f64
+    volume: i64
+    ok: bool
+
+def main():
+    trades: DataFrame[Trade] = DataFrame({
+        "price": Array([1.5, 2.25, -3.0]),
+        "volume": Array([10, 200, 3]),
+        "ok": Array([True, False, True]),
+    })
+    print(trades[0].price, trades[-1].volume, trades[1].ok)
+    total = trades[0].price + trades[1].price
+    print(total)
+    several = [trades.copy(), trades.copy()]
+    print(several[1][2].price)
+    if trades[2].ok:
+        print(len(trades))
+"#;
+    let (code, stdout, report) = run("frames-row-fields", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, "1.5 3 False\n3.75\n-3.0\n3\n");
+}
