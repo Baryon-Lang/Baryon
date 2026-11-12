@@ -50,8 +50,8 @@ impl<'db> Builder<'db> {
                     };
                     // A `Path` is formatted as its text, as Python's `str(path)`.
                     let ty = self.ty(value);
-                    let value = self.borrow(value);
-                    pieces.push(Piece::Value(self.text_place(value, ty), spec));
+                    let place = self.borrow(value);
+                    pieces.push(Piece::Value(self.shown_place(value, place, ty), spec));
                 }
                 _ => return self.unsupported(item, "this part of an f-string"),
             }
