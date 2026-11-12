@@ -242,6 +242,9 @@ impl<'db> Body<'db> {
         {
             return self.environ_item(node);
         }
+        if let Some(ty) = self.netcdf_item(node, expected) {
+            return ty;
+        }
         let base = self.child_type(node, Role::Value);
         if let Some(value) = self.tree.child(node, Role::Value)
             && self.maybe_none(value, base)

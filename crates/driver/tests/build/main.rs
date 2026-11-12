@@ -35,6 +35,7 @@ mod linalg;
 mod list_slices;
 mod math;
 mod modules;
+mod netcdf;
 mod npy;
 mod one_pass;
 mod overflow;

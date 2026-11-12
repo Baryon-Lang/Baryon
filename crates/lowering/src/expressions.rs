@@ -215,8 +215,9 @@ impl<'db> Builder<'db> {
                 let value = self.tree.child(node, Role::Value)?;
                 let fields = self.field(value, node)?;
                 // A part of any complex value, such as `(z * w).real`, reads the value's
-                // temporary.
-                let base = if self.is_complex(self.ty(value)) {
+                // temporary, as does a field of a library call's result, such as
+                // `ds.dimensions["time"].size`.
+                let base = if self.is_complex(self.ty(value)) || self.is_library_access(value) {
                     self.borrow(value)
                 } else if matches!(
                     self.tree.kind(value),

@@ -57,6 +57,9 @@ impl<'db> Body<'db> {
         if self.is_path(base) {
             return self.path_attribute(node, name);
         }
+        if let Some(ty) = self.netcdf_attribute(node, base, name) {
+            return ty;
+        }
         let TypeKind::Struct(nominal) = base.kind(self.db) else {
             if self.has_no_members(base) {
                 return self.no_member(node, base, name, false);

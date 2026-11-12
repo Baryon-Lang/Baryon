@@ -299,6 +299,7 @@ mod loops;
 mod math;
 mod matrix;
 mod methods;
+mod netcdf;
 mod operators;
 mod parallel;
 mod paths;

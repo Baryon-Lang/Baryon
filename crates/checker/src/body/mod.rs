@@ -55,6 +55,7 @@ mod math;
 mod members;
 mod methods;
 mod moves;
+mod netcdf;
 mod npy;
 mod numbers;
 mod operators;
