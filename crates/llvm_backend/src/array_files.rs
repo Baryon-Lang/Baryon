@@ -1,7 +1,8 @@
 //! Array files: `Array.fromfile` and `a.tofile` (decision 0036, part 4), `Array.load` and
 //! `Array.save` of `NumPy`'s `.npy` files (decision 0043), and `fits.getheader`,
-//! `fits.getdata` and `fits.writeto` of FITS files (decision 0044), each a call of the runtime
-//! that can fail with `OSError`.
+//! `fits.getdata` and `fits.writeto` of FITS files (decision 0044), and the `netCDF4`
+//! module's reads of `NetCDF` classic files (decision 0047), each a call of the runtime that can
+//! fail with `OSError`.
 //!
 //! Both raise as a file call does (the `files` module): the last parameter is the address of the
 //! error edge's local, and the `i1` result is true when the call failed.
@@ -15,6 +16,8 @@
 //! | [`FitsHeader`](mir::ArrayFile::FitsHeader) | `baryon_rt_fits_cards(path, length, ext, out, error)` |
 //! | [`FitsData`](mir::ArrayFile::FitsData) | `baryon_rt_fits_read(path, length, ext, element, rank, out, error)` |
 //! | [`FitsWrite`](mir::ArrayFile::FitsWrite) | `baryon_rt_fits_write(path, length, array, rank, element, cards, card_count, header, overwrite, error)` |
+//! | [`NetcdfOpen`](mir::ArrayFile::NetcdfOpen) | `baryon_rt_netcdf_open(path, length, out, error)` |
+//! | [`NetcdfRead`](mir::ArrayFile::NetcdfRead) | `baryon_rt_netcdf_read(path, length, name, name_length, element, rank, out, error)` |
 //!
 //! A read writes the header of the new rank-1 array through `out`, the destination's address.
 //! `element` is the address of a stack slot holding the runtime's `ElementLayout`,
@@ -25,7 +28,8 @@
 //! in `NumPy`'s spelling, such as `<f8`, a constant this module works out from the type; a load
 //! writes the header of a new array of the destination's rank. A FITS call passes the element
 //! type as the runtime's `ELEMENT_*` number, and a write passes the program's header cards, the
-//! data and length of a `list[str]`, with a flag that says whether there was a header.
+//! data and length of a `list[str]`, with a flag that says whether there was a header. A
+//! `NetCDF` read passes the element type as a FITS read does, with the variable's name.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -87,6 +91,33 @@ impl<'db> Function<'_, '_, 'db> {
             }
             (ArrayFile::FitsHeader | ArrayFile::FitsData | ArrayFile::FitsWrite, _) => {
                 self.fits_parameters(method, arguments, destination)?
+            }
+            (ArrayFile::NetcdfOpen, [path]) => {
+                let (bytes, length) = self.text_argument(path)?;
+                let (out, _) = self.place(destination)?;
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("ptr {out}"),
+                ];
+                ("baryon_rt_netcdf_open", parameters)
+            }
+            (ArrayFile::NetcdfRead, [path, variable]) => {
+                let (bytes, length) = self.text_argument(path)?;
+                let (variable, variable_length) = self.text_argument(variable)?;
+                let (out, ty) = self.place(destination)?;
+                let (element, rank) = self.array(ty)?;
+                let code = self.fits_code(element, name)?;
+                let parameters = vec![
+                    format!("ptr {bytes}"),
+                    format!("i64 {length}"),
+                    format!("ptr {variable}"),
+                    format!("i64 {variable_length}"),
+                    format!("i32 {code}"),
+                    format!("i64 {rank}"),
+                    format!("ptr {out}"),
+                ];
+                ("baryon_rt_netcdf_read", parameters)
             }
             _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
         };
@@ -350,8 +381,8 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(call)
     }
 
-    /// The runtime's `ELEMENT_*` number for a FITS image of `element`s: a number type other
-    /// than a complex one, which the checker allows. `name` is the call, for the report of
+    /// The runtime's `ELEMENT_*` number for a FITS image or a `NetCDF` variable of `element`s: a
+    /// number type other than a complex one, which the checker allows. `name` is the call, for the report of
     /// another type.
     fn fits_code(&self, element: Type<'db>, name: &str) -> Result<u32, Unsupported> {
         match (element.kind(self.types.db), self.element_code(element)) {
