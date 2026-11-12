@@ -188,6 +188,7 @@ Comes after Phase 3's native capability work (Collins, 2026-11-10): see the orde
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
+| 2.0 | Compile-speed baseline: `baryon build --timings` (also `run` and `test`) prints the wall-clock time of each build stage, and the baseline is recorded in [`bench/README.md`](bench/README.md#compile-speed). Measured on Linux x86-64, 4 cores, best of 3: the eight benchmark kernels (45 to 190 lines) build in 0.18 to 0.48 s, of which `baryon` itself takes 8 to 22 ms, `clang -O2` 45 to 322 ms and linking with the runtime about 120 ms; a 4,706-line program, the n-body kernel with its force loop repeated 200 times, builds in 9.5 s, 300 ms in `baryon` and 9.0 s in `clang -O2`, about 490 lines per second against the target of 100,000. The LLVM module has about 80 lines per source line | — | — | Done | Claude | [#277](https://github.com/Baryon-Lang/Baryon/pull/277) |
 | 2.1 | Cranelift debug backend | 4 | 1.9 | Planned | — | — |
 | 2.2 | Incremental code generation and object patching | 3 | 2.1 | Planned | — | — |
 | 2.3 | Compile-speed profiling and tuning to the targets | 3 | 2.2 | Planned | — | — |

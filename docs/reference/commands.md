@@ -3,14 +3,14 @@
 `baryon` is the one tool for a Baryon program: it checks, builds, runs, tests and documents a
 package, and serves an editor. This chapter lists every command, what it needs, what it prints and
 the exit status it ends with. It is a prototype (roadmap 1.11): arguments are positional, and the
-one option is `--release`.
+two options are `--release` and `--timings`.
 
 | Command | What it does |
 | --- | --- |
 | [`baryon check <directory>`](#baryon-check) | Reports every error and warning in the package |
-| [`baryon build [--release] <directory> <output>`](#baryon-build) | Compiles the package into the executable `output` |
-| [`baryon run [--release] <directory>`](#baryon-run) | Builds the package and runs it |
-| [`baryon test [--release] <directory>`](#baryon-test) | Builds and runs every `@test` function |
+| [`baryon build [--release] [--timings] <directory> <output>`](#baryon-build) | Compiles the package into the executable `output` |
+| [`baryon run [--release] [--timings] <directory>`](#baryon-run) | Builds the package and runs it |
+| [`baryon test [--release] [--timings] <directory>`](#baryon-test) | Builds and runs every `@test` function |
 | [`baryon doc <directory> <output>`](#baryon-doc) | Writes the package's documentation as Markdown |
 | [`baryon lsp`](#baryon-lsp) | Runs the language server an editor talks to |
 | `baryon --version` | Prints the release, such as `baryon 0.2.0`; put it in a bug report |
@@ -70,7 +70,7 @@ standard output and exit with 0. Called with no arguments or wrong ones, `baryon
 line to standard error and exits with 2:
 
 ```text
-baryon: usage: baryon check <directory> | baryon build [--release] <directory> <output> | baryon run [--release] <directory> | baryon test [--release] <directory> | baryon doc <directory> <output> | baryon lsp
+baryon: usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] <directory> | baryon doc <directory> <output> | baryon lsp
 ```
 
 ## `baryon check`
@@ -105,7 +105,7 @@ that checks may still use a feature `build` cannot compile yet; see
 ## `baryon build`
 
 ```text
-baryon build [--release] <directory> <output>
+baryon build [--release] [--timings] <directory> <output>
 ```
 
 Checks the package as `check` does, compiles it, and writes the executable `output`, linked with
@@ -133,6 +133,27 @@ Develop and test in a debug build, where an overflow stops at the line that caus
 ship a release build: a debug build cannot vectorize a loop that adds integers. Every other check,
 such as array bounds, stays on in both ([Integer overflow](types.md#integer-overflow)).
 
+### Timing a build
+
+`--timings`, anywhere after `build`, `run` or `test`, prints to standard error how long each
+stage of the build took, once the executable is linked, then the package's lines per second:
+
+```text
+$ baryon build --timings nbody nbody.out
+timings for 106 line(s) in 1 file(s):
+  load              0 ms
+  compile          21 ms  check, lower, IR passes, LLVM text
+  machine code    239 ms  clang: optimize, generate code
+  link            136 ms  clang: link with the runtime
+  total           397 ms  267 lines/s
+built nbody.out from 1 file(s)
+```
+
+`compile` is the time spent in `baryon` itself; `machine code` and `link` are `clang`. Standard
+library modules a program uses, such as `linalg`, are compiled too but not counted in its lines.
+The [compile-speed baseline](../../bench/README.md#compile-speed) lists these numbers for the
+benchmark kernels.
+
 Running the executable runs `main`. It exits with:
 
 | Status | Meaning |
@@ -144,7 +165,7 @@ Running the executable runs `main`. It exits with:
 ## `baryon run`
 
 ```text
-baryon run [--release] <directory>
+baryon run [--release] [--timings] <directory>
 ```
 
 Builds the package as `build` does, into a scratch directory, runs it with the terminal's standard
@@ -161,7 +182,7 @@ hello, world
 ## `baryon test`
 
 ```text
-baryon test [--release] <directory>
+baryon test [--release] [--timings] <directory>
 ```
 
 Builds every top-level function decorated `@test` into one test program and runs each test in its

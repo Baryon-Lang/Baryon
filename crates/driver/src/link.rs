@@ -11,7 +11,16 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 use std::{env, fs};
+
+/// How long the two `clang` stages of [`link`] took, for `--timings`.
+pub(crate) struct Linked {
+    /// Optimizing the module and writing machine code into an object file.
+    pub(crate) machine_code: Duration,
+    /// Linking the object file with the runtime, and on macOS running `dsymutil`.
+    pub(crate) link: Duration,
+}
 
 /// The system libraries the runtime, a Rust static library, needs, as
 /// `rustc --print native-static-libs` lists them for each system.
@@ -66,13 +75,18 @@ const MATH_LIBRARY: &str = "-lm";
 /// and records where it was, so `dsymutil` collects them into `output.dSYM` beside the
 /// executable before the scratch directory, and the object file with it, is removed. `clang`
 /// runs `dsymutil` itself only for source files it compiles, not for an LLVM module.
-pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
+///
+/// Returns how long the object file and the link took ([`Linked`]); writing the module to the
+/// scratch directory counts toward the object file.
+pub(crate) fn link(module: &str, output: &Path) -> Result<Linked, String> {
     let runtime = runtime()?;
     let clang = find_clang()?;
     let scratch = env::temp_dir().join(format!("baryon-build-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let source = scratch.join("module.ll");
     let object = scratch.join("module.o");
+    let started = Instant::now();
+    let mut compiled = started;
     let result = fs::write(&source, module)
         .map_err(|error| format!("{}: {error}", source.display()))
         .and_then(|()| {
@@ -86,6 +100,7 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
             })
         })
         .and_then(|()| {
+            compiled = Instant::now();
             run_clang(&clang, |command| {
                 command
                     .arg("-g")
@@ -105,8 +120,12 @@ pub(crate) fn link(module: &str, output: &Path) -> Result<(), String> {
                 Ok(())
             }
         });
+    let linked = Instant::now();
     let _ = fs::remove_dir_all(&scratch);
-    result
+    result.map(|()| Linked {
+        machine_code: compiled - started,
+        link: linked - compiled,
+    })
 }
 
 /// The oldest `clang` major version that accepts the LLVM text the backend emits: opaque

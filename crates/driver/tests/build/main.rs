@@ -56,6 +56,7 @@ mod testing;
 mod text;
 mod text_methods;
 mod text_tables;
+mod timings;
 mod traits;
 mod unions;
 mod vector;
