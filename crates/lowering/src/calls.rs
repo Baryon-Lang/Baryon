@@ -29,6 +29,14 @@ impl<'db> Builder<'db> {
         if matches!(&call.callee, types::Callee::Builtin(name) if name == "Array.fromfile") {
             return self.array_fromfile(place, &given, node);
         }
+        if let types::Callee::Builtin(name) = &call.callee
+            && let ("Array.load" | "Array.save", Some(arguments)) = (
+                name.as_str(),
+                given.iter().copied().collect::<Option<Vec<_>>>(),
+            )
+        {
+            return self.array_npy(place, name, &arguments, node);
+        }
         let Some(arguments) = given.into_iter().collect::<Option<Vec<NodeId>>>() else {
             return self.unsupported(node, "calls that leave out a defaulted argument");
         };

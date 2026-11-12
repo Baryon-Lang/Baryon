@@ -25,7 +25,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 type, while `baryon run` builds only what this page lists.
 
 This page was last brought up to date on 2026-11-11, when the standard streams,
-`print(..., file=)` and `input`, and before them `fft`, text tables, `Array.loadtxt` and
+`print(..., file=)` and `input`, and before them `.npy` files, `Array.load` and `Array.save`,
+`linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables, `Array.loadtxt` and
 `Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and
 `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files,
 `Array.fromfile` and
@@ -155,7 +156,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix; [`fft`](linear-algebra.md#fft): `fft`, `ifft`, `rfft`, `irfft`, `fftfreq` and `rfftfreq` of any length | Several right-hand sides, other element types, `eig`, `svd`, `fft2` and `fftn`, and `--blas` (roadmap 3.10) |
+| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), [`svd` and `svdvals`](linear-algebra.md#linalgsvd-and-linalgsvdvals), [`eig` and `eigvals`](linear-algebra.md#linalgeig-and-linalgeigvals), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix; [`fft`](linear-algebra.md#fft): `fft`, `ifft`, `rfft`, `irfft`, `fftfreq` and `rfftfreq` of any length | Several right-hand sides, other element types, `fft2` and `fftn`, and `--blas` (roadmap 3.10) |
 
 ## Files and processes
 
@@ -167,7 +168,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments` | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files, FITS, CSV into a DataFrame, NetCDF, Parquet and HDF5 (roadmap 3.14.2 to 3.14.6) |
+| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments`; [`.npy` files](data-files.md#npy-files): `Array.load` and `Array.save` of arrays of numbers, `bool`s and complex numbers of any rank, a view included | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files of structs, in Fortran order or big-endian, and `.npz` archives; FITS, CSV into a DataFrame, NetCDF, Parquet and HDF5 (roadmap 3.14.3 to 3.14.6) |
 
 ## Tests
 
