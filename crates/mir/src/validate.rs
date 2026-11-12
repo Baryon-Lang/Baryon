@@ -329,6 +329,12 @@ fn has_parameter(db: &dyn Db, ty: Type<'_>) -> bool {
         TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
             has_parameter(db, *element)
         }
+        TypeKind::DataFrame { columns, row } => {
+            columns
+                .iter()
+                .any(|column| has_parameter(db, column.element))
+                || row.is_some_and(|row| has_parameter(db, row))
+        }
         TypeKind::Struct(nominal) | TypeKind::Enum(nominal) => any(&nominal.arguments),
         TypeKind::Callable {
             parameters,

@@ -216,6 +216,13 @@ impl<'db> Substitution<'_, 'db> {
                 element: self.apply(db, *element),
                 shape: shape.clone(),
             },
+            TypeKind::DataFrame { columns, row } => TypeKind::DataFrame {
+                columns: columns
+                    .iter()
+                    .map(|column| column.map(|ty| self.apply(db, ty)))
+                    .collect(),
+                row: row.map(|row| self.apply(db, row)),
+            },
             TypeKind::Struct(class) => TypeKind::Struct(nominal(class)),
             TypeKind::Enum(class) => TypeKind::Enum(nominal(class)),
             TypeKind::Callable {

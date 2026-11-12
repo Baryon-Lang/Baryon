@@ -129,6 +129,7 @@ in scope, with no import.
 | `Struct` | Base that makes a class a struct | [Types](types.md#structs) |
 | `Copy` | Base that makes a struct copy instead of move | [Values and references](values-and-references.md#copy-types) |
 | `Array`, `Fixed` | The two array types | [Arrays](arrays.md) |
+| `DataFrame` | A table of named columns, each an array; reserved until roadmap 3.13.2 builds it | [Decision 0045](../decisions/0045-dataframe.md) |
 | `InOut`, `Owned` | Parameter modes | [Values and references](values-and-references.md#parameters) |
 | `Self` | The type of the struct a method belongs to | [Values and references](values-and-references.md#methods) |
 | `Raises` | Return type of a function that can fail | [Errors](errors.md) |
