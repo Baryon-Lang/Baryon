@@ -1,6 +1,6 @@
 //! Text columns of a `DataFrame` as keys (roadmap 3.13.3, decision 0045), built and run:
-//! frames put in order by a column of `str`, and their repeated rows left out. The frames
-//! printed are compared with what pandas 3 prints.
+//! frames put in order by a column of `str`, their repeated rows left out, and frames joined
+//! on one. The frames printed are compared with what pandas 3 prints.
 
 use super::text_columns::run;
 
@@ -161,6 +161,82 @@ fn rows_that_repeat_in_a_frame_with_a_text_column_are_left_out() {
         "0 10 βeta\n",
     ];
     let (code, stdout, report) = run("text-columns-distinct", DISTINCT).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+}
+
+/// A program that joins frames with text columns: on a text key from either side, with
+/// keys that have several partners, none, an empty text and a letter outside ASCII; on a
+/// text key and a key of numbers in both orders; and on a key of numbers with text columns
+/// carried along from both frames.
+const JOINED: &str = r#"
+def main():
+    trades = DataFrame({
+        "symbol": Array(["IBM", "AAPL", "", "IBM", "βeta", "ibm", "AAPL"]),
+        "price": Array([3.0, 2.0, 1.0, 4.0, 5.0, 6.0, 7.0]),
+        "day": Array([1, 1, 2, 2, 1, 1, 2]),
+    })
+    names = DataFrame({
+        "symbol": Array(["AAPL", "IBM", "βeta", "MSFT", "IBM"]),
+        "name": Array(["Apple", "International Business Machines", "Beta", "Microsoft", "Big Blue"]),
+    })
+    print(trades.merge(names, on="symbol"))
+    print(names.merge(trades, on="symbol"))
+    limits = DataFrame({
+        "day": Array([2, 1, 2]),
+        "symbol": Array(["IBM", "AAPL", "AAPL"]),
+        "limit": Array([10, 20, 30]),
+    })
+    print(trades.merge(limits, on=["symbol", "day"]))
+    print(trades.merge(limits, on=["day", "symbol"], how="inner"))
+    print(trades.merge(limits, on="day").head(4))
+    sizes = DataFrame({"day": Array([1, 2]), "venue": Array(["NYSE", ""])})
+    print(sizes.merge(limits, on="day"))
+    print(len(names.head(0).merge(trades, on="symbol")), len(trades), names.name[4])
+"#;
+
+/// `merge` joins on text as on numbers and carries text columns into the result: every
+/// frame printed holds the rows pandas 3 gives, in the order of the left frame's rows and,
+/// for one of them, of its partners in the right frame.
+#[test]
+fn frames_with_a_text_column_are_joined() {
+    let expected = [
+        "  symbol  price  day                             name\n",
+        "0    IBM    3.0    1  International Business Machines\n",
+        "1    IBM    3.0    1                         Big Blue\n",
+        "2   AAPL    2.0    1                            Apple\n",
+        "3    IBM    4.0    2  International Business Machines\n",
+        "4    IBM    4.0    2                         Big Blue\n",
+        "5   βeta    5.0    1                             Beta\n",
+        "6   AAPL    7.0    2                            Apple\n",
+        "  symbol                             name  price  day\n",
+        "0   AAPL                            Apple    2.0    1\n",
+        "1   AAPL                            Apple    7.0    2\n",
+        "2    IBM  International Business Machines    3.0    1\n",
+        "3    IBM  International Business Machines    4.0    2\n",
+        "4   βeta                             Beta    5.0    1\n",
+        "5    IBM                         Big Blue    3.0    1\n",
+        "6    IBM                         Big Blue    4.0    2\n",
+        "  symbol  price  day  limit\n",
+        "0   AAPL    2.0    1     20\n",
+        "1    IBM    4.0    2     10\n",
+        "2   AAPL    7.0    2     30\n",
+        "  symbol  price  day  limit\n",
+        "0   AAPL    2.0    1     20\n",
+        "1    IBM    4.0    2     10\n",
+        "2   AAPL    7.0    2     30\n",
+        "  symbol_x  price  day symbol_y  limit\n",
+        "0      IBM    3.0    1     AAPL     20\n",
+        "1     AAPL    2.0    1     AAPL     20\n",
+        "2             1.0    2      IBM     10\n",
+        "3             1.0    2     AAPL     30\n",
+        "   day venue symbol  limit\n",
+        "0    1  NYSE   AAPL     20\n",
+        "1    2          IBM     10\n",
+        "2    2         AAPL     30\n",
+        "0 7 Big Blue\n",
+    ];
+    let (code, stdout, report) = run("text-columns-joined", JOINED).unwrap();
     assert_eq!(stdout, expected.concat());
     assert_eq!((code, report.as_str()), (Some(0), ""));
 }

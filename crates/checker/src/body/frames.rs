@@ -415,6 +415,7 @@ impl<'db> Body<'db> {
                 | "drop"
                 | "rename"
                 | "drop_duplicates"
+                | "merge"
         );
         if self.has_text_column(base) && !built {
             self.untyped(arguments);
