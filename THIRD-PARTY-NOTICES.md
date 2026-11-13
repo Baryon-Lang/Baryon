@@ -1,10 +1,10 @@
 # Third-party notices
 
-Baryon is licensed under the [Apache License 2.0](LICENSE). This file lists every piece of
-third-party content the repository carries, as opposed to a dependency `Cargo.toml` declares,
-with its license and the files that hold it. Each license below permits the use made of it.
-[Rule 6](CONTRIBUTING.md#rule-6-few-dependencies) asks that new content be listed here in the
-pull request that adds it.
+Baryon is licensed under the [Apache License 2.0](LICENSE) or the [MIT License](LICENSE-MIT), at
+your option. This file lists every piece of third-party content the repository carries, as
+opposed to a dependency `Cargo.toml` declares, with its license and the files that hold it. Each
+license below permits the use made of it. [Rule 6](CONTRIBUTING.md#rule-6-few-dependencies) asks
+that new content be listed here in the pull request that adds it.
 
 ## DejaVu Sans
 

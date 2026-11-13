@@ -137,6 +137,14 @@ The repository should look like someone obsessive built it, because someone did.
 A choice that is hard to reverse, or that affects more than one crate, gets a decision record in
 [`docs/decisions/`](docs/decisions/README.md) before or with the code that implements it.
 
+## License
+
+Baryon is licensed under either of the [Apache License 2.0](LICENSE) or the
+[MIT License](LICENSE-MIT), at the user's option
+([decision 0055](docs/decisions/0055-dual-license.md)). Unless you say otherwise, a contribution
+you submit is licensed the same way, under both, with no further terms. That is why every
+dependency must be usable under both licenses (rule 6).
+
 ## Workflow
 
 1. Find your item in [`ROADMAP.md`](ROADMAP.md), or add it.

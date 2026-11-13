@@ -98,11 +98,11 @@ These settle the shape of whole modules, so they come before the code that depen
 
 | Row | What it settles | Blocks |
 | --- | --- | --- |
-| D.19 | Operators on user types (`5 * u.km`, `Time + TimeDelta`, `Gaussian1D() + Const1D()`) | 4.2.3, 4.2.7, every number-like value |
-| D.20 | Physical units: compile-time, run-time, or both | 4.2.3, and through it most of AstroBaryon |
+| D.19 | Operators on user types (`5 * u.km`, `Time + TimeDelta`, `Gaussian1D() + Const1D()`). Decided: Python's dunder methods ([0058](../decisions/0058-operators-are-dunder-methods.md)) | 4.2.3, 4.2.7, every number-like value |
+| D.20 | Physical units: compile-time, run-time, or both. Decided: compile-time first, a run-time unit for file data later ([0059](../decisions/0059-units-compile-time-first.md)) | 4.2.3, and through it most of AstroBaryon |
 | D.21 | Missing values: masked arrays, validity bitmaps, or one form for both | 3.24, 3.13, 4.2.6, 4.2.9 |
-| D.22 | Networking and TLS: written in Baryon or taken from the operating system | 3.30, and through it 4.2.2 and 4.2.4 |
-| D.23 | Where AstroBaryon lives: with Baryon's standard distribution, or a separate package | 4.2.13 and, if separate, 4.3 |
+| D.22 | Networking and TLS: written in Baryon or taken from the operating system. Decided: from the operating system ([0060](../decisions/0060-tls-from-the-operating-system.md)) | 3.30, and through it 4.2.2 and 4.2.4 |
+| D.23 | Where AstroBaryon lives: with Baryon's standard distribution, or a separate package. Decided: in the standard distribution until a package registry exists ([0061](../decisions/0061-astrobaryon-ships-with-baryon.md)) | 4.2.13 and, if separate, 4.3 |
 | D.24 | How close AstroBaryon's names and calls stay to AstroPy's. Decided: AstroPy's names ([0039](../decisions/0039-astrobaryon-keeps-astropy-names.md)) | 4.2.11 and every AstroBaryon row's API |
 | D.1 | Team size, which sets every estimate below | Calendar dates |
 

@@ -20,8 +20,8 @@ ignore = []
 yanked = "deny"
 
 [licenses]
-# The project is Apache-2.0 and may become dual Apache-2.0 OR MIT (ROADMAP.md, D.8), so every
-# dependency must be usable under both. Each license below is permissive and compatible with
+# The project is licensed Apache-2.0 OR MIT (decision 0055), so every dependency must be usable
+# under both. Each license below is permissive and compatible with
 # both, and each is listed only because a dependency in Cargo.lock needs it. A license that no
 # dependency uses any more fails the check, so this list never grows stale.
 #

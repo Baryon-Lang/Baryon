@@ -119,6 +119,9 @@ AI agents start with [`AGENTS.md`](AGENTS.md).
 
 ## License
 
-[Apache License 2.0](LICENSE). Third-party content the repository carries, such as the DejaVu Sans
+Baryon is licensed under either of the [Apache License 2.0](LICENSE) or the
+[MIT License](LICENSE-MIT), at your option ([decision 0055](docs/decisions/0055-dual-license.md)).
+Unless you say otherwise, a contribution you submit is licensed the same way, under both, with no
+further terms. Third-party content the repository carries, such as the DejaVu Sans
 font's outlines, is under its own licenses, listed in
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
