@@ -26,6 +26,9 @@ Elements are copy types so that reading an element is always a copy and never a 
 array code free of ownership questions. Arrays of non-copy values (an array of lists) are not in
 version 0; use `list` for those.
 
+The one exception is text: `Array[str, 1]` holds strings, stored end to end, and reading an
+element borrows it. It has its own chapter, [Arrays of text](text-arrays.md).
+
 ## Layout
 
 Arrays are row-major ([decision 0008](../decisions/0008-row-major-arrays.md)): the last index

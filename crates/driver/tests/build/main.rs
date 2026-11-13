@@ -72,6 +72,7 @@ mod subprocess;
 mod temporaries;
 mod testing;
 mod text;
+mod text_arrays;
 mod text_methods;
 mod text_tables;
 mod timings;

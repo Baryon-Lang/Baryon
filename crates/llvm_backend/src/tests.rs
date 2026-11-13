@@ -22,6 +22,7 @@ mod streams;
 mod string_methods;
 mod subprocess;
 mod text;
+mod text_arrays;
 mod vector;
 mod views;
 

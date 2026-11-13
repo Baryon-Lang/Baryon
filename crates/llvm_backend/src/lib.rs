@@ -182,6 +182,7 @@ mod string_methods;
 mod strings;
 mod subprocess;
 mod text;
+mod text_arrays;
 mod ty;
 mod unions;
 mod view;

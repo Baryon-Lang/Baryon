@@ -36,6 +36,7 @@ impl<'db> Body<'db> {
     pub(super) fn moves(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.db) {
             TypeKind::Str
+            | TypeKind::TextArray
             | TypeKind::List(_)
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }

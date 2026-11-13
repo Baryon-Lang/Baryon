@@ -24,8 +24,9 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when `a.argsort()`
-joined it, and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before it the inner `merge` of two `DataFrame`s, and before it
+This page was last brought up to date on 2026-11-12, when arrays of text, `Array[str, 1]`,
+joined it, and before them `a.argsort()`,
+and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before it the inner `merge` of two `DataFrame`s, and before it
 `groupby(...).agg(...)`, and before it `lzma.decompress`, and before it
 `sort_values` on a `DataFrame`, and before it `bz2.compress` and `bz2.decompress`, and before
 them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
@@ -149,6 +150,7 @@ out of a function, including through a `raise`.
 | Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b`, with [broadcasting](arrays.md#broadcasting) between arrays of different ranks and of length 1, as NumPy's, and new axes with `None`, `x[:, None]`; [comparisons](arrays.md#comparisons) of arrays, `a > b` and `a == 2.0`, which give arrays of `bool`s, and `&`, `\|`, `^` and `~` on arrays of `bool`s and integers; [choosing elements](arrays.md#choosing-elements) of a rank-1 `Array` with a mask or with positions, `a[mask]` and `a[positions]`, and setting them to one value, `a[mask] = 0.0`; [`a.argsort()`](arrays.md#sorting-positions) of a rank-1 `Array`, stable, with NaN last | A mask or positions on an array of higher rank; an array assigned to a choice, `a[mask] = values`, and `a[mask] += 1.0`; `argsort` of an array of higher rank, with `axis=` and `kind=` |
 | [`@`, the matrix product](arrays.md#the-matrix-product), of `Array`s and of `Fixed` arrays: matrix by matrix, matrix by vector and vector by matrix, as a loop nest | `@=`; calling BLAS (roadmap 3.10.2) |
 | [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), the float sum of a whole-array expression, `(a * b).sum()`, without storing it, `a.min()`, `a.max()`, [`sum`, `min` and `max` along an axis](arrays.md#reductions-along-an-axis) with NumPy's bits, [`a.mean()`, `a.var(ddof)` and `a.std(ddof)`](arrays.md#means-and-variances), of the whole array and along an axis, with NumPy's bits, `a.round()` and `a.fill(value)`; [`print(a)`](arrays.md#printing), as NumPy writes it | Printing an array of `str` or structs; `var` and `std` of integers or complex numbers, and `mean` of integers along an axis |
+| [Arrays of text](text-arrays.md), `Array[str, 1]`: built from a list with `Array(words)`, `len`, an element read by position and borrowed, `for` loops with `enumerate`, `reversed` and `zip`, comprehensions, `copy()`, as a variable, parameter, return value, item of a list or tuple, dict value and `T \| None` | Assigning an element, slices and masks, operators such as `==` and `in`, every other method and built-in, `print` of one, a struct field of one, and a text column of a `DataFrame` (roadmap 3.13.3) |
 | [The `stats` module](statistics.md): `median`, `quantile`, `percentile`, `average` and `histogram` of an `Array[f64, 1]`, with NumPy's bits; `cov` and `corrcoef` of two, to NumPy's last bit but one | `axis=`, several quantiles at once, the other quantile methods and other element types; `histogram` with other bins or `range=`, `weights=` and `density=`; `cov` and `corrcoef` of more than two variables |
 
 ## DataFrames

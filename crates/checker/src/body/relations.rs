@@ -56,6 +56,11 @@ pub(crate) fn holds_frame<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
     })
 }
 
+/// Whether `ty` is or contains a text array, `Array[str, 1]`.
+pub(crate) fn holds_text_array<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
+    contains(db, ty, &|ty| matches!(ty.kind(db), TypeKind::TextArray))
+}
+
 /// `ty` with every frame type in it replaced by the frame of the same columns whose rows no
 /// struct names, so two types that differ only in what names the rows of their frames become
 /// equal.
