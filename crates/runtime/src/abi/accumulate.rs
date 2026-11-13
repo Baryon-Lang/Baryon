@@ -5,11 +5,12 @@
 //! [`baryon_rt_accumulator_new`] before [`baryon_rt_parallel_for`](crate::baryon_rt_parallel_for)
 //! and [`baryon_rt_accumulator_finish`] after it. Inside the loop, each add calls
 //! [`baryon_rt_accumulator_slot`] for the address of the element's scalar in the running chunk's
-//! private copy and adds there; compiled code skips the call when it finds the block already made
-//! in the chunk's table, from [`baryon_rt_accumulator_table`]. Each chunk calls [`baryon_rt_accumulator_chunk_done`] when its
-//! last iteration ends. The result is bit-identical on any number of threads.
+//! private copy and adds there; compiled code skips the call when it finds the block already
+//! made in the chunk's table, from [`baryon_rt_accumulator_table`]. Each chunk calls
+//! [`baryon_rt_accumulator_chunk_done`] when its last iteration ends. The result is
+//! bit-identical on any number of threads.
 //!
-//! The example on [`baryon_rt_accumulator_new`] runs all four.
+//! The example on [`baryon_rt_accumulator_new`] runs the four functions every loop calls.
 
 use super::location;
 use crate::Location;
