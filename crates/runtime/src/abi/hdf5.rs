@@ -228,13 +228,7 @@ pub unsafe extern "C" fn baryon_rt_hdf5_read(
     // SAFETY: the caller guarantees a readable rank-1 array of bytes at `inflated`.
     let inflated = unsafe { gather(inflated, 1) };
     // SAFETY: the caller guarantees a readable rank-1 array of 64-bit integers at `sizes`.
-    let sizes: Vec<usize> = unsafe { gather(sizes, 8) }
-        .chunks_exact(8)
-        .map(|word| {
-            let word = i64::from_ne_bytes(word.try_into().unwrap_or_default());
-            usize::try_from(word).unwrap_or(usize::MAX)
-        })
-        .collect();
+    let sizes = unsafe { chunk_sizes(sizes) };
     let result = hdf5::read_file(path)
         .map_err(SubscriptFailure::Os)
         .and_then(|file| {
@@ -260,7 +254,7 @@ pub unsafe extern "C" fn baryon_rt_hdf5_read(
 ///
 /// `array` points to a readable rank-1 array header whose elements are readable.
 #[allow(unsafe_code, reason = "reads an array compiled code owns")]
-unsafe fn gather(array: *const i64, size: usize) -> Vec<u8> {
+pub(super) unsafe fn gather(array: *const i64, size: usize) -> Vec<u8> {
     // SAFETY: the caller guarantees a header at `array`, whose first word is the pointer.
     let data = unsafe { array.cast::<*const u8>().read() };
     // SAFETY: its length follows the pointer.
@@ -272,6 +266,47 @@ unsafe fn gather(array: *const i64, size: usize) -> Vec<u8> {
     // fail, so the result is always `Ok`.
     let _ = unsafe { runs(&mut bytes, data, lengths, strides, size) };
     bytes
+}
+
+/// The sizes of the inflated chunks, the elements of the `Array[i64, 1]` whose header is at
+/// `array`; a negative size, which no chunk has, reads as one larger than any array.
+///
+/// # Safety
+///
+/// `array` points to a readable rank-1 array header whose 64-bit elements are readable.
+#[allow(unsafe_code, reason = "reads an array compiled code owns")]
+pub(super) unsafe fn chunk_sizes(array: *const i64) -> Vec<usize> {
+    // SAFETY: the caller's promise, passed on.
+    unsafe { gather(array, 8) }
+        .chunks_exact(8)
+        .map(|word| {
+            let word = i64::from_ne_bytes(word.try_into().unwrap_or_default());
+            usize::try_from(word).unwrap_or(usize::MAX)
+        })
+        .collect()
+}
+
+/// Takes the inflated chunks back from `inflated`, one piece of `sizes` at a time, as the
+/// library inflated them: what the readers call in place of inflating a deflated chunk, which
+/// the runtime does not do. Fails with "the inflated chunks ran out" when there are fewer than
+/// the reader asks for.
+pub(super) fn inflater<'a>(
+    inflated: &'a [u8],
+    sizes: &'a [usize],
+) -> impl FnMut(&[u8]) -> Result<Vec<u8>, String> + 'a {
+    let (mut at, mut next) = (0_usize, 0_usize);
+    move |_: &[u8]| {
+        let size = *sizes
+            .get(next)
+            .ok_or_else(|| "the inflated chunks ran out".to_owned())?;
+        let end = at
+            .checked_add(size)
+            .filter(|&end| end <= inflated.len())
+            .ok_or_else(|| "the inflated chunks ran out".to_owned())?;
+        let chunk = inflated[at..end].to_vec();
+        (at, next) = (end, next + 1);
+        Ok(chunk)
+    }
 }
 
 /// The dataset `name` of `file`, the file at `path`.
@@ -346,19 +381,7 @@ fn read(
     // SAFETY: the allocation holds `layout.size()` zeroed bytes that nothing else refers to; an
     // empty one is an aligned pointer that is never read through.
     let memory = unsafe { std::slice::from_raw_parts_mut(pointer.as_ptr(), layout.size()) };
-    let (mut at, mut next) = (0_usize, 0_usize);
-    let mut inflate = |_: &[u8]| -> Result<Vec<u8>, String> {
-        let size = *sizes
-            .get(next)
-            .ok_or_else(|| "the inflated chunks ran out".to_owned())?;
-        let end = at
-            .checked_add(size)
-            .filter(|&end| end <= inflated.len())
-            .ok_or_else(|| "the inflated chunks ran out".to_owned())?;
-        let chunk = inflated[at..end].to_vec();
-        (at, next) = (end, next + 1);
-        Ok(chunk)
-    };
+    let mut inflate = inflater(inflated, sizes);
     if let Err(failure) = hdf5::read_dataset(
         path,
         file,
