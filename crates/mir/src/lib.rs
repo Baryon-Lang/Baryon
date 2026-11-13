@@ -104,6 +104,7 @@ mod paths;
 mod place;
 mod statement;
 mod text;
+mod text_arrays;
 mod uses;
 mod validate;
 
@@ -122,6 +123,7 @@ pub use statement::{
     Terminator, TerminatorKind,
 };
 pub use text::TextMethod;
+pub use text_arrays::TextArrayStep;
 pub use validate::Invalid;
 
 use source::Span;
