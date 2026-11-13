@@ -130,7 +130,7 @@ The repository should look like someone obsessive built it, because someone did.
 - Third-party content carried in the repository, such as a font's outlines or a data table, is
   listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) with its license text and the files
   that hold it, in the same pull request that adds it. Its license must permit the use and be
-  compatible with Apache-2.0.
+  compatible with Apache-2.0 and MIT.
 
 ## Rule 7: decisions are written down
 
