@@ -1,5 +1,5 @@
 """The parts of a `DataFrame` written in Baryon (decision 0045): choosing rows, sorting
-them, and the text a frame prints as.
+and grouping them, and the text a frame prints as.
 
 The compiler calls these functions; a program cannot import this file. A frame's columns
 are known when compiling, so the compiler calls a function once for each column, with the
@@ -13,6 +13,12 @@ copies those elements of each column.
 Sorting, for `df.sort_values(...)`: `row_positions` gives the rows in their order, `ordered`
 (`ordered_flags` for a column of `bool`) puts them in the order of one column, once for each
 column sorted by, the last one first, and `taken` copies each column in that order.
+
+Grouping, for `df.groupby(...).agg(...)`: the rows are sorted by the key columns, after
+`kept_rows` leaves out those with a missing key; `group_marks`, once for each key column,
+then `group_starts` find where each group starts; `group_keys` gives one row of each group
+to read its keys from; and `group_floats` or `group_integers` reduces one column, which the
+compiler has converted to `f64` or `i64`, to one value for each group.
 
 Printing, for `print(df)` and a frame in an f-string: each column is formatted with
 `float_cells`, `single_cells` or `cells`, by the type of its elements, and `frame_text` lays
@@ -30,7 +36,7 @@ characters wide:
 Only the rows shown are formatted, so printing costs the same for ten rows or ten million.
 """
 
-from math import isinf, isnan
+from math import fsum, isinf, isnan, nan, sqrt
 
 
 def masked[T](column: Array[T, 1], mask: Array[bool, 1]) -> Array[T, 1]:
@@ -149,6 +155,118 @@ def ordered_flags(
     array of `n` integers."""
     numbers = Array([1 if flag else 0 for flag in column])
     return ordered(numbers, start, ascending)
+
+
+def kept_rows[T: Number](column: Array[T, 1], order: Array[i64, 1]) -> Array[i64, 1]:
+    """The positions `order` without those where `column` is NaN: a row whose key is missing
+    belongs to no group, as in pandas."""
+    return Array([at for at in order if column[at] == column[at]])
+
+
+def no_marks(order: Array[i64, 1]) -> Array[bool, 1]:
+    """One `False` for each row of `order`: the marks before any key column is taken in."""
+    return Array([False for at in order])
+
+
+def group_marks[T: Number](
+    column: Array[T, 1], order: Array[i64, 1], marks: Array[bool, 1]
+) -> Array[bool, 1]:
+    """`marks` with one more key column taken in: element `i` is true where row `order[i]`
+    starts a group, that is where it is the first row or its value in `column` differs from
+    that of the row before it in `order`."""
+    return Array([
+        marks[at] or at == 0 or column[order[at]] != column[order[at - 1]]
+        for at in range(len(order))
+    ])
+
+
+def group_starts(marks: Array[bool, 1]) -> Array[i64, 1]:
+    """Where each group starts in the sorted rows, and after the last, where the rows end:
+    one more element than there are groups, so group `g` is `starts[g]` to `starts[g + 1]`."""
+    starts = [at for at in range(len(marks)) if marks[at]]
+    starts.append(len(marks))
+    return Array(starts)
+
+
+def group_keys(order: Array[i64, 1], starts: Array[i64, 1]) -> Array[i64, 1]:
+    """The position of the first row of each group, from which its key is read."""
+    return Array([order[starts[group]] for group in range(len(starts) - 1)])
+
+
+def _values(column: Array[f64, 1], order: Array[i64, 1], low: int, high: int) -> list[f64]:
+    """The values of one group, rows `low` to `high` of `order`, without NaN."""
+    return [column[order[at]] for at in range(low, high) if not isnan(column[order[at]])]
+
+
+def _reduced(values: list[f64], how: int) -> f64:
+    """One group's values, which hold no NaN, reduced the way `how` numbers; see
+    `group_floats`."""
+    count = len(values)
+    if how == 5:
+        return f64(count)
+    if how == 0:
+        return fsum(values)
+    if count == 0:
+        return nan
+    if how == 1:
+        return min(values)
+    if how == 2:
+        return max(values)
+    if how == 3:
+        return values[0]
+    if how == 4:
+        return values[count - 1]
+    if how == 9:
+        middle = sorted(values)
+        return (middle[(count - 1) // 2] + middle[count // 2]) / 2.0
+    mean = fsum(values) / f64(count)
+    if how == 6:
+        return mean
+    if count == 1:
+        return nan
+    spread = fsum([(value - mean) * (value - mean) for value in values]) / f64(count - 1)
+    return spread if how == 7 else sqrt(spread)
+
+
+def group_floats(
+    column: Array[f64, 1], order: Array[i64, 1], starts: Array[i64, 1], how: int
+) -> Array[f64, 1]:
+    """One value for each group from the values of `column` in it, NaN left out, as pandas
+    leaves it out. `how` numbers the reduction: 0 sum, 1 min, 2 max, 3 first, 4 last,
+    5 count, 6 mean, 7 var, 8 std, 9 median. `var` and `std` divide by one less than the
+    count, and are NaN for a group of one value; a group with no values gives NaN, except
+    that its sum and its count are 0."""
+    return Array([
+        _reduced(_values(column, order, starts[group], starts[group + 1]), how)
+        for group in range(len(starts) - 1)
+    ])
+
+
+def group_integers(
+    column: Array[i64, 1], order: Array[i64, 1], starts: Array[i64, 1], how: int
+) -> Array[i64, 1]:
+    """`group_floats` for a column of integers, for the reductions that give an integer:
+    0 sum, 1 min, 2 max, 3 first, 4 last, 5 count. No value is missing, so no group is
+    empty."""
+    result = [0 for group in range(len(starts) - 1)]
+    for group in range(len(starts) - 1):
+        low = starts[group]
+        high = starts[group + 1]
+        value = column[order[low]]
+        if how == 4:
+            value = column[order[high - 1]]
+        if how == 5:
+            value = high - low
+        for at in range(low + 1, high):
+            other = column[order[at]]
+            if how == 0:
+                value += other
+            if how == 1:
+                value = min(value, other)
+            if how == 2:
+                value = max(value, other)
+        result[group] = value
+    return Array(result)
 
 
 def _shown(count: int) -> list[int]:

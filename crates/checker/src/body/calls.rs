@@ -110,7 +110,9 @@ impl<'db> Body<'db> {
                 ty
             }
             None if self.tree.kind(function) == SyntaxKind::Attribute => {
-                self.method_call(node, function, &arguments, expected)
+                let grouped = self.grouped_frame(function);
+                let grouped = grouped.and_then(|frame| self.frame_agg(node, frame, &arguments));
+                grouped.unwrap_or_else(|| self.method_call(node, function, &arguments, expected))
             }
             Some(_) | None => self.untyped(&arguments),
         };

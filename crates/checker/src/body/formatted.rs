@@ -17,6 +17,7 @@ impl<'db> Body<'db> {
                     let ty = value.map(|value| self.expression(value, None));
                     if let (Some(value), Some(ty)) = (value, ty) {
                         self.shows_no_path(value, ty);
+                        self.shows_no_text_array(value, ty);
                     }
                     if let Some(format) = self.tree.child(part, Role::Format) {
                         self.interpolations(format);

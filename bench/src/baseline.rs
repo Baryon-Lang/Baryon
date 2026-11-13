@@ -14,7 +14,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version of the baseline file format.
-const SCHEMA: u32 = 1;
+const SCHEMA: u32 = 2;
 
 /// One kernel's measurements in both languages.
 pub(crate) struct KernelResult<'a> {
@@ -88,6 +88,7 @@ pub(crate) fn document(
                 "summary": result.kernel.summary,
                 "arguments": result.kernel.arguments,
                 "parameters": result.kernel.parameters(context.size),
+                "threaded": result.kernel.threaded,
                 "results": languages,
             })
         })

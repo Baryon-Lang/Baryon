@@ -3,7 +3,9 @@
 //! call the runtime for, and each [`Argument`]'s mode. The [`MathFunction`]s a `Builtin::Math`
 //! call computes live in the `math` module.
 
-use crate::{ArrayFile, FileMethod, MathFunction, Operand, PathMethod, Place, TextMethod};
+use crate::{
+    ArrayFile, FileMethod, MathFunction, Operand, PathMethod, Place, TextArrayStep, TextMethod,
+};
 use types::{Item, Type};
 
 /// The function a [`Call`](crate::TerminatorKind::Call) calls.
@@ -134,6 +136,9 @@ pub enum Builtin {
     /// A method of `str`, such as `split` or `strip`, or indexing and slicing one (roadmap
     /// 1.13.12). [`TextMethod`] says what each takes and gives.
     Text(TextMethod),
+    /// A step that builds or reads a text array, `Array[str, 1]` (roadmap 3.13.3).
+    /// [`TextArrayStep`] says what each takes and gives.
+    TextArray(TextArrayStep),
     /// Looks a key up in a `dict` (decision 0035): two arguments, the `dict` and the key, of the
     /// key type, each passed `Borrow`, so a constant key is put in a local first; the destination is an
     /// `i64`, the position of the key's entry, or -1 when the key is not there. The position
@@ -312,6 +317,7 @@ impl Builtin {
             Self::LengthStr => "len of str",
             Self::CharacterStr => "str character",
             Self::Text(method) => method.name(),
+            Self::TextArray(step) => step.name(),
             Self::DictFind => "dict lookup",
             Self::DictInsert => "dict insert",
             Self::DictRemove => "dict remove",

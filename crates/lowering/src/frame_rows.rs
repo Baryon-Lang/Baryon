@@ -40,6 +40,15 @@ impl<'db> Builder<'db> {
         if self.schema_method(&place, method, frame, node) {
             return;
         }
+        if method == "merge" {
+            return self.frame_merge(place, frame, rest, node);
+        }
+        if method == "drop_duplicates" {
+            return self.frame_distinct(place, frame, node);
+        }
+        if method == "agg" {
+            return self.frame_agg(place, frame, node);
+        }
         if method == "sort_values" {
             return self.frame_sort(place, frame, node);
         }

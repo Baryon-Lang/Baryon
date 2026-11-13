@@ -236,6 +236,7 @@ fn rvalue_moves(rvalue: &Rvalue<'_>, effects: &mut Vec<Effect>) {
             }
         }
         Rvalue::Length(..)
+        | Rvalue::Stride(..)
         | Rvalue::IsPresent(_)
         | Rvalue::ErrorIndex(_)
         | Rvalue::MemberIndex(_)

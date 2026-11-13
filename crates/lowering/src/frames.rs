@@ -14,7 +14,8 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Column, Nominal, Type, TypeDb, TypeKind};
 
 /// `ty` with every `DataFrame` type in it replaced by the tuple of arrays that stores it
-/// ([`Type::frame_storage`]). A type with no frame in it comes back unchanged.
+/// ([`Type::frame_storage`]), and every text array, `Array[str, 1]`, by the tuple of its two
+/// buffers ([`Type::text_storage`]). A type with neither in it comes back unchanged.
 ///
 /// A union is not looked into: its members cannot be frames (the checker rejects them), and
 /// rebuilding its list could break the order `types::union` keeps.
@@ -27,6 +28,7 @@ pub(crate) fn erase<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> Type<'db> {
     };
     let kind = match ty.kind(db) {
         TypeKind::DataFrame { .. } => return ty.frame_storage(db).unwrap_or(ty),
+        TypeKind::TextArray => return ty.text_storage(db).unwrap_or(ty),
         TypeKind::Primitive(_)
         | TypeKind::Str
         | TypeKind::None

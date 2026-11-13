@@ -4,7 +4,9 @@ Baryon's performance goal is concrete: numeric code within 5% of `gfortran -O3`.
 the yardstick. Eight physics and math kernels are written twice, once in C++ and once in Fortran,
 with the same algorithm, the same input data and the same order of floating-point operations. A
 harness builds them, runs them, checks that both languages computed the same answer, and records
-the times as a per-machine baseline.
+the times as a per-machine baseline. A ninth, `lennard_jones_half`, is the one parallel baseline:
+the Lennard-Jones liquid on several threads, the target for Baryon's `prange` loops that add into
+shared arrays.
 
 When the Baryon compiler can build these kernels, an Baryon version of each joins the suite, and the
 baselines here are the numbers it must match. Roadmap item 1.18 turns that comparison into a CI
@@ -88,6 +90,7 @@ compiler. The reference size is what `--record` measures.
 | [`monte_carlo`](kernels/monte_carlo) | Monte Carlo integral of exp(−\|x\|²) over the 6D unit cube | Serial random stream, `exp`, long reduction | 50 million samples | The estimate (exact: 0.173504...) |
 | [`matmul`](kernels/matmul) | Dense C = AB with plain loops, no BLAS | Floating-point throughput, cache reuse | 1,024 × 1,024 | Sum of C |
 | [`fft`](kernels/fft) | Iterative radix-2 complex FFT | Changing strides, bit reversal, complex arithmetic | 2²⁰ points, 10 transforms | Sum of magnitudes |
+| [`lennard_jones_half`](kernels/lennard_jones_half) | The `lennard_jones` liquid on threads, each pair computed once and added into both atoms (a half neighbour list) | Adding into a shared array from parallel iterations, Baryon's `accumulate=` ([decision 0013](../docs/decisions/0013-parallel-accumulation.md)) | 4,000 atoms, 200 steps, 4 threads | Total energy per atom |
 
 Every source file opens with a header comment giving its usage, what it stresses, its checksum and
 any non-obvious choice.
@@ -110,11 +113,34 @@ follow them too.
   languages define identically for 64-bit integers.
 - **Only the computation is timed.** Input generation, matrix assembly, twiddle factors and the
   checksum are outside the timed region, measured with a monotonic clock.
-- **Single-threaded and IEEE.** No `-ffast-math`, no threads. Parallel baselines are a separate,
-  later item.
+- **Single-threaded and IEEE.** No `-ffast-math`, no threads, except in the parallel baseline
+  below.
 - **Complex arithmetic spelled out.** `fft` stores real and imaginary parts in separate arrays and
   multiplies by hand, because C++'s `std::complex` adds NaN-recovery branches that Fortran's
   `complex` does not.
+
+### The parallel baseline
+
+`lennard_jones_half` (roadmap 1.14.1) is the same liquid, lattice, velocities and steps as
+`lennard_jones`, with two changes. Each pair is computed once, by the atom with the lower index,
+and its force is added into both atoms, as Newton's third law allows: half the pair arithmetic.
+And the atoms are split among threads, the number given as the kernel's last argument, so that
+one iteration adds into another atom's force. It is marked `threaded` in the harness, which
+builds it with `-fopenmp` for Fortran and `-pthread` for C++.
+
+- **The Fortran uses OpenMP; the C++ uses `std::thread`.** Apple's `clang++` has no OpenMP
+  without an extra library. The work each thread does and the order of every addition are the
+  same in both, so the two print the same checksum to the bit.
+- **No `reduction(+: fx)`.** OpenMP leaves the order in which threads' copies are combined to its
+  runtime, so two runs could differ in the last bits, and the harness requires repeated runs to
+  agree exactly. Each thread adds into its own copy of the force arrays, which is what an OpenMP
+  array reduction does, and the copies are summed in thread order afterwards.
+- **A fixed thread count.** The reference size runs 4 threads and the smoke size 2, so baselines
+  from different machines compare like with like. Another thread count changes only the rounding.
+
+Measured for roadmap 1.14.1 on Linux x86-64 in a shared cloud VM with 4 cores, best of 3: the
+single-threaded full list (`lennard_jones`) 5.8 s in Fortran; the half list on 1 thread 3.7 s; on
+4 threads 1.2 s. The Baryon twin below runs the half list in 1.84 s, the whole run timed.
 
 ### Known asymmetries
 
@@ -134,7 +160,8 @@ is designed to win on:
 Each kernel prints a checksum. The harness checks it twice. Repeated runs of one executable must
 report exactly the same checksum, or the kernel is nondeterministic and the run fails. Then the
 harness fails if the C++ and Fortran checksums differ by more
-than the kernel's relative tolerance: `1e-9` for most kernels, `1e-5` for `lennard_jones`.
+than the kernel's relative tolerance: `1e-9` for most kernels, `1e-5` for the two Lennard-Jones
+kernels.
 Molecular dynamics is chaotic, so a one-bit difference (for example, a compiler fusing a multiply
 and add) grows over the run; its checksum is the total energy, which the integrator conserves to
 about `1e-5` whatever the trajectory. With clang++ or g++ and gfortran on x86-64, every checksum
@@ -147,6 +174,19 @@ the Fortran version: the same loops, operations, constants and summation order. 
 column-major `a(i, j)` is written `a[j, i]`, so the innermost loop walks memory in order in both.
 At the smoke sizes every twin prints the same checksum as `gfortran -O3`, to the last bit, and the
 driver's build test `kernels_match_fortran_to_the_bit` keeps it that way.
+
+The exception is `lennard_jones_half`, whose twin writes `prange(atoms, accumulate=(fx, fy, fz))`.
+The runtime sums the private copies in its own fixed tree (decision 0024), not in the Fortran's
+thread order, so the twin agrees with Fortran to the kernel's tolerance and gives the same bits
+on every run, whatever the thread count; the build test
+`the_threaded_half_list_kernel_agrees_with_fortran` checks both. It ignores the thread-count
+argument, since `prange` uses every core. On the 4-core machine above, the whole run takes 1.84 s
+against Fortran's 1.2 s on 4 threads, 1.5 times; its serial twin `lennard_jones` takes 7.3 s
+against 5.8 s, 1.26 times. The difference is what `accumulate=` costs today. Callgrind on 864
+atoms puts 26% of the instructions in filling fresh private blocks with zeros, 15% in the runtime
+call per add and 8% in combining the copies: with 1,024 chunks of a few atoms each, every chunk
+makes and zeroes blocks for the few hundred forces it touches. Fewer, larger chunks, and caching
+the last block as decision 0024 suggests, are the evidence-backed next steps.
 
 The harness does not run them yet: Baryon has no clock to time the computation alone, so they
 print only the checksum. Build one and time the whole run from outside:
@@ -278,7 +318,7 @@ platform. Recording again on the same platform replaces the file; commit it to u
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "recorded": "2026-11-06T05:30:00Z",
   "commit": "<the commit the kernels were built from>",
   "size": "reference",
@@ -294,6 +334,7 @@ platform. Recording again on the same platform replaces the file; commit it to u
       "summary": "All-pairs gravity, leapfrog",
       "arguments": ["bodies", "steps"],
       "parameters": [4096, 20],
+      "threaded": false,
       "results": {
         "cpp": { "checksum": -0.4584851930577884, "seconds": { "minimum": 1.04, "median": 1.05, "runs": [1.04, 1.06] } },
         "fortran": { "checksum": -0.4584851930577884, "seconds": { "minimum": 0.70, "median": 0.71, "runs": [0.70, 0.72] } }
@@ -303,7 +344,8 @@ platform. Recording again on the same platform replaces the file; commit it to u
 }
 ```
 
-Keys appear in alphabetical order in the written file. `schema` changes whenever the format does.
+Keys appear in alphabetical order in the written file. `schema` changes whenever the format does;
+version 2 added `threaded`, true for a kernel built with its language's thread flags.
 Compare baselines by `minimum`: the fastest run is the best estimate of the cost on a quiet
 machine, and the least affected by other work on the computer.
 

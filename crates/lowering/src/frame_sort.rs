@@ -8,7 +8,7 @@
 //! The cost is `n log n` comparisons for each column sorted by, and one copy of the frame.
 
 use crate::builder::Builder;
-use mir::{Constant, ConstantValue, Local, Operand, Place, Projection};
+use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
 
@@ -110,9 +110,48 @@ impl Builder<'_> {
         self.each_column(place, frame, &source, ("taken", &Place::from(order)), node);
     }
 
+    /// `a.argsort()` on the rank-1 array `array`, into `place`: the positions of its elements
+    /// in rising order, with equal elements in the order they stand in and NaN last. It is
+    /// the sort `sort_values` uses, on one column that is the array. Cost: `n log n`
+    /// comparisons and two arrays of `n` positions.
+    pub(crate) fn array_argsort(&mut self, place: Place, array: NodeId, node: NodeId) {
+        let TypeKind::Array { element, .. } = self.ty(array).kind(self.db) else {
+            return self.unsupported(node, "`argsort` of this value");
+        };
+        let element = *element;
+        let source = self.borrow(array);
+        let int = self.int_type();
+        let count = self.temporary(int, node);
+        self.assign(Place::from(count), Rvalue::Length(source.clone(), 0), node);
+        let positions = self.ty(node);
+        let start = vec![Place::from(count)];
+        let Some(order) = self.frame_call("row_positions", Vec::new(), start, positions, node)
+        else {
+            return;
+        };
+        self.drop_later(order);
+        let rising = Operand::Constant(Constant {
+            ty: self.boolean_type(),
+            value: ConstantValue::Bool(true),
+        });
+        let rising = self.held(self.boolean_type(), rising, node);
+        let flags = matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool));
+        let (function, type_arguments) = if flags {
+            ("ordered_flags", Vec::new())
+        } else {
+            ("ordered", vec![element])
+        };
+        let arguments = vec![source, Place::from(order), Place::from(rising)];
+        let Some(sorted) = self.frame_call(function, type_arguments, arguments, positions, node)
+        else {
+            return;
+        };
+        self.assign(place, Rvalue::Use(Operand::Move(Place::from(sorted))), node);
+    }
+
     /// The items of the list `node`, or `node` itself when it is not a list written out:
     /// `"price"` and `["price"]` both name one column.
-    fn listed(&self, node: NodeId) -> Vec<NodeId> {
+    pub(crate) fn listed(&self, node: NodeId) -> Vec<NodeId> {
         if self.tree.kind(node) == SyntaxKind::List {
             self.tree.children_with(node, Role::Item).collect()
         } else {

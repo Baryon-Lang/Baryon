@@ -115,7 +115,7 @@ error: a `DataFrame` has no method `sample` yet
    |
 13 |     g = trades.sample(3)
    |         ^^^^^^^^^^^^^^^^ not defined yet
-   = note: a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop`, `rename` and `sort_values` today; the rest of decision 0045's methods come with roadmap items 3.13.6 to 3.13.9
+   = note: a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop`, `rename`, `sort_values`, `groupby(...).agg(...)`, `merge` and `drop_duplicates` today; the rest of decision 0045's methods come with roadmap items 3.13.6, 3.13.8 and 3.13.9
 
 error: rows of a `DataFrame` cannot be assigned
   --> main.byn:17:5

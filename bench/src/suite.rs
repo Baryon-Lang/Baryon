@@ -49,6 +49,9 @@ impl fmt::Display for Size {
 }
 
 /// One physics kernel, written once in C++ and once in Fortran.
+///
+/// Every kernel runs on one thread except those marked [`threaded`](Kernel::threaded), the
+/// parallel baselines that Baryon's `prange` loops are compared against.
 #[derive(Debug)]
 pub(crate) struct Kernel {
     /// Directory name under `bench/kernels/`, and the stem of both source files.
@@ -68,6 +71,10 @@ pub(crate) struct Kernel {
     /// chaotic, so rounding differences grow; its checksum is the total energy, which the
     /// integrator conserves to about 1e-5 whatever the trajectory.
     pub(crate) tolerance: f64,
+    /// Whether the kernel runs on several threads, its last argument saying how many. A threaded
+    /// kernel is built with each language's thread flags
+    /// ([`Language::thread_flags`](crate::toolchain::Language::thread_flags)).
+    pub(crate) threaded: bool,
 }
 
 impl Kernel {
@@ -92,6 +99,7 @@ pub(crate) const KERNELS: &[Kernel] = &[
         smoke: &[256, 5],
         reference: &[4096, 20],
         tolerance: DETERMINISTIC,
+        threaded: false,
     },
     Kernel {
         name: "lennard_jones",
@@ -100,6 +108,16 @@ pub(crate) const KERNELS: &[Kernel] = &[
         smoke: &[5, 10],
         reference: &[10, 200],
         tolerance: 1e-5,
+        threaded: false,
+    },
+    Kernel {
+        name: "lennard_jones_half",
+        summary: "The same liquid on threads, half neighbour list",
+        arguments: &["cells per side", "steps", "threads"],
+        smoke: &[5, 10, 2],
+        reference: &[10, 200, 4],
+        tolerance: 1e-5,
+        threaded: true,
     },
     Kernel {
         name: "heat_stencil",
@@ -108,6 +126,7 @@ pub(crate) const KERNELS: &[Kernel] = &[
         smoke: &[24, 5],
         reference: &[200, 100],
         tolerance: DETERMINISTIC,
+        threaded: false,
     },
     Kernel {
         name: "conjugate_gradient",
@@ -116,6 +135,7 @@ pub(crate) const KERNELS: &[Kernel] = &[
         smoke: &[16, 20],
         reference: &[96, 100],
         tolerance: DETERMINISTIC,
+        threaded: false,
     },
     Kernel {
         name: "runge_kutta",
@@ -124,6 +144,7 @@ pub(crate) const KERNELS: &[Kernel] = &[
         smoke: &[64, 200],
         reference: &[8192, 20000],
         tolerance: DETERMINISTIC,
+        threaded: false,
     },
     Kernel {
         name: "monte_carlo",
@@ -132,6 +153,7 @@ pub(crate) const KERNELS: &[Kernel] = &[
         smoke: &[100_000],
         reference: &[50_000_000],
         tolerance: DETERMINISTIC,
+        threaded: false,
     },
     Kernel {
         name: "matmul",
@@ -140,6 +162,7 @@ pub(crate) const KERNELS: &[Kernel] = &[
         smoke: &[64],
         reference: &[1024],
         tolerance: DETERMINISTIC,
+        threaded: false,
     },
     Kernel {
         name: "fft",
@@ -148,6 +171,7 @@ pub(crate) const KERNELS: &[Kernel] = &[
         smoke: &[10, 2],
         reference: &[20, 10],
         tolerance: DETERMINISTIC,
+        threaded: false,
     },
 ];
 
@@ -178,6 +202,13 @@ mod tests {
                 "{}",
                 kernel.name
             );
+        }
+    }
+
+    #[test]
+    fn threaded_kernels_take_their_thread_count_last() {
+        for kernel in KERNELS.iter().filter(|kernel| kernel.threaded) {
+            assert_eq!(kernel.arguments.last(), Some(&"threads"), "{}", kernel.name);
         }
     }
 
