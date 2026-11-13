@@ -12,7 +12,7 @@ def statements(items: list[int]):
     # else: in a comment is not the keyword
     else:
         pass
-    with lock():
+    with lock() as (a, b):
         pass
     try:
         work()

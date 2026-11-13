@@ -31,7 +31,7 @@ in `except` as a tuple.
 
 ### Error types the language provides
 
-Five error types need no declaration or import, as in Python. Each is an ordinary class of the
+Seven error types need no declaration or import, as in Python. Each is an ordinary class of the
 standard library's own Baryon source ([decision 0038](../decisions/0038-standard-library-in-baryon.md)),
 so it is raised, caught and read like one of the program's own.
 
@@ -42,6 +42,7 @@ so it is raised, caught and read like one of the program's own.
 | `EOFError` | none | `input()` at the end of standard input ([Standard streams](files-and-processes.md#standard-streams)) |
 | `KeyError` | `message: str` | Reading a FITS header's card that is missing or of another type ([Data files](data-files.md#headers), [decision 0044](../decisions/0044-fits-images-and-headers.md)), or a NetCDF file's variable or dimension that is missing ([decision 0047](../decisions/0047-netcdf-classic-files.md)), or an HDF5 file's object or attribute that is missing, with h5py's message ([decision 0052](../decisions/0052-hdf5-files.md)), and any program that raises it. A `dict`'s missing key panics instead |
 | `IndexError` | `message: str` | A subscript of a NetCDF variable or an HDF5 dataset with an index out of bounds, with `netCDF4`'s or h5py's message ([Data files](data-files.md#netcdf-files), [decision 0047](../decisions/0047-netcdf-classic-files.md), [decision 0052](../decisions/0052-hdf5-files.md)), and any program that raises it. A list's or an array's index out of bounds panics instead |
+| `StopIteration` | none | A class's `__next__`, to end the `for` loop over it ([Iterators](syntax.md#iterators), [decision 0053](../decisions/0053-with-and-for-on-user-classes.md)) |
 | `AttributeError` | `message: str` | Reading an attribute of a NetCDF file or variable that is missing, with `netCDF4`'s message, or of another type ([Data files](data-files.md#netcdf-files), [decision 0047](../decisions/0047-netcdf-classic-files.md)), and any program that raises it |
 
 ```python

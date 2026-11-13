@@ -74,14 +74,14 @@ the spelling to use instead.
 | Star targets `a, *rest = e` | no | |
 | `if`, `elif`, `else` | yes | The condition must be a `bool`; see [Types](types.md#bool) |
 | `while` | yes | No `else` clause |
-| `for x in e` | yes | Over `range`, `prange`, `simd`, an array, a list, a string or a tuple of one type, and over [`enumerate`, `zip` and `reversed`](#enumerate-zip-and-reversed) of these. No `else` clause |
+| `for x in e` | yes | Over `range`, `prange`, `simd`, an array, a list, a string or a tuple of one type, over [`enumerate`, `zip` and `reversed`](#enumerate-zip-and-reversed) of these, and over a class with `__next__` or `__iter__`; see [iterators](#iterators). No `else` clause |
 | `break`, `continue`, `pass`, `return` | yes | `break` and `return` are not allowed in a `prange` body |
 | `def` | yes | At module level, and as methods inside a class. Nested functions are not in version 0 |
 | `class` | yes | Only with the base `Struct` (optionally with `Copy`), `Exception` or `Enum`. No inheritance, by [decision 0015](../decisions/0015-no-class-inheritance.md); see [Types](types.md#structs) |
 | `import m`, `from m import x`, `as` | yes | No `from m import *`, no relative imports; see [Source files](#source-files) |
 | `raise E(...)` | yes | Only inside a function that declares it can fail; see [Errors](errors.md). No `raise ... from`: errors do not chain, so keep a cause in a field ([decision 0034](../decisions/0034-no-error-chaining.md)) |
 | `try` with `except` | yes | Each `except` names the error types it handles. No bare `except:`, no `else`, no `finally` |
-| `with unsafe:` | yes | The only `with` form in version 0 |
+| `with` | yes | `with unsafe:`, `with open(...) as f:` and the other files, and any class with `__enter__` and `__exit__`; see [`with` and context managers](#with-and-context-managers). The name after `as` is one name |
 | `match` | yes | Literal, enum, tuple, [class](types.md#unions-of-structs) and wildcard patterns; must be exhaustive |
 | `assert cond, message` | yes | Checked in every build; a false condition panics |
 | `del d[k]` | yes | Removes one dict entry; see [Dictionaries](types.md#dictionaries). `del x` is an error: a value is destroyed when its owner goes out of scope |
@@ -92,6 +92,122 @@ the spelling to use instead.
 
 `try` has no `finally` because cleanup is automatic: every value is destroyed when its owner goes
 out of scope, on every path out of a function.
+
+### `with` and context managers
+
+A *context manager* is a value whose class defines `__enter__` and `__exit__`, Python's two
+methods for "set up, then always tear down" ([decision 0053](../decisions/0053-with-and-for-on-user-classes.md)).
+`with manager as name:` calls `__enter__`, binds what it returns to `name` for the block, and
+calls `__exit__` on it when the block ends, however it ends:
+
+```python
+class EnergyAudit(Struct):
+    label: str
+    state: Oscillator
+    start: f64
+
+    def __enter__(self: Owned[Self]) -> Self:
+        self.start = self.state.energy()
+        return self
+
+    def __exit__(self):
+        drift = (self.state.energy() - self.start) / self.start
+        print(f"{self.label}: relative energy drift {drift:.3e}")
+
+
+def main():
+    with EnergyAudit("leapfrog", Oscillator(1.0, 0.0), 0.0) as audit:
+        leapfrog(audit.state, 0.01, 1000)
+```
+
+The whole program is the example [`energy_audit.byn`](../examples/energy_audit.byn).
+
+- **`__enter__(self: Owned[Self]) -> Self`** takes the value and gives it back, which is
+  Python's `return self` under the [ownership rules](values-and-references.md): a method can
+  return `self` only when it owns it. It may fail, `-> Raises[Self, E]`; then the block does not
+  run and `__exit__` is not called.
+- **`__exit__(self)`** takes `self` in any mode and returns `None`, or `Raises[None, E]`. Taking
+  `self` as `Owned` consumes the value, so reading `name` after the block is an error; a plain or
+  `InOut` `self` leaves it there, as Python leaves the name bound.
+- **`__exit__` runs on every way out of the block:** its end, `return`, `break`, `continue`, and
+  an error raised in it or passed on from a call. A `return` computes its value first, then
+  calls `__exit__`. A panic runs nothing.
+- **An error from `__exit__` is an error of the `with` statement**, which the function must
+  allow or a `try` around the `with` must handle. If the block was leaving with another error,
+  the one from `__exit__` replaces it, as in Python.
+- **`__exit__` takes nothing but `self`.** Python passes the error and lets `__exit__` swallow it
+  by returning true; Baryon errors are handled by `try`, where the reader sees them. Python's
+  `__exit__(self, exc_type, exc, tb)` is an error that says so.
+- **The name stays put in the block.** It may be read, passed to a call and changed in place,
+  as `leapfrog(audit.state, ...)` changes it, but not moved away or assigned a new value, since
+  `__exit__` must find it there:
+
+  ```text
+  error: `audit` is held by a `with` block, so it cannot be moved
+    --> main.byn:47:20
+     |
+  47 |             kept = audit
+     |                    ^^^^^ moved here
+    ::: main.byn:46:74
+     |
+  46 |         with EnergyAudit(f"{steps} steps", Oscillator(1.0, 0.0), 0.0) as audit:
+     |                                                                          ----- `__exit__` is called on `audit` when the block ends
+     = note: keep a copy instead: `audit.copy()`
+  ```
+
+- **Several managers nest:** `with a as x, b as y:` is `with a as x:` around `with b as y:`, so
+  `y` exits first. Without `as`, a hidden variable holds the value until `__exit__`.
+- The class must define both methods itself; one reached through an `Embed` field does not
+  count. A generic function cannot yet bound a type parameter by "any context manager" (idea
+  I.59).
+
+### Iterators
+
+An *iterator* is a value whose class defines `__next__`, Python's method for "give me the next
+value". `for x in iterator:` calls it once a pass and ends the loop when it raises
+`StopIteration`, an error type the language provides, with no fields
+([decision 0053](../decisions/0053-with-and-for-on-user-classes.md)):
+
+```python
+class Samples(Struct):
+    state: Oscillator
+    dt: f64
+    t: f64
+    left: int
+
+    def __next__(self: InOut[Self]) -> Raises[tuple[f64, f64], StopIteration]:
+        if self.left == 0:
+            raise StopIteration()
+        self.left -= 1
+        leapfrog(self.state, self.dt, 1)
+        self.t += self.dt
+        return (self.t, self.state.x)
+
+
+def main():
+    worst = 0.0
+    for t, x in Samples(Oscillator(1.0, 0.0), 0.01, 0.0, 1000):
+        worst = max(worst, abs(x - cos(t)))
+```
+
+The whole program is the example [`energy_audit.byn`](../examples/energy_audit.byn).
+
+- **`__next__(self: InOut[Self]) -> Raises[T, StopIteration]`.** The loop variable owns each `T`,
+  so it may be kept, and after the loop it holds the last one, as in Python. Ending the loop
+  costs one branch on the returned value, the same as any call that can fail. A `__next__` that
+  cannot raise `StopIteration` is an error, since the loop could never end.
+- **Other errors pass on.** `Raises[str, StopIteration | OSError]` makes the `for` statement
+  fail with `OSError`, which the function must allow or a `try` must handle.
+- **The loop uses the iterator itself.** Python calls `__iter__` first, and an iterator's
+  `__iter__` returns `self`; Baryon skips the call, so `__iter__` need not be written. A
+  variable is borrowed for the loop: the body may read it but not change or move it, and it
+  keeps its state afterwards, so a second loop goes on where a `break` left the first. A
+  temporary, such as `Samples(...)` above, is freed when the loop ends.
+- **An iterable gives an iterator.** A class that defines `__iter__` and not `__next__` is
+  *iterable*: the loop calls `__iter__` once, in the mode it declares, and loops over the
+  iterator it returns. A container can hand out a new iterator each time and keep its data.
+- A comprehension over an iterator, `[x for x in Samples(...)]`, is not built yet; write the
+  loop. `for` has no `else`, here as everywhere.
 
 ## Expressions
 

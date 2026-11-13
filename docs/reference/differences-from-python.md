@@ -11,6 +11,8 @@ reason in a line.
 | --- | --- | --- |
 | `b = a` makes two names for one list | `b = a` moves an array, list or struct; `a` cannot be used afterward | No garbage collector; ownership decides when memory is freed. [Moves](values-and-references.md#moves) |
 | A function can change any list passed to it | Parameters are read-only unless declared `InOut[T]` | The compiler must know what a call can change to prove arrays never alias. [Parameters](values-and-references.md#parameters) |
+| An iterator's `__next__` changes it and raises `StopIteration`; `for` calls `__iter__` first | `__next__` is written `def __next__(self: InOut[Self]) -> Raises[T, StopIteration]`; `for` calls it on the iterator itself, without `__iter__`, and the body cannot change or move the iterator | Raising is how any Baryon function says it has no value, and borrowing the iterator lets a loop over a variable leave it usable. [Iterators](syntax.md#iterators) |
+| A context manager's `__enter__` returns `self`, and `__exit__(self, exc_type, exc, tb)` sees the error and may swallow it | `__enter__` is written `def __enter__(self: Owned[Self]) -> Self`; `__exit__(self)` takes nothing else and cannot swallow an error; the name after `as` cannot be moved or reassigned in the block | A method returns `self` only when it owns it, and errors are handled by `try`, where the reader sees them. [`with` and context managers](syntax.md#with-and-context-managers) |
 | `int` has no size limit | `int` is a 64-bit integer; sized types such as `i32` and `u8` exist | Fixed widths are what fit in a register. [Numbers](types.md#numbers) |
 | `float32` and `float64` mix silently in NumPy | Mixing widths is an error until converted with `f64(x)` | Precision never changes without a visible conversion. [Number mixing](types.md#number-mixing) |
 | `1.0 / 0.0` raises `ZeroDivisionError` | `1.0 / 0.0` is infinity, as in IEEE 754 and NumPy | Numeric code expects IEEE results. [Numbers](types.md#numbers) |
@@ -57,7 +59,7 @@ reason in a line.
 `lambda` and nested functions, generators and `yield`, `async`, `global` and `nonlocal`, `del`
 other than `del d[k]`, `*args` and `**kwargs`, star assignment, `:=`, `set` displays, `set` comprehensions,
 generator expressions, `try` with `finally` or `else`, `raise ... from`, `for` and `while` with `else`, `with` other
-than `with unsafe:`, decorators other than `@test`, `@bench` and `@layout("C")`, and the `type`
+than `with unsafe:`, files and [context managers](syntax.md#with-and-context-managers), decorators other than `@test`, `@bench` and `@layout("C")`, and the `type`
 statement. The compiler rejects each with a message; none is silently ignored. Some will come
 later; the [Syntax](syntax.md) chapter lists what is accepted. Class inheritance will not come: it
 is left out by design (see the table above).

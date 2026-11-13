@@ -204,8 +204,9 @@ With `e.txt` holding the lines `# step energy`, `0 1.5` and `1 -0.25`, `total("e
   cannot be used after.
 - **`with` closes the file.** `with open(path, mode) as f:` gives the body the file and closes it
   where the body ends. A failure to write it out then is an `OSError` raised by the `with`
-  statement. A body left by `return`, `break` or an error drops the file instead. `with` takes
-  only a `File` and one `as` name; other context managers are not in Baryon.
+  statement. A body left by `return`, `break` or an error drops the file instead. A file in `with`
+  takes one `as` name. A class of the program's own can work in `with` too: see
+  [context managers](syntax.md#with-and-context-managers).
 - **A dropped file is closed.** A file that reaches the end of its owner's scope without
   `close()` or `with` is closed then. A drop cannot raise, so a failure to write the file out
   there panics: `` could not write out `out.txt` when it was dropped: No space left on device ``.
