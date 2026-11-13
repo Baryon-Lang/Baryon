@@ -59,7 +59,7 @@ the first crate.
 
 As of Nov 13, 2026, Phase 0 is done and the Phase 1 compiler is a working prototype: `baryon`
 checks a package, compiles it through LLVM into a native executable, runs its tests, rebuilds it on
-every save and serves an editor through the Language Server Protocol, and all six example programs
+every save and serves an editor through the Language Server Protocol, and all seven example programs
 build and run. Phase 2 has made debug builds and rebuilds fast. Phase 3's native libraries are
 under way, written in Baryon: `stats`, `linalg`, `fft`, `DataFrame`, plotting with `byplot`, the
 common data file formats and compression. [What builds today](../reference/status.md) lists what
