@@ -62,6 +62,7 @@ mod plotting_contour;
 mod plotting_figures;
 mod plotting_images;
 mod plotting_log;
+mod plotting_png;
 mod print;
 mod process;
 mod reductions;

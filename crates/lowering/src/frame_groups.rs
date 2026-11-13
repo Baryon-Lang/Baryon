@@ -9,7 +9,8 @@
 //! so a column of another number type is converted here first, and the result converted
 //! back where pandas keeps the column's type. Cost for `n` rows: `n log n` comparisons for
 //! each key column, and one pass for each new column. A key of `str` is grouped by the
-//! integers the library's `text_codes` gives for its text, and copied with `text_taken`.
+//! integers the library's `text_codes` gives for its text, and copied with `text_taken`; a
+//! column of `str` reduced by `agg` is read as those integers too.
 
 use crate::builder::Builder;
 use mir::{BinaryOperator, Constant, Local, Operand, Place, Projection, Rvalue};
@@ -28,6 +29,8 @@ struct Groups {
     order: Local,
     /// The local holding where each group starts in `order`, and last where `order` ends.
     starts: Local,
+    /// The local holding how many rows the frame has, those left out of `order` included.
+    count: Local,
 }
 
 impl<'db> Builder<'db> {
@@ -92,8 +95,13 @@ impl<'db> Builder<'db> {
                 return self.unsupported(argument, "this column of `agg`");
             };
             let values = source.clone().project(Projection::Field(position));
-            let Some(column) = self.group_column(&groups, (values, column), how, new, argument)
-            else {
+            let read = (values, column);
+            let column = if matches!(column.element.kind(self.db), TypeKind::Str) {
+                self.group_text(&groups, read, how, argument)
+            } else {
+                self.group_column(&groups, read, how, new, argument)
+            };
+            let Some(column) = column else {
                 return;
             };
             made.push(Operand::Move(column));
@@ -161,7 +169,11 @@ impl<'db> Builder<'db> {
         let marks = vec![Place::from(marks)];
         let starts = self.frame_call("group_starts", Vec::new(), marks, positions, node)?;
         self.drop_later(starts);
-        Some(Groups { order, starts })
+        Some(Groups {
+            order,
+            starts,
+            count,
+        })
     }
 
     /// The place of a new array holding one value for each group of `groups`: the values of
@@ -203,6 +215,52 @@ impl<'db> Builder<'db> {
         self.drop_later(reduced);
         let result = self.converted_new(&Place::from(reduced), new.element, node);
         Some(Place::from(result))
+    }
+
+    /// The place of a new array holding one value for each group of `groups`: the texts of
+    /// `read`, a column of `str`, reduced the way `how` numbers. `count` (5) is the size of
+    /// each group, which `group_integers` gives for any column, here the rows' positions.
+    /// For the others the library's `group_rows` picks one row of each group, whose texts
+    /// `text_taken` copies: `min` (1) and `max` (2) by the whole numbers `text_codes` gives
+    /// the column, `first` (3) and `last` (4) by the groups alone. Cost: one pass and the
+    /// copy, and for `min` and `max` a sort of the column, comparing text.
+    fn group_text(
+        &mut self,
+        groups: &Groups,
+        (values, column): (Place, &Column<'db>),
+        how: i128,
+        node: NodeId,
+    ) -> Option<Place> {
+        let int = self.int_type();
+        let positions = self.positions_type();
+        let compared = match how {
+            1 | 2 => self.text_codes(values.clone(), node)?,
+            5 => {
+                let count = vec![Place::from(groups.count)];
+                let rows = self.frame_call("row_positions", Vec::new(), count, positions, node)?;
+                self.drop_later(rows);
+                Place::from(rows)
+            }
+            // `group_rows` does not read the numbers for the first or last row of a group.
+            _ => Place::from(groups.order),
+        };
+        let how_held = Operand::Constant(Constant::integer(int, how));
+        let how_held = self.held(int, how_held, node);
+        let arguments = vec![
+            compared,
+            Place::from(groups.order),
+            Place::from(groups.starts),
+            Place::from(how_held),
+        ];
+        if how == 5 {
+            let counts =
+                self.frame_call("group_integers", Vec::new(), arguments, positions, node)?;
+            return Some(Place::from(counts));
+        }
+        let rows = self.frame_call("group_rows", Vec::new(), arguments, positions, node)?;
+        self.drop_later(rows);
+        let taken = self.taken_column(values, column, Place::from(rows), node)?;
+        Some(Place::from(taken))
     }
 
     /// The place of the array `array`, whose elements are `from`, with its elements as `to`:

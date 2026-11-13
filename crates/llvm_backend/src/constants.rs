@@ -3,7 +3,8 @@
 //! (see the `panic` module), formatting and `dict`s refer to them by name. The same value also
 //! holds the module's debug information and loop metadata, which share its numbering.
 
-use crate::debug::Debug;
+use crate::debug::{Debug, FIRST_SUBPROGRAM};
+use crate::split::Pieces;
 use crate::text::FORMAT_SPEC;
 use source::{FileId, Sources, Span};
 use std::collections::BTreeMap;
@@ -43,9 +44,9 @@ pub(crate) struct Constants<'a> {
     /// [`Assert`](mir::TerminatorKind::Assert)s are not written, and `prange` reductions
     /// combine with wrapping arithmetic (decision 0030).
     pub(crate) wraps: bool,
-    /// The loop metadata node of each `simd` loop, in the order they were made. They share
-    /// the numbering of the debug information's nodes, after which they are written.
-    loops: Vec<String>,
+    /// The number and loop metadata node of each `simd` loop, in the order they were made.
+    /// They share the numbering of the debug information's nodes, after which they are written.
+    loops: Vec<(usize, String)>,
 }
 
 /// How many constants and subprograms there were, to roll back to.
@@ -115,8 +116,11 @@ impl<'a> Constants<'a> {
     /// first.
     pub(crate) fn vectorize(&mut self) -> String {
         let number = self.debug.as_ref().map_or(0, Debug::next_number) + self.loops.len();
-        self.loops.push(format!(
-            "!{number} = distinct !{{!{number}, !{{!\"llvm.loop.vectorize.enable\", i1 true}}}}"
+        self.loops.push((
+            number,
+            format!(
+                "!{number} = distinct !{{!{number}, !{{!\"llvm.loop.vectorize.enable\", i1 true}}}}"
+            ),
         ));
         format!("!{number}")
     }
@@ -126,26 +130,60 @@ impl<'a> Constants<'a> {
         Debug::location(self.sources, scope, span)
     }
 
-    /// Every constant's definition, one per line, in the order they were made.
-    pub(crate) fn finish(self) -> String {
-        self.definitions
-            .into_iter()
-            .map(|(_, definition)| definition + "\n")
-            .collect()
+    /// A new, empty set of constants for one definition, with this one's sources, overflow
+    /// behavior and debug information settings. Each definition numbers its own constants and
+    /// metadata nodes from the start, and the `split` module numbers them again for the
+    /// module that holds it, so a definition's text never depends on another's.
+    pub(crate) fn local(&self) -> Self {
+        Self {
+            sources: self.sources,
+            definitions: Vec::new(),
+            numbers: BTreeMap::new(),
+            debug: self.debug.as_ref().map(Debug::local),
+            wraps: self.wraps,
+            loops: Vec::new(),
+        }
     }
 
-    /// The debug information's metadata, when it is on, then each loop metadata node.
-    pub(crate) fn metadata(&self) -> String {
-        let mut text = self
+    /// Takes from `local`, the constants of a definition just written, what the module's
+    /// debug information needs: the file the compile unit names, when no earlier definition
+    /// gave one.
+    pub(crate) fn adopt(&mut self, local: &Self) {
+        if let (Some(debug), Some(written)) = (&mut self.debug, &local.debug) {
+            debug.adopt(written);
+        }
+    }
+
+    /// The compile unit and module flags every module carries with debug information, and the
+    /// metadata numbers they take; empty and 0 without debug information.
+    pub(crate) fn header(&self) -> (String, usize) {
+        self.debug.as_ref().map_or((String::new(), 0), |debug| {
+            (debug.header(self.sources), FIRST_SUBPROGRAM)
+        })
+    }
+
+    /// The constants and metadata nodes of one definition, made by a set from
+    /// [`local`](Self::local), for the `split` module to number in the module that holds it.
+    pub(crate) fn pieces(self) -> Pieces {
+        let subprograms = self
             .debug
             .as_ref()
-            .map(|debug| debug.finish(self.sources))
+            .map(|debug| {
+                debug
+                    .nodes()
+                    .map(|(number, node)| (number, node.to_owned()))
+                    .collect()
+            })
             .unwrap_or_default();
-        for node in &self.loops {
-            text.push_str(node);
-            text.push('\n');
+        Pieces {
+            constants: self
+                .definitions
+                .into_iter()
+                .map(|(_, definition)| definition)
+                .collect(),
+            subprograms,
+            loops: self.loops,
         }
-        text
     }
 
     /// The constant holding the parts of `spec` as the runtime's `FormatSpec` lays them out, as

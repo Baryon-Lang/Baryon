@@ -6,8 +6,8 @@ what a text column of a [`DataFrame`](dataframes.md) is
 ([decision 0045](../decisions/0045-dataframe.md)): see [In a DataFrame](#in-a-dataframe).
 
 This chapter covers what a text array does today: it is built from a list, counted, read one
-element at a time, looped over and copied. The rest is roadmap item 3.13.3, and the compiler
-says so by name when a program asks for it.
+element at a time, looped over, copied, and cut into parts by a slice, a mask or positions.
+The rest is roadmap item 3.13.3, and the compiler says so by name when a program asks for it.
 
 ## Why not a list of strings
 
@@ -70,6 +70,31 @@ first = names[0].copy()
 
 `kept = names[0]` without the `copy()` is a compile error, the same one a list element gives,
 since it would move the text out of the array.
+
+## Slices, masks and positions
+
+`names[1:3]` is a new text array of the elements a slice takes, and `names[mask]` and
+`names[positions]` choose elements as they do for
+[an array of numbers](arrays.md#choosing-elements):
+
+```python
+names = Array(["delta", "", "alpha", "beta"])
+lengths = Array([len(name) for name in names])
+for name in names[lengths > 4][::-1]:
+    print(name)
+```
+
+This prints `alpha`, then `delta`.
+
+- **A slice follows Python**: a bound left out is an end of the array, a negative bound counts
+  from the end, a bound past an end stops there, and the step may be negative. A step of 0
+  stops the program.
+- **Each is a copy.** A slice of an array of numbers is a view of that array's memory; a slice
+  of a text array owns its text, so it can be kept in a variable, and it stays whole after
+  the array it came from changes. An element cannot be assigned through one.
+- **A mask has the array's length**, and a position lies inside the array. Another length, or
+  a position outside, stops the program.
+- **Cost:** one copy of each element chosen, and for a slice 8 bytes for each as well.
 
 ## Loops
 
@@ -183,7 +208,8 @@ Its columns are chosen and changed as any frame's are: `df[["symbol", "price"]]`
 `df.drop_duplicates()` leaves out the rows that repeat, comparing text exactly, so `"IBM"`
 and `"ibm"` are two values. `left.merge(right, on="symbol")` joins on a text key the same
 way, and carries the text columns of both frames into the result.
-`df.groupby("symbol").agg(...)` groups rows by text, the groups in the order of the text.
+`df.groupby("symbol").agg(...)` groups rows by text, the groups in the order of the text,
+and `agg` reduces a text column with `count`, `first`, `last`, `min` and `max`.
 
 Rows work as for any frame with a schema. `DataFrame(rows)` copies each `str` field of a list
 of structs into a text column. `df[i]` and the rows of `for row in df.itertuples()` are
@@ -201,16 +227,12 @@ print(first.symbol)
 IBM
 ```
 
-One use of a frame that has a text column is a compile error for now and comes with the rest
-of roadmap item 3.13.3: a text column reduced by `agg`, such as `first=("symbol", "first")`.
-
 ## What is not built yet
 
 Each of these is a compile error today, and the rest of roadmap item 3.13.3:
 
 - **Assigning an element**, `names[0] = "beta"`. The elements lie end to end, so one cannot
   change length in place. Build a new array from a list.
-- **Slices and masks**, `names[1:3]` and `names[keep]`.
 - **Operators**: `names == "alpha"`, `"alpha" in names`, `names + other`.
 - **Methods and attributes** other than `copy()`, `unique()` and `nunique()`: `shape`,
   `argsort` and the rest.
@@ -219,4 +241,3 @@ Each of these is a compile error today, and the rest of roadmap item 3.13.3:
 - **Showing one**: `print(names)`, `str(names)` and `f"{names}"`. Print the elements in a loop.
 - **A struct field** of type `Array[str, 1]`. Hold a `list[str]` in the struct, or pass the
   array beside it.
-- **A text column reduced by `agg`**, as said under [In a DataFrame](#in-a-dataframe).

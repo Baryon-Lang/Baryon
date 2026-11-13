@@ -37,7 +37,8 @@ impl<'db> Body<'db> {
                 TypeKind::Primitive(Primitive::Bool | Primitive::Integer(Integer::I64))
             )
         });
-        if indices.len() == 1 && rank_one(base).is_some() && chooses {
+        let chosen_from = rank_one(base).is_some() || self.is_text_array(base);
+        if indices.len() == 1 && chosen_from && chooses {
             return Some(base);
         }
         let message = format!(
@@ -56,12 +57,21 @@ impl<'db> Body<'db> {
     }
 
     /// Whether the subscript `node` chooses elements with an array, which gives a new array
-    /// rather than naming an element or a view.
+    /// rather than naming an element or a view. A slice of a text array is one too: its
+    /// elements are copied into a new array.
     pub(super) fn is_selection(&self, node: NodeId) -> bool {
-        self.tree.kind(node) == SyntaxKind::Subscript
-            && self
-                .tree
-                .child(node, Role::Index)
+        if self.tree.kind(node) != SyntaxKind::Subscript {
+            return false;
+        }
+        let index = self.tree.child(node, Role::Index);
+        let sliced = index.is_some_and(|index| self.tree.kind(index) == SyntaxKind::Slice);
+        let text = self
+            .tree
+            .child(node, Role::Value)
+            .and_then(|value| self.recorded(value))
+            .is_some_and(|ty| self.is_text_array(ty));
+        (sliced && text)
+            || index
                 .and_then(|index| self.recorded(index))
                 .is_some_and(|ty| self.is_any_array(ty))
     }

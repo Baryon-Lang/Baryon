@@ -22,6 +22,27 @@ use instances::{Instance, Instances, ready};
 use std::collections::HashMap;
 use types::{Declaration, Item, Nominal, TypeDb, TypeKind};
 
+/// How a compiled program is split into LLVM modules.
+#[derive(Clone, Copy)]
+enum Split {
+    /// At most this many modules of about equal size, one per core
+    /// ([`llvm_backend::Module::finish_parts`]).
+    Parts(usize),
+    /// Modules an edit changes only where it reaches
+    /// ([`llvm_backend::Module::finish_chunks`]).
+    Chunks,
+}
+
+impl Split {
+    /// The text of `module`'s modules, split this way.
+    fn finish(self, module: llvm_backend::Module<'_, '_>) -> Vec<String> {
+        match self {
+            Self::Parts(parts) => module.finish_parts(parts),
+            Self::Chunks => module.finish_chunks(),
+        }
+    }
+}
+
 /// What a compiled program starts at.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Program {
@@ -64,7 +85,7 @@ impl Session {
     /// module defines one, or when it takes parameters or returns a value. `main` may raise; an
     /// error that reaches its end is printed and the program exits with status 1.
     pub fn compile(&self, root: Option<&str>, profile: Profile) -> Result<String, Vec<Diagnostic>> {
-        self.program(root, profile, Program::Main, 1)
+        self.program(root, profile, Program::Main, Split::Parts(1))
             .map(|(modules, _)| modules.concat())
     }
 
@@ -92,7 +113,35 @@ impl Session {
         profile: Profile,
         parts: usize,
     ) -> Result<Vec<String>, Vec<Diagnostic>> {
-        self.program(root, profile, Program::Main, parts)
+        self.program(root, profile, Program::Main, Split::Parts(parts))
+            .map(|(modules, _)| modules)
+    }
+
+    /// The package as [`compile`](Self::compile) writes it, split into LLVM modules whose text
+    /// an edit changes only where it reaches, for `baryon watch`, which keeps each module's
+    /// machine code and compiles again only the modules whose text changed (roadmap 2.2.2,
+    /// [`llvm_backend::Module::finish_chunks`]). A small package comes back as one module.
+    ///
+    /// ```
+    /// use driver::{Profile, Session};
+    ///
+    /// let mut session = Session::new();
+    /// session.add_file("main.byn", "def main():\n    assert 6 * 7 == 42\n")?;
+    /// let modules = session.compile_chunks(None, Profile::Debug).unwrap();
+    /// assert_eq!(modules.len(), 1);
+    /// assert!(modules[0].contains("define void @main.main()"), "{}", modules[0]);
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The same as [`compile`](Self::compile).
+    pub fn compile_chunks(
+        &self,
+        root: Option<&str>,
+        profile: Profile,
+    ) -> Result<Vec<String>, Vec<Diagnostic>> {
+        self.program(root, profile, Program::Main, Split::Chunks)
             .map(|(modules, _)| modules)
     }
 
@@ -130,7 +179,7 @@ impl Session {
         root: Option<&str>,
         profile: Profile,
     ) -> Result<(String, Vec<String>), Vec<Diagnostic>> {
-        self.program(root, profile, Program::Tests, 1)
+        self.program(root, profile, Program::Tests, Split::Parts(1))
             .map(|(modules, tests)| (modules.concat(), tests))
     }
 
@@ -157,7 +206,7 @@ impl Session {
         profile: Profile,
         parts: usize,
     ) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>> {
-        self.program(root, profile, Program::Tests, parts)
+        self.program(root, profile, Program::Tests, Split::Parts(parts))
     }
 
     /// The error for a `main` function outside the package's `main.byn`.
@@ -169,15 +218,15 @@ impl Session {
             )
     }
 
-    /// The package as at most `parts` LLVM modules whose C `main` starts `program`, built for
-    /// `profile`, with the names of the tests it runs, which are none for [`Program::Main`].
-    /// With `parts` 1 it is exactly one module.
+    /// The package as LLVM modules split as `split` says, whose C `main` starts `program`,
+    /// built for `profile`, with the names of the tests it runs, which are none for
+    /// [`Program::Main`]. With [`Split::Parts`] of 1 it is exactly one module.
     fn program(
         &self,
         root: Option<&str>,
         profile: Profile,
         program: Program,
-        parts: usize,
+        split: Split,
     ) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>> {
         let errors: Vec<Diagnostic> = self
             .check()
@@ -278,7 +327,7 @@ impl Session {
         errors.extend(self.define(&mut module, roots, &declared, &symbol, &owners));
         let tests = self.start(&mut module, program, &entries, &mut errors);
         if errors.is_empty() {
-            Ok((module.finish_parts(parts), tests))
+            Ok((split.finish(module), tests))
         } else {
             Err(errors)
         }

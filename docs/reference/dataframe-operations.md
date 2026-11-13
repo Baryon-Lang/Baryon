@@ -4,9 +4,9 @@ This page continues [DataFrames](dataframes.md), which describes the type, its c
 its rows. The operations here read every row of a frame and build a new frame:
 `sort_values` puts the rows in order, `groupby(...).agg(...)` reduces the rows that share a
 key to one row, `merge` pairs the rows of two frames, `drop_duplicates` leaves out the
-rows that repeat, and `concat` stacks frames. Each keeps pandas's name and
-arguments ([decision 0045](../decisions/0045-dataframe.md)), and the compiler works out the
-columns of each result.
+rows that repeat, `value_counts` counts them, and `concat` stacks frames. Each keeps
+pandas's name and arguments ([decision 0045](../decisions/0045-dataframe.md)), and the
+compiler works out the columns of each result.
 
 The examples use a frame `trades` with the columns `symbol`, `price` and `volume`.
 
@@ -107,8 +107,11 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   no row index; pandas makes them the index, and shows this frame after `reset_index()`.
 - **The groups come out sorted by their keys**, rising, and rows keep their order inside a
   group, which is what `first` and `last` see. A key of `str` is in the order of Python's
-  `<`, by code point, and texts are one group only when exactly equal. A column of `str`
-  cannot be reduced by `agg` yet (roadmap item 3.13.3).
+  `<`, by code point, and texts are one group only when exactly equal.
+- **A column of `str` has five of the reductions**: `count`, an `i64`, and `first`,
+  `last`, `min` and `max`, which give a `str`, the smallest and largest by `<`. The
+  others are compile errors. pandas's `sum` of text, which joins the texts of a group, is
+  not built. `min` and `max` cost one sort of the column, comparing text.
 - **NaN is left out, as in pandas.** A row whose key is NaN belongs to no group. A NaN
   value is skipped by every reduction, so `count` counts the values that are numbers. A
   group with no numbers has the sum 0, the count 0, and NaN for the rest; `var` and `std`
@@ -206,6 +209,40 @@ With four trades of the symbols 7, 3, 7 and 5, this prints the first trade of ea
   `keep=False`, and its `inplace=` and `ignore_index=`, are not built.
 - **Cost:** for `n` rows, a sort of `n` row positions for each column compared, then one
   pass and one copy of the rows kept.
+
+## Counting values
+
+`df.value_counts("symbol")` gives a new frame with one row for each distinct value of the
+column: the value, then `count`, the number of rows that hold it. A list of columns counts
+the rows by those columns together, and no argument counts by every column.
+
+```python
+print(trades.value_counts("symbol"))
+```
+
+With four trades of the symbols 7, 3, 7 and 5, this prints:
+
+```text
+   symbol  count
+0       7      2
+1       3      1
+2       5      1
+```
+
+- **The largest count comes first.** Values with the same count stay in the order they
+  first appear in the frame, as in pandas.
+- **The result is a frame**, where pandas gives a `Series` with the values as its index: a
+  Baryon frame has no row index. Its columns are the ones named, in the order named, and
+  `count`, an `i64`. Read them as `counts.symbol` and `counts.count`.
+- **A row with a NaN in a column counted by is not counted**, as in pandas. Empty text is
+  a value like any other.
+- **No column counted by may be named `count`**, since the result would have two columns
+  of that name. This is a compile error; `rename` the column first.
+- **The frame is read, not taken.** A complex column cannot be counted by yet.
+- **pandas's other arguments are not built**: `sort=`, `ascending=`, `normalize=` and
+  `dropna=`. Sort the result with `sort_values` for another order.
+- **Cost:** for `n` rows, a sort of `n` row positions for each column counted by, one more
+  sort for a column of `str`, then one pass and a sort of the distinct values by count.
 
 ## Stacking frames
 

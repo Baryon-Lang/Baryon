@@ -8,7 +8,12 @@
 //! again. A file added or removed changes the package's modules, so the session is read again
 //! from nothing.
 //!
-//! It runs until it is stopped, with `Ctrl-C`. Each rebuild prints `built <output> in <time>`,
+//! Each build splits the program into modules an edit changes only where it reaches
+//! ([`Session::compile_chunks`]), and keeps every module's machine code in memory: a module
+//! whose text did not change skips `clang`, which is about half of a build (roadmap 2.2.2).
+//!
+//! It runs until it is stopped, with `Ctrl-C`. Each rebuild prints `built <output> in <time>`
+//! and how many modules `clang` compiled,
 //! or the errors, to standard error; with `--run` the program then runs, with the terminal's
 //! output, and its exit status is printed. A failed build never stops the watch: fixing the error
 //! and saving builds again. Nor does a file that cannot be read after a change, as when an editor
@@ -26,7 +31,8 @@
 //! modification time changed. Polling needs no dependency and behaves the same on Linux and
 //! macOS; a look every 200 ms keeps the wait for a save well under the rebuild itself.
 
-use crate::{Loaded, compile_loaded, package, parts};
+use crate::link::Objects;
+use crate::{Loaded, compile_loaded, package};
 use database::File;
 use driver::{Profile, Session};
 use std::collections::BTreeMap;
@@ -119,8 +125,16 @@ pub(crate) fn watch(
     let started = Instant::now();
     let mut package = Package::load(root)?;
     let mut load = started.elapsed();
+    let mut objects = Objects::default();
     loop {
-        rebuild(&package.loaded(load), root, output, profile, run)?;
+        rebuild(
+            &package.loaded(load),
+            root,
+            output,
+            profile,
+            run,
+            &mut objects,
+        )?;
         loop {
             thread::sleep(PAUSE);
             // A listing that fails mid-save is looked at again at the next pause.
@@ -164,8 +178,10 @@ fn read(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))
 }
 
-/// Builds the loaded package into `output`, prints how long it took, and runs it when `run` is
-/// set. A package with errors gets them printed, and nothing is run.
+/// Builds the loaded package into `output`, prints how long it took and how many modules
+/// `clang` compiled, and runs it when `run` is set. A package with errors gets them printed,
+/// and nothing is run. `objects` holds the machine code of the last build's modules, and a
+/// module whose text is unchanged reuses it instead of running `clang` (roadmap 2.2.2).
 ///
 /// # Errors
 ///
@@ -177,6 +193,7 @@ fn rebuild(
     output: &Path,
     profile: Profile,
     run: bool,
+    objects: &mut Objects,
 ) -> Result<(), String> {
     let started = Instant::now();
     let built = compile_loaded(
@@ -185,9 +202,10 @@ fn rebuild(
         output,
         profile,
         false,
+        Some(objects),
         |session, directory| {
             session
-                .compile_parts(directory, profile, parts(profile))
+                .compile_chunks(directory, profile)
                 .map(|modules| (modules, Vec::new()))
         },
     )?;
@@ -198,9 +216,10 @@ fn rebuild(
         writeln!(stderr, "watching for changes").map_err(report)?;
         return Ok(());
     }
+    let (compiled, modules) = objects.compiled();
     writeln!(
         stderr,
-        "built {} in {} ms",
+        "built {} in {} ms, {compiled} of {modules} modules compiled",
         output.display(),
         took.as_millis()
     )
