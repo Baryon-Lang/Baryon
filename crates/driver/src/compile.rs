@@ -11,7 +11,7 @@
 //! An instance's symbol is its function's with the type arguments after it: `main.square[f64]`.
 //! A function lowering or the backend cannot handle yet is reported once, at its name.
 
-mod functions;
+pub(crate) mod functions;
 mod instances;
 
 use crate::{Profile, Session};

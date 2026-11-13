@@ -35,7 +35,7 @@ mod compile;
 mod editor;
 mod lowered;
 
-pub use editor::{Completion, CompletionKind, Hover, InlayHint};
+pub use editor::{Completion, CompletionKind, Hover, InlayHint, TestLens};
 
 use database::{Db, File, Package, ParsedFile, Resolution};
 use diagnostics::Diagnostic;

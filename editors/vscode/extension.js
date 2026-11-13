@@ -34,6 +34,7 @@ async function activate(context) {
     { documentSelector: [{ scheme: "file", language: "baryon" }] },
   );
   context.subscriptions.push(
+    vscode.commands.registerCommand("baryon.runTest", (name) => runTest(command, name)),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("baryon.path")) {
         vscode.window.showInformationMessage(
@@ -50,6 +51,36 @@ async function activate(context) {
         "Install `baryon`, or set `baryon.path` to the program, then reload the window.",
     );
   }
+}
+
+/**
+ * Runs one test, `baryon test -k <name> <folder>`, as a VS Code task, so its report shows in
+ * the terminal panel. The server's "Run test" lens above each `@test` function calls this with
+ * the test's full name, `module.test_name`. `-k` picks every test whose name contains the text,
+ * so a test whose name starts another's, such as `test_flux` and `test_flux_speed`, runs both.
+ *
+ * The command runs as a process, not through a shell, so no name or path needs quoting.
+ *
+ * @param {string} baryon The `baryon` program, from the `baryon.path` setting.
+ * @param {string} name The test's full name.
+ * @returns {Thenable<vscode.TaskExecution> | undefined} The running task, or nothing when no
+ *   folder is open.
+ */
+function runTest(baryon, name) {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    vscode.window.showErrorMessage("Open the package's folder to run its tests.");
+    return undefined;
+  }
+  const task = new vscode.Task(
+    { type: "process", test: name },
+    folder,
+    `test ${name}`,
+    "baryon",
+    new vscode.ProcessExecution(baryon, ["test", "-k", name, folder.uri.fsPath]),
+  );
+  task.group = vscode.TaskGroup.Test;
+  return vscode.tasks.executeTask(task);
 }
 
 /**

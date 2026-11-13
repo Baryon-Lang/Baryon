@@ -6,7 +6,7 @@
 use crate::Session;
 use database::Db;
 use std::collections::HashMap;
-use syntax::{NodeId, Role, SyntaxKind};
+use syntax::{NodeId, Role, SyntaxKind, SyntaxTree};
 use types::{Declaration, Item, TypeDb, TypeKind};
 
 /// One function to compile: the item, its symbol and the span of its name.
@@ -44,6 +44,18 @@ pub(super) enum Test {
     Method,
 }
 
+/// Whether the definition `statement` of `tree`, whose file's text is `text`, is decorated
+/// `@test`. The editor's Run Test lenses ask the same question, so a lens shows exactly where
+/// `baryon test` finds a test.
+pub(crate) fn is_test(tree: &SyntaxTree, text: &str, statement: NodeId) -> bool {
+    tree.children_with(statement, Role::Decorator)
+        .any(|decorator| {
+            tree.child(decorator, Role::Value).is_some_and(|value| {
+                tree.kind(value) == SyntaxKind::Name && tree.text(value, text) == "test"
+            })
+        })
+}
+
 impl Session {
     /// Every function and method of the package, with its symbol, in file and source order.
     pub(super) fn functions(&self) -> Vec<Function<'_>> {
@@ -67,14 +79,7 @@ impl Session {
                     .filter(|&name| tree.kind(name) == SyntaxKind::Name)
             };
             let in_main_module = module == "main";
-            let is_test = |statement: NodeId| {
-                tree.children_with(statement, Role::Decorator)
-                    .any(|decorator| {
-                        tree.child(decorator, Role::Value).is_some_and(|value| {
-                            tree.kind(value) == SyntaxKind::Name && tree.text(value, text) == "test"
-                        })
-                    })
-            };
+            let is_test = |statement: NodeId| is_test(tree, text, statement);
             let mut push =
                 |statement: NodeId, node: NodeId, symbol: String, main: bool, method: bool| {
                     let decorated = match (is_test(statement), method) {
@@ -157,7 +162,7 @@ pub(super) fn owners<'db>(functions: &[Function<'db>]) -> HashMap<Item<'db>, Ite
 
 /// The `Name` node of each parameter of the function `function` declares that has a default,
 /// which names the function that computes it.
-fn defaulted(tree: &syntax::SyntaxTree, function: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+fn defaulted(tree: &SyntaxTree, function: NodeId) -> impl Iterator<Item = NodeId> + '_ {
     tree.child(function, Role::Parameters)
         .into_iter()
         .flat_map(|parameters| tree.children(parameters))

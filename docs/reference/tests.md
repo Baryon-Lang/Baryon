@@ -76,5 +76,9 @@ report, is shown after the list.
 `baryon test` exits with status 0 when every test passed, including when there are none, and 1
 when a test failed or the package does not compile.
 
-This is the prototype of the runner (roadmap 1.11.6). Running tests in parallel, choosing which
-tests to run by name, and `@bench` come later.
+To run only some tests, give `-k` and part of their name: `baryon test -k test_flux heat` runs
+the tests whose full name contains `test_flux` ([`baryon test`](commands.md#baryon-test)). In
+VS Code, the **Run test** link above each test does the same for that test.
+
+This is the prototype of the runner (roadmap 1.11.6). Running tests in parallel and `@bench`
+come later.

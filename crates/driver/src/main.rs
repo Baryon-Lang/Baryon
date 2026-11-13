@@ -75,13 +75,17 @@ use std::{env, fs};
 use timings::Timings;
 
 /// How to call the command, printed when the arguments are wrong.
-const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] <directory> | baryon doc <directory> <output> | baryon lsp";
+const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] [-k <text>] <directory> | baryon doc <directory> <output> | baryon lsp";
 
 /// The flag that makes `build`, `run` and `test` compile a release build.
 const RELEASE: &str = "--release";
 
 /// The flag that makes `build`, `run` and `test` print how long each stage of the build took.
 const TIMINGS: &str = "--timings";
+
+/// The option that makes `test` run only the tests whose name contains the text after it, as
+/// pytest's `-k` does at its simplest (roadmap 2.4.3).
+const FILTER: &str = "-k";
 
 fn main() -> ExitCode {
     let mut arguments: Vec<String> = env::args().skip(1).collect();
@@ -94,6 +98,7 @@ fn main() -> ExitCode {
         Profile::Debug
     };
     let timings = take_flag(&mut arguments, builds, TIMINGS);
+    let filter = take_filter(&mut arguments);
     let outcome = match arguments.as_slice() {
         [command, directory] if command == "check" => check(Path::new(directory)),
         [command, directory, output] if command == "build" => {
@@ -103,7 +108,9 @@ fn main() -> ExitCode {
         [command, directory, output] if command == "doc" => {
             document(Path::new(directory), Path::new(output))
         }
-        [command, directory] if command == "test" => test(Path::new(directory), profile, timings),
+        [command, directory] if command == "test" => {
+            test(Path::new(directory), profile, timings, filter.as_deref())
+        }
         [flag] if flag == "--version" || flag == "-V" => {
             // A tester's bug report starts with this line.
             println_to_stdout(&format!("baryon {}", env!("CARGO_PKG_VERSION")))
@@ -134,6 +141,22 @@ fn take_flag(arguments: &mut Vec<String>, builds: bool, flag: &str) -> bool {
     } else {
         false
     }
+}
+
+/// Removes `-k <text>` from `arguments` when the command is `test`, and returns the text: the
+/// part of a test's name that picks it. Any other command keeps the option, so it is reported
+/// as wrong usage; so is a `-k` given twice or with nothing after it.
+fn take_filter(arguments: &mut Vec<String>) -> Option<String> {
+    if arguments.first().is_none_or(|command| command != "test") {
+        return None;
+    }
+    let at = arguments.iter().position(|argument| argument == FILTER)?;
+    if at + 1 >= arguments.len() || arguments[at + 2..].contains(&FILTER.to_owned()) {
+        return None;
+    }
+    let text = arguments.remove(at + 1);
+    arguments.remove(at);
+    Some(text)
 }
 
 /// Prints `line` to standard output, for `--version` and `--help`, and succeeds.
@@ -257,7 +280,12 @@ fn run(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String>
 ///
 /// Fails with a message when the package cannot be built for the reasons [`build`] gives, the
 /// program cannot be started, or the report cannot be written.
-fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String> {
+fn test(
+    root: &Path,
+    profile: Profile,
+    timings: bool,
+    filter: Option<&str>,
+) -> Result<ExitCode, String> {
     let scratch = env::temp_dir().join(format!("baryon-test-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("tests");
@@ -265,7 +293,7 @@ fn test(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String
         session.compile_tests_parts(directory, profile, parts(profile))
     });
     let ran = built.and_then(|built| match built {
-        Ok((_, tests)) => runner::run(&program, &tests, &mut io::stdout().lock()),
+        Ok((_, tests)) => runner::run(&program, &tests, filter, &mut io::stdout().lock()),
         Err(code) => Ok(code),
     });
     let _ = fs::remove_dir_all(&scratch);

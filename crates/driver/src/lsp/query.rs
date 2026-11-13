@@ -134,4 +134,37 @@ impl Server {
         }
         Ok(json!({"changes": changes}))
     }
+
+    /// Answers `textDocument/codeLens`: a "Run test" lens above each test of the document
+    /// ([`Session::test_lenses`](driver::Session::test_lenses)). The lens names the command
+    /// `baryon.runTest` with the test's full name; the VS Code extension registers that command
+    /// and runs `baryon test -k <name>` in a terminal, so the server itself runs nothing.
+    pub(super) fn test_lenses(&self, params: &Value) -> Result<Value, (i64, String)> {
+        let uri = params["textDocument"]["uri"].as_str().ok_or_else(|| {
+            (
+                INVALID_PARAMS,
+                "`textDocument/codeLens` needs a document".to_owned(),
+            )
+        })?;
+        let Some(index) = self.find(uri) else {
+            return Ok(Value::Array(Vec::new()));
+        };
+        let file = self.documents[index].file;
+        Ok(Value::Array(
+            self.session
+                .test_lenses(file)
+                .iter()
+                .map(|lens| {
+                    json!({
+                        "range": convert::range(&self.session, lens.span),
+                        "command": {
+                            "title": "Run test",
+                            "command": "baryon.runTest",
+                            "arguments": [lens.name],
+                        },
+                    })
+                })
+                .collect(),
+        ))
+    }
 }

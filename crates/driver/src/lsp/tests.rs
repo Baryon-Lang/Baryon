@@ -59,6 +59,7 @@ fn initialized_reply() -> Value {
                 "completionProvider": {"triggerCharacters": ["."]},
                 "inlayHintProvider": true,
                 "renameProvider": true,
+                "codeLensProvider": {},
             },
             "serverInfo": {"name": "baryon", "version": env!("CARGO_PKG_VERSION")},
         },
@@ -406,6 +407,39 @@ fn inlay_hints_show_inferred_types() {
         ])
     );
     assert_eq!(result(&replies, 3), &json!([]));
+}
+
+/// Each test gets a "Run test" lens that names the command the extension runs it with.
+#[test]
+fn tests_get_a_run_lens() {
+    let uri = "file:///lenses/heat.byn";
+    let text = "@test\ndef test_flux():\n    assert 2 + 2 == 4\n";
+    let [shutdown, exit] = goodbye(3);
+    let (_, replies) = session(&[
+        initialize(None),
+        open(uri, text),
+        request(
+            2,
+            "textDocument/codeLens",
+            &json!({"textDocument": {"uri": uri}}),
+        ),
+        shutdown,
+        exit,
+    ]);
+    assert_eq!(
+        result(&replies, 2),
+        &json!([{
+            "range": {
+                "start": {"line": 1, "character": 4},
+                "end": {"line": 1, "character": 13},
+            },
+            "command": {
+                "title": "Run test",
+                "command": "baryon.runTest",
+                "arguments": ["heat.test_flux"],
+            },
+        }])
+    );
 }
 
 /// A rename answers with an edit of every place the variable is named, and a name that cannot

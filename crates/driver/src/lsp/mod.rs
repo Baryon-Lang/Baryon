@@ -197,6 +197,7 @@ impl Server {
             ) => self.query(method, params),
             (Phase::Running, "textDocument/inlayHint") => self.inlay_hints(params),
             (Phase::Running, "textDocument/rename") => self.rename(params),
+            (Phase::Running, "textDocument/codeLens") => self.test_lenses(params),
             (Phase::Running, _) => Err((METHOD_NOT_FOUND, format!("`{method}` is not supported"))),
             (Phase::ShutDown, _) => {
                 Err((INVALID_REQUEST, "the server is shutting down".to_owned()))
@@ -258,6 +259,7 @@ impl Server {
                 "completionProvider": {"triggerCharacters": ["."]},
                 "inlayHintProvider": true,
                 "renameProvider": true,
+                "codeLensProvider": {},
             },
             "serverInfo": {"name": "baryon", "version": env!("CARGO_PKG_VERSION")},
         })
