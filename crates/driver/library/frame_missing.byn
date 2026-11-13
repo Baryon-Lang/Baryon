@@ -14,6 +14,8 @@ and the compiler puts them together.
 - `missing` gives the mask `isna()` and `notna()` return, and `both` joins the masks of a
   frame's columns for `dropna()`.
 - `filled` gives the values with one value where an element is `None`, for `fillna(value)`.
+- `present_count`, `present` and `present_extreme` count, gather and compare the elements
+  that are there, for `count()`, `sum()`, `mean()`, `min()` and `max()`.
 """
 
 
@@ -70,3 +72,47 @@ def filled[T: Copy](values: Array[T, 1], bits: Array[u8, 1], value: T) -> Array[
         if not _valid(bits, at):
             result[at] = value
     return result
+
+
+def present_count(bits: Array[u8, 1], count: int) -> int:
+    """How many of the `count` elements the validity bitmap `bits` covers are there."""
+    there = 0
+    for at in range(count):
+        if _valid(bits, at):
+            there += 1
+    return there
+
+
+def present[T: Copy](values: Array[T, 1], bits: Array[u8, 1]) -> Array[T, 1]:
+    """The elements of `values` that are there, in order, as a new array.
+
+    `sum()` and `mean()` add this array up as they add any array, so each gives exactly what
+    it gives `values.dropna()`: a float sum adds in the pairwise order of every array's sum.
+    Cost: a mask of a byte for each element, freed here, and a copy of the values kept.
+    """
+    return values[missing(bits, len(values), False)]
+
+
+def present_extreme[T: Number](
+    values: Array[T, 1], bits: Array[u8, 1], start: T, smallest: bool
+) -> T:
+    """The smallest element that is there, or the largest when `smallest` is false.
+
+    A float NaN that is there is the answer, as it is for `min` and `max` of any array: it
+    replaces the best so far, and nothing compares smaller or larger than a NaN to replace
+    it. `start` is returned when no element is there; the compiler checks that one is before
+    it calls this.
+    """
+    best = start
+    found = False
+    for at in range(len(values)):
+        if _valid(bits, at):
+            value = values[at]
+            if not found or value != value:
+                best = value
+                found = True
+            elif smallest and value < best:
+                best = value
+            elif not smallest and value > best:
+                best = value
+    return best
