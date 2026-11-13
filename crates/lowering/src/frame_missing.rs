@@ -239,6 +239,61 @@ impl<'db> Builder<'db> {
         Some((halves[0], halves[1]))
     }
 
+    /// The column `first`, which may hold `None` and whose values are `element`s, with each
+    /// column of `rest` after it, in order, as a new column: for each column of `rest`, which
+    /// is not empty, one call of the library's `stacked` for the values and one of
+    /// `stacked_bits` for the validity bitmaps. The steps on the way are dropped when the
+    /// statement ends. `None` after a report.
+    pub(crate) fn optional_stacked(
+        &mut self,
+        element: Type<'db>,
+        first: Place,
+        rest: Vec<Place>,
+        node: NodeId,
+    ) -> Option<Operand<'db>> {
+        let int = self.int_type();
+        let plain = self.array_of(element);
+        let bytes = self.array_of(Type::new(
+            self.db,
+            TypeKind::Primitive(Primitive::Integer(Integer::U8)),
+        ));
+        let stored = Type::new(self.db, TypeKind::Tuple(vec![plain, bytes]));
+        let filler = self.filler(element)?;
+        let filler = Place::from(self.held(element, Operand::Constant(filler), node));
+        let mut values = first.clone().project(Projection::Field(VALUES));
+        let mut bits = first.project(Projection::Field(VALIDITY));
+        let mut newest: Option<(Local, Local)> = None;
+        for part in rest {
+            let more = part.clone().project(Projection::Field(VALUES));
+            let more_bits = part.project(Projection::Field(VALIDITY));
+            let mut counts = Vec::with_capacity(2);
+            for side in [&values, &more] {
+                let length = self.temporary(int, node);
+                self.assign(Place::from(length), Rvalue::Length(side.clone(), 0), node);
+                counts.push(Place::from(length));
+            }
+            let arguments = vec![bits, counts[0].clone(), more_bits, counts[1].clone()];
+            let next_bits = self.frame_call("stacked_bits", Vec::new(), arguments, bytes, node)?;
+            let arguments = vec![values, more, filler.clone()];
+            let next = self.frame_call("stacked", vec![element], arguments, plain, node)?;
+            // Every pair of arrays but the last is only a step on the way.
+            if let Some((step, step_bits)) = newest.replace((next, next_bits)) {
+                self.drop_later(step);
+                self.drop_later(step_bits);
+            }
+            values = Place::from(next);
+            bits = Place::from(next_bits);
+        }
+        let (values, bits) = newest?;
+        let parts = vec![
+            Operand::Move(Place::from(values)),
+            Operand::Move(Place::from(bits)),
+        ];
+        let whole = self.temporary(stored, node);
+        self.assign(Place::from(whole), Rvalue::Aggregate(stored, parts), node);
+        Some(Operand::Move(Place::from(whole)))
+    }
+
     /// `df.dropna()` on the frame `frame`, into `place`: a new frame of the rows that have
     /// no `None` in any column, whose columns hold no `None`. A frame with no column that
     /// may hold `None` is copied.

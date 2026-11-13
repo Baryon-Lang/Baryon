@@ -204,8 +204,14 @@ This prints `3 None 3.0`, then `[False  True False]`.
   bid and puts the rows whose bid is `None` after them, in the order they had, whether the
   sort is rising or falling. A `NaN` is a number, so it comes after the other numbers and
   before the `None`s. The sort is stable, as for any frame.
+- **`assign`, `drop` and `rename` change the columns** as for any frame. A column `assign`
+  gives may hold `None`, `quotes.assign(ask=quotes.bid.copy())`, and a list written with
+  `None` for a column that already may hold it needs no annotation,
+  `quotes.assign(bid=Array([None, 2.0, None]))`. Filling one column this way narrows it:
+  `quotes.assign(bid=quotes.bid.fillna(0.0))`.
+- **`concat` stacks frames with one schema**, each `None` staying with its row.
 - **The other frame operations are not built yet** for a frame with such a column: one row,
-  `quotes[0]`, `assign`, `drop`, `rename`, `groupby`, `merge`, `concat`, `drop_duplicates`,
+  `quotes[0]`, `groupby`, `merge`, `drop_duplicates`, `value_counts`,
   `describe`, `itertuples`, `DataFrame(rows)` and `print`. Each is a compile error that says
   so. They come with roadmap item 3.13.6. Until then, take the gaps out first, as the next
   section shows: the frame `dropna` or `fillna` gives does everything a frame does.
