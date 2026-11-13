@@ -395,7 +395,8 @@ This prints `[2 0 1] [171.  189.5 410. ]`.
 first appear, as a new array of the same element type. `a.nunique()` gives how many there
 are, an `i64`. Both follow pandas, so they work the same on a column of a
 [`DataFrame`](dataframes.md), `df.day.unique()`
-([decision 0045](../decisions/0045-dataframe.md)).
+([decision 0045](../decisions/0045-dataframe.md)), and on
+[an array of text](text-arrays.md#distinct-elements).
 
 ```python
 days = Array([3, 1, 3, 2, 1])

@@ -103,6 +103,23 @@ After `moved = names`, reading `names` is a compile error; `kept` and `moved` ar
 A text array can be a parameter, a return value, an item of a list or a tuple, a value of a
 dict, and a `T | None`.
 
+## Distinct elements
+
+`names.unique()` gives the distinct texts, each once, in the order they first appear, as a new
+text array, and `names.nunique()` gives how many there are, as they do for
+[an array of numbers](arrays.md#distinct-elements) and in pandas:
+
+```python
+symbols = Array(["IBM", "AAPL", "IBM", "ibm"])
+print(symbols.nunique())
+for symbol in symbols.unique():
+    print(symbol)
+```
+
+This prints `3`, then `IBM`, `AAPL` and `ibm`. Texts are compared exactly, so `"IBM"` and
+`"ibm"` are two. Cost: a sort of the array, about `n log n` comparisons of text, and a copy of
+each distinct text.
+
 ## In a DataFrame
 
 A field of type `str` in a frame's schema is a text column: `df.symbol` is an `Array[str, 1]`.
@@ -195,7 +212,8 @@ Each of these is a compile error today, and the rest of roadmap item 3.13.3:
   change length in place. Build a new array from a list.
 - **Slices and masks**, `names[1:3]` and `names[keep]`.
 - **Operators**: `names == "alpha"`, `"alpha" in names`, `names + other`.
-- **Methods and attributes** other than `copy()`: `sum`, `shape`, `argsort` and the rest.
+- **Methods and attributes** other than `copy()`, `unique()` and `nunique()`: `shape`,
+  `argsort` and the rest.
 - **Built-in functions** other than `len`, `enumerate`, `zip` and `reversed`: `sorted`, `min`,
   `max`, `list`.
 - **Showing one**: `print(names)`, `str(names)` and `f"{names}"`. Print the elements in a loop.
