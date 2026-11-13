@@ -57,6 +57,7 @@ mod parallel;
 mod parts;
 mod paths;
 mod plotting;
+mod plotting_contour;
 mod plotting_figures;
 mod plotting_images;
 mod plotting_log;

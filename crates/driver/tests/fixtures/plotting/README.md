@@ -82,12 +82,32 @@ with open("matplotlib_colormaps.txt", "w") as f:
 ```
 
 `polynomials.svg`, `offset.svg`, `shapes.svg`, `markers.svg`, `histogram.svg`, `grid.svg`,
-`saddle.svg`, `auto.svg`, `logaxes.svg`, `lognarrow.svg` and `figures.svg` are Baryon's own
+`saddle.svg`, `auto.svg`, `logaxes.svg`, `lognarrow.svg`, `figures.svg`, `contours.svg` and
+`saddles.svg` are Baryon's own
 output, checked by eye against matplotlib's drawing of the same data and stored so any change to
 how a plot is drawn shows up as a difference. When a change to drawing is intended, write them
 again from the programs in `plotting.rs`, `plotting_images.rs`, which draws `grid.svg`,
 `saddle.svg` and `auto.svg`, `plotting_log.rs`, which draws `logaxes.svg` and `lognarrow.svg`,
-and `plotting_figures.rs`, which draws `figures.svg`, and look at them before committing.
+`plotting_figures.rs`, which draws `figures.svg`, and `plotting_contour.rs`, which draws
+`contours.svg` and `saddles.svg`, and look at them before committing.
 `figures.svg` was also compared with matplotlib 3.11.2's SVG of the same figure, drawn with
 `font.family` set to DejaVu Sans: its text is placed within a thousandth of a point of
-matplotlib's, apart from labels whose width is estimated.
+matplotlib's, apart from labels whose width is estimated. `contours.svg` and `saddles.svg` were
+compared with matplotlib's drawings of the same grids: the lines and bands fall in the same
+places, the colors are the same bytes, and only where a dash starts differs.
+
+`matplotlib_contour_ticks.txt` holds, for each range of `ranges.txt`, the levels matplotlib
+3.11.2's `MaxNLocator(8)` gives with its default steps, as contour levels are chosen before
+they are trimmed to the data. [`../../build/plotting_contour.rs`](../../build/plotting_contour.rs)
+compares `ticker`'s with them. It was written with:
+
+```text
+from matplotlib.ticker import MaxNLocator
+
+locator = MaxNLocator(8)
+lines = []
+for line in open("ranges.txt"):
+    low, high = map(float, line.split())
+    lines.append(" ".join(repr(float(t)) for t in locator.tick_values(low, high)))
+open("matplotlib_contour_ticks.txt", "w").write("\n".join(lines) + "\n")
+```

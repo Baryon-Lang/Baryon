@@ -8,7 +8,9 @@ Each colormap is matplotlib's table of 256 colors, written here as the bytes mat
 `cmap(x, bytes=True)` gives, so an image is colored exactly as matplotlib colors it. The
 perceptually uniform maps `viridis` (the default), `plasma`, `inferno`, `magma` and `cividis`
 are here, with `gray` and `Greys`, and the diverging `coolwarm` and `RdBu`; a name ending in
-`_r` is the same map reversed.
+`_r` is the same map reversed. Lines and filled areas take the colors rounded to the nearest
+byte, as matplotlib writes them into an SVG file, where images take them rounded down, as its
+images are; a second table, one bit a channel, records which way each rounds.
 """
 
 from math import isnan
@@ -21,6 +23,7 @@ class Colormap(Struct):
 
     name: str  # matplotlib's name for it, such as "viridis"
     colors: Array[u8, 2]  # 256 rows of red, green and blue, 0 to 255, from 0 up to 1
+    nearest: Array[u8, 2]  # the same colors rounded to the nearest byte instead of down
 
     def to_rgba_bytes(self: Self, x: f64) -> tuple[u8, u8, u8, u8]:
         """The color of `x`, as matplotlib's `cmap(x, bytes=True)` gives it: the table entry
@@ -35,6 +38,20 @@ class Colormap(Struct):
         elif x > 0.0:
             index = int(x * 256.0)
         return (self.colors[index, 0], self.colors[index, 1], self.colors[index, 2], u8(255))
+
+    def to_hex(self: Self, x: f64) -> str:
+        """The color of `x` as `#rrggbb` text, as matplotlib's `to_hex(cmap(x))` writes it for a
+        line or a filled area: the table entry `to_rgba_bytes` picks, with each channel rounded
+        to the nearest byte, where `cmap(x, bytes=True)` rounds it down. NaN is black."""
+        index = 0
+        if x >= 1.0:
+            index = 255
+        elif x > 0.0:
+            index = int(x * 256.0)
+        red = self.nearest[index, 0]
+        green = self.nearest[index, 1]
+        blue = self.nearest[index, 2]
+        return f"#{red:02x}{green:02x}{blue:02x}"
 
 
 def get_cmap(name: str) -> Colormap:
@@ -52,6 +69,8 @@ def get_cmap(name: str) -> Colormap:
         + "'gray', 'Greys', 'coolwarm' or 'RdBu', or one of them with '_r'"
     )
     colors: Array[u8, 2] = Array.zeros((256, 3))
+    nearest: Array[u8, 2] = Array.zeros((256, 3))
+    up = _rounding(base)
     digits = "0123456789abcdef"
     for k in range(256):
         row = 255 - k if reverse else k
@@ -60,7 +79,10 @@ def get_cmap(name: str) -> Colormap:
             high = digits.find(table[at])
             low = digits.find(table[at + 1])
             colors[row, channel] = u8(16 * high + low)
-    return Colormap(name.copy(), colors)
+            bit = 3 * k + channel
+            nibble = digits.find(up[bit // 4])
+            nearest[row, channel] = u8(16 * high + low + (nibble >> (3 - bit % 4)) % 2)
+    return Colormap(name.copy(), colors, nearest)
 
 
 def _table(name: str) -> str:
@@ -263,5 +285,66 @@ def _table(name: str) -> str:
             + "286fb0276db0256caf246aae2368ad2166ac2064aa1f62a71e60a41d5ea11c5c9e1a5a9b195898185695"
             + "175493165190154f8d144d8a134b871249841147810f457e0e437b0d40780c3e750b3c720a3a6f09386c"
             + "083669073466063263053061"
+        )
+    return ""
+
+def _rounding(name: str) -> str:
+    """For each channel of each of the 256 colors of the colormap `name`, in order, whether
+    matplotlib's float color times 255 rounds up rather than down, as one bit, four bits a
+    hexadecimal digit, the first the highest; recorded from matplotlib 3.11. `""` for a name it
+    does not know."""
+    if name == "viridis":
+        return (
+            "071d58f1957e8d80816edfca5a95a95ccaba30e7c513bca9829ab2efbcb2cfb7df792cb01040209964b2"
+            + "50da69392cdfca5205b334bedc1860a97cd120dc9f50d392802da4dfdbb52b50ac7e3871caaaa398f0ea"
+            + "1cac552ab5168f0dc774e239"
+        )
+    if name == "plasma":
+        return (
+            "e56a4ffe493b6a523f5e8b9f063dcc39bc688691045941873c6323cf830d0f2701b13fc091b7ec892425"
+            + "bfff6c9b6d2dada404ffb024ed9912f685a1bd081f23295f310af9ca2f5e1a3e5cc2f286bc20ce9e6b18"
+            + "47ea85e261953c4787e6b51e"
+        )
+    if name == "inferno":
+        return (
+            "373bd4c3dd27b8b9c6a3ae2199ba5bb1ab4881f83c718c7074e0a0c341868e9c1570f8eab85551c6ab8d"
+            + "51e0f98a9ee08b61040b2581b4bd817e4d4b09df35615a8f43a9d43d52b1313d003bfd65b26c9bd9adc5"
+            + "a21a69abe78decb51f2d9a0a"
+        )
+    if name == "magma":
+        return (
+            "3739862ef2d9481766ac3b8cea51d7a2b7a1f81909adc1eaaae71538fe33ae8d1618f278c3418fae29ce"
+            + "0ea1c6e38551c771cae3319c15e54d12bd91fab450be742b74d797228793d0137b6cdb3768129a4414d1"
+            + "05a725dbc05a52fd802db936"
+        )
+    if name == "cividis":
+        return (
+            "21b05a0d948364208fe36a580fd1857c2c4fb501b4fc964b25b2d9080d2ff7a011bf4cc952fe03337a91"
+            + "9bd0c4f895edd0240b66ed26d26f6b6026c848949909901b04a6c5dbcb37d65cd10536ac977e81017fb4"
+            + "2497ffed812d84afbb5b2f67"
+        )
+    if name == "gray":
+        return (
+            "0000000000000000000000001c01c01c01c01c01c01c01c0038000038000038000038000038000038000"
+            + "038000038000000e00000000000e00000000000e00000000000e00000000000e00000000000e00000000"
+            + "000e00000000000e00000000"
+        )
+    if name == "Greys":
+        return (
+            "1c71c71c71c7038e38e38e38e0703f03f1f81f81c0fc0fc7fc003fff8007ff8007ff8007e07e07fc0fc0"
+            + "ff81f81ff03f0001fffc0007fff00003fff8000000007fffffffffe00000fc71c0e381c71f8e381c7038"
+            + "fff007fc01ff007fc01ff000"
+        )
+    if name == "coolwarm":
+        return (
+            "9f10f58d5f88f42b589cbf5d8cf2e0558cee3c38755c8e67746ce93dfefb59bc9f06a708f0b950f5057c"
+            + "4129b409b2422c30c321cb9879ea675d3cf2f08a9797729828f975478738a8e71c3b8b9ca1ed4107efb7"
+            + "d8804ee4ec5e87b19575d716"
+        )
+    if name == "RdBu":
+        return (
+            "1befbee08208237df7de89d6343e295d4373c28426c1bb790b4485fcb6251bbccc07a7c4a37785a4cc97"
+            + "e4c812fd99007c670731731519d58d431ab18b98f88d43d4390000924a496ffdb2492102c0f66a502e4d"
+            + "6a059b6cdb66490127fd9248"
         )
     return ""
