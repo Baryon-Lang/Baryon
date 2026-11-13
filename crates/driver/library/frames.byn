@@ -21,8 +21,8 @@ to read its keys from; and `group_floats` or `group_integers` reduces one column
 compiler has converted to `f64` or `i64`, to one value for each group.
 
 Printing, for `print(df)` and a frame in an f-string: each column is formatted with
-`float_cells`, `single_cells` or `cells`, by the type of its elements, and `frame_text` lays
-the columns out. The rules are those of pandas 3 at its default options, on a screen 80
+`float_cells`, `single_cells`, `cells` or `text_cells`, by the type of its elements, and
+`frame_text` lays the columns out. The rules are those of pandas 3 at its default options, on a screen 80
 characters wide:
 
 - A frame of more than 60 rows shows its first 5 and last 5, with a row of dots between.
@@ -378,6 +378,21 @@ def cells[T](column: Array[T, 1]) -> list[str]:
     return [_signed(f"{column[row]}") for row in _shown(len(column))]
 
 
+def _text_cell(text: str) -> str:
+    """One cell of a column of `str`: a space and the text or, when that is longer than 50
+    characters, which is where pandas cuts a cell (`display.max_colwidth`), a space, the
+    first 46 characters and `...`."""
+    if len(text) > 49:
+        return " " + text[0:46] + "..."
+    return " " + text
+
+
+def text_cells(column: Array[str, 1]) -> list[str]:
+    """The cells of a column of `str`: each shown row's text, without quotes, as pandas
+    writes it."""
+    return [_text_cell(column[row]) for row in _shown(len(column))]
+
+
 def _pad(text: str, width: int, left: bool) -> str:
     """`text` with spaces added to make it `width` characters: after it when `left`, which
     puts the text on the left, and before it otherwise."""
@@ -404,11 +419,19 @@ def _column(name: str, cells: list[str], left: bool, cut: bool) -> list[str]:
 
 
 def _table(
-    names: list[str], columns: list[list[str]], picked: list[int], dots: int, count: int
+    names: list[str],
+    columns: list[list[str]],
+    text: list[bool],
+    picked: list[int],
+    dots: int,
+    count: int,
 ) -> list[list[str]]:
     """The table's columns, each as its lines: the row numbers, then the columns `picked`,
-    which are positions in `names` and `columns`. A column of `...` goes before the picked
-    column at position `dots`; pass -1 for none. `count` is the frame's number of rows."""
+    which are positions in `names`, `columns` and `text`. A column of `...` goes before the
+    picked column at position `dots`; pass -1 for none. `count` is the frame's number of
+    rows. A heading has a space in front, as a number's cell has for its sign, except over
+    a column of `str`, where `text` is true: pandas gives that heading no more room than
+    its name."""
     rows = _shown(count)
     cut = len(rows) < count
     table = [_column("", [f"{row}" for row in rows], True, cut)]
@@ -416,13 +439,15 @@ def _table(
         if position == dots:
             table.append(_column(" ...", [" ..." for row in rows], False, cut))
         column = picked[position]
-        table.append(_column(" " + names[column], columns[column], False, cut))
+        heading = names[column].copy() if text[column] else " " + names[column]
+        table.append(_column(heading, columns[column], False, cut))
     return table
 
 
-def frame_text(names: list[str], columns: list[list[str]], count: int) -> str:
+def frame_text(names: list[str], columns: list[list[str]], text: list[bool], count: int) -> str:
     """The text of a frame of `count` rows whose columns are named `names`; `columns` holds
-    each column's cells, from `float_cells`, `single_cells` or `cells`.
+    each column's cells, from `float_cells`, `single_cells`, `cells` or `text_cells`, and
+    `text` says which columns hold `str`.
 
     The table is laid out whole first. While it is wider than 79 characters, the column in
     the middle is taken out, the row numbers counting as a column. If any column went, the
@@ -431,7 +456,7 @@ def frame_text(names: list[str], columns: list[list[str]], count: int) -> str:
     """
     if count == 0:
         return "Empty DataFrame\nColumns: [" + ", ".join(names) + "]\nIndex: []"
-    table = _table(names, columns, [column for column in range(len(names))], -1, count)
+    table = _table(names, columns, text, [column for column in range(len(names))], -1, count)
     widths = [len(column[0]) for column in table]
     excess = len(widths) - 80
     for width in widths:
@@ -450,11 +475,11 @@ def frame_text(names: list[str], columns: list[list[str]], count: int) -> str:
         picked = [column for column in range(half)]
         for column in range(len(names) - half, len(names)):
             picked.append(column)
-        table = _table(names, columns, picked, half, count)
+        table = _table(names, columns, text, picked, half, count)
     lines: list[str] = []
     for row in range(len(table[0])):
         lines.append(" ".join([column[row].copy() for column in table]))
-    text = "\n".join(lines)
+    whole = "\n".join(lines)
     if narrowed or len(table[0]) - 1 < count:
-        return text + f"\n\n[{count} rows x {len(names)} columns]"
-    return text
+        return whole + f"\n\n[{count} rows x {len(names)} columns]"
+    return whole

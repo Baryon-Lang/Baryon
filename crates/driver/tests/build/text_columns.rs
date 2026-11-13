@@ -102,3 +102,73 @@ fn frames_with_a_text_column_are_built_read_and_copied() {
         "panic: array lengths differ in dimension 0: 1 and 2\n  --> main.byn:44:11\n"
     );
 }
+
+/// A program that prints frames with a text column: beside numbers, first and last, alone,
+/// in an f-string, with cells of exactly 50 and of 60 characters, of 100 rows, and of none.
+const PRINTED: &str = r#"
+def main():
+    long = "".join(["x" for i in range(60)])
+    fifty = "".join(["y" for i in range(50)])
+    symbols = Array(["IBM", "", "AAPL", "βeta", long])
+    trades = DataFrame({"symbol": symbols, "price": Array([3.0, 1.0, 2.0, 4.0, 5.0])})
+    print(trades)
+    loose = DataFrame({"n": Array([1, 2]), "tag": Array(["a", "bb"])})
+    print(loose)
+    print(f"{loose}!")
+    alone = DataFrame({"tag": Array([fifty, "-1", " pad "])})
+    print(alone)
+    names: list[str] = []
+    for i in range(100):
+        names.append(f"row {i}")
+    many = DataFrame({"name": Array(names), "flag": Array.ones(100, bool)})
+    print(many)
+    empty: list[str] = []
+    none = DataFrame({"tag": Array(empty)})
+    print(none)
+"#;
+
+/// A frame with a text column prints as pandas 3 prints it: the text without quotes and to
+/// the right, its heading no wider than its name, a cell of 50 characters or more cut to 46
+/// and `...`, an empty string as an empty cell, and the same row and size rules as a frame
+/// of numbers. The expected text is pandas's own output for the same frames.
+#[test]
+fn frames_with_a_text_column_print_as_pandas_prints_them() {
+    let expected = [
+        "                                              symbol  price\n",
+        "0                                                IBM    3.0\n",
+        "1                                                       1.0\n",
+        "2                                               AAPL    2.0\n",
+        "3                                               βeta    4.0\n",
+        "4  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...    5.0\n",
+        "   n tag\n",
+        "0  1   a\n",
+        "1  2  bb\n",
+        "   n tag\n",
+        "0  1   a\n",
+        "1  2  bb!\n",
+        "                                                 tag\n",
+        "0  yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy...\n",
+        "1                                                 -1\n",
+        "2                                               pad \n",
+        "      name  flag\n",
+        "0    row 0  True\n",
+        "1    row 1  True\n",
+        "2    row 2  True\n",
+        "3    row 3  True\n",
+        "4    row 4  True\n",
+        "..     ...   ...\n",
+        "95  row 95  True\n",
+        "96  row 96  True\n",
+        "97  row 97  True\n",
+        "98  row 98  True\n",
+        "99  row 99  True\n",
+        "\n",
+        "[100 rows x 2 columns]\n",
+        "Empty DataFrame\n",
+        "Columns: [tag]\n",
+        "Index: []\n",
+    ];
+    let (code, stdout, report) = run("text-columns-printed", PRINTED).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+}

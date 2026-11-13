@@ -388,7 +388,7 @@ error: `DataFrame(rows)` is not built for a `DataFrame` with a column of `str` y
    |
 15 |     e = DataFrame(names)
    |                   ^^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: `DataFrame(...)` takes a dict of its columns or a list of its rows, found `Array[f64, 1]`
   --> main.byn:16:19
