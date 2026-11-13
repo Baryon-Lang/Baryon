@@ -6,6 +6,10 @@
 //! once for each, the last column first, since a stable sort keeps the order the sorts
 //! before it made among equal values. Then `taken` copies each column in the final order.
 //! The cost is `n log n` comparisons for each column sorted by, and one copy of the frame.
+//!
+//! A column of `str` is sorted by integers that stand for its text, which the library's
+//! `text_codes` gives (`<std>/frame_joins.byn`): one more sort of that column, comparing
+//! text, and one array of `n` integers.
 
 use crate::builder::Builder;
 use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
@@ -88,18 +92,26 @@ impl Builder<'_> {
                 [one] => *one,
                 several => several.get(index).copied().unwrap_or(rising),
             };
-            let element = column.element;
+            let mut element = column.element;
+            let mut values = source.clone().project(Projection::Field(position));
+            // A column of `str` is sorted by the integers that stand for its text.
+            if matches!(element.kind(self.db), TypeKind::Str) {
+                let Some(codes) =
+                    self.frame_call("text_codes", Vec::new(), vec![values], positions, key)
+                else {
+                    return;
+                };
+                self.drop_later(codes);
+                element = self.int_type();
+                values = Place::from(codes);
+            }
             let flags = matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool));
             let (function, type_arguments) = if flags {
                 ("ordered_flags", Vec::new())
             } else {
                 ("ordered", vec![element])
             };
-            let arguments = vec![
-                source.clone().project(Projection::Field(position)),
-                Place::from(order),
-                Place::from(direction),
-            ];
+            let arguments = vec![values, Place::from(order), Place::from(direction)];
             let Some(next) = self.frame_call(function, type_arguments, arguments, positions, key)
             else {
                 return;
