@@ -176,6 +176,8 @@ Trade(price=171.0, volume=50)
   element `i` of each column. Changing the struct does not change the frame, and a row cannot be
   assigned: write `df.price[i] = 200.0` to change one value.
 - **A row number out of range panics**, as an array index does.
+- **A field of `str` owns a copy of its text**, one allocation for each such field, so the
+  row does not depend on the frame ([text columns](text-arrays.md#in-a-dataframe)).
 - **Prefer columns in a hot loop.** `df[i]` reads every column to build one struct. A loop that
   needs two columns of a wide frame is faster reading `df.price[i]` and `df.volume[i]`, and
   faster still as whole-array arithmetic on the columns.

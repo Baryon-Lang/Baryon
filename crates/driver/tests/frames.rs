@@ -383,13 +383,6 @@ error: a `DataFrame` is indexed by a column's name, a row's number, a mask or a 
    |                ^^^^ does not choose a column or rows
    = note: write a column's name as a string literal, `df["price"]`, a row's number, `df[0]`, a mask, an `Array[bool, 1]` such as `df[df.price > 100.0]`, or a slice, `df[1:3]`
 
-error: `DataFrame(rows)` is not built for a `DataFrame` with a column of `str` yet
-  --> main.byn:15:19
-   |
-15 |     e = DataFrame(names)
-   |                   ^^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values`, `drop_duplicates`, `merge`, `groupby` by any column, `assign`, `drop`, `rename`, `df[[...]]`, `concat` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
-
 error: `DataFrame(...)` takes a dict of its columns or a list of its rows, found `Array[f64, 1]`
   --> main.byn:16:19
    |

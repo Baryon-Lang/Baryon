@@ -196,8 +196,16 @@ impl<'db> Body<'db> {
         };
         let read = columns.iter().find(|read| read.name == name)?;
         if matches!(read.element.kind(self.db), TypeKind::Str) {
-            let what = format!("reducing `{name}`, a column of `str`, in `agg`");
-            self.text_column_unbuilt(column, &what);
+            let message = format!("`agg` cannot reduce `{name}`, a column of `str`, yet");
+            self.lowerer.error(
+                column,
+                &message,
+                "a column of `str`",
+                Some(
+                    "a column of `str` can be a key of `groupby` today; its reductions come \
+                     with roadmap item 3.13.3",
+                ),
+            );
             return None;
         }
         if !self.orderable(column, read, "reduce") {

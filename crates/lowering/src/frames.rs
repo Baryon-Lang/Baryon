@@ -9,9 +9,9 @@
 //! ([`Builder::frame_columns`]).
 
 use crate::builder::Builder;
-use mir::{Constant, ConstantValue, Operand, Place, Projection, Rvalue};
+use mir::{Constant, ConstantValue, Local, Operand, Piece, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Column, Nominal, Type, TypeDb, TypeKind};
+use types::{Column, FormatSpec, Nominal, Type, TypeDb, TypeKind};
 
 /// `ty` with every `DataFrame` type in it replaced by the tuple of arrays that stores it
 /// ([`Type::frame_storage`]), and every text array, `Array[str, 1]`, by the tuple of its two
@@ -270,7 +270,8 @@ impl<'db> Builder<'db> {
     }
 
     /// `df[i]` into `place`: a struct holding element `i` of each column, in the schema's
-    /// order, which is the struct's field order. The index is checked against the number of
+    /// order, which is the struct's field order, a field of `str` as its own copy of the
+    /// text ([`Builder::row_field`]). The index is checked against the number of
     /// rows as an array index is, and a negative literal counts from the end.
     pub(crate) fn frame_row(&mut self, place: Place, node: NodeId) {
         let ty = self.ty(node);
@@ -290,24 +291,45 @@ impl<'db> Builder<'db> {
             return self.frame_rows(place, value, index, node);
         }
         let frame = self.borrow(value);
-        let first = frame.clone().project(Projection::Field(0));
-        let Some(first_type) = columns.first().map(|column| self.column_type(column)) else {
-            return;
-        };
-        let row = self.index(&first, first_type, 0, index, false);
+        let count = self.counted_rows(value, &frame, node);
+        let count = Operand::Copy(Place::from(count));
+        let row = self.index_within(Some(count), 0, index, false);
         let fields = (0_u32..)
             .zip(columns)
-            .map(|(position, _)| {
-                let column = frame.clone().project(Projection::Field(position));
-                Operand::Copy(column.project(Projection::Index(vec![row])))
+            .map(|(position, column)| {
+                let values = frame.clone().project(Projection::Field(position));
+                self.row_field(values, column, row, node)
             })
             .collect();
         self.assign(place, Rvalue::Aggregate(ty, fields), node);
     }
 
+    /// The value of row `row` of `column`, whose values are at `values`, for a field of the
+    /// struct of one row: a copy of the element, and for a column of `str` a new `str` that
+    /// owns a copy of the element's bytes, since the struct may outlive the frame. `row` is
+    /// inside the column. Cost for a column of `str`: one allocation.
+    pub(crate) fn row_field(
+        &mut self,
+        values: Place,
+        column: &Column<'db>,
+        row: Local,
+        node: NodeId,
+    ) -> Operand<'db> {
+        if !matches!(column.element.kind(self.db), TypeKind::Str) {
+            return Operand::Copy(values.project(Projection::Index(vec![row])));
+        }
+        let view = self.text_array_element(&values, row, node);
+        let owned = self.temporary(column.element, node);
+        let pieces = vec![Piece::Value(view, FormatSpec::default())];
+        self.assign(Place::from(owned), Rvalue::Format(pieces), node);
+        Operand::Move(Place::from(owned))
+    }
+
     /// `DataFrame(rows)` into `place`, where `rows` is a list of the struct that names the
     /// frame's rows: one new array per field, of the list's length, filled in one pass over
-    /// the list, so the cost is one read of the list and one write of the frame.
+    /// the list, so the cost is one read of the list and one write of the frame. A field of
+    /// `str` becomes a text column in two more passes over the list
+    /// ([`Builder::text_array_of`]), which copy the text.
     pub(crate) fn frame_from_rows(&mut self, place: Place, rows: NodeId, node: NodeId) {
         let ty = self.ty(node);
         let Some(columns) = self.frame_columns(node) else {
@@ -317,19 +339,30 @@ impl<'db> Builder<'db> {
         let length = self.temporary(self.int_type(), node);
         self.assign(Place::from(length), Rvalue::Length(list.clone(), 0), node);
         let length = Operand::Copy(Place::from(length));
-        let arrays: Vec<_> = columns
-            .iter()
-            .map(|column| {
-                let array = self.column_type(column);
+        // A column of numbers is a new array filled in the pass below; a column of `str` is
+        // built from the rows' field in two passes of its own.
+        let arrays: Vec<_> = (0_u32..)
+            .zip(columns)
+            .map(|(position, column)| {
+                let array = erase(self.db, column.array(self.db));
                 let local = self.temporary(array, node);
-                let lengths = vec![length.clone()];
-                self.assign(Place::from(local), Rvalue::NewArray(array, lengths), node);
-                local
+                let text = matches!(column.element.kind(self.db), TypeKind::Str);
+                if text {
+                    let field = (&list, Some(position));
+                    self.text_array_of(&Place::from(local), field, length.clone(), array, node);
+                } else {
+                    let lengths = vec![length.clone()];
+                    self.assign(Place::from(local), Rvalue::NewArray(array, lengths), node);
+                }
+                (local, text)
             })
             .collect();
         self.loop_nest(&[length], &mut Vec::new(), node, &mut |builder, indices| {
             let row = list.clone().project(Projection::Index(indices.to_vec()));
-            for (position, &array) in (0_u32..).zip(&arrays) {
+            for (position, &(array, text)) in (0_u32..).zip(&arrays) {
+                if text {
+                    continue;
+                }
                 let field = row.clone().project(Projection::Field(position));
                 let element = Place::from(array).project(Projection::Index(indices.to_vec()));
                 builder.assign(element, Rvalue::Use(Operand::Copy(field)), node);
@@ -337,15 +370,8 @@ impl<'db> Builder<'db> {
         });
         let columns = arrays
             .into_iter()
-            .map(|array| Operand::Move(Place::from(array)))
+            .map(|(array, _)| Operand::Move(Place::from(array)))
             .collect();
         self.assign(place, Rvalue::Aggregate(ty, columns), node);
-    }
-
-    /// The type of a column as lowering stores it: an array of rank 1 of the column's
-    /// elements.
-    fn column_type(&self, column: &Column<'db>) -> Type<'db> {
-        let element = column.element;
-        Type::new(self.db, TypeKind::Array { element, rank: 1 })
     }
 }

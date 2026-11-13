@@ -114,6 +114,30 @@ impl<'db> Builder<'db> {
         if self.list_element(ty, node).is_none() {
             return;
         }
+        let source = self.borrow(list);
+        let length = self.length(&source, ty, 0, node);
+        self.text_array_of(place, (&source, None), length, self.ty(node), node);
+    }
+
+    /// A new text array of type `ty` into `place`, holding a copy of the bytes of one `str`
+    /// for each of the `length` items of the list at `source.0`: the item itself, or its
+    /// field `source.1` when the items are structs, as for the rows of `DataFrame(rows)`.
+    /// The passes and the cost are those of [`Builder::text_array_from_list`].
+    pub(crate) fn text_array_of(
+        &mut self,
+        place: &Place,
+        (source, field): (&Place, Option<u32>),
+        length: Operand<'db>,
+        ty: Type<'db>,
+        node: NodeId,
+    ) {
+        let item = |indices: &[Local]| {
+            let item = source.clone().project(Projection::Index(indices.to_vec()));
+            match field {
+                Some(field) => item.project(Projection::Field(field)),
+                None => item,
+            }
+        };
         let int = self.int_type();
         let integer =
             |integer| Type::new(self.db, TypeKind::Primitive(Primitive::Integer(integer)));
@@ -121,8 +145,6 @@ impl<'db> Builder<'db> {
             self.array_of(integer(Integer::U8)),
             self.array_of(integer(Integer::I64)),
         );
-        let source = self.borrow(list);
-        let length = self.length(&source, ty, 0, node);
         let zero = Operand::Constant(Constant::integer(int, 0));
         let one = Operand::Constant(Constant::integer(int, 1));
 
@@ -146,7 +168,7 @@ impl<'db> Builder<'db> {
         self.assign(at(first), Rvalue::Use(zero.clone()), node);
         let lengths = [length];
         self.loop_nest(&lengths, &mut Vec::new(), node, &mut |builder, indices| {
-            let text = source.clone().project(Projection::Index(indices.to_vec()));
+            let text = item(indices);
             let size = builder.temporary(int, node);
             let text = vec![Argument::Borrow(text)];
             builder.text_call(
@@ -183,7 +205,7 @@ impl<'db> Builder<'db> {
         let cursor = self.temporary(int, node);
         self.assign(Place::from(cursor), Rvalue::Use(zero), node);
         self.loop_nest(&lengths, &mut Vec::new(), node, &mut |builder, indices| {
-            let text = source.clone().project(Projection::Index(indices.to_vec()));
+            let text = item(indices);
             let arguments = vec![
                 Argument::Borrow(text),
                 Argument::InOut(Place::from(bytes)),
@@ -200,10 +222,6 @@ impl<'db> Builder<'db> {
             Operand::Move(Place::from(bytes)),
             Operand::Move(Place::from(offsets)),
         ];
-        self.assign(
-            place.clone(),
-            Rvalue::Aggregate(self.ty(node), buffers),
-            node,
-        );
+        self.assign(place.clone(), Rvalue::Aggregate(ty, buffers), node);
     }
 }
