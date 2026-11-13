@@ -1,0 +1,256 @@
+"""The `figure` library file: lays an axes out on the page and draws it, as matplotlib's
+`Figure` and `Axes.draw` do (decision 0046).
+
+It is internal to the standard library: `pyplot` and the files under it import it, and a
+program cannot, so a program's own `figure.byn` is never hidden by it.
+
+`pyplot`'s `subplots` makes a `Figure`, a grid of `Axes`. Each `savefig` hands its axes to
+`draw_axes`, which finds the ranges an axes shows, places its box in its cell of the figure, and
+draws everything in it through the renderer.
+"""
+
+from artist import Kind, Text, View
+from axis import XAxis, YAxis
+from backend_svg import RendererSVG
+from colorbar import draw_colorbar
+from image import draw_image
+from legend import draw_legend
+from pyplot import Axes
+from transforms import autoscale
+
+WIDTH: Final = 460.8  # the figure's width in points: 6.4 inches
+HEIGHT: Final = 345.6  # the figure's height in points: 4.8 inches
+LEFT: Final = 0.125  # the left edge of the grid of axes, as a fraction of the width
+RIGHT: Final = 0.9  # its right edge
+BOTTOM: Final = 0.11  # its bottom edge, as a fraction of the height from the bottom
+TOP: Final = 0.88  # its top edge
+WSPACE: Final = 0.2  # the gap between columns, as a fraction of a column's width
+HSPACE: Final = 0.2  # the gap between rows, as a fraction of a row's height
+FONT_SIZE: Final = 10.0  # tick labels and axis labels, in points
+TITLE_SIZE: Final = 12.0  # the title, matplotlib's "large"
+LABEL_PAD: Final = 4.0  # the gap between the tick labels and the axis label
+TITLE_PAD: Final = 6.0  # the gap between the axes and the title's baseline
+
+
+class Figure(Struct):
+    """A figure holding a grid of `nrows` by `ncols` axes, as matplotlib's `Figure`. Make one
+    with `subplots`; `axes` holds the axes row by row, as matplotlib's `fig.axes` does, so
+    `fig.axes[0]` is the top left one and `fig.axes[ncols]` the first of the second row. Draw
+    on each with its methods, `fig.axes[1].plot(t, x)`, and write them all with `savefig`.
+    """
+
+    axes: list[Axes]  # the axes, row by row
+    nrows: int  # how many rows of axes
+    ncols: int  # how many axes in each row
+
+    def savefig(self: Self, fname: str) -> Raises[None, OSError | ValueError]:
+        """Writes the figure to the file `fname`, each axes in its place in the grid, as
+        matplotlib's `Figure.savefig`; the extension picks the format.
+
+        # Errors
+
+        As `Axes.savefig`: `ValueError` for a format other than `.svg`, `OSError` when the file
+        cannot be written.
+        """
+        check_format(fname)
+        renderer = RendererSVG(WIDTH, HEIGHT, [], 0)
+        for k in range(len(self.axes)):
+            cell = subplot_box(k // self.ncols, k % self.ncols, self.nrows, self.ncols)
+            draw_axes(self.axes[k], cell, renderer)
+        with open(fname, "w") as file:
+            file.write(renderer.tostring())
+
+
+def check_format(fname: str) -> Raises[None, ValueError]:
+    """Raises matplotlib's `ValueError` unless the extension of `fname` is `.svg`, the only
+    format written so far."""
+    dot = _last_dot(fname)
+    extension = fname[dot + 1 :].lower() if dot >= 0 else ""
+    if extension != "svg":
+        raise ValueError(f"Format '{extension}' is not supported (supported formats: svg)")
+
+
+def _last_dot(path: str) -> int:
+    """The position of the dot that starts the file name's extension in `path`, or -1 when the
+    name has none: a dot in a directory's name, `runs.d/plot`, does not count."""
+    found = -1
+    position = 0
+    for character in path:
+        if character == ".":
+            found = position
+        elif character == "/":
+            found = -1
+        position += 1
+    return found
+
+
+def _dashes(style: str, linewidth: f64) -> list[f64]:
+    """The on and off lengths, in points, of a matplotlib line style: its pattern for a line
+    one point wide, scaled by `linewidth`. Empty for a solid line. Panics on an unknown style."""
+    pattern: list[f64] = []
+    if style == "--" or style == "dashed":
+        pattern = [3.7, 1.6]
+    elif style == ":" or style == "dotted":
+        pattern = [1.0, 1.65]
+    elif style == "-." or style == "dashdot":
+        pattern = [6.4, 1.6, 1.0, 1.6]
+    else:
+        known = style == "-" or style == "solid"
+        assert known, f"{style!r} is not a line style: use '-', '--', ':', '-.' or ''"
+    return [length * linewidth for length in pattern]
+
+
+def _range(ax: Axes, along_x: bool) -> tuple[f64, f64]:
+    """The range one axis of `ax` shows: the limits `set_xlim` or `set_ylim` fixed, or else the
+    data's, as `transforms.autoscale` finds them."""
+    fixed = ax.xlim if along_x else ax.ylim
+    if fixed is not None:
+        return fixed
+    return autoscale(ax.artists, ax.images, along_x, ax.xlog if along_x else ax.ylog)
+
+
+def subplot_box(row: int, column: int, nrows: int, ncols: int) -> tuple[f64, f64, f64, f64]:
+    """The box of the axes at `row` and `column` of a grid of `nrows` by `ncols` in the default
+    figure, left, top, right and bottom in points from its top left corner, as matplotlib's
+    `GridSpec.get_grid_positions` places it with the default subplot parameters: the grid fills
+    0.125 to 0.9 of the width and 0.11 to 0.88 of the height, with gaps of 0.2 of a cell between
+    cells. One axes alone fills the whole grid.
+    """
+    width = (RIGHT - LEFT) / (f64(ncols) + WSPACE * f64(ncols - 1))
+    height = (TOP - BOTTOM) / (f64(nrows) + HSPACE * f64(nrows - 1))
+    left = LEFT + f64(column) * (1.0 + WSPACE) * width
+    top = TOP - f64(row) * (1.0 + HSPACE) * height
+    right = (left + width) * WIDTH
+    return (left * WIDTH, (1.0 - top) * HEIGHT, right, (1.0 - (top - height)) * HEIGHT)
+
+
+def _box(
+    ax: Axes, cell: tuple[f64, f64, f64, f64], x0: f64, x1: f64, y0: f64, y1: f64
+) -> tuple[f64, f64, f64, f64]:
+    """The axes' box, left, top, right and bottom in points: its `cell` of the figure, less
+    the 20% of its width a colorbar takes, then, for equal aspect, narrowed in one direction
+    about its centre so a unit of x and of y are the same length, as matplotlib's
+    `apply_aspect` narrows it."""
+    left, top, right, bottom = cell
+    if ax.colorbar_on:
+        right = right - 0.2 * (right - left)
+    if ax.aspect_equal and len(ax.images) > 0:
+        across = abs(x1 - x0)
+        down = abs(y1 - y0)
+        if (right - left) / across > (bottom - top) / down:
+            width = across * (bottom - top) / down
+            left = 0.5 * (left + right - width)
+            right = left + width
+        else:
+            height = down * (right - left) / across
+            top = 0.5 * (top + bottom - height)
+            bottom = top + height
+    return (left, top, right, bottom)
+
+
+def draw_axes(
+    ax: Axes, cell: tuple[f64, f64, f64, f64], renderer: InOut[RendererSVG]
+) -> None:
+    """Draws `ax` in its `cell` of the figure, from `subplot_box`: images, bars, markers and
+    filled areas, the grid, lines and error bars, the frame, the axes' ticks and labels, the
+    title, text, the legend and the colorbar, in matplotlib's order. Costs a few operations a
+    point of each artist and a byte or so of the file for each."""
+    x0, x1 = _range(ax, True)
+    y0, y1 = _range(ax, False)
+    left, top, right, bottom = _box(ax, cell, x0, x1, y0, y1)
+    view = View(left, top, right, bottom, x0, x1, y0, y1, ax.xlog, ax.ylog)
+    renderer.set_clip(left, top, right - left, bottom - top)
+    for image in ax.images:
+        draw_image(image, view, renderer)
+    for artist in ax.artists:
+        px = view.to_x(artist.x)
+        py = view.to_y(artist.y)
+        if artist.kind == Kind.BARS:
+            base = view.to_y(Array([0.0]))[0] if not ax.ylog else bottom
+            ends = view.to_x(artist.x + artist.widths)
+            for i in range(len(px)):
+                width = ends[i] - px[i]
+                height = base - py[i]
+                renderer.draw_rectangle(
+                    px[i], py[i], width, height, artist.color, 1.0, "none", 0.0, True
+                )
+        elif artist.kind == Kind.MARKERS:
+            renderer.draw_markers(px, py, artist.marker, artist.markersize, artist.color, 1.5, True)
+        elif artist.kind == Kind.FILL:
+            renderer.draw_polygon(px, py, artist.color, artist.alpha, True)
+    xaxis = XAxis(x0, x1, left, right, bottom, ax.xlog)
+    yaxis = YAxis(y0, y1, bottom, top, left, ax.ylog)
+    if ax.grid_on:
+        gray = "#b0b0b0"  # matplotlib's grid color
+        for tick in xaxis.get_majorticklocs():
+            if min(x0, x1) <= tick and tick <= max(x0, x1):
+                at = view.to_x(Array([tick]))[0]
+                line = Array([at, at])
+                renderer.draw_path(line, Array([top, bottom]), gray, 0.8, [], "projecting", True)
+        for tick in yaxis.get_majorticklocs():
+            if min(y0, y1) <= tick and tick <= max(y0, y1):
+                at = view.to_y(Array([tick]))[0]
+                line = Array([at, at])
+                renderer.draw_path(Array([left, right]), line, gray, 0.8, [], "projecting", True)
+    for artist in ax.artists:
+        if artist.kind == Kind.LINE or artist.kind == Kind.ERRORS:
+            px = view.to_x(artist.x)
+            py = view.to_y(artist.y)
+            cap = "projecting" if artist.kind == Kind.LINE else "butt"
+            if artist.linewidth > 0.0:
+                renderer.draw_path(px, py, artist.color, artist.linewidth, artist.dashes, cap, True)
+            if artist.marker != "" and artist.markersize > 0.0:
+                size = artist.markersize
+                renderer.draw_markers(px, py, artist.marker, size, artist.color, 1.0, True)
+    width = right - left
+    renderer.draw_rectangle(left, top, width, bottom - top, "none", 1.0, "#000000", 0.8, False)
+    below = xaxis.draw(renderer)
+    beside = yaxis.draw(renderer)
+    _, height, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
+    if ax.xlabel != "":
+        baseline = below + LABEL_PAD + height - descent
+        renderer.draw_text((left + right) / 2.0, baseline, ax.xlabel, FONT_SIZE, "middle", False)
+    if ax.ylabel != "":
+        across = beside - LABEL_PAD - descent
+        renderer.draw_text(across, (top + bottom) / 2.0, ax.ylabel, FONT_SIZE, "middle", True)
+    if ax.title != "":
+        middle = (left + right) / 2.0
+        renderer.draw_text(middle, top - TITLE_PAD, ax.title, TITLE_SIZE, "middle", False)
+    for text in ax.texts:
+        _draw_text(text, view, renderer)
+    if ax.legend_loc != "":
+        draw_legend(ax.artists, ax.legend_loc, view, renderer)
+    if ax.colorbar_on:
+        cell_left, cell_top, cell_right, cell_bottom = cell
+        slot = cell_right - 0.15 * (cell_right - cell_left)
+        height = cell_bottom - cell_top
+        draw_colorbar(
+            ax.images[len(ax.images) - 1],
+            slot,
+            cell_top,
+            height / 20.0,
+            height,
+            ax.colorbar_label,
+            renderer,
+        )
+
+
+def _draw_text(text: Text, view: View, renderer: InOut[RendererSVG]) -> None:
+    """Writes `text` at its data point, aligned as `pyplot`'s `Axes.text` says: its baseline is
+    moved from the point by the layout box's height and descent, as matplotlib aligns one line
+    of text. It is not clipped."""
+    at_x = view.to_x(Array([text.x]))[0]
+    at_y = view.to_y(Array([text.y]))[0]
+    _, height, descent = renderer.get_text_width_height_descent(text.text, text.size)
+    if text.va == "bottom":
+        at_y -= descent
+    elif text.va == "top":
+        at_y += height - descent
+    elif text.va == "center":
+        at_y += 0.5 * height - descent
+    anchor = "start"
+    if text.ha == "center":
+        anchor = "middle"
+    elif text.ha == "right":
+        anchor = "end"
+    renderer.draw_text(at_x, at_y, text.text, text.size, anchor, False)

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="460.8pt" height="345.6pt" viewBox="0 0 460.8 345.6" version="1.1">
+<rect width="460.8" height="345.6" fill="#ffffff"/>
+<clipPath id="axes"><rect x="57.600" y="41.472" width="162.327" height="120.960"/></clipPath>
+<path d="M64.979 156.934L64.979 128.738M114.169 109.001L114.169 92.083M163.359 137.197L163.359 92.083M212.549 69.527L212.549 46.970" clip-path="url(#axes)" fill="none" stroke="#1f77b4" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="round"/>
+<defs><path id="marker2" d="M3.000 0H-3.000" fill="#1f77b4" stroke="#1f77b4" stroke-width="1.0"/></defs>
+<g clip-path="url(#axes)"><use href="#marker2" x="64.979" y="156.934"/><use href="#marker2" x="64.979" y="128.738"/><use href="#marker2" x="114.169" y="109.001"/><use href="#marker2" x="114.169" y="92.083"/><use href="#marker2" x="163.359" y="137.197"/><use href="#marker2" x="163.359" y="92.083"/><use href="#marker2" x="212.549" y="69.527"/><use href="#marker2" x="212.549" y="46.970"/></g>
+<defs><path id="marker4" d="M-3.000 0A3.000 3.000 0 1 0 3.000 0A3.000 3.000 0 1 0 -3.000 0Z" fill="#1f77b4" stroke="#1f77b4" stroke-width="1.0"/></defs>
+<g clip-path="url(#axes)"><use href="#marker4" x="64.979" y="142.836"/><use href="#marker4" x="114.169" y="100.542"/><use href="#marker4" x="163.359" y="114.640"/><use href="#marker4" x="212.549" y="58.249"/></g>
+<rect x="57.600" y="41.472" width="162.327" height="120.960" fill="none" stroke="#000000" stroke-width="0.8" stroke-linejoin="miter"/>
+<path d="M64.979 162.432L64.979 165.932" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="64.979" y="177.030" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">1</text>
+<path d="M114.169 162.432L114.169 165.932" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="114.169" y="177.030" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">2</text>
+<path d="M163.359 162.432L163.359 165.932" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="163.359" y="177.030" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">3</text>
+<path d="M212.549 162.432L212.549 165.932" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="212.549" y="177.030" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">4</text>
+<path d="M57.600 142.836L54.100 142.836" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="50.600" y="146.635" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">2</text>
+<path d="M57.600 114.640L54.100 114.640" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="50.600" y="118.439" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">3</text>
+<path d="M57.600 86.444L54.100 86.444" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="50.600" y="90.243" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">4</text>
+<path d="M57.600 58.249L54.100 58.249" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="50.600" y="62.047" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">5</text>
+<rect x="62.600" y="46.472" width="60.000" height="18.000" fill="#ffffff" fill-opacity="0.8" stroke="#cccccc" stroke-width="1.0" stroke-linejoin="miter"/>
+<path d="M76.600 60.472L76.600 50.472" fill="none" stroke="#1f77b4" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="round"/>
+<defs><path id="marker25" d="M3.000 0H-3.000" fill="#1f77b4" stroke="#1f77b4" stroke-width="1.0"/></defs>
+<g><use href="#marker25" x="76.600" y="60.472"/><use href="#marker25" x="76.600" y="50.472"/></g>
+<defs><path id="marker27" d="M-3.000 0A3.000 3.000 0 1 0 3.000 0A3.000 3.000 0 1 0 -3.000 0Z" fill="#1f77b4" stroke="#1f77b4" stroke-width="1.0"/></defs>
+<g><use href="#marker27" x="76.600" y="55.472"/></g>
+<text x="94.600" y="58.070" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="start" fill="#000000">data</text>
+<clipPath id="axes2"><rect x="252.393" y="41.472" width="162.327" height="120.960"/></clipPath>
+<path d="M259.771 150.465L283.702 150.465M307.632 101.952L315.609 101.952M343.527 118.123L359.481 118.123M375.434 53.439L407.341 53.439" clip-path="url(#axes2)" fill="none" stroke="#1f77b4" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="round"/>
+<path d="M271.736 156.934L271.736 143.997M311.620 108.420L311.620 95.484M351.504 124.592L351.504 111.655M391.388 59.907L391.388 46.970" clip-path="url(#axes2)" fill="none" stroke="#1f77b4" stroke-width="1.5" stroke-linecap="butt" stroke-linejoin="round"/>
+<path d="M271.736 150.465L311.620 101.952L351.504 118.123L391.388 53.439" clip-path="url(#axes2)" fill="none" stroke="#1f77b4" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="marker34" d="M-3.000 -3.000H3.000V3.000H-3.000Z" fill="#1f77b4" stroke="#1f77b4" stroke-width="1.0"/></defs>
+<g clip-path="url(#axes2)"><use href="#marker34" x="271.736" y="150.465"/><use href="#marker34" x="311.620" y="101.952"/><use href="#marker34" x="351.504" y="118.123"/><use href="#marker34" x="391.388" y="53.439"/></g>
+<rect x="252.393" y="41.472" width="162.327" height="120.960" fill="none" stroke="#000000" stroke-width="0.8" stroke-linejoin="miter"/>
+<path d="M271.736 162.432L271.736 165.932" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="271.736" y="177.030" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">1</text>
+<path d="M311.620 162.432L311.620 165.932" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="311.620" y="177.030" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">2</text>
+<path d="M351.504 162.432L351.504 165.932" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="351.504" y="177.030" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">3</text>
+<path d="M391.388 162.432L391.388 165.932" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="391.388" y="177.030" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">4</text>
+<path d="M252.393 150.465L248.893 150.465" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="245.393" y="154.264" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">2</text>
+<path d="M252.393 118.123L248.893 118.123" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="245.393" y="121.922" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">3</text>
+<path d="M252.393 85.781L248.893 85.781" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="245.393" y="89.580" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">4</text>
+<path d="M252.393 53.439L248.893 53.439" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="245.393" y="57.237" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">5</text>
+<clipPath id="axes3"><rect x="57.600" y="186.624" width="162.327" height="120.960"/></clipPath>
+<path d="M64.979 302.086L72.357 301.811L79.736 300.986L87.114 299.612L94.493 297.687L101.871 295.213L109.250 292.189L116.628 288.615L124.007 284.492L131.385 279.818L138.764 274.595L146.142 268.822L153.521 262.499L160.899 255.626L168.278 248.204L175.656 240.231L183.035 231.709L190.413 222.637L197.792 213.015L205.170 202.844L212.549 192.122L212.549 247.104L205.170 249.853L197.792 252.602L190.413 255.351L183.035 258.100L175.656 260.849L168.278 263.599L160.899 266.348L153.521 269.097L146.142 271.846L138.764 274.595L131.385 277.344L124.007 280.093L116.628 282.842L109.250 285.591L101.871 288.340L94.493 291.089L87.114 293.839L79.736 296.588L72.357 299.337L64.979 302.086Z" clip-path="url(#axes3)" fill="#1f77b4" fill-opacity="0.3"/>
+<path d="M64.979 302.086L72.357 301.811L79.736 300.986L87.114 299.612L94.493 297.687L101.871 295.213L109.250 292.189L116.628 288.615L124.007 284.492L131.385 279.818L138.764 274.595L146.142 268.822L153.521 262.499L160.899 255.626L168.278 248.204L175.656 240.231L183.035 231.709L190.413 222.637L197.792 213.015L205.170 202.844L212.549 192.122" clip-path="url(#axes3)" fill="none" stroke="#1f77b4" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="round"/>
+<rect x="57.600" y="186.624" width="162.327" height="120.960" fill="none" stroke="#000000" stroke-width="0.8" stroke-linejoin="miter"/>
+<path d="M64.979 307.584L64.979 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="64.979" y="322.182" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">0.0</text>
+<path d="M101.871 307.584L101.871 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="101.871" y="322.182" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">0.5</text>
+<path d="M138.764 307.584L138.764 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="138.764" y="322.182" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">1.0</text>
+<path d="M175.656 307.584L175.656 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="175.656" y="322.182" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">1.5</text>
+<path d="M212.549 307.584L212.549 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="212.549" y="322.182" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">2.0</text>
+<path d="M57.600 302.086L54.100 302.086" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="50.600" y="305.885" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">0</text>
+<path d="M57.600 274.595L54.100 274.595" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="50.600" y="278.394" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">1</text>
+<path d="M57.600 247.104L54.100 247.104" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="50.600" y="250.903" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">2</text>
+<path d="M57.600 219.613L54.100 219.613" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="50.600" y="223.412" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">3</text>
+<path d="M57.600 192.122L54.100 192.122" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="50.600" y="195.921" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">4</text>
+<clipPath id="axes4"><rect x="252.393" y="186.624" width="162.327" height="120.960"/></clipPath>
+<rect x="259.771" y="261.504" width="31.067" height="46.080" clip-path="url(#axes4)" fill="#1f77b4"/>
+<rect x="298.606" y="226.944" width="31.067" height="80.640" clip-path="url(#axes4)" fill="#1f77b4"/>
+<rect x="337.440" y="238.464" width="31.067" height="69.120" clip-path="url(#axes4)" fill="#1f77b4"/>
+<rect x="376.274" y="192.384" width="31.067" height="115.200" clip-path="url(#axes4)" fill="#1f77b4"/>
+<rect x="252.393" y="186.624" width="162.327" height="120.960" fill="none" stroke="#000000" stroke-width="0.8" stroke-linejoin="miter"/>
+<path d="M275.305 307.584L275.305 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="275.305" y="322.182" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">1</text>
+<path d="M314.139 307.584L314.139 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="314.139" y="322.182" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">2</text>
+<path d="M352.974 307.584L352.974 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="352.974" y="322.182" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">3</text>
+<path d="M391.808 307.584L391.808 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="391.808" y="322.182" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">4</text>
+<path d="M252.393 307.584L248.893 307.584" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="245.393" y="311.383" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">0</text>
+<path d="M252.393 284.544L248.893 284.544" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="245.393" y="288.343" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">1</text>
+<path d="M252.393 261.504L248.893 261.504" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="245.393" y="265.303" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">2</text>
+<path d="M252.393 238.464L248.893 238.464" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="245.393" y="242.263" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">3</text>
+<path d="M252.393 215.424L248.893 215.424" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="245.393" y="219.223" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">4</text>
+<path d="M252.393 192.384L248.893 192.384" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>
+<text x="245.393" y="196.183" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="end" fill="#000000">5</text>
+<text x="314.139" y="213.022" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="middle" fill="#000000">peak</text>
+<text x="255.888" y="292.142" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="10.0" text-anchor="start" fill="#000000">left top</text>
+<text x="411.225" y="265.141" font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, sans-serif" font-size="14.0" text-anchor="end" fill="#000000">right</text>
+</svg>

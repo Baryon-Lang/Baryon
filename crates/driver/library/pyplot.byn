@@ -1,7 +1,8 @@
 """The `pyplot` module: plots with matplotlib's object-oriented names, drawn by Baryon code to SVG
 (decision 0046).
 
-Make an `Axes` with `axes()`, draw on it with its methods, and write it with `savefig`:
+Make an `Axes` with `axes()`, draw on it with its methods, and write it with `savefig`, or
+make a grid of them with `subplots(nrows, ncols)` and write the whole `Figure`:
 
 ```python
 import pyplot as plt
@@ -19,28 +20,18 @@ points, colors from the `tab10` cycle, and ticks placed and labelled by `ticker`
 `MaxNLocator` and `ScalarFormatter`, as matplotlib's are.
 """
 
-from artist import Artist, Image, Kind, View
-from axis import XAxis, YAxis
+from artist import Artist, Image, Kind, Text, dashes, error_bars, filled
 from backend_svg import RendererSVG
 from cm import get_cmap
-from colorbar import draw_colorbar
 from colors import to_hex
-from image import draw_image
-from legend import draw_legend, location_code
+from figure import Figure, check_format, draw_axes, subplot_box
+from legend import location_code
 from math import inf, isfinite
-from transforms import autoscale, fixed_limits
+from transforms import fixed_limits
 from stats import histogram
 
 WIDTH: Final = 460.8  # the figure's width in points: 6.4 inches
 HEIGHT: Final = 345.6  # the figure's height in points: 4.8 inches
-LEFT: Final = 57.6  # the axes' left edge, 0.125 of the width, from the figure's left
-RIGHT: Final = 414.72  # the axes' right edge, 0.9 of the width
-TOP: Final = 41.472  # the axes' top edge, 0.12 of the height, from the figure's top
-BOTTOM: Final = 307.584  # the axes' bottom edge, 0.89 of the height
-FONT_SIZE: Final = 10.0  # tick labels and axis labels, in points
-TITLE_SIZE: Final = 12.0  # the title, matplotlib's "large"
-LABEL_PAD: Final = 4.0  # the gap between the tick labels and the axis label
-TITLE_PAD: Final = 6.0  # the gap between the axes and the title's baseline
 
 
 class Axes(Struct):
@@ -62,10 +53,13 @@ class Axes(Struct):
     patch_colors: int  # how many `scatter`, `bar` and `hist` have taken, from their own cycle
     legend_loc: str  # where the legend goes, as `legend`'s `loc`; "" for no legend
     images: list[Image]  # every image, in the order drawn
+    texts: list[Text]  # every piece of text, in the order written
     colorbar_label: str  # the colorbar's label; "" for none
     grid_on: bool  # whether grid lines are drawn at the ticks
     aspect_equal: bool  # whether a unit of x and of y are the same length, as for images
     colorbar_on: bool  # whether a colorbar of the last image is drawn beside the axes
+    xlog: bool  # whether the x axis is logarithmic, as `set_xscale("log")` makes it
+    ylog: bool  # whether the y axis is logarithmic
 
     def plot(
         self: InOut[Self],
@@ -86,8 +80,8 @@ class Axes(Struct):
         `"-."`, or their names `"solid"`, `"dashed"`, `"dotted"` and `"dashdot"`, with dashes
         that grow with `linewidth` as matplotlib's do, or `""` or `"None"` for no line.
         `marker` puts a marker `markersize` points across at each point: `"o"`, `"."`, `"s"`,
-        `"^"`, `"v"`, `"D"`, `"+"` or `"x"`. A point with a NaN or infinite coordinate breaks
-        the line there. Copies `x` and `y`, so they can change afterwards.
+        `"^"`, `"v"`, `"D"`, `"+"`, `"x"`, `"_"` or `"|"`. A point with a NaN or infinite
+        coordinate breaks the line there. Copies `x` and `y`, so they can change afterwards.
 
         Panics when `x` and `y` differ in length, or `color` or `linestyle` is not one of
         those, and `savefig` panics on a `marker` that is not, where matplotlib raises
@@ -95,9 +89,9 @@ class Axes(Struct):
         """
         assert len(x) == len(y), "plot needs x and y of the same length"
         width = 0.0 if linestyle == "" or linestyle == "None" else linewidth
-        dashes: list[f64] = []
+        pattern: list[f64] = []
         if width > 0.0:
-            dashes = _dashes(linestyle, linewidth)
+            pattern = dashes(linestyle, linewidth)
         self.artists.append(
             Artist(
                 Kind.LINE,
@@ -106,10 +100,11 @@ class Axes(Struct):
                 Array.zeros(0),
                 self._color(color, True),
                 width,
-                dashes,
+                pattern,
                 marker.copy(),
                 markersize,
                 label.copy(),
+                1.0,
             )
         )
 
@@ -138,6 +133,7 @@ class Axes(Struct):
                 marker.copy(),
                 s**0.5,
                 label.copy(),
+                1.0,
             )
         )
 
@@ -165,6 +161,7 @@ class Axes(Struct):
                 "",
                 0.0,
                 label.copy(),
+                1.0,
             )
         )
 
@@ -194,9 +191,96 @@ class Axes(Struct):
                 "",
                 0.0,
                 label.copy(),
+                1.0,
             )
         )
         return (heights, edges)
+
+    def errorbar(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        yerr: Array[f64, 1] = Array.zeros(0),
+        xerr: Array[f64, 1] = Array.zeros(0),
+        fmt: str = "",
+        color: str = "",
+        capsize: f64 = 0.0,
+        label: str = "",
+    ) -> None:
+        """Draws the points `(x[i], y[i])` with an error bar from `y[i] - yerr[i]` to
+        `y[i] + yerr[i]` and one from `x[i] - xerr[i]` to `x[i] + xerr[i]`, as matplotlib's
+        `errorbar` does with errors of the same length as the data. `fmt` draws the points:
+        `""` or `"-"` joins them with a line, one of `plot`'s markers such as `"o"` marks each
+        one, the marker then `"-"`, `"o-"`, does both, and `"none"` draws only the bars.
+        `capsize` puts a cap that many points long, on each side, across both ends of each bar.
+        The bars, caps and points take one color, `color` or the next of the lines' cycle, and
+        the legend shows them together. An error left out, or empty, draws no bars, where
+        matplotlib takes `None`. Copies its arguments.
+
+        Panics when the lengths differ, or on a `fmt` or `color` that is not one of those.
+        """
+        assert len(x) == len(y), "errorbar needs x and y of the same length"
+        line = fmt == "" or fmt.endswith("-")
+        known = fmt == "none" or len(fmt) == 1 or (len(fmt) == 2 and line)
+        assert known, f"{fmt!r} is not a format: use '', '-', 'none', a marker or 'o-'"
+        hue = self._color(color, True)
+        if len(xerr) > 0:
+            self.artists.append(error_bars(x, y, xerr, True, hue, capsize))
+        if len(yerr) > 0:
+            self.artists.append(error_bars(x, y, yerr, False, hue, capsize))
+        marker = ""
+        if fmt != "" and fmt != "-" and fmt != "none":
+            marker = fmt[0:1]
+        width = 1.5 if line else 0.0
+        points = Artist(
+            Kind.LINE, x.copy(), y.copy(), Array.zeros(0), hue, width, [], marker, 6.0, "", 1.0
+        )
+        points.label = label.copy()
+        self.artists.append(points)
+
+    def fill_between(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y1: Array[f64, 1],
+        y2: Array[f64, 1] = Array.zeros(0),
+        color: str = "",
+        alpha: f64 = 1.0,
+        label: str = "",
+    ) -> None:
+        """Fills the area between the curves `(x[i], y1[i])` and `(x[i], y2[i])`, or down to 0
+        when `y2` is left out or empty, as matplotlib's `fill_between`, in `color` or the next
+        color of the cycle `bar` takes from, at opacity `alpha` from 0 to 1. A point with a NaN
+        or infinite value splits the area in two there. Panics when the lengths differ, on a
+        `color` that is not a color, or an `alpha` outside 0 to 1, where matplotlib raises
+        `ValueError`."""
+        base = Array.zeros(len(x))
+        if len(y2) > 0:
+            base = y2.copy()
+        same = len(x) == len(y1) and len(x) == len(base)
+        assert same, "fill_between needs x, y1 and y2 of the same length"
+        assert 0.0 <= alpha and alpha <= 1.0, f"alpha ({alpha}) is outside 0-1 range"
+        area = filled(x, y1, base, self._color(color, False), alpha)
+        area.label = label.copy()
+        self.artists.append(area)
+
+    def text(
+        self: InOut[Self],
+        x: f64,
+        y: f64,
+        s: str,
+        fontsize: f64 = 10.0,
+        ha: str = "left",
+        va: str = "baseline",
+    ) -> None:
+        """Writes `s` at the data point `(x, y)`, `fontsize` points tall, as matplotlib's `text`:
+        `ha` puts its `"left"`, `"center"` or `"right"` side at `x`, and `va` puts its
+        `"baseline"`, `"bottom"`, `"center"` or `"top"` at `y`. The text is not clipped to the
+        axes and leaves the range shown alone. Panics on any other `ha` or `va`."""
+        across = ha == "left" or ha == "center" or ha == "right"
+        assert across, f"{ha!r} is not a horizontal alignment: use 'left', 'center' or 'right'"
+        up = va == "baseline" or va == "bottom" or va == "center" or va == "top"
+        assert up, f"{va!r} is not a vertical alignment: 'baseline', 'bottom', 'center' or 'top'"
+        self.texts.append(Text(x, y, s.copy(), fontsize, ha.copy(), va.copy()))
 
     def imshow(
         self: InOut[Self],
@@ -292,6 +376,21 @@ class Axes(Struct):
         assert isfinite(bottom) and isfinite(top), "Axis limits cannot be NaN or Inf"
         self.ylim = fixed_limits(bottom, top)
 
+    def set_xscale(self: InOut[Self], value: str) -> None:
+        """Lays the x axis out evenly, `"linear"`, or by the logarithm of x, `"log"`, as
+        matplotlib's `set_xscale`. A log axis is ticked at powers of ten labelled `10³`, with
+        minor ticks between, and leaves out points at or below 0. Panics on any other scale,
+        where matplotlib raises `ValueError`."""
+        known = value == "linear" or value == "log"
+        assert known, f"{value!r} is not a scale: use 'linear' or 'log'"
+        self.xlog = value == "log"
+
+    def set_yscale(self: InOut[Self], value: str) -> None:
+        """Lays the y axis out evenly or by the logarithm of y, as `set_xscale` does x."""
+        known = value == "linear" or value == "log"
+        assert known, f"{value!r} is not a scale: use 'linear' or 'log'"
+        self.ylog = value == "log"
+
     def legend(self: InOut[Self], loc: str = "best") -> None:
         """Shows a legend of every artist with a label, as matplotlib's `legend`: a sample of
         each beside its label, in the order drawn, in a white box inside the axes.
@@ -324,12 +423,9 @@ class Axes(Struct):
         `ValueError` when the extension is not `.svg`, the only format so far, with
         matplotlib's message; `OSError` when the file cannot be written.
         """
-        dot = _last_dot(fname)
-        extension = fname[dot + 1 :].lower() if dot >= 0 else ""
-        if extension != "svg":
-            raise ValueError(f"Format '{extension}' is not supported (supported formats: svg)")
-        renderer = RendererSVG(WIDTH, HEIGHT, [])
-        _draw(self, renderer)
+        check_format(fname)
+        renderer = RendererSVG(WIDTH, HEIGHT, [], 0)
+        draw_axes(self, subplot_box(0, 0, 1, 1), renderer)
         with open(fname, "w") as file:
             file.write(renderer.tostring())
 
@@ -345,148 +441,28 @@ def axes() -> Axes:
         ax.set_title("empty")
     ```
     """
-    return Axes([], "", "", "", None, None, 0, 0, "", [], "", False, False, False)
+    return Axes([], "", "", "", None, None, 0, 0, "", [], [], "", False, False, False, False, False)
 
 
-def _last_dot(path: str) -> int:
-    """The position of the dot that starts the file name's extension in `path`, or -1 when the
-    name has none: a dot in a directory's name, `runs.d/plot`, does not count."""
-    found = -1
-    position = 0
-    for character in path:
-        if character == ".":
-            found = position
-        elif character == "/":
-            found = -1
-        position += 1
-    return found
+def subplots(nrows: int = 1, ncols: int = 1) -> Figure:
+    """A new figure with a grid of `nrows` by `ncols` empty axes, as matplotlib's
+    `pyplot.subplots`, which returns the figure and the axes; here the axes are `fig.axes`
+    (decision 0046). The grid fills matplotlib's default space, with gaps of a fifth of an axes
+    between them. Panics when either count is below 1, where matplotlib raises `ValueError`.
 
+    ```python
+    import pyplot as plt
 
-def _dashes(style: str, linewidth: f64) -> list[f64]:
-    """The on and off lengths, in points, of a matplotlib line style: its pattern for a line
-    one point wide, scaled by `linewidth`. Empty for a solid line. Panics on an unknown style."""
-    pattern: list[f64] = []
-    if style == "--" or style == "dashed":
-        pattern = [3.7, 1.6]
-    elif style == ":" or style == "dotted":
-        pattern = [1.0, 1.65]
-    elif style == "-." or style == "dashdot":
-        pattern = [6.4, 1.6, 1.0, 1.6]
-    else:
-        known = style == "-" or style == "solid"
-        assert known, f"{style!r} is not a line style: use '-', '--', ':', '-.' or ''"
-    return [length * linewidth for length in pattern]
-
-
-def _range(ax: Axes, along_x: bool) -> tuple[f64, f64]:
-    """The range one axis of `ax` shows: the limits `set_xlim` or `set_ylim` fixed, or else the
-    data's, as `transforms.autoscale` finds them."""
-    fixed = ax.xlim if along_x else ax.ylim
-    if fixed is not None:
-        return fixed
-    return autoscale(ax.artists, ax.images, along_x)
-
-
-def _box(ax: Axes, x0: f64, x1: f64, y0: f64, y1: f64) -> tuple[f64, f64, f64, f64]:
-    """The axes' box, left, top, right and bottom in points: matplotlib's default box, less
-    the 20% of its width a colorbar takes, then, for equal aspect, narrowed in one direction
-    about its centre so a unit of x and of y are the same length, as matplotlib's
-    `apply_aspect` narrows it."""
-    left = LEFT
-    top = TOP
-    right = RIGHT
-    bottom = BOTTOM
-    if ax.colorbar_on:
-        right = RIGHT - 0.2 * (RIGHT - LEFT)
-    if ax.aspect_equal and len(ax.images) > 0:
-        across = abs(x1 - x0)
-        down = abs(y1 - y0)
-        if (right - left) / across > (bottom - top) / down:
-            width = across * (bottom - top) / down
-            left = 0.5 * (left + right - width)
-            right = left + width
-        else:
-            height = down * (right - left) / across
-            top = 0.5 * (top + bottom - height)
-            bottom = top + height
-    return (left, top, right, bottom)
-
-
-def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
-    """Draws `ax` in the default figure: images, bars and markers, the grid, lines, the frame,
-    the axes' ticks and labels, the title, the legend and the colorbar, in matplotlib's order."""
-    x0, x1 = _range(ax, True)
-    y0, y1 = _range(ax, False)
-    left, top, right, bottom = _box(ax, x0, x1, y0, y1)
-    view = View(left, top, right, bottom, x0, x1, y0, y1)
-    xscale = (right - left) / (x1 - x0)
-    yscale = (bottom - top) / (y1 - y0)
-    renderer.set_clip(left, top, right - left, bottom - top)
-    for image in ax.images:
-        draw_image(image, view, renderer)
-    for artist in ax.artists:
-        px = left + (artist.x - x0) * xscale
-        py = bottom - (artist.y - y0) * yscale
-        if artist.kind == Kind.BARS:
-            base = bottom + y0 * yscale
-            for i in range(len(px)):
-                width = artist.widths[i] * xscale
-                height = base - py[i]
-                renderer.draw_rectangle(
-                    px[i], py[i], width, height, artist.color, 1.0, "none", 0.0, True
-                )
-        elif artist.kind == Kind.MARKERS:
-            renderer.draw_markers(px, py, artist.marker, artist.markersize, artist.color, 1.5, True)
-    xaxis = XAxis(x0, x1, left, right, bottom)
-    yaxis = YAxis(y0, y1, bottom, top, left)
-    if ax.grid_on:
-        gray = "#b0b0b0"  # matplotlib's grid color
-        for tick in xaxis.get_majorticklocs():
-            if min(x0, x1) <= tick and tick <= max(x0, x1):
-                at = left + (tick - x0) * xscale
-                line = Array([at, at])
-                renderer.draw_path(line, Array([top, bottom]), gray, 0.8, [], "projecting", True)
-        for tick in yaxis.get_majorticklocs():
-            if min(y0, y1) <= tick and tick <= max(y0, y1):
-                at = bottom - (tick - y0) * yscale
-                line = Array([at, at])
-                renderer.draw_path(Array([left, right]), line, gray, 0.8, [], "projecting", True)
-    for artist in ax.artists:
-        if artist.kind == Kind.LINE:
-            px = left + (artist.x - x0) * xscale
-            py = bottom - (artist.y - y0) * yscale
-            if artist.linewidth > 0.0:
-                renderer.draw_path(
-                    px, py, artist.color, artist.linewidth, artist.dashes, "projecting", True
-                )
-            if artist.marker != "":
-                size = artist.markersize
-                renderer.draw_markers(px, py, artist.marker, size, artist.color, 1.0, True)
-    width = right - left
-    renderer.draw_rectangle(left, top, width, bottom - top, "none", 1.0, "#000000", 0.8, False)
-    below = xaxis.draw(renderer)
-    beside = yaxis.draw(renderer)
-    _, height, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
-    if ax.xlabel != "":
-        baseline = below + LABEL_PAD + height - descent
-        renderer.draw_text((left + right) / 2.0, baseline, ax.xlabel, FONT_SIZE, "middle", False)
-    if ax.ylabel != "":
-        across = beside - LABEL_PAD - descent
-        renderer.draw_text(across, (top + bottom) / 2.0, ax.ylabel, FONT_SIZE, "middle", True)
-    if ax.title != "":
-        middle = (left + right) / 2.0
-        renderer.draw_text(middle, top - TITLE_PAD, ax.title, TITLE_SIZE, "middle", False)
-    if ax.legend_loc != "":
-        draw_legend(ax.artists, ax.legend_loc, view, renderer)
-    if ax.colorbar_on:
-        slot = RIGHT - 0.15 * (RIGHT - LEFT)
-        height = BOTTOM - TOP
-        draw_colorbar(
-            ax.images[len(ax.images) - 1],
-            slot,
-            TOP,
-            height / 20.0,
-            height,
-            ax.colorbar_label,
-            renderer,
-        )
+    def main() -> Raises[None, OSError | ValueError]:
+        fig = plt.subplots(2, 1)
+        fig.axes[0].plot(Array([0.0, 1.0]), Array([0.0, 1.0]))
+        fig.axes[1].set_title("below")
+        fig.savefig("two.svg")
+    ```
+    """
+    assert nrows >= 1, f"Number of rows must be a positive integer, not {nrows}"
+    assert ncols >= 1, f"Number of columns must be a positive integer, not {ncols}"
+    grid: list[Axes] = []
+    for _ in range(nrows * ncols):
+        grid.append(axes())
+    return Figure(grid, nrows, ncols)

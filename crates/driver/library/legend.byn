@@ -69,14 +69,17 @@ def draw_legend(
     left, top = _corner(code, view, width, height)
     renderer.draw_rectangle(left, top, width, height, "#ffffff", 0.8, "#cccccc", 1.0, False)
     k = 0
+    index = -1
     for artist in artists:
+        index += 1
         if artist.label != "":
             middle = top + 4.0 + f64(k) * (row + 5.0) + 0.5 * row
             start = left + 4.0
-            if artist.kind == Kind.BARS:
+            if artist.kind == Kind.BARS or artist.kind == Kind.FILL:
                 renderer.draw_rectangle(
-                    start, middle - 3.5, 20.0, 7.0, artist.color, 1.0, "none", 0.0, False
+                    start, middle - 3.5, 20.0, 7.0, artist.color, artist.alpha, "none", 0.0, False
                 )
+            _draw_errors(artists, index, start + 10.0, middle, renderer)
             if artist.kind == Kind.LINE and artist.linewidth > 0.0:
                 across = Array([start, start + 20.0])
                 level = Array([middle, middle])
@@ -93,6 +96,27 @@ def draw_legend(
             baseline = middle + 0.5 * row - descent
             renderer.draw_text(start + 28.0, baseline, artist.label, FONT_SIZE, "start", False)
             k += 1
+
+
+def _draw_errors(
+    artists: list[Artist], index: int, x: f64, y: f64, renderer: InOut[RendererSVG]
+) -> None:
+    """Draws, centred on `(x, y)`, a sample of the error bars `errorbar` added just before the
+    line `artists[index]`, as matplotlib's `HandlerErrorbar` does: each bar 10 points long,
+    with its caps, before the line's own sample. Draws nothing for a line with no error bars."""
+    first = index
+    while first > 0 and artists[first - 1].kind == Kind.ERRORS:
+        first -= 1
+    for k in range(first, index):
+        across = artists[k].marker == "|"
+        ends_x = Array([x - 5.0, x + 5.0]) if across else Array([x, x])
+        ends_y = Array([y, y]) if across else Array([y + 5.0, y - 5.0])
+        width = artists[k].linewidth
+        renderer.draw_path(ends_x, ends_y, artists[k].color, width, [], "butt", False)
+        if artists[k].markersize > 0.0:
+            size = artists[k].markersize
+            cap = "|" if across else "_"
+            renderer.draw_markers(ends_x, ends_y, cap, size, artists[k].color, 1.0, False)
 
 
 def _corner(code: int, view: View, width: f64, height: f64) -> tuple[f64, f64]:
@@ -118,8 +142,10 @@ def _corner(code: int, view: View, width: f64, height: f64) -> tuple[f64, f64]:
 
 def _best(artists: list[Artist], view: View, width: f64, height: f64) -> int:
     """matplotlib's `"best"` location: the first of the ten places, in `legend`'s order, whose
-    box holds the fewest points of lines and markers, overlaps the fewest bars, and crosses the
-    fewest lines. Costs ten passes over every point drawn."""
+    box holds the fewest points of lines, markers, error bar caps and filled areas' outlines,
+    overlaps the fewest bars, and crosses the fewest lines and outlines. Error bars without caps
+    do not count, as matplotlib's do not; text does not count yet, though matplotlib's does.
+    Costs ten passes over every point drawn."""
     best = 1
     least = -1
     for code in range(1, 11):
@@ -140,10 +166,11 @@ def _best(artists: list[Artist], view: View, width: f64, height: f64) -> int:
                     apart_y = min(py[i], base) >= bottom or max(py[i], base) <= top
                     if not apart_x and not apart_y:
                         badness += 1
-                else:
+                elif artist.kind != Kind.ERRORS or artist.markersize > 0.0:
                     if left < px[i] and px[i] < right and top < py[i] and py[i] < bottom:
                         badness += 1
-                    if artist.kind == Kind.LINE and i > 0 and not crossed:
+                    outline = artist.kind == Kind.LINE or artist.kind == Kind.FILL
+                    if outline and i > 0 and not crossed:
                         box = (left, top, right, bottom)
                         crossed = _crosses(px[i - 1], py[i - 1], px[i], py[i], box)
             if crossed:

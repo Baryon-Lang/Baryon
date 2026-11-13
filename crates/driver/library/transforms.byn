@@ -9,7 +9,7 @@ others from the data with `autoscale` when a figure is drawn.
 """
 
 from artist import Artist, Image, Kind
-from math import inf, isfinite
+from math import ceil, floor, inf, isfinite, log10
 
 
 def nonsingular(low: f64, high: f64, expander: f64, tiny: f64) -> tuple[f64, f64]:
@@ -38,14 +38,18 @@ def fixed_limits(first: f64, second: f64) -> tuple[f64, f64]:
     return (low, high)
 
 
-def autoscale(artists: list[Artist], images: list[Image], along_x: bool) -> tuple[f64, f64]:
+def autoscale(
+    artists: list[Artist], images: list[Image], along_x: bool, log: bool
+) -> tuple[f64, f64]:
     """The range one axis of an axes holding `artists` and `images` shows when its limits are
     not fixed, as matplotlib's `autoscale_view` finds it: the finite data, bars from their
     base at 0 and images to their outer edges, with a margin of 5% on each side that stops at
     a sticky edge, a bar's base or an image's edge, as matplotlib's sticky edges stop it; 0 to
     1 with no data. The last image's extent turns an axis around when it runs backwards, as
-    the default extent of an image with row 0 at the top runs y downwards. Costs one pass over
-    the data.
+    the default extent of an image with row 0 at the top runs y downwards. On a logarithmic
+    axis, `log`, only values above 0 count, the margin is 5% of the range's logarithm, as
+    matplotlib takes it in the axis's own scale, and with no data the range is 1 to 10. Costs one
+    pass over the data.
     """
     low = inf
     high = -inf
@@ -62,8 +66,10 @@ def autoscale(artists: list[Artist], images: list[Image], along_x: bool) -> tupl
                     first = min(0.0, artist.y[i])
                     last = max(0.0, artist.y[i])
                     sticky.append(0.0)
-                low = min(low, first)
-                high = max(high, last)
+                if not log or first > 0.0:
+                    low = min(low, first)
+                if not log or last > 0.0:
+                    high = max(high, last)
     for image in images:
         left_edge, right_edge, bottom_edge, top_edge = image.extent
         first = left_edge if along_x else bottom_edge
@@ -73,17 +79,28 @@ def autoscale(artists: list[Artist], images: list[Image], along_x: bool) -> tupl
         sticky.append(first)
         sticky.append(last)
     if low > high:
-        return (0.0, 1.0)
-    low, high = nonsingular(low, high, 0.05, 1e-15)
-    margin = 0.05 * (high - low)
-    bottom = low - margin
-    top = high + margin
+        return (1.0, 10.0) if log else (0.0, 1.0)
+    bottom = 0.0
+    top = 0.0
+    if log:
+        if low == high:
+            low = 10.0 ** f64(ceil(log10(low)) - 1)
+            high = 10.0 ** f64(floor(log10(high)) + 1)
+        margin = 0.05 * (log10(high) - log10(low))
+        bottom = 10.0 ** (log10(low) - margin)
+        top = 10.0 ** (log10(high) + margin)
+    else:
+        low, high = nonsingular(low, high, 0.05, 1e-15)
+        margin = 0.05 * (high - low)
+        bottom = low - margin
+        top = high + margin
     for edge in sticky:
         if edge <= low and edge > bottom:
             bottom = edge
         if edge >= high and edge < top:
             top = edge
-    bottom, top = nonsingular(bottom, top, 0.001, 1e-15)
+    if not log:
+        bottom, top = nonsingular(bottom, top, 0.001, 1e-15)
     if len(images) > 0:
         left_edge, right_edge, bottom_edge, top_edge = images[len(images) - 1].extent
         if (along_x and left_edge > right_edge) or (not along_x and bottom_edge > top_edge):

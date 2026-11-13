@@ -4,10 +4,11 @@ matplotlib's names and its results.
 `MaxNLocator.tick_values` gives the positions matplotlib's `MaxNLocator` gives, to the last bit,
 and `ScalarFormatter.format_ticks` writes them as matplotlib's `ScalarFormatter` does, with an
 offset or a power of ten moved into `get_offset` when the numbers are large, small or close
-together. `pyplot` uses both for every axis.
+together. `pyplot` uses both for every even axis, and `LogLocator` and `LogFormatterSciNotation`
+for a logarithmic one.
 """
 
-from math import copysign, floor, fmod, log10
+from math import ceil, copysign, floor, fmod, isfinite, log, log10
 
 TINY: Final = 2.2250738585072014e-308  # the smallest normal f64, NumPy's `finfo(float).tiny`
 
@@ -141,6 +142,137 @@ class ScalarFormatter(Struct):
                 power = magnitude
         return (offset, power, _decimals(values, low, high, offset, power))
 
+
+class LogLocator(Struct):
+    """Tick positions on a logarithmic axis, as matplotlib's `ticker.LogLocator` with base 10.
+
+    With `subs` `[1.0]` the ticks are whole powers of ten, every `stride`-th decade so at most
+    `numticks` fall inside the range, with one more beyond each end. Any other `subs` places
+    minor ticks at those multiples of each power; an empty `subs` is matplotlib's `"auto"`, 2 to
+    9 when fewer than ten decades show and none otherwise. When minor ticks would leave at most
+    one tick in view, it gives `MaxNLocator`'s ticks instead, as matplotlib does. `numticks` is
+    9 at the default figure size. Panics on a range that is not above 0.
+
+    ```python
+    from ticker import LogLocator
+
+    def main():
+        print(LogLocator([1.0], 9).tick_values(0.5, 2000.0))
+        # [0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0]
+    ```
+    """
+
+    subs: list[f64]  # the multiples of each power of ten; empty for matplotlib's "auto"
+    numticks: int  # the most whole-decade ticks inside the range
+
+    def tick_values(self, vmin: f64, vmax: f64) -> list[f64]:
+        """The tick positions for the range `vmin` to `vmax`, as matplotlib's `tick_values`.
+        Costs a few operations a tick."""
+        low = min(vmin, vmax)
+        high = max(vmin, vmax)
+        assert low > 0.0 and isfinite(low), "Data cannot be log-scaled because all values are <= 0."
+        lowest = log10(low)
+        highest = log10(high)
+        first = ceil(lowest)
+        last = floor(highest)
+        available = last - first + 1
+        subs = self.subs.copy()
+        if len(subs) == 0:
+            if available >= 10:
+                return []
+            subs = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        wanted = self.numticks
+        stride = available // (wanted + 1) + 1
+        wanted = min(wanted, (available + stride - 1) // stride)
+        decades: list[int] = []
+        if wanted == 0:
+            decades = [first - 1, last + 1]
+            stride = last - first + 2
+        elif wanted == 1:
+            middle = round((lowest + highest) / 2.0)
+            stride = max(middle - first + 1, last + 1 - middle)
+            decades = [middle - stride, middle, middle + stride]
+        else:
+            stride = (available - 1) // (wanted - 1)
+            if f64(stride) < f64(available) / f64(wanted):
+                stride = available // wanted
+            least = max(available - stride * wanted, 0)
+            most = min(available - stride * (wanted - 1), stride)
+            offset = (-first) % stride
+            if offset < least or offset >= most:
+                offset = least
+            decades = [d for d in range(first + offset - stride, last + stride + 1, stride)]
+        if len(subs) == 1 and subs[0] == 1.0:
+            return [10.0 ** f64(decade) for decade in decades]
+        ticks: list[f64] = []
+        if stride == 1 or available <= 1:
+            for decade in range(first - 1, last + 1):
+                for sub in subs:
+                    ticks.append(sub * 10.0 ** f64(decade))
+        inside = len([tick for tick in ticks if low <= tick and tick <= high])
+        if stride == 1 and len(subs) > 1 and len(decades) - 2 + inside <= 1:
+            return MaxNLocator(9, [1.0, 2.0, 2.5, 5.0, 10.0]).tick_values(vmin, vmax)
+        return ticks
+
+
+class LogFormatterSciNotation(Struct):
+    """Tick labels on a logarithmic axis, as matplotlib's `ticker.LogFormatterSciNotation` with
+    base 10 writes them: `$\\mathdefault{10^{3}}$` at a power of ten and
+    `$\\mathdefault{2\\times10^{3}}$` between, in matplotlib's mathtext, which the SVG
+    renderer draws with the exponent raised.
+
+    As matplotlib's does, it labels only powers of ten when the range spans more than one,
+    adds 2, 3, 4 and 6 times a power when it spans more than 0.4 of a decade, and every
+    multiple otherwise; other ticks get `""`. `vmin` and `vmax` are the range the axis shows,
+    which matplotlib reads from the axis itself.
+
+    ```python
+    from ticker import LogFormatterSciNotation
+
+    def main():
+        print(LogFormatterSciNotation(2.0, 5.0).format_ticks([3.0, 10.0]))
+        # ['$\\\\mathdefault{3\\\\times10^{0}}$', '$\\\\mathdefault{10^{1}}$']
+    ```
+    """
+
+    vmin: f64  # the low end of the range the axis shows
+    vmax: f64  # the high end of the range the axis shows
+
+    def format_ticks(self, values: list[f64]) -> list[str]:
+        """The label of each tick in `values`, as matplotlib's `format_ticks`: `""` for a tick
+        left unlabelled. The values must be above 0."""
+        low = log(min(self.vmin, self.vmax), 10.0)
+        high = log(max(self.vmin, self.vmax), 10.0)
+        below = floor(low)
+        if f64(below) == low:
+            below -= 1
+        multiples = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        if floor(high) - below > 1:
+            multiples = [1]
+        elif abs(high - low) > 0.4:
+            multiples = [1, 2, 3, 4, 6, 10]
+        labels: list[str] = []
+        for value in values:
+            power = log(value, 10.0)
+            decade = _close_to_whole(power)
+            exponent = round(power) if decade else floor(power)
+            coefficient = 10.0 ** (power - f64(exponent))
+            if round(coefficient) not in multiples:
+                labels.append("")
+            elif decade:
+                labels.append(f"$\\mathdefault{{10^{{{exponent}}}}}$")
+            else:
+                if _close_to_whole(coefficient):
+                    coefficient = f64(round(coefficient))
+                labels.append(f"$\\mathdefault{{{coefficient:g}\\times10^{{{exponent}}}}}$")
+        return labels
+
+
+def _close_to_whole(x: f64) -> bool:
+    """Whether `x` is within a relative 1e-9 of a whole number, as matplotlib's
+    `_is_close_to_int` and Python's `math.isclose` decide."""
+    whole = f64(round(x))
+    return abs(x - whole) <= 1e-9 * max(abs(x), abs(whole))
 
 def _nonsingular(vmin: f64, vmax: f64) -> tuple[f64, f64]:
     """`vmin` and `vmax` in order, widened when they are too close for `f64` to put ticks

@@ -15,7 +15,7 @@ from png import encode
 
 class RendererSVG(Struct):
     """An SVG drawing `width` by `height` points, built up one call at a time, as matplotlib's
-    `RendererSVG`. Make one with no elements, `RendererSVG(460.8, 345.6, [])`.
+    `RendererSVG`. Make one with no elements and no clip yet, `RendererSVG(460.8, 345.6, [], 0)`.
 
     Every coordinate is in points from the top left corner, y growing downwards, as SVG has it.
     Each call adds one element, so the cost is linear in what is drawn: about 15 bytes a point
@@ -25,12 +25,15 @@ class RendererSVG(Struct):
     width: f64  # the drawing's width in points
     height: f64  # the drawing's height in points
     elements: list[str]  # the SVG elements drawn so far, in order
+    clips: int  # how many clip rectangles `set_clip` has set; the last one is in force
 
     def set_clip(self: InOut[Self], x: f64, y: f64, width: f64, height: f64) -> None:
-        """Sets the rectangle that `draw_path` and `draw_markers` clip to when asked: the axes,
-        so data outside the range shown is cut off at its edge. Set it once, before drawing."""
+        """Sets the rectangle that the drawing calls clip to when asked: the axes, so data outside
+        the range shown is cut off at its edge. Set it before drawing each axes of a figure; the
+        first is called `axes` in the file, the next `axes2` and so on."""
+        self.clips += 1
         self.elements.append(
-            f'<clipPath id="axes"><rect x="{_number(x)}" y="{_number(y)}" '
+            f'<clipPath id="{_clip_id(self.clips)}"><rect x="{_number(x)}" y="{_number(y)}" '
             + f'width="{_number(width)}" height="{_number(height)}"/></clipPath>'
         )
 
@@ -49,6 +52,7 @@ class RendererSVG(Struct):
         with a NaN or infinite coordinate lifts the pen, so the line breaks there. `capstyle` is
         matplotlib's: `"projecting"` ends reach half the width past the last point, as data
         lines and grid lines do, and `"butt"` ends stop at it, as ticks do. Joins are round."""
+        cut = _clip(clip, self.clips)  # the clip attribute, if any
         path: list[str] = []
         pen_down = False
         for i in range(len(x)):
@@ -64,11 +68,37 @@ class RendererSVG(Struct):
         if len(dashes) > 0:
             pattern = ' stroke-dasharray="' + ",".join([_number(d) for d in dashes]) + '"'
         self.elements.append(
-            f'<path d="{"".join(path)}"{_clip(clip)} fill="none" stroke="{color}" '
+            f'<path d="{"".join(path)}"{cut} fill="none" stroke="{color}" '
             + f'stroke-width="{linewidth}" stroke-linecap="{_cap(capstyle)}" '
             + 'stroke-linejoin="round"'
             + f"{pattern}/>"
         )
+
+    def draw_polygon(
+        self: InOut[Self], x: Array[f64, 1], y: Array[f64, 1], fill: str, opacity: f64, clip: bool
+    ) -> None:
+        """Fills the polygons through the points `(x[i], y[i])`, in `fill` at `opacity` from 0
+        to 1, with no edge, as matplotlib fills a `PolyCollection`. A point with a NaN or
+        infinite coordinate closes the polygon so far, and the next point starts a new one."""
+        cut = _clip(clip, self.clips)  # the clip attribute, if any
+        path: list[str] = []
+        pen_down = False
+        for i in range(len(x)):
+            if isfinite(x[i]) and isfinite(y[i]):
+                command = "L" if pen_down else "M"
+                path.append(f"{command}{_number(x[i])} {_number(y[i])}")
+                pen_down = True
+            elif pen_down:
+                path.append("Z")
+                pen_down = False
+        if pen_down:
+            path.append("Z")
+        if len(path) == 0:
+            return
+        shade = ""
+        if opacity < 1.0:
+            shade = f' fill-opacity="{opacity}"'
+        self.elements.append(f'<path d="{"".join(path)}"{cut} fill="{fill}"{shade}/>')
 
     def draw_markers(
         self: InOut[Self],
@@ -83,15 +113,17 @@ class RendererSVG(Struct):
         """Draws the marker `marker` centred on each finite point, `size` points across, filled
         and edged in `color` with an edge `edgewidth` wide, as matplotlib's markers are:
         `"o"` a circle, `"."` a circle half as big, `"s"` a square, `"^"` and `"v"` triangles
-        pointing up and down, `"D"` a diamond, and `"+"` and `"x"` crosses, which are edge only.
+        pointing up and down, `"D"` a diamond, `"+"` and `"x"` crosses, and `"_"` and `"|"`
+        lines across and up, which are edge only.
         The marker is defined once and placed at each point, so a point costs one short element.
         """
+        cut = _clip(clip, self.clips)  # the clip attribute, if any
         name = f"marker{len(self.elements)}"
         self.elements.append(
             f'<defs><path id="{name}" d="{_marker_path(marker, size)}" fill="{color}" '
             + f'stroke="{color}" stroke-width="{edgewidth}"/></defs>'
         )
-        group: list[str] = [f"<g{_clip(clip)}>"]
+        group: list[str] = [f"<g{cut}>"]
         for i in range(len(x)):
             if isfinite(x[i]) and isfinite(y[i]):
                 group.append(f'<use href="#{name}" x="{_number(x[i])}" y="{_number(y[i])}"/>')
@@ -114,6 +146,7 @@ class RendererSVG(Struct):
         `opacity` from 0 to 1 and edged in `edge` `edgewidth` points wide; `fill` or `edge`
         `"none"` leaves that part out. A negative width or height is drawn from the other
         side."""
+        cut = _clip(clip, self.clips)  # the clip attribute, if any
         left = min(x, x + width)
         top = min(y, y + height)
         stroke = ""
@@ -124,7 +157,7 @@ class RendererSVG(Struct):
             shade = f' fill-opacity="{opacity}"'
         self.elements.append(
             f'<rect x="{_number(left)}" y="{_number(top)}" width="{_number(abs(width))}" '
-            + f'height="{_number(abs(height))}"{_clip(clip)} fill="{fill}"{shade}{stroke}/>'
+            + f'height="{_number(abs(height))}"{cut} fill="{fill}"{shade}{stroke}/>'
         )
 
     def draw_image(
@@ -143,10 +176,11 @@ class RendererSVG(Struct):
         as matplotlib's antialiasing does when it shrinks an image; otherwise each pixel stays
         a sharp rectangle, as its `"nearest"` interpolation draws an image it enlarges. Costs
         about 5.5 bytes of the file a pixel, until PNG data are compressed (roadmap 3.27)."""
+        cut = _clip(clip, self.clips)  # the clip attribute, if any
         sharp = "" if smooth else ' style="image-rendering:pixelated"'
         self.elements.append(
             f'<image x="{_number(x)}" y="{_number(y)}" width="{_number(width)}" '
-            + f'height="{_number(height)}" preserveAspectRatio="none"{_clip(clip)}{sharp} '
+            + f'height="{_number(height)}" preserveAspectRatio="none"{cut}{sharp} '
             + f'href="data:image/png;base64,{_base64(encode(pixels))}"/>'
         )
 
@@ -156,7 +190,13 @@ class RendererSVG(Struct):
         """Writes `text` with its baseline at `(x, y)`, `size` points tall in DejaVu Sans,
         anchored at `anchor`: `"start"`, `"middle"` or `"end"`. `rotate` turns it to read
         upwards, as a y label does. XML's special characters are escaped, so any text is safe.
+        A label `ticker.LogFormatterSciNotation` writes, `$\\mathdefault{2\\times10^{3}}$`, is
+        drawn as matplotlib's mathtext draws it, with the exponent raised and smaller; it is
+        never turned.
         """
+        if text.startswith("$\\mathdefault{"):
+            self._draw_math(x, y, text, size, anchor)
+            return
         place = f'x="{_number(x)}" y="{_number(y)}"'
         if rotate:
             place = f'transform="translate({_number(x)} {_number(y)}) rotate(-90)"'
@@ -172,21 +212,40 @@ class RendererSVG(Struct):
         them. The viewer draws the text, so the width is estimated from DejaVu Sans's widths
         of digits, the point and the minus sign, which tick labels are made of, and an average
         of 0.6 of the size for other characters. The height and descent are those of
-        matplotlib's layout box for one line, which is never smaller than that of `"lp"`: 0.76
-        of the size above the baseline, the height of an `l`, and 0.208 below it, the depth of a
-        `p`, as matplotlib measures DejaVu Sans.
+        matplotlib's layout box for one line, which since matplotlib 3.11 is never smaller than
+        the font's typographic ascent and descent: 1556 and 492 of DejaVu Sans's 2048 units, so
+        0.7598 of the size above the baseline and 0.2402 below it, a line one size tall. A
+        mathtext label's box is matplotlib's for one with an exponent: 0.854 of the size above
+        the baseline and 0.322 below it.
         """
-        width = 0.0
-        for character in text:
-            if "0" <= character and character <= "9":
-                width += 0.636
-            elif character == "." or character == " ":
-                width += 0.318
-            elif character == "\u2212":
-                width += 0.838
-            else:
-                width += 0.6
-        return (width * size, 0.968 * size, 0.208 * size)
+        if text.startswith("$\\mathdefault{"):
+            return (_math_layout(text, size)[4], 1.1762 * size, 0.3224 * size)
+        return (_advance(text) * size, size, 492.0 / 2048.0 * size)
+
+    def _draw_math(self: InOut[Self], x: f64, y: f64, text: str, size: f64, anchor: str) -> None:
+        """Draws the mathtext label `text` as `draw_text` describes, each piece placed where
+        matplotlib's mathtext puts it, so the viewer's own spacing cannot move it."""
+        coefficient, exponent, at_ten, at_exponent, width = _math_layout(text, size)
+        left = x
+        if anchor == "middle":
+            left = x - 0.5 * width
+        elif anchor == "end":
+            left = x - width
+        raised = y - 0.413 * size
+        pieces = ""
+        if coefficient != "":
+            times = left + (_advance(coefficient) + 0.1948) * size
+            pieces = (
+                f'<tspan x="{_number(left)}" y="{_number(y)}">{coefficient}</tspan>'
+                + f'<tspan x="{_number(times)}" y="{_number(y)}">\u00d7</tspan>'
+            )
+        self.elements.append(
+            f'<text font-family="DejaVu Sans, Bitstream Vera Sans, Arial, Helvetica, '
+            + f'sans-serif" font-size="{size}" fill="#000000">{pieces}'
+            + f'<tspan x="{_number(left + at_ten)}" y="{_number(y)}">10</tspan>'
+            + f'<tspan x="{_number(left + at_exponent)}" y="{_number(raised)}" '
+            + f'font-size="{0.7 * size:.1f}">{exponent}</tspan></text>'
+        )
 
     def tostring(self: Self) -> str:
         """The whole SVG file: its header, a white background, and every element in the order
@@ -199,6 +258,42 @@ class RendererSVG(Struct):
         ]
         return "\n".join(head) + "\n" + "\n".join(self.elements) + "\n</svg>\n"
 
+
+def _advance(text: str) -> f64:
+    """About how wide `text` is in DejaVu Sans, as a fraction of its size: DejaVu Sans's widths
+    of digits, the point, the space and the minus sign, which tick labels are made of, and an
+    average of 0.6 for other characters."""
+    width = 0.0
+    for character in text:
+        if "0" <= character and character <= "9":
+            width += 0.636
+        elif character == "." or character == " ":
+            width += 0.318
+        elif character == "\u2212":
+            width += 0.838
+        else:
+            width += 0.6
+    return width
+
+
+def _math_layout(text: str, size: f64) -> tuple[str, str, f64, f64, f64]:
+    """The pieces of the mathtext label `text`, `$\\mathdefault{c\\times10^{e}}$` or
+    `$\\mathdefault{10^{e}}$`, and where they go at `size` points: the coefficient `c` (`""`
+    for none), the exponent `e` with a minus sign U+2212, how far from the label's left edge
+    the `10` and the exponent start, and the label's width, all as matplotlib's mathtext lays
+    out DejaVu Sans: a medium space either side of the `\u00d7`, a kern of 0.0096 of the size
+    before the exponent, the exponent at 0.7 of the size, and 0.062 of the size after it."""
+    body = text[14 : len(text) - 2]  # within `$\\mathdefault{` and `}$`
+    times = body.find("\\times")
+    coefficient = body[0:times].copy() if times >= 0 else ""
+    power = body.find("^{")
+    exponent = body[power + 2 : len(body) - 1].replace("-", "\u2212")
+    at_ten = 0.0
+    if times >= 0:
+        at_ten = (_advance(coefficient) + 0.1948 + 0.838 + 0.1948) * size
+    at_exponent = at_ten + (2.0 * 0.636 + 0.0096) * size
+    width = at_exponent + (0.7 * _advance(exponent) + 0.062) * size
+    return (coefficient, exponent, at_ten, at_exponent, width)
 
 def _number(value: f64) -> str:
     """A coordinate in the SVG, to a thousandth of a point."""
@@ -229,9 +324,16 @@ def _cap(capstyle: str) -> str:
     return "square" if capstyle == "projecting" else capstyle.copy()
 
 
-def _clip(clip: bool) -> str:
-    """The attribute that clips an element to the axes, or nothing."""
-    return ' clip-path="url(#axes)"' if clip else ""
+def _clip(clip: bool, clips: int) -> str:
+    """The attribute that clips an element to the clip rectangle numbered `clips`, the last one
+    set, or nothing."""
+    return f' clip-path="url(#{_clip_id(clips)})"' if clip else ""
+
+
+def _clip_id(clips: int) -> str:
+    """The SVG id of the clip rectangle numbered `clips`: `axes` for the first, as a figure of
+    one axes has, then `axes2`, `axes3` and so on."""
+    return "axes" if clips <= 1 else f"axes{clips}"
 
 
 def _escape(text: str) -> str:
@@ -261,8 +363,12 @@ def _marker_path(marker: str, size: f64) -> str:
         return f"M0 {_number(-half)}L{_number(half)} 0L0 {_number(half)}L{_number(-half)} 0Z"
     if marker == "+":
         return f"M{_number(-half)} 0H{_number(half)}M0 {_number(-half)}V{_number(half)}"
+    if marker == "_":
+        return f"M{_number(half)} 0H{_number(-half)}"
+    if marker == "|":
+        return f"M0 {_number(-half)}V{_number(half)}"
     known = marker == "x"
-    assert known, f"{marker!r} is not a marker: use 'o', '.', 's', '^', 'v', 'D', '+' or 'x'"
+    assert known, f"{marker!r} is not a marker: 'o', '.', 's', '^', 'v', 'D', '+', 'x', '_' or '|'"
     return (
         f"M{_number(-half)} {_number(-half)}L{_number(half)} {_number(half)}"
         + f"M{_number(-half)} {_number(half)}L{_number(half)} {_number(-half)}"
