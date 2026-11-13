@@ -141,6 +141,15 @@ The call to `slot` per add is the narrow first version. Caching the last block i
 the obvious next step, and it waits for a benchmark that shows the call matters (roadmap 1.14.1
 adds the half-list Lennard-Jones baseline).
 
+(Built 2026-11-13 with roadmap 1.14.3, after that benchmark put 15% of the instructions in
+`slot`: the view gains a fourth field, `ptr table`, null at the chunk's start. `Accumulate`
+reads the block's address from the table, at the scalar's byte position shifted by
+`log2(BLOCK_BYTES)`, and adds at the remaining offset without a call. Only when the table or the
+block does not exist yet does it call `slot`, then the new `baryon_rt_accumulator_table(accumulator,
+chunk)` for the table's address, which stays put until `chunk_done`. The backend therefore
+writes the runtime's block size into compiled code, and the two change together. Results are
+unchanged, since only how an address is found changes.)
+
 ### Not in the first version
 
 - Slices as targets: `forces[a:b] += v`. (Built 2026-11-09 with roadmap 1.12.7: lowering turns

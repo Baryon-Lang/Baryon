@@ -24,8 +24,16 @@ use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 /// The size of one block of a private copy, in bytes: one page on most systems. Changing it
-/// changes only speed and memory, so it changes only with a benchmark that justifies it.
+/// changes only speed and memory, so it changes only with a benchmark that justifies it. The
+/// LLVM backend writes the same number into compiled code, which finds a scalar's block with a
+/// shift and a mask (`BLOCK_BYTES` in `llvm_backend`'s `accumulate` module); the two change
+/// together.
 pub(crate) const BLOCK_BYTES: usize = 4096;
+
+const _: () = assert!(
+    BLOCK_BYTES.is_power_of_two(),
+    "compiled code finds a block with a shift and a mask"
+);
 
 /// One block's storage. Words of 8 bytes keep it aligned for every scalar kind, and a boxed
 /// array is one pointer, so a block table costs 8 bytes per block.
@@ -80,6 +88,17 @@ impl Kind {
             .and_then(|index| KINDS.get(index).copied())
     }
 
+    /// A word of 8 bytes holding the identity of every scalar in it: `-0.0` for floats, whose
+    /// sign bit is the only bit set, and `0` for integers. A fresh block is this word repeated,
+    /// written once, so making a block costs one pass over its memory.
+    fn identity_word(self) -> u64 {
+        match self {
+            Self::F32 => 0x8000_0000_8000_0000,
+            Self::F64 => 0x8000_0000_0000_0000,
+            _ => 0,
+        }
+    }
+
     /// The size of one scalar, in bytes.
     pub(crate) fn size(self) -> usize {
         match self {
@@ -109,21 +128,17 @@ macro_rules! with_scalar {
     };
 }
 
-/// A scalar an accumulated array may hold: its additive identity and its checked addition.
+/// A scalar an accumulated array may hold, with its checked addition. Its additive identity,
+/// the value a private copy starts at, is [`Kind::identity_word`].
 trait Scalar: Copy {
-    /// The value a private copy starts at: adding it changes no bits of any value.
-    const IDENTITY: Self;
-
     /// `self + other`, or `None` when an integer sum overflows. Floats never fail.
     fn combine(self, other: Self) -> Option<Self>;
 }
 
-/// Implements [`Scalar`] for integer types: identity 0, checked addition.
+/// Implements [`Scalar`] for integer types: checked addition.
 macro_rules! integer_scalar {
     ($($ty:ty),*) => {$(
         impl Scalar for $ty {
-            const IDENTITY: Self = 0;
-
             fn combine(self, other: Self) -> Option<Self> {
                 self.checked_add(other)
             }
@@ -133,13 +148,11 @@ macro_rules! integer_scalar {
 
 integer_scalar!(i8, i16, i32, i64, u8, u16, u32, u64);
 
-/// Implements [`Scalar`] for float types: identity `-0.0`, which unlike `0.0` leaves `-0.0`
-/// unchanged, and plain addition.
+/// Implements [`Scalar`] for float types: plain addition. Their identity is `-0.0`, which unlike
+/// `0.0` leaves `-0.0` unchanged.
 macro_rules! float_scalar {
     ($($ty:ty),*) => {$(
         impl Scalar for $ty {
-            const IDENTITY: Self = -0.0;
-
             fn combine(self, other: Self) -> Option<Self> {
                 Some(self + other)
             }
@@ -161,11 +174,9 @@ fn scalars<T: Scalar>(block: &mut Block) -> &mut [T] {
     }
 }
 
-/// A new block filled with the identity of `T`.
-fn fresh<T: Scalar>() -> Block {
-    let mut block = Box::new([0; BLOCK_BYTES / 8]);
-    scalars::<T>(&mut block).fill(T::IDENTITY);
-    block
+/// A new block filled with the identity of `kind`'s scalars.
+fn fresh(kind: Kind) -> Block {
+    Box::new([kind.identity_word(); BLOCK_BYTES / 8])
 }
 
 /// Adds `right` into `left`, scalar by scalar, `left` first. Returns `false` when an integer sum
@@ -246,11 +257,6 @@ impl Accumulator {
         }
     }
 
-    /// How many scalars one block holds.
-    fn per_block(&self) -> usize {
-        BLOCK_BYTES / self.kind.size()
-    }
-
     /// The address of scalar `scalar` in chunk `chunk`'s copy, making the copy's table and the
     /// block if this is the chunk's first add there. The scalar starts at the identity.
     ///
@@ -263,12 +269,38 @@ impl Accumulator {
     pub(crate) unsafe fn slot(&self, chunk: usize, scalar: usize) -> *mut u8 {
         // SAFETY: the caller runs `chunk`, so this thread owns its copy.
         let copy = unsafe { &mut *self.copies[chunk].get() };
-        let table = copy.get_or_insert_with(|| (0..self.blocks).map(|_| None).collect());
-        let per_block = self.per_block();
-        let block =
-            table[scalar / per_block].get_or_insert_with(|| with_scalar!(self.kind, fresh()));
-        let offset = (scalar % per_block) * self.kind.size();
-        block.as_mut_ptr().cast::<u8>().wrapping_add(offset)
+        let table = copy.get_or_insert_with(|| self.empty_table());
+        // In bytes, so the division and remainder are by the constant `BLOCK_BYTES`, a power of
+        // two, and compile to a shift and a mask: this runs on every add of the loop.
+        let byte = scalar * self.kind.size();
+        let block = table[byte / BLOCK_BYTES].get_or_insert_with(|| fresh(self.kind));
+        block
+            .as_mut_ptr()
+            .cast::<u8>()
+            .wrapping_add(byte % BLOCK_BYTES)
+    }
+
+    /// The address of chunk `chunk`'s block table, making the table if the chunk has none: one
+    /// entry per block, a block's address or null. `Option<Block>` is a `Box`, so `None` is
+    /// guaranteed to be the null pointer and `Some` the block's address, which is what compiled
+    /// code reads.
+    ///
+    /// # Safety
+    ///
+    /// As for [`Self::slot`]: the caller is running chunk `chunk`, which has not called
+    /// [`Self::chunk_done`], and `chunk` is below the chunk count.
+    #[allow(unsafe_code, reason = "a chunk's copy is reached through its cell")]
+    pub(crate) unsafe fn table(&self, chunk: usize) -> *mut u8 {
+        // SAFETY: the caller runs `chunk`, so this thread owns its copy.
+        let copy = unsafe { &mut *self.copies[chunk].get() };
+        copy.get_or_insert_with(|| self.empty_table())
+            .as_mut_ptr()
+            .cast()
+    }
+
+    /// A table with no block made yet.
+    fn empty_table(&self) -> Table {
+        (0..self.blocks).map(|_| None).collect()
     }
 
     /// Records that chunk `chunk` has run all its iterations, and runs every tree node this

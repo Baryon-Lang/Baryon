@@ -15,7 +15,8 @@ Cost for `n` rows in the two frames together and `k` pairs: a sort, about `n log
 comparisons for each key column, then `n + k` steps, with arrays of `n` and of `2k` integers.
 
 The file also holds `text_masked` and `text_taken`, which choose rows of a column of `str` as
-`masked` and `taken` of `<std>/frames.byn` do for a column of numbers.
+`masked` and `taken` of `<std>/frames.byn` do for a column of numbers, and `text_joined`,
+which is `joined` for a column of `str`.
 """
 
 
@@ -120,3 +121,13 @@ def text_taken(column: Array[str, 1], positions: Array[i64, 1]) -> Array[str, 1]
     """`taken` for a column of `str`: the elements of `column` at `positions`, in that order,
     as a new text array. Cost: as `text_masked`."""
     return Array([column[positions[row]].copy() for row in range(len(positions))])
+
+
+def text_joined(left: Array[str, 1], right: Array[str, 1]) -> Array[str, 1]:
+    """`joined` for a column of `str`: the elements of `left`, then those of `right`, as a new
+    text array. Cost: as `text_masked`."""
+    count = len(left)
+    return Array([
+        left[at].copy() if at < count else right[at - count].copy()
+        for at in range(count + len(right))
+    ])

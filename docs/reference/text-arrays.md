@@ -161,11 +161,12 @@ print(trades[trades.price > 1.5].sort_values("price"))
 Its columns are chosen and changed as any frame's are: `df[["symbol", "price"]]`,
 `df.drop(columns=["price"])`, `df.rename(columns={"symbol": "ticker"})`, and
 `df.assign(symbol=Array(words))`, which also adds a text column to a frame of numbers.
+`concat([first, second])` stacks such frames, text and numbers alike.
 
 Every other use of a frame that has a text column is a compile error for now and comes with
 the rest of roadmap item 3.13.3: `DataFrame(rows)`, one row (`df[i]` and `itertuples`), a sort
-by the text column, `groupby`, `merge`, `drop_duplicates` and `concat`. A frame of numbers
-keeps all of these.
+by the text column, `groupby`, `merge` and `drop_duplicates`. A frame of numbers keeps all
+of these.
 
 ## What is not built yet
 
