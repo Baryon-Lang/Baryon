@@ -417,3 +417,34 @@ bb0:
 "
     );
 }
+
+/// `grid[i, j]` in a block where `Body::unit_strides` marks `grid` (roadmap 3.3.1): the last
+/// index is added as it is, with no stride loaded or multiplied; the first still is.
+#[test]
+fn a_unit_stride_mark_leaves_out_the_last_multiplication() {
+    let database = Database::default();
+    let types = Types::new(&database);
+    let mut get = functions(&types).swap_remove(3);
+    get.1
+        .unit_strides
+        .push((mir::BlockId::new(0), Local::new(1).into()));
+    let text = super::module(&database, &[get]);
+    assert_eq!(
+        text,
+        "\
+define double @get(ptr noalias readonly align 8 dereferenceable(40) %a1, i64 %a2, i64 %a3) {
+start:
+  br label %bb0
+bb0:
+  %t0 = load ptr, ptr %a1
+  %t1 = getelementptr inbounds { ptr, [2 x i64], [2 x i64] }, ptr %a1, i32 0, i32 2, i32 0
+  %t2 = load i64, ptr %t1
+  %t3 = mul i64 %a2, %t2
+  %t4 = add i64 %t3, %a3
+  %t5 = getelementptr inbounds double, ptr %t0, i64 %t4
+  %t6 = load double, ptr %t5
+  ret double %t6
+}
+"
+    );
+}
