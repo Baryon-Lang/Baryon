@@ -9,7 +9,6 @@
 //! element type as the type argument, and the results are the new frame's columns.
 
 use crate::builder::Builder;
-use crate::frames::erase;
 use mir::{BinaryOperator, Check, Constant, Local, Operand, Place, Projection, Rvalue};
 use mir::{ConstantValue, StatementKind, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
@@ -186,7 +185,8 @@ impl<'db> Builder<'db> {
     /// A new frame into `place` whose columns are the library function `kernel.0` of each
     /// column of the frame `value`, borrowed at `source`, and of `kernel.1`: `masked` with a
     /// mask, or `taken` with positions. A column of `str` goes through `text_masked` or
-    /// `text_taken`, which give a text array.
+    /// `text_taken`, which give a text array, and a column that may hold `None` has its
+    /// values and its validity bitmap chosen apart ([`Builder::chosen_column`]).
     pub(crate) fn each_column(
         &mut self,
         place: Place,
@@ -200,25 +200,11 @@ impl<'db> Builder<'db> {
         };
         let mut chosen = Vec::with_capacity(columns.len());
         for (position, column) in (0_u32..).zip(columns) {
-            // A column of `str` has its own functions, `text_masked` and `text_taken`.
-            let text = matches!(column.element.kind(self.db), TypeKind::Str);
-            let name = if text {
-                format!("text_{function}")
-            } else {
-                function.to_owned()
-            };
-            let types = if text {
-                Vec::new()
-            } else {
-                vec![column.element]
-            };
-            let array = erase(self.db, column.array(self.db));
             let from = source.clone().project(Projection::Field(position));
-            let arguments = vec![from, by.clone()];
-            let Some(result) = self.frame_call(&name, types, arguments, array, node) else {
+            let Some(result) = self.chosen_column(from, column, (function, by), node) else {
                 return;
             };
-            chosen.push(Operand::Move(Place::from(result)));
+            chosen.push(result);
         }
         self.assign(place, Rvalue::Aggregate(ty, chosen), node);
     }

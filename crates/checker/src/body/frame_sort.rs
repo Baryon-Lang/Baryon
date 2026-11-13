@@ -81,15 +81,20 @@ impl<'db> Body<'db> {
     }
 
     /// Whether every column of `keys`, columns of the frame of type `base`, has an order: a
-    /// complex column has none, and is reported at `by`.
+    /// complex column has none, and is reported at `by`. A column that may hold `None` is
+    /// sorted by its values, with each `None` last.
     fn sortable(&mut self, by: NodeId, base: Type<'db>, keys: &[String]) -> bool {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return false;
         };
         let mut sortable = true;
         for column in columns.iter().filter(|column| keys.contains(&column.name)) {
+            let element = match column.element.kind(self.db) {
+                &TypeKind::Optional(element) => element,
+                _ => column.element,
+            };
             if matches!(
-                column.element.kind(self.db),
+                element.kind(self.db),
                 TypeKind::Primitive(Primitive::Complex(_))
             ) {
                 let message = format!(

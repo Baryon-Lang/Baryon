@@ -10,13 +10,19 @@
 //! A column of `str` is sorted by integers that stand for its text, which the library's
 //! `text_codes` gives (`<std>/frame_joins.byn`): one more sort of that column, comparing
 //! text, and one array of `n` integers.
+//!
+//! A column that may hold `None` is sorted by the values that are there, and its rows that
+//! hold `None` come last in both directions, in the order they had (decision 0045): the row
+//! positions are split in two by the validity bitmap, the first part is sorted, and the two
+//! are put end to end again, three more arrays of positions.
 
 use crate::builder::Builder;
+use crate::optional_arrays::VALUES;
 use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
 
-impl Builder<'_> {
+impl<'db> Builder<'db> {
     /// The call `node` of `sort_values` on the frame `frame`, into `place`. The checker has
     /// made sure of the columns named and of `ascending`.
     pub(crate) fn frame_sort(&mut self, place: Place, frame: NodeId, node: NodeId) {
@@ -92,31 +98,61 @@ impl Builder<'_> {
                 [one] => *one,
                 several => several.get(index).copied().unwrap_or(rising),
             };
-            let mut element = column.element;
-            let mut values = source.clone().project(Projection::Field(position));
-            // A column of `str` is sorted by the integers that stand for its text.
-            if matches!(element.kind(self.db), TypeKind::Str) {
-                let Some(codes) = self.text_codes(values, key) else {
-                    return;
-                };
-                element = self.int_type();
-                values = codes;
-            }
-            let flags = matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool));
-            let (function, type_arguments) = if flags {
-                ("ordered_flags", Vec::new())
-            } else {
-                ("ordered", vec![element])
-            };
-            let arguments = vec![values, Place::from(order), Place::from(direction)];
-            let Some(next) = self.frame_call(function, type_arguments, arguments, positions, key)
+            let values = source.clone().project(Projection::Field(position));
+            let Some(next) = self.ordered_by(values, column.element, (order, direction), key)
             else {
                 return;
             };
-            self.drop_later(next);
             order = next;
         }
         self.each_column(place, frame, &source, ("taken", &Place::from(order)), node);
+    }
+
+    /// The row positions `by.0` put in the order of the column stored at `values`, whose
+    /// elements are `element`s, rising when the `bool` local `by.1` is true: one stable
+    /// sort by one key of `sort_values`, at `key`. The new positions are dropped when the
+    /// statement ends. `None` after a report.
+    ///
+    /// A column of `str` is sorted by the integers that stand for its text. A column that
+    /// may hold `None` is sorted by the values that are there, and the rows that hold `None`
+    /// go last in both directions, in the order they had.
+    fn ordered_by(
+        &mut self,
+        values: Place,
+        element: Type<'db>,
+        (order, direction): (Local, Local),
+        key: NodeId,
+    ) -> Option<Local> {
+        let positions = self.positions_type();
+        let (mut values, mut element, mut order) = (values, element, order);
+        let mut gone = None;
+        if let &TypeKind::Optional(inner) = element.kind(self.db) {
+            let (there, rest) = self.split_missing(&values, order, key)?;
+            values = values.project(Projection::Field(VALUES));
+            element = inner;
+            order = there;
+            gone = Some(rest);
+        }
+        if matches!(element.kind(self.db), TypeKind::Str) {
+            values = self.text_codes(values, key)?;
+            element = self.int_type();
+        }
+        let flags = matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool));
+        let (function, type_arguments) = if flags {
+            ("ordered_flags", Vec::new())
+        } else {
+            ("ordered", vec![element])
+        };
+        let arguments = vec![values, Place::from(order), Place::from(direction)];
+        let mut sorted = self.frame_call(function, type_arguments, arguments, positions, key)?;
+        self.drop_later(sorted);
+        if let Some(gone) = gone {
+            let ends = vec![Place::from(sorted), Place::from(gone)];
+            let int = self.int_type();
+            sorted = self.frame_call("joined", vec![int], ends, positions, key)?;
+            self.drop_later(sorted);
+        }
+        Some(sorted)
     }
 
     /// `a.argsort()` on the rank-1 array `array`, into `place`: the positions of its elements

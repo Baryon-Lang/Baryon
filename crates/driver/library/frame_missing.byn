@@ -13,6 +13,10 @@ and the compiler puts them together.
 - `optional_element` reads one element as a `T | None`, for `values[i]`.
 - `missing` gives the mask `isna()` and `notna()` return, and `both` joins the masks of a
   frame's columns for `dropna()`.
+- `masked_bits` and `taken_bits` rebuild the bitmap for the rows of a frame that a mask or
+  positions choose.
+- `valid_positions` splits row positions into those with a value and those without, for
+  `sort_values`, which puts `None` last.
 - `filled` gives the values with one value where an element is `None`, for `fillna(value)`.
 - `present_count`, `present` and `present_extreme` count, gather and compare the elements
   that are there, for `count()`, `sum()`, `mean()`, `min()` and `max()`.
@@ -116,3 +120,38 @@ def present_extreme[T: Number](
             elif not smallest and value > best:
                 best = value
     return best
+
+
+def taken_bits(bits: Array[u8, 1], positions: Array[i64, 1]) -> Array[u8, 1]:
+    """The validity bitmap of the elements at `positions`, in that order: bit `at` of the
+    result is the bit `bits` has for element `positions[at]`. The values are chosen by
+    `taken`, so the two stay in step."""
+    count = len(positions)
+    result = Array.fill(((count + 7) // 8,), u8(0))
+    for at in range(count):
+        if _valid(bits, positions[at]):
+            result[at // 8] = result[at // 8] | (u8(1) << u8(at % 8))
+    return result
+
+
+def masked_bits(bits: Array[u8, 1], mask: Array[bool, 1]) -> Array[u8, 1]:
+    """The validity bitmap of the elements where `mask` is true, in order. The values are
+    chosen by `masked`, so the two stay in step."""
+    count = 0
+    for chosen in mask:
+        if chosen:
+            count += 1
+    result = Array.fill(((count + 7) // 8,), u8(0))
+    to = 0
+    for at in range(len(mask)):
+        if mask[at]:
+            if _valid(bits, at):
+                result[to // 8] = result[to // 8] | (u8(1) << u8(to % 8))
+            to += 1
+    return result
+
+
+def valid_positions(bits: Array[u8, 1], order: Array[i64, 1], wanted: bool) -> Array[i64, 1]:
+    """The positions of `order`, in order, whose element is there, when `wanted`, or is
+    `None`, when not, by the validity bitmap `bits`."""
+    return Array([at for at in order if _valid(bits, at) == wanted])
