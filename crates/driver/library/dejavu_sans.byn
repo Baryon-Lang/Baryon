@@ -276,6 +276,20 @@ def glyphs() -> str:
     )
 
 
+def unicodes() -> str:
+    """Each of `characters`' Unicode code point, in order, as four hexadecimal digits, for the
+    map a PDF file keeps from its codes to the characters, so a reader can copy text."""
+    return (
+        "0020002100220023002400250026002700280029002A002B002C002D002E002F003000310032003300340035"
+        + "0036003700380039003A003B003C003D003E003F0040004100420043004400450046004700480049004A004B"
+        + "004C004D004E004F0050005100520053005400550056005700580059005A005B005C005D005E005F00600061"
+        + "00620063006400650066006700680069006A006B006C006D006E006F00700071007200730074007500760077"
+        + "00780079007A007B007C007D007E00D7221200B000B100B500B703B103B203B303B403B503B603B703B803B9"
+        + "03BA03BB03BC03BD03BE03BF03C003C103C303C403C503C603C703C803C9039303940398039B039E03A003A3"
+        + "03A603A803A9"
+    )
+
+
 def kerning() -> str:
     """The font's kerning pairs among these characters: six letters each, the first character's
     place, the second's, and the change to the gap between them, as `font` reads them."""

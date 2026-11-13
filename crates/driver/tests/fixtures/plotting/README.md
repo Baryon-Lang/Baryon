@@ -123,6 +123,15 @@ tests read both files back and allow a color value to differ by one level, so th
 `sin` and `cos` may differ between platforms. When a change to drawing is intended, write them
 again from those programs and look at them before committing.
 
+## PDF pages
+
+`grid_page.txt` is the drawing operators of the page Baryon writes for the figure in
+[`../../build/plotting_pdf.rs`](../../build/plotting_pdf.rs), as the program reads them back
+from its PDF file. The file was drawn by poppler's `pdftoppm` and checked by eye against the PNG
+of the same figure, and opened by MuPDF, which reported no errors and extracted the text,
+Greek letters and the minus sign included. When a change to drawing is intended, write it
+again from that program and look at the page before committing.
+
 ## DejaVu Sans
 
 `crates/driver/library/dejavu_sans.byn` is written from matplotlib's own copy of
@@ -177,6 +186,7 @@ kerning = "".join(
 )
 ```
 
-The script then writes `data`, `kerning`, the characters and the font's license notice, its
-`name` record 13 wrapped at 96 columns, into the file's functions and docstring, with each long
-string cut into lines of at most 88 characters joined by `+`.
+`codes` holds each character's Unicode code point as four hexadecimal digits, `"".join("%04X" %
+ord(c) for c in chars)`. The script then writes `data`, `codes`, `kerning`, the characters and the
+font's license notice, its `name` record 13 wrapped at 96 columns, into the file's functions and
+docstring, with each long string cut into lines of at most 88 characters joined by `+`.

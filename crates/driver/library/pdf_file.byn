@@ -1,0 +1,307 @@
+"""The `pdf_file` library file: puts a page of drawing operators, its images and DejaVu Sans
+together into a PDF file, as matplotlib's `PdfFile` does (decision 0046).
+
+It is internal to the standard library: `backend_pdf` writes through it, and a program cannot
+import it, so a program's own `pdf_file.byn` is never hidden by it.
+
+A PDF file is a list of numbered objects, then a table of where each starts, so a reader can
+jump to any of them. This file writes PDF 1.4: a catalog, one page, its compressed operators,
+a Type 3 font and each image with its opacity as a second image, its mask. The font draws each
+character from its outline in `font`, curves turned from the font's quadratic Bezier curves
+into the cubic ones PDF draws, and maps each code to its Unicode character, so text can be
+searched and copied. Codes 32 to 126 are the ASCII characters themselves; the empty box is
+code 1 and the other characters follow from code 128.
+"""
+
+from math import isfinite
+from dejavu_sans import unicodes
+from font import UNITS, Font, curves
+from zlib import compress
+
+
+def code(place: int) -> int:
+    """The font's code for the character at `place` in `Font.glyphs`."""
+    if place == 0:
+        return 1
+    if place <= 95:
+        return place + 31
+    return place + 32
+
+
+def text_string(letter: str, value: int) -> str:
+    """`letter`, whose code is `value`, as it goes inside a PDF string: itself for an ASCII
+    character, with a backslash before `(`, `)` and `\\`, and three octal digits otherwise."""
+    if value >= 32 and value <= 126:
+        if letter == "(" or letter == ")" or letter == "\\":
+            return "\\" + letter
+        return letter.copy()
+    return f"\\{value // 64}{(value // 8) % 8}{value % 8}"
+
+
+def number(value: f64) -> str:
+    """`value` to a thousandth, without trailing zeros, as PDF writes numbers: `0.5`, `12`."""
+    text = f"{value:.3f}"
+    while text.endswith("0"):
+        text = text[0 : len(text) - 1]
+    if text.endswith("."):
+        text = text[0 : len(text) - 1]
+    return "0" if text == "-0" else text
+
+
+def write_pdf(
+    width: f64,
+    height: f64,
+    operators: str,
+    images: list[Array[u8, 3]],
+    smooth: list[bool],
+    opacities: list[f64],
+    font: Font,
+) -> Raises[Array[u8, 1], OSError]:
+    """The bytes of a one-page PDF file `width` by `height` points that draws `operators`,
+    whose images `/I0`, `/I1` and so on are `images`, each stretched smoothly when `smooth`
+    says so, whose fill opacities `/A0`, `/A1` and so on are `opacities`, and whose font `/F1`
+    is `font`.
+
+    # Errors
+
+    `OSError` only if `zlib.compress` fails, which it never does.
+    """
+    bytes_of = _ascii_table()
+    out: list[u8] = []
+    starts: list[int] = []
+    _put(out, "%PDF-1.4\n%", bytes_of)
+    for value in [226, 227, 207, 211, 10]:  # marks the file as binary for old transfer tools
+        out.append(u8(value))
+    first_image = 8 + len(font.glyphs)  # objects 1 to 6, the glyphs, then the Unicode map
+    names: list[str] = []
+    for k in range(len(images)):
+        names.append(f"/I{k} {first_image + 2 * k} 0 R")
+    states: list[str] = []
+    for k in range(len(opacities)):
+        alpha = number(opacities[k])
+        states.append(f"/A{k} << /Type /ExtGState /ca {alpha} /CA {alpha} >>")
+    _object(out, starts, "<< /Type /Catalog /Pages 2 0 R >>", bytes_of)
+    _object(out, starts, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", bytes_of)
+    _object(
+        out,
+        starts,
+        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {number(width)} {number(height)}] "
+        + "/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> "
+        + f"/XObject << {' '.join(names)} >> /ExtGState << {' '.join(states)} >> >> >>",
+        bytes_of,
+    )
+    _stream(out, starts, "", compress(_bytes(operators, bytes_of)), bytes_of)
+    _object(out, starts, _font(font), bytes_of)
+    procedures: list[str] = []
+    for k in range(len(font.glyphs)):
+        procedures.append(f"/g{k} {7 + k} 0 R")
+    _object(out, starts, f"<< {' '.join(procedures)} >>", bytes_of)
+    for k in range(len(font.glyphs)):
+        _stream(out, starts, "", compress(_bytes(_glyph(font, k), bytes_of)), bytes_of)
+    _stream(out, starts, "", compress(_bytes(_unicode_map(), bytes_of)), bytes_of)
+    for k in range(len(images)):
+        _image(out, starts, images[k], smooth[k], first_image + 2 * k + 1, bytes_of)
+    table = len(out)
+    _put(out, f"xref\n0 {len(starts) + 1}\n0000000000 65535 f \n", bytes_of)
+    for start in starts:
+        _put(out, f"{_padded(start)} 00000 n \n", bytes_of)
+    _put(out, f"trailer\n<< /Size {len(starts) + 1} /Root 1 0 R >>\n", bytes_of)
+    _put(out, f"startxref\n{table}\n%%EOF\n", bytes_of)
+    return Array(out)
+
+
+def _font(font: Font) -> str:
+    """The Type 3 font dictionary, object 5: its glyphs are drawn by the procedures object 6
+    names, objects 7 on, in the font's units, 2048 to the em; its widths are the advances, and
+    the object after the procedures maps its codes to Unicode."""
+    widths: list[str] = []
+    differences: list[str] = []
+    for value in range(1, 168):
+        widths.append("0")
+    for k in range(len(font.glyphs)):
+        widths[code(k) - 1] = number(font.glyphs[k].advance)
+        differences.append(f"{code(k)} /g{k}")
+    return (
+        f"<< /Type /Font /Subtype /Type3 /Name /F1 /FontBBox [{_box(font)}] "
+        + f"/FontMatrix [{1.0 / UNITS} 0 0 {1.0 / UNITS} 0 0] /CharProcs 6 0 R "
+        + f"/Encoding << /Type /Encoding /Differences [{' '.join(differences)}] >> "
+        + f"/FirstChar 1 /LastChar 167 /Widths [{' '.join(widths)}] "
+        + f"/ToUnicode {7 + len(font.glyphs)} 0 R /Resources << >> >>"
+    )
+
+
+def _glyph(font: Font, place: int) -> str:
+    """The procedure that draws the glyph at `place`: its advance and box, `d1`, then its
+    contours as lines and cubic curves, filled by the nonzero rule."""
+    pieces = curves(font.glyphs[place])
+    box = _box_of(font, place, place + 1)
+    parts: list[str] = [f"{number(font.glyphs[place].advance)} 0 {box} d1\n"]
+    opening = True
+    for k in range(0, len(pieces), 6):
+        if not isfinite(pieces[k]):
+            parts.append("h\n")
+            opening = True
+            continue
+        if opening:
+            parts.append(f"{number(pieces[k])} {number(pieces[k + 1])} m\n")
+            opening = False
+        x1 = pieces[k + 4]
+        y1 = pieces[k + 5]
+        if isfinite(pieces[k + 2]):
+            # The quadratic curve's control point, two thirds of the way from each end.
+            c1x = pieces[k] + 2.0 / 3.0 * (pieces[k + 2] - pieces[k])
+            c1y = pieces[k + 1] + 2.0 / 3.0 * (pieces[k + 3] - pieces[k + 1])
+            c2x = x1 + 2.0 / 3.0 * (pieces[k + 2] - x1)
+            c2y = y1 + 2.0 / 3.0 * (pieces[k + 3] - y1)
+            parts.append(
+                f"{number(c1x)} {number(c1y)} {number(c2x)} {number(c2y)} "
+                + f"{number(x1)} {number(y1)} c\n"
+            )
+        else:
+            parts.append(f"{number(x1)} {number(y1)} l\n")
+    parts.append("f\n")
+    return "".join(parts)
+
+
+def _box(font: Font) -> str:
+    """The box around every glyph of `font`, in its units, as PDF writes a font's box."""
+    return _box_of(font, 0, len(font.glyphs))
+
+
+def _box_of(font: Font, first: int, end: int) -> str:
+    """The box around the glyphs from `first` to before `end`, and the origin: the least x
+    and y, then the greatest, in font units."""
+    left = 0.0
+    right = 0.0
+    low = 0.0
+    high = 0.0
+    for place in range(first, end):
+        for k in range(len(font.glyphs[place].x)):
+            left = min(left, font.glyphs[place].x[k])
+            right = max(right, font.glyphs[place].x[k])
+            low = min(low, font.glyphs[place].y[k])
+            high = max(high, font.glyphs[place].y[k])
+    return f"{number(left)} {number(low)} {number(right)} {number(high)}"
+
+
+def _unicode_map() -> str:
+    """The CMap that maps each code of the font to its Unicode character, as PDF's
+    `/ToUnicode` reads it, so a reader can search and copy the text. The empty box maps to
+    nothing."""
+    points = unicodes()
+    entries: list[str] = []
+    for k in range(len(points) // 4):
+        entries.append(f"<{_hex(code(k + 1))}> <{points[4 * k : 4 * k + 4]}>")
+    blocks: list[str] = []
+    for start in range(0, len(entries), 100):  # a CMap block holds at most 100 entries
+        end = min(start + 100, len(entries))
+        blocks.append(f"{end - start} beginbfchar\n" + "\n".join(entries[start:end]))
+        blocks.append("endbfchar")
+    return (
+        "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n"
+        + "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n"
+        + "/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n"
+        + "1 begincodespacerange\n<00> <FF>\nendcodespacerange\n"
+        + "\n".join(blocks)
+        + "\nendcmap\nCMapName currentdict /defineresource pop\nend\nend\n"
+    )
+
+
+def _hex(value: int) -> str:
+    """`value`, from 0 to 255, as two upper-case hexadecimal digits."""
+    digits = "0123456789ABCDEF"
+    return digits[value // 16] + digits[value % 16]
+
+
+def _image(
+    out: InOut[list[u8]],
+    starts: InOut[list[int]],
+    pixels: Array[u8, 3],
+    smooth: bool,
+    mask: int,
+    bytes_of: dict[str, int],
+) -> Raises[None, OSError]:
+    """Appends the image `pixels`' colors as an RGB image, then its opacities as the gray
+    image numbered `mask` that masks it."""
+    rows = pixels.shape[0]
+    columns = pixels.shape[1]
+    colors: Array[u8, 1] = Array.zeros(rows * columns * 3, u8)
+    alphas: Array[u8, 1] = Array.zeros(rows * columns, u8)
+    for row in range(rows):
+        for column in range(columns):
+            at = row * columns + column
+            for channel in range(3):
+                colors[3 * at + channel] = pixels[row, column, channel]
+            alphas[at] = pixels[row, column, 3]
+    size = f"/Type /XObject /Subtype /Image /Width {columns} /Height {rows} /BitsPerComponent 8 "
+    blend = "/Interpolate true " if smooth else ""
+    _stream(
+        out,
+        starts,
+        f"{size}/ColorSpace /DeviceRGB {blend}/SMask {mask} 0 R ",
+        compress(colors),
+        bytes_of,
+    )
+    _stream(out, starts, f"{size}/ColorSpace /DeviceGray {blend}", compress(alphas), bytes_of)
+
+
+def _object(
+    out: InOut[list[u8]], starts: InOut[list[int]], body: str, bytes_of: dict[str, int]
+) -> None:
+    """Appends the next object, numbered from 1, holding `body`, and notes where it starts."""
+    starts.append(len(out))
+    _put(out, f"{len(starts)} 0 obj\n{body}\nendobj\n", bytes_of)
+
+
+def _stream(
+    out: InOut[list[u8]],
+    starts: InOut[list[int]],
+    entries: str,
+    data: Array[u8, 1],
+    bytes_of: dict[str, int],
+) -> None:
+    """Appends the next object as a stream of the zlib-compressed `data`, its dictionary
+    holding `entries` beside its length and filter."""
+    starts.append(len(out))
+    dictionary = f"<< {entries}/Length {len(data)} /Filter /FlateDecode >>"
+    _put(out, f"{len(starts)} 0 obj\n{dictionary}\n", bytes_of)
+    _put(out, "stream\n", bytes_of)
+    for byte in data:
+        out.append(byte)
+    _put(out, "\nendstream\nendobj\n", bytes_of)
+
+
+def _put(out: InOut[list[u8]], text: str, bytes_of: dict[str, int]) -> None:
+    """Appends the ASCII text `text` to `out`."""
+    for letter in text:
+        out.append(u8(bytes_of[letter]))
+
+
+def _bytes(text: str, bytes_of: dict[str, int]) -> Array[u8, 1]:
+    """The ASCII text `text` as bytes."""
+    out: list[u8] = []
+    _put(out, text, bytes_of)
+    return Array(out)
+
+
+def _ascii_table() -> dict[str, int]:
+    """Each printable ASCII character's byte, and the line feed's, as `str` has no `encode`
+    yet."""
+    table: dict[str, int] = {"\n": 10}
+    value = 32
+    printable = (
+        " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        + "[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+    )
+    for letter in printable:
+        table[letter] = value
+        value += 1
+    return table
+
+
+def _padded(value: int) -> str:
+    """`value` as ten digits, with leading zeros, as the table of objects writes offsets."""
+    text = f"{value}"
+    while len(text) < 10:
+        text = "0" + text
+    return text
