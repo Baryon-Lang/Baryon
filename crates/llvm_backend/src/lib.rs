@@ -177,6 +177,7 @@ mod process;
 mod random;
 mod rvalue;
 mod sort;
+mod split;
 mod streams;
 mod string_methods;
 mod strings;

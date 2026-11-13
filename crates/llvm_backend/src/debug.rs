@@ -27,16 +27,16 @@ pub(crate) const UNWIND_TABLE: &str = "uwtable";
 
 /// The number of the first subprogram's node: `!0` is the compile unit and `!1` and `!2` the
 /// module flags.
-const FIRST_SUBPROGRAM: usize = 3;
+pub(crate) const FIRST_SUBPROGRAM: usize = 3;
 
 /// The debug information of one module: where the sources live, and each function's
 /// subprogram so far.
 pub(crate) struct Debug {
     /// The absolute directory the source files' names are relative to: the package's root.
     directory: String,
-    /// Each subprogram node's definition, in order; the node's number is its position plus
-    /// [`FIRST_SUBPROGRAM`].
-    subprograms: Vec<String>,
+    /// Each subprogram node's number and definition, in order. The numbers count up from
+    /// [`FIRST_SUBPROGRAM`], skipping those loop metadata nodes took.
+    subprograms: Vec<(usize, String)>,
     /// The file of the first function, which the compile unit names as its own.
     first_file: Option<FileId>,
 }
@@ -83,11 +83,14 @@ impl Debug {
         let line = sources.file(span.file()).position(span.start()).line;
         let file = self.file(sources, span.file());
         self.first_file.get_or_insert(span.file());
-        self.subprograms.push(format!(
-            "!{number} = distinct !DISubprogram(name: \"{}\", scope: {file}, file: {file}, \
-             line: {line}, type: !DISubroutineType(types: !{{}}), scopeLine: {line}, \
-             spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !0)",
-            escape(name)
+        self.subprograms.push((
+            number,
+            format!(
+                "!{number} = distinct !DISubprogram(name: \"{}\", scope: {file}, file: {file}, \
+                 line: {line}, type: !DISubroutineType(types: !{{}}), scopeLine: {line}, \
+                 spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !0)",
+                escape(name)
+            ),
         ));
         format!("!{number}")
     }
@@ -99,10 +102,14 @@ impl Debug {
     pub(crate) fn entry(&mut self, sources: &dyn Sources, loops: usize) -> String {
         let number = self.next_number() + loops;
         let file = self.unit_file(sources);
-        self.subprograms.push(format!(
-            "!{number} = distinct !DISubprogram(name: \"main\", scope: {file}, file: {file}, \
-             line: 0, type: !DISubroutineType(types: !{{}}), scopeLine: 0, \
-             flags: DIFlagArtificial, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !0)"
+        self.subprograms.push((
+            number,
+            format!(
+                "!{number} = distinct !DISubprogram(name: \"main\", scope: {file}, file: {file}, \
+                 line: 0, type: !DISubroutineType(types: !{{}}), scopeLine: 0, \
+                 flags: DIFlagArtificial, spFlags: DISPFlagDefinition | DISPFlagOptimized, \
+                 unit: !0)"
+            ),
         ));
         format!("!{number}")
     }
@@ -139,6 +146,25 @@ impl Debug {
 
     /// The compile unit, the module flags and every subprogram, one definition per line.
     pub(crate) fn finish(&self, sources: &dyn Sources) -> String {
+        let mut text = self.header(sources);
+        for (_, subprogram) in &self.subprograms {
+            text.push_str(subprogram);
+            text.push('\n');
+        }
+        text
+    }
+
+    /// Each subprogram node by its number, for a module that carries only the ones its
+    /// functions point to (the `split` module).
+    pub(crate) fn nodes(&self) -> impl Iterator<Item = (usize, &str)> {
+        self.subprograms
+            .iter()
+            .map(|(number, subprogram)| (*number, subprogram.as_str()))
+    }
+
+    /// The compile unit and the module flags, `!0` to `!2`, which every module with debug
+    /// information carries whatever functions it holds.
+    pub(crate) fn header(&self, sources: &dyn Sources) -> String {
         let file = self.unit_file(sources);
         let mut text = String::from("!llvm.dbg.cu = !{!0}\n!llvm.module.flags = !{!1, !2}\n");
         let _ = writeln!(
@@ -149,10 +175,6 @@ impl Debug {
         );
         text.push_str("!1 = !{i32 7, !\"Dwarf Version\", i32 4}\n");
         text.push_str("!2 = !{i32 2, !\"Debug Info Version\", i32 3}\n");
-        for subprogram in &self.subprograms {
-            text.push_str(subprogram);
-            text.push('\n');
-        }
         text
     }
 }

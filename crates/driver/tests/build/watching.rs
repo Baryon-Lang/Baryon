@@ -37,7 +37,7 @@ fn next(
 }
 
 /// A save rebuilds and runs the new program; a save with an error prints it and keeps
-/// watching, and fixing it builds again.
+/// watching, and fixing it builds again; a save that changes no function skips `clang`.
 #[test]
 fn each_save_rebuilds_and_runs() {
     build_runtime();
@@ -57,7 +57,7 @@ fn each_save_rebuilds_and_runs() {
     assert!(
         next(&err, |line| line.starts_with("built "))
             .unwrap()
-            .ends_with(" ms")
+            .ends_with(" ms, 1 of 1 modules compiled")
     );
     assert_eq!(
         next(&err, |line| line.starts_with("exited")).unwrap(),
@@ -85,6 +85,15 @@ fn each_save_rebuilds_and_runs() {
     assert_eq!(
         next(&err, |line| line.starts_with("exited")).unwrap(),
         "exited with 0"
+    );
+    assert_eq!(next(&out, |_| true).unwrap(), "333");
+
+    // A comment after the last line moves no function, so the module's machine code is kept.
+    fs::write(&main, "def main():\n    print(333)\n# done\n").unwrap();
+    assert!(
+        next(&err, |line| line.starts_with("built "))
+            .unwrap()
+            .ends_with(" ms, 0 of 1 modules compiled")
     );
     assert_eq!(next(&out, |_| true).unwrap(), "333");
 

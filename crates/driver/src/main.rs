@@ -341,7 +341,7 @@ fn compile(
         lines,
         load: started.elapsed(),
     };
-    compile_loaded(&loaded, root, output, profile, timings, program)
+    compile_loaded(&loaded, root, output, profile, timings, None, program)
 }
 
 /// A package already read into a [`Session`]: what [`compile_loaded`] builds. `baryon watch`
@@ -368,6 +368,7 @@ pub(crate) fn compile_loaded(
     output: &Path,
     profile: Profile,
     timings: bool,
+    kept: Option<&mut link::Objects>,
     program: impl FnOnce(&Session, Option<&str>) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>>,
 ) -> Result<Result<(usize, Vec<String>), ExitCode>, String> {
     let (session, files, lines) = (loaded.session, loaded.files, loaded.lines);
@@ -388,7 +389,7 @@ pub(crate) fn compile_loaded(
         }
     };
     let compiled = Instant::now();
-    let linked = link::link(&modules, output, profile == Profile::Release)?;
+    let linked = link::link(&modules, output, profile == Profile::Release, kept)?;
     if timings {
         let report = Timings {
             files,

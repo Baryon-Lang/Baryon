@@ -9,6 +9,7 @@
 //! distributions install side by side, such as `clang-15` on Ubuntu 22.04, whose plain `clang`
 //! is 14.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
@@ -20,6 +21,28 @@ pub(crate) struct Linked {
     pub(crate) machine_code: Duration,
     /// Linking the object file with the runtime, and on macOS running `dsymutil`.
     pub(crate) link: Duration,
+}
+
+/// The machine code of each module compiled so far, by the module's text, which `baryon watch`
+/// keeps between rebuilds so a module an edit did not change skips `clang` (roadmap 2.2.2).
+///
+/// Only the modules of the latest build are kept: about 2 MB of object code and 24 MB of text
+/// for the 4,706-line program of roadmap 2.0, held in memory so nothing is left on disk when
+/// the watch is stopped. A cache serves builds of one profile only, since the text does not
+/// say how `clang` optimized it.
+#[derive(Default)]
+pub(crate) struct Objects {
+    /// Each module's object file, by the module's text.
+    built: HashMap<String, Vec<u8>>,
+    /// How many modules the latest build had `clang` compile.
+    compiled: usize,
+}
+
+impl Objects {
+    /// How many modules the latest build had `clang` compile, and how many it had.
+    pub(crate) fn compiled(&self) -> (usize, usize) {
+        (self.compiled, self.built.len())
+    }
 }
 
 /// The system libraries the runtime, a Rust static library, needs, as
@@ -85,11 +108,20 @@ const MATH_LIBRARY: &str = "-lm";
 /// scratch directory, and the object files with it, is removed. `clang` runs `dsymutil` itself
 /// only for source files it compiles, not for an LLVM module.
 ///
+/// With `kept`, a module whose text is there skips `clang`: its kept machine code is written
+/// to the scratch directory instead. Afterwards `kept` holds the machine code of exactly this
+/// build's modules.
+///
 /// Returns how long the object files and the link took ([`Linked`]); writing the modules to the
 /// scratch directory counts toward the object files.
 ///
 /// [`Session::compile_parts`]: driver::Session::compile_parts
-pub(crate) fn link(modules: &[String], output: &Path, optimize: bool) -> Result<Linked, String> {
+pub(crate) fn link(
+    modules: &[String],
+    output: &Path,
+    optimize: bool,
+    kept: Option<&mut Objects>,
+) -> Result<Linked, String> {
     let runtime = runtime()?;
     let clang = find_clang()?;
     let scratch = env::temp_dir().join(format!("baryon-build-{}", std::process::id()));
@@ -100,7 +132,7 @@ pub(crate) fn link(modules: &[String], output: &Path, optimize: bool) -> Result<
     let started = Instant::now();
     let mut compiled = started;
     let lld = Lld::look(&clang);
-    let result = compile_objects(&clang, &scratch, modules, &objects, optimize)
+    let result = compile_objects(&clang, &scratch, modules, &objects, optimize, kept)
         .and_then(|()| {
             compiled = Instant::now();
             let linker = lld.flag();
@@ -172,22 +204,32 @@ impl Lld {
 
 /// Writes each of `modules` into `scratch` and compiles it into the object file at the same
 /// position in `objects`, one `clang` per module, all running at once, and waits for every one.
+/// A module whose text `kept` holds gets its kept machine code written instead; afterwards
+/// `kept` holds this build's modules only, and how many of them `clang` compiled.
 ///
 /// # Errors
 ///
-/// Fails with a message when a module cannot be written, a `clang` cannot be started, or one
-/// fails; the first failure in module order is the one reported.
+/// Fails with a message when a module or object file cannot be written or read, a `clang`
+/// cannot be started, or one fails; the first failure in module order is the one reported.
 fn compile_objects(
     clang: &str,
     scratch: &Path,
     modules: &[String],
     objects: &[PathBuf],
     optimize: bool,
+    kept: Option<&mut Objects>,
 ) -> Result<(), String> {
+    let written = |path: &Path, bytes: &[u8]| {
+        fs::write(path, bytes).map_err(|error| format!("{}: {error}", path.display()))
+    };
     let mut running = Vec::new();
     for (index, (module, object)) in modules.iter().zip(objects).enumerate() {
+        if let Some(bytes) = kept.as_ref().and_then(|kept| kept.built.get(module)) {
+            written(object, bytes)?;
+            continue;
+        }
         let source = scratch.join(format!("module{index}.ll"));
-        fs::write(&source, module).map_err(|error| format!("{}: {error}", source.display()))?;
+        written(&source, module.as_bytes())?;
         let child = Command::new(clang)
             .args(if optimize { OPTIMIZE } else { DEBUG })
             .args(["-g", "-Wno-override-module", "-c"])
@@ -200,6 +242,7 @@ fn compile_objects(
             .map_err(|error| format!("{clang}: {error}"));
         running.push(child);
     }
+    let count = running.len();
     // Every started `clang` is waited for, even after one fails, so none outlives the scratch
     // directory it writes into.
     let finished: Vec<Result<(), String>> = running
@@ -213,7 +256,22 @@ fn compile_objects(
             })
         })
         .collect();
-    finished.into_iter().collect()
+    finished.into_iter().collect::<Result<(), String>>()?;
+    if let Some(kept) = kept {
+        let mut built = HashMap::with_capacity(modules.len());
+        for (module, object) in modules.iter().zip(objects) {
+            let bytes = match kept.built.remove(module) {
+                Some(bytes) => bytes,
+                None => {
+                    fs::read(object).map_err(|error| format!("{}: {error}", object.display()))?
+                }
+            };
+            built.insert(module.clone(), bytes);
+        }
+        kept.built = built;
+        kept.compiled = count;
+    }
+    Ok(())
 }
 
 /// The oldest `clang` major version that accepts the LLVM text the backend emits: opaque

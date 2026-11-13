@@ -3,7 +3,8 @@
 //! (see the `panic` module), formatting and `dict`s refer to them by name. The same value also
 //! holds the module's debug information and loop metadata, which share its numbering.
 
-use crate::debug::Debug;
+use crate::debug::{Debug, FIRST_SUBPROGRAM};
+use crate::split::Pieces;
 use crate::text::FORMAT_SPEC;
 use source::{FileId, Sources, Span};
 use std::collections::BTreeMap;
@@ -43,9 +44,9 @@ pub(crate) struct Constants<'a> {
     /// [`Assert`](mir::TerminatorKind::Assert)s are not written, and `prange` reductions
     /// combine with wrapping arithmetic (decision 0030).
     pub(crate) wraps: bool,
-    /// The loop metadata node of each `simd` loop, in the order they were made. They share
-    /// the numbering of the debug information's nodes, after which they are written.
-    loops: Vec<String>,
+    /// The number and loop metadata node of each `simd` loop, in the order they were made.
+    /// They share the numbering of the debug information's nodes, after which they are written.
+    loops: Vec<(usize, String)>,
 }
 
 /// How many constants and subprograms there were, to roll back to.
@@ -115,8 +116,11 @@ impl<'a> Constants<'a> {
     /// first.
     pub(crate) fn vectorize(&mut self) -> String {
         let number = self.debug.as_ref().map_or(0, Debug::next_number) + self.loops.len();
-        self.loops.push(format!(
-            "!{number} = distinct !{{!{number}, !{{!\"llvm.loop.vectorize.enable\", i1 true}}}}"
+        self.loops.push((
+            number,
+            format!(
+                "!{number} = distinct !{{!{number}, !{{!\"llvm.loop.vectorize.enable\", i1 true}}}}"
+            ),
         ));
         format!("!{number}")
     }
@@ -141,11 +145,38 @@ impl<'a> Constants<'a> {
             .as_ref()
             .map(|debug| debug.finish(self.sources))
             .unwrap_or_default();
-        for node in &self.loops {
+        for (_, node) in &self.loops {
             text.push_str(node);
             text.push('\n');
         }
         text
+    }
+
+    /// Every constant and metadata node apart, by number, for modules that each carry only
+    /// the ones their functions point to (the `split` module).
+    pub(crate) fn pieces(self) -> Pieces {
+        let mut nodes: BTreeMap<usize, String> = self.loops.into_iter().collect();
+        let (header, reserved) = match &self.debug {
+            Some(debug) => {
+                nodes.extend(
+                    debug
+                        .nodes()
+                        .map(|(number, node)| (number, node.to_owned())),
+                );
+                (debug.header(self.sources), FIRST_SUBPROGRAM)
+            }
+            None => (String::new(), 0),
+        };
+        Pieces {
+            constants: self
+                .definitions
+                .into_iter()
+                .map(|(_, definition)| definition)
+                .collect(),
+            header,
+            nodes,
+            reserved,
+        }
     }
 
     /// The constant holding the parts of `spec` as the runtime's `FormatSpec` lays them out, as
