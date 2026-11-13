@@ -8,8 +8,9 @@ and writes arrays with NumPy's names and NumPy's bytes, as `Array` functions bes
 [`Array.fromfile`](files-and-processes.md#array-files)
 ([decision 0043](../decisions/0043-array-data-files.md)): a program moved from NumPy changes
 `numpy.` to `Array.` and gets the same numbers. FITS files keep AstroPy's names, in a `fits`
-module ([decision 0044](../decisions/0044-fits-images-and-headers.md)), and NetCDF files keep
-Unidata's `netCDF4` names ([decision 0047](../decisions/0047-netcdf-classic-files.md)). Roadmap
+module ([decision 0044](../decisions/0044-fits-images-and-headers.md)), NetCDF files keep
+Unidata's `netCDF4` names ([decision 0047](../decisions/0047-netcdf-classic-files.md)), and
+HDF5 files keep h5py's names ([decision 0052](../decisions/0052-hdf5-files.md)). Roadmap
 row 3.14 adds the
 formats one at a time, those that need no outside library first.
 
@@ -19,6 +20,7 @@ formats one at a time, those that need no outside library first.
 | [`.npy` files](#npy-files), NumPy's own format | `Array.load(file)` | `Array.save(file, arr)` |
 | [FITS images and headers](#fits-files), astronomy's format | `fits.getdata(filename)`, `fits.getheader(filename)` | `fits.writeto(filename, data, header)` |
 | [NetCDF classic files](#netcdf-files), the format of climate and weather data | `Dataset(filename).variables[name][:]` | `ds.variables[name][:] = values` |
+| [HDF5 files](#hdf5-files), the format of simulations, instruments and machine learning | `h5by.File(name)[path][...]` | not yet (roadmap 3.14.6.2) |
 | Raw binary arrays | [`Array.fromfile(path, dtype)`](files-and-processes.md#array-files) | [`a.tofile(path)`](files-and-processes.md#array-files) |
 
 ## Text tables
@@ -392,3 +394,91 @@ compression in `createVariable`, subscripts of arrays of indices, booleans or `.
 variables, attributes of several values, CDF-5 files and
 NetCDF-4 files, which are HDF5 files (roadmap 3.14.6), come later. Each is an error that names
 it, never silently ignored.
+
+## HDF5 files
+
+HDF5 is how much of physics, astronomy, materials science and machine learning stores large
+arrays: simulation snapshots, instrument recordings, training data. An HDF5 file is a tree.
+Its *groups* are like directories, its *datasets* are arrays of numbers, and both carry
+*attributes*, small named values such as `units = "K"`. The `h5by` module reads them with the
+names of the `h5py` package ([decision 0052](../decisions/0052-hdf5-files.md)), in Baryon and
+Rust, with no C library: a program moved from Python changes `import h5py` to `import h5by`
+and keeps its calls.
+
+```python
+import h5by
+
+
+def main() -> Raises[None, OSError | KeyError | IndexError | ValueError]:
+    with h5by.File("run.h5", "r") as f:
+        temp: Array[f32, 3] = f["run1/temp"][...]
+        first: Array[f32, 2] = f["run1"]["temp"][0, :, ::2]
+        units: str = f["run1/temp"].attrs["units"]
+        print(f.keys(), temp.mean(), units, first.shape)
+```
+
+This reads a dataset over three axes as `f32`s, every other value of its first plane, and its
+units, as the same lines would in Python.
+
+| Code | Gives | Does |
+| --- | --- | --- |
+| `h5by.File(name, mode="r")` | `File` | opens the file and reads its structure; alone or in a `with` block |
+| `f[path]`, `group[path]` | `Group` or `Dataset` | the object at `path`, such as `"run1/temp"`, from the group, or from the root when it starts with `/` |
+| `dset[...]` | `Array[T, rank]` | reads every value of the dataset into a new array |
+| `dset[0, :, ::2]` | `Array[T, rank]` | reads the values a subscript picks, as h5py picks them |
+| `dset.shape`, `dset.ndim`, `dset.size` | `list[int]`, `int`, `int` | the dataset's lengths, slowest first, its number of axes and of values |
+| `dset.dtype`, `obj.name` | `str` | the type as NumPy spells it, such as `"<f4"`, and the path from the root, such as `"/run1/temp"` |
+| `obj.attrs[name]` | the type the context needs | an attribute of the file, a group or a dataset |
+| `f.keys()`, `group.keys()`, `obj.attrs.keys()` | `list[str]` | the names of the members, or of the attributes, in name order as h5py lists them |
+| `name in f`, `name in group`, `name in obj.attrs` | `bool` | whether there is an object or an attribute of that name |
+| `f.close()` | `None` | closes the file, as h5py asks |
+
+- **A lookup is a group or a dataset by how the program uses it.** In h5py, `f[path]` is
+  whichever the file holds; a compiled program needs to know which before the file is read.
+  A lookup indexed again by a name, `f["run1"]["temp"]`, asked for its `keys()`, or on the
+  right of `in`, is a `Group`. So is one given the type, `run: h5by.Group = f["run1"]`. Any
+  other lookup is a `Dataset`. A variable takes its type where it is assigned, so
+  `run = f["run1"]` then `run["temp"]` is a compile error that asks for the type. A lookup
+  that finds the other kind in the file raises `KeyError` saying which it is.
+- **A dataset's element type and rank come from the context**, as a NetCDF variable's do:
+  `temp: Array[f32, 3] = f["run1/temp"][...]`. With no context the result is an
+  `Array[f64, 2]`. Every integer and float type HDF5 stores is read, in either byte order; a
+  float array reads any of them, an integer array those it can hold. Another rank, or values
+  the type cannot hold, raise `OSError` with the kind `INVALID_DATA`.
+- **An attribute's type comes from where it goes**: `units: str = dset.attrs["units"]`,
+  `version: int = f.attrs["version"]`. A `float` reads an integer attribute too, and an
+  `Array[f64, 1]` an attribute of several numbers. Where nothing gives a type, the checker asks
+  for one.
+- **Errors are h5py's**: a missing object raises `KeyError` with h5py's message,
+  `"Unable to synchronously open object (object 'nope' doesn't exist)"`, or
+  `component not found` when a group on the way is missing; a missing attribute raises
+  `KeyError` too. An index out of bounds raises `IndexError`, `Index (5) out of range for
+  (0-1)`, and a step that is not positive `ValueError`, `Step must be >= 1 (got -1)`, since
+  h5py takes no negative steps. So a subscripted read can fail with
+  `OSError | IndexError | ValueError`; `dset[...]` only with `OSError`.
+- **Every layout and filter h5py writes is read.** Contiguous, compact and chunked datasets,
+  every chunk index of HDF5 1.8 to 2.0, and the deflate, shuffle and fletcher32 filters, in
+  both the default layout and `libver="latest"`. A chunk passed through deflate is inflated by
+  the native [`zlib`](compression.md), so Baryon has one deflate decoder.
+- **Cost.** Opening reads the file's structure: its groups, datasets and attributes, not their
+  values. A read makes one pass over the stored values it picks: a subscript of a chunked
+  dataset reads only the chunks it touches, so one time step of a large file costs one step's
+  chunks, and a contiguous dataset is read one run along the last axis at a time.
+
+### Differences from h5py
+
+- **Types come from the program**: a lookup is a `Group` or a `Dataset` by its use, a dataset
+  is read as the array type it goes into, and an attribute as the type it goes into, where
+  h5py decides each from the file when it runs.
+- **`dset.shape` is a `list[int]`**, where h5py gives a tuple of the same lengths, and
+  `keys()` gives a `list[str]`, where h5py gives a view of the same names.
+- **A subscript takes `...`, integers and slices.** h5py also takes lists of indices, boolean
+  masks and fields of compound types; those are compile errors so far.
+
+### Not built yet
+
+Writing HDF5 files is roadmap 3.14.6.2. Datasets of strings, compound types, enums, references
+and variable-length data, external and virtual datasets, the szip, LZF and Blosc filters, an
+extensible array's paged blocks (past about 100,000 chunks along the growing axis), scalar
+datasets read as `dset[()]`, and NetCDF-4 files through `netCDF4.Dataset` come later. Each is an
+error that names it, never silently ignored.

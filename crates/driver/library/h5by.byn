@@ -1,0 +1,483 @@
+"""The parts of the `h5by` module written in Baryon: HDF5 files read (decision 0052).
+
+`h5by.File(path)` and `dset[...]`, `dset[1, ::2]` are built into the compiler and the runtime,
+which read the file's structure and its stored values. The runtime describes the file as lines
+of text, which a `File` keeps; its groups, datasets and attributes are found here, line by
+line, as h5py gives them. A dataset whose chunks passed through deflate is read in three
+steps: the runtime lists the chunks a subscript touches, `_inflate` here reads and inflates
+each with the native `zlib` (decision 0049), and the runtime takes them back inflated.
+
+A program writes `f["run1/temp"]`, `f["run1"].keys()` and `dset.attrs["units"]`, and the
+checker sends each to the function here that does it: `_get_str` where the context needs a
+`str` attribute. The functions whose names start with `_` are the compiler's; no program can
+import them.
+
+The lines, each a tag and fields separated by tabs, are these (the runtime writes them):
+
+- `P`, the file's path, first;
+- `G`, a group's path, such as `/run1`, the root group `/` first;
+- `D`, a dataset's path, its type as NumPy names it (`<f4`) and its shape, the lengths
+  separated by commas, empty for a scalar;
+- `A`, the path of the object an attribute belongs to, its kind (`str`, `int`, `float`, or
+  `other` for a type not read), its shape as a dataset's, its name, and its values, each after
+  a tab.
+
+The objects come in h5py's order: each group's members by name, after the group.
+"""
+
+import zlib
+
+
+class File(Struct):
+    """An HDF5 file opened for reading, as h5py's `File` is (decision 0052).
+
+    `h5by.File(path)` opens one and reads its structure. `f[name]` is a `Group` or a
+    `Dataset`, `f.keys()` the names of the root group's members, `name in f` whether there is
+    an object at that path, and `f.attrs[name]` an attribute of the root group, typed by where
+    it goes. A missing name raises `KeyError` with h5py's message.
+    """
+
+    _lines: list[str]  # the file's description lines, the path first; the compiler's to fill
+
+
+class Group(Struct):
+    """A group of an HDF5 file: its `name`, the path from the root such as `/run1`.
+    `group[name]` is a member, by a path relative to the group or from the root, and `keys()`,
+    `in` and `attrs` work as a `File`'s do."""
+
+    name: str
+    _lines: list[str]  # the file's description lines, as the `File` holds them
+
+
+class Dataset(Struct):
+    """A dataset of an HDF5 file: its `name`, the path from the root, its `shape`, slowest axis
+    first, its number of axes `ndim`, its number of values `size`, and its type `dtype` as NumPy
+    spells it, such as `<f4`. `dset[...]` or `dset[0, ::2]` reads its values into an array
+    typed by where they go, and `dset.attrs[name]` reads one of its attributes."""
+
+    name: str
+    shape: list[int]
+    ndim: int
+    size: int
+    dtype: str
+    _path: str  # the file's path, which `dset[...]` reads; the compiler's to read
+    _attributes: list[str]  # the `A` lines of its attributes
+
+
+class _Inflated(Struct):
+    """The deflated chunks a read needs, inflated: their bytes one after another, and the size
+    of each, in the order the runtime listed them."""
+
+    data: Array[u8, 1]
+    sizes: Array[i64, 1]
+
+
+def _field(line: str, index: int) -> str:
+    """Field `index` of a description `line`, counting the tag as 0; the last field of an `A`
+    line, its values, is the rest of the line, tabs and all."""
+    rest = line.copy()
+    count = 0
+    while count < index:
+        found = rest.find("\t")
+        if found < 0:
+            return ""
+        rest = rest[found + 1 :].copy()
+        count += 1
+    if index < 5:
+        found = rest.find("\t")
+        if found >= 0:
+            return rest[:found].copy()
+    return rest
+
+
+def _whole(text: str) -> int:
+    """The integer the runtime wrote as `text`."""
+    try:
+        return int(text)
+    except ValueError:
+        return 0
+
+
+def _quoted(text: str) -> KeyError:
+    """A `KeyError` whose message is `text` in the quotes Python puts around a key's text, as
+    h5py's message reads: double quotes where the text holds a single quote."""
+    if text.find("'") >= 0:
+        return KeyError(f'"{text}"')
+    return KeyError(f"'{text}'")
+
+
+def _missing(detail: str) -> KeyError:
+    """h5py's `KeyError` for an object it could not open, `detail` saying why."""
+    return _quoted(f"Unable to synchronously open object ({detail})")
+
+
+def _joined(group: str, name: str) -> str:
+    """The path of `name` in the group at `group`: `name` itself when it starts at the root."""
+    if name.startswith("/"):
+        return name.copy()
+    if group == "/":
+        return f"/{name}"
+    return f"{group}/{name}"
+
+
+def _last_slash(path: str) -> int:
+    """The position of the last `/` in `path`, -1 when it has none."""
+    last = -1
+    found = path.find("/")
+    while found >= 0:
+        last += found + 1
+        found = path[last + 1 :].find("/")
+    return last
+
+
+def _parent(path: str) -> str:
+    """The path of the group that holds the object at `path`."""
+    found = _last_slash(path)
+    if found <= 0:
+        return "/"
+    return path[:found].copy()
+
+
+def _line(lines: list[str], path: str) -> Raises[str, KeyError]:
+    """The `G` or `D` line of the object at `path`, or h5py's `KeyError`: `object 'x' doesn't
+    exist` when its group is there, and `component not found` when a group on the way is not."""
+    for line in lines:
+        if (line.startswith("G\t") or line.startswith("D\t")) and _field(line, 1) == path:
+            return line.copy()
+    parent = _parent(path)
+    for line in lines:
+        if line.startswith("G\t") and _field(line, 1) == parent:
+            last = path[_last_slash(path) + 1 :].copy()
+            raise _missing(f"object '{last}' doesn't exist")
+    raise _missing("component not found")
+
+
+def _attributes(lines: list[str], owner: str) -> list[str]:
+    """The `A` lines in `lines` of the object at `owner`."""
+    found: list[str] = []
+    for line in lines:
+        if line.startswith("A\t") and _field(line, 1) == owner:
+            found.append(line.copy())
+    return found
+
+
+def _open(lines: list[str], path: str, file: str) -> Raises[Dataset, KeyError]:
+    """The dataset at `path` of the file at `file` that `lines` describe."""
+    line = _line(lines, path)
+    if line.startswith("G\t"):
+        raise _quoted(f"{path} is a group, not a dataset; give it the type h5by.Group")
+    spans = _field(line, 3)
+    shape: list[int] = []
+    size = 1
+    if spans != "":
+        for span in spans.split(","):
+            shape.append(_whole(span))
+            size *= _whole(span)
+    ndim = len(shape)
+    dtype = _field(line, 2)
+    return Dataset(path.copy(), shape, ndim, size, dtype, file.copy(), _attributes(lines, path))
+
+
+def _enter(lines: list[str], path: str) -> Raises[Group, KeyError]:
+    """The group at `path` of the file that `lines` describe."""
+    line = _line(lines, path)
+    if line.startswith("D\t"):
+        raise _quoted(f"{path} is a dataset, not a group; give it the type h5by.Dataset")
+    return Group(path.copy(), lines.copy())
+
+
+def _file_path(lines: list[str]) -> str:
+    """The path of the file `lines` describe: their first line after the tag `P`."""
+    return lines[0][2:].copy()
+
+
+def _dataset(file: File, name: str) -> Raises[Dataset, KeyError]:
+    """`f[name]` read as a `Dataset`."""
+    return _open(file._lines, _joined("/", name), _file_path(file._lines))
+
+
+def _group(file: File, name: str) -> Raises[Group, KeyError]:
+    """`f[name]` read as a `Group`."""
+    return _enter(file._lines, _joined("/", name))
+
+
+def _group_dataset(group: Group, name: str) -> Raises[Dataset, KeyError]:
+    """`group[name]` read as a `Dataset`."""
+    return _open(group._lines, _joined(group.name, name), _file_path(group._lines))
+
+
+def _group_group(group: Group, name: str) -> Raises[Group, KeyError]:
+    """`group[name]` read as a `Group`."""
+    return _enter(group._lines, _joined(group.name, name))
+
+
+def _members(lines: list[str], path: str) -> list[str]:
+    """The names of the members of the group at `path`, in name order, as h5py lists them."""
+    names: list[str] = []
+    for line in lines:
+        if line.startswith("G\t") or line.startswith("D\t"):
+            member = _field(line, 1)
+            if member != "/" and _parent(member) == path:
+                names.append(member[_last_slash(member) + 1 :].copy())
+    return names
+
+
+def _keys(file: File) -> list[str]:
+    """`f.keys()`: the names of the root group's members."""
+    return _members(file._lines, "/")
+
+
+def _group_keys(group: Group) -> list[str]:
+    """`group.keys()`: the names of the group's members."""
+    return _members(group._lines, group.name)
+
+
+def _has(lines: list[str], path: str) -> bool:
+    """Whether the file that `lines` describe has an object at `path`."""
+    for line in lines:
+        if (line.startswith("G\t") or line.startswith("D\t")) and _field(line, 1) == path:
+            return True
+    return False
+
+
+def _contains(file: File, name: str) -> bool:
+    """`name in f`: whether the file has an object at `name`."""
+    return _has(file._lines, _joined("/", name))
+
+
+def _group_contains(group: Group, name: str) -> bool:
+    """`name in group`: whether the group has an object at `name`."""
+    return _has(group._lines, _joined(group.name, name))
+
+
+def _lacks(file: File, name: str) -> bool:
+    """`name not in f`."""
+    return not _contains(file, name)
+
+
+def _group_lacks(group: Group, name: str) -> bool:
+    """`name not in group`."""
+    return not _group_contains(group, name)
+
+
+def _close(file: File):
+    """`f.close()`: nothing to do, since the structure was read when the file was opened and
+    each dataset's values are read when the program asks for them."""
+    return
+
+
+def _inflate(path: str, chunks: list[str]) -> Raises[_Inflated, OSError]:
+    """The deflated chunks `chunks` of the file at `path`, each its address and its size
+    separated by a tab as the runtime lists them, read and inflated by `zlib`. Costs one read
+    and one inflation of each chunk, and one copy of the inflated bytes."""
+    pieces: list[Array[u8, 1]] = []
+    total = 0
+    for chunk in chunks:
+        tab = chunk.find("\t")
+        address = _whole(chunk[:tab].copy())
+        size = _whole(chunk[tab + 1 :].copy())
+        stored = Array.fromfile(path, u8, count=size, offset=address)
+        piece = zlib.decompress(stored)
+        total += len(piece)
+        pieces.append(piece)
+    data = Array.zeros(total, u8)
+    sizes = Array.zeros(len(pieces), i64)
+    at = 0
+    index = 0
+    for piece in pieces:
+        for i in range(len(piece)):
+            data[at + i] = piece[i]
+        at += len(piece)
+        sizes[index] = i64(len(piece))
+        index += 1
+    return _Inflated(data, sizes)
+
+
+def _inflate_picked(
+    path: str, chunks: list[str]
+) -> Raises[_Inflated, OSError | IndexError | ValueError]:
+    """`_inflate` for a read with a subscript, whose errors also hold the `IndexError` and
+    `ValueError` a subscript can raise, so the read raises through one error type."""
+    try:
+        return _inflate(path, chunks)
+    except OSError as error:
+        raise error
+
+
+def _attribute(lines: list[str], owner: str, name: str) -> Raises[str, KeyError]:
+    """The `A` line of the attribute `name` of the object at `owner` in `lines`, or h5py's
+    `KeyError` when there is none."""
+    for line in lines:
+        if line.startswith("A\t") and _field(line, 1) == owner and _field(line, 4) == name:
+            return line.copy()
+    raise _quoted(f"Unable to synchronously open attribute (can't locate attribute: '{name}')")
+
+
+def _wrong(line: str, wanted: str) -> KeyError:
+    """The error for the attribute on `line` when it does not hold the value `wanted` names."""
+    held = _field(line, 2)
+    shape = _field(line, 3)
+    if held == "str":
+        what = "text"
+    elif held == "other":
+        what = "a type not read yet"
+    elif shape == "":
+        what = f"one {held}"
+    else:
+        what = f"an array of {held}s"
+    return _quoted(f"the attribute {_field(line, 4)} holds {what}, not {wanted}")
+
+
+def _text(line: str) -> Raises[str, KeyError]:
+    """The text of the attribute on `line`, which must hold one text."""
+    if _field(line, 2) != "str" or _field(line, 3) != "":
+        raise _wrong(line, "text")
+    return _field(line, 5)
+
+
+def _integer(line: str) -> Raises[int, KeyError]:
+    """The one integer of the attribute on `line`."""
+    if _field(line, 2) != "int" or _field(line, 3) != "":
+        raise _wrong(line, "one int")
+    return _whole(_field(line, 5))
+
+
+def _real(line: str) -> Raises[float, KeyError]:
+    """The one number of the attribute on `line`, an integer or a float, as a float."""
+    kind = _field(line, 2)
+    if (kind != "int" and kind != "float") or _field(line, 3) != "":
+        raise _wrong(line, "one float")
+    try:
+        return float(_field(line, 5))
+    except ValueError:
+        raise _wrong(line, "one float")
+
+
+def _reals(line: str) -> Raises[Array[f64, 1], KeyError]:
+    """The numbers of the attribute on `line`, integers or floats, as a rank-1 array of
+    floats; one number gives an array of one."""
+    kind = _field(line, 2)
+    if kind != "int" and kind != "float":
+        raise _wrong(line, "floats")
+    texts = _field(line, 5).split("\t")
+    values = Array.zeros(len(texts), f64)
+    for index in range(len(texts)):
+        try:
+            values[index] = float(texts[index])
+        except ValueError:
+            raise _wrong(line, "floats")
+    return values
+
+
+def _get_str(file: File, name: str) -> Raises[str, KeyError]:
+    """`f.attrs[name]` where the context needs a `str`."""
+    return _text(_attribute(file._lines, "/", name))
+
+
+def _get_int(file: File, name: str) -> Raises[int, KeyError]:
+    """`f.attrs[name]` where the context needs an `int`."""
+    return _integer(_attribute(file._lines, "/", name))
+
+
+def _get_float(file: File, name: str) -> Raises[float, KeyError]:
+    """`f.attrs[name]` where the context needs a `float`."""
+    return _real(_attribute(file._lines, "/", name))
+
+
+def _get_array(file: File, name: str) -> Raises[Array[f64, 1], KeyError]:
+    """`f.attrs[name]` where the context needs an `Array[f64, 1]`."""
+    return _reals(_attribute(file._lines, "/", name))
+
+
+def _group_get_str(group: Group, name: str) -> Raises[str, KeyError]:
+    """`group.attrs[name]` where the context needs a `str`."""
+    return _text(_attribute(group._lines, group.name, name))
+
+
+def _group_get_int(group: Group, name: str) -> Raises[int, KeyError]:
+    """`group.attrs[name]` where the context needs an `int`."""
+    return _integer(_attribute(group._lines, group.name, name))
+
+
+def _group_get_float(group: Group, name: str) -> Raises[float, KeyError]:
+    """`group.attrs[name]` where the context needs a `float`."""
+    return _real(_attribute(group._lines, group.name, name))
+
+
+def _group_get_array(group: Group, name: str) -> Raises[Array[f64, 1], KeyError]:
+    """`group.attrs[name]` where the context needs an `Array[f64, 1]`."""
+    return _reals(_attribute(group._lines, group.name, name))
+
+
+def _dataset_get_str(dataset: Dataset, name: str) -> Raises[str, KeyError]:
+    """`dset.attrs[name]` where the context needs a `str`."""
+    return _text(_attribute(dataset._attributes, dataset.name, name))
+
+
+def _dataset_get_int(dataset: Dataset, name: str) -> Raises[int, KeyError]:
+    """`dset.attrs[name]` where the context needs an `int`."""
+    return _integer(_attribute(dataset._attributes, dataset.name, name))
+
+
+def _dataset_get_float(dataset: Dataset, name: str) -> Raises[float, KeyError]:
+    """`dset.attrs[name]` where the context needs a `float`."""
+    return _real(_attribute(dataset._attributes, dataset.name, name))
+
+
+def _dataset_get_array(dataset: Dataset, name: str) -> Raises[Array[f64, 1], KeyError]:
+    """`dset.attrs[name]` where the context needs an `Array[f64, 1]`."""
+    return _reals(_attribute(dataset._attributes, dataset.name, name))
+
+
+def _names(lines: list[str], owner: str) -> list[str]:
+    """The names of the attributes in `lines` of the object at `owner`, in name order."""
+    names: list[str] = []
+    for line in lines:
+        if line.startswith("A\t") and _field(line, 1) == owner:
+            names.append(_field(line, 4))
+    return names
+
+
+def _attrs_keys(file: File) -> list[str]:
+    """`f.attrs.keys()`: the names of the root group's attributes."""
+    return _names(file._lines, "/")
+
+
+def _group_attrs_keys(group: Group) -> list[str]:
+    """`group.attrs.keys()`: the names of the group's attributes."""
+    return _names(group._lines, group.name)
+
+
+def _dataset_attrs_keys(dataset: Dataset) -> list[str]:
+    """`dset.attrs.keys()`: the names of the dataset's attributes."""
+    return _names(dataset._attributes, dataset.name)
+
+
+def _attrs_contains(file: File, name: str) -> bool:
+    """`name in f.attrs`: whether the root group has the attribute `name`."""
+    return name in _names(file._lines, "/")
+
+
+def _attrs_lacks(file: File, name: str) -> bool:
+    """`name not in f.attrs`."""
+    return not _attrs_contains(file, name)
+
+
+def _group_attrs_contains(group: Group, name: str) -> bool:
+    """`name in group.attrs`: whether the group has the attribute `name`."""
+    return name in _names(group._lines, group.name)
+
+
+def _group_attrs_lacks(group: Group, name: str) -> bool:
+    """`name not in group.attrs`."""
+    return not _group_attrs_contains(group, name)
+
+
+def _dataset_attrs_contains(dataset: Dataset, name: str) -> bool:
+    """`name in dset.attrs`: whether the dataset has the attribute `name`."""
+    return name in _names(dataset._attributes, dataset.name)
+
+
+def _dataset_attrs_lacks(dataset: Dataset, name: str) -> bool:
+    """`name not in dset.attrs`."""
+    return not _dataset_attrs_contains(dataset, name)

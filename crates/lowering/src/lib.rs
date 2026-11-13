@@ -303,6 +303,7 @@ mod frame_stack;
 mod frame_text;
 mod frames;
 mod generics;
+mod h5by;
 mod in_place;
 mod iterators;
 mod lanes;

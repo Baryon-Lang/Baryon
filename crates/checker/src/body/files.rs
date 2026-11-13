@@ -233,12 +233,12 @@ impl<'db> Body<'db> {
     /// `with value as name:`, where `value` is a `File`, such as `open(path, "w")`: binds `name`
     /// to the file for the body and closes it at the end, which can fail with `OSError` as
     /// `close()` can. A `NetCDF` `Dataset` binds too, and closing it does nothing, as
-    /// `ds.close()` does nothing (decision 0047). Returns the type of `value`, `None` when it is
-    /// neither, which is reported.
+    /// `ds.close()` does nothing (decision 0047); so does an `h5by` `File` (decision 0052).
+    /// Returns the type of `value`, `None` when it is neither, which is reported.
     pub(super) fn with_file(&mut self, statement: NodeId, item: NodeId) -> Option<Type<'db>> {
         let value = self.tree.child(item, Role::Value)?;
         let ty = self.expression(value, None);
-        if self.is_netcdf(ty, "Dataset") {
+        if self.is_netcdf(ty, "Dataset") || self.is_h5by(ty, "File") {
             return Some(ty);
         }
         let is_file = matches!(ty.kind(self.db), TypeKind::Standard(StandardType::File));
