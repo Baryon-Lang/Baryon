@@ -215,7 +215,7 @@ baryon watch [--release] [--run] <directory> <output>
 
 Builds the package into the executable `output` as [`build`](#baryon-build) does, then keeps
 running: each time a `.byn` file in the package is saved, it builds again, and prints
-`built <output> in <n> ms` to standard error. With `--run`, it runs the program after each build,
+`built <output> in <n> ms, <k> of <m> modules compiled` to standard error. With `--run`, it runs the program after each build,
 with the terminal's input and output, then prints `exited with <status>`. A build with errors
 prints them and `watching for changes`, and the next save builds again, so `watch` never stops
 on its own; stop it with `Ctrl-C`.
@@ -228,9 +228,17 @@ ended, so a program that never ends holds up the next build until you stop it.
 
 [decision 0050]: ../decisions/0050-incremental-builds.md
 
-Today that is all it reuses: lowering, the LLVM text and machine code are made again for the
-whole program, so a rebuild takes nearly as long as `baryon build`. Redoing only the functions an
-edit reaches is roadmap 2.2.2, which aims at a rebuild under 200 ms after a one-function edit.
+It also keeps the machine code. The program is split into LLVM modules of a few functions each,
+cut so that an edit changes only the modules holding the functions it reaches, and a module whose
+text did not change reuses its machine code instead of running `clang` again; the message counts
+the modules `clang` compiled. A change inside one function recompiles one module. A line added or
+removed moves the source lines of every function below it in that file, so their modules are
+compiled again too, since each instruction records its line for the debugger.
+
+On the 4,706-line program of roadmap 2.0, a rebuild after changing a number in one function takes
+about 0.7 s, against 1.0 s for `baryon build`. Lowering and writing the LLVM text are still done
+for the whole program; redoing them only for the functions an edit reaches is the rest of roadmap
+2.2.2, which aims at a rebuild under 200 ms after a one-function edit.
 
 ## `baryon doc`
 

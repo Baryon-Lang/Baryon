@@ -48,9 +48,94 @@ pub(crate) fn assign(sizes: &[usize], parts: usize) -> Vec<Vec<usize>> {
     assigned
 }
 
+/// One in this many definitions ends a [`chunk`](chunks), chosen by its symbol's hash.
+const CHUNK_EVERY: u64 = 16;
+
+/// The least function text a chunk ends at on its symbol's hash alone, in bytes: below it, a
+/// chunk's `clang` would cost more to start than its text costs to compile.
+const MINIMUM_CHUNK: usize = 100_000;
+
+/// The most function text a chunk holds before the definition that reaches it ends it, in
+/// bytes: about 20,000 lines of LLVM IR, which `clang -O0` turns into machine code in about
+/// 80 ms on the machine of roadmap 2.2.2.
+const MAXIMUM_CHUNK: usize = 2_000_000;
+
+/// Splits the definitions `symbols`, whose text lengths are `sizes`, into runs that an edit
+/// leaves alone unless it reaches one of their definitions, for `baryon watch` (roadmap
+/// 2.2.2), and returns each run's definition indices in order.
+///
+/// [`assign`] balances parts by size, so one function growing moves others between parts, and
+/// every part changes. Here a definition ends its run where its symbol's hash says so, about
+/// one in [`CHUNK_EVERY`], as content-defined chunking does: where a run ends depends on the
+/// definitions near it, not on how much text came before. A run also ends at the definition
+/// that brings it past [`MAXIMUM_CHUNK`], and never on a hash before [`MINIMUM_CHUNK`]; both
+/// depend on sizes, but only within the run, so an edit can move the ends of its own run and
+/// the next few, never all the rest.
+pub(crate) fn chunks(symbols: &[&str], sizes: &[usize]) -> Vec<Vec<usize>> {
+    let mut chunks = Vec::new();
+    let mut chunk = Vec::new();
+    let mut size = 0;
+    for (index, (symbol, length)) in symbols.iter().zip(sizes).enumerate() {
+        chunk.push(index);
+        size += length;
+        let ends = fnv(symbol).is_multiple_of(CHUNK_EVERY) && size >= MINIMUM_CHUNK;
+        if ends || size >= MAXIMUM_CHUNK {
+            chunks.push(std::mem::take(&mut chunk));
+            size = 0;
+        }
+    }
+    if !chunk.is_empty() {
+        chunks.push(chunk);
+    }
+    chunks
+}
+
+/// The 64-bit FNV-1a hash of `text`: the same on every run and machine, unlike the standard
+/// library's, whose keys are random.
+fn fnv(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MINIMUM_PART, assign};
+    use super::{MAXIMUM_CHUNK, MINIMUM_CHUNK, MINIMUM_PART, assign, chunks, fnv};
+
+    #[test]
+    fn a_small_program_is_one_chunk() {
+        assert_eq!(chunks(&["a", "b", "c"], &[10, 20, 30]), [vec![0, 1, 2]]);
+    }
+
+    #[test]
+    fn a_chunk_ends_at_its_maximum() {
+        assert_eq!(
+            chunks(&["a", "b", "c"], &[MAXIMUM_CHUNK, 10, 10]),
+            [vec![0], vec![1, 2]]
+        );
+    }
+
+    #[test]
+    fn a_grown_definition_leaves_later_chunks_alone() {
+        let symbols: Vec<String> = (0..200).map(|index| format!("main.f{index}")).collect();
+        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
+        let mut sizes = vec![MINIMUM_CHUNK / 2; symbols.len()];
+        let before = chunks(&symbols, &sizes);
+        sizes[3] *= 3;
+        let after = chunks(&symbols, &sizes);
+        assert!(before.len() > 10, "{before:?}");
+        let changed = before.iter().filter(|chunk| !after.contains(chunk)).count();
+        assert!(
+            changed <= 2,
+            "{changed} chunks changed: {before:?} {after:?}"
+        );
+    }
+
+    #[test]
+    fn the_hash_is_fnv_1a() {
+        assert_eq!(fnv(""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(fnv("a"), 0xaf63_dc4c_8601_ec8c);
+    }
 
     #[test]
     fn a_small_program_stays_one_part() {
