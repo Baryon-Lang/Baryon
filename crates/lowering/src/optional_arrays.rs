@@ -8,14 +8,14 @@
 
 use crate::builder::Builder;
 use crate::frames::erase;
-use mir::{Constant, ConstantValue, Operand, Place, Projection, Rvalue};
+use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::NodeId;
 use types::{Primitive, Type, TypeKind};
 
 /// The position of the values in the tuple that stores an array with missing values.
-const VALUES: u32 = 0;
+pub(crate) const VALUES: u32 = 0;
 /// The position of the validity bitmap in that tuple.
-const VALIDITY: u32 = 1;
+pub(crate) const VALIDITY: u32 = 1;
 
 impl<'db> Builder<'db> {
     /// The type of an element that is there, the `T` of `Array[T | None, 1]`, when the
@@ -30,7 +30,7 @@ impl<'db> Builder<'db> {
 
     /// The number of elements of the array with missing values at `array`, an `i64`: the
     /// length of its values.
-    fn optional_array_length(&mut self, array: &Place, node: NodeId) -> Operand<'db> {
+    pub(crate) fn optional_array_length(&mut self, array: &Place, node: NodeId) -> Operand<'db> {
         let values = array.clone().project(Projection::Field(VALUES));
         let length = self.temporary(self.int_type(), node);
         self.assign(Place::from(length), Rvalue::Length(values, 0), node);
@@ -113,27 +113,34 @@ impl<'db> Builder<'db> {
         missing: bool,
         node: NodeId,
     ) {
-        let boolean = self.boolean_type();
         let base = self.borrow(array);
         let length = self.optional_array_length(&base, node);
-        let count = Place::from(self.held(self.int_type(), length, node));
+        let bits = base.project(Projection::Field(VALIDITY));
+        if let Some(result) = self.validity_mask(bits, length, missing, node) {
+            let result = Operand::Move(Place::from(result));
+            self.assign(place, Rvalue::Use(result), node);
+        }
+    }
+
+    /// A new `Array[bool, 1]` of `count` elements from the validity bitmap at `bits`: true
+    /// where an element is `None`, when `missing`, or where it is there. The caller owns
+    /// it. `None` after a report. Cost: one pass over the bitmap and a byte for each element.
+    pub(crate) fn validity_mask(
+        &mut self,
+        bits: Place,
+        count: Operand<'db>,
+        missing: bool,
+        node: NodeId,
+    ) -> Option<Local> {
+        let boolean = self.boolean_type();
+        let count = Place::from(self.held(self.int_type(), count, node));
         let wanted = Constant {
             ty: boolean,
             value: ConstantValue::Bool(missing),
         };
         let wanted = Place::from(self.held(boolean, Operand::Constant(wanted), node));
-        let bits = base.project(Projection::Field(VALIDITY));
-        let mask = Type::new(
-            self.db,
-            TypeKind::Array {
-                element: boolean,
-                rank: 1,
-            },
-        );
+        let mask = self.array_of(boolean);
         let arguments = vec![bits, count, wanted];
-        if let Some(result) = self.frame_call("missing", Vec::new(), arguments, mask, node) {
-            let result = Operand::Move(Place::from(result));
-            self.assign(place, Rvalue::Use(result), node);
-        }
+        self.frame_call("missing", Vec::new(), arguments, mask, node)
     }
 }

@@ -96,3 +96,90 @@ def main():
     );
     Ok(())
 }
+
+/// `dropna()` of a frame gives the rows with no `None` in any column, its text and number
+/// columns chosen with the others, and `fillna` every row with the value in place of each
+/// `None`: one value for every column that may hold `None`, or a dict that fills the columns
+/// it names and leaves the rest. The columns filled hold no `None` afterwards, so they sum
+/// and sort as numbers and the frame prints. A list of names chooses columns of a frame with
+/// missing values. A frame with no column that may hold `None` is copied by both.
+#[test]
+fn a_frame_drops_and_fills_missing_values() -> io::Result<()> {
+    let program = r#"
+class Quote(Struct):
+    symbol: str
+    bid: f64 | None
+    size: i64 | None
+    live: bool | None
+    lot: i64
+
+
+class Trade(Struct):
+    symbol: str
+    lot: i64
+
+
+def load() -> DataFrame[Quote]:
+    return DataFrame(
+        {
+            "symbol": Array(["a", "b", "c", "d"]),
+            "bid": Array([1.5, None, 2.5, None]),
+            "size": Array([10, 20, None, None]),
+            "live": Array([True, None, False, None]),
+            "lot": Array([1, 2, 3, 4]),
+        }
+    )
+
+
+def spread(quotes: DataFrame[Quote]) -> f64:
+    whole = quotes.dropna()
+    return whole.bid.max() - whole.bid.min()
+
+
+def main():
+    quotes = load()
+    whole = quotes.dropna()
+    print(whole)
+    print(len(whole), len(quotes), spread(quotes), whole.bid.sum())
+    print(quotes[["bid", "lot"]].fillna(0.0))
+    part = quotes.fillna({"bid": 9.5, "size": 7})
+    print(len(part), part.bid, part["size"], part.live.isna())
+    full = part.fillna(value=True)
+    print(full)
+    print(full.sort_values("bid").head(2))
+    print(quotes.fillna({"size": 0, "live": False}).dropna())
+    trades: DataFrame[Trade] = DataFrame({"symbol": Array(["x", "y"]), "lot": Array([5, 6])})
+    print(trades.dropna())
+    print(trades.fillna(0).lot, len(quotes[["bid"]].dropna()))
+"#;
+    let (code, output, _) = run("frame_missing_narrowed", program)?;
+    assert_eq!(code, Some(0));
+    assert_eq!(
+        output,
+        "  symbol  bid  size  live  lot\n\
+         0      a  1.5    10  True    1\n\
+         1 4 0.0 1.5\n\
+         \x20  bid  lot\n\
+         0  1.5    1\n\
+         1  0.0    2\n\
+         2  2.5    3\n\
+         3  0.0    4\n\
+         4 [1.5 9.5 2.5 9.5] [10 20  7  7] [False  True False  True]\n\
+         \x20 symbol  bid  size   live  lot\n\
+         0      a  1.5    10   True    1\n\
+         1      b  9.5    20   True    2\n\
+         2      c  2.5     7  False    3\n\
+         3      d  9.5     7   True    4\n\
+         \x20 symbol  bid  size   live  lot\n\
+         0      a  1.5    10   True    1\n\
+         1      c  2.5     7  False    3\n\
+         \x20 symbol  bid  size   live  lot\n\
+         0      a  1.5    10   True    1\n\
+         1      c  2.5     0  False    3\n\
+         \x20 symbol  lot\n\
+         0      x    5\n\
+         1      y    6\n\
+         [5 6] 2\n"
+    );
+    Ok(())
+}

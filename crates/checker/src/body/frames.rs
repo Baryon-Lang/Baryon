@@ -215,9 +215,10 @@ impl<'db> Body<'db> {
         };
         let index = self.tree.child(node, Role::Index)?;
         let Some(name) = self.literal_text(index) else {
-            if self.has_missing_column(base) {
+            // A list of names copies whole columns, bitmaps included; rows are not chosen yet.
+            if self.has_missing_column(base) && self.tree.kind(index) != SyntaxKind::List {
                 self.expression(index, None);
-                return Some(self.missing_column_unbuilt(node, "choosing rows or columns"));
+                return Some(self.missing_column_unbuilt(node, "choosing rows"));
             }
             let chosen = self.frame_select(index, base);
             return Some(chosen.unwrap_or_else(|| self.frame_row(index, base, *row)));
@@ -407,6 +408,9 @@ impl<'db> Body<'db> {
         callee: &str,
         arguments: &Arguments,
     ) -> Type<'db> {
+        if let Some(frame) = self.missing_method(function, base, callee, arguments) {
+            return frame;
+        }
         if callee != "copy" && self.has_missing_column(base) {
             self.untyped(arguments);
             return self.missing_column_unbuilt(function, &format!("the method `{callee}`"));
@@ -453,9 +457,9 @@ impl<'db> Body<'db> {
                     "not defined yet",
                     Some(
                         "a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop`, \
-                         `rename`, `sort_values`, `groupby(...).agg(...)`, `merge` and \
-                         `drop_duplicates` today; the rest of decision 0045's methods come with \
-                         roadmap items 3.13.6, 3.13.8 and 3.13.9",
+                         `rename`, `sort_values`, `groupby(...).agg(...)`, `merge`, \
+                         `drop_duplicates`, `dropna` and `fillna` today; the rest of decision \
+                         0045's methods come with roadmap items 3.13.6, 3.13.8 and 3.13.9",
                     ),
                 )
             }

@@ -64,7 +64,7 @@ a frame of numbers: that page lists what.
 
 A column of numbers or `bool`s may also hold `None`: a field `bid: f64 | None` is a column
 read as an `Array[f64 | None, 1]`. [Missing values](missing-values.md#in-a-dataframe) says
-what such a frame does today.
+what such a frame does today, and how `dropna` and `fillna` give a frame with no gaps.
 
 Two frame types are the same when their columns have the same names and types in the same
 order. The struct only names them: a frame built from the columns `price: f64` and

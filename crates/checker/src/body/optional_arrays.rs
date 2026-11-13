@@ -11,13 +11,14 @@ use types::{Primitive, Type, TypeKind};
 
 /// What an array with missing values can do, for messages.
 const BUILT: &str = "an array with missing values has `len`, `values[i]`, which gives a \
-                     `T | None`, and the methods `isna`, `notna` and `copy`; the rest comes with \
-                     roadmap item 3.13.6";
+                     `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna` and `copy`; \
+                     the rest comes with roadmap item 3.13.6";
 
 /// What a frame with a column that may hold `None` can do, for messages.
 const BUILT_FRAME: &str = "a frame with a column that may hold `None` is built from its \
-                           columns, counted with `len`, copied with `copy`, and its columns \
-                           are read and replaced; the rest comes with roadmap item 3.13.6";
+                           columns, counted with `len`, copied with `copy`, narrowed by \
+                           `dropna` and `fillna`, and its columns are read, replaced and \
+                           chosen by name; the rest comes with roadmap item 3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.
@@ -104,6 +105,11 @@ impl<'db> Body<'db> {
         if plain && matches!(name, "isna" | "notna") {
             let element = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
             return Type::new(self.db, TypeKind::Array { element, rank: 1 });
+        }
+        if let &TypeKind::OptionalArray(element) = base.kind(self.db)
+            && let Some(narrowed) = self.optional_array_narrowed(node, element, name, arguments)
+        {
+            return narrowed;
         }
         self.untyped(arguments);
         self.optional_array_unbuilt(node, &format!("the method `{name}`"))
