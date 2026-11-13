@@ -231,3 +231,20 @@ fn a_subscript_reads_only_the_values_it_picks() {
         );
     }
 }
+
+#[test]
+fn a_datatype_of_no_bytes_is_refused() {
+    // An integer datatype message, version 1, whose size field a damaged file left at 0: its
+    // values would have no width to step by.
+    let message = [0x10, 0, 0, 0, 0, 0, 0, 0];
+    assert_eq!(
+        messages::datatype(&message).unwrap_err(),
+        "the HDF5 file has a datatype of 0 bytes"
+    );
+    // An integer of 3 bytes is no array type's; it reads as no number.
+    let message = [0x10, 0, 0, 0, 3, 0, 0, 0];
+    assert_eq!(
+        messages::datatype(&message).unwrap().name(),
+        Datatype::Other { class: 0, size: 3 }.name()
+    );
+}

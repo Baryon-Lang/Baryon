@@ -107,8 +107,14 @@ pub(super) fn datatype(data: &[u8]) -> Result<Datatype, Failure> {
     let bits = cursor.take(3)?;
     let size = cursor.u32()?;
     let big = bits[0] & 1 != 0;
+    // Every element is at least a byte; a size of 0 comes only from a damaged file, and would
+    // leave the values with no width to step by.
+    if size == 0 {
+        return Err("the HDF5 file has a datatype of 0 bytes".to_owned());
+    }
     Ok(match class_and_version & 0x0F {
-        0 => Datatype::Integer {
+        // An integer of another width is one no array type holds, so it reads as no number.
+        0 if matches!(size, 1 | 2 | 4 | 8) => Datatype::Integer {
             size,
             signed: bits[0] & 0x08 != 0,
             big,
