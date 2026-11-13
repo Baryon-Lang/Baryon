@@ -162,19 +162,8 @@ const SITES: &[&str] = &[
 
 /// Sites that fail today for every kind, each with the bug and who owns its fix. They are left
 /// out of the sweep until the fix lands; the pull request with the fix deletes the entry, and
-/// the sweep then checks the site for every kind.
-const KNOWN: &[(&str, &str)] = &[
-    (
-        "cond_arg_temp_named",
-        "a conditional expression borrowed by a call frees the variable it chose (thread \"Fix \
-         compiler memory-safety bugs\", waiting on a decision)",
-    ),
-    (
-        "cond_arg_named_named",
-        "a conditional expression borrowed by a call frees the variable it chose (thread \"Fix \
-         compiler memory-safety bugs\", waiting on a decision)",
-    ),
-];
+/// the sweep then checks the site for every kind. Empty while no bug the sweep found is open.
+const KNOWN: &[(&str, &str)] = &[];
 
 /// One site: a `# site:` block of a sites file.
 struct Site {

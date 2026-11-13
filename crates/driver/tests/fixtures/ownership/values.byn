@@ -60,20 +60,22 @@ def cond_named_new():
 
 
 # site: cond_arg_temp_named
-# A conditional expression borrowed by a call, a new value on one side and a variable on the other.
+# A conditional expression borrowed by a call, a new value on one side and a copy of a variable on
+# the other. Naming the variable itself there is a compile error.
 def cond_arg_temp_named():
     a = NEW1
-    show(NEW2 if flag(1) else a)
-    show(NEW2 if flag(0) else a)
+    show(NEW2 if flag(1) else a.copy())
+    show(NEW2 if flag(0) else a.copy())
     show(a)
 
 
 # site: cond_arg_named_named
-# A conditional expression borrowed by a call, a variable on each side; both stay usable.
+# A conditional expression borrowed by a call, a copy of a variable on each side; both variables
+# stay usable. Naming the variables themselves there is a compile error.
 def cond_arg_named_named():
     a = NEW1
     b = NEW2
-    show(a if flag(1) else b)
+    show(a.copy() if flag(1) else b.copy())
     show(a)
     show(b)
 
