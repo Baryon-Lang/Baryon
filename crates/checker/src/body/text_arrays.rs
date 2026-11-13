@@ -5,11 +5,11 @@
 use super::Body;
 use super::calls::Arguments;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Type, TypeKind};
+use types::{Integer, Primitive, Type, TypeKind};
 
 /// What an array of `str` can do today, for messages.
-const BUILT: &str = "an array of `str` has `len`, indexing, `for` loops and `copy()` today; the \
-                     rest comes with roadmap item 3.13.3";
+const BUILT: &str = "an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` \
+                     and `nunique()` today; the rest comes with roadmap item 3.13.3";
 
 impl<'db> Body<'db> {
     /// `names[i]` on a text array: the element, a `str` borrowed from the array. A slice, and
@@ -53,8 +53,9 @@ impl<'db> Body<'db> {
             .error(node, &message, "an array of `str`", Some(BUILT))
     }
 
-    /// A method call on a text array: `copy()` gives a new array with its own bytes; no other
-    /// method is built yet.
+    /// A method call on a text array: `copy()` gives a new array with its own bytes,
+    /// `unique()` the distinct elements in the order they first appear, and `nunique()` how
+    /// many there are, an `i64` (decision 0045); no other method is built yet.
     pub(super) fn text_array_method(
         &mut self,
         node: NodeId,
@@ -62,8 +63,15 @@ impl<'db> Body<'db> {
         name: &str,
         arguments: &Arguments,
     ) -> Type<'db> {
-        if name == "copy" && arguments.positional.is_empty() && arguments.keywords.is_empty() {
-            return base;
+        if arguments.positional.is_empty() && arguments.keywords.is_empty() {
+            match name {
+                "copy" | "unique" => return base,
+                "nunique" => {
+                    let int = Primitive::Integer(Integer::I64);
+                    return Type::new(self.db, TypeKind::Primitive(int));
+                }
+                _ => {}
+            }
         }
         self.untyped(arguments);
         self.text_array_unbuilt(node, &format!("the method `{name}`"))

@@ -118,42 +118,42 @@ error: `+` is not built for an array of `str` yet
    |
 14 |     joined = names + other
    |              ^^^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops and `copy()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `==` is not built for an array of `str` yet
   --> main.byn:15:17
    |
 15 |     same = names == other
    |                 ^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops and `copy()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `in` is not built for an array of `str` yet
   --> main.byn:16:16
    |
 16 |     found = "a" in names
    |                ^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops and `copy()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: the method `sum` is not built for an array of `str` yet
   --> main.byn:17:13
    |
 17 |     total = names.sum()
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops and `copy()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `shape` is not built for an array of `str` yet
   --> main.byn:18:13
    |
 18 |     shape = names.shape
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops and `copy()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `min` is not built for an array of `str` yet
   --> main.byn:19:17
    |
 19 |     least = min(names)
    |                 ^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops and `copy()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: an array of `str` cannot be shown yet
   --> main.byn:20:11

@@ -1,5 +1,6 @@
 //! Text arrays, `Array[str, 1]` (roadmap 3.13.3, decision 0045), built and run: one made
-//! from a list, counted, indexed, looped over, copied, moved and kept in a list and a dict.
+//! from a list, counted, indexed, looped over, copied, moved and kept in a list and a dict,
+//! and its distinct elements taken and counted (roadmap 3.13.9).
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -92,4 +93,49 @@ def main():
         report,
         "panic: index 4 is out of range for dimension 0 of length 4\n  --> main.byn:40:17\n"
     );
+}
+
+/// A program that takes the distinct elements of text arrays and counts them: texts that
+/// repeat, that differ only in case, an empty text and a letter outside ASCII, a column of
+/// a frame, an empty array, and the result used as an array and as a column.
+const DISTINCT: &str = r#"
+def main():
+    symbols = Array(["IBM", "AAPL", "", "IBM", "βeta", "ibm", "AAPL", "IBM", ""])
+    seen = symbols.unique()
+    print(len(seen), symbols.nunique(), len(symbols))
+    for symbol in seen:
+        print(symbol)
+    trades = DataFrame({"symbol": symbols.copy(), "day": Array([1, 1, 2, 2, 1, 1, 2, 1, 2])})
+    print(trades.symbol.unique()[3], trades.symbol.nunique(), trades["symbol"].nunique())
+    print(DataFrame({"symbol": trades.symbol.unique()}))
+    empty: list[str] = []
+    none = Array(empty)
+    print(len(none.unique()), none.nunique())
+    print(symbols.unique().unique().nunique(), trades.day.unique())
+"#;
+
+/// `unique` of a text array gives its distinct texts in the order they first appear, and
+/// `nunique` counts them, as pandas does for the same strings.
+#[test]
+fn distinct_texts_are_kept_and_counted() {
+    let expected = [
+        "5 5 9\n",
+        "IBM\n",
+        "AAPL\n",
+        "\n",
+        "βeta\n",
+        "ibm\n",
+        "βeta 5 5\n",
+        "  symbol\n",
+        "0    IBM\n",
+        "1   AAPL\n",
+        "2       \n",
+        "3   βeta\n",
+        "4    ibm\n",
+        "0 0\n",
+        "5 [1 2]\n",
+    ];
+    let (code, stdout, report) = run("text-arrays-distinct", DISTINCT).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
 }
