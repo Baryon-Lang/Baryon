@@ -1,0 +1,267 @@
+"""The `font` library file: DejaVu Sans's outlines and widths, read from `dejavu_sans`, as the
+PNG renderer draws text with them, and the layout of the mathtext labels a logarithmic axis
+writes (decision 0046).
+
+It is internal to the standard library: `byplot` and the files under it import it, and a
+program cannot, so a program's own `font.byn` is never hidden by it.
+
+`dejavu_sans` stores each character's outline as text. A character's entry starts with its
+advance, the distance the pen moves past it, then its contours separated by `.`. Each point is
+four letters of base64, `A` to `Z`, `a` to `z`, `0` to `9`, `+` and `/`, two for x and two for
+y, each a number from 0 to 4095 less 1024; a point off the curve, a quadratic curve's control
+point, is preceded by `~`, as TrueType marks it. Units are the font's: 2048 to the em, y up.
+"""
+
+from math import ceil, isfinite, nan, sqrt
+from dejavu_sans import characters, glyphs, kerning
+
+UNITS: Final = 2048.0  # the font's units to the em: a glyph's size in points is size / UNITS
+
+
+class Glyph(Struct):
+    """One character's outline: closed contours of quadratic curves and lines, in font units
+    from the pen's position on the baseline, y up."""
+
+    advance: f64  # how far the pen moves past the character
+    x: list[f64]  # each point's distance right of the pen
+    y: list[f64]  # each point's height above the baseline
+    on_curve: list[bool]  # whether a point is on the outline, or a curve's control point
+    ends: list[int]  # the place one past each contour's last point
+
+
+class Font(Struct):
+    """DejaVu Sans as `load` reads it: the outlines, which outline each character has, and the
+    kerning between pairs. Reading it costs about 13,000 letters of decoding, so a renderer
+    loads it once."""
+
+    glyphs: list[Glyph]  # the empty box, then each of `dejavu_sans.characters` in order
+    places: dict[str, int]  # each character's place in `glyphs`
+    pairs: dict[int, f64]  # the change to the gap between two places, `1000 * first + second`
+
+    def place(self: Self, letter: str) -> int:
+        """Where `letter`'s outline is in `glyphs`: 0, the empty box, for one the font lacks."""
+        return self.places.get(letter, 0)
+
+    def width(self: Self, text: str) -> f64:
+        """How wide `text` is, in font units: each character's advance, with the kerning
+        between neighbours, as matplotlib's `FT2Font.set_text` lays a line out."""
+        total = 0.0
+        last = -1
+        for letter in text:
+            place = self.place(letter)
+            total += self.glyphs[place].advance + self.pairs.get(1000 * last + place, 0.0)
+            last = place
+        return total
+
+    def outline(
+        self: Self, text: str, size: f64, x: f64, y: f64, rotate: bool
+    ) -> tuple[list[f64], list[f64]]:
+        """The outline of `text` with the left end of its baseline at `(x, y)`, `size` units of
+        the caller tall, y growing downwards, as polygons for `raster.fill`: the curves cut into
+        lines no more than a tenth of a unit from them, a NaN after each contour. `rotate`
+        turns the text to read upwards. Costs a few points a curve."""
+        xs: list[f64] = []
+        ys: list[f64] = []
+        scale = size / UNITS
+        pen = 0.0
+        last = -1
+        for letter in text:
+            place = self.place(letter)
+            pen += self.pairs.get(1000 * last + place, 0.0)
+            _contours(self.glyphs[place], pen, scale, xs, ys)
+            pen += self.glyphs[place].advance
+            last = place
+        for k in range(len(xs)):
+            along = xs[k]
+            if rotate:
+                xs[k] = x - ys[k]
+                ys[k] = y - along
+            else:
+                xs[k] = x + along
+                ys[k] = y - ys[k]
+        return (xs, ys)
+
+
+def load() -> Font:
+    """DejaVu Sans, decoded from `dejavu_sans`."""
+    digits: dict[str, int] = {}
+    k = 0
+    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/":
+        digits[letter] = k
+        k += 1
+    font = Font([], {}, {})
+    k = 1
+    for letter in characters():
+        font.places[letter] = k
+        k += 1
+    for entry in glyphs().split(","):
+        values: list[int] = []
+        glyph = Glyph(0.0, [], [], [], [])
+        on_curve = True
+        started = False  # whether the advance, the entry's first two letters, has been read
+        for letter in entry:
+            if letter == "~":
+                on_curve = False
+            elif letter == ".":
+                glyph.ends.append(len(glyph.x))
+            else:
+                values.append(digits[letter])
+            if len(values) == 2 and not started:
+                glyph.advance = float(64 * values[0] + values[1])
+                started = True
+                values = []
+            elif len(values) == 4:
+                glyph.x.append(float(64 * values[0] + values[1] - 1024))
+                glyph.y.append(float(64 * values[2] + values[3] - 1024))
+                glyph.on_curve.append(on_curve)
+                on_curve = True
+                values = []
+        if len(glyph.x) > 0:
+            glyph.ends.append(len(glyph.x))
+        font.glyphs.append(glyph)
+    numbers: list[int] = []
+    for letter in kerning():
+        numbers.append(digits[letter])
+        if len(numbers) == 6:
+            first = 64 * numbers[0] + numbers[1]
+            second = 64 * numbers[2] + numbers[3]
+            font.pairs[1000 * first + second] = float(64 * numbers[4] + numbers[5] - 2048)
+            numbers = []
+    return font
+
+
+def approximate_width(text: str) -> f64:
+    """About how wide `text` is in DejaVu Sans, as a fraction of its size, without reading the
+    font: DejaVu Sans's widths of digits, the point, the space and the minus sign, which tick
+    labels are made of, and an average of 0.6 for other characters. The SVG renderer lays text
+    out with it, since the viewer draws the text."""
+    width = 0.0
+    for character in text:
+        if "0" <= character and character <= "9":
+            width += 0.636
+        elif character == "." or character == " ":
+            width += 0.318
+        elif character == "\u2212":
+            width += 0.838
+        else:
+            width += 0.6
+    return width
+
+
+def math_layout(text: str, size: f64) -> tuple[str, str, f64, f64, f64]:
+    """The pieces of the mathtext label `text`, `$\\mathdefault{c\\times10^{e}}$` or
+    `$\\mathdefault{10^{e}}$`, and where they go at `size` points: the coefficient `c` (`""`
+    for none), the exponent `e` with a minus sign U+2212, how far from the label's left edge
+    the `10` and the exponent start, and the label's width, all as matplotlib's mathtext lays
+    out DejaVu Sans: a medium space either side of the `\u00d7`, a kern of 0.0096 of the size
+    before the exponent, the exponent at 0.7 of the size, and 0.062 of the size after it."""
+    body = text[14 : len(text) - 2]  # within `$\\mathdefault{` and `}$`
+    times = body.find("\\times")
+    coefficient = body[0:times].copy() if times >= 0 else ""
+    power = body.find("^{")
+    exponent = body[power + 2 : len(body) - 1].replace("-", "\u2212")
+    at_ten = 0.0
+    if times >= 0:
+        at_ten = (approximate_width(coefficient) + 0.1948 + 0.838 + 0.1948) * size
+    at_exponent = at_ten + (2.0 * 0.636 + 0.0096) * size
+    width = at_exponent + (0.7 * approximate_width(exponent) + 0.062) * size
+    return (coefficient, exponent, at_ten, at_exponent, width)
+
+
+def curves(glyph: Glyph) -> list[f64]:
+    """The outline of `glyph` as pieces of six numbers each, in font units: where a piece starts,
+    its control point, and where it ends. A line's control point is NaN. A contour's pieces
+    follow one another, each starting where the last ended, and six NaNs close it. Two control
+    points in a row have an on-curve point between them, halfway, as TrueType has it. Each
+    contour is walked from its first point on the curve back round to it, so a control point is
+    always followed by the point it bends towards."""
+    out: list[f64] = []
+    start = 0
+    for end in glyph.ends:
+        count = end - start
+        first = start
+        while not glyph.on_curve[first]:  # every contour of DejaVu Sans has a point on the curve
+            first += 1
+        cx = glyph.x[first]  # the pen's place on the outline
+        cy = glyph.y[first]
+        control = False  # whether a control point is waiting at (qx, qy)
+        qx = 0.0
+        qy = 0.0
+        for step in range(1, count + 1):
+            k = start + (first - start + step) % count
+            px = glyph.x[k]
+            py = glyph.y[k]
+            if glyph.on_curve[k] or control:
+                tx = px if glyph.on_curve[k] else 0.5 * (qx + px)  # where this piece ends
+                ty = py if glyph.on_curve[k] else 0.5 * (qy + py)
+                for value in [cx, cy, qx if control else nan, qy if control else nan, tx, ty]:
+                    out.append(value)
+                cx = tx
+                cy = ty
+            control = not glyph.on_curve[k]
+            qx = px
+            qy = py
+        for _ in range(6):
+            out.append(nan)
+        start = end
+    return out
+
+
+def _contours(
+    glyph: Glyph, pen: f64, scale: f64, xs: InOut[list[f64]], ys: InOut[list[f64]]
+) -> None:
+    """Appends to `xs` and `ys` the contours of `glyph`, moved `pen` units right and scaled by
+    `scale`, its curves cut into lines, a NaN after each."""
+    pieces = curves(glyph)
+    opening = True  # whether the next piece starts a contour
+    for k in range(0, len(pieces), 6):
+        if not isfinite(pieces[k]):
+            xs.append(nan)
+            ys.append(nan)
+            opening = True
+            continue
+        if opening:
+            xs.append((pen + pieces[k]) * scale)
+            ys.append(pieces[k + 1] * scale)
+            opening = False
+        if isfinite(pieces[k + 2]):
+            _curve(
+                pieces[k],
+                pieces[k + 1],
+                pieces[k + 2],
+                pieces[k + 3],
+                pieces[k + 4],
+                pieces[k + 5],
+                pen,
+                scale,
+                xs,
+                ys,
+            )
+        else:
+            xs.append((pen + pieces[k + 4]) * scale)
+            ys.append(pieces[k + 5] * scale)
+
+
+def _curve(
+    x0: f64,
+    y0: f64,
+    qx: f64,
+    qy: f64,
+    x1: f64,
+    y1: f64,
+    pen: f64,
+    scale: f64,
+    xs: InOut[list[f64]],
+    ys: InOut[list[f64]],
+) -> None:
+    """Appends the quadratic curve from `(x0, y0)` through the control point `(qx, qy)` to
+    `(x1, y1)`, less its start, as lines no more than a tenth of a unit from it once scaled.
+    A curve strays at most a quarter of `|p0 - 2q + p1|` from its chord, and splitting it in
+    `n` divides that by `n * n`."""
+    bend = 0.25 * sqrt((x0 - 2.0 * qx + x1) ** 2 + (y0 - 2.0 * qy + y1) ** 2) * scale
+    pieces = max(1, min(16, ceil(sqrt(bend / 0.1))))
+    for k in range(1, pieces + 1):
+        t = float(k) / float(pieces)
+        u = 1.0 - t
+        xs.append((pen + u * u * x0 + 2.0 * u * t * qx + t * t * x1) * scale)
+        ys.append((u * u * y0 + 2.0 * u * t * qy + t * t * y1) * scale)

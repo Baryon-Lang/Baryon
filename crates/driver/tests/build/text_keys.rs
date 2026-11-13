@@ -1,6 +1,7 @@
 //! Text columns of a `DataFrame` as keys (roadmap 3.13.3, decision 0045), built and run:
 //! frames put in order by a column of `str`, their repeated rows left out, frames joined on
-//! one, and rows grouped by one. The frames printed are compared with what pandas 3 prints.
+//! one, rows grouped by one, and one reduced in each group. The frames printed are compared
+//! with what pandas 3 prints.
 
 use super::text_columns::run;
 
@@ -302,6 +303,71 @@ fn a_frame_is_grouped_by_a_text_column() {
         "0 βeta\n",
     ];
     let (code, stdout, report) = run("text-columns-grouped", GROUPED).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+}
+
+/// A program that reduces text columns with `agg`: every reduction text has beside a sum
+/// of numbers, a key column of text reduced when grouped by another, two keys, a key with
+/// a NaN, whose row is in no group, an empty text, a letter outside ASCII, and no rows.
+const REDUCED: &str = r#"
+from math import nan
+
+
+def main():
+    trades = DataFrame({
+        "symbol": Array(["b", "a", "b", "a", "c", "b", "d", "d"]),
+        "venue": Array(["x", "q", "a", "", "m", "zz", "é", "e"]),
+        "price": Array([2.0, 1.0, 2.5, 1.0, 5.0, nan, 7.0, 7.0]),
+        "day": Array([1, 1, 1, 2, 2, 2, 3, 3]),
+    })
+    print(trades.groupby("symbol").agg(
+        n=("venue", "count"),
+        first=("venue", "first"),
+        last=("venue", "last"),
+        low=("venue", "min"),
+        high=("venue", "max"),
+        total=("price", "sum"),
+    ))
+    print(trades.groupby("day").agg(low=("symbol", "min"), high=("venue", "max")))
+    print(trades.groupby(["day", "symbol"]).agg(v=("venue", "last"), n=("venue", "count")))
+    print(trades.groupby("price").agg(n=("symbol", "count"), s=("symbol", "max")))
+    empty = trades.head(0).groupby("symbol").agg(v=("venue", "min"), n=("venue", "count"))
+    print(len(empty), len(trades))
+"#;
+
+/// `agg` reduces a column of `str` in each group: `count` counts its texts, `first` and
+/// `last` give the group's first and last, and `min` and `max` the texts that come first
+/// and last by `<`, the empty text before every other and `"é"` after `"zz"`, as pandas
+/// gives them. The program leaves no memory behind (checked under Valgrind when written).
+#[test]
+fn text_columns_are_reduced_in_groups() {
+    let expected = [
+        "  symbol  n first last low high  total\n",
+        "0      a  2     q             q    2.0\n",
+        "1      b  3     x   zz   a   zz    4.5\n",
+        "2      c  1     m    m   m    m    5.0\n",
+        "3      d  2     é    e   e    é   14.0\n",
+        "   day low high\n",
+        "0    1   a    x\n",
+        "1    2   a   zz\n",
+        "2    3   d    é\n",
+        "   day symbol   v  n\n",
+        "0    1      a   q  1\n",
+        "1    1      b   a  2\n",
+        "2    2      a      1\n",
+        "3    2      b  zz  1\n",
+        "4    2      c   m  1\n",
+        "5    3      d   e  2\n",
+        "   price  n  s\n",
+        "0    1.0  2  a\n",
+        "1    2.0  1  b\n",
+        "2    2.5  1  b\n",
+        "3    5.0  1  c\n",
+        "4    7.0  2  d\n",
+        "0 8\n",
+    ];
+    let (code, stdout, report) = run("text-columns-reduced", REDUCED).unwrap();
     assert_eq!(stdout, expected.concat());
     assert_eq!((code, report.as_str()), (Some(0), ""));
 }

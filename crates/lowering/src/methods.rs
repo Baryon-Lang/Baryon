@@ -43,7 +43,9 @@ impl<'db> Builder<'db> {
         match (method, arguments) {
             ("copy", [array]) if !fixed => self.array_copy(place, *array, node),
             ("sum", [array]) => self.array_sum(place, *array, node),
-            ("min" | "max", [array]) => self.array_extreme(place, method == "min", *array, node),
+            ("min" | "max", [array]) if !self.is_text_array(*array) => {
+                self.array_extreme(place, method == "min", *array, node);
+            }
             ("sum" | "min" | "max", [array, axis]) => {
                 self.axis_reduction(place, method, (*array, *axis), node);
             }
@@ -51,7 +53,7 @@ impl<'db> Builder<'db> {
                 self.array_statistic(place, method, arguments, node);
             }
             ("dot", [left, right]) => self.array_dot(place, (*left, *right), node),
-            ("argsort" | "unique" | "nunique", [array]) if !fixed => {
+            ("argsort" | "unique" | "nunique" | "min" | "max", [array]) if !fixed => {
                 self.array_compared(place, method, *array, node);
             }
             ("round", [array]) if fixed => self.fixed_round(place, *array, node),

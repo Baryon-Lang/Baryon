@@ -4,31 +4,24 @@
 
 use super::Body;
 use super::calls::Arguments;
-use syntax::{NodeId, Role, SyntaxKind};
+use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::{Integer, Primitive, Type, TypeKind};
 
-/// What an array of `str` can do today, for messages.
-const BUILT: &str = "an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` \
-                     and `nunique()` today; the rest comes with roadmap item 3.13.3";
+/// What an array of `str` can do, for messages.
+const BUILT: &str = "an array of `str` has `len`, indexing, slices, masks, comparisons, \
+                     `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, \
+                     `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60";
 
 impl<'db> Body<'db> {
-    /// `names[i]` on a text array: the element, a `str` borrowed from the array. A slice, and
-    /// more than one index, are errors: the array has one dimension, and a part of one is not
-    /// built yet.
+    /// `names[i]` on a text array: the element, a `str` borrowed from the array. A slice,
+    /// `names[1:3]`, is a new text array holding a copy of the elements it takes. More than
+    /// one index is an error: the array has one dimension.
     pub(super) fn text_array_index(
         &mut self,
         node: NodeId,
         sliced: bool,
         indices: &[NodeId],
     ) -> Type<'db> {
-        if sliced {
-            return self.lowerer.error(
-                node,
-                "a slice of an array of `str` is not built yet",
-                "a slice",
-                Some("read one element at a time, such as `names[i]`"),
-            );
-        }
         if indices.len() != 1 {
             return self.lowerer.error(
                 node,
@@ -37,7 +30,12 @@ impl<'db> Body<'db> {
                 Some("for example `names[i]`"),
             );
         }
-        Type::new(self.db, TypeKind::Str)
+        let kind = if sliced {
+            TypeKind::TextArray
+        } else {
+            TypeKind::Str
+        };
+        Type::new(self.db, kind)
     }
 
     /// Whether `ty` is a text array.
@@ -55,7 +53,9 @@ impl<'db> Body<'db> {
 
     /// A method call on a text array: `copy()` gives a new array with its own bytes,
     /// `unique()` the distinct elements in the order they first appear, and `nunique()` how
-    /// many there are, an `i64` (decision 0045); no other method is built yet.
+    /// many there are, an `i64` (decision 0045); `argsort()` gives the positions that put
+    /// the elements in rising order, and `min()` and `max()` a new `str`, the element that
+    /// comes first and last by `<`. No other method is built.
     pub(super) fn text_array_method(
         &mut self,
         node: NodeId,
@@ -66,9 +66,15 @@ impl<'db> Body<'db> {
         if arguments.positional.is_empty() && arguments.keywords.is_empty() {
             match name {
                 "copy" | "unique" => return base,
-                "nunique" => {
+                "min" | "max" => return Type::new(self.db, TypeKind::Str),
+                "nunique" | "argsort" => {
                     let int = Primitive::Integer(Integer::I64);
-                    return Type::new(self.db, TypeKind::Primitive(int));
+                    let int = Type::new(self.db, TypeKind::Primitive(int));
+                    if name == "nunique" {
+                        return int;
+                    }
+                    let (element, rank) = (int, 1);
+                    return Type::new(self.db, TypeKind::Array { element, rank });
                 }
                 _ => {}
             }
@@ -77,15 +83,16 @@ impl<'db> Body<'db> {
         self.text_array_unbuilt(node, &format!("the method `{name}`"))
     }
 
-    /// Reports a text array, or a value that holds one, shown by `print`, `str` or an
-    /// f-string at `node`, which cannot write one yet.
+    /// Reports a value that holds a text array, such as a list of them, shown by `print`
+    /// or an f-string at `node`, which cannot write one yet. A text array itself is shown,
+    /// as `NumPy` shows an array of strings.
     pub(super) fn shows_no_text_array(&mut self, node: NodeId, ty: Type<'db>) {
-        if super::relations::holds_text_array(self.db, ty) {
+        if !self.is_text_array(ty) && super::relations::holds_text_array(self.db, ty) {
             self.lowerer.error(
                 node,
-                "an array of `str` cannot be shown yet",
-                "an array of `str`",
-                Some("show its elements one at a time: `for name in names: print(name)`"),
+                "a value that holds an array of `str` cannot be shown yet",
+                "holds an array of `str`",
+                Some("show each array on its own: `for names in groups: print(names)`"),
             );
         }
     }
@@ -111,5 +118,62 @@ impl<'db> Body<'db> {
             ),
         );
         true
+    }
+
+    /// One comparison, `left operator right` at `node`, with a text array on either side.
+    /// `==`, `!=`, `<`, `<=`, `>` and `>=` compare each element with the other side's, a
+    /// text array or one `str`, and give an `Array[bool, 1]`; `text in names` and `text not
+    /// in names` give one `bool`. Any other pairing is an error.
+    pub(super) fn text_array_comparison(
+        &mut self,
+        node: NodeId,
+        operator: Operator,
+        left: Type<'db>,
+        right: Type<'db>,
+    ) -> Type<'db> {
+        let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
+        let text = |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Str);
+        let unknown = |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Unknown);
+        if unknown(left) || unknown(right) {
+            return self.lowerer.unknown();
+        }
+        let fits = match operator {
+            Operator::In | Operator::NotIn => {
+                if text(left) && self.is_text_array(right) {
+                    return boolean;
+                }
+                false
+            }
+            // `is` with anything but `None` is reported where `is` is checked.
+            Operator::Is | Operator::IsNot => return boolean,
+            _ => {
+                (self.is_text_array(left) || text(left))
+                    && (self.is_text_array(right) || text(right))
+            }
+        };
+        if fits {
+            return Type::new(
+                self.db,
+                TypeKind::Array {
+                    element: boolean,
+                    rank: 1,
+                },
+            );
+        }
+        let message = format!(
+            "`{}` cannot compare `{}` and `{}`",
+            operator.symbol(),
+            self.show(left),
+            self.show(right)
+        );
+        self.lowerer.error(
+            node,
+            &message,
+            "an array of `str`",
+            Some(
+                "an array of `str` is compared with another or with one `str`, such as \
+                 `names == \"alpha\"`, and searched with `\"alpha\" in names`",
+            ),
+        )
     }
 }

@@ -19,8 +19,11 @@ The file also holds `text_masked` and `text_taken`, which choose rows of a colum
 is `joined` for a column of `str`, and `text_codes`, which turns a column of `str` into
 integers in the same order, so that a sort by text is a sort by integers. `counted_values`
 counts for an array's `nunique`, and `valued_rows` and `id_counts` for a frame's
-`value_counts`.
+`value_counts`. `group_rows` picks the row of each group whose text `agg` gives, and
+`statistic_names` and `described` make the columns of a frame's `describe`.
 """
+
+from math import fsum, isnan, nan, sqrt
 
 
 def joined[T: Number](left: Array[T, 1], right: Array[T, 1]) -> Array[T, 1]:
@@ -208,3 +211,160 @@ def id_counts(ids: Array[i64, 1], rows: Array[i64, 1]) -> Array[i64, 1]:
     for at in range(len(ids)):
         counts[ids[at]] += 1
     return Array([counts[ids[rows[at]]] for at in range(len(rows))])
+
+
+def group_rows(
+    values: Array[i64, 1], order: Array[i64, 1], starts: Array[i64, 1], how: int
+) -> Array[i64, 1]:
+    """One row for each group of `groupby`, the row whose text `agg` gives for a column of
+    `str`: by the numbers `group_integers` uses, 1 the row with the smallest of `values`,
+    2 the largest, 3 the group's first row and 4 its last. `values` are the numbers
+    `text_codes` gives the column, so the smallest is the text that comes first by `<`; of
+    equal ones the first row is given. `order` and `starts` are the groups as `frames.byn`
+    finds them. One pass over the rows."""
+    result = [0 for group in range(len(starts) - 1)]
+    for group in range(len(starts) - 1):
+        low = starts[group]
+        high = starts[group + 1]
+        row = order[low]
+        if how == 4:
+            row = order[high - 1]
+        for at in range(low + 1, high):
+            other = order[at]
+            if how == 1 and values[other] < values[row]:
+                row = other
+            if how == 2 and values[other] > values[row]:
+                row = other
+        result[group] = row
+    return Array(result)
+
+
+def statistic_names() -> Array[str, 1]:
+    """The column `statistic` of `describe`: the name of each number `described` gives, in
+    order, as pandas names them."""
+    return Array(["count", "mean", "std", "min", "25%", "50%", "75%", "max"])
+
+
+def described(column: Array[f64, 1]) -> Array[f64, 1]:
+    """The eight numbers `describe` gives for one column, a NaN left out as in pandas: how
+    many values there are, their mean, their sample standard deviation, which divides by one
+    less than the count and is NaN for one value, the smallest, the quartiles and the
+    largest. A quartile that falls between two values is taken on the line between them, as
+    NumPy's `percentile` takes it. With no values the count is 0 and the rest are NaN.
+    Cost: one copy of the values and a sort of it."""
+    values = sorted([value for value in column if not isnan(value)])
+    count = len(values)
+    result = [nan for at in range(8)]
+    result[0] = f64(count)
+    if count == 0:
+        return Array(result)
+    mean = fsum(values) / f64(count)
+    result[1] = mean
+    if count > 1:
+        squares = fsum([(value - mean) * (value - mean) for value in values])
+        result[2] = sqrt(squares / f64(count - 1))
+    result[3] = values[0]
+    for quarter in range(1, 4):
+        at = 0.25 * f64(quarter) * f64(count - 1)
+        low = int(at)
+        high = min(low + 1, count - 1)
+        part = at - f64(low)
+        gap = values[high] - values[low]
+        if part < 0.5:
+            result[3 + quarter] = values[low] + gap * part
+        else:
+            result[3 + quarter] = values[high] - gap * (1.0 - part)
+    result[7] = values[count - 1]
+    return Array(result)
+
+
+def _text_holds(left: str, right: str, how: int) -> bool:
+    """Whether `left` and `right` compare the way `how` numbers: 0 `==`, 1 `!=`, 2 `<`,
+    3 `<=`, 4 `>`, 5 `>=`, each as Python compares `str`."""
+    if how == 0:
+        return left == right
+    if how == 1:
+        return left != right
+    if how == 2:
+        return left < right
+    if how == 3:
+        return left <= right
+    if how == 4:
+        return left > right
+    return left >= right
+
+
+def text_compared(left: Array[str, 1], right: Array[str, 1], how: int) -> Array[bool, 1]:
+    """A comparison of two text arrays of one length, element by element: true where the
+    two elements compare the way `how` numbers, as `_text_holds` reads it."""
+    return Array([_text_holds(left[at], right[at], how) for at in range(len(left))])
+
+
+def text_compared_to(column: Array[str, 1], value: str, how: int) -> Array[bool, 1]:
+    """A comparison of each element of a text array with the one text `value`: true where
+    the element, on the left, compares with it the way `how` numbers."""
+    return Array([_text_holds(column[at], value, how) for at in range(len(column))])
+
+
+def text_found(column: Array[str, 1], value: str) -> bool:
+    """Whether an element of `column` equals `value`: `value in column`. Stops at the
+    first one found."""
+    for at in range(len(column)):
+        if column[at] == value:
+            return True
+    return False
+
+
+def _quoted(text: str) -> str:
+    """`text` in quotes, as Python's `repr` writes a `str`: in single quotes, or in double
+    quotes when it holds a single quote and no double one, with a backslash before a
+    backslash and before the quote used, and a new line, a return and a tab written `\\n`,
+    `\\r` and `\\t`. Other characters stand as they are, the control characters that `repr`
+    would write as numbers among them."""
+    escaped = text.replace("\\", "\\\\").replace("\n", "\\n")
+    escaped = escaped.replace("\r", "\\r").replace("\t", "\\t")
+    if "'" in text and not ("\"" in text):
+        return "\"" + escaped + "\""
+    return "'" + escaped.replace("'", "\\'") + "'"
+
+
+def text_shown(column: Array[str, 1]) -> str:
+    """A text array as `print` shows it, which is how NumPy shows an array of strings: each
+    element as Python's `repr` writes it, a space between two, the whole in brackets. A line
+    holds at most 75 characters and the next starts under the first element. Of more than
+    1000 elements the first three and the last three are shown, with `...` between. Cost:
+    one copy of each element shown."""
+    count = len(column)
+    shown = [at for at in range(count)]
+    if count > 1000:
+        shown = [0, 1, 2, -1, count - 3, count - 2, count - 1]
+    words: list[str] = []
+    for at in shown:
+        if at < 0:
+            words.append("...")
+        else:
+            words.append(_quoted(column[at]))
+    text = ""
+    line = " "
+    for at in range(len(words)):
+        if len(line) > 1 and len(line) + len(words[at]) > 74:
+            text = f"{text}{line.rstrip()}\n"
+            line = " "
+        line = f"{line}{words[at]}"
+        if at < len(words) - 1:
+            line = f"{line} "
+    text = f"{text}{line}"
+    return f"[{text[1:]}]"
+
+
+def text_extreme(column: Array[str, 1], largest: bool) -> str:
+    """A copy of the element of `column` that comes first by Python's `<` on `str`, or last
+    when `largest`: a text array's `min` and `max`. `column` has an element, which the
+    compiler has checked. One pass, comparing text."""
+    best = 0
+    for at in range(1, len(column)):
+        if largest and column[at] > column[best]:
+            best = at
+        if not largest and column[at] < column[best]:
+            best = at
+    return column[best].copy()

@@ -5,15 +5,18 @@ It is internal to the standard library: `byplot` and the files under it import i
 program cannot, so a program's own `backend_svg.byn` is never hidden by it.
 
 `byplot` lays a figure out in points, measured from the figure's top left corner, and hands each
-piece to a `RendererSVG`; `tostring` then gives the file's text. The PNG and PDF backends of
-roadmap 3.15.6 and 3.15.7 take the same calls, so `byplot` draws once for every format.
+piece to a `RendererSVG`; `tostring` then gives the file's text. `RendererSVG` has the trait
+`backend_bases.RendererBase`, whose calls the PNG and PDF renderers of roadmap 3.15.6 and 3.15.7
+take too, so `byplot` lays a figure out once for every format.
 """
 
+from backend_bases import RendererBase
+from font import approximate_width, math_layout
 from math import isfinite
 from png import encode
 
 
-class RendererSVG(Struct):
+class RendererSVG(Struct, RendererBase):
     """An SVG drawing `width` by `height` points, built up one call at a time, as matplotlib's
     `RendererSVG`. Make one with no elements and no clip yet, `RendererSVG(460.8, 345.6, [], 0)`.
 
@@ -219,13 +222,13 @@ class RendererSVG(Struct):
         the baseline and 0.322 below it.
         """
         if text.startswith("$\\mathdefault{"):
-            return (_math_layout(text, size)[4], 1.1762 * size, 0.3224 * size)
-        return (_advance(text) * size, size, 492.0 / 2048.0 * size)
+            return (math_layout(text, size)[4], 1.1762 * size, 0.3224 * size)
+        return (approximate_width(text) * size, size, 492.0 / 2048.0 * size)
 
     def _draw_math(self: InOut[Self], x: f64, y: f64, text: str, size: f64, anchor: str) -> None:
         """Draws the mathtext label `text` as `draw_text` describes, each piece placed where
         matplotlib's mathtext puts it, so the viewer's own spacing cannot move it."""
-        coefficient, exponent, at_ten, at_exponent, width = _math_layout(text, size)
+        coefficient, exponent, at_ten, at_exponent, width = math_layout(text, size)
         left = x
         if anchor == "middle":
             left = x - 0.5 * width
@@ -234,7 +237,7 @@ class RendererSVG(Struct):
         raised = y - 0.413 * size
         pieces = ""
         if coefficient != "":
-            times = left + (_advance(coefficient) + 0.1948) * size
+            times = left + (approximate_width(coefficient) + 0.1948) * size
             pieces = (
                 f'<tspan x="{_number(left)}" y="{_number(y)}">{coefficient}</tspan>'
                 + f'<tspan x="{_number(times)}" y="{_number(y)}">\u00d7</tspan>'
@@ -258,42 +261,6 @@ class RendererSVG(Struct):
         ]
         return "\n".join(head) + "\n" + "\n".join(self.elements) + "\n</svg>\n"
 
-
-def _advance(text: str) -> f64:
-    """About how wide `text` is in DejaVu Sans, as a fraction of its size: DejaVu Sans's widths
-    of digits, the point, the space and the minus sign, which tick labels are made of, and an
-    average of 0.6 for other characters."""
-    width = 0.0
-    for character in text:
-        if "0" <= character and character <= "9":
-            width += 0.636
-        elif character == "." or character == " ":
-            width += 0.318
-        elif character == "\u2212":
-            width += 0.838
-        else:
-            width += 0.6
-    return width
-
-
-def _math_layout(text: str, size: f64) -> tuple[str, str, f64, f64, f64]:
-    """The pieces of the mathtext label `text`, `$\\mathdefault{c\\times10^{e}}$` or
-    `$\\mathdefault{10^{e}}$`, and where they go at `size` points: the coefficient `c` (`""`
-    for none), the exponent `e` with a minus sign U+2212, how far from the label's left edge
-    the `10` and the exponent start, and the label's width, all as matplotlib's mathtext lays
-    out DejaVu Sans: a medium space either side of the `\u00d7`, a kern of 0.0096 of the size
-    before the exponent, the exponent at 0.7 of the size, and 0.062 of the size after it."""
-    body = text[14 : len(text) - 2]  # within `$\\mathdefault{` and `}$`
-    times = body.find("\\times")
-    coefficient = body[0:times].copy() if times >= 0 else ""
-    power = body.find("^{")
-    exponent = body[power + 2 : len(body) - 1].replace("-", "\u2212")
-    at_ten = 0.0
-    if times >= 0:
-        at_ten = (_advance(coefficient) + 0.1948 + 0.838 + 0.1948) * size
-    at_exponent = at_ten + (2.0 * 0.636 + 0.0096) * size
-    width = at_exponent + (0.7 * _advance(exponent) + 0.062) * size
-    return (coefficient, exponent, at_ten, at_exponent, width)
 
 def _number(value: f64) -> str:
     """A coordinate in the SVG, to a thousandth of a point."""

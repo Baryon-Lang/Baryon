@@ -26,7 +26,7 @@ pub(super) fn fixtures() -> &'static Path {
 /// Fails when the package cannot be written or the program cannot be run.
 fn run(name: &str, program: &str) -> io::Result<(Output, Scratch)> {
     let directory = package(name, &[("main.byn", program)])?;
-    for file in ["classic.nc", "offset.nc"] {
+    for file in ["classic.nc", "offset.nc", "netcdf4.nc", "deflated.nc"] {
         fs::copy(fixtures().join(file), directory.join(file))?;
     }
     let (output, executable) = baryon_build(&directory)?;
@@ -35,15 +35,16 @@ fn run(name: &str, program: &str) -> io::Result<(Output, Scratch)> {
     Ok((run, directory))
 }
 
-/// A program reads both formats' variables as the types it names, a scaled one among them,
-/// and the dimensions and attributes, typed by where they go.
+/// A program reads the classic formats' and NetCDF-4's variables as the types it names, a
+/// scaled one and a compressed one among them, and the dimensions and attributes, typed by
+/// where they go.
 #[test]
 fn netcdf4_files_are_read() {
     let program = "\
 from netCDF4 import Dataset
 
 
-def main() -> Raises[None, OSError | KeyError | AttributeError]:
+def main() -> Raises[None, OSError | KeyError | AttributeError | IndexError | ValueError]:
     ds = Dataset(\"classic.nc\")
     temp: Array[f32, 3] = ds.variables[\"temp\"][:]
     print(temp.shape, temp[1, 1, 2])
@@ -67,6 +68,16 @@ def main() -> Raises[None, OSError | KeyError | AttributeError]:
     wide = Dataset(\"offset.nc\", \"r\")
     same: Array[f64, 3] = wide.variables[\"temp\"][:]
     print(same[0, 0, 0], same[1, 1, 2])
+    with Dataset(\"netcdf4.nc\") as four:
+        hot: Array[f32, 2] = four.variables[\"temp\"][-1, :, ::2]
+        unpacked: Array[f32, 1] = four.variables[\"packed\"][1, 1, 1:]
+        print(hot, unpacked, four.dimensions[\"time\"].isunlimited())
+        north: str = four.variables[\"lat\"].getncattr(\"units\")
+        print(four.ncattrs(), north)
+    with Dataset(\"deflated.nc\") as squeezed:
+        squashed: Array[f64, 3] = squeezed.variables[\"temp\"][:]
+        backwards: Array[f32, 2] = squeezed.variables[\"temp\"][1, :, ::-2]
+        print(squashed[0, :, :], backwards)
 ";
     let (output, _) = run("netcdf_read", program).unwrap();
     assert!(output.status.success(), "{output:?}");
@@ -79,7 +90,10 @@ def main() -> Raises[None, OSError | KeyError | AttributeError]:
          time 2 True 3\n\
          test grid 3 ['title', 'version', 'weights']\n\
          temp ['time', 'lat', 'lon'] K 0.10000000149011612 ['units']\n\
-         270.5 281.5\n"
+         270.5 281.5\n\
+         [[276.5 278.5]\n [279.5 281.5]] [256.7 257.4] True\n\
+         ['title', 'version', 'weights'] degrees_north\n\
+         [[270.5 271.5 272.5]\n [273.5 274.5 275.5]] [[278.5 276.5]\n [281.5 279.5]]\n"
     );
 }
 

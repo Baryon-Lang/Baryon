@@ -195,3 +195,48 @@ error: `values` has type `Array[T, 1]` here, found `list[f64]`
    |                  ^^^^^ type `list[f64]`"
     );
 }
+
+/// A generic struct's method called through its class with no type arguments written finds
+/// them from its arguments, as the constructor does (roadmap 1.9.30). A class type parameter
+/// no argument fixes is reported at the call, which asks for it to be written on the class;
+/// written there, the call checks. A wrong argument is reported against the type found.
+#[test]
+fn generic_methods_called_through_their_class_find_their_type_arguments() {
+    let program = r"
+class Bag[T](Struct):
+    items: list[T]
+
+    def of(item: Owned[T]) -> Bag[T]:
+        return Bag([item])
+
+    def empty() -> Bag[T]:
+        items: list[T] = []
+        return Bag(items)
+
+    def count(self) -> int:
+        return len(self.items)
+
+
+def use_them() -> int:
+    a = Bag.empty()
+    b = Bag[f64].empty()
+    c = Bag.of(1.5)
+    return Bag.count(c) + Bag[i64].count(c)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `Bag.empty` does not say what `T` is from its arguments
+  --> main.byn:16:9
+   |
+16 |     a = Bag.empty()
+   |         ^^^^^^^^^^^ type argument not found
+   = note: write it on the class, for example `Bag[f64].empty(...)`
+
+error: `self` has type `Bag[i64]`, found `Bag[f64]`
+  --> main.byn:19:42
+   |
+19 |     return Bag.count(c) + Bag[i64].count(c)
+   |                                          ^ type `Bag[f64]`"
+    );
+}

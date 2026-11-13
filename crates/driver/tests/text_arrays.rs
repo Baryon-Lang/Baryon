@@ -36,16 +36,16 @@ def uses(other: Array[str, 1], counts: Array[i64, 1]):
     wrong: Array[str, 1] = Array([1.0])
     names[0] = "q"
     kept = names[0]
-    part = names[0:1]
+    part = names[Array([1.5])]
     both = names[0, 1]
     joined = names + other
-    same = names == other
-    found = "a" in names
+    same = names == counts
+    found = 5 in names
     total = names.sum()
     shape = names.shape
     least = min(names)
-    print(names)
-    text = f"{names}"
+    print([names.copy()])
+    text = f"{[names.copy()]}"
     numbers: Array[i64, 1] = names.copy()
     texts: Array[str, 1] = counts.copy()
     zeros = Array.zeros(3, str)
@@ -61,6 +61,15 @@ def fine(names: Array[str, 1]) -> Array[str, 1]:
     for position, name in enumerate(reversed(names)):
         count += position
     empty: Array[str, 1] = Array([])
+    part = names[1:]
+    chosen = part[Array([True, False])]
+    taken = names[Array([0, 0])][::-1]
+    same = (names == part) | ("m" <= names)
+    found = "a" in names and first not in part
+    print(names, part)
+    shown = f"{taken} {names[:1]}" + str(part)
+    order = names.argsort()
+    least = names.min() + part.max()
     return names.copy()
 "#;
 
@@ -99,12 +108,12 @@ error: a value cannot be moved out of an element
    |            ^^^^^^^^ moved out of an element
    = note: move a copy instead: `names[0].copy()`
 
-error: a slice of an array of `str` is not built yet
+error: `Array[str, 1]` cannot be indexed by `Array[f64, 1]`
   --> main.byn:12:12
    |
-12 |     part = names[0:1]
-   |            ^^^^^^^^^^ a slice
-   = note: read one element at a time, such as `names[i]`
+12 |     part = names[Array([1.5])]
+   |            ^^^^^^^^^^^^^^^^^^^ not a choice of elements
+   = note: a rank-1 `Array` takes one rank-1 array: a mask of `bool`s, `a[a > 0.0]`, or `i64` positions, `a[order]`
 
 error: an array of `str` has one dimension, so it takes one index
   --> main.byn:13:12
@@ -118,56 +127,56 @@ error: `+` is not built for an array of `str` yet
    |
 14 |     joined = names + other
    |              ^^^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60
 
-error: `==` is not built for an array of `str` yet
+error: `==` cannot compare `Array[str, 1]` and `Array[i64, 1]`
   --> main.byn:15:17
    |
-15 |     same = names == other
-   |                 ^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+15 |     same = names == counts
+   |                 ^^^^^^^^^^ an array of `str`
+   = note: an array of `str` is compared with another or with one `str`, such as `names == "alpha"`, and searched with `"alpha" in names`
 
-error: `in` is not built for an array of `str` yet
-  --> main.byn:16:16
+error: `in` cannot compare `i64` and `Array[str, 1]`
+  --> main.byn:16:14
    |
-16 |     found = "a" in names
-   |                ^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+16 |     found = 5 in names
+   |              ^^^^^^^^^ an array of `str`
+   = note: an array of `str` is compared with another or with one `str`, such as `names == "alpha"`, and searched with `"alpha" in names`
 
 error: the method `sum` is not built for an array of `str` yet
   --> main.byn:17:13
    |
 17 |     total = names.sum()
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60
 
 error: `shape` is not built for an array of `str` yet
   --> main.byn:18:13
    |
 18 |     shape = names.shape
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60
 
 error: `min` is not built for an array of `str` yet
   --> main.byn:19:17
    |
 19 |     least = min(names)
    |                 ^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60
 
-error: an array of `str` cannot be shown yet
+error: a value that holds an array of `str` cannot be shown yet
   --> main.byn:20:11
    |
-20 |     print(names)
-   |           ^^^^^ an array of `str`
-   = note: show its elements one at a time: `for name in names: print(name)`
+20 |     print([names.copy()])
+   |           ^^^^^^^^^^^^^^ holds an array of `str`
+   = note: show each array on its own: `for names in groups: print(names)`
 
-error: an array of `str` cannot be shown yet
+error: a value that holds an array of `str` cannot be shown yet
   --> main.byn:21:15
    |
-21 |     text = f"{names}"
-   |               ^^^^^ an array of `str`
-   = note: show its elements one at a time: `for name in names: print(name)`
+21 |     text = f"{[names.copy()]}"
+   |               ^^^^^^^^^^^^^^ holds an array of `str`
+   = note: show each array on its own: `for names in groups: print(names)`
 
 error: expected `Array[i64, 1]`, found `Array[str, 1]`
   --> main.byn:22:30
@@ -199,10 +208,15 @@ error: `names` was moved
    |             ----- `names` moved here
    = note: to keep both, move a copy: `names.copy()`"#;
 
-/// A text array is built from a list of `str`, counted, indexed, looped over and copied
-/// without a diagnostic, as `fine` does. Everything else is reported: a struct field that
-/// holds one, more than one dimension, a list of another type, an element assigned or moved
-/// out, a slice, two indices, operators, methods, attributes and built-ins not built yet,
+/// A text array is built from a list of `str`, counted, indexed, looped over, copied,
+/// sliced and chosen from by a mask or by positions, the new arrays kept, without a
+/// diagnostic, as `fine` does, which also compares one with another and with a `str` and
+/// searches it with `in`. Everything else is reported: a struct field that holds one, more
+/// than one dimension, a list of another type, an element assigned or moved out, an index
+/// that is an array of `f64`, two indices, a comparison with an array of numbers, a number
+/// sought with `in`, operators, methods, attributes and built-ins not built yet, a list
+/// of text arrays shown (one array is shown, as `fine` shows two, and sorted and reduced
+/// with `argsort`, `min` and `max`),
 /// showing one, an array of numbers where one of text is expected and the other way round,
 /// `Array.zeros` of `str`, and a read after a move, since a text array moves as any array.
 #[test]

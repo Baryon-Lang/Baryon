@@ -11,6 +11,9 @@ draws everything in it through the renderer.
 
 from artist import Kind, Text, View
 from axis import XAxis, YAxis
+from backend_agg import renderer_agg
+from backend_bases import RendererBase
+from backend_pdf import renderer_pdf
 from backend_svg import RendererSVG
 from colorbar import draw_colorbar
 from image import draw_image
@@ -20,6 +23,7 @@ from transforms import autoscale
 
 WIDTH: Final = 460.8  # the figure's width in points: 6.4 inches
 HEIGHT: Final = 345.6  # the figure's height in points: 4.8 inches
+DPI: Final = 100.0  # a PNG file's dots an inch, matplotlib's `figure.dpi`: 640 by 480 pixels
 LEFT: Final = 0.125  # the left edge of the grid of axes, as a fraction of the width
 RIGHT: Final = 0.9  # its right edge
 BOTTOM: Final = 0.11  # its bottom edge, as a fraction of the height from the bottom
@@ -49,25 +53,62 @@ class Figure(Struct):
 
         # Errors
 
-        As `Axes.savefig`: `ValueError` for a format other than `.svg`, `OSError` when the file
-        cannot be written.
+        As `Axes.savefig`: `ValueError` for a format other than `.svg`, `.png` or `.pdf`,
+        `OSError` when the file cannot be written.
         """
-        check_format(fname)
+        kind = check_format(fname)
+        if kind == "png":
+            pixels = renderer_agg(WIDTH, HEIGHT, DPI)
+            self._draw(pixels)
+            pixels.print_png().tofile(fname)
+            return
+        if kind == "pdf":
+            page = renderer_pdf(WIDTH, HEIGHT)
+            self._draw(page)
+            page.print_pdf().tofile(fname)
+            return
         renderer = RendererSVG(WIDTH, HEIGHT, [], 0)
-        for k in range(len(self.axes)):
-            cell = subplot_box(k // self.ncols, k % self.ncols, self.nrows, self.ncols)
-            draw_axes(self.axes[k], cell, renderer)
+        self._draw(renderer)
         with open(fname, "w") as file:
             file.write(renderer.tostring())
 
+    def _draw[R: RendererBase](self: Self, renderer: InOut[R]) -> None:
+        """Draws each axes in its cell of the grid through `renderer`."""
+        for k in range(len(self.axes)):
+            cell = subplot_box(k // self.ncols, k % self.ncols, self.nrows, self.ncols)
+            draw_axes(self.axes[k], cell, renderer)
 
-def check_format(fname: str) -> Raises[None, ValueError]:
-    """Raises matplotlib's `ValueError` unless the extension of `fname` is `.svg`, the only
-    format written so far."""
+
+def save_axes(ax: Axes, fname: str) -> Raises[None, OSError | ValueError]:
+    """Writes a figure holding only `ax` to `fname`, as `Axes.savefig` describes."""
+    kind = check_format(fname)
+    cell = subplot_box(0, 0, 1, 1)
+    if kind == "png":
+        pixels = renderer_agg(WIDTH, HEIGHT, DPI)
+        draw_axes(ax, cell, pixels)
+        pixels.print_png().tofile(fname)
+        return
+    if kind == "pdf":
+        page = renderer_pdf(WIDTH, HEIGHT)
+        draw_axes(ax, cell, page)
+        page.print_pdf().tofile(fname)
+        return
+    renderer = RendererSVG(WIDTH, HEIGHT, [], 0)
+    draw_axes(ax, cell, renderer)
+    with open(fname, "w") as file:
+        file.write(renderer.tostring())
+
+
+def check_format(fname: str) -> Raises[str, ValueError]:
+    """The format the extension of `fname` names, `"svg"`, `"png"` or `"pdf"`, in lower case;
+    raises matplotlib's `ValueError` for any other."""
     dot = _last_dot(fname)
     extension = fname[dot + 1 :].lower() if dot >= 0 else ""
-    if extension != "svg":
-        raise ValueError(f"Format '{extension}' is not supported (supported formats: svg)")
+    if extension != "svg" and extension != "png" and extension != "pdf":
+        raise ValueError(
+            f"Format '{extension}' is not supported (supported formats: pdf, png, svg)"
+        )
+    return extension
 
 
 def _last_dot(path: str) -> int:
@@ -148,8 +189,8 @@ def _box(
     return (left, top, right, bottom)
 
 
-def draw_axes(
-    ax: Axes, cell: tuple[f64, f64, f64, f64], renderer: InOut[RendererSVG]
+def draw_axes[R: RendererBase](
+    ax: Axes, cell: tuple[f64, f64, f64, f64], renderer: InOut[R]
 ) -> None:
     """Draws `ax` in its `cell` of the figure, from `subplot_box`: images, bars, markers and
     filled areas, the grid, lines and error bars, the frame, the axes' ticks and labels, the
@@ -196,7 +237,8 @@ def draw_axes(
         if artist.kind == Kind.LINE or artist.kind == Kind.ERRORS or artist.kind == Kind.CONTOUR:
             px = view.to_x(artist.x)
             py = view.to_y(artist.y)
-            cap = "projecting" if artist.kind == Kind.LINE else "butt"
+            solid = artist.kind == Kind.LINE and len(artist.dashes) == 0
+            cap = "projecting" if solid else "butt"  # matplotlib's dash_capstyle is "butt"
             if artist.linewidth > 0.0:
                 renderer.draw_path(px, py, artist.color, artist.linewidth, artist.dashes, cap, True)
             if artist.marker != "" and artist.markersize > 0.0:
@@ -235,7 +277,7 @@ def draw_axes(
         )
 
 
-def _draw_text(text: Text, view: View, renderer: InOut[RendererSVG]) -> None:
+def _draw_text[R: RendererBase](text: Text, view: View, renderer: InOut[R]) -> None:
     """Writes `text` at its data point, aligned as `byplot`'s `Axes.text` says: its baseline is
     moved from the point by the layout box's height and descent, as matplotlib aligns one line
     of text. It is not clipped."""

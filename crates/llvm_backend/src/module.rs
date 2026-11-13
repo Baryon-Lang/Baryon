@@ -17,11 +17,11 @@ pub struct Module<'a, 'db> {
     symbol: &'a dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
     /// Each definition, in the order they were made: a function with the outlined `prange`
     /// bodies only it calls, or the C `main`.
-    definitions: Vec<Definition>,
+    pub(crate) definitions: Vec<Definition>,
     /// The messages and source locations failed checks point to.
-    constants: constants::Constants<'a>,
+    pub(crate) constants: constants::Constants<'a>,
     /// The declaration of each symbol called, written from the call, by symbol.
-    declarations: BTreeMap<String, String>,
+    pub(crate) declarations: BTreeMap<String, String>,
 }
 
 impl<'a, 'db> Module<'a, 'db> {
@@ -70,7 +70,7 @@ impl<'a, 'db> Module<'a, 'db> {
         body: &Body<'db>,
         errors: &[Type<'db>],
     ) -> Result<(), Unsupported> {
-        let mark = self.constants.mark();
+        let mut constants = self.constants.local();
         let mut written = Vec::new();
         let mut calls = BTreeMap::new();
         let bodies = std::iter::once((symbol.to_owned(), body, errors, false)).chain(
@@ -82,20 +82,21 @@ impl<'a, 'db> Module<'a, 'db> {
             let (text, called) = function::Function::write(
                 self.types,
                 self.symbol,
-                &mut self.constants,
+                &mut constants,
                 &name,
                 body,
                 errors,
                 internal,
-            )
-            .inspect_err(|_| self.constants.roll_back(mark))?;
+            )?;
             written.push(text);
             calls.extend(called);
         }
+        self.constants.adopt(constants.first_file());
         self.definitions.push(Definition {
             symbol: symbol.to_owned(),
             text: written.join("\n"),
             calls: calls.keys().cloned().collect(),
+            pieces: constants.pieces(),
         });
         self.declarations.extend(calls);
         Ok(())
@@ -151,17 +152,16 @@ impl<'a, 'db> Module<'a, 'db> {
     /// # Ok::<(), llvm_backend::Unsupported>(())
     /// ```
     pub fn entry(&mut self, symbol: &str, errors: &[Type<'db>]) -> Result<(), Unsupported> {
-        let mark = self.constants.mark();
+        let mut constants = self.constants.local();
         let body = entry::no_body(self.types.db);
-        let function =
-            function::Function::new(self.types, self.symbol, &mut self.constants, &body, &[]);
-        let (text, calls) = function
-            .entry(symbol, errors)
-            .inspect_err(|_| self.constants.roll_back(mark))?;
+        let function = function::Function::new(self.types, self.symbol, &mut constants, &body, &[]);
+        let (text, calls) = function.entry(symbol, errors)?;
+        self.constants.adopt(constants.first_file());
         self.definitions.push(Definition {
             symbol: "main".to_owned(),
             text,
             calls: calls.keys().cloned().collect(),
+            pieces: constants.pieces(),
         });
         self.declarations.extend(calls);
         Ok(())
@@ -210,17 +210,16 @@ impl<'a, 'db> Module<'a, 'db> {
     /// # Ok::<(), llvm_backend::Unsupported>(())
     /// ```
     pub fn tests(&mut self, tests: &[Test<'_, 'db>]) -> Result<(), Unsupported> {
-        let mark = self.constants.mark();
+        let mut constants = self.constants.local();
         let body = entry::no_body(self.types.db);
-        let function =
-            function::Function::new(self.types, self.symbol, &mut self.constants, &body, &[]);
-        let (text, calls) = function
-            .tests(tests)
-            .inspect_err(|_| self.constants.roll_back(mark))?;
+        let function = function::Function::new(self.types, self.symbol, &mut constants, &body, &[]);
+        let (text, calls) = function.tests(tests)?;
+        self.constants.adopt(constants.first_file());
         self.definitions.push(Definition {
             symbol: "main".to_owned(),
             text,
             calls: calls.keys().cloned().collect(),
+            pieces: constants.pieces(),
         });
         self.declarations.extend(calls);
         Ok(())
@@ -232,7 +231,7 @@ impl<'a, 'db> Module<'a, 'db> {
     #[must_use]
     pub fn finish(self) -> String {
         let all: Vec<usize> = (0..self.definitions.len()).collect();
-        self.parts(&[all]).concat()
+        self.split(&[all]).concat()
     }
 
     /// The program as at most `parts` modules that `clang` can compile at once, one per core,
@@ -280,7 +279,7 @@ impl<'a, 'db> Module<'a, 'db> {
             .map(|definition| definition.text.len())
             .collect();
         let assigned = parts::assign(&sizes, parts);
-        self.parts(&assigned)
+        self.split(&assigned)
     }
 
     /// The program as modules whose text an edit changes only where it reaches, for a compiler
@@ -337,80 +336,58 @@ impl<'a, 'db> Module<'a, 'db> {
         self.split(&assigned)
     }
 
-    /// One module's text for each list of definition indices in `assigned`. One list gives the
-    /// whole program as one module, with every constant and node in the order they were made;
-    /// several give modules that carry only what their functions point to, numbered afresh
-    /// (the `split` module).
-    fn parts(self, assigned: &[Vec<usize>]) -> Vec<String> {
-        if let [indices] = assigned {
-            return vec![self.whole(indices)];
-        }
-        self.split(assigned)
-    }
-
     /// One module's text for each list of definition indices in `assigned`, each carrying only
-    /// the constants, declarations and metadata its functions point to, numbered afresh (the
-    /// `split` module).
+    /// the constants, declarations and metadata its functions point to, numbered within it
+    /// (the `split` module).
+    ///
+    /// The modules are written on every core at once, each thread taking a run of them: each
+    /// module reads the definitions and writes its own text, so the threads share nothing they
+    /// change. Writing the 18 modules of the 4,706-line program of roadmap 2.0 took about
+    /// 35 ms on one core and 12 ms on four (roadmap 2.2.2).
     fn split(self, assigned: &[Vec<usize>]) -> Vec<String> {
-        let pieces = self.constants.pieces();
-        assigned
-            .iter()
-            .map(|indices| {
-                let definitions = indices.iter().map(|&index| {
-                    let definition = &self.definitions[index];
-                    (definition.symbol.as_str(), &definition.calls)
+        let (header, reserved) = self.constants.header();
+        let definitions = &self.definitions;
+        let declarations = &self.declarations;
+        let header = header.as_str();
+        let write = |indices: &Vec<usize>| {
+            let calls = indices.iter().map(|&index| {
+                let definition = &definitions[index];
+                (definition.symbol.as_str(), &definition.calls)
+            });
+            let declared = split::declared(calls);
+            split::module(
+                indices.iter().map(|&index| {
+                    let definition = &definitions[index];
+                    (definition.text.as_str(), &definition.pieces)
+                }),
+                declared
+                    .into_iter()
+                    .filter_map(|symbol| declarations.get(symbol))
+                    .map(String::as_str),
+                header,
+                reserved,
+            )
+        };
+        let threads = std::thread::available_parallelism()
+            .map_or(1, usize::from)
+            .min(assigned.len());
+        if threads < 2 {
+            return assigned.iter().map(write).collect();
+        }
+        let mut written: Vec<String> = vec![String::new(); assigned.len()];
+        let size = assigned.len().div_ceil(threads);
+        // `scope` joins every thread, and passes on a panic in one, which would be a bug here.
+        std::thread::scope(|scope| {
+            let write = &write;
+            for (texts, lists) in written.chunks_mut(size).zip(assigned.chunks(size)) {
+                scope.spawn(move || {
+                    for (text, indices) in texts.iter_mut().zip(lists) {
+                        *text = write(indices);
+                    }
                 });
-                let declared = split::declared(definitions);
-                split::module(
-                    indices
-                        .iter()
-                        .map(|&index| self.definitions[index].text.as_str()),
-                    declared
-                        .into_iter()
-                        .filter_map(|symbol| self.declarations.get(symbol))
-                        .map(String::as_str),
-                    &pieces,
-                )
-            })
-            .collect()
-    }
-
-    /// The module holding the definitions at `indices` with every constant, every declaration
-    /// of a function they do not define, and all the metadata.
-    fn whole(self, indices: &[usize]) -> String {
-        let metadata = self.constants.metadata();
-        let constants = self.constants.finish();
-        let defined: BTreeSet<&str> = indices
-            .iter()
-            .map(|&index| self.definitions[index].symbol.as_str())
-            .collect();
-        let texts: Vec<&str> = indices
-            .iter()
-            .map(|&index| self.definitions[index].text.as_str())
-            .collect();
-        let mut text = texts.join("\n");
-        if !constants.is_empty() {
-            text.push('\n');
-            text.push_str(&constants);
-        }
-        let declared: Vec<&String> = self
-            .declarations
-            .iter()
-            .filter(|(symbol, _)| !defined.contains(symbol.as_str()))
-            .map(|(_, declaration)| declaration)
-            .collect();
-        if !declared.is_empty() {
-            text.push('\n');
-            for declaration in declared {
-                text.push_str(declaration);
-                text.push('\n');
             }
-        }
-        if !metadata.is_empty() {
-            text.push('\n');
-            text.push_str(&metadata);
-        }
-        text
+        });
+        written
     }
 
     /// Adds line tables to the module: each function and the instructions written from each
@@ -490,7 +467,8 @@ impl<'a, 'db> Module<'a, 'db> {
 /// One definition in a [`Module`]: a function, with the outlined `prange` bodies and chunk
 /// functions only it calls, or the C `main`. A definition is never split across modules, since
 /// its outlined functions are internal to the module that holds it.
-struct Definition {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Definition {
     /// The symbol of the function, or `main` for the C `main`; other modules declare it.
     symbol: String,
     /// The text of every function in the definition.
@@ -498,4 +476,6 @@ struct Definition {
     /// The symbols of the functions it calls, which a module that does not define them
     /// declares.
     calls: BTreeSet<String>,
+    /// The constants and metadata nodes it made, numbered within it.
+    pieces: split::Pieces,
 }

@@ -10,7 +10,7 @@ space on the right of the axes, and `draw_colorbar` draws it there.
 
 from artist import Image
 from axis import YAxis
-from backend_svg import RendererSVG
+from backend_bases import RendererBase
 from cm import get_cmap
 from image import colormap_strip
 
@@ -18,14 +18,14 @@ FONT_SIZE: Final = 10.0  # the label, in points
 LABEL_PAD: Final = 4.0  # the gap between the tick labels and the label, in points
 
 
-def draw_colorbar(
+def draw_colorbar[R: RendererBase](
     image: Image,
     left: f64,
     top: f64,
     width: f64,
     height: f64,
     label: str,
-    renderer: InOut[RendererSVG],
+    renderer: InOut[R],
 ) -> None:
     """Draws the colorbar of `image` in the rectangle with its top left corner at `(left, top)`,
     `width` by `height` points: the colormap's 256 colors from `vmin` at the bottom to `vmax`

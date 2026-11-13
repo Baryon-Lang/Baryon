@@ -188,21 +188,21 @@ import byplot as plt
 
 def main() -> Raises[None, OSError]:
     ax = plt.axes()
-    for name in [\"plot.png\", \"plot\", \"runs.d/plot\", \"plot.SVG.pdf\"]:
+    for name in [\"plot.jpg\", \"plot\", \"runs.d/plot\", \"plot.SVG.eps\"]:
         try:
             ax.savefig(name)
         except ValueError as error:
             print(error.message)
-    print(Path(\"plot.png\").exists())
+    print(Path(\"plot.jpg\").exists())
 ";
     let (ran, _directory) = run("plotting-formats", program).unwrap();
     assert_eq!(stderr(&ran), "");
     assert_eq!(
         String::from_utf8_lossy(&ran.stdout),
-        "Format 'png' is not supported (supported formats: svg)\n\
-         Format '' is not supported (supported formats: svg)\n\
-         Format '' is not supported (supported formats: svg)\n\
-         Format 'pdf' is not supported (supported formats: svg)\n\
+        "Format 'jpg' is not supported (supported formats: pdf, png, svg)\n\
+         Format '' is not supported (supported formats: pdf, png, svg)\n\
+         Format '' is not supported (supported formats: pdf, png, svg)\n\
+         Format 'eps' is not supported (supported formats: pdf, png, svg)\n\
          False\n"
     );
 }

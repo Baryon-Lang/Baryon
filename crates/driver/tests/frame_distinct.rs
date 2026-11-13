@@ -1,6 +1,7 @@
-//! Leaving out the rows of a frame that repeat, and counting them (roadmap 3.13.9, decision
-//! 0045), through every stage up to the type checker: `drop_duplicates` and `value_counts`,
-//! the types they give, and the mistakes they report.
+//! Leaving out the rows of a frame that repeat, counting them, and summing up its columns
+//! (roadmap 3.13.9, decision 0045), through every stage up to the type checker:
+//! `drop_duplicates`, `value_counts` and `describe`, the types they give, and the mistakes
+//! they report.
 //!
 //! These tests live in the driver because they need several implementations, and only an
 //! application crate may depend on more than one (decision 0001).
@@ -199,5 +200,60 @@ error: expected `i64`, found `DataFrame[size: f64, count: i64]`
    |
 28 |     wrong: int = waves.value_counts("size")
    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^ the annotation says `i64`"#
+    );
+}
+
+/// `describe` gives a frame of `statistic`, a column of `str`, and one `f64` column for each
+/// column of numbers, which an annotation of that schema accepts and whose columns are read
+/// by name; columns of `str` and `bool` are left out. It reports arguments, such as
+/// pandas's `include=`; a frame with no column of numbers; a column of numbers named
+/// `statistic`; and the result where another type is expected.
+#[test]
+fn describe_gives_a_column_for_each_column_of_numbers_and_reports_mistakes() {
+    let diagnostics = check_one(
+        r#"
+class Summary(Struct):
+    statistic: str
+    price: f64
+
+
+def main():
+    trades = DataFrame({"symbol": Array(["a"]), "price": Array([2.0]), "open": Array([True])})
+    kept: DataFrame[Summary] = trades.describe()
+    spread: f64 = kept.price[2] + trades.describe().price[7]
+    a = trades.describe(include="all")
+    b = trades[["symbol", "open"]].describe()
+    c = trades.copy().rename(columns={"price": "statistic"}).describe()
+    wrong: int = trades.describe()
+"#,
+    );
+    assert_eq!(
+        diagnostics,
+        r#"error: `describe` takes no arguments
+  --> main.byn:10:9
+   |
+10 |     a = trades.describe(include="all")
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+   = note: it describes every column of numbers; choose columns first with `df[["price", "volume"]].describe()`
+
+error: `DataFrame[symbol: str, open: bool]` has no column of numbers to describe
+  --> main.byn:11:9
+   |
+11 |     b = trades[["symbol", "open"]].describe()
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no column of numbers
+   = note: `describe` reads columns of whole and real numbers
+
+error: `describe` cannot describe a column named `statistic`
+  --> main.byn:12:9
+   |
+12 |     c = trades.copy().rename(columns={"price": "statistic"}).describe()
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the result would have two columns named `statistic`
+   = note: rename it first: `df.rename(columns={"statistic": "value"})`
+
+error: expected `i64`, found `DataFrame[statistic: str, price: f64]`
+  --> main.byn:13:18
+   |
+13 |     wrong: int = trades.describe()
+   |                  ^^^^^^^^^^^^^^^^^ the annotation says `i64`"#
     );
 }

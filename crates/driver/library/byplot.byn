@@ -21,18 +21,15 @@ points, colors from the `tab10` cycle, and ticks placed and labelled by `ticker`
 """
 
 from artist import Artist, Image, Kind, Text, dashes, error_bars, filled
-from backend_svg import RendererSVG
 from colors import to_hex
 from contour import contour_set
-from figure import Figure, check_format, draw_axes, subplot_box
+from figure import Figure, save_axes
 from image import make_image
 from legend import location_code
 from math import isfinite
 from transforms import fixed_limits
 from stats import histogram
 
-WIDTH: Final = 460.8  # the figure's width in points: 6.4 inches
-HEIGHT: Final = 345.6  # the figure's height in points: 4.8 inches
 
 
 class Axes(Struct):
@@ -439,15 +436,10 @@ class Axes(Struct):
 
         # Errors
 
-        `ValueError` when the extension is not `.svg`, the only format so far, with
-        matplotlib's message; `OSError` when the file cannot be written.
+        `ValueError` when the extension is not `.svg`, `.png` or `.pdf`, with matplotlib's
+        message; `OSError` when the file cannot be written.
         """
-        check_format(fname)
-        renderer = RendererSVG(WIDTH, HEIGHT, [], 0)
-        draw_axes(self, subplot_box(0, 0, 1, 1), renderer)
-        with open(fname, "w") as file:
-            file.write(renderer.tostring())
-
+        save_axes(self, fname)
 
 def axes() -> Axes:
     """New, empty axes in the default figure, as matplotlib's `pyplot.axes()`.

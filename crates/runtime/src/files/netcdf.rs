@@ -1,9 +1,10 @@
 //! `NetCDF` classic files (decision 0047): the header of a CDF-1 or CDF-2 file and the values of
 //! one of its variables, read as Unidata's "`NetCDF` Classic Format Specification" defines them,
-//! in safe code the exported functions in `abi::netcdf` call. What the dimensions, variables and
-//! attributes mean to a program is parsed in Baryon, in the standard library's `netCDF4`
-//! module, from the description lines [`describe`] writes; this module reads only what it needs
-//! to find and convert a variable's values.
+//! in safe code the exported functions in `abi::netcdf` call. A NetCDF-4 file, which is HDF5,
+//! is read into the same [`Header`] by `netcdf4` (decision 0052, point 6). What the
+//! dimensions, variables and attributes mean to a program is parsed in Baryon, in the standard
+//! library's `netCDF4` module, from the description lines [`describe`] writes; this module
+//! reads only what it needs to find and convert a variable's values.
 //!
 //! A classic file is the magic bytes `CDF` and a version byte, 1 for 32-bit offsets or 2 for
 //! 64-bit ones, the number of records, then three lists: the dimensions (a name and a length,
@@ -19,17 +20,18 @@
 //! lies together in the file.
 
 use super::fits::Pixel;
-use super::{BUFFER, ErrorKind, OsFailure};
-use std::fs;
-use std::io::{self, Read, Seek, SeekFrom};
 
 mod encoding;
 mod header;
+mod netcdf4;
+mod reading;
 mod selection;
 mod storage;
 mod writing;
 
 pub(crate) use header::read_header;
+use reading::{Scale, scaling};
+pub(crate) use reading::{deflated_chunks, read_variable};
 pub(crate) use selection::{Item, Selection, SubscriptFailure, is_whole, select};
 pub(crate) use writing::{define, write};
 
@@ -138,7 +140,7 @@ pub(crate) struct Variable {
     pub(crate) size: u64,
 }
 
-/// What a classic file's header says.
+/// What a file's header says: a classic file's, or the same read from a NetCDF-4 file.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Header {
     /// Whether the file is CDF-2, whose variables begin at 64-bit offsets, or else CDF-1.
@@ -151,6 +153,9 @@ pub(crate) struct Header {
     pub(crate) attributes: Vec<Attribute>,
     /// The variables, in the file's order.
     pub(crate) variables: Vec<Variable>,
+    /// What a NetCDF-4 file adds, its HDF5 objects and each dimension's length; `None` for a
+    /// classic file.
+    pub(crate) netcdf4: Option<Box<netcdf4::Netcdf4>>,
 }
 
 impl Header {
@@ -183,6 +188,9 @@ impl Header {
 
     /// The length of dimension `index`: the number of records for the unlimited one.
     pub(crate) fn length(&self, index: usize) -> u64 {
+        if let Some(netcdf4) = &self.netcdf4 {
+            return netcdf4.lengths[index];
+        }
         match self.dimensions[index].1 {
             0 => self.records,
             length => length,
@@ -319,184 +327,6 @@ pub(crate) fn python_float(value: f64) -> String {
             format!("{digits}e{sign}{magnitude:0>2}")
         }
         None => text,
-    }
-}
-
-/// Reads the values `selection` picks of `variable` of `header`, in the file at `path`, into
-/// `memory` as elements of `pixel`, after checking that `pixel` can hold them: with
-/// `scale_factor` and `add_offset` applied, as `netCDF4` applies them, for a float `pixel`.
-/// `memory` holds one element for each value picked, row-major. Each stretch of neighbouring
-/// values is read with one seek, so `var[:]` of a fixed variable is one read.
-///
-/// # Errors
-///
-/// Fails as the operating system does, and with `INVALID_DATA` when `pixel` cannot hold the
-/// values, they are scaled and `pixel` is an integer type, or the file ends before they do.
-pub(crate) fn read_variable(
-    path: &str,
-    header: &Header,
-    (variable, selection): (&Variable, &Selection),
-    pixel: Pixel,
-    memory: &mut [u8],
-) -> Result<(), OsFailure> {
-    let failed = |error: io::Error| OsFailure::from_io(&error, path);
-    let invalid = |message: String| OsFailure::new(ErrorKind::InvalidData, message, path);
-    let scale = scaling(variable);
-    let float = matches!(pixel, Pixel::F32 | Pixel::F64);
-    if !variable.kind.fits(pixel) || (scale.is_some() && !float) {
-        let reason = if scale.is_some() && variable.kind.fits(pixel) {
-            " scaled by scale_factor or add_offset"
-        } else {
-            ""
-        };
-        return Err(invalid(format!(
-            "the NetCDF variable {} holds {}{reason}, which does not read as `{}`; read it as a \
-             float array",
-            variable.name,
-            variable.kind.name(),
-            pixel.name()
-        )));
-    }
-    let width = variable.kind.size() as u64;
-    let record = header.is_record(variable);
-    let lengths: Vec<u64> = variable.dimensions[usize::from(record)..]
-        .iter()
-        .map(|&dimension| header.length(dimension))
-        .collect();
-    let step = header.record_size();
-    let mut file = fs::File::open(path).map_err(failed)?;
-    let mut elements = memory.chunks_exact_mut(pixel.size());
-    // A piece of whole values at a time, so a large stretch needs no second copy in memory.
-    let piece = BUFFER - BUFFER % variable.kind.size();
-    let mut stored = vec![0_u8; piece];
-    selection.runs(record, &lengths, |at, offset, count| {
-        let start = at
-            .unwrap_or(0)
-            .saturating_mul(step)
-            .saturating_add(offset.saturating_mul(width))
-            .saturating_add(variable.begin);
-        file.seek(SeekFrom::Start(start)).map_err(failed)?;
-        let mut left = count.saturating_mul(width);
-        while left > 0 {
-            let size = usize::try_from(left).map_or(piece, |left| left.min(piece));
-            file.read_exact(&mut stored[..size]).map_err(|error| {
-                if error.kind() == io::ErrorKind::UnexpectedEof {
-                    invalid(format!(
-                        "the file ends inside the NetCDF variable {}",
-                        variable.name
-                    ))
-                } else {
-                    failed(error)
-                }
-            })?;
-            for (value, element) in stored[..size]
-                .chunks_exact(variable.kind.size())
-                .zip(&mut elements)
-            {
-                convert(value, variable.kind, scale, pixel, element);
-            }
-            left -= size as u64;
-        }
-        Ok(())
-    })
-}
-
-/// How a variable's values are scaled, as `netCDF4` scales them.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Scale {
-    /// `scale_factor`, when the variable has one.
-    factor: Option<f64>,
-    /// `add_offset`, when the variable has one.
-    offset: Option<f64>,
-    /// Whether `NumPy` computes in 32-bit floats: the stored type is `i1`, `i2` or `f4` and every
-    /// factor present is an `NC_FLOAT`, so the stored array and the factors promote to `float32`.
-    /// Any other mix promotes to `float64`.
-    single: bool,
-}
-
-impl Scale {
-    /// `value` multiplied by the factor and then the offset added, each only when present, in
-    /// the precision `NumPy` computes in.
-    fn apply(self, value: f64) -> f64 {
-        if self.single {
-            #[allow(
-                clippy::cast_possible_truncation,
-                reason = "the value and factors are f32 values, exact in an f32"
-            )]
-            let (mut scaled, factor, offset) = (
-                value as f32,
-                self.factor.map(|factor| factor as f32),
-                self.offset.map(|offset| offset as f32),
-            );
-            if let Some(factor) = factor {
-                scaled *= factor;
-            }
-            if let Some(offset) = offset {
-                scaled += offset;
-            }
-            f64::from(scaled)
-        } else {
-            let mut scaled = value;
-            if let Some(factor) = self.factor {
-                scaled *= factor;
-            }
-            if let Some(offset) = self.offset {
-                scaled += offset;
-            }
-            scaled
-        }
-    }
-}
-
-/// How `variable`'s values are scaled, or `None` when it has neither `scale_factor` nor
-/// `add_offset`. A factor is its attribute's first number; a text attribute is not one.
-fn scaling(variable: &Variable) -> Option<Scale> {
-    let find = |name: &str| {
-        variable
-            .attributes
-            .iter()
-            .find(|attribute| attribute.name == name)
-            .and_then(|attribute| match &attribute.values {
-                Values::Numbers(numbers) => numbers.first().map(|&value| (value, attribute.kind)),
-                Values::Text(_) => None,
-            })
-    };
-    let factor = find("scale_factor");
-    let offset = find("add_offset");
-    if factor.is_none() && offset.is_none() {
-        return None;
-    }
-    let single = matches!(variable.kind, Kind::Byte | Kind::Short | Kind::Float)
-        && [factor, offset]
-            .iter()
-            .flatten()
-            .all(|&(_, kind)| kind == Kind::Float);
-    Some(Scale {
-        factor: factor.map(|(value, _)| value),
-        offset: offset.map(|(value, _)| value),
-        single,
-    })
-}
-
-/// Writes into `element` the value of one stored big-endian value `stored` of `kind` as an
-/// element of `pixel`, which [`read_variable`] has checked holds it, scaled by `scale`.
-fn convert(stored: &[u8], kind: Kind, scale: Option<Scale>, pixel: Pixel, element: &mut [u8]) {
-    let mut value = number(stored, kind);
-    if let Some(scale) = scale {
-        value = scale.apply(value);
-    }
-    #[allow(
-        clippy::cast_possible_truncation,
-        reason = "the checked kind fits the integer pixel, and f32 is the type asked for"
-    )]
-    match pixel {
-        Pixel::I8 => element.copy_from_slice(&(value as i8).to_ne_bytes()),
-        Pixel::I16 => element.copy_from_slice(&(value as i16).to_ne_bytes()),
-        Pixel::I32 => element.copy_from_slice(&(value as i32).to_ne_bytes()),
-        Pixel::I64 => element.copy_from_slice(&(value as i64).to_ne_bytes()),
-        Pixel::F32 => element.copy_from_slice(&(value as f32).to_ne_bytes()),
-        Pixel::F64 => element.copy_from_slice(&value.to_ne_bytes()),
-        Pixel::U8 | Pixel::U16 | Pixel::U32 | Pixel::U64 => {}
     }
 }
 

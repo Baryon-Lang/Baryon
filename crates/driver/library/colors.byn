@@ -4,7 +4,8 @@ It is internal to the standard library: `byplot` and the files under it import i
 program cannot, so a program's own `colors.byn` is never hidden by it.
 
 `to_hex` turns any color name `byplot` accepts into the `#rrggbb` text an SVG file holds, as
-`matplotlib.colors.to_hex` does. The colormaps for images are in `cm`.
+`matplotlib.colors.to_hex` does, and `to_rgb` into the three numbers the PNG and PDF renderers
+draw with. The colormaps for images are in `cm`.
 """
 
 
@@ -42,6 +43,19 @@ def to_hex(c: str) -> str:
             return _cycle(k)
     assert False, f"{c!r} is not a color: use '#rrggbb', 'C0' to 'C9', 'bgrcmykw' or 'tab:' names"
     return ""
+
+
+def to_rgb(c: str) -> tuple[f64, f64, f64]:
+    """The red, green and blue of the color `c`, each from 0 to 1, as
+    `matplotlib.colors.to_rgb`; `c` is any name `to_hex` takes."""
+    hexadecimal = to_hex(c)
+    digits = "0123456789abcdef"
+    values: list[f64] = []
+    for k in [1, 3, 5]:
+        high = digits.find(hexadecimal[k])
+        low = digits.find(hexadecimal[k + 1])
+        values.append(float(16 * high + low) / 255.0)
+    return (values[0], values[1], values[2])
 
 
 def _cycle(k: int) -> str:

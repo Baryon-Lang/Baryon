@@ -105,10 +105,14 @@ impl<'db> Body<'db> {
             // `header["OBJECT"]` is a call of a library function, which gives a new value.
             SyntaxKind::Subscript if self.typed.calls.contains_key(&Key(node)) => {}
             // A slice of a list is a new list, and a slice of a `str` a new `str`, as in
-            // Python, so keeping either moves nothing.
+            // Python, and a slice of a text array is a new text array, so keeping any of
+            // them moves nothing.
             SyntaxKind::Subscript
                 if self.is_view(node)
-                    && matches!(ty.kind(self.db), TypeKind::List(_) | TypeKind::Str) => {}
+                    && matches!(
+                        ty.kind(self.db),
+                        TypeKind::List(_) | TypeKind::Str | TypeKind::TextArray
+                    ) => {}
             SyntaxKind::Subscript if self.is_view(node) => {
                 // A view borrows the array, and a borrow cannot be stored (reference,
                 // "Slices").

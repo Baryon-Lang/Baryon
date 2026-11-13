@@ -19,7 +19,7 @@ formats one at a time, those that need no outside library first.
 | [Text tables](#text-tables) of numbers: CSV, whitespace-separated columns | `Array.loadtxt(fname)` | `Array.savetxt(fname, X)` |
 | [`.npy` files](#npy-files), NumPy's own format | `Array.load(file)` | `Array.save(file, arr)` |
 | [FITS images and headers](#fits-files), astronomy's format | `fits.getdata(filename)`, `fits.getheader(filename)` | `fits.writeto(filename, data, header)` |
-| [NetCDF classic files](#netcdf-files), the format of climate and weather data | `Dataset(filename).variables[name][:]` | `ds.variables[name][:] = values` |
+| [NetCDF files](#netcdf-files), classic and NetCDF-4, the format of climate and weather data | `Dataset(filename).variables[name][:]` | `ds.variables[name][:] = values`, classic formats only |
 | [HDF5 files](#hdf5-files), the format of simulations, instruments and machine learning | `h5by.File(name)[path][...]` | not yet (roadmap 3.14.6.2) |
 | Raw binary arrays | [`Array.fromfile(path, dtype)`](files-and-processes.md#array-files) | [`a.tofile(path)`](files-and-processes.md#array-files) |
 
@@ -237,7 +237,12 @@ named variables, each an array over some of the dimensions, and attributes, smal
 on the file or on a variable such as `units = "K"`. The `netCDF4` module reads and writes the
 classic formats, CDF-1 and the 64-bit offset CDF-2, with the names of Unidata's `netCDF4`
 package ([decision 0047](../decisions/0047-netcdf-classic-files.md)). One dimension may be
-unlimited: the records, usually time, that a model appends as it runs.
+unlimited: the records, usually time, that a model appends as it runs. `Dataset(path)` also
+reads NetCDF-4 files, which are HDF5 files underneath, through Baryon's own HDF5 reader
+([decision 0052](../decisions/0052-hdf5-files.md)): the same program reads either format.
+A NetCDF-4 variable compressed with `zlib=True`, the deflate filter with or without shuffle,
+reads as any other: its chunks are inflated by the native [`zlib`](compression.md), as an
+HDF5 dataset's are, and a subscript inflates only the chunks it touches.
 
 ```python
 from netCDF4 import Dataset
@@ -315,6 +320,8 @@ as the same lines would in Python.
 - **`var.dimensions` is a `list[str]`**, where `netCDF4` gives a tuple of the same names.
 - **A subscript takes integers and slices.** `netCDF4` also takes arrays of indices, of
   booleans and `...`; those are compile errors so far.
+- **A NetCDF-4 file's attributes are listed in name order** by `ncattrs()`, where `netCDF4`
+  lists them in the order they were written.
 
 ### Writing a NetCDF file
 
@@ -390,10 +397,11 @@ the same calls, fill values and padding included; the tests compare them.
 ### Not built yet
 
 Listing `ds.variables` and `ds.dimensions`, attributes set as `var.units = "K"`, `fill_value=` and
-compression in `createVariable`, subscripts of arrays of indices, booleans or `...`, text
-variables, attributes of several values, CDF-5 files and
-NetCDF-4 files, which are HDF5 files (roadmap 3.14.6), come later. Each is an error that names
-it, never silently ignored.
+compression in `createVariable`, subscripts of arrays of indices, booleans or `...`, text variables,
+attributes of several values and CDF-5 files come later. In NetCDF-4 files, variables compressed by
+a filter other than deflate and shuffle, groups, variables of unsigned, 64-bit or string types, a
+variable shorter than its unlimited dimension, and writing come later too. Each is an error that
+names it, never silently ignored.
 
 ## HDF5 files
 
@@ -480,5 +488,6 @@ units, as the same lines would in Python.
 Writing HDF5 files is roadmap 3.14.6.2. Datasets of strings, compound types, enums, references
 and variable-length data, external and virtual datasets, the szip, LZF and Blosc filters, an
 extensible array's paged blocks (past about 100,000 chunks along the growing axis), scalar
-datasets read as `dset[()]`, and NetCDF-4 files through `netCDF4.Dataset` come later. Each is an
+datasets read as `dset[()]` come later. NetCDF-4 files open with `netCDF4.Dataset`, as
+[NetCDF files](#netcdf-files) shows. Each is an
 error that names it, never silently ignored.

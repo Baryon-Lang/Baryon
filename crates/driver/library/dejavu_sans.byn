@@ -1,0 +1,312 @@
+"""The `dejavu_sans` library file: the outlines of DejaVu Sans, the font matplotlib draws
+text in, for the characters a plot's labels use (decision 0046).
+
+It is internal to the standard library: `font` decodes it, and a program cannot import it.
+
+The file is written by a script, from matplotlib's own copy of `DejaVuSans.ttf`; the reference
+fixtures' README holds the script. It has the printable ASCII characters, the minus sign,
+`×`, `°`, `±`, `µ` and `·`, and the Greek letters, lower case and the upper case ones that
+differ from Latin: 135 in all, and the font's empty box for any other. The outlines are
+quadratic curves in the font's units, 2048 to the em, as the font stores them; `font`
+documents their encoding.
+
+The font is DejaVu Sans, whose license permits embedding it in other software. Its copyright and
+license notice, as the font states it, follows and is compiled in with the outlines.
+
+Fonts are (c) Bitstream (see below). DejaVu changes are in public domain. Glyphs imported from
+Arev fonts are (c) Tavmjung Bah (see below)
+
+Bitstream Vera Fonts Copyright
+------------------------------
+
+Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved. Bitstream Vera is
+a trademark of Bitstream, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of the fonts accompanying this license ("Fonts") and associated
+documentation files (the "Font Software"), to reproduce and distribute the
+Font Software, including without limitation the rights to use, copy, merge,
+publish, distribute, and/or sell copies of the Font Software, and to permit
+persons to whom the Font Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright and trademark notices and this permission notice shall
+be included in all copies of one or more of the Font Software typefaces.
+
+The Font Software may be modified, altered, or added to, and in particular
+the designs of glyphs or characters in the Fonts may be modified and
+additional glyphs or characters may be added to the Fonts, only if the fonts
+are renamed to names not containing either the words "Bitstream" or the word
+"Vera".
+
+This License becomes null and void to the extent applicable to Fonts or Font
+Software that has been modified and is distributed under the "Bitstream
+Vera" names.
+
+The Font Software may be sold as part of a larger software package but no
+copy of one or more of the Font Software typefaces may be sold by itself.
+
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT,
+TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL BITSTREAM OR THE GNOME
+FOUNDATION BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING
+ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM OTHER DEALINGS IN THE
+FONT SOFTWARE.
+
+Except as contained in this notice, the names of Gnome, the Gnome
+Foundation, and Bitstream Inc., shall not be used in advertising or
+otherwise to promote the sale, use or other dealings in this Font Software
+without prior written authorization from the Gnome Foundation or Bitstream
+Inc., respectively. For further information, contact: fonts at gnome dot
+org.
+
+Arev Fonts Copyright
+------------------------------
+
+Copyright (c) 2006 by Tavmjong Bah. All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the fonts accompanying this license ("Fonts") and
+associated documentation files (the "Font Software"), to reproduce
+and distribute the modifications to the Bitstream Vera Font Software,
+including without limitation the rights to use, copy, merge, publish,
+distribute, and/or sell copies of the Font Software, and to permit
+persons to whom the Font Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright and trademark notices and this permission notice
+shall be included in all copies of one or more of the Font Software
+typefaces.
+
+The Font Software may be modified, altered, or added to, and in
+particular the designs of glyphs or characters in the Fonts may be
+modified and additional glyphs or characters may be added to the
+Fonts, only if the fonts are renamed to names not containing either
+the words "Tavmjong Bah" or the word "Arev".
+
+This License becomes null and void to the extent applicable to Fonts
+or Font Software that has been modified and is distributed under the
+"Tavmjong Bah Arev" names.
+
+The Font Software may be sold as part of a larger software package but
+no copy of one or more of the Font Software typefaces may be sold by
+itself.
+
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL
+TAVMJONG BAH BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+Except as contained in this notice, the name of Tavmjong Bah shall not
+be used in advertising or otherwise to promote the sale, use or other
+dealings in this Font Software without prior written authorization
+from Tavmjong Bah. For further information, contact: tavmjong @ free
+. fr.
+"""
+
+
+def characters() -> str:
+    """The characters this file has outlines for, in the order of `glyphs`, after the empty
+    box."""
+    return (
+        " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        + "[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~×−°±µ·αβγδεζηθικλμνξοπρστυφχψωΓΔΘΛΞΠΣΦΨΩ"
+    )
+
+
+def glyphs() -> str:
+    """Every character's outline, the empty box first, then each of `characters` in order,
+    separated by commas, as `font` reads them."""
+    return (
+        "TNRmKWRmmkhmmkhmKW.TZMIf0MIf0kxTZkx,KL,M1U1T+YAT+YAQAU1QA.U1nVYAnVYAdGXsXhVKXhU1dG,OuVvn"
+        + "VVveqTFeqTFnV.bpnVbpeqY/eqY/nV,a0gXeFb0eFagY3fFY3.eBm+cZgfg9gfimm+lGm+jfgfoXgfoXeFi4eFhm"
+        + "Y3mkY3mkWeg/WefXQAc3QAeeWeZ5WeYSQAVxQAXZWeSeWeSeY3X+Y3ZSeFUQeFUQgfZ5gfbfm+,UXa0LTZQLTZPQ"
+        + "A~XmQC~UUQvSqRcSqUQ~UQTQ~XhSPZQSOZQZW~VzZ6~SqcmSqe8~Sqhf~WEkbZQkpZQoUa0oUa0ks~cRko~e/kJg"
+        + "SjugSg/~e/hp~cQiXa0iba0bw~eXbN~htYZhtV9~htTU~eKQRa0QC.ZQcCZQic~XciP~ViglVifN~Vid3~XTcX.a"
+        + "0ZCa0SR~czSi~e0UQe0Vq~e0XC~c5Yq,eanRaR~l6aR~kXX9kXV5~kXT3~l6RinRRi~omRi~qJT3qJV5~qJX8~om"
+        + "aR.nRcQ~pvcQ~spY0spV5~spS+~puPjnRPj~kxPj~h3S+h3V5~h3Y1~kycQ.XJlx~Vzlx~UQjcUQha~UQfW~VydC"
+        + "XJdC~YgdC~aDfWaDha~aDjb~Yflx.lQnwnwnwZKPjWqPj.XJnw~Znnw~cjkVcjha~cjed~ZobDXJbD~UqbD~Rxee"
+        + "Rxha~RxkU~Urnw,Y9Xycj~WXbS~VCYxVCXZ~VCVH~YWSFa2SF~cVSF~e7TEgEUE.Z/eTh7WL~i2Xk~j4avj+chm4"
+        + "ch~msad~lEWbjnUdn+QAkCQAhzST~gLQ6~cnPjakPj~WzPj~SBT2SBXN~SBZN~UHcuWNeR~VdfQ~UrhNUriJ~Urk"
+        + "r~YJnwbBnw~cUnw~e5nMgOmogOjy~e3kh~cZlSbVlS~ZslS~XpjjXpiL~XphY~Ykfx,IzVvnVVveqTFeqTFnV,Mf"
+        + "Z7oS~X1ks~VzdqVzaD~VzWc~X2PXZ7LyXbLy~VFPd~SwWjSwaD~Swdi~VEkmXboS,MfSkoSVEoS~Xakm~ZvdiZva"
+        + "D~ZvWj~XaPdVELySkLy~UpPX~WsWcWsaD~Wsdq~Upks,QAfDjfZcgdfDdaeJb4Y5fDY5ZKXHZKXHfDR3b4Q9daWk"
+        + "gdQ9jfR3lCXHh3XHnwY5nwY5h3eJlC,a0eukEeubXnbbXnbYteuYteuQAcGQAcGYtTZYtTZbXcGbXcGkE,KLTwT+"
+        + "XDT+XDRSUfMSSeMSTwRS,LjRkaDZ/aDZ/XfRkXf,KLTbT+WuT+WuQATbQA,KyYInVaynVSqNCQANC,UXaLlQ~Xvl"
+        + "Q~VSgdVSbp~VSW2~XvSDaLSD~coSD~fFW2fFbp~fFgd~colQ.aLnw~eGnw~iPhjiPbp~iPVw~eGPjaLPj~WQPj~S"
+        + "HVwSHbp~SHhj~WQnw,UXT+SqZISqZIkdThjVThmNZGnVcQnVcQSqhaSqhaQAT+QA,UXWJSqhKSqhKQASWQASWSq~"
+        + "UJUh~aWaybJbs~cqdZ~d3fwd3g5~d3iw~bQlGZKlG~XrlG~UYkESgjBSgmN~Uam+~XunwZGnw~cunw~hCkIhChG~"
+        + "hCfq~f9dFeibV~eJa4~Z9Wj,UXc/cl~fQcG~hzZChzWy~hzTV~dDPjYrPj~XNPj~UGQIScQtScTw~TwS/~W4SNYl"
+        + "SN~bjSN~eqUjeqWy~eqY2~bxbLZMbLWebLWedxZUdx~bpdx~eHfoeHhY~eHjL~bklGZMlG~X5lG~U7kiTJj8TJmw"
+        + "~U8nQ~YFnwZenw~dEnw~hQkfhQht~hQfx~fCdG,UXcGklUIYIcGYI.bRnVfPnVfPYIikYIikVgfPVgfPQAcGQAcG"
+        + "VgRkVgRkYj,UXTdnVf2nVf2krWWkrWWe9~XCfM~YafbZGfb~dAfb~hkbJhkXf~hkTu~c4PjYnPj~XJPj~UGQDSeQ"
+        + "jSeTu~T4S9~W4SNYjSN~bQSN~eaVDeaXf~eaZ7~bQcxYjcx~XScx~UxcNTdbn,UXakc7~Ycc7~V9aBV9Xf~V9U+~"
+        + "YcSDakSD~csSD~fLU+fLXf~fLaB~csc7.g1m0g1j8~fpkg~dOlGcClG~Y6lG~Vng4VYcn~WTd+~ZFfbawfb~eRfb"
+        + "~iWbKiWXf~iWT5~eGPjakPj~WhPj~SPVwSPbp~SPhL~Xfnwb6nw~dGnw~fhnS,UXSonVhonVhol/ZKQAV3QAd1kr"
+        + "Sokr,UXaLbF~X7bF~VWYrVWWk~VWUd~X7SDaLSD~cbSD~fBUefBWk~fBYr~ccbF.XBcb~U/c7~SuftSuht~Sukg~"
+        + "WtnwaLnw~dqnw~hokghoht~hoft~fXc7dWcb~fob5~iLYziLWk~iLTL~eCPjaLPj~WUPj~SLTLSLWk~SLYz~Uvb5"
+        + ".V3ha~V3fm~YIdkaLdk~cNdk~egfmegha~egjO~cNlQaLlQ~YIlQ~V3jO,UXThQfThTX~UtSz~XJSNYUSN~bcSN~"
+        + "evWae+as~eEZW~bSX6ZmX6~WGX6~SBcJSBf0~SBja~WRnwZznw~d2nw~iHhjiHbp~iHWI~c4PjYdPj~XRPj~U1QB"
+        + ".ZzaY~b7aY~eadSeaf0~eaiV~b7lQZzlQ~XrlQ~VMiVVMf0~VMdS~XraY,KyTwT+XDT+XDQATwQA.TwgjXDgjXDc"
+        + "lTwcl,KyTwgjXDgjXDclTwcl.TwT+XDT+XDRSUfMSSeMSTwRS,a0nbfwXTaBnbUUnbReTZYvTZbVnbim,a0TZein"
+        + "beinbb6TZb6.TZYKnbYKnbVgTZVg,a0TZfwTZimnbbVnbYvTZReTZUUjfaB,Q/WHT+ZST+ZSQAWHQA.ZMWRWNWRW"
+        + "NYr~WNaQ~XFcSYfdoZ5fB~ayf2~blhUbliF~blje~ZilMX2lM~WnlM~T0kGSTjDSTl/~Txm4~WynwYZnw~bRnw~e"
+        + "wkuewiP~ewhD~doe6cOdka2cO~aHbf~ZgaqZYaR~ZSZ8~ZMZAZMYM,gAb6YZ~b6WK~eITngETn~h/Tn~kMWLkMYZ"
+        + "~kMal~h8dKgCdK~eJdK~b6am.kbTu~jfSh~hERYfdRY~cxRY~ZaVRZaYZ~Zabh~cyfbfdfb~hEfb~jgeQkbdEkbf"
+        + "HmqfHmqTn~o8T9~rhXcrhaN~rhb4~qie0pigE~n6iH~jPkSgfkS~ekkS~bCjRZiiR~XFgr~UUbgUUYf~UUWA~WHR"
+        + "qX0QA~ZdOY~dxMrgOMr~iPMr~mIOCnwPTpKNk~nNMD~imKcgOKc~dVKc~YNMfWNOc~UNQZ~SHViSHYf~SHbV~UPg"
+        + "fWNic~YOkb~dgmigdmi~jxmi~pcj0rXhU~sify~txcMtxaR~txWK~ozRakbRU,V5a8kOWqYnfPYn.ZKnVcvnVloQ"
+        + "AiWQAgOV/VtV/TlQAQQQA,V9WTbJWTSmbXSm~d6Sm~gXUtgXW4~gXZE~d6bJbXbJ.WTkvWTdta+dt~dSdt~fjfcf"
+        + "jhO~fji/~dSkva+kv.TJnVbNnV~e0nV~iukViuhk~iufb~guc5eycl~hHcF~jsY6jsWi~jsTa~fcQAbhQATJQA,W"
+        + "WknlikniN~jBjs~falKdYlK~ZYlK~VIgRVIbp~VIXC~ZYSJdYSJ~faSJ~jBTnknVGknRz~i9Qr~fQPjdMPj~X5Pj"
+        + "~RzWCRzbp~RzhR~X5nwdMnw~fSnw~i/mp,YpWTkvWTSmaHSm~e8Sm~jbW+jbbs~jbgY~e8kvaHkv.TJnVZonV~ga"
+        + "nV~mwhsmwbs~mwVq~gYQAZoQATJQA,UOTJnVh5nVh5krWTkrWTdxhadxhabHWTbHWTSqiLSqiLQATJQA,SaTJnVg"
+        + "jnVgjkrWTkrWTdzfjdzfjbJWTbJWTQATJQA,YzjDTVjDZmd5Zmd5cMmLcMmLSL~kWQ4~f8PjdcPj~X+Pj~RzV8Rz"
+        + "bp~RzhX~X+nwdcnw~funw~j1molklilkiL~j0jq~f4lKdtlK~ZblK~VIgYVIbp~VIW7~ZbSJdtSJ~fYSJ~iASu,Y"
+        + "ETJnVWTnVWTdxhxdxhxnVk7nVk7QAhxQAhxbHWTbHWTQATJQA,JcTJnVWTnVWTQATJQA,JcTJnVWTnVWTRo~WTNa"
+        + "~TGJmPjJmOWJmOWMQPVMQ~RbMQ~TJOmTJRo,U/TJnVWTnVWTdegxnVk1nVZQcdlqQAhgQAWTbPWTQATJQA,R1TJn"
+        + "VWTnVWTSqhqSqhqQATJQA,bnTJnVX2nVdzXdjynVofnVofQAlaQAlakffZUfcOUfWNkfWNQATJQA,X8TJnVXZnVh"
+        + "vT0hvnVkznVkzQAgjQAWNjhWNQATJQA,ZMcnlM~ZLlM~VIgEVIbp~VIXP~ZLSHcnSH~gDSH~kEXPkEbp~kEgE~gD"
+        + "lM.cnnw~hhnw~nZhLnZbp~nZWI~hhPjcnPj~XsPj~RzWHRzbp~RzhL~Xsnw,TTWTkvWTb+aRb+~ceb+~e4eQe4gX"
+        + "~e4id~cekvaRkv.TJnVaRnV~eMnV~iNjyiNgX~iNc6~eMZYaRZYWTZYWTQATJQA,ZMcnlM~ZLlM~VIgEVIbp~VIX"
+        + "P~ZLSHcnSH~gDSH~kEXPkEbp~kEgE~gDlM.hCQblML4hYL4d7Pn~daPl~c3PjcnPj~XsPj~RzWIRzbp~RzhL~Xsn"
+        + "wcnnw~hhnw~nZhLnZbp~nZXl~kIRz,WPeNa8~fOam~hJYWiHWYlUQAh7QAe8V/~dyYV~bnZ3ZvZ3WTZ3WTQATJQA"
+        + "TJnVaRnV~eRnV~iNj/iNgn~iNea~gKbg.WTkvWTcdaRcd~cjcd~e4eke4gn~e4iq~cjkvaRkv,UUhImkhIjf~fVk"
+        + "W~cJlMaqlM~YFlM~VSjMVShW~VSfz~XJeOZvdvbpdW~fLcr~iiZSiiWc~iiTD~d/PjZmPj~X8Pj~UNQTSNRCSNUS"
+        + "~UITN~X0SHZmSH~cTSH~fPUPfPWN~fPX7~dIZ3auaWYzau~VRbb~SHebSHhG~SHkM~WenwaTnw~b8nw~fWnK,TjP"
+        + "6nVjpnVjpkrbXkrbXQAYMQAYMkrP6kr,XbSynVV9nVV9ZK~V9Va~YrSHbuSH~ewSH~heVaheZKhenVkpnVkpYx~k"
+        + "pUN~gIPjbuPj~XTPj~SyUNSyYx,V5ZKQAQQnVTjnVa8TsiWnVlonVcvQA,fpREnVUQnVZKTneDnVhmnVmgTnrZnV"
+        + "umnVovQAkxQAf2kQa4QAW6QA,V7SBnVVanVbNeqhCnVkbnVc7cIk7QAhiQAa+Z7UXQAQ9QAZScd,TjP8nVTVnVZz"
+        + "dvgOnVjnnVbXbHbXQAYMQAYMbH,V7RznVkInVkIk7VYSqkfSqkfQARcQARcSagMkrRzkr,MfSwoUZYoUZYmFVomF"
+        + "VoOBZYOBZYLySwLy,KySqnVayNCYINCQAnV,MfZvoUZvLyTHLyTHOBW2OBW2mFTHmFTHoU,a0e8nVnbeokSeodak"
+        + "zWieoTZeob4nV,QAgUKsgUIdPsIdPsKs,QAVvpmaJjwXwjwSqpm,Tna+Yz~XfYz~UzXNUzVS~UzTw~W0R9YjR9~a"
+        + "8R9~d1VWd1YKd1Yz.gtZ/gtQAd1QAd1Sq~c2RE~Z6PjXyPj~VGPj~R7SkR7VG~R7YD~V4bDZzbDd1bDd1bV~d1dU"
+        + "~bOffY3ff~XXff~UhexTNeDTNgt~UyhU~Xwh7ZKh7~c9h7~gtd/,UUflYv~flb6~c+fhasfh~Yafh~Vzb6VzYv~V"
+        + "zVk~YaR9asR9~c+R9~flVk.Vze2~Wtga~Zeh7bZh7~elh7~ikc3ikYv~ikUn~elPjbZPj~ZePj~WtREVzSoVzQAS"
+        + "6QAS6oUVzoU,Rmfng1fneJ~eZe0~b8ffasff~X5ff~Uzb8UzYv~UzVi~X5R/asR/~b8R/~eZSqfnTVfnQr~eaQH~"
+        + "b1PjaYPj~WbPj~RxUhRxYv~RxdB~Weh7akh7~b5h7~ebhY,UUeie2eioUhaoUhaQAeiQAeiSo~doRE~a3PjY7Pj~"
+        + "VwPj~RxUnRxYv~Rxc3~Vwh7Y7h7~a3h7~doga.UvYv~UvVk~XWR9ZoR9~b6R9~eiVkeiYv~eib6~b6fhZofh~XWf"
+        + "h~Uvb6,Tsh/Zeh/YEUxYE~U9VG~YKR/bBR/~crR/~fySzhUTnhUQ5~fxQP~chPja2Pj~WqPj~RxUbRxYl~Rxc4~W"
+        + "ah7aWh7~d4h7~h/dY.fHaU~fFcr~cgffaYff~X+ff~VFcxU3aT,LRb4oUb4l7ZIl7~Xll7~WYkrWYjDWYhgbHhgb"
+        + "HfRWYfRWYQATfQATffRQvfRQvhgTfhgTfiu~Tflp~WNoUZKoU,UUeiY9~eicF~b9fhZofh~XUfh~UvcFUvY9~UvV"
+        + "2~XUSaZoSa~b9Sa~eiV2.haSL~haNt~dcJWZWJW~X1JW~VJJzT4KRT4NE~VJMY~XnLuY5Lu~buLu~eiOreiRqeiT"
+        + "F~dpRi~a3QAY7QA~VtQA~RxU6RxY9~RxdB~Vth7Y7h7~a3h7~dpgZeie2eihghahg,UShkakhkQAesQAesae~esc"
+        + "9~cwfba0fb~Yffb~VzcdVzZ5VzQAS6QAS6oUVzoUVzey~W1gX~Zoh7bdh7~eeh7~hkeM,I5TBhgV5hgV5QATBQA."
+        + "TBoUV5oUV5krTBkr,I5TBhgV5hgV5Ps~V5MW~TWJWQhJWPbJWPbLyQMLy~R1Ly~TBNTTBPs.TBoUV5oUV5krTBkr"
+        + ",SiS6oUVzoUVzZ9eYhgiDhgYxZUicQAesQAVzYjVzQAS6QA,I5TBoUV5oUV5QATBQA,fLgpeJ~hugF~kuh7mwh7~"
+        + "pfh7~sdeGsdaksdQApkQApkae~pkc/~nyfbl9fb~jufb~hIcdhIZ5hIQAePQAePae~ePdA~cdfbamfb~YZfb~Vzc"
+        + "cVzZ5VzQAS6QAS6hgVzhgVzey~WygZ~Zih7bbh7~dVh7~gAf/,UShkakhkQAesQAesae~esc9~cwfba0fb~Yffb~"
+        + "VzcdVzZ5VzQAS6QAS6hgVzhgVzey~W1gX~Zoh7bdh7~eeh7~hkeM,TlZzff~Xfff~Uzb4UzYv~UzVm~XeR/ZzR/~"
+        + "cGR/~eyVneyYv~eyb2~cGff.Zzh7~djh7~h1dDh1Yv~h1Uc~djPjZzPj~WCPj~RxUcRxYv~RxdD~WCh7,UUVzSoV"
+        + "zJWS6JWS6hgVzhgVze2~Wtga~Zeh7bZh7~elh7~ikc3ikYv~ikUn~elPjbZPj~ZePj~WtRE.flYv~flb6~c+fhas"
+        + "fh~Yafh~Vzb6VzYv~VzVk~YaR9asR9~c+R9~flVk,UUUvYv~UvVk~XWR9ZoR9~b6R9~eiVkeiYv~eib6~b6fhZof"
+        + "h~XWfh~Uvb6.eiSo~doRE~a3PjY7Pj~VwPj~RxUnRxYv~Rxc3~Vwh7Y7h7~a3h7~dogaeie2eihghahghaJWeiJW"
+        + ",NKdKe0~crfG~bifXa2fX~YafX~VzcMVzZOVzQAS6QAS6hgVzhgVzey~WtgY~Znh7bsh7~b/h7~cth2dJhx,QreL"
+        + "g/eLeR~c9e5~aVfhY7fh~Wyfh~UpeNUpc5~Upb5~WLawYfaPZeaB~ciZX~fHW+fHU1~fHSZ~bQPjX4Pj~WePj~Tb"
+        + "QGRvQpRvTn~TVSy~WbR9X8R9~Z+R9~cKTWcKUn~cKVy~alXCX6XnW6X2~UPYa~R3avR3cx~R3fP~VXh7Ylh7~aLh"
+        + "7~c/hd,MjV3meV3hgbyhgbyfRV3fRV3Vx~V3To~XCSaY1SabySabyQAY1QA~VgQA~S+SfS+VxS+fRQ3fRQ3hgS+h"
+        + "gS+me,USSuW6SuhgVmhgVmXB~VmUi~XiSDZeSD~bzSD~egVBegXleghghYhghYQAegQAegSs~ddRG~asPjY3Pj~V"
+        + "2Pj~SuTT.Z9h7,S8Q9hgUAhgZeS0e8hgh/hgbbQAXhQA,aLRWhgUOhgX0T2bZhgeyhgiYT2l9hgo1hgkQQAg3QAd"
+        + "GeWZUQAV7QA,S8hkhgbPY/h5QAegQAZaW4UUQAQ7QAXuZKRghgU5hgZibReLhg,S8aTOY~ZFLQ~WxJWU1JWSiJWS"
+        + "iLwUOLw~VaLw~WuM4XhO+YCQSQ9hgUAhgZeT0e8hgh/hg,QzRxhgfbhgfbe4UnSTfbSTfbQARYQARYSocMfNRxfN"
+        + ",UXgXNCgXKyfZKy~bgKy~Y3NGY3QjY3US~Y3Wp~XLYdU9YdUAYdUAasU9as~XMas~Y3cfY3e0Y3ik~Y3mB~bgoUf"
+        + "ZoUgXoUgXmFfTmF~dGmF~bwktbwigbweo~bwcL~aVZ9YnZk~aWZJ~bwW7bwUfbwQn~bwOa~dGNCfTNC,KyWuodWu"
+        + "IdUEIdUEod,UXUANCVGNC~XSNC~YnOYYnQnYnUf~YnW7~aBZJbwZk~aBZ9~YncLYneoYnig~Ynku~XSmFVGmFUAm"
+        + "FUAoUU/oU~Y4oU~bfmBbfikbfe0~bfcf~dLasfZasgXasgXYdfZYd~dLYd~bfWpbfUSbfQj~bfNG~Y4KyU/KyUAK"
+        + "y,a0nbcxnbZ/~lyYw~i/XsheXs~fwXsdeYn~dTYrdOYt~dHYwc4Y1~adZzY/Zz~XnZz~U7YmTZXTTZaF~VCbU~X1"
+        + "cZZWcZ~bEcZdXbd~dhbZdmbX~dubUd8bP~gXaRh1aR~jLaR~l0bd,a0mchMfTaBmcS4klQ/daYKWPQ/UZS4bhaBU"
+        + "ZhMWPjFdab6kljF,a0TZbXnbbXnbYtTZYt,QAYAlv~Wwlv~VCkAVCiw~VChh~Wwf0YAf0~ZQf0~a+hha+iw~a+j/"
+        + "~ZPlv.YAnw~ZAnw~a2m/bhmR~cPlk~c9jyc9iw~c9gs~aEd1X+d1~V3d1~TDgpTDiw~TDk2~V7nw,a0eukEeueBn"
+        + "beBnbbXeubXeuVUcGVUcGbXTZbXTZeBcGeBcGkE.TZSqnbSqnbQATZQA,UXSuJWSuhgVmhgVmWo~VmUX~XwSDZ3S"
+        + "D~cLSD~egUregXTeghghYhghYUC~hYTG~h7SNigSN~ipSN~jJSYjlSkjlQQ~i8P5~hzPjhQPj~gLPj~e5QxeqSB~"
+        + "d4Qy~bnPjaFPj~YfPj~WQQxVmR/VmJW,KLTbdGWudGWuZITbZI,VGdOYJcibw~b1fdZDfd~W9fdWAdv~UzblUzYv"
+        + "~UzVTV+Tq~XKR/ZDR/~bJR/cRVU.e1c7gYhgi8hgfvYBgXUm~ggT1hDTM~hsSciMScjkScjkQAh2QA~gYQAfERU~"
+        + "ebR+eKTW~dcRnb+QQ~bSPnZDPn~VYPnTmR/~RxUcRxYv~RxdVTwff~V9h5ZDh5~d6h5,UbV5RFV5JWTAJWTAhZ~T"
+        + "AohZqoh~gcohgcig~gceOdwcq~iIbQiIXF~iIPramPr~XSPr.V5U1~XoSIatSI~fNSIfNXC~fNbcX9bGX9dw~dod"
+        + "wdoiw~domLZ+mL~V5mLV5hT,S8VpewZeT8e8hgh/hga6QAa6JWYCJWYCQATcdE~SwfCRRfCQgfCQghgRmhg~Urhg"
+        + ",TlfskR~eGlXaXlX~WalXWaji~WaiGaihW~dygxfnfB~h1c6h1Yl~h1UcfsSA~djPjZzPj~WEPjT6SA~RxUcRxYv"
+        + "~Rxb7T6eg~UvfgV6gE~TehTTejg~TenwaXnw~d0nwfsmq.YEfS~XAe1WJds~Uzb7UzYv~UzVkWITy~XeR/ZzR/~c"
+        + "GR/~eyVneyYl~eybsdXdM~b2ezZ4e+~Y4fE,RTWLZc~UbZ0Tfa1~Sjb1SjdS~SjffUVgu~WGh8ZKh8~aWh8~dAhk"
+        + "eihMeiel~dBfCbxfP~agfcZZfc~XifcWdeu~VXeAVXdA~VXb6WbbN~XeahZSahbtahbtYJZZYJ~XQYJWIXW~U6We"
+        + "U6VG~U6TsWOS0~XjR8Z6R8~bXR8csSO~eBShfITGfIQb~duP/caPx~bFPjZ1Pj~WHPjUGQ+~SFSZSFVG~SFWy~UP"
+        + "ZE,RabKR/~dOR+edQz~fxPkfxNs~fxL5enKp~dXJSa0JS~a0Kda0Lp~b5LkcjMQ~dDMzdDNY~dDONcjO5~cEPjbK"
+        + "Pj~RsPjRrYW~RrgCamlbSSlbSSoUf4oUf4lb~UkfvUkYW~UkR/,UShkakhkJWesJWesae~esc9~cwfba0fb~Yffb"
+        + "~VzcdVzZ5VzQAS6QAS6hgVzhgVzey~W1gXYOhJ~Zoh7bdh7~eeh7gBgE~hkeM,TlexbGU0bG~VDWbWIUc~XeSAZz"
+        + "SA~cJSAdcUd~elWn.eudw~eSiMdcjw~cGmOZzmO~XamOWJjy~VJh0U2dw.Zzok~djokfslQ~h1h9h1cH~h1WSfsS"
+        + "+~djPpZzPp~WCPpT6S+~RxWSRxcH~Rxh9T6lQ~WCok,K1VjhgVjWL~VjT6WFTM~WpScYVScZuScZuQAX/QA~VLQA"
+        + "T5Rg~SnTCSnWWSmhg,S3S/hgV9hgV9aPdghghAhgaHa6iFQAekQAYGZCV9XBV9QAS/QA,S8Z6llh/QAe8QAaCc8U"
+        + "AQAQ9QAYogyXej4~Wvl2VEl2Tkl2TkoUVZoS~Y7oP,UXSuJWSuhgVmhgVmWo~VmUX~XwSDZ3SD~cLSD~egUregXT"
+        + "eghghYhghYUC~hYTG~h7SNigSN~ipSN~jJSYjlSkjlQQ~i8P5~hzPjhQPj~gLPj~e5QxeqSB~d4Qy~bnPjaFPj~Y"
+        + "fPj~WQQxVmR/VmJW,R4WgQARKhgUQhgYxS0~apUwcNXc~dZZdddbN~dfcCdHdm~crfdbBhgd7hgd7hg~fAgHfueL"
+        + "~gYcZgYbL~gYYHeQVY~bfR0ZkQA,R2baR/~deR+etQz~gBPkgBNs~gBL5e3Kp~dnJSbEJS~bEKdbELp~cJLkczMQ"
+        + "~dTMzdTNY~dTONczO5~cUPjbaPj~RrPjRrWY~RrbEW4cc~SgdASghE~SgkJV8lbSslbSsoUfBoUfBlb~VMlbVMg4"
+        + "~VMd5dcdwdcbG~UibcUkWY~UlSJ,TlZzff~Xfff~Uzb4UzYv~UzVm~XeR/ZzR/~cGR/~eyVneyYv~eyb2~cGff.Z"
+        + "zh7~djh7~h1dDh1Yv~h1Uc~djPjZzPj~WCPj~RxUcRxYv~RxdD~WCh7,TRRKhgh7hgh7eofueofuT4~fuSw~gfRx"
+        + "hWRx~hlRx~iRR2iYR3iYPy~h1Pl~grPZgGPZ~eOPZ~cyRccyUMcyeoWVeoWVQATZQATZeoRKeo,UUUUeY~VRf+Xo"
+        + "hY~Yjh7bZh7~elh7~ikc3ikYv~ikUn~elPjbZPj~ZePj~WtREVzSoVzJWS6JWS6Yl~S6cM.flYv~flb6~c+fhasf"
+        + "h~Yafh~Vzb6VzYv~VzVk~YaR9asR9~c+R9~flVk,USZzfO~XbfOWJdg~UzbtUzYv~UzVm~XeR/ZzR/~cGR/~eyVn"
+        + "eyYv~eybmdcdg~cNfO.ZzhgjWhgjWeogIeo~h1cMh1Yv~h1UcfsSA~djPjZzPj~WCPjT6SA~RxUcRxYv~RxdET6f"
+        + "f~Vrhg,TRbmTM~cKScd2ScfPScfPQAdgQA~asQAZaRg~YITCYIWWYIeoRkeoRkhghthghteobEeobEWL~bET6,Sh"
+        + "VShgVSWL~VSUEWETE~W7R/YmR/~a8R/clVP~dgXFdvaA~d3bmdZdm~c9fdbThgeNhgeNhg~fTgGgAeL~gqcYgqZ+"
+        + "~gqWBeqTG~cOPiYQPj~VdPjT4Rb~SWTRSWWWSVhg,VHc9fL~b8fLb8c6b8SM~dbSMe6T0~gPVRgPYw~gPcAe5dw~"
+        + "dzfL.c9ho~fJhohIfk~jRdXjRYw~jRUhhISA~fHPob8Pob8JWZFJWZFPn~V+PnT4SA~RwUcRwYv~RwdNT4ff~Veh"
+        + "MYEhoYEfF~XCeuWIdg~UybtUyYv~UyVlWITy~XVSLZFSLZFc6~ZFho,SfbcMGZHSFUUJVQ7JVXtVtU3dE~UGfCRs"
+        + "fCQ7fCQ7hgSBhe~WDhXXEewZYYxeLhhhkhhayVJdoNy~eZL0gzL0hkL0hkJWgeJY~ccJf,VHZFPn~VeQMTzRt~Rw"
+        + "TkRwXXRwhgUqhgUqXe~UqUnV/Tb~XJSZZFSLZFhgb8hgb8SM~d/SafCTc~gXUwgXXfgXhgjRhgjRXY~jRTchORu~"
+        + "fYQLb8Pob8JWZFJW,azYmPj~SHPjSHY1~SHcgUihgXohg~VZcgVZYw~VZR/Y3R/~cCR/cCaZesaZ~esR/h3R/~lV"
+        + "R/lVYw~lVcgjGhgmMhg~oncgonY1~onPjiIPj~d4PjdXUO~cuPj,R1TJQATJnVhqnVhqkrWTkrWTQA,V5a8kOUiS"
+        + "ohXSo.QQQAZKnVcvnVloQA,ZMXFdwiHdwiHbGXFbG.cnlM~ZLlMXKio~VIgEVIbp~VIXP~ZLSHcnSH~gDSHiEUr~"
+        + "kEXPkEbp~kEgEiEio~gDlM.cnnw~hhnw~nZhLnZbp~nZWIkdS2~hhPjcnPj~XsPjUwS1~RzWHRzbp~RzhLUwke~X"
+        + "snw,V5TlQAQQQAZKnVcvnVloQAiWQAa8kO,UOUydxf5dxf5bHUybH.TJnVhinVhikrTJkr.TJSqhiSqhiQATJQA,"
+        + "YEk7nVk7QAhxQAhxkrWTkrWTQATJQATJnV,UOWxSqiLSqiLQATJQATJSqaocaTJkrTJnVh5nVh5krWxkreQce,ZM"
+        + "bCiO~Ysh5XKgi~VIevVIbp~VIYkXKWx~YsVabCVF.eMVF~giVaiEWx~kEYkkEbp~kEeviEgi~gih5eMiO.bCSe~X"
+        + "OS0UwU6~RzXaRzbp~Rzf4UwiZ~XNkgbCk2bCnVeMnVeMk2~iAkfkdiZ~nZf4nZbp~nZXbkdU6~iAS0eMSdeMQAbC"
+        + "QA,ZMbCQA~bDSGbCU2~XsU2UwYI~R4bURzg8RznVVInVVIg8~VIciXKZ+~Y4XybCXkbCnVeMnVeMXk~gWXyiEZ+~"
+        + "kGcikGg8kGnVnbnVnbg8~nWbUkeYI~hiU2eMU2~eLTueMQA,YdnPSynPQAd3QAd3Sy~goUTiLW5~juZfjucp~jug"
+        + "Zhqiq~fmk7cOk7~Y2k7~UtgYUtcp~UtZfWQW5~X0UTamSyamQAROQAROSyWNSy~TvU9SmXS~ReZnRecf~RehdUek"
+        + "i~XdnncOnn~g9nnj+ki~m+hem+cp~m+Znl3XT~kwU/iPSy"
+    )
+
+
+def unicodes() -> str:
+    """Each of `characters`' Unicode code point, in order, as four hexadecimal digits, for the
+    map a PDF file keeps from its codes to the characters, so a reader can copy text."""
+    return (
+        "0020002100220023002400250026002700280029002A002B002C002D002E002F003000310032003300340035"
+        + "0036003700380039003A003B003C003D003E003F0040004100420043004400450046004700480049004A004B"
+        + "004C004D004E004F0050005100520053005400550056005700580059005A005B005C005D005E005F00600061"
+        + "00620063006400650066006700680069006A006B006C006D006E006F00700071007200730074007500760077"
+        + "00780079007A007B007C007D007E00D7221200B000B100B500B703B103B203B303B403B503B603B703B803B9"
+        + "03BA03BB03BC03BD03BE03BF03C003C103C303C403C503C603C703C803C9039303940398039B039E03A003A3"
+        + "03A603A803A9"
+    )
+
+
+def kerning() -> str:
+    """The font's kerning pairs among these characters: six letters each, the first character's
+    place, the second's, and the change to the gap between them, as `font` reads them."""
+    return (
+        "AiAig5AiAkfcAiAofcAiAwfcAiAyfcAiA1dhAiA3d9AiA4eQAiA6dhAiBEfcAiAbfcAiBFfcAiBGfcAiBHe3AiAO"
+        + "fTAiBQfcAiAPfcAiBSfcAiBVfcAiBXeIAiBYetAiBad1AjAkfcAjAofcAjAwfcAjA0fcAjA3fBAjA4e3AjA6eQAk"
+        + "A6fcAlAifcAlA3fcAlA6eQAnAidEAnA0fcAnA1fcAnBCdEAnAbdhAnBGeQAnBKdrAnBQe3AnAPa3AnBTdrAnBWeQ"
+        + "AnBadEAoA1e3AoA6eaApAPfcArAifcArAOe3AsAifcAsAkeQAsAweQAsA1dhAsA2fJAsA4e3AsA6e3AsBCfcAsBG"
+        + "eaAsAOcpAsBQeaAsBWeaAsBadrAtAigvAtAwe3AtA1bmAtA2eaAtA3cfAtA4dEAtA6bwAtBGfcAtAOfcAtBQfcAt"
+        + "BWfcAtBadEAwAifcAwA3fcAwA5d9AwA6eQAwAbfcAwAOg5AwAPetAxAid9AxA6fTAxBCekAxBGe3AxAOfTAxBKfT"
+        + "AxBPfcAxBQe3AxAPbBAxBTfcAxBUfcAxBWfcAyAOg5AzAietAzAkeaAzA1drAzA3eQAzA4etAzA6d9AzBCfTAzAb"
+        + "fBAzBGekAzAOetAzBQekAzAPe3AzBWekAzBaeQA0AigmA1AidhA1AkeIA1A1fcA1BCatA1BEakA1AbcfA1BGakA1"
+        + "AOdEA1BKfBA1BQakA1APcNA1BTbTA1BUatA1BWbJA1BYatA1BabBA2A7fcA3Aid9A3AwfcA3BCdhA3AbdZA3BGdh"
+        + "A3AOeIA3BKfTA3BQdhA3APb4A3BWd1A3BafJA4AieQA4BCd9A4AbeIA4BGeIA4AOetA4BKfTA4BQeIA4APcVA4BT"
+        + "ekA4BWe3A4BafcA5AkdrA5Awd9A5A1fcA5BGekA5AOeaA6AidhA6AkeQA6AweQA6BCbmA6AbbwA6BGbwA6AOcNA6"
+        + "BKe3A6BQbwA6APZhA6BWcVA7AOfcBGBZfcBHAbe3BHAOeQBHAPdrBHBVfcBHBYfcBHBafcAOAifTAOAje3AOAohL"
+        + "AOArhyAOAwg5AOAyhLAOA1dEAOA3eIAOA4etAOA5eaAOA6cNAOBQgmAOBXfJAOBafcBMBCfcBMBGe3BMBQe3BMBW"
+        + "fBBMBae3BQAOgmBQAPfcBQBZfBBTBEfTBTAbfcBTBFfcBTBGfTBTBIfcBTBJfcBTAOd9BTBOfcBTBPfcBTBQfTBT"
+        + "APdEBTBSfcBTBTfcBTBZfJBXAbeQBXAOfJBXAPdhBYAbeQBYAPdEBZBEfcBZBGfBBZBQfBBaAbdrBaAOfcBaAPbc"
+    )

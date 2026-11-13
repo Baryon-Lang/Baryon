@@ -51,6 +51,9 @@ impl fmt::Display for Displayed<'_> {
                 write!(formatter, "Array[{}, {rank}]", show(*element))
             }
             TypeKind::TextArray => formatter.write_str("Array[str, 1]"),
+            TypeKind::OptionalArray(element) => {
+                write!(formatter, "Array[{} | None, 1]", show(*element))
+            }
             TypeKind::Fixed { element, shape } => {
                 write!(formatter, "Fixed[{}, {shape}]", show(*element))
             }

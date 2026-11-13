@@ -1,6 +1,6 @@
 //! Text columns of a `DataFrame` (roadmap 3.13.3, decision 0045) through every stage up to
 //! the type checker: a frame with a column of `str` is typed, and each use of one that is not
-//! built yet is reported.
+//! built is reported.
 //!
 //! These tests live in the driver because they need several implementations, and only an
 //! application crate may depend on more than one (decision 0001).
@@ -22,9 +22,9 @@ fn check_one(text: &str) -> String {
         .join("\n\n")
 }
 
-/// A program that uses frames with a text column in ways that are not built yet, one on each
-/// line of `uses`, among them a column moved out, an element assigned, and a column of the
-/// wrong type.
+/// A program that uses frames with a text column, one use on each line of `uses`, among
+/// them a text column reduced to a mean, a column moved out, two columns added, and a
+/// column of the wrong type.
 const PROGRAM: &str = r#"
 class Trade(Struct):
     symbol: str
@@ -37,7 +37,7 @@ def uses(trades: DataFrame[Trade], more: DataFrame[Trade], rows: list[Trade]):
     c = trades[trades.price > 1.0]
     d = DataFrame(rows)
     e = concat([trades, more])
-    g = trades.groupby("price").agg(first=("symbol", "first"))
+    g = trades.groupby("price").agg(first=("symbol", "first"), mean=("symbol", "mean"))
     for row in trades.itertuples():
         pass
     h = trades.sort_values("price")
@@ -56,12 +56,12 @@ def uses(trades: DataFrame[Trade], more: DataFrame[Trade], rows: list[Trade]):
 "#;
 
 /// What the checker reports for [`PROGRAM`], in source order.
-const EXPECTED: &str = r#"error: `agg` cannot reduce `symbol`, a column of `str`, yet
-  --> main.byn:12:44
+const EXPECTED: &str = r#"error: `agg` cannot reduce `symbol`, a column of `str`, with `mean`
+  --> main.byn:12:70
    |
-12 |     g = trades.groupby("price").agg(first=("symbol", "first"))
-   |                                            ^^^^^^^^ a column of `str`
-   = note: a column of `str` can be a key of `groupby` today; its reductions come with roadmap item 3.13.3
+12 |     g = trades.groupby("price").agg(first=("symbol", "first"), mean=("symbol", "mean"))
+   |                                                                      ^^^^^^^^ a column of `str`
+   = note: a column of `str` has `count`, `first`, `last`, `min` and `max`
 
 error: a column cannot be moved out of its `DataFrame`
   --> main.byn:17:12
@@ -88,7 +88,7 @@ error: `+` is not built for an array of `str` yet
    |
 24 |     p = trades.symbol + more.symbol
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60
 
 error: `DataFrame[Trade]` has no column `x`
   --> main.byn:25:16
@@ -110,11 +110,12 @@ error: list items must share one type, found `str` and `f64`
 27 |     wrong: DataFrame[Trade] = DataFrame({"symbol": Array([1.0]), "price": Array([1.0])})
    |                                                           ^^^ a different type"#;
 
-/// The one use of a frame with a text column that is not built yet, a text column reduced by
-/// `agg`, is an error that says so. A row, `DataFrame(rows)`, `itertuples`, `head`, a mask, a
-/// slice, a sort, a list of columns, `drop`, `assign` of a text column and `concat` are
-/// built, and get no error. The column itself is a text array, so moving it out, assigning
-/// an element and adding two are that type's errors.
+/// A text column reduced by `agg` to a mean, which text does not have, is an error that
+/// names the reductions text has; `first` on the same line gets none. A row,
+/// `DataFrame(rows)`, `itertuples`, `head`, a mask, a slice, a sort, a list of columns,
+/// `drop`, `assign` of a text column and `concat` are built, and get no error. The column
+/// itself is a text array, so moving it out, assigning an element and adding two are that
+/// type's errors.
 #[test]
 fn uses_of_a_text_column_frame_not_built_yet_are_reported() {
     assert_eq!(check_one(PROGRAM), EXPECTED);

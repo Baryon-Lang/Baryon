@@ -1,0 +1,308 @@
+"""The `backend_pdf` library file: draws a figure as a one-page PDF file, as matplotlib's
+`backend_pdf` does (decision 0046).
+
+It is internal to the standard library: `byplot` and the files under it import it, and a
+program cannot, so a program's own `backend_pdf.byn` is never hidden by it.
+
+`RendererPDF` takes the same calls as `RendererSVG`, the trait `backend_bases.RendererBase`, and
+writes each as PDF drawing operators on one page the size of the figure, in points. Lines,
+shapes and markers stay vectors, so the file prints sharp at any size. Text is written as text
+in DejaVu Sans, embedded as a Type 3 font whose glyphs are the font's own outlines from `font`,
+as matplotlib embeds fonts by default (`pdf.fonttype` 3), so a reader shows it the same without
+the font installed and can search and copy it. `pdf_file` puts the page, the font and the
+images together into the file.
+"""
+
+from math import isfinite
+from backend_bases import RendererBase
+from colors import to_rgb
+from font import Font, load, math_layout
+from pdf_file import code, number, text_string, write_pdf
+
+KAPPA: Final = 0.5522847498  # a quarter circle's Bezier control distance, as a fraction of r
+
+
+class RendererPDF(Struct, RendererBase):
+    """A page `width` by `height` points, drawn into one call at a time, as matplotlib's
+    `RendererPdf`. Make one with `renderer_pdf`.
+
+    PDF measures from the bottom left corner, y growing upwards, so each call turns `byplot`'s
+    y from the top into `height - y`. A call costs about 15 bytes of the page a point of a line
+    and about 60 a marker, before the page is compressed.
+    """
+
+    width: f64  # the page's width in points
+    height: f64  # the page's height in points
+    operators: list[str]  # the page's drawing operators, a call at a time
+    images: list[Array[u8, 3]]  # each image drawn, as RGBA pixels, rows from the top
+    opacities: list[f64]  # each opacity below 1 a fill has used, by its `/A` number
+    font: Font  # DejaVu Sans, read once
+    clip: str  # the operators that set the clip rectangle, `set_clip`'s last
+    smooth: list[bool]  # whether each image of `images` is smoothed when it is stretched
+
+    def set_clip(self: InOut[Self], x: f64, y: f64, width: f64, height: f64) -> None:
+        """Sets the rectangle that calls with `clip` true are cut off at."""
+        bottom = self.height - y - height
+        self.clip = f"{number(x)} {number(bottom)} {number(width)} {number(height)} re W n "
+
+    def draw_path(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        color: str,
+        linewidth: f64,
+        dashes: list[f64],
+        capstyle: str,
+        clip: bool,
+    ) -> None:
+        """Strokes the line as `RendererSVG.draw_path` describes, with round joins."""
+        path = self._path(x, y, False)
+        if path == "":
+            return
+        cap = "2" if capstyle == "projecting" else "0"
+        pattern = " ".join([number(length) for length in dashes])
+        red, green, blue = to_rgb(color)
+        self._add(
+            f"{_triple(red, green, blue)} RG {number(linewidth)} w {cap} J 1 j "
+            + f"[{pattern}] 0 d {path}S",
+            clip,
+        )
+
+    def draw_polygon(
+        self: InOut[Self], x: Array[f64, 1], y: Array[f64, 1], fill: str, opacity: f64, clip: bool
+    ) -> None:
+        """Fills the polygons as `RendererSVG.draw_polygon` describes, by the nonzero rule."""
+        path = self._path(x, y, True)
+        if path == "":
+            return
+        red, green, blue = to_rgb(fill)
+        self._add(f"{self._opacity(opacity)}{_triple(red, green, blue)} rg {path}f", clip)
+
+    def draw_markers(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        marker: str,
+        size: f64,
+        color: str,
+        edgewidth: f64,
+        clip: bool,
+    ) -> None:
+        """Draws the marker at each finite point, as `RendererSVG.draw_markers` describes: its
+        path is written once a point, moved there."""
+        shape, paint = _marker(marker, 0.5 * size)
+        red, green, blue = to_rgb(color)
+        parts: list[str] = [
+            f"{_triple(red, green, blue)} rg {_triple(red, green, blue)} RG "
+            + f"{number(edgewidth)} w 0 J 0 j [] 0 d "
+        ]
+        for k in range(len(x)):
+            if isfinite(x[k]) and isfinite(y[k]):
+                place = f"{number(x[k])} {number(self.height - y[k])}"
+                parts.append(f"q 1 0 0 1 {place} cm {shape}{paint} Q ")
+        if len(parts) > 1:
+            self._add("".join(parts), clip)
+
+    def draw_rectangle(
+        self: InOut[Self],
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        fill: str,
+        opacity: f64,
+        edge: str,
+        edgewidth: f64,
+        clip: bool,
+    ) -> None:
+        """Draws the rectangle as `RendererSVG.draw_rectangle` describes, with mitred
+        corners."""
+        left = min(x, x + width)
+        bottom = self.height - max(y, y + height)
+        box = f"{number(left)} {number(bottom)} {number(abs(width))} {number(abs(height))} re "
+        if fill != "none":
+            red, green, blue = to_rgb(fill)
+            self._add(f"{self._opacity(opacity)}{_triple(red, green, blue)} rg {box}f", clip)
+        if edge != "none":
+            red, green, blue = to_rgb(edge)
+            stroke = f"{_triple(red, green, blue)} RG {number(edgewidth)} w 0 j [] 0 d "
+            self._add(f"{stroke}{box}S", clip)
+
+    def draw_image(
+        self: InOut[Self],
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        pixels: Array[u8, 3],
+        smooth: bool,
+        clip: bool,
+    ) -> None:
+        """Draws the RGBA image as `RendererSVG.draw_image` describes, embedded once as an
+        image the reader stretches, blending neighbouring pixels only when `smooth`."""
+        bottom = self.height - y - height
+        name = f"/I{len(self.images)}"
+        self.images.append(pixels.copy())
+        self.smooth.append(smooth)
+        self._add(
+            f"{number(width)} 0 0 {number(height)} {number(x)} {number(bottom)} cm {name} Do", clip
+        )
+
+    def draw_text(
+        self: InOut[Self], x: f64, y: f64, text: str, size: f64, anchor: str, rotate: bool
+    ) -> None:
+        """Writes `text` in black as `RendererSVG.draw_text` describes, in the embedded DejaVu
+        Sans with its own advances and kerning; a mathtext label from
+        `LogFormatterSciNotation` is laid out as `font.math_layout` places it."""
+        if text.startswith("$\\mathdefault{"):
+            coefficient, exponent, at_ten, at_exponent, width = math_layout(text, size)
+            left = x - _shift(anchor, width)
+            if coefficient != "":
+                self._text(left, y, coefficient + "×", size, False)
+            self._text(left + at_ten, y, "10", size, False)
+            self._text(left + at_exponent, y - 0.413 * size, exponent, 0.7 * size, False)
+            return
+        shift = _shift(anchor, self.font.width(text) / 2048.0 * size)
+        if rotate:
+            self._text(x, y + shift, text, size, True)
+        else:
+            self._text(x - shift, y, text, size, False)
+
+    def get_text_width_height_descent(self: Self, text: str, size: f64) -> tuple[f64, f64, f64]:
+        """How wide `text` is in DejaVu Sans at `size` points, from the font's advances and
+        kerning, and the line box `RendererSVG` gives it, as the PNG renderer measures it."""
+        if text.startswith("$\\mathdefault{"):
+            return (math_layout(text, size)[4], 1.1762 * size, 0.3224 * size)
+        return (self.font.width(text) / 2048.0 * size, size, 492.0 / 2048.0 * size)
+
+    def print_pdf(self: Self) -> Raises[Array[u8, 1], OSError]:
+        """The bytes of the PDF file: the page, the font and the images, with the page and
+        the images compressed by `zlib`.
+
+        # Errors
+
+        `OSError` only if `zlib` fails, which it never does for a valid page.
+        """
+        return write_pdf(
+            self.width,
+            self.height,
+            "\n".join(self.operators),
+            self.images,
+            self.smooth,
+            self.opacities,
+            self.font,
+        )
+
+    def _add(self: InOut[Self], operators: str, clip: bool) -> None:
+        """Adds `operators` to the page inside their own graphics state, so their colors,
+        widths, opacity and clip end with them; `clip` cuts them off at the clip rectangle."""
+        cut = self.clip.copy() if clip else ""
+        self.operators.append(f"q {cut}{operators} Q")
+
+    def _opacity(self: InOut[Self], opacity: f64) -> str:
+        """The operator that sets fills to `opacity`, nothing for 1, through a graphics state
+        named `/A` and its number, one for each opacity used."""
+        if opacity >= 1.0:
+            return ""
+        for k in range(len(self.opacities)):
+            if self.opacities[k] == opacity:
+                return f"/A{k} gs "
+        self.opacities.append(opacity)
+        return f"/A{len(self.opacities) - 1} gs "
+
+    def _path(self: Self, x: Array[f64, 1], y: Array[f64, 1], close: bool) -> str:
+        """The path through the finite points, in PDF's coordinates: a point that is not
+        finite lifts the pen, and closes the shape so far when `close`. Empty when no point is
+        finite."""
+        parts: list[str] = []
+        pen_down = False
+        for k in range(len(x)):
+            if isfinite(x[k]) and isfinite(y[k]):
+                command = "l" if pen_down else "m"
+                parts.append(f"{number(x[k])} {number(self.height - y[k])} {command} ")
+                pen_down = True
+            else:
+                if pen_down and close:
+                    parts.append("h ")
+                pen_down = False
+        if pen_down and close:
+            parts.append("h ")
+        return "".join(parts)
+
+    def _text(self: InOut[Self], x: f64, y: f64, text: str, size: f64, rotate: bool) -> None:
+        """Writes `text` with the left end of its baseline at `(x, y)`, turned to read upwards
+        when `rotate`, its characters spaced by the font's kerning."""
+        pieces: list[str] = []
+        run: list[str] = []
+        last = -1
+        for letter in text:
+            place = self.font.place(letter)
+            kern = self.font.pairs.get(1000 * last + place, 0.0)
+            if kern != 0.0:
+                pieces.append(f"({''.join(run)}) {number(-kern * 1000.0 / 2048.0)} ")
+                run = []
+            run.append(text_string(letter, code(place)))
+            last = place
+        pieces.append(f"({''.join(run)})")
+        base = self.height - y
+        turn = "0 1 -1 0" if rotate else "1 0 0 1"  # a quarter turn anticlockwise, or none
+        matrix = f"{turn} {number(x)} {number(base)}"
+        self._add(f"0 g BT /F1 {number(size)} Tf {matrix} Tm [{''.join(pieces)}] TJ ET", False)
+
+
+def renderer_pdf(width: f64, height: f64) -> RendererPDF:
+    """An empty page `width` by `height` points, as `savefig` makes one: matplotlib's default
+    figure is 460.8 by 345.6 points, 6.4 by 4.8 inches."""
+    return RendererPDF(width, height, [], [], [], load(), "", [])
+
+
+def _triple(red: f64, green: f64, blue: f64) -> str:
+    """A color as PDF writes one, three numbers from 0 to 1."""
+    return f"{number(red)} {number(green)} {number(blue)}"
+
+
+def _shift(anchor: str, width: f64) -> f64:
+    """How far left of its anchor a text `width` wide starts."""
+    if anchor == "middle":
+        return 0.5 * width
+    if anchor == "end":
+        return width
+    return 0.0
+
+
+def _marker(marker: str, half: f64) -> tuple[str, str]:
+    """The path of `marker` centred on 0, 0, `2 * half` points across, y upwards, as
+    `RendererSVG` shapes it, and how to paint it: `B` to fill and edge a filled marker, `S` to
+    stroke one made of lines. Panics on a marker it does not know."""
+    plus = number(half)
+    minus = number(-half)
+    if marker == "o" or marker == ".":
+        radius = half if marker == "o" else 0.5 * half
+        return (_circle(radius), "B")
+    if marker == "s":
+        return (f"{minus} {minus} {number(2.0 * half)} {number(2.0 * half)} re ", "B")
+    if marker == "^":
+        return (f"0 {plus} m {plus} {minus} l {minus} {minus} l h ", "B")
+    if marker == "v":
+        return (f"0 {minus} m {plus} {plus} l {minus} {plus} l h ", "B")
+    if marker == "D":
+        return (f"0 {plus} m {plus} 0 l 0 {minus} l {minus} 0 l h ", "B")
+    if marker == "+":
+        return (f"{minus} 0 m {plus} 0 l 0 {minus} m 0 {plus} l ", "S")
+    if marker == "_":
+        return (f"{plus} 0 m {minus} 0 l ", "S")
+    if marker == "|":
+        return (f"0 {minus} m 0 {plus} l ", "S")
+    known = marker == "x"
+    assert known, f"{marker!r} is not a marker: 'o', '.', 's', '^', 'v', 'D', '+', 'x', '_' or '|'"
+    return (f"{minus} {minus} m {plus} {plus} l {minus} {plus} m {plus} {minus} l ", "S")
+
+
+def _circle(radius: f64) -> str:
+    """A circle of `radius` centred on 0, 0, as four Bezier curves, as PDF has no circle."""
+    r = number(radius)  # the radius, and how far along the tangent each control point lies
+    k = number(KAPPA * radius)
+    return (
+        f"{r} 0 m {r} {k} {k} {r} 0 {r} c -{k} {r} -{r} {k} -{r} 0 c "
+        + f"-{r} -{k} -{k} -{r} 0 -{r} c {k} -{r} {r} -{k} {r} 0 c h "
+    )

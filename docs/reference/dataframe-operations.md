@@ -4,7 +4,8 @@ This page continues [DataFrames](dataframes.md), which describes the type, its c
 its rows. The operations here read every row of a frame and build a new frame:
 `sort_values` puts the rows in order, `groupby(...).agg(...)` reduces the rows that share a
 key to one row, `merge` pairs the rows of two frames, `drop_duplicates` leaves out the
-rows that repeat, `value_counts` counts them, and `concat` stacks frames. Each keeps
+rows that repeat, `value_counts` counts them, `describe` sums up each column of numbers,
+and `concat` stacks frames. Each keeps
 pandas's name and arguments ([decision 0045](../decisions/0045-dataframe.md)), and the
 compiler works out the columns of each result.
 
@@ -107,8 +108,11 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   no row index; pandas makes them the index, and shows this frame after `reset_index()`.
 - **The groups come out sorted by their keys**, rising, and rows keep their order inside a
   group, which is what `first` and `last` see. A key of `str` is in the order of Python's
-  `<`, by code point, and texts are one group only when exactly equal. A column of `str`
-  cannot be reduced by `agg` yet (roadmap item 3.13.3).
+  `<`, by code point, and texts are one group only when exactly equal.
+- **A column of `str` has five of the reductions**: `count`, an `i64`, and `first`,
+  `last`, `min` and `max`, which give a `str`, the smallest and largest by `<`. The
+  others are compile errors. pandas's `sum` of text, which joins the texts of a group, is
+  not built. `min` and `max` cost one sort of the column, comparing text.
 - **NaN is left out, as in pandas.** A row whose key is NaN belongs to no group. A NaN
   value is skipped by every reduction, so `count` counts the values that are numbers. A
   group with no numbers has the sum 0, the count 0, and NaN for the rest; `var` and `std`
@@ -240,6 +244,46 @@ With four trades of the symbols 7, 3, 7 and 5, this prints:
   `dropna=`. Sort the result with `sort_values` for another order.
 - **Cost:** for `n` rows, a sort of `n` row positions for each column counted by, one more
   sort for a column of `str`, then one pass and a sort of the distinct values by count.
+
+## Describing columns
+
+`df.describe()` gives a new frame of eight rows that sums up every column of numbers: how
+many values it has, their mean and standard deviation, the smallest, the three quartiles and
+the largest.
+
+```python
+print(trades.describe())
+```
+
+With the prices 189.5, 410.0, 191.0 and 20.0 and the volumes 100, 250, 50 and 10, this prints:
+
+```text
+  statistic       price  volume
+0     count    4.000000     4.0
+1      mean  202.625000   102.5
+2       std  159.857945   105.0
+3       min   20.000000    10.0
+4       25%  147.125000    40.0
+5       50%  190.250000    75.0
+6       75%  245.750000   137.5
+7       max  410.000000   250.0
+```
+
+- **The names are a column, `statistic`**, a column of `str`. pandas has them as the row
+  index, which a Baryon frame does not have; Polars names the column the same way. Read
+  one number as `summary.price[1]`, the mean.
+- **Each column of whole or real numbers gives one `f64` column**, under its own name.
+  Columns of `bool`, `str` and complex numbers are left out, as pandas leaves out what is
+  not a number. A frame with no column of numbers is a compile error, and so is a column
+  of numbers named `statistic`.
+- **NaN is left out**, as in pandas. `std` divides by one less than the count, so one value
+  has none and gives NaN. A column with no values has the count 0 and NaN for the rest.
+- **A quartile between two values is taken on the line between them**, as pandas and
+  NumPy's `percentile` take it.
+- **The frame is read, not taken.**
+- **pandas's arguments are not built**: `percentiles=`, `include=` and `exclude=`. Choose
+  columns first, `df[["price"]].describe()`.
+- **Cost:** for `n` rows, one copy and one sort of each column of numbers.
 
 ## Stacking frames
 

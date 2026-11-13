@@ -94,7 +94,8 @@ again from the programs in `plotting.rs`, `plotting_images.rs`, which draws `gri
 `font.family` set to DejaVu Sans: its text is placed within a thousandth of a point of
 matplotlib's, apart from labels whose width is estimated. `contours.svg` and `saddles.svg` were
 compared with matplotlib's drawings of the same grids: the lines and bands fall in the same
-places, the colors are the same bytes, and only where a dash starts differs.
+places, the colors are the same bytes, and only where a dash starts differs. `polynomials.svg`
+and `shapes.svg` were written again when dashed lines took matplotlib's `"butt"` dash cap.
 
 `matplotlib_contour_ticks.txt` holds, for each range of `ranges.txt`, the levels matplotlib
 3.11.2's `MaxNLocator(8)` gives with its default steps, as contour levels are chosen before
@@ -111,3 +112,81 @@ for line in open("ranges.txt"):
     lines.append(" ".join(repr(float(t)) for t in locator.tick_values(low, high)))
 open("matplotlib_contour_ticks.txt", "w").write("\n".join(lines) + "\n")
 ```
+
+## PNG images
+
+`waves.png` and `grid.png` are Baryon's own PNG output, from the programs in
+[`../../build/plotting_png.rs`](../../build/plotting_png.rs), checked by eye against
+matplotlib 3.11.2's PNG of the same plots: the same lines, dashes, markers, bands and colors in
+the same places, with text in DejaVu Sans where matplotlib 3.11 draws its newer default font. The
+tests read both files back and allow a color value to differ by one level, so the last bit of
+`sin` and `cos` may differ between platforms. When a change to drawing is intended, write them
+again from those programs and look at them before committing.
+
+## PDF pages
+
+`grid_page.txt` is the drawing operators of the page Baryon writes for the figure in
+[`../../build/plotting_pdf.rs`](../../build/plotting_pdf.rs), as the program reads them back
+from its PDF file. The file was drawn by poppler's `pdftoppm` and checked by eye against the PNG
+of the same figure, and opened by MuPDF, which reported no errors and extracted the text,
+Greek letters and the minus sign included. When a change to drawing is intended, write it
+again from that program and look at the page before committing.
+
+## DejaVu Sans
+
+`crates/driver/library/dejavu_sans.byn` is written from matplotlib's own copy of
+`DejaVuSans.ttf` by this script, run with `fontTools` installed, the font's path and the output
+path as its arguments:
+
+```text
+import sys
+import textwrap
+from fontTools.ttLib import TTFont
+
+font = TTFont(sys.argv[1])
+cmap = font.getBestCmap()
+glyf = font["glyf"]
+hmtx = font["hmtx"]
+chars = (
+    [chr(c) for c in range(32, 127)] + list("×−°±µ·")
+    + [chr(c) for c in range(0x3B1, 0x3CA) if c != 0x3C2] + list("ΓΔΘΛΞΠΣΦΨΩ")
+)
+B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+
+def two(value, offset):
+    value += offset
+    assert 0 <= value < 4096
+    return B64[value >> 6] + B64[value & 63]
+
+
+def glyph(name):
+    g = glyf[name]
+    out = two(hmtx[name][0], 0)
+    if g.numberOfContours == 0:
+        return out
+    coords, ends, flags = g.getCoordinates(glyf)
+    start, parts = 0, []
+    for end in ends:
+        parts.append("".join(
+            ("" if flags[k] & 1 else "~") + two(coords[k][0], 1024) + two(coords[k][1], 1024)
+            for k in range(start, end + 1)
+        ))
+        start = end + 1
+    return out + ".".join(parts)
+
+
+names = [".notdef"] + [cmap[ord(c)] for c in chars]
+index = {name: k for k, name in enumerate(names)}
+data = ",".join(glyph(name) for name in names)
+kerning = "".join(
+    two(index[a], 0) + two(index[b], 0) + two(v, 2048)
+    for (a, b), v in sorted(font["kern"].kernTables[0].kernTable.items())
+    if a in index and b in index and a != ".notdef"
+)
+```
+
+`codes` holds each character's Unicode code point as four hexadecimal digits, `"".join("%04X" %
+ord(c) for c in chars)`. The script then writes `data`, `codes`, `kerning`, the characters and the
+font's license notice, its `name` record 13 wrapped at 96 columns, into the file's functions and
+docstring, with each long string cut into lines of at most 88 characters joined by `+`.

@@ -4,12 +4,12 @@
 //! per call's type arguments rather than as roots (decision 0018).
 
 use crate::Session;
-use database::Db;
-use std::collections::HashMap;
+use database::{File, Package};
 use syntax::{NodeId, Role, SyntaxKind, SyntaxTree};
 use types::{Declaration, Item, TypeDb, TypeKind};
 
 /// One function to compile: the item, its symbol and the span of its name.
+#[derive(Clone, Debug, PartialEq, Eq, salsa::SalsaValue)]
 pub(super) struct Function<'db> {
     /// The function or method.
     pub(super) item: Item<'db>,
@@ -33,7 +33,7 @@ pub(super) struct Function<'db> {
 }
 
 /// Whether a function is decorated `@test`.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Test {
     /// It is not a test.
     No,
@@ -57,107 +57,108 @@ pub(crate) fn is_test(tree: &SyntaxTree, text: &str, statement: NodeId) -> bool 
 }
 
 impl Session {
-    /// Every function and method of the package, with its symbol, in file and source order.
+    /// Every function and method of the package, with its symbol, in file and source order:
+    /// the standard library's files first, then the package's in the order they were added.
     pub(super) fn functions(&self) -> Vec<Function<'_>> {
-        let database = &self.database;
-        let mut functions = Vec::new();
-        for &file in self.library.iter().chain(&self.files) {
-            // A library file's module is `<std>.linalg`, which no program's module can spell, so
-            // its symbols never clash with the program's own.
-            let library = database::library_module(file.source(database).name());
-            let module = match library {
-                Some(name) => format!("<std>.{name}"),
-                None => match database::module_name(database, file) {
-                    Ok(module) => module.to_string(),
-                    Err(_) => continue,
-                },
-            };
-            let tree = database.parse(file).tree();
-            let text = file.source(database).text();
-            let name = |statement: NodeId| {
-                tree.child(statement, Role::Name)
-                    .filter(|&name| tree.kind(name) == SyntaxKind::Name)
-            };
-            let in_main_module = module == "main";
-            let is_test = |statement: NodeId| is_test(tree, text, statement);
-            let mut push =
-                |statement: NodeId, node: NodeId, symbol: String, main: bool, method: bool| {
-                    let decorated = match (is_test(statement), method) {
-                        (false, _) => Test::No,
-                        (true, false) => Test::Function,
-                        (true, true) => Test::Method,
-                    };
-                    let defaults = defaulted(tree, statement)
-                        .map(|name| {
-                            let item = Item::new(database, self.package, file, name);
-                            (item, format!("{symbol}:{}", tree.text(name, text)))
-                        })
-                        .collect();
-                    functions.push(Function {
-                        item: Item::new(database, self.package, file, node),
-                        symbol,
-                        main,
-                        in_main_module,
-                        test: decorated,
-                        defaults,
-                        library: library.is_some(),
-                    });
-                };
-            for statement in tree.children_with(tree.root(), Role::Body) {
-                let Some(node) = name(statement) else {
-                    continue;
-                };
-                let own = tree.text(node, text);
-                match tree.kind(statement) {
-                    SyntaxKind::FunctionDefinition => {
-                        push(
-                            statement,
-                            node,
-                            format!("{module}.{own}"),
-                            own == "main",
-                            false,
-                        );
-                    }
-                    SyntaxKind::ClassDefinition => {
-                        // A trait's methods have no bodies: each instance of a generic function
-                        // calls the implementing type's method instead (decision 0031).
-                        let class = Item::new(database, self.package, file, node);
-                        if matches!(
-                            database.declaration(class).declaration,
-                            Declaration::Trait { .. }
-                        ) {
-                            continue;
-                        }
-                        for method in tree.children_with(statement, Role::Body) {
-                            if tree.kind(method) != SyntaxKind::FunctionDefinition {
-                                continue;
-                            }
-                            if let Some(method_name) = name(method) {
-                                let symbol =
-                                    format!("{module}.{own}.{}", tree.text(method_name, text));
-                                push(method, method_name, symbol, false, true);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        functions
+        let database: &dyn TypeDb = &self.database;
+        self.package
+            .files(database)
+            .iter()
+            .flat_map(|&file| file_functions(database, self.package, file).iter().cloned())
+            .collect()
     }
 }
 
-/// The function each default's function in `functions` belongs to.
-pub(super) fn owners<'db>(functions: &[Function<'db>]) -> HashMap<Item<'db>, Item<'db>> {
+/// Every function and method of `file`, a file of `package`, with its symbol, in source order.
+/// A query, so a build that keeps the database reads a file's functions again only after the
+/// file changes, and a function's symbol, which other functions' text names, is the same
+/// value until it changes (roadmap 2.2.2).
+#[salsa::tracked(returns(ref))]
+pub(super) fn file_functions(
+    database: &dyn TypeDb,
+    package: Package,
+    file: File,
+) -> Vec<Function<'_>> {
+    let mut functions = Vec::new();
+    // A library file's module is `<std>.linalg`, which no program's module can spell, so
+    // its symbols never clash with the program's own.
+    let library = database::library_module(file.source(database).name());
+    let module = match library {
+        Some(name) => format!("<std>.{name}"),
+        None => match database::module_name(database, file) {
+            Ok(module) => module.to_string(),
+            Err(_) => return functions,
+        },
+    };
+    let tree = database.parse(file).tree();
+    let text = file.source(database).text();
+    let name = |statement: NodeId| {
+        tree.child(statement, Role::Name)
+            .filter(|&name| tree.kind(name) == SyntaxKind::Name)
+    };
+    let in_main_module = module == "main";
+    let is_test = |statement: NodeId| is_test(tree, text, statement);
+    let mut push = |statement: NodeId, node: NodeId, symbol: String, main: bool, method: bool| {
+        let decorated = match (is_test(statement), method) {
+            (false, _) => Test::No,
+            (true, false) => Test::Function,
+            (true, true) => Test::Method,
+        };
+        let defaults = defaulted(tree, statement)
+            .map(|name| {
+                let item = Item::new(database, package, file, name);
+                (item, format!("{symbol}:{}", tree.text(name, text)))
+            })
+            .collect();
+        functions.push(Function {
+            item: Item::new(database, package, file, node),
+            symbol,
+            main,
+            in_main_module,
+            test: decorated,
+            defaults,
+            library: library.is_some(),
+        });
+    };
+    for statement in tree.children_with(tree.root(), Role::Body) {
+        let Some(node) = name(statement) else {
+            continue;
+        };
+        let own = tree.text(node, text);
+        match tree.kind(statement) {
+            SyntaxKind::FunctionDefinition => {
+                push(
+                    statement,
+                    node,
+                    format!("{module}.{own}"),
+                    own == "main",
+                    false,
+                );
+            }
+            SyntaxKind::ClassDefinition => {
+                // A trait's methods have no bodies: each instance of a generic function
+                // calls the implementing type's method instead (decision 0031).
+                let class = Item::new(database, package, file, node);
+                if matches!(
+                    database.declaration(class).declaration,
+                    Declaration::Trait { .. }
+                ) {
+                    continue;
+                }
+                for method in tree.children_with(statement, Role::Body) {
+                    if tree.kind(method) != SyntaxKind::FunctionDefinition {
+                        continue;
+                    }
+                    if let Some(method_name) = name(method) {
+                        let symbol = format!("{module}.{own}.{}", tree.text(method_name, text));
+                        push(method, method_name, symbol, false, true);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
     functions
-        .iter()
-        .flat_map(|function| {
-            function
-                .defaults
-                .iter()
-                .map(|(default, _)| (*default, function.item))
-        })
-        .collect()
 }
 
 /// The `Name` node of each parameter of the function `function` declares that has a default,

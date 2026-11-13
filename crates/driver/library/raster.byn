@@ -1,0 +1,333 @@
+"""The `raster` library file: turns polygons into anti-aliased pixels, and lines into the
+polygons that cover them, as the Anti-Grain Geometry library does for matplotlib's PNG output
+(decision 0046).
+
+It is internal to the standard library: `backend_agg` draws through it, and a program cannot
+import it, so a program's own `raster.byn` is never hidden by it.
+
+A shape is a list of polygons, their x and y in pixels from the image's top left corner, y
+growing downwards, a NaN closing each. `coverage` finds how much of each pixel the shape covers,
+exactly, from the signed area each edge sweeps across each pixel and a running sum along each
+row, as the font renderer `font-rs` does it, which fills by the nonzero rule as fonts need.
+`stroke` cuts a line into overlapping pieces, a rectangle a segment and a circle a joint, and
+`union` covers them, keeping for each pixel the most any piece covers.
+"""
+
+from math import ceil, cos, floor, isfinite, nan, pi, sin, sqrt
+
+
+def coverage(
+    x: list[f64], y: list[f64], left: int, top: int, width: int, height: int
+) -> Array[f64, 1]:
+    """How much of each pixel of the box `width` by `height` pixels at `(left, top)` the
+    polygons through `(x[i], y[i])` cover, from 0 to 1, row by row. A NaN closes a polygon,
+    and so does the end. A pixel is inside when the outline winds round it, by the nonzero
+    rule, as glyphs and filled areas need. Costs one step a pixel of the box and one a pixel
+    each edge crosses."""
+    stride = width + 2
+    area = Array.zeros(stride * height)
+    first = 0
+    for k in range(len(x) + 1):
+        if k == len(x) or not (isfinite(x[k]) and isfinite(y[k])):
+            for j in range(first, k):
+                after = j + 1 if j + 1 < k else first
+                _edge(
+                    area,
+                    stride,
+                    height,
+                    x[j] - float(left),
+                    y[j] - float(top),
+                    x[after] - float(left),
+                    y[after] - float(top),
+                )
+            first = k + 1
+    covered = Array.zeros(width * height)
+    for row in range(height):
+        total = 0.0
+        for column in range(width):
+            total += area[row * stride + column]
+            covered[row * width + column] = min(abs(total), 1.0)
+    return covered
+
+
+def union(
+    x: list[f64], y: list[f64], left: int, top: int, width: int, height: int
+) -> Array[f64, 1]:
+    """How much of each pixel of the box the union of the polygons through `(x[i], y[i])`
+    covers, as `coverage` gives it, but finding each polygon's cover on its own and keeping
+    the most any of them gives a pixel. Summing would count an edge pixel once for each piece
+    of a line that reaches it, and a line of many short overlapping pieces would draw thick
+    and hard edged. Costs one step a pixel of the box around each polygon."""
+    covered = Array.zeros(width * height)
+    first = 0
+    for k in range(len(x) + 1):
+        if k == len(x) or not (isfinite(x[k]) and isfinite(y[k])):
+            if k > first:
+                piece_x = x[first:k]
+                piece_y = y[first:k]
+                x0, x1, y0, y1 = bounds(piece_x, piece_y)
+                piece_left = max(floor(x0), left)
+                piece_top = max(floor(y0), top)
+                across = min(floor(x1) + 1, left + width) - piece_left
+                down = min(floor(y1) + 1, top + height) - piece_top
+                if across > 0 and down > 0:
+                    part = coverage(piece_x, piece_y, piece_left, piece_top, across, down)
+                    for row in range(down):
+                        at = (piece_top - top + row) * width + piece_left - left
+                        for column in range(across):
+                            value = part[row * across + column]
+                            if value > covered[at + column]:
+                                covered[at + column] = value
+            first = k + 1
+    return covered
+
+
+def bounds(x: list[f64], y: list[f64]) -> tuple[f64, f64, f64, f64]:
+    """The smallest and largest x, then y, of the finite points; infinite ones when none is."""
+    x0 = 1.0e308
+    x1 = -1.0e308
+    y0 = 1.0e308
+    y1 = -1.0e308
+    for k in range(len(x)):
+        if isfinite(x[k]) and isfinite(y[k]):
+            x0 = min(x0, x[k])
+            x1 = max(x1, x[k])
+            y0 = min(y0, y[k])
+            y1 = max(y1, y[k])
+    return (x0, x1, y0, y1)
+
+
+def stroke(
+    x: list[f64], y: list[f64], width: f64, dashes: list[f64], projecting: bool
+) -> tuple[list[f64], list[f64]]:
+    """The polygons that cover a line `width` pixels wide through the points `(x[i], y[i])`,
+    broken at any point that is not finite: one four-sided piece a segment and a round piece
+    at each joint, for `union`. `dashes` are the on and off
+    lengths in pixels, empty for a solid line, starting with the first on. `projecting` ends
+    each line or dash half the width past its last point, as matplotlib's `"projecting"` cap;
+    otherwise it stops there, the `"butt"` cap. A point within a quarter of a pixel of the
+    last one kept is passed over, unless it ends the line, as matplotlib's path simplification
+    passes over points too close to see, so a line of a million points costs about as much
+    as the pixels it crosses."""
+    xs: list[f64] = []
+    ys: list[f64] = []
+    run_x: list[f64] = []
+    run_y: list[f64] = []
+    for k in range(len(x) + 1):
+        if k < len(x) and isfinite(x[k]) and isfinite(y[k]):
+            last = len(run_x) - 1
+            ends = k + 1 == len(x) or not (isfinite(x[k + 1]) and isfinite(y[k + 1]))
+            if last < 0 or ends or (x[k] - run_x[last]) ** 2 + (y[k] - run_y[last]) ** 2 >= 0.0625:
+                run_x.append(x[k])
+                run_y.append(y[k])
+        elif len(run_x) > 0:
+            _dash(run_x, run_y, 0.5 * width, dashes, projecting, xs, ys)
+            run_x = []
+            run_y = []
+    return (xs, ys)
+
+
+def circle(cx: f64, cy: f64, radius: f64, xs: InOut[list[f64]], ys: InOut[list[f64]]) -> None:
+    """Appends a circle of `radius` pixels centred on `(cx, cy)`, as a polygon whose sides
+    stray less than a twentieth of a pixel from it, then a NaN."""
+    sides = max(8, ceil(pi / sqrt(0.1 / max(radius, 0.1))))
+    for k in range(sides):
+        angle = 2.0 * pi * float(k) / float(sides)
+        xs.append(cx + radius * cos(angle))
+        ys.append(cy + radius * sin(angle))
+    xs.append(nan)
+    ys.append(nan)
+
+
+def _dash(
+    x: list[f64],
+    y: list[f64],
+    half: f64,
+    dashes: list[f64],
+    projecting: bool,
+    xs: InOut[list[f64]],
+    ys: InOut[list[f64]],
+) -> None:
+    """Appends the pieces of the unbroken line through `x` and `y`, `2 * half` wide, cut into
+    the dashes `dashes` when there are any."""
+    if len(dashes) == 0:
+        _pieces(x, y, half, projecting, xs, ys)
+        return
+    period = 0.0
+    for length in dashes:
+        period += length
+    if period <= 0.0:
+        _pieces(x, y, half, projecting, xs, ys)
+        return
+    which = 0  # the dash pattern's entry being drawn; even ones are on
+    left = dashes[0]  # how much of it is left
+    piece_x: list[f64] = [x[0]]
+    piece_y: list[f64] = [y[0]]
+    for k in range(1, len(x)):
+        sx = x[k - 1]
+        sy = y[k - 1]
+        length = sqrt((x[k] - sx) ** 2 + (y[k] - sy) ** 2)
+        done = 0.0
+        while length - done > left:
+            done += left
+            px = sx + (x[k] - sx) * done / length
+            py = sy + (y[k] - sy) * done / length
+            if which % 2 == 0:
+                piece_x.append(px)
+                piece_y.append(py)
+                _pieces(piece_x, piece_y, half, projecting, xs, ys)
+            piece_x = [px]
+            piece_y = [py]
+            which = (which + 1) % len(dashes)
+            left = dashes[which]
+        left -= length - done
+        piece_x.append(x[k])
+        piece_y.append(y[k])
+    if which % 2 == 0:
+        _pieces(piece_x, piece_y, half, projecting, xs, ys)
+
+
+def _pieces(
+    x: list[f64],
+    y: list[f64],
+    half: f64,
+    projecting: bool,
+    xs: InOut[list[f64]],
+    ys: InOut[list[f64]],
+) -> None:
+    """Appends a four-sided piece for each segment of the line through `x` and `y`, `2 * half`
+    wide, and a circle at each joint between two segments. A projecting line's ends reach
+    `half` past its first and last points; a lone point is then a square."""
+    count = len(x)
+    if count == 1:
+        if projecting:
+            _quad(x[0] - half, y[0], x[0] + half, y[0], half, xs, ys)
+        return
+    for k in range(1, count):
+        x0 = x[k - 1]
+        y0 = y[k - 1]
+        x1 = x[k]
+        y1 = y[k]
+        length = sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
+        if length == 0.0:
+            continue
+        ux = (x1 - x0) / length * half
+        uy = (y1 - y0) / length * half
+        if projecting and k == 1:
+            x0 -= ux
+            y0 -= uy
+        if projecting and k == count - 1:
+            x1 += ux
+            y1 += uy
+        _quad(x0, y0, x1, y1, half, xs, ys)
+        if k < count - 1:
+            circle(x[k], y[k], half, xs, ys)
+
+
+def _quad(
+    x0: f64, y0: f64, x1: f64, y1: f64, half: f64, xs: InOut[list[f64]], ys: InOut[list[f64]]
+) -> None:
+    """Appends the rectangle `2 * half` wide along the segment from `(x0, y0)` to `(x1, y1)`,
+    then a NaN."""
+    length = sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
+    nx = -(y1 - y0) / length * half  # the normal, half the width long
+    ny = (x1 - x0) / length * half
+    xs.append(x0 - nx)
+    ys.append(y0 - ny)
+    xs.append(x1 - nx)
+    ys.append(y1 - ny)
+    xs.append(x1 + nx)
+    ys.append(y1 + ny)
+    xs.append(x0 + nx)
+    ys.append(y0 + ny)
+    xs.append(nan)
+    ys.append(nan)
+
+
+def _edge(
+    area: InOut[Array[f64, 1]], stride: int, height: int, x0: f64, y0: f64, x1: f64, y1: f64
+) -> None:
+    """Adds the edge from `(x0, y0)` to `(x1, y1)`, in pixels from the box's top left corner,
+    to `area`. The part above or below the box is dropped, since each row is summed on its
+    own; the part left or right of it, `stride - 2` wide, is moved onto its side, which keeps
+    the area it sweeps inside the box."""
+    if y0 == y1:
+        return
+    limit = float(stride - 2)
+    cuts: list[f64] = [0.0]
+    if x0 != x1:
+        for side in [0.0, limit]:
+            t = (side - x0) / (x1 - x0)
+            if t > 0.0 and t < 1.0:
+                cuts.append(t)
+    cuts.append(1.0)
+    if len(cuts) == 4 and cuts[1] > cuts[2]:
+        cuts = [0.0, cuts[2], cuts[1], 1.0]
+    for k in range(1, len(cuts)):
+        ax = x0 + (x1 - x0) * cuts[k - 1]
+        ay = y0 + (y1 - y0) * cuts[k - 1]
+        bx = x0 + (x1 - x0) * cuts[k]
+        by = y0 + (y1 - y0) * cuts[k]
+        _line(
+            area,
+            stride,
+            height,
+            min(max(ax, 0.0), limit),
+            ay,
+            min(max(bx, 0.0), limit),
+            by,
+        )
+
+
+def _line(
+    area: InOut[Array[f64, 1]], stride: int, height: int, x0: f64, y0: f64, x1: f64, y1: f64
+) -> None:
+    """Adds to `area` the signed area the edge from `(x0, y0)` to `(x1, y1)`, inside the box's
+    columns, sweeps in each pixel, kept as the change from the pixel before, so a running sum
+    along a row gives each pixel's cover. An edge going down adds and one going up takes
+    away."""
+    direction = 1.0
+    if y0 > y1:
+        direction = -1.0
+        x0, x1 = x1, x0
+        y0, y1 = y1, y0
+    top = max(y0, 0.0)
+    bottom = min(y1, float(height))
+    if top >= bottom:
+        return
+    slope = (x1 - x0) / (y1 - y0)
+    x = x0 + slope * (top - y0)
+    row = floor(top)
+    while float(row) < bottom:
+        dy = min(float(row + 1), bottom) - max(float(row), top)
+        following = x + slope * dy
+        signed = dy * direction
+        start = row * stride
+        low = min(x, following)
+        high = max(x, following)
+        low_floor = float(floor(low))
+        first = int(low_floor)
+        last = ceil(high)
+        if last <= first + 1:
+            middle = 0.5 * (x + following) - low_floor
+            area[start + first] += signed - signed * middle
+            area[start + first + 1] += signed * middle
+        else:
+            per_column = 1.0 / (high - low)
+            fraction = low - low_floor
+            near = 0.5 * per_column * (1.0 - fraction) * (1.0 - fraction)
+            reach = high - float(last) + 1.0
+            far = 0.5 * per_column * reach * reach
+            area[start + first] += signed * near
+            if last == first + 2:
+                area[start + first + 1] += signed * (1.0 - near - far)
+            else:
+                step = per_column * (1.5 - fraction)
+                area[start + first + 1] += signed * (step - near)
+                for column in range(first + 2, last - 1):
+                    area[start + column] += signed * per_column
+                before = step + float(last - first - 3) * per_column
+                area[start + last - 1] += signed * (1.0 - before - far)
+            area[start + last] += signed * far
+        x = following
+        row += 1

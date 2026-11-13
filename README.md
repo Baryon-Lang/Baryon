@@ -8,7 +8,6 @@ and Fortran's speed into one language. Source files end in `.byn`, and the comma
 `baryon`. [Decision 0023](docs/decisions/0023-language-name-baryon.md) records the choice.
 
 ```python
-# Planned syntax, not final.
 def heat_step(u: Array[f64, 2], alpha: f64) -> Array[f64, 2]:
     out = u.copy()
     for i in range(1, u.shape[0] - 1):
@@ -33,20 +32,19 @@ def heat_step(u: Array[f64, 2], alpha: f64) -> Array[f64, 2]:
 
 ## Status
 
-Phase 0, specification and foundation, is nearly done, and the Phase 1 compiler has started. The
-compiler parses source files, rejects the Python constructs the language does not support, and
-reports syntax errors, module errors, undefined names, bad imports and type errors with `baryon
-check`. `baryon build <directory> <output>` compiles a package through LLVM into an executable that
-runs the `main` function in `main.byn`; it handles numbers, control flow, calls, generic functions
-and functions as arguments, structs and traits, arrays and their slices, complex numbers, lists
-and dicts of any type, optionals, `str` values and f-strings, `prange` and `simd` loops, errors,
-`math`, `random.Philox`, `assert` and `print` so far, with `clang` 15 or newer installed, and all seven example programs build and run. `baryon run <directory>` builds
-and runs it in one step, and `baryon test <directory>` runs every `@test` function and reports
-which passed. `baryon lsp` is a language server that shows the same diagnostics in any editor with
-a Language Server Protocol client, as you type, along with types and documentation on hover, go to
-definition and completion; the [VS Code extension](editors/vscode/README.md)
-runs it for you and adds syntax highlighting for `.byn` files. `baryon doc` writes a package's
-documentation strings as Markdown pages.
+The compiler is a working prototype. `baryon build <directory> <output>` compiles a package through
+LLVM into a native executable that starts at `main` in `main.byn`, with `clang` 15 or newer
+installed; `baryon run` builds and runs it in one step, `baryon test` runs every `@test` function,
+and `baryon watch` rebuilds on every save. It builds numbers, complex numbers, `str`, lists, dicts,
+tuples, optionals, structs, enums, unions of structs with `match`, traits, generics, functions as
+arguments, errors, arrays with slices, broadcasting and `@`, `prange` and `simd` loops, `with` and
+`for` on a program's own classes, and all seven example programs. The standard library, written
+in Baryon itself, covers `math` (with the double-double `f64x2` and `fsum`), `random.Philox`,
+`stats`, `linalg` and `fft`, `DataFrame` with pandas's names, plotting with `byplot` (SVG, PNG
+and PDF), data files (text tables, `.npy`, FITS, NetCDF and HDF5 through `h5by`), compression
+(`zlib`, `gzip`, `compression.zstd`, `bz2` and `lzma`), and files, paths and processes. `baryon lsp` is a language server for any editor, and
+the [VS Code extension](editors/vscode/README.md) runs it for you; `baryon doc` writes a
+package's documentation strings as Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
 compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
@@ -61,7 +59,11 @@ place to add new ideas. The reasoning behind it is in the
 
 ## Getting started
 
-Install [rustup](https://rustup.rs). The pinned toolchain installs itself on first use.
+To write Baryon programs, follow the [beginner's guide](docs/guide/README.md): it installs
+`baryon`, from a download or from source, and runs a first program.
+
+To work on the compiler, install [rustup](https://rustup.rs). The pinned toolchain installs itself
+on first use.
 
 ```sh
 cargo xtask ci
@@ -92,6 +94,7 @@ contributing to the compiler, or integrating one of its crates.
 | --- | --- |
 | `ROADMAP.md` | Phases, work items, decisions and ideas: the source of truth |
 | `CHANGELOG.md` | Release notes: what each release holds |
+| `THIRD-PARTY-NOTICES.md` | Third-party content the repository carries, such as the DejaVu Sans outlines, with its licenses |
 | `crates/` | The compiler, one crate per responsibility |
 | `xtask/` | Repository automation behind `cargo xtask` |
 | `deny.toml` | Dependency rules: allowed licenses and sources, advisories, duplicate crates |
@@ -113,4 +116,6 @@ AI agents start with [`AGENTS.md`](AGENTS.md).
 
 ## License
 
-[Apache License 2.0](LICENSE).
+[Apache License 2.0](LICENSE). Third-party content the repository carries, such as the DejaVu Sans
+font's outlines, is under its own licenses, listed in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

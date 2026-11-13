@@ -44,6 +44,9 @@ impl<'db> Builder<'db> {
         if method == "merge" {
             return self.frame_merge(place, frame, rest, node);
         }
+        if method == "describe" {
+            return self.frame_describe(place, frame, node);
+        }
         if method == "value_counts" {
             return self.frame_counts(place, frame, node);
         }
@@ -96,6 +99,22 @@ impl<'db> Builder<'db> {
             self.same_length(0, Operand::Copy(Place::from(count)), chosen, index);
             return self.each_column(place, value, &source, ("masked", &mask), node);
         }
+        let Some(chosen) = self.slice_positions(count, index, node) else {
+            return;
+        };
+        self.each_column(place, value, &source, ("taken", &Place::from(chosen)), node);
+    }
+
+    /// The positions the slice `index` chooses from `count` rows or elements, as Python
+    /// chooses them: an `Array[i64, 1]` the library's `slice_positions` makes, dropped with
+    /// the statement's temporaries, so 8 bytes for each position. A step of 0 panics. `None`
+    /// after a report.
+    pub(crate) fn slice_positions(
+        &mut self,
+        count: Local,
+        index: NodeId,
+        node: NodeId,
+    ) -> Option<Local> {
         let int = self.int_type();
         let boolean = self.boolean_type();
         let mut arguments = vec![Place::from(count)];
@@ -126,7 +145,10 @@ impl<'db> Builder<'db> {
             });
             arguments.push(Place::from(self.held(boolean, flag, index)));
         }
-        self.taken_rows(place, value, &source, ("slice_positions", arguments), node);
+        let positions = self.positions_type();
+        let chosen = self.frame_call("slice_positions", Vec::new(), arguments, positions, node)?;
+        self.drop_later(chosen);
+        Some(chosen)
     }
 
     /// A new frame into `place` of the rows of the frame `value`, borrowed at `source`, at

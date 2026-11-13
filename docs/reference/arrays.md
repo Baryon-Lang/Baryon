@@ -738,10 +738,14 @@ def total_energy(kinetic: list[f64], potential: list[f64]) -> f64:
     return fsum(kinetic) + fsum(potential)
 ```
 
-| Expression | `sum` | `fsum` |
+| `a` | `a.sum()` | `fsum(a)` |
 | --- | --- | --- |
-| `[1e100, 1.0, -1e100]` | `0.0` | `1.0` |
+| `Array([1e100, 1.0, -1e100])` | `0.0` | `1.0` |
 | `Array([1.0, 1e-16, 1e-16, 1e-16])` | `1.0` | `1.0000000000000002` |
+
+`sum` of the list `[1e100, 1.0, -1e100]` is `1.0` as well, since a list's float `sum` is
+compensated as CPython 3.12's is. That compensation catches most cancellation, but only `fsum`
+is exact for every input.
 
 Use it where terms cancel: an energy summed over a long orbital integration, a residual, the
 check of a result computed another way. `sum` is the fast default: it compensates a list's sum

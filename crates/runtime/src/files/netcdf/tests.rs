@@ -1,14 +1,23 @@
-//! Tests of `NetCDF` classic files: the files read are the ones `netCDF4` 1.7.2 wrote for the
-//! driver's build tests (`crates/driver/tests/fixtures/netcdf`), and the corrupt ones are those
-//! files cut short or changed by these tests, under the system's temporary directory.
+//! Tests of `NetCDF` files, classic and NetCDF-4: the files read are the ones `netCDF4` 1.7.2
+//! wrote for the driver's build tests (`crates/driver/tests/fixtures/netcdf`), and the corrupt
+//! ones are those files cut short or changed by these tests, under the system's temporary
+//! directory.
 
 use super::*;
+use crate::files::{ErrorKind, OsFailure};
+use std::fs;
 
 /// The classic (CDF-1) file `netCDF4` wrote.
 const CLASSIC: &[u8] = include_bytes!("../../../../driver/tests/fixtures/netcdf/classic.nc");
 
 /// The same file in the 64-bit offset format (CDF-2).
 const OFFSET: &[u8] = include_bytes!("../../../../driver/tests/fixtures/netcdf/offset.nc");
+
+/// The same file as NetCDF-4, stored as HDF5.
+const NETCDF4: &[u8] = include_bytes!("../../../../driver/tests/fixtures/netcdf/netcdf4.nc");
+
+/// The NetCDF-4 file again, its `temp` compressed with deflate.
+const DEFLATED: &[u8] = include_bytes!("../../../../driver/tests/fixtures/netcdf/deflated.nc");
 
 /// Writes `bytes` to a file named after one test and this process, and gives its path.
 fn file(test: &str, bytes: &[u8]) -> String {
@@ -27,8 +36,21 @@ fn read(path: &str, name: &str, pixel: Pixel, count: usize) -> Result<Vec<u8>, O
         .unwrap();
     let mut memory = vec![0_u8; count * pixel.size()];
     let selection = header.everything(variable);
-    read_variable(path, &header, (variable, &selection), pixel, &mut memory)?;
+    read_variable(
+        path,
+        &header,
+        (variable, &selection),
+        pixel,
+        &mut memory,
+        &mut refuse,
+    )?;
     Ok(memory)
+}
+
+/// Inflates nothing: these tests read no deflated chunk except to see it refused, since the
+/// runtime leaves inflating to the standard library's `zlib`.
+fn refuse(_: &[u8]) -> Result<Vec<u8>, String> {
+    Err("no inflated chunks were given".to_owned())
 }
 
 /// `memory` as `f32`s.
@@ -154,8 +176,8 @@ fn files_that_are_not_classic_netcdf_are_refused() {
         ),
         (
             "hdf5",
-            &b"\x89HDF\r\n\x1a\n"[..],
-            "the file is a NetCDF-4 (HDF5) file, which is not read yet",
+            &NETCDF4[..100],
+            "the HDF5 file ends inside the structure at address 48, in the HDF5 object /",
         ),
         (
             "short",
@@ -231,13 +253,28 @@ fn read_picked(path: &str, name: &str, items: &[Item], pixel: Pixel, count: usiz
     let selection = select(name, items, (&names, &lengths), record, None).unwrap();
     assert_eq!(selection.count(), count);
     let mut memory = vec![0_u8; count * pixel.size()];
-    read_variable(path, &header, (variable, &selection), pixel, &mut memory).unwrap();
+    read_variable(
+        path,
+        &header,
+        (variable, &selection),
+        pixel,
+        &mut memory,
+        &mut refuse,
+    )
+    .unwrap();
     memory
 }
 
 #[test]
 fn slices_read_what_netcdf4_reads() {
-    let path = file("slices", CLASSIC);
+    for (test, bytes) in [("slices", CLASSIC), ("slices4", NETCDF4)] {
+        slices(&file(test, bytes));
+    }
+}
+
+/// Reads slices of the classic file's variables from the file at `path`, as `netCDF4` reads
+/// them.
+fn slices(path: &str) {
     let every = Item::Slice {
         start: None,
         stop: None,
@@ -253,9 +290,8 @@ fn slices_read_what_netcdf4_reads() {
         stop: None,
         stride: Some(stride),
     };
-    let temp = |items: &[Item], count: usize| {
-        floats(&read_picked(&path, "temp", items, Pixel::F32, count))
-    };
+    let temp =
+        |items: &[Item], count: usize| floats(&read_picked(path, "temp", items, Pixel::F32, count));
     // `temp[1, :, ::2]`, `temp[-1, 1]`, `temp[:, 0, 1]` and `temp[0, ::-1, 2]`, as `netCDF4`
     // 1.7.2 reads them.
     assert_eq!(
@@ -276,13 +312,91 @@ fn slices_read_what_netcdf4_reads() {
     );
     // `packed[1, 1, 1:]`, unpacked in `float32` as `netCDF4` unpacks it.
     let packed = floats(&read_picked(
-        &path,
+        path,
         "packed",
         &[Item::Index(1), Item::Index(1), from(1)],
         Pixel::F32,
         2,
     ));
     assert_eq!(packed, [0x4380_599A, 0x4380_B333].map(f32::from_bits));
-    let lat = read_picked(&path, "lat", &[from(1)], Pixel::F64, 1);
+    let lat = read_picked(path, "lat", &[from(1)], Pixel::F64, 1);
     assert_eq!(lat, 20.0_f64.to_ne_bytes());
+}
+
+#[test]
+fn a_netcdf4_file_reads_as_its_classic_twin() {
+    let classic = read_header(&file("twin", CLASSIC)).unwrap();
+    let path = file("twin4", NETCDF4);
+    let header = read_header(&path).unwrap();
+    // The same dimensions, attributes and variables, the variables in name order.
+    let mut lines = describe(&classic);
+    lines.sort();
+    let mut lines4 = describe(&header);
+    lines4.sort();
+    assert_eq!(lines4, lines);
+    let names: Vec<&str> = header
+        .variables
+        .iter()
+        .map(|variable| variable.name.as_str())
+        .collect();
+    assert_eq!(names, ["count", "flags", "lat", "packed", "temp"]);
+    for (name, count) in [
+        ("temp", 12),
+        ("packed", 12),
+        ("count", 2),
+        ("lat", 2),
+        ("flags", 3),
+    ] {
+        assert_eq!(
+            read(&path, name, Pixel::F64, count).unwrap(),
+            read(&file("twin", CLASSIC), name, Pixel::F64, count).unwrap(),
+            "{name}"
+        );
+    }
+    let counts = read(&path, "count", Pixel::I32, 2).unwrap();
+    assert_eq!(counts, [7_i32, -8].map(i32::to_ne_bytes).concat());
+}
+
+#[test]
+fn deflated_chunks_are_listed_for_the_library_to_inflate() {
+    let path = file("deflated", DEFLATED);
+    let header = read_header(&path).unwrap();
+    let chunks = |name: &str| {
+        let variable = header
+            .variables
+            .iter()
+            .find(|variable| variable.name == name)
+            .unwrap();
+        deflated_chunks(&path, &header, (variable, &header.everything(variable))).unwrap()
+    };
+    // `temp` is stored a record at a time, each chunk a zlib stream; the rest are plain.
+    let listed = chunks("temp");
+    assert_eq!(listed.len(), 2);
+    for (address, _) in &listed {
+        assert_eq!(DEFLATED[usize::try_from(*address).unwrap()], 0x78);
+    }
+    assert!(chunks("count").is_empty());
+    // A classic file's variables are never compressed.
+    let classic = file("undeflated", CLASSIC);
+    let header = read_header(&classic).unwrap();
+    let variable = &header.variables[0];
+    let listed = deflated_chunks(&classic, &header, (variable, &header.everything(variable)));
+    assert_eq!(listed.unwrap(), []);
+    // Without the chunks inflated, the read stops at the first one.
+    let failure = read(&path, "temp", Pixel::F64, 12).unwrap_err();
+    assert_eq!(failure.kind, ErrorKind::InvalidData);
+    assert_eq!(
+        failure.strerror,
+        "no inflated chunks were given, in the HDF5 dataset temp"
+    );
+    assert!(read(&path, "count", Pixel::F64, 2).is_ok());
+}
+
+#[test]
+fn writing_a_netcdf4_file_is_refused() {
+    let failure = define(&file("unwritten", NETCDF4), "D\tx\t3").unwrap_err();
+    assert_eq!(
+        failure.strerror,
+        "the file is a NetCDF-4 (HDF5) file, which is not written yet"
+    );
 }

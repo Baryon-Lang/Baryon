@@ -411,6 +411,9 @@ impl<'db> Body<'db> {
         if let Some(frame) = self.distinct_method(function, base, callee, arguments) {
             return frame;
         }
+        if let Some(frame) = self.describe_method(function, base, callee, arguments) {
+            return frame;
+        }
         let given = arguments.positional.len() + arguments.keywords.len();
         self.untyped(arguments);
         match (callee, given) {

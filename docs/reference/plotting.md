@@ -1,21 +1,23 @@
 # Plotting
 
 The `byplot` module draws plots with matplotlib's names and matplotlib's default look, written in
-Baryon and saved as SVG files that any browser, VS Code or a LaTeX toolchain can show
-([decision 0046](../decisions/0046-plotting.md)). The `ticker` module beside it places and
-labels the ticks, as `matplotlib.ticker` does. These two are the modules a program imports.
-`byplot` draws through smaller files of the standard library, named as matplotlib names its own:
-`colors` reads color names, `cm` holds the colormaps, `artist` holds what an axes draws,
-`contour` finds contour lines and bands,
-`transforms` finds the ranges it shows, `figure` lays a grid of axes out and draws them, `axis`
-draws an axis's ticks and labels, `legend`, `image` and `colorbar` draw a legend, an image and a
-colorbar, `backend_svg` writes the SVG file, and `png` the PNG images inside it. They are
-internal, so a program's own `colors.byn` or `image.byn` is never hidden by them.
+Baryon and saved as SVG files that any browser, VS Code or a LaTeX toolchain can show, as PNG
+images, or as PDF pages ([decision 0046](../decisions/0046-plotting.md)). The `ticker` module
+beside it places and labels the ticks, as `matplotlib.ticker` does. These two are the modules a
+program imports. `byplot` draws through smaller files of the standard library, named as matplotlib
+names its own: `colors` reads color names, `cm` holds the colormaps, `artist` holds what an axes
+draws, `contour` finds contour lines and bands, `transforms` finds the ranges it shows, `figure`
+lays a grid of axes out and draws them, `axis` draws an axis's ticks and labels, `legend`, `image`
+and `colorbar` draw a legend, an image and a colorbar, `backend_bases` lists the calls every
+renderer takes, `backend_svg` writes the SVG file, `backend_agg` draws the PNG image through
+`raster`, which turns shapes into pixels, and `font`, which reads DejaVu Sans's outlines from
+`dejavu_sans`, `png` writes PNG files, and `backend_pdf` draws a PDF page that `pdf_file` writes.
+They are internal, so a program's own `colors.byn` or `image.byn` is never hidden by them.
 
-This chapter covers what builds today, roadmap 3.15.1 to 3.15.5: line plots, scatter plots,
+This chapter covers what builds today, roadmap 3.15.1 to 3.15.8: line plots, scatter plots,
 bars, histograms, error bars, filled areas, text, markers, legends, grid lines, images and
-colorbars, contour plots, titles, axis labels, axis ranges, logarithmic axes, grids of plots and
-SVG output. PNG and PDF files follow in roadmap 3.15.6 and 3.15.7.
+colorbars, contour plots, titles, axis labels, axis ranges, logarithmic axes, grids of plots, and
+SVG, PNG and PDF output.
 
 ## A first plot
 
@@ -89,7 +91,7 @@ moved script is never drawn wrong in silence.
 | `ax.set_xlabel(xlabel)`, `ax.set_ylabel(ylabel)` | Sets the label under the x axis, or left of the y axis | `Axes.set_xlabel`, `Axes.set_ylabel` |
 | `ax.set_xlim(left, right)`, `ax.set_ylim(bottom, top)` | Fixes the range shown; a first value larger than the second turns the axis around | `Axes.set_xlim`, `Axes.set_ylim` |
 | `ax.set_xscale(value)`, `ax.set_yscale(value)` | Lays an axis out evenly, `"linear"`, or by the logarithm of the value, `"log"` | `Axes.set_xscale`, `Axes.set_yscale` |
-| `ax.savefig(fname)` | Writes a figure holding the axes; the extension picks the format | `Figure.savefig` |
+| `ax.savefig(fname)` | Writes a figure holding the axes; the extension picks the format, `.svg`, [`.png`](#png-files) or [`.pdf`](#pdf-files) | `Figure.savefig` |
 
 `x` and `y` are `Array[f64, 1]`s of the same length; `plot` copies them, so they can change
 afterwards. Lists and integer arrays come with generic functions over the element type: until
@@ -407,6 +409,7 @@ them; this table is for those working on the library, and on the PNG and PDF bac
 | `YAxis(vmin, vmax, bottom, top, left, log)` | The axis along the left of an axes | `axis.YAxis` |
 | `axis.get_majorticklocs()`, `axis.get_minorticklocs()` | The tick positions, with as many intervals as fit the axis's length; minor ticks only on a logarithmic axis | `Axis.get_majorticklocs`, `Axis.get_minorticklocs` |
 | `axis.draw(renderer)` | Draws the ticks, minor ticks shorter and thinner, their labels and the offset text; returns where the axis label goes | `Axis.draw` |
+| `RendererBase` | The trait every renderer has: the drawing calls below and `get_text_width_height_descent`. The drawing functions are generic over it, `[R: RendererBase]`, so `byplot` lays a figure out once for every format | `backend_bases.RendererBase` |
 | `RendererSVG(width, height, [], 0)` | An empty SVG drawing, sizes in points, with no clip rectangle yet; `renderer.set_clip(x, y, width, height)` sets the next, one for each axes | `backend_svg.RendererSVG` |
 | `renderer.draw_path`, `draw_markers`, `draw_rectangle`, `draw_polygon`, `draw_text` | Draw lines, markers, rectangles, filled polygons and text, in points from the top left corner; `draw_text` draws a `LogFormatterSciNotation` label with its exponent raised | The renderer methods of the same names, `draw_path_collection` for polygons |
 | `renderer.get_text_width_height_descent(text, size)` | About how wide a text is, and the height and depth of its line | `RendererBase.get_text_width_height_descent` |
@@ -420,7 +423,12 @@ them; this table is for those working on the library, and on the PNG and PDF bac
 | `Figure(axes, nrows, ncols)`, `fig.savefig(fname)` | A grid of axes, as `subplots` makes it, and its file | `figure.Figure` |
 | `subplot_box(row, column, nrows, ncols)` | The box, in points, of one cell of a grid in the default figure | `GridSpec.get_grid_positions` |
 | `draw_axes(ax, cell, renderer)` | Finds an axes' ranges, places its box in its cell and draws all of it | `Figure.draw`, `Axes.draw` |
-| `check_format(fname)` | Raises `savefig`'s `ValueError` unless the file is `.svg` | `FigureCanvasBase.savefig`'s check |
+| `check_format(fname)` | The format the file's extension names, `"svg"`, `"png"` or `"pdf"`; raises `savefig`'s `ValueError` for any other | `FigureCanvasBase.savefig`'s check |
+| `save_axes(ax, fname)` | Writes a figure of one axes in the format the name picks | `Axes.savefig` |
+| `renderer_pdf(width, height)` | An empty page `width` by `height` points, which takes the same calls as `RendererSVG`; `renderer.print_pdf()` gives its PDF file | `backend_pdf.RendererPdf` |
+| `write_pdf(width, height, operators, images, smooth, opacities, font)`, `code(place)`, `text_string(letter, value)`, `number(value)` | A one-page PDF file of drawing operators, images and the font; a character's code in the font; a character inside a PDF string; a number as PDF writes it | `backend_pdf.PdfFile` |
+| `curves(glyph)` | A glyph's outline as lines and quadratic curves, for the PNG and PDF renderers | `ft2font`'s outline decomposition |
+| `to_rgb(c)` | A color's red, green and blue, each from 0 to 1 | `colors.to_rgb` |
 | `draw_legend(artists, loc, view, renderer)` | Draws a legend of the labelled artists at `loc`, `"best"` included | `legend.Legend` |
 | `location_code(loc)` | matplotlib's number for a legend place: 0 for `"best"`, 1 to 10, or -1 | `Legend.codes` |
 | `Image(data, cmap, vmin, vmax, extent, upper)` | An image as an axes keeps it | `image.AxesImage` |
@@ -428,11 +436,16 @@ them; this table is for those working on the library, and on the PNG and PDF bac
 | `draw_colorbar(image, left, top, width, height, label, renderer)` | Draws an image's colorbar in a rectangle | `colorbar.Colorbar` |
 | `get_cmap(name)`, `cmap.to_rgba_bytes(x)` | A colormap by name; the color of `x` as four bytes | `colormaps[name]`, `cmap(x, bytes=True)` |
 | `renderer.draw_image(x, y, width, height, pixels, smooth, clip)` | Draws an `Array[u8, 3]` of RGBA pixels stretched over a rectangle | `RendererSVG.draw_image` |
-| `encode(pixels)` | The bytes of a PNG file of an `Array[u8, 3]` of RGBA pixels, data uncompressed until roadmap 3.27 | What `Figure.savefig` writes to a `.png` |
+| `encode(pixels)` | The bytes of a PNG file of an `Array[u8, 3]` of RGBA pixels, its data uncompressed, as an SVG file embeds it | `_png.write_png` |
+| `write_png(pixels)` | The same PNG, its data compressed with `zlib`, as `savefig` writes it | `_png.write_png` |
+| `renderer_agg(width, height, dpi)` | A white image `width` by `height` points at `dpi` dots an inch, which takes the same calls as `RendererSVG`; `renderer.print_png()` gives its PNG file | `backend_agg.RendererAgg` |
+| `coverage(x, y, left, top, width, height)`, `stroke(x, y, width, dashes, projecting)`, `circle(cx, cy, radius, xs, ys)`, `bounds(x, y)` | How much of each pixel of a box polygons cover, exactly; the pieces that cover a line; a circle as a polygon; the box around points | The Anti-Grain Geometry rasterizer and its `vcgen_stroke` |
+| `load()`, `font.width(text)`, `font.outline(text, size, x, y, rotate)` | DejaVu Sans read from `dejavu_sans`; how wide a text is, with kerning; its outline as polygons | `ft2font.FT2Font`, `set_text`, `draw_glyphs_to_bitmap` |
+| `approximate_width(text)`, `math_layout(text, size)` | A text's width without reading the font, as the SVG renderer lays text out; where the pieces of a `LogFormatterSciNotation` label go | `mathtext` |
 | `nonsingular(low, high, expander, tiny)`, `fixed_limits(first, second)`, `autoscale(artists, images, along_x, log)` | Widen a range too narrow to show; keep limits as `set_xlim` does; the range data needs | `transforms.nonsingular`, `Axes.set_xlim`, `Axes.autoscale_view` |
 
 Coordinates are in points from the figure's top left corner, y growing downwards, as SVG has
-them. The PNG and PDF backends (roadmap 3.15.6 and 3.15.7) will take the same calls.
+them, and every renderer takes the same calls.
 
 ## SVG files
 
@@ -442,14 +455,70 @@ Text is written as SVG text in DejaVu Sans, matplotlib's font, as matplotlib wri
 it in Arial, Helvetica or another sans-serif font, and labels may then sit slightly off. Every
 point of every line is written, about 15 bytes a point, so a line of a million points makes a
 file of about 15 MB. An image costs about 5.5 bytes a cell, since its PNG is not compressed
-until roadmap 3.27, so a 1000 by 1000 image makes a file of about 5.5 MB.
+(idea I.54), so a 1000 by 1000 image makes a file of about 5.5 MB.
 
-`savefig` raises `ValueError` for any extension but `.svg`, with matplotlib's message, such as
-`Format 'png' is not supported (supported formats: svg)`, and `OSError` when the file cannot be
-written. `plot`, `scatter`, `bar`, `errorbar` or `fill_between` with arrays of different lengths, an
-unknown color, line style, legend place, colormap, `errorbar` format or `text` alignment, an
-`imshow` `origin` or `aspect` it does not know, an `alpha` outside 0 to 1, contour levels that do
-not rise or a grid that does not match its `x` and `y`, a `hist` with fewer than one bin, a
-`subplots` grid with no rows or columns, or a `colorbar` before any image panics, and so does
-`savefig` on an unknown marker, where matplotlib raises `ValueError` or `RuntimeError`: each is a
-mistake in the program, not in its data ([decision 0046](../decisions/0046-plotting.md)).
+## PNG files
+
+`savefig` writes a PNG image when the file's name ends in `.png`, in any case, as matplotlib
+does:
+
+```python
+import byplot as plt
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    t = Array([0.0, 1.0, 2.0, 3.0])
+    ax = plt.axes()
+    ax.plot(t, t * t, marker="o", label="µ")
+    ax.set_title("Growth of µ with ΔT")
+    ax.legend()
+    ax.savefig("growth.png")
+```
+
+The image is 640 by 480 pixels, the 6.4 by 4.8 inch figure at matplotlib's 100 dots an inch,
+with white behind it and every pixel fully opaque. It is drawn with anti-aliasing: each edge pixel
+takes the color by the share of it the shape covers, worked out exactly. Lines and rectangles
+whose sides all run straight across or down, such as the axes' frame, ticks and grid lines, are
+moved onto the pixel grid first, as matplotlib's snapping moves them, so they stay sharp.
+
+Text is drawn from the outlines of DejaVu Sans, compiled into Baryon, so a PNG looks the same on
+every machine whether or not the font is installed. Its widths and kerning are the font's own,
+so text is placed more exactly than in an SVG file, whose viewer draws the text. The font has
+the printable ASCII characters, the Greek letters, `×`, `−`, `°`, `±`, `µ` and `·`; any other
+character is drawn as the font's empty box. Text is not hinted, so small text looks a little
+softer than matplotlib's.
+
+The pixels are compressed with `zlib`, so a typical plot makes a file of about 50 kB. Drawing
+costs about one step a pixel of the box around each piece of a line or shape, and a marker is
+drawn once and copied onto each point. Points of a line closer than a quarter of a pixel to the
+last one kept are passed over, as matplotlib's path simplification passes them, so a line of a
+million points takes about a tenth of a second in a `--release` build. The images are
+not pixel-identical to matplotlib's, which hints its text and draws in its newer default font;
+they show the same plot at the same size and place.
+
+## PDF files
+
+`savefig` writes a PDF file of one page when the file's name ends in `.pdf`, as matplotlib does:
+`ax.savefig("growth.pdf")`. The page is the figure's size, 6.4 by 4.8 inches, and everything on
+it stays a vector, lines, shapes and markers alike, so it prints sharp at any size and goes
+straight into a LaTeX document with `\includegraphics`. Images go in at their own pixels, and the
+reader stretches them, blending neighbouring pixels only where matplotlib would.
+
+Text is written as text in DejaVu Sans, embedded in the file as a Type 3 font built from the
+same outlines the PNG renderer draws, as matplotlib embeds fonts by default. A reader shows it
+the same without the font installed, and can search and copy it, Greek letters and the minus
+sign included. The font holds the characters the [PNG files](#png-files) section lists, and its
+widths and kerning are the font's own. The page and the font are compressed with `zlib`, so a
+typical plot makes a file of about 50 kB.
+
+## Errors
+
+`savefig` raises `ValueError` for any extension but `.svg`, `.png` and `.pdf`, with matplotlib's
+message, such as `Format 'jpg' is not supported (supported formats: pdf, png, svg)`, and `OSError`
+when the file cannot be written. `plot`, `scatter`, `bar`, `errorbar` or `fill_between` with arrays
+of different lengths, an unknown color, line style, legend place, colormap, `errorbar` format or
+`text` alignment, an `imshow` `origin` or `aspect` it does not know, an `alpha` outside 0 to 1,
+contour levels that do not rise or a grid that does not match its `x` and `y`, a `hist` with fewer
+than one bin, a `subplots` grid with no rows or columns, or a `colorbar` before any image panics,
+and so does `savefig` on an unknown marker, where matplotlib raises `ValueError` or `RuntimeError`:
+each is a mistake in the program, not in its data ([decision 0046](../decisions/0046-plotting.md)).
