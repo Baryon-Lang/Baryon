@@ -40,6 +40,9 @@ impl<'db> Body<'db> {
             Some(&Definition::Item(file, name)) if self.is_dataset_class(file, name) => {
                 self.netcdf_call(node, "Dataset", &arguments)
             }
+            Some(&Definition::Item(file, name)) if self.is_h5by_file_class(file, name) => {
+                self.h5by_call(node, "File", &arguments)
+            }
             Some(&Definition::Item(file, name)) => {
                 self.call_item(node, &callee, file, name, &arguments)
             }
@@ -77,25 +80,11 @@ impl<'db> Body<'db> {
                 self.process_call(node, module, &member, &arguments)
             }
             Some(Definition::Standard {
-                module: "fits",
+                module: module @ ("fits" | "netCDF4" | "h5by" | "subprocess"),
                 member: Some(member),
             }) => {
-                let member = member.clone();
-                self.fits_call(node, &member, &arguments, expected)
-            }
-            Some(Definition::Standard {
-                module: "netCDF4",
-                member: Some(member),
-            }) => {
-                let member = member.clone();
-                self.netcdf_call(node, &member, &arguments)
-            }
-            Some(Definition::Standard {
-                module: "subprocess",
-                member: Some(member),
-            }) => {
-                let member = member.clone();
-                self.subprocess_call(node, &member, &arguments)
+                let (module, member) = (*module, member.clone());
+                self.module_call(node, (module, &member), &arguments, expected)
             }
             Some(Definition::Local(_)) => {
                 let ty = self.expression(function, None);
@@ -120,6 +109,25 @@ impl<'db> Body<'db> {
             self.record_builtin(node, function, &arguments, ty);
         }
         ty
+    }
+
+    /// The call `node` of `module.member(arguments)`, where `module` is one of the standard
+    /// modules whose calls the checker types itself: `fits` (decision 0044), `netCDF4`
+    /// (decision 0047), `h5by` (decision 0052) or `subprocess` (decision 0036). `expected` is
+    /// the type the context needs, which types `fits.getdata`.
+    fn module_call(
+        &mut self,
+        node: NodeId,
+        (module, member): (&str, &str),
+        arguments: &Arguments,
+        expected: Option<Type<'db>>,
+    ) -> Type<'db> {
+        match module {
+            "fits" => self.fits_call(node, member, arguments, expected),
+            "netCDF4" => self.netcdf_call(node, member, arguments),
+            "h5by" => self.h5by_call(node, member, arguments),
+            _ => self.subprocess_call(node, member, arguments),
+        }
     }
 
     /// The arguments of a call, split into positional and keyword.

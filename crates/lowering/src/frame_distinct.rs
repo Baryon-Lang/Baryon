@@ -89,7 +89,8 @@ impl<'db> Builder<'db> {
     /// way `drop_duplicates` compares a frame's: its elements are numbered as keys,
     /// `first_rows` finds where each number first stands, and `taken` or `counted_values`
     /// gives the result. Cost for `n` elements: `n log n` comparisons and four arrays of `n`
-    /// integers, dropped when the statement ends.
+    /// integers, dropped when the statement ends. A text array is compared by the integers
+    /// `text_codes` gives for its text, one more sort, and copied with `text_taken`.
     pub(crate) fn array_compared(
         &mut self,
         place: Place,
@@ -100,15 +101,23 @@ impl<'db> Builder<'db> {
         if method == "argsort" {
             return self.array_argsort(place, array, node);
         }
-        let TypeKind::Array { element, .. } = self.ty(array).kind(self.db) else {
-            return self.unsupported(node, "the distinct elements of this value");
-        };
-        let element = *element;
         let source = self.borrow(array);
         let int = self.int_type();
-        let flag = matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool));
-        let compared = if flag { int } else { element };
-        let key = self.converted(source.clone(), element, compared, node);
+        // The elements as numbers the library compares: a text array as the integers for
+        // its text, `bool` as 0 and 1, and any other number as it is.
+        let (element, key, compared) = if self.is_text_array(array) {
+            let Some(codes) = self.text_codes(source.clone(), node) else {
+                return;
+            };
+            (None, codes, int)
+        } else if let &TypeKind::Array { element, .. } = self.ty(array).kind(self.db) {
+            let flag = matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool));
+            let compared = if flag { int } else { element };
+            let key = self.converted(source.clone(), element, compared, node);
+            (Some(element), key, compared)
+        } else {
+            return self.unsupported(node, "the distinct elements of this value");
+        };
         let Some(ids) = self.key_ids(&[(key.clone(), compared)], node) else {
             return;
         };
@@ -119,22 +128,14 @@ impl<'db> Builder<'db> {
             return;
         };
         self.drop_later(rows);
-        let (function, types, arguments, returns) = if method == "unique" {
-            (
-                "taken",
-                element,
-                vec![source, Place::from(rows)],
-                self.ty(node),
-            )
-        } else {
-            (
-                "counted_values",
-                compared,
-                vec![key, Place::from(rows)],
-                int,
-            )
+        let rows = Place::from(rows);
+        let returns = self.ty(node);
+        let (function, types, arguments, returns) = match (method, element) {
+            ("unique", Some(element)) => ("taken", vec![element], vec![source, rows], returns),
+            ("unique", None) => ("text_taken", Vec::new(), vec![source, rows], returns),
+            _ => ("counted_values", vec![compared], vec![key, rows], int),
         };
-        let Some(result) = self.frame_call(function, vec![types], arguments, returns, node) else {
+        let Some(result) = self.frame_call(function, types, arguments, returns, node) else {
             return;
         };
         self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);

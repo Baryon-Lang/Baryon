@@ -245,6 +245,9 @@ impl<'db> Body<'db> {
         if let Some(ty) = self.netcdf_item(node, expected) {
             return ty;
         }
+        if let Some(ty) = self.h5by_item(node, expected) {
+            return ty;
+        }
         let base = self.child_type(node, Role::Value);
         if let Some(value) = self.tree.child(node, Role::Value)
             && self.maybe_none(value, base)

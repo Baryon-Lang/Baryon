@@ -293,6 +293,23 @@ impl<'db> Body<'db> {
     /// variable, which the runtime reads or writes without a selection. `None`, after reporting
     /// it, when an item is anything else, such as an array of indices `netCDF4` would also take.
     pub(super) fn netcdf_items(&mut self, index: NodeId) -> Option<Vec<NodeId>> {
+        self.subscript_items(
+            index,
+            "a NetCDF variable",
+            "for example `var[0, :, ::2]`; other indexes come later under decision 0047",
+        )
+    }
+
+    /// The items of the subscript's `index` that pick part of `what`, a variable or a
+    /// dataset, each an integer or a slice of integers: none for `:`, which picks the whole.
+    /// `None`, after reporting it with the `help` that shows what is taken, when an item is
+    /// anything else.
+    pub(super) fn subscript_items(
+        &mut self,
+        index: NodeId,
+        what: &str,
+        help: &str,
+    ) -> Option<Vec<NodeId>> {
         let whole = self.tree.kind(index) == SyntaxKind::Slice
             && self.tree.children(index).next().is_none();
         if whole {
@@ -326,15 +343,11 @@ impl<'db> Body<'db> {
                 }
                 integers = false;
                 let message = format!(
-                    "a NetCDF variable is indexed by integers and slices, found `{}`",
+                    "{what} is indexed by integers and slices, found `{}`",
                     self.show(ty)
                 );
-                self.lowerer.error(
-                    part,
-                    &message,
-                    "not an integer",
-                    Some("for example `var[0, :, ::2]`; other indexes come later under decision 0047"),
-                );
+                self.lowerer
+                    .error(part, &message, "not an integer", Some(help));
             }
         }
         integers.then_some(items)
@@ -444,7 +457,7 @@ impl<'db> Body<'db> {
 
     /// The value type of `ty`, a `Raises[value, E]` that the subscript `node` gives, after
     /// recording that `node` can fail with `E`, which `what` describes.
-    fn raised_value(&mut self, node: NodeId, ty: Type<'db>, what: &str) -> Type<'db> {
+    pub(super) fn raised_value(&mut self, node: NodeId, ty: Type<'db>, what: &str) -> Type<'db> {
         self.fallible_at(node, ty, what);
         match ty.kind(self.db) {
             TypeKind::Fallible { value, .. } => *value,

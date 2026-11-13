@@ -25,35 +25,35 @@ the language that is specified and checked, but not built yet. The editor sees t
 type, while `baryon run` builds only what this page lists.
 
 This page was last brought up to date on 2026-11-13, when PNG files from `savefig`, and before them
-logarithmic axes, and before them images and colorbars, and before them text columns of a
-`DataFrame` joined it, and before them arrays of text, `Array[str, 1]`, and before them
-`a.argsort()`, and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before
-it the inner `merge` of two `DataFrame`s, and before it `groupby(...).agg(...)`, and before it
-`lzma.decompress`, and before it `sort_values` on a `DataFrame`, and before it `bz2.compress` and
-`bz2.decompress`, and before them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
-`for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by `df[mask]`,
-`df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and before it `fft2`,
-`ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`, and before it
-`print(df)`, a frame printed as pandas prints it, and before it `zlib.decompressobj` and `gzip`, and
-before them a `DataFrame` built from rows and `df[i]`, and before them `DataFrame[S]` built from
-arrays, with its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
-`zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends and grid
-lines, and before them comparisons of arrays and `a[mask]`, and before them line plots with `byplot`
-and `ticker`, saved as SVG, and before them slices of a NetCDF variable, `var[0, :, ::2]` read and
-written, and before them writing NetCDF classic files, `Dataset(path, "w", format=...)`,
-`createDimension`, `createVariable`, `setncattr` and `var[:] = values`, and before them reading
-NetCDF classic files, `netCDF4.Dataset`, its variables, dimensions and attributes, and
-`AttributeError`, and before them FITS images and headers, `fits.getdata`, `fits.getheader`,
-`fits.writeto` and `KeyError`, and before them, on 2026-11-11, the standard streams, `print(...,
-file=)` and `input`, `.npy` files, `Array.load` and `Array.save`, `linalg.svd`, `svdvals`, `eig` and
-`eigvals`, `fft`, text tables, `Array.loadtxt` and `Array.savetxt`, and before them `linalg.eigh`,
-`eigvalsh`, `cholesky` and `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them,
-array files, `Array.fromfile` and `a.tofile`, and before them `for line in f` over a text file,
-`int(text)` and `float(text)`, began to build. Before that, on 2026-11-10, text files, `open`, the
-`File` methods and `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and,
-before them, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches
-lowering or the backend something new updates the table it affects, in the same pull request, as
-roadmap item 0.8.1 asks.
+HDF5 files read with `h5by.File`, its groups, datasets and attributes, and before them logarithmic
+axes, and before them images and colorbars, and before them text columns of a `DataFrame` joined it,
+and before them arrays of text, `Array[str, 1]`, and before them `a.argsort()`, and before it
+`concat` of `DataFrame`s, and before it `drop_duplicates`, and before it the inner `merge` of two
+`DataFrame`s, and before it `groupby(...).agg(...)`, and before it `lzma.decompress`, and before it
+`sort_values` on a `DataFrame`, and before it `bz2.compress` and `bz2.decompress`, and before them
+`df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them `for row in df.itertuples()`, and
+before it the rows of a `DataFrame` chosen by `df[mask]`, `df[i:j]`, `head` and `tail`, and before
+them `compression.zstd.compress`, and before it `fft2`, `ifft2`, `rfft2` and `irfft2`, and before
+them `compression.zstd.decompress`, and before it `print(df)`, a frame printed as pandas prints it,
+and before it `zlib.decompressobj` and `gzip`, and before them a `DataFrame` built from rows and
+`df[i]`, and before them `DataFrame[S]` built from arrays, with its columns, and before them
+`zlib.compress`, and before it `zlib.decompress`, `zlib.crc32` and `zlib.adler32`, and before them
+scatter plots, bars, histograms, legends and grid lines, and before them comparisons of arrays and
+`a[mask]`, and before them line plots with `byplot` and `ticker`, saved as SVG, and before them
+slices of a NetCDF variable, `var[0, :, ::2]` read and written, and before them writing NetCDF
+classic files, `Dataset(path, "w", format=...)`, `createDimension`, `createVariable`, `setncattr`
+and `var[:] = values`, and before them reading NetCDF classic files, `netCDF4.Dataset`, its
+variables, dimensions and attributes, and `AttributeError`, and before them FITS images and headers,
+`fits.getdata`, `fits.getheader`, `fits.writeto` and `KeyError`, and before them, on 2026-11-11, the
+standard streams, `print(..., file=)` and `input`, `.npy` files, `Array.load` and `Array.save`,
+`linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables, `Array.loadtxt` and
+`Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`,
+`lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files, `Array.fromfile` and
+`a.tofile`, and before them `for line in f` over a text file, `int(text)` and `float(text)`, began
+to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and `with open(...) as
+f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them, `sys.argv`, `sys.exit` and
+`os.getenv` began to build. Every pull request that teaches lowering or the backend something new
+updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
 
 ## The example programs
 
@@ -165,7 +165,7 @@ out of a function, including through a `raise`.
 | [Sorting](dataframe-operations.md#sorting): `df.sort_values(by)` by one column or several, stable, with `ascending` one `bool` or one for each column, and NaN last | pandas's other arguments: `na_position=`, `key=`, `kind=`, `inplace=`, `ignore_index=` |
 | [Grouping](dataframe-operations.md#grouping): `df.groupby(keys).agg(name=("column", "reduction"))` by one key column or several, with `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std` and `median`, the keys returned as columns and NaN left out as in pandas | The groups as a value, `g = df.groupby(...)`; `agg` in pandas's other forms (a dict, a function, one name for every column); `df.groupby(...).sum()` and the like; `size`, `nunique`, `transform`, `apply` |
 | [Joining](dataframe-operations.md#joining): the inner join `left.merge(right, on=keys)` on one key column or several, with `_x` and `_y` for a column the two frames share | Left, right and outer joins (with missing values, 3.13.6); `left_on=`, `right_on=`, `suffixes=` and pandas's other arguments |
-| [Rows that repeat](dataframe-operations.md#rows-that-repeat): `df.drop_duplicates()` and `subset=` with one column or several, the first of the rows that repeat kept; [`a.unique()` and `a.nunique()`](arrays.md#distinct-elements) on a rank-1 array or a column of numbers | `keep="last"` and `keep=False`; `value_counts` and `describe`, the rest of roadmap item 3.13.9; `unique` and `nunique` of a text column |
+| [Rows that repeat](dataframe-operations.md#rows-that-repeat): `df.drop_duplicates()` and `subset=` with one column or several, the first of the rows that repeat kept; [`a.unique()` and `a.nunique()`](arrays.md#distinct-elements) on a rank-1 array or a column, of numbers or of text | `keep="last"` and `keep=False`; `value_counts` and `describe`, the rest of roadmap item 3.13.9 |
 | [Stacking frames](dataframe-operations.md#stacking-frames): `concat([a, b])` of any number of frames with one schema | Frames with other columns, filled with missing values (3.13.6); `axis=`, `join=`, `keys=` |
 
 ## Errors and panics
@@ -204,7 +204,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments`; [`.npy` files](data-files.md#npy-files): `Array.load` and `Array.save` of arrays of numbers, `bool`s and complex numbers of any rank, a view included; [FITS files](data-files.md#fits-files): `fits.getdata` of any HDU's image as integers or floats of any rank, scaled as AstroPy scales, `fits.getheader`, `fits.writeto` with a header and `overwrite`, and a `Header`'s `header[key]` typed by the context, `get`, `in` and `header[key] = value` or `(value, comment)`, raising `KeyError`; [NetCDF classic files](data-files.md#netcdf-files): `Dataset(path)`, `ds.variables[name][:]` of a whole variable or a subscript of integers and slices, `var[0, :, ::2]`, as signed integers or floats of any rank, unpacked as `netCDF4` unpacks, `ds.dimensions[name]` with `name`, `size` and `isunlimited()`, `getncattr` typed by the context and `ncattrs` of a file or a variable, raising `KeyError` and `AttributeError`; writing them with `Dataset(path, "w", format=...)` of either classic format or the mode `"a"`, alone or in a `with` block, `createDimension`, `createVariable` of up to four dimensions, `setncattr` of a `str`, `int` or `float`, and `var[:] = values` or a subscript's values, `var[1, ::2] = values`, past the last record too, a subscript that picks nothing raising `IndexError` or `ValueError` as `netCDF4` raises them, of signed integers or floats, packed as `netCDF4` packs, byte for byte as `netCDF4` writes | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files of structs, in Fortran order or big-endian, and `.npz` archives; `fits.open`, FITS tables, compressed images and `fits.Header()`; NetCDF subscripts of index arrays, listing a NetCDF file's variables and dimensions, and NetCDF-4 files; CSV into a DataFrame, Parquet and HDF5 (roadmap 3.14.4 and 3.14.6) |
+| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments`; [`.npy` files](data-files.md#npy-files): `Array.load` and `Array.save` of arrays of numbers, `bool`s and complex numbers of any rank, a view included; [FITS files](data-files.md#fits-files): `fits.getdata` of any HDU's image as integers or floats of any rank, scaled as AstroPy scales, `fits.getheader`, `fits.writeto` with a header and `overwrite`, and a `Header`'s `header[key]` typed by the context, `get`, `in` and `header[key] = value` or `(value, comment)`, raising `KeyError`; [NetCDF classic files](data-files.md#netcdf-files): `Dataset(path)`, `ds.variables[name][:]` of a whole variable or a subscript of integers and slices, `var[0, :, ::2]`, as signed integers or floats of any rank, unpacked as `netCDF4` unpacks, `ds.dimensions[name]` with `name`, `size` and `isunlimited()`, `getncattr` typed by the context and `ncattrs` of a file or a variable, raising `KeyError` and `AttributeError`; writing them with `Dataset(path, "w", format=...)` of either classic format or the mode `"a"`, alone or in a `with` block, `createDimension`, `createVariable` of up to four dimensions, `setncattr` of a `str`, `int` or `float`, and `var[:] = values` or a subscript's values, `var[1, ::2] = values`, past the last record too, a subscript that picks nothing raising `IndexError` or `ValueError` as `netCDF4` raises them, of signed integers or floats, packed as `netCDF4` packs, byte for byte as `netCDF4` writes; [HDF5 files](data-files.md#hdf5-files): `h5by.File(path)`, alone or in a `with` block, `f[path]` and `group[path]` as a `Group` or a `Dataset` by their use, `dset[...]` or a subscript of integers and slices as integers or floats of any rank, from every layout, chunk index and the deflate, shuffle and fletcher32 filters, `shape`, `ndim`, `size`, `dtype` and `name`, `attrs[name]` typed by the context, `keys()` and `in`, raising `KeyError`, `IndexError` and `ValueError` as h5py raises them | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files of structs, in Fortran order or big-endian, and `.npz` archives; `fits.open`, FITS tables, compressed images and `fits.Header()`; NetCDF subscripts of index arrays, listing a NetCDF file's variables and dimensions, and NetCDF-4 files; writing HDF5 files and HDF5 datasets of strings or compound types; CSV into a DataFrame and Parquet (roadmap 3.14.4 and 3.14.6) |
 
 ## Plotting
 
