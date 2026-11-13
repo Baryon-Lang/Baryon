@@ -1,5 +1,5 @@
 //! PNG output (roadmap 3.15.6, decision 0046), built and run: `savefig` with a `.png` name
-//! draws the figure into pixels, anti-aliased, with text from DejaVu Sans's outlines, and
+//! draws the figure into pixels, anti-aliased, with text from the outlines of `DejaVu Sans`, and
 //! writes a PNG file 640 by 480 pixels, as matplotlib's Agg backend does at 100 dpi.
 //!
 //! The reference images in `tests/fixtures/plotting` were written by these programs and checked
