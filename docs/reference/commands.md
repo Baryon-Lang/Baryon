@@ -242,9 +242,11 @@ functions of the edited file are still lowered again, since lowering reads the f
 but their text is kept when their lowered body comes out the same.
 
 On the 4,706-line program of roadmap 2.0, a rebuild after changing a number in one function takes
-about 0.34 s, against 0.85 s for `baryon build`, on four cores: checking takes 0.02 s, lowering
-the edited file again 0.05 s, writing the modules 0.02 s, `clang` on the one module 0.15 s and
-the link 0.06 s. Roadmap 2.2.2 aims at a rebuild under 200 ms after a one-function edit.
+about 0.3 s, against 0.85 s for `baryon build`, on four cores: checking takes 0.02 s, lowering
+the edited file again 0.05 s, writing the modules 0.02 s, `clang` on the one module 0.1 s and the
+link 0.06 s. A function of more than about 2,000 lines of LLVM text gets a module of its own, so
+editing it, or a function near it, recompiles only what changed. Roadmap 2.2.2 aims at a rebuild
+under 200 ms after a one-function edit.
 
 ## `baryon doc`
 
