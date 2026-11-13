@@ -36,7 +36,8 @@ fn run(name: &str, program: &str) -> io::Result<(Output, Scratch)> {
 }
 
 /// A program reads the classic formats' and NetCDF-4's variables as the types it names, a
-/// scaled one among them, and the dimensions and attributes, typed by where they go.
+/// scaled one and a compressed one among them, and the dimensions and attributes, typed by
+/// where they go.
 #[test]
 fn netcdf4_files_are_read() {
     let program = "\
@@ -73,12 +74,10 @@ def main() -> Raises[None, OSError | KeyError | AttributeError | IndexError | Va
         print(hot, unpacked, four.dimensions[\"time\"].isunlimited())
         north: str = four.variables[\"lat\"].getncattr(\"units\")
         print(four.ncattrs(), north)
-    try:
-        with Dataset(\"deflated.nc\") as squeezed:
-            squashed: Array[f64, 3] = squeezed.variables[\"temp\"][:]
-            print(squashed)
-    except OSError as error:
-        print(error.strerror)
+    with Dataset(\"deflated.nc\") as squeezed:
+        squashed: Array[f64, 3] = squeezed.variables[\"temp\"][:]
+        backwards: Array[f32, 2] = squeezed.variables[\"temp\"][1, :, ::-2]
+        print(squashed[0, :, :], backwards)
 ";
     let (output, _) = run("netcdf_read", program).unwrap();
     assert!(output.status.success(), "{output:?}");
@@ -94,8 +93,7 @@ def main() -> Raises[None, OSError | KeyError | AttributeError | IndexError | Va
          270.5 281.5\n\
          [[276.5 278.5]\n [279.5 281.5]] [256.7 257.4] True\n\
          ['title', 'version', 'weights'] degrees_north\n\
-         the NetCDF-4 variable temp is compressed, which is not read yet, in the HDF5 dataset \
-         temp\n"
+         [[270.5 271.5 272.5]\n [273.5 274.5 275.5]] [[278.5 276.5]\n [281.5 279.5]]\n"
     );
 }
 

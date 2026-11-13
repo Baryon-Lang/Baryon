@@ -51,9 +51,28 @@ impl<'db> Builder<'db> {
         }
     }
 
-    /// `dset[items]`, the subscript `node` of the `Dataset` `dataset`, into `place`: the
-    /// deflated chunks listed, inflated by the library, then the values read.
+    /// `dset[items]`, the subscript `node` of the `Dataset` `dataset`, into `place`.
     fn h5by_read(&mut self, place: Place, dataset: NodeId, items: &[Option<NodeId>], node: NodeId) {
+        let dataset = self.borrow(dataset);
+        let path = dataset.clone().project(Projection::Field(PATH));
+        let name = dataset.project(Projection::Field(NAME));
+        let methods = (ArrayFile::Hdf5Chunks, ArrayFile::Hdf5Read);
+        self.inflated_read(place, methods, (path, name), items, node);
+    }
+
+    /// The read `node` of the values `items` pick of the HDF5 dataset or `NetCDF` variable
+    /// `name` in the file at `path`, both borrowed `str`s, into `place`: the deflated chunks
+    /// listed by `methods.0`, inflated by `<std>/h5by.byn`'s `_inflate`, then the values read
+    /// by `methods.1`, which takes the inflated chunks back. A `NetCDF` read shares the `h5by`
+    /// library's inflater, since a `NetCDF-4` file is an HDF5 file (decision 0052).
+    pub(crate) fn inflated_read(
+        &mut self,
+        place: Place,
+        methods: (ArrayFile, ArrayFile),
+        (path, name): (Place, Place),
+        items: &[Option<NodeId>],
+        node: NodeId,
+    ) {
         let (Some(inflate), Some(inflated)) = (
             self.h5by_function(if items.is_empty() {
                 "_inflate"
@@ -62,11 +81,8 @@ impl<'db> Builder<'db> {
             }),
             self.h5by_class("_Inflated"),
         ) else {
-            return self.unsupported(node, "an HDF5 dataset without the standard library");
+            return self.unsupported(node, "a compressed read without the standard library");
         };
-        let dataset = self.borrow(dataset);
-        let path = dataset.clone().project(Projection::Field(PATH));
-        let name = dataset.project(Projection::Field(NAME));
         let words = self.subscript_words(items);
         let text = Type::new(self.db, TypeKind::Str);
         let lines = Type::new(self.db, TypeKind::List(text));
@@ -77,8 +93,12 @@ impl<'db> Builder<'db> {
             Argument::Borrow(name.clone()),
         ];
         given.extend(words.iter().cloned());
-        let listed = Builtin::ArrayFile(ArrayFile::Hdf5Chunks);
-        self.raising_call(listed, given, Place::from(chunks), node);
+        self.raising_call(
+            Builtin::ArrayFile(methods.0),
+            given,
+            Place::from(chunks),
+            node,
+        );
         let bytes = self.temporary(inflated, node);
         self.drop_later(bytes);
         let callee = Callee::Function {
@@ -97,8 +117,7 @@ impl<'db> Builder<'db> {
             Argument::Borrow(Place::from(bytes).project(Projection::Field(1))),
         ];
         given.extend(words);
-        let read = Builtin::ArrayFile(ArrayFile::Hdf5Read);
-        self.raising_call(read, given, place, node);
+        self.raising_call(Builtin::ArrayFile(methods.1), given, place, node);
     }
 
     /// The function `name` that `<std>/h5by.byn` defines at its top level.

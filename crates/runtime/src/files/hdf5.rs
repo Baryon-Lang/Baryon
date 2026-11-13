@@ -38,7 +38,7 @@ pub(crate) mod selection;
 mod superblock;
 mod values;
 
-pub(crate) use values::{deflated_chunks, read_dataset};
+pub(crate) use values::{Inflate, deflated_chunks, read_dataset};
 
 /// The element type of a dataset or an attribute.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
