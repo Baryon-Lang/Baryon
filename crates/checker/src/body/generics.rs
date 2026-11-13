@@ -204,8 +204,8 @@ impl<'db> Body<'db> {
 
     /// Whether `found` has the shape of `declared`, with each type parameter in `declared`
     /// matching anything: `list[f64]` does not fit `Array[T, 1]`, and `None` fits `T | None`.
-    /// The pairs `unify` walks, and dicts and frames; a part of `declared` that mentions no type parameter must
-    /// be compatible with its counterpart.
+    /// It walks the pairs `unify` walks, and dicts and frames; a part of `declared` that
+    /// mentions no type parameter must be compatible with its counterpart.
     fn fits(&self, declared: Type<'db>, found: Type<'db>) -> bool {
         let db = self.db;
         if !relations::is_open(db, declared) || relations::is_unknown(db, found) {
