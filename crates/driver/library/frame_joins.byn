@@ -13,6 +13,9 @@ there the join is a join on one column of integers: `join_pairs` lists the pairs
 
 Cost for `n` rows in the two frames together and `k` pairs: a sort, about `n log n`
 comparisons for each key column, then `n + k` steps, with arrays of `n` and of `2k` integers.
+
+The file also holds `text_masked` and `text_taken`, which choose rows of a column of `str` as
+`masked` and `taken` of `<std>/frames.byn` do for a column of numbers.
 """
 
 
@@ -104,3 +107,16 @@ def first_rows(ids: Array[i64, 1]) -> Array[i64, 1]:
             seen[ids[at]] = True
             rows.append(at)
     return Array(rows)
+
+
+def text_masked(column: Array[str, 1], mask: Array[bool, 1]) -> Array[str, 1]:
+    """`masked` for a column of `str`: the elements of `column` where `mask` is true, as a
+    new text array. Cost: one copy of each element kept, in a list, before the array is
+    built from the list."""
+    return Array([column[row].copy() for row in range(len(column)) if mask[row]])
+
+
+def text_taken(column: Array[str, 1], positions: Array[i64, 1]) -> Array[str, 1]:
+    """`taken` for a column of `str`: the elements of `column` at `positions`, in that order,
+    as a new text array. Cost: as `text_masked`."""
+    return Array([column[positions[row]].copy() for row in range(len(positions))])

@@ -144,11 +144,24 @@ Everything this page says of a text array holds for the column: `len(trades.symb
 from the frame. `trades.symbol = Array(words)` replaces the whole column, and panics when the
 new array has another length. `trades.copy()` copies the text with the numbers.
 
-A frame that has a text column is built from its columns, counted, copied, printed, passed and
-returned today. Every other use of it is a compile error for now and comes with the rest of
-roadmap item 3.13.3: `DataFrame(rows)`, rows (`df[i]` and `itertuples`), choosing rows or
-columns with `[...]`, `head`, `tail`, `assign`, `drop`, `rename`, `sort_values`, `groupby`, `merge`,
-`drop_duplicates` and `concat`. A frame of numbers keeps all of these.
+Rows are chosen from such a frame as from any other, and the text goes with them: `df.head(n)`,
+`df.tail(n)`, a slice `df[1:3]`, a mask `df[df.price > 1.5]`, and `df.sort_values("price")`
+by its columns of numbers.
+
+```python
+print(trades[trades.price > 1.5].sort_values("price"))
+```
+
+```text
+  symbol  price
+0   MSFT    2.0
+1    IBM    3.0
+```
+
+Every other use of a frame that has a text column is a compile error for now and comes with
+the rest of roadmap item 3.13.3: `DataFrame(rows)`, one row (`df[i]` and `itertuples`), a list
+of columns `df[["price"]]`, a sort by the text column, `assign`, `drop`, `rename`, `groupby`,
+`merge`, `drop_duplicates` and `concat`. A frame of numbers keeps all of these.
 
 ## What is not built yet
 

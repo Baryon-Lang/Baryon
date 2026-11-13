@@ -59,7 +59,7 @@ impl Builder<'_> {
         });
         let rising = self.held(self.boolean_type(), rising, node);
         let source = self.borrow(frame);
-        let count = self.row_count(&source, node);
+        let count = self.counted_rows(frame, &source, node);
         let positions = Type::new(
             self.db,
             TypeKind::Array {
