@@ -145,12 +145,17 @@ impl<'a> Constants<'a> {
         }
     }
 
-    /// Takes from `local`, the constants of a definition just written, what the module's
-    /// debug information needs: the file the compile unit names, when no earlier definition
-    /// gave one.
-    pub(crate) fn adopt(&mut self, local: &Self) {
-        if let (Some(debug), Some(written)) = (&mut self.debug, &local.debug) {
-            debug.adopt(written);
+    /// The file the compile unit names, the first function's, when there is debug
+    /// information and a function.
+    pub(crate) fn first_file(&self) -> Option<FileId> {
+        self.debug.as_ref().and_then(Debug::first_file)
+    }
+
+    /// Takes `file`, the first function's file in a definition written apart, as the file the
+    /// compile unit names, when no earlier definition gave one.
+    pub(crate) fn adopt(&mut self, file: Option<FileId>) {
+        if let Some(debug) = &mut self.debug {
+            debug.adopt(file);
         }
     }
 

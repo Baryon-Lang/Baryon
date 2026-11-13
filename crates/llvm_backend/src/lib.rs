@@ -187,11 +187,13 @@ mod text_arrays;
 mod ty;
 mod unions;
 mod view;
+mod written;
 
 use std::fmt;
 use types::Type;
 
 pub use module::Module;
+pub use written::Written;
 
 /// One test of a test program, as [`Module::tests`] takes it: the symbol of its function, and the
 /// error types the function can raise.
