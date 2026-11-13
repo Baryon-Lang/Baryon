@@ -6,7 +6,8 @@ what a text column of a [`DataFrame`](dataframes.md) is
 ([decision 0045](../decisions/0045-dataframe.md)): see [In a DataFrame](#in-a-dataframe).
 
 This chapter covers what a text array does today: it is built from a list, counted, read one
-element at a time, looped over, copied, and cut into parts by a slice, a mask or positions.
+element at a time, looped over, copied, cut into parts by a slice, a mask or positions,
+compared and searched.
 The rest is roadmap item 3.13.3, and the compiler says so by name when a program asks for it.
 
 ## Why not a list of strings
@@ -95,6 +96,30 @@ This prints `alpha`, then `delta`.
 - **A mask has the array's length**, and a position lies inside the array. Another length, or
   a position outside, stops the program.
 - **Cost:** one copy of each element chosen, and for a slice 8 bytes for each as well.
+
+## Comparisons and `in`
+
+Comparing a text array with one `str`, or with another text array, compares element by
+element and gives an `Array[bool, 1]`, a mask:
+
+```python
+names = Array(["delta", "", "alpha", "beta"])
+print(names == "alpha")
+print(len(names[names >= "b"]))
+print("beta" in names, "gamma" not in names)
+```
+
+This prints `[False False  True False]`, then `2`, for `delta` and `beta`, then `True True`.
+
+- **All six comparisons work**, `==`, `!=`, `<`, `<=`, `>` and `>=`, with the `str` on
+  either side. Text is ordered as Python orders `str`, by code point, so `"Zed" < "alpha"`.
+- **Two arrays have one length.** Another length stops the program.
+- **`text in names`** is one `bool`: whether an element equals `text`. It stops at the first.
+- **The mask is an ordinary array of `bool`s**, so it combines with `&`, `|` and `~` and
+  chooses rows of a frame: `trades[(trades.symbol == "IBM") & (trades.price > 100.0)]`.
+- **Only text compares with text.** `names == 5` is a compile error, where NumPy gives an
+  array of `False`.
+- **Cost:** one pass and one new array of `bool`s; no text is copied.
 
 ## Loops
 
@@ -233,7 +258,7 @@ Each of these is a compile error today, and the rest of roadmap item 3.13.3:
 
 - **Assigning an element**, `names[0] = "beta"`. The elements lie end to end, so one cannot
   change length in place. Build a new array from a list.
-- **Operators**: `names == "alpha"`, `"alpha" in names`, `names + other`.
+- **Arithmetic operators**: `names + other`.
 - **Methods and attributes** other than `copy()`, `unique()` and `nunique()`: `shape`,
   `argsort` and the rest.
 - **Built-in functions** other than `len`, `enumerate`, `zip` and `reversed`: `sorted`, `min`,

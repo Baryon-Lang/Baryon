@@ -432,6 +432,26 @@ class Particle(Struct):
 - `Particle(p, v, 1.0)` builds one, with arguments in field order, by position or by name.
 - Methods are `def` inside the class, with `self` first. How `self` is passed is in
   [Values and references](values-and-references.md#methods).
+- A method called through its class, as Python calls a function found on a class, takes no
+  receiver: each argument goes to the parameter at its position. A `def` without `self` is a
+  function of the class, such as a second constructor, and `Particle.kinetic_energy(p)` is
+  `p.kinetic_energy()`. A generic struct's methods cannot be called through its class yet.
+
+  ```python
+  class Point(Struct):
+      x: f64
+      y: f64
+
+      def origin() -> Point:
+          return Point(0.0, 0.0)
+
+      def on_axis(x: f64) -> Point:
+          return Point(x, 0.0)
+
+
+  start = Point.origin()
+  end = Point.on_axis(2.5)
+  ```
 - Structs have no inheritance
   ([decision 0015](../decisions/0015-no-class-inheritance.md)): no base besides `Struct` and,
   optionally, `Copy`. Types share behavior through traits and generic functions, and share data

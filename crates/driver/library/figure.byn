@@ -13,6 +13,7 @@ from artist import Kind, Text, View
 from axis import XAxis, YAxis
 from backend_agg import renderer_agg
 from backend_bases import RendererBase
+from backend_pdf import renderer_pdf
 from backend_svg import RendererSVG
 from colorbar import draw_colorbar
 from image import draw_image
@@ -52,13 +53,19 @@ class Figure(Struct):
 
         # Errors
 
-        As `Axes.savefig`: `ValueError` for a format other than `.svg` or `.png`, `OSError`
-        when the file cannot be written.
+        As `Axes.savefig`: `ValueError` for a format other than `.svg`, `.png` or `.pdf`,
+        `OSError` when the file cannot be written.
         """
-        if check_format(fname) == "png":
+        kind = check_format(fname)
+        if kind == "png":
             pixels = renderer_agg(WIDTH, HEIGHT, DPI)
             self._draw(pixels)
             pixels.print_png().tofile(fname)
+            return
+        if kind == "pdf":
+            page = renderer_pdf(WIDTH, HEIGHT)
+            self._draw(page)
+            page.print_pdf().tofile(fname)
             return
         renderer = RendererSVG(WIDTH, HEIGHT, [], 0)
         self._draw(renderer)
@@ -72,13 +79,35 @@ class Figure(Struct):
             draw_axes(self.axes[k], cell, renderer)
 
 
+def save_axes(ax: Axes, fname: str) -> Raises[None, OSError | ValueError]:
+    """Writes a figure holding only `ax` to `fname`, as `Axes.savefig` describes."""
+    kind = check_format(fname)
+    cell = subplot_box(0, 0, 1, 1)
+    if kind == "png":
+        pixels = renderer_agg(WIDTH, HEIGHT, DPI)
+        draw_axes(ax, cell, pixels)
+        pixels.print_png().tofile(fname)
+        return
+    if kind == "pdf":
+        page = renderer_pdf(WIDTH, HEIGHT)
+        draw_axes(ax, cell, page)
+        page.print_pdf().tofile(fname)
+        return
+    renderer = RendererSVG(WIDTH, HEIGHT, [], 0)
+    draw_axes(ax, cell, renderer)
+    with open(fname, "w") as file:
+        file.write(renderer.tostring())
+
+
 def check_format(fname: str) -> Raises[str, ValueError]:
-    """The format the extension of `fname` names, `"svg"` or `"png"`, in lower case; raises
-    matplotlib's `ValueError` for any other."""
+    """The format the extension of `fname` names, `"svg"`, `"png"` or `"pdf"`, in lower case;
+    raises matplotlib's `ValueError` for any other."""
     dot = _last_dot(fname)
     extension = fname[dot + 1 :].lower() if dot >= 0 else ""
-    if extension != "svg" and extension != "png":
-        raise ValueError(f"Format '{extension}' is not supported (supported formats: png, svg)")
+    if extension != "svg" and extension != "png" and extension != "pdf":
+        raise ValueError(
+            f"Format '{extension}' is not supported (supported formats: pdf, png, svg)"
+        )
     return extension
 
 

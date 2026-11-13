@@ -276,3 +276,40 @@ def described(column: Array[f64, 1]) -> Array[f64, 1]:
             result[3 + quarter] = values[high] - gap * (1.0 - part)
     result[7] = values[count - 1]
     return Array(result)
+
+
+def _text_holds(left: str, right: str, how: int) -> bool:
+    """Whether `left` and `right` compare the way `how` numbers: 0 `==`, 1 `!=`, 2 `<`,
+    3 `<=`, 4 `>`, 5 `>=`, each as Python compares `str`."""
+    if how == 0:
+        return left == right
+    if how == 1:
+        return left != right
+    if how == 2:
+        return left < right
+    if how == 3:
+        return left <= right
+    if how == 4:
+        return left > right
+    return left >= right
+
+
+def text_compared(left: Array[str, 1], right: Array[str, 1], how: int) -> Array[bool, 1]:
+    """A comparison of two text arrays of one length, element by element: true where the
+    two elements compare the way `how` numbers, as `_text_holds` reads it."""
+    return Array([_text_holds(left[at], right[at], how) for at in range(len(left))])
+
+
+def text_compared_to(column: Array[str, 1], value: str, how: int) -> Array[bool, 1]:
+    """A comparison of each element of a text array with the one text `value`: true where
+    the element, on the left, compares with it the way `how` numbers."""
+    return Array([_text_holds(column[at], value, how) for at in range(len(column))])
+
+
+def text_found(column: Array[str, 1], value: str) -> bool:
+    """Whether an element of `column` equals `value`: `value in column`. Stops at the
+    first one found."""
+    for at in range(len(column)):
+        if column[at] == value:
+            return True
+    return False

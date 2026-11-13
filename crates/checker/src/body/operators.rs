@@ -305,7 +305,17 @@ impl<'db> Body<'db> {
                 None => self.operands(left_node, right_node),
             };
             if self.is_text_array(left_type) || self.is_text_array(right_type) {
-                return self.text_array_unbuilt(comparator, &format!("`{}`", operator.symbol()));
+                let compared =
+                    self.text_array_comparison(comparator, operator, left_type, right_type);
+                if count > 1 {
+                    self.lowerer.error(
+                        node,
+                        "a chain of comparisons cannot compare arrays",
+                        "more than one comparison",
+                        Some("compare in pairs and combine them: `(a < b) & (b < c)`"),
+                    );
+                }
+                return compared;
             }
             let ordering = matches!(
                 operator,

@@ -39,8 +39,8 @@ def uses(other: Array[str, 1], counts: Array[i64, 1]):
     part = names[Array([1.5])]
     both = names[0, 1]
     joined = names + other
-    same = names == other
-    found = "a" in names
+    same = names == counts
+    found = 5 in names
     total = names.sum()
     shape = names.shape
     least = min(names)
@@ -64,6 +64,8 @@ def fine(names: Array[str, 1]) -> Array[str, 1]:
     part = names[1:]
     chosen = part[Array([True, False])]
     taken = names[Array([0, 0])][::-1]
+    same = (names == part) | ("m" <= names)
+    found = "a" in names and first not in part
     return names.copy()
 "#;
 
@@ -121,42 +123,42 @@ error: `+` is not built for an array of `str` yet
    |
 14 |     joined = names + other
    |              ^^^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
-error: `==` is not built for an array of `str` yet
+error: `==` cannot compare `Array[str, 1]` and `Array[i64, 1]`
   --> main.byn:15:17
    |
-15 |     same = names == other
-   |                 ^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+15 |     same = names == counts
+   |                 ^^^^^^^^^^ an array of `str`
+   = note: an array of `str` is compared with another or with one `str`, such as `names == "alpha"`, and searched with `"alpha" in names`
 
-error: `in` is not built for an array of `str` yet
-  --> main.byn:16:16
+error: `in` cannot compare `i64` and `Array[str, 1]`
+  --> main.byn:16:14
    |
-16 |     found = "a" in names
-   |                ^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+16 |     found = 5 in names
+   |              ^^^^^^^^^ an array of `str`
+   = note: an array of `str` is compared with another or with one `str`, such as `names == "alpha"`, and searched with `"alpha" in names`
 
 error: the method `sum` is not built for an array of `str` yet
   --> main.byn:17:13
    |
 17 |     total = names.sum()
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `shape` is not built for an array of `str` yet
   --> main.byn:18:13
    |
 18 |     shape = names.shape
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `min` is not built for an array of `str` yet
   --> main.byn:19:17
    |
 19 |     least = min(names)
    |                 ^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: an array of `str` cannot be shown yet
   --> main.byn:20:11
@@ -204,10 +206,11 @@ error: `names` was moved
 
 /// A text array is built from a list of `str`, counted, indexed, looped over, copied,
 /// sliced and chosen from by a mask or by positions, the new arrays kept, without a
-/// diagnostic, as `fine` does. Everything else is reported: a struct field that holds one,
-/// more than one dimension, a list of another type, an element assigned or moved out, an
-/// index that is an array of `f64`, two indices, operators, methods, attributes and
-/// built-ins not built yet,
+/// diagnostic, as `fine` does, which also compares one with another and with a `str` and
+/// searches it with `in`. Everything else is reported: a struct field that holds one, more
+/// than one dimension, a list of another type, an element assigned or moved out, an index
+/// that is an array of `f64`, two indices, a comparison with an array of numbers, a number
+/// sought with `in`, operators, methods, attributes and built-ins not built yet,
 /// showing one, an array of numbers where one of text is expected and the other way round,
 /// `Array.zeros` of `str`, and a read after a move, since a text array moves as any array.
 #[test]

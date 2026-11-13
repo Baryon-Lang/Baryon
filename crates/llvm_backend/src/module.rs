@@ -339,30 +339,55 @@ impl<'a, 'db> Module<'a, 'db> {
     /// One module's text for each list of definition indices in `assigned`, each carrying only
     /// the constants, declarations and metadata its functions point to, numbered within it
     /// (the `split` module).
+    ///
+    /// The modules are written on every core at once, each thread taking a run of them: each
+    /// module reads the definitions and writes its own text, so the threads share nothing they
+    /// change. Writing the 18 modules of the 4,706-line program of roadmap 2.0 took about
+    /// 35 ms on one core and 12 ms on four (roadmap 2.2.2).
     fn split(self, assigned: &[Vec<usize>]) -> Vec<String> {
         let (header, reserved) = self.constants.header();
-        assigned
-            .iter()
-            .map(|indices| {
-                let definitions = indices.iter().map(|&index| {
-                    let definition = &self.definitions[index];
-                    (definition.symbol.as_str(), &definition.calls)
+        let definitions = &self.definitions;
+        let declarations = &self.declarations;
+        let header = header.as_str();
+        let write = |indices: &Vec<usize>| {
+            let calls = indices.iter().map(|&index| {
+                let definition = &definitions[index];
+                (definition.symbol.as_str(), &definition.calls)
+            });
+            let declared = split::declared(calls);
+            split::module(
+                indices.iter().map(|&index| {
+                    let definition = &definitions[index];
+                    (definition.text.as_str(), &definition.pieces)
+                }),
+                declared
+                    .into_iter()
+                    .filter_map(|symbol| declarations.get(symbol))
+                    .map(String::as_str),
+                header,
+                reserved,
+            )
+        };
+        let threads = std::thread::available_parallelism()
+            .map_or(1, usize::from)
+            .min(assigned.len());
+        if threads < 2 {
+            return assigned.iter().map(write).collect();
+        }
+        let mut written: Vec<String> = vec![String::new(); assigned.len()];
+        let size = assigned.len().div_ceil(threads);
+        // `scope` joins every thread, and passes on a panic in one, which would be a bug here.
+        std::thread::scope(|scope| {
+            let write = &write;
+            for (texts, lists) in written.chunks_mut(size).zip(assigned.chunks(size)) {
+                scope.spawn(move || {
+                    for (text, indices) in texts.iter_mut().zip(lists) {
+                        *text = write(indices);
+                    }
                 });
-                let declared = split::declared(definitions);
-                split::module(
-                    indices.iter().map(|&index| {
-                        let definition = &self.definitions[index];
-                        (definition.text.as_str(), &definition.pieces)
-                    }),
-                    declared
-                        .into_iter()
-                        .filter_map(|symbol| self.declarations.get(symbol))
-                        .map(String::as_str),
-                    &header,
-                    reserved,
-                )
-            })
-            .collect()
+            }
+        });
+        written
     }
 
     /// Adds line tables to the module: each function and the instructions written from each

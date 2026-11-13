@@ -47,7 +47,7 @@ use types::{Checked, Item, TypeDb, TypedBody};
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-const LIBRARY: [(&str, &str); 38] = [
+const LIBRARY: [(&str, &str); 40] = [
     ("<std>/arrays.byn", include_str!("../library/arrays.byn")),
     ("<std>/artist.byn", include_str!("../library/artist.byn")),
     ("<std>/axis.byn", include_str!("../library/axis.byn")),
@@ -58,6 +58,10 @@ const LIBRARY: [(&str, &str); 38] = [
     (
         "<std>/backend_bases.byn",
         include_str!("../library/backend_bases.byn"),
+    ),
+    (
+        "<std>/backend_pdf.byn",
+        include_str!("../library/backend_pdf.byn"),
     ),
     (
         "<std>/backend_svg.byn",
@@ -103,6 +107,10 @@ const LIBRARY: [(&str, &str); 38] = [
     ("<std>/netCDF4.byn", include_str!("../library/netCDF4.byn")),
     ("<std>/os.byn", include_str!("../library/os.byn")),
     ("<std>/pathlib.byn", include_str!("../library/pathlib.byn")),
+    (
+        "<std>/pdf_file.byn",
+        include_str!("../library/pdf_file.byn"),
+    ),
     ("<std>/png.byn", include_str!("../library/png.byn")),
     ("<std>/raster.byn", include_str!("../library/raster.byn")),
     ("<std>/stats.byn", include_str!("../library/stats.byn")),
@@ -121,7 +129,7 @@ const LIBRARY: [(&str, &str); 38] = [
 /// The compiler's incremental database: every input and every cached query result.
 #[salsa::db]
 #[derive(Clone, Default)]
-struct Database {
+pub(crate) struct Database {
     /// Salsa's inputs and caches.
     storage: salsa::Storage<Self>,
 }
