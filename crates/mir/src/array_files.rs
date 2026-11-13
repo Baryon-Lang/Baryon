@@ -1,8 +1,9 @@
 //! The operations on array files a [`Builtin::ArrayFile`](crate::Builtin::ArrayFile) call
 //! performs: `Array.fromfile` and `a.tofile` (decision 0036, part 4), `Array.load` and
 //! `Array.save` of `NumPy`'s `.npy` files (decision 0043), and the `fits` module's
-//! `getheader`, `getdata` and `writeto` of FITS files (decision 0044), and the `netCDF4`
-//! module's reads of `NetCDF` classic files (decision 0047).
+//! `getheader`, `getdata` and `writeto` of FITS files (decision 0044), the `netCDF4`
+//! module's reads of `NetCDF` classic files (decision 0047), and the `h5py` module's reads of
+//! HDF5 files (decision 0052).
 
 /// An operation on an array file, called by [`Builtin::ArrayFile`](crate::Builtin::ArrayFile).
 ///
@@ -111,6 +112,39 @@ pub enum ArrayFile {
     /// items do not fit its dimensions, or the array's shape differs from the shape picked. It
     /// costs one pass over the values and one read and write of the file.
     NetcdfWrite,
+    /// `h5py.File(path)`: one argument, the path, a `str`. The destination is a new
+    /// `list[str]`: lines that describe the HDF5 file, each a tag and fields separated by tabs,
+    /// which the standard library parses. A `P` line, the path, comes first, so the library can
+    /// read datasets later; then, in h5py's order, a `G` line for each group, its path; a `D`
+    /// line for each dataset, its path, its type as `NumPy` names it (`<f8`) and its shape, the
+    /// lengths separated by commas; and after each object its `A` lines, an attribute's owner,
+    /// its kind (`str`, `int` or `float`), its shape, its name and its values separated by
+    /// tabs. The call fails with the kind `INVALID_DATA` when the file is not HDF5 or is
+    /// damaged, or uses a feature not read yet. It reads the file's structure only.
+    Hdf5Open,
+    /// The deflated chunks a read of an HDF5 dataset needs inflated: the path and the
+    /// dataset's path in the file, each a `str`, then four `int`s for each item of the
+    /// subscript, as [`Self::Hdf5Read`] takes them. The destination is a new `list[str]`, one
+    /// line for each deflated chunk that holds a value picked: its address and its size in
+    /// bytes, separated by a tab, in the order [`Self::Hdf5Read`] takes them inflated. The
+    /// standard library's `zlib` inflates them (decision 0049), so Baryon has one deflate
+    /// decoder. The call fails as [`Self::Hdf5Read`] does. It reads the dataset's chunk index.
+    Hdf5Chunks,
+    /// `f[name][items]` of the `h5py` module: the path and the dataset's path in the file, each
+    /// a `str`, the inflated chunks, an `Array[u8, 1]` borrowed, and their sizes, an
+    /// `Array[i64, 1]` borrowed, then four `int`s for each item of the subscript, which picks
+    /// the values read: `0` and an index, or `1` and a slice's start, stop and step, each
+    /// `i64::MIN` when the program left it out. No items read the whole dataset, as
+    /// `f[name][...]` does. The destination is a new `Array[T, rank]`, its `T` a number type,
+    /// its shape the lengths picked along the axes a slice keeps. A float `T` reads any number
+    /// dataset; an integer `T` reads an integer dataset it can hold. Elements never written
+    /// read as the fill value. The call fails with the kind `INVALID_DATA` when the file has no
+    /// such dataset, the values picked have another rank or `T` cannot read them, or a chunk is
+    /// damaged; with items, it raises h5py's `IndexError` for an index past its axis and
+    /// `ValueError` for more items than axes or a step that is not positive, so its error is a
+    /// `Raises[None, OSError | IndexError | ValueError]`. It costs one pass over the stored
+    /// values picked, reading only the chunks that hold one.
+    Hdf5Read,
 }
 
 impl ArrayFile {
@@ -128,6 +162,9 @@ impl ArrayFile {
     /// assert_eq!(mir::ArrayFile::NetcdfRead.name(), "netCDF4.Variable[:]");
     /// assert_eq!(mir::ArrayFile::NetcdfDefine.name(), "netCDF4.define");
     /// assert_eq!(mir::ArrayFile::NetcdfWrite.name(), "netCDF4.Variable[:] =");
+    /// assert_eq!(mir::ArrayFile::Hdf5Open.name(), "h5py.File");
+    /// assert_eq!(mir::ArrayFile::Hdf5Chunks.name(), "h5py.chunks");
+    /// assert_eq!(mir::ArrayFile::Hdf5Read.name(), "h5py.Dataset[...]");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -143,6 +180,9 @@ impl ArrayFile {
             Self::NetcdfRead => "netCDF4.Variable[:]",
             Self::NetcdfDefine => "netCDF4.define",
             Self::NetcdfWrite => "netCDF4.Variable[:] =",
+            Self::Hdf5Open => "h5py.File",
+            Self::Hdf5Chunks => "h5py.chunks",
+            Self::Hdf5Read => "h5py.Dataset[...]",
         }
     }
 }

@@ -240,8 +240,9 @@ pub enum Builtin {
     /// `Array.fromfile` or `a.tofile`, which read and write an array's elements as a file of
     /// raw bytes (decision 0036), `Array.load` or `Array.save`, which read and write a `.npy`
     /// file (decision 0043), `fits.getheader`, `fits.getdata` or `fits.writeto`, which read
-    /// and write a FITS file (decision 0044), or the `netCDF4` module's reads of a `NetCDF`
-    /// classic file (decision 0047). [`ArrayFile`] says what each takes and gives. Each can
+    /// and write a FITS file (decision 0044), the `netCDF4` module's reads of a `NetCDF`
+    /// classic file (decision 0047), or the `h5py` module's reads of an HDF5 file (decision
+    /// 0052). [`ArrayFile`] says what each takes and gives. Each can
     /// fail, as a [`File`](Self::File) call can: its call has an error edge.
     ArrayFile(ArrayFile),
     /// `subprocess.run(args, ...)` (decision 0036, part 8): runs the program `args[0]` names,
