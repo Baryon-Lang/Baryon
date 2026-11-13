@@ -9,8 +9,8 @@ use types::{Integer, Primitive, Type, TypeKind};
 
 /// What an array of `str` can do today, for messages.
 const BUILT: &str = "an array of `str` has `len`, indexing, slices, masks, comparisons, \
-                     `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest \
-                     comes with roadmap item 3.13.3";
+                     `in`, `for` loops, `print`, `copy()`, `unique()` and `nunique()` today; \
+                     the rest comes with roadmap item 3.13.3";
 
 impl<'db> Body<'db> {
     /// `names[i]` on a text array: the element, a `str` borrowed from the array. A slice,
@@ -75,15 +75,16 @@ impl<'db> Body<'db> {
         self.text_array_unbuilt(node, &format!("the method `{name}`"))
     }
 
-    /// Reports a text array, or a value that holds one, shown by `print`, `str` or an
-    /// f-string at `node`, which cannot write one yet.
+    /// Reports a value that holds a text array, such as a list of them, shown by `print`
+    /// or an f-string at `node`, which cannot write one yet. A text array itself is shown,
+    /// as `NumPy` shows an array of strings.
     pub(super) fn shows_no_text_array(&mut self, node: NodeId, ty: Type<'db>) {
-        if super::relations::holds_text_array(self.db, ty) {
+        if !self.is_text_array(ty) && super::relations::holds_text_array(self.db, ty) {
             self.lowerer.error(
                 node,
-                "an array of `str` cannot be shown yet",
-                "an array of `str`",
-                Some("show its elements one at a time: `for name in names: print(name)`"),
+                "a value that holds an array of `str` cannot be shown yet",
+                "holds an array of `str`",
+                Some("show each array on its own: `for names in groups: print(names)`"),
             );
         }
     }
