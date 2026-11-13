@@ -82,9 +82,12 @@ with open("matplotlib_colormaps.txt", "w") as f:
 ```
 
 `polynomials.svg`, `offset.svg`, `shapes.svg`, `markers.svg`, `histogram.svg`, `grid.svg`,
-`saddle.svg`, `auto.svg`, `logaxes.svg` and `lognarrow.svg` are Baryon's own output, checked by
-eye against matplotlib's drawing of the same data and stored so any change to how a plot is drawn
-shows up as a difference. When a change to drawing is intended, write them again from the
-programs in `plotting.rs`, `plotting_images.rs`, which draws `grid.svg`, `saddle.svg` and
-`auto.svg`, and `plotting_log.rs`, which draws `logaxes.svg` and `lognarrow.svg`, and look at
-them before committing.
+`saddle.svg`, `auto.svg`, `logaxes.svg`, `lognarrow.svg` and `figures.svg` are Baryon's own
+output, checked by eye against matplotlib's drawing of the same data and stored so any change to
+how a plot is drawn shows up as a difference. When a change to drawing is intended, write them
+again from the programs in `plotting.rs`, `plotting_images.rs`, which draws `grid.svg`,
+`saddle.svg` and `auto.svg`, `plotting_log.rs`, which draws `logaxes.svg` and `lognarrow.svg`,
+and `plotting_figures.rs`, which draws `figures.svg`, and look at them before committing.
+`figures.svg` was also compared with matplotlib 3.11.2's SVG of the same figure, drawn with
+`font.family` set to DejaVu Sans: its text is placed within a thousandth of a point of
+matplotlib's, apart from labels whose width is estimated.

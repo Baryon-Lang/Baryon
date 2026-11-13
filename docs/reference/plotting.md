@@ -6,15 +6,15 @@ Baryon and saved as SVG files that any browser, VS Code or a LaTeX toolchain can
 labels the ticks, as `matplotlib.ticker` does. These two are the modules a program imports.
 `pyplot` draws through smaller files of the standard library, named as matplotlib names its own:
 `colors` reads color names, `cm` holds the colormaps, `artist` holds what an axes draws,
-`transforms` finds the ranges it shows, `figure` lays an axes out and draws it, `axis` draws an axis's ticks and labels, `legend`,
-`image` and `colorbar` draw a legend, an image and a colorbar, `backend_svg` writes the SVG file,
-and `png` the PNG images inside it. They are internal, so a program's own `colors.byn` or
+`transforms` finds the ranges it shows, `figure` lays a grid of axes out and draws them, `axis`
+draws an axis's ticks and labels, `legend`, `image` and `colorbar` draw a legend, an image and a
+colorbar, `backend_svg` writes the SVG file, and `png` the PNG images inside it. They are internal, so a program's own `colors.byn` or
 `image.byn` is never hidden by them.
 
-This chapter covers what builds today, roadmap 3.15.1 to 3.15.3 and the logarithmic axes of
-3.15.4: line plots, scatter plots, bars, histograms, markers, legends, grid lines, images and
-colorbars, titles, axis labels, axis ranges, logarithmic axes and SVG output. Grids of plots,
-error bars, filled areas, text, contours, PNG and PDF files follow in roadmap 3.15.4 to 3.15.7.
+This chapter covers what builds today, roadmap 3.15.1 to 3.15.4: line plots, scatter plots,
+bars, histograms, error bars, filled areas, text, markers, legends, grid lines, images and
+colorbars, titles, axis labels, axis ranges, logarithmic axes, grids of plots and SVG output.
+Contours, PNG and PDF files follow in roadmap 3.15.5 to 3.15.7.
 
 ## A first plot
 
@@ -58,6 +58,8 @@ A matplotlib script changes in two places:
 | `import matplotlib.pyplot as plt` | `import pyplot as plt` | Libraries are named without their package, as `linalg` is for `numpy.linalg` |
 | `fig, ax = plt.subplots()` | `ax = plt.axes()` | Baryon values have one owner, so `fig` and `ax` cannot share a figure: drawing on `ax` would not change `fig` |
 | `fig.savefig("p.svg")` | `ax.savefig("p.svg")` | The axes are saved in a figure of their own |
+| `fig, axs = plt.subplots(2, 2)`, `axs[1, 0].plot(t, x)` | `fig = plt.subplots(2, 2)`, `fig.axes[2].plot(t, x)` | The figure owns its axes, so they are reached through it, row by row, as matplotlib's `fig.axes` lists them |
+| `ax.errorbar(x, y, yerr=None)`, `ax.fill_between(x, y1, 0.5)` | leave `yerr` out; `ax.fill_between(x, y1, Array.fill(len(x), 0.5))` | An array argument that may be absent is an empty array by default, and the curves are arrays |
 | `im = ax.imshow(z)`, `fig.colorbar(im)` | `ax.imshow(z)`, `ax.colorbar()` | The colorbar belongs to the axes and shows its last image, as there is no `fig` to ask |
 | `plt.plot(t, x)`, `plt.savefig(...)` | not provided | These draw on a hidden current figure, a module-level variable, and Baryon has none: a parallel loop would race on it |
 
@@ -73,7 +75,10 @@ moved script is never drawn wrong in silence.
 | `ax.scatter(x, y, s=36.0, color="", marker="o", label="")` | Draws a marker at each point; `s` is its area in points squared | `Axes.scatter` |
 | `ax.bar(x, height, width=0.8, color="", label="")` | Draws a bar from 0 to `height[i]` centred on each `x[i]` | `Axes.bar` |
 | `counts, edges = ax.hist(x, bins=10, color="", label="")` | Draws the histogram of `x` in `bins` equal bins and returns the counts and the `bins + 1` edges | `Axes.hist`, which also returns the bars |
-| `ax.legend(loc="best")` | Draws a legend of every labelled line, set of markers and set of bars | `Axes.legend` |
+| `ax.errorbar(x, y, yerr=Array.zeros(0), xerr=Array.zeros(0), fmt="", color="", capsize=0.0, label="")` | Draws the points with an error bar of `yerr[i]` up and down and `xerr[i]` left and right of each; an empty array draws no bars | `Axes.errorbar`, with errors of the data's length |
+| `ax.fill_between(x, y1, y2=Array.zeros(0), color="", alpha=1.0, label="")` | Fills the area between the curves `y1` and `y2`, or down to 0 when `y2` is left out | `Axes.fill_between` |
+| `ax.text(x, y, s, fontsize=10.0, ha="left", va="baseline")` | Writes `s` at the data point `(x, y)` | `Axes.text` |
+| `ax.legend(loc="best")` | Draws a legend of every labelled line, set of markers, set of bars, set of error bars and filled area | `Axes.legend` |
 | `ax.grid(visible=True)` | Draws light gray lines across the axes at every tick, or stops drawing them | `Axes.grid` |
 | `ax.imshow(X, cmap="viridis", vmin=None, vmax=None, origin="upper", aspect="equal", extent=None)` | Draws the `Array[f64, 2]` `X` as an image, one colored cell per element | `Axes.imshow` |
 | `ax.colorbar(label="")` | Draws a colorbar of the last image on the right of the axes | `Figure.colorbar(im, ax=ax, label=...)` |
@@ -151,10 +156,78 @@ pixels or more each way, at matplotlib's 100 dots an inch, the viewer is told to
 sharp, as matplotlib's `"nearest"` interpolation does; a smaller image is left to the viewer
 to smooth, which is close to matplotlib's antialiasing but not the same pixels.
 
+### Error bars, filled areas and text
+
+`errorbar` draws its bars first, 1.5 points wide, then the points over them, all in one color,
+the next of the line cycle unless `color` is given, as matplotlib does. `fmt` says how the points
+are drawn: `""` or `"-"` joins them with a line, a marker such as `"o"` marks each one, the
+marker then `"-"`, such as `"o-"`, does both, and `"none"` draws the bars alone. `capsize` puts
+a cap across each end of each bar, `capsize` points long on each side; the default, 0, draws
+none, as matplotlib's default does. The range shown covers the ends of the bars. A legend shows
+the bars, caps and points together.
+
+`fill_between` fills the polygon that runs along `y1` and back along `y2`, with no edge, in the
+next color of the cycle bars take from, as matplotlib's does; `alpha` from 0 to 1 sets its
+opacity. A NaN or infinite value in `x`, `y1` or `y2` splits the area there. Fills lie under the
+grid and lines, as bars do.
+
+`text` writes at a point in data coordinates. `ha` puts the text's `"left"` side, the default,
+its `"center"` or its `"right"` side at `x`; `va` puts its `"baseline"`, the default, the
+`"bottom"` or `"top"` of its line or its `"center"` at `y`, measured with matplotlib's line box
+for DejaVu Sans. Text is not clipped to the axes and does not change the range shown, as in
+matplotlib.
+
+```python
+import pyplot as plt
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    t = Array([1.0, 2.0, 3.0, 4.0, 5.0])
+    rate = Array([2.1, 3.9, 6.2, 7.8, 10.1])
+    spread = Array([0.3, 0.4, 0.4, 0.6, 0.7])
+    ax = plt.axes()
+    ax.fill_between(t, 2.0 * t - 0.5, 2.0 * t + 0.5, alpha=0.2, label="model")
+    ax.errorbar(t, rate, yerr=spread, fmt="o", capsize=3.0, label="measured")
+    ax.text(1.2, 9.0, "rate = 2t", fontsize=12.0)
+    ax.legend(loc="lower right")
+    ax.savefig("rate.svg")
+```
+
+### Grids of plots
+
+`plt.subplots(nrows, ncols)` makes a `Figure` holding a grid of empty axes, laid out with
+matplotlib's default subplot parameters: the grid fills the same box one axes fills, with gaps of
+a fifth of an axes between them. `fig.axes` lists them row by row, so in a 2 by 3 grid
+`fig.axes[0]` is the top left one and `fig.axes[3]` the first of the second row. Each is an
+ordinary `Axes`, with its own color cycles, ranges and legend, and `fig.savefig` writes them all
+in one file.
+
+```python
+import pyplot as plt
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    t = Array.zeros(50)
+    for i in range(50):
+        t[i] = 0.1 * f64(i)
+    fig = plt.subplots(2, 1)
+    fig.axes[0].plot(t, t * t)
+    fig.axes[0].set_ylabel("position (m)")
+    fig.axes[1].plot(t, 2.0 * t)
+    fig.axes[1].set_ylabel("velocity (m/s)")
+    fig.axes[1].set_xlabel("time (s)")
+    fig.savefig("motion.svg")
+```
+
+Labels and titles of neighbouring axes can overlap when the grid is dense, as they do in
+matplotlib without `constrained_layout`, which is not offered yet. `subplots` panics when either
+count is below 1, where matplotlib raises `ValueError`.
+
 ### Markers
 
 `marker` is one of matplotlib's: `"o"` a circle, `"."` a small circle, `"s"` a square, `"^"`
-and `"v"` triangles pointing up and down, `"D"` a diamond, and `"+"` and `"x"` crosses. In
+and `"v"` triangles pointing up and down, `"D"` a diamond, `"+"` and `"x"` crosses, and `"_"`
+and `"|"` short lines across and up. In
 `plot` it is `markersize` points across; a `linestyle` of `""` or `"None"` leaves the line out,
 so only the markers show. Each marker is written once in the file and placed at every point, so
 a point costs about 60 bytes.
@@ -162,7 +235,8 @@ a point costs about 60 bytes.
 ### Legends
 
 A legend lists the artists with a `label`, in the order they were drawn, each with a short
-sample of its line, marker or bar. `loc` is `"best"`, or one of matplotlib's places:
+sample of its line, marker, bar or filled area; an `errorbar`'s sample is its point with a bar
+through it, and its caps. `loc` is `"best"`, or one of matplotlib's places:
 `"upper right"`, `"upper left"`, `"lower left"`, `"lower right"`, `"right"`, `"center left"`,
 `"center right"`, `"lower center"`, `"upper center"` and `"center"`. `"best"` tries the ten
 places matplotlib tries, in its order, and takes the first that covers the fewest data points,
@@ -284,13 +358,18 @@ them; this table is for those working on the library, and on the PNG and PDF bac
 | `YAxis(vmin, vmax, bottom, top, left, log)` | The axis along the left of an axes | `axis.YAxis` |
 | `axis.get_majorticklocs()`, `axis.get_minorticklocs()` | The tick positions, with as many intervals as fit the axis's length; minor ticks only on a logarithmic axis | `Axis.get_majorticklocs`, `Axis.get_minorticklocs` |
 | `axis.draw(renderer)` | Draws the ticks, minor ticks shorter and thinner, their labels and the offset text; returns where the axis label goes | `Axis.draw` |
-| `RendererSVG(width, height, [])` | An empty SVG drawing, sizes in points | `backend_svg.RendererSVG` |
-| `renderer.draw_path`, `draw_markers`, `draw_rectangle`, `draw_text` | Draw lines, markers, rectangles and text, in points from the top left corner; `draw_text` draws a `LogFormatterSciNotation` label with its exponent raised | The renderer methods of the same names |
+| `RendererSVG(width, height, [], 0)` | An empty SVG drawing, sizes in points, with no clip rectangle yet; `renderer.set_clip(x, y, width, height)` sets the next, one for each axes | `backend_svg.RendererSVG` |
+| `renderer.draw_path`, `draw_markers`, `draw_rectangle`, `draw_polygon`, `draw_text` | Draw lines, markers, rectangles, filled polygons and text, in points from the top left corner; `draw_text` draws a `LogFormatterSciNotation` label with its exponent raised | The renderer methods of the same names, `draw_path_collection` for polygons |
 | `renderer.get_text_width_height_descent(text, size)` | About how wide a text is, and the height and depth of its line | `RendererBase.get_text_width_height_descent` |
 | `renderer.tostring()` | The SVG file's text | What `savefig` writes |
-| `Artist(kind, x, y, widths, color, linewidth, dashes, marker, markersize, label)` | One line, set of markers or set of bars, as an axes keeps it; `kind` is `Kind.LINE`, `Kind.MARKERS` or `Kind.BARS` | `Line2D`, `PathCollection`, `BarContainer` |
+| `Artist(kind, x, y, widths, color, linewidth, dashes, marker, markersize, label, alpha)` | One line, set of markers, set of bars, set of error bars or filled area, as an axes keeps it; `kind` is `Kind.LINE`, `Kind.MARKERS`, `Kind.BARS`, `Kind.ERRORS` or `Kind.FILL` | `Line2D`, `PathCollection`, `BarContainer`, `LineCollection`, `FillBetweenPolyCollection` |
+| `error_bars(x, y, error, across, color, capsize)`, `filled(x, y1, y2, color, alpha)`, `dashes(style, linewidth)` | Build `errorbar`'s and `fill_between`'s artists; a line style's dash lengths | `Axes.errorbar`, `Axes.fill_between`, `Line2D.set_linestyle` |
+| `Text(x, y, text, size, ha, va)` | A piece of text as an axes keeps it | `text.Text` |
 | `View(left, top, right, bottom, x0, x1, y0, y1, log_x, log_y)` | Where an axes sits, in points, the data range it shows and which axes are logarithmic; `view.to_x(x)` and `view.to_y(y)` map data to points | `Axes.transData` |
-| `draw_axes(ax, renderer)` | Finds an axes' ranges, places its box in the default figure and draws all of it | `Figure.draw`, `Axes.draw` |
+| `Figure(axes, nrows, ncols)`, `fig.savefig(fname)` | A grid of axes, as `subplots` makes it, and its file | `figure.Figure` |
+| `subplot_box(row, column, nrows, ncols)` | The box, in points, of one cell of a grid in the default figure | `GridSpec.get_grid_positions` |
+| `draw_axes(ax, cell, renderer)` | Finds an axes' ranges, places its box in its cell and draws all of it | `Figure.draw`, `Axes.draw` |
+| `check_format(fname)` | Raises `savefig`'s `ValueError` unless the file is `.svg` | `FigureCanvasBase.savefig`'s check |
 | `draw_legend(artists, loc, view, renderer)` | Draws a legend of the labelled artists at `loc`, `"best"` included | `legend.Legend` |
 | `location_code(loc)` | matplotlib's number for a legend place: 0 for `"best"`, 1 to 10, or -1 | `Legend.codes` |
 | `Image(data, cmap, vmin, vmax, extent, upper)` | An image as an axes keeps it | `image.AxesImage` |
@@ -316,9 +395,11 @@ until roadmap 3.27, so a 1000 by 1000 image makes a file of about 5.5 MB.
 
 `savefig` raises `ValueError` for any extension but `.svg`, with matplotlib's message, such as
 `Format 'png' is not supported (supported formats: svg)`, and `OSError` when the file cannot be
-written. `plot`, `scatter` or `bar` with arrays of different lengths, an unknown color, line
-style, legend place or colormap, an `imshow` `origin` or `aspect` it does not know, a `hist`
-with fewer than one bin, or a `colorbar` before any image panics, and so does `savefig` on an
+written. `plot`, `scatter`, `bar`, `errorbar` or `fill_between` with arrays of different
+lengths, an unknown color, line style, legend place, colormap, `errorbar` format or `text`
+alignment, an `imshow` `origin` or `aspect` it does not know, an `alpha` outside 0 to 1, a `hist`
+with fewer than one bin, a `subplots` grid with no rows or columns, or a `colorbar` before any
+image panics, and so does `savefig` on an
 unknown marker, where matplotlib raises `ValueError` or `RuntimeError`: each is a mistake in the
 program, not in its data
 ([decision 0046](../decisions/0046-plotting.md)).
