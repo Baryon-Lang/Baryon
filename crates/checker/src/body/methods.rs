@@ -22,6 +22,29 @@ impl<'db> Body<'db> {
         }
     }
 
+    /// `value.method(arguments)` when `value`, of type `base`, is of a class of the standard
+    /// library whose methods the checker types itself: a `Path`'s, a FITS `Header`'s `get`, or
+    /// a `NetCDF` or HDF5 file's. `None` for any other call.
+    fn library_class_method(
+        &mut self,
+        node: NodeId,
+        (value, base): (NodeId, Type<'db>),
+        callee: &str,
+        arguments: &Arguments,
+        expected: Option<Type<'db>>,
+    ) -> Option<Type<'db>> {
+        if self.is_path(base)
+            && let Some(result) = self.path_method(node, value, callee, arguments)
+        {
+            return Some(result);
+        }
+        if self.is_header(base) && callee == "get" {
+            return Some(self.header_get(node, value, base, arguments));
+        }
+        self.netcdf_method(node, (value, base), callee, arguments, expected)
+            .or_else(|| self.h5by_method(node, (value, base), callee, arguments))
+    }
+
     /// `value.method(arguments)` on a struct.
     pub(super) fn method_call(
         &mut self,
@@ -37,23 +60,19 @@ impl<'db> Body<'db> {
             return self.untyped(arguments);
         };
         let callee = self.tree.text(attribute, self.text).to_owned();
-        if let Some(result) = self.class_function(node, value, &callee, arguments, expected) {
+        if let Some(result) = self
+            .class_function(node, value, &callee, arguments, expected)
+            .or_else(|| self.h5by_attrs_method(node, value, &callee, arguments))
+        {
             return result;
         }
-        let base = self.expression(value, None);
+        let base = self.expression(value, self.h5by_receiver(value, &callee));
         if self.maybe_none(value, base) {
             self.untyped(arguments);
             return self.lowerer.unknown();
         }
-        if self.is_path(base)
-            && let Some(result) = self.path_method(node, value, &callee, arguments)
-        {
-            return result;
-        }
-        if self.is_header(base) && callee == "get" {
-            return self.header_get(node, value, base, arguments);
-        }
-        if let Some(result) = self.netcdf_method(node, (value, base), &callee, arguments, expected)
+        if let Some(result) =
+            self.library_class_method(node, (value, base), &callee, arguments, expected)
         {
             return result;
         }

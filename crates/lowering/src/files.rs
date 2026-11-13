@@ -197,12 +197,25 @@ impl<'db> Builder<'db> {
         place: Place,
         node: NodeId,
     ) {
+        self.raising_callee(Callee::Builtin(builtin), arguments, place, node);
+    }
+
+    /// A call of `callee`, a built-in or a function, its result written into `place`, with the
+    /// error edge for the errors the checker recorded at `node`, as [`Self::raising_call`]
+    /// writes one: a library function that lowering calls for the program raises through it.
+    pub(crate) fn raising_callee(
+        &mut self,
+        callee: Callee<'db>,
+        arguments: Vec<Argument<'db>>,
+        place: Place,
+        node: NodeId,
+    ) {
         let errors = self.typed.errors(node).to_vec();
         let edge = self.error_edge(&errors, node);
         let next = self.new_block();
         self.terminate(
             TerminatorKind::Call {
-                callee: Callee::Builtin(builtin),
+                callee,
                 arguments,
                 destination: place,
                 target: next,

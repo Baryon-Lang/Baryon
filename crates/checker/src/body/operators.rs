@@ -273,6 +273,9 @@ impl<'db> Body<'db> {
         if let Some(contains) = self.header_contains(node) {
             return contains;
         }
+        if let Some(contains) = self.h5by_contains(node) {
+            return contains;
+        }
         let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
         let Some(mut left_node) = self.tree.child(node, Role::Left) else {
             return boolean;

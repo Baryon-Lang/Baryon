@@ -59,6 +59,7 @@ mod frame_sort;
 mod frame_stack;
 mod frames;
 mod generics;
+mod h5by;
 mod library;
 mod loops;
 mod math;

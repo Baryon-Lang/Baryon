@@ -84,7 +84,7 @@ impl<'db> Builder<'db> {
     /// The four `int` words of each subscript item in `items`, as the runtime reads them: `0`
     /// and the index for an integer, `1` and the start, stop and step for a slice, with
     /// `i64::MIN` for a part the program left out.
-    fn subscript_words(&mut self, items: &[Option<NodeId>]) -> Vec<Argument<'db>> {
+    pub(crate) fn subscript_words(&mut self, items: &[Option<NodeId>]) -> Vec<Argument<'db>> {
         let int = self.int_type();
         let left_out = || Operand::Constant(Constant::integer(int, i128::from(i64::MIN)));
         let mut words = Vec::with_capacity(items.len() * 4);
