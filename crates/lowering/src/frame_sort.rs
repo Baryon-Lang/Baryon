@@ -122,14 +122,22 @@ impl Builder<'_> {
     /// `a.argsort()` on the rank-1 array `array`, into `place`: the positions of its elements
     /// in rising order, with equal elements in the order they stand in and NaN last. It is
     /// the sort `sort_values` uses, on one column that is the array. Cost: `n log n`
-    /// comparisons and two arrays of `n` positions.
+    /// comparisons and two arrays of `n` positions. A text array is put in the order of
+    /// Python's `<` on `str`, at the cost of one more sort, by `text_codes`.
     pub(crate) fn array_argsort(&mut self, place: Place, array: NodeId, node: NodeId) {
-        let TypeKind::Array { element, .. } = self.ty(array).kind(self.db) else {
+        let int = self.int_type();
+        let source = self.borrow(array);
+        // A text array is sorted by the whole numbers that stand for its text.
+        let (source, element) = if self.is_text_array(array) {
+            let Some(codes) = self.text_codes(source, node) else {
+                return;
+            };
+            (codes, int)
+        } else if let TypeKind::Array { element, .. } = self.ty(array).kind(self.db) {
+            (source, *element)
+        } else {
             return self.unsupported(node, "`argsort` of this value");
         };
-        let element = *element;
-        let source = self.borrow(array);
-        let int = self.int_type();
         let count = self.temporary(int, node);
         self.assign(Place::from(count), Rvalue::Length(source.clone(), 0), node);
         let positions = self.ty(node);

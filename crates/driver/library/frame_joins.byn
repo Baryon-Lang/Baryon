@@ -355,3 +355,16 @@ def text_shown(column: Array[str, 1]) -> str:
             line = f"{line} "
     text = f"{text}{line}"
     return f"[{text[1:]}]"
+
+
+def text_extreme(column: Array[str, 1], largest: bool) -> str:
+    """A copy of the element of `column` that comes first by Python's `<` on `str`, or last
+    when `largest`: a text array's `min` and `max`. `column` has an element, which the
+    compiler has checked. One pass, comparing text."""
+    best = 0
+    for at in range(1, len(column)):
+        if largest and column[at] > column[best]:
+            best = at
+        if not largest and column[at] < column[best]:
+            best = at
+    return column[best].copy()
