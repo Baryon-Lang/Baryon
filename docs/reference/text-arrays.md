@@ -7,7 +7,7 @@ what a text column of a [`DataFrame`](dataframes.md) is
 
 This chapter covers what a text array does today: it is built from a list, counted, read one
 element at a time, looped over, copied, cut into parts by a slice, a mask or positions,
-compared and searched.
+compared, searched and printed.
 The rest is roadmap item 3.13.3, and the compiler says so by name when a program asks for it.
 
 ## Why not a list of strings
@@ -120,6 +120,28 @@ This prints `[False False  True False]`, then `2`, for `delta` and `beta`, then 
 - **Only text compares with text.** `names == 5` is a compile error, where NumPy gives an
   array of `False`.
 - **Cost:** one pass and one new array of `bool`s; no text is copied.
+
+## Printing
+
+`print(names)` and `f"{names}"` show a text array as NumPy shows an array of strings: each
+element in quotes, a space between two, the whole in brackets.
+
+```python
+names = Array(["alpha", "", "it's"])
+print(names)
+```
+
+This prints `['alpha' '' "it's"]`.
+
+- **Each element is written as Python's `repr` writes a `str`**: in single quotes, or in
+  double quotes when it holds a single quote and no double one, with `\n`, `\t` and `\\`
+  for a new line, a tab and a backslash. Other control characters are written as they are,
+  where `repr` would write `\x00`.
+- **A line holds at most 75 characters**, and the next line starts under the first element.
+- **More than 1000 elements are cut short**: the first three, `...`, and the last three.
+- **`str(names)` is not built yet**; write `f"{names}"`. A list or tuple that holds a text
+  array cannot be shown yet either.
+- **Cost:** one copy of each element shown.
 
 ## Loops
 
@@ -263,6 +285,7 @@ Each of these is a compile error today, and the rest of roadmap item 3.13.3:
   `argsort` and the rest.
 - **Built-in functions** other than `len`, `enumerate`, `zip` and `reversed`: `sorted`, `min`,
   `max`, `list`.
-- **Showing one**: `print(names)`, `str(names)` and `f"{names}"`. Print the elements in a loop.
+- **`str(names)`**, and showing a list or tuple that holds a text array. `print(names)` and
+  `f"{names}"` work.
 - **A struct field** of type `Array[str, 1]`. Hold a `list[str]` in the struct, or pass the
   array beside it.

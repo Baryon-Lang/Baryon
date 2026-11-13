@@ -1,7 +1,7 @@
 //! Text arrays, `Array[str, 1]` (roadmap 3.13.3, decision 0045), built and run: one made
 //! from a list, counted, indexed, looped over, copied, moved and kept in a list and a dict,
 //! its distinct elements taken and counted (roadmap 3.13.9), parts of it chosen by a slice,
-//! a mask and positions, and its elements compared and searched.
+//! a mask and positions, its elements compared and searched, and the array printed.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -320,4 +320,68 @@ def main():
         ),
         "{report}"
     );
+}
+
+/// A program that prints text arrays: one with an empty text, a letter outside ASCII, both
+/// kinds of quote, a new line, a tab and a backslash; one element and none; two in an
+/// f-string; 40 elements, which take several lines; elements wider than a line; 1001
+/// elements, which are cut short, and 1000, which are not; and a frame's column.
+const SHOWN: &str = r#"
+def main():
+    names = Array(["delta", "", "alpha", "βeta", "it's", "say \"hi\"", "a\nb", "tab\there", "back\\slash"])
+    print(names)
+    print(names[:1], names[:0], len(names))
+    print(f"names: {names[1:3]} and {names[names == 'alpha']}")
+    long = Array([f"element-{at}" for at in range(40)])
+    print(long)
+    wide = Array([
+        "".join(["x" for at in range(80)]),
+        "y",
+        "".join(["z" for at in range(73)]),
+        "w",
+        "".join(["v" for at in range(72)]),
+        "u",
+    ])
+    print(wide)
+    many = Array([f"n{at}" for at in range(1001)])
+    print(many)
+    print(many[:1000][990:])
+    trades = DataFrame({"symbol": Array(["IBM", "AAPL"]), "price": Array([1.0, 2.0])})
+    print(trades.symbol, trades.symbol.unique())
+    print(trades["symbol"][::-1], sep="")
+"#;
+
+/// `print` and an f-string show a text array as numpy shows an array of the same strings:
+/// each element as Python's `repr` writes it, lines of at most 75 characters, and `...` in
+/// place of the middle of more than 1000 elements. The program leaves no memory behind
+/// (checked under Valgrind when written).
+#[test]
+fn a_text_array_is_printed_as_numpy_prints_it() {
+    let expected = [
+        "['delta' '' 'alpha' 'βeta' \"it's\" 'say \"hi\"' 'a\\nb' 'tab\\there'\n",
+        " 'back\\\\slash']\n",
+        "['delta'] [] 9\n",
+        "names: ['' 'alpha'] and ['alpha']\n",
+        "['element-0' 'element-1' 'element-2' 'element-3' 'element-4' 'element-5'\n",
+        " 'element-6' 'element-7' 'element-8' 'element-9' 'element-10' 'element-11'\n",
+        " 'element-12' 'element-13' 'element-14' 'element-15' 'element-16'\n",
+        " 'element-17' 'element-18' 'element-19' 'element-20' 'element-21'\n",
+        " 'element-22' 'element-23' 'element-24' 'element-25' 'element-26'\n",
+        " 'element-27' 'element-28' 'element-29' 'element-30' 'element-31'\n",
+        " 'element-32' 'element-33' 'element-34' 'element-35' 'element-36'\n",
+        " 'element-37' 'element-38' 'element-39']\n",
+        "['xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'\n",
+        " 'y'\n",
+        " 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'\n",
+        " 'w'\n",
+        " 'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv'\n",
+        " 'u']\n",
+        "['n0' 'n1' 'n2' ... 'n998' 'n999' 'n1000']\n",
+        "['n990' 'n991' 'n992' 'n993' 'n994' 'n995' 'n996' 'n997' 'n998' 'n999']\n",
+        "['IBM' 'AAPL'] ['IBM' 'AAPL']\n",
+        "['AAPL' 'IBM']\n",
+    ];
+    let (code, stdout, report) = run("text-arrays-shown", SHOWN).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
 }

@@ -88,7 +88,7 @@ error: `+` is not built for an array of `str` yet
    |
 24 |     p = trades.symbol + more.symbol
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `DataFrame[Trade]` has no column `x`
   --> main.byn:25:16

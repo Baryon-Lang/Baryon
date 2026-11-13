@@ -44,8 +44,8 @@ def uses(other: Array[str, 1], counts: Array[i64, 1]):
     total = names.sum()
     shape = names.shape
     least = min(names)
-    print(names)
-    text = f"{names}"
+    print([names.copy()])
+    text = f"{[names.copy()]}"
     numbers: Array[i64, 1] = names.copy()
     texts: Array[str, 1] = counts.copy()
     zeros = Array.zeros(3, str)
@@ -66,6 +66,8 @@ def fine(names: Array[str, 1]) -> Array[str, 1]:
     taken = names[Array([0, 0])][::-1]
     same = (names == part) | ("m" <= names)
     found = "a" in names and first not in part
+    print(names, part)
+    shown = f"{taken} {names[:1]}"
     return names.copy()
 "#;
 
@@ -123,7 +125,7 @@ error: `+` is not built for an array of `str` yet
    |
 14 |     joined = names + other
    |              ^^^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `==` cannot compare `Array[str, 1]` and `Array[i64, 1]`
   --> main.byn:15:17
@@ -144,35 +146,35 @@ error: the method `sum` is not built for an array of `str` yet
    |
 17 |     total = names.sum()
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `shape` is not built for an array of `str` yet
   --> main.byn:18:13
    |
 18 |     shape = names.shape
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `min` is not built for an array of `str` yet
   --> main.byn:19:17
    |
 19 |     least = min(names)
    |                 ^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
-error: an array of `str` cannot be shown yet
+error: a value that holds an array of `str` cannot be shown yet
   --> main.byn:20:11
    |
-20 |     print(names)
-   |           ^^^^^ an array of `str`
-   = note: show its elements one at a time: `for name in names: print(name)`
+20 |     print([names.copy()])
+   |           ^^^^^^^^^^^^^^ holds an array of `str`
+   = note: show each array on its own: `for names in groups: print(names)`
 
-error: an array of `str` cannot be shown yet
+error: a value that holds an array of `str` cannot be shown yet
   --> main.byn:21:15
    |
-21 |     text = f"{names}"
-   |               ^^^^^ an array of `str`
-   = note: show its elements one at a time: `for name in names: print(name)`
+21 |     text = f"{[names.copy()]}"
+   |               ^^^^^^^^^^^^^^ holds an array of `str`
+   = note: show each array on its own: `for names in groups: print(names)`
 
 error: expected `Array[i64, 1]`, found `Array[str, 1]`
   --> main.byn:22:30
@@ -210,7 +212,8 @@ error: `names` was moved
 /// searches it with `in`. Everything else is reported: a struct field that holds one, more
 /// than one dimension, a list of another type, an element assigned or moved out, an index
 /// that is an array of `f64`, two indices, a comparison with an array of numbers, a number
-/// sought with `in`, operators, methods, attributes and built-ins not built yet,
+/// sought with `in`, operators, methods, attributes and built-ins not built yet, a list
+/// of text arrays shown (one array is shown, as `fine` shows two),
 /// showing one, an array of numbers where one of text is expected and the other way round,
 /// `Array.zeros` of `str`, and a read after a move, since a text array moves as any array.
 #[test]
