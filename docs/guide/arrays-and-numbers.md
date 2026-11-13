@@ -237,8 +237,9 @@ peak at 5.0 cycles
   and more; `fft` has `fft`, `ifft`, `irfft` and their two-dimensional forms; `stats` has
   `quantile`, `average`, `histogram`, `cov` and `corrcoef`.
 
-[Linear algebra and FFT](../reference/linear-algebra.md) and [Statistics](../reference/statistics.md)
-list every function, with its cost and where it differs from NumPy.
+[Linear algebra and FFT](../reference/linear-algebra.md) and
+[Statistics](../reference/statistics.md) list every function, with its cost and where it
+differs from NumPy.
 
 ## Where to go next
 

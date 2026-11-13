@@ -7,8 +7,9 @@ what this page shows.
 
 Most of Baryon is Python with types. Four things are new, and the page points each out as it
 comes: numbers have fixed sizes, every variable keeps one type, records are declared as
-`Struct`s, and a value has one owner. [Differences from Python](../reference/differences-from-python.md)
-lists every difference with its reason.
+`Struct`s, and a value has one owner.
+[Differences from Python](../reference/differences-from-python.md) lists every difference with
+its reason.
 
 ## 1. Values, strings and collections
 
