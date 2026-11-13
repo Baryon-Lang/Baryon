@@ -349,11 +349,13 @@ the astronomy library (4.2), has its own plan in the
 A release is a tag on `main` that people outside the project can try, and
 [`CHANGELOG.md`](CHANGELOG.md) says what each one holds. Releases are time-based (Collins,
 2026-11-11): one every two weeks, cut from what `main` holds that day, so a release never waits for
-a piece of work to finish. Each one is an item here with one row per step. The first is due on
-2026-11-25 (R.5). Collins approves every release and pushes its tag himself.
+a piece of work to finish. Each one is an item here with one row per step. The first, 0.2.0
+(R.5), was due on 2026-11-25 and is cut early, on Collins's call of 2026-11-13, as a rehearsal of
+the whole process; the schedule keeps its dates, so 0.3.0 is due on 2026-11-25 (R.6). Collins
+approves every release and pushes its tag himself.
 
-Releases are numbered 0.x, one step of 0.1 each (Collins, 2026-11-11): the release on 2026-11-25
-is 0.2.0, the next number never published, and the one two weeks later is 0.3.0.
+Releases are numbered 0.x, one step of 0.1 each (Collins, 2026-11-11), starting at 0.2.0, the
+next number never published.
 
 The efforts R.2, R.3 and R.4 are checkpoints, not release gates, and are known by their names
 rather than by version numbers, so they never clash with release numbers. Each names a body of work and sets the order in which it is built; when one is finished,
@@ -406,12 +408,17 @@ The standard library's own calls into system libraries, such as the opt-in syste
 | R.3.3 | Release notes for 0.3.0 in `CHANGELOG.md`, the workspace version set to 0.3.0, and What builds today, the README and the guides checked against `main`. Dropped: releases are time-based (2026-11-11), so the notes and the version change are a step of each time-based release, such as R.5.2 | 0.1 | R.3.2 | Dropped | Claude | [#232](https://github.com/Baryon-Lang/Baryon/pull/232) |
 | R.3.4 | Collins approves the release; tag `v0.3.0` on `main`, which runs the release workflow (R.2.6, R.2.7), and publish the GitHub release with the notes, the extension and both `baryon` archives attached. Dropped: releases are time-based (2026-11-11), so tags come from the time-based release items, such as R.5.4 | — | R.3.3 | Dropped | Claude | [#232](https://github.com/Baryon-Lang/Baryon/pull/232) |
 | R.4 | Checkpoint: Windows, first planned as release 0.4.0. Windows (x86_64) joins Linux and macOS as a supported platform: `baryon` and the runtime build, link and run there, with CI and a prebuilt archive like R.2.6's (Collins, 2026-11-10). Its steps are added when its work is planned | — | R.2 | Planned | — | — |
-| R.5 | Release 0.2.0, due 2026-11-25: everything on `main` that day, which is the Linux and macOS checkpoint (R.2), the real-data work merged by then (R.3), and the fixes since, among them the double frees closed by #175 and #176 | — | R.2.6, R.2.7, R.2.8 | In progress | Claude | [#232](https://github.com/Baryon-Lang/Baryon/pull/232) |
+| R.5 | Release 0.2.0, first due 2026-11-25 and cut early on Collins's call of 2026-11-13 as a rehearsal of the release process: everything on `main` that day, which is the Linux and macOS checkpoint (R.2), the real-data work merged by then (R.3), and the fixes since, among them the double frees closed by #175 and #176 | — | R.2.6, R.2.7, R.2.8 | In progress | Claude | [#232](https://github.com/Baryon-Lang/Baryon/pull/232) |
 | R.5.1 | Settle how time-based releases are numbered, and write it here and in `CHANGELOG.md`. Decided (Collins, 2026-11-11): 0.x, one step of 0.1 each release, starting at 0.2.0 | — | — | Done | Claude | [#232](https://github.com/Baryon-Lang/Baryon/pull/232), [#252](https://github.com/Baryon-Lang/Baryon/pull/252) |
-| R.5.2 | Release pull request, opened by 2026-11-24: notes in `CHANGELOG.md` for everything since 0.1.0 (the notes written for 0.2.0 become part of them), the workspace version set, and What builds today, the README, the guides and the VS Code setup guide checked against `main`. Merged green on Linux and macOS; its squash commit is the release commit | 0.25 | R.5.1 | Planned | — | — |
+| R.5.2 | Release pull request: notes in `CHANGELOG.md` for everything since 0.1.0 (the notes written for 0.2.0 become part of them), the workspace version set, and What builds today, the README, the guides and the VS Code setup guide checked against `main`. Merged green on Linux and macOS; its squash commit is the release commit | 0.25 | R.5.1 | In progress | Claude | [#PRNUM](https://github.com/Baryon-Lang/Baryon/pull/PRNUM) |
 | R.5.3 | Dry run: start the release workflow by hand on the release commit; both builds and both clean-machine tests (R.2.6, R.2.7) pass before anyone tags | 0.1 | R.5.2 | Planned | — | — |
 | R.5.4 | Collins approves, then pushes the tag for the release commit himself; the release workflow builds both archives into a draft release; check both archives, their SHA-256 files and the notes, attach the VS Code extension, and publish the draft once Collins says so | — | R.5.3 | Planned | — | — |
-| R.5.5 | Add the next time-based release, due two weeks after this one, as R.6 with the same steps | 0.1 | R.5.4 | Planned | — | — |
+| R.5.5 | Add the next time-based release, due two weeks after this one, as R.6 with the same steps. Done early: 0.2.0 was cut ahead of its date, and the schedule keeps its dates, so R.6 is 0.3.0 on 2026-11-25 | 0.1 | R.5.4 | Done | Claude | [#PRNUM](https://github.com/Baryon-Lang/Baryon/pull/PRNUM) |
+| R.6 | Release 0.3.0, due 2026-11-25: everything on `main` that day | — | R.5 | Planned | — | — |
+| R.6.1 | Release pull request, opened by 2026-11-24: notes in `CHANGELOG.md` for everything since 0.2.0, the workspace version set to 0.3.0, the VS Code extension's version raised if its code changed, and What builds today, the README, the guides and the VS Code setup guide checked against `main`. Merged green on Linux and macOS; its squash commit is the release commit | 0.25 | R.5.4 | Planned | — | — |
+| R.6.2 | Dry run: start the release workflow by hand on the release commit; both builds and both clean-machine tests pass before anyone tags | 0.1 | R.6.1 | Planned | — | — |
+| R.6.3 | Collins approves, then pushes the tag for the release commit himself; check both archives, their SHA-256 files and the notes in the draft release, attach the VS Code extension, and publish the draft once Collins says so | — | R.6.2 | Planned | — | — |
+| R.6.4 | Add the next time-based release, due 2026-12-09, as R.7 with the same steps | 0.1 | R.6.3 | Planned | — | — |
 
 ## Decisions needed
 

@@ -5,18 +5,22 @@ published to a package registry yet. Releases are time-based: one every two week
 `main` holds that day, and numbered 0.x, one step of 0.1 each.
 [`ROADMAP.md`](ROADMAP.md#releases) tracks the steps of the release in progress.
 
-## 0.2.0: Linux and macOS, due 2026-11-25
+## 0.2.0: Linux and macOS, real data and the first libraries
 
-These notes were written on 2026-11-10, before releases became time-based. The release on
-2026-11-25 adds everything merged since (roadmap R.5).
+Cut early, on Collins's call of 2026-11-13, as the first run of the full release process; the
+two-week schedule continues from it (roadmap R.5 and R.6). It holds everything merged to `main`
+since 0.1.0: the Linux and macOS checkpoint (R.2), the real-data checkpoint (R.3), the native
+numeric and data libraries that followed, and every fix since, among them the double frees closed
+by #175 and #176.
 
 The second release, and the first to download and use without building the compiler: prebuilt
 `baryon` archives for Linux and macOS, programs written the way the reference describes them
-without the 0.1.0 workarounds, and the basics of a standard library. `baryon check` still knows the
-whole of version 0 of the language, and the compiler now builds most of it.
-[What builds today](docs/reference/status.md) lists what it does not build yet. Please
-[open an issue](https://github.com/Baryon-Lang/Baryon/issues) for anything wrong, unclear or
-missing, with what `baryon --version` prints.
+without the 0.1.0 workarounds, files and other programs, and libraries for arrays, linear algebra,
+statistics, data files, tables, plots and compression, written in Baryon. `baryon check` knows the
+whole of version 0 of the language, and the compiler builds most of it.
+[What builds today](docs/reference/status.md) lists, chapter by chapter, what it does not build
+yet. Please [open an issue](https://github.com/Baryon-Lang/Baryon/issues) for anything wrong,
+unclear or missing, with what `baryon --version` prints.
 
 ### Platforms
 
@@ -29,7 +33,8 @@ missing, with what `baryon --version` prints.
 ([decision 0020](docs/decisions/0020-llvm-backend-emits-text.md)). Both platforms are tested in CI
 on every change. The release is tested on Ubuntu 22.04 and macOS 15; macOS 13.5 is the oldest
 version whose `clang` is new enough, but no older Mac has run this release yet. Intel Macs and
-musl Linux such as Alpine have no download and build from source. Windows comes in release 0.4.0.
+musl Linux such as Alpine have no download and build from source. Windows is the next platform
+(roadmap R.4).
 
 ### Install
 
@@ -50,68 +55,131 @@ The [beginner's guide](docs/guide/README.md#1-install-baryon) shows both ways:
   `Protocol` class, implement it by naming it as a base, and bound a type parameter with it,
   `[T: Body]`; calls resolve when compiling, with no run-time cost. `Embed[T]` fields reach an
   embedded struct's fields and methods through the outer one.
+- **Sum types** ([decision 0032](docs/decisions/0032-sum-types-are-unions-of-structs.md)): unions
+  of structs, `Circle | Square`, with class patterns in `match`, and methods and trait bounds on
+  them.
+- **A struct's methods called through its class**, `Point.origin()`.
 - **Array slices**: `a[i:j]`, `a[i:j:k]` and `a[:, k]` are views that copy nothing. Read them,
   pass them to read-only and `InOut` parameters, use them in whole-array arithmetic, and assign
   into them with `=` and `+=`, including `forces[a:b] += v` in a `prange` loop with
   `accumulate=`.
-- **Array methods**: `a.min()`, `a.max()`, `a.dot(b)`, `a.round()`, `a.fill(value)`, and the
-  matrix product `@` on rank-1 and rank-2 arrays.
+- **Arrays as NumPy has them**: [broadcasting](docs/reference/arrays.md#broadcasting) between
+  arrays of different ranks, new axes with `None`, comparisons that give arrays of `bool`s,
+  `a[mask]` and `a[positions]`, `sum`, `min` and `max` along an axis, `mean`, `var` and `std` with NumPy's
+  bits, `argsort`, `unique` and `nunique`, the matrix product `@`, and `print(a)` in
+  [NumPy's form](docs/decisions/0033-printing-arrays.md).
+- **Arrays of text**, `Array[str, 1]` ([text arrays](docs/reference/text-arrays.md)): built from a
+  list, sliced, masked, compared, sorted, searched with `in` and printed as NumPy prints them.
 - **Complex numbers**: `complex128` (`complex`) and `complex64`, `2j` literals, arithmetic,
-  `z.real`, `z.imag`, `z.conjugate()`, `abs(z)`, `complex(re, im)` and `print`, with CPython's
-  results bit for bit. Division by zero gives IEEE infinities and NaNs, as NumPy does, where
-  Python raises.
-- **Statements**: `for` over arrays, tuples and lists, a `range` step known only at run time,
-  `**` and `**=` on integers, and nested unpacking `a, (b, c) = e`. `raise ... from` is rejected
-  with a clear error ([decision 0034](docs/decisions/0034-no-error-chaining.md)).
+  `z.real`, `z.imag`, `z.conjugate()`, `abs(z)`, `complex(re, im)`, `print` and f-strings, with
+  CPython's results bit for bit. Division by zero gives IEEE infinities and NaNs, as NumPy does,
+  where Python raises.
+- **Statements**: `for` over arrays, tuples, lists, `enumerate`, `zip` and `reversed`, a `range`
+  step known only at run time, `**` and `**=` on integers, and nested unpacking `a, (b, c) = e`.
+  `raise ... from` is rejected with a clear error
+  ([decision 0034](docs/decisions/0034-no-error-chaining.md)).
 - **Generics**: methods of generic structs, a `Callable` parameter passed on to another call or
-  kept in a local, and default parameter values computed at each call
-  ([decision 0027](docs/decisions/0027-default-parameter-evaluation.md)).
-- **`print` of every value but arrays**: `None`, optional values, tuples, enum members as
-  `Phase.GAS`, structs as `Type(field=value, ...)`, and lists and dicts as Python writes them,
-  `['a', 'b']` and `{'a': 1}`, with the `sep=` and `end=` keywords. Output is flushed at exit and
-  before a panic. Arrays print in 0.3.0, in NumPy's form.
-- **Reproducible `simd` sums**: float sums and products in a `simd` loop vectorize in 8 fixed
-  lanes, so they run faster and give the same bits on every machine.
-- **Integer overflow checks** in debug builds now also cover generic code, `abs` of the minimum,
-  whole-array arithmetic, and integer `sum`, `dot` and `@`.
+  kept in a local, default parameter values computed at each call
+  ([decision 0027](docs/decisions/0027-default-parameter-evaluation.md)), and `[T: Float]`
+  functions that call `math` and divide.
+- **`print` of every value**: `None`, optional values, tuples, enum members as `Phase.GAS`,
+  structs as `Type(field=value, ...)`, lists and dicts as Python writes them, arrays as NumPy
+  writes them, with the `sep=`, `end=`, `file=` and `flush=` keywords.
+- **Reproducible floating point**: float sums and products in a `simd` loop add in 8 fixed lanes,
+  `a.sum()` adds in NumPy's pairwise order, and scalar float loops are vectorized only in their
+  written order, so a program gives the same bits on every machine.
+- **Integer overflow** panics in debug builds, generic code, whole-array arithmetic and integer
+  `sum`, `dot` and `@` included, and wraps with `--release`
+  ([decision 0030](docs/decisions/0030-integer-overflow.md)).
 
 ### New in the standard library
 
-- **`math`**: the rest of Python's `math` module for real numbers, such as `tan`, the inverse and
-  hyperbolic functions, `atan2`, `hypot`, `log2`, `log10`, `log1p`, `expm1`, `cbrt`, `erf`,
-  `gamma`, `lgamma`, `fma`, `floor`, `ceil` and `isnan`.
-- **`str`**: `len`, `==`, `!=`, ordering, `in`, and `for c in text`, one character at a time.
-- **Lists of any type**, such as `list[str]` and lists of structs, with `in`, `not in`,
-  `copy()`, `pop()`, slices `xs[a:b]`, list comprehensions, and `for` over them. Dict
-  comprehensions are not built yet.
-- **`dict`** ([decision 0035](docs/decisions/0035-dict.md)): Python's dict, with integer, `bool`,
-  `str`, enum and tuple keys, insertion order, and a panic on a missing key; float keys are
-  rejected.
+Every library below is written in Baryon or the runtime from its specification, with no outside
+library at run time, and keeps the Python or NumPy names its users already know.
+
+- **Core**: the rest of Python's `math` for real numbers, `math.fsum`, and
+  [`f64x2`](docs/decisions/0051-double-double-floats.md), a double-double float of about 32
+  digits; `str` methods, indexing and slicing, `int(text)` and `float(text)` raising
+  `ValueError`; lists of any type with slices and comprehensions; `dict`
+  ([decision 0035](docs/decisions/0035-dict.md)); `sorted`, `round(x, digits)`, `min`, `max` and
+  `sum` of lists.
+- **[Files and processes](docs/reference/files-and-processes.md)**
+  ([decision 0036](docs/decisions/0036-files-and-processes.md)): `sys.argv`, `sys.exit`, the
+  environment, read only; text files with `open`, `with` and `for line in f`; the standard streams
+  and `input`; `pathlib.Path` and the directory functions of `os`; `subprocess.run` with no shell;
+  one `OSError` with `os.ErrorKind`.
+- **[Linear algebra and FFT](docs/reference/linear-algebra.md)**
+  ([decision 0040](docs/decisions/0040-linear-algebra-and-fft.md)): `linalg.solve`, `lu_factor`,
+  `lu_solve`, `det`, `inv`, `cholesky`, `qr`, `eigh`, `eigvalsh`, `svd`, `svdvals`, `eig` and
+  `eigvals`, at `f64` and most at `f32`, raising `LinAlgError`; `fft`, `ifft`, `rfft`, `irfft`,
+  `fftfreq`, `rfftfreq` and the two-dimensional transforms.
+- **[Statistics](docs/reference/statistics.md)** ([decision 0042](docs/decisions/0042-statistics.md)):
+  `stats.median`, `quantile`, `percentile`, `average`, `histogram`, `cov` and `corrcoef`, with
+  NumPy's bits.
+- **[Data files](docs/reference/data-files.md)**: text tables with `Array.loadtxt` and `savetxt`,
+  raw arrays with `Array.fromfile` and `a.tofile`, NumPy's `.npy` with `Array.load` and `save`
+  ([decision 0043](docs/decisions/0043-array-data-files.md)); FITS images and headers with
+  `fits.getdata`, `getheader` and `writeto` ([decision 0044](docs/decisions/0044-fits-images-and-headers.md));
+  NetCDF classic files read and written through `netCDF4.Dataset`, and NetCDF-4 files read
+  ([decision 0047](docs/decisions/0047-netcdf-classic-files.md)); HDF5 files read through `h5by.File`
+  ([decision 0052](docs/decisions/0052-hdf5-files.md)).
+- **[DataFrame](docs/reference/dataframes.md)** ([decision 0045](docs/decisions/0045-dataframe.md)):
+  a table whose schema is part of its type, `DataFrame[S]`, built from arrays or rows, with
+  number, `bool` and text columns; rows chosen by mask, slice, `head` and `tail`; columns chosen,
+  assigned, dropped and renamed; `sort_values`, `groupby(...).agg(...)`, the inner `merge`,
+  `concat`, `drop_duplicates`, `value_counts` and `describe`; printed as pandas prints it.
+- **[Plotting](docs/reference/plotting.md)** ([decision 0046](docs/decisions/0046-plotting.md)):
+  `import byplot as plt` with matplotlib's names: line and scatter plots, bars, histograms, error
+  bars, filled areas, images with colormaps and colorbars, contours, logarithmic axes, grids of
+  plots, legends and text, saved as SVG, PNG or PDF.
+- **[Compression](docs/reference/compression.md)**
+  ([decision 0049](docs/decisions/0049-compression.md)): `zlib` and `gzip` in both directions,
+  `zlib.decompressobj`, `compression.zstd` and `bz2` in both directions, and `lzma.decompress`.
+
+### Faster programs and faster builds
+
+- **Faster compiled code**: whole-array temporaries fused into the statement that reads them,
+  arrays updated in place, bounds checks made once per loop, unit-stride inner loops, number locals
+  kept in registers, and `@` run row by row. The [benchmark suite](bench/README.md) compares each
+  kernel with its C++ and Fortran twin; the slowest is now within about 1.5 times of
+  `gfortran -O3`.
+- **Faster builds** ([decision 0048](docs/decisions/0048-debug-builds-compile-fast.md)): debug
+  builds compile at `-O0`, in parallel modules, linked with `lld` where it is installed;
+  `--timings` prints each stage's time. [`baryon watch`](docs/reference/commands.md#baryon-watch)
+  keeps the package loaded and rebuilds it on each save, reusing the machine code of what did not
+  change ([decision 0050](docs/decisions/0050-incremental-builds.md)).
 
 ### Editor support
 
-`baryon lsp` now shows a name's type and documentation on hover, goes to a definition across a
-package's modules, and completes names in scope, a module's members after `m.`, and a value's
-fields and methods after `x.`. The [VS Code extension](editors/vscode/README.md) uses them with no
-change; version 0.2.0 from release 0.1.0 still works.
+`baryon lsp` shows a name's type and documentation on hover, goes to a definition across a
+package's modules, completes names, members, fields and methods, shows inlay hints for inferred
+types, and renames a name everywhere it is used. The [VS Code extension](editors/vscode/README.md),
+now version 0.3.0, runs one test from the editor with `baryon test -k`, and the
+[setup guide](docs/guide/vscode.md#10-debug-it) shows how to debug a program from VS Code.
+
+### Fixed
+
+- Double frees of a dict key read from a variable and of tuple parts (#175, #176), and the other
+  memory-safety bugs found by the new ownership sweep, which builds every kind of owned value
+  through every place a program can own, borrow, move or drop one and runs it under Valgrind on
+  Linux in CI (#306, #311, #315, #352, #368, #375).
+- A conditional expression that is only lent, such as `f(a if c else b)` where one branch names a
+  variable whose value moves, is now a compile error instead of a use-after-free (#368).
 
 ### Decisions made for this release
 
-[Sum types as unions of structs](docs/decisions/0032-sum-types-are-unions-of-structs.md) (built in
-0.3.0), [arrays print in NumPy's form](docs/decisions/0033-printing-arrays.md) (built in 0.3.0),
-[no error chaining](docs/decisions/0034-no-error-chaining.md) and
-[`dict`](docs/decisions/0035-dict.md).
+Decisions 0031 to 0052 were accepted between the two releases; the
+[decision index](docs/decisions/README.md) lists each with its status.
 
 ### Known limits
 
-- Not built yet, though `baryon check` accepts them: `print` of an array or of a tuple holding
-  `None`; dict comprehensions; indexing, slicing and methods such as `split` on `str`; `match` on
-  `str`; and complex numbers in f-strings and in `a.sum()`. [What builds today](docs/reference/status.md) has the
-  full list. Each is reported as an error that says it is not built yet, never miscompiled.
-- No reading or writing of files, command-line arguments or running other programs yet: that
-  leads release 0.3.0 (roadmap 1.13.6).
-- Speed is not yet compared with the C++ and Fortran baselines in [`bench/`](bench/README.md).
-  Running within 5% of Fortran is the Phase 1 gate, still ahead.
+- [What builds today](docs/reference/status.md) lists what `baryon check` accepts that the
+  compiler does not build yet, such as CSV and Parquet files, missing values in tables, writing
+  HDF5 and the `scipy`-style libraries. Each is reported as an error that names it, never
+  miscompiled.
+- No packages outside the standard library, no interop with Python or C++, and no REPL yet.
+- Speed: the benchmark kernels run within about 1.5 times of `gfortran -O3`; within 5% is the
+  Phase 1 gate, still ahead.
 
 ## 0.1.0: review release, 2026-11-09
 

@@ -19,7 +19,7 @@ options are `--release`, `--timings`, `-k` for `test` and `--run` for `watch`.
 
 ## Installing
 
-From release 0.2.0, due on 2026-11-25, each release has prebuilt archives for Linux on x86_64 and macOS on Apple
+From release 0.2.0, each release has prebuilt archives for Linux on x86_64 and macOS on Apple
 silicon, holding `baryon` and `libruntime.a` together; the
 [beginner's guide](../guide/README.md#download-a-prebuilt-baryon) says how to download, check and
 install one. On any other system, or to follow `main`, `baryon` is built from this repository
