@@ -3,15 +3,24 @@
 //!
 //! `baryon build` starts from nothing every time. `watch` reads the package once into a
 //! [`Session`], builds it, and then looks at the files a few times a second. When one changes,
-//! only its text is replaced in the session; `salsa` ([decision 0016](../../docs/decisions/0016-salsa-query-engine.md))
-//! then reuses every query the edit did not reach, such as parsing and checking the other files,
-//! and the package is built again. A file added or removed changes the package's modules, so the
-//! session is read again from nothing.
+//! only its text is replaced in the session; `salsa` ([decision 0016]) then reuses every query
+//! the edit did not reach, such as parsing and checking the other files, and the package is built
+//! again. A file added or removed changes the package's modules, so the session is read again
+//! from nothing.
 //!
 //! It runs until it is stopped, with `Ctrl-C`. Each rebuild prints `built <output> in <time>`,
 //! or the errors, to standard error; with `--run` the program then runs, with the terminal's
 //! output, and its exit status is printed. A failed build never stops the watch: fixing the error
-//! and saving builds again.
+//! and saving builds again. Nor does a file that cannot be read after a change, as when an editor
+//! saves by writing a new file and renaming it over the old one: the message is printed, and the
+//! package is read again from nothing at the next change. Only a package that cannot be read at
+//! the start, or a missing `clang` or runtime, ends the watch.
+//!
+//! With `--run`, the next look waits for the program to end: a program that never ends holds up
+//! every later rebuild until it is stopped. Running it in the background, so a save could stop
+//! it and start the new build, is left for when someone needs it.
+//!
+//! [decision 0016]: ../../docs/decisions/0016-salsa-query-engine.md
 //!
 //! Looking costs one `stat` of each file per look, and reads only a file whose size or
 //! modification time changed. Polling needs no dependency and behaves the same on Linux and
@@ -94,12 +103,12 @@ impl Package {
 
 /// Runs `baryon watch` on the package rooted at `root`: builds `output` for `profile`, then
 /// rebuilds it after each change to the package's files, running it after each build when `run`
-/// is set. Returns only when the files cannot be listed or read.
+/// is set. Returns only on an error that a save cannot fix.
 ///
 /// # Errors
 ///
-/// Fails with a message when the package's directory cannot be listed, a file cannot be read, or
-/// `clang` or the runtime archive is missing.
+/// Fails with a message when the package cannot be read at the start, or `clang` or the runtime
+/// archive is missing.
 pub(crate) fn watch(
     root: &Path,
     output: &Path,
@@ -112,25 +121,37 @@ pub(crate) fn watch(
     let mut load = started.elapsed();
     loop {
         rebuild(&package.loaded(load), root, output, profile, run)?;
-        let now = loop {
+        loop {
             thread::sleep(PAUSE);
-            let now = look(root)?;
-            if now != stamps {
-                break now;
+            // A listing that fails mid-save is looked at again at the next pause.
+            let Ok(now) = look(root) else {
+                continue;
+            };
+            if now == stamps {
+                continue;
             }
-        };
-        let started = Instant::now();
-        if now.keys().eq(stamps.keys()) {
-            for (path, stamp) in &now {
-                if stamps.get(path) != Some(stamp) {
-                    package.update(path)?;
+            let started = Instant::now();
+            let refreshed = if now.keys().eq(stamps.keys()) {
+                now.iter()
+                    .filter(|&(path, stamp)| stamps.get(path) != Some(stamp))
+                    .try_for_each(|(path, _)| package.update(path))
+            } else {
+                Package::load(root).map(|loaded| package = loaded)
+            };
+            load = started.elapsed();
+            match refreshed {
+                Ok(()) => {
+                    stamps = now;
+                    break;
+                }
+                Err(message) => {
+                    writeln!(io::stderr(), "baryon: {message}\nwatching for changes")
+                        .map_err(|error| error.to_string())?;
+                    // No stamps match an empty map, so the next change reads the package again.
+                    stamps = BTreeMap::new();
                 }
             }
-        } else {
-            package = Package::load(root)?;
         }
-        load = started.elapsed();
-        stamps = now;
     }
 }
 

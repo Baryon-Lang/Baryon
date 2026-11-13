@@ -220,10 +220,13 @@ with the terminal's input and output, then prints `exited with <status>`. A buil
 prints them and `watching for changes`, and the next save builds again, so `watch` never stops
 on its own; stop it with `Ctrl-C`.
 
-It keeps the package loaded between builds ([decision 0050](../decisions/0050-incremental-builds.md)):
-only a saved file's text is read again, and the compiler's query engine reuses the parsing and
-checking of every file the edit did not change. Adding or removing a file reads the package
-again. It looks at the files five times a second, so a save is seen within 0.2 s.
+It keeps the package loaded between builds ([decision 0050]): only a saved file's text is read
+again, and the compiler's query engine reuses the parsing and checking of every file the edit did
+not change. Adding or removing a file reads the package again. It looks at the files five times a
+second, so a save is seen within 0.2 s. With `--run`, it looks again only once the program has
+ended, so a program that never ends holds up the next build until you stop it.
+
+[decision 0050]: ../decisions/0050-incremental-builds.md
 
 Today that is all it reuses: lowering, the LLVM text and machine code are made again for the
 whole program, so a rebuild takes nearly as long as `baryon build`. Redoing only the functions an

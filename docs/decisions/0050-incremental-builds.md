@@ -49,12 +49,12 @@ reaches.
 
 ## Decision
 
-Option B, which Collins chose on 2026-11-13 over option A and over doing neither. Roadmap 2.2 becomes "`baryon watch`: rebuild on save, redoing only what the
-edit reaches", in two steps:
+Option B, which Collins chose on 2026-11-13 over option A and over doing neither. Roadmap 2.2
+becomes "`baryon watch`: rebuild on save, redoing only what the edit reaches", in two steps:
 
-1. `baryon watch [--release] <directory>` rebuilds on each save in one process, reusing the
-   checked front end that `salsa` already caches. It writes the executable as `build` does, and
-   runs it with `--run`. This step alone spares parsing and checking of unchanged files.
+1. `baryon watch [--release] [--run] <directory> <output>` rebuilds on each save in one process,
+   reusing the checked front end that `salsa` already caches. It writes the executable as `build`
+   does, and runs it with `--run`. This step alone spares parsing and checking of unchanged files.
 2. Lowering, the IR passes and the backend become per-function queries, and modules keep their
    object files in memory between rebuilds, assigned by a hash of each function's symbol, so an
    edit recompiles one module.
