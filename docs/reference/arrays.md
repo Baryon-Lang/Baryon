@@ -29,6 +29,9 @@ version 0; use `list` for those.
 The one exception is text: `Array[str, 1]` holds strings, stored end to end, and reading an
 element borrows it. It has its own chapter, [Arrays of text](text-arrays.md).
 
+An element may also be missing: `Array[f64 | None, 1]` holds numbers any of which may be
+`None`, stored as the numbers and one bit for each. See [Missing values](missing-values.md).
+
 ## Layout
 
 Arrays are row-major ([decision 0008](../decisions/0008-row-major-arrays.md)): the last index

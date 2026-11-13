@@ -72,6 +72,7 @@ mod netcdf_writing;
 mod npy;
 mod numbers;
 mod operators;
+mod optional_arrays;
 mod parallel;
 mod paths;
 mod patterns;

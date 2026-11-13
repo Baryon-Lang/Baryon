@@ -52,6 +52,7 @@ mod netcdf;
 mod netcdf_writing;
 mod npy;
 mod one_pass;
+mod optional_arrays;
 mod overflow;
 mod ownership;
 mod parallel;
