@@ -80,6 +80,7 @@ mod timings;
 mod traits;
 mod unions;
 mod vector;
+mod watching;
 mod zlib;
 mod zstd;
 

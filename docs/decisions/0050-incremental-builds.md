@@ -1,7 +1,7 @@
 # 0050. Incremental builds: keep the compiler running rather than cache object files on disk
 
-Status: Proposed
-Date: 2026-11-12
+Status: Accepted
+Date: 2026-11-12, accepted 2026-11-13
 Roadmap: 2.2
 
 ## Context
@@ -49,7 +49,7 @@ reaches.
 
 ## Decision
 
-Proposed: option B. Roadmap 2.2 becomes "`baryon watch`: rebuild on save, redoing only what the
+Option B, which Collins chose on 2026-11-13 over option A and over doing neither. Roadmap 2.2 becomes "`baryon watch`: rebuild on save, redoing only what the
 edit reaches", in two steps:
 
 1. `baryon watch [--release] <directory>` rebuilds on each save in one process, reusing the

@@ -3,7 +3,7 @@
 `baryon` is the one tool for a Baryon program: it checks, builds, runs, tests and documents a
 package, and serves an editor. This chapter lists every command, what it needs, what it prints and
 the exit status it ends with. It is a prototype (roadmap 1.11): arguments are positional, and the
-two options are `--release` and `--timings`.
+options are `--release`, `--timings`, `-k` for `test` and `--run` for `watch`.
 
 | Command | What it does |
 | --- | --- |
@@ -11,6 +11,7 @@ two options are `--release` and `--timings`.
 | [`baryon build [--release] [--timings] <directory> <output>`](#baryon-build) | Compiles the package into the executable `output` |
 | [`baryon run [--release] [--timings] <directory>`](#baryon-run) | Builds the package and runs it |
 | [`baryon test [--release] [--timings] [-k <text>] <directory>`](#baryon-test) | Builds and runs every `@test` function, or those whose name contains `text` |
+| [`baryon watch [--release] [--run] <directory> <output>`](#baryon-watch) | Builds the package, then rebuilds it each time a file is saved |
 | [`baryon doc <directory> <output>`](#baryon-doc) | Writes the package's documentation as Markdown |
 | [`baryon lsp`](#baryon-lsp) | Runs the language server an editor talks to |
 | `baryon --version` | Prints the release, such as `baryon 0.2.0`; put it in a bug report |
@@ -72,7 +73,7 @@ standard output and exit with 0. Called with no arguments or wrong ones, `baryon
 line to standard error and exits with 2:
 
 ```text
-baryon: usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] [-k <text>] <directory> | baryon doc <directory> <output> | baryon lsp
+baryon: usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] [-k <text>] <directory> | baryon watch [--release] [--run] <directory> <output> | baryon doc <directory> <output> | baryon lsp
 ```
 
 ## `baryon check`
@@ -205,6 +206,28 @@ package is still built, so a test elsewhere that does not compile stops the run.
 
 Exit status 0 when every test passed, including when there are none; 1 when a test failed or the
 package does not build.
+
+## `baryon watch`
+
+```text
+baryon watch [--release] [--run] <directory> <output>
+```
+
+Builds the package into the executable `output` as [`build`](#baryon-build) does, then keeps
+running: each time a `.byn` file in the package is saved, it builds again, and prints
+`built <output> in <n> ms` to standard error. With `--run`, it runs the program after each build,
+with the terminal's input and output, then prints `exited with <status>`. A build with errors
+prints them and `watching for changes`, and the next save builds again, so `watch` never stops
+on its own; stop it with `Ctrl-C`.
+
+It keeps the package loaded between builds ([decision 0050](../decisions/0050-incremental-builds.md)):
+only a saved file's text is read again, and the compiler's query engine reuses the parsing and
+checking of every file the edit did not change. Adding or removing a file reads the package
+again. It looks at the files five times a second, so a save is seen within 0.2 s.
+
+Today that is all it reuses: lowering, the LLVM text and machine code are made again for the
+whole program, so a rebuild takes nearly as long as `baryon build`. Redoing only the functions an
+edit reaches is roadmap 2.2.2, which aims at a rebuild under 200 ms after a one-function edit.
 
 ## `baryon doc`
 

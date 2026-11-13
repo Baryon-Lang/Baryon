@@ -4,7 +4,8 @@
 //! baryon check <directory>
 //! baryon build [--release] [--timings] <directory> <output>
 //! baryon run [--release] [--timings] <directory>
-//! baryon test [--release] [--timings] <directory>
+//! baryon test [--release] [--timings] [-k <text>] <directory>
+//! baryon watch [--release] [--run] <directory> <output>
 //! baryon doc <directory> <output>
 //! baryon lsp
 //! baryon --version
@@ -50,6 +51,11 @@
 //! the list. The package needs no `main`. The exit status is 0 when every test passed, 1 when
 //! one failed or the package does not build. This is a prototype (roadmap 1.11.6).
 //!
+//! `baryon watch` builds the package as `build` does, then keeps it loaded and rebuilds it each
+//! time a file is saved, running it after each build with `--run` ([`watch`], decision 0050).
+//! `salsa` reuses what the edit did not reach, so a rebuild skips parsing and checking the files
+//! that did not change. It runs until stopped.
+//!
 //! `baryon doc` loads the package the same way and writes its documentation as Markdown into the
 //! output directory, creating it if needed: one page per module, named after the module, such
 //! as `physics.nbody.md`, and an `index.md` listing them. A package with syntax or module naming
@@ -64,24 +70,28 @@ mod lsp;
 mod package;
 mod runner;
 mod timings;
+mod watch;
 
 use diagnostics::{Diagnostic, Severity};
 use driver::{Profile, Session};
 use std::io::{self, Write as _};
 use std::path::Path;
 use std::process::{Command, ExitCode};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{env, fs};
 use timings::Timings;
 
 /// How to call the command, printed when the arguments are wrong.
-const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] [-k <text>] <directory> | baryon doc <directory> <output> | baryon lsp";
+const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] [-k <text>] <directory> | baryon watch [--release] [--run] <directory> <output> | baryon doc <directory> <output> | baryon lsp";
 
 /// The flag that makes `build`, `run` and `test` compile a release build.
 const RELEASE: &str = "--release";
 
 /// The flag that makes `build`, `run` and `test` print how long each stage of the build took.
 const TIMINGS: &str = "--timings";
+
+/// The flag that makes `watch` run the program after each build.
+const RUN: &str = "--run";
 
 /// The option that makes `test` run only the tests whose name contains the text after it, as
 /// pytest's `-k` does at its simplest (roadmap 2.4.3).
@@ -91,7 +101,7 @@ fn main() -> ExitCode {
     let mut arguments: Vec<String> = env::args().skip(1).collect();
     let builds = arguments
         .first()
-        .is_some_and(|command| ["build", "run", "test"].contains(&command.as_str()));
+        .is_some_and(|command| ["build", "run", "test", "watch"].contains(&command.as_str()));
     let profile = if take_flag(&mut arguments, builds, RELEASE) {
         Profile::Release
     } else {
@@ -99,12 +109,17 @@ fn main() -> ExitCode {
     };
     let timings = take_flag(&mut arguments, builds, TIMINGS);
     let filter = take_filter(&mut arguments);
+    let watching = arguments.first().is_some_and(|command| command == "watch");
+    let run_each = take_flag(&mut arguments, watching, RUN);
     let outcome = match arguments.as_slice() {
         [command, directory] if command == "check" => check(Path::new(directory)),
         [command, directory, output] if command == "build" => {
             build(Path::new(directory), Path::new(output), profile, timings)
         }
         [command, directory] if command == "run" => run(Path::new(directory), profile, timings),
+        [command, directory, output] if command == "watch" && !timings => {
+            watch::watch(Path::new(directory), Path::new(output), profile, run_each)
+        }
         [command, directory, output] if command == "doc" => {
             document(Path::new(directory), Path::new(output))
         }
@@ -320,17 +335,53 @@ fn compile(
 ) -> Result<Result<(usize, Vec<String>), ExitCode>, String> {
     let started = Instant::now();
     let (session, files, lines) = load(root)?;
-    let loaded = Instant::now();
+    let loaded = Loaded {
+        session: &session,
+        files,
+        lines,
+        load: started.elapsed(),
+    };
+    compile_loaded(&loaded, root, output, profile, timings, program)
+}
+
+/// A package already read into a [`Session`]: what [`compile_loaded`] builds. `baryon watch`
+/// keeps one between rebuilds, so `salsa` reuses whatever an edit left unchanged.
+pub(crate) struct Loaded<'s> {
+    /// The package's files.
+    pub(crate) session: &'s Session,
+    /// How many files it has.
+    pub(crate) files: usize,
+    /// How many lines they hold together.
+    pub(crate) lines: usize,
+    /// How long reading them took, for `--timings`.
+    pub(crate) load: Duration,
+}
+
+/// [`compile`] for a package already loaded, rooted at `root`.
+///
+/// # Errors
+///
+/// Fails as [`compile`] does, except that every file is already read.
+pub(crate) fn compile_loaded(
+    loaded: &Loaded<'_>,
+    root: &Path,
+    output: &Path,
+    profile: Profile,
+    timings: bool,
+    program: impl FnOnce(&Session, Option<&str>) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>>,
+) -> Result<Result<(usize, Vec<String>), ExitCode>, String> {
+    let (session, files, lines) = (loaded.session, loaded.files, loaded.lines);
+    let loaded_at = Instant::now();
     let directory =
         fs::canonicalize(root).map_err(|error| format!("{}: {error}", root.display()))?;
-    let (modules, tests) = match program(&session, Some(&directory.to_string_lossy())) {
+    let (modules, tests) = match program(session, Some(&directory.to_string_lossy())) {
         Ok(compiled) => compiled,
         Err(problems) => {
             let mut stderr = io::stderr().lock();
             problems
                 .iter()
                 .try_for_each(|problem| {
-                    writeln!(stderr, "{}\n", diagnostics::render(problem, &session))
+                    writeln!(stderr, "{}\n", diagnostics::render(problem, session))
                 })
                 .map_err(|error| error.to_string())?;
             return Ok(Err(ExitCode::FAILURE));
@@ -342,8 +393,8 @@ fn compile(
         let report = Timings {
             files,
             lines,
-            load: loaded - started,
-            compile: compiled - loaded,
+            load: loaded.load,
+            compile: compiled - loaded_at,
             machine_code: linked.machine_code,
             link: linked.link,
         };
