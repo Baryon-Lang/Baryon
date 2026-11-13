@@ -1,6 +1,6 @@
-//! Leaving out the rows of a frame that repeat (roadmap 3.13.9, decision 0045), through
-//! every stage up to the type checker: `drop_duplicates`, the type it gives, and the
-//! mistakes it reports.
+//! Leaving out the rows of a frame that repeat, and counting them (roadmap 3.13.9, decision
+//! 0045), through every stage up to the type checker: `drop_duplicates` and `value_counts`,
+//! the types they give, and the mistakes they report.
 //!
 //! These tests live in the driver because they need several implementations, and only an
 //! application crate may depend on more than one (decision 0001).
@@ -108,5 +108,96 @@ error: expected `i64`, found `DataFrame[Trade]`
    |
 23 |     wrong: int = trades.drop_duplicates()
    |                  ^^^^^^^^^^^^^^^^^^^^^^^^ the annotation says `i64`"#
+    );
+}
+
+/// `value_counts` gives a frame of the columns counted by and `count`, an `i64`, which an
+/// annotation of that schema accepts and whose columns are read by name. It reports
+/// arguments in another form than its own, such as pandas's `sort=`; a column the frame
+/// does not have; no columns; a column named `count` among those counted by, named or not;
+/// a complex column; and the result where another type is expected.
+#[test]
+fn value_counts_gives_the_columns_counted_and_reports_mistakes() {
+    let diagnostics = check_one(
+        r#"
+class Trade(Struct):
+    symbol: str
+    count: i64
+
+
+class Counted(Struct):
+    symbol: str
+    count: i64
+
+
+class Wave(Struct):
+    phase: complex
+    size: f64
+
+
+def main():
+    trades: DataFrame[Trade] = DataFrame({"symbol": Array(["a"]), "count": Array([2])})
+    waves: DataFrame[Wave] = DataFrame({"phase": Array([1j]), "size": Array([1.0])})
+    kept: DataFrame[Counted] = trades.value_counts("symbol")
+    sizes = waves.value_counts("size")
+    total: i64 = sizes.count.sum() + sizes.size.nunique()
+    a = trades.value_counts("symbol", sort=False)
+    b = trades.value_counts("cost")
+    c = trades.value_counts(subset=[])
+    d = trades.value_counts("count")
+    e = trades.value_counts()
+    f = waves.value_counts("phase")
+    wrong: int = waves.value_counts("size")
+"#,
+    );
+    assert_eq!(
+        diagnostics,
+        r#"error: `value_counts` takes `subset=`, the columns to compare, or nothing
+  --> main.byn:22:9
+   |
+22 |     a = trades.value_counts("symbol", sort=False)
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+   = note: for example `df.value_counts("symbol")` or `df.value_counts(["symbol", "day"])`
+
+error: `DataFrame[Trade]` has no column `cost`
+  --> main.byn:23:29
+   |
+23 |     b = trades.value_counts("cost")
+   |                             ^^^^^^ not a column
+   = note: its columns are `symbol`, `count`
+
+error: `subset` needs at least one column to compare
+  --> main.byn:24:36
+   |
+24 |     c = trades.value_counts(subset=[])
+   |                                    ^^ no columns
+   = note: leave `subset` out to compare every column
+
+error: `value_counts` cannot count by a column named `count`
+  --> main.byn:25:29
+   |
+25 |     d = trades.value_counts("count")
+   |                             ^^^^^^^ the result would have two columns named `count`
+   = note: rename it first: `df.rename(columns={"count": "n"})`
+
+error: `value_counts` cannot count by a column named `count`
+  --> main.byn:26:9
+   |
+26 |     e = trades.value_counts()
+   |         ^^^^^^^^^^^^^^^^^^^^^ the result would have two columns named `count`
+   = note: rename it first: `df.rename(columns={"count": "n"})`
+
+error: `value_counts` cannot compare the column `phase`, which holds `complex128`, yet
+  --> main.byn:27:28
+   |
+27 |     f = waves.value_counts("phase")
+   |                            ^^^^^^^ complex numbers
+   = note: name the columns of real numbers to compare with `subset=`
+
+error: expected `i64`, found `DataFrame[size: f64, count: i64]`
+  --> main.byn:28:18
+   |
+28 |     wrong: int = waves.value_counts("size")
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^ the annotation says `i64`"#
     );
 }

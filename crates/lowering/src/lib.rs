@@ -293,6 +293,7 @@ mod expressions;
 mod facts;
 mod files;
 mod fits;
+mod frame_counts;
 mod frame_distinct;
 mod frame_groups;
 mod frame_joins;
