@@ -30,6 +30,7 @@ mod files;
 mod fits;
 mod float_generics;
 mod frame_columns;
+mod frame_distinct;
 mod frame_groups;
 mod frame_joins;
 mod frame_rows;

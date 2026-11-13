@@ -319,8 +319,8 @@ print(value)
 
 ## Sorting, grouping and joining
 
-`sort_values`, `groupby(...).agg(...)` and `merge` build a new frame from all the rows of
-one frame or two. They have their own page:
+`sort_values`, `groupby(...).agg(...)`, `merge` and `drop_duplicates` build a new frame
+from all the rows of one frame or two. They have their own page:
 [Sorting, grouping and joining DataFrames](dataframe-operations.md).
 
 ## `len`, `shape` and `columns`

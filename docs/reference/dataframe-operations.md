@@ -1,9 +1,10 @@
 # Sorting, grouping and joining DataFrames
 
 This page continues [DataFrames](dataframes.md), which describes the type, its columns and
-its rows. The three operations here read every row of a frame and build a new frame:
+its rows. The operations here read every row of a frame and build a new frame:
 `sort_values` puts the rows in order, `groupby(...).agg(...)` reduces the rows that share a
-key to one row, and `merge` pairs the rows of two frames. Each keeps pandas's name and
+key to one row, `merge` pairs the rows of two frames, and `drop_duplicates` leaves out the
+rows that repeat. Each keeps pandas's name and
 arguments ([decision 0045](../decisions/0045-dataframe.md)), and the compiler works out the
 columns of each result.
 
@@ -166,3 +167,32 @@ With four trades of the symbols 7, 3, 7 and 5, this prints:
   pandas's other arguments, such as `left_on=`, `right_on=` and `suffixes=`, are not built.
 - **Cost:** for `n` rows in the two frames together and `k` pairs, a sort of `n` rows for
   each key column, then `n + k` steps and one copy of each column of the result.
+
+## Rows that repeat
+
+`df.drop_duplicates()` gives a new frame without the rows that repeat: of the rows that
+hold the same value in every column, the first is kept. `subset` names the columns to
+compare, one or a list.
+
+```python
+print(trades.drop_duplicates(subset="symbol"))
+```
+
+With four trades of the symbols 7, 3, 7 and 5, this prints the first trade of each symbol:
+
+```text
+   symbol  price  volume
+0       7  189.5     100
+1       3  410.0     250
+2       5   20.0      10
+```
+
+- **The rows kept stay in the frame's order**, and the result has the frame's type.
+- **Two NaN are the same value here**, as in pandas, though the two are not equal. `0.0`
+  and `-0.0` are the same value too.
+- **The frame is read, not taken.**
+- **A complex column cannot be compared yet**: leave it out with `subset`.
+- **Only the first of the rows that repeat can be kept.** pandas's `keep="last"` and
+  `keep=False`, and its `inplace=` and `ignore_index=`, are not built.
+- **Cost:** for `n` rows, a sort of `n` row positions for each column compared, then one
+  pass and one copy of the rows kept.

@@ -118,6 +118,19 @@ impl<'db> Builder<'db> {
         left_count: Local,
         node: NodeId,
     ) -> Option<Local> {
+        let positions = self.positions_type();
+        let ids = self.key_ids(keys, node)?;
+        let arguments = vec![Place::from(ids), Place::from(left_count)];
+        let pairs = self.frame_call("join_pairs", Vec::new(), arguments, positions, node)?;
+        self.drop_later(pairs);
+        Some(pairs)
+    }
+
+    /// A number for each row of `keys`, columns of one length each with its element type:
+    /// the same number for two rows exactly when every column holds the same value in both,
+    /// two NaN counting as the same. The rows are sorted by the columns, the last first,
+    /// and numbered where the sorted values change. `None` after an error is reported.
+    pub(crate) fn key_ids(&mut self, keys: &[(Place, Type<'db>)], node: NodeId) -> Option<Local> {
         let (first, _) = keys.first()?;
         let int = self.int_type();
         let boolean = self.boolean_type();
@@ -154,10 +167,7 @@ impl<'db> Builder<'db> {
             marks = next;
         }
         let arguments = vec![Place::from(order), Place::from(marks)];
-        let ids = call(self, "group_ids", None, arguments, positions)?;
-        let arguments = vec![Place::from(ids), Place::from(left_count)];
-        let pairs = call(self, "join_pairs", None, arguments, positions)?;
-        Some(pairs)
+        call(self, "group_ids", None, arguments, positions)
     }
 
     /// The name of the keyword argument `argument`, `on` in `on="symbol"`.
