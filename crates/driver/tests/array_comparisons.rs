@@ -202,7 +202,7 @@ def sorting(grid: Array[f64, 2], waves: Array[complex, 1], prices: Array[f64, 1]
   |
 2 |     a = grid.argsort()
   |         ^^^^^^^^^^^^^^ not defined
-  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`, `unique` and `nunique`
 
 error: `argsort` needs elements with an order, found `Array[complex128, 1]`
  --> main.byn:3:9
@@ -215,19 +215,64 @@ error: `Array[f64, 1]` has no method `argsort` taking these arguments
   |
 4 |     c = prices.argsort(kind="stable")
   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not defined
-  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`, `unique` and `nunique`
 
 error: `Array[f64, 1]` has no method `argsort` taking these arguments
  --> main.byn:5:9
   |
 5 |     d = prices.argsort(0)
   |         ^^^^^^^^^^^^^^^^^ not defined
-  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`, `unique` and `nunique`
 
 error: expected `f64`, found `Array[i64, 1]`
  --> main.byn:6:18
   |
 6 |     wrong: f64 = prices.argsort()
   |                  ^^^^^^^^^^^^^^^^ the annotation says `f64`"#
+    );
+}
+
+/// `a.unique()` of a rank-1 array is an array like it and `a.nunique()` an `i64`. An array
+/// of higher rank, complex elements, and an argument are errors, and so is a result used as
+/// the wrong type.
+#[test]
+fn unique_and_nunique_are_typed_and_report_mistakes() {
+    let program = r"def distinct(
+    grid: Array[f64, 2], waves: Array[complex128, 1], days: Array[i32, 1]
+):
+    kept: Array[i32, 1] = days.unique()
+    count: i64 = days.nunique()
+    a = grid.unique()
+    b = waves.nunique()
+    c = days.unique(False)
+    wrong: f64 = days.unique()
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `Array[f64, 2]` has no method `unique` taking these arguments
+ --> main.byn:6:9
+  |
+6 |     a = grid.unique()
+  |         ^^^^^^^^^^^^^ not defined
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`, `unique` and `nunique`
+
+error: `nunique` needs elements with an order, found `Array[complex128, 1]`
+ --> main.byn:7:9
+  |
+7 |     b = waves.nunique()
+  |         ^^^^^^^^^^^^^^^ complex numbers
+
+error: `Array[i32, 1]` has no method `unique` taking these arguments
+ --> main.byn:8:9
+  |
+8 |     c = days.unique(False)
+  |         ^^^^^^^^^^^^^^^^^^ not defined
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`, `unique` and `nunique`
+
+error: expected `f64`, found `Array[i32, 1]`
+ --> main.byn:9:18
+  |
+9 |     wrong: f64 = days.unique()
+  |                  ^^^^^^^^^^^^^ the annotation says `f64`"
     );
 }

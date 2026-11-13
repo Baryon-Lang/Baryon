@@ -51,7 +51,9 @@ impl<'db> Builder<'db> {
                 self.array_statistic(place, method, arguments, node);
             }
             ("dot", [left, right]) => self.array_dot(place, (*left, *right), node),
-            ("argsort", [array]) if !fixed => self.array_argsort(place, *array, node),
+            ("argsort" | "unique" | "nunique", [array]) if !fixed => {
+                self.array_compared(place, method, *array, node);
+            }
             ("round", [array]) if fixed => self.fixed_round(place, *array, node),
             ("round", [array]) => self.array_round(place, *array, node),
             ("fill", [array, value]) => self.array_fill(place, (*array, *value), node),

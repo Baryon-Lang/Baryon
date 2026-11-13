@@ -24,7 +24,7 @@ const FIXED_METHODS: &str =
 /// The methods version 0 defines on an `Array`, for messages.
 const ARRAY_METHODS: &str = concat!(
     "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, ",
-    "for one dimension, `argsort`"
+    "for one dimension, `argsort`, `unique` and `nunique`"
 );
 
 impl<'db> Body<'db> {
@@ -355,8 +355,10 @@ impl<'db> Body<'db> {
                 let axis = self.axis_argument(arguments);
                 self.axis_reduction(node, (base, element), name, axis, arguments)
             }
-            ("argsort", []) if is_array && rank_one && arguments.keywords.is_empty() => {
-                self.argsort(node, base, element)
+            ("argsort" | "unique" | "nunique", [])
+                if is_array && rank_one && arguments.keywords.is_empty() =>
+            {
+                self.compared(node, name, base, element)
             }
             ("dot", [other]) => {
                 let found = self.expression(*other, Some(base));
@@ -395,15 +397,24 @@ impl<'db> Body<'db> {
         })
     }
 
-    /// `a.argsort()` on the rank-1 array `base` of `element`: the positions that put its
-    /// elements in rising order, an `Array[i64, 1]`. Complex numbers have no order.
-    fn argsort(&mut self, node: NodeId, base: Type<'db>, element: Type<'db>) -> Type<'db> {
+    /// A method of the rank-1 array `base` of `element` that compares its elements:
+    /// `a.argsort()`, the positions that put them in rising order, an `Array[i64, 1]`;
+    /// `a.unique()`, the distinct elements in the order they first appear, an array like
+    /// `base`; or `a.nunique()`, how many distinct elements there are, an `i64` (decision
+    /// 0045). The comparison is a sort, and complex numbers have no order.
+    fn compared(
+        &mut self,
+        node: NodeId,
+        name: &str,
+        base: Type<'db>,
+        element: Type<'db>,
+    ) -> Type<'db> {
         if matches!(
             element.kind(self.db),
             TypeKind::Primitive(Primitive::Complex(_))
         ) {
             let message = format!(
-                "`argsort` needs elements with an order, found `{}`",
+                "`{name}` needs elements with an order, found `{}`",
                 self.show(base)
             );
             return self.lowerer.error(node, &message, "complex numbers", None);
@@ -412,13 +423,17 @@ impl<'db> Body<'db> {
             self.db,
             TypeKind::Primitive(Primitive::Integer(Integer::I64)),
         );
-        Type::new(
-            self.db,
-            TypeKind::Array {
-                element: int,
-                rank: 1,
-            },
-        )
+        match name {
+            "unique" => base,
+            "nunique" => int,
+            _ => Type::new(
+                self.db,
+                TypeKind::Array {
+                    element: int,
+                    rank: 1,
+                },
+            ),
+        }
     }
 
     /// `a.shape` or `a.size` on an array, or `None` when `base` is not an array.

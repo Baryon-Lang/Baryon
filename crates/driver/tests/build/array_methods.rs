@@ -1,6 +1,7 @@
 //! Array methods and the matrix product built and run (roadmap 1.14.2): `a.min()`, `a.max()`,
 //! `a.dot(b)`, `a.round()` and `a.fill(value)` on `Array` and `Fixed` arrays, `@` on matrices
-//! and vectors, and the panics for an empty array and for lengths that do not match.
+//! and vectors, and the panics for an empty array and for lengths that do not match; and
+//! `a.unique()` and `a.nunique()` of rank-1 arrays (roadmap 3.13.9).
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -217,4 +218,55 @@ fn empty_arrays_and_mismatched_lengths_panic() {
         assert_eq!(status, Some(101), "{report}");
         assert_eq!(report, expected);
     }
+}
+
+/// A program that takes the distinct elements of arrays and counts them: integers, floats
+/// with NaN and both zeros, `bool`, `f32`, `u8`, an empty array, a parameter, and columns of
+/// a frame.
+const DISTINCT: &str = r#"
+from math import nan
+
+
+def distinct(values: Array[i64, 1]) -> Array[i64, 1]:
+    return values.unique()
+
+
+def main():
+    days = Array([3, 1, 3, 2, 1, 3, -7])
+    print(days.unique(), days.nunique())
+    prices = Array([2.5, nan, 1.0, 2.5, nan, 0.0, -0.0, 1.0])
+    print(prices.unique(), prices.nunique())
+    flags = Array([True, True, False, True])
+    print(flags.unique(), flags.nunique())
+    small: Array[f32, 1] = Array([1.5, 1.5, 0.25])
+    print(small.unique(), small.nunique())
+    bytes: Array[u8, 1] = Array([255, 0, 255])
+    print(bytes.unique().sum(), bytes.nunique())
+    empty = days[days > 100]
+    print(empty.unique(), empty.nunique(), len(empty.unique()))
+    print(distinct(days)[1], days.unique().sum(), len(days))
+    frame = DataFrame({"day": days.copy(), "price": Array.fill(7, 1.5)})
+    print(frame.day.unique(), frame.price.nunique(), frame["day"].nunique())
+    print(days[days.unique().argsort()])
+"#;
+
+/// `unique` gives the distinct elements in the order they first appear, NaN once and `0.0`
+/// and `-0.0` as one, and `nunique` counts them without NaN: every line is what pandas 3
+/// prints for the same values.
+#[test]
+fn distinct_elements_are_kept_and_counted() {
+    let expected = [
+        "[ 3  1  2 -7] 4\n",
+        "[2.5 nan 1.  0. ] 3\n",
+        "[ True False] 2\n",
+        "[1.5  0.25] 2\n",
+        "255 2\n",
+        "[] 0 0\n",
+        "1 -1 7\n",
+        "[ 3  1  2 -7] 1 4\n",
+        "[2 1 3 3]\n",
+    ];
+    let (stdout, code, report) = run("array-distinct", DISTINCT).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
 }

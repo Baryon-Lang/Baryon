@@ -10,7 +10,7 @@
 //! gives for its text, which is one more sort of that column.
 
 use crate::builder::Builder;
-use mir::{Place, Projection};
+use mir::{Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
 
@@ -80,5 +80,63 @@ impl<'db> Builder<'db> {
         };
         self.drop_later(rows);
         self.each_column(place, frame, &source, ("taken", &Place::from(rows)), node);
+    }
+
+    /// A method of the rank-1 array `array` that compares its elements, into `place`:
+    /// `argsort` ([`Builder::array_argsort`]), or `unique` or `nunique` (decision 0045), the
+    /// distinct elements in the order they first appear, or how many there are, a NaN not
+    /// counted, as in pandas. An array is one column compared the
+    /// way `drop_duplicates` compares a frame's: its elements are numbered as keys,
+    /// `first_rows` finds where each number first stands, and `taken` or `counted_values`
+    /// gives the result. Cost for `n` elements: `n log n` comparisons and four arrays of `n`
+    /// integers, dropped when the statement ends.
+    pub(crate) fn array_compared(
+        &mut self,
+        place: Place,
+        method: &str,
+        array: NodeId,
+        node: NodeId,
+    ) {
+        if method == "argsort" {
+            return self.array_argsort(place, array, node);
+        }
+        let TypeKind::Array { element, .. } = self.ty(array).kind(self.db) else {
+            return self.unsupported(node, "the distinct elements of this value");
+        };
+        let element = *element;
+        let source = self.borrow(array);
+        let int = self.int_type();
+        let flag = matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool));
+        let compared = if flag { int } else { element };
+        let key = self.converted(source.clone(), element, compared, node);
+        let Some(ids) = self.key_ids(&[(key.clone(), compared)], node) else {
+            return;
+        };
+        let positions = self.positions_type();
+        let arguments = vec![Place::from(ids)];
+        let Some(rows) = self.frame_call("first_rows", Vec::new(), arguments, positions, node)
+        else {
+            return;
+        };
+        self.drop_later(rows);
+        let (function, types, arguments, returns) = if method == "unique" {
+            (
+                "taken",
+                element,
+                vec![source, Place::from(rows)],
+                self.ty(node),
+            )
+        } else {
+            (
+                "counted_values",
+                compared,
+                vec![key, Place::from(rows)],
+                int,
+            )
+        };
+        let Some(result) = self.frame_call(function, vec![types], arguments, returns, node) else {
+            return;
+        };
+        self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);
     }
 }

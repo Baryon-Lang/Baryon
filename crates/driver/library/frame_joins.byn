@@ -17,7 +17,8 @@ comparisons for each key column, then `n + k` steps, with arrays of `n` and of `
 The file also holds `text_masked` and `text_taken`, which choose rows of a column of `str` as
 `masked` and `taken` of `<std>/frames.byn` do for a column of numbers, `text_joined`, which
 is `joined` for a column of `str`, and `text_codes`, which turns a column of `str` into
-integers in the same order, so that a sort by text is a sort by integers.
+integers in the same order, so that a sort by text is a sort by integers. `counted_values`
+counts for an array's `nunique`.
 """
 
 
@@ -173,3 +174,15 @@ def text_codes(column: Array[str, 1]) -> Array[i64, 1]:
             code += 1
         spare[order[at]] = code
     return spare
+
+
+def counted_values[T: Number](column: Array[T, 1], rows: Array[i64, 1]) -> int:
+    """How many of the elements of `column` at the positions `rows` are values, a NaN not
+    being one: what `nunique` gives when `rows` holds one position for each distinct
+    element, as `first_rows` finds them. Cost: one pass over `rows`."""
+    count = 0
+    for at in range(len(rows)):
+        value = column[rows[at]]
+        if value == value:
+            count += 1
+    return count
