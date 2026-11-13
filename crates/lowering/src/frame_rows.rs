@@ -44,6 +44,9 @@ impl<'db> Builder<'db> {
         if method == "merge" {
             return self.frame_merge(place, frame, rest, node);
         }
+        if method == "value_counts" {
+            return self.frame_counts(place, frame, node);
+        }
         if method == "drop_duplicates" {
             return self.frame_distinct(place, frame, node);
         }
