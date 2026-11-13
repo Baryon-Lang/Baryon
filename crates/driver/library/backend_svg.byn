@@ -5,15 +5,17 @@ It is internal to the standard library: `byplot` and the files under it import i
 program cannot, so a program's own `backend_svg.byn` is never hidden by it.
 
 `byplot` lays a figure out in points, measured from the figure's top left corner, and hands each
-piece to a `RendererSVG`; `tostring` then gives the file's text. The PNG and PDF backends of
-roadmap 3.15.6 and 3.15.7 take the same calls, so `byplot` draws once for every format.
+piece to a `RendererSVG`; `tostring` then gives the file's text. `RendererSVG` has the trait
+`backend_bases.RendererBase`, whose calls the PNG and PDF renderers of roadmap 3.15.6 and 3.15.7
+take too, so `byplot` lays a figure out once for every format.
 """
 
+from backend_bases import RendererBase
 from math import isfinite
 from png import encode
 
 
-class RendererSVG(Struct):
+class RendererSVG(Struct, RendererBase):
     """An SVG drawing `width` by `height` points, built up one call at a time, as matplotlib's
     `RendererSVG`. Make one with no elements and no clip yet, `RendererSVG(460.8, 345.6, [], 0)`.
 

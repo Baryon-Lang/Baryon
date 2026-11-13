@@ -9,7 +9,8 @@ labels the ticks, as `matplotlib.ticker` does. These two are the modules a progr
 `contour` finds contour lines and bands,
 `transforms` finds the ranges it shows, `figure` lays a grid of axes out and draws them, `axis`
 draws an axis's ticks and labels, `legend`, `image` and `colorbar` draw a legend, an image and a
-colorbar, `backend_svg` writes the SVG file, and `png` the PNG images inside it. They are
+colorbar, `backend_bases` lists the calls every renderer takes, `backend_svg` writes the SVG
+file, and `png` the PNG images inside it. They are
 internal, so a program's own `colors.byn` or `image.byn` is never hidden by them.
 
 This chapter covers what builds today, roadmap 3.15.1 to 3.15.5: line plots, scatter plots,
@@ -407,6 +408,7 @@ them; this table is for those working on the library, and on the PNG and PDF bac
 | `YAxis(vmin, vmax, bottom, top, left, log)` | The axis along the left of an axes | `axis.YAxis` |
 | `axis.get_majorticklocs()`, `axis.get_minorticklocs()` | The tick positions, with as many intervals as fit the axis's length; minor ticks only on a logarithmic axis | `Axis.get_majorticklocs`, `Axis.get_minorticklocs` |
 | `axis.draw(renderer)` | Draws the ticks, minor ticks shorter and thinner, their labels and the offset text; returns where the axis label goes | `Axis.draw` |
+| `RendererBase` | The trait every renderer has: the drawing calls below and `get_text_width_height_descent`. The drawing functions are generic over it, `[R: RendererBase]`, so `byplot` lays a figure out once for every format | `backend_bases.RendererBase` |
 | `RendererSVG(width, height, [], 0)` | An empty SVG drawing, sizes in points, with no clip rectangle yet; `renderer.set_clip(x, y, width, height)` sets the next, one for each axes | `backend_svg.RendererSVG` |
 | `renderer.draw_path`, `draw_markers`, `draw_rectangle`, `draw_polygon`, `draw_text` | Draw lines, markers, rectangles, filled polygons and text, in points from the top left corner; `draw_text` draws a `LogFormatterSciNotation` label with its exponent raised | The renderer methods of the same names, `draw_path_collection` for polygons |
 | `renderer.get_text_width_height_descent(text, size)` | About how wide a text is, and the height and depth of its line | `RendererBase.get_text_width_height_descent` |

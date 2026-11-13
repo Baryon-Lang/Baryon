@@ -9,7 +9,7 @@ lays it out from the axes' artists and draws it.
 """
 
 from artist import Artist, Kind, View
-from backend_svg import RendererSVG
+from backend_bases import RendererBase
 
 FONT_SIZE: Final = 10.0  # the labels, in points
 
@@ -39,8 +39,8 @@ def location_code(loc: str) -> int:
     return -1
 
 
-def draw_legend(
-    artists: list[Artist], loc: str, view: View, renderer: InOut[RendererSVG]
+def draw_legend[R: RendererBase](
+    artists: list[Artist], loc: str, view: View, renderer: InOut[R]
 ) -> None:
     """Draws a legend of the `artists` with a label at `loc`, inside the axes `view` shows, as
     matplotlib's `Legend` draws one with its default spacing: 4 points of padding, a 20 point
@@ -98,8 +98,8 @@ def draw_legend(
             k += 1
 
 
-def _draw_errors(
-    artists: list[Artist], index: int, x: f64, y: f64, renderer: InOut[RendererSVG]
+def _draw_errors[R: RendererBase](
+    artists: list[Artist], index: int, x: f64, y: f64, renderer: InOut[R]
 ) -> None:
     """Draws, centred on `(x, y)`, a sample of the error bars `errorbar` added just before the
     line `artists[index]`, as matplotlib's `HandlerErrorbar` does: each bar 10 points long,
