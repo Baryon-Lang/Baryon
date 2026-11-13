@@ -242,9 +242,9 @@ functions of the edited file are still lowered again, since lowering reads the f
 but their text is kept when their lowered body comes out the same.
 
 On the 4,706-line program of roadmap 2.0, a rebuild after changing a number in one function takes
-about 0.44 s, against 0.85 s for `baryon build`, on four cores: lowering the edited file again
-takes 0.08 s, `clang` on the one module 0.17 s and the link 0.07 s. Roadmap 2.2.2 aims at a
-rebuild under 200 ms after a one-function edit.
+about 0.34 s, against 0.85 s for `baryon build`, on four cores: checking takes 0.02 s, lowering
+the edited file again 0.05 s, writing the modules 0.02 s, `clang` on the one module 0.15 s and
+the link 0.06 s. Roadmap 2.2.2 aims at a rebuild under 200 ms after a one-function edit.
 
 ## `baryon doc`
 
