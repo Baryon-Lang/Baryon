@@ -109,13 +109,21 @@ impl<'db> Body<'db> {
             let expected = self
                 .instantiate(parameter.ty, &names, &bindings, true)
                 .unwrap_or_else(|| self.lowerer.unknown());
+            // A type parameter that no argument fixed becomes unknown in `expected`, which
+            // matches anything; the argument must still have the parameter's shape, or
+            // `first([1.0])` for `values: Array[T, 1]` would reach the backend unchecked.
+            let unfixed = self
+                .instantiate(parameter.ty, &names, &bindings, false)
+                .is_none();
             if let Some(ty) = found[slot]
-                && !relations::compatible(self.db, expected, ty)
+                && (!relations::compatible(self.db, expected, ty)
+                    || (unfixed && !self.fits(parameter.ty, ty)))
             {
+                let shown = if unfixed { parameter.ty } else { expected };
                 let message = format!(
                     "`{}` has type `{}` here, found `{}`",
                     parameter.name,
-                    self.show(expected),
+                    self.show(shown),
                     self.show(ty)
                 );
                 let label = format!("type `{}`", self.show(ty));
@@ -192,6 +200,62 @@ impl<'db> Body<'db> {
                 relations::mentions(self.db, result, parameter)
             });
         (!unresolved).then_some(result)
+    }
+
+    /// Whether `found` has the shape of `declared`, with each type parameter in `declared`
+    /// matching anything: `list[f64]` does not fit `Array[T, 1]`, and `None` fits `T | None`.
+    /// It walks the pairs `unify` walks, and dicts and frames; a part of `declared` that
+    /// mentions no type parameter must be compatible with its counterpart.
+    fn fits(&self, declared: Type<'db>, found: Type<'db>) -> bool {
+        let db = self.db;
+        if !relations::is_open(db, declared) || relations::is_unknown(db, found) {
+            return relations::compatible(db, declared, found);
+        }
+        let all = |a: &[Type<'db>], b: &[Type<'db>]| {
+            a.len() == b.len() && a.iter().zip(b).all(|(&a, &b)| self.fits(a, b))
+        };
+        match (declared.kind(db), found.kind(db)) {
+            // A generic schema's columns are matched by the frame rules, not here.
+            (TypeKind::Parameter { .. }, _)
+            | (TypeKind::Optional(_), TypeKind::None)
+            | (TypeKind::DataFrame { .. }, TypeKind::DataFrame { .. }) => true,
+            (_, TypeKind::Function { callable, .. }) => self.fits(declared, *callable),
+            (TypeKind::List(a), TypeKind::List(b))
+            | (TypeKind::Optional(a), TypeKind::Optional(b)) => self.fits(*a, *b),
+            (
+                TypeKind::Array { element: a, rank },
+                TypeKind::Array {
+                    element: b,
+                    rank: found_rank,
+                },
+            ) => rank == found_rank && self.fits(*a, *b),
+            (
+                TypeKind::Fixed { element: a, shape },
+                TypeKind::Fixed {
+                    element: b,
+                    shape: s,
+                },
+            ) => shape == s && self.fits(*a, *b),
+            (TypeKind::Optional(a), _) => self.fits(*a, found),
+            (TypeKind::Tuple(a), TypeKind::Tuple(b)) => all(a, b),
+            (TypeKind::Dict { key, value }, TypeKind::Dict { key: k, value: v }) => {
+                self.fits(*key, *k) && self.fits(*value, *v)
+            }
+            (TypeKind::Struct(a), TypeKind::Struct(b)) | (TypeKind::Enum(a), TypeKind::Enum(b)) => {
+                a.file == b.file && a.name == b.name && all(&a.arguments, &b.arguments)
+            }
+            (
+                TypeKind::Callable {
+                    parameters: a,
+                    returns: r,
+                },
+                TypeKind::Callable {
+                    parameters: b,
+                    returns: s,
+                },
+            ) => all(a, b) && self.fits(*r, *s),
+            _ => false,
+        }
     }
 
     /// Records in `bindings` the type arguments that make `declared` match `found`.

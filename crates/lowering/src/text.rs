@@ -69,6 +69,26 @@ impl<'db> Builder<'db> {
         self.assign(place, Rvalue::Format(pieces), node);
     }
 
+    /// `target += value` on a `str`: the joined text is built into a temporary, reading the old
+    /// text, then replaces it, as Python's `s = s + value` does. `target` is a variable, a
+    /// field or an element, `w[0] += "q"`.
+    ///
+    /// Cost: one new string the length of both; the old one is freed.
+    pub(crate) fn append_text(&mut self, target: NodeId, value: NodeId, statement: NodeId) {
+        let Some(place) = self.place(target) else {
+            return;
+        };
+        let ty = self.ty(target);
+        let added = self.borrow(value);
+        let pieces = vec![
+            Piece::Value(place.clone(), FormatSpec::default()),
+            Piece::Value(added, FormatSpec::default()),
+        ];
+        let joined = self.temporary(ty, statement);
+        self.assign(Place::from(joined), Rvalue::Format(pieces), statement);
+        self.replace(place, Operand::Move(Place::from(joined)), statement);
+    }
+
     /// The specification of the interpolation `node`, the default when it has none, or `None`
     /// after reporting one this slice does not lower: one with a value inside, `{x:{width}}`.
     fn format_spec(&mut self, node: NodeId) -> Option<FormatSpec> {
