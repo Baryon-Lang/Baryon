@@ -12,7 +12,7 @@ use mir::{
     Argument, BinaryOperator, Builtin, Constant, Local, Operand, Place, Projection, Rvalue,
     TextArrayStep,
 };
-use syntax::NodeId;
+use syntax::{NodeId, Role, SyntaxKind};
 use types::{Integer, Primitive, Type, TypeKind};
 
 /// The position of the bytes in the tuple that stores a text array.
@@ -223,5 +223,60 @@ impl<'db> Builder<'db> {
             Operand::Move(Place::from(offsets)),
         ];
         self.assign(place.clone(), Rvalue::Aggregate(ty, buffers), node);
+    }
+
+    /// Whether the subscript `node` is a slice of a text array, `names[1:3]`.
+    pub(crate) fn is_text_slice(&self, node: NodeId) -> bool {
+        let sliced = self
+            .tree
+            .child(node, Role::Index)
+            .is_some_and(|index| self.tree.kind(index) == SyntaxKind::Slice);
+        sliced
+            && self
+                .tree
+                .child(node, Role::Value)
+                .is_some_and(|value| self.is_text_array(value))
+    }
+
+    /// `names[mask]`, `names[positions]` or `names[i:j:k]`, the subscript `node` of the
+    /// text array `value` with the index `index`, into `place`: a new text array holding a
+    /// copy of each element chosen, made by the library's `text_masked` or `text_taken`.
+    ///
+    /// A slice of an array of numbers is a view; this one is a copy, since the elements of a
+    /// text array lie end to end and cannot be assigned through a view anyway. A slice
+    /// follows Python, its bounds clamped to the array; a mask of another length panics,
+    /// and so does a position outside the array.
+    pub(crate) fn text_selection(
+        &mut self,
+        place: Place,
+        value: NodeId,
+        index: NodeId,
+        node: NodeId,
+    ) {
+        let source = self.borrow(value);
+        let length = self.text_array_length(&source, node);
+        let (function, by) = if self.tree.kind(index) == SyntaxKind::Slice {
+            let count = self.held(self.int_type(), length, node);
+            let Some(positions) = self.slice_positions(count, index, node) else {
+                return;
+            };
+            ("text_taken", Place::from(positions))
+        } else {
+            let by = self.borrow(index);
+            let by_type = self.ty(index);
+            if self.element(by_type) == self.boolean_type() {
+                let chosen = self.length(&by, by_type, 0, index);
+                self.same_length(0, length, chosen, index);
+                ("text_masked", by)
+            } else {
+                ("text_taken", by)
+            }
+        };
+        let arguments = vec![source, by];
+        let Some(result) = self.frame_call(function, Vec::new(), arguments, self.ty(node), node)
+        else {
+            return;
+        };
+        self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);
     }
 }

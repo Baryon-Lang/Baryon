@@ -36,7 +36,7 @@ def uses(other: Array[str, 1], counts: Array[i64, 1]):
     wrong: Array[str, 1] = Array([1.0])
     names[0] = "q"
     kept = names[0]
-    part = names[0:1]
+    part = names[Array([1.5])]
     both = names[0, 1]
     joined = names + other
     same = names == other
@@ -61,6 +61,9 @@ def fine(names: Array[str, 1]) -> Array[str, 1]:
     for position, name in enumerate(reversed(names)):
         count += position
     empty: Array[str, 1] = Array([])
+    part = names[1:]
+    chosen = part[Array([True, False])]
+    taken = names[Array([0, 0])][::-1]
     return names.copy()
 "#;
 
@@ -99,12 +102,12 @@ error: a value cannot be moved out of an element
    |            ^^^^^^^^ moved out of an element
    = note: move a copy instead: `names[0].copy()`
 
-error: a slice of an array of `str` is not built yet
+error: `Array[str, 1]` cannot be indexed by `Array[f64, 1]`
   --> main.byn:12:12
    |
-12 |     part = names[0:1]
-   |            ^^^^^^^^^^ a slice
-   = note: read one element at a time, such as `names[i]`
+12 |     part = names[Array([1.5])]
+   |            ^^^^^^^^^^^^^^^^^^^ not a choice of elements
+   = note: a rank-1 `Array` takes one rank-1 array: a mask of `bool`s, `a[a > 0.0]`, or `i64` positions, `a[order]`
 
 error: an array of `str` has one dimension, so it takes one index
   --> main.byn:13:12
@@ -118,42 +121,42 @@ error: `+` is not built for an array of `str` yet
    |
 14 |     joined = names + other
    |              ^^^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `==` is not built for an array of `str` yet
   --> main.byn:15:17
    |
 15 |     same = names == other
    |                 ^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `in` is not built for an array of `str` yet
   --> main.byn:16:16
    |
 16 |     found = "a" in names
    |                ^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: the method `sum` is not built for an array of `str` yet
   --> main.byn:17:13
    |
 17 |     total = names.sum()
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `shape` is not built for an array of `str` yet
   --> main.byn:18:13
    |
 18 |     shape = names.shape
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: `min` is not built for an array of `str` yet
   --> main.byn:19:17
    |
 19 |     least = min(names)
    |                 ^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
 
 error: an array of `str` cannot be shown yet
   --> main.byn:20:11
@@ -199,10 +202,12 @@ error: `names` was moved
    |             ----- `names` moved here
    = note: to keep both, move a copy: `names.copy()`"#;
 
-/// A text array is built from a list of `str`, counted, indexed, looped over and copied
-/// without a diagnostic, as `fine` does. Everything else is reported: a struct field that
-/// holds one, more than one dimension, a list of another type, an element assigned or moved
-/// out, a slice, two indices, operators, methods, attributes and built-ins not built yet,
+/// A text array is built from a list of `str`, counted, indexed, looped over, copied,
+/// sliced and chosen from by a mask or by positions, the new arrays kept, without a
+/// diagnostic, as `fine` does. Everything else is reported: a struct field that holds one,
+/// more than one dimension, a list of another type, an element assigned or moved out, an
+/// index that is an array of `f64`, two indices, operators, methods, attributes and
+/// built-ins not built yet,
 /// showing one, an array of numbers where one of text is expected and the other way round,
 /// `Array.zeros` of `str`, and a read after a move, since a text array moves as any array.
 #[test]
