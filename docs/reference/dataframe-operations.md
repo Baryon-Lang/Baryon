@@ -3,8 +3,8 @@
 This page continues [DataFrames](dataframes.md), which describes the type, its columns and
 its rows. The operations here read every row of a frame and build a new frame:
 `sort_values` puts the rows in order, `groupby(...).agg(...)` reduces the rows that share a
-key to one row, `merge` pairs the rows of two frames, and `drop_duplicates` leaves out the
-rows that repeat. Each keeps pandas's name and
+key to one row, `merge` pairs the rows of two frames, `drop_duplicates` leaves out the
+rows that repeat, and `concat` stacks frames. Each keeps pandas's name and
 arguments ([decision 0045](../decisions/0045-dataframe.md)), and the compiler works out the
 columns of each result.
 
@@ -196,3 +196,28 @@ With four trades of the symbols 7, 3, 7 and 5, this prints the first trade of ea
   `keep=False`, and its `inplace=` and `ignore_index=`, are not built.
 - **Cost:** for `n` rows, a sort of `n` row positions for each column compared, then one
   pass and one copy of the rows kept.
+
+## Stacking frames
+
+`concat([first, second])` gives a new frame with the rows of `first`, then those of
+`second`. `concat` is a built-in name, as `DataFrame` is, and takes any number of frames,
+written out in a list.
+
+```python
+week = concat([monday, tuesday])
+print(len(week) == len(monday) + len(tuesday))
+```
+
+This prints `True`.
+
+- **The frames have one schema**: the same columns, in the same order, of the same types.
+  Another schema is a compile error, where pandas would fill the columns a frame lacks
+  with missing values. Bring the frames into one form first, with `df[["a", "b"]]`,
+  `rename` or `assign`.
+- **The result has the type of the first frame**, so its rows are that frame's struct.
+- **Every frame is read, not taken**, and can be used afterwards.
+- **The rows are numbered anew**, as pandas's `ignore_index=True` does: a frame has no
+  row index to keep.
+- **pandas's other arguments are not built**: `axis=`, `join=`, `keys=` and the rest.
+- **Cost:** each frame after the first copies the rows stacked so far, so stack many
+  frames with care. One frame alone is copied once.

@@ -24,8 +24,8 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when `drop_duplicates` on a
-`DataFrame` joined it, and before it the inner `merge` of two `DataFrame`s, and before it
+This page was last brought up to date on 2026-11-12, when `concat` of
+`DataFrame`s joined it, and before it `drop_duplicates`, and before it the inner `merge` of two `DataFrame`s, and before it
 `groupby(...).agg(...)`, and before it `lzma.decompress`, and before it
 `sort_values` on a `DataFrame`, and before it `bz2.compress` and `bz2.decompress`, and before
 them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
@@ -163,7 +163,8 @@ out of a function, including through a `raise`.
 | [Sorting](dataframe-operations.md#sorting): `df.sort_values(by)` by one column or several, stable, with `ascending` one `bool` or one for each column, and NaN last | pandas's other arguments: `na_position=`, `key=`, `kind=`, `inplace=`, `ignore_index=` |
 | [Grouping](dataframe-operations.md#grouping): `df.groupby(keys).agg(name=("column", "reduction"))` by one key column or several, with `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std` and `median`, the keys returned as columns and NaN left out as in pandas | The groups as a value, `g = df.groupby(...)`; `agg` in pandas's other forms (a dict, a function, one name for every column); `df.groupby(...).sum()` and the like; `size`, `nunique`, `transform`, `apply` |
 | [Joining](dataframe-operations.md#joining): the inner join `left.merge(right, on=keys)` on one key column or several, with `_x` and `_y` for a column the two frames share | Left, right and outer joins (with missing values, 3.13.6); `left_on=`, `right_on=`, `suffixes=` and pandas's other arguments |
-| [Rows that repeat](dataframe-operations.md#rows-that-repeat): `df.drop_duplicates()` and `subset=` with one column or several, the first of the rows that repeat kept | `keep="last"` and `keep=False`; `concat`, `value_counts`, `unique`, `nunique` and `describe`, the rest of roadmap item 3.13.9 |
+| [Rows that repeat](dataframe-operations.md#rows-that-repeat): `df.drop_duplicates()` and `subset=` with one column or several, the first of the rows that repeat kept | `keep="last"` and `keep=False`; `value_counts`, `unique`, `nunique` and `describe`, the rest of roadmap item 3.13.9 |
+| [Stacking frames](dataframe-operations.md#stacking-frames): `concat([a, b])` of any number of frames with one schema | Frames with other columns, filled with missing values (3.13.6); `axis=`, `join=`, `keys=` |
 
 ## Errors and panics
 
