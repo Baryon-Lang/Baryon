@@ -4,7 +4,11 @@
 use super::super::print_array::{ELEMENT_F32, ELEMENT_I16, ELEMENT_I32};
 use super::*;
 use crate::baryon_rt_deallocate;
+use crate::files::ErrorKind;
 use std::mem::MaybeUninit;
+
+/// No inflated chunks, an empty `Array[u8, 1]` or `Array[i64, 1]`: a classic file has none.
+const EMPTY: [i64; 3] = [8, 0, 1];
 
 /// The classic file `netCDF4` wrote.
 const CLASSIC: &str = concat!(
@@ -34,6 +38,8 @@ fn read(
             name.len(),
             std::ptr::null(),
             0,
+            EMPTY.as_ptr(),
+            EMPTY.as_ptr(),
             element,
             rank,
             words.as_mut_ptr(),
@@ -233,6 +239,8 @@ fn a_subscript_that_picks_nothing_raises_index_error_or_value_error() {
                 name.len(),
                 item.as_ptr(),
                 1,
+                EMPTY.as_ptr(),
+                EMPTY.as_ptr(),
                 ELEMENT_F32,
                 2,
                 words.as_mut_ptr(),
@@ -256,4 +264,41 @@ fn a_subscript_that_picks_nothing_raises_index_error_or_value_error() {
             (tag, message.to_owned())
         );
     }
+}
+
+#[test]
+fn a_netcdf4_variables_deflated_chunks_are_listed_then_taken_back() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../driver/tests/fixtures/netcdf/deflated.nc"
+    );
+    let name = "temp";
+    let mut list = MaybeUninit::<OwnedList>::uninit();
+    let mut error = MaybeUninit::<RaisedError>::uninit();
+    // SAFETY: the path and the name are the strings' bytes; `list` and `error` are locals.
+    let failed = unsafe {
+        baryon_rt_netcdf_chunks(
+            path.as_ptr(),
+            path.len(),
+            name.as_ptr(),
+            name.len(),
+            std::ptr::null(),
+            0,
+            list.as_mut_ptr(),
+            error.as_mut_ptr(),
+        )
+    };
+    assert!(!failed);
+    // SAFETY: a call that did not fail wrote the list: two chunks, a record each. Its `str`s
+    // are left to the process's end.
+    assert_eq!(unsafe { list.assume_init() }.length, 2);
+    // Read with none of them inflated, the read stops at the first.
+    let failure = read(path, name, ELEMENT_F32, 4, 3).unwrap_err();
+    assert_eq!(
+        raised(&failure),
+        (
+            ErrorKind::InvalidData as u8,
+            "the inflated chunks ran out, in the HDF5 dataset temp".to_owned()
+        )
+    );
 }

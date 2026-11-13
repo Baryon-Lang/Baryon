@@ -23,11 +23,11 @@
 //! of a copy type is the exception: it is passed by value, so the function holds its own copy,
 //! and may change it without the caller seeing.
 
-use super::Body;
+use super::{Body, relations};
 use database::Definition;
 use diagnostics::Diagnostic;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Mode, Type};
+use types::{Mode, Parameter, Type};
 
 /// One argument of a call, as passed: the receiver of a method call counts as one.
 pub(super) struct Passed<'db> {
@@ -220,5 +220,42 @@ impl<'db> Body<'db> {
         };
         self.lowerer
             .error(node, &message, "changed here", Some(&hint));
+    }
+
+    /// Reports an `InOut` argument whose type only fits its parameter's, as a `str` fits a
+    /// `str | None` or a `Circle` fits a `Circle | Square`. The function may assign the
+    /// parameter any value of its own type, `None` or a `Square`, which the caller's variable
+    /// cannot hold, and the two types are laid out differently, so the caller's value would be
+    /// overwritten with the wrong shape (roadmap 1.9.29). Frames with the same columns are one
+    /// layout and pass.
+    pub(super) fn changed_exactly(
+        &mut self,
+        argument: NodeId,
+        parameter: &Parameter<'db>,
+        found: Type<'db>,
+    ) {
+        if found == parameter.ty
+            || relations::is_unknown(self.db, found)
+            || relations::holds_frame(self.db, found)
+        {
+            return;
+        }
+        let message = format!(
+            "`{}` is changed by the call, so it must have type `{}`, found `{}`",
+            parameter.name,
+            self.show(parameter.ty),
+            self.show(found)
+        );
+        let label = format!("type `{}`", self.show(found));
+        let hint = (self.tree.kind(argument) == SyntaxKind::Name).then(|| {
+            format!(
+                "the function may give it any `{}`; declare the variable with that type: `{}: {}`",
+                self.show(parameter.ty),
+                self.tree.text(argument, self.text),
+                self.show(parameter.ty)
+            )
+        });
+        self.lowerer
+            .error(argument, &message, &label, hint.as_deref());
     }
 }

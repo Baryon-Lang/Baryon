@@ -30,8 +30,8 @@ mod storage;
 mod writing;
 
 pub(crate) use header::read_header;
-pub(crate) use reading::read_variable;
 use reading::{Scale, scaling};
+pub(crate) use reading::{deflated_chunks, read_variable};
 pub(crate) use selection::{Item, Selection, SubscriptFailure, is_whole, select};
 pub(crate) use writing::{define, write};
 

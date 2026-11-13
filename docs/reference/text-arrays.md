@@ -7,8 +7,8 @@ what a text column of a [`DataFrame`](dataframes.md) is
 
 This chapter covers what a text array does today: it is built from a list, counted, read one
 element at a time, looped over, copied, cut into parts by a slice, a mask or positions,
-compared and searched.
-The rest is roadmap item 3.13.3, and the compiler says so by name when a program asks for it.
+compared, searched, printed, sorted and reduced.
+The rest is roadmap idea I.60, and the compiler says so by name when a program asks for it.
 
 ## Why not a list of strings
 
@@ -121,6 +121,28 @@ This prints `[False False  True False]`, then `2`, for `delta` and `beta`, then 
   array of `False`.
 - **Cost:** one pass and one new array of `bool`s; no text is copied.
 
+## Printing
+
+`print(names)` and `f"{names}"` show a text array as NumPy shows an array of strings: each
+element in quotes, a space between two, the whole in brackets.
+
+```python
+names = Array(["alpha", "", "it's"])
+print(names)
+```
+
+This prints `['alpha' '' "it's"]`.
+
+- **Each element is written as Python's `repr` writes a `str`**: in single quotes, or in
+  double quotes when it holds a single quote and no double one, with `\n`, `\t` and `\\`
+  for a new line, a tab and a backslash. Other control characters are written as they are,
+  where `repr` would write `\x00`.
+- **A line holds at most 75 characters**, and the next line starts under the first element.
+- **More than 1000 elements are cut short**: the first three, `...`, and the last three.
+- **`str(names)` gives the same text.** A list or tuple that holds a text array cannot be
+  shown yet.
+- **Cost:** one copy of each element shown.
+
 ## Loops
 
 A `for` loop reads the elements in order, each borrowed for one pass:
@@ -169,6 +191,28 @@ for symbol in symbols.unique():
 This prints `3`, then `IBM`, `AAPL` and `ibm`. Texts are compared exactly, so `"IBM"` and
 `"ibm"` are two. Cost: a sort of the array, about `n log n` comparisons of text, and a copy of
 each distinct text.
+
+## Order, smallest and largest
+
+`names.argsort()` gives the positions that put the elements in rising order, an
+`Array[i64, 1]`, and `names.min()` and `names.max()` give the element that comes first and
+last:
+
+```python
+names = Array(["delta", "alpha", "Zed"])
+print(names.argsort())
+print(names.min(), names.max())
+```
+
+This prints `[2 1 0]`, then `Zed delta`.
+
+- **The order is Python's `<` on `str`**, by code point, so capitals come before small
+  letters. Equal elements keep the order they stand in.
+- **`min` and `max` give a new `str`**, a copy, which stays after the array is gone. An
+  empty array has neither, and stops the program.
+- **Sort the array itself** with `names[names.argsort()]`.
+- **Cost:** `argsort` is a sort, about `n log n` comparisons of text; `min` and `max` are
+  one pass.
 
 ## In a DataFrame
 
@@ -252,17 +296,18 @@ print(first.symbol)
 IBM
 ```
 
-## What is not built yet
+## What is not built
 
-Each of these is a compile error today, and the rest of roadmap item 3.13.3:
+Each of these is a compile error, and roadmap idea I.60 unless it says otherwise:
 
 - **Assigning an element**, `names[0] = "beta"`. The elements lie end to end, so one cannot
   change length in place. Build a new array from a list.
 - **Arithmetic operators**: `names + other`.
-- **Methods and attributes** other than `copy()`, `unique()` and `nunique()`: `shape`,
-  `argsort` and the rest.
+- **Methods and attributes** other than `copy`, `unique`, `nunique`, `argsort`, `min` and
+  `max`: `shape`, `size` and the rest.
 - **Built-in functions** other than `len`, `enumerate`, `zip` and `reversed`: `sorted`, `min`,
   `max`, `list`.
-- **Showing one**: `print(names)`, `str(names)` and `f"{names}"`. Print the elements in a loop.
-- **A struct field** of type `Array[str, 1]`. Hold a `list[str]` in the struct, or pass the
-  array beside it.
+- **Showing a list or tuple that holds a text array.** `print(names)`, `str(names)` and
+  `f"{names}"` work.
+- **A struct field** of type `Array[str, 1]` (roadmap idea I.49). Hold a `list[str]` in the
+  struct, or pass the array beside it.

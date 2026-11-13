@@ -17,9 +17,20 @@ use types::{Column, Float, Item, Primitive, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// The place to read as text where the expression `node`, of type `ty` and borrowed at
-    /// `place`, is printed or formatted in an f-string: a frame's table, a `Path`'s text
-    /// ([`Builder::text_place`]), and any other value as it is.
+    /// `place`, is printed or formatted in an f-string: a frame's table, a text array's
+    /// elements as `NumPy` shows them, which the library's `text_shown` writes into a new `str`
+    /// dropped with the statement's temporaries, a `Path`'s text ([`Builder::text_place`]),
+    /// and any other value as it is.
     pub(crate) fn shown_place(&mut self, node: NodeId, place: Place, ty: Type<'db>) -> Place {
+        if self.is_text_array(node) {
+            let text = Type::new(self.db, TypeKind::Str);
+            let arguments = vec![place.clone()];
+            if let Some(shown) = self.frame_call("text_shown", Vec::new(), arguments, text, node) {
+                self.drop_later(shown);
+                return Place::from(shown);
+            }
+            return place;
+        }
         match self.frame_text(node, &place) {
             Some(text) => text,
             None => self.text_place(place, ty),

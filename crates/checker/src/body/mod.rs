@@ -35,6 +35,7 @@ mod axes;
 mod binding;
 mod builtins;
 mod calls;
+mod class_functions;
 mod class_patterns;
 mod complex;
 mod conditionals;

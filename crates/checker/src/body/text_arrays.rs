@@ -7,10 +7,10 @@ use super::calls::Arguments;
 use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::{Integer, Primitive, Type, TypeKind};
 
-/// What an array of `str` can do today, for messages.
+/// What an array of `str` can do, for messages.
 const BUILT: &str = "an array of `str` has `len`, indexing, slices, masks, comparisons, \
-                     `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest \
-                     comes with roadmap item 3.13.3";
+                     `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, \
+                     `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60";
 
 impl<'db> Body<'db> {
     /// `names[i]` on a text array: the element, a `str` borrowed from the array. A slice,
@@ -53,7 +53,9 @@ impl<'db> Body<'db> {
 
     /// A method call on a text array: `copy()` gives a new array with its own bytes,
     /// `unique()` the distinct elements in the order they first appear, and `nunique()` how
-    /// many there are, an `i64` (decision 0045); no other method is built yet.
+    /// many there are, an `i64` (decision 0045); `argsort()` gives the positions that put
+    /// the elements in rising order, and `min()` and `max()` a new `str`, the element that
+    /// comes first and last by `<`. No other method is built.
     pub(super) fn text_array_method(
         &mut self,
         node: NodeId,
@@ -64,9 +66,15 @@ impl<'db> Body<'db> {
         if arguments.positional.is_empty() && arguments.keywords.is_empty() {
             match name {
                 "copy" | "unique" => return base,
-                "nunique" => {
+                "min" | "max" => return Type::new(self.db, TypeKind::Str),
+                "nunique" | "argsort" => {
                     let int = Primitive::Integer(Integer::I64);
-                    return Type::new(self.db, TypeKind::Primitive(int));
+                    let int = Type::new(self.db, TypeKind::Primitive(int));
+                    if name == "nunique" {
+                        return int;
+                    }
+                    let (element, rank) = (int, 1);
+                    return Type::new(self.db, TypeKind::Array { element, rank });
                 }
                 _ => {}
             }
@@ -75,15 +83,16 @@ impl<'db> Body<'db> {
         self.text_array_unbuilt(node, &format!("the method `{name}`"))
     }
 
-    /// Reports a text array, or a value that holds one, shown by `print`, `str` or an
-    /// f-string at `node`, which cannot write one yet.
+    /// Reports a value that holds a text array, such as a list of them, shown by `print`
+    /// or an f-string at `node`, which cannot write one yet. A text array itself is shown,
+    /// as `NumPy` shows an array of strings.
     pub(super) fn shows_no_text_array(&mut self, node: NodeId, ty: Type<'db>) {
-        if super::relations::holds_text_array(self.db, ty) {
+        if !self.is_text_array(ty) && super::relations::holds_text_array(self.db, ty) {
             self.lowerer.error(
                 node,
-                "an array of `str` cannot be shown yet",
-                "an array of `str`",
-                Some("show its elements one at a time: `for name in names: print(name)`"),
+                "a value that holds an array of `str` cannot be shown yet",
+                "holds an array of `str`",
+                Some("show each array on its own: `for names in groups: print(names)`"),
             );
         }
     }

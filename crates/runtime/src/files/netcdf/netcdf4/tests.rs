@@ -46,6 +46,7 @@ fn positions_far_apart_cost_only_themselves() {
         (variable, &selection),
         Pixel::F64,
         &mut memory,
+        &mut |_: &[u8]| Err(String::new()),
     )
     .unwrap();
     // The first record comes second.

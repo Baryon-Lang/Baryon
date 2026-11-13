@@ -28,13 +28,45 @@ pub(crate) struct CountedLoop<'db> {
     pub(crate) entries: Vec<usize>,
 }
 
-/// Every counted loop of `body` whose header is not in `done`.
-pub(crate) fn counted_loops<'db>(body: &Body<'db>, done: &[usize]) -> Vec<CountedLoop<'db>> {
+/// Each counted loop of `body` whose header is not in `done`, in header order, found only as
+/// it is asked for: a pass that stops at the first loop it can change, then looks again,
+/// examines each loop once instead of every loop each time.
+pub(crate) fn counted_loops<'a, 'db>(
+    body: &'a Body<'db>,
+    done: &'a [usize],
+) -> impl Iterator<Item = CountedLoop<'db>> + 'a {
     let predecessors = predecessors(body);
     (0..body.blocks.len())
         .filter(|header| !done.contains(header))
-        .filter_map(|header| counted_loop(body, header, &predecessors))
-        .collect()
+        .filter_map(move |header| counted_loop(body, header, &predecessors))
+}
+
+/// Whether each block of `body` is the header of a counted loop, worked out only for the blocks
+/// asked about.
+pub(crate) struct Headers<'a, 'db> {
+    /// The body.
+    body: &'a Body<'db>,
+    /// The blocks that jump to each block.
+    predecessors: Vec<Vec<usize>>,
+    /// The answer for each block asked about so far.
+    known: Vec<Option<bool>>,
+}
+
+impl<'a, 'db> Headers<'a, 'db> {
+    /// No block asked about yet.
+    pub(crate) fn new(body: &'a Body<'db>) -> Self {
+        Self {
+            body,
+            predecessors: predecessors(body),
+            known: vec![None; body.blocks.len()],
+        }
+    }
+
+    /// Whether `block` is the header of a counted loop.
+    pub(crate) fn is_header(&mut self, block: usize) -> bool {
+        let (body, predecessors) = (self.body, &self.predecessors);
+        *self.known[block].get_or_insert_with(|| counted_loop(body, block, predecessors).is_some())
+    }
 }
 
 /// The counted loop whose header is block `header`, if it is one.
@@ -114,16 +146,16 @@ fn is_latch(body: &Body<'_>, latch: usize, header: usize, counter: Local) -> boo
 /// The blocks of the loop that `latch` closes by jumping back to `header`: the header and every
 /// block that reaches the latch without passing through the header.
 fn natural_loop(header: usize, latch: usize, predecessors: &[Vec<usize>]) -> Vec<usize> {
-    let mut blocks = vec![header];
+    let mut inside = vec![false; predecessors.len()];
+    inside[header] = true;
     let mut pending = vec![latch];
     while let Some(block) = pending.pop() {
-        if !blocks.contains(&block) {
-            blocks.push(block);
+        if !inside[block] {
+            inside[block] = true;
             pending.extend(predecessors[block].iter().copied());
         }
     }
-    blocks.sort_unstable();
-    blocks
+    (0..inside.len()).filter(|&block| inside[block]).collect()
 }
 
 /// The blocks that jump to each block of `body`.
@@ -139,11 +171,30 @@ pub(crate) fn predecessors(body: &Body<'_>) -> Vec<Vec<usize>> {
     predecessors
 }
 
-/// The blocks `terminator` may jump to.
+/// The blocks `terminator` may jump to. Read in place: every pass over a body asks this of
+/// each block, and a copy of a call's terminator would copy its arguments.
 pub(crate) fn successors(terminator: &TerminatorKind<'_>) -> Vec<BlockId> {
-    let mut targets = Vec::new();
-    for_each_target(&mut terminator.clone(), &mut |target| targets.push(*target));
-    targets
+    match terminator {
+        TerminatorKind::Goto(target)
+        | TerminatorKind::Assert { target, .. }
+        | TerminatorKind::ParallelFor { target, .. } => vec![*target],
+        TerminatorKind::Branch {
+            then, otherwise, ..
+        } => vec![*then, *otherwise],
+        TerminatorKind::Switch {
+            cases, otherwise, ..
+        } => cases
+            .iter()
+            .map(|(_, target)| *target)
+            .chain(std::iter::once(*otherwise))
+            .collect(),
+        TerminatorKind::Call { target, error, .. } => std::iter::once(*target)
+            .chain(error.as_ref().map(|edge| edge.target))
+            .collect(),
+        TerminatorKind::Return | TerminatorKind::Raise(_) | TerminatorKind::Unreachable => {
+            Vec::new()
+        }
+    }
 }
 
 /// Calls `visit` on each block `terminator` may jump to, so it can redirect it.

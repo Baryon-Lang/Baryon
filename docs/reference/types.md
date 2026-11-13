@@ -380,7 +380,7 @@ so keep a copy to store it elsewhere: `out.append(v.copy())`. A key is copied in
 `setdefault` and a comprehension, so the variable it came from stays usable, as in Python. A dict
 moves like a list ([values and references](values-and-references.md#moves)). Lookups hash with a
 fixed seed, so a program behaves the same on every run. `popitem`, `fromkeys`, `|` and `**` in a
-display are not in 0.3.0.
+display are not in the language yet.
 
 ## Optional values
 
@@ -432,6 +432,27 @@ class Particle(Struct):
 - `Particle(p, v, 1.0)` builds one, with arguments in field order, by position or by name.
 - Methods are `def` inside the class, with `self` first. How `self` is passed is in
   [Values and references](values-and-references.md#methods).
+- A method called through its class, as Python calls a function found on a class, takes no
+  receiver: each argument goes to the parameter at its position. A `def` without `self` is a
+  function of the class, such as a second constructor, and `Particle.kinetic_energy(p)` is
+  `p.kinetic_energy()`. A [generic](#generics) struct's methods are called through its class
+  the same way, `Pair.both(1.5)`.
+
+  ```python
+  class Point(Struct):
+      x: f64
+      y: f64
+
+      def origin() -> Point:
+          return Point(0.0, 0.0)
+
+      def on_axis(x: f64) -> Point:
+          return Point(x, 0.0)
+
+
+  start = Point.origin()
+  end = Point.on_axis(2.5)
+  ```
 - Structs have no inheritance
   ([decision 0015](../decisions/0015-no-class-inheritance.md)): no base besides `Struct` and,
   optionally, `Copy`. Types share behavior through traits and generic functions, and share data
@@ -750,6 +771,31 @@ left to right and number literals last, so `largest(x, 0)` with `x: f32` makes t
 Every other argument must then have the same type: `largest(x, n)` with `x: f64` and `n: i64` is an
 error, as in non-generic code. A generic struct is built the same way: `Pair(1.5, 2.5)` is a
 `Pair[f64]`.
+
+A generic struct's method called through its class finds the class's type arguments the same
+way, from all its arguments: `Pair.both(1.5)` is the `both` of `Pair[f64]`, and
+`Pair.total(p)` takes them from `p`. The class's type parameters come first, then the method's
+own. A method no argument tells the type argument of, such as `def empty() -> Bag[T]`, is an
+error called that way; write the type arguments on the class instead, as an annotation does:
+`Bag[f64].empty()`. Written there, they are the class's, and the arguments are checked against
+them.
+
+```python
+class Pair[T: Number](Struct, Copy):
+    a: T
+    b: T
+
+    def both(x: T) -> Pair[T]:
+        return Pair(x, x)
+
+    def total(self) -> T:
+        return self.a + self.b
+
+
+p = Pair.both(1.5)          # a Pair[f64]
+q = Pair[i64].both(2)       # a Pair[i64]
+print(Pair.total(p))        # 3.0, the same as p.total()
+```
 
 Inside a generic function, a type parameter is its own type: a `T` matches only `T`, and only the
 operations its bound allows apply to it. A number literal takes the type `T` under `Float`; under

@@ -11,6 +11,10 @@
 //! and its length is the longest any variable along it reaches. The attributes the library
 //! keeps for itself, [`HIDDEN`], are not shown, as `netCDF4` does not show them.
 //!
+//! A deflated variable's chunks are inflated by the standard library's `zlib` (decision 0049),
+//! as `h5by` inflates them: [`chunks`] lists them, the library inflates them, and [`read`]
+//! takes them back.
+//!
 //! Cost: opening reads every HDF5 object header once, as `h5by.File` does. A read gives the
 //! HDF5 reader, for each axis, the upward slice that picks exactly the positions picked, reads
 //! them as `f64`s, then copies them into the array in the order picked, so a read costs the
@@ -19,7 +23,7 @@
 use super::reading::{Scale, place};
 use super::{Attribute, Header, Kind, Selection, Values, Variable};
 use crate::files::fits::Pixel;
-use crate::files::hdf5::{self, Datatype, Hdf5, Object};
+use crate::files::hdf5::{self, Datatype, Hdf5, Inflate, Object};
 use crate::files::netcdf::{Item, SubscriptFailure};
 use crate::files::{ErrorKind, OsFailure};
 
@@ -274,21 +278,18 @@ fn extent(object: &Object, axis: usize) -> (u64, bool) {
     })
 }
 
-/// Reads the values `selection` picks of `variable`, a variable of the NetCDF-4 file at `path`
-/// described by `netcdf4`, into `memory` as elements of `pixel` scaled by `scale`, which
-/// [`super::read_variable`] has checked.
+/// The dataset of `variable`, a variable of the NetCDF-4 file at `path` described by
+/// `netcdf4`, as long along each axis as its dimensions are.
 ///
 /// # Errors
 ///
-/// Fails as [`hdf5::read_dataset`] does, and with `INVALID_DATA` when the variable is shorter
-/// than its unlimited dimension or its values passed through deflate, neither read yet.
-pub(super) fn read(
+/// `INVALID_DATA` when the file has no such dataset, or it is shorter than its unlimited
+/// dimension, which is not read yet.
+fn dataset<'a>(
     path: &str,
-    netcdf4: &Netcdf4,
-    (variable, selection): (&Variable, &Selection),
-    (scale, pixel): (Option<Scale>, Pixel),
-    memory: &mut [u8],
-) -> Result<(), OsFailure> {
+    netcdf4: &'a Netcdf4,
+    variable: &Variable,
+) -> Result<&'a hdf5::Dataset, OsFailure> {
     let invalid = |message: String| OsFailure::new(ErrorKind::InvalidData, message, path);
     let name = &variable.name;
     let Some(dataset) = netcdf4
@@ -309,22 +310,95 @@ pub(super) fn read(
              read yet"
         )));
     }
-    if selection.count() == 0 {
-        return Ok(());
-    }
-    // Each axis's slice, and where each position picked lies in what it reads.
+    Ok(dataset)
+}
+
+/// The HDF5 subscript that reads `selection` of the variable `name`: for each axis, the slice
+/// of [`block`] and where each position picked lies in what it reads.
+///
+/// # Errors
+///
+/// `INVALID_DATA` when an axis's positions are in no equal steps, which no subscript of
+/// integers and slices picks.
+fn blocks(
+    path: &str,
+    name: &str,
+    selection: &Selection,
+) -> Result<(Vec<Item>, Vec<Vec<usize>>), OsFailure> {
     let mut items = Vec::new();
-    let mut places: Vec<Vec<usize>> = Vec::new();
+    let mut places = Vec::new();
     for axis in &selection.axes {
         let Some((item, within)) = block(&axis.positions) else {
-            return Err(invalid(format!(
-                "the values picked of the NetCDF-4 variable {name} are in no equal steps, which \
-                 is not read yet"
-            )));
+            return Err(OsFailure::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "the values picked of the NetCDF-4 variable {name} are in no equal steps, \
+                     which is not read yet"
+                ),
+                path,
+            ));
         };
         items.push(item);
         places.push(within);
     }
+    Ok((items, places))
+}
+
+/// The address and stored size of each deflated chunk that a read of the values `selection`
+/// picks of `variable` takes inflated, in the order [`read`] takes them: none when it picks no
+/// values or the variable is not deflated.
+///
+/// # Errors
+///
+/// Fails as [`hdf5::deflated_chunks`] does, and as [`dataset`] and [`blocks`] do.
+pub(super) fn chunks(
+    path: &str,
+    netcdf4: &Netcdf4,
+    (variable, selection): (&Variable, &Selection),
+) -> Result<Vec<(u64, u64)>, OsFailure> {
+    let dataset = dataset(path, netcdf4, variable)?;
+    if selection.count() == 0 {
+        return Ok(Vec::new());
+    }
+    let (items, _) = blocks(path, &variable.name, selection)?;
+    hdf5::deflated_chunks(path, &netcdf4.file, (&variable.name, dataset, &items))
+        .map_err(|failure| plain(path, failure))
+}
+
+/// `failure` as an `OSError`: the HDF5 reader's `IndexError` and `ValueError` cannot happen
+/// for the slices [`block`] makes, which lie inside the variable, so one is a damaged file.
+fn plain(path: &str, failure: SubscriptFailure) -> OsFailure {
+    match failure {
+        SubscriptFailure::Os(failure) => failure,
+        SubscriptFailure::Index(message) | SubscriptFailure::Value(message) => {
+            OsFailure::new(ErrorKind::InvalidData, message, path)
+        }
+    }
+}
+
+/// Reads the values `selection` picks of `variable`, a variable of the NetCDF-4 file at `path`
+/// described by `netcdf4`, into `memory` as elements of `pixel` scaled by `scale`, which
+/// [`super::read_variable`] has checked. A deflated chunk is inflated by `inflate`, in the
+/// order [`chunks`] lists them.
+///
+/// # Errors
+///
+/// Fails as [`hdf5::read_dataset`] does, as [`dataset`] and [`blocks`] do, and with
+/// `INVALID_DATA` when the values picked do not fit in memory.
+pub(super) fn read(
+    path: &str,
+    netcdf4: &Netcdf4,
+    (variable, selection): (&Variable, &Selection),
+    (scale, pixel): (Option<Scale>, Pixel),
+    memory: &mut [u8],
+    inflate: &mut Inflate<'_>,
+) -> Result<(), OsFailure> {
+    let dataset = dataset(path, netcdf4, variable)?;
+    let name = &variable.name;
+    if selection.count() == 0 {
+        return Ok(());
+    }
+    let (items, places) = blocks(path, name, selection)?;
     let sizes: Vec<usize> = places.iter().map(Vec::len).collect();
     // As many `f64`s as values picked, which the caller's array already holds as `pixel`s.
     let mut values = Vec::new();
@@ -333,28 +407,22 @@ pub(super) fn read(
         .try_fold(8_usize, |bytes, &size| bytes.checked_mul(size))
         .filter(|&bytes| values.try_reserve_exact(bytes).is_ok());
     let Some(bytes) = room else {
-        return Err(invalid(format!(
-            "the values picked of the NetCDF-4 variable {name} do not fit in memory"
-        )));
+        return Err(OsFailure::new(
+            ErrorKind::InvalidData,
+            format!("the values picked of the NetCDF-4 variable {name} do not fit in memory"),
+            path,
+        ));
     };
     values.resize(bytes, 0);
-    let mut inflate = |_: &[u8]| -> Result<Vec<u8>, String> {
-        Err(format!(
-            "the NetCDF-4 variable {name} is compressed, which is not read yet"
-        ))
-    };
     hdf5::read_dataset(
         path,
         &netcdf4.file,
         (name, dataset, &items),
         Pixel::F64,
         &mut values,
-        &mut inflate,
+        inflate,
     )
-    .map_err(|failure| match failure {
-        SubscriptFailure::Os(failure) => failure,
-        SubscriptFailure::Index(message) | SubscriptFailure::Value(message) => invalid(message),
-    })?;
+    .map_err(|failure| plain(path, failure))?;
     let mut elements = memory.chunks_exact_mut(pixel.size());
     let mut picked = vec![0_usize; places.len()];
     loop {

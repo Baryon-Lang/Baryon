@@ -32,7 +32,7 @@
 //! checks hoisting before it can already have doubled it. A loop that allocates an array is
 //! left as it is: allocating costs far more than the multiplications.
 
-use crate::loops::{CountedLoop, counted_loops, for_each_target, writes};
+use crate::loops::{CountedLoop, Headers, counted_loops, for_each_target, writes};
 use mir::{
     Argument, BinaryOperator, BlockId, Body, Constant, Local, LocalKind, Operand, Place,
     Projection, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
@@ -51,16 +51,12 @@ pub(crate) fn version_all<'db>(
 ) {
     let mut done = Vec::new();
     loop {
-        let headers: Vec<usize> = counted_loops(body, &[])
-            .iter()
-            .map(|counted| counted.header)
-            .collect();
-        let loops = counted_loops(body, &done);
-        let next = loops.into_iter().find_map(|counted| {
+        let mut headers = Headers::new(body);
+        let next = counted_loops(body, &done.clone()).find_map(|counted| {
             let innermost = counted
                 .blocks
                 .iter()
-                .all(|&block| block == counted.header || !headers.contains(&block));
+                .all(|&block| block == counted.header || !headers.is_header(block));
             let arrays = if innermost && !allocates(body, &counted) {
                 arrays(db, body, &counted, declared)
             } else {

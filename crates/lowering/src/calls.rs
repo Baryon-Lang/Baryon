@@ -4,7 +4,7 @@
 
 use crate::builder::Builder;
 use crate::frames::erase;
-use mir::{Argument, Callee, Place, Projection, Rvalue, TerminatorKind};
+use mir::{Argument, Callee, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
 
@@ -210,7 +210,7 @@ impl<'db> Builder<'db> {
             .collect();
         // A method of a generic class is generic in the class's type parameters, which come
         // first: the receiver's type arguments (roadmap 1.9.18).
-        let mut type_arguments = match self.class_arguments(item, arguments) {
+        let mut type_arguments = match self.class_arguments(item, arguments, node) {
             Some(class) => class.into_iter().chain(type_arguments).collect::<Vec<_>>(),
             None => return self.unsupported(node, "a method call on this receiver"),
         };
@@ -254,10 +254,7 @@ impl<'db> Builder<'db> {
                 continue;
             }
             passed.push(Some(match mode {
-                Mode::Borrow => match self.borrow_as(argument, ty) {
-                    Some(place) => Argument::Borrow(place),
-                    None => return,
-                },
+                Mode::Borrow => Argument::Borrow(self.borrow_as(argument, ty)),
                 Mode::InOut => match self.changed_place(argument) {
                     Some(place) => {
                         let (passed, view) = self.in_out(place, ty, argument);
@@ -302,16 +299,20 @@ impl<'db> Builder<'db> {
         self.copy_back(&views, node);
     }
 
-    /// The type arguments of the class that declares `item`, for a call whose receiver is the
-    /// first of `arguments`: `[f64]` for `p.total()` with `p: Pair[f64]`, or `[T]` inside
-    /// another generic body, which monomorphization replaces. Empty for a function and for a
-    /// method of a class with no type parameters. `None` when the class has type parameters
-    /// but the receiver is not a struct of that class, such as a method an embedded generic
-    /// struct provides (decision 0031), which is not built yet.
+    /// The type arguments of the class that declares `item`, for the call `node` with
+    /// `arguments`: `[f64]` for `p.total()` with `p: Pair[f64]`, or `[T]` inside another
+    /// generic body, which monomorphization replaces. They come from the value before the dot,
+    /// which for a call through the class, `Pair.both(1.5)` or `Pair[f64].both(1.5)`, the
+    /// checker types as the class with its type arguments, or else from the receiver, the
+    /// first of `arguments`. Empty for a function and for a method of a class with no type
+    /// parameters. `None` when the class has type parameters but neither is a struct of that
+    /// class, such as a method an embedded generic struct provides (decision 0031), which is
+    /// not built yet.
     fn class_arguments(
         &self,
         item: Item<'db>,
         arguments: &[Option<NodeId>],
+        node: NodeId,
     ) -> Option<Vec<types::Type<'db>>> {
         let tree = self.db.parse(item.file(self.db)).tree();
         let Some((_, Some(class))) = crate::definition(tree, item.name(self.db)) else {
@@ -321,17 +322,24 @@ impl<'db> Builder<'db> {
             return Some(Vec::new());
         };
         let count = tree.children_with(parameters, Role::Item).count();
-        let receiver = arguments.first().copied().flatten()?;
-        match self.ty(receiver).kind(self.db) {
-            TypeKind::Struct(nominal)
-                if nominal.file == item.file(self.db)
-                    && tree.child(class, Role::Name) == Some(nominal.name)
-                    && nominal.arguments.len() == count =>
-            {
-                Some(nominal.arguments.clone())
+        let before_dot = self
+            .tree
+            .child(node, Role::Function)
+            .filter(|&function| self.tree.kind(function) == SyntaxKind::Attribute)
+            .and_then(|function| self.tree.child(function, Role::Value));
+        let receiver = arguments.first().copied().flatten();
+        before_dot.into_iter().chain(receiver).find_map(|value| {
+            match self.ty(value).kind(self.db) {
+                TypeKind::Struct(nominal)
+                    if nominal.file == item.file(self.db)
+                        && tree.child(class, Role::Name) == Some(nominal.name)
+                        && nominal.arguments.len() == count =>
+                {
+                    Some(nominal.arguments.clone())
+                }
+                _ => None,
             }
-            _ => None,
-        }
+        })
     }
 
     /// The receiver of the method call `node` when the checker found the method through
@@ -402,23 +410,29 @@ impl<'db> Builder<'db> {
 
     /// A place holding `argument` as the parameter type `ty`, to borrow. An argument that
     /// changes representation, such as an `f64` passed where `f64 | None` is borrowed, is
-    /// converted into a temporary first. `None` after reporting an argument of a type that is
-    /// not a copy type, since wrapping it would move or copy the caller's value.
-    fn borrow_as(&mut self, argument: NodeId, ty: types::Type<'db>) -> Option<Place> {
+    /// converted into a temporary first.
+    ///
+    /// An argument that is not a copy type, such as an `Array` passed where `Array[f64, 1] |
+    /// None` is borrowed (roadmap 1.9.29), is wrapped without moving it: the place that holds
+    /// it, or the temporary it is computed into and the statement drops, is copied bit for bit
+    /// into the wrapper, which is never dropped. The callee only reads the wrapper, so the
+    /// caller's value is freed once, by its owner, as a loop variable that borrows a tuple's
+    /// item is (the `collections` module). Cost: a copy of the value's header, never of its
+    /// elements.
+    fn borrow_as(&mut self, argument: NodeId, ty: types::Type<'db>) -> Place {
         let from = self.ty(argument);
         if !self.converts(from, ty) {
-            return Some(self.borrow(argument));
-        }
-        if !self.is_copy(from) {
-            self.unsupported(
-                argument,
-                "borrowing a value that is not a copy type as an optional",
-            );
-            return None;
+            return self.borrow(argument);
         }
         let temporary = self.temporary(ty, argument);
-        self.write(Place::from(temporary), ty, argument);
-        Some(Place::from(temporary))
+        if self.is_copy(from) {
+            self.write(Place::from(temporary), ty, argument);
+        } else {
+            let held = self.borrow(argument);
+            let wrapped = self.coerce(Operand::Copy(held), from, ty);
+            self.assign(Place::from(temporary), wrapped, argument);
+        }
+        Place::from(temporary)
     }
 
     /// The elements of a `Fixed` array that `node` writes, in row-major order, onto

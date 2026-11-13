@@ -36,8 +36,21 @@ fn read(path: &str, name: &str, pixel: Pixel, count: usize) -> Result<Vec<u8>, O
         .unwrap();
     let mut memory = vec![0_u8; count * pixel.size()];
     let selection = header.everything(variable);
-    read_variable(path, &header, (variable, &selection), pixel, &mut memory)?;
+    read_variable(
+        path,
+        &header,
+        (variable, &selection),
+        pixel,
+        &mut memory,
+        &mut refuse,
+    )?;
     Ok(memory)
+}
+
+/// Inflates nothing: these tests read no deflated chunk except to see it refused, since the
+/// runtime leaves inflating to the standard library's `zlib`.
+fn refuse(_: &[u8]) -> Result<Vec<u8>, String> {
+    Err("no inflated chunks were given".to_owned())
 }
 
 /// `memory` as `f32`s.
@@ -240,7 +253,15 @@ fn read_picked(path: &str, name: &str, items: &[Item], pixel: Pixel, count: usiz
     let selection = select(name, items, (&names, &lengths), record, None).unwrap();
     assert_eq!(selection.count(), count);
     let mut memory = vec![0_u8; count * pixel.size()];
-    read_variable(path, &header, (variable, &selection), pixel, &mut memory).unwrap();
+    read_variable(
+        path,
+        &header,
+        (variable, &selection),
+        pixel,
+        &mut memory,
+        &mut refuse,
+    )
+    .unwrap();
     memory
 }
 
@@ -337,17 +358,43 @@ fn a_netcdf4_file_reads_as_its_classic_twin() {
 }
 
 #[test]
-fn what_netcdf4_files_do_not_do_yet_is_refused() {
+fn deflated_chunks_are_listed_for_the_library_to_inflate() {
     let path = file("deflated", DEFLATED);
+    let header = read_header(&path).unwrap();
+    let chunks = |name: &str| {
+        let variable = header
+            .variables
+            .iter()
+            .find(|variable| variable.name == name)
+            .unwrap();
+        deflated_chunks(&path, &header, (variable, &header.everything(variable))).unwrap()
+    };
+    // `temp` is stored a record at a time, each chunk a zlib stream; the rest are plain.
+    let listed = chunks("temp");
+    assert_eq!(listed.len(), 2);
+    for (address, _) in &listed {
+        assert_eq!(DEFLATED[usize::try_from(*address).unwrap()], 0x78);
+    }
+    assert!(chunks("count").is_empty());
+    // A classic file's variables are never compressed.
+    let classic = file("undeflated", CLASSIC);
+    let header = read_header(&classic).unwrap();
+    let variable = &header.variables[0];
+    let listed = deflated_chunks(&classic, &header, (variable, &header.everything(variable)));
+    assert_eq!(listed.unwrap(), []);
+    // Without the chunks inflated, the read stops at the first one.
     let failure = read(&path, "temp", Pixel::F64, 12).unwrap_err();
     assert_eq!(failure.kind, ErrorKind::InvalidData);
     assert_eq!(
         failure.strerror,
-        "the NetCDF-4 variable temp is compressed, which is not read yet, in the HDF5 dataset temp"
+        "no inflated chunks were given, in the HDF5 dataset temp"
     );
-    // The variables stored plainly read as before.
     assert!(read(&path, "count", Pixel::F64, 2).is_ok());
-    let failure = define(&path, "D\tx\t3").unwrap_err();
+}
+
+#[test]
+fn writing_a_netcdf4_file_is_refused() {
+    let failure = define(&file("unwritten", NETCDF4), "D\tx\t3").unwrap_err();
     assert_eq!(
         failure.strerror,
         "the file is a NetCDF-4 (HDF5) file, which is not written yet"

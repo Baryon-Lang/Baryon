@@ -36,6 +36,10 @@ pub(crate) struct Objects {
     built: HashMap<String, Vec<u8>>,
     /// How many modules the latest build had `clang` compile.
     compiled: usize,
+    /// The `clang` the first build found, and the flag that links with `lld` where there is
+    /// one: asked once per watch rather than at every rebuild, since each question starts a
+    /// `clang`, about 25 ms.
+    tools: Option<(String, Option<&'static str>)>,
 }
 
 impl Objects {
@@ -123,7 +127,11 @@ pub(crate) fn link(
     kept: Option<&mut Objects>,
 ) -> Result<Linked, String> {
     let runtime = runtime()?;
-    let clang = find_clang()?;
+    let found = kept.as_ref().and_then(|kept| kept.tools.clone());
+    let clang = match &found {
+        Some((clang, _)) => clang.clone(),
+        None => find_clang()?,
+    };
     let scratch = env::temp_dir().join(format!("baryon-build-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let objects: Vec<PathBuf> = (0..modules.len())
@@ -131,31 +139,58 @@ pub(crate) fn link(
         .collect();
     let started = Instant::now();
     let mut compiled = started;
-    let lld = Lld::look(&clang);
-    let result = compile_objects(&clang, &scratch, modules, &objects, optimize, kept)
-        .and_then(|()| {
-            compiled = Instant::now();
-            let linker = lld.flag();
-            run_clang(&clang, |command| {
-                command
-                    .args(linker)
-                    .arg("-g")
-                    .args(&objects)
-                    .arg(MATH_LIBRARY)
-                    .arg(&runtime)
-                    .args(SYSTEM_LIBRARIES)
-                    .arg(DROP_UNUSED)
-                    .arg("-o")
-                    .arg(output);
-            })
-        })
-        .and_then(|()| {
-            if cfg!(target_os = "macos") {
-                dsymutil(output)
-            } else {
-                Ok(())
-            }
+    let lld = match &found {
+        Some(_) => Lld(None),
+        None => Lld::look(&clang),
+    };
+    let mut lld_flag = found.and_then(|(_, linker)| linker);
+    let result = compile_objects(
+        &clang,
+        &scratch,
+        modules,
+        &objects,
+        optimize,
+        kept.as_deref(),
+    )
+    .and_then(|count| {
+        compiled = Instant::now();
+        lld_flag = lld_flag.or_else(|| lld.flag());
+        let mut command = Command::new(&clang);
+        command
+            .args(lld_flag)
+            .arg("-g")
+            .args(&objects)
+            .arg(MATH_LIBRARY)
+            .arg(&runtime)
+            .args(SYSTEM_LIBRARIES)
+            .arg(DROP_UNUSED)
+            .arg("-o")
+            .arg(output)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        let linking = command
+            .spawn()
+            .map_err(|error| format!("{clang}: {error}"))?;
+        // The link only reads the object files, so the cache takes this build's machine code
+        // while it runs: hashing every module's text again costs about 20 ms on the 4,706-line
+        // program, which the link's 55 ms hides.
+        let kept = kept.map_or(Ok(()), |kept| {
+            kept.tools = Some((clang.clone(), lld_flag));
+            keep(kept, modules, &objects, count)
         });
+        let linked = linking
+            .wait_with_output()
+            .map_err(|error| format!("{clang}: {error}"))
+            .and_then(|finished| clang_failure(&clang, &finished));
+        linked.and(kept)
+    })
+    .and_then(|()| {
+        if cfg!(target_os = "macos") {
+            dsymutil(output)
+        } else {
+            Ok(())
+        }
+    });
     let linked = Instant::now();
     let _ = fs::remove_dir_all(&scratch);
     result.map(|()| Linked {
@@ -204,8 +239,8 @@ impl Lld {
 
 /// Writes each of `modules` into `scratch` and compiles it into the object file at the same
 /// position in `objects`, one `clang` per module, all running at once, and waits for every one.
-/// A module whose text `kept` holds gets its kept machine code written instead; afterwards
-/// `kept` holds this build's modules only, and how many of them `clang` compiled.
+/// A module whose text `kept` holds gets its kept machine code written instead. Returns how
+/// many modules `clang` compiled.
 ///
 /// # Errors
 ///
@@ -217,14 +252,14 @@ fn compile_objects(
     modules: &[String],
     objects: &[PathBuf],
     optimize: bool,
-    kept: Option<&mut Objects>,
-) -> Result<(), String> {
+    kept: Option<&Objects>,
+) -> Result<usize, String> {
     let written = |path: &Path, bytes: &[u8]| {
         fs::write(path, bytes).map_err(|error| format!("{}: {error}", path.display()))
     };
     let mut running = Vec::new();
     for (index, (module, object)) in modules.iter().zip(objects).enumerate() {
-        if let Some(bytes) = kept.as_ref().and_then(|kept| kept.built.get(module)) {
+        if let Some(bytes) = kept.and_then(|kept| kept.built.get(module)) {
             written(object, bytes)?;
             continue;
         }
@@ -257,20 +292,32 @@ fn compile_objects(
         })
         .collect();
     finished.into_iter().collect::<Result<(), String>>()?;
-    if let Some(kept) = kept {
-        let mut built = HashMap::with_capacity(modules.len());
-        for (module, object) in modules.iter().zip(objects) {
-            let bytes = match kept.built.remove(module) {
-                Some(bytes) => bytes,
-                None => {
-                    fs::read(object).map_err(|error| format!("{}: {error}", object.display()))?
-                }
-            };
-            built.insert(module.clone(), bytes);
-        }
-        kept.built = built;
-        kept.compiled = count;
+    Ok(count)
+}
+
+/// Makes `kept` hold the machine code of exactly `modules`, whose object files are at the same
+/// positions in `objects`, `compiled` of which `clang` compiled this build: a module `kept`
+/// already held keeps its bytes, and the others are read from their object files.
+///
+/// # Errors
+///
+/// Fails with a message when an object file cannot be read.
+fn keep(
+    kept: &mut Objects,
+    modules: &[String],
+    objects: &[PathBuf],
+    compiled: usize,
+) -> Result<(), String> {
+    let mut built = HashMap::with_capacity(modules.len());
+    for (module, object) in modules.iter().zip(objects) {
+        let bytes = match kept.built.remove(module) {
+            Some(bytes) => bytes,
+            None => fs::read(object).map_err(|error| format!("{}: {error}", object.display()))?,
+        };
+        built.insert(module.clone(), bytes);
     }
+    kept.built = built;
+    kept.compiled = compiled;
     Ok(())
 }
 
@@ -340,16 +387,6 @@ fn major_version(version: &str) -> Option<u32> {
         .next()?
         .parse()
         .ok()
-}
-
-/// Runs the `clang` named `clang` with the arguments `arguments` adds.
-fn run_clang(clang: &str, arguments: impl FnOnce(&mut Command)) -> Result<(), String> {
-    let mut command = Command::new(clang);
-    arguments(&mut command);
-    match command.output() {
-        Ok(finished) => clang_failure(clang, &finished),
-        Err(error) => Err(format!("{clang}: {error}")),
-    }
 }
 
 /// Nothing when the `clang` named `clang` that ended with `finished` succeeded, and otherwise
