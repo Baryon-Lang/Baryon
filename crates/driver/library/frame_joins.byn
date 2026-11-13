@@ -19,8 +19,11 @@ The file also holds `text_masked` and `text_taken`, which choose rows of a colum
 is `joined` for a column of `str`, and `text_codes`, which turns a column of `str` into
 integers in the same order, so that a sort by text is a sort by integers. `counted_values`
 counts for an array's `nunique`, and `valued_rows` and `id_counts` for a frame's
-`value_counts`. `group_rows` picks the row of each group whose text `agg` gives.
+`value_counts`. `group_rows` picks the row of each group whose text `agg` gives, and
+`statistic_names` and `described` make the columns of a frame's `describe`.
 """
+
+from math import fsum, isnan, nan, sqrt
 
 
 def joined[T: Number](left: Array[T, 1], right: Array[T, 1]) -> Array[T, 1]:
@@ -233,4 +236,43 @@ def group_rows(
             if how == 2 and values[other] > values[row]:
                 row = other
         result[group] = row
+    return Array(result)
+
+
+def statistic_names() -> Array[str, 1]:
+    """The column `statistic` of `describe`: the name of each number `described` gives, in
+    order, as pandas names them."""
+    return Array(["count", "mean", "std", "min", "25%", "50%", "75%", "max"])
+
+
+def described(column: Array[f64, 1]) -> Array[f64, 1]:
+    """The eight numbers `describe` gives for one column, a NaN left out as in pandas: how
+    many values there are, their mean, their sample standard deviation, which divides by one
+    less than the count and is NaN for one value, the smallest, the quartiles and the
+    largest. A quartile that falls between two values is taken on the line between them, as
+    NumPy's `percentile` takes it. With no values the count is 0 and the rest are NaN.
+    Cost: one copy of the values and a sort of it."""
+    values = sorted([value for value in column if not isnan(value)])
+    count = len(values)
+    result = [nan for at in range(8)]
+    result[0] = f64(count)
+    if count == 0:
+        return Array(result)
+    mean = fsum(values) / f64(count)
+    result[1] = mean
+    if count > 1:
+        squares = fsum([(value - mean) * (value - mean) for value in values])
+        result[2] = sqrt(squares / f64(count - 1))
+    result[3] = values[0]
+    for quarter in range(1, 4):
+        at = 0.25 * f64(quarter) * f64(count - 1)
+        low = int(at)
+        high = min(low + 1, count - 1)
+        part = at - f64(low)
+        gap = values[high] - values[low]
+        if part < 0.5:
+            result[3 + quarter] = values[low] + gap * part
+        else:
+            result[3 + quarter] = values[high] - gap * (1.0 - part)
+    result[7] = values[count - 1]
     return Array(result)
