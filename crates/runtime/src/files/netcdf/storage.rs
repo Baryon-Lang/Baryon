@@ -44,6 +44,13 @@ pub(super) fn slot(header: &Header, variable: &Variable) -> usize {
 /// Reads the whole file at `path` into memory.
 pub(super) fn load(path: &str) -> Result<Contents, OsFailure> {
     let header = read_header(path)?;
+    if header.netcdf4.is_some() {
+        return Err(OsFailure::new(
+            ErrorKind::InvalidData,
+            "the file is a NetCDF-4 (HDF5) file, which is not written yet",
+            path,
+        ));
+    }
     let failed = |error: io::Error| OsFailure::from_io(&error, path);
     let mut file = fs::File::open(path).map_err(failed)?;
     let length = file.metadata().map_err(failed)?.len();
