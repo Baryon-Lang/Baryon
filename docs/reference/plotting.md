@@ -8,8 +8,8 @@ labels the ticks, as `matplotlib.ticker` does. These two are the modules a progr
 `colors` reads color names, `cm` holds the colormaps, `artist` holds what an axes draws,
 `transforms` finds the ranges it shows, `figure` lays a grid of axes out and draws them, `axis`
 draws an axis's ticks and labels, `legend`, `image` and `colorbar` draw a legend, an image and a
-colorbar, `backend_svg` writes the SVG file, and `png` the PNG images inside it. They are internal, so a program's own `colors.byn` or
-`image.byn` is never hidden by them.
+colorbar, `backend_svg` writes the SVG file, and `png` the PNG images inside it. They are
+internal, so a program's own `colors.byn` or `image.byn` is never hidden by them.
 
 This chapter covers what builds today, roadmap 3.15.1 to 3.15.4: line plots, scatter plots,
 bars, histograms, error bars, filled areas, text, markers, legends, grid lines, images and
@@ -256,7 +256,8 @@ same legend, since it is laid out when the plot is saved.
 
 Left out, or `""`, each line takes the next color of the cycle, as matplotlib's `color=None`
 does. Lines have one cycle, and `scatter`, `bar` and `hist` share another, as in matplotlib: a
-plot's first line and its first bars are both blue. A borrowed `str | None` parameter does not build yet, so `""` stands for "none" here.
+plot's first line and its first bars are both blue. A borrowed `str | None` parameter does not
+build yet, so `""` stands for "none" here.
 
 `linestyle` is `"-"` or `"solid"`, `"--"` or `"dashed"`, `":"` or `"dotted"`, and `"-."` or
 `"dashdot"`. Dashes are matplotlib's, measured in line widths, so a thicker line has longer
