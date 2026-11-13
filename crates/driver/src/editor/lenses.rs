@@ -26,7 +26,8 @@ impl Session {
     /// use driver::Session;
     ///
     /// let mut session = Session::new();
-    /// let text = "@test\ndef test_flux():\n    assert 2 + 2 == 4\n\ndef flux() -> f64:\n    return 1.0\n";
+    /// let text = "@test\ndef test_flux():\n    assert 2 + 2 == 4\n\n\
+    ///             def flux() -> f64:\n    return 1.0\n";
     /// let file = session.add_file("heat.byn", text)?;
     /// let lenses = session.test_lenses(file);
     /// assert_eq!(lenses.len(), 1);
