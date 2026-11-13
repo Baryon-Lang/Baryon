@@ -87,7 +87,13 @@ impl<'db> Body<'db> {
         };
         let found = self.expression(rows, wanted);
         match found.kind(self.db) {
-            &TypeKind::List(row) => self.lowerer.frame_of(rows, row),
+            &TypeKind::List(row) => {
+                let frame = self.lowerer.frame_of(rows, row);
+                if self.has_text_column(frame) {
+                    return self.text_column_unbuilt(rows, "`DataFrame(rows)`");
+                }
+                frame
+            }
             _ if relations::is_open(self.db, found) => self.lowerer.unknown(),
             _ => {
                 let message = format!(
@@ -147,6 +153,7 @@ impl<'db> Body<'db> {
         self.consume(value, found);
         let element = match *found.kind(self.db) {
             TypeKind::Array { element, rank: 1 } if is_column(self.db, element) => element,
+            TypeKind::TextArray => Type::new(self.db, TypeKind::Str),
             _ if relations::is_open(self.db, found) => return None,
             TypeKind::Array { element, rank: 1 } => {
                 let message = format!(
@@ -207,6 +214,12 @@ impl<'db> Body<'db> {
         };
         let index = self.tree.child(node, Role::Index)?;
         let Some(name) = self.literal_text(index) else {
+            if self.has_text_column(base) {
+                self.expression(index, None);
+                return Some(
+                    self.text_column_unbuilt(node, "choosing rows or columns with `[...]`"),
+                );
+            }
             let chosen = self.frame_select(index, base);
             return Some(chosen.unwrap_or_else(|| self.frame_row(index, base, *row)));
         };
@@ -364,10 +377,10 @@ impl<'db> Body<'db> {
         );
     }
 
-    /// The type of a column read from a frame: an array of rank 1 of the column's elements.
+    /// The type of a column read from a frame: an array of rank 1 of the column's elements,
+    /// or a text array for a column of `str`.
     fn column_type(&self, column: &Column<'db>) -> Type<'db> {
-        let element = column.element;
-        Type::new(self.db, TypeKind::Array { element, rank: 1 })
+        column.array(self.db)
     }
 
     /// Reports `name` read from the frame type `base`, which has no such column, and lists
@@ -395,6 +408,10 @@ impl<'db> Body<'db> {
         callee: &str,
         arguments: &Arguments,
     ) -> Type<'db> {
+        if self.has_text_column(base) && callee != "copy" {
+            self.untyped(arguments);
+            return self.text_column_unbuilt(function, &format!("the method `{callee}`"));
+        }
         if let Some(rows) = self.rows_method(function, base, callee, arguments) {
             return rows;
         }

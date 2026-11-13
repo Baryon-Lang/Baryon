@@ -53,6 +53,9 @@ impl<'db> Body<'db> {
             .tree
             .child(node, Role::Function)
             .and_then(|function| self.tree.child(function, Role::Value));
+        if self.has_text_column(base) {
+            return Some(self.text_column_grouped(node, grouping, arguments));
+        }
         let keys = match grouping.map(|grouping| self.arguments(grouping)) {
             Some(Arguments {
                 positional,
@@ -138,13 +141,7 @@ impl<'db> Body<'db> {
             arguments: vec![Some(Key(frame))],
         };
         self.typed.calls.insert(Key(node), call);
-        Some(Type::new(
-            self.db,
-            TypeKind::DataFrame {
-                columns: result,
-                row: None,
-            },
-        ))
+        Some(self.frame_of_columns(result))
     }
 
     /// The element type of the column one argument of `agg` gives, `value` being

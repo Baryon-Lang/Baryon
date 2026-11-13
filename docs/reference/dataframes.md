@@ -58,8 +58,9 @@ class Trade(Struct):
 def load() -> DataFrame[Trade]: ...
 ```
 
-A column holds numbers of any number type, or `bool`s. Text columns and missing values are
-roadmap items 3.13.3 and 3.13.6.
+A column holds numbers of any number type, `bool`s, or `str`s. A column of `str` is a
+[text array](text-arrays.md#in-a-dataframe), and a frame that has one can do less today than
+a frame of numbers: that page lists what. Missing values are roadmap item 3.13.6.
 
 Two frame types are the same when their columns have the same names and types in the same
 order. The struct only names them: a frame built from the columns `price: f64` and

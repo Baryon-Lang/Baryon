@@ -2,8 +2,8 @@
 
 `Array[str, 1]` is a text array: a one-dimensional array whose elements are strings. It is the
 one array whose elements are not a [copy type](values-and-references.md#copy-types), and it is
-what a text column of a [`DataFrame`](dataframes.md) will be
-([decision 0045](../decisions/0045-dataframe.md)).
+what a text column of a [`DataFrame`](dataframes.md) is
+([decision 0045](../decisions/0045-dataframe.md)): see [In a DataFrame](#in-a-dataframe).
 
 This chapter covers what a text array does today: it is built from a list, counted, read one
 element at a time, looped over and copied. The rest is roadmap item 3.13.3, and the compiler
@@ -103,6 +103,42 @@ After `moved = names`, reading `names` is a compile error; `kept` and `moved` ar
 A text array can be a parameter, a return value, an item of a list or a tuple, a value of a
 dict, and a `T | None`.
 
+## In a DataFrame
+
+A field of type `str` in a frame's schema is a text column: `df.symbol` is an `Array[str, 1]`.
+The frame is built from its columns, as any frame is, and the text array moves into it:
+
+```python
+class Trade(Struct):
+    symbol: str
+    price: f64
+
+
+def main():
+    symbols = Array(["IBM", "AAPL", "MSFT"])
+    trades: DataFrame[Trade] = DataFrame({"symbol": symbols, "price": Array([3.0, 1.0, 2.0])})
+    print(len(trades), trades.shape, trades.columns)
+    cheapest = 0
+    for i in range(len(trades)):
+        if trades.price[i] < trades.price[cheapest]:
+            cheapest = i
+    print(trades.symbol[cheapest])
+```
+
+This prints `3 (3, 2) ['symbol', 'price']` and then `AAPL`. A text column of another length
+than the frame's other columns panics when the frame is built, as a column of numbers does.
+
+Everything this page says of a text array holds for the column: `len(trades.symbol)`,
+`trades.symbol[i]`, `for symbol in trades.symbol`, and `trades.symbol.copy()` to keep it apart
+from the frame. `trades.symbol = Array(words)` replaces the whole column, and panics when the
+new array has another length. `trades.copy()` copies the text with the numbers.
+
+A frame that has a text column is built from its columns, counted, copied, passed and returned
+today. Every other use of it is a compile error for now and comes with the rest of roadmap item
+3.13.3: `DataFrame(rows)`, rows (`df[i]` and `itertuples`), choosing rows or columns with
+`[...]`, `head`, `tail`, `assign`, `drop`, `rename`, `sort_values`, `groupby`, `merge`,
+`drop_duplicates`, `concat`, and `print` of the frame. A frame of numbers keeps all of these.
+
 ## What is not built yet
 
 Each of these is a compile error today, and the rest of roadmap item 3.13.3:
@@ -117,4 +153,5 @@ Each of these is a compile error today, and the rest of roadmap item 3.13.3:
 - **Showing one**: `print(names)`, `str(names)` and `f"{names}"`. Print the elements in a loop.
 - **A struct field** of type `Array[str, 1]`. Hold a `list[str]` in the struct, or pass the
   array beside it.
-- **A text column of a `DataFrame`**, which is the next piece of the same roadmap item.
+- **Most uses of a frame that has a text column**, listed under
+  [In a DataFrame](#in-a-dataframe).

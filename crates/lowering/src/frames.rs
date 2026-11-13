@@ -1,6 +1,6 @@
 //! Frames (decision 0045): a `DataFrame` is stored as a tuple of its columns, each an `Array`
-//! of rank 1, so this module is the only place after the checker that knows a frame from a
-//! tuple.
+//! of rank 1, or the two buffers of a text array for a column of `str`, so this module is the
+//! only place after the checker that knows a frame from a tuple.
 //!
 //! [`erase`] replaces every frame type by its tuple. The builder applies it to each type it
 //! takes from the checker, so the body it builds, and with it every later stage, stores,
@@ -155,11 +155,19 @@ impl<'db> Builder<'db> {
     /// The number of rows of the frame `value`: the length of its first column, since all
     /// its columns have one length.
     pub(crate) fn frame_length(&mut self, value: NodeId, node: NodeId) -> Operand<'db> {
+        let stored = self.stored_columns(self.ty(value));
         let frame = self.borrow(value);
         let first = frame.project(Projection::Field(0));
-        let length = self.temporary(self.int_type(), node);
-        self.assign(Place::from(length), Rvalue::Length(first, 0), node);
-        Operand::Copy(Place::from(length))
+        self.column_length(first, stored.first().copied(), node)
+    }
+
+    /// The types of the columns of a frame as it is stored, `ty` being its erased type: the
+    /// items of its tuple. Empty when `ty` is not a tuple.
+    fn stored_columns(&self, ty: Type<'db>) -> Vec<Type<'db>> {
+        match ty.kind(self.db) {
+            TypeKind::Tuple(columns) => columns.clone(),
+            _ => Vec::new(),
+        }
     }
 
     /// `DataFrame({"price": prices, "volume": volumes})` into `place`: the arrays move into
@@ -176,18 +184,16 @@ impl<'db> Builder<'db> {
             };
             columns.push(self.operand(value));
         }
-        let count = u32::try_from(columns.len()).unwrap_or(u32::MAX);
         self.assign(place.clone(), Rvalue::Aggregate(ty, columns), node);
-        let length = |builder: &mut Self, position: u32| {
-            let local = builder.temporary(builder.int_type(), node);
-            let column = place.clone().project(Projection::Field(position));
-            builder.assign(Place::from(local), Rvalue::Length(column, 0), node);
-            Operand::Copy(Place::from(local))
-        };
-        let first = length(self, 0);
-        for position in 1..count {
-            let found = length(self, position);
-            self.same_length(0, first.clone(), found, node);
+        let stored = self.stored_columns(ty);
+        let mut first = None;
+        for (position, &column) in (0_u32..).zip(&stored) {
+            let field = place.clone().project(Projection::Field(position));
+            let found = self.column_length(field, Some(column), node);
+            match &first {
+                Some(first) => self.same_length(0, Operand::clone(first), found, node),
+                None => first = Some(found),
+            }
         }
     }
 
@@ -208,13 +214,8 @@ impl<'db> Builder<'db> {
         };
         let new = self.temporary(ty, value);
         self.write(Place::from(new), ty, value);
-        let length = |builder: &mut Self, array: Place| {
-            let local = builder.temporary(builder.int_type(), target);
-            builder.assign(Place::from(local), Rvalue::Length(array, 0), target);
-            Operand::Copy(Place::from(local))
-        };
-        let expected = length(self, column.clone());
-        let found = length(self, Place::from(new));
+        let expected = self.column_length(column.clone(), Some(ty), target);
+        let found = self.column_length(Place::from(new), Some(ty), target);
         self.same_length(0, expected, found, target);
         self.replace(column, Operand::Move(Place::from(new)), target);
     }
@@ -229,10 +230,27 @@ impl<'db> Builder<'db> {
         let mut columns = Vec::with_capacity(arrays.len());
         for (position, &array) in (0_u32..).zip(arrays) {
             let column = source.clone().project(Projection::Field(position));
-            let copy = self.copy_view(column, array, node);
-            columns.push(Operand::Move(Place::from(copy)));
+            columns.push(self.column_copy(column, array, node));
         }
         self.assign(place, Rvalue::Aggregate(ty, columns), node);
+    }
+
+    /// A copy of the column at `column`, stored as `stored`: a copy of the array, or of both
+    /// buffers of a text column, which is stored as a tuple of the two.
+    fn column_copy(&mut self, column: Place, stored: Type<'db>, node: NodeId) -> Operand<'db> {
+        let TypeKind::Tuple(buffers) = stored.kind(self.db) else {
+            let copy = self.copy_view(column, stored, node);
+            return Operand::Move(Place::from(copy));
+        };
+        let mut copies = Vec::with_capacity(buffers.len());
+        for (position, &buffer) in (0_u32..).zip(buffers) {
+            let source = column.clone().project(Projection::Field(position));
+            let copy = self.copy_view(source, buffer, node);
+            copies.push(Operand::Move(Place::from(copy)));
+        }
+        let whole = self.temporary(stored, node);
+        self.assign(Place::from(whole), Rvalue::Aggregate(stored, copies), node);
+        Operand::Move(Place::from(whole))
     }
 
     /// Whether `node` reads a row of a frame, `df[i]`: a subscript of a frame that names no

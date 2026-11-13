@@ -72,7 +72,9 @@ impl<'db> Body<'db> {
     /// Reports a text array, or a value that holds one, shown by `print`, `str` or an
     /// f-string at `node`, which cannot write one yet.
     pub(super) fn shows_no_text_array(&mut self, node: NodeId, ty: Type<'db>) {
-        if super::relations::holds_text_array(self.db, ty) {
+        if self.has_text_column(ty) {
+            self.text_column_unbuilt(node, "showing it");
+        } else if super::relations::holds_text_array(self.db, ty) {
             self.lowerer.error(
                 node,
                 "an array of `str` cannot be shown yet",
