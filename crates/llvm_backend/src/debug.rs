@@ -51,6 +51,25 @@ impl Debug {
         }
     }
 
+    /// No subprograms yet, with the same directory and compile unit file: the debug
+    /// information of one definition. The C `main`'s subprogram sits in the compile unit's
+    /// file, so it needs that file from the module.
+    pub(crate) fn local(&self) -> Self {
+        Self {
+            directory: self.directory.clone(),
+            subprograms: Vec::new(),
+            first_file: self.first_file,
+        }
+    }
+
+    /// Takes the file the compile unit names from `written`, a definition's debug information,
+    /// when no earlier definition gave one.
+    pub(crate) fn adopt(&mut self, written: &Self) {
+        if self.first_file.is_none() {
+            self.first_file = written.first_file;
+        }
+    }
+
     /// How many subprograms there are, to [`roll_back`](Self::roll_back) to.
     pub(crate) fn mark(&self) -> usize {
         self.subprograms.len()
@@ -144,18 +163,7 @@ impl Debug {
         )
     }
 
-    /// The compile unit, the module flags and every subprogram, one definition per line.
-    pub(crate) fn finish(&self, sources: &dyn Sources) -> String {
-        let mut text = self.header(sources);
-        for (_, subprogram) in &self.subprograms {
-            text.push_str(subprogram);
-            text.push('\n');
-        }
-        text
-    }
-
-    /// Each subprogram node by its number, for a module that carries only the ones its
-    /// functions point to (the `split` module).
+    /// Each subprogram node by its number, in the order they were made.
     pub(crate) fn nodes(&self) -> impl Iterator<Item = (usize, &str)> {
         self.subprograms
             .iter()

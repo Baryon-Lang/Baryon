@@ -1,13 +1,14 @@
-//! Writing one module of a program split into several (roadmap 2.6 and 2.2.2): the module holds
-//! some of the program's functions, and only the constants, declarations and metadata nodes
-//! those functions point to, numbered afresh in the order they are first pointed to.
+//! Writing a module from definitions written apart (roadmap 2.2.2): the module holds some of
+//! the program's functions, or all of them, and only the constants, declarations and metadata
+//! nodes those functions made.
 //!
-//! The renumbering is what lets `baryon watch` skip `clang` for a module an edit did not
-//! reach. The backend numbers constants (`@baryon.str.N`) and metadata nodes (`!N`) across the
-//! whole program in the order it makes them, so a new message in one function would shift the
-//! number of every constant made after it, and change the text of every module that points to
-//! one. Numbered within the module, a module's text depends only on its own functions: the
-//! same functions give the same text, byte for byte, whatever the rest of the program does.
+//! Each definition numbers its own constants (`@baryon.str.N`) and metadata nodes (`!N`) from
+//! the start, so its text never depends on another definition's. This module numbers them
+//! again for the module that holds them, in the order the definitions made them, and writes a
+//! constant two definitions both made once. That is what lets `baryon watch` skip `clang` for
+//! a module an edit did not reach: the same functions give the same module text, byte for
+//! byte, whatever the rest of the program does. It also means a definition's text can be kept
+//! and reused, or written on another thread, without asking the others for numbers.
 //!
 //! The numbers are found by reading the functions' text. A constant's name is
 //! `@baryon.<kind>.N`, where the kind is `str`, `loc`, `spec`, `dict` or `dict.parts`; a dict
@@ -16,21 +17,19 @@
 //! between quotes, where a message or a file name could hold any characters: inside quotes,
 //! the backend writes a quote itself as `\22`.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
-/// Every constant and metadata node of a program, apart, for [`module`] to choose from.
+/// The constants and metadata nodes one definition made, numbered within it: what
+/// [`module`] numbers again for the module that holds the definition.
 pub(crate) struct Pieces {
     /// Each constant's definition, one or two lines without the final newline; its number is
     /// its position.
     pub(crate) constants: Vec<String>,
-    /// The compile unit and module flags, `!0` to `!2`, which every module carries when the
-    /// program has debug information; empty otherwise.
-    pub(crate) header: String,
-    /// Each numbered metadata node by its number: the subprograms and the loop nodes.
-    pub(crate) nodes: BTreeMap<usize, String>,
-    /// The metadata numbers kept as they are, those of the header: 3 with debug information,
-    /// 0 without.
-    pub(crate) reserved: usize,
+    /// Each subprogram node with its number.
+    pub(crate) subprograms: Vec<(usize, String)>,
+    /// Each loop metadata node with its number. The subprograms and loop nodes together take
+    /// the numbers from the reserved ones up, in the order they were made.
+    pub(crate) loops: Vec<(usize, String)>,
 }
 
 /// The prefixes of the constants' names, longest first so `dict.parts` is not read as `dict`.
@@ -42,38 +41,83 @@ const CONSTANT_PREFIXES: [&str; 5] = [
     "@baryon.spec.",
 ];
 
-/// The text of the module holding the functions `texts`, in order, then the constants they
-/// point to, then `declarations`, the declarations of what they call that the module does not
-/// define, then the metadata nodes they point to. The layout is the one
-/// [`Module::finish`](crate::Module::finish) writes for a whole program.
+/// A number no constant has, which a constant's own name takes while it is compared with the
+/// constants already written.
+const ITSELF: usize = usize::MAX;
+
+/// The text of the module holding `definitions`, each a function's text and the pieces it
+/// made, in order: the functions, then their constants, then `declarations`, the declarations
+/// of what they call that the module does not define, then `header`, the compile unit and
+/// module flags, which take the metadata numbers below `reserved`, then the subprograms and
+/// the loop nodes.
 ///
-/// Cost: one pass over the functions' text, and over each constant and node the module holds.
+/// Constants and nodes are numbered in the order the definitions made them, and a constant two
+/// definitions both made is written once, under the first one's number. For a whole program
+/// that is the numbering one shared set of constants would give.
+///
+/// Cost: one pass over the functions' text, and over each constant and node.
 pub(crate) fn module<'t>(
-    texts: impl Iterator<Item = &'t str>,
+    definitions: impl Iterator<Item = (&'t str, &'t Pieces)>,
     declarations: impl Iterator<Item = &'t str>,
-    pieces: &Pieces,
+    header: &str,
+    reserved: usize,
 ) -> String {
-    let mut renumber = Renumber {
-        constants: Numbering::new(0),
-        nodes: Numbering::new(pieces.reserved),
-    };
     let mut text = String::new();
-    for (index, function) in texts.enumerate() {
+    let mut constants = String::new();
+    let mut subprograms = String::new();
+    let mut loops = String::new();
+    let mut written: HashMap<String, usize> = HashMap::new();
+    let mut next_node = reserved;
+    for (index, (function, pieces)) in definitions.enumerate() {
+        let mut nodes: HashMap<usize, usize> = HashMap::new();
+        let mut made: Vec<_> = pieces.subprograms.iter().chain(&pieces.loops).collect();
+        made.sort_by_key(|(number, _)| *number);
+        for (number, _) in made {
+            nodes.insert(*number, next_node);
+            next_node += 1;
+        }
+        let node = |old: usize| nodes.get(&old).copied().unwrap_or(old);
+        let mut numbers: Vec<usize> = Vec::with_capacity(pieces.constants.len());
+        for (own, constant) in pieces.constants.iter().enumerate() {
+            let mut key = String::new();
+            let mapped = |old: usize| {
+                if old == own {
+                    ITSELF
+                } else {
+                    numbers.get(old).copied().unwrap_or(old)
+                }
+            };
+            rewrite(constant, &mut key, mapped, node);
+            if let Some(&number) = written.get(&key) {
+                numbers.push(number);
+                continue;
+            }
+            let number = written.len();
+            let mut final_text = String::new();
+            rewrite(
+                &key,
+                &mut final_text,
+                |old| if old == ITSELF { number } else { old },
+                |old| old,
+            );
+            constants.push_str(&final_text);
+            constants.push('\n');
+            written.insert(key, number);
+            numbers.push(number);
+        }
         if index > 0 {
             text.push('\n');
         }
-        renumber.rewrite(function, &mut text);
-    }
-    let mut constants = String::new();
-    let mut written = 0;
-    // Writing a constant can point to one not yet written, as a location points to its file
-    // name, which then takes the next number and is written in its turn.
-    while let Some(&old) = renumber.constants.order.get(written) {
-        if let Some(definition) = pieces.constants.get(old) {
-            renumber.rewrite(definition, &mut constants);
-            constants.push('\n');
+        let constant = |old: usize| numbers.get(old).copied().unwrap_or(old);
+        rewrite(function, &mut text, constant, node);
+        for (_, subprogram) in &pieces.subprograms {
+            rewrite(subprogram, &mut subprograms, |old| old, node);
+            subprograms.push('\n');
         }
-        written += 1;
+        for (_, node_text) in &pieces.loops {
+            rewrite(node_text, &mut loops, |old| old, node);
+            loops.push('\n');
+        }
     }
     if !constants.is_empty() {
         text.push('\n');
@@ -87,15 +131,7 @@ pub(crate) fn module<'t>(
             text.push('\n');
         }
     }
-    let mut metadata = pieces.header.clone();
-    let mut written = 0;
-    while let Some(&old) = renumber.nodes.order.get(written) {
-        if let Some(node) = pieces.nodes.get(&old) {
-            renumber.rewrite(node, &mut metadata);
-            metadata.push('\n');
-        }
-        written += 1;
-    }
+    let metadata = [header, &subprograms, &loops].concat();
     if !metadata.is_empty() {
         text.push('\n');
         text.push_str(&metadata);
@@ -115,106 +151,63 @@ pub(crate) fn declared<'d>(
         .collect()
 }
 
-/// New numbers for one kind of name, given in the order the old ones are first met.
-struct Numbering {
-    /// The numbers below this keep their own.
-    reserved: usize,
-    /// The new number of each old one met so far.
-    new: HashMap<usize, usize>,
-    /// The old numbers in the order they were met; one's new number is its position plus
-    /// `reserved`.
-    order: Vec<usize>,
-}
-
-impl Numbering {
-    /// No numbers met yet; those below `reserved` are kept.
-    fn new(reserved: usize) -> Self {
-        Self {
-            reserved,
-            new: HashMap::new(),
-            order: Vec::new(),
-        }
-    }
-
-    /// The new number of `old`, given now if it is met for the first time.
-    fn number(&mut self, old: usize) -> usize {
-        if old < self.reserved {
-            return old;
-        }
-        let next = self.reserved + self.order.len();
-        *self.new.entry(old).or_insert_with(|| {
-            self.order.push(old);
-            next
-        })
-    }
-}
-
-/// The two numberings of one module.
-struct Renumber {
-    /// The constants', `@baryon.str.N` and the rest.
-    constants: Numbering,
-    /// The metadata nodes', `!N`.
-    nodes: Numbering,
-}
-
-impl Renumber {
-    /// Appends `text` to `out` with each constant's and node's number replaced by its new one.
-    fn rewrite(&mut self, text: &str, out: &mut String) {
-        let bytes = text.as_bytes();
-        let mut copied = 0;
-        let mut index = 0;
-        while let Some(offset) = bytes[index..]
-            .iter()
-            .position(|&byte| matches!(byte, b'"' | b'@' | b'!'))
-        {
-            let at = index + offset;
-            index = at + 1;
-            let (start, nodes) = match bytes[at] {
-                b'"' => {
-                    // Skip to the closing quote; a quote inside is written `\22`.
-                    index = bytes[index..]
-                        .iter()
-                        .position(|&byte| byte == b'"')
-                        .map_or(bytes.len(), |end| index + end + 1);
-                    continue;
-                }
-                b'!' => (at + 1, true),
-                _ => match CONSTANT_PREFIXES
+/// Appends `text` to `out` with each constant's number replaced by `constant` of it, and each
+/// metadata node's by `node` of it.
+fn rewrite(
+    text: &str,
+    out: &mut String,
+    mut constant: impl FnMut(usize) -> usize,
+    mut node: impl FnMut(usize) -> usize,
+) {
+    let bytes = text.as_bytes();
+    let mut copied = 0;
+    let mut index = 0;
+    while let Some(offset) = bytes[index..]
+        .iter()
+        .position(|&byte| matches!(byte, b'"' | b'@' | b'!'))
+    {
+        let at = index + offset;
+        index = at + 1;
+        let (start, is_node) = match bytes[at] {
+            b'"' => {
+                // Skip to the closing quote; a quote inside is written `\22`.
+                index = bytes[index..]
                     .iter()
-                    .find(|prefix| text[at..].starts_with(*prefix))
-                {
-                    Some(prefix) => (at + prefix.len(), false),
-                    None => continue,
-                },
-            };
-            let digits = bytes[start..]
-                .iter()
-                .take_while(|byte| byte.is_ascii_digit())
-                .count();
-            let Ok(old) = text[start..start + digits].parse::<usize>() else {
+                    .position(|&byte| byte == b'"')
+                    .map_or(bytes.len(), |end| index + end + 1);
                 continue;
-            };
-            let numbering = if nodes {
-                &mut self.nodes
-            } else {
-                &mut self.constants
-            };
-            out.push_str(&text[copied..start]);
-            out.push_str(&numbering.number(old).to_string());
-            copied = start + digits;
-            index = copied;
-        }
-        out.push_str(&text[copied..]);
+            }
+            b'!' => (at + 1, true),
+            _ => match CONSTANT_PREFIXES
+                .iter()
+                .find(|prefix| text[at..].starts_with(*prefix))
+            {
+                Some(prefix) => (at + prefix.len(), false),
+                None => continue,
+            },
+        };
+        let digits = bytes[start..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count();
+        let Ok(old) = text[start..start + digits].parse::<usize>() else {
+            continue;
+        };
+        let new = if is_node { node(old) } else { constant(old) };
+        out.push_str(&text[copied..start]);
+        out.push_str(&new.to_string());
+        copied = start + digits;
+        index = copied;
     }
+    out.push_str(&text[copied..]);
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Pieces, module};
-    use std::collections::BTreeMap;
 
-    /// Two constants, a location pointing to a file name, and a debug header with one
-    /// subprogram and one loop node.
+    /// A function's pieces: a file name, a location pointing to it, a message holding text
+    /// that looks like a name, a subprogram and a loop node.
     fn pieces() -> Pieces {
         Pieces {
             constants: vec![
@@ -222,28 +215,30 @@ mod tests {
                 "@baryon.loc.1 = { ptr @baryon.str.0 }".to_owned(),
                 "@baryon.str.2 = c\"see @baryon.str.0 !7\"".to_owned(),
             ],
-            header: "!0 = unit\n".to_owned(),
-            nodes: BTreeMap::from([
-                (5, "!5 = distinct !DISubprogram(unit: !0)".to_owned()),
-                (6, "!6 = distinct !{!6}".to_owned()),
-            ]),
-            reserved: 3,
+            subprograms: vec![(3, "!3 = distinct !DISubprogram(unit: !0)".to_owned())],
+            loops: vec![(4, "!4 = distinct !{!4}".to_owned())],
         }
     }
 
     #[test]
-    fn a_module_numbers_what_it_points_to_from_zero() {
+    fn one_definition_keeps_its_numbers() {
+        let pieces = pieces();
         let text = module(
-            ["f !dbg !5 @baryon.str.2 @baryon.loc.1 !llvm.loop !6"].into_iter(),
+            [(
+                "f !dbg !3 @baryon.str.2 @baryon.loc.1 !llvm.loop !4",
+                &pieces,
+            )]
+            .into_iter(),
             ["declare void @g()"].into_iter(),
-            &pieces(),
+            "!0 = unit\n",
+            3,
         );
         assert_eq!(
             text,
-            "f !dbg !3 @baryon.str.0 @baryon.loc.1 !llvm.loop !4\n\
-             @baryon.str.0 = c\"see @baryon.str.0 !7\"\n\
-             @baryon.loc.1 = { ptr @baryon.str.2 }\n\
-             @baryon.str.2 = c\"heat.byn\"\n\
+            "f !dbg !3 @baryon.str.2 @baryon.loc.1 !llvm.loop !4\n\
+             @baryon.str.0 = c\"heat.byn\"\n\
+             @baryon.loc.1 = { ptr @baryon.str.0 }\n\
+             @baryon.str.2 = c\"see @baryon.str.0 !7\"\n\
              \n\
              declare void @g()\n\
              \n\
@@ -254,30 +249,68 @@ mod tests {
     }
 
     #[test]
-    fn a_module_leaves_out_what_it_does_not_point_to() {
-        let text = module(["f @baryon.str.0"].into_iter(), [].into_iter(), &pieces());
+    fn a_second_definition_shares_equal_constants_and_numbers_after_the_first() {
+        let first = pieces();
+        let second = Pieces {
+            constants: vec![
+                "@baryon.str.0 = c\"heat.byn\"".to_owned(),
+                "@baryon.loc.1 = { ptr @baryon.str.0 }".to_owned(),
+                "@baryon.str.2 = c\"new\"".to_owned(),
+            ],
+            subprograms: vec![(3, "!3 = distinct !DISubprogram(unit: !0)".to_owned())],
+            loops: Vec::new(),
+        };
+        let text = module(
+            [
+                ("f !dbg !3 !llvm.loop !4", &first),
+                ("g !dbg !3 @baryon.loc.1 @baryon.str.2", &second),
+            ]
+            .into_iter(),
+            [].into_iter(),
+            "!0 = unit\n",
+            3,
+        );
         assert_eq!(
             text,
-            "f @baryon.str.0\n@baryon.str.0 = c\"heat.byn\"\n\n!0 = unit\n"
+            "f !dbg !3 !llvm.loop !4\n\
+             g !dbg !5 @baryon.loc.1 @baryon.str.3\n\
+             @baryon.str.0 = c\"heat.byn\"\n\
+             @baryon.loc.1 = { ptr @baryon.str.0 }\n\
+             @baryon.str.2 = c\"see @baryon.str.0 !7\"\n\
+             @baryon.str.3 = c\"new\"\n\
+             \n\
+             !0 = unit\n\
+             !3 = distinct !DISubprogram(unit: !0)\n\
+             !5 = distinct !DISubprogram(unit: !0)\n\
+             !4 = distinct !{!4}\n"
         );
     }
 
     #[test]
     fn a_dict_layout_keeps_one_number_for_its_two_names() {
-        let pieces = Pieces {
+        let first = Pieces {
+            constants: vec!["@baryon.str.0 = c\"x\"".to_owned()],
+            subprograms: Vec::new(),
+            loops: Vec::new(),
+        };
+        let second = Pieces {
             constants: vec![
-                "@baryon.str.0 = c\"x\"".to_owned(),
-                "@baryon.dict.parts.1 = []\n@baryon.dict.1 = { ptr @baryon.dict.parts.1 }"
+                "@baryon.dict.parts.0 = []\n@baryon.dict.0 = { ptr @baryon.dict.parts.0 }"
                     .to_owned(),
             ],
-            header: String::new(),
-            nodes: BTreeMap::new(),
-            reserved: 0,
+            subprograms: Vec::new(),
+            loops: Vec::new(),
         };
-        let text = module(["f @baryon.dict.1"].into_iter(), [].into_iter(), &pieces);
+        let text = module(
+            [("f @baryon.str.0", &first), ("g @baryon.dict.0", &second)].into_iter(),
+            [].into_iter(),
+            "",
+            0,
+        );
         assert_eq!(
             text,
-            "f @baryon.dict.0\n@baryon.dict.parts.0 = []\n@baryon.dict.0 = { ptr @baryon.dict.parts.0 }\n"
+            "f @baryon.str.0\ng @baryon.dict.1\n@baryon.str.0 = c\"x\"\n\
+             @baryon.dict.parts.1 = []\n@baryon.dict.1 = { ptr @baryon.dict.parts.1 }\n"
         );
     }
 }

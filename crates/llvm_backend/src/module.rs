@@ -70,7 +70,7 @@ impl<'a, 'db> Module<'a, 'db> {
         body: &Body<'db>,
         errors: &[Type<'db>],
     ) -> Result<(), Unsupported> {
-        let mark = self.constants.mark();
+        let mut constants = self.constants.local();
         let mut written = Vec::new();
         let mut calls = BTreeMap::new();
         let bodies = std::iter::once((symbol.to_owned(), body, errors, false)).chain(
@@ -82,20 +82,21 @@ impl<'a, 'db> Module<'a, 'db> {
             let (text, called) = function::Function::write(
                 self.types,
                 self.symbol,
-                &mut self.constants,
+                &mut constants,
                 &name,
                 body,
                 errors,
                 internal,
-            )
-            .inspect_err(|_| self.constants.roll_back(mark))?;
+            )?;
             written.push(text);
             calls.extend(called);
         }
+        self.constants.adopt(&constants);
         self.definitions.push(Definition {
             symbol: symbol.to_owned(),
             text: written.join("\n"),
             calls: calls.keys().cloned().collect(),
+            pieces: constants.pieces(),
         });
         self.declarations.extend(calls);
         Ok(())
@@ -151,17 +152,16 @@ impl<'a, 'db> Module<'a, 'db> {
     /// # Ok::<(), llvm_backend::Unsupported>(())
     /// ```
     pub fn entry(&mut self, symbol: &str, errors: &[Type<'db>]) -> Result<(), Unsupported> {
-        let mark = self.constants.mark();
+        let mut constants = self.constants.local();
         let body = entry::no_body(self.types.db);
-        let function =
-            function::Function::new(self.types, self.symbol, &mut self.constants, &body, &[]);
-        let (text, calls) = function
-            .entry(symbol, errors)
-            .inspect_err(|_| self.constants.roll_back(mark))?;
+        let function = function::Function::new(self.types, self.symbol, &mut constants, &body, &[]);
+        let (text, calls) = function.entry(symbol, errors)?;
+        self.constants.adopt(&constants);
         self.definitions.push(Definition {
             symbol: "main".to_owned(),
             text,
             calls: calls.keys().cloned().collect(),
+            pieces: constants.pieces(),
         });
         self.declarations.extend(calls);
         Ok(())
@@ -210,17 +210,16 @@ impl<'a, 'db> Module<'a, 'db> {
     /// # Ok::<(), llvm_backend::Unsupported>(())
     /// ```
     pub fn tests(&mut self, tests: &[Test<'_, 'db>]) -> Result<(), Unsupported> {
-        let mark = self.constants.mark();
+        let mut constants = self.constants.local();
         let body = entry::no_body(self.types.db);
-        let function =
-            function::Function::new(self.types, self.symbol, &mut self.constants, &body, &[]);
-        let (text, calls) = function
-            .tests(tests)
-            .inspect_err(|_| self.constants.roll_back(mark))?;
+        let function = function::Function::new(self.types, self.symbol, &mut constants, &body, &[]);
+        let (text, calls) = function.tests(tests)?;
+        self.constants.adopt(&constants);
         self.definitions.push(Definition {
             symbol: "main".to_owned(),
             text,
             calls: calls.keys().cloned().collect(),
+            pieces: constants.pieces(),
         });
         self.declarations.extend(calls);
         Ok(())
@@ -232,7 +231,7 @@ impl<'a, 'db> Module<'a, 'db> {
     #[must_use]
     pub fn finish(self) -> String {
         let all: Vec<usize> = (0..self.definitions.len()).collect();
-        self.parts(&[all]).concat()
+        self.split(&[all]).concat()
     }
 
     /// The program as at most `parts` modules that `clang` can compile at once, one per core,
@@ -280,7 +279,7 @@ impl<'a, 'db> Module<'a, 'db> {
             .map(|definition| definition.text.len())
             .collect();
         let assigned = parts::assign(&sizes, parts);
-        self.parts(&assigned)
+        self.split(&assigned)
     }
 
     /// The program as modules whose text an edit changes only where it reaches, for a compiler
@@ -337,22 +336,11 @@ impl<'a, 'db> Module<'a, 'db> {
         self.split(&assigned)
     }
 
-    /// One module's text for each list of definition indices in `assigned`. One list gives the
-    /// whole program as one module, with every constant and node in the order they were made;
-    /// several give modules that carry only what their functions point to, numbered afresh
-    /// (the `split` module).
-    fn parts(self, assigned: &[Vec<usize>]) -> Vec<String> {
-        if let [indices] = assigned {
-            return vec![self.whole(indices)];
-        }
-        self.split(assigned)
-    }
-
     /// One module's text for each list of definition indices in `assigned`, each carrying only
-    /// the constants, declarations and metadata its functions point to, numbered afresh (the
-    /// `split` module).
+    /// the constants, declarations and metadata its functions point to, numbered within it
+    /// (the `split` module).
     fn split(self, assigned: &[Vec<usize>]) -> Vec<String> {
-        let pieces = self.constants.pieces();
+        let (header, reserved) = self.constants.header();
         assigned
             .iter()
             .map(|indices| {
@@ -362,55 +350,19 @@ impl<'a, 'db> Module<'a, 'db> {
                 });
                 let declared = split::declared(definitions);
                 split::module(
-                    indices
-                        .iter()
-                        .map(|&index| self.definitions[index].text.as_str()),
+                    indices.iter().map(|&index| {
+                        let definition = &self.definitions[index];
+                        (definition.text.as_str(), &definition.pieces)
+                    }),
                     declared
                         .into_iter()
                         .filter_map(|symbol| self.declarations.get(symbol))
                         .map(String::as_str),
-                    &pieces,
+                    &header,
+                    reserved,
                 )
             })
             .collect()
-    }
-
-    /// The module holding the definitions at `indices` with every constant, every declaration
-    /// of a function they do not define, and all the metadata.
-    fn whole(self, indices: &[usize]) -> String {
-        let metadata = self.constants.metadata();
-        let constants = self.constants.finish();
-        let defined: BTreeSet<&str> = indices
-            .iter()
-            .map(|&index| self.definitions[index].symbol.as_str())
-            .collect();
-        let texts: Vec<&str> = indices
-            .iter()
-            .map(|&index| self.definitions[index].text.as_str())
-            .collect();
-        let mut text = texts.join("\n");
-        if !constants.is_empty() {
-            text.push('\n');
-            text.push_str(&constants);
-        }
-        let declared: Vec<&String> = self
-            .declarations
-            .iter()
-            .filter(|(symbol, _)| !defined.contains(symbol.as_str()))
-            .map(|(_, declaration)| declaration)
-            .collect();
-        if !declared.is_empty() {
-            text.push('\n');
-            for declaration in declared {
-                text.push_str(declaration);
-                text.push('\n');
-            }
-        }
-        if !metadata.is_empty() {
-            text.push('\n');
-            text.push_str(&metadata);
-        }
-        text
     }
 
     /// Adds line tables to the module: each function and the instructions written from each
@@ -498,4 +450,6 @@ struct Definition {
     /// The symbols of the functions it calls, which a module that does not define them
     /// declares.
     calls: BTreeSet<String>,
+    /// The constants and metadata nodes it made, numbered within it.
+    pieces: split::Pieces,
 }

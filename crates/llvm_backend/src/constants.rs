@@ -130,52 +130,59 @@ impl<'a> Constants<'a> {
         Debug::location(self.sources, scope, span)
     }
 
-    /// Every constant's definition, one per line, in the order they were made.
-    pub(crate) fn finish(self) -> String {
-        self.definitions
-            .into_iter()
-            .map(|(_, definition)| definition + "\n")
-            .collect()
+    /// A new, empty set of constants for one definition, with this one's sources, overflow
+    /// behavior and debug information settings. Each definition numbers its own constants and
+    /// metadata nodes from the start, and the `split` module numbers them again for the
+    /// module that holds it, so a definition's text never depends on another's.
+    pub(crate) fn local(&self) -> Self {
+        Self {
+            sources: self.sources,
+            definitions: Vec::new(),
+            numbers: BTreeMap::new(),
+            debug: self.debug.as_ref().map(Debug::local),
+            wraps: self.wraps,
+            loops: Vec::new(),
+        }
     }
 
-    /// The debug information's metadata, when it is on, then each loop metadata node.
-    pub(crate) fn metadata(&self) -> String {
-        let mut text = self
+    /// Takes from `local`, the constants of a definition just written, what the module's
+    /// debug information needs: the file the compile unit names, when no earlier definition
+    /// gave one.
+    pub(crate) fn adopt(&mut self, local: &Self) {
+        if let (Some(debug), Some(written)) = (&mut self.debug, &local.debug) {
+            debug.adopt(written);
+        }
+    }
+
+    /// The compile unit and module flags every module carries with debug information, and the
+    /// metadata numbers they take; empty and 0 without debug information.
+    pub(crate) fn header(&self) -> (String, usize) {
+        self.debug.as_ref().map_or((String::new(), 0), |debug| {
+            (debug.header(self.sources), FIRST_SUBPROGRAM)
+        })
+    }
+
+    /// The constants and metadata nodes of one definition, made by a set from
+    /// [`local`](Self::local), for the `split` module to number in the module that holds it.
+    pub(crate) fn pieces(self) -> Pieces {
+        let subprograms = self
             .debug
             .as_ref()
-            .map(|debug| debug.finish(self.sources))
+            .map(|debug| {
+                debug
+                    .nodes()
+                    .map(|(number, node)| (number, node.to_owned()))
+                    .collect()
+            })
             .unwrap_or_default();
-        for (_, node) in &self.loops {
-            text.push_str(node);
-            text.push('\n');
-        }
-        text
-    }
-
-    /// Every constant and metadata node apart, by number, for modules that each carry only
-    /// the ones their functions point to (the `split` module).
-    pub(crate) fn pieces(self) -> Pieces {
-        let mut nodes: BTreeMap<usize, String> = self.loops.into_iter().collect();
-        let (header, reserved) = match &self.debug {
-            Some(debug) => {
-                nodes.extend(
-                    debug
-                        .nodes()
-                        .map(|(number, node)| (number, node.to_owned())),
-                );
-                (debug.header(self.sources), FIRST_SUBPROGRAM)
-            }
-            None => (String::new(), 0),
-        };
         Pieces {
             constants: self
                 .definitions
                 .into_iter()
                 .map(|(_, definition)| definition)
                 .collect(),
-            header,
-            nodes,
-            reserved,
+            subprograms,
+            loops: self.loops,
         }
     }
 
