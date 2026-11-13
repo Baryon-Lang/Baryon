@@ -1,10 +1,10 @@
 """The `figure` library file: lays an axes out on the page and draws it, as matplotlib's
 `Figure` and `Axes.draw` do (decision 0046).
 
-It is internal to the standard library: `pyplot` and the files under it import it, and a
+It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `figure.byn` is never hidden by it.
 
-`pyplot`'s `subplots` makes a `Figure`, a grid of `Axes`. Each `savefig` hands its axes to
+`byplot`'s `subplots` makes a `Figure`, a grid of `Axes`. Each `savefig` hands its axes to
 `draw_axes`, which finds the ranges an axes shows, places its box in its cell of the figure, and
 draws everything in it through the renderer.
 """
@@ -15,7 +15,7 @@ from backend_svg import RendererSVG
 from colorbar import draw_colorbar
 from image import draw_image
 from legend import draw_legend
-from pyplot import Axes
+from byplot import Axes
 from transforms import autoscale
 
 WIDTH: Final = 460.8  # the figure's width in points: 6.4 inches
@@ -236,7 +236,7 @@ def draw_axes(
 
 
 def _draw_text(text: Text, view: View, renderer: InOut[RendererSVG]) -> None:
-    """Writes `text` at its data point, aligned as `pyplot`'s `Axes.text` says: its baseline is
+    """Writes `text` at its data point, aligned as `byplot`'s `Axes.text` says: its baseline is
     moved from the point by the layout box's height and descent, as matplotlib aligns one line
     of text. It is not clipped."""
     at_x = view.to_x(Array([text.x]))[0]

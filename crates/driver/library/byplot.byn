@@ -1,11 +1,11 @@
-"""The `pyplot` module: plots with matplotlib's object-oriented names, drawn by Baryon code to SVG
+"""The `byplot` module: plots with matplotlib's object-oriented names, drawn by Baryon code to SVG
 (decision 0046).
 
 Make an `Axes` with `axes()`, draw on it with its methods, and write it with `savefig`, or
 make a grid of them with `subplots(nrows, ncols)` and write the whole `Figure`:
 
 ```python
-import pyplot as plt
+import byplot as plt
 
 def main() -> Raises[None, OSError | ValueError]:
     t = Array([0.0, 1.0, 2.0, 3.0])
@@ -434,7 +434,7 @@ def axes() -> Axes:
     """New, empty axes in the default figure, as matplotlib's `pyplot.axes()`.
 
     ```python
-    import pyplot as plt
+    import byplot as plt
 
     def main():
         ax = plt.axes()
@@ -451,7 +451,7 @@ def subplots(nrows: int = 1, ncols: int = 1) -> Figure:
     between them. Panics when either count is below 1, where matplotlib raises `ValueError`.
 
     ```python
-    import pyplot as plt
+    import byplot as plt
 
     def main() -> Raises[None, OSError | ValueError]:
         fig = plt.subplots(2, 1)

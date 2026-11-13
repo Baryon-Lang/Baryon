@@ -1,10 +1,10 @@
 """The `axis` library file: draws an axis's ticks, tick labels and offset text, as matplotlib's
 `XAxis` and `YAxis` do (decision 0046).
 
-It is internal to the standard library: `pyplot` and the files under it import it, and a
+It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `axis.byn` is never hidden by it.
 
-`pyplot` makes one `XAxis` and one `YAxis` for each `Axes` when it draws, from the range each
+`byplot` makes one `XAxis` and one `YAxis` for each `Axes` when it draws, from the range each
 shows, where it sits in the figure, in points, and whether its scale is logarithmic; `ticker`
 places and labels the ticks. A logarithmic axis also has minor ticks, shorter and thinner, at 2
 to 9 times each power of ten, as matplotlib's `"log"` scale draws them.

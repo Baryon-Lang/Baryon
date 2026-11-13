@@ -1,9 +1,9 @@
 """The `colors` library file: the color names plots take, with matplotlib's names (decision 0046).
 
-It is internal to the standard library: `pyplot` and the files under it import it, and a
+It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `colors.byn` is never hidden by it.
 
-`to_hex` turns any color name `pyplot` accepts into the `#rrggbb` text an SVG file holds, as
+`to_hex` turns any color name `byplot` accepts into the `#rrggbb` text an SVG file holds, as
 `matplotlib.colors.to_hex` does. The colormaps for images are in `cm`.
 """
 

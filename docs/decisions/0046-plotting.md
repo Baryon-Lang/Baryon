@@ -1,6 +1,6 @@
-# 0046. Plots are drawn with matplotlib's object-oriented names, in a `pyplot` module, to SVG first
+# 0046. Plots are drawn with matplotlib's object-oriented names, in a `byplot` module, to SVG first
 
-Status: Accepted (Collins, 2026-11-12), amended 2026-11-13
+Status: Accepted (Collins, 2026-11-12), amended twice on 2026-11-13
 Date: 2026-11-12
 Roadmap: 3.15
 
@@ -128,3 +128,15 @@ imports. A program that has a module named as a standard module that remains, su
 `stats.byn`, is told at the import that the name belongs to the standard library. Underscored
 names, nesting the files under `pyplot`, and letting a program's file always win were weighed;
 keeping the files internal changes nothing a program can see and renames nothing.
+
+## Amendment, 2026-11-13: the module is `byplot`
+
+Collins set a naming rule at 03:54 UTC on 2026-11-13: no Baryon name contains "py", which marks a
+Python project, and Baryon's own names use a short Baryon abbreviation instead, chosen by the
+project (his words: "let's make sure names don't have "py" in them but rather a shorter Baryon
+abbreviation"). The coordinator chose `by`, as in `.byn`. The module this record calls `pyplot` is
+therefore `byplot`, and programs write `import byplot as plt`; the rest of this record reads with
+that name. Everything inside keeps matplotlib's names, `Axes`, `plot`, `savefig` and the keyword
+arguments, since those carry no "py" and are what a matplotlib user already knows. Only the import
+line of a moved script changes, from `import matplotlib.pyplot as plt` to `import byplot as plt`,
+and a script that keeps the old name fails to compile at the import instead of drawing anything.

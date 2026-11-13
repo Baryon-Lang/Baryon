@@ -193,13 +193,13 @@ fn a_standard_module_inside_a_package_is_found() {
     assert_eq!(check_one(program), "");
 }
 
-/// The library files `pyplot` draws through, such as `colors` and `artist`, are not standard
-/// modules (decision 0046): a program's own `colors.byn` is the one it imports, and `pyplot`
+/// The library files `byplot` draws through, such as `colors` and `artist`, are not standard
+/// modules (decision 0046): a program's own `colors.byn` is the one it imports, and `byplot`
 /// still finds its own.
 #[test]
 fn a_program_module_named_as_a_plotting_helper_is_its_own() {
     let colors = "def red() -> str:\n    return \"mine\"\n";
-    let program = "import pyplot as plt\nfrom colors import red\n\n\ndef main():\n    ax = plt.axes()\n    print(red())\n";
+    let program = "import byplot as plt\nfrom colors import red\n\n\ndef main():\n    ax = plt.axes()\n    print(red())\n";
     assert_eq!(check(&[("colors.byn", colors), ("main.byn", program)]), "");
     let helper = "from artist import Artist\n";
     assert_eq!(

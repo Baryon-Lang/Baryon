@@ -90,8 +90,8 @@ pub const BUILTINS: [&str; 61] = [
 /// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042). `fits` is
 /// roadmap 3.14.3's FITS files, named as `astropy.io.fits` is (decision 0044), `netCDF4`
 /// roadmap 3.14.5's `NetCDF` files, named as Unidata's `netCDF4` package is (decision 0047), and
-/// `pyplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046). The
-/// library files `pyplot` draws through, such as `colors`, `axis` and `backend_svg`, are not
+/// `byplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046). The
+/// library files `byplot` draws through, such as `colors`, `axis` and `backend_svg`, are not
 /// standard modules: only another library file can import them, so a program's own
 /// `colors.byn` is never hidden by them. `zlib` is roadmap 3.27's deflate streams, named as
 /// Python's `zlib` is (decision 0049), `gzip` its gzip files, named as Python's `gzip` is, and
@@ -112,7 +112,7 @@ pub const STANDARD_MODULES: [&str; 18] = [
     "stats",
     "fits",
     "netCDF4",
-    "pyplot",
+    "byplot",
     "ticker",
     "zlib",
     "gzip",

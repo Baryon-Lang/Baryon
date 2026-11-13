@@ -4,7 +4,7 @@ matplotlib's names and its results.
 `MaxNLocator.tick_values` gives the positions matplotlib's `MaxNLocator` gives, to the last bit,
 and `ScalarFormatter.format_ticks` writes them as matplotlib's `ScalarFormatter` does, with an
 offset or a power of ten moved into `get_offset` when the numbers are large, small or close
-together. `pyplot` uses both for every even axis, and `LogLocator` and `LogFormatterSciNotation`
+together. `byplot` uses both for every even axis, and `LogLocator` and `LogFormatterSciNotation`
 for a logarithmic one.
 """
 
@@ -18,7 +18,7 @@ class MaxNLocator(Struct):
 
     The step is the smallest of `steps`, scaled by a power of ten, that puts at most `nbins`
     intervals between the ticks, and at least two ticks inside the range. matplotlib's axes
-    use `MaxNLocator(9, [1.0, 2.0, 2.5, 5.0, 10.0])` at the default figure size, as `pyplot`
+    use `MaxNLocator(9, [1.0, 2.0, 2.5, 5.0, 10.0])` at the default figure size, as `byplot`
     does. `steps` rise from 1 to 10, as matplotlib requires.
 
     ```python

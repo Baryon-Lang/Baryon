@@ -38,7 +38,7 @@ before it `zlib.decompressobj` and `gzip`, and before them a `DataFrame` built f
 `df[i]`, and before them `DataFrame[S]` built from arrays, with its columns, and before them
 `zlib.compress`, and before it `zlib.decompress`, `zlib.crc32` and `zlib.adler32`, and before them
 scatter plots, bars, histograms, legends and grid lines, and before them comparisons of arrays and
-`a[mask]`, and before them line plots with `pyplot` and `ticker`, saved as SVG, and before them
+`a[mask]`, and before them line plots with `byplot` and `ticker`, saved as SVG, and before them
 slices of a NetCDF variable, `var[0, :, ::2]` read and written, and before them writing NetCDF
 classic files, `Dataset(path, "w", format=...)`, `createDimension`, `createVariable`, `setncattr`
 and `var[:] = values`, and before them reading NetCDF classic files, `netCDF4.Dataset`, its
@@ -209,7 +209,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `imshow` of an `Array[f64, 2]` with matplotlib's common colormaps, `vmin`, `vmax`, `origin`, `aspect` and `extent`, `colorbar`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim`, [`set_xscale` and `set_yscale`](plotting.md#logarithmic-axes) with `"log"`, [`errorbar`, `fill_between` and `text`](plotting.md#error-bars-filled-areas-and-text), [`plt.subplots`](plotting.md#grids-of-plots) grids written by `Figure.savefig`, and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, `LogLocator.tick_values` and `LogFormatterSciNotation.format_ticks`, with matplotlib's results; the [internal files under `pyplot`](plotting.md#the-files-under-pyplot) build only inside the standard library | other colormaps, `interpolation`, and images of integers or RGB; `errorbar` and `fill_between` with scalar arguments, `None` for an absent array, and `where=`; `sharex`, `sharey` and `constrained_layout`; contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
+| [`byplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `imshow` of an `Array[f64, 2]` with matplotlib's common colormaps, `vmin`, `vmax`, `origin`, `aspect` and `extent`, `colorbar`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim`, [`set_xscale` and `set_yscale`](plotting.md#logarithmic-axes) with `"log"`, [`errorbar`, `fill_between` and `text`](plotting.md#error-bars-filled-areas-and-text), [`plt.subplots`](plotting.md#grids-of-plots) grids written by `Figure.savefig`, and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, `LogLocator.tick_values` and `LogFormatterSciNotation.format_ticks`, with matplotlib's results; the [internal files under `byplot`](plotting.md#the-files-under-byplot) build only inside the standard library | other colormaps, `interpolation`, and images of integers or RGB; `errorbar` and `fill_between` with scalar arguments, `None` for an absent array, and `where=`; `sharex`, `sharey` and `constrained_layout`; contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
 
 ## Compression
 
