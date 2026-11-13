@@ -7,9 +7,9 @@ Roadmap: 1.7.14
 ## Context
 
 Two statements work only on values the compiler knows. `with` takes `open(...)`, a NetCDF
-`Dataset` and `unsafe` ([decision 0036](0036-files-and-processes.md), part 3). `for` takes
-`range`, lists, arrays, strings, dicts, files and a frame's rows. A program cannot write its
-own.
+`Dataset`, an `h5by` `File` and `unsafe` ([decision 0036](0036-files-and-processes.md),
+part 3). `for` takes `range`, lists, arrays, strings, dicts, files and a frame's rows. A
+program cannot write its own.
 
 That leaves out things physicists write all the time:
 
@@ -126,9 +126,9 @@ def main():
   loop costs one branch on the returned value. That is the same branch Rust spends on `None`
   from `Iterator::next`.
 - **`__next__(self: InOut[Self]) -> Raises[T, StopIteration]`.** The loop calls it once a pass
-  and binds the result to the loop variable, which owns it. `StopIteration` ends the loop and
-  runs its `else`. Any other error `__next__` lists, `Raises[str, StopIteration | OSError]`,
-  passes on from the `for` statement like any call's error. A `__next__` that does not list
+  and binds the result to the loop variable, which owns it. `StopIteration` ends the loop.
+  Any other error `__next__` lists, `Raises[str, StopIteration | OSError]`, passes on from the
+  `for` statement like any call's error. A `__next__` that does not list
   `StopIteration` is a compile error, since the loop could never end.
 - **An iterator is used as it is.** When the class defines `__next__`, the loop calls it on the
   value directly and does not call `__iter__`. Python calls `__iter__` first, but an iterator's
