@@ -163,7 +163,7 @@ fn hoist_checks<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
     let mut done = Vec::new();
     loop {
         let mut next = None;
-        for counted in loops::counted_loops(body, &done) {
+        for counted in loops::counted_loops(body, &done.clone()) {
             let hoisted = values::hoistable(body, &counted);
             if hoisted.is_empty() {
                 done.push(counted.header);
