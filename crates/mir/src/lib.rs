@@ -102,6 +102,7 @@ mod call;
 mod check;
 mod display;
 mod files;
+mod math;
 mod operand;
 mod paths;
 mod place;
@@ -112,10 +113,11 @@ mod uses;
 mod validate;
 
 pub use array_files::ArrayFile;
-pub use call::{Argument, Builtin, Callee, MathFunction};
+pub use call::{Argument, Builtin, Callee};
 pub use check::Check;
 pub use display::DisplayedBody;
 pub use files::FileMethod;
+pub use math::MathFunction;
 pub use operand::{
     BinaryOperator, Constant, ConstantValue, Elementwise, Operand, Piece, Rvalue, UnaryOperator,
 };
