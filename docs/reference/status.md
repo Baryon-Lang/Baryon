@@ -24,37 +24,35 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when text columns of a `DataFrame`
-joined it, and before them arrays of text, `Array[str, 1]`, and before them `a.argsort()`,
-and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before it the inner `merge` of two `DataFrame`s, and before it
-`groupby(...).agg(...)`, and before it `lzma.decompress`, and before it
-`sort_values` on a `DataFrame`, and before it `bz2.compress` and `bz2.decompress`, and before
-them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
-`for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by
-`df[mask]`, `df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and
-before it `fft2`, `ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`,
-and before it `print(df)`, a frame printed as pandas prints it, and before it
-`zlib.decompressobj` and `gzip`, and before them a `DataFrame` built from rows and `df[i]`, and
-before them `DataFrame[S]` built from arrays, with its columns, and before them
-`zlib.compress`, and before it `zlib.decompress`,
-`zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends
-and grid lines, and before them comparisons of arrays and `a[mask]`, and before them line plots
-with `pyplot` and `ticker`, saved as SVG, and before them slices of a NetCDF variable,
-`var[0, :, ::2]` read and written, and before them writing NetCDF classic files,
-`Dataset(path, "w", format=...)`, `createDimension`, `createVariable`, `setncattr` and
-`var[:] = values`, and before them reading NetCDF classic files, `netCDF4.Dataset`, its
-variables, dimensions and attributes, and `AttributeError`, and before them
-FITS images and headers, `fits.getdata`, `fits.getheader`, `fits.writeto` and `KeyError`, and
-before them, on 2026-11-11,
-the standard streams, `print(..., file=)` and `input`, `.npy` files, `Array.load` and
-`Array.save`, `linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables, `Array.loadtxt`
-and `Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`,
-`lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files, `Array.fromfile` and
-`a.tofile`, and before them `for line in f` over a text file, `int(text)` and `float(text)`, began
-to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
-`with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
-`sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches lowering or the backend something new
-updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
+This page was last brought up to date on 2026-11-13, when images and colorbars, and before them text
+columns of a `DataFrame` joined it, and before them arrays of text, `Array[str, 1]`, and before them
+`a.argsort()`, and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before
+it the inner `merge` of two `DataFrame`s, and before it `groupby(...).agg(...)`, and before it
+`lzma.decompress`, and before it `sort_values` on a `DataFrame`, and before it `bz2.compress` and
+`bz2.decompress`, and before them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
+`for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by `df[mask]`,
+`df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and before it `fft2`,
+`ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`, and before it
+`print(df)`, a frame printed as pandas prints it, and before it `zlib.decompressobj` and `gzip`, and
+before them a `DataFrame` built from rows and `df[i]`, and before them `DataFrame[S]` built from
+arrays, with its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
+`zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends and grid
+lines, and before them comparisons of arrays and `a[mask]`, and before them line plots with `pyplot`
+and `ticker`, saved as SVG, and before them slices of a NetCDF variable, `var[0, :, ::2]` read and
+written, and before them writing NetCDF classic files, `Dataset(path, "w", format=...)`,
+`createDimension`, `createVariable`, `setncattr` and `var[:] = values`, and before them reading
+NetCDF classic files, `netCDF4.Dataset`, its variables, dimensions and attributes, and
+`AttributeError`, and before them FITS images and headers, `fits.getdata`, `fits.getheader`,
+`fits.writeto` and `KeyError`, and before them, on 2026-11-11, the standard streams, `print(...,
+file=)` and `input`, `.npy` files, `Array.load` and `Array.save`, `linalg.svd`, `svdvals`, `eig` and
+`eigvals`, `fft`, text tables, `Array.loadtxt` and `Array.savetxt`, and before them `linalg.eigh`,
+`eigvalsh`, `cholesky` and `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them,
+array files, `Array.fromfile` and `a.tofile`, and before them `for line in f` over a text file,
+`int(text)` and `float(text)`, began to build. Before that, on 2026-11-10, text files, `open`, the
+`File` methods and `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and,
+before them, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches
+lowering or the backend something new updates the table it affects, in the same pull request, as
+roadmap item 0.8.1 asks.
 
 ## The example programs
 
@@ -211,7 +209,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim` and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, with matplotlib's results; [`colors.to_hex`](plotting.md#colors-and-line-styles), [`axis`, `backend_svg`, `artist` and `legend`](plotting.md#axis-backend_svg-artist-and-legend) | `imshow` and colormaps (3.15.3); `plt.subplots`, logarithmic axes, `errorbar`, `fill_between` and `text` (3.15.4); contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
+| [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `imshow` of an `Array[f64, 2]` with matplotlib's common colormaps, `vmin`, `vmax`, `origin`, `aspect` and `extent`, `colorbar`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim` and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, with matplotlib's results; the [internal files under `pyplot`](plotting.md#the-files-under-pyplot) build only inside the standard library | other colormaps, `interpolation`, and images of integers or RGB; `plt.subplots`, logarithmic axes, `errorbar`, `fill_between` and `text` (3.15.4); contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
 
 ## Compression
 
