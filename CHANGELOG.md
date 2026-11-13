@@ -59,6 +59,8 @@ The [beginner's guide](docs/guide/README.md#1-install-baryon) shows both ways:
   of structs, `Circle | Square`, with class patterns in `match`, and methods and trait bounds on
   them.
 - **A struct's methods called through its class**, `Point.origin()`.
+- **Optional arguments of any type**: an `Array` or a `str` passes where a read-only parameter
+  takes `T | None`, as `yerr=errors` does.
 - **Array slices**: `a[i:j]`, `a[i:j:k]` and `a[:, k]` are views that copy nothing. Read them,
   pass them to read-only and `InOut` parameters, use them in whole-array arithmetic, and assign
   into them with `=` and `+=`, including `forces[a:b] += v` in a `prange` loop with
@@ -120,7 +122,8 @@ library at run time, and keeps the Python or NumPy names its users already know.
   raw arrays with `Array.fromfile` and `a.tofile`, NumPy's `.npy` with `Array.load` and `save`
   ([decision 0043](docs/decisions/0043-array-data-files.md)); FITS images and headers with
   `fits.getdata`, `getheader` and `writeto` ([decision 0044](docs/decisions/0044-fits-images-and-headers.md));
-  NetCDF classic files read and written through `netCDF4.Dataset`, and NetCDF-4 files read
+  NetCDF classic files read and written through `netCDF4.Dataset`, and NetCDF-4 files read,
+  compressed variables included,
   ([decision 0047](docs/decisions/0047-netcdf-classic-files.md)); HDF5 files read through `h5by.File`
   ([decision 0052](docs/decisions/0052-hdf5-files.md)).
 - **[DataFrame](docs/reference/dataframes.md)** ([decision 0045](docs/decisions/0045-dataframe.md)):
@@ -163,6 +166,10 @@ now version 0.3.0, runs one test from the editor with `baryon test -k`, and the
   memory-safety bugs found by the new ownership sweep, which builds every kind of owned value
   through every place a program can own, borrow, move or drop one and runs it under Valgrind on
   Linux in CI (#306, #311, #315, #352, #368, #375).
+- An `InOut` argument must now have exactly its parameter's type: a `str` no longer passes as an
+  `InOut[str | None]`, which the function could set to `None`
+  ([values and references](docs/reference/values-and-references.md)). This closes a memory-layout
+  bug (#411).
 - A conditional expression that is only lent, such as `f(a if c else b)` where one branch names a
   variable whose value moves, is now a compile error instead of a use-after-free (#368).
 
