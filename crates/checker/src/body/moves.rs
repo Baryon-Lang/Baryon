@@ -86,6 +86,7 @@ impl<'db> Body<'db> {
             // `a if c else b` keeps whichever branch runs, so each branch is moved: a borrowed
             // element or a variable in either one is the same error as moving it directly.
             SyntaxKind::Conditional => {
+                self.kept.insert(node);
                 for role in [Role::Value, Role::Else] {
                     if let Some(branch) = self.tree.child(node, role) {
                         self.consume(branch, ty);
