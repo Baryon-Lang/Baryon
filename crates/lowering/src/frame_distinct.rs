@@ -14,14 +14,22 @@ use mir::{Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
 
+/// A column the library compares rows by, and the type of its elements.
+pub(crate) type Key<'db> = (Place, Type<'db>);
+
 impl<'db> Builder<'db> {
-    /// The call `node` of `drop_duplicates` on the frame `frame`, into `place`. The checker
-    /// has made sure of the columns `subset` names.
-    pub(crate) fn frame_distinct(&mut self, place: Place, frame: NodeId, node: NodeId) {
-        let Some(columns) = self.frame_columns(frame) else {
-            return self.unsupported(node, "this `drop_duplicates`");
-        };
-        // The columns compared: the ones `subset` names, by position or keyword, or all.
+    /// What the call `node` of `drop_duplicates` or `value_counts` on the frame `frame`
+    /// compares: the frame borrowed, the positions of the columns `subset` names, by
+    /// position or keyword, in the order written, or of every column, and each of those
+    /// columns as a key the library compares with its element type, a `bool` column as the
+    /// integers 0 and 1 and a column of `str` as the integers for its text. `None` after a
+    /// report. The checker has made sure of the columns.
+    pub(crate) fn compared_columns(
+        &mut self,
+        frame: NodeId,
+        node: NodeId,
+    ) -> Option<(Place, Vec<u32>, Vec<Key<'db>>)> {
+        let columns = self.frame_columns(frame)?;
         let subset = self.written(node).first().map(|&argument| {
             if self.tree.kind(argument) == SyntaxKind::Keyword {
                 self.keyword_value(argument)
@@ -34,7 +42,8 @@ impl<'db> Builder<'db> {
             Some(subset) => {
                 for name in self.listed(subset) {
                     let Some((position, _)) = self.named_column(columns, name) else {
-                        return self.unsupported(name, "this column to compare");
+                        self.unsupported(name, "this column to compare");
+                        return None;
                     };
                     compared.push(position);
                 }
@@ -43,32 +52,33 @@ impl<'db> Builder<'db> {
         }
         let source = self.borrow(frame);
         let int = self.int_type();
-        // Each column compared, a `bool` column as the integers 0 and 1.
-        let mut keys: Vec<(Place, Type<'db>)> = Vec::new();
+        let mut keys: Vec<Key<'db>> = Vec::new();
         for (position, column) in (0_u32..).zip(columns) {
             if !compared.contains(&position) {
                 continue;
             }
-            let flag = matches!(
-                column.element.kind(self.db),
-                TypeKind::Primitive(Primitive::Bool)
-            );
             let values = source.clone().project(Projection::Field(position));
-            // A column of `str` is compared by the integers that stand for its text.
-            if matches!(column.element.kind(self.db), TypeKind::Str) {
-                let Some(codes) = self.text_codes(values, node) else {
-                    return;
-                };
-                keys.push((codes, int));
-                continue;
-            }
-            let element = if flag { int } else { column.element };
-            let values = self.converted(values, column.element, element, node);
-            keys.push((values, element));
+            keys.push(match column.element.kind(self.db) {
+                TypeKind::Str => (self.text_codes(values, node)?, int),
+                TypeKind::Primitive(Primitive::Bool) => {
+                    (self.converted(values, column.element, int, node), int)
+                }
+                _ => (values, column.element),
+            });
         }
         if keys.is_empty() {
-            return self.unsupported(node, "`drop_duplicates` of a frame with no columns");
+            self.unsupported(node, "comparing the rows of a frame with no columns");
+            return None;
         }
+        Some((source, compared, keys))
+    }
+
+    /// The call `node` of `drop_duplicates` on the frame `frame`, into `place`. The checker
+    /// has made sure of the columns `subset` names.
+    pub(crate) fn frame_distinct(&mut self, place: Place, frame: NodeId, node: NodeId) {
+        let Some((source, _, keys)) = self.compared_columns(frame, node) else {
+            return;
+        };
         let Some(ids) = self.key_ids(&keys, node) else {
             return;
         };

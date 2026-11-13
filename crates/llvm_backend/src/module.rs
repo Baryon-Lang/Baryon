@@ -3,7 +3,7 @@
 //! writes them out as one textual LLVM IR module (decision 0020). Each function body is written
 //! by the `function` module and the modules beside it; this one only gathers their text.
 
-use crate::{ClassNames, Test, Unsupported, constants, debug, entry, function, parts, ty};
+use crate::{ClassNames, Test, Unsupported, constants, debug, entry, function, parts, split, ty};
 use mir::Body;
 use std::collections::{BTreeMap, BTreeSet};
 use types::{Declared, Item, Nominal, Type};
@@ -95,6 +95,7 @@ impl<'a, 'db> Module<'a, 'db> {
         self.definitions.push(Definition {
             symbol: symbol.to_owned(),
             text: written.join("\n"),
+            calls: calls.keys().cloned().collect(),
         });
         self.declarations.extend(calls);
         Ok(())
@@ -160,6 +161,7 @@ impl<'a, 'db> Module<'a, 'db> {
         self.definitions.push(Definition {
             symbol: "main".to_owned(),
             text,
+            calls: calls.keys().cloned().collect(),
         });
         self.declarations.extend(calls);
         Ok(())
@@ -218,6 +220,7 @@ impl<'a, 'db> Module<'a, 'db> {
         self.definitions.push(Definition {
             symbol: "main".to_owned(),
             text,
+            calls: calls.keys().cloned().collect(),
         });
         self.declarations.extend(calls);
         Ok(())
@@ -280,46 +283,134 @@ impl<'a, 'db> Module<'a, 'db> {
         self.parts(&assigned)
     }
 
-    /// One module's text for each list of definition indices in `assigned`.
+    /// The program as modules whose text an edit changes only where it reaches, for a compiler
+    /// that keeps each module's machine code and recompiles only the modules that changed
+    /// (`baryon watch`, roadmap 2.2.2). Each module holds a run of definitions in the order
+    /// they were made, ended by its last symbol's hash or its size, so an edit that grows or
+    /// adds a function moves the ends of a few runs at most. Each module carries only the
+    /// constants, declarations and line-table metadata its functions point to, numbered within
+    /// the module, so its text depends on its functions alone. A small program is one module.
+    ///
+    /// Splitting changes no result, as for [`finish_parts`](Self::finish_parts).
+    ///
+    /// Cost: one more pass over the text, to number each module's constants and metadata.
+    ///
+    /// ```
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// let database = Database::default();
+    /// let sources = source::SourceMap::new();
+    /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
+    /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
+    /// let names = |_: &types::Nominal<'_>| llvm_backend::ClassNames::default();
+    /// let mut module =
+    ///     llvm_backend::Module::new(&database, &sources, &declared, &names, &symbol);
+    /// module.entry("main.main", &[])?;
+    /// let chunks = module.finish_chunks();
+    /// assert_eq!(chunks.len(), 1, "a C `main` alone is one chunk");
+    /// assert!(chunks[0].starts_with("define i32 @main()"), "{}", chunks[0]);
+    /// # Ok::<(), llvm_backend::Unsupported>(())
+    /// ```
+    #[must_use]
+    pub fn finish_chunks(self) -> Vec<String> {
+        let symbols: Vec<&str> = self
+            .definitions
+            .iter()
+            .map(|definition| definition.symbol.as_str())
+            .collect();
+        let sizes: Vec<usize> = self
+            .definitions
+            .iter()
+            .map(|definition| definition.text.len())
+            .collect();
+        let assigned = parts::chunks(&symbols, &sizes);
+        self.split(&assigned)
+    }
+
+    /// One module's text for each list of definition indices in `assigned`. One list gives the
+    /// whole program as one module, with every constant and node in the order they were made;
+    /// several give modules that carry only what their functions point to, numbered afresh
+    /// (the `split` module).
     fn parts(self, assigned: &[Vec<usize>]) -> Vec<String> {
-        let metadata = self.constants.metadata();
-        let constants = self.constants.finish();
+        if let [indices] = assigned {
+            return vec![self.whole(indices)];
+        }
+        self.split(assigned)
+    }
+
+    /// One module's text for each list of definition indices in `assigned`, each carrying only
+    /// the constants, declarations and metadata its functions point to, numbered afresh (the
+    /// `split` module).
+    fn split(self, assigned: &[Vec<usize>]) -> Vec<String> {
+        let pieces = self.constants.pieces();
         assigned
             .iter()
             .map(|indices| {
-                let defined: BTreeSet<&str> = indices
-                    .iter()
-                    .map(|&index| self.definitions[index].symbol.as_str())
-                    .collect();
-                let texts: Vec<&str> = indices
-                    .iter()
-                    .map(|&index| self.definitions[index].text.as_str())
-                    .collect();
-                let mut text = texts.join("\n");
-                if !constants.is_empty() {
-                    text.push('\n');
-                    text.push_str(&constants);
-                }
-                let declared: Vec<&String> = self
-                    .declarations
-                    .iter()
-                    .filter(|(symbol, _)| !defined.contains(symbol.as_str()))
-                    .map(|(_, declaration)| declaration)
-                    .collect();
-                if !declared.is_empty() {
-                    text.push('\n');
-                    for declaration in declared {
-                        text.push_str(declaration);
-                        text.push('\n');
-                    }
-                }
-                if !metadata.is_empty() {
-                    text.push('\n');
-                    text.push_str(&metadata);
-                }
-                text
+                let definitions = indices.iter().map(|&index| {
+                    let definition = &self.definitions[index];
+                    (definition.symbol.as_str(), &definition.calls)
+                });
+                let declared = split::declared(definitions);
+                split::module(
+                    indices
+                        .iter()
+                        .map(|&index| self.definitions[index].text.as_str()),
+                    declared
+                        .into_iter()
+                        .filter_map(|symbol| self.declarations.get(symbol))
+                        .map(String::as_str),
+                    &pieces,
+                )
             })
             .collect()
+    }
+
+    /// The module holding the definitions at `indices` with every constant, every declaration
+    /// of a function they do not define, and all the metadata.
+    fn whole(self, indices: &[usize]) -> String {
+        let metadata = self.constants.metadata();
+        let constants = self.constants.finish();
+        let defined: BTreeSet<&str> = indices
+            .iter()
+            .map(|&index| self.definitions[index].symbol.as_str())
+            .collect();
+        let texts: Vec<&str> = indices
+            .iter()
+            .map(|&index| self.definitions[index].text.as_str())
+            .collect();
+        let mut text = texts.join("\n");
+        if !constants.is_empty() {
+            text.push('\n');
+            text.push_str(&constants);
+        }
+        let declared: Vec<&String> = self
+            .declarations
+            .iter()
+            .filter(|(symbol, _)| !defined.contains(symbol.as_str()))
+            .map(|(_, declaration)| declaration)
+            .collect();
+        if !declared.is_empty() {
+            text.push('\n');
+            for declaration in declared {
+                text.push_str(declaration);
+                text.push('\n');
+            }
+        }
+        if !metadata.is_empty() {
+            text.push('\n');
+            text.push_str(&metadata);
+        }
+        text
     }
 
     /// Adds line tables to the module: each function and the instructions written from each
@@ -404,4 +495,7 @@ struct Definition {
     symbol: String,
     /// The text of every function in the definition.
     text: String,
+    /// The symbols of the functions it calls, which a module that does not define them
+    /// declares.
+    calls: BTreeSet<String>,
 }

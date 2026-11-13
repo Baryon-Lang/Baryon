@@ -18,7 +18,8 @@ The file also holds `text_masked` and `text_taken`, which choose rows of a colum
 `masked` and `taken` of `<std>/frames.byn` do for a column of numbers, `text_joined`, which
 is `joined` for a column of `str`, and `text_codes`, which turns a column of `str` into
 integers in the same order, so that a sort by text is a sort by integers. `counted_values`
-counts for an array's `nunique`.
+counts for an array's `nunique`, and `valued_rows` and `id_counts` for a frame's
+`value_counts`.
 """
 
 
@@ -186,3 +187,24 @@ def counted_values[T: Number](column: Array[T, 1], rows: Array[i64, 1]) -> int:
         if value == value:
             count += 1
     return count
+
+
+def valued_rows[T: Number](column: Array[T, 1], rows: Array[i64, 1]) -> Array[i64, 1]:
+    """The positions of `rows` where `column` holds a value, a NaN not being one, in the
+    order of `rows`: `value_counts` counts no NaN. Cost: one pass over `rows`."""
+    return Array([
+        rows[at] for at in range(len(rows)) if column[rows[at]] == column[rows[at]]
+    ])
+
+
+def id_counts(ids: Array[i64, 1], rows: Array[i64, 1]) -> Array[i64, 1]:
+    """For each position of `rows`, how many rows have the number that `ids` gives the row
+    there: the count of each distinct value when `rows` holds one row of each, as
+    `first_rows` finds them. Cost: one pass over `ids` and one over `rows`."""
+    groups = 0
+    for at in range(len(ids)):
+        groups = max(groups, ids[at] + 1)
+    counts = [0 for group in range(groups)]
+    for at in range(len(ids)):
+        counts[ids[at]] += 1
+    return Array([counts[ids[rows[at]]] for at in range(len(rows))])
