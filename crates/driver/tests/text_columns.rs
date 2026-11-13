@@ -162,8 +162,9 @@ error: list items must share one type, found `str` and `f64`
 /// Every use of a frame with a text column that is not built yet is an error that says so
 /// and names what is built: a row, a list of columns, `DataFrame(rows)`, `concat`, `groupby`,
 /// `itertuples`, `drop`, a sort by the text column, and `assign` of a text column. `head`,
-/// a mask, a slice and a sort by a column of numbers are built, and get no error. The column itself is a
-/// text array, so moving it out, assigning an element and adding two are that type's errors.
+/// a mask, a slice and a sort by a column of numbers are built, and get no error. The column
+/// itself is a text array, so moving it out, assigning an element and adding two are that
+/// type's errors.
 #[test]
 fn uses_of_a_text_column_frame_not_built_yet_are_reported() {
     assert_eq!(check_one(PROGRAM), EXPECTED);
