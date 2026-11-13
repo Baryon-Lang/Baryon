@@ -68,6 +68,17 @@ impl Language {
         }
     }
 
+    /// Flags a [threaded](crate::suite::Kernel::threaded) kernel is built with, after every other
+    /// flag: OpenMP for Fortran, and the thread library for C++. The C++ kernels use
+    /// `std::thread` rather than OpenMP because Apple's `clang++` has no OpenMP without an extra
+    /// library.
+    pub(crate) fn thread_flags(self) -> &'static [&'static str] {
+        match self {
+            Self::Cpp => &["-pthread"],
+            Self::Fortran => &["-fopenmp"],
+        }
+    }
+
     /// Flags every build uses, before any extra flags.
     fn base_flags(self) -> &'static [&'static str] {
         match self {
@@ -136,6 +147,7 @@ impl Compiler {
 
     /// Builds kernel `name` from `kernels/<name>/<name>.<extension>` and the shared support file,
     /// writing the executable to `build/<language>/<name>`, and returns the executable's path.
+    /// A `threaded` kernel also gets the language's [thread flags](Language::thread_flags).
     ///
     /// # Errors
     ///
@@ -146,6 +158,7 @@ impl Compiler {
         kernels: &Path,
         build: &Path,
         name: &str,
+        threaded: bool,
     ) -> Result<PathBuf, String> {
         let output_directory = build.join(self.language.key());
         let modules = output_directory.join(format!("{name}.modules"));
@@ -170,6 +183,9 @@ impl Compiler {
                     .arg(support.join("support.f90"))
                     .arg(&source);
             }
+        }
+        if threaded {
+            command.args(self.language.thread_flags());
         }
         command.arg("-o").arg(&executable);
 
