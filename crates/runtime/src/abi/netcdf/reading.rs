@@ -98,21 +98,21 @@ pub unsafe extern "C" fn baryon_rt_netcdf_chunks(
 
 /// `ds.variables[name][items]`: reads the values `items` pick of the variable whose name is the
 /// `name_length` bytes at `name`, in the `NetCDF` file, classic or NetCDF-4, whose path is the
-/// `length` bytes at `path`, into a new row-major array of `rank` dimensions and elements of the type numbered
-/// `element`, and writes its header to `out`. `items` points to `item_count` items of the
-/// subscript, four 64-bit words each: `0` and an index, or `1` and a slice's start, stop and
-/// step, each `i64::MIN` when left out; the axes after the last item are read whole, so no
-/// items read the whole variable, as `var[:]` does. `inflated` is the header of an
-/// `Array[u8, 1]` holding a NetCDF-4 variable's deflated chunks inflated, one after another in
-/// the order [`baryon_rt_netcdf_chunks`] lists them, and `sizes` the header of an
-/// `Array[i64, 1]` of their sizes; both are empty for a classic file. A float type reads any number variable with
+/// `length` bytes at `path`, into a new row-major array of `rank` dimensions and elements of the
+/// type numbered `element`, and writes its header to `out`. `items` points to `item_count` items of
+/// the subscript, four 64-bit words each: `0` and an index, or `1` and a slice's start, stop and
+/// step, each `i64::MIN` when left out; the axes after the last item are read whole, so no items
+/// read the whole variable, as `var[:]` does. `inflated` is the header of an `Array[u8, 1]` holding
+/// a NetCDF-4 variable's deflated chunks inflated, one after another in the order
+/// [`baryon_rt_netcdf_chunks`] lists them, and `sizes` the header of an `Array[i64, 1]` of their
+/// sizes; both are empty for a classic file. A float type reads any number variable with
 /// `scale_factor` and `add_offset` applied as `netCDF4` applies them; an integer type reads an
-/// unscaled integer variable it can hold. Fill values are read as stored. Returns `true`, with
-/// the error at `error`, when the operating system refuses, or with the kind `INVALID_DATA`
-/// when the file is not a `NetCDF` file, has no such variable, the inflated chunks run out, the values picked have
-/// another rank or do not read as the type, or the file ends inside them; and with an
-/// `IndexError` for an index past its axis or more items than axes, or a `ValueError` for a
-/// step of 0, as `netCDF4` raises them.
+/// unscaled integer variable it can hold. Fill values are read as stored. Returns `true`, with the
+/// error at `error`, when the operating system refuses, or with the kind `INVALID_DATA` when the
+/// file is not a `NetCDF` file, has no such variable, the inflated chunks run out, the values
+/// picked have another rank or do not read as the type, or the file ends inside them; and with an
+/// `IndexError` for an index past its axis or more items than axes, or a `ValueError` for a step of
+/// 0, as `netCDF4` raises them.
 ///
 /// Cost: the header, one allocation, and one pass over the values picked: in a classic file
 /// converted from big-endian as they are read, with one seek for each stretch of them that lies
@@ -153,16 +153,15 @@ pub unsafe extern "C" fn baryon_rt_netcdf_chunks(
 /// // SAFETY: the path and the name are the strings' bytes, the empty arrays are never read,
 /// // and `lines`, `loaded` and `error` are locals. The values read are freed once.
 /// unsafe {
-///     let failed =
-///         baryon_rt_netcdf_open(path.as_ptr(), path.len(), lines.as_mut_ptr(), error.as_mut_ptr());
+///     let raised = error.as_mut_ptr();
+///     let failed = baryon_rt_netcdf_open(path.as_ptr(), path.len(), lines.as_mut_ptr(), raised);
 ///     assert!(!failed);
 ///     // The path, three dimensions, three file attributes, five variables and their four
 ///     // attributes.
 ///     assert_eq!(lines.assume_init().length, 16);
 ///     let failed = baryon_rt_netcdf_read(
 ///         path.as_ptr(), path.len(), name.as_ptr(), name.len(), items.as_ptr(), 1,
-///         empty.as_ptr(), empty.as_ptr(), ELEMENT_F64, 1, loaded.as_mut_ptr(),
-///         error.as_mut_ptr(),
+///         empty.as_ptr(), empty.as_ptr(), ELEMENT_F64, 1, loaded.as_mut_ptr(), raised,
 ///     );
 ///     assert!(!failed);
 ///     assert_eq!(loaded[1..], [1, 1]);
