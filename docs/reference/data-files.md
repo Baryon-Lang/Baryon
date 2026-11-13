@@ -19,7 +19,7 @@ formats one at a time, those that need no outside library first.
 | [Text tables](#text-tables) of numbers: CSV, whitespace-separated columns | `Array.loadtxt(fname)` | `Array.savetxt(fname, X)` |
 | [`.npy` files](#npy-files), NumPy's own format | `Array.load(file)` | `Array.save(file, arr)` |
 | [FITS images and headers](#fits-files), astronomy's format | `fits.getdata(filename)`, `fits.getheader(filename)` | `fits.writeto(filename, data, header)` |
-| [NetCDF classic files](#netcdf-files), the format of climate and weather data | `Dataset(filename).variables[name][:]` | `ds.variables[name][:] = values` |
+| [NetCDF files](#netcdf-files), classic and NetCDF-4, the format of climate and weather data | `Dataset(filename).variables[name][:]` | `ds.variables[name][:] = values`, classic formats only |
 | [HDF5 files](#hdf5-files), the format of simulations, instruments and machine learning | `h5by.File(name)[path][...]` | not yet (roadmap 3.14.6.2) |
 | Raw binary arrays | [`Array.fromfile(path, dtype)`](files-and-processes.md#array-files) | [`a.tofile(path)`](files-and-processes.md#array-files) |
 

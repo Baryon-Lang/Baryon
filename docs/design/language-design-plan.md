@@ -57,13 +57,13 @@ the first crate.
 
 ## Where the project stands
 
-As of Nov 6, 2026, the repository foundation is in place: ground rules, the roadmap and its
-check, the crate architecture and its check, CI, the dependency policy, and the C++ and Fortran
-baseline benchmark suite. The language reference is at version 0 and five example programs are
-written. The compiler has started: the front end parses source files into a flat syntax tree,
-rejects the Python constructs the language does not support, loads a package into the incremental
-query database, resolves every name through scopes, modules and imports, and reports all of it
-through `baryon check`. Type representation (roadmap 1.6) is next on the critical path.
+As of Nov 13, 2026, Phase 0 is done and the Phase 1 compiler is a working prototype: `baryon`
+checks a package, compiles it through LLVM into a native executable, runs its tests, rebuilds it on
+every save and serves an editor through the Language Server Protocol, and all six example programs
+build and run. Phase 2 has made debug builds and rebuilds fast. Phase 3's native libraries are
+under way, written in Baryon: `stats`, `linalg`, `fft`, `DataFrame`, plotting with `byplot`, the
+common data file formats and compression. [What builds today](../reference/status.md) lists what
+the compiler builds, feature by feature.
 
 The [roadmap](../../ROADMAP.md) has the item-by-item status.
 

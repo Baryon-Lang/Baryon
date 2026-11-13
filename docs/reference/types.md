@@ -380,7 +380,7 @@ so keep a copy to store it elsewhere: `out.append(v.copy())`. A key is copied in
 `setdefault` and a comprehension, so the variable it came from stays usable, as in Python. A dict
 moves like a list ([values and references](values-and-references.md#moves)). Lookups hash with a
 fixed seed, so a program behaves the same on every run. `popitem`, `fromkeys`, `|` and `**` in a
-display are not in 0.3.0.
+display are not in the language yet.
 
 ## Optional values
 

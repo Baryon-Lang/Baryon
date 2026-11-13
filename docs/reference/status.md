@@ -24,38 +24,10 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-13, when PDF files from `savefig`, and before them
-NetCDF-4 files read with `netCDF4.Dataset`, and before them PNG files from `savefig`, and before
-them HDF5 files read with `h5by.File`, its groups, datasets and attributes, and before them
-logarithmic axes, and before them images and colorbars, and before them text columns of a
-`DataFrame` joined it, and before them arrays of text, `Array[str, 1]`, and before them
-`a.argsort()`, and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before
-it the inner `merge` of two `DataFrame`s, and before it `groupby(...).agg(...)`, and before it
-`lzma.decompress`, and before it `sort_values` on a `DataFrame`, and before it `bz2.compress` and
-`bz2.decompress`, and before them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
-`for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by `df[mask]`,
-`df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and before it `fft2`,
-`ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`, and before it
-`print(df)`, a frame printed as pandas prints it, and before it `zlib.decompressobj` and `gzip`, and
-before them a `DataFrame` built from rows and `df[i]`, and before them `DataFrame[S]` built from
-arrays, with its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
-`zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends and grid
-lines, and before them comparisons of arrays and `a[mask]`, and before them line plots with `byplot`
-and `ticker`, saved as SVG, and before them slices of a NetCDF variable, `var[0, :, ::2]` read and
-written, and before them writing NetCDF classic files, `Dataset(path, "w", format=...)`,
-`createDimension`, `createVariable`, `setncattr` and `var[:] = values`, and before them reading
-NetCDF classic files, `netCDF4.Dataset`, its variables, dimensions and attributes, and
-`AttributeError`, and before them FITS images and headers, `fits.getdata`, `fits.getheader`,
-`fits.writeto` and `KeyError`, and before them, on 2026-11-11, the standard streams, `print(...,
-file=)` and `input`, `.npy` files, `Array.load` and `Array.save`, `linalg.svd`, `svdvals`, `eig` and
-`eigvals`, `fft`, text tables, `Array.loadtxt` and `Array.savetxt`, and before them `linalg.eigh`,
-`eigvalsh`, `cholesky` and `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them,
-array files, `Array.fromfile` and `a.tofile`, and before them `for line in f` over a text file,
-`int(text)` and `float(text)`, began to build. Before that, on 2026-11-10, text files, `open`, the
-`File` methods and `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and,
-before them, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches
-lowering or the backend something new updates the table it affects, in the same pull request, as
-roadmap item 0.8.1 asks.
+This page was last checked against `main` on 2026-11-13. Every pull request that teaches lowering
+or the backend something new updates the table it affects, in the same pull request, as roadmap
+item 0.8.1 asks. What each release added is in the [release notes](../../CHANGELOG.md), and what
+each pull request added is in this file's history.
 
 ## The example programs
 
