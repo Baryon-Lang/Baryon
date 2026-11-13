@@ -60,6 +60,13 @@ const MINIMUM_CHUNK: usize = 100_000;
 /// 80 ms on the machine of roadmap 2.2.2.
 const MAXIMUM_CHUNK: usize = 2_000_000;
 
+/// The least text a definition has to get a chunk of its own, in bytes: about 2,000 lines of
+/// LLVM IR. Compiling a definition that large costs more than starting another `clang`, so an
+/// edit to it should not also recompile the definitions around it, and an edit around it
+/// should not recompile it. On the 4,706-line program of roadmap 2.0, `main`'s 520 KB of text
+/// shared a 1.3 MB chunk, which `clang` compiled in about 150 ms, against about 70 ms alone.
+const LARGE_DEFINITION: usize = 200_000;
+
 /// Splits the definitions `symbols`, whose text lengths are `sizes`, into runs that an edit
 /// leaves alone unless it reaches one of their definitions, for `baryon watch` (roadmap
 /// 2.2.2), and returns each run's definition indices in order.
@@ -70,16 +77,21 @@ const MAXIMUM_CHUNK: usize = 2_000_000;
 /// definitions near it, not on how much text came before. A run also ends at the definition
 /// that brings it past [`MAXIMUM_CHUNK`], and never on a hash before [`MINIMUM_CHUNK`]; both
 /// depend on sizes, but only within the run, so an edit can move the ends of its own run and
-/// the next few, never all the rest.
+/// the next few, never all the rest. A definition of [`LARGE_DEFINITION`] or more is a run of
+/// its own.
 pub(crate) fn chunks(symbols: &[&str], sizes: &[usize]) -> Vec<Vec<usize>> {
     let mut chunks = Vec::new();
     let mut chunk = Vec::new();
     let mut size = 0;
     for (index, (symbol, length)) in symbols.iter().zip(sizes).enumerate() {
+        if *length >= LARGE_DEFINITION && !chunk.is_empty() {
+            chunks.push(std::mem::take(&mut chunk));
+            size = 0;
+        }
         chunk.push(index);
         size += length;
         let ends = fnv(symbol).is_multiple_of(CHUNK_EVERY) && size >= MINIMUM_CHUNK;
-        if ends || size >= MAXIMUM_CHUNK {
+        if ends || size >= MAXIMUM_CHUNK || *length >= LARGE_DEFINITION {
             chunks.push(std::mem::take(&mut chunk));
             size = 0;
         }
@@ -100,7 +112,9 @@ fn fnv(text: &str) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAXIMUM_CHUNK, MINIMUM_CHUNK, MINIMUM_PART, assign, chunks, fnv};
+    use super::{
+        LARGE_DEFINITION, MAXIMUM_CHUNK, MINIMUM_CHUNK, MINIMUM_PART, assign, chunks, fnv,
+    };
 
     #[test]
     fn a_small_program_is_one_chunk() {
@@ -112,6 +126,14 @@ mod tests {
         assert_eq!(
             chunks(&["a", "b", "c"], &[MAXIMUM_CHUNK, 10, 10]),
             [vec![0], vec![1, 2]]
+        );
+    }
+
+    #[test]
+    fn a_large_definition_is_a_chunk_of_its_own() {
+        assert_eq!(
+            chunks(&["a", "b", "c", "d"], &[10, LARGE_DEFINITION, 10, 10]),
+            [vec![0], vec![1], vec![2, 3]]
         );
     }
 
