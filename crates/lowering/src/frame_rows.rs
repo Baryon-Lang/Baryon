@@ -11,16 +11,16 @@
 use crate::builder::Builder;
 use crate::frames::erase;
 use mir::{BinaryOperator, Check, Constant, Local, Operand, Place, Projection, Rvalue};
-use mir::{ConstantValue, TerminatorKind};
+use mir::{ConstantValue, StatementKind, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Type, TypeKind};
+use types::{Column, Type, TypeKind};
 
 /// The rows of a frame that a `for` loop over `df.itertuples()` walks.
 pub(crate) struct Rows<'db> {
     /// The borrowed frame.
     frame: Place,
-    /// The number of the frame's columns.
-    columns: u32,
+    /// The frame's columns.
+    columns: &'db [Column<'db>],
     /// The struct of one row.
     pub(crate) row: Type<'db>,
     /// The local holding the number of rows.
@@ -224,28 +224,36 @@ impl<'db> Builder<'db> {
     /// when `node` is any other expression.
     pub(crate) fn rows(&mut self, node: NodeId) -> Option<Rows<'db>> {
         let (value, row) = self.itertuples_frame(node)?;
-        let columns = self.frame_columns(value).map_or(0, <[_]>::len);
+        let columns = self.frame_columns(value).unwrap_or_default();
         let frame = self.borrow(value);
-        let length = self.row_count(&frame, node);
+        let length = self.counted_rows(value, &frame, node);
         Some(Rows {
             frame,
-            columns: u32::try_from(columns).unwrap_or(u32::MAX),
+            columns,
             row,
             length,
         })
     }
 
     /// A temporary holding row `at` of `rows` as the schema's struct: a copy of element `at`
-    /// of each column, in the order of the struct's fields. `at` is a row the loop has
-    /// counted, so it is in range.
+    /// of each column, in the order of the struct's fields, a field of `str` owning a copy
+    /// of its text ([`Builder::row_field`]). `at` is a row the loop has counted, so it is in
+    /// range.
     pub(crate) fn row_at(&mut self, rows: &Rows<'db>, at: Local, node: NodeId) -> Place {
-        let fields = (0..rows.columns)
-            .map(|position| {
-                let column = rows.frame.clone().project(Projection::Field(position));
-                Operand::Copy(column.project(Projection::Index(vec![at])))
+        let fields = (0_u32..)
+            .zip(rows.columns)
+            .map(|(position, column)| {
+                let values = rows.frame.clone().project(Projection::Field(position));
+                self.row_field(values, column, at, node)
             })
             .collect();
         let value = self.temporary(rows.row, node);
+        // A row that owns text is dropped when the next row replaces it, and the last row
+        // when the loop's statement ends.
+        if self.needs_drop(rows.row) {
+            self.push(StatementKind::Drop(Place::from(value)), node);
+            self.drop_later(value);
+        }
         self.assign(
             Place::from(value),
             Rvalue::Aggregate(rows.row, fields),
@@ -254,18 +262,9 @@ impl<'db> Builder<'db> {
         Place::from(value)
     }
 
-    /// A temporary holding the number of rows of the frame at `source`: the length of its
-    /// first column.
-    pub(crate) fn row_count(&mut self, source: &Place, node: NodeId) -> Local {
-        let count = self.temporary(self.int_type(), node);
-        let first = source.clone().project(Projection::Field(0));
-        self.assign(Place::from(count), Rvalue::Length(first, 0), node);
-        count
-    }
-
     /// The number of rows of the frame the expression `frame` gives, borrowed at `source`,
-    /// in a temporary: [`Builder::row_count`] for a frame whose first column may hold `str`,
-    /// whose rows are counted from its offsets.
+    /// in a temporary: the length of its first column, counted from the offsets when that
+    /// column holds `str`.
     pub(crate) fn counted_rows(&mut self, frame: NodeId, source: &Place, node: NodeId) -> Local {
         let stored = match self.ty(frame).kind(self.db) {
             TypeKind::Tuple(columns) => columns.first().copied(),

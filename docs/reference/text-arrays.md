@@ -168,10 +168,24 @@ and `"ibm"` are two values. `left.merge(right, on="symbol")` joins on a text key
 way, and carries the text columns of both frames into the result.
 `df.groupby("symbol").agg(...)` groups rows by text, the groups in the order of the text.
 
-Every other use of a frame that has a text column is a compile error for now and comes with
-the rest of roadmap item 3.13.3: `DataFrame(rows)`, one row (`df[i]` and `itertuples`),
-and a text column reduced by `agg`, such as `first=("symbol", "first")`. A frame of numbers
-keeps all of these.
+Rows work as for any frame with a schema. `DataFrame(rows)` copies each `str` field of a list
+of structs into a text column. `df[i]` and the rows of `for row in df.itertuples()` are
+structs whose `str` fields own a copy of their text, so a row stays whole after the frame
+changes or is gone. That copy is one allocation for each `str` field of each row read; a loop
+that needs one text column is cheaper as `for symbol in df.symbol`, which borrows.
+
+```python
+first = trades[0]
+trades.symbol = Array(["a", "b", "c"])
+print(first.symbol)
+```
+
+```text
+IBM
+```
+
+One use of a frame that has a text column is a compile error for now and comes with the rest
+of roadmap item 3.13.3: a text column reduced by `agg`, such as `first=("symbol", "first")`.
 
 ## What is not built yet
 
@@ -187,5 +201,4 @@ Each of these is a compile error today, and the rest of roadmap item 3.13.3:
 - **Showing one**: `print(names)`, `str(names)` and `f"{names}"`. Print the elements in a loop.
 - **A struct field** of type `Array[str, 1]`. Hold a `list[str]` in the struct, or pass the
   array beside it.
-- **Most uses of a frame that has a text column**, listed under
-  [In a DataFrame](#in-a-dataframe).
+- **A text column reduced by `agg`**, as said under [In a DataFrame](#in-a-dataframe).

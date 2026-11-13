@@ -87,13 +87,7 @@ impl<'db> Body<'db> {
         };
         let found = self.expression(rows, wanted);
         match found.kind(self.db) {
-            &TypeKind::List(row) => {
-                let frame = self.lowerer.frame_of(rows, row);
-                if self.has_text_column(frame) {
-                    return self.text_column_unbuilt(rows, "`DataFrame(rows)`");
-                }
-                frame
-            }
+            &TypeKind::List(row) => self.lowerer.frame_of(rows, row),
             _ if relations::is_open(self.db, found) => self.lowerer.unknown(),
             _ => {
                 let message = format!(
@@ -259,9 +253,6 @@ impl<'db> Body<'db> {
                 ),
             );
         }
-        if self.has_text_column(base) {
-            return self.text_column_unbuilt(index, "reading a row, `df[i]`,");
-        }
         row.unwrap_or_else(|| {
             let message = format!("no struct names the rows of `{}`", self.show(base));
             self.lowerer.error(
@@ -405,22 +396,6 @@ impl<'db> Body<'db> {
         callee: &str,
         arguments: &Arguments,
     ) -> Type<'db> {
-        let built = matches!(
-            callee,
-            "copy"
-                | "head"
-                | "tail"
-                | "sort_values"
-                | "assign"
-                | "drop"
-                | "rename"
-                | "drop_duplicates"
-                | "merge"
-        );
-        if self.has_text_column(base) && !built {
-            self.untyped(arguments);
-            return self.text_column_unbuilt(function, &format!("the method `{callee}`"));
-        }
         if let Some(rows) = self.rows_method(function, base, callee, arguments) {
             return rows;
         }
