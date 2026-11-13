@@ -145,9 +145,9 @@ from the frame. `trades.symbol = Array(words)` replaces the whole column, and pa
 new array has another length. `trades.copy()` copies the text with the numbers.
 
 A frame that has a text column is built from its columns, counted, copied, printed, passed and
-returned today. Every other use of it is a compile error for now and comes with the rest of roadmap item
-3.13.3: `DataFrame(rows)`, rows (`df[i]` and `itertuples`), choosing rows or columns with
-`[...]`, `head`, `tail`, `assign`, `drop`, `rename`, `sort_values`, `groupby`, `merge`,
+returned today. Every other use of it is a compile error for now and comes with the rest of
+roadmap item 3.13.3: `DataFrame(rows)`, rows (`df[i]` and `itertuples`), choosing rows or
+columns with `[...]`, `head`, `tail`, `assign`, `drop`, `rename`, `sort_values`, `groupby`, `merge`,
 `drop_duplicates` and `concat`. A frame of numbers keeps all of these.
 
 ## What is not built yet

@@ -4,9 +4,9 @@
 //! The formatting is written in Baryon, in the standard library's `<std>/frames.byn`
 //! (decision 0038), so this module only calls it: one call for each column, which gives the
 //! column's cells as text, a column of `str` among them, then one call that lays the cells
-//! out. A frame's columns are known
-//! when compiling, so the calls are chosen here by each column's element type, and MIR, the
-//! passes and the backend see only calls of Baryon functions.
+//! out. A frame's columns are known when compiling, so the calls are chosen here by each
+//! column's element type, and MIR, the passes and the backend see only calls of Baryon
+//! functions.
 
 use crate::builder::Builder;
 use mir::{Argument, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue};
@@ -91,11 +91,12 @@ impl<'db> Builder<'db> {
         Some(Place::from(result))
     }
 
-    /// Calls the function `name` of `<std>/frames.byn` or `<std>/frame_joins.byn` with `type_arguments`, borrowing each
-    /// of `arguments`, and gives the temporary of type `returns` that holds its result. The
-    /// functions called this way take every parameter borrowed and raise nothing. `None`
-    /// after reporting that the library's file or the function is missing, which happens only
-    /// when the library's files were left out of the package.
+    /// Calls the function `name` of `<std>/frames.byn` or `<std>/frame_joins.byn` with
+    /// `type_arguments`, borrowing each of `arguments`, and gives the temporary of type
+    /// `returns` that holds its result. The functions called this way take every parameter
+    /// borrowed and raise nothing. `None` after reporting that the library's file or the
+    /// function is missing, which happens only when the library's files were left out of the
+    /// package.
     pub(crate) fn frame_call(
         &mut self,
         name: &str,

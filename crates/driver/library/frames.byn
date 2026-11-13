@@ -22,8 +22,8 @@ compiler has converted to `f64` or `i64`, to one value for each group.
 
 Printing, for `print(df)` and a frame in an f-string: each column is formatted with
 `float_cells`, `single_cells`, `cells` or `text_cells`, by the type of its elements, and
-`frame_text` lays the columns out. The rules are those of pandas 3 at its default options, on a screen 80
-characters wide:
+`frame_text` lays the columns out. The rules are those of pandas 3 at its default options, on
+a screen 80 characters wide:
 
 - A frame of more than 60 rows shows its first 5 and last 5, with a row of dots between.
 - Columns that do not fit in 80 characters are left out of the middle, with `...` in their
