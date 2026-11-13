@@ -71,9 +71,9 @@ def main() -> Raises[None, OSError | ValueError]:
 
 /// Three images are drawn as the stored reference files: `viridis` with a colorbar and square
 /// cells, row 0 at the top; a saddle in `RdBu_r` with fixed `vmin` and `vmax`, row 0 at the
-/// bottom, a NaN left transparent, a title and a labelled colorbar; and `gray_r` stretched
-/// over `extent=(0, 8, 0, 3)` and filling the axes with `aspect="auto"`, under a line. Each image is a PNG inside the SVG, so the files
-/// also fix the PNG encoder's output.
+/// bottom, a NaN left transparent, a title and a labelled colorbar; and `gray_r` stretched over
+/// `extent=(0, 8, 0, 3)` and filling the axes with `aspect="auto"`, under a line. Each image is
+/// a PNG inside the SVG, so the files also fix the PNG encoder's output.
 #[test]
 fn images_are_drawn_as_the_reference_files() {
     let (ran, directory) = run("plotting-images", IMAGES).unwrap();
