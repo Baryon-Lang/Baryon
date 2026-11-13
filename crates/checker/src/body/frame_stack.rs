@@ -67,6 +67,11 @@ impl<'db> Body<'db> {
                 complete = false;
                 continue;
             };
+            if self.has_missing_column(found) {
+                self.missing_column_unbuilt(frame, "`concat`");
+                complete = false;
+                continue;
+            }
             let Some(first) = first else {
                 first = Some(found);
                 continue;

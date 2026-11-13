@@ -50,6 +50,10 @@ impl<'db> Body<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return None;
         };
+        if self.has_missing_column(base) {
+            self.untyped(arguments);
+            return Some(self.missing_column_unbuilt(node, "`groupby`"));
+        }
         let grouping = self
             .tree
             .child(node, Role::Function)

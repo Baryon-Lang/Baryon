@@ -33,6 +33,7 @@ mod frame_columns;
 mod frame_distinct;
 mod frame_groups;
 mod frame_joins;
+mod frame_missing;
 mod frame_rows;
 mod frame_sort;
 mod frame_stack;
