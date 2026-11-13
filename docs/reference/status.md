@@ -105,7 +105,7 @@ checks what it prints.
 | Conversions that panic when the value does not fit | |
 | `str`: literals, f-strings, `+`, `+=` on a variable, field or list element, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len`; [indexing and slicing](types.md#indexing-slicing-and-methods) by character; `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower` and `upper`; `int(text)` and `float(text)`, which raise `ValueError` | `str`'s other methods, such as `count`, `rfind` and `isdigit`; `split` with `maxsplit`, `find` with `start` and `end`, and `startswith` of a tuple |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
-| `T \| None`, with every narrowing rule | |
+| `T \| None`, with every narrowing rule; a value of any type, an `Array` or a `str` included, passed where a read-only parameter takes `T \| None`, as `yerr=errors` is | |
 | Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, methods called through their class, `Point.origin()`, generic structs and their methods, each method compiled once per type its struct is used at | |
 | Enums: members, `==` and `!=`, `match` | |
 | [Unions](types.md#unions-of-structs) of structs, enums, error types and `None`: a member passed, assigned or returned where its union is expected, `match` with class patterns by position and keyword, `print`, members that own memory, freed by the member they hold, shared methods called on a union, and unions as the type of a trait-bounded parameter | A shared method that a member gets from an embedded field; `Array.zeros` of a union; class patterns on generic structs; a capture of a field that is not a copy type |

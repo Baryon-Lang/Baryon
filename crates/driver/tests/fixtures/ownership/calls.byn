@@ -247,6 +247,22 @@ def struct_temp_method():
     print(Peeker(make(2)).peek())
 
 
+# site: optional_borrow
+# A variable, a new value and `None` borrowed by a parameter that takes an optional, by
+# position and by name; the caller's variable is still whole afterwards (roadmap 1.9.29).
+def optional_borrow_size(v: ITEM | None = None) -> int:
+    if v is None:
+        return 0
+    return size(v)
+
+
+def optional_borrow():
+    a = NEW1
+    print(optional_borrow_size(a), optional_borrow_size(v=a), optional_borrow_size(None))
+    print(optional_borrow_size(make(2)), optional_borrow_size())
+    show(a)
+
+
 # site: default_argument once
 # A default parameter value, a new `str` made at each call that leaves it out.
 def default_argument_greet(name: str = f"d{1}") -> int:
