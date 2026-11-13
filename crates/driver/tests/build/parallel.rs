@@ -2,6 +2,7 @@
 //! thread pool, arrays written at each iteration's own elements, and reductions combined in a
 //! fixed order, so the result is the same on every run.
 
+use super::examples::prints;
 use super::{baryon_build, package, panic_report, stderr};
 use std::process::Command;
 
@@ -191,4 +192,29 @@ def main():
             "panic: `sys.exit` cannot end the program inside a parallel loop\n  --> main.byn:6:9\n"
         );
     }
+}
+
+/// A number variable bound inside a `prange` body is private to the iteration, so the body may
+/// assign it again: `r = r * 2.0`, and `j = j + 1` walking a `while` loop. Lowering took any
+/// such assignment for a write to a shared variable and stopped with "not lowered yet", which
+/// kept a linked-list walk, as in the half-list Lennard-Jones kernel, out of `prange`.
+#[test]
+fn a_variable_bound_in_the_body_is_assigned_again() {
+    prints(
+        "prange-rebind",
+        "\
+def main():
+    total = 0.0
+    for i in prange(10):
+        r = f64(i)
+        r = r * 2.0
+        j = 0
+        while j < 3:
+            total += r
+            j = j + 1
+    print(total)
+",
+        "270.0\n",
+    )
+    .unwrap();
 }

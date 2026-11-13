@@ -16,8 +16,8 @@ use syntax::NodeId;
 /// standard traits (language reference, "Types", "Traits"), and the names decision 0031 adds:
 /// `Protocol`, the base of a user trait, `Embed`, which embeds a struct in another, and `Dyn`,
 /// reserved for trait objects (roadmap 3.5). `open`, `File`, the type it returns, and `input` are
-/// decision 0036's, and `DataFrame` is decision 0045's.
-pub const BUILTINS: [&str; 60] = [
+/// decision 0036's, and `DataFrame` and `concat`, which stacks frames, are decision 0045's.
+pub const BUILTINS: [&str; 61] = [
     "f64",
     "f32",
     "i64",
@@ -78,6 +78,7 @@ pub const BUILTINS: [&str; 60] = [
     "Embed",
     "Dyn",
     "DataFrame",
+    "concat",
 ];
 
 /// The standard library's modules. Until the standard library is written (roadmap 1.13),
@@ -96,8 +97,9 @@ pub const BUILTINS: [&str; 60] = [
 /// files, named as Python's `gzip` is, and `compression.zstd` roadmap 3.27.7's Zstandard
 /// frames, named as Python 3.14's `compression.zstd` is. Its file is
 /// `<std>/compression.zstd.byn`, so [`library_module`](crate::library_module) gives its dotted
-/// name. `bz2` is roadmap 3.27.9's bzip2 streams, named as Python's `bz2` is.
-pub const STANDARD_MODULES: [&str; 22] = [
+/// name. `bz2` is roadmap 3.27.9's bzip2 streams, named as Python's `bz2` is, and `lzma`
+/// roadmap 3.27.10's xz files, named as Python's `lzma` is.
+pub const STANDARD_MODULES: [&str; 23] = [
     "math",
     "random",
     "sys",
@@ -120,6 +122,7 @@ pub const STANDARD_MODULES: [&str; 22] = [
     "gzip",
     "compression.zstd",
     "bz2",
+    "lzma",
 ];
 
 /// What a name refers to.

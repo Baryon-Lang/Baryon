@@ -76,10 +76,21 @@ impl<'db> Lowerer<'db> {
     }
 
     /// `ty`, the type of a struct field written at `annotation`, or the unknown type after an
-    /// error when it is or holds a `DataFrame`. Lowering stores a frame as a tuple of arrays
-    /// in every body it builds, but a struct's declaration is read by the stages after it
-    /// too, so a field cannot hold a frame until they learn that.
+    /// error when it is or holds a `DataFrame` or a text array, `Array[str, 1]`. Lowering
+    /// stores each as a tuple of arrays in every body it builds, but a struct's declaration is
+    /// read by the stages after it too, so a field cannot hold one until they learn that.
     pub(crate) fn without_frame(&mut self, annotation: NodeId, ty: Type<'db>) -> Type<'db> {
+        if crate::body::relations::holds_text_array(self.db, ty) {
+            return self.error(
+                annotation,
+                "a struct field cannot hold an array of `str` yet",
+                "holds an array of `str`",
+                Some(
+                    "keep the array in a variable and pass it beside the struct, or hold a \
+                     `list[str]`; like a frame in a struct field, this is roadmap idea I.49",
+                ),
+            );
+        }
         if !crate::body::relations::holds_frame(self.db, ty) {
             return ty;
         }
@@ -96,10 +107,11 @@ impl<'db> Lowerer<'db> {
 }
 
 /// What a column may hold today, for the note of an error about one that holds something else.
-pub(crate) const COLUMN_TYPES: &str = "a column holds numbers or `bool` today; text columns \
-    come with roadmap item 3.13.3 and missing values with 3.13.6";
+pub(crate) const COLUMN_TYPES: &str = "a column holds numbers, `bool` or `str` today; missing \
+    values come with roadmap item 3.13.6";
 
-/// Whether a column of a frame may hold elements of type `ty` today: a number or a `bool`.
+/// Whether a column of a frame may hold elements of type `ty` today: a number, a `bool`, or
+/// a `str`, whose column is a text array.
 pub(crate) fn is_column<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
-    matches!(ty.kind(db), TypeKind::Primitive(_))
+    matches!(ty.kind(db), TypeKind::Primitive(_) | TypeKind::Str)
 }

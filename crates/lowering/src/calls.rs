@@ -119,6 +119,9 @@ impl<'db> Builder<'db> {
             }
             (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
             (None, _) if name == "print" => self.print(place, arguments, node),
+            (None, [list]) if name == "Array" && self.is_text_array(node) => {
+                self.text_array_from_list(&place, *list, node);
+            }
             (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
             (None, [table])
                 if name == "DataFrame" && self.tree.kind(*table) == SyntaxKind::Dictionary =>
@@ -126,6 +129,7 @@ impl<'db> Builder<'db> {
                 self.frame_new(&place, *table, node);
             }
             (None, [rows]) if name == "DataFrame" => self.frame_from_rows(place, *rows, node),
+            (None, [list]) if name == "concat" => self.frame_concat(place, *list, node),
             (Some(("DataFrame", method)), [frame, rest @ ..]) => {
                 self.frame_method(place, method, (*frame, rest), node);
             }
@@ -157,6 +161,10 @@ impl<'db> Builder<'db> {
                 self.list_append(place, *list, *value, node);
             }
             (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
+            // A text array is two arrays in a tuple, as a frame is its columns.
+            (Some(("Array", "copy")), [array]) if self.is_text_array(*array) => {
+                self.frame_copy(place, *array, node);
+            }
             (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
             (Some(("dict", method)), _) => self.dict_method(place, method, arguments, node),
             (Some(("Array" | "Fixed", method)), _) => {

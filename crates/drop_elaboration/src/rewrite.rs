@@ -364,6 +364,7 @@ impl<'db> Decider<'_, 'db> {
             // A `File` holds an open file a drop closes; a `Philox` is only numbers.
             TypeKind::Standard(standard) => standard.owns_resources(),
             TypeKind::Str
+            | TypeKind::TextArray
             | TypeKind::List(_)
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }

@@ -87,7 +87,13 @@ impl<'db> Body<'db> {
         };
         let found = self.expression(rows, wanted);
         match found.kind(self.db) {
-            &TypeKind::List(row) => self.lowerer.frame_of(rows, row),
+            &TypeKind::List(row) => {
+                let frame = self.lowerer.frame_of(rows, row);
+                if self.has_text_column(frame) {
+                    return self.text_column_unbuilt(rows, "`DataFrame(rows)`");
+                }
+                frame
+            }
             _ if relations::is_open(self.db, found) => self.lowerer.unknown(),
             _ => {
                 let message = format!(
@@ -147,6 +153,7 @@ impl<'db> Body<'db> {
         self.consume(value, found);
         let element = match *found.kind(self.db) {
             TypeKind::Array { element, rank: 1 } if is_column(self.db, element) => element,
+            TypeKind::TextArray => Type::new(self.db, TypeKind::Str),
             _ if relations::is_open(self.db, found) => return None,
             TypeKind::Array { element, rank: 1 } => {
                 let message = format!(
@@ -207,7 +214,8 @@ impl<'db> Body<'db> {
         };
         let index = self.tree.child(node, Role::Index)?;
         let Some(name) = self.literal_text(index) else {
-            return Some(self.frame_row(index, base, *row));
+            let chosen = self.frame_select(index, base);
+            return Some(chosen.unwrap_or_else(|| self.frame_row(index, base, *row)));
         };
         let name = name.to_owned();
         let column = columns.iter().find(|column| column.name == name);
@@ -250,6 +258,9 @@ impl<'db> Body<'db> {
                      slice, `df[1:3]`",
                 ),
             );
+        }
+        if self.has_text_column(base) {
+            return self.text_column_unbuilt(index, "reading a row, `df[i]`,");
         }
         row.unwrap_or_else(|| {
             let message = format!("no struct names the rows of `{}`", self.show(base));
@@ -363,15 +374,15 @@ impl<'db> Body<'db> {
         );
     }
 
-    /// The type of a column read from a frame: an array of rank 1 of the column's elements.
+    /// The type of a column read from a frame: an array of rank 1 of the column's elements,
+    /// or a text array for a column of `str`.
     fn column_type(&self, column: &Column<'db>) -> Type<'db> {
-        let element = column.element;
-        Type::new(self.db, TypeKind::Array { element, rank: 1 })
+        column.array(self.db)
     }
 
     /// Reports `name` read from the frame type `base`, which has no such column, and lists
     /// the columns it has.
-    fn no_column(&mut self, node: NodeId, base: Type<'db>, name: &str) -> Type<'db> {
+    pub(super) fn no_column(&mut self, node: NodeId, base: Type<'db>, name: &str) -> Type<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return self.lowerer.unknown();
         };
@@ -394,8 +405,28 @@ impl<'db> Body<'db> {
         callee: &str,
         arguments: &Arguments,
     ) -> Type<'db> {
+        let built = matches!(
+            callee,
+            "copy" | "head" | "tail" | "sort_values" | "assign" | "drop" | "rename"
+        );
+        if self.has_text_column(base) && !built {
+            self.untyped(arguments);
+            return self.text_column_unbuilt(function, &format!("the method `{callee}`"));
+        }
         if let Some(rows) = self.rows_method(function, base, callee, arguments) {
             return rows;
+        }
+        if let Some(frame) = self.schema_method(function, base, callee, arguments) {
+            return frame;
+        }
+        if let Some(frame) = self.sort_method(function, base, callee, arguments) {
+            return frame;
+        }
+        if let Some(frame) = self.merge_method(function, base, callee, arguments) {
+            return frame;
+        }
+        if let Some(frame) = self.distinct_method(function, base, callee, arguments) {
+            return frame;
         }
         let given = arguments.positional.len() + arguments.keywords.len();
         self.untyped(arguments);
@@ -407,6 +438,12 @@ impl<'db> Body<'db> {
                 "wrong arguments",
                 None,
             ),
+            ("groupby", _) => self.lowerer.error(
+                function,
+                "`groupby` is followed by `.agg(...)`, which says what to work out for each group",
+                "groups with nothing worked out",
+                Some("for example `df.groupby(\"symbol\").agg(total=(\"volume\", \"sum\"))`"),
+            ),
             _ => {
                 let message = format!("a `DataFrame` has no method `{callee}` yet");
                 self.lowerer.error(
@@ -414,8 +451,10 @@ impl<'db> Body<'db> {
                     &message,
                     "not defined yet",
                     Some(
-                        "a `DataFrame` has `copy()`, `head()` and `tail()` today; the rest of \
-                         decision 0045's methods come with roadmap items 3.13.4 to 3.13.9",
+                        "a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop`, \
+                         `rename`, `sort_values`, `groupby(...).agg(...)`, `merge` and \
+                         `drop_duplicates` today; the rest of decision 0045's methods come with \
+                         roadmap items 3.13.6, 3.13.8 and 3.13.9",
                     ),
                 )
             }

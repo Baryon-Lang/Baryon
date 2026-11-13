@@ -57,6 +57,7 @@ impl<'db> Substitution<'_, 'db> {
             TypeKind::Parameter { .. } | TypeKind::Union(_) => return ty,
             TypeKind::Primitive(_)
             | TypeKind::Str
+            | TypeKind::TextArray
             | TypeKind::None
             | TypeKind::Function { .. }
             | TypeKind::Standard(_)
@@ -130,6 +131,7 @@ impl<'db> Substitution<'_, 'db> {
                 }
             }
             Rvalue::Length(..)
+            | Rvalue::Stride(..)
             | Rvalue::IsPresent(_)
             | Rvalue::ErrorIndex(_)
             | Rvalue::MemberIndex(_)

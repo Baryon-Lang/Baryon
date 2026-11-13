@@ -13,6 +13,14 @@ impl<'db> Body<'db> {
     /// A call to one of the language's names: a number conversion such as `f64(n)`, or a
     /// built-in function.
     pub(super) fn builtin(&mut self, node: NodeId, name: &str, arguments: &Arguments) -> Type<'db> {
+        // `concat` reads the frames of its list one by one, so the list is not typed as a list.
+        if name == "concat" {
+            let stacked = self.frame_concat(node, arguments);
+            if self.has_text_column(stacked) {
+                return self.text_column_unbuilt(node, "`concat`");
+            }
+            return stacked;
+        }
         let all: Vec<NodeId> = arguments
             .positional
             .iter()
@@ -23,6 +31,12 @@ impl<'db> Body<'db> {
             .iter()
             .map(|&argument| self.expression(argument, None))
             .collect();
+        // A text array has few built-ins yet; `Array(...)` never takes one.
+        if !matches!(name, "len" | "enumerate" | "zip" | "reversed" | "print")
+            && let Some(index) = types.iter().position(|&ty| self.is_text_array(ty))
+        {
+            return self.text_array_unbuilt(all[index], &format!("`{name}`"));
+        }
         let primitive = |db, kind| Type::new(db, TypeKind::Primitive(kind));
         if let Some(target) = Primitive::from_name(name) {
             if let Some(ty) = self.complex_conversion(node, name, target, &all, &types) {
@@ -56,6 +70,7 @@ impl<'db> Body<'db> {
             ("print", _) => {
                 for (&argument, &ty) in all.iter().zip(&types) {
                     self.shows_no_path(argument, ty);
+                    self.shows_no_text_array(argument, ty);
                 }
                 let keywords = &types[arguments.positional.len()..];
                 self.print_keywords(arguments, keywords);
@@ -401,7 +416,7 @@ impl<'db> Body<'db> {
                         match self.typed.expression(value).map(|ty| ty.kind(self.db)) {
                             Some(TypeKind::List(_)) => "list",
                             Some(TypeKind::Dict { .. }) => "dict",
-                            Some(TypeKind::Array { .. }) => "Array",
+                            Some(TypeKind::Array { .. } | TypeKind::TextArray) => "Array",
                             Some(TypeKind::Fixed { .. }) => "Fixed",
                             Some(TypeKind::DataFrame { .. }) => "DataFrame",
                             Some(TypeKind::Standard(standard)) => standard.name(),

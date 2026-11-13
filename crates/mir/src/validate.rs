@@ -44,6 +44,9 @@ pub enum Invalid {
     Outlined(u32, Box<Invalid>),
     /// [`Body::vectorized`] marks a block the body does not have.
     UnknownVectorized(BlockId),
+    /// [`Body::unit_strides`] names a block the body does not have, or a place whose local it
+    /// does not have.
+    UnknownUnitStride(BlockId),
     /// A block uses a view, a place that ends in a [`Slice`](crate::Projection::Slice), as a whole
     /// value: moves or copies it, drops it, or assigns it anything but a whole-array
     /// expression. A view is a borrow and owns no memory, so any of these would store a borrow
@@ -127,6 +130,14 @@ impl fmt::Display for Invalid {
                     block.index()
                 )
             }
+            Self::UnknownUnitStride(block) => {
+                write!(
+                    formatter,
+                    "bb{} is marked as holding an array of unit stride, but it or the array's \
+                     local does not exist",
+                    block.index()
+                )
+            }
             Self::UnknownVectorized(block) => {
                 write!(
                     formatter,
@@ -154,7 +165,8 @@ impl Body<'_> {
     /// - a view, a place that ends in a [`Slice`](crate::Projection::Slice), is only borrowed, read
     ///   by [`Length`](crate::Rvalue::Length), a leaf of a whole-array expression or the destination
     ///   of one: never moved, copied whole, dropped or assigned anything else;
-    /// - each block marked as a `simd` loop header exists,
+    /// - each block marked as a `simd` loop header exists, and each block and local that
+    ///   [`Body::unit_strides`] names,
     /// - each outlined body keeps these rules too.
     ///
     /// It does not check types: lowering builds bodies from type-checked code, and a type check
@@ -252,6 +264,11 @@ impl Body<'_> {
                 problems.push(Invalid::UnknownVectorized(header));
             }
         }
+        for (block, place) in &self.unit_strides {
+            if block.index() >= self.blocks.len() || place.local.index() >= self.locals.len() {
+                problems.push(Invalid::UnknownUnitStride(*block));
+            }
+        }
         for (position, outlined) in (0..).zip(&self.outlined) {
             let accumulated = self.accumulated(position);
             let inside = outlined.check(db, &accumulated).into_iter();
@@ -319,6 +336,7 @@ fn has_parameter(db: &dyn Db, ty: Type<'_>) -> bool {
         TypeKind::Parameter { .. } => true,
         TypeKind::Primitive(_)
         | TypeKind::Str
+        | TypeKind::TextArray
         | TypeKind::None
         | TypeKind::Function { .. }
         | TypeKind::Standard(_)

@@ -9,6 +9,7 @@
 //! element type as the type argument, and the results are the new frame's columns.
 
 use crate::builder::Builder;
+use crate::frames::erase;
 use mir::{BinaryOperator, Check, Constant, Local, Operand, Place, Projection, Rvalue};
 use mir::{ConstantValue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
@@ -28,7 +29,8 @@ pub(crate) struct Rows<'db> {
 
 impl<'db> Builder<'db> {
     /// The call `node` of the method `method` of the frame `frame`, with the arguments
-    /// `rest`, into `place`: `copy()`, `head(n)` or `tail(n)`.
+    /// `rest`, into `place`: `copy()`, `head(n)` or `tail(n)`, a method that changes the
+    /// columns (the `frame_schema` module) or `sort_values` (the `frame_sort` module).
     pub(crate) fn frame_method(
         &mut self,
         place: Place,
@@ -36,6 +38,21 @@ impl<'db> Builder<'db> {
         (frame, rest): (NodeId, &[NodeId]),
         node: NodeId,
     ) {
+        if self.schema_method(&place, method, frame, node) {
+            return;
+        }
+        if method == "merge" {
+            return self.frame_merge(place, frame, rest, node);
+        }
+        if method == "drop_duplicates" {
+            return self.frame_distinct(place, frame, node);
+        }
+        if method == "agg" {
+            return self.frame_agg(place, frame, node);
+        }
+        if method == "sort_values" {
+            return self.frame_sort(place, frame, node);
+        }
         let function = match (method, rest.len()) {
             ("copy", 0) => return self.frame_copy(place, frame, node),
             ("head", 0 | 1) => "head_positions",
@@ -56,7 +73,7 @@ impl<'db> Builder<'db> {
         };
         let rows = self.held(int, rows, node);
         let source = self.borrow(frame);
-        let count = self.row_count(&source, node);
+        let count = self.counted_rows(frame, &source, node);
         let arguments = vec![Place::from(count), Place::from(rows)];
         self.taken_rows(place, frame, &source, (function, arguments), node);
     }
@@ -69,7 +86,7 @@ impl<'db> Builder<'db> {
     /// panics.
     pub(crate) fn frame_rows(&mut self, place: Place, value: NodeId, index: NodeId, node: NodeId) {
         let source = self.borrow(value);
-        let count = self.row_count(&source, node);
+        let count = self.counted_rows(value, &source, node);
         if self.tree.kind(index) != SyntaxKind::Slice {
             let mask = self.borrow(index);
             let chosen = self.length(&mask, self.ty(index), 0, index);
@@ -138,8 +155,9 @@ impl<'db> Builder<'db> {
 
     /// A new frame into `place` whose columns are the library function `kernel.0` of each
     /// column of the frame `value`, borrowed at `source`, and of `kernel.1`: `masked` with a
-    /// mask, or `taken` with positions.
-    fn each_column(
+    /// mask, or `taken` with positions. A column of `str` goes through `text_masked` or
+    /// `text_taken`, which give a text array.
+    pub(crate) fn each_column(
         &mut self,
         place: Place,
         value: NodeId,
@@ -152,12 +170,22 @@ impl<'db> Builder<'db> {
         };
         let mut chosen = Vec::with_capacity(columns.len());
         for (position, column) in (0_u32..).zip(columns) {
-            let element = column.element;
-            let array = Type::new(self.db, TypeKind::Array { element, rank: 1 });
+            // A column of `str` has its own functions, `text_masked` and `text_taken`.
+            let text = matches!(column.element.kind(self.db), TypeKind::Str);
+            let name = if text {
+                format!("text_{function}")
+            } else {
+                function.to_owned()
+            };
+            let types = if text {
+                Vec::new()
+            } else {
+                vec![column.element]
+            };
+            let array = erase(self.db, column.array(self.db));
             let from = source.clone().project(Projection::Field(position));
             let arguments = vec![from, by.clone()];
-            let Some(result) = self.frame_call(function, vec![element], arguments, array, node)
-            else {
+            let Some(result) = self.frame_call(&name, types, arguments, array, node) else {
                 return;
             };
             chosen.push(Operand::Move(Place::from(result)));
@@ -167,7 +195,7 @@ impl<'db> Builder<'db> {
 
     /// A temporary of type `ty` holding `operand`, for an argument a library function
     /// borrows.
-    fn held(&mut self, ty: Type<'db>, operand: Operand<'db>, node: NodeId) -> Local {
+    pub(crate) fn held(&mut self, ty: Type<'db>, operand: Operand<'db>, node: NodeId) -> Local {
         let local = self.temporary(ty, node);
         self.assign(Place::from(local), Rvalue::Use(operand), node);
         local
@@ -228,10 +256,23 @@ impl<'db> Builder<'db> {
 
     /// A temporary holding the number of rows of the frame at `source`: the length of its
     /// first column.
-    fn row_count(&mut self, source: &Place, node: NodeId) -> Local {
+    pub(crate) fn row_count(&mut self, source: &Place, node: NodeId) -> Local {
         let count = self.temporary(self.int_type(), node);
         let first = source.clone().project(Projection::Field(0));
         self.assign(Place::from(count), Rvalue::Length(first, 0), node);
         count
+    }
+
+    /// The number of rows of the frame the expression `frame` gives, borrowed at `source`,
+    /// in a temporary: [`Builder::row_count`] for a frame whose first column may hold `str`,
+    /// whose rows are counted from its offsets.
+    pub(crate) fn counted_rows(&mut self, frame: NodeId, source: &Place, node: NodeId) -> Local {
+        let stored = match self.ty(frame).kind(self.db) {
+            TypeKind::Tuple(columns) => columns.first().copied(),
+            _ => None,
+        };
+        let first = source.clone().project(Projection::Field(0));
+        let rows = self.column_length(first, stored, node);
+        self.held(self.int_type(), rows, node)
     }
 }

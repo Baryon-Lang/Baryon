@@ -70,7 +70,7 @@ class Trade(Struct):
 
 
 class Named(Struct):
-    name: str
+    name: list[f64]
     price: f64
 
 
@@ -101,12 +101,12 @@ error: a `DataFrame`'s schema is a struct that lists its columns, found `f64`
    |                        ^^^ not a struct
    = note: declare the columns as the fields of a struct, `class Trade(Struct):` with `price: f64` and `volume: i64`, then write `DataFrame[Trade]`
 
-error: a column of a `DataFrame` cannot hold `str` yet
+error: a column of a `DataFrame` cannot hold `list[f64]` yet
   --> main.byn:19:43
    |
 19 | def types(a: DataFrame[f64], b: DataFrame[Named], c: DataFrame[Empty], d: DataFrame):
    |                                           ^^^^^ the field `name` would be such a column
-   = note: a column holds numbers or `bool` today; text columns come with roadmap item 3.13.3 and missing values with 3.13.6
+   = note: a column holds numbers, `bool` or `str` today; missing values come with roadmap item 3.13.6
 
 error: `Empty` has no fields, so a `DataFrame` of it would have no columns
   --> main.byn:19:64
@@ -383,12 +383,12 @@ error: a `DataFrame` is indexed by a column's name, a row's number, a mask or a 
    |                ^^^^ does not choose a column or rows
    = note: write a column's name as a string literal, `df["price"]`, a row's number, `df[0]`, a mask, an `Array[bool, 1]` such as `df[df.price > 100.0]`, or a slice, `df[1:3]`
 
-error: a column of a `DataFrame` cannot hold `str` yet
+error: `DataFrame(rows)` is not built for a `DataFrame` with a column of `str` yet
   --> main.byn:15:19
    |
 15 |     e = DataFrame(names)
-   |                   ^^^^^ the field `name` would be such a column
-   = note: a column holds numbers or `bool` today; text columns come with roadmap item 3.13.3 and missing values with 3.13.6
+   |                   ^^^^^ has a column of `str`
+   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, `assign`, `drop`, `rename`, `df[[...]]` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: `DataFrame(...)` takes a dict of its columns or a list of its rows, found `Array[f64, 1]`
   --> main.byn:16:19

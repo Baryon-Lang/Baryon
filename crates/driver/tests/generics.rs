@@ -165,3 +165,33 @@ def main():
     let module = session.compile(None, driver::Profile::Debug).unwrap();
     assert!(module.contains("@\"main.Pair.total[f64]\""), "{module}");
 }
+
+/// An argument that cannot fix a type parameter because it has the wrong shape is reported at
+/// the call (roadmap 1.9.27). Before, the unfixed `T` became unknown, matched anything, and the
+/// call reached the backend: "the LLVM backend does not compile values of type `unknown` yet".
+/// A `None` for a `T | None` still fits.
+#[test]
+fn an_argument_of_the_wrong_shape_is_reported_at_the_call() {
+    let program = r"
+def first[T: Number](values: Array[T, 1]) -> T:
+    return values[0]
+
+
+def maybe[T](value: T | None) -> bool:
+    return value is None
+
+
+def use_them() -> f64:
+    maybe(None)
+    return first([1.0])
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `values` has type `Array[T, 1]` here, found `list[f64]`
+  --> main.byn:11:18
+   |
+11 |     return first([1.0])
+   |                  ^^^^^ type `list[f64]`"
+    );
+}

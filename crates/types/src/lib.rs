@@ -59,6 +59,7 @@ mod interned;
 mod layout;
 mod primitive;
 mod shape;
+mod text_array;
 mod union;
 
 pub use body::{Call, Callee, Key, TypedBody};
@@ -176,6 +177,12 @@ pub enum TypeKind<'db> {
         /// The dimension lengths.
         shape: Shape,
     },
+    /// `Array[str, 1]`: a text array, the one array whose elements are not a copy type
+    /// (decision 0045). It has one dimension and holds `str`s, so it carries nothing else.
+    /// Lowering stores it as its [two buffers](Type::text_storage), every element's bytes end
+    /// to end and where each one starts, so the mid-level IR and the stages after it see only a
+    /// tuple of two arrays of numbers.
+    TextArray,
     /// `DataFrame[S]`: a table of named columns, each a rank-1 array, all of one length
     /// (decision 0045). Lowering stores it as its [`columns`](Type::frame_storage), so the
     /// mid-level IR and the stages after it see only a tuple of arrays.

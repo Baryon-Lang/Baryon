@@ -392,6 +392,22 @@ fn a_union_keeps_one_of_each_member_even_when_two_display_alike() {
     assert_eq!(union, crate::union(&database, [twin, periodic, twin]));
 }
 
+/// A text array is written `Array[str, 1]`, takes the room of its two buffers, each the three
+/// words of a rank-1 array, and is stored as the tuple of them.
+#[test]
+fn a_text_array_shows_as_an_array_of_str_and_is_stored_as_two_buffers() {
+    let database = Database::default();
+    let text = Type::new(&database, TypeKind::TextArray);
+    assert_eq!(text.display(&database).to_string(), "Array[str, 1]");
+    assert_eq!(layout_of(&database, text), Ok((48, 8)));
+    let stored = text.text_storage(&database);
+    assert_eq!(
+        stored.map(|ty| ty.display(&database).to_string()),
+        Some("tuple[Array[u8, 1], Array[i64, 1]]".to_owned())
+    );
+    assert_eq!(stored.map(|ty| layout_of(&database, ty)), Some(Ok((48, 8))));
+}
+
 /// A frame type of the columns `price: f64` and `volume: i64`, with rows named by `row`.
 fn trades<'db>(database: &'db Database, row: Option<Type<'db>>) -> Type<'db> {
     let column = |name: &str, element: &str| Column {
@@ -433,6 +449,34 @@ fn a_frame_is_stored_as_one_array_per_column() {
         layout_of(&database, Type::new(&database, empty)),
         Ok((0, 1))
     );
+}
+
+/// A column of `str` is a text array, read as `Array[str, 1]` and stored as its two buffers,
+/// so a frame with one beside a column of numbers takes three buffers.
+#[test]
+fn a_text_column_is_stored_as_a_text_array() {
+    let database = Database::default();
+    let shown = |ty: Type<'_>| ty.display(&database).to_string();
+    let text = Type::new(&database, TypeKind::Str);
+    let symbol = Column {
+        name: "symbol".to_owned(),
+        element: text,
+    };
+    assert_eq!(shown(symbol.array(&database)), "Array[str, 1]");
+    let price = Column {
+        name: "price".to_owned(),
+        element: primitive(&database, "f64"),
+    };
+    assert_eq!(shown(price.array(&database)), "Array[f64, 1]");
+    let columns = vec![symbol, price];
+    let frame = Type::new(&database, TypeKind::DataFrame { columns, row: None });
+    assert_eq!(layout_of(&database, frame), Ok((72, 8)));
+    let storage = frame.frame_storage(&database).unwrap();
+    assert_eq!(
+        storage.display(&database).to_string(),
+        "tuple[tuple[Array[u8, 1], Array[i64, 1]], Array[f64, 1]]"
+    );
+    assert_eq!(layout_of(&database, storage), Ok((72, 8)));
 }
 
 #[test]

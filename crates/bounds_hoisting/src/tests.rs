@@ -253,7 +253,9 @@ fn hoists_a_shifted_counter_and_its_overflow_check() {
     let mut second = after;
     second.extend(first);
     let mut body = builder.finish(vec![(statements, overflow), (second, check)]);
-    hoist(&database, &mut body);
+    hoist(&database, &mut body, &|_| {
+        types::Declared::Struct(Vec::new())
+    });
 
     assert!(body.validate(&database).is_empty());
     // Entry, header, two checking blocks, latch, exit; the copy of the four loop blocks; the
@@ -283,7 +285,9 @@ fn hoists_an_index_the_loop_does_not_change() {
     let (mut statements, check) = builder.check(k(), copy(length), 3);
     statements.insert(0, assign(length, Rvalue::Length(Place::from(a()), 0)));
     let mut body = builder.finish(vec![(statements, check)]);
-    hoist(&database, &mut body);
+    hoist(&database, &mut body, &|_| {
+        types::Declared::Struct(Vec::new())
+    });
 
     assert!(body.validate(&database).is_empty());
     assert_eq!(body.blocks.len(), 5 + 3 + 1);
@@ -342,7 +346,11 @@ fn leaves_checks_it_cannot_hoist() {
         let blocks = blocks(&mut builder);
         let mut body = builder.finish(blocks);
         let before = body.blocks.len();
-        hoist(&database, &mut body);
+        hoist(&database, &mut body, &|_| {
+            types::Declared::Struct(Vec::new())
+        });
         assert_eq!(body.blocks.len(), before, "case {case}");
     }
 }
+
+mod unit;

@@ -180,7 +180,12 @@ fn run(options: &Options) -> Result<(), String> {
         let parameters = kernel.parameters(options.size);
         let mut measurements = Vec::new();
         for (compiler, _) in &compilers {
-            let executable = compiler.build(&kernels_directory, &build_directory, kernel.name)?;
+            let executable = compiler.build(
+                &kernels_directory,
+                &build_directory,
+                kernel.name,
+                kernel.threaded,
+            )?;
             let measurement = measure::measure(&executable, parameters, options.repetitions)?;
             measurements.push((compiler.language, measurement));
         }

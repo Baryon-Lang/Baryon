@@ -302,6 +302,7 @@ impl<'db> Body<'db> {
             (TypeKind::List(_), [_]) if sliced => base,
             (TypeKind::List(item), [_]) => *item,
             (TypeKind::Str, [_]) => base,
+            (TypeKind::TextArray, _) => self.text_array_index(node, sliced, &indices),
             (TypeKind::Tuple(items), [index]) => match self.lowerer.evaluate_quietly(*index) {
                 Some(Value::Integer(position)) => usize::try_from(position)
                     .ok()
@@ -521,8 +522,11 @@ impl<'db> Body<'db> {
             TypeKind::Tuple(items) if items.windows(2).all(|pair| pair[0] == pair[1]) => {
                 items.first().copied().unwrap_or(unknown)
             }
-            // Each pass reads the next line (the `files` module).
-            TypeKind::Standard(types::StandardType::File) => Type::new(self.db, TypeKind::Str),
+            // Each pass reads the next line of a file (the `files` module), or borrows the next
+            // element of a text array.
+            TypeKind::Standard(types::StandardType::File) | TypeKind::TextArray => {
+                Type::new(self.db, TypeKind::Str)
+            }
             TypeKind::Primitive(_) | TypeKind::None => {
                 let message = format!("a value of type `{}` cannot be looped over", self.show(ty));
                 self.lowerer

@@ -1,0 +1,804 @@
+"""The `bz2` module: bzip2 streams on byte arrays, with Python's names, written in Baryon
+(decision 0049).
+
+A bzip2 stream is a header naming the block size, then blocks of at most 100,000 to 900,000
+bytes, each sorted by the Burrows-Wheeler transform, move-to-front coded and Huffman coded with
+up to six tables, and an end marker holding a CRC of every block's CRC. `decompress` reads every
+stream in its input and joins what they hold, as Python's `bz2.decompress` does; data that is
+not bzip2 raises `OSError` with the kind `INVALID_DATA` and the message Python's error carries.
+"""
+
+from os import ErrorKind
+
+
+def compress(data: Array[u8, 1], compresslevel: int = 9) -> Raises[Array[u8, 1], ValueError]:
+    """`data` compressed as one bzip2 stream, as `bz2.compress(data, compresslevel)` gives it:
+    any bzip2 decoder, Python's included, reads it back.
+
+    `compresslevel` runs from 1 to 9 and sets the block size, `compresslevel` times 100,000
+    bytes; 9, the default, compresses best. A level outside 1 to 9 raises `ValueError` with
+    Python's message, `compresslevel must be between 1 and 9`. The bytes are Baryon's own
+    (decision 0049): the block sort and the run-length stages are bzip2's, so the blocks match,
+    and the Huffman tables are chosen as bzip2 chooses them, within a fraction of a percent.
+
+    Costs O(n log n) for n bytes, sorting each block by prefix doubling, and about 13 bytes of
+    tables for each byte of a block.
+    """
+    if compresslevel < 1 or compresslevel > 9:
+        raise ValueError("compresslevel must be between 1 and 9")
+    crc_table = _crc_table()
+    writer = _Writer(Array.zeros(len(data) // 2 + 64, u8), 0, 0, 0)
+    _put(writer, 32, 0x425A6830 + compresslevel)
+    capacity = 100000 * compresslevel - 19
+    block = Array.zeros(min(capacity, 5 * len(data) // 4 + 8), u8)
+    combined = 0
+    position = 0
+    while position < len(data):
+        n = 0
+        crc = 0xFFFFFFFF
+        while position < len(data):
+            value = int(data[position])
+            run = 1
+            while run < 255 and position + run < len(data) and int(data[position + run]) == value:
+                run += 1
+            written = min(run, 4) + (1 if run >= 4 else 0)
+            if n + written > len(block):
+                break
+            for _ in range(min(run, 4)):
+                block[n] = u8(value)
+                n += 1
+            if run >= 4:
+                block[n] = u8(run - 4)
+                n += 1
+            for _ in range(run):
+                crc = _crc(crc_table, crc, value)
+            position += run
+        crc = crc ^ 0xFFFFFFFF
+        _write_block(writer, block, n, crc)
+        combined = (((combined << 1) | (combined >> 31)) & 0xFFFFFFFF) ^ crc
+    _put(writer, 24, 0x177245)
+    _put(writer, 24, 0x385090)
+    _put(writer, 32, combined)
+    if writer.count > 0:
+        _put(writer, 8 - writer.count, 0)
+    return writer.data[: writer.length].copy()
+
+
+def decompress(data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
+    """The bytes the bzip2 streams in `data` hold, joined, as `bz2.decompress(data)` gives them.
+    Empty `data` gives an empty array.
+
+    Raises `OSError` with the kind `INVALID_DATA` for data Python refuses, with Python's
+    message: `Invalid data stream` for bytes that are not bzip2 or a block that is damaged, its
+    CRC included, and `Compressed data ended before the end-of-stream marker was reached` for a
+    stream cut short. As in Python, bytes after the first stream that do not start another are
+    ignored, but a later stream cut short raises. Blocks in the randomized form bzip2 stopped
+    writing in 1999 raise `Invalid data stream`, where Python reads them.
+
+    Costs one pass over `data`, and for each block of n bytes about 5n bytes of tables and a
+    pass over them in the order the transform undoes; the output is copied each time its buffer
+    doubles.
+    """
+    crc_table = _crc_table()
+    output = _Output(Array.zeros(4 * len(data) + 64, u8), 0)
+    reader = _Reader(0)
+    streams = 0
+    while reader.position < 8 * len(data):
+        kept = output.length
+        status = _stream(data, reader, output, crc_table)
+        if status == 1:
+            raise OSError(ErrorKind.INVALID_DATA, i32(0), _ended(), "")
+        if status != 0:
+            if streams > 0:
+                output.length = kept
+                break
+            raise OSError(ErrorKind.INVALID_DATA, i32(0), "Invalid data stream", "")
+        streams += 1
+    return output.data[: output.length].copy()
+
+
+def _ended() -> str:
+    """The message of Python's `ValueError` for a stream cut short."""
+    return "Compressed data ended before the end-of-stream marker was reached"
+
+
+def _crc_table() -> Array[u32, 1]:
+    """The table of bzip2's CRC-32: the polynomial of zlib's, fed highest bit first."""
+    table = Array.zeros(256, u32)
+    for i in range(256):
+        c = i << 24
+        for _ in range(8):
+            if c & 0x80000000 != 0:
+                c = ((c << 1) ^ 0x04C11DB7) & 0xFFFFFFFF
+            else:
+                c = (c << 1) & 0xFFFFFFFF
+        table[i] = u32(c)
+    return table
+
+
+def _crc(table: Array[u32, 1], crc: int, byte: int) -> int:
+    """`crc` carried over one more `byte`."""
+    return ((crc << 8) & 0xFFFFFFFF) ^ int(table[((crc >> 24) ^ byte) & 255])
+
+
+class _Reader(Struct):
+    """Where a decoder stands in a bzip2 stream, which packs its bits from each byte's highest
+    bit down: `position` counts bits from the start of the data."""
+
+    position: int
+
+
+class _Output(Struct):
+    """The bytes decoded so far: the first `length` bytes of `data`, whose length doubles when
+    it fills, so n bytes cost O(n) copying in all."""
+
+    data: Array[u8, 1]
+    length: int
+
+
+class _Huffman(Struct):
+    """A bzip2 Huffman table in canonical form: codes of each length run upward from
+    `first[length]`, and the `count[length]` symbols of that length are `symbols[start[length]:]`,
+    in increasing order."""
+
+    first: Array[int, 1]
+    count: Array[int, 1]
+    start: Array[int, 1]
+    symbols: Array[i32, 1]
+
+
+def _reserve(output: InOut[_Output], extra: int):
+    """Makes room for `extra` more bytes, doubling the buffer as needed."""
+    needed = output.length + extra
+    if needed <= len(output.data):
+        return
+    grown = Array.zeros(max(2 * len(output.data), needed), u8)
+    for i in range(output.length):
+        grown[i] = output.data[i]
+    output.data = grown
+
+
+def _bits(data: Array[u8, 1], reader: InOut[_Reader], n: int) -> int:
+    """The next `n` bits, at most 32, highest first, or -1 when the data ends first."""
+    if reader.position + n > 8 * len(data):
+        return -1
+    value = 0
+    taken = 0
+    while taken < n:
+        byte = int(data[reader.position >> 3])
+        offset = reader.position & 7
+        width = min(8 - offset, n - taken)
+        value = (value << width) | ((byte >> (8 - offset - width)) & ((1 << width) - 1))
+        reader.position += width
+        taken += width
+    return value
+
+
+def _expect(data: Array[u8, 1], reader: InOut[_Reader], byte: int) -> int:
+    """0 when the next byte is `byte`, 1 when the data ends first, 2 when it is another."""
+    value = _bits(data, reader, 8)
+    if value < 0:
+        return 1
+    return 0 if value == byte else 2
+
+
+def _stream(
+    data: Array[u8, 1], reader: InOut[_Reader], output: InOut[_Output], crc_table: Array[u32, 1]
+) -> int:
+    """Decodes the bzip2 stream at `reader` onto `output` and leaves `reader` at the byte after
+    it. Gives 0, 1 when the data ends first, or 2 for a stream that is not valid. Checks each
+    part as soon as it is read, in the order libbzip2 checks them, so a stream damaged and cut
+    short gives the answer Python gives."""
+    for byte in [66, 90, 104]:
+        status = _expect(data, reader, byte)
+        if status != 0:
+            return status
+    level = _bits(data, reader, 8)
+    if level < 0:
+        return 1
+    if level < 49 or level > 57:
+        return 2
+    limit = 100000 * (level - 48)
+    combined = 0
+    while True:
+        first = _bits(data, reader, 8)
+        if first < 0:
+            return 1
+        magic = [65, 89, 38, 83, 89]
+        if first == 0x17:
+            magic = [114, 69, 56, 80, 144]
+        elif first != 0x31:
+            return 2
+        for byte in magic:
+            status = _expect(data, reader, byte)
+            if status != 0:
+                return status
+        if first == 0x17:
+            break
+        header = _Reader(reader.position)
+        status = _block(data, reader, limit, output, crc_table)
+        if status != 0:
+            return status
+        crc = _bits(data, header, 32)
+        combined = (((combined << 1) | (combined >> 31)) & 0xFFFFFFFF) ^ crc
+    stored = _bits(data, reader, 32)
+    if stored < 0:
+        return 1
+    if stored != combined:
+        return 2
+    reader.position = ((reader.position + 7) >> 3) << 3
+    return 0
+
+
+def _block(
+    data: Array[u8, 1],
+    reader: InOut[_Reader],
+    limit: int,
+    output: InOut[_Output],
+    crc_table: Array[u32, 1],
+) -> int:
+    """Decodes the block after the magic number at `reader` onto `output`, giving 0, 1 when the
+    data ends first, or 2 for a block that is not valid or whose CRC is wrong. `limit` is the
+    most bytes the block may hold before its last run-length decoding."""
+    expected = _bits(data, reader, 32)
+    randomized = _bits(data, reader, 1)
+    origin = _bits(data, reader, 24)
+    if origin < 0:
+        return 1
+    if origin > limit + 10 or randomized != 0:
+        return 2
+    ranges = _bits(data, reader, 16)
+    if ranges < 0:
+        return 1
+    seen = Array.zeros(256, u8)
+    in_use = 0
+    for i in range(16):
+        if (ranges >> (15 - i)) & 1 != 0:
+            bits = _bits(data, reader, 16)
+            if bits < 0:
+                return 1
+            for j in range(16):
+                if (bits >> (15 - j)) & 1 != 0:
+                    seen[in_use] = u8(16 * i + j)
+                    in_use += 1
+    if in_use == 0:
+        return 2
+    tables: list[_Huffman] = []
+    selectors = Array.zeros(18002, i32)
+    status = _tables(data, reader, in_use + 2, tables, selectors)
+    if status < 0:
+        return -status
+    text = Array.zeros(limit, u8)
+    size = _text(data, reader, seen, in_use, tables, selectors, status, text)
+    if size < 0:
+        return -size
+    if origin >= size:
+        return 2
+    crc = _unsort(text, size, origin, output, crc_table)
+    return 0 if crc == expected else 2
+
+
+def _tables(
+    data: Array[u8, 1],
+    reader: InOut[_Reader],
+    alphabet: int,
+    tables: InOut[list[_Huffman]],
+    selectors: InOut[Array[i32, 1]],
+) -> int:
+    """Reads a block's Huffman tables into `tables` and its selectors, which table codes each
+    group of 50 symbols, into `selectors`. Gives how many selectors there are, at most 18,002 as
+    libbzip2 keeps, or -1 when the data ends first and -2 for tables that are not valid."""
+    groups = _bits(data, reader, 3)
+    if groups < 0:
+        return -1
+    if groups < 2 or groups > 6:
+        return -2
+    count = _bits(data, reader, 15)
+    if count < 0:
+        return -1
+    if count < 1:
+        return -2
+    order = Array.zeros(6, i32)
+    for i in range(groups):
+        order[i] = i32(i)
+    for i in range(count):
+        index = 0
+        bit = _bits(data, reader, 1)
+        while bit == 1:
+            index += 1
+            if index >= groups:
+                return -2
+            bit = _bits(data, reader, 1)
+        if bit < 0:
+            return -1
+        chosen = order[index]
+        for j in range(index, 0, -1):
+            order[j] = order[j - 1]
+        order[0] = chosen
+        if i < 18002:
+            selectors[i] = chosen
+    for _ in range(groups):
+        lengths = Array.zeros(alphabet, i32)
+        current = _bits(data, reader, 5)
+        if current < 0:
+            return -1
+        for i in range(alphabet):
+            while True:
+                if current < 1 or current > 20:
+                    return -2
+                bit = _bits(data, reader, 1)
+                if bit < 0:
+                    return -1
+                if bit == 0:
+                    break
+                step = _bits(data, reader, 1)
+                if step < 0:
+                    return -1
+                current += 1 if step == 0 else -1
+            lengths[i] = i32(current)
+        tables.append(_huffman(lengths, alphabet))
+    return min(count, 18002)
+
+
+def _huffman(lengths: Array[i32, 1], size: int) -> _Huffman:
+    """The canonical decoding table for `size` symbols with code `lengths` from 1 to 20."""
+    count = Array.zeros(22, int)
+    for i in range(size):
+        count[int(lengths[i])] += 1
+    first = Array.zeros(22, int)
+    start = Array.zeros(22, int)
+    code = 0
+    index = 0
+    for length in range(1, 21):
+        first[length] = code
+        start[length] = index
+        code = (code + count[length]) << 1
+        index += count[length]
+    symbols = Array.zeros(size, i32)
+    placed = start.copy()
+    for length in range(1, 21):
+        for i in range(size):
+            if int(lengths[i]) == length:
+                symbols[placed[length]] = i32(i)
+                placed[length] += 1
+    return _Huffman(first, count, start, symbols)
+
+
+def _symbol(data: Array[u8, 1], reader: InOut[_Reader], table: _Huffman) -> int:
+    """The next symbol of `table`'s code: -1 when the data ends, -2 for bits no code starts.
+    A code is matched as libbzip2 matches one, by the last code of each length, so the tables
+    of a damaged block decode as they decode in Python."""
+    code = 0
+    for length in range(1, 21):
+        bit = _bits(data, reader, 1)
+        if bit < 0:
+            return -1
+        code = (code << 1) | bit
+        if code - table.first[length] < table.count[length]:
+            index = table.start[length] + code - table.first[length]
+            if index < 0 or index >= len(table.symbols):
+                return -2
+            return int(table.symbols[index])
+    return -2
+
+
+def _text(
+    data: Array[u8, 1],
+    reader: InOut[_Reader],
+    seen: Array[u8, 1],
+    in_use: int,
+    tables: list[_Huffman],
+    selectors: Array[i32, 1],
+    selector_count: int,
+    text: InOut[Array[u8, 1]],
+) -> int:
+    """Decodes a block's symbols into `text`, its bytes in the transform's order, undoing the
+    move-to-front coding and the runs of the front byte. `seen` lists the `in_use` bytes the
+    block uses. Gives the bytes decoded, or -1 when the data ends first and -2 for a block that
+    is not valid or holds more than `text` does."""
+    end = in_use + 1
+    front = Array.zeros(256, u8)
+    for i in range(in_use):
+        front[i] = u8(i)
+    size = 0
+    selector = 0
+    left = 0
+    table = 0
+    run = 0
+    weight = 1
+    while True:
+        if left == 0:
+            if selector >= selector_count:
+                return -2
+            table = int(selectors[selector])
+            selector += 1
+            left = 50
+        left -= 1
+        symbol = _symbol(data, reader, tables[table])
+        if symbol < 0:
+            return symbol
+        if symbol <= 1:
+            if weight >= 2097152:
+                return -2
+            run += weight << symbol
+            weight = weight << 1
+            continue
+        if run > 0:
+            if size + run > len(text):
+                return -2
+            byte = seen[int(front[0])]
+            for i in range(run):
+                text[size + i] = byte
+            size += run
+            run = 0
+            weight = 1
+        if symbol == end:
+            return size
+        if size >= len(text):
+            return -2
+        moved = front[symbol - 1]
+        for j in range(symbol - 1, 0, -1):
+            front[j] = front[j - 1]
+        front[0] = moved
+        text[size] = seen[int(moved)]
+        size += 1
+
+
+def _unsort(
+    text: Array[u8, 1], size: int, origin: int, output: InOut[_Output], crc_table: Array[u32, 1]
+) -> int:
+    """Undoes the Burrows-Wheeler transform of `text[:size]`, whose original rotation sorted
+    `origin`-th, and then the first run-length coding, in which four equal bytes are followed
+    by how many more there are, onto `output`. Gives the CRC of the bytes written."""
+    starts = Array.zeros(256, int)
+    for i in range(size):
+        starts[int(text[i])] += 1
+    total = 0
+    for i in range(256):
+        count = starts[i]
+        starts[i] = total
+        total += count
+    links = Array.zeros(size, i32)
+    for i in range(size):
+        byte = int(text[i])
+        links[starts[byte]] = i32(i)
+        starts[byte] += 1
+    crc = 0xFFFFFFFF
+    position = int(links[origin])
+    last = -1
+    repeats = 0
+    for _ in range(size):
+        value = int(text[position])
+        position = int(links[position])
+        if repeats == 4:
+            _reserve(output, value)
+            for i in range(value):
+                output.data[output.length + i] = u8(last)
+                crc = _crc(crc_table, crc, last)
+            output.length += value
+            repeats = 0
+            last = -1
+            continue
+        if value == last:
+            repeats += 1
+        else:
+            repeats = 1
+            last = value
+        _reserve(output, 1)
+        output.data[output.length] = u8(value)
+        output.length += 1
+        crc = _crc(crc_table, crc, value)
+    return crc ^ 0xFFFFFFFF
+
+
+class _Writer(Struct):
+    """The bits written so far, highest first: `length` whole bytes in `data`, and the last
+    `count` bits, fewer than 8, in the low bits of `buffer`."""
+
+    data: Array[u8, 1]
+    length: int
+    buffer: int
+    count: int
+
+
+def _put(writer: InOut[_Writer], n: int, value: int):
+    """Writes the low `n` bits of `value`, at most 32, highest first."""
+    writer.buffer = (writer.buffer << n) | (value & ((1 << n) - 1))
+    writer.count += n
+    while writer.count >= 8:
+        writer.count -= 8
+        if writer.length == len(writer.data):
+            grown = Array.zeros(2 * len(writer.data) + 64, u8)
+            for i in range(writer.length):
+                grown[i] = writer.data[i]
+            writer.data = grown
+        writer.data[writer.length] = u8((writer.buffer >> writer.count) & 255)
+        writer.length += 1
+    writer.buffer = writer.buffer & ((1 << writer.count) - 1)
+
+
+def _write_block(writer: InOut[_Writer], block: Array[u8, 1], n: int, crc: int):
+    """Writes the block of the first `n` bytes of `block`, which hold bzip2's first run-length
+    coding of bytes whose CRC is `crc`: sorted, move-to-front coded, and Huffman coded with the
+    tables `_choose` picks."""
+    used = Array.zeros(256, bool)
+    for i in range(n):
+        used[int(block[i])] = True
+    index = Array.zeros(256, int)
+    in_use = 0
+    for i in range(256):
+        if used[i]:
+            index[i] = in_use
+            in_use += 1
+    symbols = Array.zeros(n + 1, i32)
+    count, origin = _symbols(block, n, index, in_use, symbols)
+    alphabet = in_use + 2
+    lengths = Array.zeros(6 * 258, i32)
+    selectors = Array.zeros((count + 49) // 50, i32)
+    groups = _choose(symbols, count, alphabet, lengths, selectors)
+    _put(writer, 24, 0x314159)
+    _put(writer, 24, 0x265359)
+    _put(writer, 32, crc)
+    _put(writer, 1, 0)
+    _put(writer, 24, origin)
+    ranges = 0
+    for i in range(256):
+        if used[i]:
+            ranges = ranges | (1 << (15 - i // 16))
+    _put(writer, 16, ranges)
+    for i in range(16):
+        if (ranges >> (15 - i)) & 1 != 0:
+            bits = 0
+            for j in range(16):
+                if used[16 * i + j]:
+                    bits = bits | (1 << (15 - j))
+            _put(writer, 16, bits)
+    _put(writer, 3, groups)
+    _put(writer, 15, len(selectors))
+    order = Array.zeros(6, i32)
+    for i in range(groups):
+        order[i] = i32(i)
+    for group in range(len(selectors)):
+        chosen = selectors[group]
+        position = 0
+        while order[position] != chosen:
+            position += 1
+            _put(writer, 1, 1)
+        _put(writer, 1, 0)
+        for k in range(position, 0, -1):
+            order[k] = order[k - 1]
+        order[0] = chosen
+    codes = Array.zeros(6 * 258, int)
+    for table in range(groups):
+        current = int(lengths[258 * table])
+        _put(writer, 5, current)
+        for symbol in range(alphabet):
+            wanted = int(lengths[258 * table + symbol])
+            while current < wanted:
+                _put(writer, 2, 2)
+                current += 1
+            while current > wanted:
+                _put(writer, 2, 3)
+                current -= 1
+            _put(writer, 1, 0)
+        code = 0
+        for length in range(1, 21):
+            for symbol in range(alphabet):
+                if int(lengths[258 * table + symbol]) == length:
+                    codes[258 * table + symbol] = code
+                    code += 1
+            code = code << 1
+    for group in range(len(selectors)):
+        table = int(selectors[group])
+        for i in range(50 * group, min(50 * group + 50, count)):
+            symbol = 258 * table + int(symbols[i])
+            _put(writer, int(lengths[symbol]), codes[symbol])
+
+
+def _symbols(
+    block: Array[u8, 1], n: int, index: Array[int, 1], in_use: int, symbols: InOut[Array[i32, 1]]
+) -> tuple[int, int]:
+    """Writes into `symbols` the block's last column after the sort, move-to-front coded over
+    the `in_use` bytes it uses, `index` numbering them, with runs of the front byte as RUNA and
+    RUNB digits and an end symbol last. Gives how many symbols there are and where the
+    unrotated block sorted."""
+    order = _sort(block, n)
+    origin = 0
+    front = Array.zeros(256, i32)
+    for i in range(in_use):
+        front[i] = i32(i)
+    count = 0
+    zeros = 0
+    for j in range(n):
+        start = int(order[j])
+        if start == 0:
+            origin = j
+        value = index[int(block[(start + n - 1) % n])]
+        position = 0
+        while int(front[position]) != value:
+            position += 1
+        for k in range(position, 0, -1):
+            front[k] = front[k - 1]
+        front[0] = i32(value)
+        if position == 0:
+            zeros += 1
+            continue
+        count = _run(symbols, count, zeros)
+        zeros = 0
+        symbols[count] = i32(position + 1)
+        count += 1
+    count = _run(symbols, count, zeros)
+    symbols[count] = i32(in_use + 1)
+    return (count + 1, origin)
+
+
+def _run(symbols: InOut[Array[i32, 1]], count: int, zeros: int) -> int:
+    """Writes a run of `zeros` front bytes as bzip2's RUNA (0) and RUNB (1) digits, lowest
+    first, after the first `count` symbols, and gives the new count."""
+    if zeros == 0:
+        return count
+    pending = zeros - 1
+    while True:
+        symbols[count] = i32(pending & 1)
+        count += 1
+        if pending < 2:
+            return count
+        pending = (pending - 2) >> 1
+
+
+def _sort(block: Array[u8, 1], n: int) -> Array[i32, 1]:
+    """The starts of the rotations of `block[:n]` in sorted order: the Burrows-Wheeler sort, by
+    prefix doubling with counting sorts, so O(n log n) whatever the bytes."""
+    size = max(n, 256)
+    rank = Array.zeros(n, i32)
+    order = Array.zeros(n, i32)
+    counts = Array.zeros(size + 1, int)
+    for i in range(n):
+        rank[i] = i32(block[i])
+        counts[int(block[i]) + 1] += 1
+    for i in range(size):
+        counts[i + 1] += counts[i]
+    for i in range(n):
+        value = int(block[i])
+        order[counts[value]] = i32(i)
+        counts[value] += 1
+    shifted = Array.zeros(n, i32)
+    fresh = Array.zeros(n, i32)
+    step = 1
+    while step < n:
+        for i in range(size + 1):
+            counts[i] = 0
+        for j in range(n):
+            shifted[j] = i32((int(order[j]) - step + n) % n)
+            counts[int(rank[int(shifted[j])]) + 1] += 1
+        for i in range(size):
+            counts[i + 1] += counts[i]
+        for j in range(n):
+            start = int(shifted[j])
+            key = int(rank[start])
+            order[counts[key]] = i32(start)
+            counts[key] += 1
+        classes = 0
+        fresh[int(order[0])] = i32(0)
+        for j in range(1, n):
+            here = int(order[j])
+            before = int(order[j - 1])
+            if rank[here] != rank[before] or rank[(here + step) % n] != rank[(before + step) % n]:
+                classes += 1
+            fresh[here] = i32(classes)
+        for i in range(n):
+            rank[i] = fresh[i]
+        if classes == n - 1:
+            break
+        step = 2 * step
+    return order
+
+
+def _choose(
+    symbols: Array[i32, 1],
+    count: int,
+    alphabet: int,
+    lengths: InOut[Array[i32, 1]],
+    selectors: InOut[Array[i32, 1]],
+) -> int:
+    """Picks the Huffman tables for a block's `count` symbols as bzip2 picks them, and gives how
+    many: two to six by the block's size, first coding equal shares of the symbols, then four
+    rounds of choosing each group of 50 symbols' cheapest table and rebuilding the tables from
+    what they were chosen for. Table t's code lengths go to `lengths[258 * t:]`."""
+    groups = 6
+    if count < 200:
+        groups = 2
+    elif count < 600:
+        groups = 3
+    elif count < 1200:
+        groups = 4
+    elif count < 2400:
+        groups = 5
+    frequencies = Array.zeros(alphabet, int)
+    for i in range(count):
+        frequencies[int(symbols[i])] += 1
+    remaining = count
+    low = 0
+    for table in range(groups):
+        target = remaining // (groups - table)
+        high = low - 1
+        taken = 0
+        while taken < target and high < alphabet - 1:
+            high += 1
+            taken += frequencies[high]
+        for symbol in range(alphabet):
+            lengths[258 * table + symbol] = i32(0 if symbol >= low and symbol <= high else 15)
+        low = high + 1
+        remaining -= taken
+    tally = Array.zeros(alphabet, int)
+    for _ in range(4):
+        tallies = Array.zeros(6 * alphabet, int)
+        for group in range(len(selectors)):
+            first = 50 * group
+            last = min(first + 50, count)
+            best = 0
+            best_cost = -1
+            for table in range(groups):
+                cost = 0
+                for i in range(first, last):
+                    cost += int(lengths[258 * table + int(symbols[i])])
+                if best_cost < 0 or cost < best_cost:
+                    best = table
+                    best_cost = cost
+            selectors[group] = i32(best)
+            for i in range(first, last):
+                tallies[best * alphabet + int(symbols[i])] += 1
+        for table in range(groups):
+            for symbol in range(alphabet):
+                tally[symbol] = tallies[table * alphabet + symbol]
+            _code_lengths(tally, alphabet, lengths, 258 * table)
+    return groups
+
+
+def _code_lengths(
+    frequencies: Array[int, 1], size: int, lengths: InOut[Array[i32, 1]], offset: int
+):
+    """Huffman code lengths of at most 17 bits for `size` symbols with `frequencies`, into
+    `lengths[offset:offset + size]`. A symbol never seen still gets a code, as bzip2 needs;
+    while the longest code is over 17 bits the weights are halved, as bzip2 halves them. Costs
+    O(size²), at most 258² steps, for each try."""
+    weights = Array.zeros(2 * size, int)
+    parents = Array.zeros(2 * size, int)
+    alive = Array.zeros(2 * size, bool)
+    for i in range(size):
+        weights[i] = max(frequencies[i], 1)
+    while True:
+        for i in range(2 * size):
+            alive[i] = i < size
+            parents[i] = -1
+        nodes = size
+        for _ in range(size - 1):
+            first = -1
+            second = -1
+            for i in range(nodes):
+                if alive[i]:
+                    if first < 0 or weights[i] < weights[first]:
+                        second = first
+                        first = i
+                    elif second < 0 or weights[i] < weights[second]:
+                        second = i
+            weights[nodes] = weights[first] + weights[second]
+            parents[first] = nodes
+            parents[second] = nodes
+            alive[first] = False
+            alive[second] = False
+            alive[nodes] = True
+            nodes += 1
+        longest = 0
+        for i in range(size):
+            depth = 0
+            node = i
+            while parents[node] >= 0:
+                node = parents[node]
+                depth += 1
+            lengths[offset + i] = i32(depth)
+            longest = max(longest, depth)
+        if longest <= 17:
+            return
+        for i in range(size):
+            weights[i] = 1 + weights[i] // 2
