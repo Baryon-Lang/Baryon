@@ -28,13 +28,17 @@ impl<'db> Body<'db> {
         };
         let table = match (arguments.positional.as_slice(), arguments.keywords.len()) {
             (&[table], 0) if self.tree.kind(table) == SyntaxKind::Dictionary => table,
+            (&[rows], 0) => return self.frame_from_rows(rows, expected),
             _ => {
                 self.untyped(arguments);
                 return self.lowerer.error(
                     node,
-                    "`DataFrame(...)` takes a dict of its columns",
+                    "`DataFrame(...)` takes a dict of its columns or a list of its rows",
                     "wrong arguments",
-                    Some("for example `DataFrame({\"price\": prices, \"volume\": volumes})`"),
+                    Some(
+                        "for example `DataFrame({\"price\": prices, \"volume\": volumes})`, or \
+                         `DataFrame(trades)` with `trades: list[Trade]`",
+                    ),
                 );
             }
         };
@@ -67,6 +71,46 @@ impl<'db> Body<'db> {
         match expected {
             Some(expected) if wanted == columns => expected,
             _ => Type::new(self.db, TypeKind::DataFrame { columns, row: None }),
+        }
+    }
+
+    /// `DataFrame(rows)`: a frame with one row for each struct of the list `rows`, in order,
+    /// and one column for each field of the struct, which is the frame's schema. The list is
+    /// read, not moved: each field is copied into its column. The context's row struct gives
+    /// an empty list, `DataFrame([])`, its type.
+    fn frame_from_rows(&mut self, rows: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
+        let wanted = match expected.map(|ty| ty.kind(self.db)) {
+            Some(&TypeKind::DataFrame { row: Some(row), .. }) => {
+                Some(Type::new(self.db, TypeKind::List(row)))
+            }
+            _ => None,
+        };
+        let found = self.expression(rows, wanted);
+        match found.kind(self.db) {
+            &TypeKind::List(row) => {
+                let frame = self.lowerer.frame_of(rows, row);
+                if self.has_text_column(frame) {
+                    return self.text_column_unbuilt(rows, "`DataFrame(rows)`");
+                }
+                frame
+            }
+            _ if relations::is_open(self.db, found) => self.lowerer.unknown(),
+            _ => {
+                let message = format!(
+                    "`DataFrame(...)` takes a dict of its columns or a list of its rows, found \
+                     `{}`",
+                    self.show(found)
+                );
+                self.lowerer.error(
+                    rows,
+                    &message,
+                    "neither a dict of columns nor a list of rows",
+                    Some(
+                        "for example `DataFrame({\"price\": prices, \"volume\": volumes})`, or \
+                         `DataFrame(trades)` with `trades: list[Trade]`",
+                    ),
+                )
+            }
         }
     }
 
@@ -109,6 +153,7 @@ impl<'db> Body<'db> {
         self.consume(value, found);
         let element = match *found.kind(self.db) {
             TypeKind::Array { element, rank: 1 } if is_column(self.db, element) => element,
+            TypeKind::TextArray => Type::new(self.db, TypeKind::Str),
             _ if relations::is_open(self.db, found) => return None,
             TypeKind::Array { element, rank: 1 } => {
                 let message = format!(
@@ -161,30 +206,16 @@ impl<'db> Body<'db> {
         })
     }
 
-    /// `df["name"]` on a frame: the column of that name. `None` when `base` is not a frame.
+    /// `df["name"]` on a frame, the column of that name, or `df[i]`, row `i` as a value of the
+    /// struct that names the frame's rows (decision 0045). `None` when `base` is not a frame.
     pub(super) fn frame_item(&mut self, node: NodeId, base: Type<'db>) -> Option<Type<'db>> {
-        let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
+        let TypeKind::DataFrame { columns, row } = base.kind(self.db) else {
             return None;
         };
         let index = self.tree.child(node, Role::Index)?;
         let Some(name) = self.literal_text(index) else {
-            let found = self.expression(index, None);
-            if relations::is_open(self.db, found) {
-                return Some(found);
-            }
-            let message = format!(
-                "a `DataFrame` is indexed by a column's name, found `{}`",
-                self.show(found)
-            );
-            return Some(self.lowerer.error(
-                index,
-                &message,
-                "not a column's name",
-                Some(
-                    "write the name as a string literal, `df[\"price\"]`; rows by number, masks \
-                     and slices come with roadmap items 3.13.2 and 3.13.4",
-                ),
-            ));
+            let chosen = self.frame_select(index, base);
+            return Some(chosen.unwrap_or_else(|| self.frame_row(index, base, *row)));
         };
         let name = name.to_owned();
         let column = columns.iter().find(|column| column.name == name);
@@ -194,14 +225,78 @@ impl<'db> Body<'db> {
         })
     }
 
+    /// `df[index]` where `index` is not a column's name: a whole number gives that row, a new
+    /// value of the struct `row` that names the rows of the frame type `base`. A frame whose
+    /// columns the compiler worked out has no such struct, so its rows are reached by column.
+    fn frame_row(&mut self, index: NodeId, base: Type<'db>, row: Option<Type<'db>>) -> Type<'db> {
+        if self.chooses_rows(index, None) {
+            return base;
+        }
+        let found = self.expression(index, None);
+        if relations::is_open(self.db, found) {
+            return found;
+        }
+        if self.chooses_rows(index, Some(found)) {
+            return base;
+        }
+        if !matches!(
+            found.kind(self.db),
+            TypeKind::Primitive(Primitive::Integer(_))
+        ) {
+            let message = format!(
+                "a `DataFrame` is indexed by a column's name, a row's number, a mask or a slice, \
+                 found `{}`",
+                self.show(found)
+            );
+            return self.lowerer.error(
+                index,
+                &message,
+                "does not choose a column or rows",
+                Some(
+                    "write a column's name as a string literal, `df[\"price\"]`, a row's number, \
+                     `df[0]`, a mask, an `Array[bool, 1]` such as `df[df.price > 100.0]`, or a \
+                     slice, `df[1:3]`",
+                ),
+            );
+        }
+        if self.has_text_column(base) {
+            return self.text_column_unbuilt(index, "reading a row, `df[i]`,");
+        }
+        row.unwrap_or_else(|| {
+            let message = format!("no struct names the rows of `{}`", self.show(base));
+            self.lowerer.error(
+                index,
+                &message,
+                "a row needs a type",
+                Some(
+                    "read the row's values by column, `df.price[0]`, or give the frame a schema: \
+                     assign it to a variable declared `DataFrame[Trade]`, whose struct lists \
+                     these columns",
+                ),
+            )
+        })
+    }
+
     /// Whether `node` reads a column of a frame, `df.price` or `df["price"]`: a place inside
     /// the frame, which can be borrowed but not moved out.
     pub(super) fn is_column_read(&self, node: NodeId) -> bool {
-        matches!(
-            self.tree.kind(node),
-            SyntaxKind::Attribute | SyntaxKind::Subscript
-        ) && self.reads_frame(node)
-            && !self.is_frame_attribute(node)
+        let named = match self.tree.kind(node) {
+            SyntaxKind::Attribute => !self.is_frame_attribute(node),
+            // `df[i]` is a new struct, so keeping it moves nothing.
+            SyntaxKind::Subscript => self
+                .tree
+                .child(node, Role::Index)
+                .is_some_and(|index| self.literal_text(index).is_some()),
+            _ => false,
+        };
+        named && self.reads_frame(node)
+    }
+
+    /// Whether `node` reads a row of a frame, `df[i]`: a new struct at each read.
+    pub(super) fn is_frame_row(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::Subscript
+            && self.reads_frame(node)
+            && !self.is_column_read(node)
     }
 
     /// Whether `node` reads `shape` or `columns` of a frame: a value computed at each read,
@@ -215,10 +310,23 @@ impl<'db> Body<'db> {
                 .is_some_and(|name| matches!(self.tree.text(name, self.text), "shape" | "columns"))
     }
 
-    /// Reports an assignment to `df.shape` or `df.columns` at `target`, and returns whether it
-    /// was one. Both are computed from the frame: its shape changes only with its columns, and
-    /// its column names are part of its type.
+    /// Reports an assignment to `df.shape`, `df.columns` or a row, `df[i]`, at `target`, and
+    /// returns whether it was one. The first two are computed from the frame: its shape
+    /// changes only with its columns, and its column names are part of its type. A row is
+    /// a new struct at each read, not a place in the frame, whose memory is its columns.
     pub(super) fn frame_attribute_assigned(&mut self, target: NodeId) -> bool {
+        if self.is_frame_row(target) {
+            self.lowerer.error(
+                target,
+                "rows of a `DataFrame` cannot be assigned",
+                "whole rows",
+                Some(
+                    "assign their values by column: `df.price[0] = 1.0`, or \
+                     `df.price[mask] = 1.0` for the rows a mask chooses",
+                ),
+            );
+            return true;
+        }
         if !self.is_frame_attribute(target) {
             return false;
         }
@@ -266,15 +374,15 @@ impl<'db> Body<'db> {
         );
     }
 
-    /// The type of a column read from a frame: an array of rank 1 of the column's elements.
+    /// The type of a column read from a frame: an array of rank 1 of the column's elements,
+    /// or a text array for a column of `str`.
     fn column_type(&self, column: &Column<'db>) -> Type<'db> {
-        let element = column.element;
-        Type::new(self.db, TypeKind::Array { element, rank: 1 })
+        column.array(self.db)
     }
 
     /// Reports `name` read from the frame type `base`, which has no such column, and lists
     /// the columns it has.
-    fn no_column(&mut self, node: NodeId, base: Type<'db>, name: &str) -> Type<'db> {
+    pub(super) fn no_column(&mut self, node: NodeId, base: Type<'db>, name: &str) -> Type<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return self.lowerer.unknown();
         };
@@ -297,6 +405,29 @@ impl<'db> Body<'db> {
         callee: &str,
         arguments: &Arguments,
     ) -> Type<'db> {
+        let built = matches!(
+            callee,
+            "copy" | "head" | "tail" | "sort_values" | "assign" | "drop" | "rename"
+        );
+        if self.has_text_column(base) && !built {
+            self.untyped(arguments);
+            return self.text_column_unbuilt(function, &format!("the method `{callee}`"));
+        }
+        if let Some(rows) = self.rows_method(function, base, callee, arguments) {
+            return rows;
+        }
+        if let Some(frame) = self.schema_method(function, base, callee, arguments) {
+            return frame;
+        }
+        if let Some(frame) = self.sort_method(function, base, callee, arguments) {
+            return frame;
+        }
+        if let Some(frame) = self.merge_method(function, base, callee, arguments) {
+            return frame;
+        }
+        if let Some(frame) = self.distinct_method(function, base, callee, arguments) {
+            return frame;
+        }
         let given = arguments.positional.len() + arguments.keywords.len();
         self.untyped(arguments);
         match (callee, given) {
@@ -307,6 +438,12 @@ impl<'db> Body<'db> {
                 "wrong arguments",
                 None,
             ),
+            ("groupby", _) => self.lowerer.error(
+                function,
+                "`groupby` is followed by `.agg(...)`, which says what to work out for each group",
+                "groups with nothing worked out",
+                Some("for example `df.groupby(\"symbol\").agg(total=(\"volume\", \"sum\"))`"),
+            ),
             _ => {
                 let message = format!("a `DataFrame` has no method `{callee}` yet");
                 self.lowerer.error(
@@ -314,8 +451,10 @@ impl<'db> Body<'db> {
                     &message,
                     "not defined yet",
                     Some(
-                        "a `DataFrame` has `copy()` today; the rest of decision 0045's methods \
-                         come with roadmap items 3.13.4 to 3.13.9",
+                        "a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop`, \
+                         `rename`, `sort_values`, `groupby(...).agg(...)`, `merge` and \
+                         `drop_duplicates` today; the rest of decision 0045's methods come with \
+                         roadmap items 3.13.6, 3.13.8 and 3.13.9",
                     ),
                 )
             }

@@ -1,0 +1,160 @@
+"""The `gzip` module: gzip files (RFC 1952) on byte arrays, with Python's names, written in
+Baryon on top of `zlib` (decision 0049).
+
+A gzip file is one or more members, each a header, a deflate stream and a trailer holding the
+CRC-32 and length of what it decompresses to. `decompress` reads every member and joins what
+they hold, as Python's `gzip.decompress` does. Data that is not a gzip file raises `OSError`
+with the kind `INVALID_DATA` and the message Python's `gzip.BadGzipFile`, `EOFError` or
+`zlib.error` carries.
+"""
+
+from os import ErrorKind
+import zlib
+
+
+def compress(
+    data: Array[u8, 1], compresslevel: int = 9, mtime: int | None = None
+) -> Raises[Array[u8, 1], OSError]:
+    """`data` compressed as one gzip member, as `gzip.compress(data, compresslevel, mtime=mtime)`
+    gives it, with no file name and the operating-system byte 255, "unknown", as Python writes.
+
+    `compresslevel` runs from 0 to 9, as `zlib.compress`'s `level`; 9, the smallest, is the
+    default. `mtime` is the modification time the header records, in seconds since 1970.
+    Python writes the current time when `mtime` is `None`; Baryon has no clock yet and writes
+    0, which RFC 1952 reads as "no time recorded", so the same data always gives the same
+    bytes. Raises `OSError` with the kind `INVALID_DATA` and the message `Bad compression level`
+    for a level outside -1 to 9. Costs what `zlib.compress` costs.
+    """
+    member = zlib.compress(data, compresslevel, 31)
+    time = 0
+    if mtime is not None:
+        time = mtime & 0xFFFFFFFF
+    for i in range(4):
+        member[4 + i] = u8((time >> (8 * i)) & 255)
+    member[9] = u8(255)
+    return member
+
+
+def decompress(data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
+    """The bytes the gzip members in `data` hold, joined, as `gzip.decompress(data)` gives them.
+    Zero bytes between and after members are skipped, as Python skips them; empty `data` gives
+    an empty array.
+
+    Raises `OSError` with the kind `INVALID_DATA` and Python's message for data that is not
+    gzip (`Not a gzipped file (b'PK')`), a method other than deflate (`Unknown compression
+    method`), a member cut short (`Compressed file ended before the end-of-stream marker was
+    reached`), a wrong checksum (`CRC check failed`) or length (`Incorrect length of data
+    produced`), and a corrupt deflate stream (`zlib.decompress`'s messages).
+
+    Costs one pass over `data` and one over the output, plus, for each member, a copy of the
+    bytes after it, as Python's `gzip.decompress` makes; a file of thousands of small members
+    is better read by `gzip.open` (roadmap 3.27.4).
+    """
+    members: list[Array[u8, 1]] = []
+    rest = data.copy()
+    total = 0
+    while len(rest) > 0:
+        start = _header(rest)
+        decompressor = zlib.decompressobj(-15)
+        output = decompressor.decompress(rest[start:].copy())
+        trailer = decompressor.unused_data.copy()
+        if not decompressor.eof or len(trailer) < 8:
+            raise OSError(ErrorKind.INVALID_DATA, i32(0), _ended(), "")
+        if _word(trailer, 0) != zlib.crc32(output):
+            raise OSError(ErrorKind.INVALID_DATA, i32(0), "CRC check failed", "")
+        if _word(trailer, 4) != len(output) & 0xFFFFFFFF:
+            raise OSError(ErrorKind.INVALID_DATA, i32(0), "Incorrect length of data produced", "")
+        total += len(output)
+        members.append(output)
+        skip = 8
+        while skip < len(trailer) and trailer[skip] == 0:
+            skip += 1
+        rest = trailer[skip:].copy()
+    joined = Array.zeros(total, u8)
+    position = 0
+    for member in members:
+        for i in range(len(member)):
+            joined[position + i] = member[i]
+        position += len(member)
+    return joined
+
+
+def _ended() -> str:
+    """The message of Python's `EOFError` for a member cut short, in its header or after it."""
+    return "Compressed file ended before the end-of-stream marker was reached"
+
+def _header(data: Array[u8, 1]) -> Raises[int, OSError]:
+    """The position of the deflate stream after the gzip header that starts `data`, which is
+    not empty, read as Python's `gzip._read_gzip_header` reads it: the extra field, file name,
+    comment and header CRC are skipped, not checked. Raises `OSError` with Python's message for
+    a header that is not gzip's, names another method or is cut short."""
+    if len(data) < 2 or data[0] != 31 or data[1] != 139:
+        raise OSError(
+            ErrorKind.INVALID_DATA,
+            i32(0),
+            "Not a gzipped file (" + _bytes_repr(data, min(2, len(data))) + ")",
+            "",
+        )
+    if len(data) < 10:
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), _ended(), "")
+    if data[2] != 8:
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), "Unknown compression method", "")
+    flags = int(data[3])
+    position = 10
+    if flags & 4 != 0:
+        if position + 2 > len(data):
+            raise OSError(ErrorKind.INVALID_DATA, i32(0), _ended(), "")
+        position += 2 + int(data[position]) + (int(data[position + 1]) << 8)
+        if position > len(data):
+            raise OSError(ErrorKind.INVALID_DATA, i32(0), _ended(), "")
+    for flag in [8, 16]:
+        if flags & flag != 0:
+            while position < len(data) and data[position] != 0:
+                position += 1
+            position = min(position + 1, len(data))
+    if flags & 2 != 0:
+        position += 2
+        if position > len(data):
+            raise OSError(ErrorKind.INVALID_DATA, i32(0), _ended(), "")
+    return position
+
+
+def _word(data: Array[u8, 1], position: int) -> int:
+    """The little-endian 32-bit number in `data[position:position + 4]`."""
+    word = 0
+    for i in range(4):
+        word |= int(data[position + i]) << (8 * i)
+    return word
+
+
+def _bytes_repr(data: Array[u8, 1], count: int) -> str:
+    """The first `count` bytes of `data` as Python's `repr` writes a `bytes`, such as `b'PK'`
+    or `b'\\x1f\\x8c'`: single quotes unless the bytes hold a `'` and no `"`, printable ASCII
+    as itself, `\\t`, `\\n`, `\\r` and `\\\\` escaped, and every other byte as `\\x` and two hex
+    digits."""
+    has_single = False
+    has_double = False
+    for i in range(count):
+        has_single = has_single or data[i] == 39
+        has_double = has_double or data[i] == 34
+    quote = '"' if has_single and not has_double else "'"
+    printable = (
+        " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        + "[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+    )
+    text = "b" + quote
+    for i in range(count):
+        byte = int(data[i])
+        if byte == 9:
+            text = text + "\\t"
+        elif byte == 10:
+            text = text + "\\n"
+        elif byte == 13:
+            text = text + "\\r"
+        elif byte == 92 or (byte == 39 and quote == "'"):
+            text = text + "\\" + printable[byte - 32]
+        elif byte >= 32 and byte < 127:
+            text = text + printable[byte - 32]
+        else:
+            text = text + f"\\x{byte:02x}"
+    return text + quote

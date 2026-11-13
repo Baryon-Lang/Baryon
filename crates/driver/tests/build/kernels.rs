@@ -1,6 +1,8 @@
 //! The Baryon twins of the benchmark kernels in `bench/kernels` (roadmap 3.3), built and run at
 //! their smoke sizes: each prints the checksum its Fortran version prints, to the last bit, so
 //! the compiler's optimizations, the vectorized in-order sums among them, change no result.
+//! The threaded `lennard_jones_half` adds its forces in another order than its Fortran twin, so
+//! it is checked to the kernel's tolerance instead.
 
 use super::{baryon_build, stderr};
 use std::io;
@@ -52,6 +54,19 @@ fn kernels_match_fortran_to_the_bit() {
         let found = checksum(name, arguments).unwrap();
         assert_eq!(found.to_bits(), expected.to_bits(), "{name}: {found:e}");
     }
+}
+
+/// The half-list Lennard-Jones twin, whose `prange(atoms, accumulate=(fx, fy, fz))` sums the
+/// forces in the runtime's fixed tree rather than in OpenMP thread order: it agrees with
+/// `gfortran -O3` on two threads within the kernel's tolerance, `1e-5`, and gives the same bits
+/// on every run. Its third argument, the thread count, is read and ignored.
+#[test]
+fn the_threaded_half_list_kernel_agrees_with_fortran() {
+    let fortran = -5.691_759_543_731_019_5;
+    let first = checksum("lennard_jones_half", &["5", "10", "2"]).unwrap();
+    assert!((first - fortran).abs() <= 1e-5 * fortran.abs(), "{first:e}");
+    let again = checksum("lennard_jones_half", &["5", "10", "2"]).unwrap();
+    assert_eq!(again.to_bits(), first.to_bits());
 }
 
 /// A sum whose terms cancel, `1e16 + 1 - 1e16 + 1 ...`, gives a different total if any two

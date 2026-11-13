@@ -50,8 +50,8 @@ impl<'db> Builder<'db> {
                     };
                     // A `Path` is formatted as its text, as Python's `str(path)`.
                     let ty = self.ty(value);
-                    let value = self.borrow(value);
-                    pieces.push(Piece::Value(self.text_place(value, ty), spec));
+                    let place = self.borrow(value);
+                    pieces.push(Piece::Value(self.shown_place(value, place, ty), spec));
                 }
                 _ => return self.unsupported(item, "this part of an f-string"),
             }
@@ -67,6 +67,26 @@ impl<'db> Builder<'db> {
             .map(|&value| Piece::Value(self.borrow(value), FormatSpec::default()))
             .collect();
         self.assign(place, Rvalue::Format(pieces), node);
+    }
+
+    /// `target += value` on a `str`: the joined text is built into a temporary, reading the old
+    /// text, then replaces it, as Python's `s = s + value` does. `target` is a variable, a
+    /// field or an element, `w[0] += "q"`.
+    ///
+    /// Cost: one new string the length of both; the old one is freed.
+    pub(crate) fn append_text(&mut self, target: NodeId, value: NodeId, statement: NodeId) {
+        let Some(place) = self.place(target) else {
+            return;
+        };
+        let ty = self.ty(target);
+        let added = self.borrow(value);
+        let pieces = vec![
+            Piece::Value(place.clone(), FormatSpec::default()),
+            Piece::Value(added, FormatSpec::default()),
+        ];
+        let joined = self.temporary(ty, statement);
+        self.assign(Place::from(joined), Rvalue::Format(pieces), statement);
+        self.replace(place, Operand::Move(Place::from(joined)), statement);
     }
 
     /// The specification of the interpolation `node`, the default when it has none, or `None`

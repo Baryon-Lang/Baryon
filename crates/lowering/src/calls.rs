@@ -1,12 +1,10 @@
 //! Calls: of functions and methods, with each argument in its parameter's mode; of a struct's
 //! constructor; of a number type, which converts; and of the built-ins lowering handles.
+//! `print` is lowered with the streams it writes to (the `streams` module).
 
 use crate::builder::Builder;
 use crate::frames::erase;
-use crate::streams::PrintTarget;
-use mir::{
-    Argument, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue, TerminatorKind,
-};
+use mir::{Argument, Callee, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
 
@@ -121,9 +119,20 @@ impl<'db> Builder<'db> {
             }
             (None, [argument]) if name == "abs" => self.absolute(place, *argument, node),
             (None, _) if name == "print" => self.print(place, arguments, node),
+            (None, [list]) if name == "Array" && self.is_text_array(node) => {
+                self.text_array_from_list(&place, *list, node);
+            }
             (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
-            (None, [table]) if name == "DataFrame" => self.frame_new(&place, *table, node),
-            (Some(("DataFrame", "copy")), [frame]) => self.frame_copy(place, *frame, node),
+            (None, [table])
+                if name == "DataFrame" && self.tree.kind(*table) == SyntaxKind::Dictionary =>
+            {
+                self.frame_new(&place, *table, node);
+            }
+            (None, [rows]) if name == "DataFrame" => self.frame_from_rows(place, *rows, node),
+            (None, [list]) if name == "concat" => self.frame_concat(place, *list, node),
+            (Some(("DataFrame", method)), [frame, rest @ ..]) => {
+                self.frame_method(place, method, (*frame, rest), node);
+            }
             (None, _) if name == "open" => self.open(place, arguments, node),
             (None, [value]) if name == "str" => {
                 if !self.text_of_value(&place, *value, node) {
@@ -152,6 +161,10 @@ impl<'db> Builder<'db> {
                 self.list_append(place, *list, *value, node);
             }
             (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
+            // A text array is two arrays in a tuple, as a frame is its columns.
+            (Some(("Array", "copy")), [array]) if self.is_text_array(*array) => {
+                self.frame_copy(place, *array, node);
+            }
             (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
             (Some(("dict", method)), _) => self.dict_method(place, method, arguments, node),
             (Some(("Array" | "Fixed", method)), _) => {
@@ -239,7 +252,7 @@ impl<'db> Builder<'db> {
                     Some(place) => Argument::Borrow(place),
                     None => return,
                 },
-                Mode::InOut => match self.place(argument) {
+                Mode::InOut => match self.changed_place(argument) {
                     Some(place) => {
                         let (passed, view) = self.in_out(place, ty, argument);
                         views.extend(view);
@@ -337,7 +350,7 @@ impl<'db> Builder<'db> {
         };
         Some(match mode {
             Mode::Borrow => Argument::Borrow(project(self.borrow(argument))),
-            Mode::InOut => Argument::InOut(project(self.place(argument)?)),
+            Mode::InOut => Argument::InOut(project(self.changed_place(argument)?)),
             Mode::Owned => {
                 self.unsupported(argument, "moving an embedded field out of its struct");
                 return None;
@@ -379,95 +392,6 @@ impl<'db> Builder<'db> {
             Declaration::Struct { fields, .. } => fields.iter().map(|field| field.ty).collect(),
             _ => Vec::new(),
         }
-    }
-
-    /// `print(arguments…, sep=…, end=…, file=…, flush=…)`, its `None` result written into
-    /// `place`. `file=` and `flush=` choose where it writes (the `streams` module). The call
-    /// writes its arguments with nothing between them ([`mir::Builtin::Print`]), so the separator
-    /// goes between each pair of values and the line end after the last: a space and `"\n"`
-    /// unless `sep=` or `end=` gives another `str`, and also when it gives `None`, as in Python.
-    ///
-    /// Arguments are evaluated as written, the values then the keywords, each once: a separator
-    /// that is not a literal is borrowed once and passed at every gap. A literal is passed as
-    /// its constant, so a backend can print a string literal without a `str` value; anything
-    /// else is borrowed, since printing does not consume it.
-    fn print(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
-        let keywords: Vec<NodeId> = self
-            .tree
-            .child(node, Role::Arguments)
-            .into_iter()
-            .flat_map(|list| self.tree.children_with(list, Role::Item))
-            .filter(|&item| self.tree.kind(item) == SyntaxKind::Keyword)
-            .collect();
-        let values = &arguments[..arguments.len().saturating_sub(keywords.len())];
-        let values: Vec<Argument<'db>> = values
-            .iter()
-            .map(|&argument| self.print_argument(argument))
-            .collect();
-        let (mut separator, mut end) = (self.text(" "), self.text("\n"));
-        let (mut target, mut flush) = (PrintTarget::Output, None);
-        for keyword in keywords {
-            let (Some(name), Some(value)) = (
-                self.tree.child(keyword, Role::Name),
-                self.tree.child(keyword, Role::Value),
-            ) else {
-                return self.unsupported(keyword, "this keyword argument");
-            };
-            match self.text_of(name) {
-                "file" => {
-                    target = self.print_target(value);
-                    continue;
-                }
-                "flush" => {
-                    flush = Some(value);
-                    continue;
-                }
-                _ => {}
-            }
-            let given = if matches!(self.ty(value).kind(self.db), TypeKind::None) {
-                if !self.is_literal(value) {
-                    self.borrow(value);
-                }
-                None
-            } else {
-                Some(self.print_argument(value))
-            };
-            match (self.text_of(name), given) {
-                ("sep", Some(given)) => separator = given,
-                ("end", Some(given)) => end = given,
-                ("sep" | "end", None) => {}
-                _ => return self.unsupported(keyword, "this keyword argument of `print`"),
-            }
-        }
-        let mut passed = Vec::with_capacity(2 * values.len() + 1);
-        for (position, value) in values.into_iter().enumerate() {
-            if position > 0 {
-                passed.push(separator.clone());
-            }
-            passed.push(value);
-        }
-        passed.push(end);
-        self.print_to(&target, flush, passed, place, node);
-    }
-
-    /// One value `print` writes: a literal as its constant, anything else borrowed.
-    fn print_argument(&mut self, argument: NodeId) -> Argument<'db> {
-        if self.is_literal(argument) {
-            Argument::Owned(Operand::Constant(self.literal(argument)))
-        } else {
-            // A `Path` prints as its text, as Python's `print(path)` does.
-            let ty = self.ty(argument);
-            let place = self.borrow(argument);
-            Argument::Borrow(self.text_place(place, ty))
-        }
-    }
-
-    /// The `str` constant `text`, passed `Owned`, as `print` takes its separator and line end.
-    fn text(&self, text: &str) -> Argument<'db> {
-        Argument::Owned(Operand::Constant(Constant {
-            ty: types::Type::new(self.db, TypeKind::Str),
-            value: ConstantValue::Str(text.to_owned()),
-        }))
     }
 
     /// A place holding `argument` as the parameter type `ty`, to borrow. An argument that

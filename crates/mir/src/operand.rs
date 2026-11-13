@@ -147,6 +147,13 @@ pub enum Rvalue<'db> {
     /// outermost. For a list, dimension 0 is its number of elements, and for a `dict` its number
     /// of keys.
     Length(Place, u32),
+    /// The stride of one dimension of the `Array` at the place, as an `i64`: how many elements
+    /// apart two neighbours along that dimension lie in memory. Dimension 0 is the outermost.
+    /// A new array's last stride is 1; a view's may be any value, negative or zero included
+    /// (decision 0008). Bounds-check hoisting reads it to pick a loop copy that indexes without
+    /// multiplying by it (roadmap 3.3.1), as [`Body::unit_strides`](crate::Body::unit_strides)
+    /// records.
+    Stride(Place, u32),
     /// Whether the `T | None` at the place holds a value, as a `bool`.
     IsPresent(Place),
     /// Which error the error value at the place holds: its position in the callee's `Raises`

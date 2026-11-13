@@ -33,7 +33,11 @@ impl<'db> Builder<'db> {
         (values, rest): (NodeId, &[NodeId]),
         node: NodeId,
     ) -> bool {
-        let number = |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Primitive(_));
+        // A `Float` type parameter is a number too: `max(x, y)` on `T` compares as on `f32`
+        // and `f64`.
+        let number = |ty: Type<'db>| {
+            matches!(ty.kind(self.db), TypeKind::Primitive(_)) || self.is_float_parameter(ty)
+        };
         match name {
             "sum" => rest.len() <= 1,
             "min" | "max" if rest.is_empty() => !number(self.ty(values)),

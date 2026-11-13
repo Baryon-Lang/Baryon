@@ -271,6 +271,7 @@ fn moves(rvalue: &Rvalue<'_>, local: Local) -> bool {
             operands.iter().any(|operand| moved(operand, local))
         }
         Rvalue::Length(..)
+        | Rvalue::Stride(..)
         | Rvalue::IsPresent(_)
         | Rvalue::ErrorIndex(_)
         | Rvalue::MemberIndex(_)

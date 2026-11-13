@@ -15,6 +15,8 @@
 //! - **`Array[T, rank]`** is a header pointing to the elements on the heap: a data pointer,
 //!   then the length of each dimension, then the stride of each dimension in elements, all
 //!   64-bit. A view of an array has the same header with its own pointer and strides.
+//! - **`Array[str, 1]`**, a text array, is two rank-1 array headers, one after the other: its
+//!   bytes, then its offsets ([`Type::text_storage`](crate::Type::text_storage)).
 //! - **`list[T]`** is a pointer, a length and a capacity; **`str`** a pointer and a length in
 //!   bytes.
 //! - **`dict[K, V]`** is one pointer to a table the runtime allocates and owns, or null while the
@@ -241,11 +243,21 @@ impl<'db> Layouter<'_, 'db> {
                 Ok(Layout::record([value, flag]).ok_or(too_large)?.layout())
             }
             TypeKind::Array { rank, .. } => WORD.repeat(1 + 2 * u64::from(*rank)).ok_or(too_large),
-            // One rank-1 array per column: a frame is stored as `Type::frame_storage` says.
+            // Two rank-1 arrays, the bytes and the offsets, as `Type::text_storage` says.
+            TypeKind::TextArray => {
+                let buffer = WORD.repeat(3).ok_or(too_large)?;
+                Ok(Layout::record([buffer, buffer]).ok_or(too_large)?.layout())
+            }
+            // One rank-1 array per column, and two for a column of `str`, a text array: a
+            // frame is stored as `Type::frame_storage` says. Every part is whole words, so
+            // the columns' buffers in a row take the bytes the nested tuples would.
             TypeKind::DataFrame { columns, .. } => {
-                let column = WORD.repeat(3).ok_or(too_large)?;
-                let fields = columns.iter().map(|_| column);
-                Ok(Layout::record(fields).ok_or(too_large)?.layout())
+                let buffer = WORD.repeat(3).ok_or(too_large)?;
+                let buffers = columns.iter().flat_map(|column| {
+                    let text = matches!(column.element.kind(self.db), TypeKind::Str);
+                    std::iter::repeat_n(buffer, if text { 2 } else { 1 })
+                });
+                Ok(Layout::record(buffers).ok_or(too_large)?.layout())
             }
             TypeKind::Fixed { element, shape } => self
                 .layout(*element)?

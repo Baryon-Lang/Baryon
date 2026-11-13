@@ -26,6 +26,9 @@ Elements are copy types so that reading an element is always a copy and never a 
 array code free of ownership questions. Arrays of non-copy values (an array of lists) are not in
 version 0; use `list` for those.
 
+The one exception is text: `Array[str, 1]` holds strings, stored end to end, and reading an
+element borrows it. It has its own chapter, [Arrays of text](text-arrays.md).
+
 ## Layout
 
 Arrays are row-major ([decision 0008](../decisions/0008-row-major-arrays.md)): the last index
@@ -66,6 +69,20 @@ The element type, when the expression does not fix it, is decided in this order:
 2. otherwise the optional second argument, as in NumPy's `zeros(shape, dtype)`:
    `Array.zeros((n,), Vec3)` or `Array.zeros((n,), dtype=Vec3)`;
 3. otherwise `f64`, as NumPy's default is `float64`.
+
+In a generic function the element type may be the function's type parameter, when the parameter
+is bounded by `Number` or `Float`. The array is then built at the type of each call:
+
+```python
+def twice[T: Number](values: Array[T, 1]) -> Array[T, 1]:
+    result = Array.zeros(len(values), T)
+    for at in range(len(values)):
+        result[at] = values[at] + values[at]
+    return result
+```
+
+`twice(Array([1, 2, 3]))` gives `[2 4 6]`, an array of `int`, and `twice(Array([1.5, 2.0]))`
+gives `[3. 4.]`. A parameter with no bound has no zero, so `Array.zeros(n, T)` is an error there.
 
 A `Fixed` array is created by calling its type with its elements, or with one of the same
 functions without the shape:
@@ -318,6 +335,7 @@ set.
 | `a.mean()`, `a.mean(axis=k)` | The mean of the elements, or of each line along axis `k`, with NumPy's bits. See [Means and variances](#means-and-variances) |
 | `a.var(ddof=0)`, `a.std(ddof=0)`, each with `axis=k` | The variance and standard deviation of float elements, dividing by `n - ddof`, with NumPy's bits |
 | `a.dot(b)` | The dot product of two rank-1 arrays or vectors of the same length |
+| `a.argsort()` | The positions that put a rank-1 `Array` in rising order, an `Array[i64, 1]`. See [Sorting positions](#sorting-positions) |
 | `a.round()` | A new array with each element rounded to the nearest whole number, ties to even |
 | `a.fill(value)` | Sets every element to `value`; `a` must be changeable |
 | `a.tofile(path)` | Writes every element to a binary file, as NumPy's `tofile` does; an `Array` only. See [Array files](files-and-processes.md#array-files) |
@@ -347,6 +365,28 @@ def residual_norm(residual: Array[f64, 1]) -> f64:
 def reset(forces: InOut[Array[f64, 1]]):
     forces.fill(0.0)
 ```
+
+### Sorting positions
+
+`a.argsort()` gives the positions of the elements of a rank-1 `Array` in rising order, so
+`a[a.argsort()]` is `a` sorted and `a.argsort()[0]` is where its smallest element stands.
+
+```python
+prices = Array([189.5, 410.0, 171.0])
+order = prices.argsort()
+print(order, prices[order])
+```
+
+This prints `[2 0 1] [171.  189.5 410. ]`.
+
+- **Equal elements keep the order they stand in**: the sort is stable, as NumPy's is with
+  `kind="stable"`. NumPy's default sort may order equal elements another way.
+- **NaN goes last**, as in NumPy. `False` comes before `True`.
+- **Complex elements have no order** and are a compile error; NumPy sorts them by their
+  real part.
+- `a` is read, not changed. Arrays of higher rank and NumPy's `axis=` and `kind=` are not
+  built.
+- **Cost:** about `n log n` comparisons, and two arrays of `n` positions while it runs.
 
 ### The order `sum` adds in
 
@@ -610,8 +650,8 @@ real numbers, with Python's names:
 sign of `x`, as C's does, where `x % y` takes the sign of `y`, as Python's does: `fmod(-7.5, 2.0)`
 is `-1.5` and `-7.5 % 2.0` is `0.5`. `lgamma` is safe to call from a `prange` loop.
 
-The functions of integers alone, such as `gcd`, `factorial` and `isqrt`, and those of
-sequences, such as `fsum` and `prod`, come later in the standard library (roadmap 1.13).
+The functions of integers alone, such as `gcd`, `factorial` and `isqrt`, and `prod` come later
+in the standard library (roadmap 1.13).
 
 The constants `pi`, `e`, `tau`, `inf` and `nan` are each an `f64` with Python's value.
 
@@ -657,6 +697,48 @@ follows:
 
 A negative base with a whole-number exponent gives a real result, as in Python. `x ** y` on
 floats is C's `pow(x, y)`. `**` on integers needs a non-negative exponent; a negative one panics.
+
+### Exact sums
+
+`fsum(values)` adds a `list[f64]` or an `Array[f64, 1]` as if with infinite precision and rounds
+the result once, to the nearest `f64`, as Python's `math.fsum` does (Shewchuk's algorithm). No
+digit is lost to cancellation, however large the terms and in whatever order they come:
+
+```python
+from math import fsum
+
+
+def total_energy(kinetic: list[f64], potential: list[f64]) -> f64:
+    return fsum(kinetic) + fsum(potential)
+```
+
+| Expression | `sum` | `fsum` |
+| --- | --- | --- |
+| `[1e100, 1.0, -1e100]` | `0.0` | `1.0` |
+| `Array([1.0, 1e-16, 1e-16, 1e-16])` | `1.0` | `1.0000000000000002` |
+
+Use it where terms cancel: an energy summed over a long orbital integration, a residual, the
+check of a result computed another way. `sum` is the fast default: it compensates a list's sum
+and adds an array's [pairwise](#the-order-sum-adds-in),
+which is accurate enough for most data but can still lose digits when large terms cancel.
+`fsum` is several times slower than `sum`, about six float operations per element for each
+partial sum it keeps, and it keeps only a few for typical data. It allocates one small list.
+
+A list display such as `fsum([1, 2.5])` reads its numbers as `f64`s, as Python converts them.
+Other element types are an error that asks for a conversion: `f64(n)` of each `int`. A table,
+`Array[f64, 2]`, is summed one row at a time.
+
+Infinities and NaN give their IEEE 754 sum, as the [other `math` functions](#math-functions) do,
+where Python raises:
+
+| Expression | Python | Here |
+| --- | --- | --- |
+| `fsum([inf, 1.0])` | `inf` | `inf` |
+| `fsum([inf, -inf])` | `ValueError` | `nan` |
+| `fsum([1e308, 1e308, -1e308])` | `OverflowError` | `inf` |
+
+The last row is a sum whose running total overflows although the exact sum, `1e308`, is an
+`f64`; both languages give up on it.
 
 ## Random numbers
 

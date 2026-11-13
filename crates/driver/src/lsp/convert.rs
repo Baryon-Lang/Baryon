@@ -107,6 +107,12 @@ pub(super) fn range(sources: &dyn Sources, span: Span) -> Value {
     json!({"start": position(file, span.start()), "end": position(file, span.end())})
 }
 
+/// The protocol's inlay hint for `hint` in `file`: a type hint, shown right after the name it
+/// follows. The protocol's kind 1 is a type.
+pub(super) fn inlay_hint(file: &SourceFile, hint: &driver::InlayHint) -> Value {
+    json!({"position": position(file, hint.offset), "label": hint.label, "kind": 1})
+}
+
 /// The protocol's diagnostic object for `diagnostic`, whose primary span must be present.
 ///
 /// The message is the diagnostic's summary, then the primary label and each note on lines of

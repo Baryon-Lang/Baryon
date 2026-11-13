@@ -1,5 +1,6 @@
 //! Bounds-check hoisting: makes the index checks of a counted loop once, before it starts, and
-//! runs a copy of the loop without them when they all pass (roadmap 3.2).
+//! runs a copy of the loop without them when they all pass (roadmap 3.2); and runs innermost
+//! loops in a copy that skips multiplying by strides of 1 (roadmap 3.3.1).
 //!
 //! Lowering checks every index, `a[i]`, against its dimension's length before it reads or
 //! writes the element (decision 0010). In a loop that is a compare and a branch per access, and
@@ -37,6 +38,14 @@
 //! in the same order. When some check could fail, the loop runs as it was and panics at the same
 //! element with the same message. The comparisons before the loop read only integers and
 //! lengths the loop reads anyway, and cannot fail.
+//!
+//! # Unit strides
+//!
+//! Then each innermost counted loop that indexes an `Array` it does not replace gets a second
+//! kind of copy, run when every such array's last stride is 1, whose blocks are listed in
+//! `Body::unit_strides` so the backend finds elements without multiplying by that stride (the
+//! `unit` module, roadmap 3.3.1). Lennard-Jones's force loop runs in 5.70 s instead of 6.31 s
+//! with it, against gfortran's 5.6.
 //!
 //! # Where it runs
 //!
@@ -112,7 +121,7 @@
 //!     body.blocks[id.index()].statements = statements;
 //! }
 //!
-//! bounds_hoisting::hoist(&database, &mut body);
+//! bounds_hoisting::hoist(&database, &mut body, &|_| types::Declared::Struct(Vec::new()));
 //!
 //! assert!(body.validate(&database).is_empty());
 //! // The loop as it was, its copy without the check, and the block that picks one.
@@ -123,20 +132,34 @@
 //! ```
 
 mod loops;
+mod unit;
 mod values;
 mod version;
 
 use mir::Body;
+use types::{Declared, Nominal};
 
 /// Versions every counted loop of `body`, and of its `prange` loop bodies, that has index checks
-/// the crate documentation's rules allow it to make before the loop starts.
+/// the crate documentation's rules allow it to make before the loop starts; then versions each
+/// innermost counted loop on the strides of the arrays it reads, as the `unit` module describes
+/// (roadmap 3.3.1). `declared` says what each struct declares, to find the arrays in its fields.
 ///
 /// Loops are found again after each one is versioned, since the copy of an outer loop holds
 /// copies of the loops inside it, which are versioned in turn.
-pub fn hoist<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
+pub fn hoist<'db>(
+    db: &'db dyn salsa::Database,
+    body: &mut Body<'db>,
+    declared: &dyn Fn(&Nominal<'db>) -> Declared<'db>,
+) {
     for outlined in &mut body.outlined {
-        hoist(db, outlined);
+        hoist(db, outlined, declared);
     }
+    hoist_checks(db, body);
+    unit::version_all(db, body, declared);
+}
+
+/// Versions every counted loop of `body` that has checks it can make before the loop.
+fn hoist_checks<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
     let mut done = Vec::new();
     loop {
         let mut next = None;

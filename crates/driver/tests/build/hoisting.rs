@@ -110,3 +110,47 @@ def main():
     assert_eq!((code, report.as_str()), (Some(0), ""));
     assert_eq!(stdout, "done\n");
 }
+
+/// Unit-stride loop versions (roadmap 3.3.1): one loop reads whole arrays, whose last stride
+/// is 1, a view that skips elements, one that walks backwards and a column of a matrix, and
+/// writes through a struct's field. The copy without the multiplications runs only for the
+/// first; every call computes what it would without it.
+#[test]
+fn unit_stride_versions_compute_the_same_results() {
+    let program = "\
+class Pair(Struct):
+    xs: Array[f64, 1]
+    ys: Array[f64, 1]
+
+
+def weighted(a: Array[f64, 1], w: Array[f64, 1]) -> f64:
+    total = 0.0
+    for i in range(len(a)):
+        total += a[i] * w[i]
+    return total
+
+
+def shift(p: InOut[Pair]):
+    for i in range(len(p.xs)):
+        p.ys[i] = p.xs[i] + 1.0
+
+
+def main():
+    a = Array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    w = Array([1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0])
+    grid = Array.zeros((3, 2))
+    for i in range(3):
+        for j in range(2):
+            grid[i, j] = float(2 * i + j + 1)
+    print(weighted(a, w))
+    print(weighted(a[::2], w[1::2]))
+    print(weighted(a[::-1], w))
+    print(weighted(grid[:, 1], w[:3]))
+    p = Pair(xs=a[::2].copy(), ys=Array.zeros((3,)))
+    shift(p)
+    print(p.ys)
+";
+    let (code, stdout, report) = run("unit-strides", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, "654321.0\n503010.0\n123456.0\n642.0\n[2. 4. 6.]\n");
+}

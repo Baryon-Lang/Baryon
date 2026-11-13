@@ -72,10 +72,15 @@ or a built-in function, add it to the matching rule in the injection grammar and
 it runs `baryon lsp` and connects it to VS Code through Microsoft's `vscode-languageclient`, the
 client most VS Code language extensions use. From then on the server checks the package on every
 change and VS Code shows what it finds. The same server answers hovers (the type or signature of a
-name and its documentation string), **Go to Definition** and completion; the client asks for them
+name and its documentation string), **Go to Definition**, completion, inlay hints (the
+inferred type of each variable, after its name) and **Rename Symbol** (`F2`); the client asks for them
 on its own once the server says it supports them, so the extension needs no code for them. As the
 [`baryon lsp`](../../docs/reference/commands.md#baryon-lsp) reference says, the server reads the
 first folder of the window as one package.
+
+The extension has no debugger of its own. A debug build keeps line tables, so CodeLLDB or
+Microsoft's C/C++ extension stop at `.byn` lines and step through them; the
+[VS Code guide](../../docs/guide/vscode.md#10-debug-it) has the `launch.json`.
 
 | Setting | Default | What it does |
 | --- | --- | --- |

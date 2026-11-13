@@ -211,7 +211,7 @@ fn element_addresses_use_the_strides() {
     assert_eq!(
         text,
         "\
-define double @get(ptr noalias readonly %a1, i64 %a2, i64 %a3) {
+define double @get(ptr noalias readonly align 8 dereferenceable(40) %a1, i64 %a2, i64 %a3) {
 start:
   br label %bb0
 bb0:
@@ -386,5 +386,65 @@ fn pop_moves_out_the_last_element() {
     assert_eq!(
         run(&executable, &["empty"]),
         Err("panic: pop from empty list\n  --> heat.byn:1:1\n".to_owned())
+    );
+}
+
+/// `stride(grid, 1)` loads the second stride from the header's third part.
+#[test]
+fn a_stride_is_read_from_the_header() {
+    let database = Database::default();
+    let types = Types::new(&database);
+    let stride = body(
+        types.i64,
+        &[(types.grid, Mode::Borrow)],
+        vec![assign(
+            Local::RETURN,
+            Rvalue::Stride(Local::new(1).into(), 1),
+        )],
+    );
+    let text = super::module(&database, &[("stride", stride)]);
+    assert_eq!(
+        text,
+        "\
+define i64 @stride(ptr noalias readonly align 8 dereferenceable(40) %a1) {
+start:
+  br label %bb0
+bb0:
+  %t0 = getelementptr inbounds { ptr, [2 x i64], [2 x i64] }, ptr %a1, i32 0, i32 2, i32 1
+  %t1 = load i64, ptr %t0
+  ret i64 %t1
+}
+"
+    );
+}
+
+/// `grid[i, j]` in a block where `Body::unit_strides` marks `grid` (roadmap 3.3.1): the last
+/// index is added as it is, with no stride loaded or multiplied; the first still is.
+#[test]
+fn a_unit_stride_mark_leaves_out_the_last_multiplication() {
+    let database = Database::default();
+    let types = Types::new(&database);
+    let mut get = functions(&types).swap_remove(3);
+    get.1
+        .unit_strides
+        .push((mir::BlockId::new(0), Local::new(1).into()));
+    let text = super::module(&database, &[get]);
+    assert_eq!(
+        text,
+        "\
+define double @get(ptr noalias readonly align 8 dereferenceable(40) %a1, i64 %a2, i64 %a3) {
+start:
+  br label %bb0
+bb0:
+  %t0 = load ptr, ptr %a1
+  %t1 = getelementptr inbounds { ptr, [2 x i64], [2 x i64] }, ptr %a1, i32 0, i32 2, i32 0
+  %t2 = load i64, ptr %t1
+  %t3 = mul i64 %a2, %t2
+  %t4 = add i64 %t3, %a3
+  %t5 = getelementptr inbounds double, ptr %t0, i64 %t4
+  %t6 = load double, ptr %t5
+  ret double %t6
+}
+"
     );
 }

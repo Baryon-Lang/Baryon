@@ -175,3 +175,32 @@ def main():
         "none\nada\nbo\nafter\nbo\ncy\n0 ada\n1 bo\nz\nx\nq\n"
     );
 }
+
+/// `+=` on a `str` variable, field and list element builds the joined text and frees the old
+/// one (roadmap 1.9.27); before, lowering reported the element form as not built yet.
+#[test]
+fn text_plus_equals_builds_on_variables_fields_and_elements() {
+    let program = "\
+class Box(Struct):
+    s: str
+
+
+def main():
+    s = \"a\"
+    s += \"q\"
+    b = Box(\"x\")
+    b.s += \"y\"
+    w = [\"a\", \"b\"]
+    w[1] += s
+    w[0] += \"z\"
+    print(s, b.s, w)
+";
+    let directory = package("text_plus_equals", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "aq xy ['az', 'baq']\n"
+    );
+}

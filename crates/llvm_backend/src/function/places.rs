@@ -30,11 +30,12 @@ impl<'db> Function<'_, '_, 'db> {
             Passing::Slot => format!("%_{local}"),
             Passing::Pointer => format!("%a{local}"),
         };
-        for projection in &place.projections {
+        for (step, projection) in place.projections.iter().enumerate() {
             let position = match projection {
                 Projection::Field(position) => position,
                 Projection::Index(indices) => {
-                    (address, ty) = self.element(&address, ty, indices)?;
+                    let unit = self.unit_stride(place, step);
+                    (address, ty) = self.element(&address, ty, indices, unit)?;
                     continue;
                 }
                 Projection::Error(position) => {
@@ -70,6 +71,17 @@ impl<'db> Function<'_, '_, 'db> {
             address = field;
         }
         Ok((address, ty))
+    }
+
+    /// Whether the array `place` indexes at projection `step`, the part of it before that step,
+    /// has a last stride of 1 in the block being written, as `Body::unit_strides` records
+    /// (roadmap 3.3.1).
+    fn unit_stride(&self, place: &Place, step: usize) -> bool {
+        self.body.unit_strides.iter().any(|(block, array)| {
+            *block == self.block
+                && array.local == place.local
+                && array.projections[..] == place.projections[..step]
+        })
     }
 
     /// Where to write a value assigned to `place`, and its type: a promoted local, which takes

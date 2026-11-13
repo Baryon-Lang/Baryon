@@ -43,6 +43,7 @@ impl<'db> Builder<'db> {
             SyntaxKind::Attribute if self.is_frame_attribute(node) => {
                 self.frame_attribute(place, node);
             }
+            SyntaxKind::Subscript if self.is_frame_row(node) => self.frame_row(place, node),
             SyntaxKind::Subscript if self.is_environ_item(node) => {
                 self.environ_item(place, node);
             }
@@ -232,8 +233,9 @@ impl<'db> Builder<'db> {
                 let fields = self.field(value, node)?;
                 // A part of any complex value, such as `(z * w).real`, reads the value's
                 // temporary, as does a field of a library call's result, such as
-                // `ds.dimensions["time"].size`.
-                let base = if self.is_complex(self.ty(value)) || self.is_library_access(value) {
+                // `ds.dimensions["time"].size`, and a field of a frame's row, `df[0].price`.
+                let computed = self.is_library_access(value) || self.is_frame_row(value);
+                let base = if self.is_complex(self.ty(value)) || computed {
                     self.borrow(value)
                 } else if matches!(
                     self.tree.kind(value),
@@ -279,6 +281,25 @@ impl<'db> Builder<'db> {
         self.write(Place::from(temporary), ty, node);
         self.drop_later(temporary);
         Place::from(temporary)
+    }
+
+    /// The place a changing use of `node` works on: an `InOut` argument, or the receiver of a
+    /// method that changes it, such as `append`, `pop` or `d[k] = v`. A place, such as `xs`,
+    /// is changed where it is. Anything else, such as `numbers(3)` in `numbers(3).pop()`, is
+    /// computed into a temporary that the change works on and the statement then drops, as
+    /// Python changes the new object and discards it ("The procedure" in the reference's
+    /// "Values and references": a temporary cannot conflict). Before, lowering skipped the
+    /// call, and its result was never written.
+    ///
+    /// A conditional expression, `(a if c else b).pop()` or `bump(a if c else b)`, would
+    /// change the variable its branch names, of any type; lowering does not build that yet and
+    /// reports it, rather than change a temporary and lose the change.
+    pub(crate) fn changed_place(&mut self, node: NodeId) -> Option<Place> {
+        if self.tree.kind(node) == SyntaxKind::Conditional {
+            self.unsupported(node, "changing the value of a conditional expression");
+            return None;
+        }
+        Some(self.borrow(node))
     }
 
     /// The positions of the fields to step through for `attribute` on the struct `value`

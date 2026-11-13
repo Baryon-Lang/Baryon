@@ -114,7 +114,18 @@ impl fmt::Display for DisplayedBody<'_, '_> {
             } else {
                 ""
             };
-            writeln!(formatter, "\n    bb{index}{mark}: {{")?;
+            let unit: Vec<String> = body
+                .unit_strides
+                .iter()
+                .filter(|(block, _)| block.index() == index)
+                .map(|(_, place)| place_text(place))
+                .collect();
+            let unit = if unit.is_empty() {
+                String::new()
+            } else {
+                format!(" (unit stride {})", unit.join(", "))
+            };
+            writeln!(formatter, "\n    bb{index}{mark}{unit}: {{")?;
             for statement in &block.statements {
                 let text = match &statement.kind {
                     StatementKind::Assign(place, rvalue) => {
@@ -219,6 +230,9 @@ impl Writer<'_> {
                 format!("new {}({})", self.ty(*ty), self.operands(lengths))
             }
             Rvalue::Length(place, dimension) => format!("len({}, {dimension})", place_text(place)),
+            Rvalue::Stride(place, dimension) => {
+                format!("stride({}, {dimension})", place_text(place))
+            }
             Rvalue::IsPresent(place) => format!("is_present({})", place_text(place)),
             Rvalue::ErrorIndex(place) => format!("error_index({})", place_text(place)),
             Rvalue::MemberIndex(place) => format!("member_index({})", place_text(place)),

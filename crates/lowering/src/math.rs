@@ -72,7 +72,8 @@ impl<'db> Builder<'db> {
             return self.unsupported(node, &format!("`math.{member}`"));
         };
         let ty = self.ty(node);
-        if !self.is_float(ty) || arguments.len() != function.arity() {
+        let float = self.is_float(ty) || self.is_float_parameter(ty);
+        if !float || arguments.len() != function.arity() {
             return self.unsupported(node, &format!("this call of `math.{member}`"));
         }
         let operands = arguments
