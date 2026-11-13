@@ -31,11 +31,12 @@ use crate::memory;
 use crate::panic::panic;
 
 /// `Dataset(path)`: writes to `out` a new `list[str]` of the lines that describe the header of
-/// the `NetCDF` classic file whose path is the `length` bytes at `path`: `P`, a tab and the
-/// path, which the library's `Dataset` keeps to read variables later, then the lines
-/// `files::netcdf::describe` writes, for its dimensions, attributes and variables. Returns
-/// `true`, with the error at `error`, when the operating system refuses, or with the kind
-/// `INVALID_DATA` when the file is not a classic `NetCDF` file or its header is cut short.
+/// the `NetCDF` file, classic or NetCDF-4, whose path is the `length` bytes at `path`: `P`, a
+/// tab and the path, which the library's `Dataset` keeps to read variables later, then the
+/// lines `files::netcdf::describe` writes, for its dimensions, attributes and variables.
+/// Returns `true`, with the error at `error`, when the operating system refuses, or with the kind
+/// `INVALID_DATA` when the file is not a `NetCDF` file, its header is cut short, or a NetCDF-4
+/// file holds what is not read yet.
 ///
 /// Cost: the header only; no variable's values are read.
 ///

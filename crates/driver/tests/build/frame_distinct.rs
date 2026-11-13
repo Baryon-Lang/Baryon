@@ -1,6 +1,7 @@
-//! Leaving out the rows of a frame that repeat, and counting them (roadmap 3.13.9, decision
-//! 0045), built and run: `drop_duplicates` of every column and of a `subset`, and
-//! `value_counts`, with the printed frames those pandas 3.0.5 prints for the same calls.
+//! Leaving out the rows of a frame that repeat, counting them, and summing up its columns
+//! (roadmap 3.13.9, decision 0045), built and run: `drop_duplicates` of every column and of
+//! a `subset`, `value_counts` and `describe`, with the printed frames those pandas 3.0.5
+//! prints for the same calls.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -155,6 +156,72 @@ def main():
         "1      a      2\n",
     ];
     let (code, stdout, report) = run("frames-counts", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, expected.concat());
+}
+
+/// `describe` gives the count, mean, sample standard deviation, smallest, quartiles and
+/// largest of each column of numbers, an integer and an `f32` column among them, with a
+/// NaN left out and the columns of `str` and `bool` left out, as pandas gives them; pandas
+/// has the names as its row index, put here in the column `statistic`. One row has no
+/// standard deviation, and no rows have a count of 0 and NaN for the rest. The frame read
+/// keeps its rows.
+#[test]
+fn columns_of_numbers_are_described() {
+    let program = r#"
+from math import nan
+
+
+def main():
+    trades = DataFrame({
+        "symbol": Array(["b", "a", "b", "a", "c", "b", "d"]),
+        "price": Array([2.0, 1.0, 2.5, 1.0, 5.0, nan, 7.25]),
+        "volume": Array([100, 250, 50, 250, 75, 10, 3]),
+        "live": Array([True, False, True, True, False, True, True]),
+        "size": Array([f32(1.5), f32(2.5), f32(0.5), f32(4.0), f32(1.0), f32(8.0), f32(2.0)]),
+    })
+    summary = trades.describe()
+    print(summary)
+    print(summary.price[1], summary.statistic[5], len(summary), summary.columns)
+    print(trades.head(1).describe())
+    print(trades.head(0).describe())
+    print(trades[["volume"]].describe().volume)
+    print(len(trades))
+"#;
+    let expected = [
+        "  statistic    price      volume      size\n",
+        "0     count  6.00000    7.000000  7.000000\n",
+        "1      mean  3.12500  105.428571  2.785714\n",
+        "2       std  2.49875  104.425184  2.563480\n",
+        "3       min  1.00000    3.000000  0.500000\n",
+        "4       25%  1.25000   30.000000  1.250000\n",
+        "5       50%  2.25000   75.000000  2.000000\n",
+        "6       75%  4.37500  175.000000  3.250000\n",
+        "7       max  7.25000  250.000000  8.000000\n",
+        "3.125 50% 8 ['statistic', 'price', 'volume', 'size']\n",
+        "  statistic  price  volume  size\n",
+        "0     count    1.0     1.0   1.0\n",
+        "1      mean    2.0   100.0   1.5\n",
+        "2       std    NaN     NaN   NaN\n",
+        "3       min    2.0   100.0   1.5\n",
+        "4       25%    2.0   100.0   1.5\n",
+        "5       50%    2.0   100.0   1.5\n",
+        "6       75%    2.0   100.0   1.5\n",
+        "7       max    2.0   100.0   1.5\n",
+        "  statistic  price  volume  size\n",
+        "0     count    0.0     0.0   0.0\n",
+        "1      mean    NaN     NaN   NaN\n",
+        "2       std    NaN     NaN   NaN\n",
+        "3       min    NaN     NaN   NaN\n",
+        "4       25%    NaN     NaN   NaN\n",
+        "5       50%    NaN     NaN   NaN\n",
+        "6       75%    NaN     NaN   NaN\n",
+        "7       max    NaN     NaN   NaN\n",
+        "[  7.         105.42857143 104.42518397   3.          30.\n",
+        "  75.         175.         250.        ]\n",
+        "7\n",
+    ];
+    let (code, stdout, report) = run("frames-described", program).unwrap();
     assert_eq!((code, report.as_str()), (Some(0), ""));
     assert_eq!(stdout, expected.concat());
 }
