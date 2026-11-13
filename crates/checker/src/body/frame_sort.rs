@@ -81,13 +81,19 @@ impl<'db> Body<'db> {
     }
 
     /// Whether every column of `keys`, columns of the frame of type `base`, has an order: a
-    /// complex column has none, and is reported at `by`.
+    /// complex column has none, and is reported at `by`, and so is a column of `str`, which
+    /// is not sorted by yet.
     fn sortable(&mut self, by: NodeId, base: Type<'db>, keys: &[String]) -> bool {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return false;
         };
         let mut sortable = true;
         for column in columns.iter().filter(|column| keys.contains(&column.name)) {
+            if matches!(column.element.kind(self.db), TypeKind::Str) {
+                let what = format!("sorting by `{}`, a column of `str`,", column.name);
+                self.text_column_unbuilt(by, &what);
+                sortable = false;
+            }
             if matches!(
                 column.element.kind(self.db),
                 TypeKind::Primitive(Primitive::Complex(_))

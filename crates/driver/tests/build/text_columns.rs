@@ -172,3 +172,84 @@ fn frames_with_a_text_column_print_as_pandas_prints_them() {
     assert_eq!(stdout, expected.concat());
     assert_eq!((code, report.as_str()), (Some(0), ""));
 }
+
+/// A program that chooses rows of frames with a text column: `head` and `tail` with counts
+/// of both signs, slices with a step and backwards, masks that keep some rows and none, and
+/// `sort_values` by a column of numbers in both directions.
+const CHOSEN: &str = r#"
+def main():
+    symbols = Array(["IBM", "", "AAPL", "βeta", "MSFT", "GOOG", "x"])
+    prices = Array([3.0, 1.0, 2.0, 4.0, 0.5, 9.0, 2.0])
+    trades = DataFrame({"symbol": symbols, "price": prices})
+    print(trades.head(2))
+    print(trades.tail(3))
+    print(trades.head(-5))
+    print(trades[1:6:2])
+    print(trades[::-1])
+    print(trades[trades.price > 1.5])
+    print(trades[trades.price > 100.0])
+    by = trades.sort_values("price")
+    print(by)
+    print(trades.sort_values("price", ascending=False).head(3).symbol[0])
+    print(len(trades), trades.symbol[6])
+    alone = DataFrame({"tag": Array(["b", "a", "c"])})
+    print(alone[1:])
+    print(alone.tail(1).tag[0], len(alone.head(0)))
+"#;
+
+/// The rows chosen from a frame with a text column carry their text with them: every frame
+/// printed is what pandas 3 prints for the same rows, numbered from 0 again, and a stable
+/// sort keeps rows of equal price in their order.
+#[test]
+fn rows_of_a_frame_with_a_text_column_are_chosen_and_sorted() {
+    let expected = [
+        "  symbol  price\n",
+        "0    IBM    3.0\n",
+        "1           1.0\n",
+        "  symbol  price\n",
+        "0   MSFT    0.5\n",
+        "1   GOOG    9.0\n",
+        "2      x    2.0\n",
+        "  symbol  price\n",
+        "0    IBM    3.0\n",
+        "1           1.0\n",
+        "  symbol  price\n",
+        "0           1.0\n",
+        "1   βeta    4.0\n",
+        "2   GOOG    9.0\n",
+        "  symbol  price\n",
+        "0      x    2.0\n",
+        "1   GOOG    9.0\n",
+        "2   MSFT    0.5\n",
+        "3   βeta    4.0\n",
+        "4   AAPL    2.0\n",
+        "5           1.0\n",
+        "6    IBM    3.0\n",
+        "  symbol  price\n",
+        "0    IBM    3.0\n",
+        "1   AAPL    2.0\n",
+        "2   βeta    4.0\n",
+        "3   GOOG    9.0\n",
+        "4      x    2.0\n",
+        "Empty DataFrame\n",
+        "Columns: [symbol, price]\n",
+        "Index: []\n",
+        "  symbol  price\n",
+        "0   MSFT    0.5\n",
+        "1           1.0\n",
+        "2   AAPL    2.0\n",
+        "3      x    2.0\n",
+        "4    IBM    3.0\n",
+        "5   βeta    4.0\n",
+        "6   GOOG    9.0\n",
+        "GOOG\n",
+        "7 x\n",
+        "  tag\n",
+        "0   a\n",
+        "1   c\n",
+        "c 0\n",
+    ];
+    let (code, stdout, report) = run("text-columns-chosen", CHOSEN).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+}

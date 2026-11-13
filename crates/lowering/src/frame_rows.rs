@@ -9,6 +9,7 @@
 //! element type as the type argument, and the results are the new frame's columns.
 
 use crate::builder::Builder;
+use crate::frames::erase;
 use mir::{BinaryOperator, Check, Constant, Local, Operand, Place, Projection, Rvalue};
 use mir::{ConstantValue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
@@ -72,7 +73,7 @@ impl<'db> Builder<'db> {
         };
         let rows = self.held(int, rows, node);
         let source = self.borrow(frame);
-        let count = self.row_count(&source, node);
+        let count = self.counted_rows(frame, &source, node);
         let arguments = vec![Place::from(count), Place::from(rows)];
         self.taken_rows(place, frame, &source, (function, arguments), node);
     }
@@ -85,7 +86,7 @@ impl<'db> Builder<'db> {
     /// panics.
     pub(crate) fn frame_rows(&mut self, place: Place, value: NodeId, index: NodeId, node: NodeId) {
         let source = self.borrow(value);
-        let count = self.row_count(&source, node);
+        let count = self.counted_rows(value, &source, node);
         if self.tree.kind(index) != SyntaxKind::Slice {
             let mask = self.borrow(index);
             let chosen = self.length(&mask, self.ty(index), 0, index);
@@ -154,7 +155,8 @@ impl<'db> Builder<'db> {
 
     /// A new frame into `place` whose columns are the library function `kernel.0` of each
     /// column of the frame `value`, borrowed at `source`, and of `kernel.1`: `masked` with a
-    /// mask, or `taken` with positions.
+    /// mask, or `taken` with positions. A column of `str` goes through `text_masked` or
+    /// `text_taken`, which give a text array.
     pub(crate) fn each_column(
         &mut self,
         place: Place,
@@ -168,12 +170,22 @@ impl<'db> Builder<'db> {
         };
         let mut chosen = Vec::with_capacity(columns.len());
         for (position, column) in (0_u32..).zip(columns) {
-            let element = column.element;
-            let array = Type::new(self.db, TypeKind::Array { element, rank: 1 });
+            // A column of `str` has its own functions, `text_masked` and `text_taken`.
+            let text = matches!(column.element.kind(self.db), TypeKind::Str);
+            let name = if text {
+                format!("text_{function}")
+            } else {
+                function.to_owned()
+            };
+            let types = if text {
+                Vec::new()
+            } else {
+                vec![column.element]
+            };
+            let array = erase(self.db, column.array(self.db));
             let from = source.clone().project(Projection::Field(position));
             let arguments = vec![from, by.clone()];
-            let Some(result) = self.frame_call(function, vec![element], arguments, array, node)
-            else {
+            let Some(result) = self.frame_call(&name, types, arguments, array, node) else {
                 return;
             };
             chosen.push(Operand::Move(Place::from(result)));
@@ -249,5 +261,18 @@ impl<'db> Builder<'db> {
         let first = source.clone().project(Projection::Field(0));
         self.assign(Place::from(count), Rvalue::Length(first, 0), node);
         count
+    }
+
+    /// The number of rows of the frame the expression `frame` gives, borrowed at `source`,
+    /// in a temporary: [`Builder::row_count`] for a frame whose first column may hold `str`,
+    /// whose rows are counted from its offsets.
+    pub(crate) fn counted_rows(&mut self, frame: NodeId, source: &Place, node: NodeId) -> Local {
+        let stored = match self.ty(frame).kind(self.db) {
+            TypeKind::Tuple(columns) => columns.first().copied(),
+            _ => None,
+        };
+        let first = source.clone().project(Projection::Field(0));
+        let rows = self.column_length(first, stored, node);
+        self.held(self.int_type(), rows, node)
     }
 }
