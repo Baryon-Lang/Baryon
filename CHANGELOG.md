@@ -184,6 +184,9 @@ Decisions 0031 to 0052 were accepted between the two releases; the
   compiler does not build yet, such as CSV and Parquet files, missing values in tables, writing
   HDF5 and the `scipy`-style libraries. Each is reported as an error that names it, never
   miscompiled.
+- Two bugs found while checking the documentation stay open: in a `for` loop over a list of paths,
+  reading `entry.name` gives a false "moved" error (roadmap 1.9.31), and a `try` cannot reuse one
+  name in two `except ... as error` clauses, which Python allows (1.9.32).
 - No packages outside the standard library, no interop with Python or C++, and no REPL yet.
 - Speed: the benchmark kernels run within about 1.5 times of `gfortran -O3`; within 5% is the
   Phase 1 gate, still ahead.
