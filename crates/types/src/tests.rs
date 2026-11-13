@@ -392,6 +392,22 @@ fn a_union_keeps_one_of_each_member_even_when_two_display_alike() {
     assert_eq!(union, crate::union(&database, [twin, periodic, twin]));
 }
 
+/// A text array is written `Array[str, 1]`, takes the room of its two buffers, each the three
+/// words of a rank-1 array, and is stored as the tuple of them.
+#[test]
+fn a_text_array_shows_as_an_array_of_str_and_is_stored_as_two_buffers() {
+    let database = Database::default();
+    let text = Type::new(&database, TypeKind::TextArray);
+    assert_eq!(text.display(&database).to_string(), "Array[str, 1]");
+    assert_eq!(layout_of(&database, text), Ok((48, 8)));
+    let stored = text.text_storage(&database);
+    assert_eq!(
+        stored.map(|ty| ty.display(&database).to_string()),
+        Some("tuple[Array[u8, 1], Array[i64, 1]]".to_owned())
+    );
+    assert_eq!(stored.map(|ty| layout_of(&database, ty)), Some(Ok((48, 8))));
+}
+
 /// A frame type of the columns `price: f64` and `volume: i64`, with rows named by `row`.
 fn trades<'db>(database: &'db Database, row: Option<Type<'db>>) -> Type<'db> {
     let column = |name: &str, element: &str| Column {

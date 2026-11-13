@@ -58,6 +58,7 @@ impl<'db> Builder<'db> {
         let kind = match ty.kind(self.db) {
             TypeKind::Primitive(_)
             | TypeKind::Str
+            | TypeKind::TextArray
             | TypeKind::None
             | TypeKind::Parameter { .. }
             | TypeKind::Union(_)
