@@ -16,12 +16,20 @@ pub(crate) struct Importer<'a> {
     db: &'a dyn Db,
     /// The package's module map.
     modules: &'a Modules,
+    /// Whether the importing file is a standard library file, which may also import the
+    /// library's internal files, such as `artist` and `axis` under `pyplot` (decision 0046).
+    in_library: bool,
 }
 
 impl<'a> Importer<'a> {
-    /// An importer for a package with the given modules.
-    pub(crate) fn new(db: &'a dyn Db, modules: &'a Modules) -> Self {
-        Self { db, modules }
+    /// An importer for a package with the given modules, for a file that is a standard library
+    /// file when `in_library` is set.
+    pub(crate) fn new(db: &'a dyn Db, modules: &'a Modules, in_library: bool) -> Self {
+        Self {
+            db,
+            modules,
+            in_library,
+        }
     }
 
     /// What `import`, written in `tree`, refers to.
@@ -81,6 +89,7 @@ impl<'a> Importer<'a> {
         }
         let mut components = path.split('.');
         if let Some(module) = standard(components.next().unwrap_or_default()) {
+            self.unshadowed(module, at)?;
             return if components.next().is_none() {
                 Ok(Definition::Standard {
                     module,
@@ -112,7 +121,17 @@ impl<'a> Importer<'a> {
     /// What `member` of `module` is: a submodule, or a top-level name of the module's file.
     fn member(&self, module: &str, member: &str, depth: usize) -> Result<Definition, Failure> {
         if let Some(standard) = standard(module) {
+            self.unshadowed(standard, At::Module)?;
             return Ok(self.standard_member(standard, member));
+        }
+        if self.in_library && self.modules.library(module).is_some() {
+            return self.library(module, member).ok_or_else(|| {
+                Failure::new(
+                    format!("module `{module}` has no `{member}`"),
+                    "not defined there",
+                    At::Member,
+                )
+            });
         }
         if let Some(submodule) = standard(&format!("{module}.{member}")) {
             return Ok(Definition::Standard {
@@ -194,6 +213,35 @@ impl<'a> Importer<'a> {
                     None => diagnostic,
                 }
             })
+    }
+
+    /// Checks that the program has no module of its own named as the standard module
+    /// `module`, which an import of `module` could never reach: the standard module is found
+    /// first, as Python finds a built-in module before a file of the same name.
+    ///
+    /// # Errors
+    ///
+    /// Fails, naming the program's file, when it has such a module and the import is the
+    /// program's own; the standard library's imports always mean the standard module.
+    fn unshadowed(&self, module: &str, at: At) -> Result<(), Failure> {
+        if self.in_library {
+            return Ok(());
+        }
+        let Some(file) = ModuleName::from_dotted(module).and_then(|name| self.modules.get(&name))
+        else {
+            return Ok(());
+        };
+        Err(Failure {
+            message: format!(
+                "`{}` has the name of the standard library module `{module}`",
+                file.source(self.db).name()
+            ),
+            label: "imports the standard module",
+            note: Some(format!(
+                "an import of `{module}` always finds the standard module; rename the file"
+            )),
+            at,
+        })
     }
 
     /// What `member` of the standard module `module` is: the class or function the standard

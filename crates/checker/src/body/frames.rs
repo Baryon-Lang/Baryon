@@ -407,7 +407,14 @@ impl<'db> Body<'db> {
     ) -> Type<'db> {
         let built = matches!(
             callee,
-            "copy" | "head" | "tail" | "sort_values" | "assign" | "drop" | "rename"
+            "copy"
+                | "head"
+                | "tail"
+                | "sort_values"
+                | "assign"
+                | "drop"
+                | "rename"
+                | "drop_duplicates"
         );
         if self.has_text_column(base) && !built {
             self.untyped(arguments);

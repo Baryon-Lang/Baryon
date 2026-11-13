@@ -60,6 +60,23 @@ A value of any other type (an `Array`, a `list`, a `str`, a struct without `Copy
 A conditional expression passes its move on to each branch: `b = x if ok else y` moves `x` or
 `y`, so both count as moved after it, as on the two branches of an `if`.
 
+A conditional expression that is only lent, to a read-only parameter, a method, an operator or
+`print`, cannot yet have a branch that names a variable's value when that value moves. The
+compiler cannot yet lend whichever branch runs in place, so it reports the branch:
+
+```text
+error: a conditional expression cannot lend `name` yet
+  --> main.byn:10:40
+   |
+10 |     return size(name[0:1] if long else name)
+   |                                        ^^^^ freed with the conditional's value
+   = note: lend a copy, `name.copy()`, or choose with an `if` statement and pass `name` itself
+```
+
+Either fix works: `size(name[0:1] if long else name.copy())`, or an `if` statement that calls
+`size(name[0:1])` on one branch and `size(name)` on the other. A branch that builds a new value,
+such as `name[0:1]`, `name + "s"` or a literal, is fine, and so is a conditional of a copy type.
+
 After a move, the old owner holds nothing. Using it is an error until a new value is assigned:
 
 ```text

@@ -1,0 +1,77 @@
+"""The `image` library file: colors an image's values through a colormap and draws it on an axes, as
+matplotlib's `AxesImage` does (decision 0046).
+
+It is internal to the standard library: `pyplot` and the files under it import it, and a
+program cannot, so a program's own `image.byn` is never hidden by it.
+
+`pyplot`'s `Axes.imshow` records an `artist.Image`; when the figure is drawn, `draw_image`
+turns its values into pixels and hands them to the renderer, which embeds them as a PNG.
+"""
+
+from artist import Image, View
+from backend_svg import RendererSVG
+from cm import Colormap, get_cmap
+from math import isfinite
+
+
+def draw_image(image: Image, view: View, renderer: InOut[RendererSVG]) -> None:
+    """Draws `image` stretched over its extent where `view` puts it, row 0 along the top or
+    bottom edge as `image.upper` says, clipped to the axes. Each
+    value is colored as matplotlib's `imshow` colors it, through `Normalize(vmin, vmax)` and
+    the colormap; a NaN is left transparent. An image whose cells are at least three pixels
+    across each way, at matplotlib's default 100 dots an inch, keeps them sharp, as
+    matplotlib's `"nearest"` interpolation does; a smaller one lets the viewer smooth it, as
+    matplotlib's antialiasing does. Costs a few operations and about 5.5 bytes of the file a
+    cell.
+    """
+    rows = image.data.shape[0]
+    columns = image.data.shape[1]
+    left_edge, right_edge, bottom_edge, top_edge = image.extent
+    first = top_edge if image.upper else bottom_edge
+    last = bottom_edge if image.upper else top_edge
+    across = view.to_x(Array([left_edge, right_edge]))
+    down = view.to_y(Array([first, last]))
+    flip_rows = down[0] > down[1]
+    flip_columns = across[0] > across[1]
+    cmap = get_cmap(image.cmap)
+    pixels: Array[u8, 3] = Array.zeros((rows, columns, 4))
+    for i in range(rows):
+        for j in range(columns):
+            source_i = rows - 1 - i if flip_rows else i
+            source_j = columns - 1 - j if flip_columns else j
+            value = normalize(image.data[source_i, source_j], image.vmin, image.vmax)
+            red, green, blue, alpha = cmap.to_rgba_bytes(value)
+            pixels[i, j, 0] = red
+            pixels[i, j, 1] = green
+            pixels[i, j, 2] = blue
+            pixels[i, j, 3] = alpha
+    width = abs(across[1] - across[0])
+    height = abs(down[1] - down[0])
+    pixels_a_point = 100.0 / 72.0  # matplotlib's default 100 dots an inch, over 72 points
+    wide = width * pixels_a_point >= 3.0 * f64(columns)
+    tall = height * pixels_a_point >= 3.0 * f64(rows)
+    left = min(across[0], across[1])
+    top = min(down[0], down[1])
+    renderer.draw_image(left, top, width, height, pixels, not (wide and tall), True)
+
+
+def normalize(value: f64, vmin: f64, vmax: f64) -> f64:
+    """`value` mapped linearly so `vmin` is 0 and `vmax` is 1, as matplotlib's
+    `Normalize(vmin, vmax)(value)`: 0 for every value when `vmin` equals `vmax`, and NaN or
+    infinity kept, so the colormap draws it as bad, under or over.
+    """
+    if vmin == vmax:
+        return 0.0 if isfinite(value) else value
+    return (value - vmin) / (vmax - vmin)
+
+
+def colormap_strip(cmap: Colormap) -> Array[u8, 3]:
+    """The 256 colors of `cmap` as an image one pixel wide, its last color at the top, as a
+    colorbar shows them.
+    """
+    pixels: Array[u8, 3] = Array.zeros((256, 1, 4))
+    for k in range(256):
+        for channel in range(3):
+            pixels[255 - k, 0, channel] = cmap.colors[k, channel]
+        pixels[255 - k, 0, 3] = u8(255)
+    return pixels

@@ -19,12 +19,16 @@ points, colors from the `tab10` cycle, and ticks placed and labelled by `ticker`
 `MaxNLocator` and `ScalarFormatter`, as matplotlib's are.
 """
 
-from artist import Artist, Kind, View
+from artist import Artist, Image, Kind, View
 from axis import XAxis, YAxis
 from backend_svg import RendererSVG
+from cm import get_cmap
+from colorbar import draw_colorbar
 from colors import to_hex
+from image import draw_image
 from legend import draw_legend, location_code
 from math import inf, isfinite
+from transforms import autoscale, fixed_limits
 from stats import histogram
 
 WIDTH: Final = 460.8  # the figure's width in points: 6.4 inches
@@ -57,7 +61,11 @@ class Axes(Struct):
     line_colors: int  # how many colors of the cycle `plot` has taken
     patch_colors: int  # how many `scatter`, `bar` and `hist` have taken, from their own cycle
     legend_loc: str  # where the legend goes, as `legend`'s `loc`; "" for no legend
+    images: list[Image]  # every image, in the order drawn
+    colorbar_label: str  # the colorbar's label; "" for none
     grid_on: bool  # whether grid lines are drawn at the ticks
+    aspect_equal: bool  # whether a unit of x and of y are the same length, as for images
+    colorbar_on: bool  # whether a colorbar of the last image is drawn beside the axes
 
     def plot(
         self: InOut[Self],
@@ -190,6 +198,61 @@ class Axes(Struct):
         )
         return (heights, edges)
 
+    def imshow(
+        self: InOut[Self],
+        X: Array[f64, 2],
+        cmap: str = "viridis",
+        vmin: f64 | None = None,
+        vmax: f64 | None = None,
+        origin: str = "upper",
+        aspect: str = "equal",
+        extent: tuple[f64, f64, f64, f64] | None = None,
+    ) -> None:
+        """Draws `X` as an image, as matplotlib's `imshow`: element `X[i, j]` is a cell centred
+        on x = `j` and y = `i`, colored by the colormap `cmap`, a name `cm.get_cmap` knows,
+        from `vmin` to `vmax`, which default to the smallest and largest finite element. A NaN
+        element is left transparent. `origin="upper"` puts row 0 at the top, as matplotlib
+        does, and `"lower"` at the bottom. `extent=(left, right, bottom, top)` stretches the
+        image over that rectangle of data coordinates instead. `aspect="equal"` keeps a unit of
+        x and of y the same length by narrowing the axes, and `"auto"` lets the image fill the
+        axes. Copies `X`.
+
+        Panics on an unknown `cmap`, `origin` or `aspect`, where matplotlib raises
+        `ValueError`.
+        """
+        assert origin == "upper" or origin == "lower", "imshow's origin is 'upper' or 'lower'"
+        assert aspect == "equal" or aspect == "auto", "imshow's aspect is 'equal' or 'auto'"
+        get_cmap(cmap)
+        low = inf
+        high = -inf
+        for i in range(X.shape[0]):
+            for j in range(X.shape[1]):
+                if isfinite(X[i, j]):
+                    low = min(low, X[i, j])
+                    high = max(high, X[i, j])
+        if low > high:
+            low = 0.0
+            high = 1.0
+        bottom = low if vmin is None else vmin
+        top = high if vmax is None else vmax
+        upper = origin == "upper"
+        right = f64(X.shape[1]) - 0.5
+        down = f64(X.shape[0]) - 0.5
+        edges = (-0.5, right, down, -0.5) if upper else (-0.5, right, -0.5, down)
+        if extent is not None:
+            edges = extent
+        self.images.append(Image(X.copy(), cmap.copy(), bottom, top, edges, upper))
+        self.aspect_equal = aspect == "equal"
+
+    def colorbar(self: InOut[Self], label: str = "") -> None:
+        """Draws a colorbar of the last image beside the axes, as matplotlib's
+        `Figure.colorbar(im, ax=ax)`: it takes 15% of the axes' width on the right, after a
+        gap of 5%, and `label` is written beside its ticks. Panics when there is no image yet,
+        where matplotlib raises `RuntimeError`."""
+        assert len(self.images) > 0, "colorbar needs an image: call imshow first"
+        self.colorbar_on = True
+        self.colorbar_label = label.copy()
+
     def _color(self: InOut[Self], color: str, line: bool) -> str:
         """The SVG color of `color`, or when it is `""` the next color of the cycle: the lines'
         cycle or the one `scatter`, `bar` and `hist` share. matplotlib keeps the two apart, so a
@@ -221,13 +284,13 @@ class Axes(Struct):
 
         Panics when a limit is NaN or infinite, where matplotlib raises `ValueError`."""
         assert isfinite(left) and isfinite(right), "Axis limits cannot be NaN or Inf"
-        self.xlim = _limits(left, right)
+        self.xlim = fixed_limits(left, right)
 
     def set_ylim(self: InOut[Self], bottom: f64, top: f64) -> None:
         """Shows y from `bottom` to `top`; `bottom` larger than `top` turns the axis around.
         Widens limits and panics as `set_xlim` does."""
         assert isfinite(bottom) and isfinite(top), "Axis limits cannot be NaN or Inf"
-        self.ylim = _limits(bottom, top)
+        self.ylim = fixed_limits(bottom, top)
 
     def legend(self: InOut[Self], loc: str = "best") -> None:
         """Shows a legend of every artist with a label, as matplotlib's `legend`: a sample of
@@ -282,7 +345,7 @@ def axes() -> Axes:
         ax.set_title("empty")
     ```
     """
-    return Axes([], "", "", "", None, None, 0, 0, "", False)
+    return Axes([], "", "", "", None, None, 0, 0, "", [], "", False, False, False)
 
 
 def _last_dot(path: str) -> int:
@@ -315,75 +378,57 @@ def _dashes(style: str, linewidth: f64) -> list[f64]:
     return [length * linewidth for length in pattern]
 
 
-def _expand(low: f64, high: f64, expander: f64, tiny: f64) -> tuple[f64, f64]:
-    """`low` and `high`, widened by `expander` of their size when they are too close to tell
-    apart, as matplotlib's `transforms.nonsingular`."""
-    largest = max(abs(low), abs(high))
-    if largest < 1e6 / tiny * 2.2250738585072014e-308:
-        return (-expander, expander)
-    if high - low <= largest * tiny:
-        if high == 0.0 and low == 0.0:
-            return (-expander, expander)
-        return (low - expander * abs(low), high + expander * abs(high))
-    return (low, high)
-
-
-def _limits(first: f64, second: f64) -> tuple[f64, f64]:
-    """Fixed limits as matplotlib's `set_xlim` keeps them: put in order, widened by
-    `nonsingular` with an expander of 5% when too close to tell apart, then turned back round
-    if `first` was the larger."""
-    low, high = _expand(min(first, second), max(first, second), 0.05, 1e-15)
-    if first > second:
-        return (high, low)
-    return (low, high)
-
-
-def _view(ax: Axes, along_x: bool) -> tuple[f64, f64]:
-    """The range one axis shows, as matplotlib's `autoscale_view`: the fixed range when set;
-    otherwise the finite data, bars from their base at 0, with a margin of 5% on each side
-    that never crosses 0 into a range of bars that all stand on it; 0 to 1 with no data."""
+def _range(ax: Axes, along_x: bool) -> tuple[f64, f64]:
+    """The range one axis of `ax` shows: the limits `set_xlim` or `set_ylim` fixed, or else the
+    data's, as `transforms.autoscale` finds them."""
     fixed = ax.xlim if along_x else ax.ylim
     if fixed is not None:
         return fixed
-    low = inf
-    high = -inf
-    sticky = False
-    for artist in ax.artists:
-        bars = artist.kind == Kind.BARS
-        for i in range(len(artist.x)):
-            if isfinite(artist.x[i]) and isfinite(artist.y[i]):
-                first = artist.x[i] if along_x else artist.y[i]
-                last = first
-                if bars and along_x:
-                    last = first + artist.widths[i]
-                elif bars:
-                    first = min(0.0, artist.y[i])
-                    last = max(0.0, artist.y[i])
-                    sticky = True
-                low = min(low, first)
-                high = max(high, last)
-    if low > high:
-        return (0.0, 1.0)
-    low, high = _expand(low, high, 0.05, 1e-15)
-    margin = 0.05 * (high - low)
-    bottom = low if sticky and low == 0.0 else low - margin
-    top = high if sticky and high == 0.0 else high + margin
-    return _expand(bottom, top, 0.001, 1e-15)
+    return autoscale(ax.artists, ax.images, along_x)
+
+
+def _box(ax: Axes, x0: f64, x1: f64, y0: f64, y1: f64) -> tuple[f64, f64, f64, f64]:
+    """The axes' box, left, top, right and bottom in points: matplotlib's default box, less
+    the 20% of its width a colorbar takes, then, for equal aspect, narrowed in one direction
+    about its centre so a unit of x and of y are the same length, as matplotlib's
+    `apply_aspect` narrows it."""
+    left = LEFT
+    top = TOP
+    right = RIGHT
+    bottom = BOTTOM
+    if ax.colorbar_on:
+        right = RIGHT - 0.2 * (RIGHT - LEFT)
+    if ax.aspect_equal and len(ax.images) > 0:
+        across = abs(x1 - x0)
+        down = abs(y1 - y0)
+        if (right - left) / across > (bottom - top) / down:
+            width = across * (bottom - top) / down
+            left = 0.5 * (left + right - width)
+            right = left + width
+        else:
+            height = down * (right - left) / across
+            top = 0.5 * (top + bottom - height)
+            bottom = top + height
+    return (left, top, right, bottom)
 
 
 def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
-    """Draws `ax` in the default figure: bars and markers, the grid, lines, the frame, the axes'
-    ticks and labels, the title and the legend, in matplotlib's order."""
-    x0, x1 = _view(ax, True)
-    y0, y1 = _view(ax, False)
-    xscale = (RIGHT - LEFT) / (x1 - x0)
-    yscale = (BOTTOM - TOP) / (y1 - y0)
-    renderer.set_clip(LEFT, TOP, RIGHT - LEFT, BOTTOM - TOP)
+    """Draws `ax` in the default figure: images, bars and markers, the grid, lines, the frame,
+    the axes' ticks and labels, the title, the legend and the colorbar, in matplotlib's order."""
+    x0, x1 = _range(ax, True)
+    y0, y1 = _range(ax, False)
+    left, top, right, bottom = _box(ax, x0, x1, y0, y1)
+    view = View(left, top, right, bottom, x0, x1, y0, y1)
+    xscale = (right - left) / (x1 - x0)
+    yscale = (bottom - top) / (y1 - y0)
+    renderer.set_clip(left, top, right - left, bottom - top)
+    for image in ax.images:
+        draw_image(image, view, renderer)
     for artist in ax.artists:
-        px = LEFT + (artist.x - x0) * xscale
-        py = BOTTOM - (artist.y - y0) * yscale
+        px = left + (artist.x - x0) * xscale
+        py = bottom - (artist.y - y0) * yscale
         if artist.kind == Kind.BARS:
-            base = BOTTOM + y0 * yscale
+            base = bottom + y0 * yscale
             for i in range(len(px)):
                 width = artist.widths[i] * xscale
                 height = base - py[i]
@@ -392,24 +437,24 @@ def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
                 )
         elif artist.kind == Kind.MARKERS:
             renderer.draw_markers(px, py, artist.marker, artist.markersize, artist.color, 1.5, True)
-    xaxis = XAxis(x0, x1, LEFT, RIGHT, BOTTOM)
-    yaxis = YAxis(y0, y1, BOTTOM, TOP, LEFT)
+    xaxis = XAxis(x0, x1, left, right, bottom)
+    yaxis = YAxis(y0, y1, bottom, top, left)
     if ax.grid_on:
         gray = "#b0b0b0"  # matplotlib's grid color
         for tick in xaxis.get_majorticklocs():
             if min(x0, x1) <= tick and tick <= max(x0, x1):
-                at = LEFT + (tick - x0) * xscale
+                at = left + (tick - x0) * xscale
                 line = Array([at, at])
-                renderer.draw_path(line, Array([TOP, BOTTOM]), gray, 0.8, [], "projecting", True)
+                renderer.draw_path(line, Array([top, bottom]), gray, 0.8, [], "projecting", True)
         for tick in yaxis.get_majorticklocs():
             if min(y0, y1) <= tick and tick <= max(y0, y1):
-                at = BOTTOM - (tick - y0) * yscale
+                at = bottom - (tick - y0) * yscale
                 line = Array([at, at])
-                renderer.draw_path(Array([LEFT, RIGHT]), line, gray, 0.8, [], "projecting", True)
+                renderer.draw_path(Array([left, right]), line, gray, 0.8, [], "projecting", True)
     for artist in ax.artists:
         if artist.kind == Kind.LINE:
-            px = LEFT + (artist.x - x0) * xscale
-            py = BOTTOM - (artist.y - y0) * yscale
+            px = left + (artist.x - x0) * xscale
+            py = bottom - (artist.y - y0) * yscale
             if artist.linewidth > 0.0:
                 renderer.draw_path(
                     px, py, artist.color, artist.linewidth, artist.dashes, "projecting", True
@@ -417,20 +462,31 @@ def _draw(ax: Axes, renderer: InOut[RendererSVG]) -> None:
             if artist.marker != "":
                 size = artist.markersize
                 renderer.draw_markers(px, py, artist.marker, size, artist.color, 1.0, True)
-    width = RIGHT - LEFT
-    renderer.draw_rectangle(LEFT, TOP, width, BOTTOM - TOP, "none", 1.0, "#000000", 0.8, False)
+    width = right - left
+    renderer.draw_rectangle(left, top, width, bottom - top, "none", 1.0, "#000000", 0.8, False)
     below = xaxis.draw(renderer)
     beside = yaxis.draw(renderer)
     _, height, descent = renderer.get_text_width_height_descent("0", FONT_SIZE)
     if ax.xlabel != "":
         baseline = below + LABEL_PAD + height - descent
-        renderer.draw_text((LEFT + RIGHT) / 2.0, baseline, ax.xlabel, FONT_SIZE, "middle", False)
+        renderer.draw_text((left + right) / 2.0, baseline, ax.xlabel, FONT_SIZE, "middle", False)
     if ax.ylabel != "":
         across = beside - LABEL_PAD - descent
-        renderer.draw_text(across, (TOP + BOTTOM) / 2.0, ax.ylabel, FONT_SIZE, "middle", True)
+        renderer.draw_text(across, (top + bottom) / 2.0, ax.ylabel, FONT_SIZE, "middle", True)
     if ax.title != "":
-        middle = (LEFT + RIGHT) / 2.0
-        renderer.draw_text(middle, TOP - TITLE_PAD, ax.title, TITLE_SIZE, "middle", False)
+        middle = (left + right) / 2.0
+        renderer.draw_text(middle, top - TITLE_PAD, ax.title, TITLE_SIZE, "middle", False)
     if ax.legend_loc != "":
-        view = View(LEFT, TOP, RIGHT, BOTTOM, x0, x1, y0, y1)
         draw_legend(ax.artists, ax.legend_loc, view, renderer)
+    if ax.colorbar_on:
+        slot = RIGHT - 0.15 * (RIGHT - LEFT)
+        height = BOTTOM - TOP
+        draw_colorbar(
+            ax.images[len(ax.images) - 1],
+            slot,
+            TOP,
+            height / 20.0,
+            height,
+            ax.colorbar_label,
+            renderer,
+        )

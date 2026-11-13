@@ -1,6 +1,6 @@
 # 0046. Plots are drawn with matplotlib's object-oriented names, in a `pyplot` module, to SVG first
 
-Status: Accepted (Collins, 2026-11-12)
+Status: Accepted (Collins, 2026-11-12), amended 2026-11-13
 Date: 2026-11-12
 Roadmap: 3.15
 
@@ -111,3 +111,20 @@ Three ways were weighed:
 - Plotting large data is linear in the number of points, and an SVG holds every point, so a
   line of ten million points writes a file of about 150 MB. Thinning lines to the pixels they
   cover, as matplotlib's path simplification does, is a later optimization.
+
+## Amendment, 2026-11-13: the files under `pyplot` are internal
+
+Collins accepted this amendment on 2026-11-13.
+
+`pyplot` draws through smaller library files, named as matplotlib names its own: `colors`, `cm`,
+`artist`, `transforms`, `axis`, `legend`, `image`, `colorbar`, `backend_svg` and `png`. As
+standard modules they took those names from every program: a package with its own `colors.byn`
+imported the library's file instead, and failed with an error far from the cause. These names
+are exactly the ones a scientist gives their own files.
+
+Only `pyplot` and `ticker` are standard modules. The other files stay in the standard library,
+where only another library file can import them, so a program's own `colors.byn` is the one it
+imports. A program that has a module named as a standard module that remains, such as its own
+`stats.byn`, is told at the import that the name belongs to the standard library. Underscored
+names, nesting the files under `pyplot`, and letting a program's file always win were weighed;
+keeping the files internal changes nothing a program can see and renames nothing.

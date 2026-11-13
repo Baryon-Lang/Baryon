@@ -82,7 +82,11 @@ use std::{env, fs};
 use timings::Timings;
 
 /// How to call the command, printed when the arguments are wrong.
+<<<<<<< HEAD
 const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] [-k <text>] <directory> | baryon watch [--release] [--run] <directory> <output> | baryon doc <directory> <output> | baryon lsp";
+=======
+const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] [-k <text>] <directory> | baryon doc <directory> <output> | baryon lsp";
+>>>>>>> origin/main
 
 /// The flag that makes `build`, `run` and `test` compile a release build.
 const RELEASE: &str = "--release";
@@ -90,9 +94,12 @@ const RELEASE: &str = "--release";
 /// The flag that makes `build`, `run` and `test` print how long each stage of the build took.
 const TIMINGS: &str = "--timings";
 
+<<<<<<< HEAD
 /// The flag that makes `watch` run the program after each build.
 const RUN: &str = "--run";
 
+=======
+>>>>>>> origin/main
 /// The option that makes `test` run only the tests whose name contains the text after it, as
 /// pytest's `-k` does at its simplest (roadmap 2.4.3).
 const FILTER: &str = "-k";
@@ -109,8 +116,11 @@ fn main() -> ExitCode {
     };
     let timings = take_flag(&mut arguments, builds, TIMINGS);
     let filter = take_filter(&mut arguments);
+<<<<<<< HEAD
     let watching = arguments.first().is_some_and(|command| command == "watch");
     let run_each = take_flag(&mut arguments, watching, RUN);
+=======
+>>>>>>> origin/main
     let outcome = match arguments.as_slice() {
         [command, directory] if command == "check" => check(Path::new(directory)),
         [command, directory, output] if command == "build" => {

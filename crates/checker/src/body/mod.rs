@@ -37,6 +37,7 @@ mod builtins;
 mod calls;
 mod class_patterns;
 mod complex;
+mod conditionals;
 mod dicts;
 mod elementwise;
 mod errors;
@@ -125,6 +126,8 @@ pub(crate) fn check<'db>(
         loop_ends: BTreeSet::new(),
         parallel: Vec::new(),
         accumulate: Vec::new(),
+        conditionals: BTreeSet::new(),
+        kept: BTreeSet::new(),
         typed: TypedBody::default(),
     };
     let mut bound = BTreeSet::new();
@@ -134,6 +137,7 @@ pub(crate) fn check<'db>(
     if body.block(entry.statement, Role::Body) {
         body.missing_return(entry.name);
     }
+    body.lent_conditionals();
     let mut typed = body.typed;
     typed.locals = body
         .locals
@@ -186,6 +190,13 @@ struct Body<'db> {
     /// The valid entries of the `accumulate=` argument of the `prange` call just checked,
     /// waiting for its loop to start (the `accumulate` module).
     accumulate: Vec<NodeId>,
+    /// The conditional expressions of a type that moves, which the `conditionals` module
+    /// checks once the body is done.
+    conditionals: BTreeSet<NodeId>,
+    /// The conditional expressions whose value is kept, by an assignment, a return or an
+    /// `Owned` argument (the `moves` module), or changed (the `exclusive` module), rather
+    /// than only lent.
+    kept: BTreeSet<NodeId>,
     /// What the stages after the checker read about this body, filled as it is checked.
     typed: TypedBody<'db>,
 }

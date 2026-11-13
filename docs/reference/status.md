@@ -24,37 +24,35 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when text columns of a `DataFrame`
-joined it, and before them arrays of text, `Array[str, 1]`, and before them `a.argsort()`,
-and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before it the inner `merge` of two `DataFrame`s, and before it
-`groupby(...).agg(...)`, and before it `lzma.decompress`, and before it
-`sort_values` on a `DataFrame`, and before it `bz2.compress` and `bz2.decompress`, and before
-them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
-`for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by
-`df[mask]`, `df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and
-before it `fft2`, `ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`,
-and before it `print(df)`, a frame printed as pandas prints it, and before it
-`zlib.decompressobj` and `gzip`, and before them a `DataFrame` built from rows and `df[i]`, and
-before them `DataFrame[S]` built from arrays, with its columns, and before them
-`zlib.compress`, and before it `zlib.decompress`,
-`zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends
-and grid lines, and before them comparisons of arrays and `a[mask]`, and before them line plots
-with `pyplot` and `ticker`, saved as SVG, and before them slices of a NetCDF variable,
-`var[0, :, ::2]` read and written, and before them writing NetCDF classic files,
-`Dataset(path, "w", format=...)`, `createDimension`, `createVariable`, `setncattr` and
-`var[:] = values`, and before them reading NetCDF classic files, `netCDF4.Dataset`, its
-variables, dimensions and attributes, and `AttributeError`, and before them
-FITS images and headers, `fits.getdata`, `fits.getheader`, `fits.writeto` and `KeyError`, and
-before them, on 2026-11-11,
-the standard streams, `print(..., file=)` and `input`, `.npy` files, `Array.load` and
-`Array.save`, `linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables, `Array.loadtxt`
-and `Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`,
-`lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files, `Array.fromfile` and
-`a.tofile`, and before them `for line in f` over a text file, `int(text)` and `float(text)`, began
-to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
-`with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
-`sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches lowering or the backend something new
-updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
+This page was last brought up to date on 2026-11-13, when images and colorbars, and before them text
+columns of a `DataFrame` joined it, and before them arrays of text, `Array[str, 1]`, and before them
+`a.argsort()`, and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before
+it the inner `merge` of two `DataFrame`s, and before it `groupby(...).agg(...)`, and before it
+`lzma.decompress`, and before it `sort_values` on a `DataFrame`, and before it `bz2.compress` and
+`bz2.decompress`, and before them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
+`for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by `df[mask]`,
+`df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and before it `fft2`,
+`ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`, and before it
+`print(df)`, a frame printed as pandas prints it, and before it `zlib.decompressobj` and `gzip`, and
+before them a `DataFrame` built from rows and `df[i]`, and before them `DataFrame[S]` built from
+arrays, with its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
+`zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends and grid
+lines, and before them comparisons of arrays and `a[mask]`, and before them line plots with `pyplot`
+and `ticker`, saved as SVG, and before them slices of a NetCDF variable, `var[0, :, ::2]` read and
+written, and before them writing NetCDF classic files, `Dataset(path, "w", format=...)`,
+`createDimension`, `createVariable`, `setncattr` and `var[:] = values`, and before them reading
+NetCDF classic files, `netCDF4.Dataset`, its variables, dimensions and attributes, and
+`AttributeError`, and before them FITS images and headers, `fits.getdata`, `fits.getheader`,
+`fits.writeto` and `KeyError`, and before them, on 2026-11-11, the standard streams, `print(...,
+file=)` and `input`, `.npy` files, `Array.load` and `Array.save`, `linalg.svd`, `svdvals`, `eig` and
+`eigvals`, `fft`, text tables, `Array.loadtxt` and `Array.savetxt`, and before them `linalg.eigh`,
+`eigvalsh`, `cholesky` and `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them,
+array files, `Array.fromfile` and `a.tofile`, and before them `for line in f` over a text file,
+`int(text)` and `float(text)`, began to build. Before that, on 2026-11-10, text files, `open`, the
+`File` methods and `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and,
+before them, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches
+lowering or the backend something new updates the table it affects, in the same pull request, as
+roadmap item 0.8.1 asks.
 
 ## The example programs
 
@@ -92,7 +90,7 @@ checks what it prints.
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications; complex literals such as `2j` | `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
 | `+ - * / // % **`, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions; comparisons, `in` and `not in` between two `str`s | `in` and `not in` on arrays and tuples |
-| `min`, `max`, `len` of arrays, lists and `str`; `sum`, `min` and `max` of a list or rank-1 array of numbers, a list's float `sum` as CPython 3.12 adds it; `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`math.fsum`](arrays.md#exact-sums) of a list or rank-1 array of `f64`s; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)` and `round(x, digits)` as Python rounds; `sorted` of a list of numbers or `str`s, with `reverse=`; `abs` of integers, floats and complex numbers | `float(text)` and the other conversions of a `str` to a number; `sorted` with `key=` or of other elements, such as tuples; `min` and `max` of a list of `str`s; `sum` of a list of complex numbers and of an array with a start; the integer functions of `math`, such as `gcd`, and `math.prod`; `fsum` of other element types and iterables; the rest of `random` |
+| `min`, `max`, `len` of arrays, lists and `str`; `sum`, `min` and `max` of a list or rank-1 array of numbers, a list's float `sum` as CPython 3.12 adds it; `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`math.fsum`](arrays.md#exact-sums) of a list or rank-1 array of `f64`s; [`math.f64x2`](arrays.md#double-double-floats) double-double floats and their methods; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)` and `round(x, digits)` as Python rounds; `sorted` of a list of numbers or `str`s, with `reverse=`; `abs` of integers, floats and complex numbers | `float(text)` and the other conversions of a `str` to a number; `sorted` with `key=` or of other elements, such as tuples; `min` and `max` of a list of `str`s; `sum` of a list of complex numbers and of an array with a start; the integer functions of `math`, such as `gcd`, and `math.prod`; `fsum` of other element types and iterables; the rest of `random` |
 | `@test` functions, with `baryon test` | |
 
 ## Types
@@ -158,7 +156,7 @@ out of a function, including through a `raise`.
 | Builds today | Not built yet |
 | --- | --- |
 | [`DataFrame[S]`](dataframes.md) with number and `bool` columns, as a variable, parameter, return value and item of a list, tuple or `T \| None`; frames with the same columns passed for one another | Missing values (3.13.6); a frame as a struct field |
-| [Text columns](text-arrays.md#in-a-dataframe), a field `symbol: str`: a frame built from its columns with `DataFrame({"symbol": Array(words), ...})`, the column read as an `Array[str, 1]` and replaced whole, `len(df)`, `df.shape`, `df.columns`, `df.copy()`, `print(df)` as pandas prints it, and rows chosen with `head`, `tail`, a slice, a mask and `sort_values` by a column of numbers, and columns chosen and changed with `df[[...]]`, `assign`, `drop` and `rename` | Every other use of a frame that has a text column: `DataFrame(rows)`, one row `df[i]` and `itertuples`, a sort by the text column, `groupby`, `merge`, `drop_duplicates` and `concat` (roadmap 3.13.3) |
+| [Text columns](text-arrays.md#in-a-dataframe), a field `symbol: str`: a frame built from its columns with `DataFrame({"symbol": Array(words), ...})`, the column read as an `Array[str, 1]` and replaced whole, `len(df)`, `df.shape`, `df.columns`, `df.copy()`, `print(df)` as pandas prints it, and rows chosen with `head`, `tail`, a slice, a mask and `sort_values` by any column, text included, the rows that repeat left out with `drop_duplicates`, and columns chosen and changed with `df[[...]]`, `assign`, `drop` and `rename`, and `concat` | Every other use of a frame that has a text column: `DataFrame(rows)`, one row `df[i]` and `itertuples`, `groupby` and `merge` (roadmap 3.13.3) |
 | [Building a frame](dataframes.md#building-a-frame) from arrays, `DataFrame({"price": prices})`, with the panic for columns of two lengths, and from a list of rows, `DataFrame(rows)` | |
 | [Columns](dataframes.md#columns) read as `df.price` and `df["price"]`, used as arrays, changed in place and replaced, with the panic for a new column of another length; `len(df)`, `df.shape`, `df.columns`, `df.copy()`; [a row](dataframes.md#rows), `df[i]`, as the schema's struct; [`print(df)` and a frame in an f-string](dataframes.md#printing), as the table pandas prints | pandas's text for a complex column and for a frame inside a list, and the terminal's width when printing (idea I.49); `concat`, `drop_duplicates`, `value_counts`, `unique`, `nunique`, `describe` (3.13.9) |
 | [Choosing rows](dataframes.md#choosing-rows): `df[mask]`, `df[i:j]` with a step, `df.head(n)` and `df.tail(n)`, each a new frame, with the panics for a mask of another length and a step of 0; [`for row in df.itertuples()`](dataframes.md#looping-over-rows), also inside `enumerate`, `zip` and a comprehension | Assigning to the rows chosen, `df[mask] = ...`; `itertuples()` kept outside a loop |
@@ -211,7 +209,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim` and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, with matplotlib's results; [`colors.to_hex`](plotting.md#colors-and-line-styles), [`axis`, `backend_svg`, `artist` and `legend`](plotting.md#axis-backend_svg-artist-and-legend) | `imshow` and colormaps (3.15.3); `plt.subplots`, logarithmic axes, `errorbar`, `fill_between` and `text` (3.15.4); contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
+| [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `imshow` of an `Array[f64, 2]` with matplotlib's common colormaps, `vmin`, `vmax`, `origin`, `aspect` and `extent`, `colorbar`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim` and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, with matplotlib's results; the [internal files under `pyplot`](plotting.md#the-files-under-pyplot) build only inside the standard library | other colormaps, `interpolation`, and images of integers or RGB; `plt.subplots`, logarithmic axes, `errorbar`, `fill_between` and `text` (3.15.4); contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
 
 ## Compression
 

@@ -1,5 +1,6 @@
-//! Plots (roadmap 3.15.1 and 3.15.2, decision 0046), built and run: `ticker` places and labels ticks as
-//! matplotlib 3.11 does, to the last bit, and `pyplot` draws the same SVG as the reference files.
+//! Plots (roadmap 3.15.1 and 3.15.2, decision 0046), built and run: `ticker` places and labels
+//! ticks as matplotlib 3.11 does, to the last bit, and `pyplot` draws the same SVG as the
+//! reference files.
 //!
 //! The files in `tests/fixtures/plotting` were recorded from matplotlib or written by these
 //! programs; its `README.md` says which and how.

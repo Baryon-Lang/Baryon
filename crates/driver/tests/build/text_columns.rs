@@ -8,7 +8,7 @@ use std::process::Command;
 
 /// Builds `program` as the package `name`, runs it, and returns its exit code, standard output
 /// and panic report.
-fn run(name: &str, program: &str) -> io::Result<(Option<i32>, String, String)> {
+pub(super) fn run(name: &str, program: &str) -> io::Result<(Option<i32>, String, String)> {
     let directory = package(name, &[("main.byn", program)])?;
     let (output, executable) = baryon_build(&directory)?;
     assert!(output.status.success(), "{}", stderr(&output));
@@ -331,4 +331,63 @@ fn columns_of_a_frame_with_a_text_column_are_chosen_and_changed() {
         report,
         "panic: array lengths differ in dimension 0: 4 and 1\n  --> main.byn:22:31\n"
     );
+}
+
+/// A program that stacks frames with a text column: two, four with an empty one among
+/// them, one alone, two empty ones, and frames of a text column only.
+const STACKED: &str = r#"
+class Trade(Struct):
+    symbol: str
+    price: f64
+
+
+def part(names: list[str], price: f64) -> DataFrame[Trade]:
+    return DataFrame({"symbol": Array(names), "price": Array.fill(len(names), price)})
+
+
+def main():
+    first = part(["IBM", ""], 1.0)
+    second = part(["AAPL", "βeta", "MSFT"], 2.0)
+    empty: list[str] = []
+    none = part(empty, 0.0)
+    print(concat([first, second]))
+    print(concat([first, none, second, first]))
+    print(concat([second]))
+    print(len(concat([none, none])), len(first), first.symbol[1] == "")
+    tags = concat([DataFrame({"tag": Array(["a"])}), DataFrame({"tag": Array(["b", "c"])})])
+    print(tags)
+"#;
+
+/// `concat` of frames with a text column puts their text end to end as it does their
+/// numbers: every frame printed is what pandas 3 prints for `concat(..., ignore_index=True)`.
+#[test]
+fn frames_with_a_text_column_are_stacked() {
+    let expected = [
+        "  symbol  price\n",
+        "0    IBM    1.0\n",
+        "1           1.0\n",
+        "2   AAPL    2.0\n",
+        "3   βeta    2.0\n",
+        "4   MSFT    2.0\n",
+        "  symbol  price\n",
+        "0    IBM    1.0\n",
+        "1           1.0\n",
+        "2   AAPL    2.0\n",
+        "3   βeta    2.0\n",
+        "4   MSFT    2.0\n",
+        "5    IBM    1.0\n",
+        "6           1.0\n",
+        "  symbol  price\n",
+        "0   AAPL    2.0\n",
+        "1   βeta    2.0\n",
+        "2   MSFT    2.0\n",
+        "0 2 True\n",
+        "  tag\n",
+        "0   a\n",
+        "1   b\n",
+        "2   c\n",
+    ];
+    let (code, stdout, report) = run("text-columns-stacked", STACKED).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
 }

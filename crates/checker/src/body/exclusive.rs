@@ -171,6 +171,11 @@ impl<'db> Body<'db> {
     /// an `InOut` argument or receiver. Reports it when an enclosing loop borrows it (the
     /// `loops` module), or when it is part of a read-only parameter.
     pub(super) fn change(&mut self, node: NodeId) {
+        // Changing a conditional is reported by lowering as not built yet (roadmap 1.9.24),
+        // which says more than the lending error of the `conditionals` module would.
+        if self.tree.kind(node) == SyntaxKind::Conditional {
+            self.kept.insert(node);
+        }
         if self.environ_changed(node) {
             return;
         }

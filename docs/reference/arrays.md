@@ -740,6 +740,42 @@ where Python raises:
 The last row is a sum whose running total overflows although the exact sum, `1e308`, is an
 `f64`; both languages give up on it.
 
+### Double-double floats
+
+`f64x2` holds a value as the unevaluated sum of two `f64`s, `hi + lo`, for about 32 significant
+digits where an `f64` has 16 ([decision 0051](../decisions/0051-double-double-floats.md)). Use it
+for the few lines that need the digits: the residual of an ill-conditioned solve, a long
+accumulation, a check of an `f64` result. Each operation costs about 5 to 20 `f64` operations;
+the range stays an `f64`'s.
+
+```python
+from math import f64x2
+
+
+def residual(a: f64, x: f64, b: f64) -> f64:
+    """`b - a * x` with the product kept exact, then rounded once."""
+    product = f64x2(a, 0.0).mul(f64x2(x, 0.0))
+    return f64x2(b, 0.0).sub(product).to_f64()
+```
+
+`f64x2(x, 0.0)` makes one from an `f64`, exactly. Until a struct can define operators
+([roadmap D.19](../../ROADMAP.md)), the operations are methods, each taking and returning an
+`f64x2`, so `a * b + c` is written `a.mul(b).add(c)`:
+
+| Method | Gives |
+| --- | --- |
+| `a.add(b)`, `a.sub(b)`, `a.mul(b)`, `a.div(b)` | `a + b`, `a - b`, `a * b`, `a / b` |
+| `a.sqrt()`, `a.neg()`, `a.abs()` | The square root, `-a`, `abs(a)` |
+| `a.eq(b)`, `a.ne(b)`, `a.lt(b)`, `a.le(b)`, `a.gt(b)`, `a.ge(b)` | `==`, `!=`, `<`, `<=`, `>`, `>=` as a `bool` |
+| `a.to_f64()` | The value rounded to an `f64` |
+| `a.to_str()` | 31 significant digits: `f64x2(2.0, 0.0).sqrt().to_str()` is `1.414213562373095048801688724210e+00` |
+
+Each operation is accurate to a few units of 2**-104, about 1e-32 relative; the last digit of
+`to_str` can be one off. An infinite or NaN result is the one an `f64` would give, and `sqrt` of
+a negative value is NaN, as for the other `math` functions. `f64x2` is `Copy`. `print(a)` writes
+its two fields; print `a.to_str()` for the decimal value. Keep `f64x2` code out of
+`with fastmath:`, whose reordering silently removes the extra digits.
+
 ## Random numbers
 
 `random.Philox` is a counter-based random number generator: the numbers of stream `k` of a seed

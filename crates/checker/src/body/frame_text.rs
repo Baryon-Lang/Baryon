@@ -11,9 +11,9 @@ use types::{Type, TypeKind};
 /// What a frame with a text column can do today, for messages.
 const BUILT: &str = "a frame with a column of `str` is built from its columns, `DataFrame({...})`, \
                      and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, \
-                     slices, masks, `sort_values` by its other columns, `assign`, `drop`, \
-                     `rename`, `df[[...]]` and its columns, such as `df.symbol`, today; the \
-                     rest comes with roadmap item 3.13.3";
+                     slices, masks, `sort_values`, `drop_duplicates`, `assign`, `drop`, \
+                     `rename`, `df[[...]]`, `concat` and its columns, such as `df.symbol`, \
+                     today; the rest comes with roadmap item 3.13.3";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column of `str`.
