@@ -165,19 +165,6 @@ const SITES: &[&str] = &[
 /// the sweep then checks the site for every kind.
 const KNOWN: &[(&str, &str)] = &[
     (
-        "pop_temp",
-        "a changing call on a value that is not a place, `make_list(2).pop()`, is skipped by \
-         lowering and reads uninitialised memory (thread \"Fix compiler memory-safety bugs\")",
-    ),
-    (
-        "for_temp_keep",
-        "moving the loop variable out of a temporary list frees each element twice (#311)",
-    ),
-    (
-        "comp_temp",
-        "a comprehension moving each element out of a temporary list frees it twice (#311)",
-    ),
-    (
         "cond_arg_temp_named",
         "a conditional expression borrowed by a call frees the variable it chose (thread \"Fix \
          compiler memory-safety bugs\", waiting on a decision)",
