@@ -112,19 +112,7 @@ impl<'db> Body<'db> {
                     complete = false;
                     continue;
                 }
-                TypeKind::TextArray => {
-                    self.lowerer.error(
-                        value,
-                        "`assign` cannot add a column of `str` yet",
-                        "an array of `str`",
-                        Some(
-                            "build the frame with the column in it: \
-                             `DataFrame({\"symbol\": symbols, ...})`",
-                        ),
-                    );
-                    complete = false;
-                    continue;
-                }
+                TypeKind::TextArray => Type::new(self.db, TypeKind::Str),
                 TypeKind::Array { element, rank: 1 } => {
                     let message = format!(
                         "a column of a `DataFrame` cannot hold `{}` yet",

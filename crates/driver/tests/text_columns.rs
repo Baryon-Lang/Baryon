@@ -61,42 +61,42 @@ const EXPECTED: &str = r#"error: reading a row, `df[i]`, is not built for a `Dat
   |
 8 |     b = trades[0]
   |                ^ has a column of `str`
-  = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+  = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, `assign`, `drop`, `rename`, `df[[...]]` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: `DataFrame(rows)` is not built for a `DataFrame` with a column of `str` yet
   --> main.byn:10:19
    |
 10 |     d = DataFrame(rows)
    |                   ^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, `assign`, `drop`, `rename`, `df[[...]]` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: `concat` is not built for a `DataFrame` with a column of `str` yet
   --> main.byn:11:9
    |
 11 |     e = concat([trades, more])
    |         ^^^^^^^^^^^^^^^^^^^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, `assign`, `drop`, `rename`, `df[[...]]` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: `groupby` is not built for a `DataFrame` with a column of `str` yet
   --> main.byn:12:9
    |
 12 |     g = trades.groupby("symbol").agg(total=("price", "sum"))
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, `assign`, `drop`, `rename`, `df[[...]]` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: the method `itertuples` is not built for a `DataFrame` with a column of `str` yet
   --> main.byn:13:16
    |
 13 |     for row in trades.itertuples():
    |                ^^^^^^^^^^^^^^^^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, `assign`, `drop`, `rename`, `df[[...]]` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: sorting by `symbol`, a column of `str`, is not built for a `DataFrame` with a column of `str` yet
   --> main.byn:16:28
    |
 16 |     i = trades.sort_values(["price", "symbol"])
    |                            ^^^^^^^^^^^^^^^^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, `assign`, `drop`, `rename`, `df[[...]]` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: a column cannot be moved out of its `DataFrame`
   --> main.byn:17:12
@@ -105,26 +105,12 @@ error: a column cannot be moved out of its `DataFrame`
    |            ^^^^^^^^^^^^^ moved out of the frame
    = note: a column can be read, passed to a call or assigned to; to keep it on its own, copy it: `trades.symbol.copy()`
 
-error: choosing columns with `[[...]]` is not built for a `DataFrame` with a column of `str` yet
-  --> main.byn:19:9
-   |
-19 |     k = trades[["price"]]
-   |         ^^^^^^^^^^^^^^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
-
-error: the method `drop` is not built for a `DataFrame` with a column of `str` yet
+error: `trades` is borrowed from the caller, so it cannot be moved
   --> main.byn:20:9
    |
 20 |     m = trades.drop(columns=["symbol"])
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values` by its other columns, and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
-
-error: `assign` cannot add a column of `str` yet
-  --> main.byn:22:28
-   |
-22 |     n = numbers.assign(tag=Array(["a", "b"]))
-   |                            ^^^^^^^^^^^^^^^^^ an array of `str`
-   = note: build the frame with the column in it: `DataFrame({"symbol": symbols, ...})`
+   |         ^^^^^^ moved here
+   = note: move a copy instead: `trades.copy()`, or take the parameter as `Owned[...]`
 
 error: a column is an array of rank 1, found `list[i64]`
   --> main.byn:23:27
@@ -160,9 +146,9 @@ error: list items must share one type, found `str` and `f64`
    |                                                           ^^^ a different type"#;
 
 /// Every use of a frame with a text column that is not built yet is an error that says so
-/// and names what is built: a row, a list of columns, `DataFrame(rows)`, `concat`, `groupby`,
-/// `itertuples`, `drop`, a sort by the text column, and `assign` of a text column. `head`,
-/// a mask, a slice and a sort by a column of numbers are built, and get no error. The column
+/// and names what is built: a row, `DataFrame(rows)`, `concat`, `groupby`, `itertuples` and
+/// a sort by the text column. `head`, a mask, a slice, a sort by a column of numbers, a list
+/// of columns, `drop` and `assign` of a text column are built, and get no error. The column
 /// itself is a text array, so moving it out, assigning an element and adding two are that
 /// type's errors.
 #[test]

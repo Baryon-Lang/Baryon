@@ -237,7 +237,12 @@ impl<'db> Builder<'db> {
 
     /// A copy of the column at `column`, stored as `stored`: a copy of the array, or of both
     /// buffers of a text column, which is stored as a tuple of the two.
-    fn column_copy(&mut self, column: Place, stored: Type<'db>, node: NodeId) -> Operand<'db> {
+    pub(crate) fn column_copy(
+        &mut self,
+        column: Place,
+        stored: Type<'db>,
+        node: NodeId,
+    ) -> Operand<'db> {
         let TypeKind::Tuple(buffers) = stored.kind(self.db) else {
             let copy = self.copy_view(column, stored, node);
             return Operand::Move(Place::from(copy));
