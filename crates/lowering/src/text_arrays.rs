@@ -47,6 +47,22 @@ impl<'db> Builder<'db> {
         Operand::Copy(Place::from(length))
     }
 
+    /// The number of rows of the column at `column`, stored as `stored`: the elements of a
+    /// text column, which is stored as a tuple of its two buffers, or the length of an array.
+    pub(crate) fn column_length(
+        &mut self,
+        column: Place,
+        stored: Option<Type<'db>>,
+        node: NodeId,
+    ) -> Operand<'db> {
+        if stored.is_some_and(|stored| matches!(stored.kind(self.db), TypeKind::Tuple(_))) {
+            return self.text_array_length(&column, node);
+        }
+        let length = self.temporary(self.int_type(), node);
+        self.assign(Place::from(length), Rvalue::Length(column, 0), node);
+        Operand::Copy(Place::from(length))
+    }
+
     /// The element at the position `index` of the text array at `array`: a `str` in a temporary
     /// that borrows the array's bytes from `offsets[index]` up to `offsets[index + 1]`. The
     /// position must be inside the array, which the caller checks or guarantees.

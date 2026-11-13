@@ -143,6 +143,9 @@ impl<'db> Body<'db> {
         let &TypeKind::DataFrame { row, .. } = frame.kind(self.db) else {
             return None;
         };
+        if self.has_text_column(frame) {
+            return Some(self.text_column_unbuilt(iterator, "the method `itertuples`"));
+        }
         Some(row.unwrap_or_else(|| {
             let message = format!("no struct names the rows of `{}`", self.show(frame));
             self.lowerer.error(

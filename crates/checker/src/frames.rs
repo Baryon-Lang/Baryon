@@ -107,10 +107,11 @@ impl<'db> Lowerer<'db> {
 }
 
 /// What a column may hold today, for the note of an error about one that holds something else.
-pub(crate) const COLUMN_TYPES: &str = "a column holds numbers or `bool` today; text columns \
-    come with roadmap item 3.13.3 and missing values with 3.13.6";
+pub(crate) const COLUMN_TYPES: &str = "a column holds numbers, `bool` or `str` today; missing \
+    values come with roadmap item 3.13.6";
 
-/// Whether a column of a frame may hold elements of type `ty` today: a number or a `bool`.
+/// Whether a column of a frame may hold elements of type `ty` today: a number, a `bool`, or
+/// a `str`, whose column is a text array.
 pub(crate) fn is_column<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
-    matches!(ty.kind(db), TypeKind::Primitive(_))
+    matches!(ty.kind(db), TypeKind::Primitive(_) | TypeKind::Str)
 }
