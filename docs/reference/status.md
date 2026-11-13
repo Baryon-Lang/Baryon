@@ -24,38 +24,10 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-13, when PDF files from `savefig`, and before them
-NetCDF-4 files read with `netCDF4.Dataset`, and before them PNG files from `savefig`, and before
-them HDF5 files read with `h5by.File`, its groups, datasets and attributes, and before them
-logarithmic axes, and before them images and colorbars, and before them text columns of a
-`DataFrame` joined it, and before them arrays of text, `Array[str, 1]`, and before them
-`a.argsort()`, and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before
-it the inner `merge` of two `DataFrame`s, and before it `groupby(...).agg(...)`, and before it
-`lzma.decompress`, and before it `sort_values` on a `DataFrame`, and before it `bz2.compress` and
-`bz2.decompress`, and before them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
-`for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by `df[mask]`,
-`df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and before it `fft2`,
-`ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`, and before it
-`print(df)`, a frame printed as pandas prints it, and before it `zlib.decompressobj` and `gzip`, and
-before them a `DataFrame` built from rows and `df[i]`, and before them `DataFrame[S]` built from
-arrays, with its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
-`zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends and grid
-lines, and before them comparisons of arrays and `a[mask]`, and before them line plots with `byplot`
-and `ticker`, saved as SVG, and before them slices of a NetCDF variable, `var[0, :, ::2]` read and
-written, and before them writing NetCDF classic files, `Dataset(path, "w", format=...)`,
-`createDimension`, `createVariable`, `setncattr` and `var[:] = values`, and before them reading
-NetCDF classic files, `netCDF4.Dataset`, its variables, dimensions and attributes, and
-`AttributeError`, and before them FITS images and headers, `fits.getdata`, `fits.getheader`,
-`fits.writeto` and `KeyError`, and before them, on 2026-11-11, the standard streams, `print(...,
-file=)` and `input`, `.npy` files, `Array.load` and `Array.save`, `linalg.svd`, `svdvals`, `eig` and
-`eigvals`, `fft`, text tables, `Array.loadtxt` and `Array.savetxt`, and before them `linalg.eigh`,
-`eigvalsh`, `cholesky` and `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them,
-array files, `Array.fromfile` and `a.tofile`, and before them `for line in f` over a text file,
-`int(text)` and `float(text)`, began to build. Before that, on 2026-11-10, text files, `open`, the
-`File` methods and `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and,
-before them, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches
-lowering or the backend something new updates the table it affects, in the same pull request, as
-roadmap item 0.8.1 asks.
+This page was last checked against `main` on 2026-11-13. Every pull request that teaches lowering
+or the backend something new updates the table it affects, in the same pull request, as roadmap
+item 0.8.1 asks. What each release added is in the [release notes](../../CHANGELOG.md), and what
+each pull request added is in this file's history.
 
 ## The example programs
 
@@ -106,7 +78,7 @@ checks what it prints.
 | `str`: literals, f-strings, `+`, `+=` on a variable, field or list element, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len`; [indexing and slicing](types.md#indexing-slicing-and-methods) by character; `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower` and `upper`; `int(text)` and `float(text)`, which raise `ValueError` | `str`'s other methods, such as `count`, `rfind` and `isdigit`; `split` with `maxsplit`, `find` with `start` and `end`, and `startswith` of a tuple |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
 | `T \| None`, with every narrowing rule; a value of any type, an `Array` or a `str` included, passed where a read-only parameter takes `T \| None`, as `yerr=errors` is | |
-| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, methods called through their class, `Point.origin()`, generic structs and their methods, each method compiled once per type its struct is used at | |
+| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, methods called through their class, `Point.origin()`, generic structs and their methods, called through their class too, `Pair.both(1.5)` or `Pair[i64].both(2)`, each method compiled once per type its struct is used at | |
 | Enums: members, `==` and `!=`, `match` | |
 | [Unions](types.md#unions-of-structs) of structs, enums, error types and `None`: a member passed, assigned or returned where its union is expected, `match` with class patterns by position and keyword, `print`, members that own memory, freed by the member they hold, shared methods called on a union, and unions as the type of a trait-bounded parameter | A shared method that a member gets from an embedded field; `Array.zeros` of a union; class patterns on generic structs; a capture of a field that is not a copy type |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |

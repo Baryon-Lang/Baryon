@@ -9,6 +9,18 @@ and every output shown is what the command printed, so if a step does not work f
 bug: please open an issue. The compiler is a prototype and does not build the whole language yet;
 [What builds today](../reference/status.md) lists what it does.
 
+This guide is the first of four pages that together teach how to code in Baryon. Read them in
+order:
+
+| Page | What it teaches |
+| --- | --- |
+| Beginner's guide, this page | Installing `baryon`, a first program, compiler errors, a physics program in modules, and tests |
+| [A tour of the language](language-tour.md) | Values, strings and collections; structs, enums and unions; generics and traits; who owns a value; errors; modules |
+| [Arrays and numbers](arrays-and-numbers.md) | `Array`, parallel and vector loops, `math`, exact sums, random numbers, `linalg`, `fft` and `stats` |
+| [Data, files and plots](data-files-and-plots.md) | `DataFrame`, files and paths, text tables and `.npy`, NetCDF, HDF5 and FITS, compression, and plots with `byplot` |
+
+[Coding Baryon in VS Code](vscode.md) sets up an editor alongside them.
+
 ## 1. Install `baryon`
 
 There are two ways to get `baryon`: download a prebuilt one, or build it from source. Either way
@@ -516,8 +528,30 @@ test result: ok. 2 passed; 0 failed
 `baryon test` exits with status 0 when every test passes and 1 when one fails, so a CI job can run
 it as it is. [Tests](../reference/tests.md) has the details.
 
+To run only some tests, give `-k` and part of their name, as pytest's `-k` does:
+
+```text
+$ baryon test -k long spring
+running 1 test
+test physics.oscillator.test_long_steps_are_refused ... ok
+
+test result: ok. 1 passed; 0 failed; 1 filtered out
+```
+
+While you work, `baryon watch` rebuilds a package each time you save one of its files, and with
+`--run` runs it too, so the result of an edit is on screen a moment after you save:
+
+```sh
+baryon watch --run spring spring/program
+```
+
+It keeps watching until you stop it with `Ctrl-C`.
+[The `baryon` command](../reference/commands.md#baryon-watch) has the details.
+
 ## Where to go next
 
+- [A tour of the language](language-tour.md) is the next page of this guide: the rest of the
+  language, a section at a time.
 - [Coding Baryon in VS Code](vscode.md) sets up the editor, with errors underlined as you type and
   tasks that run and test a package.
 - [Differences from Python](../reference/differences-from-python.md) lists every place a Python
