@@ -58,7 +58,8 @@ The [beginner's guide](docs/guide/README.md#1-install-baryon) shows both ways:
 - **Sum types** ([decision 0032](docs/decisions/0032-sum-types-are-unions-of-structs.md)): unions
   of structs, `Circle | Square`, with class patterns in `match`, and methods and trait bounds on
   them.
-- **A struct's methods called through its class**, `Point.origin()`.
+- **A struct's methods called through its class**, `Point.origin()`, generic structs included,
+  `Pair.both(1.5)` or `Pair[i64].both(2)`.
 - **Optional arguments of any type**: an `Array` or a `str` passes where a read-only parameter
   takes `T | None`, as `yerr=errors` does.
 - **Array slices**: `a[i:j]`, `a[i:j:k]` and `a[:, k]` are views that copy nothing. Read them,
