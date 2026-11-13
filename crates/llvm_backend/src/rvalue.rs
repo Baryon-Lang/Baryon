@@ -28,6 +28,7 @@ impl<'db> Function<'_, '_, 'db> {
             Rvalue::Aggregate(_, operands) => self.aggregate(ty, operands)?,
             Rvalue::NewArray(ty, lengths) => self.new_array(*ty, lengths)?,
             Rvalue::Length(place, dimension) => self.length(place, *dimension)?,
+            Rvalue::Stride(place, dimension) => self.stride(place, *dimension)?,
             Rvalue::Elementwise(_) => return Err(Unsupported::new("whole-array operations")),
             Rvalue::IsPresent(place) => self.is_present(place)?,
             Rvalue::ErrorIndex(place) => self.error_index(place)?,

@@ -388,3 +388,32 @@ fn pop_moves_out_the_last_element() {
         Err("panic: pop from empty list\n  --> heat.byn:1:1\n".to_owned())
     );
 }
+
+/// `stride(grid, 1)` loads the second stride from the header's third part.
+#[test]
+fn a_stride_is_read_from_the_header() {
+    let database = Database::default();
+    let types = Types::new(&database);
+    let stride = body(
+        types.i64,
+        &[(types.grid, Mode::Borrow)],
+        vec![assign(
+            Local::RETURN,
+            Rvalue::Stride(Local::new(1).into(), 1),
+        )],
+    );
+    let text = super::module(&database, &[("stride", stride)]);
+    assert_eq!(
+        text,
+        "\
+define i64 @stride(ptr noalias readonly align 8 dereferenceable(40) %a1) {
+start:
+  br label %bb0
+bb0:
+  %t0 = getelementptr inbounds { ptr, [2 x i64], [2 x i64] }, ptr %a1, i32 0, i32 2, i32 1
+  %t1 = load i64, ptr %t0
+  ret i64 %t1
+}
+"
+    );
+}

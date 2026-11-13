@@ -131,6 +131,7 @@ impl<'db> Substitution<'_, 'db> {
                 }
             }
             Rvalue::Length(..)
+            | Rvalue::Stride(..)
             | Rvalue::IsPresent(_)
             | Rvalue::ErrorIndex(_)
             | Rvalue::MemberIndex(_)
