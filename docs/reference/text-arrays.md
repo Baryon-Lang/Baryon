@@ -164,11 +164,12 @@ Its columns are chosen and changed as any frame's are: `df[["symbol", "price"]]`
 `df.assign(symbol=Array(words))`, which also adds a text column to a frame of numbers.
 `concat([first, second])` stacks such frames, text and numbers alike, and
 `df.drop_duplicates()` leaves out the rows that repeat, comparing text exactly, so `"IBM"`
-and `"ibm"` are two values.
+and `"ibm"` are two values. `left.merge(right, on="symbol")` joins on a text key the same
+way, and carries the text columns of both frames into the result.
 
 Every other use of a frame that has a text column is a compile error for now and comes with
 the rest of roadmap item 3.13.3: `DataFrame(rows)`, one row (`df[i]` and `itertuples`),
-`groupby` and `merge`. A frame of numbers keeps all of these.
+and `groupby`. A frame of numbers keeps all of these.
 
 ## What is not built yet
 

@@ -6,8 +6,11 @@
 //! put end to end and sorted together, each row gets the number of its key, and the join is
 //! then one of two columns of integers. Lowering calls the generic functions once for each
 //! key column and copies each column of the result with `taken`. Both frames are borrowed.
+//! A key of `str` is joined on the integers the library's `text_codes` gives for the text of
+//! the two columns end to end, and a column of `str` is copied with `text_taken`.
 
 use crate::builder::Builder;
+use crate::frames::erase;
 use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
@@ -52,25 +55,16 @@ impl<'db> Builder<'db> {
                 return self.unsupported(key, "this column to join on");
             };
             names.push(column.name.as_str());
-            let flag = matches!(
-                column.element.kind(self.db),
-                TypeKind::Primitive(Primitive::Bool)
-            );
-            let element = if flag { int } else { column.element };
             let sides = [
                 left_source.clone().project(Projection::Field(left_at)),
                 right_source.clone().project(Projection::Field(right_at)),
-            ]
-            .map(|side| self.converted(side, column.element, element, key));
-            let array = self.array_of(element);
-            let Some(both) = self.frame_call("joined", vec![element], sides.to_vec(), array, key)
-            else {
+            ];
+            let Some(both) = self.joined_key(sides, column.element, key) else {
                 return;
             };
-            self.drop_later(both);
-            keys.push((Place::from(both), element));
+            keys.push(both);
         }
-        let count = self.row_count(&left_source, node);
+        let count = self.counted_rows(left, &left_source, node);
         let Some(pairs) = self.join_pairs(&keys, count, node) else {
             return;
         };
@@ -95,18 +89,49 @@ impl<'db> Builder<'db> {
                 if side == 1 && names.contains(&column.name.as_str()) {
                     continue;
                 }
-                let array = self.array_of(column.element);
+                // A column of `str` has its own function, `text_taken`.
+                let (function, types) = match column.element.kind(self.db) {
+                    TypeKind::Str => ("text_taken", Vec::new()),
+                    _ => ("taken", vec![column.element]),
+                };
+                let array = erase(self.db, column.array(self.db));
                 let from = source.clone().project(Projection::Field(position));
                 let arguments = vec![from, Place::from(rows)];
-                let Some(taken) =
-                    self.frame_call("taken", vec![column.element], arguments, array, node)
-                else {
+                let Some(taken) = self.frame_call(function, types, arguments, array, node) else {
                     return;
                 };
                 made.push(Operand::Move(Place::from(taken)));
             }
         }
         self.assign(place, Rvalue::Aggregate(ty, made), node);
+    }
+
+    /// The key column of the two frames end to end, `sides` with the left frame's first,
+    /// whose elements are `element`, as a column the library's sort takes, and its element
+    /// type: a key of `str` as the integers for its text (`text_joined`, then `text_codes`),
+    /// a key of `bool` as the integers 0 and 1, and any other as it is. The new arrays are
+    /// dropped when the statement ends. `None` after an error is reported.
+    fn joined_key(
+        &mut self,
+        sides: [Place; 2],
+        element: Type<'db>,
+        key: NodeId,
+    ) -> Option<(Place, Type<'db>)> {
+        let int = self.int_type();
+        if matches!(element.kind(self.db), TypeKind::Str) {
+            let text = erase(self.db, Type::new(self.db, TypeKind::TextArray));
+            let both = self.frame_call("text_joined", Vec::new(), sides.to_vec(), text, key)?;
+            self.drop_later(both);
+            let codes = self.text_codes(Place::from(both), key)?;
+            return Some((codes, int));
+        }
+        let flag = matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool));
+        let compared = if flag { int } else { element };
+        let sides = sides.map(|side| self.converted(side, element, compared, key));
+        let array = self.array_of(compared);
+        let both = self.frame_call("joined", vec![compared], sides.to_vec(), array, key)?;
+        self.drop_later(both);
+        Some((Place::from(both), compared))
     }
 
     /// The pairs of rows an inner join on `keys` gives, as the library's `join_pairs` lists
