@@ -22,8 +22,10 @@ const FIXED_METHODS: &str =
     "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round` and `fill`";
 
 /// The methods version 0 defines on an `Array`, for messages.
-const ARRAY_METHODS: &str = "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, \
-     for one dimension, `argsort`";
+const ARRAY_METHODS: &str = concat!(
+    "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, ",
+    "for one dimension, `argsort`"
+);
 
 impl<'db> Body<'db> {
     /// `Array.zeros(shape)`, `Array.ones(shape)`, `Array.fill(shape, value)`, each with an
