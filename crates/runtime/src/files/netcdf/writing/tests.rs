@@ -120,6 +120,7 @@ fn the_only_record_variable_is_unpadded_until_another_joins() {
         (variable, &selection),
         Pixel::I64,
         &mut memory,
+        &mut |_: &[u8]| Err(String::new()),
     )
     .unwrap();
     assert_eq!(memory, longs(&[5, 6, 7]));

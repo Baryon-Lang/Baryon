@@ -4,7 +4,7 @@
 
 use crate::builder::Builder;
 use crate::frames::erase;
-use mir::{Argument, Callee, Place, Projection, Rvalue, TerminatorKind};
+use mir::{Argument, Callee, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, TypeKind};
 
@@ -254,10 +254,7 @@ impl<'db> Builder<'db> {
                 continue;
             }
             passed.push(Some(match mode {
-                Mode::Borrow => match self.borrow_as(argument, ty) {
-                    Some(place) => Argument::Borrow(place),
-                    None => return,
-                },
+                Mode::Borrow => Argument::Borrow(self.borrow_as(argument, ty)),
                 Mode::InOut => match self.changed_place(argument) {
                     Some(place) => {
                         let (passed, view) = self.in_out(place, ty, argument);
@@ -413,23 +410,29 @@ impl<'db> Builder<'db> {
 
     /// A place holding `argument` as the parameter type `ty`, to borrow. An argument that
     /// changes representation, such as an `f64` passed where `f64 | None` is borrowed, is
-    /// converted into a temporary first. `None` after reporting an argument of a type that is
-    /// not a copy type, since wrapping it would move or copy the caller's value.
-    fn borrow_as(&mut self, argument: NodeId, ty: types::Type<'db>) -> Option<Place> {
+    /// converted into a temporary first.
+    ///
+    /// An argument that is not a copy type, such as an `Array` passed where `Array[f64, 1] |
+    /// None` is borrowed (roadmap 1.9.29), is wrapped without moving it: the place that holds
+    /// it, or the temporary it is computed into and the statement drops, is copied bit for bit
+    /// into the wrapper, which is never dropped. The callee only reads the wrapper, so the
+    /// caller's value is freed once, by its owner, as a loop variable that borrows a tuple's
+    /// item is (the `collections` module). Cost: a copy of the value's header, never of its
+    /// elements.
+    fn borrow_as(&mut self, argument: NodeId, ty: types::Type<'db>) -> Place {
         let from = self.ty(argument);
         if !self.converts(from, ty) {
-            return Some(self.borrow(argument));
-        }
-        if !self.is_copy(from) {
-            self.unsupported(
-                argument,
-                "borrowing a value that is not a copy type as an optional",
-            );
-            return None;
+            return self.borrow(argument);
         }
         let temporary = self.temporary(ty, argument);
-        self.write(Place::from(temporary), ty, argument);
-        Some(Place::from(temporary))
+        if self.is_copy(from) {
+            self.write(Place::from(temporary), ty, argument);
+        } else {
+            let held = self.borrow(argument);
+            let wrapped = self.coerce(Operand::Copy(held), from, ty);
+            self.assign(Place::from(temporary), wrapped, argument);
+        }
+        Place::from(temporary)
     }
 
     /// The elements of a `Fixed` array that `node` writes, in row-major order, onto

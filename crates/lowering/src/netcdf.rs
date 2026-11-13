@@ -7,10 +7,13 @@
 //! - `Dataset(path)` writes the header's description lines straight into the `Dataset`'s one
 //!   field, a `list[str]`. `Dataset(path, "w", format=...)` does the same after making a new
 //!   file: its change is `C` and the format's version, which the format's text gives.
-//! - `var[:]` passes the path and the name the `Variable` holds, its fields 2 and 0; the element
-//!   type and rank are the destination's. `var[:] = values` passes them with the array,
-//!   borrowed. A subscript that picks part of the variable, `var[0, :, ::2]`, adds four `int`s
-//!   for each item.
+//! - `var[:]` is three calls, as an `h5by` read is (the `h5by` module): the runtime lists the
+//!   deflated chunks of a `NetCDF-4` variable, the `h5by` library's `_inflate` inflates them,
+//!   and the runtime reads the values, taking the inflated chunks back. A classic file lists
+//!   none. Each passes the path and the name the `Variable` holds, its fields 2 and 0; the
+//!   element type and rank are the destination's. `var[:] = values` passes them with the
+//!   array, borrowed. A subscript that picks part of the variable, `var[0, :, ::2]`, adds four
+//!   `int`s for each item.
 //! - `path._apply(line)` passes both `str`s; its result is the new description lines.
 //!
 //! Each call's error edge goes where any failing call's does (the `errors` module).
@@ -61,11 +64,10 @@ impl<'db> Builder<'db> {
             }
             ("netCDF4.read", [Some(variable), items @ ..]) => {
                 let variable = self.borrow(*variable);
-                let path = Argument::Borrow(variable.clone().project(Projection::Field(PATH)));
-                let name = Argument::Borrow(variable.project(Projection::Field(NAME)));
-                let mut given = vec![path, name];
-                given.extend(self.subscript_words(items));
-                (ArrayFile::NetcdfRead, given, place)
+                let path = variable.clone().project(Projection::Field(PATH));
+                let name = variable.project(Projection::Field(NAME));
+                let methods = (ArrayFile::NetcdfChunks, ArrayFile::NetcdfRead);
+                return self.inflated_read(place, methods, (path, name), items, node);
             }
             ("netCDF4.write", [Some(variable), Some(array), items @ ..]) => {
                 let variable = self.borrow(*variable);

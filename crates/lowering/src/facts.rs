@@ -23,6 +23,7 @@ impl<'db> Builder<'db> {
             | TypeKind::Unknown => true,
             TypeKind::Str
             | TypeKind::TextArray
+            | TypeKind::OptionalArray(_)
             | TypeKind::List(_)
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }

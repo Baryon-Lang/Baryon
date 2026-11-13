@@ -5,8 +5,8 @@
 //! A type argument is never written at a call, except on the class of a generic struct's
 //! method called through it, `Bag[f64].empty()` (the `methods` module); each type parameter
 //! takes the type of the first argument that fixes it, read left to right, number literals
-//! last so that `largest(x, 0)` with `x: f32` makes the `0` an `f32`. The bounds are the standard traits and the traits user
-//! code declares:
+//! last so that `largest(x, 0)` with `x: f32` makes the `0` an `f32`. The bounds are the
+//! standard traits and the traits user code declares:
 //!
 //! | Trait | Satisfied by | Allows, inside a generic body |
 //! | --- | --- | --- |

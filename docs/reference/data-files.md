@@ -240,6 +240,9 @@ package ([decision 0047](../decisions/0047-netcdf-classic-files.md)). One dimens
 unlimited: the records, usually time, that a model appends as it runs. `Dataset(path)` also
 reads NetCDF-4 files, which are HDF5 files underneath, through Baryon's own HDF5 reader
 ([decision 0052](../decisions/0052-hdf5-files.md)): the same program reads either format.
+A NetCDF-4 variable compressed with `zlib=True`, the deflate filter with or without shuffle,
+reads as any other: its chunks are inflated by the native [`zlib`](compression.md), as an
+HDF5 dataset's are, and a subscript inflates only the chunks it touches.
 
 ```python
 from netCDF4 import Dataset
@@ -394,11 +397,11 @@ the same calls, fill values and padding included; the tests compare them.
 ### Not built yet
 
 Listing `ds.variables` and `ds.dimensions`, attributes set as `var.units = "K"`, `fill_value=` and
-compression in `createVariable`, subscripts of arrays of indices, booleans or `...`, text
-variables, attributes of several values and CDF-5 files come later. In NetCDF-4 files,
-compressed variables, groups, variables of unsigned, 64-bit or string types, a variable shorter
-than its unlimited dimension, and writing come later too (roadmap 3.14.6.5). Each is an error
-that names it, never silently ignored.
+compression in `createVariable`, subscripts of arrays of indices, booleans or `...`, text variables,
+attributes of several values and CDF-5 files come later. In NetCDF-4 files, variables compressed by
+a filter other than deflate and shuffle, groups, variables of unsigned, 64-bit or string types, a
+variable shorter than its unlimited dimension, and writing come later too. Each is an error that
+names it, never silently ignored.
 
 ## HDF5 files
 

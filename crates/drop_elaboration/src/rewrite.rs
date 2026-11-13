@@ -365,6 +365,7 @@ impl<'db> Decider<'_, 'db> {
             TypeKind::Standard(standard) => standard.owns_resources(),
             TypeKind::Str
             | TypeKind::TextArray
+            | TypeKind::OptionalArray(_)
             | TypeKind::List(_)
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }
