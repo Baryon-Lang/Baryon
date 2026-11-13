@@ -48,6 +48,10 @@ print(trades.sort_values(["price", "volume"], ascending=[False, True]))
   here it is always so ([decision 0045](../decisions/0045-dataframe.md)).
 - **NaN goes last**, rising or falling, as in pandas. In a `bool` column `False` comes
   before `True`.
+- **A column of `str` is sorted by code point**, the order of Python's `<` on `str`, as in
+  pandas: `"Zed"` comes before `"apple"`, and the empty text comes first. The text is
+  turned into whole numbers in that order first, which costs one more sort of that column
+  and an array of `n` integers.
 - **The result is a new frame**, and the frame sorted stays as it was. To keep only the
   sorted rows, assign the result back: `trades = trades.sort_values("price")`.
 - **Rows are numbered again from 0**, since a frame has no row index. pandas would print each
