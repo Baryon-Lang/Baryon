@@ -127,6 +127,10 @@ The repository should look like someone obsessive built it, because someone did.
   compatible with Apache-2.0 and MIT, no RustSec advisory, one version per crate, and crates.io
   as the only source. `cargo xtask check-dependencies` enforces them; `deny.toml` says how to
   record an exception and why each one exists.
+- Third-party content carried in the repository, such as a font's outlines or a data table, is
+  listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) with its license text and the
+  files that hold it, in the same pull request that adds it. Its license must permit the use
+  and be compatible with Apache-2.0.
 
 ## Rule 7: decisions are written down
 
