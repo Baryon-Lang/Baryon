@@ -113,6 +113,7 @@ fn contains<'db>(db: &'db dyn TypeDb, ty: Type<'db>, test: &dyn Fn(Type<'db>) ->
         | TypeKind::Parameter { .. }
         | TypeKind::Primitive(_)
         | TypeKind::Str
+        | TypeKind::TextArray
         | TypeKind::None
         | TypeKind::Function { .. }
         | TypeKind::Standard(_) => false,
@@ -164,6 +165,7 @@ pub(crate) fn substitute<'db>(
         }
         TypeKind::Primitive(_)
         | TypeKind::Str
+        | TypeKind::TextArray
         | TypeKind::None
         | TypeKind::Parameter { .. }
         | TypeKind::Function { .. }

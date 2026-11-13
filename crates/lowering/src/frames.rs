@@ -29,6 +29,7 @@ pub(crate) fn erase<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> Type<'db> {
         TypeKind::DataFrame { .. } => return ty.frame_storage(db).unwrap_or(ty),
         TypeKind::Primitive(_)
         | TypeKind::Str
+        | TypeKind::TextArray
         | TypeKind::None
         | TypeKind::Union(_)
         | TypeKind::Array { .. }
