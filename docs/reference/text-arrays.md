@@ -183,7 +183,8 @@ Its columns are chosen and changed as any frame's are: `df[["symbol", "price"]]`
 `df.drop_duplicates()` leaves out the rows that repeat, comparing text exactly, so `"IBM"`
 and `"ibm"` are two values. `left.merge(right, on="symbol")` joins on a text key the same
 way, and carries the text columns of both frames into the result.
-`df.groupby("symbol").agg(...)` groups rows by text, the groups in the order of the text.
+`df.groupby("symbol").agg(...)` groups rows by text, the groups in the order of the text,
+and `agg` reduces a text column with `count`, `first`, `last`, `min` and `max`.
 
 Rows work as for any frame with a schema. `DataFrame(rows)` copies each `str` field of a list
 of structs into a text column. `df[i]` and the rows of `for row in df.itertuples()` are
@@ -201,9 +202,6 @@ print(first.symbol)
 IBM
 ```
 
-One use of a frame that has a text column is a compile error for now and comes with the rest
-of roadmap item 3.13.3: a text column reduced by `agg`, such as `first=("symbol", "first")`.
-
 ## What is not built yet
 
 Each of these is a compile error today, and the rest of roadmap item 3.13.3:
@@ -219,4 +217,3 @@ Each of these is a compile error today, and the rest of roadmap item 3.13.3:
 - **Showing one**: `print(names)`, `str(names)` and `f"{names}"`. Print the elements in a loop.
 - **A struct field** of type `Array[str, 1]`. Hold a `list[str]` in the struct, or pass the
   array beside it.
-- **A text column reduced by `agg`**, as said under [In a DataFrame](#in-a-dataframe).

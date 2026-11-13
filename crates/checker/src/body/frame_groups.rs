@@ -5,7 +5,8 @@
 //! the key columns form a group, and each argument of `agg` names a new column, the column
 //! it reads and how that column's values in a group become one. The result is a frame of the
 //! key columns followed by the new ones, with one row for each group. Every name is a
-//! string literal, so the result's type is known when compiling.
+//! string literal, so the result's type is known when compiling. A column of `str` has the
+//! reductions that need no arithmetic: `count`, `first`, `last`, `min` and `max`.
 
 use super::Body;
 use super::calls::Arguments;
@@ -196,17 +197,7 @@ impl<'db> Body<'db> {
         };
         let read = columns.iter().find(|read| read.name == name)?;
         if matches!(read.element.kind(self.db), TypeKind::Str) {
-            let message = format!("`agg` cannot reduce `{name}`, a column of `str`, yet");
-            self.lowerer.error(
-                column,
-                &message,
-                "a column of `str`",
-                Some(
-                    "a column of `str` can be a key of `groupby` today; its reductions come \
-                     with roadmap item 3.13.3",
-                ),
-            );
-            return None;
+            return self.text_reduction(column, read, &how);
         }
         if !self.orderable(column, read, "reduce") {
             return None;
@@ -227,6 +218,34 @@ impl<'db> Body<'db> {
             _ if single => read.element,
             _ => primitive(Primitive::Float(Float::F64)),
         })
+    }
+
+    /// The element type of the column that reducing `read`, a column of `str`, the way `how`
+    /// names gives: `i64` for `count`, and `str` for `first`, `last`, `min` and `max`, which
+    /// pick one of the group's texts, the smallest and largest by `<`. Text has no sum, mean
+    /// or spread here, so the rest are reported at `node`, where the column is named;
+    /// pandas's `sum`, which joins the texts, is not built.
+    fn text_reduction(&mut self, node: NodeId, read: &Column<'db>, how: &str) -> Option<Type<'db>> {
+        match how {
+            "count" => Some(Type::new(
+                self.db,
+                TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+            )),
+            "first" | "last" | "min" | "max" => Some(read.element),
+            _ => {
+                let message = format!(
+                    "`agg` cannot reduce `{}`, a column of `str`, with `{how}`",
+                    read.name
+                );
+                self.lowerer.error(
+                    node,
+                    &message,
+                    "a column of `str`",
+                    Some("a column of `str` has `count`, `first`, `last`, `min` and `max`"),
+                );
+                None
+            }
+        }
     }
 
     /// Whether `column` holds values with an order, which grouping and reducing need: a
