@@ -11,13 +11,14 @@ use syntax::{NodeId, Role, SyntaxKind};
 impl<'db> Builder<'db> {
     /// Whether the subscript `node` chooses elements with an array, `a[mask]` or
     /// `a[positions]`, which gives a new array rather than naming an element or a view. A
-    /// mask on a frame, `df[mask]`, chooses rows instead (the `frame_rows` module).
+    /// mask on a frame, `df[mask]`, chooses rows instead (the `frame_rows` module). A slice
+    /// of a text array, `names[1:3]`, is a new array too ([`Builder::text_selection`]).
     pub(crate) fn is_selection(&self, node: NodeId) -> bool {
         self.tree.kind(node) == SyntaxKind::Subscript
             && self
                 .tree
                 .child(node, Role::Index)
-                .is_some_and(|index| self.is_array(self.ty(index)))
+                .is_some_and(|index| self.is_array(self.ty(index)) || self.is_text_slice(node))
             && self
                 .tree
                 .child(node, Role::Value)
@@ -35,6 +36,9 @@ impl<'db> Builder<'db> {
         ) else {
             return;
         };
+        if self.is_text_array(value) {
+            return self.text_selection(place, value, index, node);
+        }
         let (ty, by_type) = (self.ty(node), self.ty(index));
         let source = self.borrow(value);
         let by = self.borrow(index);

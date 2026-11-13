@@ -1,6 +1,7 @@
 //! Text arrays, `Array[str, 1]` (roadmap 3.13.3, decision 0045), built and run: one made
 //! from a list, counted, indexed, looped over, copied, moved and kept in a list and a dict,
-//! and its distinct elements taken and counted (roadmap 3.13.9).
+//! its distinct elements taken and counted (roadmap 3.13.9), and parts of it chosen by a
+//! slice, a mask and positions.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -138,4 +139,103 @@ fn distinct_texts_are_kept_and_counted() {
     let (code, stdout, report) = run("text-arrays-distinct", DISTINCT).unwrap();
     assert_eq!(stdout, expected.concat());
     assert_eq!((code, report.as_str()), (Some(0), ""));
+}
+
+/// A program that takes parts of a text array: slices with either bound left out, a
+/// negative bound, a step, a step of -1, bounds that take nothing and bounds past the end;
+/// a mask written out and one computed; positions that repeat; a part kept while the array
+/// is replaced by another part of itself; parts of parts; and parts of a frame's column.
+const PARTS: &str = r#"
+def show(names: Array[str, 1]):
+    for name in names:
+        print(name, end="|")
+    print(len(names))
+
+
+def main():
+    names = Array(["delta", "", "alpha", "βeta", "gamma", "al"])
+    show(names[1:3])
+    show(names[:2])
+    show(names[4:])
+    show(names[::-1])
+    show(names[-2:])
+    show(names[1:5:2])
+    show(names[3:1])
+    show(names[:100])
+    keep = Array([True, False, True, False, False, True])
+    show(names[keep])
+    lengths = Array([len(name) for name in names])
+    show(names[lengths > 2])
+    show(names[Array([5, 0, 0, 2])])
+    first = names[:3]
+    names = names[3:]
+    show(first)
+    show(names)
+    show(names[1:][Array([True, False])])
+    show(first[:0][:])
+    trades = DataFrame({"symbol": Array(["x", "y", "z"]), "price": Array([3.0, 1.0, 2.0])})
+    show(trades.symbol[trades.price > 1.5])
+    show(trades.symbol[1:])
+    show(trades.symbol[trades.price.argsort()])
+"#;
+
+/// A slice of a text array holds the elements Python's slice of the same list holds, and
+/// a mask or an array of positions chooses elements as for an array of numbers. Each is a
+/// new array, so it stays whole after the array it came from is replaced. The program
+/// leaves no memory behind (checked under Valgrind when written).
+#[test]
+fn parts_of_a_text_array_are_new_arrays() {
+    let expected = [
+        "|alpha|2\n",
+        "delta||2\n",
+        "gamma|al|2\n",
+        "al|gamma|βeta|alpha||delta|6\n",
+        "gamma|al|2\n",
+        "|βeta|2\n",
+        "0\n",
+        "delta||alpha|βeta|gamma|al|6\n",
+        "delta|alpha|al|3\n",
+        "delta|alpha|βeta|gamma|4\n",
+        "al|delta|delta|alpha|4\n",
+        "delta||alpha|3\n",
+        "βeta|gamma|al|3\n",
+        "gamma|1\n",
+        "0\n",
+        "x|z|2\n",
+        "y|z|2\n",
+        "y|z|x|3\n",
+    ];
+    let (code, stdout, report) = run("text-arrays-parts", PARTS).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+}
+
+/// A mask of another length than the text array stops the program at the mask, and a
+/// position past the end stops it too, as for an array of numbers.
+#[test]
+fn a_wrong_mask_or_position_of_a_text_array_panics() {
+    let mask = r#"
+def main():
+    names = Array(["a", "b", "c"])
+    print(len(names[Array([True, False])]))
+"#;
+    let (code, stdout, report) = run("text-arrays-short-mask", mask).unwrap();
+    assert_eq!((code, stdout.as_str()), (Some(101), ""));
+    assert!(
+        report.starts_with(
+            "panic: array lengths differ in dimension 0: 3 and 2\n  --> main.byn:4:21\n"
+        ),
+        "{report}"
+    );
+    let position = r#"
+def main():
+    names = Array(["a", "b", "c"])
+    print(len(names[Array([0, 3])]))
+"#;
+    let (code, stdout, report) = run("text-arrays-far-position", position).unwrap();
+    assert_eq!((code, stdout.as_str()), (Some(101), ""));
+    assert!(
+        report.starts_with("panic: index 3 is out of range for dimension 0 of length 3\n"),
+        "{report}"
+    );
 }
