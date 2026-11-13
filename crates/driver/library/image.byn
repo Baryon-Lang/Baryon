@@ -9,12 +9,12 @@ turns its values into pixels and hands them to the renderer, which embeds them a
 """
 
 from artist import Image, View
-from backend_svg import RendererSVG
+from backend_bases import RendererBase
 from cm import Colormap, get_cmap
 from math import inf, isfinite
 
 
-def draw_image(image: Image, view: View, renderer: InOut[RendererSVG]) -> None:
+def draw_image[R: RendererBase](image: Image, view: View, renderer: InOut[R]) -> None:
     """Draws `image` stretched over its extent where `view` puts it, row 0 along the top or
     bottom edge as `image.upper` says, clipped to the axes. Each
     value is colored as matplotlib's `imshow` colors it, through `Normalize(vmin, vmax)` and

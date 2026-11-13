@@ -92,6 +92,7 @@ contributing to the compiler, or integrating one of its crates.
 | --- | --- |
 | `ROADMAP.md` | Phases, work items, decisions and ideas: the source of truth |
 | `CHANGELOG.md` | Release notes: what each release holds |
+| `THIRD-PARTY-NOTICES.md` | Third-party content the repository carries, such as the DejaVu Sans outlines, with its licenses |
 | `crates/` | The compiler, one crate per responsibility |
 | `xtask/` | Repository automation behind `cargo xtask` |
 | `deny.toml` | Dependency rules: allowed licenses and sources, advisories, duplicate crates |
@@ -113,4 +114,6 @@ AI agents start with [`AGENTS.md`](AGENTS.md).
 
 ## License
 
-[Apache License 2.0](LICENSE).
+[Apache License 2.0](LICENSE). Third-party content the repository carries, such as the DejaVu Sans
+font's outlines, is under its own licenses, listed in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

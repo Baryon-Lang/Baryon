@@ -1,0 +1,99 @@
+"""The `backend_bases` library file: the calls every renderer takes, as matplotlib's
+`RendererBase` lists them (decision 0046).
+
+It is internal to the standard library: `byplot` and the files under it import it, and a
+program cannot, so a program's own `backend_bases.byn` is never hidden by it.
+
+`byplot` lays a figure out once, in points from the figure's top left corner with y growing
+downwards, and draws it through any renderer that has the trait `RendererBase`:
+`backend_svg`'s `RendererSVG` writes SVG elements, and the other formats' renderers draw the
+same calls their own way. Each drawing function is generic over the renderer, `[R:
+RendererBase]`, so it is compiled once for each format a program saves, and a call goes
+straight to that renderer's method.
+"""
+
+
+class RendererBase(Protocol):
+    """What a renderer must do for `byplot` to draw through it. Every coordinate and length is
+    in points, 1/72 of an inch, from the drawing's top left corner, y growing downwards; colors
+    are `"#rrggbb"` strings. `RendererSVG` documents each call in full.
+    """
+
+    def set_clip(self: InOut[Self], x: f64, y: f64, width: f64, height: f64) -> None:
+        """Sets the rectangle that the drawing calls with `clip` true are cut off at."""
+        ...
+
+    def draw_path(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        color: str,
+        linewidth: f64,
+        dashes: list[f64],
+        capstyle: str,
+        clip: bool,
+    ) -> None:
+        """Strokes straight lines through the points, broken at any point that is not
+        finite, with round joins and the cap `capstyle`, `"projecting"` or `"butt"`."""
+        ...
+
+    def draw_polygon(
+        self: InOut[Self], x: Array[f64, 1], y: Array[f64, 1], fill: str, opacity: f64, clip: bool
+    ) -> None:
+        """Fills the polygons through the points, a point that is not finite closing one, by
+        the nonzero rule, with no edge."""
+        ...
+
+    def draw_markers(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        marker: str,
+        size: f64,
+        color: str,
+        edgewidth: f64,
+        clip: bool,
+    ) -> None:
+        """Draws the marker `marker`, `size` points across, centred on each finite point."""
+        ...
+
+    def draw_rectangle(
+        self: InOut[Self],
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        fill: str,
+        opacity: f64,
+        edge: str,
+        edgewidth: f64,
+        clip: bool,
+    ) -> None:
+        """Draws a rectangle from its top left corner, filled and edged; `"none"` leaves either
+        part out."""
+        ...
+
+    def draw_image(
+        self: InOut[Self],
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        pixels: Array[u8, 3],
+        smooth: bool,
+        clip: bool,
+    ) -> None:
+        """Draws the RGBA image `pixels`, rows from the top, stretched over a rectangle."""
+        ...
+
+    def draw_text(
+        self: InOut[Self], x: f64, y: f64, text: str, size: f64, anchor: str, rotate: bool
+    ) -> None:
+        """Writes `text` in DejaVu Sans with its baseline at `(x, y)`, anchored at `"start"`,
+        `"middle"` or `"end"`, turned to read upwards when `rotate` is true."""
+        ...
+
+    def get_text_width_height_descent(self: Self, text: str, size: f64) -> tuple[f64, f64, f64]:
+        """How wide `text` is at `size` points, how tall its line box is, and how far the box
+        reaches below the baseline, in points."""
+        ...

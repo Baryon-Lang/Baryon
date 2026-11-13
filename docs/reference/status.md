@@ -24,18 +24,18 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-13, when HDF5 files read with `h5by.File`, its
-groups, datasets and attributes, and before them logarithmic axes, and before them images
-and colorbars, and before them text columns of a `DataFrame` joined it, and before them arrays of
-text, `Array[str, 1]`, and before them `a.argsort()`, and before it `concat` of `DataFrame`s, and
-before it `drop_duplicates`, and before it the inner `merge` of two `DataFrame`s, and before it
-`groupby(...).agg(...)`, and before it `lzma.decompress`, and before it `sort_values` on a
-`DataFrame`, and before it `bz2.compress` and `bz2.decompress`, and before them `df[["a", "b"]]`,
-`assign`, `drop` and `rename`, and before them `for row in df.itertuples()`, and before it the rows
-of a `DataFrame` chosen by `df[mask]`, `df[i:j]`, `head` and `tail`, and before them
-`compression.zstd.compress`, and before it `fft2`, `ifft2`, `rfft2` and `irfft2`, and before them
-`compression.zstd.decompress`, and before it `print(df)`, a frame printed as pandas prints it, and
-before it `zlib.decompressobj` and `gzip`, and before them a `DataFrame` built from rows and
+This page was last brought up to date on 2026-11-13, when PNG files from `savefig`, and before them
+HDF5 files read with `h5by.File`, its groups, datasets and attributes, and before them logarithmic
+axes, and before them images and colorbars, and before them text columns of a `DataFrame` joined it,
+and before them arrays of text, `Array[str, 1]`, and before them `a.argsort()`, and before it
+`concat` of `DataFrame`s, and before it `drop_duplicates`, and before it the inner `merge` of two
+`DataFrame`s, and before it `groupby(...).agg(...)`, and before it `lzma.decompress`, and before it
+`sort_values` on a `DataFrame`, and before it `bz2.compress` and `bz2.decompress`, and before them
+`df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them `for row in df.itertuples()`, and
+before it the rows of a `DataFrame` chosen by `df[mask]`, `df[i:j]`, `head` and `tail`, and before
+them `compression.zstd.compress`, and before it `fft2`, `ifft2`, `rfft2` and `irfft2`, and before
+them `compression.zstd.decompress`, and before it `print(df)`, a frame printed as pandas prints it,
+and before it `zlib.decompressobj` and `gzip`, and before them a `DataFrame` built from rows and
 `df[i]`, and before them `DataFrame[S]` built from arrays, with its columns, and before them
 `zlib.compress`, and before it `zlib.decompress`, `zlib.crc32` and `zlib.adler32`, and before them
 scatter plots, bars, histograms, legends and grid lines, and before them comparisons of arrays and
@@ -210,7 +210,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`byplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `imshow` of an `Array[f64, 2]` with matplotlib's common colormaps, `vmin`, `vmax`, `origin`, `aspect` and `extent`, `colorbar`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim`, [`set_xscale` and `set_yscale`](plotting.md#logarithmic-axes) with `"log"`, [`errorbar`, `fill_between` and `text`](plotting.md#error-bars-filled-areas-and-text), [`plt.subplots`](plotting.md#grids-of-plots) grids written by `Figure.savefig`, [`contour` and `contourf`](plotting.md#contour-plots) of an `Array[f64, 2]`, and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, `LogLocator.tick_values` and `LogFormatterSciNotation.format_ticks`, with matplotlib's results; the [internal files under `byplot`](plotting.md#the-files-under-byplot) build only inside the standard library | other colormaps, `interpolation`, and images of integers or RGB; `errorbar` and `fill_between` with scalar arguments, `None` for an absent array, and `where=`; `sharex`, `sharey` and `constrained_layout`; a count of contour levels, `clabel` and 2-D `X` and `Y` grids; PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
+| [`byplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `imshow` of an `Array[f64, 2]` with matplotlib's common colormaps, `vmin`, `vmax`, `origin`, `aspect` and `extent`, `colorbar`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim`, [`set_xscale` and `set_yscale`](plotting.md#logarithmic-axes) with `"log"`, [`errorbar`, `fill_between` and `text`](plotting.md#error-bars-filled-areas-and-text), [`plt.subplots`](plotting.md#grids-of-plots) grids written by `Figure.savefig`, [`contour` and `contourf`](plotting.md#contour-plots) of an `Array[f64, 2]`, and `savefig` to an SVG file or a [PNG file](plotting.md#png-files); [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, `LogLocator.tick_values` and `LogFormatterSciNotation.format_ticks`, with matplotlib's results; the [internal files under `byplot`](plotting.md#the-files-under-byplot) build only inside the standard library | other colormaps, `interpolation`, and images of integers or RGB; `errorbar` and `fill_between` with scalar arguments, `None` for an absent array, and `where=`; `sharex`, `sharey` and `constrained_layout`; a count of contour levels, `clabel` and 2-D `X` and `Y` grids; `savefig(dpi=...)` and PDF (3.15.7); plotting lists and integer arrays |
 
 ## Compression
 

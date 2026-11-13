@@ -10,7 +10,7 @@ places and labels the ticks. A logarithmic axis also has minor ticks, shorter an
 to 9 times each power of ten, as matplotlib's `"log"` scale draws them.
 """
 
-from backend_svg import RendererSVG
+from backend_bases import RendererBase
 from math import log10
 from ticker import LogFormatterSciNotation, LogLocator, MaxNLocator, ScalarFormatter
 
@@ -48,7 +48,7 @@ class XAxis(Struct):
         major tick."""
         return _minor(self.vmin, self.vmax, self.right - self.left, 3.0, self.log)
 
-    def draw(self: Self, renderer: InOut[RendererSVG]) -> f64:
+    def draw[R: RendererBase](self: Self, renderer: InOut[R]) -> f64:
         """Draws the ticks inside the range, pointing down, their labels under them and the
         offset text, if any, under the right end; returns how far down the labels reach, in
         points, where an x label goes."""
@@ -105,20 +105,20 @@ class YAxis(Struct):
         """The minor tick positions, as `XAxis.get_minorticklocs`."""
         return _minor(self.vmin, self.vmax, self.bottom - self.top, 2.0, self.log)
 
-    def draw(self: Self, renderer: InOut[RendererSVG]) -> f64:
+    def draw[R: RendererBase](self: Self, renderer: InOut[R]) -> f64:
         """Draws the ticks inside the range, pointing left, their labels left of them and the
         offset text, if any, above the top end; returns how far left the labels reach, in
         points, where a y label goes."""
         return self._draw_side(renderer, -1.0)
 
-    def draw_right(self: Self, renderer: InOut[RendererSVG]) -> f64:
+    def draw_right[R: RendererBase](self: Self, renderer: InOut[R]) -> f64:
         """Draws the axis on the right of the line at `left`, as matplotlib's
         `set_ticks_position("right")` puts it on a colorbar: ticks pointing right, their labels
         right of them, and the offset text, if any, above the top end, ending at the line;
         returns how far right the labels reach, in points, where a colorbar's label goes."""
         return self._draw_side(renderer, 1.0)
 
-    def _draw_side(self: Self, renderer: InOut[RendererSVG], outward: f64) -> f64:
+    def _draw_side[R: RendererBase](self: Self, renderer: InOut[R], outward: f64) -> f64:
         """Draws the axis with its ticks and labels on the side `outward` points to: -1 for
         the left, 1 for the right; returns how far out the labels reach."""
         ticks = self.get_majorticklocs()
