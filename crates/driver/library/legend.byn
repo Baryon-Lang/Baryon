@@ -84,9 +84,8 @@ def draw_legend[R: RendererBase](
                 across = Array([start, start + 20.0])
                 level = Array([middle, middle])
                 width = artist.linewidth
-                renderer.draw_path(
-                    across, level, artist.color, width, artist.dashes, "projecting", False
-                )
+                cap = "projecting" if len(artist.dashes) == 0 else "butt"
+                renderer.draw_path(across, level, artist.color, width, artist.dashes, cap, False)
             if artist.marker != "":
                 edge = 1.5 if artist.kind == Kind.MARKERS else 1.0
                 at = Array([start + 10.0])

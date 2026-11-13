@@ -1,0 +1,421 @@
+"""The `backend_agg` library file: draws a figure into pixels and writes them as a PNG file, as
+matplotlib's `backend_agg` does (decision 0046).
+
+It is internal to the standard library: `byplot` and the files under it import it, and a
+program cannot, so a program's own `backend_agg.byn` is never hidden by it.
+
+`RendererAgg` takes the same calls as `RendererSVG`, the trait `backend_bases.RendererBase`, in
+points from the top left corner, and draws each into an image of `dpi / 72` pixels a point:
+lines and shapes through `raster`, anti-aliased, and text from DejaVu Sans's outlines in
+`font`. Lines and rectangles whose sides all run straight across or down are moved onto the
+pixel grid first, as matplotlib's path snapping moves them, so axes, ticks and grid lines are
+sharp. `print_png` gives the PNG file's bytes.
+"""
+
+from math import floor, isfinite, nan
+from backend_bases import RendererBase
+from font import Font, load, math_layout
+from png import write_png
+from raster import bounds, circle, coverage, stroke, union
+
+
+class RendererAgg(Struct, RendererBase):
+    """A white image of `width` by `height` points at `dpi` dots an inch, drawn into one call at
+    a time, as matplotlib's `RendererAgg`. Make one with `renderer_agg`.
+
+    Each pixel is red, green and blue from 0 to 1, and a shape is laid over it by how much of
+    the pixel it covers, times its opacity. A shape costs one step for each pixel of the box
+    around it, so a line across the whole axes costs about as much as the axes' pixels; markers
+    are drawn once and copied to each point.
+    """
+
+    pixels: Array[f64, 3]  # the image, rows from the top, by columns, by red, green and blue
+    font: Font  # DejaVu Sans, read once
+    scale: f64  # pixels a point, `dpi / 72`
+    clip_left: int  # the clip rectangle's first column
+    clip_top: int  # its first row
+    clip_right: int  # one past its last column
+    clip_bottom: int  # one past its last row
+
+    def set_clip(self: InOut[Self], x: f64, y: f64, width: f64, height: f64) -> None:
+        """Sets the rectangle that calls with `clip` true are cut off at, rounded to whole
+        pixels, as matplotlib's Agg rounds a clip rectangle."""
+        self.clip_left = floor(x * self.scale + 0.5)
+        self.clip_top = floor(y * self.scale + 0.5)
+        self.clip_right = floor((x + width) * self.scale + 0.5)
+        self.clip_bottom = floor((y + height) * self.scale + 0.5)
+
+    def draw_path(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        color: str,
+        linewidth: f64,
+        dashes: list[f64],
+        capstyle: str,
+        clip: bool,
+    ) -> None:
+        """Strokes the line as `RendererSVG.draw_path` describes, with round joins."""
+        width = linewidth * self.scale
+        xs, ys = self._points(x, y, width)
+        lengths = [length * self.scale for length in dashes]
+        outline_x, outline_y = stroke(xs, ys, width, lengths, capstyle == "projecting")
+        self._fill(outline_x, outline_y, color, 1.0, clip, True)
+
+    def draw_polygon(
+        self: InOut[Self], x: Array[f64, 1], y: Array[f64, 1], fill: str, opacity: f64, clip: bool
+    ) -> None:
+        """Fills the polygons as `RendererSVG.draw_polygon` describes."""
+        xs, ys = self._points(x, y, 0.0)
+        self._fill(xs, ys, fill, opacity, clip, False)
+
+    def draw_markers(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        marker: str,
+        size: f64,
+        color: str,
+        edgewidth: f64,
+        clip: bool,
+    ) -> None:
+        """Draws the marker at each finite point, as `RendererSVG.draw_markers` describes. The
+        marker is drawn once, centred on a pixel's centre, and copied onto the pixel each point
+        falls in, as matplotlib's Agg copies it."""
+        shape_x, shape_y, lines_x, lines_y = _marker(marker, size * self.scale)
+        outline_x, outline_y = stroke(lines_x, lines_y, edgewidth * self.scale, [], False)
+        for k in range(len(outline_x)):
+            shape_x.append(outline_x[k])
+            shape_y.append(outline_y[k])
+        x0, x1, y0, y1 = bounds(shape_x, shape_y)
+        reach = floor(max(max(-x0, x1), max(-y0, y1))) + 2
+        side = 2 * reach + 1
+        for k in range(len(shape_x)):
+            shape_x[k] += float(reach) + 0.5
+            shape_y[k] += float(reach) + 0.5
+        cover = union(shape_x, shape_y, 0, 0, side, side)
+        red, green, blue = _rgb(color)
+        for k in range(len(x)):
+            if isfinite(x[k]) and isfinite(y[k]):
+                left = floor(x[k] * self.scale) - reach
+                top = floor(y[k] * self.scale) - reach
+                self._blend(cover, left, top, side, side, red, green, blue, 1.0, clip)
+
+    def draw_rectangle(
+        self: InOut[Self],
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        fill: str,
+        opacity: f64,
+        edge: str,
+        edgewidth: f64,
+        clip: bool,
+    ) -> None:
+        """Draws the rectangle as `RendererSVG.draw_rectangle` describes, its corners moved onto
+        the pixel grid."""
+        line = edgewidth * self.scale if edge != "none" else 0.0
+        x0 = _snap(min(x, x + width) * self.scale, line)
+        x1 = _snap(max(x, x + width) * self.scale, line)
+        y0 = _snap(min(y, y + height) * self.scale, line)
+        y1 = _snap(max(y, y + height) * self.scale, line)
+        xs = [x0, x1, x1, x0]
+        ys = [y0, y0, y1, y1]
+        if fill != "none":
+            self._fill(xs, ys, fill, opacity, clip, False)
+        if edge != "none":
+            around_x = [x0, x1, x1, x0, x0, x1]  # once round, and on to join the first corner
+            around_y = [y0, y0, y1, y1, y0, y0]
+            outline_x, outline_y = stroke(around_x, around_y, line, [], False)
+            self._fill(outline_x, outline_y, edge, 1.0, clip, True)
+
+    def draw_image(
+        self: InOut[Self],
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        pixels: Array[u8, 3],
+        smooth: bool,
+        clip: bool,
+    ) -> None:
+        """Draws the RGBA image `pixels` stretched over the rectangle, as
+        `RendererSVG.draw_image` describes: each pixel of the PNG takes the colour of the image
+        pixel under its centre, or, when `smooth`, a blend of the four nearest. Costs a few
+        steps a pixel of the rectangle."""
+        rows = pixels.shape[0]
+        columns = pixels.shape[1]
+        left = x * self.scale
+        top = y * self.scale
+        across = width * self.scale
+        down = height * self.scale
+        cover = Array.ones(1)
+        for row in range(floor(top + 0.5), floor(top + down + 0.5)):
+            for column in range(floor(left + 0.5), floor(left + across + 0.5)):
+                u = (float(column) + 0.5 - left) / across * float(columns)
+                v = (float(row) + 0.5 - top) / down * float(rows)
+                red, green, blue, alpha = _sample(pixels, u, v, smooth)
+                self._blend(cover, column, row, 1, 1, red, green, blue, alpha, clip)
+
+    def draw_text(
+        self: InOut[Self], x: f64, y: f64, text: str, size: f64, anchor: str, rotate: bool
+    ) -> None:
+        """Draws `text` in black from DejaVu Sans's outlines, as `RendererSVG.draw_text`
+        describes; a mathtext label from `LogFormatterSciNotation` is laid out as
+        `font.math_layout` places it."""
+        if text.startswith("$\\mathdefault{"):
+            coefficient, exponent, at_ten, at_exponent, width = math_layout(text, size)
+            left = x - _shift(anchor, width)
+            if coefficient != "":
+                self._glyphs(left, y, coefficient + "×", size, False)
+            self._glyphs(left + at_ten, y, "10", size, False)
+            self._glyphs(left + at_exponent, y - 0.413 * size, exponent, 0.7 * size, False)
+            return
+        shift = _shift(anchor, self.font.width(text) / 2048.0 * size)
+        if rotate:
+            self._glyphs(x, y + shift, text, size, True)
+        else:
+            self._glyphs(x - shift, y, text, size, False)
+
+    def get_text_width_height_descent(self: Self, text: str, size: f64) -> tuple[f64, f64, f64]:
+        """How wide `text` is in DejaVu Sans at `size` points, from the font's own advances and
+        kerning, and the line box `RendererSVG` gives it, as matplotlib 3.11 sizes it."""
+        if text.startswith("$\\mathdefault{"):
+            return (math_layout(text, size)[4], 1.1762 * size, 0.3224 * size)
+        return (self.font.width(text) / 2048.0 * size, size, 492.0 / 2048.0 * size)
+
+    def print_png(self: Self) -> Raises[Array[u8, 1], OSError]:
+        """The bytes of a PNG file of the image, each colour rounded to the nearest of 256
+        levels and fully opaque, compressed with `zlib`.
+
+        # Errors
+
+        `OSError` only if `zlib` fails, which a valid image never makes it do.
+        """
+        rows = self.pixels.shape[0]
+        columns = self.pixels.shape[1]
+        out: Array[u8, 3] = Array.zeros((rows, columns, 4))
+        for row in range(rows):
+            for column in range(columns):
+                for channel in range(3):
+                    level = floor(self.pixels[row, column, channel] * 255.0 + 0.5)
+                    out[row, column, channel] = u8(min(max(level, 0), 255))
+                out[row, column, 3] = u8(255)
+        return write_png(out)
+
+    def _points(
+        self: Self, x: Array[f64, 1], y: Array[f64, 1], line: f64
+    ) -> tuple[list[f64], list[f64]]:
+        """The points in pixels; on the pixel grid, as `_snap` puts them, when every segment
+        runs straight across or down, as matplotlib's automatic snapping does."""
+        straight = True
+        for k in range(1, len(x)):
+            if x[k] != x[k - 1] and y[k] != y[k - 1] and isfinite(x[k]) and isfinite(x[k - 1]):
+                straight = False
+        xs: list[f64] = []
+        ys: list[f64] = []
+        for k in range(len(x)):
+            px = x[k] * self.scale
+            py = y[k] * self.scale
+            if straight and isfinite(px) and isfinite(py):
+                px = _snap(px, line)
+                py = _snap(py, line)
+            xs.append(px)
+            ys.append(py)
+        return (xs, ys)
+
+    def _fill(
+        self: InOut[Self],
+        x: list[f64],
+        y: list[f64],
+        color: str,
+        opacity: f64,
+        clip: bool,
+        pieces: bool,
+    ) -> None:
+        """Lays the polygons through `x` and `y`, in pixels, over the image in `color` at
+        `opacity`, within the box around them: their union when they are `pieces` of a line,
+        from `raster.union`, and otherwise by the nonzero rule, from `raster.coverage`."""
+        x0, x1, y0, y1 = bounds(x, y)
+        if x0 > x1:
+            return
+        left, top, right, bottom = self._box(
+            floor(x0), floor(y0), floor(x1) + 1, floor(y1) + 1, clip
+        )
+        if left >= right or top >= bottom:
+            return
+        across = right - left
+        down = bottom - top
+        cover = Array.zeros(0)
+        if pieces:
+            cover = union(x, y, left, top, across, down)
+        else:
+            cover = coverage(x, y, left, top, across, down)
+        red, green, blue = _rgb(color)
+        self._blend(cover, left, top, across, down, red, green, blue, opacity, clip)
+
+    def _glyphs(self: InOut[Self], x: f64, y: f64, text: str, size: f64, rotate: bool) -> None:
+        """Fills `text`'s outline in black, its baseline starting at `(x, y)` in points."""
+        xs, ys = self.font.outline(text, size * self.scale, x * self.scale, y * self.scale, rotate)
+        self._fill(xs, ys, "#000000", 1.0, False, False)
+
+    def _box(
+        self: Self, left: int, top: int, right: int, bottom: int, clip: bool
+    ) -> tuple[int, int, int, int]:
+        """The box from `(left, top)` to `(right, bottom)` cut to the image, and to the clip
+        rectangle when `clip` is true."""
+        left = max(left, 0)
+        top = max(top, 0)
+        right = min(right, self.pixels.shape[1])
+        bottom = min(bottom, self.pixels.shape[0])
+        if clip:
+            left = max(left, self.clip_left)
+            top = max(top, self.clip_top)
+            right = min(right, self.clip_right)
+            bottom = min(bottom, self.clip_bottom)
+        return (left, top, right, bottom)
+
+    def _blend(
+        self: InOut[Self],
+        cover: Array[f64, 1],
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+        red: f64,
+        green: f64,
+        blue: f64,
+        opacity: f64,
+        clip: bool,
+    ) -> None:
+        """Lays `red`, `green` and `blue` over the box `width` by `height` at `(left, top)`, each
+        pixel by its `cover`, row by row, times `opacity`, skipping what falls outside the
+        image or the clip rectangle."""
+        x0, y0, x1, y1 = self._box(left, top, left + width, top + height, clip)
+        for row in range(y0, y1):
+            for column in range(x0, x1):
+                weight = cover[(row - top) * width + column - left] * opacity
+                if weight > 0.0:
+                    keep = 1.0 - weight
+                    pixel = self.pixels[row, column, 0]
+                    self.pixels[row, column, 0] = pixel * keep + red * weight
+                    pixel = self.pixels[row, column, 1]
+                    self.pixels[row, column, 1] = pixel * keep + green * weight
+                    pixel = self.pixels[row, column, 2]
+                    self.pixels[row, column, 2] = pixel * keep + blue * weight
+
+
+def renderer_agg(width: f64, height: f64, dpi: f64) -> RendererAgg:
+    """A white image `width` by `height` points at `dpi` dots an inch, as `savefig` makes one:
+    matplotlib's default figure, 460.8 by 345.6 points at 100 dpi, is 640 by 480 pixels."""
+    scale = dpi / 72.0
+    columns = floor(width * scale + 0.5)
+    rows = floor(height * scale + 0.5)
+    return RendererAgg(Array.ones((rows, columns, 3)), load(), scale, 0, 0, columns, rows)
+
+
+def _snap(value: f64, line: f64) -> f64:
+    """`value`, in pixels, moved onto the pixel grid as matplotlib's `PathSnapper` moves it: to
+    a pixel's centre for a line an odd number of pixels wide, so the line covers whole pixels,
+    and to a pixel's edge for an even one or a fill."""
+    if floor(line + 0.5) % 2 == 1:
+        return float(floor(value)) + 0.5
+    return float(floor(value + 0.5))
+
+
+def _shift(anchor: str, width: f64) -> f64:
+    """How far left of its anchor a text `width` wide starts."""
+    if anchor == "middle":
+        return 0.5 * width
+    if anchor == "end":
+        return width
+    return 0.0
+
+
+def _rgb(color: str) -> tuple[f64, f64, f64]:
+    """The red, green and blue of `"#rrggbb"`, each from 0 to 1."""
+    digits = "0123456789abcdef"
+    values: list[f64] = []
+    for k in [1, 3, 5]:
+        high = digits.find(color[k].lower())
+        low = digits.find(color[k + 1].lower())
+        values.append(float(16 * high + low) / 255.0)
+    return (values[0], values[1], values[2])
+
+
+def _sample(pixels: Array[u8, 3], u: f64, v: f64, smooth: bool) -> tuple[f64, f64, f64, f64]:
+    """The colour and opacity of the image `pixels` at column `u` and row `v`, in pixels of the
+    image from its top left corner: the pixel there, or, when `smooth`, a blend of the four
+    pixels whose centres surround it."""
+    rows = pixels.shape[0]
+    columns = pixels.shape[1]
+    if not smooth:
+        row = min(floor(v), rows - 1)
+        column = min(floor(u), columns - 1)
+        return (
+            float(pixels[row, column, 0]) / 255.0,
+            float(pixels[row, column, 1]) / 255.0,
+            float(pixels[row, column, 2]) / 255.0,
+            float(pixels[row, column, 3]) / 255.0,
+        )
+    across = min(max(u - 0.5, 0.0), float(columns - 1))  # between pixel centres
+    down = min(max(v - 0.5, 0.0), float(rows - 1))
+    left = floor(across)
+    top = floor(down)
+    right = min(left + 1, columns - 1)
+    bottom = min(top + 1, rows - 1)
+    a = across - float(left)  # how far towards the right pixel
+    b = down - float(top)  # how far towards the lower pixel
+    values: list[f64] = []
+    for channel in range(4):
+        upper = (1.0 - a) * float(pixels[top, left, channel])
+        upper += a * float(pixels[top, right, channel])
+        lower = (1.0 - a) * float(pixels[bottom, left, channel])
+        lower += a * float(pixels[bottom, right, channel])
+        values.append(((1.0 - b) * upper + b * lower) / 255.0)
+    return (values[0], values[1], values[2], values[3])
+
+
+def _marker(marker: str, size: f64) -> tuple[list[f64], list[f64], list[f64], list[f64]]:
+    """The polygons filled for `marker` centred on 0, 0 and `size` pixels across, and the lines
+    edged around it, as `RendererSVG` shapes it: a filled marker is edged along its outline, and
+    `"+"`, `"x"`, `"_"` and `"|"` are lines only. Panics on a marker it does not know."""
+    half = 0.5 * size
+    fill_x: list[f64] = []
+    fill_y: list[f64] = []
+    if marker == "o" or marker == ".":
+        circle(0.0, 0.0, half if marker == "o" else 0.5 * half, fill_x, fill_y)
+    elif marker == "s":
+        fill_x = [-half, half, half, -half, nan]
+        fill_y = [-half, -half, half, half, nan]
+    elif marker == "^":
+        fill_x = [0.0, half, -half, nan]
+        fill_y = [-half, half, half, nan]
+    elif marker == "v":
+        fill_x = [0.0, half, -half, nan]
+        fill_y = [half, -half, -half, nan]
+    elif marker == "D":
+        fill_x = [0.0, half, 0.0, -half, nan]
+        fill_y = [-half, 0.0, half, 0.0, nan]
+    if len(fill_x) > 0:
+        edge_x: list[f64] = []
+        edge_y: list[f64] = []
+        start = 0
+        for k in range(len(fill_x)):
+            if not isfinite(fill_x[k]):
+                edge_x.append(fill_x[start])
+                edge_y.append(fill_y[start])
+                start = k + 1
+            edge_x.append(fill_x[k])
+            edge_y.append(fill_y[k])
+        return (fill_x, fill_y, edge_x, edge_y)
+    if marker == "+":
+        return ([], [], [-half, half, nan, 0.0, 0.0], [0.0, 0.0, nan, -half, half])
+    if marker == "_":
+        return ([], [], [half, -half], [0.0, 0.0])
+    if marker == "|":
+        return ([], [], [0.0, 0.0], [-half, half])
+    known = marker == "x"
+    assert known, f"{marker!r} is not a marker: 'o', '.', 's', '^', 'v', 'D', '+', 'x', '_' or '|'"
+    return ([], [], [-half, half, nan, -half, half], [-half, half, nan, half, -half])

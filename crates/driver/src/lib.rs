@@ -47,10 +47,14 @@ use types::{Checked, Item, TypeDb, TypedBody};
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-const LIBRARY: [(&str, &str); 33] = [
+const LIBRARY: [(&str, &str); 37] = [
     ("<std>/arrays.byn", include_str!("../library/arrays.byn")),
     ("<std>/artist.byn", include_str!("../library/artist.byn")),
     ("<std>/axis.byn", include_str!("../library/axis.byn")),
+    (
+        "<std>/backend_agg.byn",
+        include_str!("../library/backend_agg.byn"),
+    ),
     (
         "<std>/backend_bases.byn",
         include_str!("../library/backend_bases.byn"),
@@ -71,10 +75,19 @@ const LIBRARY: [(&str, &str); 33] = [
         include_str!("../library/colorbar.byn"),
     ),
     ("<std>/colors.byn", include_str!("../library/colors.byn")),
+    (
+        "<std>/compression.zstd.byn",
+        include_str!("../library/compression.zstd.byn"),
+    ),
     ("<std>/contour.byn", include_str!("../library/contour.byn")),
+    (
+        "<std>/dejavu_sans.byn",
+        include_str!("../library/dejavu_sans.byn"),
+    ),
     ("<std>/fft.byn", include_str!("../library/fft.byn")),
     ("<std>/figure.byn", include_str!("../library/figure.byn")),
     ("<std>/fits.byn", include_str!("../library/fits.byn")),
+    ("<std>/font.byn", include_str!("../library/font.byn")),
     (
         "<std>/frame_joins.byn",
         include_str!("../library/frame_joins.byn"),
@@ -90,6 +103,7 @@ const LIBRARY: [(&str, &str); 33] = [
     ("<std>/os.byn", include_str!("../library/os.byn")),
     ("<std>/pathlib.byn", include_str!("../library/pathlib.byn")),
     ("<std>/png.byn", include_str!("../library/png.byn")),
+    ("<std>/raster.byn", include_str!("../library/raster.byn")),
     ("<std>/stats.byn", include_str!("../library/stats.byn")),
     (
         "<std>/subprocess.byn",
@@ -101,10 +115,6 @@ const LIBRARY: [(&str, &str); 33] = [
         include_str!("../library/transforms.byn"),
     ),
     ("<std>/zlib.byn", include_str!("../library/zlib.byn")),
-    (
-        "<std>/compression.zstd.byn",
-        include_str!("../library/compression.zstd.byn"),
-    ),
 ];
 
 /// The compiler's incremental database: every input and every cached query result.

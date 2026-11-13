@@ -21,10 +21,11 @@ points, colors from the `tab10` cycle, and ticks placed and labelled by `ticker`
 """
 
 from artist import Artist, Image, Kind, Text, dashes, error_bars, filled
+from backend_agg import renderer_agg
 from backend_svg import RendererSVG
 from colors import to_hex
 from contour import contour_set
-from figure import Figure, check_format, draw_axes, subplot_box
+from figure import DPI, Figure, check_format, draw_axes, subplot_box
 from image import make_image
 from legend import location_code
 from math import isfinite
@@ -439,10 +440,14 @@ class Axes(Struct):
 
         # Errors
 
-        `ValueError` when the extension is not `.svg`, the only format so far, with
-        matplotlib's message; `OSError` when the file cannot be written.
+        `ValueError` when the extension is not `.svg` or `.png`, with matplotlib's message;
+        `OSError` when the file cannot be written.
         """
-        check_format(fname)
+        if check_format(fname) == "png":
+            pixels = renderer_agg(WIDTH, HEIGHT, DPI)
+            draw_axes(self, subplot_box(0, 0, 1, 1), pixels)
+            pixels.print_png().tofile(fname)
+            return
         renderer = RendererSVG(WIDTH, HEIGHT, [], 0)
         draw_axes(self, subplot_box(0, 0, 1, 1), renderer)
         with open(fname, "w") as file:

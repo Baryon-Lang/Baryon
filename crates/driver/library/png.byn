@@ -4,19 +4,58 @@ embeds in an SVG file and saves as PNG (decision 0046).
 It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `png.byn` is never hidden by it.
 
-The image data go in uncompressed deflate blocks, which every PNG reader takes: the file is
-about four times larger than a compressed one, until compression (roadmap 3.27) lands. The
-checksums PNG and zlib need, CRC-32 and Adler-32, are computed here.
+`encode` puts the image data in uncompressed deflate blocks, which every PNG reader takes, for
+the images inside an SVG file, computing the checksums PNG and zlib need, CRC-32 and Adler-32,
+itself; idea I.54 moves it onto `zlib`. `write_png`, for the PNG files `savefig` writes,
+compresses them with `zlib`.
 """
+
+from zlib import compress
 
 
 def encode(pixels: Array[u8, 3]) -> list[u8]:
     """The bytes of a PNG file holding `pixels`, an image `height` by `width` by 4: red, green,
-    blue and alpha, 0 to 255, rows from the top. Costs about 4 bytes and a few operations a
+    blue and alpha, 0 to 255, rows from the top, its data in uncompressed deflate blocks, as
+    the images inside an SVG file are written. Costs about 4 bytes and a few operations a
     pixel.
+    """
+    raw: list[u8] = []
+    for row in range(pixels.shape[0]):
+        raw.append(u8(0))  # no filter on the row
+        for column in range(pixels.shape[1]):
+            for channel in range(4):
+                raw.append(pixels[row, column, channel])
+    return _assemble(pixels.shape[1], pixels.shape[0], _zlib_stored(raw))
+
+
+def write_png(pixels: Array[u8, 3]) -> Raises[Array[u8, 1], OSError]:
+    """The bytes of a PNG file holding `pixels`, as `encode` lays them out, its data compressed
+    with `zlib` at its default level, as a PNG file `savefig` writes. A plot, mostly white,
+    shrinks to about a twentieth of its 4 bytes a pixel.
+
+    # Errors
+
+    `OSError` only if `zlib.compress` fails, which it never does for a valid image.
     """
     height = pixels.shape[0]
     width = pixels.shape[1]
+    raw: Array[u8, 1] = Array.zeros(height * (4 * width + 1), u8)
+    at = 0
+    for row in range(height):
+        at += 1  # the row's filter byte, 0: no filter
+        for column in range(width):
+            for channel in range(4):
+                raw[at] = pixels[row, column, channel]
+                at += 1
+    packed: list[u8] = []
+    for byte in compress(raw):
+        packed.append(byte)
+    return Array(_assemble(width, height, packed))
+
+
+def _assemble(width: int, height: int, data: list[u8]) -> list[u8]:
+    """A PNG file of an RGBA image `width` by `height` pixels, 8 bits a channel, whose zlib
+    stream of rows is `data`: the signature, then the `IHDR`, `IDAT` and `IEND` chunks."""
     out: list[u8] = [u8(137), u8(80), u8(78), u8(71), u8(13), u8(10), u8(26), u8(10)]
     header: list[u8] = []
     _put32(header, u32(width))
@@ -25,13 +64,7 @@ def encode(pixels: Array[u8, 3]) -> list[u8]:
         header.append(u8(value))
     table = _crc_table()
     _chunk(out, "IHDR", header, table)
-    raw: list[u8] = []
-    for row in range(height):
-        raw.append(u8(0))  # no filter on the row
-        for column in range(width):
-            for channel in range(4):
-                raw.append(pixels[row, column, channel])
-    _chunk(out, "IDAT", _zlib_stored(raw), table)
+    _chunk(out, "IDAT", data, table)
     _chunk(out, "IEND", [], table)
     return out
 
