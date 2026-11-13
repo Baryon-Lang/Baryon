@@ -214,10 +214,6 @@ impl<'db> Body<'db> {
         };
         let index = self.tree.child(node, Role::Index)?;
         let Some(name) = self.literal_text(index) else {
-            if self.has_text_column(base) && self.tree.kind(index) == SyntaxKind::List {
-                self.expression(index, None);
-                return Some(self.text_column_unbuilt(node, "choosing columns with `[[...]]`"));
-            }
             let chosen = self.frame_select(index, base);
             return Some(chosen.unwrap_or_else(|| self.frame_row(index, base, *row)));
         };
@@ -409,7 +405,10 @@ impl<'db> Body<'db> {
         callee: &str,
         arguments: &Arguments,
     ) -> Type<'db> {
-        let built = matches!(callee, "copy" | "head" | "tail" | "sort_values");
+        let built = matches!(
+            callee,
+            "copy" | "head" | "tail" | "sort_values" | "assign" | "drop" | "rename"
+        );
         if self.has_text_column(base) && !built {
             self.untyped(arguments);
             return self.text_column_unbuilt(function, &format!("the method `{callee}`"));

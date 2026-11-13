@@ -253,3 +253,82 @@ fn rows_of_a_frame_with_a_text_column_are_chosen_and_sorted() {
     assert_eq!(stdout, expected.concat());
     assert_eq!((code, report.as_str()), (Some(0), ""));
 }
+
+/// A program that chooses and changes the columns of frames with a text column: a list of
+/// columns, `rename`, `drop`, and `assign` that adds a text column, replaces one and adds
+/// numbers beside one. Its last line assigns a text column of another length.
+const COLUMNS: &str = r#"
+def main():
+    symbols = Array(["IBM", "", "AAPL", "βeta"])
+    prices = Array([3.0, 1.0, 2.0, 4.0])
+    trades = DataFrame({"symbol": symbols, "price": prices, "n": Array([1, 2, 3, 4])})
+    print(trades[["n", "symbol"]])
+    print(trades[["symbol"]])
+    print(trades[["price"]].price.sum())
+    named = trades.copy().rename(columns={"symbol": "ticker", "n": "count"})
+    print(named)
+    print(named.ticker[2], named.columns)
+    less = trades.copy().drop(columns=["price"])
+    print(less)
+    numbers = trades.copy().drop(columns=["symbol"])
+    print(numbers.shape)
+    tagged = numbers.assign(tag=Array(["a", "b", "c", "d"]))
+    print(tagged)
+    swapped = trades.copy().assign(symbol=Array(["w", "x", "y", "z"]), half=trades.price / 2.0)
+    print(swapped)
+    first = DataFrame({"tag": Array(["p", "q"])}).assign(n=Array([1, 2]))
+    print(first)
+    bad = trades.assign(other=Array(["only one"]))
+"#;
+
+/// The columns of a frame with a text column are chosen, renamed, dropped and assigned as
+/// those of a frame of numbers: every frame printed is what pandas 3 prints. A new text
+/// column of another length than the frame panics at its argument.
+#[test]
+fn columns_of_a_frame_with_a_text_column_are_chosen_and_changed() {
+    let expected = [
+        "   n symbol\n",
+        "0  1    IBM\n",
+        "1  2       \n",
+        "2  3   AAPL\n",
+        "3  4   βeta\n",
+        "  symbol\n",
+        "0    IBM\n",
+        "1       \n",
+        "2   AAPL\n",
+        "3   βeta\n",
+        "10.0\n",
+        "  ticker  price  count\n",
+        "0    IBM    3.0      1\n",
+        "1           1.0      2\n",
+        "2   AAPL    2.0      3\n",
+        "3   βeta    4.0      4\n",
+        "AAPL ['ticker', 'price', 'count']\n",
+        "  symbol  n\n",
+        "0    IBM  1\n",
+        "1         2\n",
+        "2   AAPL  3\n",
+        "3   βeta  4\n",
+        "(4, 2)\n",
+        "   price  n tag\n",
+        "0    3.0  1   a\n",
+        "1    1.0  2   b\n",
+        "2    2.0  3   c\n",
+        "3    4.0  4   d\n",
+        "  symbol  price  n  half\n",
+        "0      w    3.0  1   1.5\n",
+        "1      x    1.0  2   0.5\n",
+        "2      y    2.0  3   1.0\n",
+        "3      z    4.0  4   2.0\n",
+        "  tag  n\n",
+        "0   p  1\n",
+        "1   q  2\n",
+    ];
+    let (code, stdout, report) = run("text-columns-changed", COLUMNS).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!(code, Some(101));
+    assert_eq!(
+        report,
+        "panic: array lengths differ in dimension 0: 4 and 1\n  --> main.byn:22:31\n"
+    );
+}

@@ -3,15 +3,15 @@
 //! `df.rename(columns={...})`.
 //!
 //! The checker has worked out the columns of each result, so the work here is moving arrays
-//! between two tuples. `df[["a", "b"]]` borrows the frame and copies the columns named.
-//! The three methods take the frame: every column that stays moves into the result, which
-//! costs nothing however long the columns are, and a column left out or replaced is freed
-//! when the statement ends.
+//! between two tuples. A column of `str` moves as the pair of buffers it is stored as.
+//! `df[["a", "b"]]` borrows the frame and copies the columns named. The three methods take
+//! the frame: every column that stays moves into the result, which costs nothing however
+//! long the columns are, and a column left out or replaced is freed when the statement ends.
 
 use crate::builder::Builder;
+use crate::frames::erase;
 use mir::{Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Type, TypeKind};
 
 impl Builder<'_> {
     /// `df[["a", "b"]]`, the subscript `node` of the frame `value`, into `place`: a new frame
@@ -30,11 +30,9 @@ impl Builder<'_> {
             else {
                 return self.unsupported(node, "this column of a `DataFrame`");
             };
-            let element = column.element;
-            let array = Type::new(self.db, TypeKind::Array { element, rank: 1 });
+            let stored = erase(self.db, column.array(self.db));
             let from = source.clone().project(Projection::Field(position));
-            let copy = self.copy_view(from, array, node);
-            copies.push(Operand::Move(Place::from(copy)));
+            copies.push(self.column_copy(from, stored, node));
         }
         self.assign(place, Rvalue::Aggregate(ty, copies), node);
     }
@@ -99,18 +97,11 @@ impl Builder<'_> {
         let moved = self.operand(frame);
         self.assign(Place::from(held), Rvalue::Use(moved), frame);
         self.drop_later(held);
-        let rows = self.temporary(self.int_type(), node);
-        let first = Place::from(held).project(Projection::Field(0));
-        self.assign(Place::from(rows), Rvalue::Length(first, 0), node);
+        let rows = self.counted_rows(frame, &Place::from(held), node);
         for &(_, value, new) in &given {
-            let length = self.temporary(self.int_type(), value);
-            self.assign(
-                Place::from(length),
-                Rvalue::Length(Place::from(new), 0),
-                value,
-            );
+            let length = self.column_length(Place::from(new), Some(self.ty(value)), value);
             let expected = Operand::Copy(Place::from(rows));
-            self.same_length(0, expected, Operand::Copy(Place::from(length)), value);
+            self.same_length(0, expected, length, value);
         }
         let mut result = Vec::with_capacity(kept.len());
         for column in kept {
