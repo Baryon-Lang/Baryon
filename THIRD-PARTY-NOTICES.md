@@ -3,8 +3,6 @@
 Baryon is licensed under the [Apache License 2.0](LICENSE). This file lists every piece of
 third-party content the repository carries, as opposed to a dependency `Cargo.toml` declares,
 with its license and the files that hold it. Each license below permits the use made of it.
-[`CONTRIBUTING.md`](CONTRIBUTING.md#rule-6-few-dependencies) requires any new embedded asset to
-be listed here in the same pull request that adds it.
 
 ## DejaVu Sans
 
