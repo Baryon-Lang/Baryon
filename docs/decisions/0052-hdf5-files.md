@@ -1,6 +1,6 @@
 # 0052. HDF5 files are read with h5py's names
 
-Status: Proposed
+Status: Accepted (Collins, 2026-11-13)
 Date: 2026-11-12
 Roadmap: 3.14.6.1
 
@@ -34,6 +34,10 @@ settled when Baryon compiles. They are a dataset's element type and rank, an att
 and what a missing name, a bad subscript or a filter Baryon does not have raises. One question
 is new: the codecs are written in Baryon (decision 0049), while the file's structure is
 binary, and the runtime reads binary structures fastest.
+
+Collins chose among three options on 2026-11-13: h5py's names (this record), a Baryon-only
+`hdf5` module shaped like `netCDF4`, or HDF5 only through `netCDF4.Dataset`. He took the
+first.
 
 ## Decision
 
