@@ -3,7 +3,7 @@
 //! Unidata's specification lays them out. A count in a corrupt header cannot make the reader
 //! ask for more than [`LARGEST_HEADER`] bytes.
 
-use super::{Attribute, Header, Kind, Values, Variable, number};
+use super::{Attribute, Header, Kind, Values, Variable, netcdf4, number};
 use crate::files::{BUFFER, ErrorKind, OsFailure};
 use std::fs;
 use std::io::{self, Read};
@@ -21,12 +21,14 @@ pub(super) const ATTRIBUTES: u32 = 0x0C;
 /// would otherwise ask for more memory than a file can describe.
 const LARGEST_HEADER: u64 = 1 << 30;
 
-/// Reads the header of the classic file at `path`.
+/// Reads the header of the `NetCDF` file at `path`: a classic file's, or a NetCDF-4 file's as
+/// [`netcdf4::header`] reads it.
 ///
 /// # Errors
 ///
-/// Fails as the operating system does, and with `INVALID_DATA` when the file is not a classic
-/// `NetCDF` file or its header is cut short or names what does not exist.
+/// Fails as the operating system does, and with `INVALID_DATA` when the file is not a `NetCDF`
+/// file, its header is cut short or names what does not exist, or a NetCDF-4 file holds what
+/// is not read yet.
 pub(crate) fn read_header(path: &str) -> Result<Header, OsFailure> {
     let failed = |error: io::Error| OsFailure::from_io(&error, path);
     let file = fs::File::open(path).map_err(failed)?;
@@ -34,14 +36,15 @@ pub(crate) fn read_header(path: &str) -> Result<Header, OsFailure> {
         bytes: io::BufReader::with_capacity(BUFFER, file),
         read: 0,
     };
-    parse(&mut reader).map_err(|failure| match failure {
-        Failure::Io(error) if error.kind() == io::ErrorKind::UnexpectedEof => OsFailure::new(
+    parse(&mut reader).or_else(|failure| match failure {
+        Failure::Io(error) if error.kind() == io::ErrorKind::UnexpectedEof => Err(OsFailure::new(
             ErrorKind::InvalidData,
             "the file ends inside a NetCDF header",
             path,
-        ),
-        Failure::Io(error) => failed(error),
-        Failure::Invalid(message) => OsFailure::new(ErrorKind::InvalidData, message, path),
+        )),
+        Failure::Io(error) => Err(failed(error)),
+        Failure::Invalid(message) => Err(OsFailure::new(ErrorKind::InvalidData, message, path)),
+        Failure::Hdf5 => netcdf4::header(path),
     })
 }
 
@@ -51,6 +54,8 @@ enum Failure {
     Io(io::Error),
     /// The bytes are not a header this reader follows; the message says why.
     Invalid(String),
+    /// The file is HDF5, a NetCDF-4 file, which [`netcdf4::header`] reads.
+    Hdf5,
 }
 
 impl From<io::Error> for Failure {
@@ -172,11 +177,7 @@ fn parse(reader: &mut Reader<impl Read>) -> Result<Header, Failure> {
                 "the file is a 64-bit data NetCDF file (CDF-5), which is not read yet".to_owned(),
             ));
         }
-        [0x89, b'H', b'D', b'F'] => {
-            return Err(Failure::Invalid(
-                "the file is a NetCDF-4 (HDF5) file, which is not read yet".to_owned(),
-            ));
-        }
+        [0x89, b'H', b'D', b'F'] => return Err(Failure::Hdf5),
         _ => {
             return Err(Failure::Invalid(
                 "the file is not a NetCDF file: it does not start with CDF".to_owned(),
@@ -238,5 +239,6 @@ fn parse(reader: &mut Reader<impl Read>) -> Result<Header, Failure> {
         dimensions,
         attributes,
         variables,
+        netcdf4: None,
     })
 }

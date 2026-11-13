@@ -50,6 +50,7 @@ mod fits;
 mod fits_header;
 mod flow;
 mod formatted;
+mod frame_describe;
 mod frame_distinct;
 mod frame_groups;
 mod frame_joins;

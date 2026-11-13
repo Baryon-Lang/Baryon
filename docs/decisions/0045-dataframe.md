@@ -171,6 +171,12 @@ and `np.unique` does not. `df.value_counts("symbol")` is a method of the frame a
 with the columns `symbol` and `count`. Collins chose this on 2026-11-13 over NumPy's sorted
 order and over methods of the frame only.
 
+`df.describe()` gives a frame whose first column, `statistic`, a column of `str`, holds the
+names pandas has as its row index (`count`, `mean`, `std`, `min`, `25%`, `50%`, `75%`,
+`max`), followed by one `f64` column for each column of numbers under its own name. Polars
+lays `describe` out the same way. Collins chose this on 2026-11-13 over one row for each
+column and over leaving `describe` out until frames have row labels.
+
 `DataFrame` and `concat` are built-in names, as `Array` is. `read_csv` takes its schema from the
 context, as `Array.loadtxt` takes its rank (decision 0043), and raises when the file's header
 lacks a column of the schema or a cell does not parse; its details are roadmap 3.14.4's.

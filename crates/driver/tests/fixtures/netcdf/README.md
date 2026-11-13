@@ -14,6 +14,8 @@ writes (decision 0047) without Python running in the tests.
   - `lat`, `f8` over `(lat,)`, `units = "degrees_north"`, the values 10 and 20;
   - `flags`, `i1` over `(lon,)`, the values -1, 0 and 1.
 - `offset.nc`: the same in the 64-bit offset format (CDF-2).
+- `netcdf4.nc`: the same as NetCDF-4, an HDF5 file, every variable stored plainly.
+- `deflated.nc`: `netcdf4.nc` again with `temp` compressed by deflate (`zlib=True`).
 
 To record them again, run this in this directory:
 
@@ -21,7 +23,12 @@ To record them again, run this in this directory:
 import numpy as np
 from netCDF4 import Dataset
 
-for fmt, name in [("NETCDF3_CLASSIC", "classic.nc"), ("NETCDF3_64BIT_OFFSET", "offset.nc")]:
+for fmt, name, zlib in [
+    ("NETCDF3_CLASSIC", "classic.nc", False),
+    ("NETCDF3_64BIT_OFFSET", "offset.nc", False),
+    ("NETCDF4", "netcdf4.nc", False),
+    ("NETCDF4", "deflated.nc", True),
+]:
     with Dataset(name, "w", format=fmt) as ds:
         ds.setncattr("title", "test grid")
         ds.setncattr("version", np.int32(3))
@@ -29,7 +36,7 @@ for fmt, name in [("NETCDF3_CLASSIC", "classic.nc"), ("NETCDF3_64BIT_OFFSET", "o
         ds.createDimension("time", None)
         ds.createDimension("lat", 2)
         ds.createDimension("lon", 3)
-        temp = ds.createVariable("temp", "f4", ("time", "lat", "lon"))
+        temp = ds.createVariable("temp", "f4", ("time", "lat", "lon"), zlib=zlib)
         temp.setncattr("units", "K")
         temp[:] = np.arange(12, dtype="f4").reshape(2, 2, 3) + 270.5
         packed = ds.createVariable("packed", "i2", ("time", "lat", "lon"))

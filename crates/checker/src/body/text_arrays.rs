@@ -8,27 +8,20 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Integer, Primitive, Type, TypeKind};
 
 /// What an array of `str` can do today, for messages.
-const BUILT: &str = "an array of `str` has `len`, indexing, `for` loops, `copy()`, `unique()` \
-                     and `nunique()` today; the rest comes with roadmap item 3.13.3";
+const BUILT: &str = "an array of `str` has `len`, indexing, slices, masks, `for` loops, \
+                     `copy()`, `unique()` and `nunique()` today; the rest comes with \
+                     roadmap item 3.13.3";
 
 impl<'db> Body<'db> {
-    /// `names[i]` on a text array: the element, a `str` borrowed from the array. A slice, and
-    /// more than one index, are errors: the array has one dimension, and a part of one is not
-    /// built yet.
+    /// `names[i]` on a text array: the element, a `str` borrowed from the array. A slice,
+    /// `names[1:3]`, is a new text array holding a copy of the elements it takes. More than
+    /// one index is an error: the array has one dimension.
     pub(super) fn text_array_index(
         &mut self,
         node: NodeId,
         sliced: bool,
         indices: &[NodeId],
     ) -> Type<'db> {
-        if sliced {
-            return self.lowerer.error(
-                node,
-                "a slice of an array of `str` is not built yet",
-                "a slice",
-                Some("read one element at a time, such as `names[i]`"),
-            );
-        }
         if indices.len() != 1 {
             return self.lowerer.error(
                 node,
@@ -37,7 +30,12 @@ impl<'db> Body<'db> {
                 Some("for example `names[i]`"),
             );
         }
-        Type::new(self.db, TypeKind::Str)
+        let kind = if sliced {
+            TypeKind::TextArray
+        } else {
+            TypeKind::Str
+        };
+        Type::new(self.db, kind)
     }
 
     /// Whether `ty` is a text array.
