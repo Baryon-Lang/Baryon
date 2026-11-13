@@ -8,7 +8,8 @@
 //! reduction is one pass over one column. The library reduces `f64` and `i64` columns only,
 //! so a column of another number type is converted here first, and the result converted
 //! back where pandas keeps the column's type. Cost for `n` rows: `n log n` comparisons for
-//! each key column, and one pass for each new column.
+//! each key column, and one pass for each new column. A key of `str` is grouped by the
+//! integers the library's `text_codes` gives for its text, and copied with `text_taken`.
 
 use crate::builder::Builder;
 use mir::{BinaryOperator, Constant, Local, Operand, Place, Projection, Rvalue};
@@ -54,7 +55,8 @@ impl<'db> Builder<'db> {
             };
             keys.push((source.clone().project(Projection::Field(position)), column));
         }
-        let Some(groups) = self.groups(&source, &keys, node) else {
+        let count = self.counted_rows(frame, &source, node);
+        let Some(groups) = self.groups(count, &keys, node) else {
             return;
         };
         let positions = self.positions_type();
@@ -66,10 +68,7 @@ impl<'db> Builder<'db> {
         self.drop_later(firsts);
         let mut made = Vec::with_capacity(result.len());
         for (key, column) in &keys {
-            let array = self.array_of(column.element);
-            let arguments = vec![key.clone(), Place::from(firsts)];
-            let Some(taken) =
-                self.frame_call("taken", vec![column.element], arguments, array, node)
+            let Some(taken) = self.taken_column(key.clone(), column, Place::from(firsts), node)
             else {
                 return;
             };
@@ -102,36 +101,33 @@ impl<'db> Builder<'db> {
         self.assign(place, Rvalue::Aggregate(ty, made), node);
     }
 
-    /// The rows of the frame at `source` sorted into groups by `keys`, each a key column's
-    /// place and its column: rows with a missing key left out, the rest sorted by the keys,
-    /// the last key first, and the start of each group found.
+    /// The `count` rows of a frame sorted into groups by `keys`, each a key column's place
+    /// and its column: rows with a missing key left out, the rest sorted by the keys, the
+    /// last key first, and the start of each group found.
     fn groups(
         &mut self,
-        source: &Place,
+        count: Local,
         keys: &[(Place, &Column<'db>)],
         node: NodeId,
     ) -> Option<Groups> {
         let positions = self.positions_type();
         let boolean = self.boolean_type();
-        let count = self.row_count(source, node);
         let start = vec![Place::from(count)];
         let mut order = self.frame_call("row_positions", Vec::new(), start, positions, node)?;
         self.drop_later(order);
-        // A `bool` key is sorted and compared as the integers 0 and 1.
+        // A `bool` key is sorted and compared as the integers 0 and 1, and a key of `str`
+        // as the integers that stand for its text.
         let int = self.int_type();
-        let sorted: Vec<(Place, Type<'db>)> = keys
-            .iter()
-            .map(|(key, column)| {
-                if matches!(
-                    column.element.kind(self.db),
-                    TypeKind::Primitive(Primitive::Bool)
-                ) {
+        let mut sorted: Vec<(Place, Type<'db>)> = Vec::with_capacity(keys.len());
+        for (key, column) in keys {
+            sorted.push(match column.element.kind(self.db) {
+                TypeKind::Str => (self.text_codes(key.clone(), node)?, int),
+                TypeKind::Primitive(Primitive::Bool) => {
                     (self.converted(key.clone(), column.element, int, node), int)
-                } else {
-                    (key.clone(), column.element)
                 }
-            })
-            .collect();
+                _ => (key.clone(), column.element),
+            });
+        }
         let rising = Operand::Constant(Constant {
             ty: boolean,
             value: mir::ConstantValue::Bool(true),

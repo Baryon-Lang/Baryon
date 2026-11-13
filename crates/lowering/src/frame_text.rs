@@ -9,10 +9,11 @@
 //! functions.
 
 use crate::builder::Builder;
+use crate::frames::erase;
 use mir::{Argument, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue};
 use mir::{Local, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Float, Item, Primitive, Type, TypeKind};
+use types::{Column, Float, Item, Primitive, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// The place to read as text where the expression `node`, of type `ty` and borrowed at
@@ -102,6 +103,24 @@ impl<'db> Builder<'db> {
         let codes = self.frame_call("text_codes", Vec::new(), vec![column], positions, node)?;
         self.drop_later(codes);
         Some(Place::from(codes))
+    }
+
+    /// A new array of the elements of `column`'s values at `from` that stand at the
+    /// positions `rows`, in that order: the library's `taken`, or `text_taken` for a column
+    /// of `str`. The caller owns the result. `None` after a report.
+    pub(crate) fn taken_column(
+        &mut self,
+        from: Place,
+        column: &Column<'db>,
+        rows: Place,
+        node: NodeId,
+    ) -> Option<Local> {
+        let (function, types) = match column.element.kind(self.db) {
+            TypeKind::Str => ("text_taken", Vec::new()),
+            _ => ("taken", vec![column.element]),
+        };
+        let array = erase(self.db, column.array(self.db));
+        self.frame_call(function, types, vec![from, rows], array, node)
     }
 
     /// Calls the function `name` of `<std>/frames.byn` or `<std>/frame_joins.byn` with

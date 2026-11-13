@@ -37,7 +37,7 @@ def uses(trades: DataFrame[Trade], more: DataFrame[Trade], rows: list[Trade]):
     c = trades[trades.price > 1.0]
     d = DataFrame(rows)
     e = concat([trades, more])
-    g = trades.groupby("symbol").agg(total=("price", "sum"))
+    g = trades.groupby("price").agg(first=("symbol", "first"))
     for row in trades.itertuples():
         pass
     h = trades.sort_values("price")
@@ -61,28 +61,28 @@ const EXPECTED: &str = r#"error: reading a row, `df[i]`, is not built for a `Dat
   |
 8 |     b = trades[0]
   |                ^ has a column of `str`
-  = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values`, `drop_duplicates`, `merge`, `assign`, `drop`, `rename`, `df[[...]]`, `concat` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+  = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values`, `drop_duplicates`, `merge`, `groupby` by any column, `assign`, `drop`, `rename`, `df[[...]]`, `concat` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: `DataFrame(rows)` is not built for a `DataFrame` with a column of `str` yet
   --> main.byn:10:19
    |
 10 |     d = DataFrame(rows)
    |                   ^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values`, `drop_duplicates`, `merge`, `assign`, `drop`, `rename`, `df[[...]]`, `concat` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values`, `drop_duplicates`, `merge`, `groupby` by any column, `assign`, `drop`, `rename`, `df[[...]]`, `concat` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
-error: `groupby` is not built for a `DataFrame` with a column of `str` yet
-  --> main.byn:12:9
+error: reducing `symbol`, a column of `str`, in `agg` is not built for a `DataFrame` with a column of `str` yet
+  --> main.byn:12:44
    |
-12 |     g = trades.groupby("symbol").agg(total=("price", "sum"))
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values`, `drop_duplicates`, `merge`, `assign`, `drop`, `rename`, `df[[...]]`, `concat` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+12 |     g = trades.groupby("price").agg(first=("symbol", "first"))
+   |                                            ^^^^^^^^ has a column of `str`
+   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values`, `drop_duplicates`, `merge`, `groupby` by any column, `assign`, `drop`, `rename`, `df[[...]]`, `concat` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: the method `itertuples` is not built for a `DataFrame` with a column of `str` yet
   --> main.byn:13:16
    |
 13 |     for row in trades.itertuples():
    |                ^^^^^^^^^^^^^^^^^^^ has a column of `str`
-   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values`, `drop_duplicates`, `merge`, `assign`, `drop`, `rename`, `df[[...]]`, `concat` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
+   = note: a frame with a column of `str` is built from its columns, `DataFrame({...})`, and has `len`, `shape`, `columns`, `copy()`, `print`, `head`, `tail`, slices, masks, `sort_values`, `drop_duplicates`, `merge`, `groupby` by any column, `assign`, `drop`, `rename`, `df[[...]]`, `concat` and its columns, such as `df.symbol`, today; the rest comes with roadmap item 3.13.3
 
 error: a column cannot be moved out of its `DataFrame`
   --> main.byn:17:12
@@ -132,11 +132,11 @@ error: list items must share one type, found `str` and `f64`
    |                                                           ^^^ a different type"#;
 
 /// Every use of a frame with a text column that is not built yet is an error that says so
-/// and names what is built: a row, `DataFrame(rows)`, `groupby` and `itertuples`. `head`, a
-/// mask, a slice, a sort by any column, a list of columns, `drop`, `assign` of a text column,
-/// `drop_duplicates`, `merge` and `concat` are built, and get no error. The column itself is
-/// a text array, so moving it out, assigning an element and adding two are that type's
-/// errors.
+/// and names what is built: a row, `DataFrame(rows)`, `itertuples` and a text column reduced
+/// by `agg`. `head`, a mask, a slice, a sort by any column, a list of columns, `drop`,
+/// `assign` of a text column, `drop_duplicates`, `merge` and `concat` are built, and get no
+/// error. The column itself is a text array, so moving it out, assigning an element and
+/// adding two are that type's errors.
 #[test]
 fn uses_of_a_text_column_frame_not_built_yet_are_reported() {
     assert_eq!(check_one(PROGRAM), EXPECTED);
