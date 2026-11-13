@@ -1,12 +1,12 @@
 //! Logarithmic axes (roadmap 3.15.4, decision 0046), built and run: `ticker`'s `LogLocator` and
 //! `LogFormatterSciNotation` place and label ticks as matplotlib 3.11 does, to within the last
-//! bit of a tick, and `axis` draws them, with minor ticks and raised exponents, as the reference
-//! files.
+//! bit of a tick, and `pyplot` draws log axes, with minor ticks and raised exponents, as the
+//! reference files.
 //!
 //! The files in `tests/fixtures/plotting` were recorded from matplotlib or written by these
 //! programs; its `README.md` says which and how.
 
-use super::{Scratch, baryon_build, package, stderr};
+use super::{Scratch, baryon_build, package, panic_report, stderr};
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -93,30 +93,31 @@ def main() -> Raises[None, OSError | ValueError]:
     assert_eq!(printed.lines().count(), expected.lines().count());
 }
 
-/// Logarithmic axes drawn on their own, as the stored reference file: eleven decades up the
-/// side with every other one labelled and no minor ticks, six across the bottom with minor
-/// ticks, and on a second figure a range inside one decade, where the minor ticks carry the
-/// labels `2×10⁰`, `3×10⁰` and `4×10⁰` beside an even y axis.
+/// Logarithmic axes drawn as the stored reference files: a line through five decades of x and
+/// ten of y on `set_xscale("log")` and `set_yscale("log")`, ranges found as matplotlib finds
+/// them, with every other power of ten labelled up the side and minor ticks along the bottom;
+/// and a range inside one decade, where the minor ticks carry the labels `2×10⁰`, `3×10⁰` and
+/// `4×10⁰` beside an even y axis.
 #[test]
 fn log_axes_are_drawn_as_the_reference_file() {
     let program = "\
-from axis import XAxis, YAxis
-from backend_svg import RendererSVG
+import pyplot as plt
 
 
-def main() -> Raises[None, OSError]:
-    wide = RendererSVG(460.8, 345.6, [])
-    wide.draw_rectangle(57.6, 41.472, 357.12, 266.112, \"none\", 1.0, \"#000000\", 0.8, False)
-    XAxis(0.005623413251903487, 1778.2794100389244, 57.6, 414.72, 307.584, True).draw(wide)
-    YAxis(3.162277660168375e-05, 3162277.660168385, 307.584, 41.472, 57.6, True).draw(wide)
-    narrow = RendererSVG(460.8, 345.6, [])
-    narrow.draw_rectangle(57.6, 41.472, 357.12, 266.112, \"none\", 1.0, \"#000000\", 0.8, False)
-    XAxis(1.9104382079046485, 5.234401174884329, 57.6, 414.72, 307.584, True).draw(narrow)
-    YAxis(0.9, 3.1, 307.584, 41.472, 57.6, False).draw(narrow)
-    with open(\"logaxes.svg\", \"w\") as file:
-        file.write(wide.tostring())
-    with open(\"lognarrow.svg\", \"w\") as file:
-        file.write(narrow.tostring())
+def main() -> Raises[None, OSError | ValueError]:
+    x = Array.zeros(51)
+    for i in range(51):
+        x[i] = 10.0 ** (-2.0 + 0.1 * f64(i))
+    ax = plt.axes()
+    ax.plot(x, x * x)
+    ax.set_xscale(\"log\")
+    ax.set_yscale(\"log\")
+    ax.set_xlabel(\"x\")
+    ax.savefig(\"logaxes.svg\")
+    narrow = plt.axes()
+    narrow.plot(Array([2.0, 3.0, 5.0]), Array([1.0, 2.0, 3.0]))
+    narrow.set_xscale(\"log\")
+    narrow.savefig(\"lognarrow.svg\")
 ";
     let (ran, directory) = run("plotting-log-axes", program).unwrap();
     assert_eq!(stderr(&ran), "");
@@ -126,4 +127,26 @@ def main() -> Raises[None, OSError]:
         let reference = fs::read_to_string(fixtures().join(name)).unwrap();
         assert_eq!(drawn, reference, "{name} differs from the reference file");
     }
+}
+
+/// A scale other than `"linear"` and `"log"` panics at `set_xscale`, where matplotlib raises
+/// `ValueError`.
+#[test]
+fn unknown_scales_panic() {
+    let program = "\
+import pyplot as plt
+
+
+def main():
+    ax = plt.axes()
+    ax.set_xscale(\"symlog\")
+";
+    let (ran, _directory) = run("plotting-scale", program).unwrap();
+    assert_eq!(ran.status.code(), Some(101));
+    assert!(
+        panic_report(&ran)
+            .starts_with("panic: assertion failed: known, f\"{value!r} is not a scale"),
+        "{}",
+        panic_report(&ran)
+    );
 }

@@ -9,6 +9,8 @@ program cannot, so a program's own `artist.byn` is never hidden by it.
 the `legend` module reads the artists to draw a legend.
 """
 
+from math import log10
+
 
 class Kind(Enum):
     """What an `Artist` draws."""
@@ -56,7 +58,9 @@ class View(Struct):
     """Where an axes sits on the page and what it shows: the box from `left` to `right` and
     `top` to `bottom`, in points from the page's top left corner, showing x from `x0` to `x1`
     and y from `y0` to `y1`, as matplotlib's `transData` maps them. `x0` larger than `x1`, or
-    `y0` larger than `y1`, turns that axis around.
+    `y0` larger than `y1`, turns that axis around. With `log_x` or `log_y` set, that axis is
+    laid out by the logarithm of the value, as matplotlib's `"log"` scale lays it; a value at
+    or below 0 then maps to no point, so a line breaks there.
     """
 
     left: f64  # the box's left edge, in points
@@ -67,11 +71,30 @@ class View(Struct):
     x1: f64  # the x shown at the right edge
     y0: f64  # the y shown at the bottom edge
     y1: f64  # the y shown at the top edge
+    log_x: bool  # whether x is laid out by its logarithm
+    log_y: bool  # whether y is laid out by its logarithm
 
     def to_x(self: Self, x: Array[f64, 1]) -> Array[f64, 1]:
         """Where the data `x` fall across the page, in points."""
+        if self.log_x:
+            low = log10(self.x0)
+            scale = (self.right - self.left) / (log10(self.x1) - low)
+            return self.left + (_log10(x) - low) * scale
         return self.left + (x - self.x0) * ((self.right - self.left) / (self.x1 - self.x0))
 
     def to_y(self: Self, y: Array[f64, 1]) -> Array[f64, 1]:
         """Where the data `y` fall down the page, in points."""
+        if self.log_y:
+            low = log10(self.y0)
+            scale = (self.bottom - self.top) / (log10(self.y1) - low)
+            return self.bottom - (_log10(y) - low) * scale
         return self.bottom - (y - self.y0) * ((self.bottom - self.top) / (self.y1 - self.y0))
+
+
+def _log10(values: Array[f64, 1]) -> Array[f64, 1]:
+    """The base-10 logarithm of each of `values`, NaN for one at or below 0, as matplotlib masks
+    such values on a logarithmic axis. Costs one logarithm a value."""
+    logs = Array.zeros(len(values))
+    for i in range(len(values)):
+        logs[i] = log10(values[i]) if values[i] > 0.0 else 0.0 / 0.0
+    return logs

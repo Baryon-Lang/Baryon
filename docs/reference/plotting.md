@@ -6,15 +6,15 @@ Baryon and saved as SVG files that any browser, VS Code or a LaTeX toolchain can
 labels the ticks, as `matplotlib.ticker` does. These two are the modules a program imports.
 `pyplot` draws through smaller files of the standard library, named as matplotlib names its own:
 `colors` reads color names, `cm` holds the colormaps, `artist` holds what an axes draws,
-`transforms` finds the ranges it shows, `axis` draws an axis's ticks and labels, `legend`,
+`transforms` finds the ranges it shows, `figure` lays an axes out and draws it, `axis` draws an axis's ticks and labels, `legend`,
 `image` and `colorbar` draw a legend, an image and a colorbar, `backend_svg` writes the SVG file,
 and `png` the PNG images inside it. They are internal, so a program's own `colors.byn` or
 `image.byn` is never hidden by them.
 
-This chapter covers what builds today, roadmap 3.15.1 to 3.15.3: line plots, scatter plots,
-bars, histograms, markers, legends, grid lines, images and colorbars, titles, axis labels, axis
-ranges and SVG output. Grids of plots, logarithmic axes, contours, PNG and PDF files follow in
-roadmap 3.15.4 to 3.15.7.
+This chapter covers what builds today, roadmap 3.15.1 to 3.15.3 and the logarithmic axes of
+3.15.4: line plots, scatter plots, bars, histograms, markers, legends, grid lines, images and
+colorbars, titles, axis labels, axis ranges, logarithmic axes and SVG output. Grids of plots,
+error bars, filled areas, text, contours, PNG and PDF files follow in roadmap 3.15.4 to 3.15.7.
 
 ## A first plot
 
@@ -80,6 +80,7 @@ moved script is never drawn wrong in silence.
 | `ax.set_title(label)` | Sets the title, centred above the axes, at 12 points | `Axes.set_title` |
 | `ax.set_xlabel(xlabel)`, `ax.set_ylabel(ylabel)` | Sets the label under the x axis, or left of the y axis | `Axes.set_xlabel`, `Axes.set_ylabel` |
 | `ax.set_xlim(left, right)`, `ax.set_ylim(bottom, top)` | Fixes the range shown; a first value larger than the second turns the axis around | `Axes.set_xlim`, `Axes.set_ylim` |
+| `ax.set_xscale(value)`, `ax.set_yscale(value)` | Lays an axis out evenly, `"linear"`, or by the logarithm of the value, `"log"` | `Axes.set_xscale`, `Axes.set_yscale` |
 | `ax.savefig(fname)` | Writes a figure holding the axes; the extension picks the format | `Figure.savefig` |
 
 `x` and `y` are `Array[f64, 1]`s of the same length; `plot` copies them, so they can change
@@ -205,6 +206,36 @@ small or close together, part of each number moves to the end of the axis, as ma
 it: the labels of ticks from 1000.00000002 to 1000.00000008 read `0.2` to `0.8`, and the y axis
 says `1e−7+1e3` above its top end, meaning "times 10⁻⁷, plus 1000".
 
+### Logarithmic axes
+
+`ax.set_xscale("log")` or `ax.set_yscale("log")` lays an axis out by the logarithm of the value,
+base 10, as matplotlib's `"log"` scale does. The range follows the data above 0, with a margin of
+5% of its logarithm on each side; with no such data it is 1 to 10. Points at or below 0 are left
+out, so a line breaks there. Ticks fall at powers of ten, every second or third one when many
+decades show, labelled `10⁻²`, `10⁰`, `10³` with the exponent raised; shorter minor ticks mark 2
+to 9 times each power when fewer than ten decades show. Inside one decade the minor ticks carry
+the labels instead, `2×10⁰`, `3×10⁰`, as matplotlib's do.
+
+```python
+import pyplot as plt
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    frequency = Array.zeros(41)
+    for i in range(41):
+        frequency[i] = 10.0 ** (0.1 * f64(i))
+    gain = 1.0 / (1.0 + frequency * frequency / 100.0)
+    ax = plt.axes()
+    ax.plot(frequency, gain)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("frequency (Hz)")
+    ax.savefig("response.svg")
+```
+
+`set_xscale` panics on any scale but `"linear"` and `"log"`, where matplotlib raises
+`ValueError`; `"symlog"` and `"logit"` are not offered.
+
 ## `ticker`
 
 | Item | Does | matplotlib |
@@ -258,7 +289,8 @@ them; this table is for those working on the library, and on the PNG and PDF bac
 | `renderer.get_text_width_height_descent(text, size)` | About how wide a text is, and the height and depth of its line | `RendererBase.get_text_width_height_descent` |
 | `renderer.tostring()` | The SVG file's text | What `savefig` writes |
 | `Artist(kind, x, y, widths, color, linewidth, dashes, marker, markersize, label)` | One line, set of markers or set of bars, as an axes keeps it; `kind` is `Kind.LINE`, `Kind.MARKERS` or `Kind.BARS` | `Line2D`, `PathCollection`, `BarContainer` |
-| `View(left, top, right, bottom, x0, x1, y0, y1)` | Where an axes sits, in points, and the data range it shows; `view.to_x(x)` and `view.to_y(y)` map data to points | `Axes.transData` |
+| `View(left, top, right, bottom, x0, x1, y0, y1, log_x, log_y)` | Where an axes sits, in points, the data range it shows and which axes are logarithmic; `view.to_x(x)` and `view.to_y(y)` map data to points | `Axes.transData` |
+| `draw_axes(ax, renderer)` | Finds an axes' ranges, places its box in the default figure and draws all of it | `Figure.draw`, `Axes.draw` |
 | `draw_legend(artists, loc, view, renderer)` | Draws a legend of the labelled artists at `loc`, `"best"` included | `legend.Legend` |
 | `location_code(loc)` | matplotlib's number for a legend place: 0 for `"best"`, 1 to 10, or -1 | `Legend.codes` |
 | `Image(data, cmap, vmin, vmax, extent, upper)` | An image as an axes keeps it | `image.AxesImage` |
@@ -267,7 +299,7 @@ them; this table is for those working on the library, and on the PNG and PDF bac
 | `get_cmap(name)`, `cmap.to_rgba_bytes(x)` | A colormap by name; the color of `x` as four bytes | `colormaps[name]`, `cmap(x, bytes=True)` |
 | `renderer.draw_image(x, y, width, height, pixels, smooth, clip)` | Draws an `Array[u8, 3]` of RGBA pixels stretched over a rectangle | `RendererSVG.draw_image` |
 | `encode(pixels)` | The bytes of a PNG file of an `Array[u8, 3]` of RGBA pixels, data uncompressed until roadmap 3.27 | What `Figure.savefig` writes to a `.png` |
-| `nonsingular(low, high, expander, tiny)`, `fixed_limits(first, second)`, `autoscale(artists, images, along_x)` | Widen a range too narrow to show; keep limits as `set_xlim` does; the range data needs | `transforms.nonsingular`, `Axes.set_xlim`, `Axes.autoscale_view` |
+| `nonsingular(low, high, expander, tiny)`, `fixed_limits(first, second)`, `autoscale(artists, images, along_x, log)` | Widen a range too narrow to show; keep limits as `set_xlim` does; the range data needs | `transforms.nonsingular`, `Axes.set_xlim`, `Axes.autoscale_view` |
 
 Coordinates are in points from the figure's top left corner, y growing downwards, as SVG has
 them. The PNG and PDF backends (roadmap 3.15.6 and 3.15.7) will take the same calls.
