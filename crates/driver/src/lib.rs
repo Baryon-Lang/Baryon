@@ -121,7 +121,7 @@ const LIBRARY: [(&str, &str); 38] = [
 /// The compiler's incremental database: every input and every cached query result.
 #[salsa::db]
 #[derive(Clone, Default)]
-struct Database {
+pub(crate) struct Database {
     /// Salsa's inputs and caches.
     storage: salsa::Storage<Self>,
 }

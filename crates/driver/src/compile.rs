@@ -15,7 +15,7 @@ pub(crate) mod functions;
 mod instances;
 mod queries;
 
-use crate::{Profile, Session};
+use crate::{Database, Profile, Session};
 use diagnostics::{Diagnostic, Severity};
 use functions::{Function, Test, is_generic};
 use instances::{Instance, Instances};
@@ -307,6 +307,7 @@ impl Session {
             root.map(str::to_owned),
             profile == Profile::Release,
         );
+        prepare(&self.database, settings, &roots);
         errors.extend(define(database, &mut module, settings, roots));
         let tests = self.start(&mut module, program, &entries, &mut errors);
         if errors.is_empty() {
@@ -414,4 +415,35 @@ fn define<'db>(
         }
     }
     errors
+}
+
+/// Runs the queries of each of `roots` on every core at once, so [`define`] finds their bodies
+/// and text ready. Each thread works on its own handle to the database; `salsa` shares the
+/// results between them (roadmap 2.2.2).
+fn prepare<'db>(
+    database: &'db Database,
+    settings: queries::Settings<'db>,
+    roots: &[Instance<'db>],
+) {
+    let threads = std::thread::available_parallelism().map_or(1, usize::from);
+    if threads < 2 || roots.len() < 2 {
+        return;
+    }
+    let size = roots.len().div_ceil(threads);
+    std::thread::scope(|scope| {
+        for chunk in roots.chunks(size) {
+            let handle = database.clone();
+            let items: Vec<(Item<'db>, Vec<types::Type<'db>>)> = chunk
+                .iter()
+                .map(|instance| (instance.item, instance.arguments.clone()))
+                .collect();
+            scope.spawn(move || {
+                let db: &dyn TypeDb = &handle;
+                for (item, arguments) in items {
+                    let wanted = queries::Wanted::new(db, item, arguments);
+                    queries::written(db, settings, wanted);
+                }
+            });
+        }
+    });
 }
