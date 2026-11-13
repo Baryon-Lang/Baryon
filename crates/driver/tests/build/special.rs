@@ -1,5 +1,5 @@
-//! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1)
-//! and of the error functions (3.18.3) gives, at a few hundred arguments each, the value mpmath
+//! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1),
+//! the error functions (3.18.3) and the Bessel functions of whole order (3.18.4) gives, at a few hundred arguments each, the value mpmath
 //! computes to 50 digits, within a tolerance in units in the last place (ULP) stated for each
 //! function below, and `SciPy`'s value at its poles, zeros and infinities.
 //!
@@ -90,15 +90,20 @@ def main() -> Raises[None, OSError | ValueError]:
                 print(dawsn(x))
 ";
 
-/// How far a value may be from the reference, in ULP of `scale(name, want)`.
+/// How far a value may be from the reference, in ULP of `scale(name, want, x)`.
 ///
-/// Most functions are relative: within 8 ULP of the reference. `beta` is held to 8 ULP plus 2
+/// Most functions are relative: within 8 ULP of the reference. The Bessel functions are held
+/// to 16, since each is a sum or a recurrence of many terms, and `yn` to 32: its upward
+/// recurrence adds about half a ULP at each order, and the cases reach order 30. `beta` is held to 8 ULP plus 2
 /// for each unit of the logarithm of the value: above 171 it is `exp(betaln)`, and the
 /// exponential turns each ULP of the logarithm's absolute error into its size in relative
 /// error.
 fn tolerance(name: &str, want: f64) -> f64 {
     match name {
         "beta" => 8.0 + 2.0 * want.abs().ln().abs(),
+        "yn" => 32.0,
+        "j0" | "j1" | "jn" | "y0" | "y1" | "i0" | "i1" | "i0e" | "i1e" | "k0" | "k1" | "k0e"
+        | "k1e" | "kn" => 16.0,
         _ => 8.0,
     }
 }
@@ -106,10 +111,15 @@ fn tolerance(name: &str, want: f64) -> f64 {
 /// The magnitude a function's error is measured against. `gammaln`, `psi` and `betaln` have
 /// zeros where no formula keeps relative precision (`gammaln` between −3 and −2, `psi` between
 /// each pair of negative whole numbers), so they are measured against the larger of the
-/// reference and 1, the precision of the terms they are formed from.
-fn scale(name: &str, want: f64) -> f64 {
+/// reference and 1, the precision of the terms they are formed from. The Bessel functions of
+/// the first and second kind oscillate, so near each zero they are measured against the larger
+/// of the reference and their envelope √(2/(π|x|)), for `|x|` above 1.
+fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
         "gammaln" | "psi" | "betaln" => want.abs().max(1.0),
+        "j0" | "j1" | "jn" | "y0" | "y1" | "yn" if x.abs() > 1.0 => want
+            .abs()
+            .max((2.0 / (std::f64::consts::PI * x.abs())).sqrt()),
         _ => want.abs(),
     }
 }
@@ -148,7 +158,9 @@ fn check(name: &str, program: &str, fixture: &str) -> io::Result<()> {
     assert_eq!(printed.lines().count(), cases.lines().count());
     for (case, line) in cases.lines().zip(printed.lines()) {
         let function = case.split(' ').next().unwrap_or_default();
-        let want = number(case.rsplit(' ').next().unwrap_or_default())?;
+        let fields: Vec<&str> = case.split(' ').collect();
+        let want = number(fields[fields.len() - 1])?;
+        let x = number(fields[fields.len() - 2])?;
         let got = number(line)?;
         if want.is_nan() {
             assert!(got.is_nan(), "{case}: got {got}");
@@ -157,7 +169,7 @@ fn check(name: &str, program: &str, fixture: &str) -> io::Result<()> {
         } else if want.abs().to_bits() == 0 {
             assert_eq!(got.abs().to_bits(), 0, "{case}: got {got}");
         } else {
-            let error = (got - want).abs() / ulp(scale(function, want));
+            let error = (got - want).abs() / ulp(scale(function, want, x));
             let allowed = tolerance(function, want);
             assert!(
                 error <= allowed,
@@ -178,6 +190,52 @@ fn number(text: &str) -> io::Result<f64> {
         .map_err(|error| io::Error::other(format!("`{text}`: {error}")))
 }
 
+/// The Bessel functions' program, which reads the cases as [`GAMMA_FAMILY`] does.
+const BESSEL_FUNCTIONS: &str = "\
+from special import i0, i0e, i1, i1e, j0, j1, jn, k0, k0e, k1, k1e, kn, y0, y1, yn
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            if name == \"jn\":
+                print(jn(int(fields[1]), float(fields[2])))
+                continue
+            if name == \"yn\":
+                print(yn(int(fields[1]), float(fields[2])))
+                continue
+            if name == \"kn\":
+                print(kn(int(fields[1]), float(fields[2])))
+                continue
+            x = float(fields[1])
+            if name == \"j0\":
+                print(j0(x))
+            elif name == \"j1\":
+                print(j1(x))
+            elif name == \"y0\":
+                print(y0(x))
+            elif name == \"y1\":
+                print(y1(x))
+            elif name == \"i0\":
+                print(i0(x))
+            elif name == \"i1\":
+                print(i1(x))
+            elif name == \"i0e\":
+                print(i0e(x))
+            elif name == \"i1e\":
+                print(i1e(x))
+            elif name == \"k0\":
+                print(k0(x))
+            elif name == \"k1\":
+                print(k1(x))
+            elif name == \"k0e\":
+                print(k0e(x))
+            elif name == \"k1e\":
+                print(k1e(x))
+";
+
 /// `gamma`, `rgamma`, `gammaln`, `loggamma`, `gammasgn`, `psi`, `digamma`, `polygamma`, `beta`,
 /// `betaln` and `poch` at the 2,074 cases of `gamma_family.txt`.
 #[test]
@@ -191,4 +249,11 @@ fn gamma_family_matches_the_recorded_values() {
 #[test]
 fn error_functions_match_the_recorded_values() {
     check("special-error", ERROR_FUNCTIONS, "error_functions.txt").unwrap();
+}
+
+/// The fifteen Bessel functions of whole order at the 2,001 cases of `bessel_functions.txt`,
+/// from tiny arguments to 1e8, orders up to 30 and below 0, and the limits at 0 and infinity.
+#[test]
+fn bessel_functions_match_the_recorded_values() {
+    check("special-bessel", BESSEL_FUNCTIONS, "bessel_functions.txt").unwrap();
 }
