@@ -149,7 +149,7 @@ error: `Array[f64, 2]` has no method `median` taking these arguments
   |
 3 |     h = grid.median()
   |         ^^^^^^^^^^^^^ not defined
-  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill` and `tofile`
+  = note: version 0 defines `copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, for one dimension, `argsort`
 
 error: a shape's lengths are integers, found `f64`
  --> main.byn:4:22
