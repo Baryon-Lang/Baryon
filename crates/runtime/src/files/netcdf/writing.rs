@@ -51,6 +51,7 @@ pub(crate) fn define(path: &str, line: &str) -> Result<(), OsFailure> {
             dimensions: Vec::new(),
             attributes: Vec::new(),
             variables: Vec::new(),
+            netcdf4: None,
         };
         return save(
             path,
