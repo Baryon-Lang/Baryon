@@ -185,6 +185,41 @@ fn standard_library_modules_are_accepted_by_name() {
     );
 }
 
+/// Python 3.14's `compression.zstd` is a module inside a package; `from compression.zstd import
+/// x` and `from compression import zstd` both find it (decision 0049).
+#[test]
+fn a_standard_module_inside_a_package_is_found() {
+    let program = "from compression import zstd\nfrom compression.zstd import decompress\n\n\ndef main() -> Raises[None, OSError]:\n    print(len(zstd.decompress(Array.zeros(0, u8))), len(decompress(Array.zeros(0, u8))))\n";
+    assert_eq!(check_one(program), "");
+}
+
+/// The library files `pyplot` draws through, such as `colors` and `artist`, are not standard
+/// modules (decision 0046): a program's own `colors.byn` is the one it imports, and `pyplot`
+/// still finds its own.
+#[test]
+fn a_program_module_named_as_a_plotting_helper_is_its_own() {
+    let colors = "def red() -> str:\n    return \"mine\"\n";
+    let program = "import pyplot as plt\nfrom colors import red\n\n\ndef main():\n    ax = plt.axes()\n    print(red())\n";
+    assert_eq!(check(&[("colors.byn", colors), ("main.byn", program)]), "");
+    let helper = "from artist import Artist\n";
+    assert_eq!(
+        check_one(helper),
+        "error: no module named `artist`\n --> main.byn:1:6\n  |\n1 | from artist import Artist\n  |      ^^^^^^ no such module"
+    );
+}
+
+/// A program's module named as a standard module can never be imported, so importing that name
+/// says so, instead of failing later on a member the standard module lacks.
+#[test]
+fn a_program_module_named_as_a_standard_module_is_reported() {
+    let stats = "def spread() -> f64:\n    return 1.0\n";
+    let program = "from stats import spread\n";
+    assert_eq!(
+        check(&[("stats.byn", stats), ("main.byn", program)]),
+        "error: `stats.byn` has the name of the standard library module `stats`\n --> main.byn:1:6\n  |\n1 | from stats import spread\n  |      ^^^^^ imports the standard module\n  = note: an import of `stats` always finds the standard module; rename the file"
+    );
+}
+
 #[test]
 fn a_relative_import_is_reported() {
     let program = "from . import helpers\n";

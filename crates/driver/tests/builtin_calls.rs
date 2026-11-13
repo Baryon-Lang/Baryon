@@ -128,6 +128,34 @@ error: `fma` cannot mix `f32` and `f64`
     );
 }
 
+/// Inside a function generic over `T: Float`, a `math` function takes `T` and returns `T`, so one
+/// function serves `f32` and `f64`; an argument of another type does not mix with `T`, since
+/// the instance may be `f32`.
+#[test]
+fn math_functions_take_a_float_type_parameter() {
+    let program = r"
+from math import hypot, isfinite, sqrt
+
+
+def norm[T: Float](x: T, y: T) -> T:
+    if not isfinite(x):
+        return x
+    return sqrt(x * x + y * y) + hypot(x, y)
+
+
+def mix[T: Float](x: T, y: f64) -> T:
+    return hypot(x, y)
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `hypot` cannot mix `T` and `f64`
+  --> main.byn:11:21
+   |
+11 |     return hypot(x, y)
+   |                     ^ not a `T`"
+    );
+}
+
 /// `Philox` takes a seed and an optional stream, both `int`; it has `uniform()` and nothing
 /// else; and it moves, so a generator given to another name cannot draw again. `math.pi` and
 /// the other constants are `f64`s.
@@ -320,6 +348,64 @@ error: `sum` adds a list or an array of numbers, found `i64`
 {line}
   |                                                                                         ^ not a sequence"
         )
+    );
+}
+
+/// `math.fsum` takes one list or rank-1 array of `f64`s by position (roadmap 1.13.16): integer
+/// elements, a table, a value that is not a sequence, a second argument and a keyword are each
+/// an error that says what to pass instead.
+#[test]
+fn fsum_checks_its_values() {
+    let program = "
+import math
+from math import fsum
+
+
+def f(counts: list[int], grid: Array[f64, 2], text: str, xs: list[f64]) -> f64:
+    a = fsum(counts)
+    b = math.fsum(grid)
+    c = fsum(text)
+    d = fsum(xs, 0.0)
+    e = fsum(values=xs)
+    return fsum(xs) + fsum(Array([1.0, 2.0]))
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `fsum` adds a list or rank-1 array of `f64`s, found `list[i64]`
+ --> main.byn:6:14
+  |
+6 |     a = fsum(counts)
+  |              ^^^^^^ cannot be added exactly
+  = note: convert the elements to `f64` first, such as `[f64(n) for n in counts]`
+
+error: `fsum` adds a list or rank-1 array of `f64`s, found `Array[f64, 2]`
+ --> main.byn:7:19
+  |
+7 |     b = math.fsum(grid)
+  |                   ^^^^ cannot be added exactly
+  = note: add one row at a time, such as `fsum(grid[i, :])`
+
+error: `fsum` adds a list or rank-1 array of `f64`s, found `str`
+ --> main.byn:8:14
+  |
+8 |     c = fsum(text)
+  |              ^^^^ cannot be added exactly
+  = note: pass a `list[f64]` or an `Array[f64, 1]`
+
+error: `fsum` takes one list or array, found 2 arguments
+ --> main.byn:9:9
+  |
+9 |     d = fsum(xs, 0.0)
+  |         ^^^^^^^^^^^^^ wrong number of arguments
+  = note: pass the values to add, such as `fsum(energies)`
+
+error: `fsum` takes its values by position, as Python's does
+  --> main.byn:10:9
+   |
+10 |     e = fsum(values=xs)
+   |         ^^^^^^^^^^^^^^^ a keyword argument
+   = note: pass the values to add by position, such as `fsum(energies)`"
     );
 }
 

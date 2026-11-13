@@ -16,8 +16,8 @@ use syntax::NodeId;
 /// standard traits (language reference, "Types", "Traits"), and the names decision 0031 adds:
 /// `Protocol`, the base of a user trait, `Embed`, which embeds a struct in another, and `Dyn`,
 /// reserved for trait objects (roadmap 3.5). `open`, `File`, the type it returns, and `input` are
-/// decision 0036's.
-pub const BUILTINS: [&str; 59] = [
+/// decision 0036's, and `DataFrame` and `concat`, which stacks frames, are decision 0045's.
+pub const BUILTINS: [&str; 61] = [
     "f64",
     "f32",
     "i64",
@@ -77,6 +77,8 @@ pub const BUILTINS: [&str; 59] = [
     "Protocol",
     "Embed",
     "Dyn",
+    "DataFrame",
+    "concat",
 ];
 
 /// The standard library's modules. Until the standard library is written (roadmap 1.13),
@@ -88,13 +90,17 @@ pub const BUILTINS: [&str; 59] = [
 /// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042). `fits` is
 /// roadmap 3.14.3's FITS files, named as `astropy.io.fits` is (decision 0044), `netCDF4`
 /// roadmap 3.14.5's `NetCDF` files, named as Unidata's `netCDF4` package is (decision 0047), and
-/// `pyplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046), as are
-/// `colors`, the color names, `axis`, which draws an axis, `backend_svg`, which writes SVG
-/// files, `png`, which writes PNG images, `cm`, the colormaps, `artist`, what an axes holds, and
-/// `legend`, `image` and `colorbar`, which draw a legend, an image and a colorbar, and
-/// `transforms`, the ranges an axes shows. `zlib` is roadmap 3.27's deflate streams, named as
-/// Python's `zlib` is (decision 0049).
-pub const STANDARD_MODULES: [&str; 24] = [
+/// `pyplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046). The
+/// library files `pyplot` draws through, such as `colors`, `axis` and `backend_svg`, are not
+/// standard modules: only another library file can import them, so a program's own
+/// `colors.byn` is never hidden by them. `zlib` is roadmap 3.27's deflate streams, named as
+/// Python's `zlib` is (decision 0049), `gzip` its gzip files, named as Python's `gzip` is, and
+/// `compression.zstd` roadmap 3.27.7's Zstandard frames, named as Python 3.14's
+/// `compression.zstd` is. Its file is `<std>/compression.zstd.byn`, so
+/// [`library_module`](crate::library_module) gives its dotted name. `bz2` is roadmap 3.27.9's
+/// bzip2 streams, named as Python's `bz2` is, and `lzma` roadmap 3.27.10's xz files, named as
+/// Python's `lzma` is.
+pub const STANDARD_MODULES: [&str; 18] = [
     "math",
     "random",
     "sys",
@@ -108,17 +114,11 @@ pub const STANDARD_MODULES: [&str; 24] = [
     "netCDF4",
     "pyplot",
     "ticker",
-    "colors",
-    "axis",
-    "backend_svg",
-    "png",
-    "cm",
-    "artist",
-    "legend",
-    "image",
-    "colorbar",
-    "transforms",
     "zlib",
+    "gzip",
+    "compression.zstd",
+    "bz2",
+    "lzma",
 ];
 
 /// What a name refers to.

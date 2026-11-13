@@ -110,16 +110,32 @@ impl<'db> Function<'_, '_, 'db> {
         Ok(self.emit(&format!("load i64, ptr {field}")))
     }
 
+    /// The stride of `dimension` of the `Array` at `place`, in elements, an `i64`: the third
+    /// part of its header.
+    pub(crate) fn stride(&mut self, place: &Place, dimension: u32) -> Result<String, Unsupported> {
+        let (address, ty) = self.place(place)?;
+        if !matches!(ty.kind(self.types.db), TypeKind::Array { .. }) {
+            return Err(self.types.unsupported(ty));
+        }
+        let header = self.types.value(ty)?;
+        let field = self.emit(&format!(
+            "getelementptr inbounds {header}, ptr {address}, i32 0, i32 2, i32 {dimension}"
+        ));
+        Ok(self.emit(&format!("load i64, ptr {field}")))
+    }
+
     /// The address of the element at `indices` of the array of type `ty` at `address`, and the
     /// element type. A `Fixed` array holds its elements in place, so that is one
     /// `getelementptr` through its nested LLVM arrays; an `Array` or a list goes through its
     /// header (the `list` module). Each index local holds an integer of any width; it is
-    /// widened to `i64`.
+    /// widened to `i64`. When `unit`, the `Array`'s last stride is known to be 1, so its last
+    /// index is used as it is, with no stride loaded or multiplied (roadmap 3.3.1).
     pub(crate) fn element(
         &mut self,
         address: &str,
         ty: Type<'db>,
         indices: &[Local],
+        unit: bool,
     ) -> Result<(String, Type<'db>), Unsupported> {
         if let TypeKind::Fixed { element, shape } = ty.kind(self.types.db) {
             if indices.len() != shape.rank() {
@@ -155,6 +171,14 @@ impl<'db> Function<'_, '_, 'db> {
         let mut offset = "0".to_owned();
         for (dimension, &index) in indices.iter().enumerate() {
             let index = self.index(index)?;
+            if unit && dimension + 1 == indices.len() {
+                offset = if offset == "0" {
+                    index
+                } else {
+                    self.emit(&format!("add i64 {offset}, {index}"))
+                };
+                continue;
+            }
             let field = self.emit(&format!(
                 "getelementptr inbounds {header}, ptr {address}, i32 0, i32 2, i32 {dimension}"
             ));

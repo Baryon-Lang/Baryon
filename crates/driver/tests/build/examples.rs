@@ -108,9 +108,10 @@ def main():
     .unwrap();
 }
 
-/// Lennard-Jones molecular dynamics: `Fixed` vector arithmetic, `dot`, `round`, a `prange`
-/// force loop and `math.sqrt`. An independent `NumPy` run of the same steps prints the same
-/// energies, and the total stays constant to four digits, the standard check of the integrator.
+/// Lennard-Jones molecular dynamics: `Fixed` vector arithmetic, `dot`, `round`, a half-list
+/// `prange` force loop that adds each pair into both atoms through `accumulate=`, and
+/// `math.sqrt`. An independent `NumPy` run of the same steps prints the same energies, and the
+/// total stays constant to four digits, the standard check of the integrator.
 #[test]
 fn lennard_jones_builds_and_runs() {
     prints(

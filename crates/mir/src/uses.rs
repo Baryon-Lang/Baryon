@@ -224,6 +224,7 @@ impl Uses {
                 }
             }
             Rvalue::Length(place, _)
+            | Rvalue::Stride(place, _)
             | Rvalue::IsPresent(place)
             | Rvalue::ErrorIndex(place)
             | Rvalue::MemberIndex(place) => {

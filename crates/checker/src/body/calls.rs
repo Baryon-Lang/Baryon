@@ -44,12 +44,17 @@ impl<'db> Body<'db> {
                 self.call_item(node, &callee, file, name, &arguments)
             }
             Some(Definition::Builtin("Array")) => self.array_from_list(node, &arguments, expected),
+            Some(Definition::Builtin("DataFrame")) => self.frame_new(node, &arguments, expected),
             Some(Definition::Builtin("open")) => {
                 let ty = self.open(node, &arguments);
                 self.record_open(node, &arguments, ty);
                 ty
             }
             Some(Definition::Builtin(builtin)) => self.builtin(node, builtin, &arguments),
+            Some(Definition::Standard {
+                module: "math",
+                member: Some(member),
+            }) if member == "fsum" => self.fsum(node, &arguments),
             Some(Definition::Standard {
                 module: "math",
                 member: Some(member),
@@ -105,7 +110,9 @@ impl<'db> Body<'db> {
                 ty
             }
             None if self.tree.kind(function) == SyntaxKind::Attribute => {
-                self.method_call(node, function, &arguments, expected)
+                let grouped = self.grouped_frame(function);
+                let grouped = grouped.and_then(|frame| self.frame_agg(node, frame, &arguments));
+                grouped.unwrap_or_else(|| self.method_call(node, function, &arguments, expected))
             }
             Some(_) | None => self.untyped(&arguments),
         };

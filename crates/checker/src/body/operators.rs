@@ -20,6 +20,9 @@ impl<'db> Body<'db> {
             return self.lowerer.unknown();
         }
         let operator = self.tree.node(node).operator();
+        if self.is_text_array(left_type) || self.is_text_array(right_type) {
+            return self.text_array_unbuilt(node, &format!("`{}`", operator.symbol()));
+        }
         if operator == Operator::Divide
             && let Some(path) = self.path_join(node, left_type, right_type)
         {
@@ -145,6 +148,9 @@ impl<'db> Body<'db> {
             && self.maybe_none(value, operand)
         {
             return self.lowerer.unknown();
+        }
+        if self.is_text_array(operand) {
+            return self.text_array_unbuilt(node, &format!("`{}`", operator.symbol()));
         }
         if matches!(operator, Operator::Negate | Operator::Plus)
             && self.number_context(operand) == Some(operand)
@@ -295,6 +301,9 @@ impl<'db> Body<'db> {
                 }
                 None => self.operands(left_node, right_node),
             };
+            if self.is_text_array(left_type) || self.is_text_array(right_type) {
+                return self.text_array_unbuilt(comparator, &format!("`{}`", operator.symbol()));
+            }
             let ordering = matches!(
                 operator,
                 Operator::Less | Operator::LessEqual | Operator::Greater | Operator::GreaterEqual

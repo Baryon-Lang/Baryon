@@ -1,5 +1,8 @@
-"""The `artist` module: the things an axes holds and where they land on the page, as
+"""The `artist` library file: the things an axes holds and where they land on the page, as
 matplotlib's `Artist` classes and its data-to-display transform (decision 0046).
+
+It is internal to the standard library: `pyplot` and the files under it import it, and a
+program cannot, so a program's own `artist.byn` is never hidden by it.
 
 `pyplot`'s `Axes` keeps one `Artist` for each line, set of markers or set of bars, and one
 `Image` for each image; when a figure is drawn, a `View` maps data to points on the page, and
@@ -18,16 +21,7 @@ class Kind(Enum):
 class Artist(Struct):
     """One thing drawn on an axes, in data coordinates: a line, a set of markers or a set of
     bars, as matplotlib's `Line2D`, `PathCollection` and `BarContainer` are. `pyplot` makes
-    them; a program reads them only to draw something of its own.
-
-    ```python
-    from artist import Artist, Kind
-
-    def main():
-        x = Array([0.0, 1.0])
-        line = Artist(Kind.LINE, x, x.copy(), Array.zeros(0), "#1f77b4", 1.5, [], "", 6.0, "rising")
-        print(line.label)  # rising
-    ```
+    them.
     """
 
     kind: Kind  # what is drawn
@@ -48,14 +42,6 @@ class Image(Struct):
     left, right, bottom and top in data coordinates, column 0 at the left and row 0 at the top
     when `upper` is set, as matplotlib's `origin="upper"` puts it, or at the bottom. imshow's
     default extent centres cell `(i, j)` on x = `j` and y = `i`.
-
-    ```python
-    from artist import Image
-
-    def main():
-        image = Image(Array.zeros((2, 3)), "viridis", 0.0, 1.0, (-0.5, 2.5, 1.5, -0.5), True)
-        print(image.data.shape)  # (2, 3)
-    ```
     """
 
     data: Array[f64, 2]  # the values, rows by columns
@@ -71,14 +57,6 @@ class View(Struct):
     `top` to `bottom`, in points from the page's top left corner, showing x from `x0` to `x1`
     and y from `y0` to `y1`, as matplotlib's `transData` maps them. `x0` larger than `x1`, or
     `y0` larger than `y1`, turns that axis around.
-
-    ```python
-    from artist import View
-
-    def main():
-        view = View(50.0, 10.0, 150.0, 110.0, 0.0, 10.0, 0.0, 1.0)
-        print(view.to_x(Array([5.0])), view.to_y(Array([1.0])))  # [100.] [10.]
-    ```
     """
 
     left: f64  # the box's left edge, in points

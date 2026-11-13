@@ -194,7 +194,12 @@ The period, in seconds, of a pendulum `length` metres long released at `angle` r
 ```
 
 Hover over `swing` and the box shows the type the compiler worked out for it, `swing: f64`,
-although the program never wrote one. **Go to Definition** (`F12`, or `Cmd`-click on macOS and
+although the program never wrote one. The editor also shows it, greyed, right after the name
+where `swing` is first assigned: an inlay hint, which VS Code shows for every variable whose
+type the compiler inferred (turn them off with the `editor.inlayHints.enabled` setting). To
+rename a variable or a function, put the cursor on it and press `F2`: every place the program
+names it changes, in every file, and nothing else does; a new name already in use there is
+refused with a message rather than merged with the other. **Go to Definition** (`F12`, or `Cmd`-click on macOS and
 `Ctrl`-click elsewhere) on `simulated` opens `period.byn` at the `def` line; it works the same on
 variables, constants, fields, methods and enum members, in whichever file of the package they
 are defined. Now type `period.` on a new line inside the loop: the editor offers what `period`
@@ -282,6 +287,56 @@ To run and test without typing commands, add a file `.vscode/tasks.json` to the 
 **Terminal > Run Build Task** (`Cmd+Shift+B` or `Ctrl+Shift+B`) now runs the program, and
 **Terminal > Run Task... > baryon test** runs the tests. Both use the program you set in
 **Baryon: Path**.
+
+## 10. Debug it
+
+A debug build keeps a line table, which tells a debugger which `.byn` line each machine
+instruction came from. So `lldb` or `gdb` can stop at a line, step line by line, and show the
+chain of calls that led there, with your files open in the editor.
+
+Install a debugger extension: **CodeLLDB** (`vadimcn.vscode-lldb`) on Linux or macOS, which
+brings its own `lldb`. Add a task that builds the program, beside the two of step 9 in
+`.vscode/tasks.json`:
+
+```json
+    {
+      "label": "baryon build",
+      "type": "process",
+      "command": "${config:baryon.path}",
+      "args": ["build", "${workspaceFolder}", "${workspaceFolder}/program"],
+      "problemMatcher": []
+    }
+```
+
+Then add `.vscode/launch.json`, which builds and starts the program under the debugger:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Baryon program",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/program",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "baryon build"
+    }
+  ]
+}
+```
+
+VS Code lets you set breakpoints only in languages a debugger has declared, and none declares
+Baryon yet, so turn on **Debug: Allow Breakpoints Everywhere** (`"debug.allowBreakpointsEverywhere":
+true` in your settings). Now click left of a line number in `period.byn` to set a breakpoint and
+press `F5`: the program stops there, **Step Over** (`F10`) and **Step Into** (`F11`) move a line
+or a call at a time, and the **Call Stack** view shows each `.byn` function and line on the way.
+
+If you prefer `gdb`, use Microsoft's **C/C++** extension instead, with `"type": "cppdbg"`,
+`"MIMode": "gdb"` and the same `program` and `preLaunchTask`.
+
+What it does not show yet: the **Variables** view is empty, because the compiler writes where each
+line is but not where each variable lives. Print a value with `print` while that is missing.
 
 ## Troubleshooting
 

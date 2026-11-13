@@ -25,12 +25,13 @@ impl<'db> Builder<'db> {
         }
         // On a type parameter, `+`, `-` and `*` become the instance's number arithmetic. The
         // others depend on whether the number is an integer: `//` and `%` check the divisor,
-        // and `/` converts integers to `f64`.
+        // and `/` converts integers to `f64`. Under `Float` the instance is a float, so `/` is
+        // its float division too.
         let generic = matches!(ty.kind(self.db), TypeKind::Parameter { .. })
-            && matches!(
+            && (matches!(
                 syntax,
                 Operator::Add | Operator::Subtract | Operator::Multiply
-            );
+            ) || (syntax == Operator::Divide && self.is_float_parameter(ty)));
         if !generic && matches!(ty.kind(self.db), TypeKind::Parameter { .. }) {
             let what = format!("`{}` on a type parameter", syntax.symbol());
             return self.unsupported(node, &what);

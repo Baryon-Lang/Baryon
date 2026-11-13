@@ -3,11 +3,13 @@
 The `pyplot` module draws plots with matplotlib's names and matplotlib's default look, written in
 Baryon and saved as SVG files that any browser, VS Code or a LaTeX toolchain can show
 ([decision 0046](../decisions/0046-plotting.md)). The `ticker` module beside it places and
-labels the ticks, as `matplotlib.ticker` does. More modules hold the parts below them, named
-as matplotlib names its own: `colors` reads color names, `cm` holds the colormaps, `artist`
-holds what an axes draws, `transforms` finds the ranges it shows, `axis` draws an axis's ticks
-and labels, `legend`, `image` and `colorbar` draw a legend, an image and a colorbar,
-`backend_svg` writes the SVG file, and `png` the PNG images inside it.
+labels the ticks, as `matplotlib.ticker` does. These two are the modules a program imports.
+`pyplot` draws through smaller files of the standard library, named as matplotlib names its own:
+`colors` reads color names, `cm` holds the colormaps, `artist` holds what an axes draws,
+`transforms` finds the ranges it shows, `axis` draws an axis's ticks and labels, `legend`,
+`image` and `colorbar` draw a legend, an image and a colorbar, `backend_svg` writes the SVG file,
+and `png` the PNG images inside it. They are internal, so a program's own `colors.byn` or
+`image.byn` is never hidden by them.
 
 This chapter covers what builds today, roadmap 3.15.1 to 3.15.3: line plots, scatter plots,
 bars, histograms, markers, legends, grid lines, images and colorbars, titles, axis labels, axis
@@ -185,7 +187,7 @@ plot's first line and its first bars are both blue. A borrowed `str | None` para
 `"dashdot"`. Dashes are matplotlib's, measured in line widths, so a thicker line has longer
 dashes.
 
-`colors.to_hex(c)` gives the `"#rrggbb"` form of any of these names, as matplotlib's
+`pyplot` turns each name into the `"#rrggbb"` form an SVG file holds, as matplotlib's
 `colors.to_hex` does.
 
 ### Ranges and ticks
@@ -229,10 +231,10 @@ tests compare both with what matplotlib 3.11 gives for 310 ranges, from `0 10` t
 millionth wide near `-77380925.9`. Struct fields have no defaults, so both items are built with
 every field, where matplotlib's have keyword arguments with defaults.
 
-## The modules under `pyplot`
+## The files under `pyplot`
 
-`pyplot` draws through smaller modules, which can be used on their own to draw something it
-does not offer yet.
+`pyplot` draws through these internal files of the standard library. A program cannot import
+them; this table is for those working on the library, and on the PNG and PDF backends to come.
 
 | Item | Does | matplotlib |
 | --- | --- | --- |

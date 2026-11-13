@@ -30,6 +30,9 @@ pub(crate) enum Elements {
     Tuple(usize),
     /// One character at a time from this byte cursor, in a `str`.
     Text(Local),
+    /// At an index, in a text array, whose element is a `str` borrowed from its bytes
+    /// ([`Builder::text_array_element`]).
+    TextArray,
 }
 
 impl<'db> Builder<'db> {
@@ -63,6 +66,7 @@ impl<'db> Builder<'db> {
             return self.file_loop(statement, target, iterator, pass);
         }
         let element = match ty.kind(self.db) {
+            _ if self.is_text_array(iterator) => Type::new(self.db, TypeKind::Str),
             TypeKind::Array { element, rank: 1 } | TypeKind::List(element) => *element,
             TypeKind::Fixed { element, shape } if shape.rank() == 1 => *element,
             TypeKind::Tuple(items) if !items.is_empty() => items[0],
@@ -91,6 +95,10 @@ impl<'db> Builder<'db> {
         node: NodeId,
     ) -> (Operand<'db>, Elements) {
         let int = self.int_type();
+        if self.is_text_array(node) {
+            let length = self.text_array_length(collection, node);
+            return (length, Elements::TextArray);
+        }
         match ty.kind(self.db) {
             TypeKind::Tuple(items) => {
                 let count = i128::try_from(items.len()).unwrap_or(i128::MAX);
@@ -185,6 +193,10 @@ impl<'db> Builder<'db> {
             }
             Elements::Indexed => {
                 let place = collection.clone().project(Projection::Index(vec![counter]));
+                self.bind_element(target, place, element);
+            }
+            Elements::TextArray => {
+                let place = self.text_array_element(collection, counter, target);
                 self.bind_element(target, place, element);
             }
             &Elements::Tuple(count) if borrowed => {

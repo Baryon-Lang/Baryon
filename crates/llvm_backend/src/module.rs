@@ -3,7 +3,7 @@
 //! writes them out as one textual LLVM IR module (decision 0020). Each function body is written
 //! by the `function` module and the modules beside it; this one only gathers their text.
 
-use crate::{ClassNames, Test, Unsupported, debug, entry, function, panic, parts, ty};
+use crate::{ClassNames, Test, Unsupported, constants, debug, entry, function, parts, ty};
 use mir::Body;
 use std::collections::{BTreeMap, BTreeSet};
 use types::{Declared, Item, Nominal, Type};
@@ -19,7 +19,7 @@ pub struct Module<'a, 'db> {
     /// bodies only it calls, or the C `main`.
     definitions: Vec<Definition>,
     /// The messages and source locations failed checks point to.
-    constants: panic::Constants<'a>,
+    constants: constants::Constants<'a>,
     /// The declaration of each symbol called, written from the call, by symbol.
     declarations: BTreeMap<String, String>,
 }
@@ -45,7 +45,7 @@ impl<'a, 'db> Module<'a, 'db> {
             },
             symbol,
             definitions: Vec::new(),
-            constants: panic::Constants::new(sources),
+            constants: constants::Constants::new(sources),
             declarations: BTreeMap::new(),
         }
     }

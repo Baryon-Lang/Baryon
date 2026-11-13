@@ -35,6 +35,10 @@ impl<'db> Body<'db> {
             }
             self.change(target);
             let held = self.expression(target, None);
+            if self.text_array_element_assigned(target) || self.frame_attribute_assigned(target) {
+                self.expression(value, None);
+                return;
+            }
             if self.path_part_changed(target) {
                 self.expression(value, None);
                 return;

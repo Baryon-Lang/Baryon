@@ -19,6 +19,7 @@
 
 use crate::builder::Builder;
 use crate::collections::Elements;
+use crate::frame_rows::Rows;
 use crate::loops::Pass;
 use database::Definition;
 use mir::{Argument, BinaryOperator, Builtin, Constant, Local, Operand, Place, Projection, Rvalue};
@@ -60,6 +61,8 @@ enum Walk<'db> {
     },
     /// `enumerate` or `zip`: one tuple whose items are the parts' values.
     Group(Vec<Walk<'db>>),
+    /// The rows of `df.itertuples()`, walked from the last to the first when the flag is set.
+    Rows(Rows<'db>, bool),
 }
 
 impl<'db> Builder<'db> {
@@ -69,7 +72,7 @@ impl<'db> Builder<'db> {
         matches!(
             self.builtin_called(iterator),
             Some("enumerate" | "zip" | "reversed")
-        )
+        ) || self.itertuples_frame(iterator).is_some()
     }
 
     /// `for target in iterator: body` where `iterator` calls `enumerate`, `zip` or `reversed`
@@ -147,6 +150,9 @@ impl<'db> Builder<'db> {
     /// The walk of the sequence `node`, read backward when `reversed`, after computing and
     /// borrowing what it reads. `None` after an error.
     fn walk(&mut self, node: NodeId, reversed: bool) -> Option<Walk<'db>> {
+        if let Some(rows) = self.rows(node) {
+            return Some(Walk::Rows(rows, reversed));
+        }
         let builtin = self.builtin_called(node);
         let (positional, keywords) = self.call_arguments(node);
         match builtin {
@@ -294,6 +300,7 @@ impl<'db> Builder<'db> {
     fn elements_walk(&mut self, node: NodeId, reversed: bool) -> Option<Walk<'db>> {
         let ty = self.ty(node);
         let element = match ty.kind(self.db) {
+            _ if self.is_text_array(node) => Type::new(self.db, TypeKind::Str),
             TypeKind::Array { element, rank: 1 } | TypeKind::List(element) => *element,
             TypeKind::Fixed { element, shape } if shape.rank() == 1 => *element,
             TypeKind::Tuple(items) if !items.is_empty() => items[0],
@@ -326,6 +333,7 @@ impl<'db> Builder<'db> {
             Walk::Elements { element, .. } => *element,
             Walk::Range { ty, .. } => *ty,
             Walk::Count { .. } => self.int_type(),
+            Walk::Rows(rows, _) => rows.row,
             Walk::Group(parts) => {
                 let items = parts.iter().map(|part| self.walk_type(part)).collect();
                 Type::new(self.db, TypeKind::Tuple(items))
@@ -338,6 +346,7 @@ impl<'db> Builder<'db> {
         match walk {
             Walk::Elements { length, .. } | Walk::Range { length, .. } => lengths.push(*length),
             Walk::Count { .. } => {}
+            Walk::Rows(rows, _) => lengths.push(rows.length),
             Walk::Group(parts) => {
                 for part in parts {
                     Self::walk_lengths(part, lengths);
@@ -411,6 +420,7 @@ impl<'db> Builder<'db> {
                 let at = self.position(counter, (*length, *reversed), target);
                 match elements {
                     Elements::Indexed => collection.clone().project(Projection::Index(vec![at])),
+                    Elements::TextArray => self.text_array_element(collection, at, target),
                     Elements::Tuple(count) => {
                         let item = self.temporary(*element, target);
                         self.tuple_item(target, (collection, *count), at, &mut |builder, place| {
@@ -471,6 +481,10 @@ impl<'db> Builder<'db> {
             Walk::Count { start } => {
                 let int = self.int_type();
                 Place::from(self.binary_locals(BinaryOperator::Add, (*start, counter), int, target))
+            }
+            Walk::Rows(rows, reversed) => {
+                let at = self.position(counter, (rows.length, *reversed), target);
+                self.row_at(rows, at, target)
             }
             Walk::Group(parts) => {
                 let operands = parts

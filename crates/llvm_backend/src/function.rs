@@ -2,9 +2,9 @@
 //! statements and terminator, and a block of its own for each check that can fail.
 
 use crate::Unsupported;
+use crate::constants::Constants;
 use crate::debug::UNWIND_TABLE;
 use crate::literal::{global, wrap};
-use crate::panic::Constants;
 use crate::ty::{Repr, Types};
 use mir::{BlockId, Body, LocalKind, Statement, StatementKind, Terminator, TerminatorKind};
 use source::Span;
@@ -76,6 +76,8 @@ pub(crate) struct Function<'f, 'a, 'db> {
     pub(crate) slots: String,
     /// Which locals are registers instead of stack slots, and their values (roadmap 2.7).
     ssa: ssa::Ssa,
+    /// The block being written, whose arrays of unit stride `Body::unit_strides` lists.
+    block: BlockId,
 }
 
 impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
@@ -108,6 +110,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             helpers: Vec::new(),
             slots: String::new(),
             ssa: ssa::Ssa::default(),
+            block: BlockId::new(0),
         }
     }
 
@@ -185,6 +188,7 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         let mut loops: BTreeMap<BlockId, String> = BTreeMap::new();
         for (index, block) in body.blocks.iter().enumerate() {
             let id = BlockId::new(index);
+            self.block = id;
             let label = block_label(id);
             let _ = writeln!(self.code, "{label}:");
             let marker = self.ssa.start_block(index, &label);
@@ -244,11 +248,13 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
             let argument = format!("%a{index}");
             match mode {
                 Mode::Borrow if !self.types.by_value(local.ty) => {
-                    parameters.push(format!("ptr noalias readonly {argument}"));
+                    let pointee = self.types.pointee(local.ty);
+                    parameters.push(format!("ptr noalias readonly{pointee} {argument}"));
                     self.passing[index] = Passing::Pointer;
                 }
                 Mode::InOut => {
-                    parameters.push(format!("ptr noalias {argument}"));
+                    let pointee = self.types.pointee(local.ty);
+                    parameters.push(format!("ptr noalias{pointee} {argument}"));
                     self.passing[index] = Passing::Pointer;
                 }
                 Mode::Borrow | Mode::Owned => {
@@ -458,6 +464,19 @@ impl<'f, 'a, 'db> Function<'f, 'a, 'db> {
         self.ssa.record(instruction);
         self.code.push_str("  ");
         self.code.push_str(instruction);
+        self.end_line();
+    }
+
+    /// Writes `result = instruction`, an instruction that gives a value and so never branches,
+    /// straight into the function's text.
+    pub(crate) fn line_with_result(&mut self, result: &str, instruction: &str) {
+        let _ = write!(self.code, "  {result} = {instruction}");
+        self.end_line();
+    }
+
+    /// Ends the instruction just written with its `!dbg` location, when the module has debug
+    /// information, and a line end.
+    fn end_line(&mut self) {
         if self.location().is_some() {
             // Read again from the fields, since `location` borrows all of `self`.
             let location = self.fixed_location.as_deref().or_else(|| {

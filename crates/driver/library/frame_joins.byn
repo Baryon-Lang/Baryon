@@ -1,0 +1,122 @@
+"""The join of two `DataFrame`s, written in Baryon (decision 0045): `left.merge(right, on=...)`.
+
+The compiler calls these functions; a program cannot import this file. Its sort is the one in
+`<std>/frames.byn`.
+
+An inner join pairs each row of the left frame with every row of the right frame whose key
+columns hold the same values. The compiler puts each key column of the two frames end to end
+with `joined`, the left frame's rows first, and sorts the rows of the two frames together by
+the keys. `key_marks`, once for each key column, finds where the keys change, and `group_ids`
+numbers the rows so that two rows have one number exactly when their keys are equal. From
+there the join is a join on one column of integers: `join_pairs` lists the pairs, and
+`pair_side` gives the rows of one frame, which `taken` copies column by column.
+
+Cost for `n` rows in the two frames together and `k` pairs: a sort, about `n log n`
+comparisons for each key column, then `n + k` steps, with arrays of `n` and of `2k` integers.
+
+The file also holds `text_masked` and `text_taken`, which choose rows of a column of `str` as
+`masked` and `taken` of `<std>/frames.byn` do for a column of numbers.
+"""
+
+
+def joined[T: Number](left: Array[T, 1], right: Array[T, 1]) -> Array[T, 1]:
+    """The elements of `left`, then those of `right`, as a new array."""
+    count = len(left)
+    return Array([
+        left[at] if at < count else right[at - count] for at in range(count + len(right))
+    ])
+
+
+def key_marks[T: Number](
+    column: Array[T, 1], order: Array[i64, 1], marks: Array[bool, 1]
+) -> Array[bool, 1]:
+    """`marks` with one more key column taken in: element `i` is true where row `order[i]`
+    has another key than the row before it in `order`, or is the first row. Two NaN are one
+    key here, as pandas joins them, though NaN is not equal to NaN."""
+    result = [flag for flag in marks]
+    for at in range(len(order)):
+        if at == 0:
+            result[at] = True
+        else:
+            value = column[order[at]]
+            before = column[order[at - 1]]
+            if value != before and (value == value or before == before):
+                result[at] = True
+    return Array(result)
+
+
+def group_ids(order: Array[i64, 1], marks: Array[bool, 1]) -> Array[i64, 1]:
+    """A number for each row, the same for two rows exactly when their keys are equal:
+    element `r` is the number of the group that row `r` is in, counting from 0 in the order
+    of the keys."""
+    ids = [0 for at in order]
+    group = -1
+    for at in range(len(order)):
+        if marks[at]:
+            group += 1
+        ids[order[at]] = group
+    return Array(ids)
+
+
+def join_pairs(ids: Array[i64, 1], left_count: int) -> Array[i64, 1]:
+    """The pairs of an inner join, one after another: a row of the left frame, then the row
+    of the right frame it is paired with. `ids` holds the group of each row, the left
+    frame's `left_count` rows first. The pairs follow the left frame's rows in order, and
+    for one left row the right frame's rows in order, as pandas's do."""
+    total = len(ids)
+    groups = 0
+    for at in range(total):
+        groups = max(groups, ids[at] + 1)
+    # Where each group's right rows start among the right rows sorted by group.
+    starts = [0 for group in range(groups + 1)]
+    for at in range(left_count, total):
+        starts[ids[at] + 1] += 1
+    for group in range(groups):
+        starts[group + 1] += starts[group]
+    filled = [start for start in starts]
+    rows = [0 for at in range(left_count, total)]
+    for at in range(left_count, total):
+        group = ids[at]
+        rows[filled[group]] = at - left_count
+        filled[group] += 1
+    pairs: list[int] = []
+    for at in range(left_count):
+        group = ids[at]
+        for slot in range(starts[group], starts[group + 1]):
+            pairs.append(at)
+            pairs.append(rows[slot])
+    return Array(pairs)
+
+
+def pair_side(pairs: Array[i64, 1], side: int) -> Array[i64, 1]:
+    """The rows of one frame in the pairs `join_pairs` gives: the left frame's when `side`
+    is 0, the right frame's when it is 1."""
+    return Array([pairs[2 * at + side] for at in range(len(pairs) // 2)])
+
+
+def first_rows(ids: Array[i64, 1]) -> Array[i64, 1]:
+    """The rows that `drop_duplicates` keeps, in order: each row whose number in `ids`, the
+    number `group_ids` gives its key, no row before it has. Cost: one pass over the rows."""
+    groups = 0
+    for at in range(len(ids)):
+        groups = max(groups, ids[at] + 1)
+    seen = [False for group in range(groups)]
+    rows: list[int] = []
+    for at in range(len(ids)):
+        if not seen[ids[at]]:
+            seen[ids[at]] = True
+            rows.append(at)
+    return Array(rows)
+
+
+def text_masked(column: Array[str, 1], mask: Array[bool, 1]) -> Array[str, 1]:
+    """`masked` for a column of `str`: the elements of `column` where `mask` is true, as a
+    new text array. Cost: one copy of each element kept, in a list, before the array is
+    built from the list."""
+    return Array([column[row].copy() for row in range(len(column)) if mask[row]])
+
+
+def text_taken(column: Array[str, 1], positions: Array[i64, 1]) -> Array[str, 1]:
+    """`taken` for a column of `str`: the elements of `column` at `positions`, in that order,
+    as a new text array. Cost: as `text_masked`."""
+    return Array([column[positions[row]].copy() for row in range(len(positions))])

@@ -1,0 +1,485 @@
+"""The parts of a `DataFrame` written in Baryon (decision 0045): choosing rows, sorting
+and grouping them, and the text a frame prints as.
+
+The compiler calls these functions; a program cannot import this file. A frame's columns
+are known when compiling, so the compiler calls a function once for each column, with the
+column's element type as `T`.
+
+Choosing rows, for `df[mask]`, `df[i:j]`, `df.head(n)` and `df.tail(n)`: `masked` keeps the
+elements of one column where a mask is true. For the others the positions of the rows are
+worked out once, by `slice_positions`, `head_positions` or `tail_positions`, and `taken`
+copies those elements of each column.
+
+Sorting, for `df.sort_values(...)`: `row_positions` gives the rows in their order, `ordered`
+(`ordered_flags` for a column of `bool`) puts them in the order of one column, once for each
+column sorted by, the last one first, and `taken` copies each column in that order.
+
+Grouping, for `df.groupby(...).agg(...)`: the rows are sorted by the key columns, after
+`kept_rows` leaves out those with a missing key; `group_marks`, once for each key column,
+then `group_starts` find where each group starts; `group_keys` gives one row of each group
+to read its keys from; and `group_floats` or `group_integers` reduces one column, which the
+compiler has converted to `f64` or `i64`, to one value for each group.
+
+Printing, for `print(df)` and a frame in an f-string: each column is formatted with
+`float_cells`, `single_cells`, `cells` or `text_cells`, by the type of its elements, and
+`frame_text` lays the columns out. The rules are those of pandas 3 at its default options, on
+a screen 80 characters wide:
+
+- A frame of more than 60 rows shows its first 5 and last 5, with a row of dots between.
+- Columns that do not fit in 80 characters are left out of the middle, with `...` in their
+  place.
+- A frame cut either way ends with its size, `[100 rows x 2 columns]`.
+- A column of floats shows up to 6 decimals, and as many as its longest value needs. It
+  switches to powers of ten, `1.500000e+10`, when a value is too small for 6 decimals or too
+  large to read.
+
+Only the rows shown are formatted, so printing costs the same for ten rows or ten million.
+"""
+
+from math import fsum, isinf, isnan, nan, sqrt
+
+
+def masked[T](column: Array[T, 1], mask: Array[bool, 1]) -> Array[T, 1]:
+    """The elements of `column` where `mask` is true, as a new array. The compiler has
+    checked that the two have one length. Cost: two passes over `mask`."""
+    return column[mask]
+
+
+def taken[T](column: Array[T, 1], positions: Array[i64, 1]) -> Array[T, 1]:
+    """The elements of `column` at `positions`, in that order, as a new array."""
+    return column[positions]
+
+
+def slice_positions(
+    count: int, start: int, stop: int, step: int, starts: bool, stops: bool
+) -> Array[i64, 1]:
+    """The rows that the slice `start:stop:step` chooses from `count` rows, as Python
+    chooses them: a negative bound counts from the end, and a bound past either end stops
+    there. `starts` and `stops` say whether the slice gives each bound; a bound left out is
+    the end the slice walks from or to. `step` is not 0, which the compiler has checked.
+    """
+    low = 0
+    high = count
+    if step < 0:
+        low = -1
+        high = count - 1
+    first = low if step > 0 else high
+    last = high if step > 0 else low
+    if starts:
+        first = start + count if start < 0 else start
+        first = min(max(first, low), high)
+    if stops:
+        last = stop + count if stop < 0 else stop
+        last = min(max(last, low), high)
+    return Array([position for position in range(first, last, step)])
+
+
+def head_positions(count: int, rows: int) -> Array[i64, 1]:
+    """The first `rows` of `count` rows or, when `rows` is negative, all but the last
+    `-rows`, as pandas's `head` chooses them."""
+    return slice_positions(count, 0, rows, 1, False, True)
+
+
+def tail_positions(count: int, rows: int) -> Array[i64, 1]:
+    """The last `rows` of `count` rows or, when `rows` is negative, all but the first
+    `-rows`, as pandas's `tail` chooses them."""
+    if rows >= 0:
+        return slice_positions(count, max(count - rows, 0), 0, 1, True, False)
+    return slice_positions(count, min(-rows, count), 0, 1, True, False)
+
+
+def row_positions(count: int) -> Array[i64, 1]:
+    """The positions of all `count` rows of a frame, in order: where a sort starts."""
+    return Array([at for at in range(count)])
+
+
+def ordered[T: Number](
+    column: Array[T, 1], start: Array[i64, 1], ascending: bool
+) -> Array[i64, 1]:
+    """The positions `start` put in the order of the values of `column` they name: rising when
+    `ascending`, falling when not. The sort is stable, so rows with equal values keep the order
+    they have in `start`; sorting by the last key first and the first key last therefore
+    sorts by several keys. NaN goes last in both directions, as in pandas.
+
+    A merge sort from the bottom up: `n log n` comparisons and two arrays of `n` positions,
+    whatever the values are."""
+    count = len(start)
+    order = start.copy()
+    spare = start.copy()
+    valid = 0
+    for at in range(count):
+        value = column[start[at]]
+        if value == value:
+            order[valid] = start[at]
+            valid += 1
+    missing = valid
+    for at in range(count):
+        value = column[start[at]]
+        if value != value:
+            order[missing] = start[at]
+            missing += 1
+    width = 1
+    while width < valid:
+        low = 0
+        while low < valid:
+            middle = min(low + width, valid)
+            high = min(low + 2 * width, valid)
+            left = low
+            right = middle
+            for at in range(low, high):
+                from_left = right >= high
+                if left < middle and right < high:
+                    first = column[order[left]]
+                    second = column[order[right]]
+                    if ascending:
+                        from_left = not (second < first)
+                    else:
+                        from_left = not (second > first)
+                if from_left:
+                    spare[at] = order[left]
+                    left += 1
+                else:
+                    spare[at] = order[right]
+                    right += 1
+            low = high
+        for at in range(valid):
+            order[at] = spare[at]
+        width *= 2
+    return order
+
+
+def ordered_flags(
+    column: Array[bool, 1], start: Array[i64, 1], ascending: bool
+) -> Array[i64, 1]:
+    """`ordered` for a column of `bool`, where `False` comes before `True`. Cost: one more
+    array of `n` integers."""
+    numbers = Array([1 if flag else 0 for flag in column])
+    return ordered(numbers, start, ascending)
+
+
+def kept_rows[T: Number](column: Array[T, 1], order: Array[i64, 1]) -> Array[i64, 1]:
+    """The positions `order` without those where `column` is NaN: a row whose key is missing
+    belongs to no group, as in pandas."""
+    return Array([at for at in order if column[at] == column[at]])
+
+
+def no_marks(order: Array[i64, 1]) -> Array[bool, 1]:
+    """One `False` for each row of `order`: the marks before any key column is taken in."""
+    return Array([False for at in order])
+
+
+def group_marks[T: Number](
+    column: Array[T, 1], order: Array[i64, 1], marks: Array[bool, 1]
+) -> Array[bool, 1]:
+    """`marks` with one more key column taken in: element `i` is true where row `order[i]`
+    starts a group, that is where it is the first row or its value in `column` differs from
+    that of the row before it in `order`."""
+    return Array([
+        marks[at] or at == 0 or column[order[at]] != column[order[at - 1]]
+        for at in range(len(order))
+    ])
+
+
+def group_starts(marks: Array[bool, 1]) -> Array[i64, 1]:
+    """Where each group starts in the sorted rows, and after the last, where the rows end:
+    one more element than there are groups, so group `g` is `starts[g]` to `starts[g + 1]`."""
+    starts = [at for at in range(len(marks)) if marks[at]]
+    starts.append(len(marks))
+    return Array(starts)
+
+
+def group_keys(order: Array[i64, 1], starts: Array[i64, 1]) -> Array[i64, 1]:
+    """The position of the first row of each group, from which its key is read."""
+    return Array([order[starts[group]] for group in range(len(starts) - 1)])
+
+
+def _values(column: Array[f64, 1], order: Array[i64, 1], low: int, high: int) -> list[f64]:
+    """The values of one group, rows `low` to `high` of `order`, without NaN."""
+    return [column[order[at]] for at in range(low, high) if not isnan(column[order[at]])]
+
+
+def _reduced(values: list[f64], how: int) -> f64:
+    """One group's values, which hold no NaN, reduced the way `how` numbers; see
+    `group_floats`."""
+    count = len(values)
+    if how == 5:
+        return f64(count)
+    if how == 0:
+        return fsum(values)
+    if count == 0:
+        return nan
+    if how == 1:
+        return min(values)
+    if how == 2:
+        return max(values)
+    if how == 3:
+        return values[0]
+    if how == 4:
+        return values[count - 1]
+    if how == 9:
+        middle = sorted(values)
+        return (middle[(count - 1) // 2] + middle[count // 2]) / 2.0
+    mean = fsum(values) / f64(count)
+    if how == 6:
+        return mean
+    if count == 1:
+        return nan
+    spread = fsum([(value - mean) * (value - mean) for value in values]) / f64(count - 1)
+    return spread if how == 7 else sqrt(spread)
+
+
+def group_floats(
+    column: Array[f64, 1], order: Array[i64, 1], starts: Array[i64, 1], how: int
+) -> Array[f64, 1]:
+    """One value for each group from the values of `column` in it, NaN left out, as pandas
+    leaves it out. `how` numbers the reduction: 0 sum, 1 min, 2 max, 3 first, 4 last,
+    5 count, 6 mean, 7 var, 8 std, 9 median. `var` and `std` divide by one less than the
+    count, and are NaN for a group of one value; a group with no values gives NaN, except
+    that its sum and its count are 0."""
+    return Array([
+        _reduced(_values(column, order, starts[group], starts[group + 1]), how)
+        for group in range(len(starts) - 1)
+    ])
+
+
+def group_integers(
+    column: Array[i64, 1], order: Array[i64, 1], starts: Array[i64, 1], how: int
+) -> Array[i64, 1]:
+    """`group_floats` for a column of integers, for the reductions that give an integer:
+    0 sum, 1 min, 2 max, 3 first, 4 last, 5 count. No value is missing, so no group is
+    empty."""
+    result = [0 for group in range(len(starts) - 1)]
+    for group in range(len(starts) - 1):
+        low = starts[group]
+        high = starts[group + 1]
+        value = column[order[low]]
+        if how == 4:
+            value = column[order[high - 1]]
+        if how == 5:
+            value = high - low
+        for at in range(low + 1, high):
+            other = column[order[at]]
+            if how == 0:
+                value += other
+            if how == 1:
+                value = min(value, other)
+            if how == 2:
+                value = max(value, other)
+        result[group] = value
+    return Array(result)
+
+
+def _shown(count: int) -> list[int]:
+    """The rows of a frame of `count` rows that are printed: all of 60 rows or fewer, or else
+    the first 5 and the last 5."""
+    rows: list[int] = []
+    if count <= 60:
+        for row in range(count):
+            rows.append(row)
+    else:
+        for row in range(5):
+            rows.append(row)
+        for row in range(count - 5, count):
+            rows.append(row)
+    return rows
+
+
+def _signed(text: Owned[str]) -> str:
+    """`text`, a number, with a space in front when it has no minus sign, so that numbers of
+    either sign line up."""
+    if text.startswith("-"):
+        return text
+    return " " + text
+
+
+def _float(value: f64, scientific: bool) -> str:
+    """`value` with 6 decimals, as `1.500000` or, when `scientific`, as `1.500000e+00`."""
+    if isnan(value):
+        return " NaN"
+    if isinf(value):
+        if value > 0.0:
+            return " inf"
+        return "-inf"
+    if scientific:
+        return _signed(f"{value:.6e}")
+    return _signed(f"{value:.6f}")
+
+
+def _floats(values: list[f64], small: bool) -> list[str]:
+    """One cell for each of `values`, formatted together as one column.
+
+    Each value is written with 6 decimals, then the zeros every value ends with are removed,
+    down to one decimal: 1.5 and 2.25 give `1.50` and `2.25`. The column is written in powers
+    of ten instead when `small`, which says a value is under 0.000001 in size and not zero,
+    or when a value is over 1,000,000 in size and the longest cell is over 12 characters.
+
+    A column whose every value is NaN has no number to line up with, so its cells are `NaN`
+    with no space in front for a sign, as pandas prints it.
+    """
+    numbers = 0
+    for value in values:
+        if not isnan(value):
+            numbers += 1
+    if numbers == 0:
+        return ["NaN" for value in values]
+    cells = [_float(value, False) for value in values]
+    trimming = True
+    while trimming:
+        numbers = 0
+        for cell in cells:
+            if "." in cell:
+                numbers += 1
+                if not cell.endswith("0"):
+                    trimming = False
+        if numbers == 0:
+            trimming = False
+        if trimming:
+            cells = [cell[:len(cell) - 1] if "." in cell else cell.copy() for cell in cells]
+    cells = [cell + "0" if cell.endswith(".") else cell.copy() for cell in cells]
+    longest = 0
+    for cell in cells:
+        longest = max(longest, len(cell))
+    large = False
+    for value in values:
+        if abs(value) > 1.0e6:
+            large = True
+    if small or (large and longest > 12):
+        return [_float(value, True) for value in values]
+    return cells
+
+
+def float_cells(column: Array[f64, 1]) -> list[str]:
+    """The cells of the `f64` column `column`: one text for each row that is printed."""
+    values = [column[row] for row in _shown(len(column))]
+    small = False
+    for value in values:
+        if abs(value) > 0.0 and abs(value) < 1.0e-6:
+            small = True
+    return _floats(values, small)
+
+
+def single_cells(column: Array[f32, 1]) -> list[str]:
+    """The cells of the `f32` column `column`, formatted as the same values in `f64`.
+
+    Whether a value is under 0.000001 is tested in `f32`, as pandas tests it: the `f32`
+    nearest 0.000001 is a little under it, and still prints with 6 decimals.
+    """
+    values = [column[row] for row in _shown(len(column))]
+    limit = f32(1.0e-6)
+    small = False
+    for value in values:
+        if abs(value) > f32(0.0) and abs(value) < limit:
+            small = True
+    return _floats([f64(value) for value in values], small)
+
+
+def cells[T](column: Array[T, 1]) -> list[str]:
+    """The cells of a column of integers or of `bool`: each value as `print` writes it."""
+    return [_signed(f"{column[row]}") for row in _shown(len(column))]
+
+
+def _text_cell(text: str) -> str:
+    """One cell of a column of `str`: a space and the text or, when that is longer than 50
+    characters, which is where pandas cuts a cell (`display.max_colwidth`), a space, the
+    first 46 characters and `...`."""
+    if len(text) > 49:
+        return " " + text[0:46] + "..."
+    return " " + text
+
+
+def text_cells(column: Array[str, 1]) -> list[str]:
+    """The cells of a column of `str`: each shown row's text, without quotes, as pandas
+    writes it."""
+    return [_text_cell(column[row]) for row in _shown(len(column))]
+
+
+def _pad(text: str, width: int, left: bool) -> str:
+    """`text` with spaces added to make it `width` characters: after it when `left`, which
+    puts the text on the left, and before it otherwise."""
+    padding = "".join([" " for position in range(width - len(text))])
+    if left:
+        return text + padding
+    return padding + text
+
+
+def _column(name: str, cells: list[str], left: bool, cut: bool) -> list[str]:
+    """One column of the table as its lines: the heading `name`, then `cells`, every line
+    padded to the width of the longest. When `cut`, rows were left out after the fifth cell,
+    and a line of dots stands for them: `...`, or `..` in a column 3 characters wide or less.
+    """
+    width = len(name)
+    for cell in cells:
+        width = max(width, len(cell))
+    column = [_pad(name, width, left)]
+    for position in range(len(cells)):
+        if cut and position == 5:
+            column.append(_pad("..." if width > 3 else "..", width, left))
+        column.append(_pad(cells[position], width, left))
+    return column
+
+
+def _table(
+    names: list[str],
+    columns: list[list[str]],
+    text: list[bool],
+    picked: list[int],
+    dots: int,
+    count: int,
+) -> list[list[str]]:
+    """The table's columns, each as its lines: the row numbers, then the columns `picked`,
+    which are positions in `names`, `columns` and `text`. A column of `...` goes before the
+    picked column at position `dots`; pass -1 for none. `count` is the frame's number of
+    rows. A heading has a space in front, as a number's cell has for its sign, except over
+    a column of `str`, where `text` is true: pandas gives that heading no more room than
+    its name."""
+    rows = _shown(count)
+    cut = len(rows) < count
+    table = [_column("", [f"{row}" for row in rows], True, cut)]
+    for position in range(len(picked)):
+        if position == dots:
+            table.append(_column(" ...", [" ..." for row in rows], False, cut))
+        column = picked[position]
+        heading = names[column].copy() if text[column] else " " + names[column]
+        table.append(_column(heading, columns[column], False, cut))
+    return table
+
+
+def frame_text(names: list[str], columns: list[list[str]], text: list[bool], count: int) -> str:
+    """The text of a frame of `count` rows whose columns are named `names`; `columns` holds
+    each column's cells, from `float_cells`, `single_cells`, `cells` or `text_cells`, and
+    `text` says which columns hold `str`.
+
+    The table is laid out whole first. While it is wider than 79 characters, the column in
+    the middle is taken out, the row numbers counting as a column. If any column went, the
+    table is laid out again with the same number of columns from each end of the frame, at
+    least one from each, and `...` between them.
+    """
+    if count == 0:
+        return "Empty DataFrame\nColumns: [" + ", ".join(names) + "]\nIndex: []"
+    table = _table(names, columns, text, [column for column in range(len(names))], -1, count)
+    widths = [len(column[0]) for column in table]
+    excess = len(widths) - 80
+    for width in widths:
+        excess += width
+    while excess > 0 and len(widths) > 1:
+        # The middle as Python's `round(n / 2)` gives it: a half rounds to the even number.
+        middle = len(widths) // 2
+        if len(widths) % 2 == 1 and middle % 2 == 1:
+            middle += 1
+        excess -= widths[middle] + 1
+        widths = [widths[position] for position in range(len(widths)) if position != middle]
+    fitted = max(len(widths) - 1, 2)
+    narrowed = len(names) > fitted
+    if narrowed:
+        half = fitted // 2
+        picked = [column for column in range(half)]
+        for column in range(len(names) - half, len(names)):
+            picked.append(column)
+        table = _table(names, columns, text, picked, half, count)
+    lines: list[str] = []
+    for row in range(len(table[0])):
+        lines.append(" ".join([column[row].copy() for column in table]))
+    whole = "\n".join(lines)
+    if narrowed or len(table[0]) - 1 < count:
+        return whole + f"\n\n[{count} rows x {len(names)} columns]"
+    return whole

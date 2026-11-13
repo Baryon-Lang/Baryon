@@ -1,5 +1,8 @@
-"""The `colorbar` module: draws the bar beside an image that shows which color stands for which
-value, as matplotlib's `Colorbar` does (decision 0046).
+"""The `colorbar` library file: draws the bar beside an image that shows which color stands for
+which value, as matplotlib's `Colorbar` does (decision 0046).
+
+It is internal to the standard library: `pyplot` and the files under it import it, and a
+program cannot, so a program's own `colorbar.byn` is never hidden by it.
 
 `pyplot`'s `Axes.colorbar` asks for one; when the figure is drawn, it takes a slice of the
 space on the right of the axes, and `draw_colorbar` draws it there.
@@ -28,18 +31,6 @@ def draw_colorbar(
     `width` by `height` points: the colormap's 256 colors from `vmin` at the bottom to `vmax`
     at the top, a black outline, ticks and their labels on the right, placed and written as
     `ticker` places and writes them, and `label` beside them, reading upwards.
-
-    ```python
-    from artist import Image
-    from backend_svg import RendererSVG
-    from colorbar import draw_colorbar
-
-    def main():
-        image = Image(Array.zeros((2, 2)), "viridis", 0.0, 1.0, (-0.5, 1.5, 1.5, -0.5), True)
-        renderer = RendererSVG(100.0, 300.0, [])
-        draw_colorbar(image, 10.0, 10.0, 13.0, 266.0, "counts", renderer)
-        print(len(renderer.elements) > 2)  # True
-    ```
     """
     strip = colormap_strip(get_cmap(image.cmap))
     renderer.draw_image(left, top, width, height, strip, False, False)

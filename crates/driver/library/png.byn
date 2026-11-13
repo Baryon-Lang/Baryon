@@ -1,5 +1,8 @@
-"""The `png` module: writes RGBA images in the PNG format, as matplotlib writes the images it
+"""The `png` library file: writes RGBA images in the PNG format, as matplotlib writes the images it
 embeds in an SVG file and saves as PNG (decision 0046).
+
+It is internal to the standard library: `pyplot` and the files under it import it, and a
+program cannot, so a program's own `png.byn` is never hidden by it.
 
 The image data go in uncompressed deflate blocks, which every PNG reader takes: the file is
 about four times larger than a compressed one, until compression (roadmap 3.27) lands. The
@@ -11,15 +14,6 @@ def encode(pixels: Array[u8, 3]) -> list[u8]:
     """The bytes of a PNG file holding `pixels`, an image `height` by `width` by 4: red, green,
     blue and alpha, 0 to 255, rows from the top. Costs about 4 bytes and a few operations a
     pixel.
-
-    ```python
-    from png import encode
-
-    def main():
-        pixels: Array[u8, 3] = Array.zeros((1, 2, 4))
-        pixels[0, 1, 0] = u8(255)
-        print(len(encode(pixels)))  # 77
-    ```
     """
     height = pixels.shape[0]
     width = pixels.shape[1]

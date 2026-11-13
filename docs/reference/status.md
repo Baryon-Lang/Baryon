@@ -24,25 +24,35 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-12, when images and colorbars, and before them
-scatter plots, bars, histograms, legends and grid lines, and before them comparisons of arrays and
-`a[mask]`, and before them line plots with `pyplot` and `ticker`, saved as SVG, and before them
-slices of a NetCDF variable, `var[0, :, ::2]` read and written, and before them writing NetCDF
-classic files,
-`Dataset(path, "w", format=...)`, `createDimension`, `createVariable`, `setncattr` and
-`var[:] = values`, and before them reading NetCDF classic files, `netCDF4.Dataset`, its
-variables, dimensions and attributes, and `AttributeError`, and before them
-FITS images and headers, `fits.getdata`, `fits.getheader`, `fits.writeto` and `KeyError`, and
-before them, on 2026-11-11,
-the standard streams, `print(..., file=)` and `input`, `.npy` files, `Array.load` and
-`Array.save`, `linalg.svd`, `svdvals`, `eig` and `eigvals`, `fft`, text tables, `Array.loadtxt`
-and `Array.savetxt`, and before them `linalg.eigh`, `eigvalsh`, `cholesky` and `qr`, `solve`,
-`lu_factor`, `lu_solve`, `det` and `inv` and, before them, array files, `Array.fromfile` and
-`a.tofile`, and before them `for line in f` over a text file, `int(text)` and `float(text)`, began
-to build. Before that, on 2026-11-10, text files, `open`, the `File` methods and
-`with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and, before them,
-`sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches lowering or the backend something new
-updates the table it affects, in the same pull request, as roadmap item 0.8.1 asks.
+This page was last brought up to date on 2026-11-13, when images and colorbars, and before them text
+columns of a `DataFrame` joined it, and before them arrays of text, `Array[str, 1]`, and before them
+`a.argsort()`, and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before
+it the inner `merge` of two `DataFrame`s, and before it `groupby(...).agg(...)`, and before it
+`lzma.decompress`, and before it `sort_values` on a `DataFrame`, and before it `bz2.compress` and
+`bz2.decompress`, and before them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
+`for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by `df[mask]`,
+`df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and before it `fft2`,
+`ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`, and before it
+`print(df)`, a frame printed as pandas prints it, and before it `zlib.decompressobj` and `gzip`, and
+before them a `DataFrame` built from rows and `df[i]`, and before them `DataFrame[S]` built from
+arrays, with its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
+`zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends and grid
+lines, and before them comparisons of arrays and `a[mask]`, and before them line plots with `pyplot`
+and `ticker`, saved as SVG, and before them slices of a NetCDF variable, `var[0, :, ::2]` read and
+written, and before them writing NetCDF classic files, `Dataset(path, "w", format=...)`,
+`createDimension`, `createVariable`, `setncattr` and `var[:] = values`, and before them reading
+NetCDF classic files, `netCDF4.Dataset`, its variables, dimensions and attributes, and
+`AttributeError`, and before them FITS images and headers, `fits.getdata`, `fits.getheader`,
+`fits.writeto` and `KeyError`, and before them, on 2026-11-11, the standard streams, `print(...,
+file=)` and `input`, `.npy` files, `Array.load` and `Array.save`, `linalg.svd`, `svdvals`, `eig` and
+`eigvals`, `fft`, text tables, `Array.loadtxt` and `Array.savetxt`, and before them `linalg.eigh`,
+`eigvalsh`, `cholesky` and `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them,
+array files, `Array.fromfile` and `a.tofile`, and before them `for line in f` over a text file,
+`int(text)` and `float(text)`, began to build. Before that, on 2026-11-10, text files, `open`, the
+`File` methods and `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and,
+before them, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches
+lowering or the backend something new updates the table it affects, in the same pull request, as
+roadmap item 0.8.1 asks.
 
 ## The example programs
 
@@ -80,7 +90,7 @@ checks what it prints.
 | `with unsafe:` | |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications; complex literals such as `2j` | `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
 | `+ - * / // % **`, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions; comparisons, `in` and `not in` between two `str`s | `in` and `not in` on arrays and tuples |
-| `min`, `max`, `len` of arrays, lists and `str`; `sum`, `min` and `max` of a list or rank-1 array of numbers, a list's float `sum` as CPython 3.12 adds it; `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)` and `round(x, digits)` as Python rounds; `sorted` of a list of numbers or `str`s, with `reverse=`; `abs` of integers, floats and complex numbers | `float(text)` and the other conversions of a `str` to a number; `sorted` with `key=` or of other elements, such as tuples; `min` and `max` of a list of `str`s; `sum` of a list of complex numbers and of an array with a start; the integer and sequence functions of `math`, such as `gcd` and `fsum`; the rest of `random` |
+| `min`, `max`, `len` of arrays, lists and `str`; `sum`, `min` and `max` of a list or rank-1 array of numbers, a list's float `sum` as CPython 3.12 adds it; `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`math.fsum`](arrays.md#exact-sums) of a list or rank-1 array of `f64`s; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)` and `round(x, digits)` as Python rounds; `sorted` of a list of numbers or `str`s, with `reverse=`; `abs` of integers, floats and complex numbers | `float(text)` and the other conversions of a `str` to a number; `sorted` with `key=` or of other elements, such as tuples; `min` and `max` of a list of `str`s; `sum` of a list of complex numbers and of an array with a start; the integer functions of `math`, such as `gcd`, and `math.prod`; `fsum` of other element types and iterables; the rest of `random` |
 | `@test` functions, with `baryon test` | |
 
 ## Types
@@ -90,7 +100,7 @@ checks what it prints.
 | Every integer type, `f32`, `f64` and `bool`, with Python's number mixing, `//` and `%` | |
 | [Complex numbers](types.md#complex-numbers) `complex64` and `complex128`: arithmetic, `==`, `real`, `imag`, `conjugate()`, `abs`, `complex(re, im)`, `print`, and f-strings with format specifications | `a.sum()` of a complex array; complex numbers in `prange` reductions and `accumulate=`; the `cmath` module (roadmap idea I.37) |
 | Conversions that panic when the value does not fit | |
-| `str`: literals, f-strings, `+`, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len`; [indexing and slicing](types.md#indexing-slicing-and-methods) by character; `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower` and `upper`; `int(text)` and `float(text)`, which raise `ValueError` | `str`'s other methods, such as `count`, `rfind` and `isdigit`; `split` with `maxsplit`, `find` with `start` and `end`, and `startswith` of a tuple |
+| `str`: literals, f-strings, `+`, `+=` on a variable, field or list element, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len`; [indexing and slicing](types.md#indexing-slicing-and-methods) by character; `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower` and `upper`; `int(text)` and `float(text)`, which raise `ValueError` | `str`'s other methods, such as `count`, `rfind` and `isdigit`; `split` with `maxsplit`, `find` with `start` and `end`, and `startswith` of a tuple |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
 | `T \| None`, with every narrowing rule | |
 | Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, generic structs and their methods, each method compiled once per type its struct is used at | |
@@ -98,7 +108,7 @@ checks what it prints.
 | [Unions](types.md#unions-of-structs) of structs, enums, error types and `None`: a member passed, assigned or returned where its union is expected, `match` with class patterns by position and keyword, `print`, members that own memory, freed by the member they hold, shared methods called on a union, and unions as the type of a trait-bounded parameter | A shared method that a member gets from an embedded field; `Array.zeros` of a union; class patterns on generic structs; a capture of a field that is not a copy type |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
 | `Final` constants of numbers, including `Final[f32]` and arithmetic on other constants | `Final` constants that are not numbers |
-| Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors, and bounds by a [user trait](types.md#using-a-trait-as-a-bound), `[T: Body]`, whose method calls go straight to each type's own method | |
+| Generic functions, compiled once per type they are called at, including `VectorSpace` arithmetic on `Fixed` vectors, `math` functions, `/`, in-place operators and `Array.zeros(n, T)` under a `Number` or `Float` bound, and bounds by a [user trait](types.md#using-a-trait-as-a-bound), `[T: Body]`, whose method calls go straight to each type's own method | |
 | [Embedded structs](types.md#embedded-structs): `Embed[T]` fields, and their fields and methods reached through the outer struct | Calling a method that an embedded generic struct provides |
 | [Functions as arguments](types.md#functions-as-arguments): a module-level function passed to a `Callable` parameter, directly or through a local, compiled once per function passed (decision 0026); a `Callable` parameter passed on to another call or copied into a local | A local that holds one of two different functions depending on a branch, which needs a function value at run time: the build reports it |
 | Lists of any type, such as `list[f64]`, `list[str]` or lists of structs, arrays and lists: displays `[a, b]` and `[]`, `xs.append(value)`, `len(xs)`, and `xs[i]` with bounds checks, reading and writing; dropping a list drops its elements; `xs.pop()`, which panics on an empty list; `value in xs` and `not in` on lists of numbers, `bool`s, enums and `str`s; `xs.copy()` and slices `xs[i:j:k]`, each a new list, and assigning into a slice `xs[i:j] = ys`, of lists of copy types and `str`s; list comprehensions `[f(x) for x in xs if p(x)]`, with any number of `for` clauses and conditions, over what `for` loops over, and over `simd(range(…))`, which runs as its plain range | `in`, `copy()` and slices on lists of other types; assigning into a list slice with a step, `xs[::2] = ys` |
@@ -135,10 +145,27 @@ out of a function, including through a `raise`.
 | `a.unchecked[i]` inside `with unsafe:` | |
 | `Fixed` arrays: calling the type with elements, `Vec3.zeros()`, indexing, `len`, unpacking `x, y, z = v`, the methods below, and whole-array arithmetic | |
 | Arrays of `Fixed` arrays and of `Copy` structs | |
-| Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b`, with [broadcasting](arrays.md#broadcasting) between arrays of different ranks and of length 1, as NumPy's, and new axes with `None`, `x[:, None]`; [comparisons](arrays.md#comparisons) of arrays, `a > b` and `a == 2.0`, which give arrays of `bool`s, and `&`, `\|`, `^` and `~` on arrays of `bool`s and integers; [choosing elements](arrays.md#choosing-elements) of a rank-1 `Array` with a mask or with positions, `a[mask]` and `a[positions]`, and setting them to one value, `a[mask] = 0.0` | A mask or positions on an array of higher rank; an array assigned to a choice, `a[mask] = values`, and `a[mask] += 1.0`; `a.argsort()` (roadmap 3.13.1) |
+| Whole-array arithmetic, `+= -= *= /=` and expressions such as `a + 2.0 * b`, with [broadcasting](arrays.md#broadcasting) between arrays of different ranks and of length 1, as NumPy's, and new axes with `None`, `x[:, None]`; [comparisons](arrays.md#comparisons) of arrays, `a > b` and `a == 2.0`, which give arrays of `bool`s, and `&`, `\|`, `^` and `~` on arrays of `bool`s and integers; [choosing elements](arrays.md#choosing-elements) of a rank-1 `Array` with a mask or with positions, `a[mask]` and `a[positions]`, and setting them to one value, `a[mask] = 0.0`; [`a.argsort()`](arrays.md#sorting-positions) of a rank-1 `Array`, stable, with NaN last | A mask or positions on an array of higher rank; an array assigned to a choice, `a[mask] = values`, and `a[mask] += 1.0`; `argsort` of an array of higher rank, with `axis=` and `kind=` |
 | [`@`, the matrix product](arrays.md#the-matrix-product), of `Array`s and of `Fixed` arrays: matrix by matrix, matrix by vector and vector by matrix, as a loop nest | `@=`; calling BLAS (roadmap 3.10.2) |
 | [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), the float sum of a whole-array expression, `(a * b).sum()`, without storing it, `a.min()`, `a.max()`, [`sum`, `min` and `max` along an axis](arrays.md#reductions-along-an-axis) with NumPy's bits, [`a.mean()`, `a.var(ddof)` and `a.std(ddof)`](arrays.md#means-and-variances), of the whole array and along an axis, with NumPy's bits, `a.round()` and `a.fill(value)`; [`print(a)`](arrays.md#printing), as NumPy writes it | Printing an array of `str` or structs; `var` and `std` of integers or complex numbers, and `mean` of integers along an axis |
+| [Arrays of text](text-arrays.md), `Array[str, 1]`: built from a list with `Array(words)`, `len`, an element read by position and borrowed, `for` loops with `enumerate`, `reversed` and `zip`, comprehensions, `copy()`, as a variable, parameter, return value, item of a list or tuple, dict value and `T \| None` | Assigning an element, slices and masks, operators such as `==` and `in`, every other method and built-in, `print` of one, and a struct field of one (roadmap 3.13.3) |
 | [The `stats` module](statistics.md): `median`, `quantile`, `percentile`, `average` and `histogram` of an `Array[f64, 1]`, with NumPy's bits; `cov` and `corrcoef` of two, to NumPy's last bit but one | `axis=`, several quantiles at once, the other quantile methods and other element types; `histogram` with other bins or `range=`, `weights=` and `density=`; `cov` and `corrcoef` of more than two variables |
+
+## DataFrames
+
+| Builds today | Not built yet |
+| --- | --- |
+| [`DataFrame[S]`](dataframes.md) with number and `bool` columns, as a variable, parameter, return value and item of a list, tuple or `T \| None`; frames with the same columns passed for one another | Missing values (3.13.6); a frame as a struct field |
+| [Text columns](text-arrays.md#in-a-dataframe), a field `symbol: str`: a frame built from its columns with `DataFrame({"symbol": Array(words), ...})`, the column read as an `Array[str, 1]` and replaced whole, `len(df)`, `df.shape`, `df.columns`, `df.copy()`, `print(df)` as pandas prints it, and rows chosen with `head`, `tail`, a slice, a mask and `sort_values` by a column of numbers, and columns chosen and changed with `df[[...]]`, `assign`, `drop` and `rename` | Every other use of a frame that has a text column: `DataFrame(rows)`, one row `df[i]` and `itertuples`, a sort by the text column, `groupby`, `merge`, `drop_duplicates` and `concat` (roadmap 3.13.3) |
+| [Building a frame](dataframes.md#building-a-frame) from arrays, `DataFrame({"price": prices})`, with the panic for columns of two lengths, and from a list of rows, `DataFrame(rows)` | |
+| [Columns](dataframes.md#columns) read as `df.price` and `df["price"]`, used as arrays, changed in place and replaced, with the panic for a new column of another length; `len(df)`, `df.shape`, `df.columns`, `df.copy()`; [a row](dataframes.md#rows), `df[i]`, as the schema's struct; [`print(df)` and a frame in an f-string](dataframes.md#printing), as the table pandas prints | pandas's text for a complex column and for a frame inside a list, and the terminal's width when printing (idea I.49); `concat`, `drop_duplicates`, `value_counts`, `unique`, `nunique`, `describe` (3.13.9) |
+| [Choosing rows](dataframes.md#choosing-rows): `df[mask]`, `df[i:j]` with a step, `df.head(n)` and `df.tail(n)`, each a new frame, with the panics for a mask of another length and a step of 0; [`for row in df.itertuples()`](dataframes.md#looping-over-rows), also inside `enumerate`, `zip` and a comprehension | Assigning to the rows chosen, `df[mask] = ...`; `itertuples()` kept outside a loop |
+| [Choosing and changing columns](dataframes.md#choosing-and-changing-columns): `df[["a", "b"]]`, `df.assign(name=values)`, `df.drop(columns=...)` and `df.rename(columns=...)`, each a new frame whose type the compiler works out, with the panic for a new column of another length | A column name that is not a string literal; `assign` of one value for every row or of a function, and an argument that reads a column added earlier in the same call; `drop` and `rename` in pandas's other forms (`axis=`, `index=`, `inplace=`, a function) |
+| [Sorting](dataframe-operations.md#sorting): `df.sort_values(by)` by one column or several, stable, with `ascending` one `bool` or one for each column, and NaN last | pandas's other arguments: `na_position=`, `key=`, `kind=`, `inplace=`, `ignore_index=` |
+| [Grouping](dataframe-operations.md#grouping): `df.groupby(keys).agg(name=("column", "reduction"))` by one key column or several, with `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std` and `median`, the keys returned as columns and NaN left out as in pandas | The groups as a value, `g = df.groupby(...)`; `agg` in pandas's other forms (a dict, a function, one name for every column); `df.groupby(...).sum()` and the like; `size`, `nunique`, `transform`, `apply` |
+| [Joining](dataframe-operations.md#joining): the inner join `left.merge(right, on=keys)` on one key column or several, with `_x` and `_y` for a column the two frames share | Left, right and outer joins (with missing values, 3.13.6); `left_on=`, `right_on=`, `suffixes=` and pandas's other arguments |
+| [Rows that repeat](dataframe-operations.md#rows-that-repeat): `df.drop_duplicates()` and `subset=` with one column or several, the first of the rows that repeat kept | `keep="last"` and `keep=False`; `value_counts`, `unique`, `nunique` and `describe`, the rest of roadmap item 3.13.9 |
+| [Stacking frames](dataframe-operations.md#stacking-frames): `concat([a, b])` of any number of frames with one schema | Frames with other columns, filled with missing values (3.13.6); `axis=`, `join=`, `keys=` |
 
 ## Errors and panics
 
@@ -164,7 +191,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), [`svd` and `svdvals`](linear-algebra.md#linalgsvd-and-linalgsvdvals), [`eig` and `eigvals`](linear-algebra.md#linalgeig-and-linalgeigvals), and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix; [`fft`](linear-algebra.md#fft): `fft`, `ifft`, `rfft`, `irfft`, `fftfreq` and `rfftfreq` of any length | Other element types (roadmap 3.10.1), `--blas` (3.10.2), several right-hand sides (3.10.3), and `fft2` and `fftn` (3.10.4) |
+| [`linalg.solve`](linear-algebra.md#linalgsolve) of an `f64` or `f32` matrix and vector, [`lu_factor` and `lu_solve`](linear-algebra.md#linalglu_factor-and-linalglu_solve), [`det` and `inv`](linear-algebra.md#linalgdet-and-linalginv), [`cholesky`](linear-algebra.md#linalgcholesky), [`qr`](linear-algebra.md#linalgqr), [`eigh` and `eigvalsh`](linear-algebra.md#linalgeigh-and-linalgeigvalsh), [`svd` and `svdvals`](linear-algebra.md#linalgsvd-and-linalgsvdvals), [`eig` and `eigvals`](linear-algebra.md#linalgeig-and-linalgeigvals) of `f64` matrices, every other function at `f64` or `f32`, and [`linalg.LinAlgError`](linear-algebra.md#errors), raised for a singular matrix; [`fft`](linear-algebra.md#fft): `fft`, `ifft`, `rfft`, `irfft`, `fftfreq` and `rfftfreq` of any length, and [`fft2`, `ifft2`, `rfft2` and `irfft2`](linear-algebra.md#fftfft2-and-the-other-two-dimensional-transforms) | Complex matrices and `eig` of an `f32` matrix (idea I.57), `--blas` (3.10.2), several right-hand sides (3.10.3), and `fftn` (idea I.51) |
 
 ## Files and processes
 
@@ -182,7 +209,13 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `imshow` of an `Array[f64, 2]` with matplotlib's common colormaps, `vmin`, `vmax`, `origin`, `aspect` and `extent`, `colorbar`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim` and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, with matplotlib's results; [`colors.to_hex`](plotting.md#colors-and-line-styles), [`cm`, `image`, `colorbar`, `png`, `transforms`, `axis`, `backend_svg`, `artist` and `legend`](plotting.md#the-modules-under-pyplot) | other colormaps, `interpolation`, and images of integers or RGB; `plt.subplots`, logarithmic axes, `errorbar`, `fill_between` and `text` (3.15.4); contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
+| [`pyplot`](plotting.md): `plt.axes()`, `Axes.plot` of `Array[f64, 1]`s with `color`, `linewidth`, `linestyle`, `marker`, `markersize` and `label`, `scatter`, `bar`, `hist`, `legend`, `grid`, `imshow` of an `Array[f64, 2]` with matplotlib's common colormaps, `vmin`, `vmax`, `origin`, `aspect` and `extent`, `colorbar`, `set_title`, `set_xlabel`, `set_ylabel`, `set_xlim`, `set_ylim` and `savefig` to an SVG file; [`ticker`](plotting.md#ticker): `MaxNLocator.tick_values` and `ScalarFormatter.format_ticks` and `get_offset`, with matplotlib's results; the [internal files under `pyplot`](plotting.md#the-files-under-pyplot) build only inside the standard library | other colormaps, `interpolation`, and images of integers or RGB; `plt.subplots`, logarithmic axes, `errorbar`, `fill_between` and `text` (3.15.4); contours (3.15.5); PNG (3.15.6) and PDF (3.15.7); plotting lists and integer arrays |
+
+## Compression
+
+| Builds today | Not built yet |
+| --- | --- |
+| [`zlib.compress`](compression.md#zlibcompress) at every level and in each container; [`zlib.decompress`](compression.md#zlibdecompress) of zlib streams, raw deflate streams and gzip members with every `wbits` form Python accepts, raising `OSError` with Python's message for a corrupt stream; [`zlib.crc32` and `zlib.adler32`](compression.md#zlibcrc32-and-zlibadler32); [`zlib.decompressobj`](compression.md#zlibdecompressobj) with `decompress`, `flush`, `eof` and `unused_data`; [`gzip.compress`](compression.md#gzipcompress) and [`gzip.decompress`](compression.md#gzipdecompress) of one member or several; [`compression.zstd.decompress`](compression.md#compressionzstddecompress) of one frame or several and [`compression.zstd.compress`](compression.md#compressionzstdcompress) at every level, imported with `from compression import zstd` or `from compression.zstd import decompress`; [`bz2.compress`](compression.md#bz2compress) at every level and [`bz2.decompress`](compression.md#bz2decompress) of one stream or several; [`lzma.decompress`](compression.md#lzmadecompress) of xz and `.lzma` files | `zlib.compressobj` and preset dictionaries; `gzip.open` (3.27.4); `import compression.zstd` (idea I.56), Zstandard dictionaries and `options`; bzip2's randomized blocks; `lzma.compress`, `lzma.open` and xz filters before LZMA2 |
 
 ## Tests
 

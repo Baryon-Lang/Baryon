@@ -102,6 +102,114 @@ def rfftfreq(n: int, d: f64 = 1.0) -> Array[f64, 1]:
     return result
 
 
+def fft2(x: Array[complex128, 2]) -> Array[complex128, 2]:
+    """The two-dimensional discrete Fourier transform of `x`, as `numpy.fft.fft2(x)`: `fft` of
+    each row, then of each column of the result. Costs m n (log m + log n) operations for an
+    m × n array, with the factor of six of `fft` for a side that is not a power of two. Panics
+    when `x` has no entries.
+    """
+    return _transform_2d(x, -1.0)
+
+
+def ifft2(x: Array[complex128, 2]) -> Array[complex128, 2]:
+    """The inverse of `fft2`, as `numpy.fft.ifft2(x)`: `ifft` of each row, then of each column,
+    so the result is divided by m n and `ifft2(fft2(x))` is `x` up to rounding.
+    """
+    result = _transform_2d(x, 1.0)
+    rows = x.shape[0]
+    columns = x.shape[1]
+    scale = 1.0 / columns
+    scale_rows = 1.0 / rows
+    for i in range(rows):
+        for j in range(columns):
+            result[i, j] = result[i, j] * scale * scale_rows
+    return result
+
+
+def rfft2(x: Array[f64, 2]) -> Array[complex128, 2]:
+    """The two-dimensional transform of real `x`, as `numpy.fft.rfft2(x)`: `rfft` of each row,
+    keeping n // 2 + 1 columns, then `fft` of each column. About half the work of `fft2`.
+    """
+    rows = x.shape[0]
+    columns = x.shape[1]
+    half = Array.zeros((rows, columns // 2 + 1), complex128)
+    for i in range(rows):
+        row = Array.zeros(columns)
+        for j in range(columns):
+            row[j] = x[i, j]
+        transformed = rfft(row)
+        for k in range(columns // 2 + 1):
+            half[i, k] = transformed[k]
+    _columns(half, -1.0)
+    # The entries whose sums are real, as in `rfft`: the first and, for an even length, middle
+    # row of the first column and, for an even number of columns, of the last.
+    for i in [0, rows // 2]:
+        if i == 0 or rows % 2 == 0:
+            for k in [0, columns // 2]:
+                if k == 0 or columns % 2 == 0:
+                    half[i, k] = complex(half[i, k].real, 0.0)
+    return half
+
+
+def irfft2(x: Array[complex128, 2], s: tuple[int, int] | None = None) -> Array[f64, 2]:
+    """The real m × n array whose `rfft2` is `x`, as `numpy.fft.irfft2(x, s)`: `ifft` of each
+    column, then `irfft` of each row. `s` is the shape `(m, n)`; it defaults to `x`'s number of
+    rows and 2 * (columns - 1), as for `irfft`, so give it for an odd number of columns. Rows of
+    `x` past m are ignored and missing ones count as zero, as in NumPy. Panics when m is less
+    than 1 or n is less than 1.
+    """
+    rows = x.shape[0]
+    length = 2 * (x.shape[1] - 1)
+    if s is not None:
+        rows, length = s
+    assert rows >= 1, "irfft2 needs at least one row"
+    work = Array.zeros((rows, x.shape[1]), complex128)
+    for i in range(min(rows, x.shape[0])):
+        for k in range(x.shape[1]):
+            work[i, k] = x[i, k]
+    _columns(work, 1.0)
+    result = Array.zeros((rows, length))
+    scale = 1.0 / rows
+    for i in range(rows):
+        row = Array.zeros(x.shape[1], complex128)
+        for k in range(x.shape[1]):
+            row[k] = work[i, k] * scale
+        samples = irfft(row, length)
+        for j in range(length):
+            result[i, j] = samples[j]
+    return result
+
+
+def _transform_2d(x: Array[complex128, 2], sign: f64) -> Array[complex128, 2]:
+    """The unscaled transform of each row of `x`, then of each column of the result."""
+    rows = x.shape[0]
+    columns = x.shape[1]
+    result = Array.zeros((rows, columns), complex128)
+    for i in range(rows):
+        row = Array.zeros(columns, complex128)
+        for j in range(columns):
+            row[j] = x[i, j]
+        transformed = _transform(row, sign)
+        for j in range(columns):
+            result[i, j] = transformed[j]
+    _columns(result, sign)
+    return result
+
+
+def _columns(x: InOut[Array[complex128, 2]], sign: f64):
+    """Replaces each column of `x` by its unscaled transform. Each column is copied into a
+    contiguous vector first, so the transform reads memory in order.
+    """
+    rows = x.shape[0]
+    for j in range(x.shape[1]):
+        column = Array.zeros(rows, complex128)
+        for i in range(rows):
+            column[i] = x[i, j]
+        transformed = _transform(column, sign)
+        for i in range(rows):
+            x[i, j] = transformed[i]
+
+
 def _transform(x: Array[complex128, 1], sign: f64) -> Array[complex128, 1]:
     """The sum over `j` of `x[j] * exp(sign * 2πi jk / n)` for each `k`, unscaled: the radix-2
     transform for a power-of-two length, Bluestein's otherwise.

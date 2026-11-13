@@ -1,5 +1,8 @@
-"""The `cm` module: matplotlib's colormaps, which turn a number from 0 to 1 into a color, for
+"""The `cm` library file: matplotlib's colormaps, which turn a number from 0 to 1 into a color, for
 images and their colorbars (decision 0046).
+
+It is internal to the standard library: `pyplot` and the files under it import it, and a
+program cannot, so a program's own `cm.byn` is never hidden by it.
 
 Each colormap is matplotlib's table of 256 colors, written here as the bytes matplotlib's
 `cmap(x, bytes=True)` gives, so an image is colored exactly as matplotlib colors it. The
@@ -14,14 +17,6 @@ from math import isnan
 class Colormap(Struct):
     """A colormap: its `name` and its 256 colors, as matplotlib's `Colormap`. Get one by name
     with `get_cmap`.
-
-    ```python
-    from cm import get_cmap
-
-    def main():
-        cmap = get_cmap("viridis")
-        print(cmap.to_rgba_bytes(0.0))  # (68, 1, 84, 255)
-    ```
     """
 
     name: str  # matplotlib's name for it, such as "viridis"

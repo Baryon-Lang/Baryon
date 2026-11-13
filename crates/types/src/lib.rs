@@ -16,6 +16,8 @@
 //!   it against the kind of value it formats.
 //! - [`union()`]: the one canonical form of a union type such as `Periodic | Dirichlet`
 //!   (decision 0032).
+//! - [`Column`]: one column of a `DataFrame` type, with how a frame
+//!   [is stored](Type::frame_storage) (decision 0045).
 //! - [`Item`], [`Declaration`] and the [`TypeDb`] trait: what each definition declares in
 //!   types, which the type checker computes and later stages read.
 //!
@@ -52,10 +54,12 @@ mod body;
 mod declaration;
 mod display;
 mod format;
+mod frame;
 mod interned;
 mod layout;
 mod primitive;
 mod shape;
+mod text_array;
 mod union;
 
 pub use body::{Call, Callee, Key, TypedBody};
@@ -173,6 +177,24 @@ pub enum TypeKind<'db> {
         /// The dimension lengths.
         shape: Shape,
     },
+    /// `Array[str, 1]`: a text array, the one array whose elements are not a copy type
+    /// (decision 0045). It has one dimension and holds `str`s, so it carries nothing else.
+    /// Lowering stores it as its [two buffers](Type::text_storage), every element's bytes end
+    /// to end and where each one starts, so the mid-level IR and the stages after it see only a
+    /// tuple of two arrays of numbers.
+    TextArray,
+    /// `DataFrame[S]`: a table of named columns, each a rank-1 array, all of one length
+    /// (decision 0045). Lowering stores it as its [`columns`](Type::frame_storage), so the
+    /// mid-level IR and the stages after it see only a tuple of arrays.
+    DataFrame {
+        /// The columns, in order. Two frames with the same columns are the
+        /// [same table](Type::same_table), whatever struct names their rows.
+        columns: Vec<Column<'db>>,
+        /// The struct `S` that names the schema, whose fields are the columns, when the frame
+        /// was declared with one; `None` for a schema the checker worked out, such as the
+        /// result of choosing columns. A row read from the frame is a value of this struct.
+        row: Option<Type<'db>>,
+    },
     /// A class with the base `Struct` or `Exception`: named fields stored together.
     Struct(Nominal<'db>),
     /// A class with the base `Enum`: one of a fixed set of named constants.
@@ -216,6 +238,44 @@ pub enum TypeKind<'db> {
     /// A type that could not be worked out because of an error already reported. Stages accept
     /// it anywhere without a further error, so one mistake gives one message.
     Unknown,
+}
+
+/// One column of a [`DataFrame`](TypeKind::DataFrame): its name and the type of its elements.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, salsa::SalsaValue)]
+pub struct Column<'db> {
+    /// The column's name, as the program writes it in `df["name"]` and `df.name`.
+    pub name: String,
+    /// The type of one element, such as `f64`: the column is an `Array` of it of rank 1.
+    pub element: Type<'db>,
+}
+
+impl<'db> Column<'db> {
+    /// The column with its element type replaced by `change` of it and its name kept, as
+    /// putting types in place of type parameters does.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use types::{Column, Float, Primitive, Type, TypeKind};
+    ///
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// let database = Database::default();
+    /// let f64 = Type::new(&database, TypeKind::Primitive(Primitive::Float(Float::F64)));
+    /// let unknown = Type::new(&database, TypeKind::Unknown);
+    /// let column = Column { name: "price".to_owned(), element: unknown };
+    /// assert_eq!(column.map(|_| f64), Column { name: "price".to_owned(), element: f64 });
+    /// ```
+    #[must_use]
+    pub fn map(&self, change: impl FnOnce(Type<'db>) -> Type<'db>) -> Self {
+        Self {
+            name: self.name.clone(),
+            element: change(self.element),
+        }
+    }
 }
 
 /// A type declared by a class: which class, and its type arguments when it is generic.

@@ -130,7 +130,8 @@ pub fn resolve(db: &dyn Db, package: Package, file: File) -> Resolution {
     let text = file.source(db).text();
     let modules = database::modules(db, package);
     let items = items::module_items(db, file);
-    let importer = Importer::new(db, modules);
+    let in_library = file.source(db).name().starts_with(database::LIBRARY_ROOT);
+    let importer = Importer::new(db, modules, in_library);
     let (references, diagnostics) = Walker::new(tree, text, file, items, importer).run();
     Resolution::new(references, diagnostics)
 }

@@ -57,6 +57,7 @@ impl<'db> Substitution<'_, 'db> {
             TypeKind::Parameter { .. } | TypeKind::Union(_) => return ty,
             TypeKind::Primitive(_)
             | TypeKind::Str
+            | TypeKind::TextArray
             | TypeKind::None
             | TypeKind::Function { .. }
             | TypeKind::Standard(_)
@@ -77,6 +78,13 @@ impl<'db> Substitution<'_, 'db> {
             TypeKind::Fixed { element, shape } => TypeKind::Fixed {
                 element: self.ty(*element),
                 shape: shape.clone(),
+            },
+            TypeKind::DataFrame { columns, row } => TypeKind::DataFrame {
+                columns: columns
+                    .iter()
+                    .map(|column| column.map(|ty| self.ty(ty)))
+                    .collect(),
+                row: row.map(|row| self.ty(row)),
             },
             TypeKind::Struct(nominal) => TypeKind::Struct(self.nominal(nominal)),
             TypeKind::Enum(nominal) => TypeKind::Enum(self.nominal(nominal)),
@@ -123,6 +131,7 @@ impl<'db> Substitution<'_, 'db> {
                 }
             }
             Rvalue::Length(..)
+            | Rvalue::Stride(..)
             | Rvalue::IsPresent(_)
             | Rvalue::ErrorIndex(_)
             | Rvalue::MemberIndex(_)

@@ -29,7 +29,10 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Types](types.md) | Numbers, number mixing, strings, collections, structs, enums, generics, type inference, constants |
 | [Values and references](values-and-references.md) | Moves, copies, borrows, and the exclusivity check, written as a decision procedure |
 | [Arrays](arrays.md) | `Array` and `Fixed`: construction, layout, indexing, slicing, whole-array arithmetic |
+| [Arrays of text](text-arrays.md) | `Array[str, 1]`: an array of strings stored end to end as Arrow stores text, built from a list, read by borrowing, looped over and copied |
 | [Statistics](statistics.md) | The `stats` module: `median`, `quantile`, `percentile`, `average`, `histogram`, `cov` and `corrcoef`, with NumPy's bits |
+| [DataFrames](dataframes.md) | `DataFrame[S]`: a table whose columns are arrays and whose column names the compiler checks, with pandas's names |
+| [Sorting, grouping and joining DataFrames](dataframe-operations.md) | `sort_values`, `groupby(...).agg(...)`, the inner `merge`, `drop_duplicates` and `concat`, with what each costs and where it differs from pandas |
 | [Errors and panics](errors.md) | `Raises`, `raise`, `try`/`except`, and failures that stop the program |
 | [Parallel and vector loops](parallel-loops.md) | `prange`, reductions, the disjoint-write rule, adding into shared arrays with `accumulate=`, and `simd` |
 | [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |
@@ -37,6 +40,7 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Files and processes](files-and-processes.md) | Command-line arguments, the exit status and environment variables: `sys` and `os` |
 | [Data files](data-files.md) | Text tables of numbers, NumPy's `.npy` files and the other data file formats, with NumPy's names: `Array.loadtxt`, `Array.savetxt`, `Array.load` and `Array.save` |
 | [Plotting](plotting.md) | The `pyplot` and `ticker` modules: line plots with matplotlib's names and look, saved as SVG |
+| [Compression](compression.md) | The `zlib` module and the other compression formats, with Python's names, on byte arrays |
 | [Differences from Python](differences-from-python.md) | Every place a Python programmer will be surprised, with the reason |
 | [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |
 | [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |

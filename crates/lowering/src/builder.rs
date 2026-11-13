@@ -1,6 +1,7 @@
 //! The state of lowering one function: the body being built, the block being filled, and what
 //! each name of the function became.
 
+use crate::frames::erase;
 use crate::parallel::Passed;
 use database::{Definition, File, Package, Resolution};
 use diagnostics::Diagnostic;
@@ -121,6 +122,7 @@ impl<'db> Builder<'db> {
             TypeKind::Fallible { value, .. } => *value,
             _ => signature.returns,
         };
+        let returns = erase(db, returns);
         let mut body = Body::new(returns, tree.span(function));
         let mut variables = BTreeMap::new();
         let parameters = tree
@@ -134,13 +136,14 @@ impl<'db> Builder<'db> {
                 name: parameter.name.clone(),
                 mode: parameter.mode,
             };
-            let local = body.push_local(parameter.ty, kind, tree.span(name));
+            let local = body.push_local(erase(db, parameter.ty), kind, tree.span(name));
             variables.insert(name, local);
         }
         let text = file.source(db).text();
         for (key, &ty) in &typed.locals {
             if let std::collections::btree_map::Entry::Vacant(entry) = variables.entry(key.0) {
                 let name = tree.text(key.0, text).to_owned();
+                let ty = erase(db, ty);
                 entry.insert(body.push_local(ty, LocalKind::Variable { name }, tree.span(key.0)));
             }
         }
@@ -222,6 +225,7 @@ impl<'db> Builder<'db> {
             if binding.start() >= span.start() && binding.end() <= span.end() {
                 let name = self.text_of(key.0).to_owned();
                 let kind = LocalKind::Variable { name };
+                let ty = erase(self.db, ty);
                 variables.insert(key.0, body.push_local(ty, kind, binding));
             }
         }
@@ -304,11 +308,13 @@ impl<'db> Builder<'db> {
         }
     }
 
-    /// The type of the expression `node`, as the checker found it; unknown if it has none.
+    /// The type of the expression `node`, as the checker found it, with a frame as the tuple
+    /// that stores it (the `frames` module); unknown if it has none.
     pub(crate) fn ty(&self, node: NodeId) -> Type<'db> {
-        self.typed
-            .expression(node)
-            .unwrap_or_else(|| Type::new(self.db, TypeKind::Unknown))
+        match self.typed.expression(node) {
+            Some(ty) => erase(self.db, ty),
+            None => Type::new(self.db, TypeKind::Unknown),
+        }
     }
 
     /// The type a local holds.

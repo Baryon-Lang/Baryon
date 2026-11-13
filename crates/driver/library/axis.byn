@@ -1,5 +1,8 @@
-"""The `axis` module: draws an axis's ticks, tick labels and offset text, as matplotlib's
+"""The `axis` library file: draws an axis's ticks, tick labels and offset text, as matplotlib's
 `XAxis` and `YAxis` do (decision 0046).
+
+It is internal to the standard library: `pyplot` and the files under it import it, and a
+program cannot, so a program's own `axis.byn` is never hidden by it.
 
 `pyplot` makes one `XAxis` and one `YAxis` for each `Axes` when it draws, from the range each
 shows and where it sits in the figure, in points; `ticker` places and labels the ticks.
@@ -17,14 +20,6 @@ OFFSET_PAD: Final = 3.0  # the gap between the tick labels or the axes and the o
 class XAxis(Struct):
     """The axis along the bottom of an axes: the range `vmin` to `vmax` laid from `left` to
     `right` along the line at `bottom`, all in points from the figure's top left corner.
-
-    ```python
-    from axis import XAxis
-
-    def main():
-        axis = XAxis(0.0, 10.0, 57.6, 414.72, 307.584)
-        print(axis.get_majorticklocs())  # [0.0, 2.0, 4.0, 6.0, 8.0, 10.0]
-    ```
     """
 
     vmin: f64  # the value at the left end
@@ -65,14 +60,6 @@ class XAxis(Struct):
 class YAxis(Struct):
     """The axis along the left of an axes: the range `vmin` to `vmax` laid from `bottom` up to
     `top` along the line at `left`, all in points from the figure's top left corner.
-
-    ```python
-    from axis import YAxis
-
-    def main():
-        axis = YAxis(-1.0, 1.0, 307.584, 41.472, 57.6)
-        print(len(axis.get_majorticklocs()))  # 9
-    ```
     """
 
     vmin: f64  # the value at the bottom end

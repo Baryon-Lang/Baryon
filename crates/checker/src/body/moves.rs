@@ -36,9 +36,11 @@ impl<'db> Body<'db> {
     pub(super) fn moves(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.db) {
             TypeKind::Str
+            | TypeKind::TextArray
             | TypeKind::List(_)
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }
+            | TypeKind::DataFrame { .. }
             | TypeKind::Standard(_) => true,
             // A union of `Copy` members is `Copy`; otherwise it moves (decision 0032).
             TypeKind::Tuple(items) | TypeKind::Union(items) => {
@@ -64,6 +66,12 @@ impl<'db> Body<'db> {
         match self.tree.kind(node) {
             SyntaxKind::Name | SyntaxKind::Attribute if self.borrowed_by_loop(node, "moved") => {}
             SyntaxKind::Name => self.move_variable(node, node),
+            SyntaxKind::Attribute if self.is_frame_attribute(node) => {}
+            // `df[i]` is a new struct each time it is read, so keeping it moves nothing.
+            SyntaxKind::Subscript if self.is_frame_row(node) => {}
+            SyntaxKind::Attribute | SyntaxKind::Subscript if self.is_column_read(node) => {
+                self.moved_out_of_frame(node);
+            }
             // `path.name` and the other parts of a `Path` are new values each time.
             SyntaxKind::Attribute if self.is_path_part(node) => {}
             // A field of an element, `people[0].name`, is part of the element: moving it out

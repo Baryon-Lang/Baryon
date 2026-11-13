@@ -1,0 +1,1366 @@
+"""The `zlib` module: deflate streams (RFC 1951) in their zlib (RFC 1950) and gzip (RFC 1952)
+containers, with Python's names, written in Baryon (decision 0049).
+
+Bytes are `Array[u8, 1]` where Python has `bytes`. Data that is not a valid stream raises
+`OSError` with the kind `INVALID_DATA` and the message Python's `zlib.error` carries, such as
+`Error -3 while decompressing data: invalid block type`.
+"""
+
+from os import ErrorKind
+
+
+def compress(data: Array[u8, 1], level: int = -1, wbits: int = 15) -> Raises[Array[u8, 1], OSError]:
+    """`data` compressed, as `zlib.compress(data, level, wbits)` gives it: a stream any deflate
+    decoder reads, Python's `zlib.decompress` included.
+
+    `level` runs from 0, stored without compression, through 1, the fastest, to 9, the
+    smallest; -1, the default, is 6, as in zlib. `wbits` names the container as for
+    `decompress`: 9 to 15 a zlib stream with a window of 2 ** wbits bytes (8 is taken as 9, as
+    zlib takes it), -9 to -15 a raw deflate stream, and 25 to 31 a gzip member with no name and
+    a modification time of 0, as zlib writes it. The stream follows zlib's algorithm and comes
+    within a few bytes of zlib's size, but its bytes are Baryon's own (decision 0049).
+
+    Raises `OSError` with the kind `INVALID_DATA` and Python's message for a `level` or `wbits`
+    Python rejects. Costs one pass over `data`; each position searches a hash chain up to the
+    level's limit, 4 links at level 1 and 4096 at level 9.
+    """
+    if level < -1 or level > 9:
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), "Bad compression level", "")
+    window = wbits if wbits >= 0 else -wbits
+    if window > 16:
+        window -= 16
+    if window == 8 and wbits == 8:
+        # zlib writes a zlib stream of window 8 as one of window 9, which every decoder reads.
+        window = 9
+    if window < 9 or window > 15:
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), "Bad compression level", "")
+    if level == -1:
+        level = 6
+    writer = _Writer(Array.zeros(len(data) // 2 + 64, u8), 0, 0, 0)
+    if wbits > 0 and wbits <= 15:
+        flags = 0 if level < 2 else (1 if level < 6 else (2 if level == 6 else 3))
+        header = ((8 + ((window - 8) << 4)) << 8) | (flags << 6)
+        header += 31 - header % 31
+        _put(writer, header >> 8, 8)
+        _put(writer, header & 255, 8)
+    elif wbits > 15:
+        extra = 2 if level == 9 else (4 if level < 2 else 0)
+        for byte in [31, 139, 8, 0, 0, 0, 0, 0, extra, 3]:
+            _put(writer, byte, 8)
+    _deflate(data, level, window, writer)
+    if wbits > 0 and wbits <= 15:
+        check = _adler32(data, 0, len(data), 1)
+        for shift in [24, 16, 8, 0]:
+            _put(writer, (check >> shift) & 255, 8)
+    elif wbits > 15:
+        check = _crc32(data, 0, len(data), 0, _crc_table())
+        size = len(data) & 0xFFFFFFFF
+        for shift in [0, 8, 16, 24]:
+            _put(writer, (check >> shift) & 255, 8)
+        for shift in [0, 8, 16, 24]:
+            _put(writer, (size >> shift) & 255, 8)
+    exact = Array.zeros(writer.length, u8)
+    for i in range(writer.length):
+        exact[i] = writer.data[i]
+    return exact
+
+
+def decompress(
+    data: Array[u8, 1], wbits: int = 15, bufsize: int = 16384
+) -> Raises[Array[u8, 1], OSError]:
+    """The bytes `data` holds compressed, as `zlib.decompress(data, wbits, bufsize)` gives them.
+
+    `wbits` names the container as in Python: 8 to 15 a zlib stream whose window is at most
+    2 ** wbits bytes, 0 a zlib stream of any window, -8 to -15 a raw deflate stream, 16 plus
+    those a gzip member, and 32 plus them either, told apart by the first bytes. Bytes after the
+    stream are ignored, as Python ignores them; a gzip member is read alone, so use
+    `gzip.decompress` for files of several members. `bufsize` is the first size of the output
+    buffer, which doubles as needed.
+
+    Raises `OSError` with the kind `INVALID_DATA` for a stream that is corrupt, truncated or of
+    another container, and for a `wbits` Python rejects. Costs one pass over `data` and over the
+    output, plus O(log n) copies of the output as its buffer grows.
+    """
+    output = _Output(Array.zeros(max(bufsize, 64), u8), 0)
+    error = _decompress(data, wbits, output)
+    if error != 0:
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(error), "")
+    exact = Array.zeros(output.length, u8)
+    for i in range(output.length):
+        exact[i] = output.data[i]
+    return exact
+
+
+class Decompress(Struct):
+    """A decompressor fed a stream in pieces, as `zlib.decompressobj` gives Python one: each
+    `decompress(piece)` gives the bytes the pieces so far hold, so a file larger than memory
+    can be read a block at a time. `eof` turns true at the end of the stream, and bytes after
+    it collect in `unused_data`, as in Python.
+
+    Output comes a whole deflate block at a time: a block cut off by the end of a piece is
+    decoded again, from its start, when the next piece arrives. Pieces of 64 KiB or more cost
+    one pass over the data; much smaller pieces decode a block's start several times.
+    """
+
+    unused_data: Array[u8, 1]  # the bytes after the end of the stream
+    eof: bool  # whether the end of the stream has been reached
+    _container: int  # 0 zlib, 1 gzip, 2 raw deflate, 3 zlib or gzip, not yet told apart
+    _window: int  # the largest window a zlib header may ask for, as `wbits` gives it; 0 any
+    _stage: int  # 0 the header, 1 the blocks, 2 the trailer, 3 ended
+    _pending: Array[u8, 1]  # input not yet used, from the byte the next block starts in
+    _bit: int  # bits of `_pending[0]` an earlier block used, 0 to 7
+    _history: Array[u8, 1]  # the last 32 KiB of output, which matches may copy from
+    _check: int  # the Adler-32 or CRC-32 of the output so far
+    _size: int  # the number of bytes of output so far
+
+    def decompress(self: InOut[Self], data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
+        """The bytes `data` and the pieces before it hold that no earlier call gave, as
+        `Decompress.decompress(data)` does in Python. Raises `OSError` with the kind
+        `INVALID_DATA` and Python's message for a corrupt stream."""
+        pending = _joined(self._pending, data)
+        if self._stage == 3:
+            self.unused_data = _joined(self.unused_data, pending)
+            self._pending = Array.zeros(0, u8)
+            return Array.zeros(0, u8)
+        output = _Output(
+            _joined(self._history, Array.zeros(len(data) * 4 + 64, u8)), len(self._history)
+        )
+        start = output.length
+        folded = output.length
+        position = 0
+        bases = _bases()
+        fixed = _fixed()
+        waiting = False
+        while not waiting:
+            if self._stage == 0:
+                if self._container == 3 and len(pending) >= 2:
+                    self._container = 1 if pending[0] == 31 and pending[1] == 139 else 0
+                    self._check = 0 if self._container == 1 else 1
+                error = 1
+                end = 0
+                if self._container == 0:
+                    error, end = _zlib_header(pending, self._window)
+                elif self._container == 1:
+                    error, end = _gzip_header(pending)
+                elif self._container == 2:
+                    error = 0
+                if error == 1:
+                    waiting = True
+                elif error != 0:
+                    raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(error), "")
+                else:
+                    position = end
+                    self._stage = 1
+            elif self._stage == 1:
+                bits = _Bits(position, 0, 0)
+                if self._bit > 0 and position < len(pending):
+                    bits = _Bits(position + 1, int(pending[position]) >> self._bit, 8 - self._bit)
+                mark = output.length
+                error, final = _block(bits, pending, output, bases, fixed)
+                if error == 1:
+                    output.length = mark
+                    waiting = True
+                elif error != 0:
+                    raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(error), "")
+                else:
+                    position = bits.position - (bits.count >> 3)
+                    self._bit = 0
+                    if bits.count & 7 > 0:
+                        position -= 1
+                        self._bit = 8 - (bits.count & 7)
+                    if final:
+                        self._stage = 2
+                        if self._bit > 0:
+                            position += 1
+                            self._bit = 0
+            elif self._stage == 2:
+                self._check = self._fold(output, folded)
+                self._size += output.length - folded
+                folded = output.length
+                size = 0 if self._container == 2 else (4 if self._container == 0 else 8)
+                if position + size > len(pending):
+                    waiting = True
+                else:
+                    if self._container == 0 and _word(pending, position, 4, True) != self._check:
+                        raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(16), "")
+                    if self._container == 1:
+                        if _word(pending, position, 4, False) != self._check:
+                            raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(16), "")
+                        if _word(pending, position + 4, 4, False) != self._size & 0xFFFFFFFF:
+                            raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(17), "")
+                    position += size
+                    self._stage = 3
+                    self.eof = True
+            else:
+                self.unused_data = _joined(self.unused_data, pending[position:].copy())
+                position = len(pending)
+                waiting = True
+        self._check = self._fold(output, folded)
+        self._size += output.length - folded
+        self._pending = pending[position:].copy()
+        keep = min(output.length, 32768)
+        self._history = output.data[output.length - keep : output.length].copy()
+        return output.data[start : output.length].copy()
+
+    def flush(self: InOut[Self]) -> Array[u8, 1]:
+        """The bytes still held back, as `Decompress.flush()` gives them in Python: the part
+        of a block that the input so far cuts off, decoded as far as it goes. Use it once, at
+        the end of the input."""
+        if self._stage != 1 or len(self._pending) == 0:
+            return Array.zeros(0, u8)
+        output = _Output(
+            _joined(self._history, Array.zeros(4 * len(self._pending) + 64, u8)), len(self._history)
+        )
+        start = output.length
+        bits = _Bits(0, 0, 0)
+        if self._bit > 0:
+            bits = _Bits(1, int(self._pending[0]) >> self._bit, 8 - self._bit)
+        _block(bits, self._pending, output, _bases(), _fixed())
+        self._pending = Array.zeros(0, u8)
+        return output.data[start : output.length].copy()
+
+    def _fold(self, output: _Output, start: int) -> int:
+        """The running checksum with `output.data[start:output.length]` folded in: Adler-32
+        for a zlib stream, CRC-32 for a gzip member, nothing for a raw stream."""
+        if self._container == 0:
+            return _adler32(output.data, start, output.length, self._check)
+        if self._container == 1:
+            return _crc32(output.data, start, output.length, self._check, _crc_table())
+        return 0
+
+
+def decompressobj(wbits: int = 15) -> Raises[Decompress, OSError]:
+    """A `Decompress` for a stream in the container `wbits` names, as for `decompress`, as
+    `zlib.decompressobj(wbits)` gives one in Python. Raises `OSError` for a `wbits` Python
+    rejects."""
+    window = wbits
+    container = 0
+    if wbits < 0:
+        window = -wbits
+        container = 2
+    elif wbits >= 32:
+        window = wbits - 32
+        container = 3
+    elif wbits >= 16:
+        window = wbits - 16
+        container = 1
+    if window > 15 or (window < 8 and not (window == 0 and wbits >= 0)):
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), _message(21), "")
+    check = 1 if container != 1 else 0
+    empty = Array.zeros(0, u8)
+    return Decompress(
+        empty.copy(), False, container, window, 0, empty.copy(), 0, empty.copy(), check, 0
+    )
+
+
+def _joined(first: Array[u8, 1], second: Array[u8, 1]) -> Array[u8, 1]:
+    """A new array of `first`'s bytes followed by `second`'s."""
+    joined = Array.zeros(len(first) + len(second), u8)
+    for i in range(len(first)):
+        joined[i] = first[i]
+    for i in range(len(second)):
+        joined[len(first) + i] = second[i]
+    return joined
+
+
+def crc32(data: Array[u8, 1], value: int = 0) -> int:
+    """The CRC-32 of `data` (ISO 3309, as gzip and PNG use it), continuing the checksum `value`
+    of the bytes before it, as `zlib.crc32(data, value)` gives it: a number from 0 to
+    2 ** 32 - 1. Costs one table lookup per byte.
+    """
+    return _crc32(data, 0, len(data), value & 0xFFFFFFFF, _crc_table())
+
+
+def adler32(data: Array[u8, 1], value: int = 1) -> int:
+    """The Adler-32 checksum of `data` (RFC 1950, as zlib streams end with it), continuing the
+    checksum `value` of the bytes before it, as `zlib.adler32(data, value)` gives it: a number
+    from 0 to 2 ** 32 - 1. Costs two additions per byte.
+    """
+    return _adler32(data, 0, len(data), value & 0xFFFFFFFF)
+
+
+def _decompress(data: Array[u8, 1], wbits: int, output: InOut[_Output]) -> int:
+    """Decodes `data` in the container `wbits` names, as `decompress` describes, into `output`;
+    gives an error code for `_message`, 0 for none."""
+    window = wbits
+    container = 0
+    if wbits < 0:
+        window = -wbits
+        container = 2
+    elif wbits >= 32:
+        window = wbits - 32
+        container = 3
+    elif wbits >= 16:
+        window = wbits - 16
+        container = 1
+    if window > 15 or (window < 8 and not (window == 0 and wbits >= 0)):
+        return 21
+    if container == 3:
+        container = 1 if len(data) >= 2 and data[0] == 31 and data[1] == 139 else 0
+    if container == 2:
+        return _inflate(data, 0, output)[0]
+    if container == 1:
+        return _gzip_member(data, output)
+    return _zlib_stream(data, window, output)
+
+
+class _Bits(Struct):
+    """Where a decoder stands in its input: DEFLATE reads bits from the lowest bit of each byte
+    up, so bits not yet used wait in `buffer`, lowest first."""
+
+    position: int  # the next byte of the input to load into `buffer`
+    buffer: int  # bits loaded and not yet used, the next one lowest
+    count: int  # how many bits `buffer` holds, at most 63
+
+
+class _Output(Struct):
+    """The bytes decoded so far: the first `length` bytes of `data`, whose length doubles when
+    it fills, so n bytes cost O(n) copying in all."""
+
+    data: Array[u8, 1]
+    length: int
+
+
+class _Table(Struct):
+    """A Huffman code as a table read by the next `bits` input bits: entry `i` is
+    `symbol * 16 + length` for the code whose reversed bits start `i`, or 0 where no code does.
+    `bits` is the longest code's length, at most 15, so the table has 2 ** bits entries."""
+
+    entries: Array[i32, 1]
+    bits: int
+
+
+def _fill(bits: InOut[_Bits], data: Array[u8, 1], n: int):
+    """Loads bytes until `bits` holds at least `n` bits or the input ends."""
+    while bits.count < n and bits.position < len(data):
+        bits.buffer = bits.buffer | (int(data[bits.position]) << bits.count)
+        bits.position += 1
+        bits.count += 8
+
+
+def _take(bits: InOut[_Bits], data: Array[u8, 1], n: int) -> int:
+    """The next `n` bits as a number, first bit lowest, or -1 when the input ends first."""
+    _fill(bits, data, n)
+    if bits.count < n:
+        return -1
+    value = bits.buffer & ((1 << n) - 1)
+    bits.buffer = bits.buffer >> n
+    bits.count -= n
+    return value
+
+
+def _reverse(code: int, length: int) -> int:
+    """`code`'s lowest `length` bits in the opposite order."""
+    reversed = 0
+    for _ in range(length):
+        reversed = (reversed << 1) | (code & 1)
+        code = code >> 1
+    return reversed
+
+
+def _table(lengths: Array[i32, 1], start: int, count: int, kind: int) -> _Table:
+    """The table of the canonical Huffman code whose code lengths are
+    `lengths[start:start + count]` (RFC 1951, section 3.2.2). `kind` is 0 for the code-length
+    code, which must be complete, and 1 for the literal/length and distance codes, which may be
+    incomplete only when they have a single code, of length 1, as zlib allows. Gives a table of
+    `bits` -1 for a set of lengths that is over-subscribed or wrongly incomplete."""
+    counts = Array.zeros(16, int)
+    longest = 0
+    for symbol in range(count):
+        length = int(lengths[start + symbol])
+        counts[length] += 1
+        if length > longest:
+            longest = length
+    if longest == 0:
+        return _Table(Array.zeros(2, i32), 1)
+    left = 1
+    for length in range(1, 16):
+        left = (left << 1) - counts[length]
+        if left < 0:
+            return _Table(Array.zeros(1, i32), -1)
+    if left > 0 and (kind == 0 or longest != 1):
+        return _Table(Array.zeros(1, i32), -1)
+    counts[0] = 0
+    next_code = Array.zeros(16, int)
+    code = 0
+    for length in range(1, 16):
+        code = (code + counts[length - 1]) << 1
+        next_code[length] = code
+    size = 1 << longest
+    entries = Array.zeros(size, i32)
+    for symbol in range(count):
+        length = int(lengths[start + symbol])
+        if length > 0:
+            first = _reverse(next_code[length], length)
+            next_code[length] += 1
+            entry = i32(symbol * 16 + length)
+            step = 1 << length
+            index = first
+            while index < size:
+                entries[index] = entry
+                index += step
+    return _Table(entries, longest)
+
+
+def _decode(bits: InOut[_Bits], data: Array[u8, 1], table: _Table) -> int:
+    """The next symbol of `table`'s code, -1 when the input ends inside it, or -2 for bits that
+    start no code."""
+    _fill(bits, data, table.bits)
+    entry = int(table.entries[bits.buffer & ((1 << table.bits) - 1)])
+    length = entry & 15
+    if length == 0:
+        if bits.count < table.bits:
+            return -1
+        return -2
+    if length > bits.count:
+        return -1
+    bits.buffer = bits.buffer >> length
+    bits.count -= length
+    return entry >> 4
+
+
+def _reserve(output: InOut[_Output], extra: int):
+    """Makes room for `extra` more bytes, doubling the buffer as needed."""
+    needed = output.length + extra
+    if needed <= len(output.data):
+        return
+    size = 2 * len(output.data)
+    if size < needed:
+        size = needed
+    grown = Array.zeros(size, u8)
+    for i in range(output.length):
+        grown[i] = output.data[i]
+    output.data = grown
+
+
+def _stored(bits: InOut[_Bits], data: Array[u8, 1], output: InOut[_Output]) -> int:
+    """Copies a stored block (RFC 1951, section 3.2.4), from the byte after its header; gives
+    an error code, 0 for none."""
+    bits.buffer = bits.buffer >> (bits.count & 7)
+    bits.count -= bits.count & 7
+    length = _take(bits, data, 16)
+    complement = _take(bits, data, 16)
+    if complement < 0:
+        return 1
+    if length != (complement ^ 65535):
+        return 3
+    # Whole bytes still in the buffer were loaded ahead; step back so the copy starts there.
+    bits.position -= bits.count >> 3
+    bits.buffer = 0
+    bits.count = 0
+    if bits.position + length > len(data):
+        return 1
+    _reserve(output, length)
+    for i in range(length):
+        output.data[output.length + i] = data[bits.position + i]
+    output.length += length
+    bits.position += length
+    return 0
+
+
+def _huffman(
+    bits: InOut[_Bits],
+    data: Array[u8, 1],
+    output: InOut[_Output],
+    literals: _Table,
+    distances: _Table,
+    bases: Array[i32, 1],
+) -> int:
+    """Decodes one block coded with `literals` and `distances` up to its end-of-block symbol
+    (RFC 1951, section 3.2.5); gives an error code, 0 for none. `bases` holds each length
+    symbol's base and extra bits, then each distance symbol's."""
+    while True:
+        symbol = _decode(bits, data, literals)
+        if symbol < 0:
+            return 1 if symbol == -1 else 10
+        if symbol < 256:
+            if output.length == len(output.data):
+                _reserve(output, 1)
+            output.data[output.length] = u8(symbol)
+            output.length += 1
+        elif symbol == 256:
+            return 0
+        else:
+            symbol -= 257
+            if symbol >= 29:
+                return 10
+            extra = _take(bits, data, int(bases[29 + symbol]))
+            if extra < 0:
+                return 1
+            length = int(bases[symbol]) + extra
+            code = _decode(bits, data, distances)
+            if code < 0:
+                return 1 if code == -1 else 11
+            if code >= 30:
+                return 11
+            extra = _take(bits, data, int(bases[88 + code]))
+            if extra < 0:
+                return 1
+            distance = int(bases[58 + code]) + extra
+            if distance > output.length:
+                return 12
+            _reserve(output, length)
+            source = output.length - distance
+            for i in range(length):
+                output.data[output.length + i] = output.data[source + i]
+            output.length += length
+
+
+def _bases() -> Array[i32, 1]:
+    """The base lengths of length symbols 257 to 285 (29 entries), their extra bits (29), the base
+    distances of distance codes 0 to 29 (30) and their extra bits (30), from RFC 1951's tables."""
+    bases = Array.zeros(118, i32)
+    length = 3
+    for symbol in range(28):
+        extra = 0 if symbol < 8 else (symbol - 4) // 4
+        bases[symbol] = i32(length)
+        bases[29 + symbol] = i32(extra)
+        length += 1 << extra
+    bases[28] = i32(258)
+    bases[57] = i32(0)
+    distance = 1
+    for code in range(30):
+        extra = 0 if code < 4 else (code - 2) // 2
+        bases[58 + code] = i32(distance)
+        bases[88 + code] = i32(extra)
+        distance += 1 << extra
+    return bases
+
+
+def _failed(error: int) -> tuple[_Table, _Table, int]:
+    """What `_dynamic` gives for error code `error`: two empty tables and the code."""
+    return (_Table(Array.zeros(1, i32), -1), _Table(Array.zeros(1, i32), -1), error)
+
+
+def _dynamic(bits: InOut[_Bits], data: Array[u8, 1]) -> tuple[_Table, _Table, int]:
+    """Reads a dynamic block's code definitions (RFC 1951, section 3.2.7): the literal/length
+    and distance tables, and an error code, 0 for none."""
+    literal_count = _take(bits, data, 5)
+    distance_count = _take(bits, data, 5)
+    code_count = _take(bits, data, 4)
+    if code_count < 0:
+        return _failed(1)
+    literal_count += 257
+    distance_count += 1
+    code_count += 4
+    if literal_count > 286 or distance_count > 30:
+        return _failed(4)
+    order = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+    code_lengths = Array.zeros(19, i32)
+    for i in range(code_count):
+        length = _take(bits, data, 3)
+        if length < 0:
+            return _failed(1)
+        code_lengths[order[i]] = i32(length)
+    codes = _table(code_lengths, 0, 19, 0)
+    if codes.bits < 0:
+        return _failed(5)
+    total = literal_count + distance_count
+    lengths = Array.zeros(total, i32)
+    filled = 0
+    while filled < total:
+        symbol = _decode(bits, data, codes)
+        if symbol == -1:
+            return _failed(1)
+        if symbol < 0:
+            return _failed(5)
+        if symbol < 16:
+            lengths[filled] = i32(symbol)
+            filled += 1
+        else:
+            repeated = 0
+            times = 0
+            if symbol == 16:
+                if filled == 0:
+                    return _failed(6)
+                repeated = int(lengths[filled - 1])
+                times = 3 + _take(bits, data, 2)
+                if times < 3:
+                    return _failed(1)
+            elif symbol == 17:
+                times = 3 + _take(bits, data, 3)
+                if times < 3:
+                    return _failed(1)
+            else:
+                times = 11 + _take(bits, data, 7)
+                if times < 11:
+                    return _failed(1)
+            if filled + times > total:
+                return _failed(6)
+            for _ in range(times):
+                lengths[filled] = i32(repeated)
+                filled += 1
+    if lengths[256] == 0:
+        return _failed(7)
+    literals = _table(lengths, 0, literal_count, 1)
+    if literals.bits < 0:
+        return _failed(8)
+    distances = _table(lengths, literal_count, distance_count, 1)
+    if distances.bits < 0:
+        return _failed(9)
+    return (literals, distances, 0)
+
+
+def _fixed() -> tuple[_Table, _Table]:
+    """The fixed literal/length and distance tables of RFC 1951, section 3.2.6."""
+    lengths = Array.zeros(320, i32)
+    for symbol in range(288):
+        if symbol < 144:
+            lengths[symbol] = i32(8)
+        elif symbol < 256:
+            lengths[symbol] = i32(9)
+        elif symbol < 280:
+            lengths[symbol] = i32(7)
+        else:
+            lengths[symbol] = i32(8)
+    for code in range(32):
+        lengths[288 + code] = i32(5)
+    return (_table(lengths, 0, 288, 1), _table(lengths, 288, 32, 1))
+
+
+def _inflate(data: Array[u8, 1], start: int, output: InOut[_Output]) -> tuple[int, int]:
+    """Decodes the raw DEFLATE stream (RFC 1951) that starts at byte `start` of `data`, adding
+    its bytes to `output`. Gives the error code, 0 for none, and the position of the first byte
+    after the stream."""
+    bits = _Bits(start, 0, 0)
+    bases = _bases()
+    fixed = _fixed()
+    final = False
+    while not final:
+        error, final = _block(bits, data, output, bases, fixed)
+        if error != 0:
+            return (error, bits.position)
+    return (0, bits.position - (bits.count >> 3))
+
+
+def _block(
+    bits: InOut[_Bits],
+    data: Array[u8, 1],
+    output: InOut[_Output],
+    bases: Array[i32, 1],
+    fixed: tuple[_Table, _Table],
+) -> tuple[int, bool]:
+    """Decodes the one DEFLATE block that starts at `bits` into `output`: its 3-bit header,
+    then a stored, fixed-code or dynamic-code body. Gives the error code, 0 for none, and
+    whether the block is the stream's last."""
+    header = _take(bits, data, 3)
+    if header < 0:
+        return (1, False)
+    kind = header >> 1
+    error = 0
+    if kind == 0:
+        error = _stored(bits, data, output)
+    elif kind == 1:
+        error = _huffman(bits, data, output, fixed[0], fixed[1], bases)
+    elif kind == 2:
+        literals, distances, error = _dynamic(bits, data)
+        if error == 0:
+            error = _huffman(bits, data, output, literals, distances, bases)
+    else:
+        error = 2
+    return (error, header & 1 == 1)
+
+
+def _adler32(data: Array[u8, 1], start: int, stop: int, value: int) -> int:
+    """The Adler-32 checksum (RFC 1950, section 9) of `data[start:stop]`, continuing from
+    `value`, as `zlib.adler32(data, value)` gives it. The sums are reduced every 5552 bytes,
+    zlib's NMAX, the most that cannot overflow 32 bits."""
+    low = value & 65535
+    high = (value >> 16) & 65535
+    position = start
+    while position < stop:
+        chunk = min(stop, position + 5552)
+        for i in range(position, chunk):
+            low += int(data[i])
+            high += low
+        low = low % 65521
+        high = high % 65521
+        position = chunk
+    return (high << 16) | low
+
+
+def _crc_table() -> Array[u32, 1]:
+    """The CRC-32 table for the reflected polynomial 0xEDB88320 (ISO 3309, RFC 1952): entry `n`
+    is the CRC of the byte `n`."""
+    table = Array.zeros(256, u32)
+    for n in range(256):
+        c = n
+        for _ in range(8):
+            if c & 1 == 1:
+                c = 0xEDB88320 ^ (c >> 1)
+            else:
+                c = c >> 1
+        table[n] = u32(c)
+    return table
+
+
+def _crc32(data: Array[u8, 1], start: int, stop: int, value: int, table: Array[u32, 1]) -> int:
+    """The CRC-32 (RFC 1952, section 8) of `data[start:stop]`, continuing from `value`, as
+    `zlib.crc32(data, value)` gives it, one table lookup per byte."""
+    c = value ^ 0xFFFFFFFF
+    for i in range(start, stop):
+        c = int(table[(c ^ int(data[i])) & 255]) ^ (c >> 8)
+    return c ^ 0xFFFFFFFF
+
+
+def _word(data: Array[u8, 1], position: int, size: int, big: bool) -> int:
+    """The unsigned number in the `size` bytes of `data` from `position`, big-endian or
+    little-endian. The caller checks the bytes are there."""
+    value = 0
+    for i in range(size):
+        if big:
+            value = (value << 8) | int(data[position + i])
+        else:
+            value = value | (int(data[position + i]) << (8 * i))
+    return value
+
+
+def _zlib_stream(data: Array[u8, 1], window: int, output: InOut[_Output]) -> int:
+    """Decodes the zlib stream (RFC 1950) at the start of `data` into `output`, checking its
+    header against a window of at most 2 ** `window` bytes (any window for 0) and its Adler-32,
+    as zlib does; gives an error code, 0 for none."""
+    error, start = _zlib_header(data, window)
+    if error != 0:
+        return error
+    error, end = _inflate(data, start, output)
+    if error != 0:
+        return error
+    if end + 4 > len(data):
+        return 1
+    if _word(data, end, 4, True) != _adler32(output.data, 0, output.length, 1):
+        return 16
+    return 0
+
+
+def _zlib_header(data: Array[u8, 1], window: int) -> tuple[int, int]:
+    """Checks the two-byte zlib header (RFC 1950) at the start of `data` against a window of at
+    most 2 ** `window` bytes (any window for 0), as zlib does. Gives the error code, 0 for none
+    and 1 when `data` is too short to tell, and the position after the header."""
+    if len(data) < 2:
+        return (1, 0)
+    method = int(data[0])
+    flags = int(data[1])
+    if (method * 256 + flags) % 31 != 0:
+        return (13, 0)
+    if method & 15 != 8:
+        return (14, 0)
+    if (method >> 4) + 8 > 15 or (window > 0 and (method >> 4) + 8 > window):
+        return (15, 0)
+    if flags & 32 != 0:
+        return (18, 0)
+    return (0, 2)
+
+
+def _skip_text(data: Array[u8, 1], position: int) -> int:
+    """The position after the zero byte that ends the text at `position` in a gzip header, or
+    -1 when the input ends first."""
+    while position < len(data):
+        if data[position] == 0:
+            return position + 1
+        position += 1
+    return -1
+
+
+def _gzip_member(data: Array[u8, 1], output: InOut[_Output]) -> int:
+    """Decodes the gzip member (RFC 1952) at the start of `data` into `output`, checking its
+    header, its header CRC when it has one, and its CRC-32 and length, as zlib does; gives an
+    error code, 0 for none."""
+    error, start = _gzip_header(data)
+    if error != 0:
+        return error
+    error, end = _inflate(data, start, output)
+    if error != 0:
+        return error
+    if end + 8 > len(data):
+        return 1
+    if _word(data, end, 4, False) != _crc32(output.data, 0, output.length, 0, _crc_table()):
+        return 16
+    if _word(data, end + 4, 4, False) != output.length & 0xFFFFFFFF:
+        return 17
+    return 0
+
+
+def _gzip_header(data: Array[u8, 1]) -> tuple[int, int]:
+    """Checks the gzip member header (RFC 1952) at the start of `data`, its optional fields and
+    its header CRC when it has one, as zlib does. Gives the error code, 0 for none and 1 when
+    `data` is too short to tell, and the position after the header."""
+    if len(data) < 10:
+        return (1, 0)
+    if data[0] != 31 or data[1] != 139:
+        return (13, 0)
+    if data[2] != 8:
+        return (14, 0)
+    flags = int(data[3])
+    if flags & 224 != 0:
+        return (19, 0)
+    position = 10
+    if flags & 4 != 0:
+        if position + 2 > len(data):
+            return (1, 0)
+        position += 2 + _word(data, position, 2, False)
+    if flags & 8 != 0 and position <= len(data):
+        position = _skip_text(data, position)
+    if flags & 16 != 0 and position >= 0 and position <= len(data):
+        position = _skip_text(data, position)
+    if position < 0 or position > len(data):
+        return (1, 0)
+    if flags & 2 != 0:
+        if position + 2 > len(data):
+            return (1, 0)
+        if _word(data, position, 2, False) != _crc32(data, 0, position, 0, _crc_table()) & 65535:
+            return (20, 0)
+        position += 2
+    return (0, position)
+
+
+def _message(error: int) -> str:
+    """The message of Python's `zlib.error` for error code `error`: zlib's return code, then
+    zlib's own words for what was wrong."""
+    if error == 1:
+        return "Error -5 while decompressing data: incomplete or truncated stream"
+    if error == 18:
+        return "Error 2 while decompressing data"
+    if error == 21:
+        return "Error -2 while preparing to decompress data: inconsistent stream state"
+    words = [
+        "invalid block type",
+        "invalid stored block lengths",
+        "too many length or distance symbols",
+        "invalid code lengths set",
+        "invalid bit length repeat",
+        "invalid code -- missing end-of-block",
+        "invalid literal/lengths set",
+        "invalid distances set",
+        "invalid literal/length code",
+        "invalid distance code",
+        "invalid distance too far back",
+        "incorrect header check",
+        "unknown compression method",
+        "invalid window size",
+        "incorrect data check",
+        "incorrect length check",
+        "",
+        "unknown header flags set",
+        "header crc mismatch",
+    ]
+    return "Error -3 while decompressing data: " + words[error - 2]
+
+
+class _Writer(Struct):
+    """A DEFLATE bit stream being written: bits go into `buffer` lowest first and leave as whole
+    bytes into the first `length` bytes of `data`, which doubles when it fills."""
+
+    data: Array[u8, 1]
+    length: int  # bytes written to `data`
+    buffer: int  # bits not yet written, the first lowest
+    count: int  # how many bits `buffer` holds, less than 8 between calls
+
+
+class _Block(Struct):
+    """The symbols of the block being gathered: a literal byte has distance 0, a match its
+    length (3 to 258) and distance (1 to 32768). Frequencies are counted as symbols arrive."""
+
+    lengths: Array[i32, 1]  # a literal's byte, or a match's length
+    distances: Array[i32, 1]  # 0 for a literal, or a match's distance
+    count: int  # symbols gathered
+    start: int  # the input position of the block's first byte
+    literal_counts: Array[int, 1]  # frequency of each literal/length symbol, 286 of them
+    distance_counts: Array[int, 1]  # frequency of each distance code, 30 of them
+
+
+def _put(writer: InOut[_Writer], value: int, n: int):
+    """Writes the `n` lowest bits of `value`, at most 16, lowest first."""
+    writer.buffer = writer.buffer | (value << writer.count)
+    writer.count += n
+    if writer.length + 3 > len(writer.data):
+        grown = Array.zeros(2 * len(writer.data) + 16, u8)
+        for i in range(writer.length):
+            grown[i] = writer.data[i]
+        writer.data = grown
+    while writer.count >= 8:
+        writer.data[writer.length] = u8(writer.buffer & 255)
+        writer.length += 1
+        writer.buffer = writer.buffer >> 8
+        writer.count -= 8
+
+
+def _align(writer: InOut[_Writer]):
+    """Pads the stream with zero bits to the next byte boundary."""
+    if writer.count > 0:
+        _put(writer, 0, 8 - writer.count)
+
+
+def _length_symbol(length: int) -> int:
+    """The literal/length symbol, 257 to 285, of a match length from 3 to 258."""
+    if length == 258:
+        return 285
+    if length < 11:
+        return 254 + length
+    extra = 1
+    while (8 << extra) + 3 <= length:
+        extra += 1
+    # Each extra-bit group of four symbols starts at length 3 + 4 * 2 ** extra.
+    group_start = (4 << extra) + 3
+    return 261 + 4 * extra + (length - group_start) // (1 << extra)
+
+
+def _distance_code(distance: int) -> int:
+    """The distance code, 0 to 29, of a distance from 1 to 32768."""
+    if distance <= 4:
+        return distance - 1
+    extra = 1
+    while (4 << extra) < distance:
+        extra += 1
+    group_start = (2 << extra) + 1
+    return 2 + 2 * extra + (distance - group_start) // (1 << extra)
+
+
+def _limited_lengths(counts: Array[int, 1], size: int, limit: int) -> Array[i32, 1]:
+    """Huffman code lengths of at most `limit` bits for symbols with frequencies
+    `counts[0:size]`, 0 for an unused symbol. At least two symbols get a code, as zlib ensures,
+    since a decoder needs a code of at least one bit. The tree is built from frequencies in
+    order; lengths past the limit are then pulled in and the Kraft sum restored by lengthening
+    the next-deepest codes, as miniz does, and the shortest codes go to the most frequent
+    symbols."""
+    lengths = Array.zeros(size, i32)
+    used: list[int] = []
+    for symbol in range(size):
+        if counts[symbol] > 0:
+            used.append(symbol)
+    forced = 0
+    while len(used) < 2:
+        if counts[forced] == 0:
+            used.append(forced)
+        forced += 1
+    n = len(used)
+    # Leaves sorted by frequency (then symbol), smallest first: an insertion sort of at most
+    # 286 symbols.
+    order = Array.zeros(n, int)
+    weights = Array.zeros(2 * n, int)
+    for i in range(n):
+        symbol = used[i]
+        weight = counts[symbol] if counts[symbol] > 0 else 1
+        j = i
+        while j > 0 and weights[j - 1] > weight:
+            weights[j] = weights[j - 1]
+            order[j] = order[j - 1]
+            j -= 1
+        weights[j] = weight
+        order[j] = symbol
+    # Two-queue Huffman: leaves 0..n-1 in order, internal nodes n..2n-2 in the order made.
+    parents = Array.zeros(2 * n, int)
+    leaf = 0
+    node = n
+    for made in range(n, 2 * n - 1):
+        children = Array.zeros(2, int)
+        for k in range(2):
+            if leaf < n and (node >= made or weights[leaf] <= weights[node]):
+                children[k] = leaf
+                leaf += 1
+            else:
+                children[k] = node
+                node += 1
+        weights[made] = weights[children[0]] + weights[children[1]]
+        parents[children[0]] = made
+        parents[children[1]] = made
+    depths = Array.zeros(2 * n, int)
+    for i in range(2 * n - 3, -1, -1):
+        depths[i] = depths[parents[i]] + 1
+    counts_by_length = Array.zeros(64, int)
+    for i in range(n):
+        counts_by_length[depths[i]] += 1
+    for length in range(limit + 1, 64):
+        counts_by_length[limit] += counts_by_length[length]
+        counts_by_length[length] = 0
+    total = 0
+    for length in range(1, limit + 1):
+        total += counts_by_length[length] << (limit - length)
+    while total != (1 << limit):
+        counts_by_length[limit] -= 1
+        for length in range(limit - 1, 0, -1):
+            if counts_by_length[length] > 0:
+                counts_by_length[length] -= 1
+                counts_by_length[length + 1] += 2
+                break
+        total -= 1
+    # The least frequent leaves take the longest lengths.
+    i = 0
+    for length in range(limit, 0, -1):
+        for _ in range(counts_by_length[length]):
+            lengths[order[i]] = i32(length)
+            i += 1
+    return lengths
+
+
+def _codes(lengths: Array[i32, 1]) -> Array[i32, 1]:
+    """The canonical codes (RFC 1951, section 3.2.2) of a set of code lengths, each with its bits
+    reversed, since codes are written from their first bit and the stream from the lowest."""
+    counts = Array.zeros(16, int)
+    for symbol in range(len(lengths)):
+        counts[int(lengths[symbol])] += 1
+    counts[0] = 0
+    next_code = Array.zeros(16, int)
+    code = 0
+    for length in range(1, 16):
+        code = (code + counts[length - 1]) << 1
+        next_code[length] = code
+    codes = Array.zeros(len(lengths), i32)
+    for symbol in range(len(lengths)):
+        length = int(lengths[symbol])
+        if length > 0:
+            codes[symbol] = i32(_reverse(next_code[length], length))
+            next_code[length] += 1
+    return codes
+
+
+def _fixed_lengths() -> Array[i32, 1]:
+    """The fixed code lengths of RFC 1951, section 3.2.6: 288 literal/length symbols, then 30
+    distance codes."""
+    lengths = Array.zeros(318, i32)
+    for symbol in range(288):
+        if symbol < 144:
+            lengths[symbol] = i32(8)
+        elif symbol < 256:
+            lengths[symbol] = i32(9)
+        elif symbol < 280:
+            lengths[symbol] = i32(7)
+        else:
+            lengths[symbol] = i32(8)
+    for code in range(30):
+        lengths[288 + code] = i32(5)
+    return lengths
+
+
+def _data_bits(
+    block: _Block, literal_lengths: Array[i32, 1], distance_lengths: Array[i32, 1]
+) -> int:
+    """The bits a block's symbols and end-of-block take with the given code lengths, extra
+    bits included."""
+    bits = 0
+    for symbol in range(286):
+        bits += block.literal_counts[symbol] * int(literal_lengths[symbol])
+        if symbol >= 265 and symbol < 285:
+            bits += block.literal_counts[symbol] * ((symbol - 261) // 4)
+    for code in range(30):
+        bits += block.distance_counts[code] * int(distance_lengths[code])
+        if code >= 4:
+            bits += block.distance_counts[code] * ((code - 2) // 2)
+    return bits
+
+
+def _code_length_runs(lengths: Array[i32, 1], start: int, count: int, runs: InOut[list[int]]):
+    """Appends the code-length code's symbols for `lengths[start:start + count]`, run-length
+    coded as zlib's `scan_tree` codes them: 16 repeats the previous length 3 to 6 times, 17 and
+    18 give 3 to 10 and 11 to 138 zeros. Each symbol is appended with its extra-bits value."""
+    i = 0
+    while i < count:
+        length = int(lengths[start + i])
+        run = 1
+        while i + run < count and int(lengths[start + i + run]) == length:
+            run += 1
+        if length == 0 and run >= 3:
+            taken = min(run, 138)
+            if taken >= 11:
+                runs.append(18)
+                runs.append(taken - 11)
+            else:
+                runs.append(17)
+                runs.append(taken - 3)
+            i += taken
+        elif length != 0 and run >= 4:
+            runs.append(length)
+            runs.append(0)
+            left = run - 1
+            while left >= 3:
+                taken = min(left, 6)
+                runs.append(16)
+                runs.append(taken - 3)
+                left -= taken
+            for _ in range(left):
+                runs.append(length)
+                runs.append(0)
+            i += run
+        else:
+            for _ in range(run):
+                runs.append(length)
+                runs.append(0)
+            i += run
+
+
+def _write_symbols(
+    writer: InOut[_Writer],
+    block: _Block,
+    literal_lengths: Array[i32, 1],
+    distance_lengths: Array[i32, 1],
+):
+    """Writes a block's symbols and its end-of-block with the given code lengths."""
+    literal_codes = _codes(literal_lengths)
+    distance_codes = _codes(distance_lengths)
+    for i in range(block.count):
+        distance = int(block.distances[i])
+        value = int(block.lengths[i])
+        if distance == 0:
+            _put(writer, int(literal_codes[value]), int(literal_lengths[value]))
+        else:
+            symbol = _length_symbol(value)
+            _put(writer, int(literal_codes[symbol]), int(literal_lengths[symbol]))
+            if symbol >= 265 and symbol < 285:
+                extra = (symbol - 261) // 4
+                _put(writer, (value - 3) & ((1 << extra) - 1), extra)
+            code = _distance_code(distance)
+            _put(writer, int(distance_codes[code]), int(distance_lengths[code]))
+            if code >= 4:
+                extra = (code - 2) // 2
+                _put(writer, (distance - 1) & ((1 << extra) - 1), extra)
+    _put(writer, int(literal_codes[256]), int(literal_lengths[256]))
+
+
+def _write_stored(writer: InOut[_Writer], data: Array[u8, 1], start: int, stop: int, last: bool):
+    """Writes `data[start:stop]` as stored blocks of at most 65535 bytes (RFC 1951, section
+    3.2.4); the last of them is marked final when `last` is."""
+    position = start
+    while True:
+        size = min(stop - position, 65535)
+        final = last and position + size == stop
+        _put(writer, 1 if final else 0, 3)
+        _align(writer)
+        _put(writer, size, 16)
+        _put(writer, size ^ 65535, 16)
+        for i in range(size):
+            _put(writer, int(data[position + i]), 8)
+        position += size
+        if position == stop:
+            return
+
+
+def _flush(writer: InOut[_Writer], data: Array[u8, 1], block: InOut[_Block], stop: int, last: bool):
+    """Writes the gathered block, covering `data[block.start:stop]`, in whichever of the three
+    forms is smallest (stored, fixed or dynamic codes), as zlib's `_tr_flush_block` chooses,
+    then starts an empty block at `stop`."""
+    block.literal_counts[256] += 1
+    literal_lengths = _limited_lengths(block.literal_counts, 286, 15)
+    distance_lengths = _limited_lengths(block.distance_counts, 30, 15)
+    literal_count = 286
+    while literal_count > 257 and literal_lengths[literal_count - 1] == 0:
+        literal_count -= 1
+    distance_count = 30
+    while distance_count > 1 and distance_lengths[distance_count - 1] == 0:
+        distance_count -= 1
+    runs: list[int] = []
+    _code_length_runs(literal_lengths, 0, literal_count, runs)
+    _code_length_runs(distance_lengths, 0, distance_count, runs)
+    run_counts = Array.zeros(19, int)
+    for i in range(0, len(runs), 2):
+        run_counts[runs[i]] += 1
+    run_lengths = _limited_lengths(run_counts, 19, 7)
+    order = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+    code_count = 19
+    while code_count > 4 and run_lengths[order[code_count - 1]] == 0:
+        code_count -= 1
+    dynamic_bits = 17 + 3 * code_count + _data_bits(block, literal_lengths, distance_lengths)
+    for symbol in range(19):
+        dynamic_bits += run_counts[symbol] * int(run_lengths[symbol])
+    dynamic_bits += 2 * run_counts[16] + 3 * run_counts[17] + 7 * run_counts[18]
+    fixed = _fixed_lengths()
+    fixed_literals = fixed[0:288].copy()
+    fixed_distances = fixed[288:318].copy()
+    fixed_bits = 3 + _data_bits(block, fixed_literals, fixed_distances)
+    size = stop - block.start
+    stored_bits = 8 * (size + 5 * ((size + 65534) // 65535 if size > 0 else 1)) + 7
+    final = 1 if last else 0
+    if stored_bits <= fixed_bits and stored_bits <= dynamic_bits:
+        _write_stored(writer, data, block.start, stop, last)
+    elif fixed_bits <= dynamic_bits:
+        _put(writer, final | 2, 3)
+        _write_symbols(writer, block, fixed_literals, fixed_distances)
+    else:
+        _put(writer, final | 4, 3)
+        _put(writer, literal_count - 257, 5)
+        _put(writer, distance_count - 1, 5)
+        _put(writer, code_count - 4, 4)
+        for i in range(code_count):
+            _put(writer, int(run_lengths[order[i]]), 3)
+        run_codes = _codes(run_lengths)
+        for i in range(0, len(runs), 2):
+            symbol = runs[i]
+            _put(writer, int(run_codes[symbol]), int(run_lengths[symbol]))
+            if symbol == 16:
+                _put(writer, runs[i + 1], 2)
+            elif symbol == 17:
+                _put(writer, runs[i + 1], 3)
+            elif symbol == 18:
+                _put(writer, runs[i + 1], 7)
+        _write_symbols(writer, block, literal_lengths, distance_lengths)
+    block.count = 0
+    block.start = stop
+    for symbol in range(286):
+        block.literal_counts[symbol] = 0
+    for code in range(30):
+        block.distance_counts[code] = 0
+
+
+def _add(
+    writer: InOut[_Writer],
+    data: Array[u8, 1],
+    block: InOut[_Block],
+    length: int,
+    distance: int,
+    position: int,
+):
+    """Gathers one symbol, a literal when `distance` is 0, flushing the block once it holds
+    16383 symbols, as zlib's 16 KiB symbol buffer does. `position` is the input position after
+    the symbol."""
+    block.lengths[block.count] = i32(length)
+    block.distances[block.count] = i32(distance)
+    block.count += 1
+    if distance == 0:
+        block.literal_counts[length] += 1
+    else:
+        block.literal_counts[_length_symbol(length)] += 1
+        block.distance_counts[_distance_code(distance)] += 1
+    if block.count == 16383:
+        _flush(writer, data, block, position, False)
+
+
+def _hash(data: Array[u8, 1], position: int) -> int:
+    """zlib's hash of the three bytes at `position`, 15 bits."""
+    return (
+        (int(data[position]) << 10) ^ (int(data[position + 1]) << 5) ^ int(data[position + 2])
+    ) & 32767
+
+
+def _longest(
+    data: Array[u8, 1],
+    position: int,
+    candidate: int,
+    previous: int,
+    chain: int,
+    nice: int,
+    links: Array[i32, 1],
+    reach: int,
+) -> tuple[int, int]:
+    """The longest match, at most 258 bytes, for the bytes at `position` among the earlier
+    positions on the hash chain from `candidate` (stored plus one, 0 ending the chain), trying
+    at most `chain` of them, stopping at one of `nice` bytes and looking at most `reach` bytes
+    back, as zlib's `longest_match` does. Gives the length and distance, a length of
+    `previous` or less meaning none better."""
+    best = previous
+    distance = 0
+    stop = min(len(data) - position, 258)
+    if nice > stop:
+        nice = stop
+    limit = position - reach
+    while candidate > 0 and candidate - 1 > limit and chain > 0:
+        start = candidate - 1
+        if data[start + best] == data[position + best] if best < stop else False:
+            length = 0
+            while length < stop and data[start + length] == data[position + length]:
+                length += 1
+            if length > best:
+                best = length
+                distance = position - start
+                if length >= nice:
+                    break
+        next = int(links[start & 32767])
+        if next >= candidate:
+            break
+        candidate = next
+        chain -= 1
+    return (best, distance)
+
+
+def _deflate(data: Array[u8, 1], level: int, window: int, writer: InOut[_Writer]):
+    """Compresses `data` as one raw DEFLATE stream (RFC 1951) at `level`, 0 to 9 with zlib's
+    meanings: 0 stores, 1 to 3 take the first good match, 4 to 9 look one byte ahead for a
+    better one (lazy matching), each level searching longer hash chains, as zlib's
+    `configuration_table`. Matches reach at most 2 ** `window` - 262 bytes back, zlib's
+    `MAX_DIST`, so a decoder with a window of 2 ** `window` bytes reads the stream."""
+    n = len(data)
+    if level == 0:
+        _write_stored(writer, data, 0, n, True)
+        _align(writer)
+        return
+    goods = [4, 4, 4, 4, 8, 8, 8, 32, 32]
+    lazies = [4, 5, 6, 4, 16, 16, 32, 128, 258]
+    nices = [8, 16, 32, 16, 32, 128, 128, 258, 258]
+    chains = [4, 8, 32, 16, 32, 128, 256, 1024, 4096]
+    good = goods[level - 1]
+    lazy = lazies[level - 1]
+    nice = nices[level - 1]
+    chain = chains[level - 1]
+    heads = Array.zeros(32768, i32)
+    links = Array.zeros(32768, i32)
+    block = _Block(
+        Array.zeros(16383, i32),
+        Array.zeros(16383, i32),
+        0,
+        0,
+        Array.zeros(286, int),
+        Array.zeros(30, int),
+    )
+    position = 0
+    # Lazy matching's state: a match found at the previous position, and whether that
+    # position's literal is still to be written.
+    previous_length = 2
+    previous_distance = 0
+    waiting = False
+    while position < n:
+        length = 2
+        distance = 0
+        if position + 2 < n:
+            hash = _hash(data, position)
+            candidate = int(heads[hash])
+            links[position & 32767] = i32(candidate)
+            heads[hash] = i32(position + 1)
+            if candidate > 0 and (level <= 3 or previous_length < lazy):
+                tries = chain
+                if level > 3 and previous_length >= good:
+                    tries = chain >> 2
+                found = _longest(
+                    data, position, candidate, 2, tries, nice, links, (1 << window) - 262
+                )
+                length = found[0]
+                distance = found[1]
+                if level > 3 and length == 3 and distance > 4096:
+                    length = 2
+        if level <= 3:
+            if length >= 3:
+                _add(writer, data, block, length, distance, position + length)
+                if length <= lazy and position + length + 2 < n:
+                    for inserted in range(position + 1, position + length):
+                        hash = _hash(data, inserted)
+                        links[inserted & 32767] = heads[hash]
+                        heads[hash] = i32(inserted + 1)
+                position += length
+            else:
+                _add(writer, data, block, int(data[position]), 0, position + 1)
+                position += 1
+        elif previous_length >= 3 and length <= previous_length:
+            # The match from the previous position is at least as long: take it.
+            _add(
+                writer,
+                data,
+                block,
+                previous_length,
+                previous_distance,
+                position - 1 + previous_length,
+            )
+            stop = min(position - 1 + previous_length, n - 2)
+            for inserted in range(position + 1, stop):
+                hash = _hash(data, inserted)
+                links[inserted & 32767] = heads[hash]
+                heads[hash] = i32(inserted + 1)
+            position = position - 1 + previous_length
+            previous_length = 2
+            waiting = False
+        else:
+            if waiting:
+                _add(writer, data, block, int(data[position - 1]), 0, position)
+            previous_length = length
+            previous_distance = distance
+            waiting = True
+            position += 1
+    if waiting:
+        _add(writer, data, block, int(data[n - 1]), 0, n)
+    _flush(writer, data, block, n, True)
+    _align(writer)

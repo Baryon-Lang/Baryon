@@ -22,8 +22,10 @@ const FIXED_METHODS: &str =
     "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round` and `fill`";
 
 /// The methods version 0 defines on an `Array`, for messages.
-const ARRAY_METHODS: &str =
-    "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill` and `tofile`";
+const ARRAY_METHODS: &str = concat!(
+    "`copy`, `sum`, `min`, `max`, `mean`, `var`, `std`, `dot`, `round`, `fill`, `tofile` and, ",
+    "for one dimension, `argsort`"
+);
 
 impl<'db> Body<'db> {
     /// `Array.zeros(shape)`, `Array.ones(shape)`, `Array.fill(shape, value)`, each with an
@@ -95,6 +97,15 @@ impl<'db> Body<'db> {
                 "`Array.fill` needs a shape and a value",
                 "no value",
                 Some("for example `Array.fill((n,), 1.0)`"),
+            );
+        }
+        if matches!(element.kind(self.db), TypeKind::Str) {
+            let message = format!("`Array.{name}` cannot make an array of `str` yet");
+            return self.lowerer.error(
+                fill_value.unwrap_or(node),
+                &message,
+                "an array of `str`",
+                Some("make one from a list of strings: `Array(words)`"),
             );
         }
         if !is_copy(self.db, element) {
@@ -170,6 +181,10 @@ impl<'db> Body<'db> {
             Some(TypeKind::Array { element, rank: 1 }) => {
                 Some(Type::new(self.db, TypeKind::List(*element)))
             }
+            Some(TypeKind::TextArray) => {
+                let text = Type::new(self.db, TypeKind::Str);
+                Some(Type::new(self.db, TypeKind::List(text)))
+            }
             _ => None,
         };
         let [values] = arguments.positional.as_slice() else {
@@ -190,6 +205,10 @@ impl<'db> Body<'db> {
                     rank: 1,
                 },
             ),
+            // A list of `str` gives a text array (decision 0045), which reads the list.
+            TypeKind::List(element) if matches!(element.kind(self.db), TypeKind::Str) => {
+                Type::new(self.db, TypeKind::TextArray)
+            }
             TypeKind::List(element) => {
                 let message = format!(
                     "an array's elements must be a copy type, found `{}`",
@@ -291,6 +310,12 @@ impl<'db> Body<'db> {
         let (element, rank_one) = match base.kind(self.db) {
             TypeKind::Array { element, rank } => (*element, *rank == 1),
             TypeKind::Fixed { element, shape } => (*element, shape.rank() == 1),
+            TypeKind::DataFrame { .. } => {
+                return Some(self.frame_method(node, base, name, arguments));
+            }
+            TypeKind::TextArray => {
+                return Some(self.text_array_method(node, base, name, arguments));
+            }
             TypeKind::List(item) => {
                 let item = *item;
                 return Some(match (name, arguments.positional.as_slice()) {
@@ -330,6 +355,9 @@ impl<'db> Body<'db> {
                 let axis = self.axis_argument(arguments);
                 self.axis_reduction(node, (base, element), name, axis, arguments)
             }
+            ("argsort", []) if is_array && rank_one && arguments.keywords.is_empty() => {
+                self.argsort(node, base, element)
+            }
             ("dot", [other]) => {
                 let found = self.expression(*other, Some(base));
                 self.expect(*other, base, found, "the dot product needs");
@@ -365,6 +393,32 @@ impl<'db> Body<'db> {
                     .error(node, &message, "not defined", Some(&hint))
             }
         })
+    }
+
+    /// `a.argsort()` on the rank-1 array `base` of `element`: the positions that put its
+    /// elements in rising order, an `Array[i64, 1]`. Complex numbers have no order.
+    fn argsort(&mut self, node: NodeId, base: Type<'db>, element: Type<'db>) -> Type<'db> {
+        if matches!(
+            element.kind(self.db),
+            TypeKind::Primitive(Primitive::Complex(_))
+        ) {
+            let message = format!(
+                "`argsort` needs elements with an order, found `{}`",
+                self.show(base)
+            );
+            return self.lowerer.error(node, &message, "complex numbers", None);
+        }
+        let int = Type::new(
+            self.db,
+            TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+        );
+        Type::new(
+            self.db,
+            TypeKind::Array {
+                element: int,
+                rank: 1,
+            },
+        )
     }
 
     /// `a.shape` or `a.size` on an array, or `None` when `base` is not an array.

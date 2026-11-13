@@ -1,5 +1,8 @@
-"""The `image` module: colors an image's values through a colormap and draws it on an axes, as
+"""The `image` library file: colors an image's values through a colormap and draws it on an axes, as
 matplotlib's `AxesImage` does (decision 0046).
+
+It is internal to the standard library: `pyplot` and the files under it import it, and a
+program cannot, so a program's own `image.byn` is never hidden by it.
 
 `pyplot`'s `Axes.imshow` records an `artist.Image`; when the figure is drawn, `draw_image`
 turns its values into pixels and hands them to the renderer, which embeds them as a PNG.
@@ -20,18 +23,6 @@ def draw_image(image: Image, view: View, renderer: InOut[RendererSVG]) -> None:
     matplotlib's `"nearest"` interpolation does; a smaller one lets the viewer smooth it, as
     matplotlib's antialiasing does. Costs a few operations and about 5.5 bytes of the file a
     cell.
-
-    ```python
-    from artist import Image, View
-    from backend_svg import RendererSVG
-    from image import draw_image
-
-    def main():
-        image = Image(Array.zeros((2, 2)), "gray", 0.0, 1.0, (-0.5, 1.5, 1.5, -0.5), True)
-        renderer = RendererSVG(100.0, 100.0, [])
-        draw_image(image, View(0.0, 0.0, 100.0, 100.0, -0.5, 1.5, 1.5, -0.5), renderer)
-        print(len(renderer.elements))  # 1
-    ```
     """
     rows = image.data.shape[0]
     columns = image.data.shape[1]
@@ -68,13 +59,6 @@ def normalize(value: f64, vmin: f64, vmax: f64) -> f64:
     """`value` mapped linearly so `vmin` is 0 and `vmax` is 1, as matplotlib's
     `Normalize(vmin, vmax)(value)`: 0 for every value when `vmin` equals `vmax`, and NaN or
     infinity kept, so the colormap draws it as bad, under or over.
-
-    ```python
-    from image import normalize
-
-    def main():
-        print(normalize(5.0, 0.0, 10.0), normalize(3.0, 2.0, 2.0))  # 0.5 0.0
-    ```
     """
     if vmin == vmax:
         return 0.0 if isfinite(value) else value
@@ -84,14 +68,6 @@ def normalize(value: f64, vmin: f64, vmax: f64) -> f64:
 def colormap_strip(cmap: Colormap) -> Array[u8, 3]:
     """The 256 colors of `cmap` as an image one pixel wide, its last color at the top, as a
     colorbar shows them.
-
-    ```python
-    from cm import get_cmap
-    from image import colormap_strip
-
-    def main():
-        print(colormap_strip(get_cmap("gray")).shape)  # (256, 1, 4)
-    ```
     """
     pixels: Array[u8, 3] = Array.zeros((256, 1, 4))
     for k in range(256):

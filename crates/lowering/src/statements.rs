@@ -163,6 +163,9 @@ impl<'db> Builder<'db> {
         if self.is_selection(target) {
             return self.selection_store(target, value);
         }
+        if self.is_column(target) {
+            return self.column_store(target, value);
+        }
         let Some((place, ty)) = self.target(target) else {
             return;
         };
@@ -206,7 +209,8 @@ impl<'db> Builder<'db> {
     }
 
     /// `target op= value` on a number: the value converts to the target's type, as number
-    /// mixing allows only when the result keeps it (decision 0014).
+    /// mixing allows only when the result keeps it (decision 0014). On a `str`, `+=` appends
+    /// (the `text` module).
     fn augmented(&mut self, statement: NodeId) {
         let (Some(target), Some(value)) = (
             self.tree.child(statement, Role::Target),
@@ -219,11 +223,17 @@ impl<'db> Builder<'db> {
         }
         let ty = self.ty(target);
         let array = self.is_array(ty);
-        if !array && !matches!(ty.kind(self.db), TypeKind::Primitive(_)) {
+        let float_parameter = self.is_float_parameter(ty);
+        let syntax = self.tree.node(statement).operator();
+        if matches!(ty.kind(self.db), TypeKind::Str) && syntax == Operator::Add {
+            return self.append_text(target, value, statement);
+        }
+        if !array && !float_parameter && !matches!(ty.kind(self.db), TypeKind::Primitive(_)) {
             return self.unsupported(statement, "in-place operators on values other than numbers");
         }
-        let syntax = self.tree.node(statement).operator();
-        if syntax == Operator::Power && (self.is_float(ty) || self.is_complex(ty)) {
+        if syntax == Operator::Power
+            && (self.is_float(ty) || float_parameter || self.is_complex(ty))
+        {
             let Some(place) = self.place(target) else {
                 return;
             };

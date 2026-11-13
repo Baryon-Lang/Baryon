@@ -46,6 +46,12 @@ impl<'db> Builder<'db> {
             Some(array) => (array, true),
             None => (value, false),
         };
+        if self.is_text_array(value) {
+            let base = self.borrow(value);
+            let length = self.text_array_length(&base, node);
+            let position = self.index_within(Some(length), 0, index, false);
+            return Some(self.text_array_element(&base, position, node));
+        }
         let base_type = self.ty(array);
         match base_type.kind(self.db) {
             TypeKind::Dict { .. } => self.dict_value(node),
@@ -449,6 +455,15 @@ impl<'db> Builder<'db> {
         let ty = self.ty(argument);
         if matches!(ty.kind(self.db), TypeKind::Str) {
             return self.text_length(place, argument, node);
+        }
+        if self.frame_columns(argument).is_some() {
+            let rows = self.frame_length(argument, node);
+            return self.assign(place, Rvalue::Use(rows), node);
+        }
+        if self.is_text_array(argument) {
+            let array = self.borrow(argument);
+            let length = self.text_array_length(&array, node);
+            return self.assign(place, Rvalue::Use(length), node);
         }
         if !self.is_array(ty)
             && !matches!(ty.kind(self.db), TypeKind::List(_) | TypeKind::Dict { .. })

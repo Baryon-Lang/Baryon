@@ -25,8 +25,12 @@ use types::{Type, TypeKind};
 /// A `for` loop the body being checked is inside.
 pub(super) struct Loop {
     /// The collection it goes over, when that is a place such as `atoms.forces`; a loop over
-    /// a temporary, such as `range(n)`, borrows nothing.
+    /// a temporary, such as `range(n)`, borrows no collection.
     collection: Option<NodeId>,
+    /// The expression it goes over, a place or a temporary such as `words(3)`. A borrowed
+    /// element belongs to it either way: the loop frees a temporary, elements included, when
+    /// it ends.
+    iterator: NodeId,
     /// The loop variables that borrow an element, or a part of one, that is not a copy type:
     /// `v` in `for v in names:`, `name` in `for name, mass in species:`.
     elements: Vec<NodeId>,
@@ -44,8 +48,17 @@ impl<'db> Body<'db> {
             None => self.lowerer.unknown(),
         };
         let lines = iterator.is_some_and(|iterator| self.file_loop(statement, iterator));
+        // A row of a frame is a new struct on each pass, so the loop variable owns it too.
+        let rows = iterator.and_then(|iterator| self.rows_receiver(iterator));
+        let owned = lines
+            || rows.is_some()
+            || iterator.is_some_and(|iterator| self.is_text_literal(iterator));
         let collection = iterator
-            .map(|iterator| self.dict_view_receiver(iterator).unwrap_or(iterator))
+            .map(|iterator| {
+                self.dict_view_receiver(iterator)
+                    .or(rows)
+                    .unwrap_or(iterator)
+            })
             .filter(|&collection| self.place_root(collection).is_some());
         let parallel = iterator.is_some_and(|iterator| {
             self.loop_kind(iterator)
@@ -56,15 +69,17 @@ impl<'db> Body<'db> {
             if let Some(target) = target {
                 body.bind(target, element, None);
             }
-            // A line read from a file is a new `str` the loop variable owns, so it borrows
-            // nothing.
-            let borrowed = if lines {
+            // A line read from a file is a new `str` the loop variable owns, and a character of
+            // a string literal lives as long as the program (decision 0022), so neither
+            // borrows anything.
+            let borrowed = if owned {
                 Vec::new()
             } else {
                 body.borrowed_elements(target, element)
             };
             body.loops.push(Loop {
                 collection,
+                iterator: iterator.unwrap_or(statement),
                 elements: borrowed.iter().map(|&(binding, _)| binding).collect(),
             });
             body.block(statement, Role::Body);
@@ -121,8 +136,17 @@ impl<'db> Body<'db> {
             self.prange_in_comprehension(iterator);
         }
         let lines = iterator.is_some_and(|iterator| self.file_loop(clause, iterator));
+        // A row of a frame is a new struct on each pass, so the loop variable owns it too.
+        let rows = iterator.and_then(|iterator| self.rows_receiver(iterator));
+        let owned = lines
+            || rows.is_some()
+            || iterator.is_some_and(|iterator| self.is_text_literal(iterator));
         let collection = iterator
-            .map(|iterator| self.dict_view_receiver(iterator).unwrap_or(iterator))
+            .map(|iterator| {
+                self.dict_view_receiver(iterator)
+                    .or(rows)
+                    .unwrap_or(iterator)
+            })
             .filter(|&collection| self.place_root(collection).is_some());
         let mut item = self.lowerer.unknown();
         self.repeated(clause, iterator.unwrap_or(clause), |body| {
@@ -130,13 +154,14 @@ impl<'db> Body<'db> {
             if let Some(target) = target {
                 body.bind(target, element, None);
             }
-            let borrowed = if lines {
+            let borrowed = if owned {
                 Vec::new()
             } else {
                 body.borrowed_elements(target, element)
             };
             body.loops.push(Loop {
                 collection,
+                iterator: iterator.unwrap_or(clause),
                 elements: borrowed.into_iter().map(|(binding, _)| binding).collect(),
             });
             let conditions: Vec<NodeId> =
@@ -214,10 +239,10 @@ impl<'db> Body<'db> {
             _ => None,
         };
         let found = self.loops.iter().rev().find_map(|found| {
-            let collection = found.collection?;
             if binding.is_some_and(|binding| found.elements.contains(&binding)) {
-                return Some((collection, true));
+                return Some((found.iterator, true));
             }
+            let collection = found.collection?;
             self.overlaps(node, collection)
                 .then_some((collection, false))
         });
@@ -233,6 +258,8 @@ impl<'db> Body<'db> {
             .with_primary(self.tree.span(node), format!("{verb} here"))
             .with_note(if verb == "moved" {
                 format!("to keep the element, keep a copy: `{name}.copy()`")
+            } else if self.place_root(collection).is_none() {
+                format!("work on a copy: `{name}.copy()`")
             } else {
                 format!(
                     "work on a copy, `{name}.copy()`, or loop over the indices to change the element: `for i in range(len({collection_name})):`"
@@ -259,6 +286,12 @@ impl<'db> Body<'db> {
         };
         self.lowerer.diagnostics.push(diagnostic);
         true
+    }
+
+    /// Whether `node` is a string literal, `"aeiou"`, whose characters are never freed
+    /// (decision 0022), so a loop over it lends nothing that can dangle.
+    fn is_text_literal(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::StringLiteral
     }
 
     /// Whether the expression `node` was typed as a `File`, whose loop reads it line by line.

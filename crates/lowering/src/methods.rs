@@ -51,6 +51,7 @@ impl<'db> Builder<'db> {
                 self.array_statistic(place, method, arguments, node);
             }
             ("dot", [left, right]) => self.array_dot(place, (*left, *right), node),
+            ("argsort", [array]) if !fixed => self.array_argsort(place, *array, node),
             ("round", [array]) if fixed => self.fixed_round(place, *array, node),
             ("round", [array]) => self.array_round(place, *array, node),
             ("fill", [array, value]) => self.array_fill(place, (*array, *value), node),
@@ -156,7 +157,8 @@ impl<'db> Builder<'db> {
     ) {
         let ty = self.ty(left);
         let element = self.element(ty);
-        if !matches!(element.kind(self.db), TypeKind::Primitive(_)) {
+        let float_parameter = self.is_float_parameter(element);
+        if !float_parameter && !matches!(element.kind(self.db), TypeKind::Primitive(_)) {
             return self.unsupported(node, "`dot` of vectors whose elements are not numbers");
         }
         let (left, right) = (self.borrow(left), self.borrow(right));
@@ -169,7 +171,7 @@ impl<'db> Builder<'db> {
             TypeKind::Fixed { shape, .. } => shape.elements() < PAIRWISE_LANES,
             _ => false,
         };
-        if self.is_float(element) && !short {
+        if (self.is_float(element) || float_parameter) && !short {
             return self.then(node, |target| TerminatorKind::Call {
                 callee: Callee::Builtin(Builtin::Dot),
                 arguments: vec![Argument::Borrow(left), Argument::Borrow(right)],
@@ -421,7 +423,7 @@ impl<'db> Builder<'db> {
         let ty = self.ty(array);
         let element = self.element(ty);
         let value = self.operand_as(value, element);
-        let Some(target) = self.place(array) else {
+        let Some(target) = self.changed_place(array) else {
             return;
         };
         let lengths: Vec<Operand<'db>> = (0..self.rank(ty))
