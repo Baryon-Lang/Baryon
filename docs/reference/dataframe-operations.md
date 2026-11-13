@@ -194,6 +194,8 @@ With four trades of the symbols 7, 3, 7 and 5, this prints the first trade of ea
 - **The rows kept stay in the frame's order**, and the result has the frame's type.
 - **Two NaN are the same value here**, as in pandas, though the two are not equal. `0.0`
   and `-0.0` are the same value too.
+- **Text is compared exactly**: `"IBM"` and `"ibm"` are two values. A column of `str` costs
+  one more sort of that column, comparing text.
 - **The frame is read, not taken.**
 - **A complex column cannot be compared yet**: leave it out with `subset`.
 - **Only the first of the rows that repeat can be kept.** pandas's `keep="last"` and
