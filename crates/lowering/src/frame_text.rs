@@ -91,6 +91,19 @@ impl<'db> Builder<'db> {
         Some(Place::from(result))
     }
 
+    /// The column of `str` at `column` as whole numbers that stand for its text in keys:
+    /// equal texts have one number, and a text that comes first by `<` has the smaller one
+    /// (the library's `text_codes`). A sort, `drop_duplicates` and the like then work on the
+    /// numbers as on any column of `i64`. The new array is dropped when the statement ends.
+    /// Cost: a sort of the column, comparing text, and the array of 8 bytes for each row.
+    /// `None` after a report when the library is missing.
+    pub(crate) fn text_codes(&mut self, column: Place, node: NodeId) -> Option<Place> {
+        let positions = self.positions_type();
+        let codes = self.frame_call("text_codes", Vec::new(), vec![column], positions, node)?;
+        self.drop_later(codes);
+        Some(Place::from(codes))
+    }
+
     /// Calls the function `name` of `<std>/frames.byn` or `<std>/frame_joins.byn` with
     /// `type_arguments`, borrowing each of `arguments`, and gives the temporary of type
     /// `returns` that holds its result. The functions called this way take every parameter

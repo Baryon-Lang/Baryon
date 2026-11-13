@@ -96,14 +96,11 @@ impl Builder<'_> {
             let mut values = source.clone().project(Projection::Field(position));
             // A column of `str` is sorted by the integers that stand for its text.
             if matches!(element.kind(self.db), TypeKind::Str) {
-                let Some(codes) =
-                    self.frame_call("text_codes", Vec::new(), vec![values], positions, key)
-                else {
+                let Some(codes) = self.text_codes(values, key) else {
                     return;
                 };
-                self.drop_later(codes);
                 element = self.int_type();
-                values = Place::from(codes);
+                values = codes;
             }
             let flags = matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool));
             let (function, type_arguments) = if flags {

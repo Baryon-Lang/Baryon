@@ -74,6 +74,7 @@ mod testing;
 mod text;
 mod text_arrays;
 mod text_columns;
+mod text_keys;
 mod text_methods;
 mod text_tables;
 mod timings;
