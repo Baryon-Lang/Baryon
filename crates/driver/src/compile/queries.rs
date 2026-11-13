@@ -2,7 +2,8 @@
 //! keeps (roadmap 2.2.2, decision 0050). `baryon watch` keeps one database between rebuilds,
 //! and `salsa` (decision 0016) runs a query again only when something it read changed, so an
 //! edit rewrites only the functions it reaches; `baryon build` starts from an empty database
-//! and runs each query once.
+//! and runs each query once. The queries of a program's functions run on every core at once,
+//! each thread with its own handle to the database, which shares their results.
 //!
 //! Everything a query uses is read through the database, which is what makes keeping its
 //! result safe: the declarations of the types a function uses, the symbols of the functions it
