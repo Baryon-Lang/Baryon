@@ -8,6 +8,7 @@ use mir::{Argument, ArrayFile, BlockId, Body, Builtin, Callee, Constant, Constan
 use mir::{FileMethod, Local, LocalKind, Operand, Statement, StatementKind, TerminatorKind};
 use types::{Float, Integer, Primitive, StandardType, Type, TypeKind};
 
+mod hdf5;
 mod netcdf;
 
 /// `out = open("out.txt", "w")`, then `out.write("hi")`, then the drop of `out`; either call's

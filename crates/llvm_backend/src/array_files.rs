@@ -1,8 +1,9 @@
 //! Array files: `Array.fromfile` and `a.tofile` (decision 0036, part 4), `Array.load` and
 //! `Array.save` of `NumPy`'s `.npy` files (decision 0043), and `fits.getheader`,
-//! `fits.getdata` and `fits.writeto` of FITS files (decision 0044), and the `netCDF4`
-//! module's reads and writes of `NetCDF` classic files (decision 0047), each a call of the
-//! runtime that can fail with `OSError`.
+//! `fits.getdata` and `fits.writeto` of FITS files (decision 0044), the `netCDF4` module's
+//! reads and writes of `NetCDF` classic files (decision 0047), and the `h5by` module's reads
+//! of HDF5 files (decision 0052, in the `hdf5` module), each a call of the runtime that can
+//! fail with `OSError`.
 //!
 //! Both raise as a file call does (the `files` module): the last parameter is the address of the
 //! error edge's local, and the `i1` result is true when the call failed.
@@ -34,6 +35,8 @@
 //! `NetCDF` read or write passes the element type as a FITS call does, with the variable's
 //! name and the items of its subscript, four `i64`s each in a stack slot, and a `NetCDF`
 //! change passes its line of text.
+
+mod hdf5;
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -103,6 +106,9 @@ impl<'db> Function<'_, '_, 'db> {
                 | ArrayFile::NetcdfWrite,
                 _,
             ) => self.netcdf_parameters(method, arguments, destination)?,
+            (ArrayFile::Hdf5Open | ArrayFile::Hdf5Chunks | ArrayFile::Hdf5Read, _) => {
+                self.hdf5_parameters(method, arguments, destination)?
+            }
             _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
         };
         let (address, _) = self.place(&edge.error.into())?;
