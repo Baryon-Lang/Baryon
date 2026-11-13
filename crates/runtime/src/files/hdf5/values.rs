@@ -3,47 +3,55 @@
 
 use super::chunks::{Grid, chunks};
 use super::cursor::{Failure, Source, UNDEFINED};
-use super::{Chunk, Dataset, Datatype, Filter, Hdf5, Layout};
+use super::selection::{Axis, inside, select};
+use super::{Dataset, Datatype, Filter, Hdf5, Layout};
 use crate::files::fits::Pixel;
+use crate::files::netcdf::{Item, SubscriptFailure};
 use crate::files::{BUFFER, ErrorKind, OsFailure};
 
 /// Inflates a deflate (zlib) stream: the standard library's native `zlib.decompress` (decision
 /// 0049), which the runtime calls back rather than holding a second decoder.
 pub(crate) type Inflate<'a> = dyn FnMut(&[u8]) -> Result<Vec<u8>, String> + 'a;
 
-/// Reads every value of the dataset `name` of `file`, the file at `path`, into `memory` as
-/// elements of `pixel`, row-major, after checking that `pixel` can hold them. Elements never
-/// written read as the dataset's fill value. A deflated chunk is inflated by `inflate`.
+/// Reads the values `items` pick of the dataset `name` of `file`, the file at `path`, into
+/// `memory` as elements of `pixel`, row-major, after checking that `pixel` can hold them; no
+/// items read every value. Elements never written read as the dataset's fill value. Only the
+/// chunks that hold a value picked are read, and a deflated one is inflated by `inflate`.
 ///
 /// # Errors
 ///
 /// Fails as the operating system does, and with `INVALID_DATA` when `pixel` cannot hold the
-/// values, `memory` is not the dataset's size, the file is damaged, or a chunk passed through
-/// a filter the reader does not reverse.
+/// values, `memory` is not the size of what is picked, the file is damaged, or a chunk passed
+/// through a filter the reader does not reverse; and with h5py's `IndexError` or `ValueError`
+/// for a subscript that picks nothing (see [`select`]).
 pub(crate) fn read_dataset(
     path: &str,
     file: &Hdf5,
-    (name, dataset): (&str, &Dataset),
+    (name, dataset, items): (&str, &Dataset, &[Item]),
     pixel: Pixel,
     memory: &mut [u8],
     inflate: &mut Inflate<'_>,
-) -> Result<(), OsFailure> {
+) -> Result<(), SubscriptFailure> {
     let invalid = |message: String| OsFailure::new(ErrorKind::InvalidData, message, path);
     if !fits(dataset.datatype, pixel) {
-        return Err(invalid(format!(
+        return Err(SubscriptFailure::Os(invalid(format!(
             "the HDF5 dataset {name} holds {}, which does not read as `{}`",
             dataset.datatype.name(),
             pixel.name()
-        )));
+        ))));
     }
-    let count = dataset.shape.iter().product::<u64>();
+    let axes = select(items, &dataset.shape)?;
+    let count = axes
+        .iter()
+        .map(|axis| axis.positions.len() as u64)
+        .product::<u64>();
     let width = pixel.size();
     if u64::try_from(memory.len() / width).ok() != Some(count)
         || !memory.len().is_multiple_of(width)
     {
-        return Err(invalid(format!(
-            "the HDF5 dataset {name} holds {count} values, which the array does not match"
-        )));
+        return Err(SubscriptFailure::Os(invalid(format!(
+            "the HDF5 dataset {name} picks {count} values, which the array does not match"
+        ))));
     }
     let mut source = file.source(path)?;
     let stored = usize::try_from(dataset.datatype.size(&source)).unwrap_or(usize::MAX);
@@ -56,28 +64,57 @@ pub(crate) fn read_dataset(
     for element in memory.chunks_exact_mut(width) {
         convert(blank, dataset.datatype, pixel, element);
     }
-    read_values(&mut source, dataset, pixel, memory, inflate)
-        .map_err(|failure| invalid(format!("{failure}, in the HDF5 dataset {name}")))
+    let target = Target {
+        axes: &axes,
+        datatype: dataset.datatype,
+        pixel,
+        stored,
+    };
+    read_values(&mut source, dataset, &target, memory, inflate).map_err(|failure| {
+        SubscriptFailure::Os(invalid(format!("{failure}, in the HDF5 dataset {name}")))
+    })
 }
 
-/// Reads the stored values of `dataset` from `source` over the fill values already in
-/// `memory`.
+/// Where values go: the positions picked and the types to convert between.
+struct Target<'a> {
+    /// The positions picked along each axis.
+    axes: &'a [Axis],
+    /// The stored type.
+    datatype: Datatype,
+    /// The array's element type.
+    pixel: Pixel,
+    /// The size of one stored value in bytes.
+    stored: usize,
+}
+
+/// Reads the stored values of `dataset` that `target` picks from `source`, over the fill values
+/// already in `memory`.
 fn read_values(
     source: &mut Source,
     dataset: &Dataset,
-    pixel: Pixel,
+    target: &Target,
     memory: &mut [u8],
     inflate: &mut Inflate<'_>,
 ) -> Result<(), Failure> {
-    let width = pixel.size();
-    let stored = usize::try_from(dataset.datatype.size(source)).unwrap_or(usize::MAX);
+    let stored = target.stored;
+    let whole = target
+        .axes
+        .iter()
+        .zip(&dataset.shape)
+        .all(|(axis, &length)| axis.positions.len() as u64 == length);
     match &dataset.layout {
         Layout::Compact(bytes) => {
-            place_all(bytes, dataset.datatype, pixel, memory, stored);
+            place_block(
+                bytes,
+                (&vec![0; dataset.shape.len()], &dataset.shape),
+                target,
+                memory,
+            );
             Ok(())
         }
         Layout::Contiguous { address, .. } if *address == UNDEFINED => Ok(()),
-        Layout::Contiguous { address, .. } => {
+        Layout::Contiguous { address, .. } if whole => {
+            let width = target.pixel.size();
             let mut done = 0_usize;
             let mut at = *address;
             let total = memory.len() / width;
@@ -87,8 +124,7 @@ fn read_values(
                 let bytes = source.bytes(at, (take * stored) as u64)?;
                 place_all(
                     &bytes,
-                    dataset.datatype,
-                    pixel,
+                    (target.datatype, target.pixel),
                     &mut memory[done * width..],
                     stored,
                 );
@@ -96,6 +132,9 @@ fn read_values(
                 at += (take * stored) as u64;
             }
             Ok(())
+        }
+        Layout::Contiguous { address, .. } => {
+            rows(source, *address, &dataset.shape, target, memory)
         }
         Layout::Chunked { chunk, index } => {
             let grid = Grid {
@@ -105,30 +144,133 @@ fn read_values(
                 element: stored as u64,
                 filtered: !dataset.filters.is_empty(),
             };
-            let found = chunks(source, index, &grid)?;
-            for piece in found {
+            for piece in chunks(source, index, &grid)? {
+                if inside(target.axes, &piece.offset, chunk).is_none() {
+                    continue;
+                }
                 let raw = source.bytes(piece.address, piece.size)?;
                 let bytes = unfilter(raw, &dataset.filters, piece.mask, stored, inflate)?;
-                place_chunk(&bytes, &piece, &grid, (dataset.datatype, pixel), memory)?;
+                let needed = chunk.iter().product::<u64>() * stored as u64;
+                if (bytes.len() as u64) < needed {
+                    return Err(format!("the chunk at {} is cut short", piece.address));
+                }
+                place_block(&bytes, (&piece.offset, chunk), target, memory);
             }
             Ok(())
         }
     }
 }
 
+/// Reads the values `target` picks of a contiguous dataset of `shape` stored at `address`, one
+/// row at a time: each read spans the positions picked along the last axis of one row.
+fn rows(
+    source: &mut Source,
+    address: u64,
+    shape: &[u64],
+    target: &Target,
+    memory: &mut [u8],
+) -> Result<(), Failure> {
+    let Some(last) = shape.len().checked_sub(1) else {
+        let bytes = source.bytes(address, target.stored as u64)?;
+        place_block(&bytes, (&[], &[]), target, memory);
+        return Ok(());
+    };
+    let along = &target.axes[last].positions;
+    let (Some(&first), Some(&end)) = (along.first(), along.last()) else {
+        return Ok(());
+    };
+    let outer: Vec<&[u64]> = target.axes[..last]
+        .iter()
+        .map(|axis| axis.positions.as_slice())
+        .collect();
+    let rows: usize = outer.iter().map(|positions| positions.len()).product();
+    let mut index = vec![0_usize; last];
+    for _ in 0..rows {
+        let mut origin: Vec<u64> = index
+            .iter()
+            .zip(&outer)
+            .map(|(&at, positions)| positions[at])
+            .collect();
+        let row = origin
+            .iter()
+            .zip(shape)
+            .fold(0_u64, |linear, (&at, &length)| linear * length + at);
+        let start = (row * shape[last] + first) * target.stored as u64;
+        let bytes = source.bytes(address + start, (end - first + 1) * target.stored as u64)?;
+        origin.push(first);
+        let mut extent = vec![1; last];
+        extent.push(end - first + 1);
+        place_block(&bytes, (&origin, &extent), target, memory);
+        for axis in (0..last).rev() {
+            index[axis] += 1;
+            if index[axis] < outer[axis].len() {
+                break;
+            }
+            index[axis] = 0;
+        }
+    }
+    Ok(())
+}
+
+/// Copies the values `target` picks from a block of the dataset that begins at `origin`, spans
+/// `extent` along each axis and whose stored values, row-major, are `bytes`, into their places
+/// in `memory`.
+fn place_block(
+    bytes: &[u8],
+    (origin, extent): (&[u64], &[u64]),
+    target: &Target,
+    memory: &mut [u8],
+) {
+    let Some(found) = inside(target.axes, origin, extent) else {
+        return;
+    };
+    let counts: Vec<u64> = target
+        .axes
+        .iter()
+        .map(|axis| axis.positions.len() as u64)
+        .collect();
+    let width = target.pixel.size();
+    let total: usize = found.iter().map(Vec::len).product();
+    let mut index = vec![0_usize; found.len()];
+    for _ in 0..total {
+        let (mut out, mut from) = (0_u64, 0_u64);
+        for (axis, &at) in index.iter().enumerate() {
+            let (result, offset) = found[axis][at];
+            out = out * counts[axis] + result;
+            from = from * extent[axis] + offset;
+        }
+        let from = usize::try_from(from).unwrap_or(usize::MAX) * target.stored;
+        let out = usize::try_from(out).unwrap_or(usize::MAX) * width;
+        if let (Some(element), Some(slot)) = (
+            bytes.get(from..from + target.stored),
+            memory.get_mut(out..out + width),
+        ) {
+            convert(element, target.datatype, target.pixel, slot);
+        }
+        for axis in (0..index.len()).rev() {
+            index[axis] += 1;
+            if index[axis] < found[axis].len() {
+                break;
+            }
+            index[axis] = 0;
+        }
+    }
+}
+
 /// The address and stored size of each chunk of the dataset `name` of `file`, the file at
-/// `path`, that passed through deflate, in the order [`read_dataset`] hands them to its
-/// inflater: the chunks a caller inflates for it.
+/// `path`, that passed through deflate and holds a value `items` pick, in the order
+/// [`read_dataset`] hands them to its inflater: the chunks a caller inflates for it.
 ///
 /// # Errors
 ///
-/// Fails as the operating system does, and with `INVALID_DATA` when the chunk index is
-/// damaged.
+/// Fails as the operating system does, with `INVALID_DATA` when the chunk index is damaged,
+/// and as [`read_dataset`] does for a subscript that picks nothing.
 pub(crate) fn deflated_chunks(
     path: &str,
     file: &Hdf5,
-    (name, dataset): (&str, &Dataset),
-) -> Result<Vec<(u64, u64)>, OsFailure> {
+    (name, dataset, items): (&str, &Dataset, &[Item]),
+) -> Result<Vec<(u64, u64)>, SubscriptFailure> {
+    let axes = select(items, &dataset.shape)?;
     let Layout::Chunked { chunk, index } = &dataset.layout else {
         return Ok(Vec::new());
     };
@@ -153,6 +295,7 @@ pub(crate) fn deflated_chunks(
     Ok(found
         .iter()
         .filter(|piece| position >= 32 || piece.mask & (1 << position) == 0)
+        .filter(|piece| inside(&axes, &piece.offset, chunk).is_some())
         .map(|piece| (piece.address, piece.size))
         .collect())
 }
@@ -180,82 +323,13 @@ fn fits(datatype: Datatype, pixel: Pixel) -> bool {
 
 /// Converts the elements of `bytes`, each `stored` bytes of `datatype`, into the elements of
 /// `memory` in order, as many as both hold.
-fn place_all(bytes: &[u8], datatype: Datatype, pixel: Pixel, memory: &mut [u8], stored: usize) {
+fn place_all(bytes: &[u8], (datatype, pixel): (Datatype, Pixel), memory: &mut [u8], stored: usize) {
     for (element, target) in bytes
         .chunks_exact(stored)
         .zip(memory.chunks_exact_mut(pixel.size()))
     {
         convert(element, datatype, pixel, target);
     }
-}
-
-/// Copies the part of the chunk `piece`, whose unfiltered values are `bytes`, that lies inside
-/// the dataset into its place in `memory`.
-fn place_chunk(
-    bytes: &[u8],
-    piece: &Chunk,
-    grid: &Grid,
-    (datatype, pixel): (Datatype, Pixel),
-    memory: &mut [u8],
-) -> Result<(), Failure> {
-    let stored = usize::try_from(grid.element).unwrap_or(usize::MAX);
-    let needed = grid.chunk.iter().product::<u64>() * grid.element;
-    if (bytes.len() as u64) < needed || piece.offset.len() != grid.shape.len() {
-        return Err(format!("the chunk at {} is cut short", piece.address));
-    }
-    let rank = grid.shape.len();
-    let Some(last) = rank.checked_sub(1) else {
-        place_all(bytes, datatype, pixel, memory, stored);
-        return Ok(());
-    };
-    if piece
-        .offset
-        .iter()
-        .zip(grid.shape)
-        .any(|(&at, &length)| at >= length)
-    {
-        return Ok(());
-    }
-    let run = grid.chunk[last].min(grid.shape[last] - piece.offset[last]);
-    let rows: u64 = grid.chunk[..last].iter().product();
-    let width = pixel.size();
-    for row in 0..rows {
-        // The row's position inside the chunk, slowest axis first.
-        let mut rest = row;
-        let mut inside = vec![0; last];
-        for axis in (0..last).rev() {
-            inside[axis] = rest % grid.chunk[axis];
-            rest /= grid.chunk[axis];
-        }
-        let global: Vec<u64> = inside
-            .iter()
-            .zip(&piece.offset)
-            .map(|(&inside, &offset)| inside + offset)
-            .collect();
-        if global
-            .iter()
-            .zip(grid.shape)
-            .any(|(&at, &length)| at >= length)
-        {
-            continue;
-        }
-        let target = global
-            .iter()
-            .chain(std::iter::once(&piece.offset[last]))
-            .zip(grid.shape)
-            .fold(0, |linear, (&at, &length)| linear * length + at);
-        let from = usize::try_from(row * grid.chunk[last]).unwrap_or(usize::MAX) * stored;
-        let to = usize::try_from(target).unwrap_or(usize::MAX) * width;
-        let count = usize::try_from(run).unwrap_or(usize::MAX);
-        place_all(
-            &bytes[from..from + count * stored],
-            datatype,
-            pixel,
-            &mut memory[to..to + count * width],
-            stored,
-        );
-    }
-    Ok(())
 }
 
 /// The bytes of a chunk stored as `raw`, passed back through `filters` in reverse, skipping

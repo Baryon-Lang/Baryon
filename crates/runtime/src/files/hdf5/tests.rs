@@ -5,6 +5,7 @@
 use super::values::Inflate;
 use super::*;
 use crate::files::fits::Pixel;
+use crate::files::netcdf::{Item, SubscriptFailure};
 
 /// The path of the fixture `name`.
 fn fixture(name: &str) -> String {
@@ -17,16 +18,32 @@ fn fixture(name: &str) -> String {
 /// The values of the dataset `name` of the fixture `file`, read as `f64`s, the chunks inflated
 /// by `inflate`.
 fn read(file: &str, name: &str, inflate: &mut Inflate<'_>) -> Result<Vec<f64>, OsFailure> {
+    pick(file, (name, &[]), inflate).map_err(|failure| match failure {
+        SubscriptFailure::Os(failure) => failure,
+        SubscriptFailure::Index(message) | SubscriptFailure::Value(message) => {
+            panic!("{message}")
+        }
+    })
+}
+
+/// The values `items` pick of the dataset `name` of the fixture `file`, read as `f64`s, the
+/// chunks inflated by `inflate`.
+fn pick(
+    file: &str,
+    (name, items): (&str, &[Item]),
+    inflate: &mut Inflate<'_>,
+) -> Result<Vec<f64>, SubscriptFailure> {
     let path = fixture(file);
     let hdf5 = read_file(&path)?;
     let object = hdf5.find(name).unwrap();
     let dataset = object.dataset.as_ref().unwrap();
-    let count = usize::try_from(dataset.shape.iter().product::<u64>()).unwrap();
+    let axes = selection::select(items, &dataset.shape)?;
+    let count = usize::try_from(selection::shape(&axes).iter().product::<u64>()).unwrap();
     let mut memory = vec![0_u8; count * 8];
     read_dataset(
         &path,
         &hdf5,
-        (name, dataset),
+        (name, dataset, items),
         Pixel::F64,
         &mut memory,
         inflate,
@@ -137,12 +154,15 @@ fn an_array_that_cannot_hold_the_values_is_refused() {
     let failure = read_dataset(
         &path,
         &hdf5,
-        ("count", dataset),
+        ("count", dataset, &[]),
         Pixel::I16,
         &mut memory,
         &mut never,
     )
     .unwrap_err();
+    let SubscriptFailure::Os(failure) = failure else {
+        panic!("not an OSError");
+    };
     assert_eq!(
         failure.strerror,
         "the HDF5 dataset count holds <i4, which does not read as `i16`"
@@ -169,4 +189,45 @@ fn the_checksum_is_lookup3() {
         cursor::checksum(b"Four score and seven years ago"),
         0x1777_0551
     );
+}
+
+#[test]
+fn a_subscript_reads_only_the_values_it_picks() {
+    let slice = |start, stop, stride| Item::Slice {
+        start,
+        stop,
+        stride,
+    };
+    for file in ["earliest.h5", "latest.h5"] {
+        // `run1/temp[1, ::2, 1:3]`: rows 0 and 2 of the second block, columns 1 and 2.
+        let items = [
+            Item::Index(1),
+            slice(None, None, Some(2)),
+            slice(Some(1), Some(3), None),
+        ];
+        let values = pick(file, ("run1/temp", &items), &mut never).unwrap();
+        assert_eq!(values, [283.5, 284.5, 291.5, 292.5], "{file}");
+        // `long[-3:]`, the last three of 400 values in chunks of 1: an extensible array or a
+        // B-tree read only where it holds them.
+        let items = [slice(Some(-3), None, None)];
+        let values = pick(file, ("long", &items), &mut never).unwrap();
+        assert_eq!(values, [397.0, 398.0, 399.0], "{file}");
+        // `deflated[5, ::3]` lies in the two chunks that start at row 4 and columns 0 and 2.
+        let mut streams = Vec::new();
+        let path = fixture(file);
+        let hdf5 = read_file(&path).unwrap();
+        let dataset = hdf5.find("deflated").unwrap().dataset.as_ref().unwrap();
+        let items = [Item::Index(5), slice(None, None, Some(3))];
+        for (address, _) in deflated_chunks(&path, &hdf5, ("deflated", dataset, &items)).unwrap() {
+            streams.push(address);
+        }
+        assert_eq!(streams.len(), 2, "{file}");
+        // A subscript that picks nothing raises as h5py does.
+        let failure = pick(file, ("count", &[Item::Index(3)]), &mut never).unwrap_err();
+        assert!(
+            matches!(&failure, SubscriptFailure::Index(message)
+                if message == "Index (3) out of range for (0-2)"),
+            "{file}: {failure:?}"
+        );
+    }
 }

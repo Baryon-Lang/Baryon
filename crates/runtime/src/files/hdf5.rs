@@ -34,6 +34,7 @@ mod extensible;
 mod groups;
 mod header;
 mod messages;
+pub(crate) mod selection;
 mod superblock;
 mod values;
 

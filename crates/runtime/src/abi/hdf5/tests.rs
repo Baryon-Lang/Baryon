@@ -1,6 +1,7 @@
 //! Tests of the exported HDF5 functions, called as compiled code calls them, on the files
 //! h5py 3.16 wrote for the driver's build tests.
 
+use super::super::netcdf::RaisedMessage;
 use super::super::print_array::ELEMENT_F64;
 use super::*;
 use crate::abi::text::OwnedText;
@@ -41,6 +42,8 @@ fn the_deflated_chunks_are_listed_then_read_back_inflated() {
             LATEST.len(),
             name.as_ptr(),
             name.len(),
+            std::ptr::null(),
+            0,
             list.as_mut_ptr(),
             error.as_mut_ptr(),
         )
@@ -63,6 +66,8 @@ fn the_deflated_chunks_are_listed_then_read_back_inflated() {
             LATEST.len(),
             name.as_ptr(),
             name.len(),
+            std::ptr::null(),
+            0,
             empty.as_ptr(),
             empty.as_ptr(),
             ELEMENT_F64,
@@ -107,4 +112,59 @@ fn the_description_starts_with_the_path() {
     let lines = texts(&unsafe { list.assume_init() });
     assert_eq!(lines[0], format!("P\t{LATEST}"));
     assert_eq!(lines[1], "G\t/");
+}
+
+#[test]
+fn a_subscript_that_picks_nothing_raises_index_error_or_value_error() {
+    // `count[3]` of three values, then `count[::-1]`, each read as no axis.
+    let cases: [([i64; 4], u8, &str); 2] = [
+        (
+            [0, 3, i64::MIN, i64::MIN],
+            1,
+            "Index (3) out of range for (0-2)",
+        ),
+        ([1, i64::MIN, i64::MIN, -1], 2, "Step must be >= 1 (got -1)"),
+    ];
+    for (item, tag, message) in cases {
+        let name = "count";
+        let empty = [8_i64, 0, 1];
+        let mut words = [0_i64; 1];
+        let mut error = MaybeUninit::<RaisedError>::uninit();
+        // SAFETY: the path and the name are the strings' bytes, `item` is one item's four
+        // words, the empty arrays are never read, `words` holds the one word of rank 0, and
+        // `error` is a local the size of an `OSError`, more than an `IndexError` or
+        // `ValueError` needs.
+        let failed = unsafe {
+            baryon_rt_hdf5_read(
+                LATEST.as_ptr(),
+                LATEST.len(),
+                name.as_ptr(),
+                name.len(),
+                item.as_ptr(),
+                1,
+                empty.as_ptr(),
+                empty.as_ptr(),
+                ELEMENT_F64,
+                0,
+                words.as_mut_ptr(),
+                error.as_mut_ptr(),
+            )
+        };
+        assert!(failed);
+        // SAFETY: the failed call wrote the tag and, where an `OSError` starts, the message:
+        // a `RaisedMessage`.
+        let RaisedMessage {
+            tag: written,
+            message: text,
+        } = unsafe { error.as_ptr().cast::<RaisedMessage>().read() };
+        let length = usize::try_from(text.length).unwrap();
+        // SAFETY: an owned `str` is `length` bytes of UTF-8 at `bytes`, freed once here.
+        let bytes = unsafe { std::slice::from_raw_parts(text.bytes, length) }.to_vec();
+        // SAFETY: as above.
+        unsafe { baryon_rt_deallocate(text.bytes, length, 1) };
+        assert_eq!(
+            (written, String::from_utf8(bytes).unwrap()),
+            (tag, message.to_owned())
+        );
+    }
 }

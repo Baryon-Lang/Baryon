@@ -17,10 +17,12 @@
 use super::array_files::{runs, write_header};
 use super::files::{RaisedError, finish};
 use super::fits::pixel;
+use super::netcdf::{finish_subscript, subscript};
 use super::string_lists::{OwnedList, write_list};
 use super::strings::text;
 use crate::files::fits::Pixel;
-use crate::files::hdf5::{self, Dataset, Hdf5};
+use crate::files::hdf5::{self, Dataset, Hdf5, selection};
+use crate::files::netcdf::{Item, SubscriptFailure};
 use crate::files::{ErrorKind, OsFailure};
 use crate::memory;
 use crate::panic::panic;
@@ -68,12 +70,14 @@ pub unsafe extern "C" fn baryon_rt_hdf5_open(
     unsafe { finish(result, write, error) }
 }
 
-/// Writes to `out` a new `list[str]` with one line for each deflated chunk of the dataset whose
-/// path in the file is the `name_length` bytes at `name`, in the HDF5 file whose path is the
-/// `length` bytes at `path`: the chunk's address and its size in bytes, separated by a tab, in
-/// the order [`baryon_rt_hdf5_read`] takes them inflated. A dataset with no deflated chunk gives
-/// an empty list. Returns `true`, with the error at `error`, as [`baryon_rt_hdf5_open`] does,
-/// or with the kind `INVALID_DATA` when the file has no such dataset.
+/// Writes to `out` a new `list[str]` with one line for each deflated chunk that holds a value
+/// `items` pick of the dataset whose path in the file is the `name_length` bytes at `name`, in
+/// the HDF5 file whose path is the `length` bytes at `path`: the chunk's address and its size
+/// in bytes, separated by a tab, in the order [`baryon_rt_hdf5_read`] takes them inflated.
+/// `items` are as [`baryon_rt_hdf5_read`] takes them. A dataset with no deflated chunk gives an
+/// empty list. Returns `true`, with the error at `error`, as [`baryon_rt_hdf5_open`] does, with
+/// the kind `INVALID_DATA` when the file has no such dataset, or with h5py's `IndexError` or
+/// `ValueError` for a subscript that picks nothing, as [`baryon_rt_hdf5_read`] raises them.
 ///
 /// Cost: the file's object headers and the dataset's chunk index.
 ///
@@ -83,8 +87,10 @@ pub unsafe extern "C" fn baryon_rt_hdf5_open(
 ///
 /// # Safety
 ///
-/// `path` points to `length` and `name` to `name_length` readable bytes of UTF-8, `out` to a
-/// writable [`OwnedList`] and `error` to a writable [`RaisedError`].
+/// `path` points to `length` and `name` to `name_length` readable bytes of UTF-8, `items` to
+/// `4 * item_count` readable 64-bit words or `item_count` is 0, `out` to a writable
+/// [`OwnedList`], and `error` to a writable [`RaisedError`] that is a
+/// `Raises[None, OSError | IndexError | ValueError]` whenever `item_count` is not 0.
 ///
 /// # Example
 ///
@@ -96,6 +102,8 @@ pub unsafe extern "C" fn baryon_rt_hdf5_chunks(
     length: usize,
     name: *const u8,
     name_length: usize,
+    items: *const i64,
+    item_count: usize,
     out: *mut OwnedList,
     error: *mut RaisedError,
 ) -> bool {
@@ -103,10 +111,14 @@ pub unsafe extern "C" fn baryon_rt_hdf5_chunks(
     let path = unsafe { text(path, length) };
     // SAFETY: the caller guarantees `name_length` readable bytes of UTF-8 at `name`.
     let name = unsafe { text(name, name_length) };
-    let result = hdf5::read_file(path).and_then(|file| {
-        let dataset = find(path, &file, name)?;
-        hdf5::deflated_chunks(path, &file, (name, dataset))
-    });
+    // SAFETY: the caller guarantees `4 * item_count` readable words at `items`.
+    let items = unsafe { subscript(items, item_count) };
+    let result = hdf5::read_file(path)
+        .map_err(SubscriptFailure::Os)
+        .and_then(|file| {
+            let dataset = find(path, &file, name)?;
+            hdf5::deflated_chunks(path, &file, (name, dataset, &items))
+        });
     // SAFETY: the caller guarantees `out` is writable.
     let write = |chunks: Vec<(u64, u64)>| unsafe {
         let lines: Vec<String> = chunks
@@ -116,24 +128,30 @@ pub unsafe extern "C" fn baryon_rt_hdf5_chunks(
         let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
         write_list(&lines, out);
     };
-    // SAFETY: the caller guarantees `error` is writable.
-    unsafe { finish(result, write, error) }
+    // SAFETY: the caller's promises about `error` and its error types, passed on.
+    unsafe { finish_subscript(result, write, error) }
 }
 
-/// `f[name][...]`: reads every value of the dataset whose path in the file is the
+/// `f[name][items]`: reads the values `items` pick of the dataset whose path in the file is the
 /// `name_length` bytes at `name`, in the HDF5 file whose path is the `length` bytes at `path`,
 /// into a new row-major array of `rank` dimensions and elements of the type numbered
-/// `element`, and writes its header to `out`. `inflated` is the header of an `Array[u8, 1]`
+/// `element`, and writes its header to `out`. `items` points to `item_count` items of the
+/// subscript, four 64-bit words each, as the `NetCDF` functions take them: `0` and an index, or
+/// `1` and a slice's start, stop and step, `i64::MIN` for a part left out. No items read every
+/// value, as `f[name][...]` does. An index drops its axis and a slice keeps it, as in h5py,
+/// which takes no negative step. `inflated` is the header of an `Array[u8, 1]`
 /// holding the dataset's deflated chunks inflated, one after another in the order
 /// [`baryon_rt_hdf5_chunks`] lists them, and `sizes` the header of an `Array[i64, 1]` of their
 /// sizes; both are empty for a dataset with no deflated chunk. Elements never written read as
 /// the dataset's fill value. Returns `true`, with the error at `error`, when the operating
-/// system refuses, or with the kind `INVALID_DATA` when the file has no such dataset, it has
-/// another rank or its values do not read as the type, a chunk's checksum does not match, the
-/// inflated chunks run out, or a chunk passed through a filter the reader does not reverse.
+/// system refuses, with the kind `INVALID_DATA` when the file has no such dataset, what is
+/// picked has another rank or its values do not read as the type, a chunk's checksum does not
+/// match, the inflated chunks run out, or a chunk passed through a filter the reader does not
+/// reverse; or with h5py's `IndexError` for an index past its axis, or `ValueError` for more
+/// items than axes or a step that is not positive, with h5py's messages.
 ///
-/// Cost: the file's object headers, one allocation, and one pass over the stored values; a
-/// chunked dataset reads each chunk once.
+/// Cost: the file's object headers, one allocation, and one pass over the stored values
+/// picked; a chunked dataset reads only the chunks that hold a value picked, each once.
 ///
 /// # Panics
 ///
@@ -142,10 +160,11 @@ pub unsafe extern "C" fn baryon_rt_hdf5_chunks(
 ///
 /// # Safety
 ///
-/// `path` points to `length` and `name` to `name_length` readable bytes of UTF-8; `inflated`
-/// and `sizes` to readable rank-1 array headers whose elements are readable and unchanged
-/// during the call; `out` to `1 + 2 * rank` writable 64-bit words; and `error` to a writable
-/// [`RaisedError`].
+/// `path` points to `length` and `name` to `name_length` readable bytes of UTF-8; `items` to
+/// `4 * item_count` readable 64-bit words, or `item_count` is 0; `inflated` and `sizes` to
+/// readable rank-1 array headers whose elements are readable and unchanged during the call;
+/// `out` to `1 + 2 * rank` writable 64-bit words; and `error` to a writable [`RaisedError`]
+/// that is a `Raises[None, OSError | IndexError | ValueError]` whenever `item_count` is not 0.
 ///
 /// # Example
 ///
@@ -156,22 +175,27 @@ pub unsafe extern "C" fn baryon_rt_hdf5_chunks(
 /// // A file h5py wrote, with a dataset `run1/temp` of 2 by 3 by 4 `f4` values from 270.5.
 /// let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../driver/tests/fixtures/hdf5/latest.h5");
 /// let name = "run1/temp";
+/// // `f["run1/temp"][1, ::2]`: an index, then a slice with only a step.
+/// let items = [0, 1, i64::MIN, i64::MIN, 1, i64::MIN, i64::MIN, 2];
 /// // No deflated chunks: two empty arrays.
 /// let empty = [8_i64, 0, 1];
-/// let mut loaded = [0_i64; 7];
+/// let mut loaded = [0_i64; 5];
 /// let mut error = MaybeUninit::uninit();
-/// // SAFETY: the path and the name are the strings' bytes, the empty arrays are never read,
-/// // and `loaded` and `error` are locals. The values read are freed once.
+/// // SAFETY: the path and the name are the strings' bytes, `items` holds two items, the empty
+/// // arrays are never read, and `loaded` and `error` are locals. The values read are freed
+/// // once.
 /// unsafe {
 ///     let failed = baryon_rt_hdf5_read(
-///         path.as_ptr(), path.len(), name.as_ptr(), name.len(), empty.as_ptr(),
-///         empty.as_ptr(), ELEMENT_F32, 3, loaded.as_mut_ptr(), error.as_mut_ptr(),
+///         path.as_ptr(), path.len(), name.as_ptr(), name.len(), items.as_ptr(), 2,
+///         empty.as_ptr(), empty.as_ptr(), ELEMENT_F32, 2, loaded.as_mut_ptr(),
+///         error.as_mut_ptr(),
 ///     );
 ///     assert!(!failed);
-///     assert_eq!(loaded[1..], [2, 3, 4, 12, 4, 1]);
+///     // Rows 0 and 2 of the second block, four values each.
+///     assert_eq!(loaded[1..], [2, 4, 4, 1]);
 ///     let data = loaded[0] as *mut u8;
-///     assert_eq!(data.cast::<f32>().read(), 270.5);
-///     baryon_rt_deallocate(data, 24 * 4, 4);
+///     assert_eq!(data.cast::<f32>().read(), 282.5);
+///     baryon_rt_deallocate(data, 8 * 4, 4);
 /// }
 /// ```
 #[allow(unsafe_code, reason = "exported to compiled code")]
@@ -185,6 +209,8 @@ pub unsafe extern "C" fn baryon_rt_hdf5_read(
     length: usize,
     name: *const u8,
     name_length: usize,
+    items: *const i64,
+    item_count: usize,
     inflated: *const i64,
     sizes: *const i64,
     element: u32,
@@ -197,6 +223,8 @@ pub unsafe extern "C" fn baryon_rt_hdf5_read(
     let path = unsafe { text(path, length) };
     // SAFETY: the caller guarantees `name_length` readable bytes of UTF-8 at `name`.
     let name = unsafe { text(name, name_length) };
+    // SAFETY: the caller guarantees `4 * item_count` readable words at `items`.
+    let items = unsafe { subscript(items, item_count) };
     // SAFETY: the caller guarantees a readable rank-1 array of bytes at `inflated`.
     let inflated = unsafe { gather(inflated, 1) };
     // SAFETY: the caller guarantees a readable rank-1 array of 64-bit integers at `sizes`.
@@ -208,12 +236,22 @@ pub unsafe extern "C" fn baryon_rt_hdf5_read(
         })
         .collect();
     let result = hdf5::read_file(path)
-        .and_then(|file| read(path, &file, name, (&inflated, &sizes), pixel, rank));
+        .map_err(SubscriptFailure::Os)
+        .and_then(|file| {
+            read(
+                path,
+                &file,
+                (name, &items),
+                (&inflated, &sizes),
+                pixel,
+                rank,
+            )
+        });
     // SAFETY: the caller guarantees `1 + 2 * rank` writable words at `out`, and `read` gives a
     // shape `rank` long.
     let write = |(data, shape): (*mut u8, Vec<usize>)| unsafe { write_header(out, data, &shape) };
-    // SAFETY: the caller guarantees `error` is writable.
-    unsafe { finish(result, write, error) }
+    // SAFETY: the caller's promises about `error` and its error types, passed on.
+    unsafe { finish_subscript(result, write, error) }
 }
 
 /// The elements of the rank-1 array whose header is at `array`, `size` bytes each, in order.
@@ -237,43 +275,48 @@ unsafe fn gather(array: *const i64, size: usize) -> Vec<u8> {
 }
 
 /// The dataset `name` of `file`, the file at `path`.
-fn find<'a>(path: &str, file: &'a Hdf5, name: &str) -> Result<&'a Dataset, OsFailure> {
+fn find<'a>(path: &str, file: &'a Hdf5, name: &str) -> Result<&'a Dataset, SubscriptFailure> {
     file.find(name)
         .and_then(|object| object.dataset.as_ref())
         .ok_or_else(|| {
-            OsFailure::new(
+            SubscriptFailure::Os(OsFailure::new(
                 ErrorKind::InvalidData,
                 format!("the HDF5 file has no dataset {name}"),
                 path,
-            )
+            ))
         })
 }
 
-/// Reads every value of the dataset `name` of `file`, the file at `path`, into new memory as
-/// `pixel`s, the deflated chunks taken from `inflated` in pieces of `sizes`: the memory and the
-/// shape. The memory is freed again when the read fails.
+/// Reads the values `items` pick of the dataset `name` of `file`, the file at `path`, into new
+/// memory as `pixel`s, the deflated chunks taken from `inflated` in pieces of `sizes`: the
+/// memory and the shape. The memory is freed again when the read fails.
 #[allow(unsafe_code, reason = "reads into memory it allocates")]
 fn read(
     path: &str,
     file: &Hdf5,
-    name: &str,
+    (name, items): (&str, &[Item]),
     (inflated, sizes): (&[u8], &[usize]),
     pixel: Pixel,
     rank: usize,
-) -> Result<(*mut u8, Vec<usize>), OsFailure> {
+) -> Result<(*mut u8, Vec<usize>), SubscriptFailure> {
     let dataset = find(path, file, name)?;
-    if dataset.shape.len() != rank {
-        return Err(OsFailure::new(
+    let picked = selection::shape(&selection::select(items, &dataset.shape)?);
+    if picked.len() != rank {
+        let what = if items.is_empty() {
+            format!("the HDF5 dataset {name} has")
+        } else {
+            format!("the values picked of the HDF5 dataset {name} have")
+        };
+        return Err(SubscriptFailure::Os(OsFailure::new(
             ErrorKind::InvalidData,
             format!(
-                "the HDF5 dataset {name} has rank {}, not rank {rank} as the program asks",
-                dataset.shape.len()
+                "{what} rank {}, not rank {rank} as the program asks",
+                picked.len()
             ),
             path,
-        ));
+        )));
     }
-    let shape: Vec<usize> = dataset
-        .shape
+    let shape: Vec<usize> = picked
         .iter()
         .map(|&length| usize::try_from(length).unwrap_or(usize::MAX))
         .collect();
@@ -303,9 +346,14 @@ fn read(
         (at, next) = (end, next + 1);
         Ok(chunk)
     };
-    if let Err(failure) =
-        hdf5::read_dataset(path, file, (name, dataset), pixel, memory, &mut inflate)
-    {
+    if let Err(failure) = hdf5::read_dataset(
+        path,
+        file,
+        (name, dataset, items),
+        pixel,
+        memory,
+        &mut inflate,
+    ) {
         // SAFETY: `pointer` came from `allocate_zeroed` with this layout just above.
         unsafe { memory::deallocate(pointer, layout) };
         return Err(failure);
