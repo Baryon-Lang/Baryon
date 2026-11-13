@@ -158,12 +158,12 @@ error: a shape's lengths are integers, found `f64`
   |                      ^^^ not an integer
   = note: a shape is a tuple of integers written out, such as `(nx, ny)`
 
-error: an array's elements must be a copy type, found `str`
+error: `Array.fill` cannot make an array of `str` yet
  --> main.byn:5:26
   |
 5 |     m = Array.fill((3,), "x")
-  |                          ^^^ not a copy type
-  = note: a copy type is a number, `bool`, a `Fixed` array, an enum, or a struct declared `Copy`; use a `list` for other values
+  |                          ^^^ an array of `str`
+  = note: make one from a list of strings: `Array(words)`
 
 error: expected `i64`, found `f64`
  --> main.byn:6:19

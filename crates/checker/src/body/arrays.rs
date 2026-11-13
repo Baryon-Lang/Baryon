@@ -99,6 +99,15 @@ impl<'db> Body<'db> {
                 Some("for example `Array.fill((n,), 1.0)`"),
             );
         }
+        if matches!(element.kind(self.db), TypeKind::Str) {
+            let message = format!("`Array.{name}` cannot make an array of `str` yet");
+            return self.lowerer.error(
+                fill_value.unwrap_or(node),
+                &message,
+                "an array of `str`",
+                Some("make one from a list of strings: `Array(words)`"),
+            );
+        }
         if !is_copy(self.db, element) {
             let message = format!(
                 "an array's elements must be a copy type, found `{}`",
@@ -172,6 +181,10 @@ impl<'db> Body<'db> {
             Some(TypeKind::Array { element, rank: 1 }) => {
                 Some(Type::new(self.db, TypeKind::List(*element)))
             }
+            Some(TypeKind::TextArray) => {
+                let text = Type::new(self.db, TypeKind::Str);
+                Some(Type::new(self.db, TypeKind::List(text)))
+            }
             _ => None,
         };
         let [values] = arguments.positional.as_slice() else {
@@ -192,6 +205,10 @@ impl<'db> Body<'db> {
                     rank: 1,
                 },
             ),
+            // A list of `str` gives a text array (decision 0045), which reads the list.
+            TypeKind::List(element) if matches!(element.kind(self.db), TypeKind::Str) => {
+                Type::new(self.db, TypeKind::TextArray)
+            }
             TypeKind::List(element) => {
                 let message = format!(
                     "an array's elements must be a copy type, found `{}`",
@@ -295,6 +312,9 @@ impl<'db> Body<'db> {
             TypeKind::Fixed { element, shape } => (*element, shape.rank() == 1),
             TypeKind::DataFrame { .. } => {
                 return Some(self.frame_method(node, base, name, arguments));
+            }
+            TypeKind::TextArray => {
+                return Some(self.text_array_method(node, base, name, arguments));
             }
             TypeKind::List(item) => {
                 let item = *item;

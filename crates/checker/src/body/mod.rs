@@ -82,6 +82,7 @@ mod statistics;
 mod streams;
 mod subprocess;
 mod text;
+mod text_arrays;
 mod text_tables;
 mod union_methods;
 

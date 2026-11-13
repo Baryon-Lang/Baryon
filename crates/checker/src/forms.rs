@@ -9,6 +9,9 @@ use types::{Shape, Type, TypeDb, TypeKind, Value};
 impl<'db> Lowerer<'db> {
     /// `Array[element, rank]`.
     pub(crate) fn array(&mut self, element: NodeId, rank_node: NodeId) -> Type<'db> {
+        if matches!(self.lower(element).kind(self.db), TypeKind::Str) {
+            return self.text_array(rank_node);
+        }
         let element = self.element(element);
         let rank = match self.evaluate(rank_node) {
             Some(Value::Integer(rank)) if rank >= 1 => u32::try_from(rank).ok(),
@@ -24,6 +27,21 @@ impl<'db> Lowerer<'db> {
             );
         };
         Type::new(self.db, TypeKind::Array { element, rank })
+    }
+
+    /// `Array[str, rank]`: a text array (decision 0045), the one array whose elements are not
+    /// a copy type, which has one dimension only.
+    fn text_array(&mut self, rank_node: NodeId) -> Type<'db> {
+        match self.evaluate(rank_node) {
+            Some(Value::Integer(1)) => Type::new(self.db, TypeKind::TextArray),
+            None => self.unknown(),
+            Some(_) => self.error(
+                rank_node,
+                "an array of `str` has one dimension",
+                "not 1",
+                Some("write `Array[str, 1]`; for a grid of text use a `list` of them"),
+            ),
+        }
     }
 
     /// `Fixed[element, shape]`, where the shape is a tuple of constant lengths.

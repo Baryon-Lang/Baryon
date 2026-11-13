@@ -328,6 +328,7 @@ mod subprocess;
 #[cfg(test)]
 mod tests;
 mod text;
+mod text_arrays;
 mod text_methods;
 mod unions;
 mod unpacking;

@@ -199,9 +199,8 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::ContainsStr => self.text_builtin(&CONTAINS, arguments, destination, target),
             Builtin::LengthStr => self.text_builtin(&LENGTH, arguments, destination, target),
             Builtin::CharacterStr => self.text_character(arguments, destination, target),
+            Builtin::TextArray(step) => self.text_array_step(step, arguments, destination, target),
             Builtin::Text(method) => self.text_method(method, arguments, destination, target),
-            // Built with the text arrays that use them (roadmap 3.13.3).
-            Builtin::TextArray(step) => Err(Unsupported::new(step.name())),
             Builtin::DictFind => self.dict_find(arguments, destination, target),
             Builtin::DictInsert => self.dict_insert(arguments, destination, target),
             Builtin::DictRemove => self.dict_remove(arguments, destination, target),

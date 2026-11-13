@@ -48,6 +48,10 @@ impl<'db> Body<'db> {
             return self.lowerer.unknown();
         }
         let name = self.tree.text(attribute, self.text);
+        if self.is_text_array(base) {
+            let what = format!("`{name}`");
+            return self.text_array_unbuilt(node, &what);
+        }
         if let Some(ty) = self.array_attribute(node, base, name) {
             return ty;
         }

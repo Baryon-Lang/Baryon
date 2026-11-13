@@ -300,6 +300,7 @@ impl<'db> Builder<'db> {
     fn elements_walk(&mut self, node: NodeId, reversed: bool) -> Option<Walk<'db>> {
         let ty = self.ty(node);
         let element = match ty.kind(self.db) {
+            _ if self.is_text_array(node) => Type::new(self.db, TypeKind::Str),
             TypeKind::Array { element, rank: 1 } | TypeKind::List(element) => *element,
             TypeKind::Fixed { element, shape } if shape.rank() == 1 => *element,
             TypeKind::Tuple(items) if !items.is_empty() => items[0],
@@ -419,6 +420,7 @@ impl<'db> Builder<'db> {
                 let at = self.position(counter, (*length, *reversed), target);
                 match elements {
                     Elements::Indexed => collection.clone().project(Projection::Index(vec![at])),
+                    Elements::TextArray => self.text_array_element(collection, at, target),
                     Elements::Tuple(count) => {
                         let item = self.temporary(*element, target);
                         self.tuple_item(target, (collection, *count), at, &mut |builder, place| {
