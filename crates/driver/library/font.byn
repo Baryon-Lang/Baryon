@@ -12,7 +12,7 @@ y, each a number from 0 to 4095 less 1024; a point off the curve, a quadratic cu
 point, is preceded by `~`, as TrueType marks it. Units are the font's: 2048 to the em, y up.
 """
 
-from math import ceil, nan, sqrt
+from math import ceil, isfinite, nan, sqrt
 from dejavu_sans import characters, glyphs, kerning
 
 UNITS: Final = 2048.0  # the font's units to the em: a glyph's size in points is size / UNITS
@@ -68,10 +68,7 @@ class Font(Struct):
         for letter in text:
             place = self.place(letter)
             pen += self.pairs.get(1000 * last + place, 0.0)
-            start = 0
-            for end in self.glyphs[place].ends:
-                _contour(self.glyphs[place], start, end, pen, scale, xs, ys)
-                start = end
+            _contours(self.glyphs[place], pen, scale, xs, ys)
             pen += self.glyphs[place].advance
             last = place
         for k in range(len(xs)):
@@ -171,56 +168,78 @@ def math_layout(text: str, size: f64) -> tuple[str, str, f64, f64, f64]:
     return (coefficient, exponent, at_ten, at_exponent, width)
 
 
-def _contour(
-    glyph: Glyph,
-    start: int,
-    end: int,
-    pen: f64,
-    scale: f64,
-    xs: InOut[list[f64]],
-    ys: InOut[list[f64]],
-) -> None:
-    """Appends to `xs` and `ys` the contour of `glyph` from point `start` to before `end`,
-    moved `pen` units right and scaled by `scale`, its curves cut into lines, then a NaN. Two
-    control points in a row have an on-curve point between them, halfway, as TrueType has it.
-    The walk starts at the contour's first point on the curve and ends back at it, so a
-    curve's control point is always followed by the point it bends towards."""
-    count = end - start
-    first = start
-    while not glyph.on_curve[first]:  # every contour of DejaVu Sans has a point on the curve
-        first += 1
-    cx = glyph.x[first]  # the pen's place on the outline
-    cy = glyph.y[first]
-    xs.append((pen + cx) * scale)
-    ys.append(cy * scale)
-    control = False  # whether a control point is waiting at (qx, qy)
-    qx = 0.0
-    qy = 0.0
-    for step in range(1, count + 1):
-        k = start + (first - start + step) % count
-        px = glyph.x[k]
-        py = glyph.y[k]
-        if glyph.on_curve[k]:
-            if control:
-                _curve(cx, cy, qx, qy, px, py, pen, scale, xs, ys)
-            else:
-                xs.append((pen + px) * scale)
-                ys.append(py * scale)
-            control = False
-            cx = px
-            cy = py
-        else:
-            if control:
-                mx = 0.5 * (qx + px)
-                my = 0.5 * (qy + py)
-                _curve(cx, cy, qx, qy, mx, my, pen, scale, xs, ys)
-                cx = mx
-                cy = my
-            control = True
+def curves(glyph: Glyph) -> list[f64]:
+    """The outline of `glyph` as pieces of six numbers each, in font units: where a piece starts,
+    its control point, and where it ends. A line's control point is NaN. A contour's pieces
+    follow one another, each starting where the last ended, and six NaNs close it. Two control
+    points in a row have an on-curve point between them, halfway, as TrueType has it. Each
+    contour is walked from its first point on the curve back round to it, so a control point is
+    always followed by the point it bends towards."""
+    out: list[f64] = []
+    start = 0
+    for end in glyph.ends:
+        count = end - start
+        first = start
+        while not glyph.on_curve[first]:  # every contour of DejaVu Sans has a point on the curve
+            first += 1
+        cx = glyph.x[first]  # the pen's place on the outline
+        cy = glyph.y[first]
+        control = False  # whether a control point is waiting at (qx, qy)
+        qx = 0.0
+        qy = 0.0
+        for step in range(1, count + 1):
+            k = start + (first - start + step) % count
+            px = glyph.x[k]
+            py = glyph.y[k]
+            if glyph.on_curve[k] or control:
+                tx = px if glyph.on_curve[k] else 0.5 * (qx + px)  # where this piece ends
+                ty = py if glyph.on_curve[k] else 0.5 * (qy + py)
+                for value in [cx, cy, qx if control else nan, qy if control else nan, tx, ty]:
+                    out.append(value)
+                cx = tx
+                cy = ty
+            control = not glyph.on_curve[k]
             qx = px
             qy = py
-    xs.append(nan)
-    ys.append(nan)
+        for _ in range(6):
+            out.append(nan)
+        start = end
+    return out
+
+
+def _contours(
+    glyph: Glyph, pen: f64, scale: f64, xs: InOut[list[f64]], ys: InOut[list[f64]]
+) -> None:
+    """Appends to `xs` and `ys` the contours of `glyph`, moved `pen` units right and scaled by
+    `scale`, its curves cut into lines, a NaN after each."""
+    pieces = curves(glyph)
+    opening = True  # whether the next piece starts a contour
+    for k in range(0, len(pieces), 6):
+        if not isfinite(pieces[k]):
+            xs.append(nan)
+            ys.append(nan)
+            opening = True
+            continue
+        if opening:
+            xs.append((pen + pieces[k]) * scale)
+            ys.append(pieces[k + 1] * scale)
+            opening = False
+        if isfinite(pieces[k + 2]):
+            _curve(
+                pieces[k],
+                pieces[k + 1],
+                pieces[k + 2],
+                pieces[k + 3],
+                pieces[k + 4],
+                pieces[k + 5],
+                pen,
+                scale,
+                xs,
+                ys,
+            )
+        else:
+            xs.append((pen + pieces[k + 4]) * scale)
+            ys.append(pieces[k + 5] * scale)
 
 
 def _curve(
