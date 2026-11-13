@@ -10,7 +10,7 @@ two options are `--release` and `--timings`.
 | [`baryon check <directory>`](#baryon-check) | Reports every error and warning in the package |
 | [`baryon build [--release] [--timings] <directory> <output>`](#baryon-build) | Compiles the package into the executable `output` |
 | [`baryon run [--release] [--timings] <directory>`](#baryon-run) | Builds the package and runs it |
-| [`baryon test [--release] [--timings] <directory>`](#baryon-test) | Builds and runs every `@test` function |
+| [`baryon test [--release] [--timings] [-k <text>] <directory>`](#baryon-test) | Builds and runs every `@test` function, or those whose name contains `text` |
 | [`baryon doc <directory> <output>`](#baryon-doc) | Writes the package's documentation as Markdown |
 | [`baryon lsp`](#baryon-lsp) | Runs the language server an editor talks to |
 | `baryon --version` | Prints the release, such as `baryon 0.2.0`; put it in a bug report |
@@ -72,7 +72,7 @@ standard output and exit with 0. Called with no arguments or wrong ones, `baryon
 line to standard error and exits with 2:
 
 ```text
-baryon: usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] <directory> | baryon doc <directory> <output> | baryon lsp
+baryon: usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] [-k <text>] <directory> | baryon doc <directory> <output> | baryon lsp
 ```
 
 ## `baryon check`
@@ -189,13 +189,19 @@ hello, world
 ## `baryon test`
 
 ```text
-baryon test [--release] [--timings] <directory>
+baryon test [--release] [--timings] [-k <text>] <directory>
 ```
 
 Builds every top-level function decorated `@test` into one test program and runs each test in its
 own process, so a panic ends only its own test. It prints one line per test and a summary to
 standard output, then the output and failure of each test that failed. The package needs no
 `main`. [Tests](tests.md) defines what a test is and shows the full report.
+
+With `-k <text>`, only the tests whose full name, `module.test_name`, contains `text` run, as
+pytest's `-k` picks tests at its simplest: `-k test_flux` runs that test (and any whose name
+contains it, such as `test_flux_speed`), and `-k heat.` runs the module `heat`'s tests. The
+summary then counts the rest: `test result: ok. 1 passed; 0 failed; 3 filtered out`. The whole
+package is still built, so a test elsewhere that does not compile stops the run.
 
 Exit status 0 when every test passed, including when there are none; 1 when a test failed or the
 package does not build.
@@ -226,7 +232,7 @@ the Language Server Protocol, version 3.17
 ([decision 0019](../decisions/0019-language-server-protocol.md)). It loads every `.byn` file under
 the editor's workspace root as one package and reports the same errors and warnings as
 `baryon check`, updated as you type. It also answers three questions about the place the cursor
-is, shows inlay hints and renames, from the same checked package:
+is, shows inlay hints, renames and test lenses, from the same checked package:
 
 - **Hover**: what the name under the cursor is, as one line of code, and the documentation string
   of what it names, as `baryon doc` writes it. A variable shows the type the compiler inferred for
@@ -253,6 +259,9 @@ is, shows inlay hints and renames, from the same checked package:
   already taken where the rename reaches is refused too, since it would join two variables or
   hide a builtin, an import or another definition: a builtin such as `print`, any name the
   variable's function uses, or any name in a module the definition is defined or named in.
+- **Test lenses**: a **Run test** link above each top-level function decorated `@test`, which
+  asks the editor to run the command `baryon.runTest` with the test's full name. The VS Code
+  extension runs it as `baryon test -k <name>`; another editor can bind the command itself.
 
 Answers come from the parts of the file that parse and check, so code half typed still gets them
 where it can, and gets nothing rather than an error where it cannot. Fixes come later (roadmap

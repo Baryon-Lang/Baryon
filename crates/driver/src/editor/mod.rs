@@ -39,12 +39,14 @@
 mod complete;
 mod hints;
 mod hover;
+mod lenses;
 mod outline;
 mod rename;
 
 pub use complete::{Completion, CompletionKind};
 pub use hints::InlayHint;
 pub use hover::Hover;
+pub use lenses::TestLens;
 
 use crate::{Database, Session};
 use database::{Db, Definition, File, ModuleName, Package, Resolution};

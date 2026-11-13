@@ -136,6 +136,53 @@ fn passing_tests_exit_with_success() {
     );
 }
 
+/// `-k` runs only the tests whose full name contains its text, and the summary counts the rest
+/// as filtered out; a module name with its dot picks that module's tests.
+#[test]
+fn a_filter_runs_only_the_tests_it_names() {
+    let directory = package(
+        "tests-filter",
+        &[
+            (
+                "heat.byn",
+                "@test\ndef test_flux():\n    assert 2 + 2 == 4\n\n\n\
+                 @test\ndef test_wrong():\n    assert 2 + 2 == 5\n",
+            ),
+            (
+                "wave.byn",
+                "@test\ndef test_flux_speed():\n    assert 3 * 4 == 12\n",
+            ),
+        ],
+    )
+    .unwrap();
+    let filtered = |filter: &str| {
+        build_runtime();
+        Command::new(BARYON)
+            .args(["test", "-k", filter])
+            .arg(directory.join("package"))
+            .output()
+            .unwrap()
+    };
+    let output = filtered("flux");
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(
+        report(&output),
+        "running 2 tests\n\
+         test heat.test_flux ... ok\n\
+         test wave.test_flux_speed ... ok\n\
+         \n\
+         test result: ok. 2 passed; 0 failed; 1 filtered out\n"
+    );
+    let output = filtered("wave.");
+    assert_eq!(
+        report(&output),
+        "running 1 test\n\
+         test wave.test_flux_speed ... ok\n\
+         \n\
+         test result: ok. 1 passed; 0 failed; 2 filtered out\n"
+    );
+}
+
 /// A test that takes parameters, or a method decorated `@test`, is an error, and nothing runs.
 #[test]
 fn tests_take_no_parameters_and_are_top_level() {

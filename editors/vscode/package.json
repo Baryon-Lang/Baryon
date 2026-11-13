@@ -29,6 +29,21 @@
     "onLanguage:baryon"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "baryon.runTest",
+        "title": "Run Test",
+        "category": "Baryon"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "baryon.runTest",
+          "when": "false"
+        }
+      ]
+    },
     "languages": [
       {
         "id": "baryon",

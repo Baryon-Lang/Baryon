@@ -346,7 +346,7 @@ pub unsafe extern "C" fn baryon_rt_netcdf_write(
 /// types in that order, whenever the result can be an `IndexError` or a `ValueError`: the
 /// checker types a read or write with subscript items so, and only one with items fails so.
 #[allow(unsafe_code, reason = "writes an error compiled code owns")]
-unsafe fn finish_subscript<T>(
+pub(super) unsafe fn finish_subscript<T>(
     result: Result<T, SubscriptFailure>,
     write: impl FnOnce(T),
     error: *mut RaisedError,
@@ -377,11 +377,11 @@ unsafe fn finish_subscript<T>(
 /// `Raises[None, OSError | IndexError | ValueError]` that holds one: the tag, then the error's
 /// one field, its `message`, an owned `str`, where an `OSError` would start.
 #[repr(C)]
-struct RaisedMessage {
+pub(super) struct RaisedMessage {
     /// Which of the error types it is: 1, `IndexError`, or 2, `ValueError`.
-    tag: u8,
+    pub(super) tag: u8,
     /// The error's `message`.
-    message: OwnedText,
+    pub(super) message: OwnedText,
 }
 
 /// Writes to `out` a new `list[str]` of the lines that describe `header`, the file at `path`:
@@ -471,7 +471,7 @@ fn read(
 ///
 /// `words` points to `4 * count` readable 64-bit words, or `count` is 0.
 #[allow(unsafe_code, reason = "reads words compiled code passes")]
-unsafe fn subscript(words: *const i64, count: usize) -> Vec<Item> {
+pub(super) unsafe fn subscript(words: *const i64, count: usize) -> Vec<Item> {
     if count == 0 {
         return Vec::new();
     }

@@ -3,15 +3,18 @@
 The `pyplot` module draws plots with matplotlib's names and matplotlib's default look, written in
 Baryon and saved as SVG files that any browser, VS Code or a LaTeX toolchain can show
 ([decision 0046](../decisions/0046-plotting.md)). The `ticker` module beside it places and
-labels the ticks, as `matplotlib.ticker` does. Five more modules hold the parts below them,
-named as matplotlib names its own: `colors` reads color names, `artist` holds what an axes
-draws, `axis` draws an axis's ticks and labels, `legend` draws a legend, and `backend_svg`
-writes the SVG file.
+labels the ticks, as `matplotlib.ticker` does. These two are the modules a program imports.
+`pyplot` draws through smaller files of the standard library, named as matplotlib names its own:
+`colors` reads color names, `cm` holds the colormaps, `artist` holds what an axes draws,
+`transforms` finds the ranges it shows, `axis` draws an axis's ticks and labels, `legend`,
+`image` and `colorbar` draw a legend, an image and a colorbar, `backend_svg` writes the SVG file,
+and `png` the PNG images inside it. They are internal, so a program's own `colors.byn` or
+`image.byn` is never hidden by them.
 
-This chapter covers what builds today, roadmap 3.15.1 and 3.15.2: line plots, scatter plots,
-bars, histograms, markers, legends, grid lines, titles, axis labels, axis ranges and SVG output.
-Images, grids of plots, logarithmic axes, contours, PNG and PDF follow in roadmap 3.15.3 to
-3.15.7.
+This chapter covers what builds today, roadmap 3.15.1 to 3.15.3: line plots, scatter plots,
+bars, histograms, markers, legends, grid lines, images and colorbars, titles, axis labels, axis
+ranges and SVG output. Grids of plots, logarithmic axes, contours, PNG and PDF files follow in
+roadmap 3.15.4 to 3.15.7.
 
 ## A first plot
 
@@ -55,6 +58,7 @@ A matplotlib script changes in two places:
 | `import matplotlib.pyplot as plt` | `import pyplot as plt` | Libraries are named without their package, as `linalg` is for `numpy.linalg` |
 | `fig, ax = plt.subplots()` | `ax = plt.axes()` | Baryon values have one owner, so `fig` and `ax` cannot share a figure: drawing on `ax` would not change `fig` |
 | `fig.savefig("p.svg")` | `ax.savefig("p.svg")` | The axes are saved in a figure of their own |
+| `im = ax.imshow(z)`, `fig.colorbar(im)` | `ax.imshow(z)`, `ax.colorbar()` | The colorbar belongs to the axes and shows its last image, as there is no `fig` to ask |
 | `plt.plot(t, x)`, `plt.savefig(...)` | not provided | These draw on a hidden current figure, a module-level variable, and Baryon has none: a parallel loop would race on it |
 
 Everything else keeps matplotlib's names: the methods, their keyword arguments and the color and
@@ -71,6 +75,8 @@ moved script is never drawn wrong in silence.
 | `counts, edges = ax.hist(x, bins=10, color="", label="")` | Draws the histogram of `x` in `bins` equal bins and returns the counts and the `bins + 1` edges | `Axes.hist`, which also returns the bars |
 | `ax.legend(loc="best")` | Draws a legend of every labelled line, set of markers and set of bars | `Axes.legend` |
 | `ax.grid(visible=True)` | Draws light gray lines across the axes at every tick, or stops drawing them | `Axes.grid` |
+| `ax.imshow(X, cmap="viridis", vmin=None, vmax=None, origin="upper", aspect="equal", extent=None)` | Draws the `Array[f64, 2]` `X` as an image, one colored cell per element | `Axes.imshow` |
+| `ax.colorbar(label="")` | Draws a colorbar of the last image on the right of the axes | `Figure.colorbar(im, ax=ax, label=...)` |
 | `ax.set_title(label)` | Sets the title, centred above the axes, at 12 points | `Axes.set_title` |
 | `ax.set_xlabel(xlabel)`, `ax.set_ylabel(ylabel)` | Sets the label under the x axis, or left of the y axis | `Axes.set_xlabel`, `Axes.set_ylabel` |
 | `ax.set_xlim(left, right)`, `ax.set_ylim(bottom, top)` | Fixes the range shown; a first value larger than the second turns the axis around | `Axes.set_xlim`, `Axes.set_ylim` |
@@ -102,6 +108,47 @@ def main() -> Raises[None, OSError | ValueError]:
     ax.legend(loc="upper left")
     ax.savefig("histogram.svg")
 ```
+
+### Images
+
+`imshow` draws `X[i, j]` as a cell centred on x = `j` and y = `i`, colored by its colormap from
+`vmin`, the first color, to `vmax`, the last; they default to the smallest and largest finite
+element, and a value outside them takes the end color, as matplotlib's does. A NaN is left
+transparent. Row 0 is at the top, so the y axis runs downwards, until `origin="lower"` puts it
+at the bottom; `extent=(left, right, bottom, top)` stretches the image over that rectangle of
+data instead. With `aspect="equal"`, the default, a unit of x and of y have the same length, so
+the axes narrow about their centre as matplotlib's do; `aspect="auto"` lets the image fill them.
+
+`cmap` is one of matplotlib's colormaps: `"viridis"`, `"plasma"`, `"inferno"`, `"magma"`,
+`"cividis"`, `"gray"`, `"Greys"`, `"coolwarm"` or `"RdBu"`, or any of them with `"_r"` for the
+same colors reversed. Each is matplotlib's table of 256 colors, and a value picks its color as
+matplotlib picks it, so an image's pixels are matplotlib's bytes; the tests check every map
+against colors recorded from matplotlib.
+
+`colorbar` takes 20% of the axes' width on the right, as matplotlib's default does, and draws
+the colormap from `vmin` to `vmax` with ticks placed and labelled by `ticker`.
+
+```python
+import pyplot as plt
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    z = Array.zeros((24, 40))
+    for i in range(24):
+        for j in range(40):
+            x = 0.125 * f64(j - 20)
+            y = 0.125 * f64(i - 12)
+            z[i, j] = x * x - y * y
+    ax = plt.axes()
+    ax.imshow(z, cmap="RdBu_r", vmin=-4.0, vmax=4.0, origin="lower")
+    ax.colorbar(label="height (m)")
+    ax.savefig("saddle.svg")
+```
+
+The image goes into the SVG file as a PNG with one pixel a cell. When a cell spans three
+pixels or more each way, at matplotlib's 100 dots an inch, the viewer is told to keep cells
+sharp, as matplotlib's `"nearest"` interpolation does; a smaller image is left to the viewer
+to smooth, which is close to matplotlib's antialiasing but not the same pixels.
 
 ### Markers
 
@@ -140,7 +187,7 @@ plot's first line and its first bars are both blue. A borrowed `str | None` para
 `"dashdot"`. Dashes are matplotlib's, measured in line widths, so a thicker line has longer
 dashes.
 
-`colors.to_hex(c)` gives the `"#rrggbb"` form of any of these names, as matplotlib's
+`pyplot` turns each name into the `"#rrggbb"` form an SVG file holds, as matplotlib's
 `colors.to_hex` does.
 
 ### Ranges and ticks
@@ -184,10 +231,10 @@ tests compare both with what matplotlib 3.11 gives for 310 ranges, from `0 10` t
 millionth wide near `-77380925.9`. Struct fields have no defaults, so both items are built with
 every field, where matplotlib's have keyword arguments with defaults.
 
-## `axis`, `backend_svg`, `artist` and `legend`
+## The files under `pyplot`
 
-`pyplot` draws through smaller modules, which can be used on their own to draw something it
-does not offer yet.
+`pyplot` draws through these internal files of the standard library. A program cannot import
+them; this table is for those working on the library, and on the PNG and PDF backends to come.
 
 | Item | Does | matplotlib |
 | --- | --- | --- |
@@ -203,6 +250,13 @@ does not offer yet.
 | `View(left, top, right, bottom, x0, x1, y0, y1)` | Where an axes sits, in points, and the data range it shows; `view.to_x(x)` and `view.to_y(y)` map data to points | `Axes.transData` |
 | `draw_legend(artists, loc, view, renderer)` | Draws a legend of the labelled artists at `loc`, `"best"` included | `legend.Legend` |
 | `location_code(loc)` | matplotlib's number for a legend place: 0 for `"best"`, 1 to 10, or -1 | `Legend.codes` |
+| `Image(data, cmap, vmin, vmax, extent, upper)` | An image as an axes keeps it | `image.AxesImage` |
+| `draw_image(image, view, renderer)`, `normalize(value, vmin, vmax)` | Draws an image where a view puts it; maps a value to 0 to 1 | `AxesImage.draw`, `colors.Normalize` |
+| `draw_colorbar(image, left, top, width, height, label, renderer)` | Draws an image's colorbar in a rectangle | `colorbar.Colorbar` |
+| `get_cmap(name)`, `cmap.to_rgba_bytes(x)` | A colormap by name; the color of `x` as four bytes | `colormaps[name]`, `cmap(x, bytes=True)` |
+| `renderer.draw_image(x, y, width, height, pixels, smooth, clip)` | Draws an `Array[u8, 3]` of RGBA pixels stretched over a rectangle | `RendererSVG.draw_image` |
+| `encode(pixels)` | The bytes of a PNG file of an `Array[u8, 3]` of RGBA pixels, data uncompressed until roadmap 3.27 | What `Figure.savefig` writes to a `.png` |
+| `nonsingular(low, high, expander, tiny)`, `fixed_limits(first, second)`, `autoscale(artists, images, along_x)` | Widen a range too narrow to show; keep limits as `set_xlim` does; the range data needs | `transforms.nonsingular`, `Axes.set_xlim`, `Axes.autoscale_view` |
 
 Coordinates are in points from the figure's top left corner, y growing downwards, as SVG has
 them. The PNG and PDF backends (roadmap 3.15.6 and 3.15.7) will take the same calls.
@@ -214,11 +268,14 @@ Text is written as SVG text in DejaVu Sans, matplotlib's font, as matplotlib wri
 `svg.fonttype = "none"`, so it stays searchable and editable; a viewer without DejaVu Sans draws
 it in Arial, Helvetica or another sans-serif font, and labels may then sit slightly off. Every
 point of every line is written, about 15 bytes a point, so a line of a million points makes a
-file of about 15 MB.
+file of about 15 MB. An image costs about 5.5 bytes a cell, since its PNG is not compressed
+until roadmap 3.27, so a 1000 by 1000 image makes a file of about 5.5 MB.
 
 `savefig` raises `ValueError` for any extension but `.svg`, with matplotlib's message, such as
 `Format 'png' is not supported (supported formats: svg)`, and `OSError` when the file cannot be
 written. `plot`, `scatter` or `bar` with arrays of different lengths, an unknown color, line
-style or legend place, or a `hist` with fewer than one bin panics, and so does `savefig` on an
-unknown marker, where matplotlib raises `ValueError`: each is a mistake in the program, not in its data
+style, legend place or colormap, an `imshow` `origin` or `aspect` it does not know, a `hist`
+with fewer than one bin, or a `colorbar` before any image panics, and so does `savefig` on an
+unknown marker, where matplotlib raises `ValueError` or `RuntimeError`: each is a mistake in the
+program, not in its data
 ([decision 0046](../decisions/0046-plotting.md)).

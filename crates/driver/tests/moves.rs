@@ -318,3 +318,75 @@ error: `text` borrows an element of `enumerate(words(2))`, so it cannot be moved
    = note: to keep the element, keep a copy: `text.copy()`"
     );
 }
+
+/// A conditional expression that is only lent, to a read-only parameter, a builtin, a method
+/// or `print`, cannot have a branch naming a variable's value of a type that moves (roadmap
+/// 1.9.22): lowering computes it into a temporary that the statement frees, which freed the
+/// variable too. Nested conditionals, lists and fields are reported the same way. Branches that
+/// build new values, copies, literals, and conditionals that are kept are fine.
+#[test]
+fn a_conditional_cannot_lend_a_variable() {
+    let program = r#"
+class Probe(Struct):
+    name: str
+
+
+def size(text: str) -> int:
+    return len(text)
+
+
+def measure(name: str, long: bool) -> int:
+    return size(name[0:1] if long else name)
+
+
+def report(a: str, b: str, xs: list[int], probe: Probe, long: bool):
+    print(size(a if long else b))
+    print(len(xs[0:1] if long else xs))
+    print((a + "!" if long else (b if len(b) > 2 else "short")).upper())
+    print(probe.name if long else "none")
+
+
+def fine(name: str, long: bool) -> int:
+    kept = name.copy() if long else name + "s"
+    print(size(name[0:1] if long else name.copy()), kept)
+    return size("a" if long else "b")
+"#;
+    assert_eq!(
+        check_one(program),
+        "\
+error: a conditional expression cannot lend `name` yet
+  --> main.byn:10:40
+   |
+10 |     return size(name[0:1] if long else name)
+   |                                        ^^^^ freed with the conditional's value
+   = note: lend a copy, `name.copy()`, or choose with an `if` statement and pass `name` itself
+
+error: a conditional expression cannot lend `a` yet
+  --> main.byn:14:16
+   |
+14 |     print(size(a if long else b))
+   |                ^ freed with the conditional's value
+   = note: lend a copy, `a.copy()`, or choose with an `if` statement and pass `a` itself
+
+error: a conditional expression cannot lend `xs` yet
+  --> main.byn:15:36
+   |
+15 |     print(len(xs[0:1] if long else xs))
+   |                                    ^^ freed with the conditional's value
+   = note: lend a copy, `xs.copy()`, or choose with an `if` statement and pass `xs` itself
+
+error: a conditional expression cannot lend `b` yet
+  --> main.byn:16:34
+   |
+16 |     print((a + \"!\" if long else (b if len(b) > 2 else \"short\")).upper())
+   |                                  ^ freed with the conditional's value
+   = note: lend a copy, `b.copy()`, or choose with an `if` statement and pass `b` itself
+
+error: a conditional expression cannot lend `probe.name` yet
+  --> main.byn:17:11
+   |
+17 |     print(probe.name if long else \"none\")
+   |           ^^^^^^^^^^ freed with the conditional's value
+   = note: lend a copy, `probe.name.copy()`, or choose with an `if` statement and pass `probe.name` itself"
+    );
+}

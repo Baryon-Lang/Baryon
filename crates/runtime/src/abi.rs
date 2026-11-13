@@ -12,6 +12,7 @@ mod complex;
 mod dict;
 mod files;
 mod fits;
+mod hdf5;
 mod memory;
 mod netcdf;
 mod npy;
@@ -36,7 +37,7 @@ mod text;
 
 pub use accumulate::{
     baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
-    baryon_rt_accumulator_slot,
+    baryon_rt_accumulator_slot, baryon_rt_accumulator_table,
 };
 pub use array_files::{
     ArrayHeader, ElementLayout, baryon_rt_array_from_file, baryon_rt_array_to_file,
@@ -55,6 +56,7 @@ pub use files::{
     baryon_rt_file_write,
 };
 pub use fits::{baryon_rt_fits_cards, baryon_rt_fits_read, baryon_rt_fits_write};
+pub use hdf5::{baryon_rt_hdf5_chunks, baryon_rt_hdf5_open, baryon_rt_hdf5_read};
 pub use memory::{baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_deallocate};
 pub use netcdf::{
     baryon_rt_netcdf_define, baryon_rt_netcdf_open, baryon_rt_netcdf_read, baryon_rt_netcdf_write,

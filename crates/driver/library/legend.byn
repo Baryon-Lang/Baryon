@@ -1,5 +1,8 @@
-"""The `legend` module: draws a legend inside an axes, placed where matplotlib's `Legend` puts
+"""The `legend` library file: draws a legend inside an axes, placed where matplotlib's `Legend` puts
 it, `"best"` included (decision 0046).
+
+It is internal to the standard library: `pyplot` and the files under it import it, and a
+program cannot, so a program's own `legend.byn` is never hidden by it.
 
 `pyplot`'s `Axes.legend` records where the legend goes; when the figure is drawn, `draw_legend`
 lays it out from the axes' artists and draws it.
@@ -16,13 +19,6 @@ def location_code(loc: str) -> int:
     `"upper right"`, `"upper left"`, `"lower left"`, `"lower right"`, `"right"`,
     `"center left"`, `"center right"`, `"lower center"`, `"upper center"` and `"center"`, and
     -1 for a name it does not know.
-
-    ```python
-    from legend import location_code
-
-    def main():
-        print(location_code("best"), location_code("lower left"), location_code("top"))  # 0 3 -1
-    ```
     """
     names = [
         "best",
@@ -54,20 +50,6 @@ def draw_legend(
 
     `loc` is `"best"` or one of the places `location_code` knows; `"best"` costs ten passes
     over every point drawn.
-
-    ```python
-    from artist import Artist, Kind, View
-    from backend_svg import RendererSVG
-    from legend import draw_legend
-
-    def main():
-        x = Array([0.0, 1.0])
-        line = Artist(Kind.LINE, x, x.copy(), Array.zeros(0), "#1f77b4", 1.5, [], "", 6.0, "rising")
-        renderer = RendererSVG(200.0, 100.0, [])
-        view = View(10.0, 10.0, 190.0, 90.0, 0.0, 1.0, 0.0, 1.0)
-        draw_legend([line], "upper left", view, renderer)
-        print(len(renderer.elements))  # 3
-    ```
     """
     widest = 0.0
     rows = 0

@@ -15,7 +15,9 @@ Cost for `n` rows in the two frames together and `k` pairs: a sort, about `n log
 comparisons for each key column, then `n + k` steps, with arrays of `n` and of `2k` integers.
 
 The file also holds `text_masked` and `text_taken`, which choose rows of a column of `str` as
-`masked` and `taken` of `<std>/frames.byn` do for a column of numbers.
+`masked` and `taken` of `<std>/frames.byn` do for a column of numbers, `text_joined`, which
+is `joined` for a column of `str`, and `text_codes`, which turns a column of `str` into
+integers in the same order, so that a sort by text is a sort by integers.
 """
 
 
@@ -120,3 +122,54 @@ def text_taken(column: Array[str, 1], positions: Array[i64, 1]) -> Array[str, 1]
     """`taken` for a column of `str`: the elements of `column` at `positions`, in that order,
     as a new text array. Cost: as `text_masked`."""
     return Array([column[positions[row]].copy() for row in range(len(positions))])
+
+
+def text_joined(left: Array[str, 1], right: Array[str, 1]) -> Array[str, 1]:
+    """`joined` for a column of `str`: the elements of `left`, then those of `right`, as a new
+    text array. Cost: as `text_masked`."""
+    count = len(left)
+    return Array([
+        left[at].copy() if at < count else right[at - count].copy()
+        for at in range(count + len(right))
+    ])
+
+
+def text_codes(column: Array[str, 1]) -> Array[i64, 1]:
+    """A whole number for each element of `column` that stands for its text when rows are
+    put in order: equal texts get one number, and a text that comes before another, by
+    Python's `<`, gets a smaller one. A sort by a column of `str` is `ordered` on these
+    numbers, so text keys need no sort of their own.
+
+    A merge sort of the positions from the bottom up, then one pass that numbers the
+    distinct texts: `n log n` comparisons of text and three arrays of `n` integers."""
+    count = len(column)
+    order = Array([at for at in range(count)])
+    spare = order.copy()
+    width = 1
+    while width < count:
+        low = 0
+        while low < count:
+            middle = min(low + width, count)
+            high = min(low + 2 * width, count)
+            left = low
+            right = middle
+            for at in range(low, high):
+                from_left = right >= high
+                if left < middle and right < high:
+                    from_left = not (column[order[right]] < column[order[left]])
+                if from_left:
+                    spare[at] = order[left]
+                    left += 1
+                else:
+                    spare[at] = order[right]
+                    right += 1
+            low = high
+        for at in range(count):
+            order[at] = spare[at]
+        width *= 2
+    code = 0
+    for at in range(count):
+        if at > 0 and column[order[at - 1]] != column[order[at]]:
+            code += 1
+        spare[order[at]] = code
+    return spare

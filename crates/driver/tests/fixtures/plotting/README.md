@@ -32,7 +32,26 @@ for line in open("ranges.txt"):
 open("matplotlib_ticks.txt", "w").write("\n".join(lines) + "\n")
 ```
 
-`polynomials.svg`, `offset.svg`, `shapes.svg`, `markers.svg` and `histogram.svg` are Baryon's
-own output, checked by eye against matplotlib's drawing of the same data and stored so any change
-to how a plot is drawn shows up as a difference. When a change to drawing is intended, write them
-again from the programs in `plotting.rs` and look at them before committing.
+`matplotlib_colormaps.txt` holds, for each colormap `cm` has and each one reversed, the colors
+matplotlib 3.11.2's `colormaps[name](x, bytes=True)` gives at eleven values of `x`, from -0.5
+to 1.5 and NaN, as red, green, blue and alpha bytes. The tests in
+[`../../build/plotting_images.rs`](../../build/plotting_images.rs) draw each colormap over those
+values with `imshow` and compare the pixels of the PNG inside the SVG with it. It was written
+with:
+
+```text
+import matplotlib as m
+names = ["viridis", "plasma", "inferno", "magma", "cividis", "gray", "Greys", "coolwarm", "RdBu"]
+xs = [-0.5, 0.0, 0.001, 0.1, 0.25, 0.5, 0.7, 0.999, 1.0, 1.5, float("nan")]
+with open("matplotlib_colormaps.txt", "w") as f:
+    for name in names + [n + "_r" for n in names]:
+        colors = [m.colormaps[name](x, bytes=True) for x in xs]
+        f.write(name + " " + " ".join(",".join(str(int(v)) for v in c) for c in colors) + "\n")
+```
+
+`polynomials.svg`, `offset.svg`, `shapes.svg`, `markers.svg`, `histogram.svg`, `grid.svg`,
+`saddle.svg` and `auto.svg` are Baryon's own output, checked by eye against matplotlib's drawing
+of the same data and stored so any change to how a plot is drawn shows up as a difference. When
+a change to drawing is intended, write them again from the programs in `plotting.rs` and
+`plotting_images.rs`, which draws `grid.svg`, `saddle.svg` and `auto.svg`, and look at them before
+committing.

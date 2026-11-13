@@ -180,13 +180,13 @@ The runtime sums the private copies in its own fixed tree (decision 0024), not i
 thread order, so the twin agrees with Fortran to the kernel's tolerance and gives the same bits
 on every run, whatever the thread count; the build test
 `the_threaded_half_list_kernel_agrees_with_fortran` checks both. It ignores the thread-count
-argument, since `prange` uses every core. On the 4-core machine above, the whole run takes 1.84 s
+argument, since `prange` uses every core. On the 4-core machine above, the whole run took 1.84 s
 against Fortran's 1.2 s on 4 threads, 1.5 times; its serial twin `lennard_jones` takes 7.3 s
-against 5.8 s, 1.26 times. The difference is what `accumulate=` costs today. Callgrind on 864
-atoms puts 26% of the instructions in filling fresh private blocks with zeros, 15% in the runtime
-call per add and 8% in combining the copies: with 1,024 chunks of a few atoms each, every chunk
-makes and zeroes blocks for the few hundred forces it touches. Fewer, larger chunks, and caching
-the last block as decision 0024 suggests, are the evidence-backed next steps.
+against 5.8 s, 1.26 times. Callgrind put 15% of the instructions in the runtime call made for
+every add, 10% in filling fresh private blocks and 3% in combining the copies. Roadmap 1.14.3
+filled each block in one pass and found a touched block from the chunk's block table without a
+call: 22% fewer instructions, and the run went to 1.66 s best of 5, from 1.82 s, with the same
+checksum. Most of what remains is the pair loop itself, as in the serial twin.
 
 The harness does not run them yet: Baryon has no clock to time the computation alone, so they
 print only the checksum. Build one and time the whole run from outside:

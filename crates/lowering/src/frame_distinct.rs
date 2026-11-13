@@ -6,7 +6,8 @@
 //! 0038). Each row gets the number of its key the way a join numbers them, `first_rows`
 //! keeps the first row of each number, and `taken` copies every column at those rows. The
 //! frame is borrowed. Cost for `n` rows: `n log n` comparisons for each column compared,
-//! and one copy of the rows kept.
+//! and one copy of the rows kept. A column of `str` is compared by the integers `text_codes`
+//! gives for its text, which is one more sort of that column.
 
 use crate::builder::Builder;
 use mir::{Place, Projection};
@@ -52,8 +53,16 @@ impl<'db> Builder<'db> {
                 column.element.kind(self.db),
                 TypeKind::Primitive(Primitive::Bool)
             );
-            let element = if flag { int } else { column.element };
             let values = source.clone().project(Projection::Field(position));
+            // A column of `str` is compared by the integers that stand for its text.
+            if matches!(column.element.kind(self.db), TypeKind::Str) {
+                let Some(codes) = self.text_codes(values, node) else {
+                    return;
+                };
+                keys.push((codes, int));
+                continue;
+            }
+            let element = if flag { int } else { column.element };
             let values = self.converted(values, column.element, element, node);
             keys.push((values, element));
         }

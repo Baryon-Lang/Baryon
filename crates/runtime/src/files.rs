@@ -22,6 +22,7 @@ use std::sync::Mutex;
 
 pub(crate) mod arrays;
 pub(crate) mod fits;
+pub(crate) mod hdf5;
 pub(crate) mod netcdf;
 pub(crate) mod npy;
 

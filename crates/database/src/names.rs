@@ -90,16 +90,17 @@ pub const BUILTINS: [&str; 61] = [
 /// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042). `fits` is
 /// roadmap 3.14.3's FITS files, named as `astropy.io.fits` is (decision 0044), `netCDF4`
 /// roadmap 3.14.5's `NetCDF` files, named as Unidata's `netCDF4` package is (decision 0047), and
-/// `pyplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046), as are
-/// `colors`, the color names, `axis`, which draws an axis, `backend_svg`, which writes SVG
-/// files, `artist`, what an axes holds, and `legend`, which draws a legend. `zlib` is roadmap
-/// 3.27's deflate streams, named as Python's `zlib` is (decision 0049), `gzip` its gzip
-/// files, named as Python's `gzip` is, and `compression.zstd` roadmap 3.27.7's Zstandard
-/// frames, named as Python 3.14's `compression.zstd` is. Its file is
-/// `<std>/compression.zstd.byn`, so [`library_module`](crate::library_module) gives its dotted
-/// name. `bz2` is roadmap 3.27.9's bzip2 streams, named as Python's `bz2` is, and `lzma`
-/// roadmap 3.27.10's xz files, named as Python's `lzma` is.
-pub const STANDARD_MODULES: [&str; 23] = [
+/// `pyplot` and `ticker` roadmap 3.15's plots, with matplotlib's names (decision 0046). The
+/// library files `pyplot` draws through, such as `colors`, `axis` and `backend_svg`, are not
+/// standard modules: only another library file can import them, so a program's own
+/// `colors.byn` is never hidden by them. `zlib` is roadmap 3.27's deflate streams, named as
+/// Python's `zlib` is (decision 0049), `gzip` its gzip files, named as Python's `gzip` is, and
+/// `compression.zstd` roadmap 3.27.7's Zstandard frames, named as Python 3.14's
+/// `compression.zstd` is. Its file is `<std>/compression.zstd.byn`, so
+/// [`library_module`](crate::library_module) gives its dotted name. `bz2` is roadmap 3.27.9's
+/// bzip2 streams, named as Python's `bz2` is, and `lzma` roadmap 3.27.10's xz files, named as
+/// Python's `lzma` is.
+pub const STANDARD_MODULES: [&str; 18] = [
     "math",
     "random",
     "sys",
@@ -113,11 +114,6 @@ pub const STANDARD_MODULES: [&str; 23] = [
     "netCDF4",
     "pyplot",
     "ticker",
-    "colors",
-    "axis",
-    "backend_svg",
-    "artist",
-    "legend",
     "zlib",
     "gzip",
     "compression.zstd",

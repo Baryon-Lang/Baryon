@@ -48,6 +48,10 @@ print(trades.sort_values(["price", "volume"], ascending=[False, True]))
   here it is always so ([decision 0045](../decisions/0045-dataframe.md)).
 - **NaN goes last**, rising or falling, as in pandas. In a `bool` column `False` comes
   before `True`.
+- **A column of `str` is sorted by code point**, the order of Python's `<` on `str`, as in
+  pandas: `"Zed"` comes before `"apple"`, and the empty text comes first. The text is
+  turned into whole numbers in that order first, which costs one more sort of that column
+  and an array of `n` integers.
 - **The result is a new frame**, and the frame sorted stays as it was. To keep only the
   sorted rows, assign the result back: `trades = trades.sort_values("price")`.
 - **Rows are numbered again from 0**, since a frame has no row index. pandas would print each
@@ -160,6 +164,8 @@ With four trades of the symbols 7, 3, 7 and 5, this prints:
   the order of `right`. pandas documents the same order but does not always give it when
   rows have several partners; sort both results to compare them.
 - **NaN joins NaN**, as in pandas, though the two are not equal.
+- **A key of `str` joins texts that are exactly equal**: `"IBM"` and `"ibm"` are no
+  partners. It costs one copy of the key's text from both frames and a sort of it.
 - **Both frames are read, not taken**, and the result is a new frame, with no struct for
   its rows until it meets one.
 - **Only the inner join is built.** `how="inner"` can be written out; `"left"`, `"right"`
@@ -190,6 +196,8 @@ With four trades of the symbols 7, 3, 7 and 5, this prints the first trade of ea
 - **The rows kept stay in the frame's order**, and the result has the frame's type.
 - **Two NaN are the same value here**, as in pandas, though the two are not equal. `0.0`
   and `-0.0` are the same value too.
+- **Text is compared exactly**: `"IBM"` and `"ibm"` are two values. A column of `str` costs
+  one more sort of that column, comparing text.
 - **The frame is read, not taken.**
 - **A complex column cannot be compared yet**: leave it out with `subset`.
 - **Only the first of the rows that repeat can be kept.** pandas's `keep="last"` and
