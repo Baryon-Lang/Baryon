@@ -427,6 +427,9 @@ impl<'db> Body<'db> {
         let Some(value) = value else {
             return self.lowerer.unknown();
         };
+        if self.moves(value) {
+            self.conditionals.insert(node);
+        }
         let Some(other) = other else {
             return value;
         };
