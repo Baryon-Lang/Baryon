@@ -84,4 +84,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0049. Compression keeps Python's module names, works on byte arrays, and raises `OSError`](0049-compression.md) | Accepted |
 | [0050. Incremental builds: keep the compiler running rather than cache object files on disk](0050-incremental-builds.md) | Proposed |
 | [0051. Double-double floats are an `f64x2` struct in `math`, with methods until operators exist](0051-double-double-floats.md) | Accepted |
-| [0052. HDF5 files are read with h5py's names](0052-hdf5-files.md) | Accepted |
+| [0052. HDF5 files are read with h5py's names](0052-hdf5-files.md) | Accepted, amended 2026-11-13 |

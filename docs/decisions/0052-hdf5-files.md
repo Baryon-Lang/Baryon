@@ -1,6 +1,6 @@
 # 0052. HDF5 files are read with h5py's names
 
-Status: Accepted (Collins, 2026-11-13)
+Status: Accepted (Collins, 2026-11-13), amended 2026-11-13
 Date: 2026-11-12
 Roadmap: 3.14.6.1
 
@@ -98,3 +98,15 @@ first.
   dimension scales.
 - **Deflate in the runtime too.** This would be simpler to wire, but it would give two deflate
   decoders to maintain and tune, which decision 0049 set out to avoid.
+
+## Amendment, 2026-11-13: the module is `h5by`
+
+Collins set this rule on 2026-11-13: no Baryon name contains "py"; a name taken from a Python
+package uses a short Baryon abbreviation instead. The coordinator picked `by`, as in `.byn`. So
+the module of point 1 is `h5by`, not `h5py`: a program writes `import h5by`, `h5by.File(path)`,
+and gives a lookup the type `h5by.Group` or `h5by.Dataset`.
+
+Everything inside the module keeps h5py's names and behavior, as point 1 says: `f[name]`,
+`dset[...]`, `shape`, `dtype`, `attrs`, `keys()`, h5py's error messages, and the rest. Moving a
+program from Python changes its imports, `import h5py` to `import h5by`, and nothing else. The
+reference and this record still name h5py where they mean the Python library.
