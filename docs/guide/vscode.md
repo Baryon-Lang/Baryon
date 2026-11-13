@@ -221,6 +221,10 @@ $ baryon run pendulum
 `baryon run` compiled the package to machine code with `clang`, ran it, and removed the
 executable. For a 0.1 radian swing, the simulation and the formula agree to a millisecond.
 
+To see the result again after every edit without typing the command, leave
+`baryon watch --run pendulum pendulum/program` running in a terminal: each time you save a file
+it builds the program again and runs it ([`baryon watch`](../reference/commands.md#baryon-watch)).
+
 ## 8. Test it
 
 A test is a function marked `@test` that takes no arguments; it passes if it returns and fails if
