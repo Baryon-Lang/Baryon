@@ -252,6 +252,9 @@ impl<'db> Builder<'db> {
         if self.is_matrix_product(node) {
             return self.matrix_product(place, node);
         }
+        if self.is_text_comparison(node) {
+            return self.text_array_comparison(place, node);
+        }
         let element = self.element(self.ty(node));
         if let Some(tree) = self.tree_of(node, element) {
             self.assign(place, Rvalue::Elementwise(Box::new(tree)), node);
@@ -298,7 +301,9 @@ impl<'db> Builder<'db> {
                 let value = self.tree_of(child(Role::Value)?, element)?;
                 Some(Elementwise::Unary(operator, Box::new(value)))
             }
-            SyntaxKind::Compare if self.is_array(ty) => self.comparison_tree(node),
+            SyntaxKind::Compare if self.is_array(ty) && !self.is_text_comparison(node) => {
+                self.comparison_tree(node)
+            }
             _ if self.is_array(ty) => {
                 if matches!(
                     self.tree.kind(node),

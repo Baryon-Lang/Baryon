@@ -10,9 +10,9 @@
 use crate::builder::Builder;
 use mir::{
     Argument, BinaryOperator, Builtin, Constant, Local, Operand, Place, Projection, Rvalue,
-    TextArrayStep,
+    TextArrayStep, UnaryOperator,
 };
-use syntax::{NodeId, Role, SyntaxKind};
+use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::{Integer, Primitive, Type, TypeKind};
 
 /// The position of the bytes in the tuple that stores a text array.
@@ -278,5 +278,96 @@ impl<'db> Builder<'db> {
             return;
         };
         self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);
+    }
+
+    /// Whether `node` is a comparison of a text array, element by element: `names ==
+    /// "alpha"` or `names < other`, which gives an `Array[bool, 1]`.
+    pub(crate) fn is_text_comparison(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::Compare
+            && self.is_array(self.ty(node))
+            && self.compared(node).is_some_and(|(_, left, right)| {
+                self.is_text_array(left) || self.is_text_array(right)
+            })
+    }
+
+    /// The operator and the two sides of the comparison `node`, which has one link.
+    fn compared(&self, node: NodeId) -> Option<(Operator, NodeId, NodeId)> {
+        let comparator = self.tree.children_with(node, Role::Item).next()?;
+        let left = self.tree.child(node, Role::Left)?;
+        let right = self.tree.child(comparator, Role::Right)?;
+        Some((self.tree.node(comparator).operator(), left, right))
+    }
+
+    /// The comparison `node` of a text array with another or with one `str`, into `place`:
+    /// a new `Array[bool, 1]` with one element for each pair, made by the library's
+    /// `text_compared` or `text_compared_to`. Text is compared as Python compares `str`. Two
+    /// arrays of different lengths panic, as two arrays of numbers do. One `str` on the left
+    /// is the same comparison turned round, `"m" < names` being `names > "m"`. Cost: one
+    /// pass, comparing text.
+    pub(crate) fn text_array_comparison(&mut self, place: Place, node: NodeId) {
+        let Some((operator, left, right)) = self.compared(node) else {
+            return;
+        };
+        let (array, other, turned) = if self.is_text_array(left) {
+            (left, right, false)
+        } else {
+            (right, left, true)
+        };
+        // The numbers the library knows the comparisons by.
+        let how = match (operator, turned) {
+            (Operator::Equal, _) => 0,
+            (Operator::NotEqual, _) => 1,
+            (Operator::Less, false) | (Operator::Greater, true) => 2,
+            (Operator::LessEqual, false) | (Operator::GreaterEqual, true) => 3,
+            (Operator::Greater, false) | (Operator::Less, true) => 4,
+            (Operator::GreaterEqual, false) | (Operator::LessEqual, true) => 5,
+            _ => return self.unsupported(node, "this comparison of an array of `str`"),
+        };
+        let int = self.int_type();
+        let source = self.borrow(array);
+        let with = self.borrow(other);
+        let function = if self.is_text_array(other) {
+            let length = self.text_array_length(&source, node);
+            let other_length = self.text_array_length(&with, other);
+            self.same_length(0, length, other_length, node);
+            "text_compared"
+        } else {
+            "text_compared_to"
+        };
+        let how = Operand::Constant(Constant::integer(int, how));
+        let how = Place::from(self.held(int, how, node));
+        let arguments = vec![source, with, how];
+        let Some(result) = self.frame_call(function, Vec::new(), arguments, self.ty(node), node)
+        else {
+            return;
+        };
+        self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);
+    }
+
+    /// `text in names` or `text not in names` into `place`: whether an element of the text
+    /// array `sides.1` equals the `str` `sides.0`, found by the library's `text_found`, which
+    /// stops at the first one. Cost: at most one pass, comparing text.
+    pub(crate) fn text_array_contains(
+        &mut self,
+        place: Place,
+        operator: Operator,
+        (text, array): (NodeId, NodeId),
+        node: NodeId,
+    ) {
+        let boolean = self.boolean_type();
+        let value = self.borrow(text);
+        let source = self.borrow(array);
+        let Some(found) =
+            self.frame_call("text_found", Vec::new(), vec![source, value], boolean, node)
+        else {
+            return;
+        };
+        let found = Operand::Copy(Place::from(found));
+        let result = if operator == Operator::NotIn {
+            Rvalue::Unary(UnaryOperator::Not, found)
+        } else {
+            Rvalue::Use(found)
+        };
+        self.assign(place, result, node);
     }
 }
