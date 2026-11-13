@@ -155,3 +155,33 @@ fn kind_codes_follow_the_documented_order() {
     assert_eq!(Kind::from_code(-1), None);
     assert_eq!(Kind::F32.size(), 4);
 }
+
+/// A fresh block holds the additive identity in every scalar: `-0.0` in each `f32` and `f64`,
+/// so adding it leaves `-0.0` itself unchanged, and `0` in every integer.
+#[test]
+fn a_fresh_block_holds_the_identity() {
+    let mut block = fresh(Kind::F64);
+    assert!(
+        scalars::<f64>(&mut block)
+            .iter()
+            .all(|value| value.to_bits() == (-0.0f64).to_bits())
+    );
+    let mut block = fresh(Kind::F32);
+    assert!(
+        scalars::<f32>(&mut block)
+            .iter()
+            .all(|value| value.to_bits() == (-0.0f32).to_bits())
+    );
+    for kind in [
+        Kind::I8,
+        Kind::I16,
+        Kind::I32,
+        Kind::I64,
+        Kind::U8,
+        Kind::U16,
+        Kind::U32,
+        Kind::U64,
+    ] {
+        assert!(fresh(kind).iter().all(|&word| word == 0));
+    }
+}

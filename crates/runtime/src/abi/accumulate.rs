@@ -5,7 +5,8 @@
 //! [`baryon_rt_accumulator_new`] before [`baryon_rt_parallel_for`](crate::baryon_rt_parallel_for)
 //! and [`baryon_rt_accumulator_finish`] after it. Inside the loop, each add calls
 //! [`baryon_rt_accumulator_slot`] for the address of the element's scalar in the running chunk's
-//! private copy and adds there, and each chunk calls [`baryon_rt_accumulator_chunk_done`] when its
+//! private copy and adds there; compiled code skips the call when it finds the block already made
+//! in the chunk's table, from [`baryon_rt_accumulator_table`]. Each chunk calls [`baryon_rt_accumulator_chunk_done`] when its
 //! last iteration ends. The result is bit-identical on any number of threads.
 //!
 //! The example on [`baryon_rt_accumulator_new`] runs all four.
@@ -108,6 +109,62 @@ pub unsafe extern "C" fn baryon_rt_accumulator_slot(
     let (chunk, scalar) = (to_index(chunk), to_index(scalar));
     // SAFETY: the caller's promise about the chunk and the scalar, passed on.
     unsafe { accumulator.slot(chunk, scalar) }
+}
+
+/// Chunk `chunk`'s block table, made if the chunk has none yet: one pointer per block of
+/// 4096 bytes of the array's scalars (the runtime's block size), null until the chunk first
+/// adds into that block. Compiled code reads it to find a block it has touched
+/// without a call: scalar `s` of size `z` bytes is at byte `s × z % 4096` of the block at index
+/// `s × z / 4096`. When the pointer it finds is null, it calls [`baryon_rt_accumulator_slot`].
+///
+/// The table stays at this address until the chunk calls [`baryon_rt_accumulator_chunk_done`];
+/// a block, once made, does too.
+///
+/// # Safety
+///
+/// As for [`baryon_rt_accumulator_slot`]: `accumulator` came from [`baryon_rt_accumulator_new`]
+/// and is not finished, and the caller is running chunk `chunk` and has not yet called
+/// [`baryon_rt_accumulator_chunk_done`] for it.
+///
+/// # Example
+///
+/// The second add into a block finds it in the table:
+///
+/// ```
+/// use runtime::{
+///     baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
+///     baryon_rt_accumulator_slot, baryon_rt_accumulator_table,
+/// };
+///
+/// let mut values = [1.0_f64; 600];
+/// // SAFETY: one chunk, run on this thread; scalar 513 is below 600, and the array is live,
+/// // contiguous and holds 600 `f64` scalars.
+/// unsafe {
+///     let accumulator = baryon_rt_accumulator_new(1, 600, 9, std::ptr::null());
+///     let table = baryon_rt_accumulator_table(accumulator, 0).cast::<*mut f64>();
+///     assert!(table.add(1).read().is_null());
+///     let slot = baryon_rt_accumulator_slot(accumulator, 0, 513).cast::<f64>();
+///     slot.write(slot.read() + 2.0);
+///     // Scalar 513 is byte 4104: block 1, byte 8, which is `f64` number 1 in it.
+///     let found = table.add(1).read().add(1);
+///     assert_eq!(found, slot);
+///     found.write(found.read() + 3.0);
+///     baryon_rt_accumulator_chunk_done(accumulator, 0);
+///     baryon_rt_accumulator_finish(accumulator, values.as_mut_ptr().cast(), 1, &600, &1, 1);
+/// }
+/// assert_eq!(values[513], 6.0);
+/// assert_eq!(values[512], 1.0);
+/// ```
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_accumulator_table(
+    accumulator: *const Accumulator,
+    chunk: i64,
+) -> *mut u8 {
+    // SAFETY: the caller guarantees the accumulator is live.
+    let accumulator = unsafe { &*accumulator };
+    // SAFETY: the caller's promise about the chunk, passed on.
+    unsafe { accumulator.table(to_index(chunk)) }
 }
 
 /// Records that chunk `chunk` has run its last iteration, and combines every part of the tree
