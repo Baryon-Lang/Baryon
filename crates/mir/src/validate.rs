@@ -337,6 +337,7 @@ fn has_parameter(db: &dyn Db, ty: Type<'_>) -> bool {
         TypeKind::Primitive(_)
         | TypeKind::Str
         | TypeKind::TextArray
+        | TypeKind::OptionalArray(_)
         | TypeKind::None
         | TypeKind::Function { .. }
         | TypeKind::Standard(_)

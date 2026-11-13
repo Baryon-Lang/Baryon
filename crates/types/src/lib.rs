@@ -57,6 +57,7 @@ mod format;
 mod frame;
 mod interned;
 mod layout;
+mod optional_array;
 mod primitive;
 mod shape;
 mod text_array;
@@ -183,6 +184,11 @@ pub enum TypeKind<'db> {
     /// to end and where each one starts, so the mid-level IR and the stages after it see only a
     /// tuple of two arrays of numbers.
     TextArray,
+    /// `Array[T | None, 1]`: an array of rank 1 whose elements may be missing (decision 0045,
+    /// part 3). It carries `T`, the type of an element that is there: a number, `bool` or
+    /// `str`. Lowering stores it as its [values and validity bitmap](Type::optional_storage),
+    /// so the mid-level IR and the stages after it see only a tuple of arrays.
+    OptionalArray(Type<'db>),
     /// `DataFrame[S]`: a table of named columns, each a rank-1 array, all of one length
     /// (decision 0045). Lowering stores it as its [`columns`](Type::frame_storage), so the
     /// mid-level IR and the stages after it see only a tuple of arrays.
