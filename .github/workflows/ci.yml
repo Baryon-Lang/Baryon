@@ -83,6 +83,12 @@ jobs:
         uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: cargo-deny@0.20.2
+      - name: Install Valgrind, which the ownership sweep runs its programs under
+        # The sweep (roadmap 1.18.2, crates/driver/tests/build/ownership.rs) runs each generated
+        # program under Valgrind where it can. Valgrind does not run on macOS, where the sweep
+        # runs the programs without it.
+        if: steps.scope.outputs.markdown_only != 'true' && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends valgrind
       - name: Run every check
         if: steps.scope.outputs.markdown_only != 'true'
         run: cargo xtask ci

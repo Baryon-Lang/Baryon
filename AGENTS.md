@@ -49,5 +49,6 @@ undocumented code is unfinished code.
 | Roadmap only | `cargo xtask check-roadmap` |
 | Build and open the API docs | `cargo doc --workspace --no-deps --open` |
 | Tests for one crate | `cargo test --package <crate>` |
+| Ownership sweep only: every kind of value through every ownership site, under Valgrind | `cargo test --package driver --test build ownership` |
 | Format | `cargo fmt --all` |
 | Baseline benchmarks: build, verify, time | `cargo kernels` (see [`bench/README.md`](bench/README.md)) |

@@ -1,0 +1,46 @@
+# The ownership sweep's prelude (roadmap 1.18.2): the types and helpers every site uses. The test
+# puts `show`, `size` and `make` for the kind of value being swept above this text, and replaces
+# `ITEM` with that kind's type and `NEW1`, `NEW2` and `NEW3` with expressions that build a new
+# value of it. See crates/driver/tests/build/ownership.rs.
+
+
+class Rec(Struct):
+    name: str
+    tags: list[str]
+
+
+class Circle(Struct):
+    label: str
+
+
+class Square(Struct):
+    size: int
+    tags: list[str]
+
+
+Shape = Circle | Square
+
+
+class Holder[T](Struct):
+    item: T
+
+
+class Oops(Exception):
+    what: str
+
+
+def make_shape(k: int) -> Shape:
+    if k % 2 == 0:
+        return Circle(f"c{k}")
+    return Square(k, [f"q{k}"])
+
+
+def flag(k: int) -> bool:
+    return k % 2 == 1
+
+
+def make_list(n: int) -> list[ITEM]:
+    result: list[ITEM] = []
+    for i in range(n):
+        result.append(make(i))
+    return result
