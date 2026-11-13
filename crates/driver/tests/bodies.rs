@@ -389,3 +389,62 @@ def f():
   = note: a variable keeps one type for its whole scope; to fill it in later, declare it optional: `y: i64 | None = None`"
     );
 }
+
+/// A method called through its class is checked as a call with no receiver (roadmap 1.9.28):
+/// every argument fills the parameter at its position, `self` included, and a field or a name
+/// the struct does not define is not a function of the class.
+#[test]
+fn methods_called_through_their_class_are_checked() {
+    let program = r#"
+class Point(Struct):
+    x: f64
+
+    def origin() -> Point:
+        return Point(0.0)
+
+    def norm(self) -> f64:
+        return self.x
+
+
+def use_them() -> f64:
+    p = Point.origin(1.0)
+    q = Point.x()
+    r = Point.norm()
+    s = Point.norm("p")
+    t = Point.missing()
+    return Point.norm(Point.origin())
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: `origin` takes 0 arguments, found 1
+  --> main.byn:12:9
+   |
+12 |     p = Point.origin(1.0)
+   |         ^^^^^^^^^^^^^^^^^ too many arguments
+
+error: `x` is not a function of `Point`
+  --> main.byn:13:15
+   |
+13 |     q = Point.x()
+   |               ^ not defined by this class
+   = note: a class's own methods can be called through it, as `Point.origin()`
+
+error: `norm` is missing the argument `self`
+  --> main.byn:14:9
+   |
+14 |     r = Point.norm()
+   |         ^^^^^^^^^^^^ missing arguments
+
+error: `self` has type `Point`, found `str`
+  --> main.byn:15:20
+   |
+15 |     s = Point.norm("p")
+   |                    ^^^ type `str`
+
+error: `Point` has no field or method `missing`
+  --> main.byn:16:15
+   |
+16 |     t = Point.missing()
+   |               ^^^^^^^ not defined on this struct"#
+    );
+}

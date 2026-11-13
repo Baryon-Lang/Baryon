@@ -63,3 +63,42 @@ def main():
     assert_eq!(stderr(&run), "");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "0.5 None 1.5\n");
 }
+
+/// A method called through its class takes no receiver (roadmap 1.9.28): `Probe.named(...)`
+/// is a second constructor with no `self`, and `Probe.label(p)` and `Probe.bump(p, 2.0)` pass
+/// the struct as `self` by position, read-only and `InOut`, as Python does. Before, lowering
+/// reported every such call as an array method it does not build.
+#[test]
+fn methods_called_through_their_class_build_and_run() {
+    let program = "\
+class Probe(Struct):
+    name: str
+    value: f64
+
+    def named(name: str) -> Probe:
+        return Probe(name.copy(), 0.0)
+
+    def label(self) -> str:
+        return self.name + \"!\"
+
+    def bump(self: InOut[Probe], by: f64):
+        self.value += by
+
+
+def main():
+    p = Probe.named(\"heat\" + \"er\")
+    print(p.label(), Probe.label(p))
+    Probe.bump(p, 2.0)
+    print(p.value)
+    xs = [Probe.named(\"a\"), Probe.named(\"b\")]
+    print(len(xs), xs[1].name)
+";
+    let directory = package("class_functions", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "heater! heater!\n2.0\n2 b\n"
+    );
+}
