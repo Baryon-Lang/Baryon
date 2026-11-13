@@ -10,7 +10,7 @@
 //! gives for its text, which is one more sort of that column.
 
 use crate::builder::Builder;
-use mir::{Operand, Place, Projection, Rvalue};
+use mir::{Constant, ConstantValue, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
 
@@ -93,7 +93,8 @@ impl<'db> Builder<'db> {
     }
 
     /// A method of the rank-1 array `array` that compares its elements, into `place`:
-    /// `argsort` ([`Builder::array_argsort`]), or `unique` or `nunique` (decision 0045), the
+    /// `argsort` ([`Builder::array_argsort`]), `min` or `max` of a text array
+    /// ([`Builder::text_extreme`]), or `unique` or `nunique` (decision 0045), the
     /// distinct elements in the order they first appear, or how many there are, a NaN not
     /// counted, as in pandas. An array is one column compared the
     /// way `drop_duplicates` compares a frame's: its elements are numbered as keys,
@@ -112,6 +113,9 @@ impl<'db> Builder<'db> {
             return self.array_argsort(place, array, node);
         }
         let source = self.borrow(array);
+        if matches!(method, "min" | "max") {
+            return self.text_extreme(place, method == "max", (array, source), node);
+        }
         let int = self.int_type();
         // The elements as numbers the library compares: a text array as the integers for
         // its text, `bool` as 0 and 1, and any other number as it is.
@@ -146,6 +150,34 @@ impl<'db> Builder<'db> {
             _ => ("counted_values", vec![compared], vec![key, rows], int),
         };
         let Some(result) = self.frame_call(function, types, arguments, returns, node) else {
+            return;
+        };
+        self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);
+    }
+
+    /// `names.min()` or `names.max()` of the text array `array`, borrowed at `source`, into
+    /// `place`: a new `str`, a copy of the element that comes first, or last when `largest`,
+    /// by Python's `<` on `str`, found by the library's `text_extreme` in one pass. An empty
+    /// array panics, as an array of numbers does, since it has no such element.
+    fn text_extreme(
+        &mut self,
+        place: Place,
+        largest: bool,
+        (array, source): (NodeId, Place),
+        node: NodeId,
+    ) {
+        let length = self.text_array_length(&source, array);
+        self.not_empty(&[length], false, node);
+        let boolean = self.boolean_type();
+        let largest = Operand::Constant(Constant {
+            ty: boolean,
+            value: ConstantValue::Bool(largest),
+        });
+        let largest = Place::from(self.held(boolean, largest, node));
+        let text = Type::new(self.db, TypeKind::Str);
+        let arguments = vec![source, largest];
+        let Some(result) = self.frame_call("text_extreme", Vec::new(), arguments, text, node)
+        else {
             return;
         };
         self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);

@@ -67,7 +67,9 @@ def fine(names: Array[str, 1]) -> Array[str, 1]:
     same = (names == part) | ("m" <= names)
     found = "a" in names and first not in part
     print(names, part)
-    shown = f"{taken} {names[:1]}"
+    shown = f"{taken} {names[:1]}" + str(part)
+    order = names.argsort()
+    least = names.min() + part.max()
     return names.copy()
 "#;
 
@@ -125,7 +127,7 @@ error: `+` is not built for an array of `str` yet
    |
 14 |     joined = names + other
    |              ^^^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60
 
 error: `==` cannot compare `Array[str, 1]` and `Array[i64, 1]`
   --> main.byn:15:17
@@ -146,21 +148,21 @@ error: the method `sum` is not built for an array of `str` yet
    |
 17 |     total = names.sum()
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60
 
 error: `shape` is not built for an array of `str` yet
   --> main.byn:18:13
    |
 18 |     shape = names.shape
    |             ^^^^^^^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60
 
 error: `min` is not built for an array of `str` yet
   --> main.byn:19:17
    |
 19 |     least = min(names)
    |                 ^^^^^ an array of `str`
-   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `copy()`, `unique()` and `nunique()` today; the rest comes with roadmap item 3.13.3
+   = note: an array of `str` has `len`, indexing, slices, masks, comparisons, `in`, `for` loops, `print`, `str` and the methods `copy`, `unique`, `nunique`, `argsort`, `min` and `max`; the rest is roadmap idea I.60
 
 error: a value that holds an array of `str` cannot be shown yet
   --> main.byn:20:11
@@ -213,7 +215,8 @@ error: `names` was moved
 /// than one dimension, a list of another type, an element assigned or moved out, an index
 /// that is an array of `f64`, two indices, a comparison with an array of numbers, a number
 /// sought with `in`, operators, methods, attributes and built-ins not built yet, a list
-/// of text arrays shown (one array is shown, as `fine` shows two),
+/// of text arrays shown (one array is shown, as `fine` shows two, and sorted and reduced
+/// with `argsort`, `min` and `max`),
 /// showing one, an array of numbers where one of text is expected and the other way round,
 /// `Array.zeros` of `str`, and a read after a move, since a text array moves as any array.
 #[test]

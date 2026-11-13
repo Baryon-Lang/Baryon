@@ -186,15 +186,17 @@ impl<'db> Builder<'db> {
         true
     }
 
-    /// `str(value)` into `place`, for a `str` or a `Path`: a new `str` with the same text.
-    /// Returns whether `value` is one of the two.
+    /// `str(value)` into `place`, for a `str` or a `Path`, a new `str` with the same text,
+    /// or a text array, a new `str` of its elements as `print` shows them. Returns whether
+    /// `value` is one of the three.
     pub(crate) fn text_of_value(&mut self, place: &Place, value: NodeId, node: NodeId) -> bool {
         let ty = self.ty(value);
-        if !self.is_path(ty) && !matches!(ty.kind(self.db), TypeKind::Str) {
+        let shown = self.is_text_array(value);
+        if !shown && !self.is_path(ty) && !matches!(ty.kind(self.db), TypeKind::Str) {
             return false;
         }
         let borrowed = self.borrow(value);
-        let text = self.text_place(borrowed, ty);
+        let text = self.shown_place(value, borrowed, ty);
         let pieces = vec![Piece::Value(text, FormatSpec::default())];
         self.assign(place.clone(), Rvalue::Format(pieces), node);
         true

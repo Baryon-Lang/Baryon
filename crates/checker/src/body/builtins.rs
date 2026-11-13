@@ -28,8 +28,10 @@ impl<'db> Body<'db> {
             .map(|&argument| self.expression(argument, None))
             .collect();
         // A text array has few built-ins yet; `Array(...)` never takes one.
-        if !matches!(name, "len" | "enumerate" | "zip" | "reversed" | "print")
-            && let Some(index) = types.iter().position(|&ty| self.is_text_array(ty))
+        if !matches!(
+            name,
+            "len" | "enumerate" | "zip" | "reversed" | "print" | "str"
+        ) && let Some(index) = types.iter().position(|&ty| self.is_text_array(ty))
         {
             return self.text_array_unbuilt(all[index], &format!("`{name}`"));
         }

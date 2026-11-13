@@ -1,7 +1,8 @@
 //! Text arrays, `Array[str, 1]` (roadmap 3.13.3, decision 0045), built and run: one made
 //! from a list, counted, indexed, looped over, copied, moved and kept in a list and a dict,
 //! its distinct elements taken and counted (roadmap 3.13.9), parts of it chosen by a slice,
-//! a mask and positions, its elements compared and searched, and the array printed.
+//! a mask and positions, its elements compared and searched, the array printed, and its
+//! order, smallest and largest element found.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -384,4 +385,55 @@ fn a_text_array_is_printed_as_numpy_prints_it() {
     let (code, stdout, report) = run("text-arrays-shown", SHOWN).unwrap();
     assert_eq!(stdout, expected.concat());
     assert_eq!((code, report.as_str()), (Some(0), ""));
+}
+
+/// A program that puts a text array in order with `argsort`, takes its `min` and `max`,
+/// and makes its text with `str`: with texts that repeat, an empty text, a capital and a
+/// letter outside ASCII, one element, a frame's column, and an empty array.
+const ORDERED: &str = r#"
+def main():
+    names = Array(["delta", "", "alpha", "βeta", "alpha", "Al"])
+    print(names.argsort())
+    print(names[names.argsort()])
+    print(names.min(), names.max(), names[1:].min(), len(names.min()))
+    text = str(names)
+    print(text, len(text), str(names[:2]) == "['delta' '']")
+    low = names.max()
+    names = names[:1]
+    print(low, names.min(), names.max(), names.argsort())
+    trades = DataFrame({"symbol": Array(["IBM", "AAPL", "MSFT"]), "price": Array([3.0, 1.0, 2.0])})
+    print(trades.symbol.min(), trades.symbol.max(), trades.price[trades.symbol.argsort()])
+    empty: Array[str, 1] = Array([])
+    print(empty.argsort(), str(empty))
+"#;
+
+/// `argsort` gives the positions numpy's stable `argsort` gives for the same strings,
+/// `min` and `max` the strings Python's `min` and `max` give, each a new `str` that
+/// outlives the array, and `str` the text `print` writes. The program leaves no memory
+/// behind (checked under Valgrind when written). `max` of an empty array stops the program.
+#[test]
+fn a_text_array_is_ordered_and_reduced() {
+    let expected = [
+        "[1 5 2 4 0 3]\n",
+        "['' 'Al' 'alpha' 'alpha' 'delta' 'βeta']\n",
+        " βeta  0\n",
+        "['delta' '' 'alpha' 'βeta' 'alpha' 'Al'] 40 True\n",
+        "βeta delta delta [0]\n",
+        "AAPL MSFT [1. 3. 2.]\n",
+        "[] []\n",
+    ];
+    let (code, stdout, report) = run("text-arrays-ordered", ORDERED).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    let empty = r"
+def main():
+    empty: Array[str, 1] = Array([])
+    print(empty.max())
+";
+    let (code, stdout, report) = run("text-arrays-empty-max", empty).unwrap();
+    assert_eq!((code, stdout.as_str()), (Some(101), ""));
+    assert!(
+        report.starts_with("panic: `empty.max()` of an empty array\n  --> main.byn:4:11\n"),
+        "{report}"
+    );
 }
