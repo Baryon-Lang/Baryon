@@ -80,3 +80,44 @@ def main():
     )
     .unwrap();
 }
+
+/// `math.f64x2`, the double-double float (decision 0051, roadmap 3.33): the four operations,
+/// `sqrt`, comparisons and conversions. The square root of 2, a third and `0.1` print the 31
+/// digits Python's `fractions` and `decimal` compute exactly; squaring the root back leaves a
+/// residual near 1e-31, where an `f64` leaves one near 1e-16; edge values follow IEEE 754.
+#[test]
+fn f64x2_keeps_about_32_digits() {
+    let program = "\
+from math import f64x2, inf
+
+
+def residual(a: f64, x: f64, b: f64) -> f64:
+    product = f64x2(a, 0.0).mul(f64x2(x, 0.0))
+    return f64x2(b, 0.0).sub(product).to_f64()
+
+
+def main():
+    one = f64x2(1.0, 0.0)
+    three = f64x2(3.0, 0.0)
+    root = f64x2(2.0, 0.0).sqrt()
+    third = one.div(three)
+    print(root.to_str(), root.hi, root.lo)
+    print(third.to_str(), third.mul(three).eq(one), third.lt(f64x2(1.0 / 3.0, 0.0)))
+    print(root.mul(root).sub(f64x2(2.0, 0.0)).to_str(), residual(0.1, 3.0, 0.3))
+    tenth = f64x2(0.1, 0.0)
+    print(tenth.to_str(), tenth.neg().abs().ge(tenth), tenth.add(tenth).to_f64())
+    print(f64x2(-0.0, 0.0).to_str(), f64x2(5e-324, 0.0).to_str(), f64x2(-1.0, 0.0).sqrt().to_str())
+    print(f64x2(inf, 0.0).add(one).to_str(), f64x2(1e300, 0.0).mul(f64x2(1e10, 0.0)).neg().to_str())
+";
+    prints(
+        "math-f64x2",
+        program,
+        "1.414213562373095048801688724210e+00 1.4142135623730951 -9.667293313452916e-17\n\
+         3.333333333333333333333333333333e-01 True False\n\
+         -9.860761315262647567646607066035e-32 -2.7755575615628914e-17\n\
+         1.000000000000000055511151231258e-01 True 0.2\n\
+         -0.000000000000000000000000000000e+00 4.940656458412465441765687928682e-324 nan\n\
+         inf -inf\n",
+    )
+    .unwrap();
+}
