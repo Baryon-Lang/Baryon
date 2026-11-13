@@ -73,8 +73,10 @@ it runs `baryon lsp` and connects it to VS Code through Microsoft's `vscode-lang
 client most VS Code language extensions use. From then on the server checks the package on every
 change and VS Code shows what it finds. The same server answers hovers (the type or signature of a
 name and its documentation string), **Go to Definition**, completion, inlay hints (the
-inferred type of each variable, after its name) and **Rename Symbol** (`F2`); the client asks for them
-on its own once the server says it supports them, so the extension needs no code for them. As the
+inferred type of each variable, after its name), **Rename Symbol** (`F2`) and a **Run test** link
+above each test; the client asks for them on its own once the server says it supports them. The
+one piece of code beyond starting the server is the `baryon.runTest` command that link calls,
+which runs `baryon test -k <name>` as a task in the terminal panel. As the
 [`baryon lsp`](../../docs/reference/commands.md#baryon-lsp) reference says, the server reads the
 first folder of the window as one package.
 

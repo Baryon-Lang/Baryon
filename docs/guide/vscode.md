@@ -288,6 +288,10 @@ To run and test without typing commands, add a file `.vscode/tasks.json` to the 
 **Terminal > Run Task... > baryon test** runs the tests. Both use the program you set in
 **Baryon: Path**.
 
+One test needs no task: a **Run test** link sits above each function decorated `@test`. Click
+it and the extension runs `baryon test -k <module>.<name>` in the terminal panel, so you see
+that test's result alone (and any test whose name contains it, as `-k` matches part of a name).
+
 ## 10. Debug it
 
 A debug build keeps a line table, which tells a debugger which `.byn` line each machine
