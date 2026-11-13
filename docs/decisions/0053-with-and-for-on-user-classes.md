@@ -30,7 +30,8 @@ with all recommendations for 1-9", item 8 of the open questions). He rejected th
 options: library-only `with` forms, and Baryon names of our own. What remains to settle is how
 the two protocols fit the language's ownership rules
 ([Values and references](../reference/values-and-references.md)), errors as values
-([decision 0005](0005-error-handling.md)), and traits ([decision 0031](0031-traits-are-protocols.md)).
+([decision 0005](0005-error-handling.md)), and traits
+([decision 0031](0031-traits-are-protocols.md)).
 
 ## Decision
 
@@ -162,8 +163,9 @@ def main():
 
 - `with` and `for` read the same in Baryon and Python for classes that follow Python's usual
   shapes. The differences are three annotations, `Owned[Self]`, `InOut[Self]` and
-  `Raises[..., StopIteration]`, which [Differences from Python](../reference/differences-from-python.md)
-  lists once the two statements are built.
+  `Raises[..., StopIteration]`, which
+  [Differences from Python](../reference/differences-from-python.md) lists once the two
+  statements are built.
 - The standard library can write its own context managers and iterators in Baryon:
   `gzip.open`, `lzma.open` and `bz2.open` return library classes, so no compiler special case is
   added for each.

@@ -123,7 +123,10 @@ impl<'db> Body<'db> {
                 value,
                 &message,
                 "not a context manager",
-                Some("define `def __enter__(self: Owned[Self]) -> Self` and `def __exit__(self)` (decision 0053)"),
+                Some(
+                    "define `def __enter__(self: Owned[Self]) -> Self` and `def __exit__(self)` \
+                    (decision 0053)",
+                ),
             );
             return Some(Err(()));
         };
@@ -142,7 +145,10 @@ impl<'db> Body<'db> {
                 value,
                 &message,
                 "used by this `with`",
-                Some("the value moves into the block, and `__exit__` is called on the one `__enter__` returns: `return self` (decision 0053)"),
+                Some(
+                    "the value moves into the block, and `__exit__` is called on the one \
+                    `__enter__` returns: `return self` (decision 0053)",
+                ),
             );
             return Some(Err(()));
         }
@@ -157,7 +163,10 @@ impl<'db> Body<'db> {
                 value,
                 &message,
                 "used by this `with`",
-                Some("`__exit__` cannot see or suppress an error; handle errors with `try` around the `with` (decision 0053)"),
+                Some(
+                    "`__exit__` cannot see or suppress an error; handle errors with `try` around \
+                    the `with` (decision 0053)",
+                ),
             );
             return Some(Err(()));
         }

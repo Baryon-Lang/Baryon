@@ -124,7 +124,11 @@ impl<'db> Body<'db> {
                         iterator,
                         &message,
                         "not an iterator",
-                        Some("`__iter__` returns an iterator: a class with `def __next__(self: InOut[Self]) -> Raises[T, StopIteration]` (decision 0053)"),
+                        Some(
+                            "`__iter__` returns an iterator: a class with \
+                            `def __next__(self: InOut[Self]) -> Raises[T, StopIteration]` \
+                            (decision 0053)",
+                        ),
                     )
                 }
             }
@@ -156,14 +160,18 @@ impl<'db> Body<'db> {
         let in_out = matches!(signature.parameters.as_slice(), [only] if only.mode == Mode::InOut);
         let Some((element, errors)) = returned.filter(|_| in_out) else {
             let message = format!(
-                "`{}.__next__` must take `self: InOut[Self]` and return `Raises[T, StopIteration]` for `for`",
+                "`{}.__next__` must take `self: InOut[Self]` and return \
+                 `Raises[T, StopIteration]` for `for`",
                 self.show(ty)
             );
             return self.lowerer.error(
                 iterator,
                 &message,
                 "looped over here",
-                Some("`__next__` changes the iterator and raises `StopIteration` when it has no value left, which ends the loop (decision 0053)"),
+                Some(
+                    "`__next__` changes the iterator and raises `StopIteration` when it has no \
+                    value left, which ends the loop (decision 0053)",
+                ),
             );
         };
         let others: Vec<Type<'db>> = errors

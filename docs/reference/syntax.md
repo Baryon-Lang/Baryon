@@ -96,7 +96,8 @@ out of scope, on every path out of a function.
 ### `with` and context managers
 
 A *context manager* is a value whose class defines `__enter__` and `__exit__`, Python's two
-methods for "set up, then always tear down" ([decision 0053](../decisions/0053-with-and-for-on-user-classes.md)).
+methods for "set up, then always tear down"
+([decision 0053](../decisions/0053-with-and-for-on-user-classes.md)).
 `with manager as name:` calls `__enter__`, binds what it returns to `name` for the block, and
 calls `__exit__` on it when the block ends, however it ends:
 
