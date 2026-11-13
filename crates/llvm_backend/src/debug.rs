@@ -62,11 +62,16 @@ impl Debug {
         }
     }
 
-    /// Takes the file the compile unit names from `written`, a definition's debug information,
-    /// when no earlier definition gave one.
-    pub(crate) fn adopt(&mut self, written: &Self) {
+    /// The file the compile unit names: the first function's.
+    pub(crate) fn first_file(&self) -> Option<FileId> {
+        self.first_file
+    }
+
+    /// Makes `file`, the first function's file in a definition written apart, the file the
+    /// compile unit names, when no earlier definition gave one.
+    pub(crate) fn adopt(&mut self, file: Option<FileId>) {
         if self.first_file.is_none() {
-            self.first_file = written.first_file;
+            self.first_file = file;
         }
     }
 

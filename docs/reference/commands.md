@@ -235,10 +235,16 @@ the modules `clang` compiled. A change inside one function recompiles one module
 removed moves the source lines of every function below it in that file, so their modules are
 compiled again too, since each instruction records its line for the debugger.
 
+It keeps each function's LLVM text too. A function's text is written again only when something
+it reads changed: its own body, the declarations of the types it uses, the names of the
+functions it calls, or the text above it in its file, which its line numbers count. The other
+functions of the edited file are still lowered again, since lowering reads the file as a whole,
+but their text is kept when their lowered body comes out the same.
+
 On the 4,706-line program of roadmap 2.0, a rebuild after changing a number in one function takes
-about 0.7 s, against 1.0 s for `baryon build`. Lowering and writing the LLVM text are still done
-for the whole program; redoing them only for the functions an edit reaches is the rest of roadmap
-2.2.2, which aims at a rebuild under 200 ms after a one-function edit.
+about 0.5 s, against 1.0 s for `baryon build`: lowering the edited file again takes 0.12 s,
+`clang` on the one module 0.17 s and the link 0.07 s. Roadmap 2.2.2 aims at a rebuild under
+200 ms after a one-function edit.
 
 ## `baryon doc`
 

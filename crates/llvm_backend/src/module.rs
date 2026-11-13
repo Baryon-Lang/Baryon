@@ -17,11 +17,11 @@ pub struct Module<'a, 'db> {
     symbol: &'a dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
     /// Each definition, in the order they were made: a function with the outlined `prange`
     /// bodies only it calls, or the C `main`.
-    definitions: Vec<Definition>,
+    pub(crate) definitions: Vec<Definition>,
     /// The messages and source locations failed checks point to.
-    constants: constants::Constants<'a>,
+    pub(crate) constants: constants::Constants<'a>,
     /// The declaration of each symbol called, written from the call, by symbol.
-    declarations: BTreeMap<String, String>,
+    pub(crate) declarations: BTreeMap<String, String>,
 }
 
 impl<'a, 'db> Module<'a, 'db> {
@@ -91,7 +91,7 @@ impl<'a, 'db> Module<'a, 'db> {
             written.push(text);
             calls.extend(called);
         }
-        self.constants.adopt(&constants);
+        self.constants.adopt(constants.first_file());
         self.definitions.push(Definition {
             symbol: symbol.to_owned(),
             text: written.join("\n"),
@@ -156,7 +156,7 @@ impl<'a, 'db> Module<'a, 'db> {
         let body = entry::no_body(self.types.db);
         let function = function::Function::new(self.types, self.symbol, &mut constants, &body, &[]);
         let (text, calls) = function.entry(symbol, errors)?;
-        self.constants.adopt(&constants);
+        self.constants.adopt(constants.first_file());
         self.definitions.push(Definition {
             symbol: "main".to_owned(),
             text,
@@ -214,7 +214,7 @@ impl<'a, 'db> Module<'a, 'db> {
         let body = entry::no_body(self.types.db);
         let function = function::Function::new(self.types, self.symbol, &mut constants, &body, &[]);
         let (text, calls) = function.tests(tests)?;
-        self.constants.adopt(&constants);
+        self.constants.adopt(constants.first_file());
         self.definitions.push(Definition {
             symbol: "main".to_owned(),
             text,
@@ -442,7 +442,8 @@ impl<'a, 'db> Module<'a, 'db> {
 /// One definition in a [`Module`]: a function, with the outlined `prange` bodies and chunk
 /// functions only it calls, or the C `main`. A definition is never split across modules, since
 /// its outlined functions are internal to the module that holds it.
-struct Definition {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Definition {
     /// The symbol of the function, or `main` for the C `main`; other modules declare it.
     symbol: String,
     /// The text of every function in the definition.

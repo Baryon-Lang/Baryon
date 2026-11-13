@@ -21,6 +21,7 @@ use std::collections::{BTreeSet, HashMap};
 
 /// The constants and metadata nodes one definition made, numbered within it: what
 /// [`module`] numbers again for the module that holds the definition.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Pieces {
     /// Each constant's definition, one or two lines without the final newline; its number is
     /// its position.
@@ -69,14 +70,18 @@ pub(crate) fn module<'t>(
     let mut written: HashMap<String, usize> = HashMap::new();
     let mut next_node = reserved;
     for (index, (function, pieces)) in definitions.enumerate() {
-        let mut nodes: HashMap<usize, usize> = HashMap::new();
-        let mut made: Vec<_> = pieces.subprograms.iter().chain(&pieces.loops).collect();
-        made.sort_by_key(|(number, _)| *number);
-        for (number, _) in made {
-            nodes.insert(*number, next_node);
-            next_node += 1;
-        }
-        let node = |old: usize| nodes.get(&old).copied().unwrap_or(old);
+        // A definition numbers its nodes from `reserved` up, in the order it made them, so
+        // moving them is one subtraction and one addition.
+        let made = pieces.subprograms.len() + pieces.loops.len();
+        let first = next_node;
+        let node = move |old: usize| {
+            if (reserved..reserved + made).contains(&old) {
+                old - reserved + first
+            } else {
+                old
+            }
+        };
+        next_node += made;
         let mut numbers: Vec<usize> = Vec::with_capacity(pieces.constants.len());
         for (own, constant) in pieces.constants.iter().enumerate() {
             let mut key = String::new();
@@ -195,11 +200,29 @@ fn rewrite(
         };
         let new = if is_node { node(old) } else { constant(old) };
         out.push_str(&text[copied..start]);
-        out.push_str(&new.to_string());
+        push_number(out, new);
         copied = start + digits;
         index = copied;
     }
     out.push_str(&text[copied..]);
+}
+
+/// Appends the decimal digits of `number` to `out`, without the allocation `to_string` makes:
+/// a module's text holds one number per instruction.
+fn push_number(out: &mut String, number: usize) {
+    let mut digits = [0u8; 20];
+    let mut at = digits.len();
+    let mut rest = number;
+    loop {
+        at -= 1;
+        // The remainder is below ten, so it fits a byte.
+        digits[at] = b'0' + u8::try_from(rest % 10).unwrap_or(0);
+        rest /= 10;
+        if rest == 0 {
+            break;
+        }
+    }
+    out.extend(digits[at..].iter().map(|&digit| char::from(digit)));
 }
 
 #[cfg(test)]

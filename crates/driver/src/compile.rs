@@ -13,14 +13,13 @@
 
 pub(crate) mod functions;
 mod instances;
+mod queries;
 
 use crate::{Profile, Session};
-use database::Db;
 use diagnostics::{Diagnostic, Severity};
-use functions::{Function, Test, is_generic, owners};
-use instances::{Instance, Instances, ready};
-use std::collections::HashMap;
-use types::{Declaration, Item, Nominal, TypeDb, TypeKind};
+use functions::{Function, Test, is_generic};
+use instances::{Instance, Instances};
+use types::{Declaration, Item, TypeDb, TypeKind};
 
 /// How a compiled program is split into LLVM modules.
 #[derive(Clone, Copy)]
@@ -236,35 +235,14 @@ impl Session {
         if !errors.is_empty() {
             return Err(errors);
         }
-        let database = &self.database;
+        let database: &dyn TypeDb = &self.database;
         let functions = self.functions();
-        let symbols: HashMap<Item<'_>, String> = functions
-            .iter()
-            .flat_map(|function| {
-                std::iter::once((function.item, function.symbol.clone()))
-                    .chain(function.defaults.iter().cloned())
-            })
-            .collect();
+        let package = self.package;
         let symbol = |item: &Item<'_>, arguments: &[types::Type<'_>]| {
-            let base = symbols.get(item).cloned().unwrap_or_default();
-            if arguments.is_empty() {
-                return base;
-            }
-            // A function's own type shows as its signature, which two functions can share, so
-            // its symbol names the function instead.
-            let shown: Vec<String> = arguments
-                .iter()
-                .map(|argument| match argument.kind(database) {
-                    TypeKind::Function { item, .. } => {
-                        symbols.get(item).cloned().unwrap_or_default()
-                    }
-                    _ => argument.display(database).to_string(),
-                })
-                .collect();
-            format!("{base}[{}]", shown.join(", "))
+            queries::symbol(database, package, *item, arguments)
         };
-        let declared = declared(database, self.package);
-        let names = names(database, self.package);
+        let declared = queries::declared(database, package);
+        let names = queries::names(database, package);
         let mut module = llvm_backend::Module::new(database, self, &declared, &names, &symbol);
         if let Some(root) = root {
             module.debug_info(root);
@@ -323,8 +301,13 @@ impl Session {
                 arguments: Vec::new(),
             });
         }
-        let owners = owners(&functions);
-        errors.extend(self.define(&mut module, roots, &declared, &symbol, &owners));
+        let settings = queries::Settings::new(
+            database,
+            package,
+            root.map(str::to_owned),
+            profile == Profile::Release,
+        );
+        errors.extend(define(database, &mut module, settings, roots));
         let tests = self.start(&mut module, program, &entries, &mut errors);
         if errors.is_empty() {
             Ok((split.finish(module), tests))
@@ -383,54 +366,6 @@ impl Session {
         }
     }
 
-    /// Defines in `module` each instance a program needs: `roots`, then each instance of a
-    /// generic function, and each default's function, that a defined body calls. `owners`
-    /// maps each default's function to the function it belongs to, whose errors it raises.
-    /// Returns one error per function lowering or the backend cannot handle yet.
-    fn define<'db>(
-        &'db self,
-        module: &mut llvm_backend::Module<'_, 'db>,
-        roots: Vec<Instance<'db>>,
-        declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
-        symbol: &dyn Fn(&Item<'db>, &[types::Type<'db>]) -> String,
-        owners: &HashMap<Item<'db>, Item<'db>>,
-    ) -> Vec<Diagnostic> {
-        let database = &self.database;
-        let mut errors = Vec::new();
-        let mut instances = Instances::new(roots);
-        let package = self.package;
-        let implementation = move |method: Item<'db>, implementor: types::Type<'db>| {
-            checker::implementation(database, package, method, implementor)
-        };
-        // Each function's lowering errors once, however many instances of it there are.
-        let mut reported = std::collections::HashSet::new();
-        while let Some(instance) = instances.next() {
-            match ready(database, &instance, declared, &implementation) {
-                Ok(body) => {
-                    instances.follow(&body);
-                    // A default's function raises what the function it belongs to declares.
-                    let owner = owners.get(&instance.item).unwrap_or(&instance.item);
-                    let raises = match &database.declaration(*owner).declaration {
-                        Declaration::Function(signature) => {
-                            match signature.returns.kind(database) {
-                                TypeKind::Fallible { errors, .. } => errors.as_slice(),
-                                _ => &[],
-                            }
-                        }
-                        _ => &[],
-                    };
-                    let name = symbol(&instance.item, &instance.arguments);
-                    if let Err(unsupported) = module.define(&name, &body, raises) {
-                        errors.push(self.at(instance.item, unsupported.to_string()));
-                    }
-                }
-                Err(problems) if reported.insert(instance.item) => errors.extend(problems),
-                Err(_) => {}
-            }
-        }
-        errors
-    }
-
     /// The error types a `main` returning `returns` can raise, for the report of an error that
     /// ends the program; empty when it cannot fail.
     fn reported<'db>(&'db self, returns: types::Type<'db>) -> Vec<types::Type<'db>> {
@@ -442,45 +377,41 @@ impl Session {
 
     /// An error at the name of `item`.
     fn at(&self, item: Item<'_>, message: impl Into<String>) -> Diagnostic {
-        let message = message.into();
-        let tree = self.database.parse(item.file(&self.database)).tree();
-        Diagnostic::error(message.clone())
-            .with_primary(tree.span(item.name(&self.database)), message)
+        queries::at(&self.database, item, message)
     }
 }
 
-/// What each struct or enum of `package` declares, as layouts, the passes and the backend read it.
-fn declared<'db>(
+/// Adds to `module` each instance a program needs: `roots`, then each instance of a generic
+/// function, and each default's function, that a defined body calls. Each instance's body and
+/// text are the database's queries ([`queries::written`]), so a database kept between builds
+/// writes again only what an edit reached. Returns one error per function lowering or the
+/// backend cannot handle yet.
+fn define<'db>(
     db: &'db dyn TypeDb,
-    package: database::Package,
-) -> impl Fn(&Nominal<'db>) -> types::Declared<'db> {
-    move |nominal| checker::declared(db, package, nominal)
-}
-
-/// The names `print` writes for each struct or enum of `package`: the class's name, then its
-/// fields' or members' names in declaration order.
-fn names<'db>(
-    db: &'db dyn TypeDb,
-    package: database::Package,
-) -> impl Fn(&Nominal<'db>) -> llvm_backend::ClassNames {
-    move |nominal| {
-        let bare = Nominal {
-            arguments: Vec::new(),
-            ..nominal.clone()
-        };
-        let item = Item::new(db, package, nominal.file, nominal.name);
-        let members = match &db.declaration(item).declaration {
-            Declaration::Struct { fields, .. } => {
-                fields.iter().map(|field| field.name.clone()).collect()
+    module: &mut llvm_backend::Module<'_, 'db>,
+    settings: queries::Settings<'db>,
+    roots: Vec<Instance<'db>>,
+) -> Vec<Diagnostic> {
+    let mut errors = Vec::new();
+    let mut instances = Instances::new(roots);
+    // Each function's lowering errors once, however many instances of it there are.
+    let mut reported = std::collections::HashSet::new();
+    while let Some(instance) = instances.next() {
+        let wanted = queries::Wanted::new(db, instance.item, instance.arguments);
+        match queries::ready_body(db, settings, wanted) {
+            queries::Ready::Body(body) => {
+                instances.follow(body);
+                match queries::written(db, settings, wanted) {
+                    Some(Ok(written)) => module.absorb(written),
+                    Some(Err(error)) => errors.push(error.clone()),
+                    None => {}
+                }
             }
-            Declaration::Enum { variants } => variants.clone(),
-            _ => Vec::new(),
-        };
-        llvm_backend::ClassNames {
-            class: types::Type::new(db, TypeKind::Struct(bare))
-                .display(db)
-                .to_string(),
-            members,
+            queries::Ready::Errors(problems) if reported.insert(*wanted.item(db)) => {
+                errors.extend(problems.iter().cloned());
+            }
+            queries::Ready::Errors(_) => {}
         }
     }
+    errors
 }
