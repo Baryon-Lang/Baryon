@@ -248,11 +248,16 @@ impl<'db> Layouter<'_, 'db> {
                 let buffer = WORD.repeat(3).ok_or(too_large)?;
                 Ok(Layout::record([buffer, buffer]).ok_or(too_large)?.layout())
             }
-            // One rank-1 array per column: a frame is stored as `Type::frame_storage` says.
+            // One rank-1 array per column, and two for a column of `str`, a text array: a
+            // frame is stored as `Type::frame_storage` says. Every part is whole words, so
+            // the columns' buffers in a row take the bytes the nested tuples would.
             TypeKind::DataFrame { columns, .. } => {
-                let column = WORD.repeat(3).ok_or(too_large)?;
-                let fields = columns.iter().map(|_| column);
-                Ok(Layout::record(fields).ok_or(too_large)?.layout())
+                let buffer = WORD.repeat(3).ok_or(too_large)?;
+                let buffers = columns.iter().flat_map(|column| {
+                    let text = matches!(column.element.kind(self.db), TypeKind::Str);
+                    std::iter::repeat_n(buffer, if text { 2 } else { 1 })
+                });
+                Ok(Layout::record(buffers).ok_or(too_large)?.layout())
             }
             TypeKind::Fixed { element, shape } => self
                 .layout(*element)?
