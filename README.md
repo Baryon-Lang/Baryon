@@ -80,7 +80,10 @@ cargo install --locked cargo-deny@0.20.2
 
 ## Documentation
 
-New to Baryon? Start with the [beginner's guide](docs/guide/README.md). To try it in an editor,
+New to Baryon? Start with the [beginner's guide](docs/guide/README.md), the first of four pages
+on how to code in Baryon: then [a tour of the language](docs/guide/language-tour.md),
+[arrays and numbers](docs/guide/arrays-and-numbers.md), and
+[data, files and plots](docs/guide/data-files-and-plots.md). To try it in an editor,
 [Coding Baryon in VS Code](docs/guide/vscode.md) sets up VS Code, from building `baryon` to
 running and testing a first program. [`CHANGELOG.md`](CHANGELOG.md) says what each release
 holds.
@@ -104,7 +107,7 @@ contributing to the compiler, or integrating one of its crates.
 | `docs/architecture.md` | Crate kinds and dependency rules |
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan and the AstroBaryon roadmap |
-| `docs/guide/` | The beginner's guide and the VS Code setup guide, both run in CI as written |
+| `docs/guide/` | How to code in Baryon, from installing it to data and plots, and the VS Code setup guide, all run in CI as written |
 | `docs/examples/` | Example programs written in the language |
 | `docs/reference/` | The language reference: what a program may say and what it means |
 | `.github/` | CI workflow and pull request template |
