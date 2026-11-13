@@ -153,6 +153,14 @@ library at run time, and keeps the Python or NumPy names its users already know.
   keeps the package loaded and rebuilds it on each save, reusing the machine code of what did not
   change ([decision 0050](docs/decisions/0050-incremental-builds.md)).
 
+### Learning Baryon
+
+The [beginner's guide](docs/guide/README.md) is now the first of four pages of "How to code in
+Baryon": a [language tour](docs/guide/language-tour.md),
+[arrays and numbers](docs/guide/arrays-and-numbers.md), and
+[data, files and plots](docs/guide/data-files-and-plots.md). CI builds and runs every example in
+them and checks what it prints, so they cannot drift from the compiler.
+
 ### Editor support
 
 `baryon lsp` shows a name's type and documentation on hover, goes to a definition across a

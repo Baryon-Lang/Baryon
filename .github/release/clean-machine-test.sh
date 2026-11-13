@@ -4,8 +4,8 @@
 # Usage: clean-machine-test.sh <archive.tar.gz> <repository checkout>
 #
 # Checks what a new user gets from a download, on a machine with `clang` and no Rust toolchain:
-# the archive's checksum matches its `.sha256` file, it unpacks to `baryon` with `libruntime.a`
-# beside it, and that `baryon` builds, runs and tests the five example programs, the guide's first
+# the archive's checksum matches its `.sha256` file, it unpacks to `baryon` with `libruntime.a`,
+# the license and the third-party notices beside it, and that `baryon` builds, runs and tests the five example programs, the guide's first
 # program and a small package of tests, in a debug build and with `--release`. Last, it runs
 # `baryon build` with nothing but `baryon` on PATH and checks that it fails with the message that
 # says how to install `clang`.
@@ -47,6 +47,8 @@ tar -xzf "$archive" -C "$scratch"
 install="$scratch/${name%.tar.gz}"
 [ -x "$install/baryon" ] || fail "the archive has no executable baryon"
 [ -f "$install/libruntime.a" ] || fail "the archive has no libruntime.a"
+[ -f "$install/LICENSE" ] || fail "the archive has no LICENSE"
+[ -f "$install/THIRD-PARTY-NOTICES.md" ] || fail "the archive has no THIRD-PARTY-NOTICES.md"
 baryon="$install/baryon"
 "$baryon" --version
 

@@ -68,11 +68,13 @@ jobs:
             exit 1
           fi
       - name: Pack the archive
-        # One directory, so unpacking never scatters files: baryon, libruntime.a and the license.
+        # One directory, so unpacking never scatters files: baryon, libruntime.a, the license and
+        # the third-party notices, which the font `byplot` embeds in the binary requires to travel
+        # with every copy.
         run: |
           name="baryon-${{ steps.version.outputs.version }}-${{ matrix.target }}"
           mkdir -p "dist/$name"
-          cp target/release/baryon target/release/libruntime.a LICENSE "dist/$name/"
+          cp target/release/baryon target/release/libruntime.a LICENSE THIRD-PARTY-NOTICES.md "dist/$name/"
           cd dist
           tar -czf "$name.tar.gz" "$name"
           shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
