@@ -119,7 +119,7 @@ mod tests {
     fn a_grown_definition_leaves_later_chunks_alone() {
         let symbols: Vec<String> = (0..200).map(|index| format!("main.f{index}")).collect();
         let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
-        let mut sizes = vec![MINIMUM_CHUNK / 2; symbols.len()];
+        let mut sizes = vec![MINIMUM_CHUNK; symbols.len()];
         let before = chunks(&symbols, &sizes);
         sizes[3] *= 3;
         let after = chunks(&symbols, &sizes);

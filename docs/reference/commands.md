@@ -215,10 +215,10 @@ baryon watch [--release] [--run] <directory> <output>
 
 Builds the package into the executable `output` as [`build`](#baryon-build) does, then keeps
 running: each time a `.byn` file in the package is saved, it builds again, and prints
-`built <output> in <n> ms, <k> of <m> modules compiled` to standard error. With `--run`, it runs the program after each build,
-with the terminal's input and output, then prints `exited with <status>`. A build with errors
-prints them and `watching for changes`, and the next save builds again, so `watch` never stops
-on its own; stop it with `Ctrl-C`.
+`built <output> in <n> ms, <k> of <m> modules compiled` to standard error. With `--run`, it
+runs the program after each build, with the terminal's input and output, then prints
+`exited with <status>`. A build with errors prints them and `watching for changes`, and the
+next save builds again, so `watch` never stops on its own; stop it with `Ctrl-C`.
 
 It keeps the package loaded between builds ([decision 0050]): only a saved file's text is read
 again, and the compiler's query engine reuses the parsing and checking of every file the edit did
