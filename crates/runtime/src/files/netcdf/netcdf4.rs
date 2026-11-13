@@ -12,9 +12,9 @@
 //! keeps for itself, [`HIDDEN`], are not shown, as `netCDF4` does not show them.
 //!
 //! Cost: opening reads every HDF5 object header once, as `h5by.File` does. A read gives the
-//! HDF5 reader, for each axis, the smallest slice that holds every position picked, reads that
-//! block as `f64`s, then copies the positions picked out of it: a stepped slice costs its
-//! positions alone, while positions in another order cost the span between the first and last.
+//! HDF5 reader, for each axis, the upward slice that picks exactly the positions picked, reads
+//! them as `f64`s, then copies them into the array in the order picked, so a read costs the
+//! values picked alone, however far apart they lie.
 
 use super::reading::{Scale, place};
 use super::{Attribute, Header, Kind, Selection, Values, Variable};
@@ -312,17 +312,32 @@ pub(super) fn read(
     if selection.count() == 0 {
         return Ok(());
     }
-    // Each axis's block: the slice read, and where each position picked lies within it.
+    // Each axis's slice, and where each position picked lies in what it reads.
     let mut items = Vec::new();
     let mut places: Vec<Vec<usize>> = Vec::new();
     for axis in &selection.axes {
-        let (item, within) = block(&axis.positions);
+        let Some((item, within)) = block(&axis.positions) else {
+            return Err(invalid(format!(
+                "the values picked of the NetCDF-4 variable {name} are in no equal steps, which \
+                 is not read yet"
+            )));
+        };
         items.push(item);
         places.push(within);
     }
-    let sizes: Vec<usize> = items.iter().map(span).collect();
-    let total: usize = sizes.iter().product();
-    let mut values = vec![0_u8; total.saturating_mul(8)];
+    let sizes: Vec<usize> = places.iter().map(Vec::len).collect();
+    // As many `f64`s as values picked, which the caller's array already holds as `pixel`s.
+    let mut values = Vec::new();
+    let room = sizes
+        .iter()
+        .try_fold(8_usize, |bytes, &size| bytes.checked_mul(size))
+        .filter(|&bytes| values.try_reserve_exact(bytes).is_ok());
+    let Some(bytes) = room else {
+        return Err(invalid(format!(
+            "the values picked of the NetCDF-4 variable {name} do not fit in memory"
+        )));
+    };
+    values.resize(bytes, 0);
     let mut inflate = |_: &[u8]| -> Result<Vec<u8>, String> {
         Err(format!(
             "the NetCDF-4 variable {name} is compressed, which is not read yet"
@@ -369,54 +384,39 @@ pub(super) fn read(
     }
 }
 
-/// The slice that holds every one of `positions`, none of them empty, and where each lies in
-/// it: a slice in steps when they go up in equal steps, else every position from the first to
-/// the last.
-fn block(positions: &[u64]) -> (Item, Vec<usize>) {
-    let first = positions[0];
+/// The slice that picks exactly `positions`, none of them empty, and where each lies in what
+/// it reads: a slice in steps, read upwards, when they are in equal steps either way, as every
+/// subscript of integers and slices picks them; `None` for positions in no such order.
+fn block(positions: &[u64]) -> Option<(Item, Vec<usize>)> {
+    let low = *positions.iter().min()?;
     let step = match positions {
-        [one, two, ..] if two > one => two - one,
+        [one, two, ..] => one.abs_diff(*two),
         _ => 1,
     };
-    let stepped = positions
-        .iter()
-        .enumerate()
-        .all(|(index, &position)| Some(position) == first.checked_add(step * index as u64));
-    let signed = |value: u64| i64::try_from(value).unwrap_or(i64::MAX);
-    if stepped {
-        let last = positions[positions.len() - 1];
-        let item = Item::Slice {
-            start: Some(signed(first)),
-            stop: Some(signed(last).saturating_add(1)),
-            stride: Some(signed(step)),
-        };
-        return (item, (0..positions.len()).collect());
+    let mut within = Vec::with_capacity(positions.len());
+    for &position in positions {
+        let offset = position - low;
+        if step == 0 || offset % step != 0 {
+            return None;
+        }
+        within.push(usize::try_from(offset / step).ok()?);
     }
-    let low = positions.iter().copied().min().unwrap_or(0);
-    let high = positions.iter().copied().max().unwrap_or(0);
+    let count = positions.len();
+    let mut seen = vec![false; count];
+    for &index in &within {
+        if index >= count || std::mem::replace(&mut seen[index], true) {
+            return None;
+        }
+    }
+    let signed = |value: u64| i64::try_from(value).unwrap_or(i64::MAX);
+    let high = low.saturating_add(step.saturating_mul(count as u64 - 1));
     let item = Item::Slice {
         start: Some(signed(low)),
         stop: Some(signed(high).saturating_add(1)),
-        stride: None,
+        stride: Some(signed(step)),
     };
-    let within = positions
-        .iter()
-        .map(|&position| usize::try_from(position - low).unwrap_or(usize::MAX))
-        .collect();
-    (item, within)
+    Some((item, within))
 }
 
-/// The number of positions the slice `item`, made by [`block`], picks.
-fn span(item: &Item) -> usize {
-    match *item {
-        Item::Slice {
-            start: Some(start),
-            stop: Some(stop),
-            stride,
-        } => {
-            let stride = stride.unwrap_or(1).max(1);
-            usize::try_from((stop - start + stride - 1) / stride).unwrap_or(0)
-        }
-        _ => 1,
-    }
-}
+#[cfg(test)]
+mod tests;
