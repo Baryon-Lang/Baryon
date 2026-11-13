@@ -123,9 +123,20 @@ def main():
         if trades.price[i] < trades.price[cheapest]:
             cheapest = i
     print(trades.symbol[cheapest])
+    print(trades)
 ```
 
-This prints `3 (3, 2) ['symbol', 'price']` and then `AAPL`. A text column of another length
+This prints `3 (3, 2) ['symbol', 'price']`, then `AAPL`, then the frame as pandas prints it:
+
+```text
+  symbol  price
+0    IBM    3.0
+1   AAPL    1.0
+2   MSFT    2.0
+```
+
+Text is printed without quotes and to the right, and a cell of 50 characters or more shows its
+first 46 and `...`, as in pandas. A text column of another length
 than the frame's other columns panics when the frame is built, as a column of numbers does.
 
 Everything this page says of a text array holds for the column: `len(trades.symbol)`,
@@ -133,11 +144,11 @@ Everything this page says of a text array holds for the column: `len(trades.symb
 from the frame. `trades.symbol = Array(words)` replaces the whole column, and panics when the
 new array has another length. `trades.copy()` copies the text with the numbers.
 
-A frame that has a text column is built from its columns, counted, copied, passed and returned
-today. Every other use of it is a compile error for now and comes with the rest of roadmap item
-3.13.3: `DataFrame(rows)`, rows (`df[i]` and `itertuples`), choosing rows or columns with
-`[...]`, `head`, `tail`, `assign`, `drop`, `rename`, `sort_values`, `groupby`, `merge`,
-`drop_duplicates`, `concat`, and `print` of the frame. A frame of numbers keeps all of these.
+A frame that has a text column is built from its columns, counted, copied, printed, passed and
+returned today. Every other use of it is a compile error for now and comes with the rest of
+roadmap item 3.13.3: `DataFrame(rows)`, rows (`df[i]` and `itertuples`), choosing rows or
+columns with `[...]`, `head`, `tail`, `assign`, `drop`, `rename`, `sort_values`, `groupby`, `merge`,
+`drop_duplicates` and `concat`. A frame of numbers keeps all of these.
 
 ## What is not built yet
 

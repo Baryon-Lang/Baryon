@@ -3,9 +3,10 @@
 //!
 //! The formatting is written in Baryon, in the standard library's `<std>/frames.byn`
 //! (decision 0038), so this module only calls it: one call for each column, which gives the
-//! column's cells as text, then one call that lays the cells out. A frame's columns are known
-//! when compiling, so the calls are chosen here by each column's element type, and MIR, the
-//! passes and the backend see only calls of Baryon functions.
+//! column's cells as text, a column of `str` among them, then one call that lays the cells
+//! out. A frame's columns are known when compiling, so the calls are chosen here by each
+//! column's element type, and MIR, the passes and the backend see only calls of Baryon
+//! functions.
 
 use crate::builder::Builder;
 use mir::{Argument, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue};
@@ -36,10 +37,17 @@ impl<'db> Builder<'db> {
         let list = Type::new(self.db, TypeKind::List(text));
         let mut cells = Vec::with_capacity(columns.len());
         let mut names = Vec::with_capacity(columns.len());
+        let mut flags = Vec::with_capacity(columns.len());
+        let boolean = self.boolean_type();
         for (position, column) in (0..).zip(columns) {
+            flags.push(Operand::Constant(Constant {
+                ty: boolean,
+                value: ConstantValue::Bool(matches!(column.element.kind(self.db), TypeKind::Str)),
+            }));
             let (function, type_arguments) = match column.element.kind(self.db) {
                 TypeKind::Primitive(Primitive::Float(Float::F64)) => ("float_cells", Vec::new()),
                 TypeKind::Primitive(Primitive::Float(Float::F32)) => ("single_cells", Vec::new()),
+                TypeKind::Str => ("text_cells", Vec::new()),
                 _ => ("cells", vec![column.element]),
             };
             let values = frame.clone().project(Projection::Field(position));
@@ -53,6 +61,12 @@ impl<'db> Builder<'db> {
         let headings = self.temporary(list, node);
         self.assign(Place::from(headings), Rvalue::Aggregate(list, names), node);
         self.drop_later(headings);
+        // Which columns hold `str`: the library gives their headings no room for a sign.
+        let flag_list = Type::new(self.db, TypeKind::List(boolean));
+        let text_columns = self.temporary(flag_list, node);
+        let aggregate = Rvalue::Aggregate(flag_list, flags);
+        self.assign(Place::from(text_columns), aggregate, node);
+        self.drop_later(text_columns);
         let table_type = Type::new(self.db, TypeKind::List(list));
         let table = self.temporary(table_type, node);
         let aggregate = Rvalue::Aggregate(table_type, cells);
@@ -60,10 +74,16 @@ impl<'db> Builder<'db> {
         self.drop_later(table);
         let count = self.temporary(self.int_type(), node);
         let first = frame.clone().project(Projection::Field(0));
-        self.assign(Place::from(count), Rvalue::Length(first, 0), node);
+        let stored = match self.ty(node).kind(self.db) {
+            TypeKind::Tuple(stored) => stored.first().copied(),
+            _ => None,
+        };
+        let rows = self.column_length(first, stored, node);
+        self.assign(Place::from(count), Rvalue::Use(rows), node);
         let arguments = vec![
             Place::from(headings),
             Place::from(table),
+            Place::from(text_columns),
             Place::from(count),
         ];
         let result = self.frame_call("frame_text", Vec::new(), arguments, text, node)?;
@@ -71,11 +91,12 @@ impl<'db> Builder<'db> {
         Some(Place::from(result))
     }
 
-    /// Calls the function `name` of `<std>/frames.byn` or `<std>/frame_joins.byn` with `type_arguments`, borrowing each
-    /// of `arguments`, and gives the temporary of type `returns` that holds its result. The
-    /// functions called this way take every parameter borrowed and raise nothing. `None`
-    /// after reporting that the library's file or the function is missing, which happens only
-    /// when the library's files were left out of the package.
+    /// Calls the function `name` of `<std>/frames.byn` or `<std>/frame_joins.byn` with
+    /// `type_arguments`, borrowing each of `arguments`, and gives the temporary of type
+    /// `returns` that holds its result. The functions called this way take every parameter
+    /// borrowed and raise nothing. `None` after reporting that the library's file or the
+    /// function is missing, which happens only when the library's files were left out of the
+    /// package.
     pub(crate) fn frame_call(
         &mut self,
         name: &str,
