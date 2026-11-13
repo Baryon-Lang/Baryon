@@ -59,6 +59,7 @@ impl<'db> Builder<'db> {
             TypeKind::Primitive(_)
             | TypeKind::Str
             | TypeKind::TextArray
+            | TypeKind::OptionalArray(_)
             | TypeKind::None
             | TypeKind::Parameter { .. }
             | TypeKind::Union(_)

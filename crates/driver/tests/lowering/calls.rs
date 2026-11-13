@@ -5,8 +5,8 @@ use crate::lower;
 
 /// An argument passed where its parameter wants an optional or another number type is converted
 /// first, into a temporary when the parameter is borrowed, so the callee reads the layout it
-/// expects. A value that owns memory cannot be wrapped without moving it, so borrowing one as an
-/// optional is not lowered yet.
+/// expects. A value that owns memory is wrapped bit for bit into a temporary that is never
+/// dropped, so its owner still frees it once (roadmap 1.9.29).
 #[test]
 fn arguments_take_their_parameters_type() {
     let program = r"class Particle(Struct, Copy):
@@ -54,12 +54,21 @@ def array_caller(a: Array[f64, 1]) -> f64:
     );
     assert_eq!(
         lower(program, "array_caller"),
-        r"error: lowering does not handle borrowing a value that is not a copy type as an optional yet
-  --> main.byn:19:14
-   |
-19 |     return g(a)
-   |              ^ not lowered yet
-   = note: the compiler lowers more of the language as roadmap item 1.9.3 continues"
+        r"fn(_1: Array[f64, 1]) -> f64 {
+    let _0: f64; // return
+    let _1: Array[f64, 1]; // parameter a
+    let _2: Array[f64, 1] | None;
+
+    bb0: {
+        _2 = Array[f64, 1] | None(copy _1);
+        _0 = call g(_2) -> [return: bb1];
+    }
+
+    bb1: {
+        return;
+    }
+}
+"
     );
 }
 

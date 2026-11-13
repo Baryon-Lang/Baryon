@@ -4,6 +4,7 @@
 
 use super::{Header, Kind, Selection, Values, Variable, netcdf4, number};
 use crate::files::fits::Pixel;
+use crate::files::hdf5::Inflate;
 use crate::files::{BUFFER, ErrorKind, OsFailure};
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
@@ -13,7 +14,8 @@ use std::io::{self, Read, Seek, SeekFrom};
 /// `scale_factor` and `add_offset` applied, as `netCDF4` applies them, for a float `pixel`.
 /// `memory` holds one element for each value picked, row-major. In a classic file each stretch
 /// of neighbouring values is read with one seek, so `var[:]` of a fixed variable is one read; a
-/// NetCDF-4 file's variable is read as [`netcdf4::read`] reads it.
+/// NetCDF-4 file's variable is read as [`netcdf4::read`] reads it, its deflated chunks inflated
+/// by `inflate`; a classic file's never are.
 ///
 /// # Errors
 ///
@@ -25,12 +27,20 @@ pub(crate) fn read_variable(
     (variable, selection): (&Variable, &Selection),
     pixel: Pixel,
     memory: &mut [u8],
+    inflate: &mut Inflate<'_>,
 ) -> Result<(), OsFailure> {
     let failed = |error: io::Error| OsFailure::from_io(&error, path);
     let invalid = |message: String| OsFailure::new(ErrorKind::InvalidData, message, path);
     let scale = checked(variable, pixel).map_err(invalid)?;
     if let Some(netcdf4) = &header.netcdf4 {
-        return netcdf4::read(path, netcdf4, (variable, selection), (scale, pixel), memory);
+        return netcdf4::read(
+            path,
+            netcdf4,
+            (variable, selection),
+            (scale, pixel),
+            memory,
+            inflate,
+        );
     }
     let width = variable.kind.size() as u64;
     let record = header.is_record(variable);
@@ -74,6 +84,26 @@ pub(crate) fn read_variable(
         }
         Ok(())
     })
+}
+
+/// The address and stored size of each deflated chunk a read of the values `selection` picks
+/// of `variable` of `header`, the file at `path`, takes inflated, in the order
+/// [`read_variable`] takes them: none for a classic file, whose variables are never
+/// compressed.
+///
+/// # Errors
+///
+/// Fails as the operating system does, and with `INVALID_DATA` when a NetCDF-4 file's variable
+/// or its chunk index is damaged or not read yet.
+pub(crate) fn deflated_chunks(
+    path: &str,
+    header: &Header,
+    (variable, selection): (&Variable, &Selection),
+) -> Result<Vec<(u64, u64)>, OsFailure> {
+    match &header.netcdf4 {
+        Some(netcdf4) => netcdf4::chunks(path, netcdf4, (variable, selection)),
+        None => Ok(Vec::new()),
+    }
 }
 
 /// How `variable`'s values are scaled, after checking that an array of `pixel` can hold them:

@@ -248,14 +248,24 @@ impl<'db> Layouter<'_, 'db> {
                 let buffer = WORD.repeat(3).ok_or(too_large)?;
                 Ok(Layout::record([buffer, buffer]).ok_or(too_large)?.layout())
             }
-            // One rank-1 array per column, and two for a column of `str`, a text array: a
-            // frame is stored as `Type::frame_storage` says. Every part is whole words, so
-            // the columns' buffers in a row take the bytes the nested tuples would.
+            // The values and the validity bitmap, as `Type::optional_storage` says.
+            TypeKind::OptionalArray(_) => match ty.optional_storage(self.db) {
+                Some(stored) => self.layout(stored),
+                None => Err(LayoutError::Unknown),
+            },
+            // One rank-1 array per column, two for a column of `str`, a text array, and one
+            // more for a column that may hold `None`: a frame is stored as
+            // `Type::frame_storage` says. Every part is whole words, so the columns' buffers
+            // in a row take the bytes the nested tuples would.
             TypeKind::DataFrame { columns, .. } => {
                 let buffer = WORD.repeat(3).ok_or(too_large)?;
                 let buffers = columns.iter().flat_map(|column| {
-                    let text = matches!(column.element.kind(self.db), TypeKind::Str);
-                    std::iter::repeat_n(buffer, if text { 2 } else { 1 })
+                    let (element, validity) = match column.element.kind(self.db) {
+                        TypeKind::Optional(element) => (*element, 1),
+                        _ => (column.element, 0),
+                    };
+                    let text = matches!(element.kind(self.db), TypeKind::Str);
+                    std::iter::repeat_n(buffer, validity + if text { 2 } else { 1 })
                 });
                 Ok(Layout::record(buffers).ok_or(too_large)?.layout())
             }

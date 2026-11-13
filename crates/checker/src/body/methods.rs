@@ -6,9 +6,10 @@ use super::calls::Arguments;
 use super::exclusive::Passed;
 use super::members::Member;
 use super::{Body, relations};
+use crate::outline::{Base, Kind, outline};
 use crate::traits::{self, Trait, UserTrait};
 use database::Definition;
-use syntax::{NodeId, Role};
+use syntax::{NodeId, Role, SyntaxKind};
 use types::{Callee, Declaration, Key, Mode, Parameter, Signature, Type, TypeKind};
 
 impl<'db> Body<'db> {
@@ -61,7 +62,7 @@ impl<'db> Body<'db> {
         };
         let callee = self.tree.text(attribute, self.text).to_owned();
         if let Some(result) = self
-            .class_function(node, value, &callee, arguments, expected)
+            .class_function(node, (value, attribute), &callee, arguments, expected)
             .or_else(|| self.h5by_attrs_method(node, value, &callee, arguments))
         {
             return result;
@@ -153,29 +154,110 @@ impl<'db> Body<'db> {
     }
 
     /// `Class.function(arguments)`, where `value` names a class rather than a value:
-    /// `Array.zeros(n)`, or `Vec3.zeros()` on an alias of a `Fixed` type; anything else on a
-    /// class has no functions in version 0. Returns `None` when `value` is not a class.
+    /// `Array.zeros(n)`, `Vec3.zeros()` on an alias of a `Fixed` type, or a method of a struct
+    /// called through its class, `Point.origin()` (the `struct_function` method), a generic
+    /// struct's with its type arguments written, `Pair[f64].both(1.5)`, or found from the
+    /// arguments, `Pair.both(1.5)` (the `generic_struct_function` method). Returns `None` when
+    /// `value` is not a class.
     fn class_function(
         &mut self,
         node: NodeId,
-        value: NodeId,
+        (value, attribute): (NodeId, NodeId),
         callee: &str,
         arguments: &Arguments,
         expected: Option<Type<'db>>,
     ) -> Option<Type<'db>> {
-        match self.lowerer.definition(value) {
-            Some(Definition::Builtin("Array")) => {
+        let subscript = self.tree.kind(value) == SyntaxKind::Subscript;
+        let class = if subscript {
+            self.tree.child(value, Role::Value)?
+        } else {
+            value
+        };
+        match self.lowerer.definition(class) {
+            Some(Definition::Builtin("Array")) if !subscript => {
                 Some(self.array_function(node, callee, arguments, expected))
             }
-            Some(Definition::Item(..)) => {
+            Some(&Definition::Item(file, name)) => {
+                let parameters = match outline(self.db, file).get(name).map(|entry| &entry.kind) {
+                    Some(Kind::Class(class)) if class.base == Base::Struct => {
+                        class.type_parameters.clone()
+                    }
+                    _ if subscript => return None,
+                    _ => Vec::new(),
+                };
+                if !subscript && !parameters.is_empty() {
+                    let class = (value, file, name, parameters.as_slice());
+                    return Some(self.generic_struct_function(node, class, attribute, arguments));
+                }
                 let ty = self.lowerer.lower(value);
                 Some(match ty.kind(self.db) {
                     TypeKind::Fixed { .. } => self.fixed_function(node, ty, callee, arguments),
+                    TypeKind::Struct(nominal) => {
+                        let nominal = nominal.clone();
+                        if !nominal.arguments.is_empty() {
+                            // Lowering finds the class's type arguments here (`Call`).
+                            self.typed.expressions.insert(Key(value), ty);
+                        }
+                        self.struct_function(node, (&nominal, ty), attribute, arguments)
+                    }
                     _ => self.untyped(arguments),
                 })
             }
             _ => None,
         }
+    }
+
+    /// `Point.origin()` or `Point.at(2.5)`: a method of the struct `nominal`, of type `ty`,
+    /// called through its class, as Python calls a function found on a class. No receiver is
+    /// passed, so each argument goes to the parameter at its position, `self` included when
+    /// the method has one: `Point.norm(p)` is `p.norm()`. The struct's type arguments, written
+    /// as in `Pair[f64].both(1.5)`, are substituted into the method's signature. A method
+    /// reached through an embedded struct is reported, since its class is not the one named.
+    fn struct_function(
+        &mut self,
+        node: NodeId,
+        (nominal, ty): (&types::Nominal<'db>, Type<'db>),
+        attribute: NodeId,
+        arguments: &Arguments,
+    ) -> Type<'db> {
+        let callee = self.tree.text(attribute, self.text).to_owned();
+        let (item, parameters, type_arguments) =
+            match self.member(attribute, nominal, ty, attribute) {
+                Some(Member::Method {
+                    item,
+                    parameters,
+                    arguments,
+                }) if self.typed.promotion(attribute).is_empty() => (item, parameters, arguments),
+                Some(Member::Method { .. } | Member::Field(_) | Member::Copy) => {
+                    self.untyped(arguments);
+                    let message = format!("`{callee}` is not a function of `{}`", self.show(ty));
+                    return self.lowerer.error(
+                        attribute,
+                        &message,
+                        "not defined by this class",
+                        Some("a class's own methods can be called through it, as `Point.origin()`"),
+                    );
+                }
+                None => return self.untyped(arguments),
+            };
+        let Declaration::Function(signature) = &self.db.declaration(item).declaration else {
+            return self.untyped(arguments);
+        };
+        let signature = relations::substitute_signature(
+            self.db,
+            signature,
+            nominal.file,
+            &parameters,
+            &type_arguments,
+        );
+        self.check_call(
+            node,
+            &callee,
+            &signature,
+            None,
+            Callee::Method(item),
+            arguments,
+        )
     }
 
     /// Reports the call of a method reached through an embedded field, `function`, that takes

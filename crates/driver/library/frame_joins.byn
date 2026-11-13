@@ -313,3 +313,58 @@ def text_found(column: Array[str, 1], value: str) -> bool:
         if column[at] == value:
             return True
     return False
+
+
+def _quoted(text: str) -> str:
+    """`text` in quotes, as Python's `repr` writes a `str`: in single quotes, or in double
+    quotes when it holds a single quote and no double one, with a backslash before a
+    backslash and before the quote used, and a new line, a return and a tab written `\\n`,
+    `\\r` and `\\t`. Other characters stand as they are, the control characters that `repr`
+    would write as numbers among them."""
+    escaped = text.replace("\\", "\\\\").replace("\n", "\\n")
+    escaped = escaped.replace("\r", "\\r").replace("\t", "\\t")
+    if "'" in text and not ("\"" in text):
+        return "\"" + escaped + "\""
+    return "'" + escaped.replace("'", "\\'") + "'"
+
+
+def text_shown(column: Array[str, 1]) -> str:
+    """A text array as `print` shows it, which is how NumPy shows an array of strings: each
+    element as Python's `repr` writes it, a space between two, the whole in brackets. A line
+    holds at most 75 characters and the next starts under the first element. Of more than
+    1000 elements the first three and the last three are shown, with `...` between. Cost:
+    one copy of each element shown."""
+    count = len(column)
+    shown = [at for at in range(count)]
+    if count > 1000:
+        shown = [0, 1, 2, -1, count - 3, count - 2, count - 1]
+    words: list[str] = []
+    for at in shown:
+        if at < 0:
+            words.append("...")
+        else:
+            words.append(_quoted(column[at]))
+    text = ""
+    line = " "
+    for at in range(len(words)):
+        if len(line) > 1 and len(line) + len(words[at]) > 74:
+            text = f"{text}{line.rstrip()}\n"
+            line = " "
+        line = f"{line}{words[at]}"
+        if at < len(words) - 1:
+            line = f"{line} "
+    text = f"{text}{line}"
+    return f"[{text[1:]}]"
+
+
+def text_extreme(column: Array[str, 1], largest: bool) -> str:
+    """A copy of the element of `column` that comes first by Python's `<` on `str`, or last
+    when `largest`: a text array's `min` and `max`. `column` has an element, which the
+    compiler has checked. One pass, comparing text."""
+    best = 0
+    for at in range(1, len(column)):
+        if largest and column[at] > column[best]:
+            best = at
+        if not largest and column[at] < column[best]:
+            best = at
+    return column[best].copy()

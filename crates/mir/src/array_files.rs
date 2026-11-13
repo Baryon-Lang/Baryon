@@ -64,22 +64,24 @@ pub enum ArrayFile {
     /// `overwrite` is false. It costs one pass over the array's elements.
     FitsWrite,
     /// `Dataset(path)` of the `netCDF4` module: one argument, the path, a `str`. The
-    /// destination is a new `list[str]`: lines that describe the header of a `NetCDF` classic
-    /// file (CDF-1 or CDF-2), each a tag and fields separated by tabs, which the standard
-    /// library parses. A `P` line, the path, comes first, so the library can read variables
-    /// later; then the `D` lines, then the file's `A` lines, then each `V` line followed by its
-    /// variable's `A` lines. A `D` line is a dimension's name, its length and
+    /// destination is a new `list[str]`: lines that describe the header of a `NetCDF` file,
+    /// classic (CDF-1 or CDF-2) or NetCDF-4, each a tag and fields separated by tabs, which the
+    /// standard library parses. A `P` line, the path, comes first, so the library can read
+    /// variables later; then the `D` lines, then the file's `A` lines, then each `V` line
+    /// followed by its variable's `A` lines. A `D` line is a dimension's name, its length and
     /// `1` when it is the unlimited one or `0`; a `V` line a variable's name, its type as
     /// `netCDF4` names it (`f4`) and its dimensions' names separated by commas; an `A` line an
     /// attribute's variable (empty for the file's own), its kind (`str`, `int` or `float`), its
     /// number of values, its name and its values separated by commas. The call fails with the
-    /// kind `INVALID_DATA` when the file is not a classic `NetCDF` file. It reads the header
-    /// only.
+    /// kind `INVALID_DATA` when the file is neither a classic `NetCDF` file nor a NetCDF-4 one.
+    /// It reads the header only.
     NetcdfOpen,
     /// `ds.variables[name][items]` of the `netCDF4` module: the path and the variable's name,
-    /// each a `str`, then four `int`s for each item of the subscript, which picks the values
-    /// read: `0` and an index, or `1` and a slice's start, stop and step, each `i64::MIN` when
-    /// the program left it out. No items read the whole variable, as `var[:]` does. The
+    /// each a `str`, the inflated chunks, an `Array[u8, 1]` borrowed, and their sizes, an
+    /// `Array[i64, 1]` borrowed, as [`Self::NetcdfChunks`] lists them, both empty for a classic
+    /// file, then four `int`s for each item of the subscript, which picks the values read: `0`
+    /// and an index, or `1` and a slice's start, stop and step, each `i64::MIN` when the
+    /// program left it out. No items read the whole variable, as `var[:]` does. The
     /// destination is a new `Array[T, rank]`, its `T` a signed integer or float type, its shape
     /// the lengths picked along the axes a slice keeps, in the file's order. A float `T` reads
     /// any number variable, with `scale_factor` and `add_offset` applied as `netCDF4` applies
@@ -88,6 +90,15 @@ pub enum ArrayFile {
     /// variable, the items do not fit its dimensions, or the values picked have another rank or
     /// `T` cannot read them. It costs one pass over the values picked.
     NetcdfRead,
+    /// The deflated chunks a read of a NetCDF-4 variable needs inflated: the path and the
+    /// variable's name, each a `str`, then four `int`s for each item of the subscript, as
+    /// [`Self::NetcdfRead`] takes them. The destination is a new `list[str]`, one line for each
+    /// deflated chunk that holds a value picked, its address and its size in bytes separated by
+    /// a tab, as [`Self::Hdf5Chunks`] lists them; it is empty for a classic file, whose
+    /// variables are never compressed. The standard library's `zlib` inflates them (decision
+    /// 0049). The call fails as [`Self::NetcdfRead`] does. It reads the file's header and, for
+    /// a NetCDF-4 file, the variable's chunk index.
+    NetcdfChunks,
     /// One change to a `NetCDF` classic file opened for writing, which the `netCDF4` module's
     /// `Dataset(path, "w")`, `createDimension`, `createVariable` and `setncattr` make: two
     /// arguments, the path and the change, each a `str`. The change is a line of a tag and
@@ -160,6 +171,7 @@ impl ArrayFile {
     /// assert_eq!(mir::ArrayFile::FitsWrite.name(), "fits.writeto");
     /// assert_eq!(mir::ArrayFile::NetcdfOpen.name(), "netCDF4.Dataset");
     /// assert_eq!(mir::ArrayFile::NetcdfRead.name(), "netCDF4.Variable[:]");
+    /// assert_eq!(mir::ArrayFile::NetcdfChunks.name(), "netCDF4.chunks");
     /// assert_eq!(mir::ArrayFile::NetcdfDefine.name(), "netCDF4.define");
     /// assert_eq!(mir::ArrayFile::NetcdfWrite.name(), "netCDF4.Variable[:] =");
     /// assert_eq!(mir::ArrayFile::Hdf5Open.name(), "h5by.File");
@@ -178,6 +190,7 @@ impl ArrayFile {
             Self::FitsWrite => "fits.writeto",
             Self::NetcdfOpen => "netCDF4.Dataset",
             Self::NetcdfRead => "netCDF4.Variable[:]",
+            Self::NetcdfChunks => "netCDF4.chunks",
             Self::NetcdfDefine => "netCDF4.define",
             Self::NetcdfWrite => "netCDF4.Variable[:] =",
             Self::Hdf5Open => "h5by.File",

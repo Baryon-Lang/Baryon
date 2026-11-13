@@ -216,3 +216,51 @@ def main():
         "[1, 2] 0.5 2.0\n[1, 2] True\n"
     );
 }
+
+/// A generic struct's methods called through its class (roadmap 1.9.30), built and run: with
+/// the type arguments found from the arguments, `Pair.both(1.5)` and `Pair.total(p)`, as the
+/// constructor finds them; written on the class, `Pair[i64].both(2)` and `Bag[str].empty()`,
+/// which no argument could fix; and a method with type parameters of its own. Each is
+/// compiled once per type argument, and the `Bag` of `str` is freed with its list.
+#[test]
+fn generic_methods_called_through_their_class_build_and_run() {
+    let program = "\
+class Pair[T: Number](Struct, Copy):
+    a: T
+    b: T
+
+    def both(x: T) -> Pair[T]:
+        return Pair(x, x)
+
+    def total(self) -> T:
+        return self.a + self.b
+
+    def first_of[U: Number](self, other: U) -> T:
+        return self.a
+
+
+class Bag[T](Struct):
+    items: list[T]
+
+    def of(item: Owned[T]) -> Bag[T]:
+        return Bag([item])
+
+    def empty() -> Bag[T]:
+        items: list[T] = []
+        return Bag(items)
+
+
+def main():
+    p = Pair.both(1.5)
+    q = Pair[i64].both(2)
+    print(p.a, Pair.total(p), Pair[i64].total(q), Pair.first_of(q, 0.5))
+    words = Bag[str].empty()
+    words.items.append(\"hi\")
+    numbers = Bag.of(3)
+    print(words.items, numbers.items)
+";
+    assert_eq!(
+        output("generic-class-functions", program).unwrap(),
+        "1.5 3.0 4 2\n['hi'] [3]\n"
+    );
+}

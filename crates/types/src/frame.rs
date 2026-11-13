@@ -6,7 +6,9 @@ use crate::{Column, Type, TypeKind};
 impl<'db> Type<'db> {
     /// How a `DataFrame` is stored: a tuple of its columns, each an `Array` of rank 1, in the
     /// schema's order. A column of `str` is a text array, so its entry is the tuple of two
-    /// buffers that stores one ([`Type::text_storage`]). `None` when the type is not a frame.
+    /// buffers that stores one ([`Type::text_storage`]), and a column that may hold `None`
+    /// is the tuple of its values and validity bitmap ([`Type::optional_storage`]). `None`
+    /// when the type is not a frame.
     ///
     /// Lowering replaces a frame type by this one, so the mid-level IR and every stage after it
     /// store, move, borrow and free a frame as the tuple of arrays it is, with no code of their
@@ -41,7 +43,10 @@ impl<'db> Type<'db> {
             .iter()
             .map(|column| {
                 let array = column.array(db);
-                array.text_storage(db).unwrap_or(array)
+                array
+                    .text_storage(db)
+                    .or_else(|| array.optional_storage(db))
+                    .unwrap_or(array)
             })
             .collect();
         Some(Type::new(db, TypeKind::Tuple(arrays)))
@@ -90,9 +95,10 @@ impl<'db> Type<'db> {
 
 impl<'db> Column<'db> {
     /// The type of the column read as a value, `df.price`: an `Array` of rank 1 of its
-    /// elements, or the text array, `Array[str, 1]`, when its elements are `str`. A text
-    /// array is its own kind of type ([`TypeKind::TextArray`]), so every reader of a column
-    /// asks here instead of building the array type itself.
+    /// elements, the text array, `Array[str, 1]`, when its elements are `str`, or the array
+    /// with missing values, `Array[T | None, 1]`, when they are `T | None`. The last two are
+    /// kinds of type of their own ([`TypeKind::TextArray`], [`TypeKind::OptionalArray`]), so
+    /// every reader of a column asks here instead of building the array type itself.
     ///
     /// # Example
     ///
@@ -113,12 +119,17 @@ impl<'db> Column<'db> {
     /// let str = Type::new(&database, TypeKind::Str);
     /// let symbol = Column { name: "symbol".to_owned(), element: str };
     /// assert_eq!(symbol.array(&database), Type::new(&database, TypeKind::TextArray));
+    ///
+    /// let optional = Type::new(&database, TypeKind::Optional(f64));
+    /// let bid = Column { name: "bid".to_owned(), element: optional };
+    /// assert_eq!(bid.array(&database), Type::new(&database, TypeKind::OptionalArray(f64)));
     /// ```
     #[must_use]
     pub fn array(&self, db: &'db dyn salsa::Database) -> Type<'db> {
         let element = self.element;
         let kind = match element.kind(db) {
             TypeKind::Str => TypeKind::TextArray,
+            TypeKind::Optional(element) => TypeKind::OptionalArray(*element),
             _ => TypeKind::Array { element, rank: 1 },
         };
         Type::new(db, kind)
