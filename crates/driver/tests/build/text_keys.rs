@@ -1,6 +1,6 @@
 //! Text columns of a `DataFrame` as keys (roadmap 3.13.3, decision 0045), built and run:
-//! frames put in order by a column of `str`, their repeated rows left out, and frames joined
-//! on one. The frames printed are compared with what pandas 3 prints.
+//! frames put in order by a column of `str`, their repeated rows left out, frames joined on
+//! one, and rows grouped by one. The frames printed are compared with what pandas 3 prints.
 
 use super::text_columns::run;
 
@@ -237,6 +237,71 @@ fn frames_with_a_text_column_are_joined() {
         "0 7 Big Blue\n",
     ];
     let (code, stdout, report) = run("text-columns-joined", JOINED).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+}
+
+/// A program that groups frames by text columns: by one, by a text key and a key of
+/// numbers in both orders, by two text keys, and by a key of numbers with text columns
+/// beside it, with texts that differ only in case, an empty text and a letter outside ASCII.
+const GROUPED: &str = r#"
+def main():
+    trades = DataFrame({
+        "symbol": Array(["IBM", "AAPL", "", "IBM", "βeta", "ibm", "AAPL", "IBM"]),
+        "price": Array([3.0, 2.0, 1.0, 4.0, 5.0, 6.0, 7.0, 8.0]),
+        "day": Array([1, 1, 2, 2, 1, 1, 2, 1]),
+        "venue": Array(["N", "Q", "N", "N", "Q", "N", "Q", "N"]),
+    })
+    print(trades.groupby("symbol").agg(total=("price", "sum"), trades=("day", "count")))
+    print(trades.groupby(["symbol", "day"]).agg(high=("price", "max")))
+    print(trades.groupby(["day", "symbol"]).agg(mean=("price", "mean"), first=("price", "first")))
+    print(trades.groupby(["venue", "symbol"]).agg(low=("price", "min")))
+    print(trades.groupby("day").agg(total=("price", "sum")))
+    by = trades.groupby(by="venue").agg(days=("day", "sum"), spread=("price", "std"))
+    print(by.venue[0], len(by))
+    print(len(trades.head(0).groupby("symbol").agg(n=("day", "count"))), trades.symbol[4])
+"#;
+
+/// `groupby` groups rows by text as by numbers, the groups in the order of the text: every
+/// frame printed is what pandas 3 prints with the keys as columns.
+#[test]
+fn a_frame_is_grouped_by_a_text_column() {
+    let expected = [
+        "  symbol  total  trades\n",
+        "0           1.0       1\n",
+        "1   AAPL    9.0       2\n",
+        "2    IBM   15.0       3\n",
+        "3    ibm    6.0       1\n",
+        "4   βeta    5.0       1\n",
+        "  symbol  day  high\n",
+        "0           2   1.0\n",
+        "1   AAPL    1   2.0\n",
+        "2   AAPL    2   7.0\n",
+        "3    IBM    1   8.0\n",
+        "4    IBM    2   4.0\n",
+        "5    ibm    1   6.0\n",
+        "6   βeta    1   5.0\n",
+        "   day symbol  mean  first\n",
+        "0    1   AAPL   2.0    2.0\n",
+        "1    1    IBM   5.5    3.0\n",
+        "2    1    ibm   6.0    6.0\n",
+        "3    1   βeta   5.0    5.0\n",
+        "4    2          1.0    1.0\n",
+        "5    2   AAPL   7.0    7.0\n",
+        "6    2    IBM   4.0    4.0\n",
+        "  venue symbol  low\n",
+        "0     N         1.0\n",
+        "1     N    IBM  3.0\n",
+        "2     N    ibm  6.0\n",
+        "3     Q   AAPL  2.0\n",
+        "4     Q   βeta  5.0\n",
+        "   day  total\n",
+        "0    1   24.0\n",
+        "1    2   12.0\n",
+        "N 2\n",
+        "0 βeta\n",
+    ];
+    let (code, stdout, report) = run("text-columns-grouped", GROUPED).unwrap();
     assert_eq!(stdout, expected.concat());
     assert_eq!((code, report.as_str()), (Some(0), ""));
 }

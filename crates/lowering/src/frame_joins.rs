@@ -89,15 +89,8 @@ impl<'db> Builder<'db> {
                 if side == 1 && names.contains(&column.name.as_str()) {
                     continue;
                 }
-                // A column of `str` has its own function, `text_taken`.
-                let (function, types) = match column.element.kind(self.db) {
-                    TypeKind::Str => ("text_taken", Vec::new()),
-                    _ => ("taken", vec![column.element]),
-                };
-                let array = erase(self.db, column.array(self.db));
                 let from = source.clone().project(Projection::Field(position));
-                let arguments = vec![from, Place::from(rows)];
-                let Some(taken) = self.frame_call(function, types, arguments, array, node) else {
+                let Some(taken) = self.taken_column(from, column, Place::from(rows), node) else {
                     return;
                 };
                 made.push(Operand::Move(Place::from(taken)));
