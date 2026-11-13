@@ -87,7 +87,8 @@ pub const BUILTINS: [&str; 61] = [
 /// environment, and running another program. So is `pathlib`, whose `Path` the library's own
 /// source defines (decision 0038). `linalg` and `fft` are roadmap 3.10's linear algebra and
 /// fast Fourier transforms, named as `numpy.linalg` and `numpy.fft` are. `stats` is roadmap
-/// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042). `fits` is
+/// 3.16's statistics, `NumPy`'s `median`, `percentile` and the rest (decision 0042). `special` is
+/// roadmap 3.18's special functions, named as `scipy.special` is (decision 0054). `fits` is
 /// roadmap 3.14.3's FITS files, named as `astropy.io.fits` is (decision 0044), `netCDF4`
 /// roadmap 3.14.5's `NetCDF` files, named as Unidata's `netCDF4` package is (decision 0047),
 /// `h5by` roadmap 3.14.6.1's HDF5 files, with the `h5py` package's names (decision 0052), and
@@ -101,7 +102,7 @@ pub const BUILTINS: [&str; 61] = [
 /// [`library_module`](crate::library_module) gives its dotted name. `bz2` is roadmap 3.27.9's
 /// bzip2 streams, named as Python's `bz2` is, and `lzma` roadmap 3.27.10's xz files, named as
 /// Python's `lzma` is.
-pub const STANDARD_MODULES: [&str; 19] = [
+pub const STANDARD_MODULES: [&str; 20] = [
     "math",
     "random",
     "sys",
@@ -111,6 +112,7 @@ pub const STANDARD_MODULES: [&str; 19] = [
     "linalg",
     "fft",
     "stats",
+    "special",
     "fits",
     "netCDF4",
     "h5by",
