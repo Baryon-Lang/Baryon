@@ -52,7 +52,8 @@ impl Body<'_> {
             let text = self.tree.text(branch, self.text);
             let message = format!("a conditional expression cannot lend `{text}` yet");
             let hint = format!(
-                "lend a copy, `{text}.copy()`, or choose with an `if` statement and pass `{text}` itself"
+                "lend a copy, `{text}.copy()`, or choose with an `if` statement and pass \
+                 `{text}` itself"
             );
             self.lowerer.error(
                 branch,
