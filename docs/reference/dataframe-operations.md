@@ -107,8 +107,11 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   no row index; pandas makes them the index, and shows this frame after `reset_index()`.
 - **The groups come out sorted by their keys**, rising, and rows keep their order inside a
   group, which is what `first` and `last` see. A key of `str` is in the order of Python's
-  `<`, by code point, and texts are one group only when exactly equal. A column of `str`
-  cannot be reduced by `agg` yet (roadmap item 3.13.3).
+  `<`, by code point, and texts are one group only when exactly equal.
+- **A column of `str` has five of the reductions**: `count`, an `i64`, and `first`,
+  `last`, `min` and `max`, which give a `str`, the smallest and largest by `<`. The
+  others are compile errors. pandas's `sum` of text, which joins the texts of a group, is
+  not built. `min` and `max` cost one sort of the column, comparing text.
 - **NaN is left out, as in pandas.** A row whose key is NaN belongs to no group. A NaN
   value is skipped by every reduction, so `count` counts the values that are numbers. A
   group with no numbers has the sum 0, the count 0, and NaN for the rest; `var` and `std`
