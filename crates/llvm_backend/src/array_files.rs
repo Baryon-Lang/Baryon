@@ -18,7 +18,7 @@
 //! | [`FitsData`](mir::ArrayFile::FitsData) | `baryon_rt_fits_read(path, length, ext, element, rank, out, error)` |
 //! | [`FitsWrite`](mir::ArrayFile::FitsWrite) | `baryon_rt_fits_write(path, length, array, rank, element, cards, card_count, header, overwrite, error)` |
 //! | [`NetcdfOpen`](mir::ArrayFile::NetcdfOpen) | `baryon_rt_netcdf_open(path, length, out, error)` |
-//! | [`NetcdfRead`](mir::ArrayFile::NetcdfRead) | `baryon_rt_netcdf_read(path, length, name, name_length, items, item_count, element, rank, out, error)` |
+//! | [`NetcdfRead`](mir::ArrayFile::NetcdfRead), [`NetcdfChunks`](mir::ArrayFile::NetcdfChunks) | as the `hdf5` module says |
 //! | [`NetcdfDefine`](mir::ArrayFile::NetcdfDefine) | `baryon_rt_netcdf_define(path, length, line, line_length, out, error)` |
 //! | [`NetcdfWrite`](mir::ArrayFile::NetcdfWrite) | `baryon_rt_netcdf_write(path, length, name, name_length, items, item_count, array, rank, element, error)` |
 //!
@@ -99,16 +99,17 @@ impl<'db> Function<'_, '_, 'db> {
             (ArrayFile::FitsHeader | ArrayFile::FitsData | ArrayFile::FitsWrite, _) => {
                 self.fits_parameters(method, arguments, destination)?
             }
-            (
-                ArrayFile::NetcdfOpen
-                | ArrayFile::NetcdfRead
-                | ArrayFile::NetcdfDefine
-                | ArrayFile::NetcdfWrite,
-                _,
-            ) => self.netcdf_parameters(method, arguments, destination)?,
-            (ArrayFile::Hdf5Open | ArrayFile::Hdf5Chunks | ArrayFile::Hdf5Read, _) => {
-                self.hdf5_parameters(method, arguments, destination)?
+            (ArrayFile::NetcdfOpen | ArrayFile::NetcdfDefine | ArrayFile::NetcdfWrite, _) => {
+                self.netcdf_parameters(method, arguments, destination)?
             }
+            (
+                ArrayFile::Hdf5Open
+                | ArrayFile::Hdf5Chunks
+                | ArrayFile::Hdf5Read
+                | ArrayFile::NetcdfChunks
+                | ArrayFile::NetcdfRead,
+                _,
+            ) => self.hdf5_parameters(method, arguments, destination)?,
             _ => return Err(Unsupported::new(format!("`{name}` with these arguments"))),
         };
         let (address, _) = self.place(&edge.error.into())?;
@@ -311,26 +312,6 @@ impl<'db> Function<'_, '_, 'db> {
                     format!("ptr {out}"),
                 ];
                 ("baryon_rt_netcdf_open", parameters)
-            }
-            (ArrayFile::NetcdfRead, [path, variable, items @ ..]) => {
-                let (bytes, length) = self.text_argument(path)?;
-                let (variable, variable_length) = self.text_argument(variable)?;
-                let (out, ty) = self.place(destination)?;
-                let (element, rank) = self.array(ty)?;
-                let code = self.fits_code(element, name)?;
-                let (items, item_count) = self.subscript_items(items, name)?;
-                let parameters = vec![
-                    format!("ptr {bytes}"),
-                    format!("i64 {length}"),
-                    format!("ptr {variable}"),
-                    format!("i64 {variable_length}"),
-                    format!("ptr {items}"),
-                    format!("i64 {item_count}"),
-                    format!("i32 {code}"),
-                    format!("i64 {rank}"),
-                    format!("ptr {out}"),
-                ];
-                ("baryon_rt_netcdf_read", parameters)
             }
             (ArrayFile::NetcdfDefine, [path, line]) => {
                 let (bytes, length) = self.text_argument(path)?;

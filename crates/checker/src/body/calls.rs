@@ -6,7 +6,9 @@ use super::{Body, relations};
 use crate::outline::{Base, Kind, outline};
 use database::{Definition, File};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Call, Callee, Declaration, Item, Key, Nominal, Parameter, Signature, Type, TypeKind};
+use types::{
+    Call, Callee, Declaration, Item, Key, Mode, Nominal, Parameter, Signature, Type, TypeKind,
+};
 
 /// The arguments of one call, as written.
 pub(super) struct Arguments {
@@ -220,7 +222,7 @@ impl<'db> Body<'db> {
                     .map(|field| Parameter {
                         name: field.name,
                         ty: field.ty,
-                        mode: types::Mode::Owned,
+                        mode: Mode::Owned,
                         default: false,
                     })
                     .collect();
@@ -323,7 +325,7 @@ impl<'db> Body<'db> {
                         .map(|(index, &ty)| Parameter {
                             name: format!("argument {}", index + 1),
                             ty,
-                            mode: types::Mode::Borrow,
+                            mode: Mode::Borrow,
                             default: false,
                         })
                         .collect(),
@@ -482,6 +484,8 @@ impl<'db> Body<'db> {
             );
             let label = format!("type `{}`", self.show(found));
             self.lowerer.error(argument, &message, &label, None);
+        } else if parameter.mode == Mode::InOut {
+            self.changed_exactly(argument, parameter, found);
         }
         found
     }
