@@ -145,8 +145,9 @@ from the frame. `trades.symbol = Array(words)` replaces the whole column, and pa
 new array has another length. `trades.copy()` copies the text with the numbers.
 
 Rows are chosen from such a frame as from any other, and the text goes with them: `df.head(n)`,
-`df.tail(n)`, a slice `df[1:3]`, a mask `df[df.price > 1.5]`, and `df.sort_values("price")`
-by its columns of numbers.
+`df.tail(n)`, a slice `df[1:3]`, a mask `df[df.price > 1.5]`, and `df.sort_values("price")`.
+A sort by the text column itself, `df.sort_values("symbol")`, puts the rows in the order of
+Python's `<` on `str`: by code point, so `"Zed"` comes before `"apple"`, as in pandas.
 
 ```python
 print(trades[trades.price > 1.5].sort_values("price"))
@@ -161,11 +162,11 @@ print(trades[trades.price > 1.5].sort_values("price"))
 Its columns are chosen and changed as any frame's are: `df[["symbol", "price"]]`,
 `df.drop(columns=["price"])`, `df.rename(columns={"symbol": "ticker"})`, and
 `df.assign(symbol=Array(words))`, which also adds a text column to a frame of numbers.
+`concat([first, second])` stacks such frames, text and numbers alike.
 
 Every other use of a frame that has a text column is a compile error for now and comes with
-the rest of roadmap item 3.13.3: `DataFrame(rows)`, one row (`df[i]` and `itertuples`), a sort
-by the text column, `groupby`, `merge`, `drop_duplicates` and `concat`. A frame of numbers
-keeps all of these.
+the rest of roadmap item 3.13.3: `DataFrame(rows)`, one row (`df[i]` and `itertuples`),
+`groupby`, `merge` and `drop_duplicates`. A frame of numbers keeps all of these.
 
 ## What is not built yet
 

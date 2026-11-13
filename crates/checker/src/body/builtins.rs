@@ -15,11 +15,7 @@ impl<'db> Body<'db> {
     pub(super) fn builtin(&mut self, node: NodeId, name: &str, arguments: &Arguments) -> Type<'db> {
         // `concat` reads the frames of its list one by one, so the list is not typed as a list.
         if name == "concat" {
-            let stacked = self.frame_concat(node, arguments);
-            if self.has_text_column(stacked) {
-                return self.text_column_unbuilt(node, "`concat`");
-            }
-            return stacked;
+            return self.frame_concat(node, arguments);
         }
         let all: Vec<NodeId> = arguments
             .positional

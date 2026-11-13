@@ -8,14 +8,20 @@
 //! accumulator.
 //!
 //! The chunk function builds a *view* per array on its stack, `{ header, ptr accumulator, i64
-//! chunk }`, and passes its address where the outlined body expects the array. The header comes
-//! first, so the body's bounds checks read the lengths through the parameter as for any array.
-//! When the chunk's last iteration ends, it calls `baryon_rt_accumulator_chunk_done`.
+//! chunk, ptr table }`, and passes its address where the outlined body expects the array. The
+//! header comes first, so the body's bounds checks read the lengths through the parameter as for
+//! any array. The table starts null. When the chunk's last iteration ends, it calls
+//! `baryon_rt_accumulator_chunk_done`.
 //!
 //! In the body, an [`Accumulate`](mir::StatementKind::Accumulate) finds the element's row-major
-//! position from the indices and the lengths, asks `baryon_rt_accumulator_slot` for the address
-//! of each of its scalars in the chunk's copy, and adds there with the arithmetic of `+=`. A
-//! `Fixed` element is added lane by lane.
+//! position from the indices and the lengths, then the address of each of its scalars in the
+//! chunk's copy, and adds there with the arithmetic of `+=`. A `Fixed` element is added lane by
+//! lane. The address comes from the chunk's block table without a call when the block exists:
+//! the scalar's byte position, shifted by [`BLOCK_BYTES`], indexes the table, and the rest is the
+//! offset in the block. Otherwise, on the chunk's first add into a block, it calls
+//! `baryon_rt_accumulator_slot`, which makes the block, and `baryon_rt_accumulator_table` to keep
+//! the table's address in the view. Before the table lookup, every add was a call, 15% of the
+//! instructions of the half-list Lennard-Jones benchmark (roadmap 1.14.3).
 
 use crate::Unsupported;
 use crate::function::Function;
@@ -31,10 +37,21 @@ const NEW: &str = "declare ptr @baryon_rt_accumulator_new(i64, i64, i32, ptr)";
 const SLOT: &str = "declare ptr @baryon_rt_accumulator_slot(ptr, i64, i64) nounwind";
 
 /// See [`NEW`].
+const TABLE: &str = "declare ptr @baryon_rt_accumulator_table(ptr, i64) nounwind";
+
+/// See [`NEW`].
 const CHUNK_DONE: &str = "declare void @baryon_rt_accumulator_chunk_done(ptr, i64)";
 
 /// See [`NEW`].
 const FINISH: &str = "declare void @baryon_rt_accumulator_finish(ptr, ptr, i64, ptr, ptr, i64)";
+
+/// The size of one block of a chunk's private copy, in bytes, as the runtime's `BLOCK_BYTES`
+/// sets it; the two must be equal, since compiled code finds a scalar's block itself. A power of
+/// two, so the block is `byte >> BLOCK_SHIFT` and the offset `byte & (BLOCK_BYTES - 1)`.
+const BLOCK_BYTES: u64 = 4096;
+
+/// `log2(BLOCK_BYTES)`.
+const BLOCK_SHIFT: u32 = BLOCK_BYTES.trailing_zeros();
 
 /// One accumulated array of a loop, as the function running the loop writes it.
 pub(crate) struct Accumulated {
@@ -58,6 +75,8 @@ struct Scalars {
     number: Number,
     /// The scalar's LLVM type.
     llvm: String,
+    /// The scalar's size in bytes.
+    bytes: u64,
     /// The lengths of a `Fixed` element, outermost first; empty for a number.
     shape: Vec<u64>,
 }
@@ -79,6 +98,10 @@ impl<'db> Function<'_, '_, 'db> {
             _ => (element, Vec::new()),
         };
         let (number, llvm) = self.scalar(scalar)?;
+        let bytes = match number {
+            Number::Integer { bits, .. } | Number::Float(bits) => u64::from(bits / 8),
+            Number::Bool => 1,
+        };
         let kind = match number {
             Number::Integer { bits, signed } => {
                 let width = match bits {
@@ -98,6 +121,7 @@ impl<'db> Function<'_, '_, 'db> {
             kind,
             number,
             llvm,
+            bytes,
             shape,
         })
     }
@@ -222,7 +246,8 @@ impl<'db> Function<'_, '_, 'db> {
             }
         }
         self.declare("baryon_rt_accumulator_slot", SLOT);
-        let view_type = format!("{{ {header}, ptr, i64 }}");
+        self.declare("baryon_rt_accumulator_table", TABLE);
+        let view_type = format!("{{ {header}, ptr, i64, ptr }}");
         let accumulator_field = self.emit(&format!(
             "getelementptr inbounds {view_type}, ptr {view}, i32 0, i32 1"
         ));
@@ -231,6 +256,9 @@ impl<'db> Function<'_, '_, 'db> {
             "getelementptr inbounds {view_type}, ptr {view}, i32 0, i32 2"
         ));
         let chunk = self.emit(&format!("load i64, ptr {chunk_field}"));
+        let table_field = self.emit(&format!(
+            "getelementptr inbounds {view_type}, ptr {view}, i32 0, i32 3"
+        ));
         let llvm = &scalars.llvm;
         let instruction = match (scalars.number, operator) {
             (Number::Float(_), AccumulateOperator::Add) => "fadd",
@@ -240,14 +268,66 @@ impl<'db> Function<'_, '_, 'db> {
         };
         for (lane, scalar) in lane_values {
             let index = self.emit(&format!("add i64 {first}, {lane}"));
-            let slot = self.emit(&format!(
-                "call ptr @baryon_rt_accumulator_slot(ptr {accumulator}, i64 {chunk}, i64 {index})"
-            ));
+            let slot =
+                self.scalar_address(&index, scalars.bytes, &table_field, &accumulator, &chunk);
             let current = self.emit(&format!("load {llvm}, ptr {slot}"));
             let sum = self.emit(&format!("{instruction} {llvm} {current}, {scalar}"));
             self.line(&format!("store {llvm} {sum}, ptr {slot}"));
         }
         Ok(())
+    }
+}
+
+impl Function<'_, '_, '_> {
+    /// The address of scalar `index`, of `bytes` bytes, in the running chunk's copy, whose view
+    /// keeps the table's address at `table_field`: read from the table when the block exists,
+    /// otherwise made by `baryon_rt_accumulator_slot`, after which the view keeps the table.
+    fn scalar_address(
+        &mut self,
+        index: &str,
+        bytes: u64,
+        table_field: &str,
+        accumulator: &str,
+        chunk: &str,
+    ) -> String {
+        let [look, found, create, join] = [(); 4].map(|()| self.fresh_block());
+        let byte = self.emit(&format!("mul i64 {index}, {bytes}"));
+        let table = self.emit(&format!("load ptr, ptr {table_field}"));
+        let has_table = self.emit(&format!("icmp ne ptr {table}, null"));
+        self.line(&format!(
+            "br i1 {has_table}, label %{look}, label %{create}"
+        ));
+        self.line_label(&look);
+        let block_index = self.emit(&format!("lshr i64 {byte}, {BLOCK_SHIFT}"));
+        let entry = self.emit(&format!(
+            "getelementptr inbounds ptr, ptr {table}, i64 {block_index}"
+        ));
+        let block = self.emit(&format!("load ptr, ptr {entry}"));
+        let has_block = self.emit(&format!("icmp ne ptr {block}, null"));
+        self.line(&format!(
+            "br i1 {has_block}, label %{found}, label %{create}"
+        ));
+        self.line_label(&found);
+        let offset = self.emit(&format!("and i64 {byte}, {}", BLOCK_BYTES - 1));
+        let near = self.emit(&format!(
+            "getelementptr inbounds i8, ptr {block}, i64 {offset}"
+        ));
+        self.line(&format!("br label %{join}"));
+        self.line_label(&create);
+        let made = self.emit(&format!(
+            "call ptr @baryon_rt_accumulator_slot(ptr {accumulator}, i64 {chunk}, i64 {index})"
+        ));
+        let kept = self.emit(&format!(
+            "call ptr @baryon_rt_accumulator_table(ptr {accumulator}, i64 {chunk})"
+        ));
+        self.line(&format!("store ptr {kept}, ptr {table_field}"));
+        self.line(&format!("br label %{join}"));
+        self.line_label(&join);
+        let address = self.fresh();
+        self.line(&format!(
+            "{address} = phi ptr [ {near}, %{found} ], [ {made}, %{create} ]"
+        ));
+        address
     }
 }
 
@@ -288,7 +368,7 @@ pub(crate) fn chunk_views(headers: &[String], first: usize, slots: usize) -> [St
     let mut done = String::new();
     for (index, header) in headers.iter().enumerate() {
         let (array, accumulator) = (first + 2 * index, first + 2 * index + 1);
-        let view = format!("{{ {header}, ptr, i64 }}");
+        let view = format!("{{ {header}, ptr, i64, ptr }}");
         let _ = writeln!(
             entry,
             "  %ha{index} = getelementptr inbounds [{slots} x ptr], ptr %context, i64 0, i64 {array}\n  \
@@ -301,7 +381,9 @@ pub(crate) fn chunk_views(headers: &[String], first: usize, slots: usize) -> [St
              %wa{index} = getelementptr inbounds {view}, ptr %w{index}, i32 0, i32 1\n  \
              store ptr %a{index}, ptr %wa{index}\n  \
              %wc{index} = getelementptr inbounds {view}, ptr %w{index}, i32 0, i32 2\n  \
-             store i64 %chunk, ptr %wc{index}"
+             store i64 %chunk, ptr %wc{index}\n  \
+             %wt{index} = getelementptr inbounds {view}, ptr %w{index}, i32 0, i32 3\n  \
+             store ptr null, ptr %wt{index}"
         );
         arguments.push(format!("ptr %w{index}"));
         let _ = writeln!(
@@ -331,7 +413,7 @@ mod tests {
     }
 
     /// The chunk function builds one view per accumulated array from its two context slots,
-    /// passes the view, and reports the chunk done.
+    /// with no block table yet, passes the view, and reports the chunk done.
     #[test]
     fn a_chunk_builds_a_view_per_array() {
         let header = "{ ptr, [1 x i64], [1 x i64] }".to_owned();
@@ -342,13 +424,15 @@ mod tests {
   %h0 = load ptr, ptr %ha0
   %aa0 = getelementptr inbounds [3 x ptr], ptr %context, i64 0, i64 2
   %a0 = load ptr, ptr %aa0
-  %w0 = alloca { { ptr, [1 x i64], [1 x i64] }, ptr, i64 }
+  %w0 = alloca { { ptr, [1 x i64], [1 x i64] }, ptr, i64, ptr }
   %hv0 = load { ptr, [1 x i64], [1 x i64] }, ptr %h0
   store { ptr, [1 x i64], [1 x i64] } %hv0, ptr %w0
-  %wa0 = getelementptr inbounds { { ptr, [1 x i64], [1 x i64] }, ptr, i64 }, ptr %w0, i32 0, i32 1
+  %wa0 = getelementptr inbounds { { ptr, [1 x i64], [1 x i64] }, ptr, i64, ptr }, ptr %w0, i32 0, i32 1
   store ptr %a0, ptr %wa0
-  %wc0 = getelementptr inbounds { { ptr, [1 x i64], [1 x i64] }, ptr, i64 }, ptr %w0, i32 0, i32 2
+  %wc0 = getelementptr inbounds { { ptr, [1 x i64], [1 x i64] }, ptr, i64, ptr }, ptr %w0, i32 0, i32 2
   store i64 %chunk, ptr %wc0
+  %wt0 = getelementptr inbounds { { ptr, [1 x i64], [1 x i64] }, ptr, i64, ptr }, ptr %w0, i32 0, i32 3
+  store ptr null, ptr %wt0
 "
         );
         assert_eq!(arguments, "ptr %w0");

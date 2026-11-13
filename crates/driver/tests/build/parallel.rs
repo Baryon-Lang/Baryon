@@ -107,6 +107,37 @@ def main():
     }
 }
 
+/// Adds into accumulated arrays of 1-, 4- and 8-byte scalars that span several 4 KiB blocks
+/// land in the right element: compiled code finds each scalar's block in the chunk's table by
+/// its byte position (roadmap 1.14.3), so the scalar's size must scale the index. 7919 and 31
+/// are coprime to the lengths, which divide 60,000, so every element gets the same count.
+#[test]
+fn accumulated_scalars_of_every_size_land_in_place() {
+    let program = "\
+def spread(small: InOut[Array[i8, 1]], middle: InOut[Array[f32, 1]], wide: InOut[Array[i64, 1]]):
+    for i in prange(60000, accumulate=(small, middle, wide)):
+        small[(i * 7919) % 5000] += 1
+        middle[(i * 31) % 3000] += 0.5
+        wide[(i * 7919) % 2000] += 3
+
+
+def main():
+    small: Array[i8, 1] = Array.zeros(5000, dtype=i8)
+    middle: Array[f32, 1] = Array.zeros(3000, dtype=f32)
+    wide: Array[i64, 1] = Array.zeros(2000, dtype=i64)
+    spread(small, middle, wide)
+    print(small[0], small[4095], small[4096], small[4999])
+    print(middle[0], middle[1023], middle[1024], middle[2999])
+    print(wide[0], wide[511], wide[512], wide[1999], wide.sum())
+";
+    prints(
+        "accumulate-sizes",
+        program,
+        "12 12 12 12\n10.0 10.0 10.0 10.0\n90 90 90 90 180000\n",
+    )
+    .unwrap();
+}
+
 /// `accumulate=` of a struct field (decision 0024): the same pair loop as
 /// `accumulated_arrays_build_and_run`, with positions and forces held in one struct, gives the
 /// same bits as that loop on every run.
