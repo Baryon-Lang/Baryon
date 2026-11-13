@@ -451,6 +451,34 @@ fn a_frame_is_stored_as_one_array_per_column() {
     );
 }
 
+/// A column of `str` is a text array, read as `Array[str, 1]` and stored as its two buffers,
+/// so a frame with one beside a column of numbers takes three buffers.
+#[test]
+fn a_text_column_is_stored_as_a_text_array() {
+    let database = Database::default();
+    let shown = |ty: Type<'_>| ty.display(&database).to_string();
+    let text = Type::new(&database, TypeKind::Str);
+    let symbol = Column {
+        name: "symbol".to_owned(),
+        element: text,
+    };
+    assert_eq!(shown(symbol.array(&database)), "Array[str, 1]");
+    let price = Column {
+        name: "price".to_owned(),
+        element: primitive(&database, "f64"),
+    };
+    assert_eq!(shown(price.array(&database)), "Array[f64, 1]");
+    let columns = vec![symbol, price];
+    let frame = Type::new(&database, TypeKind::DataFrame { columns, row: None });
+    assert_eq!(layout_of(&database, frame), Ok((72, 8)));
+    let storage = frame.frame_storage(&database).unwrap();
+    assert_eq!(
+        storage.display(&database).to_string(),
+        "tuple[tuple[Array[u8, 1], Array[i64, 1]], Array[f64, 1]]"
+    );
+    assert_eq!(layout_of(&database, storage), Ok((72, 8)));
+}
+
 #[test]
 fn frames_with_the_same_columns_are_one_table() {
     let database = Database::default();
