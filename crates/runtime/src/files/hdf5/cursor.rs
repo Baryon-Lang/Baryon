@@ -19,6 +19,8 @@ pub(super) type Failure = String;
 pub(super) struct Source {
     /// The file.
     file: fs::File,
+    /// Its size in bytes, which no structure reaches past.
+    size: u64,
     /// Its path, for the messages of an I/O failure.
     path: String,
     /// The size of an address in bytes, from the superblock.
@@ -35,8 +37,13 @@ impl Source {
     /// until the superblock gives other sizes.
     pub(super) fn open(path: &str) -> Result<Self, OsFailure> {
         let file = fs::File::open(path).map_err(|error| OsFailure::from_io(&error, path))?;
+        let size = file
+            .metadata()
+            .map_err(|error| OsFailure::from_io(&error, path))?
+            .len();
         Ok(Self {
             file,
+            size,
             path: path.to_owned(),
             offsets: 8,
             lengths: 8,
@@ -60,6 +67,12 @@ impl Source {
         let at = address
             .checked_add(self.base)
             .ok_or_else(|| format!("the HDF5 file has an address past its end, {address}"))?;
+        // A damaged length is refused before anything is allocated for it.
+        if at.checked_add(length).is_none_or(|end| end > self.size) {
+            return Err(format!(
+                "the HDF5 file ends inside the structure at address {address}"
+            ));
+        }
         let size = usize::try_from(length)
             .map_err(|_| format!("the HDF5 file has a structure of {length} bytes"))?;
         let mut bytes = Vec::new();

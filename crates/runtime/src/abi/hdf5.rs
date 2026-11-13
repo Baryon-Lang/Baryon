@@ -300,7 +300,20 @@ fn read(
     rank: usize,
 ) -> Result<(*mut u8, Vec<usize>), SubscriptFailure> {
     let dataset = find(path, file, name)?;
-    let picked = selection::shape(&selection::select(items, &dataset.shape)?);
+    let axes = selection::select(items, &dataset.shape)?;
+    // A damaged file's shape can claim more values than memory has bytes: refused here, before
+    // anything is allocated, rather than ending the program.
+    let too_many = selection::count(&axes)
+        .and_then(|count| count.checked_mul(pixel.size() as u64))
+        .is_none_or(|bytes| bytes > isize::MAX as u64);
+    if too_many {
+        return Err(SubscriptFailure::Os(OsFailure::new(
+            ErrorKind::InvalidData,
+            format!("the HDF5 dataset {name} picks more values than an array can hold"),
+            path,
+        )));
+    }
+    let picked = selection::shape(&axes);
     if picked.len() != rank {
         let what = if items.is_empty() {
             format!("the HDF5 dataset {name} has")

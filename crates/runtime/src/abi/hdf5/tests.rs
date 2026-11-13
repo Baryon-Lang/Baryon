@@ -168,3 +168,38 @@ fn a_subscript_that_picks_nothing_raises_index_error_or_value_error() {
         );
     }
 }
+
+#[test]
+fn a_shape_too_large_for_memory_raises_invalid_data() {
+    // A damaged dataspace that claims 2^62 values along one axis: the read refuses it before
+    // allocating anything, rather than ending the program.
+    let mut file = hdf5::read_file(LATEST).unwrap();
+    let object = file
+        .objects
+        .iter_mut()
+        .find(|object| object.path == "/count")
+        .unwrap();
+    object.dataset.as_mut().unwrap().shape = vec![1 << 62];
+    let Err(SubscriptFailure::Os(failure)) =
+        read(LATEST, &file, ("count", &[]), (&[], &[]), Pixel::F64, 1)
+    else {
+        panic!("the read did not raise an OSError");
+    };
+    assert_eq!(failure.kind, ErrorKind::InvalidData);
+    assert_eq!(
+        failure.strerror,
+        "the HDF5 dataset count picks more values than an array can hold"
+    );
+    // Picking one of them reads past the end of the file, which is refused the same way.
+    let Err(SubscriptFailure::Os(failure)) = read(
+        LATEST,
+        &file,
+        ("count", &[Item::Index(1 << 61)]),
+        (&[], &[]),
+        Pixel::F64,
+        0,
+    ) else {
+        panic!("the read did not raise an OSError");
+    };
+    assert_eq!(failure.kind, ErrorKind::InvalidData);
+}

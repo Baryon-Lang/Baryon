@@ -8,13 +8,38 @@
 
 use crate::files::netcdf::{Item, SubscriptFailure};
 
-/// The positions picked along one axis, in increasing order.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// The positions picked along one axis, in increasing order: `count` of them, `first`, then
+/// every `step` after it. Held as a rule, not a list, so a damaged file that claims an axis of
+/// 2^62 costs nothing until something reads that many values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Axis {
-    /// The positions.
-    pub(crate) positions: Vec<u64>,
+    /// The first position picked.
+    pub(crate) first: u64,
+    /// The distance between two positions picked, at least 1.
+    pub(crate) step: u64,
+    /// The number of positions picked.
+    pub(crate) count: u64,
     /// Whether the axis stays in the result: false for an integer index.
     pub(crate) kept: bool,
+}
+
+impl Axis {
+    /// The position picked `index`-th, for an `index` below `count`.
+    pub(crate) fn position(self, index: u64) -> u64 {
+        self.first + index * self.step
+    }
+
+    /// The last position picked, `None` when it picks none.
+    pub(crate) fn last(self) -> Option<u64> {
+        self.count.checked_sub(1).map(|index| self.position(index))
+    }
+
+    /// The indexes of the positions picked in `start..end`, as a range of indexes.
+    fn within(self, start: u64, end: u64) -> std::ops::Range<u64> {
+        let from = start.saturating_sub(self.first).div_ceil(self.step);
+        let to = end.saturating_sub(self.first).div_ceil(self.step);
+        from.min(self.count)..to.min(self.count)
+    }
 }
 
 /// The positions `items` pick of a dataset of `shape`, axis by axis.
@@ -36,7 +61,9 @@ pub(crate) fn select(items: &[Item], shape: &[u64]) -> Result<Vec<Axis>, Subscri
         let signed = i64::try_from(length).unwrap_or(i64::MAX);
         let picked = match items.get(axis) {
             None => Axis {
-                positions: (0..length).collect(),
+                first: 0,
+                step: 1,
+                count: length,
                 kept: true,
             },
             Some(&Item::Index(index)) => {
@@ -52,7 +79,9 @@ pub(crate) fn select(items: &[Item], shape: &[u64]) -> Result<Vec<Axis>, Subscri
                     )));
                 }
                 Axis {
-                    positions: vec![at.unsigned_abs()],
+                    first: at.unsigned_abs(),
+                    step: 1,
+                    count: 1,
                     kept: false,
                 }
             }
@@ -84,15 +113,10 @@ pub(crate) fn select(items: &[Item], shape: &[u64]) -> Result<Vec<Axis>, Subscri
                 };
                 let (first, end) = (bound(start, 0), bound(stop, signed));
                 let step = step.unsigned_abs();
-                let positions = if first < end {
-                    (first.unsigned_abs()..end.unsigned_abs())
-                        .step_by(usize::try_from(step).unwrap_or(usize::MAX))
-                        .collect()
-                } else {
-                    Vec::new()
-                };
                 Axis {
-                    positions,
+                    first: first.unsigned_abs(),
+                    step,
+                    count: (end - first).max(0).unsigned_abs().div_ceil(step),
                     kept: true,
                 }
             }
@@ -106,29 +130,35 @@ pub(crate) fn select(items: &[Item], shape: &[u64]) -> Result<Vec<Axis>, Subscri
 pub(crate) fn shape(axes: &[Axis]) -> Vec<u64> {
     axes.iter()
         .filter(|axis| axis.kept)
-        .map(|axis| axis.positions.len() as u64)
+        .map(|axis| axis.count)
         .collect()
+}
+
+/// The number of values `axes` pick, `None` when it does not fit in a `u64`, which only a
+/// damaged file's shape can make.
+pub(crate) fn count(axes: &[Axis]) -> Option<u64> {
+    axes.iter()
+        .try_fold(1_u64, |count, axis| count.checked_mul(axis.count))
 }
 
 /// For a block of the dataset that begins at `origin` and spans `extent` along each axis,
 /// the positions `axes` pick inside it: for each axis, each picked position's index in the
-/// result and its offset in the block. `None` when the block holds no position picked.
+/// result and its offset in the block. `None` when the block holds no position picked. Costs
+/// one entry per position picked inside the block, at most the block's extent along each axis.
 pub(crate) fn inside(
     axes: &[Axis],
     origin: &[u64],
     extent: &[u64],
 ) -> Option<Vec<Vec<(u64, u64)>>> {
     let mut found = Vec::with_capacity(axes.len());
-    for ((axis, &start), &length) in axes.iter().zip(origin).zip(extent) {
-        let end = start.saturating_add(length);
-        let first = axis.positions.partition_point(|&position| position < start);
-        let last = axis.positions.partition_point(|&position| position < end);
-        if first == last {
+    for ((&axis, &start), &length) in axes.iter().zip(origin).zip(extent) {
+        let picked = axis.within(start, start.saturating_add(length));
+        if picked.is_empty() {
             return None;
         }
         found.push(
-            (first..last)
-                .map(|index| (index as u64, axis.positions[index] - start))
+            picked
+                .map(|index| (index, axis.position(index) - start))
                 .collect(),
         );
     }
@@ -160,7 +190,10 @@ mod tests {
             &[2, 3, 4],
         )
         .unwrap();
-        let positions: Vec<_> = axes.iter().map(|axis| axis.positions.clone()).collect();
+        let positions: Vec<Vec<u64>> = axes
+            .iter()
+            .map(|&axis| (0..axis.count).map(|index| axis.position(index)).collect())
+            .collect();
         assert_eq!(positions, [vec![1], vec![0, 2], vec![1, 2]]);
         assert_eq!(shape(&axes), [2, 2]);
         // `d[5:1]` picks nothing.
@@ -222,5 +255,21 @@ mod tests {
         );
         let odd = select(&[slice(Some(1), None, Some(2))], &[6, 5]).unwrap();
         assert_eq!(inside(&odd, &[4, 0], &[1, 5]), None);
+    }
+
+    #[test]
+    fn a_huge_axis_is_held_as_a_rule() {
+        // A damaged file's dataspace can claim 2^62 along an axis: picking it builds no list,
+        // and the count of a whole selection overflows to `None` rather than panicking.
+        let axes = select(&[], &[1 << 62, 1 << 62]).unwrap();
+        assert_eq!(shape(&axes), [1 << 62, 1 << 62]);
+        assert_eq!(count(&axes), None);
+        let axes = select(&[slice(Some(-2), None, None)], &[1 << 62, 0]).unwrap();
+        assert_eq!(count(&axes), Some(0));
+        assert_eq!(axes[0].last(), Some((1 << 62) - 1));
+        assert_eq!(
+            inside(&axes[..1], &[(1 << 62) - 4], &[4]),
+            Some(vec![vec![(0, 2), (1, 3)]])
+        );
     }
 }

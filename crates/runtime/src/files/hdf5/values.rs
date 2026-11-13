@@ -3,7 +3,7 @@
 
 use super::chunks::{Grid, chunks};
 use super::cursor::{Failure, Source, UNDEFINED};
-use super::selection::{Axis, inside, select};
+use super::selection::{Axis, count, inside, select};
 use super::{Dataset, Datatype, Filter, Hdf5, Layout};
 use crate::files::fits::Pixel;
 use crate::files::netcdf::{Item, SubscriptFailure};
@@ -41,11 +41,12 @@ pub(crate) fn read_dataset(
         ))));
     }
     let axes = select(items, &dataset.shape)?;
-    let count = axes
-        .iter()
-        .map(|axis| axis.positions.len() as u64)
-        .product::<u64>();
     let width = pixel.size();
+    let Some(count) = count(&axes) else {
+        return Err(SubscriptFailure::Os(invalid(format!(
+            "the HDF5 dataset {name} picks more values than an array can hold"
+        ))));
+    };
     if u64::try_from(memory.len() / width).ok() != Some(count)
         || !memory.len().is_multiple_of(width)
     {
@@ -54,6 +55,8 @@ pub(crate) fn read_dataset(
         ))));
     }
     let mut source = file.source(path)?;
+    // At most 8: `fits` let through integers and floats only, whose sizes the datatype message
+    // limits to 1, 2, 4 and 8.
     let stored = usize::try_from(dataset.datatype.size(&source)).unwrap_or(usize::MAX);
     let zero = vec![0; stored];
     let blank = dataset
@@ -101,7 +104,7 @@ fn read_values(
         .axes
         .iter()
         .zip(&dataset.shape)
-        .all(|(axis, &length)| axis.positions.len() as u64 == length);
+        .all(|(axis, &length)| axis.count == length);
     match &dataset.layout {
         Layout::Compact(bytes) => {
             place_block(
@@ -175,21 +178,19 @@ fn rows(
         place_block(&bytes, (&[], &[]), target, memory);
         return Ok(());
     };
-    let along = &target.axes[last].positions;
-    let (Some(&first), Some(&end)) = (along.first(), along.last()) else {
+    let along = target.axes[last];
+    let (first, Some(end)) = (along.first, along.last()) else {
         return Ok(());
     };
-    let outer: Vec<&[u64]> = target.axes[..last]
-        .iter()
-        .map(|axis| axis.positions.as_slice())
-        .collect();
-    let rows: usize = outer.iter().map(|positions| positions.len()).product();
-    let mut index = vec![0_usize; last];
+    let outer = &target.axes[..last];
+    // The caller's array holds every value picked, so the rows fit in a `u64`.
+    let rows = count(outer).unwrap_or(0);
+    let mut index = vec![0_u64; last];
     for _ in 0..rows {
         let mut origin: Vec<u64> = index
             .iter()
-            .zip(&outer)
-            .map(|(&at, positions)| positions[at])
+            .zip(outer)
+            .map(|(&at, axis)| axis.position(at))
             .collect();
         let row = origin
             .iter()
@@ -203,7 +204,7 @@ fn rows(
         place_block(&bytes, (&origin, &extent), target, memory);
         for axis in (0..last).rev() {
             index[axis] += 1;
-            if index[axis] < outer[axis].len() {
+            if index[axis] < outer[axis].count {
                 break;
             }
             index[axis] = 0;
@@ -224,11 +225,7 @@ fn place_block(
     let Some(found) = inside(target.axes, origin, extent) else {
         return;
     };
-    let counts: Vec<u64> = target
-        .axes
-        .iter()
-        .map(|axis| axis.positions.len() as u64)
-        .collect();
+    let counts: Vec<u64> = target.axes.iter().map(|axis| axis.count).collect();
     let width = target.pixel.size();
     let total: usize = found.iter().map(Vec::len).product();
     let mut index = vec![0_usize; found.len()];
