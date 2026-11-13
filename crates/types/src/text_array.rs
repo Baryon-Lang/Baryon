@@ -25,7 +25,9 @@ impl<'db> Type<'db> {
     /// # #[salsa::db]
     /// # impl salsa::Database for Database {}
     /// let database = Database::default();
-    /// let number = |integer| Type::new(&database, TypeKind::Primitive(Primitive::Integer(integer)));
+    /// let number = |integer| {
+    ///     Type::new(&database, TypeKind::Primitive(Primitive::Integer(integer)))
+    /// };
     /// let array = |element| Type::new(&database, TypeKind::Array { element, rank: 1 });
     /// let text = Type::new(&database, TypeKind::TextArray);
     ///
