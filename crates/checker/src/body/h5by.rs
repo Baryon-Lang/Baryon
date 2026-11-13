@@ -98,9 +98,13 @@ impl<'db> Body<'db> {
     /// Whether the class `name` of `file` is the library's `h5by.File`, which a program calls
     /// to open a file rather than to build one field by field.
     pub(super) fn is_h5by_file_class(&self, file: database::File, name: NodeId) -> bool {
-        self.library_class_in("h5by", "File").is_some_and(|class| {
-            matches!(class.kind(self.db), TypeKind::Struct(nominal) if nominal.file == file && nominal.name == name)
-        })
+        let Some(class) = self.library_class_in("h5by", "File") else {
+            return false;
+        };
+        let TypeKind::Struct(nominal) = class.kind(self.db) else {
+            return false;
+        };
+        nominal.file == file && nominal.name == name
     }
 
     /// Whether `ty` is the library's `h5by` class `name`.
