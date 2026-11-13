@@ -280,6 +280,10 @@ impl<'db> Builder<'db> {
                     self.dict_contains(place, operator, (left, right), node);
                     return None;
                 }
+                _ if self.is_text_array(right) => {
+                    self.text_array_contains(place, operator, (left, right), node);
+                    return None;
+                }
                 _ => {}
             }
         }

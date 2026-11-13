@@ -1,7 +1,7 @@
 //! Text arrays, `Array[str, 1]` (roadmap 3.13.3, decision 0045), built and run: one made
 //! from a list, counted, indexed, looped over, copied, moved and kept in a list and a dict,
-//! its distinct elements taken and counted (roadmap 3.13.9), and parts of it chosen by a
-//! slice, a mask and positions.
+//! its distinct elements taken and counted (roadmap 3.13.9), parts of it chosen by a slice,
+//! a mask and positions, and its elements compared and searched.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -236,6 +236,88 @@ def main():
     assert_eq!((code, stdout.as_str()), (Some(101), ""));
     assert!(
         report.starts_with("panic: index 3 is out of range for dimension 0 of length 3\n"),
+        "{report}"
+    );
+}
+
+/// A program that compares text arrays: with one `str` on either side and with another
+/// array, by all six operators, with an empty text, capitals and a letter outside ASCII;
+/// searches one with `in` and `not in`; and uses the masks to choose elements, rows of a
+/// frame and, joined with `&`, `|` and `~` to masks of numbers, elements of a column.
+const COMPARED: &str = r#"
+def count(mask: Array[bool, 1]) -> int:
+    return len(mask[mask])
+
+
+def main():
+    names = Array(["delta", "", "alpha", "βeta", "alpha", "Al"])
+    other = Array(["delta", "x", "alpha", "beta", "al", "Al"])
+    print(names == "alpha")
+    print(names != "alpha")
+    print(names < "b", names <= "alpha", names > "alpha", names >= "delta")
+    print("b" > names, "alpha" >= names, "alpha" < names, "delta" <= names)
+    print("alpha" == names, "" != names)
+    print(names == other, names != other)
+    print(names < other, names <= other, names > other, names >= other)
+    print("alpha" in names, "beta" in names, "" in names, "x" not in names, "Al" not in names)
+    word = "al" + "pha"
+    print(word in names, count(names == word), count(names == other))
+    for name in names[names != "alpha"]:
+        print(name, end=" ")
+    print()
+    trades = DataFrame({"symbol": names.copy(), "price": Array([3.0, 1.0, 2.0, 5.0, 4.0, 6.0])})
+    print(trades[trades.symbol == "alpha"])
+    print(trades[(trades.symbol >= "a") & (trades.price > 2.5)])
+    print(trades.price[~(trades.symbol == "alpha") | (trades.price < 2.0)])
+    if "βeta" in trades.symbol and not ("zz" in trades.symbol):
+        print("found")
+    empty: Array[str, 1] = Array([])
+    print(empty == "a", "a" in empty, len(empty == empty))
+"#;
+
+/// Comparing a text array gives the mask numpy gives for the same strings, and `in` what
+/// numpy's `in` gives; the frames are what pandas prints for the same masks. The program
+/// leaves no memory behind (checked under Valgrind when written). Two arrays of different
+/// lengths stop the program at the comparison.
+#[test]
+fn text_arrays_are_compared_and_searched() {
+    let expected = [
+        "[False False  True False  True False]\n",
+        "[ True  True False  True False  True]\n",
+        "[False  True  True False  True  True] [False  True  True False  True  True] [ True False False  True False False] [ True False False  True False False]\n",
+        "[False  True  True False  True  True] [False  True  True False  True  True] [ True False False  True False False] [ True False False  True False False]\n",
+        "[False False  True False  True False] [ True False  True  True  True  True]\n",
+        "[ True False  True False False  True] [False  True False  True  True False]\n",
+        "[False  True False False False False] [ True  True  True False False  True] [False False False  True  True False] [ True False  True  True  True  True]\n",
+        "True False True True False\n",
+        "True 2 3\n",
+        "delta  βeta Al \n",
+        "  symbol  price\n",
+        "0  alpha    2.0\n",
+        "1  alpha    4.0\n",
+        "  symbol  price\n",
+        "0  delta    3.0\n",
+        "1   βeta    5.0\n",
+        "2  alpha    4.0\n",
+        "[3. 1. 5. 6.]\n",
+        "found\n",
+        "[] False 0\n",
+    ];
+    let (code, stdout, report) = run("text-arrays-compared", COMPARED).unwrap();
+    assert_eq!(stdout, expected.concat());
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    let lengths = r#"
+def main():
+    names = Array(["a", "b"])
+    other = Array(["a"])
+    print(names == other)
+"#;
+    let (code, stdout, report) = run("text-arrays-compared-lengths", lengths).unwrap();
+    assert_eq!((code, stdout.as_str()), (Some(101), ""));
+    assert!(
+        report.starts_with(
+            "panic: array lengths differ in dimension 0: 2 and 1\n  --> main.byn:5:11\n"
+        ),
         "{report}"
     );
 }

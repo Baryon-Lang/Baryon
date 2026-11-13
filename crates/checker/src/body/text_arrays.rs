@@ -4,13 +4,13 @@
 
 use super::Body;
 use super::calls::Arguments;
-use syntax::{NodeId, Role, SyntaxKind};
+use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::{Integer, Primitive, Type, TypeKind};
 
 /// What an array of `str` can do today, for messages.
-const BUILT: &str = "an array of `str` has `len`, indexing, slices, masks, `for` loops, \
-                     `copy()`, `unique()` and `nunique()` today; the rest comes with \
-                     roadmap item 3.13.3";
+const BUILT: &str = "an array of `str` has `len`, indexing, slices, masks, comparisons, \
+                     `in`, `for` loops, `copy()`, `unique()` and `nunique()` today; the rest \
+                     comes with roadmap item 3.13.3";
 
 impl<'db> Body<'db> {
     /// `names[i]` on a text array: the element, a `str` borrowed from the array. A slice,
@@ -109,5 +109,62 @@ impl<'db> Body<'db> {
             ),
         );
         true
+    }
+
+    /// One comparison, `left operator right` at `node`, with a text array on either side.
+    /// `==`, `!=`, `<`, `<=`, `>` and `>=` compare each element with the other side's, a
+    /// text array or one `str`, and give an `Array[bool, 1]`; `text in names` and `text not
+    /// in names` give one `bool`. Any other pairing is an error.
+    pub(super) fn text_array_comparison(
+        &mut self,
+        node: NodeId,
+        operator: Operator,
+        left: Type<'db>,
+        right: Type<'db>,
+    ) -> Type<'db> {
+        let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
+        let text = |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Str);
+        let unknown = |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Unknown);
+        if unknown(left) || unknown(right) {
+            return self.lowerer.unknown();
+        }
+        let fits = match operator {
+            Operator::In | Operator::NotIn => {
+                if text(left) && self.is_text_array(right) {
+                    return boolean;
+                }
+                false
+            }
+            // `is` with anything but `None` is reported where `is` is checked.
+            Operator::Is | Operator::IsNot => return boolean,
+            _ => {
+                (self.is_text_array(left) || text(left))
+                    && (self.is_text_array(right) || text(right))
+            }
+        };
+        if fits {
+            return Type::new(
+                self.db,
+                TypeKind::Array {
+                    element: boolean,
+                    rank: 1,
+                },
+            );
+        }
+        let message = format!(
+            "`{}` cannot compare `{}` and `{}`",
+            operator.symbol(),
+            self.show(left),
+            self.show(right)
+        );
+        self.lowerer.error(
+            node,
+            &message,
+            "an array of `str`",
+            Some(
+                "an array of `str` is compared with another or with one `str`, such as \
+                 `names == \"alpha\"`, and searched with `\"alpha\" in names`",
+            ),
+        )
     }
 }
