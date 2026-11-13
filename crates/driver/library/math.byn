@@ -2,11 +2,12 @@
 
 The rest of `math`, such as `math.sqrt` and `math.pi`, is built into the compiler, which calls
 the C math library for each function. What lives here is `fsum`, the exactly rounded sum
-(roadmap 1.13.16). The compiler checks a call of `math.fsum` and picks the function here that
-fits its argument: `_fsum_list` for a list and `_fsum_array` for a rank-1 array.
+(roadmap 1.13.16), and `f64x2`, the double-double float (decision 0051, roadmap 3.33). The
+compiler checks a call of `math.fsum` and picks the function here that fits its argument:
+`_fsum_list` for a list and `_fsum_array` for a rank-1 array.
 """
 
-from math import isfinite
+from math import floor, fma, isfinite, log10, sqrt
 
 
 class _Partials(Struct):
@@ -112,3 +113,224 @@ def _fsum_array(values: Array[f64, 1]) -> f64:
     for i in range(len(values)):
         _add(sums, values[i])
     return _round(sums)
+
+
+class f64x2(Struct, Copy):
+    """A double-double float: the unevaluated sum `hi + lo` of two `f64`s, about 32 significant
+    digits (decision 0051, roadmap 3.33).
+
+    `hi` is the value rounded to an `f64`, and `lo` is what that rounding left out, no larger than
+    half a unit in the last place of `hi`. Every method keeps that true. Build one from an `f64`
+    as `f64x2(x, 0.0)`, which is exact; a pair whose `lo` is larger is not a valid `f64x2`.
+
+    The methods are the four operations, `sqrt`, comparisons and conversions. Each operation is
+    the classic double-double algorithm of Dekker, Knuth and the QD library, built on `fma`, with
+    a relative error of a few units of 2**-104, about 1e-32. It costs about 5 to 20 `f64`
+    operations: division and `sqrt` the most. The range is an `f64`'s, so an `f64x2` gains
+    digits, not exponent. An infinite or NaN result has `lo == 0.0`, so `hi` is the IEEE 754
+    result an `f64` would give.
+
+    Operators come once user types can define them (roadmap D.19): until then write
+    `a.mul(b).add(c)` for `a * b + c`. Never compile these methods inside `with fastmath:`, whose
+    reordering silently removes the extra digits.
+    """
+
+    hi: f64
+    lo: f64
+
+    def add(self: Self, other: f64x2) -> f64x2:
+        """`self + other`, rounded to an `f64x2`. About 20 `f64` operations."""
+        high, low = _two_sum(self.hi, other.hi)
+        if not isfinite(high):
+            return f64x2(high, 0.0)
+        tail, rest = _two_sum(self.lo, other.lo)
+        high, low = _quick_two_sum(high, low + tail)
+        return _normal(high, low + rest)
+
+    def sub(self: Self, other: f64x2) -> f64x2:
+        """`self - other`, rounded to an `f64x2`. Costs what `add` does."""
+        return self.add(f64x2(-other.hi, -other.lo))
+
+    def mul(self: Self, other: f64x2) -> f64x2:
+        """`self * other`, rounded to an `f64x2`. About 10 `f64` operations, with one `fma`."""
+        high, low = _two_prod(self.hi, other.hi)
+        if not isfinite(high):
+            return f64x2(high, 0.0)
+        return _normal(high, low + (self.hi * other.lo + self.lo * other.hi))
+
+    def div(self: Self, other: f64x2) -> f64x2:
+        """`self / other`, rounded to an `f64x2`: three `f64` quotients, each correcting the
+        last. About 40 `f64` operations. Division by zero gives what `f64` division gives."""
+        first = self.hi / other.hi
+        if not isfinite(first):
+            return f64x2(first, 0.0)
+        remainder = self.sub(other.mul(f64x2(first, 0.0)))
+        second = remainder.hi / other.hi
+        remainder = remainder.sub(other.mul(f64x2(second, 0.0)))
+        third = remainder.hi / other.hi
+        high, low = _quick_two_sum(first, second)
+        return f64x2(high, low).add(f64x2(third, 0.0))
+
+    def sqrt(self: Self) -> f64x2:
+        """The square root, rounded to an `f64x2`: one Newton step from the `f64` square root,
+        Karp's method. NaN for a negative value, as `math.sqrt` gives, and `-0.0` for `-0.0`."""
+        if self.hi == 0.0 or not isfinite(self.hi) or self.hi < 0.0:
+            return f64x2(sqrt(self.hi), 0.0)
+        inverse = 1.0 / sqrt(self.hi)
+        root = self.hi * inverse
+        square_high, square_low = _two_prod(root, root)
+        difference = self.sub(f64x2(square_high, square_low))
+        missing = difference.hi
+        high, low = _two_sum(root, missing * (inverse * 0.5))
+        return f64x2(high, low)
+
+    def neg(self: Self) -> f64x2:
+        """`-self`, exactly."""
+        return f64x2(-self.hi, -self.lo)
+
+    def abs(self: Self) -> f64x2:
+        """`abs(self)`, exactly."""
+        if self.hi < 0.0 or (self.hi == 0.0 and self.lo < 0.0):
+            return self.neg()
+        return f64x2(self.hi, self.lo)
+
+    def eq(self: Self, other: f64x2) -> bool:
+        """`self == other`: both parts equal. False when either is NaN."""
+        return self.hi == other.hi and self.lo == other.lo
+
+    def ne(self: Self, other: f64x2) -> bool:
+        """`self != other`: not `eq`. True when either is NaN."""
+        return not self.eq(other)
+
+    def lt(self: Self, other: f64x2) -> bool:
+        """`self < other`, by `hi` first and then `lo`. False when either is NaN."""
+        return self.hi < other.hi or (self.hi == other.hi and self.lo < other.lo)
+
+    def le(self: Self, other: f64x2) -> bool:
+        """`self <= other`. False when either is NaN."""
+        return self.hi < other.hi or (self.hi == other.hi and self.lo <= other.lo)
+
+    def gt(self: Self, other: f64x2) -> bool:
+        """`self > other`. False when either is NaN."""
+        return other.lt(self)
+
+    def ge(self: Self, other: f64x2) -> bool:
+        """`self >= other`. False when either is NaN."""
+        return other.le(self)
+
+    def to_f64(self: Self) -> f64:
+        """The value rounded to the nearest `f64`, which is `hi`."""
+        return self.hi
+
+    def to_str(self: Self) -> str:
+        """The value in scientific notation with 31 significant digits, such as
+        `1.414213562373095048801688724210e+00` for the square root of 2; `nan`, `inf` or
+        `-inf` for those. The last digit can be one off, as double-double rounding allows.
+        About 32 `mul` and `sub` calls, so print in bulk with care."""
+        return _text(self)
+
+
+def _two_sum(a: f64, b: f64) -> tuple[f64, f64]:
+    """`(s, e)` with `s = a + b` rounded and `s + e == a + b` exactly: Knuth's two-sum, six
+    `f64` operations, for any order of sizes."""
+    s = a + b
+    b_part = s - a
+    return (s, (a - (s - b_part)) + (b - b_part))
+
+
+def _quick_two_sum(a: f64, b: f64) -> tuple[f64, f64]:
+    """`(s, e)` with `s = a + b` rounded and `s + e == a + b` exactly, when `abs(a) >= abs(b)`
+    or `a` is zero: Dekker's fast two-sum, three `f64` operations."""
+    s = a + b
+    return (s, b - (s - a))
+
+
+def _two_prod(a: f64, b: f64) -> tuple[f64, f64]:
+    """`(p, e)` with `p = a * b` rounded and `p + e == a * b` exactly, unless it underflows: one
+    `fma` gives the error."""
+    p = a * b
+    return (p, fma(a, b, -p))
+
+
+def _normal(high: f64, low: f64) -> f64x2:
+    """The `f64x2` for `high + low`, where `abs(low)` is at most a few units in the last place of
+    `high`: their fast two-sum."""
+    s, e = _quick_two_sum(high, low)
+    return f64x2(s, e)
+
+
+def _power_of_ten(exponent: int) -> f64x2:
+    """`10 ** exponent` as an `f64x2`, for `exponent >= 0`, by repeated squaring: at most about
+    18 multiplications, each off by a few units of 2**-104."""
+    result = f64x2(1.0, 0.0)
+    square = f64x2(10.0, 0.0)
+    n = exponent
+    while n > 0:
+        if n % 2 == 1:
+            result = result.mul(square)
+        n = n // 2
+        if n > 0:
+            square = square.mul(square)
+    return result
+
+
+def _scaled(value: f64x2, exponent: int) -> f64x2:
+    """`value / 10 ** exponent`, done as a multiplication for a negative exponent. Below
+    `1e-290` it scales in two steps, so the power of ten never overflows."""
+    if exponent >= 0:
+        return value.div(_power_of_ten(exponent))
+    if exponent < -290:
+        return value.mul(_power_of_ten(290)).mul(_power_of_ten(-exponent - 290))
+    return value.mul(_power_of_ten(-exponent))
+
+
+def _text(value: f64x2) -> str:
+    """`value.to_str()`: 32 decimal digits taken one at a time from the value scaled into
+    `[1, 10)`, a carry pass that repairs any digit the rounding pushed out of `0` to `9`, then
+    rounding half up to 31 digits."""
+    if value.hi != value.hi:
+        return "nan"
+    if not isfinite(value.hi):
+        return "inf" if value.hi > 0.0 else "-inf"
+    sign = "-" if value.hi < 0.0 or (value.hi == 0.0 and 1.0 / value.hi < 0.0) else ""
+    count = 31
+    if value.hi == 0.0:
+        return sign + "0.000000000000000000000000000000e+00"
+    rest = value.abs()
+    exponent = floor(log10(rest.hi))
+    rest = _scaled(rest, exponent)
+    ten = f64x2(10.0, 0.0)
+    if rest.hi >= 10.0:
+        rest = rest.div(ten)
+        exponent += 1
+    elif rest.hi < 1.0:
+        rest = rest.mul(ten)
+        exponent -= 1
+    digits: list[int] = []
+    for _ in range(count + 1):
+        digit = floor(rest.hi)
+        rest = rest.sub(f64x2(f64(digit), 0.0)).mul(ten)
+        digits.append(digit)
+    for i in range(count, 0, -1):
+        if digits[i] < 0:
+            digits[i] += 10
+            digits[i - 1] -= 1
+        elif digits[i] > 9:
+            digits[i] -= 10
+            digits[i - 1] += 1
+    if digits[count] >= 5:
+        i = count - 1
+        digits[i] += 1
+        while i > 0 and digits[i] == 10:
+            digits[i] = 0
+            i -= 1
+            digits[i] += 1
+    if digits[0] == 10:
+        digits[0] = 1
+        exponent += 1
+    text = f"{sign}{digits[0]}."
+    for i in range(1, count):
+        text += f"{digits[i]}"
+    marker = "e-" if exponent < 0 else "e+"
+    size = exponent if exponent >= 0 else -exponent
+    return f"{text}{marker}{size:02d}"
