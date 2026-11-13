@@ -34,7 +34,10 @@ open("matplotlib_ticks.txt", "w").write("\n".join(lines) + "\n")
 
 `matplotlib_colormaps.txt` holds, for each colormap `cm` has and each one reversed, the colors
 matplotlib 3.11.2's `colormaps[name](x, bytes=True)` gives at eleven values of `x`, from -0.5
-to 1.5 and NaN, as red, green, blue and alpha bytes. It was written with:
+to 1.5 and NaN, as red, green, blue and alpha bytes. The tests in
+[`../../build/plotting_images.rs`](../../build/plotting_images.rs) draw each colormap over those
+values with `imshow` and compare the pixels of the PNG inside the SVG with it. It was written
+with:
 
 ```text
 import matplotlib as m
@@ -49,5 +52,6 @@ with open("matplotlib_colormaps.txt", "w") as f:
 `polynomials.svg`, `offset.svg`, `shapes.svg`, `markers.svg`, `histogram.svg`, `grid.svg`,
 `saddle.svg` and `auto.svg` are Baryon's own output, checked by eye against matplotlib's drawing
 of the same data and stored so any change to how a plot is drawn shows up as a difference. When
-a change to drawing is intended, write them again from the programs in `plotting.rs` and look at
-them before committing.
+a change to drawing is intended, write them again from the programs in `plotting.rs` and
+`plotting_images.rs`, which draws `grid.svg`, `saddle.svg` and `auto.svg`, and look at them before
+committing.

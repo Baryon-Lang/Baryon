@@ -56,6 +56,7 @@ mod parallel;
 mod parts;
 mod paths;
 mod plotting;
+mod plotting_images;
 mod print;
 mod process;
 mod reductions;
