@@ -17,7 +17,7 @@ pub(crate) struct Importer<'a> {
     /// The package's module map.
     modules: &'a Modules,
     /// Whether the importing file is a standard library file, which may also import the
-    /// library's internal files, such as `artist` and `axis` under `pyplot` (decision 0046).
+    /// library's internal files, such as `artist` and `axis` under `byplot` (decision 0046).
     in_library: bool,
 }
 

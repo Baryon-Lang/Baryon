@@ -1,10 +1,10 @@
 # Plotting
 
-The `pyplot` module draws plots with matplotlib's names and matplotlib's default look, written in
+The `byplot` module draws plots with matplotlib's names and matplotlib's default look, written in
 Baryon and saved as SVG files that any browser, VS Code or a LaTeX toolchain can show
 ([decision 0046](../decisions/0046-plotting.md)). The `ticker` module beside it places and
 labels the ticks, as `matplotlib.ticker` does. These two are the modules a program imports.
-`pyplot` draws through smaller files of the standard library, named as matplotlib names its own:
+`byplot` draws through smaller files of the standard library, named as matplotlib names its own:
 `colors` reads color names, `cm` holds the colormaps, `artist` holds what an axes draws,
 `transforms` finds the ranges it shows, `figure` lays a grid of axes out and draws them, `axis`
 draws an axis's ticks and labels, `legend`, `image` and `colorbar` draw a legend, an image and a
@@ -22,7 +22,7 @@ A damped oscillator's position and velocity over ten seconds:
 
 ```python
 from math import cos, exp, sin
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -55,7 +55,7 @@ A matplotlib script changes in two places:
 
 | matplotlib | Baryon | Why |
 | --- | --- | --- |
-| `import matplotlib.pyplot as plt` | `import pyplot as plt` | Libraries are named without their package, as `linalg` is for `numpy.linalg` |
+| `import matplotlib.pyplot as plt` | `import byplot as plt` | Libraries are named without their package, as `linalg` is for `numpy.linalg`, and Baryon's own names say `by` where Python's say `py` ([decision 0046](../decisions/0046-plotting.md)) |
 | `fig, ax = plt.subplots()` | `ax = plt.axes()` | Baryon values have one owner, so `fig` and `ax` cannot share a figure: drawing on `ax` would not change `fig` |
 | `fig.savefig("p.svg")` | `ax.savefig("p.svg")` | The axes are saved in a figure of their own |
 | `fig, axs = plt.subplots(2, 2)`, `axs[1, 0].plot(t, x)` | `fig = plt.subplots(2, 2)`, `fig.axes[2].plot(t, x)` | The figure owns its axes, so they are reached through it, row by row, as matplotlib's `fig.axes` lists them |
@@ -101,7 +101,7 @@ or plotted straight away. Bars and histograms start at 0: the y axis reaches 0 e
 margin below it, as matplotlib's does.
 
 ```python
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -135,7 +135,7 @@ against colors recorded from matplotlib.
 the colormap from `vmin` to `vmax` with ticks placed and labelled by `ticker`.
 
 ```python
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -178,7 +178,7 @@ for DejaVu Sans. Text is not clipped to the axes and does not change the range s
 matplotlib.
 
 ```python
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -203,7 +203,7 @@ ordinary `Axes`, with its own color cycles, ranges and legend, and `fig.savefig`
 in one file.
 
 ```python
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -263,7 +263,7 @@ build yet, so `""` stands for "none" here.
 `"dashdot"`. Dashes are matplotlib's, measured in line widths, so a thicker line has longer
 dashes.
 
-`pyplot` turns each name into the `"#rrggbb"` form an SVG file holds, as matplotlib's
+`byplot` turns each name into the `"#rrggbb"` form an SVG file holds, as matplotlib's
 `colors.to_hex` does.
 
 ### Ranges and ticks
@@ -292,7 +292,7 @@ to 9 times each power when fewer than ten decades show. Inside one decade the mi
 the labels instead, `2×10⁰`, `3×10⁰`, as matplotlib's do.
 
 ```python
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -348,9 +348,9 @@ ranges, from a tenth of a decade to sixty decades. A tick can differ from matplo
 bit: NumPy raises 10 to a power with a vectorized `pow` on some processors that is not always
 correctly rounded, so matplotlib's own ticks differ between machines. Only base 10 is offered.
 
-## The files under `pyplot`
+## The files under `byplot`
 
-`pyplot` draws through these internal files of the standard library. A program cannot import
+`byplot` draws through these internal files of the standard library. A program cannot import
 them; this table is for those working on the library, and on the PNG and PDF backends to come.
 
 | Item | Does | matplotlib |

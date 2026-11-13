@@ -59,6 +59,7 @@ const LIBRARY: [(&str, &str); 31] = [
         "<std>/builtins.byn",
         include_str!("../library/builtins.byn"),
     ),
+    ("<std>/byplot.byn", include_str!("../library/byplot.byn")),
     ("<std>/bz2.byn", include_str!("../library/bz2.byn")),
     ("<std>/cm.byn", include_str!("../library/cm.byn")),
     (
@@ -84,7 +85,6 @@ const LIBRARY: [(&str, &str); 31] = [
     ("<std>/os.byn", include_str!("../library/os.byn")),
     ("<std>/pathlib.byn", include_str!("../library/pathlib.byn")),
     ("<std>/png.byn", include_str!("../library/png.byn")),
-    ("<std>/pyplot.byn", include_str!("../library/pyplot.byn")),
     ("<std>/stats.byn", include_str!("../library/stats.byn")),
     (
         "<std>/subprocess.byn",

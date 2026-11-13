@@ -1,5 +1,5 @@
 //! Figures of several axes, error bars, filled areas and text (roadmap 3.15.4, decision 0046),
-//! built and run: `pyplot.subplots` lays a grid out as matplotlib's default subplot parameters
+//! built and run: `byplot.subplots` lays a grid out as matplotlib's default subplot parameters
 //! do, and `errorbar`, `fill_between` and `text` draw as matplotlib 3.11 draws them.
 //!
 //! The reference file in `tests/fixtures/plotting` was written by this program and checked
@@ -41,7 +41,7 @@ fn run(name: &str, program: &str) -> io::Result<(Output, Scratch)> {
 #[test]
 fn figures_are_drawn_as_the_reference_file() {
     let program = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -97,7 +97,7 @@ fn wrong_grids_formats_and_alignments_panic() {
         ),
     ];
     for (name, call, report) in cases {
-        let program = format!("import pyplot as plt\n\n\ndef main():\n    {call}\n");
+        let program = format!("import byplot as plt\n\n\ndef main():\n    {call}\n");
         let (ran, _directory) = run(name, &program).unwrap();
         assert_eq!(ran.status.code(), Some(101), "{name}");
         assert!(

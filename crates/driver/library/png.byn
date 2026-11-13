@@ -1,7 +1,7 @@
 """The `png` library file: writes RGBA images in the PNG format, as matplotlib writes the images it
 embeds in an SVG file and saves as PNG (decision 0046).
 
-It is internal to the standard library: `pyplot` and the files under it import it, and a
+It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `png.byn` is never hidden by it.
 
 The image data go in uncompressed deflate blocks, which every PNG reader takes: the file is

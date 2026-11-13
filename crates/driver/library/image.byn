@@ -1,10 +1,10 @@
 """The `image` library file: colors an image's values through a colormap and draws it on an axes, as
 matplotlib's `AxesImage` does (decision 0046).
 
-It is internal to the standard library: `pyplot` and the files under it import it, and a
+It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `image.byn` is never hidden by it.
 
-`pyplot`'s `Axes.imshow` records an `artist.Image`; when the figure is drawn, `draw_image`
+`byplot`'s `Axes.imshow` records an `artist.Image`; when the figure is drawn, `draw_image`
 turns its values into pixels and hands them to the renderer, which embeds them as a PNG.
 """
 

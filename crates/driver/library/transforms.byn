@@ -1,10 +1,10 @@
 """The `transforms` library file: the ranges an axes shows, as matplotlib's `transforms.nonsingular`
 and `Axes.autoscale_view` find them (decision 0046).
 
-It is internal to the standard library: `pyplot` and the files under it import it, and a
+It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `transforms.byn` is never hidden by it.
 
-`pyplot` keeps the limits `set_xlim` and `set_ylim` fix through `fixed_limits`, and finds the
+`byplot` keeps the limits `set_xlim` and `set_ylim` fix through `fixed_limits`, and finds the
 others from the data with `autoscale` when a figure is drawn.
 """
 

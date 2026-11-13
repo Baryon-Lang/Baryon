@@ -3,7 +3,7 @@
 //! byte, and each image is embedded as a PNG a reader can decode.
 //!
 //! The colormaps and the PNG encoder are internal to the standard library, so these tests
-//! reach them as a program does, through `pyplot`, and read the PNG back out of the SVG.
+//! reach them as a program does, through `byplot`, and read the PNG back out of the SVG.
 
 use super::{Scratch, baryon_build, package, panic_report, stderr};
 use std::fs;
@@ -36,7 +36,7 @@ fn run(name: &str, program: &str) -> io::Result<(Output, Scratch)> {
 /// The program that draws the reference images (roadmap 3.15.3), from data that is exact in
 /// binary.
 const IMAGES: &str = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -100,7 +100,7 @@ fn colormaps_match_matplotlib() {
         .join(", ");
     let program = format!(
         "\
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -135,7 +135,7 @@ def main() -> Raises[None, OSError | ValueError]:
 #[test]
 fn images_are_embedded_as_png() {
     let program = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -269,7 +269,7 @@ fn adler32(data: &[u8]) -> u32 {
 #[test]
 fn unknown_colormaps_and_lonely_colorbars_panic() {
     let program = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main():
@@ -284,7 +284,7 @@ def main():
         panic_report(&ran)
     );
     let program = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main():

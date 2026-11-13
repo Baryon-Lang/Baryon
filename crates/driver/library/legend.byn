@@ -1,10 +1,10 @@
 """The `legend` library file: draws a legend inside an axes, placed where matplotlib's `Legend` puts
 it, `"best"` included (decision 0046).
 
-It is internal to the standard library: `pyplot` and the files under it import it, and a
+It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `legend.byn` is never hidden by it.
 
-`pyplot`'s `Axes.legend` records where the legend goes; when the figure is drawn, `draw_legend`
+`byplot`'s `Axes.legend` records where the legend goes; when the figure is drawn, `draw_legend`
 lays it out from the axes' artists and draws it.
 """
 

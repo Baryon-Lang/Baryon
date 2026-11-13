@@ -1,10 +1,10 @@
 """The `artist` library file: the things an axes holds and where they land on the page, as
 matplotlib's `Artist` classes and its data-to-display transform (decision 0046).
 
-It is internal to the standard library: `pyplot` and the files under it import it, and a
+It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `artist.byn` is never hidden by it.
 
-`pyplot`'s `Axes` keeps one `Artist` for each line, set of markers, set of bars, set of error
+`byplot`'s `Axes` keeps one `Artist` for each line, set of markers, set of bars, set of error
 bars or filled area, one `Image` for each image and one `Text` for each piece of text; when a
 figure is drawn, a `View` maps data to points on the page, and the `legend` module reads the
 artists to draw a legend.
@@ -26,7 +26,7 @@ class Kind(Enum):
 class Artist(Struct):
     """One thing drawn on an axes, in data coordinates: a line, a set of markers, a set of
     bars, a set of error bars or a filled area, as matplotlib's `Line2D`, `PathCollection`,
-    `BarContainer`, `LineCollection` and `FillBetweenPolyCollection` are. `pyplot` makes them.
+    `BarContainer`, `LineCollection` and `FillBetweenPolyCollection` are. `byplot` makes them.
 
     Error bars are segments of two points each, with a NaN point between segments; their
     `marker` is the cap at each end of a segment, `"_"` or `"|"`, `markersize` across, or no
@@ -65,7 +65,7 @@ class Image(Struct):
 
 class Text(Struct):
     """A piece of text on an axes, as matplotlib's `Text`: `text` written `size` points tall at
-    the data point `(x, y)`, aligned to it by `ha` and `va` as `pyplot`'s `Axes.text` says. It is
+    the data point `(x, y)`, aligned to it by `ha` and `va` as `byplot`'s `Axes.text` says. It is
     not clipped to the axes and does not change the range shown, as matplotlib's is not and does
     not."""
 
@@ -142,7 +142,7 @@ def dashes(style: str, linewidth: f64) -> list[f64]:
 def error_bars(
     x: Array[f64, 1], y: Array[f64, 1], error: Array[f64, 1], across: bool, color: str, capsize: f64
 ) -> Artist:
-    """`pyplot.errorbar`'s bars of `error` about each point `(x[i], y[i])`, across in x when
+    """`byplot.errorbar`'s bars of `error` about each point `(x[i], y[i])`, across in x when
     `across` is set and up and down in y otherwise, in `color`, with caps `capsize` points long
     on each side, as matplotlib's `errorbar` draws them: three points a bar, the low end, the
     high end and a NaN to lift the pen. Panics when `error` and `x` differ in length."""
@@ -163,7 +163,7 @@ def error_bars(
 def filled(
     x: Array[f64, 1], y1: Array[f64, 1], y2: Array[f64, 1], color: str, alpha: f64
 ) -> Artist:
-    """`pyplot.fill_between`'s area between the curves `(x[i], y1[i])` and `(x[i], y2[i])`, in
+    """`byplot.fill_between`'s area between the curves `(x[i], y1[i])` and `(x[i], y2[i])`, in
     `color` at opacity `alpha`: a polygon along `y1` and back along `y2` for each run of points
     whose values are all finite, with a NaN point after each, so a NaN or infinite value splits
     the area there, as matplotlib splits it. Costs one pass over the points."""

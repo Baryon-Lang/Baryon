@@ -1,6 +1,6 @@
 //! Logarithmic axes (roadmap 3.15.4, decision 0046), built and run: `ticker`'s `LogLocator` and
 //! `LogFormatterSciNotation` place and label ticks as matplotlib 3.11 does, to within the last
-//! bit of a tick, and `pyplot` draws log axes, with minor ticks and raised exponents, as the
+//! bit of a tick, and `byplot` draws log axes, with minor ticks and raised exponents, as the
 //! reference files.
 //!
 //! The files in `tests/fixtures/plotting` were recorded from matplotlib or written by these
@@ -101,7 +101,7 @@ def main() -> Raises[None, OSError | ValueError]:
 #[test]
 fn log_axes_are_drawn_as_the_reference_file() {
     let program = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -134,7 +134,7 @@ def main() -> Raises[None, OSError | ValueError]:
 #[test]
 fn unknown_scales_panic() {
     let program = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main():

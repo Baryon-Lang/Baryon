@@ -1,5 +1,5 @@
 //! Plots (roadmap 3.15.1 and 3.15.2, decision 0046), built and run: `ticker` places and labels
-//! ticks as matplotlib 3.11 does, to the last bit, and `pyplot` draws the same SVG as the
+//! ticks as matplotlib 3.11 does, to the last bit, and `byplot` draws the same SVG as the
 //! reference files.
 //!
 //! The files in `tests/fixtures/plotting` were recorded from matplotlib or written by these
@@ -68,7 +68,7 @@ def main() -> Raises[None, OSError | ValueError]:
 /// The program that draws the reference plots, from data that is exact in binary, so every
 /// machine computes the same points.
 const DRAWING: &str = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -98,7 +98,7 @@ def main() -> Raises[None, OSError | ValueError]:
 /// The program that draws the reference plots of scatter, bars and histograms (roadmap
 /// 3.15.2), from data that is exact in binary, and prints what `hist` returns.
 const SHAPES: &str = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -183,7 +183,7 @@ fn compare(directory: &Path, names: &[&str]) -> io::Result<()> {
 fn other_formats_raise_value_error() {
     let program = "\
 from pathlib import Path
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError]:
@@ -212,7 +212,7 @@ def main() -> Raises[None, OSError]:
 #[test]
 fn plotting_arrays_of_different_lengths_panics() {
     let program = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main():
@@ -235,7 +235,7 @@ def main():
 #[test]
 fn unknown_colors_panic() {
     let program = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main():
@@ -250,7 +250,7 @@ def main():
         panic_report(&ran)
     );
     assert!(
-        stderr(&ran).contains("pyplot.Axes.bar at"),
+        stderr(&ran).contains("byplot.Axes.bar at"),
         "{}",
         stderr(&ran)
     );
@@ -261,7 +261,7 @@ def main():
 #[test]
 fn equal_limits_are_widened() {
     let program = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -288,7 +288,7 @@ def main() -> Raises[None, OSError | ValueError]:
 #[test]
 fn limits_that_are_not_finite_panic() {
     let program = "\
-import pyplot as plt
+import byplot as plt
 
 
 def main():

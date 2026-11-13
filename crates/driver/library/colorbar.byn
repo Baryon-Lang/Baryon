@@ -1,10 +1,10 @@
 """The `colorbar` library file: draws the bar beside an image that shows which color stands for
 which value, as matplotlib's `Colorbar` does (decision 0046).
 
-It is internal to the standard library: `pyplot` and the files under it import it, and a
+It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `colorbar.byn` is never hidden by it.
 
-`pyplot`'s `Axes.colorbar` asks for one; when the figure is drawn, it takes a slice of the
+`byplot`'s `Axes.colorbar` asks for one; when the figure is drawn, it takes a slice of the
 space on the right of the axes, and `draw_colorbar` draws it there.
 """
 
