@@ -144,8 +144,8 @@ def _best(artists: list[Artist], view: View, width: f64, height: f64) -> int:
     """matplotlib's `"best"` location: the first of the ten places, in `legend`'s order, whose
     box holds the fewest points of lines, markers, error bar caps and filled areas' outlines,
     overlaps the fewest bars, and crosses the fewest lines and outlines. Error bars without caps
-    do not count, as matplotlib's do not; text does not count yet, though matplotlib's does.
-    Costs ten passes over every point drawn."""
+    and contours do not count, as matplotlib's do not; text does not count yet, though
+    matplotlib's does. Costs ten passes over every point drawn."""
     best = 1
     least = -1
     for code in range(1, 11):
@@ -154,6 +154,8 @@ def _best(artists: list[Artist], view: View, width: f64, height: f64) -> int:
         bottom = top + height
         badness = 0
         for artist in artists:
+            if artist.kind == Kind.CONTOUR or artist.kind == Kind.FILLED:
+                continue
             px = view.to_x(artist.x)
             py = view.to_y(artist.y)
             crossed = False

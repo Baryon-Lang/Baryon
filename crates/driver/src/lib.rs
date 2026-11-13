@@ -67,6 +67,7 @@ const LIBRARY: [(&str, &str); 32] = [
         include_str!("../library/colorbar.byn"),
     ),
     ("<std>/colors.byn", include_str!("../library/colors.byn")),
+    ("<std>/contour.byn", include_str!("../library/contour.byn")),
     ("<std>/fft.byn", include_str!("../library/fft.byn")),
     ("<std>/figure.byn", include_str!("../library/figure.byn")),
     ("<std>/fits.byn", include_str!("../library/fits.byn")),

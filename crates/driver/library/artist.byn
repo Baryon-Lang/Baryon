@@ -21,6 +21,8 @@ class Kind(Enum):
     BARS = 2  # a bar for each point, from `bar` and `hist`
     ERRORS = 3  # error bars, from `errorbar`: segments from point to point, NaN between them
     FILL = 4  # filled polygons through the points, NaN between them, from `fill_between`
+    CONTOUR = 5  # the lines of one contour level, NaN between them, from `contour`
+    FILLED = 6  # the polygons of one band between two levels, from `contourf`
 
 
 class Artist(Struct):
@@ -37,7 +39,7 @@ class Artist(Struct):
     kind: Kind  # what is drawn
     x: Array[f64, 1]  # the x of each point, or the left edge of each bar
     y: Array[f64, 1]  # the y of each point, or the top of each bar, whose base is 0
-    widths: Array[f64, 1]  # each bar's width; empty for lines and markers
+    widths: Array[f64, 1]  # each bar's width; a contour's grid box, x0, x1, y0, y1; else empty
     color: str  # an SVG color, `#rrggbb`
     linewidth: f64  # a line's width in points; 0 for no line
     dashes: list[f64]  # a line's on and off lengths in points; empty for a solid line

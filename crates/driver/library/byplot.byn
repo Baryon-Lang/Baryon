@@ -22,11 +22,12 @@ points, colors from the `tab10` cycle, and ticks placed and labelled by `ticker`
 
 from artist import Artist, Image, Kind, Text, dashes, error_bars, filled
 from backend_svg import RendererSVG
-from cm import get_cmap
 from colors import to_hex
+from contour import contour_set
 from figure import Figure, check_format, draw_axes, subplot_box
+from image import make_image
 from legend import location_code
-from math import inf, isfinite
+from math import isfinite
 from transforms import fixed_limits
 from stats import histogram
 
@@ -282,6 +283,43 @@ class Axes(Struct):
         assert up, f"{va!r} is not a vertical alignment: 'baseline', 'bottom', 'center' or 'top'"
         self.texts.append(Text(x, y, s.copy(), fontsize, ha.copy(), va.copy()))
 
+    def contour(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        Z: Array[f64, 2],
+        levels: Array[f64, 1] = Array.zeros(0),
+        colors: str = "",
+        cmap: str = "viridis",
+        linewidths: f64 = 1.5,
+    ) -> None:
+        """Draws the contour lines of `Z[i, j]`, given at `(x[j], y[i])`, as matplotlib's
+        `contour(x, y, Z)`: one line wherever `Z` crosses each of `levels`, or, when `levels` is
+        empty, at about seven levels matplotlib would choose. Lines are `linewidths` points wide
+        and colored by `cmap` from the first level to the last, or all in `colors`, and then a
+        line at a negative level is dashed. The range shown fits the grid exactly.
+
+        Panics when `x` or `y` does not match `Z`'s columns or rows, or the levels do not rise,
+        where matplotlib raises `TypeError` or `ValueError`.
+        """
+        hue = "" if colors == "" else to_hex(colors)
+        contour_set(x, y, Z, levels, False, hue, cmap, linewidths, 1.0, self.artists)
+
+    def contourf(
+        self: InOut[Self],
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        Z: Array[f64, 2],
+        levels: Array[f64, 1] = Array.zeros(0),
+        cmap: str = "viridis",
+        alpha: f64 = 1.0,
+    ) -> None:
+        """Fills the bands between neighbouring `levels` of `Z`, as matplotlib's
+        `contourf(x, y, Z)`: each band in `cmap`'s color at its middle value, at opacity `alpha`,
+        with no edge; a band holds its top level, and the lowest its bottom level too. Picks the
+        levels and panics as `contour` does, and also with fewer than 2 levels."""
+        contour_set(x, y, Z, levels, True, "", cmap, 0.0, alpha, self.artists)
+
     def imshow(
         self: InOut[Self],
         X: Array[f64, 2],
@@ -306,26 +344,7 @@ class Axes(Struct):
         """
         assert origin == "upper" or origin == "lower", "imshow's origin is 'upper' or 'lower'"
         assert aspect == "equal" or aspect == "auto", "imshow's aspect is 'equal' or 'auto'"
-        get_cmap(cmap)
-        low = inf
-        high = -inf
-        for i in range(X.shape[0]):
-            for j in range(X.shape[1]):
-                if isfinite(X[i, j]):
-                    low = min(low, X[i, j])
-                    high = max(high, X[i, j])
-        if low > high:
-            low = 0.0
-            high = 1.0
-        bottom = low if vmin is None else vmin
-        top = high if vmax is None else vmax
-        upper = origin == "upper"
-        right = f64(X.shape[1]) - 0.5
-        down = f64(X.shape[0]) - 0.5
-        edges = (-0.5, right, down, -0.5) if upper else (-0.5, right, -0.5, down)
-        if extent is not None:
-            edges = extent
-        self.images.append(Image(X.copy(), cmap.copy(), bottom, top, edges, upper))
+        self.images.append(make_image(X, cmap, vmin, vmax, origin == "upper", extent))
         self.aspect_equal = aspect == "equal"
 
     def colorbar(self: InOut[Self], label: str = "") -> None:

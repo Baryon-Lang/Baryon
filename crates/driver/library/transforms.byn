@@ -43,8 +43,9 @@ def autoscale(
 ) -> tuple[f64, f64]:
     """The range one axis of an axes holding `artists` and `images` shows when its limits are
     not fixed, as matplotlib's `autoscale_view` finds it: the finite data, bars from their
-    base at 0 and images to their outer edges, with a margin of 5% on each side that stops at
-    a sticky edge, a bar's base or an image's edge, as matplotlib's sticky edges stop it; 0 to
+    base at 0, and images and contours to the edges of their grids, with a margin of 5% on
+    each side that stops at a sticky edge, a bar's base or the edge of an image or a contour's
+    grid, as matplotlib's sticky edges stop it; 0 to
     1 with no data. The last image's extent turns an axis around when it runs backwards, as
     the default extent of an image with row 0 at the top runs y downwards. On a logarithmic
     axis, `log`, only values above 0 count, the margin is 5% of the range's logarithm, as
@@ -55,6 +56,16 @@ def autoscale(
     high = -inf
     sticky: list[f64] = []
     for artist in artists:
+        if artist.kind == Kind.CONTOUR or artist.kind == Kind.FILLED:
+            first = artist.widths[0] if along_x else artist.widths[2]
+            last = artist.widths[1] if along_x else artist.widths[3]
+            if not log or first > 0.0:
+                low = min(low, first)
+                sticky.append(first)
+            if not log or last > 0.0:
+                high = max(high, last)
+                sticky.append(last)
+            continue
         bars = artist.kind == Kind.BARS
         for i in range(len(artist.x)):
             if isfinite(artist.x[i]) and isfinite(artist.y[i]):

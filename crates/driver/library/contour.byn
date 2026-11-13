@@ -1,0 +1,432 @@
+"""The `contour` library file: contour lines and filled contours of a grid of values, found by
+marching squares, as matplotlib's `contour` and `contourf` draw them (decision 0046).
+
+It is internal to the standard library: `byplot` and the files under it import it, and a
+program cannot, so a program's own `contour.byn` is never hidden by it.
+
+The grid is `z[i, j]` at `(x[j], y[i])`. Each cell between four neighbouring points is looked at
+alone: a level crosses an edge of the cell where the values at its ends lie on either side of
+the level, at the point a straight line between them reaches it, and the crossings are joined
+across the cell. A cell whose corners alternate above and below a level, a saddle, is resolved
+by the mean of its four corners, as matplotlib's default `mpl2014` algorithm resolves it. A cell
+with a NaN or infinite corner is left out. Lines are joined from cell to cell into one path per
+level. A filled band is found piece by piece, cell by cell, and the pieces are merged into the
+band's outlines, so the band is one path with no seams inside it, as matplotlib's is. The cost
+is a few operations a cell for each level.
+"""
+
+from artist import Artist, Kind, dashes
+from cm import get_cmap
+from image import normalize
+from math import inf, isfinite, nan
+from ticker import MaxNLocator
+
+
+def contour_set(
+    x: Array[f64, 1],
+    y: Array[f64, 1],
+    z: Array[f64, 2],
+    levels: Array[f64, 1],
+    filled: bool,
+    colors: str,
+    cmap: str,
+    linewidth: f64,
+    alpha: f64,
+    artists: InOut[list[Artist]],
+) -> None:
+    """Adds to `artists` those of `byplot`'s `contour`, when `filled` is not set, or `contourf`:
+    one `CONTOUR` artist a level, or one `FILLED` artist a band between two neighbouring levels.
+
+    `levels` empty picks matplotlib's levels with `contour_levels`. Lines are colored by `cmap`
+    from the first level to the last, or all in `colors` when it is not `""`, and then a line at
+    a negative level is dashed, as matplotlib dashes it; a band is colored by `cmap` at its
+    middle value. Each artist's `widths` holds the grid's box, smallest x, largest x, smallest
+    y and largest y, which the range shown fits exactly, as matplotlib fits it.
+
+    Panics when `x` or `y` does not match `z`'s columns or rows, when the levels do not rise,
+    or when `contourf` has fewer than 2 levels, where matplotlib raises `TypeError` or
+    `ValueError`.
+    """
+    rows = z.shape[0]
+    columns = z.shape[1]
+    assert len(x) == columns, "contour needs len(x) == z.shape[1]"
+    assert len(y) == rows, "contour needs len(y) == z.shape[0]"
+    chosen: list[f64] = []
+    if len(levels) > 0:
+        for level in levels:
+            chosen.append(level)
+    else:
+        chosen = contour_levels(z)
+    for k in range(1, len(chosen)):
+        assert chosen[k] > chosen[k - 1], "Contour levels must be increasing"
+    assert not filled or len(chosen) >= 2, "Filled contours require at least 2 levels."
+    box = Array([_least(x), _most(x), _least(y), _most(y)])
+    first = chosen[0]
+    last = chosen[len(chosen) - 1]
+    colormap = get_cmap(cmap)
+    if filled:
+        for k in range(len(chosen) - 1):
+            middle = 0.5 * (chosen[k] + chosen[k + 1])
+            hue = colormap.to_hex(normalize(middle, first, last))
+            ends = contour_bands(x, y, z, chosen[k], chosen[k + 1], k == 0)
+            across, up = ends
+            artists.append(
+                Artist(Kind.FILLED, across, up, box.copy(), hue, 0.0, [], "", 0.0, "", alpha)
+            )
+        return
+    for level in chosen:
+        hue = colors.copy()
+        pattern: list[f64] = []
+        if colors == "":
+            hue = colormap.to_hex(normalize(level, first, last))
+        elif level < 0.0:
+            pattern = dashes("dashed", linewidth)
+        across, up = contour_lines(x, y, z, level)
+        artists.append(
+            Artist(Kind.CONTOUR, across, up, box.copy(), hue, linewidth, pattern, "", 0.0, "", 1.0)
+        )
+
+
+def contour_levels(z: Array[f64, 2]) -> list[f64]:
+    """matplotlib's contour levels for `z`: the ticks `MaxNLocator(8)` puts over the range of its
+    finite values, with matplotlib's default steps, keeping only the last tick below the
+    smallest value and the first above the largest, as `ContourSet._autolev` trims them. Values
+    from 0 to 1 when none is finite."""
+    low = inf
+    high = -inf
+    for i in range(z.shape[0]):
+        for j in range(z.shape[1]):
+            if isfinite(z[i, j]):
+                low = min(low, z[i, j])
+                high = max(high, z[i, j])
+    if low > high:
+        low = 0.0
+        high = 1.0
+    steps = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0]
+    ticks = MaxNLocator(8, steps).tick_values(low, high)
+    start = 0
+    stop = len(ticks)
+    for k in range(len(ticks)):
+        if ticks[k] < low:
+            start = k
+    for k in range(len(ticks) - 1, -1, -1):
+        if ticks[k] > high:
+            stop = k + 1
+    if stop - start < 3:
+        start = 0
+        stop = len(ticks)
+    return ticks[start:stop]
+
+
+def contour_lines(
+    x: Array[f64, 1], y: Array[f64, 1], z: Array[f64, 2], level: f64
+) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The lines where `z` crosses `level`, as the x and y of their points, a NaN after each
+    line; a closed line ends at its first point. Each cell's crossings are joined into
+    segments, and segments that share an edge of the grid are joined into one line."""
+    columns = z.shape[1]
+    first: list[int] = []  # the grid edge one end of each segment lies on
+    second: list[int] = []  # the grid edge its other end lies on
+    for i in range(z.shape[0] - 1):
+        for j in range(columns - 1):
+            corners = _corners(z, i, j)
+            if not _finite(corners):
+                continue
+            above = [_above(value, level, False) for value in corners]
+            middle = 0.25 * (corners[0] + corners[1] + corners[2] + corners[3])
+            slots = _pairs(above, _above(middle, level, False))
+            edges = _cell_edges(i, j, z.shape[0], columns)
+            for k in range(0, len(slots), 2):
+                first.append(edges[slots[k]])
+                second.append(edges[slots[k + 1]])
+    count = _edge_count(z.shape[0], columns)
+    touching: list[int] = []  # two segment numbers an edge, -1 for none
+    for _ in range(2 * count):
+        touching.append(-1)
+    for s in range(len(first)):
+        for edge in [first[s], second[s]]:
+            if touching[2 * edge] < 0:
+                touching[2 * edge] = s
+            else:
+                touching[2 * edge + 1] = s
+    used: list[bool] = [False for _ in first]
+    across: list[f64] = []
+    up: list[f64] = []
+    for s in range(len(first)):
+        if used[s]:
+            continue
+        current = s
+        edge = first[s]
+        while True:
+            other = _other(touching, edge, current)
+            if other < 0 or other == s:
+                break
+            current = other
+            edge = second[other] if first[other] == edge else first[other]
+        start = current
+        while True:
+            used[current] = True
+            point = _crossing(x, y, z, edge, level)
+            across.append(point[0])
+            up.append(point[1])
+            edge = second[current] if first[current] == edge else first[current]
+            current = _other(touching, edge, current)
+            if current < 0 or current == start:
+                break
+        point = _crossing(x, y, z, edge, level)
+        across.append(point[0])
+        up.append(point[1])
+        across.append(nan)
+        up.append(nan)
+    return (Array(across), Array(up))
+
+
+def contour_bands(
+    x: Array[f64, 1], y: Array[f64, 1], z: Array[f64, 2], lower: f64, upper: f64, lowest: bool
+) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The outlines of the region where `lower < z <= upper`, or `lower <= z <= upper` for the
+    `lowest` band, as matplotlib's `contourf` fills it, as the x and y of their corners, a NaN
+    after each; a hole is an outline that runs the other way round, so the region fills with
+    SVG's nonzero rule. Each cell's piece of the band is found by `_cell_band`; an edge two
+    pieces share runs both ways and is dropped, so only the outline is left, with no seams
+    inside it. Costs a dictionary entry for each edge of a piece."""
+    rows = z.shape[0]
+    columns = z.shape[1]
+    corners_count = rows * columns
+    nodes = corners_count + 2 * _edge_count(rows, columns)
+    edges: dict[int, bool] = {}  # each kept edge `start * nodes + end`, in the order found
+    for i in range(rows - 1):
+        for j in range(columns - 1):
+            corners = _corners(z, i, j)
+            if not _finite(corners):
+                continue
+            pieces = _cell_band(z, i, j, lower, upper, lowest)
+            first = 0
+            for k in range(len(pieces)):
+                if pieces[k] >= 0:
+                    continue
+                for m in range(first, k):
+                    start = pieces[m]
+                    end = pieces[m + 1] if m + 1 < k else pieces[first]
+                    if end * nodes + start in edges:
+                        del edges[end * nodes + start]
+                    else:
+                        edges[start * nodes + end] = True
+                first = k + 1
+    following: dict[int, list[int]] = {}  # the ends of the kept edges from each node
+    for key in edges:
+        start = key // nodes
+        if start not in following:
+            following[start] = []
+        following[start].append(key % nodes)
+    limits = [lower, upper]
+    across: list[f64] = []
+    up: list[f64] = []
+    for key in edges:
+        begin = key // nodes
+        while len(following[begin]) > 0:
+            node = begin
+            for _ in range(len(edges)):
+                point = _node(x, y, z, node, limits)
+                across.append(point[0])
+                up.append(point[1])
+                node = following[node].pop()
+                if node == begin:
+                    break
+            across.append(nan)
+            up.append(nan)
+    return (Array(across), Array(up))
+
+
+def _node(
+    x: Array[f64, 1], y: Array[f64, 1], z: Array[f64, 2], node: int, limits: list[f64]
+) -> tuple[f64, f64]:
+    """Where the outline point `node` lies: the grid point `node` when it is below
+    `rows * columns`, counted row by row, else the crossing of `limits[level]` on grid edge
+    `edge`, numbered `rows * columns + 2 * edge + level`."""
+    count = z.shape[0] * z.shape[1]
+    if node < count:
+        return (x[node % z.shape[1]], y[node // z.shape[1]])
+    crossing = node - count
+    return _crossing(x, y, z, crossing // 2, limits[crossing % 2])
+
+
+def _cell_band(
+    z: Array[f64, 2], i: int, j: int, lower: f64, upper: f64, lowest: bool
+) -> list[int]:
+    """The pieces of the band from `lower` to `upper` inside the cell at row `i` and column
+    `j`, as `_node` numbers, -1 after each piece. The walk goes round the cell counterclockwise
+    through its corners inside the band and the crossings of both levels on its edges; where
+    the edge leaves the band at a crossing it follows that level's segment across the cell to
+    the crossing it is paired with, which enters the band again. A cell wholly inside is one
+    piece, its four corners."""
+    rows = z.shape[0]
+    columns = z.shape[1]
+    corners = _corners(z, i, j)
+    edges = _cell_edges(i, j, rows, columns)
+    row = i * columns + j
+    points = [row, row + 1, row + columns + 1, row + columns]
+    middle = 0.25 * (corners[0] + corners[1] + corners[2] + corners[3])
+    limits = [lower, upper]
+    partners: list[int] = [-1, -1, -1, -1, -1, -1, -1, -1]  # slot paired with each level's slot
+    for which in range(2):
+        closed = lowest and which == 0
+        above = [_above(value, limits[which], closed) for value in corners]
+        slots = _pairs(above, _above(middle, limits[which], closed))
+        for k in range(0, len(slots), 2):
+            partners[4 * which + slots[k]] = slots[k + 1]
+            partners[4 * which + slots[k + 1]] = slots[k]
+    kinds: list[int] = []  # -1 - slot for a corner, else 4 * level + slot of a crossing
+    inside: list[bool] = []  # a corner inside the band, or a crossing that leaves it
+    for slot in range(4):
+        value = corners[slot]
+        kinds.append(-1 - slot)
+        inside.append(_above(value, lower, lowest) and not _above(value, upper, False))
+        after = corners[(slot + 1) % 4]
+        crossings: list[tuple[f64, int]] = []
+        for which in range(2):
+            if partners[4 * which + slot] >= 0:
+                fraction = (limits[which] - value) / (after - value)
+                crossings.append((fraction, which))
+        if len(crossings) == 2 and crossings[1][0] < crossings[0][0]:
+            crossings = [crossings[1], crossings[0]]
+        for crossing in crossings:
+            which = crossing[1]
+            kinds.append(4 * which + slot)
+            leaves = _above(after, upper, False) if which == 1 else not _above(after, lower, lowest)
+            inside.append(leaves)
+    count = len(kinds)
+    numbers: list[int] = []  # the `_node` number of each point round the cell
+    for kind in kinds:
+        if kind < 0:
+            numbers.append(points[-1 - kind])
+        else:
+            numbers.append(rows * columns + 2 * edges[kind % 4] + kind // 4)
+    visited: list[bool] = [False for _ in kinds]
+    pieces: list[int] = []
+    for start in range(count):
+        if visited[start] or (kinds[start] < 0 and not inside[start]) or (
+            kinds[start] >= 0 and inside[start]
+        ):
+            continue
+        k = start
+        for _ in range(2 * count):
+            pieces.append(numbers[k])
+            visited[k] = True
+            if kinds[k] >= 0 and inside[k]:
+                target = 4 * (kinds[k] // 4) + partners[kinds[k]]
+                partner = _position(kinds, target)
+                if partner == start:
+                    break
+                pieces.append(numbers[partner])
+                visited[partner] = True
+                k = (partner + 1) % count
+            else:
+                k = (k + 1) % count
+            if k == start:
+                break
+        pieces.append(-1)
+    return pieces
+
+
+def _position(values: list[int], value: int) -> int:
+    """Where `value` first is in `values`, or -1."""
+    for k in range(len(values)):
+        if values[k] == value:
+            return k
+    return -1
+
+
+def _corners(z: Array[f64, 2], i: int, j: int) -> list[f64]:
+    """The values at the corners of the cell at row `i` and column `j`, counterclockwise from
+    `z[i, j]`: `z[i, j]`, `z[i, j + 1]`, `z[i + 1, j + 1]` and `z[i + 1, j]`."""
+    return [z[i, j], z[i, j + 1], z[i + 1, j + 1], z[i + 1, j]]
+
+
+def _finite(values: list[f64]) -> bool:
+    """Whether every one of `values` is finite."""
+    for value in values:
+        if not isfinite(value):
+            return False
+    return True
+
+
+def _above(value: f64, level: f64, closed: bool) -> bool:
+    """Whether `value` is above `level`, or at it too when `closed` is set, as the lowest band
+    of `contourf` holds the lowest level."""
+    return value > level or (closed and value == level)
+
+
+def _pairs(above: list[bool], center: bool) -> list[int]:
+    """The edges of a cell a level crosses, paired into the segments that join the crossings,
+    as edge slots 0 to 3 counterclockwise from the bottom edge: none, one pair, or two pairs
+    in a saddle, where the corners on the other side from the cell's `center` are cut off."""
+    slots = [k for k in range(4) if above[k] != above[(k + 1) % 4]]
+    if len(slots) != 4:
+        return slots
+    cut: list[int] = []
+    for k in range(4):
+        if above[k] != center:
+            cut.append((k + 3) % 4)
+            cut.append(k)
+    return cut
+
+
+def _cell_edges(i: int, j: int, rows: int, columns: int) -> list[int]:
+    """The grid's numbers for the bottom, right, top and left edges of the cell at row `i` and
+    column `j`: the edges along rows first, `rows * (columns - 1)` of them, then those along
+    columns."""
+    along = rows * (columns - 1)
+    return [
+        i * (columns - 1) + j,
+        along + i * columns + j + 1,
+        (i + 1) * (columns - 1) + j,
+        along + i * columns + j,
+    ]
+
+
+def _edge_count(rows: int, columns: int) -> int:
+    """How many edges a grid of `rows` by `columns` points has."""
+    return rows * (columns - 1) + (rows - 1) * columns
+
+
+def _other(touching: list[int], edge: int, segment: int) -> int:
+    """The segment other than `segment` with an end on `edge`, or -1."""
+    first = touching[2 * edge]
+    return touching[2 * edge + 1] if first == segment else first
+
+
+def _crossing(
+    x: Array[f64, 1], y: Array[f64, 1], z: Array[f64, 2], edge: int, level: f64
+) -> tuple[f64, f64]:
+    """Where `level` crosses the grid edge `edge`, interpolated linearly from the edge's first
+    point, the one at the smaller row and column, so both cells beside the edge get the same
+    point to the last bit."""
+    rows = z.shape[0]
+    columns = z.shape[1]
+    along = rows * (columns - 1)
+    if edge < along:
+        i = edge // (columns - 1)
+        j = edge % (columns - 1)
+        t = (level - z[i, j]) / (z[i, j + 1] - z[i, j])
+        return (x[j] + t * (x[j + 1] - x[j]), y[i])
+    i = (edge - along) // columns
+    j = (edge - along) % columns
+    t = (level - z[i, j]) / (z[i + 1, j] - z[i, j])
+    return (x[j], y[i] + t * (y[i + 1] - y[i]))
+
+
+def _least(values: Array[f64, 1]) -> f64:
+    """The smallest of `values`."""
+    least = inf
+    for value in values:
+        least = min(least, value)
+    return least
+
+
+def _most(values: Array[f64, 1]) -> f64:
+    """The largest of `values`."""
+    most = -inf
+    for value in values:
+        most = max(most, value)
+    return most

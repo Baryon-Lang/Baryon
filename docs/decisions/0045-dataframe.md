@@ -165,6 +165,12 @@ One form serves arrays and tables: an element type `T | None`.
 | Missing | `isna`, `notna`, `fillna`, `dropna` |
 | Write | `df.to_csv(path)`, `print(df)` |
 
+`unique()` and `nunique()` are methods of a rank-1 array, so `df.symbol.unique()` reads as it
+does in pandas, and `unique` gives the values in the order they first appear, as pandas does
+and `np.unique` does not. `df.value_counts("symbol")` is a method of the frame and gives a frame
+with the columns `symbol` and `count`. Collins chose this on 2026-11-13 over NumPy's sorted
+order and over methods of the frame only.
+
 `DataFrame` and `concat` are built-in names, as `Array` is. `read_csv` takes its schema from the
 context, as `Array.loadtxt` takes its rank (decision 0043), and raises when the file's header
 lacks a column of the schema or a cell does not parse; its details are roadmap 3.14.4's.

@@ -336,6 +336,7 @@ set.
 | `a.var(ddof=0)`, `a.std(ddof=0)`, each with `axis=k` | The variance and standard deviation of float elements, dividing by `n - ddof`, with NumPy's bits |
 | `a.dot(b)` | The dot product of two rank-1 arrays or vectors of the same length |
 | `a.argsort()` | The positions that put a rank-1 `Array` in rising order, an `Array[i64, 1]`. See [Sorting positions](#sorting-positions) |
+| `a.unique()`, `a.nunique()` | The distinct elements of a rank-1 `Array` in the order they first appear, and how many there are. See [Distinct elements](#distinct-elements) |
 | `a.round()` | A new array with each element rounded to the nearest whole number, ties to even |
 | `a.fill(value)` | Sets every element to `value`; `a` must be changeable |
 | `a.tofile(path)` | Writes every element to a binary file, as NumPy's `tofile` does; an `Array` only. See [Array files](files-and-processes.md#array-files) |
@@ -387,6 +388,30 @@ This prints `[2 0 1] [171.  189.5 410. ]`.
 - `a` is read, not changed. Arrays of higher rank and NumPy's `axis=` and `kind=` are not
   built.
 - **Cost:** about `n log n` comparisons, and two arrays of `n` positions while it runs.
+
+### Distinct elements
+
+`a.unique()` gives the distinct elements of a rank-1 `Array`, each once, in the order they
+first appear, as a new array of the same element type. `a.nunique()` gives how many there
+are, an `i64`. Both follow pandas, so they work the same on a column of a
+[`DataFrame`](dataframes.md), `df.day.unique()`
+([decision 0045](../decisions/0045-dataframe.md)).
+
+```python
+days = Array([3, 1, 3, 2, 1])
+print(days.unique(), days.nunique())
+```
+
+This prints `[3 1 2] 3`.
+
+- **The order is the order of first appearance**, as in pandas. NumPy's `np.unique` sorts
+  instead; for that, sort the result: `u = a.unique()`, then `u[u.argsort()]`.
+- **NaN is one element of `unique`, and `nunique` does not count it**, as in pandas. `0.0`
+  and `-0.0` are one element, the one that comes first.
+- **Complex elements are a compile error** for now, since the elements are compared by
+  sorting them.
+- `a` is read, not changed. Arrays of higher rank and pandas's `dropna=` are not built.
+- **Cost:** about `n log n` comparisons, and four arrays of `n` integers while it runs.
 
 ### The order `sum` adds in
 

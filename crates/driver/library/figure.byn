@@ -176,7 +176,7 @@ def draw_axes(
                 )
         elif artist.kind == Kind.MARKERS:
             renderer.draw_markers(px, py, artist.marker, artist.markersize, artist.color, 1.5, True)
-        elif artist.kind == Kind.FILL:
+        elif artist.kind == Kind.FILL or artist.kind == Kind.FILLED:
             renderer.draw_polygon(px, py, artist.color, artist.alpha, True)
     xaxis = XAxis(x0, x1, left, right, bottom, ax.xlog)
     yaxis = YAxis(y0, y1, bottom, top, left, ax.ylog)
@@ -193,7 +193,7 @@ def draw_axes(
                 line = Array([at, at])
                 renderer.draw_path(Array([left, right]), line, gray, 0.8, [], "projecting", True)
     for artist in ax.artists:
-        if artist.kind == Kind.LINE or artist.kind == Kind.ERRORS:
+        if artist.kind == Kind.LINE or artist.kind == Kind.ERRORS or artist.kind == Kind.CONTOUR:
             px = view.to_x(artist.x)
             py = view.to_y(artist.y)
             cap = "projecting" if artist.kind == Kind.LINE else "butt"

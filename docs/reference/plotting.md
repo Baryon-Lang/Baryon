@@ -6,15 +6,16 @@ Baryon and saved as SVG files that any browser, VS Code or a LaTeX toolchain can
 labels the ticks, as `matplotlib.ticker` does. These two are the modules a program imports.
 `byplot` draws through smaller files of the standard library, named as matplotlib names its own:
 `colors` reads color names, `cm` holds the colormaps, `artist` holds what an axes draws,
+`contour` finds contour lines and bands,
 `transforms` finds the ranges it shows, `figure` lays a grid of axes out and draws them, `axis`
 draws an axis's ticks and labels, `legend`, `image` and `colorbar` draw a legend, an image and a
 colorbar, `backend_svg` writes the SVG file, and `png` the PNG images inside it. They are
 internal, so a program's own `colors.byn` or `image.byn` is never hidden by them.
 
-This chapter covers what builds today, roadmap 3.15.1 to 3.15.4: line plots, scatter plots,
+This chapter covers what builds today, roadmap 3.15.1 to 3.15.5: line plots, scatter plots,
 bars, histograms, error bars, filled areas, text, markers, legends, grid lines, images and
-colorbars, titles, axis labels, axis ranges, logarithmic axes, grids of plots and SVG output.
-Contours, PNG and PDF files follow in roadmap 3.15.5 to 3.15.7.
+colorbars, contour plots, titles, axis labels, axis ranges, logarithmic axes, grids of plots and
+SVG output. PNG and PDF files follow in roadmap 3.15.6 and 3.15.7.
 
 ## A first plot
 
@@ -78,6 +79,8 @@ moved script is never drawn wrong in silence.
 | `ax.errorbar(x, y, yerr=Array.zeros(0), xerr=Array.zeros(0), fmt="", color="", capsize=0.0, label="")` | Draws the points with an error bar of `yerr[i]` up and down and `xerr[i]` left and right of each; an empty array draws no bars | `Axes.errorbar`, with errors of the data's length |
 | `ax.fill_between(x, y1, y2=Array.zeros(0), color="", alpha=1.0, label="")` | Fills the area between the curves `y1` and `y2`, or down to 0 when `y2` is left out | `Axes.fill_between` |
 | `ax.text(x, y, s, fontsize=10.0, ha="left", va="baseline")` | Writes `s` at the data point `(x, y)` | `Axes.text` |
+| `ax.contour(x, y, Z, levels=Array.zeros(0), colors="", cmap="viridis", linewidths=1.5)` | Draws the lines where the `Array[f64, 2]` `Z` crosses each level | `Axes.contour(x, y, Z, ...)` |
+| `ax.contourf(x, y, Z, levels=Array.zeros(0), cmap="viridis", alpha=1.0)` | Fills the bands between neighbouring levels of `Z` | `Axes.contourf(x, y, Z, ...)` |
 | `ax.legend(loc="best")` | Draws a legend of every labelled line, set of markers, set of bars, set of error bars and filled area | `Axes.legend` |
 | `ax.grid(visible=True)` | Draws light gray lines across the axes at every tick, or stops drawing them | `Axes.grid` |
 | `ax.imshow(X, cmap="viridis", vmin=None, vmax=None, origin="upper", aspect="equal", extent=None)` | Draws the `Array[f64, 2]` `X` as an image, one colored cell per element | `Axes.imshow` |
@@ -192,6 +195,51 @@ def main() -> Raises[None, OSError | ValueError]:
     ax.legend(loc="lower right")
     ax.savefig("rate.svg")
 ```
+
+### Contour plots
+
+`contour` draws the lines where `Z` crosses each level, and `contourf` fills the bands between
+neighbouring levels. `Z[i, j]` is the value at `(x[j], y[i])`, as matplotlib reads it with 1-D
+`x` and `y`, so `x` has one value per column and `y` one per row. With `levels` left out, about
+seven levels are chosen as matplotlib chooses them, at round values spanning the data; give
+`levels` as a rising array to pick them. Lines and bands are colored by `cmap` over the levels,
+in matplotlib's colors to the byte; `colors="k"` draws every line in one color instead, with the
+negative levels dashed, as matplotlib draws them. A band holds its top level, and the lowest
+band its bottom level too. The range shown fits the grid exactly, with no margin.
+
+The lines are found by marching squares: each cell between four neighbouring points is crossed
+where its edges cross a level, by straight-line interpolation along the edge, and a cell whose
+corners alternate about a level is split by the mean of its corners, as matplotlib's default
+algorithm splits it. A cell with a NaN corner is left out, where matplotlib also fills the
+corner triangles beside it.
+
+```python
+from math import exp
+import byplot as plt
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    x = Array.zeros(41)
+    y = Array.zeros(31)
+    for j in range(41):
+        x[j] = -2.0 + 0.1 * f64(j)
+    for i in range(31):
+        y[i] = -1.5 + 0.1 * f64(i)
+    potential = Array.zeros((31, 41))
+    for i in range(31):
+        for j in range(41):
+            potential[i, j] = x[j] * exp(-x[j] * x[j] - y[i] * y[i])
+    ax = plt.axes()
+    ax.contourf(x, y, potential, cmap="RdBu_r")
+    ax.contour(x, y, potential, colors="k")
+    ax.set_title("Dipole potential")
+    ax.savefig("dipole.svg")
+```
+
+`levels` takes an array where matplotlib also takes a count: a count does not build yet. Contour
+labels (`clabel`), a colorbar of contours, 2-D `X` and `Y` grids, and `extend` are not offered.
+A file holds one path a level: about 15 bytes a point of a line, and up to 60 a cell a filled
+band covers in part; whole cells in a row are merged into one rectangle.
 
 ### Grids of plots
 
@@ -363,9 +411,11 @@ them; this table is for those working on the library, and on the PNG and PDF bac
 | `renderer.draw_path`, `draw_markers`, `draw_rectangle`, `draw_polygon`, `draw_text` | Draw lines, markers, rectangles, filled polygons and text, in points from the top left corner; `draw_text` draws a `LogFormatterSciNotation` label with its exponent raised | The renderer methods of the same names, `draw_path_collection` for polygons |
 | `renderer.get_text_width_height_descent(text, size)` | About how wide a text is, and the height and depth of its line | `RendererBase.get_text_width_height_descent` |
 | `renderer.tostring()` | The SVG file's text | What `savefig` writes |
-| `Artist(kind, x, y, widths, color, linewidth, dashes, marker, markersize, label, alpha)` | One line, set of markers, set of bars, set of error bars or filled area, as an axes keeps it; `kind` is `Kind.LINE`, `Kind.MARKERS`, `Kind.BARS`, `Kind.ERRORS` or `Kind.FILL` | `Line2D`, `PathCollection`, `BarContainer`, `LineCollection`, `FillBetweenPolyCollection` |
+| `Artist(kind, x, y, widths, color, linewidth, dashes, marker, markersize, label, alpha)` | One line, set of markers, set of bars, set of error bars or filled area, as an axes keeps it; `kind` is `Kind.LINE`, `Kind.MARKERS`, `Kind.BARS`, `Kind.ERRORS`, `Kind.FILL`, `Kind.CONTOUR` or `Kind.FILLED` | `Line2D`, `PathCollection`, `BarContainer`, `LineCollection`, `FillBetweenPolyCollection` |
 | `error_bars(x, y, error, across, color, capsize)`, `filled(x, y1, y2, color, alpha)`, `dashes(style, linewidth)` | Build `errorbar`'s and `fill_between`'s artists; a line style's dash lengths | `Axes.errorbar`, `Axes.fill_between`, `Line2D.set_linestyle` |
 | `Text(x, y, text, size, ha, va)` | A piece of text as an axes keeps it | `text.Text` |
+| `contour_set(x, y, z, levels, filled, colors, cmap, linewidth, alpha, artists)`, `contour_levels(z)`, `contour_lines(x, y, z, level)`, `contour_bands(x, y, z, lower, upper, lowest)` | Build `contour`'s and `contourf`'s artists; matplotlib's levels; one level's lines; one band's polygons | `ContourSet`, `ContourSet._autolev`, `contourpy`'s `mpl2014` |
+| `cmap.to_hex(x)` | The color of `x` as `#rrggbb`, each channel rounded to the nearest byte | `colors.to_hex(cmap(x))` |
 | `View(left, top, right, bottom, x0, x1, y0, y1, log_x, log_y)` | Where an axes sits, in points, the data range it shows and which axes are logarithmic; `view.to_x(x)` and `view.to_y(y)` map data to points | `Axes.transData` |
 | `Figure(axes, nrows, ncols)`, `fig.savefig(fname)` | A grid of axes, as `subplots` makes it, and its file | `figure.Figure` |
 | `subplot_box(row, column, nrows, ncols)` | The box, in points, of one cell of a grid in the default figure | `GridSpec.get_grid_positions` |
@@ -396,11 +446,10 @@ until roadmap 3.27, so a 1000 by 1000 image makes a file of about 5.5 MB.
 
 `savefig` raises `ValueError` for any extension but `.svg`, with matplotlib's message, such as
 `Format 'png' is not supported (supported formats: svg)`, and `OSError` when the file cannot be
-written. `plot`, `scatter`, `bar`, `errorbar` or `fill_between` with arrays of different
-lengths, an unknown color, line style, legend place, colormap, `errorbar` format or `text`
-alignment, an `imshow` `origin` or `aspect` it does not know, an `alpha` outside 0 to 1, a `hist`
-with fewer than one bin, a `subplots` grid with no rows or columns, or a `colorbar` before any
-image panics, and so does `savefig` on an
-unknown marker, where matplotlib raises `ValueError` or `RuntimeError`: each is a mistake in the
-program, not in its data
-([decision 0046](../decisions/0046-plotting.md)).
+written. `plot`, `scatter`, `bar`, `errorbar` or `fill_between` with arrays of different lengths, an
+unknown color, line style, legend place, colormap, `errorbar` format or `text` alignment, an
+`imshow` `origin` or `aspect` it does not know, an `alpha` outside 0 to 1, contour levels that do
+not rise or a grid that does not match its `x` and `y`, a `hist` with fewer than one bin, a
+`subplots` grid with no rows or columns, or a `colorbar` before any image panics, and so does
+`savefig` on an unknown marker, where matplotlib raises `ValueError` or `RuntimeError`: each is a
+mistake in the program, not in its data ([decision 0046](../decisions/0046-plotting.md)).
