@@ -494,11 +494,11 @@ they show the same plot at the same size and place.
 ## Errors
 
 `savefig` raises `ValueError` for any extension but `.svg` and `.png`, with matplotlib's message,
-such as `Format 'jpg' is not supported (supported formats: png, svg)`, and `OSError` when the
-file cannot be written. `plot`, `scatter`, `bar`, `errorbar` or `fill_between` with arrays of different lengths, an
-unknown color, line style, legend place, colormap, `errorbar` format or `text` alignment, an
-`imshow` `origin` or `aspect` it does not know, an `alpha` outside 0 to 1, contour levels that do
-not rise or a grid that does not match its `x` and `y`, a `hist` with fewer than one bin, a
-`subplots` grid with no rows or columns, or a `colorbar` before any image panics, and so does
-`savefig` on an unknown marker, where matplotlib raises `ValueError` or `RuntimeError`: each is a
-mistake in the program, not in its data ([decision 0046](../decisions/0046-plotting.md)).
+such as `Format 'jpg' is not supported (supported formats: png, svg)`, and `OSError` when the file
+cannot be written. `plot`, `scatter`, `bar`, `errorbar` or `fill_between` with arrays of different
+lengths, an unknown color, line style, legend place, colormap, `errorbar` format or `text`
+alignment, an `imshow` `origin` or `aspect` it does not know, an `alpha` outside 0 to 1, contour
+levels that do not rise or a grid that does not match its `x` and `y`, a `hist` with fewer than one
+bin, a `subplots` grid with no rows or columns, or a `colorbar` before any image panics, and so
+does `savefig` on an unknown marker, where matplotlib raises `ValueError` or `RuntimeError`: each
+is a mistake in the program, not in its data ([decision 0046](../decisions/0046-plotting.md)).
