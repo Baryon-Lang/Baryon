@@ -778,6 +778,39 @@ The receiving function may pass the parameter on to another `Callable` parameter
 a local. Which function a name holds must be known when compiling, so a local that holds one of
 two different functions depending on a branch is reported when building.
 
+These forms need a function value at run time, which version 0 leaves out. Each is a checker
+error that names decision 0026, at the expression or annotation:
+
+- a method read as a value, bound (`s.at`) or through its class (`Scale.double`);
+- a generic function read as a value (`twice` in `apply(twice, 1.0)`);
+- a `Callable` in a struct field, a return type, or inside a parameter's type, such as
+  `Callable[[f64], f64] | None` or `list[Callable[[f64], f64]]`: a `Callable` must be a
+  parameter's whole type;
+- a struct value called through its `__call__` method, `p(3.0)`; call the method by name,
+  `p.__call__(3.0)`, instead.
+
+Lambdas, nested functions and module-level variables are errors of their own. To pass a method
+or a generic function, wrap it in a module-level function:
+
+```python
+def apply(f: Callable[[f64], f64], x: f64) -> f64:
+    return f(x)
+
+
+def twice[T: Float](x: T) -> T:
+    return x + x
+
+
+def twice_f64(x: f64) -> f64:
+    return twice(x)
+
+
+print(apply(twice_f64, 1.5))        # 3.0
+```
+
+A function with an optional callback, such as SciPy's `jac=None`, is two functions in version 0:
+one that takes the callback and one that does not.
+
 ## Generics
 
 Functions and structs take type parameters with Python 3.12's syntax. A bound after `:` names the
