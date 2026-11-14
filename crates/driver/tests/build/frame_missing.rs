@@ -393,3 +393,97 @@ def main():
     );
     Ok(())
 }
+
+/// `concat` stacks frames whose columns may hold `None`, two and three at a time, one alone
+/// and empty ones, and each `None` stays with its row across the byte boundaries of the
+/// validity bits. `assign` adds columns that may hold `None` and columns that do not,
+/// narrows one it replaces with its filled values, and takes a list written with `None`
+/// for a column that may hold it; `drop` and `rename` carry such columns along.
+#[test]
+fn frames_with_missing_values_are_stacked_and_reshaped() -> io::Result<()> {
+    let program = r#"
+class Quote(Struct):
+    symbol: str
+    bid: f64 | None
+    size: i64 | None
+    live: bool | None
+
+
+def load(symbols: Array[str, 1], shift: f64) -> DataFrame[Quote]:
+    return DataFrame(
+        {
+            "symbol": symbols.copy(),
+            "bid": Array([1.5 + shift, None, 2.5 + shift, None, None]),
+            "size": Array([None, 20, 30, None, 50]),
+            "live": Array([True, None, False, None, True]),
+        }
+    )
+
+
+def show(quotes: DataFrame[Quote]):
+    print(len(quotes), quotes.symbol, quotes.bid.count(), quotes.size.count(), quotes.live.count())
+    print(quotes.fillna({"bid": -1.0, "size": -1, "live": False}))
+
+
+def main():
+    first = load(Array(["a", "b", "c", "d", "e"]), 0.0)
+    second = load(Array(["f", "g", "h", "i", "j"]), 10.0)
+    show(concat([first, second]))
+    show(concat([first[0:2], second, first[4:]]))
+    show(concat([first.head(1)]))
+    show(concat([first[0:0], second[0:0]]))
+    wider = first.copy().assign(
+        mid=first.bid.fillna(0.0), ask=first.bid.copy(), lot=first.size.isna()
+    )
+    print(wider.columns, wider.ask.count(), wider.mid.sum(), wider.lot)
+    filled = first.copy().assign(bid=first.bid.fillna(0.0))
+    print(filled.bid.sum(), filled.size.count())
+    gaps: Array[f64 | None, 1] = Array([None, None, None, None, 9.0])
+    print(first.copy().assign(bid=gaps).bid.count(), first.copy().drop(columns=["bid"]).columns)
+    print(first.copy().assign(bid=Array([None, 1.0, None, 2.0, 3.0])).bid.sum())
+    print(first.copy().drop(columns=["symbol", "live"]).size.sum())
+    renamed = first.rename(columns={"bid": "best", "size": "count"})
+    print(renamed.columns, renamed.best.count(), renamed["count"].max())
+"#;
+    let (code, output, _) = run("frame_missing_stacked", program)?;
+    assert_eq!(code, Some(0));
+    assert_eq!(
+        output,
+        "10 ['a' 'b' 'c' 'd' 'e' 'f' 'g' 'h' 'i' 'j'] 4 6 6\n\
+         \x20 symbol   bid  size   live\n\
+         0      a   1.5    -1   True\n\
+         1      b  -1.0    20  False\n\
+         2      c   2.5    30  False\n\
+         3      d  -1.0    -1  False\n\
+         4      e  -1.0    50   True\n\
+         5      f  11.5    -1   True\n\
+         6      g  -1.0    20  False\n\
+         7      h  12.5    30  False\n\
+         8      i  -1.0    -1  False\n\
+         9      j  -1.0    50   True\n\
+         8 ['a' 'b' 'f' 'g' 'h' 'i' 'j' 'e'] 3 5 5\n\
+         \x20 symbol   bid  size   live\n\
+         0      a   1.5    -1   True\n\
+         1      b  -1.0    20  False\n\
+         2      f  11.5    -1   True\n\
+         3      g  -1.0    20  False\n\
+         4      h  12.5    30  False\n\
+         5      i  -1.0    -1  False\n\
+         6      j  -1.0    50   True\n\
+         7      e  -1.0    50   True\n\
+         1 ['a'] 1 0 1\n\
+         \x20 symbol  bid  size  live\n\
+         0      a  1.5    -1  True\n\
+         0 [] 0 0 0\n\
+         Empty DataFrame\n\
+         Columns: [symbol, bid, size, live]\n\
+         Index: []\n\
+         ['symbol', 'bid', 'size', 'live', 'mid', 'ask', 'lot'] 2 4.0 [ True False False  True False]\n\
+         4.0 3\n\
+         1 ['symbol', 'size', 'live']\n\
+         6.0\n\
+         100\n\
+         ['symbol', 'best', 'count', 'live'] 2 50\n"
+    );
+    Ok(())
+}
