@@ -17,7 +17,9 @@
 
 use crate::builder::{Builder, Clause, Handler};
 use database::Definition;
-use mir::{Constant, ErrorEdge, Local, Operand, Place, Projection, Rvalue, TerminatorKind};
+use mir::{
+    BlockId, Constant, ErrorEdge, Local, Operand, Place, Projection, Rvalue, TerminatorKind,
+};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Nominal, Type, TypeKind};
 
@@ -45,14 +47,33 @@ impl<'db> Builder<'db> {
     /// The code at a call's error edge, in the edge's block: each error the call can fail with
     /// goes where [`fail`](Self::fail) sends it.
     pub(crate) fn dispatch(&mut self, edge: &ErrorEdge, errors: &[Type<'db>], node: NodeId) {
+        self.dispatch_except(edge, errors, node, None);
+    }
+
+    /// [`dispatch`](Self::dispatch), except that the error type `stop.0` goes to the block
+    /// `stop.1` instead: how a loop over a class's `__next__` ends at `StopIteration`
+    /// (decision 0053). The stopping error has no fields, so it needs no drop.
+    pub(crate) fn dispatch_except(
+        &mut self,
+        edge: &ErrorEdge,
+        errors: &[Type<'db>],
+        node: NodeId,
+        stop: Option<(Type<'db>, BlockId)>,
+    ) {
         self.start(edge.target);
         let place = Place::from(edge.error);
         let error = |position: usize| {
             let position = u32::try_from(position).unwrap_or(u32::MAX);
             Operand::Move(place.clone().project(Projection::Error(position)))
         };
+        let fail = |builder: &mut Self, position: usize, ty: Type<'db>| match stop {
+            Some((stopping, block)) if stopping == ty => {
+                builder.terminate(TerminatorKind::Goto(block), node);
+            }
+            _ => builder.fail(error(position), ty, node),
+        };
         if let [only] = errors {
-            return self.fail(error(0), *only, node);
+            return fail(self, 0, *only);
         }
         let which = self.temporary(self.int_type(), node);
         self.assign(Place::from(which), Rvalue::ErrorIndex(place.clone()), node);
@@ -61,7 +82,7 @@ impl<'db> Builder<'db> {
         self.switch(which, &blocks, node);
         for (position, &(block, ty)) in blocks.iter().enumerate() {
             self.start(block);
-            self.fail(error(position), ty, node);
+            fail(self, position, ty);
         }
     }
 
@@ -86,12 +107,38 @@ impl<'db> Builder<'db> {
     /// Fails at `node` with `error`, of the error type `ty`: to the innermost `except` that
     /// catches `ty`, or else to the caller.
     pub(crate) fn fail(&mut self, error: Operand<'db>, ty: Type<'db>, node: NodeId) {
-        let found = self.handlers.iter().rev().find_map(|handler| {
-            handler.clauses.iter().find_map(|clause| {
-                let position = clause.errors.iter().position(|&caught| caught == ty)?;
-                Some((handler.depth, clause.clone(), position))
-            })
+        let found = self
+            .handlers
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, handler)| {
+                handler.clauses.iter().find_map(|clause| {
+                    let position = clause.errors.iter().position(|&caught| caught == ty)?;
+                    Some((index, handler.depth, clause.clone(), position))
+                })
+            });
+        // The `with` blocks the error leaves call `__exit__` first (decision 0053): those
+        // inside the catching `try`, or all of them. The error waits in a temporary that an
+        // error from `__exit__`, which replaces it, drops.
+        let inside = found.as_ref().map_or(0, |&(index, ..)| {
+            self.exits
+                .iter()
+                .position(|exit| exit.handlers() > index)
+                .unwrap_or(self.exits.len())
         });
+        let error = if self.exits.len() > inside {
+            let held = self.temporary(ty, node);
+            self.assign(Place::from(held), Rvalue::Use(error), node);
+            self.enter();
+            self.drop_later(held);
+            self.exit_from(inside);
+            self.forget();
+            Operand::Move(Place::from(held))
+        } else {
+            error
+        };
+        let found = found.map(|(_, depth, clause, position)| (depth, clause, position));
         let Some((depth, clause, position)) = found else {
             // The error may live in a variable or temporary that is about to be dropped, so it
             // moves out first.
@@ -230,4 +277,4 @@ impl<'db> Builder<'db> {
 }
 
 /// A block and the error type it handles.
-type BlockAndType<'db> = (mir::BlockId, Type<'db>);
+type BlockAndType<'db> = (BlockId, Type<'db>);

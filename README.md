@@ -37,12 +37,12 @@ LLVM into a native executable that starts at `main` in `main.byn`, with `clang` 
 installed; `baryon run` builds and runs it in one step, `baryon test` runs every `@test` function,
 and `baryon watch` rebuilds on every save. It builds numbers, complex numbers, `str`, lists, dicts,
 tuples, optionals, structs, enums, unions of structs with `match`, traits, generics, functions as
-arguments, errors, arrays with slices, broadcasting and `@`, `prange` and `simd` loops, and all
-six example programs. The standard library, written in Baryon itself, covers `math` (with the
-double-double `f64x2` and `fsum`), `random.Philox`, `stats`, `linalg` and `fft`, `DataFrame`
-with pandas's names, plotting with `byplot` (SVG, PNG and PDF), data files (text tables, `.npy`,
-FITS, NetCDF and HDF5 through `h5by`), compression (`zlib`, `gzip`, `compression.zstd`, `bz2` and
-`lzma`), and files, paths and processes. `baryon lsp` is a language server for any editor, and
+arguments, errors, arrays with slices, broadcasting and `@`, `prange` and `simd` loops, `with` and
+`for` on a program's own classes, and all seven example programs. The standard library, written
+in Baryon itself, covers `math` (with the double-double `f64x2` and `fsum`), `random.Philox`,
+`stats`, `linalg` and `fft`, `DataFrame` with pandas's names, plotting with `byplot` (SVG, PNG
+and PDF), data files (text tables, `.npy`, FITS, NetCDF and HDF5 through `h5by`), compression
+(`zlib`, `gzip`, `compression.zstd`, `bz2` and `lzma`), and files, paths and processes. `baryon lsp` is a language server for any editor, and
 the [VS Code extension](editors/vscode/README.md) runs it for you; `baryon doc` writes a
 package's documentation strings as Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
@@ -80,7 +80,10 @@ cargo install --locked cargo-deny@0.20.2
 
 ## Documentation
 
-New to Baryon? Start with the [beginner's guide](docs/guide/README.md). To try it in an editor,
+New to Baryon? Start with the [beginner's guide](docs/guide/README.md), the first of four pages
+on how to code in Baryon: then [a tour of the language](docs/guide/language-tour.md),
+[arrays and numbers](docs/guide/arrays-and-numbers.md), and
+[data, files and plots](docs/guide/data-files-and-plots.md). To try it in an editor,
 [Coding Baryon in VS Code](docs/guide/vscode.md) sets up VS Code, from building `baryon` to
 running and testing a first program. [`CHANGELOG.md`](CHANGELOG.md) says what each release
 holds.
@@ -104,7 +107,7 @@ contributing to the compiler, or integrating one of its crates.
 | `docs/architecture.md` | Crate kinds and dependency rules |
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan and the AstroBaryon roadmap |
-| `docs/guide/` | The beginner's guide and the VS Code setup guide, both run in CI as written |
+| `docs/guide/` | How to code in Baryon, from installing it to data and plots, and the VS Code setup guide, all run in CI as written |
 | `docs/examples/` | Example programs written in the language |
 | `docs/reference/` | The language reference: what a program may say and what it means |
 | `.github/` | CI workflow and pull request template |

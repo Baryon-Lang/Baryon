@@ -43,15 +43,19 @@ impl<'db> Body<'db> {
     /// module).
     pub(super) fn for_statement(&mut self, statement: NodeId) {
         let iterator = self.tree.child(statement, Role::Iterator);
+        self.iterating = Some(statement);
         let element = match iterator {
             Some(iterator) => self.iteration(iterator),
             None => self.lowerer.unknown(),
         };
+        self.iterating = None;
         let lines = iterator.is_some_and(|iterator| self.file_loop(statement, iterator));
-        // A row of a frame is a new struct on each pass, so the loop variable owns it too.
+        // A row of a frame is a new struct on each pass, so the loop variable owns it too, as
+        // it owns each value a class's `__next__` returns (decision 0053).
         let rows = iterator.and_then(|iterator| self.rows_receiver(iterator));
         let owned = lines
             || rows.is_some()
+            || self.user_loops.contains(&statement)
             || iterator.is_some_and(|iterator| self.is_text_literal(iterator));
         let collection = iterator
             .map(|iterator| {
@@ -276,6 +280,14 @@ impl<'db> Body<'db> {
             )
             .with_note(if self.is_dict(collection) {
                 format!("loop over a copy instead: `for k in {collection_name}.copy():`")
+            } else if self
+                .typed
+                .expression(collection)
+                .is_some_and(|ty| self.dunder_method(ty, "__next__").is_some())
+            {
+                format!(
+                    "the loop calls `__next__` on `{collection_name}` on each pass; change it before or after the loop (decision 0053)"
+                )
             } else if self.is_file(collection) {
                 format!(
                     "read the lines first, then loop over them: `for line in {collection_name}.readlines():`"

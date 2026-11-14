@@ -54,6 +54,9 @@ pub(crate) struct Builder<'db> {
     /// The `except` clauses whose bodies are being lowered, innermost last: what a bare `raise`
     /// raises again.
     pub(crate) caught: Vec<Clause<'db>>,
+    /// The `with` blocks of context managers being lowered, innermost last: the `__exit__`
+    /// each way out of a block calls (the `managers` module).
+    pub(crate) exits: Vec<crate::managers::Exit<'db>>,
     /// One error per construct the first slice does not lower.
     diagnostics: Vec<Diagnostic>,
     /// In the outlined body of a `prange` loop, one entry per array it lists in `accumulate=`:
@@ -171,6 +174,7 @@ impl<'db> Builder<'db> {
             loops: Vec::new(),
             handlers: Vec::new(),
             caught: Vec::new(),
+            exits: Vec::new(),
             diagnostics: Vec::new(),
             accumulated: Vec::new(),
             lanes: Vec::new(),
@@ -252,6 +256,7 @@ impl<'db> Builder<'db> {
             loops: Vec::new(),
             handlers: Vec::new(),
             caught: Vec::new(),
+            exits: Vec::new(),
             diagnostics: Vec::new(),
             accumulated: Vec::new(),
             lanes: Vec::new(),
@@ -431,6 +436,13 @@ impl<'db> Builder<'db> {
                 self.push(StatementKind::Drop(Place::from(local)), node);
             }
         }
+    }
+
+    /// Ends what [`enter`](Self::enter) started without dropping its temporaries, which the
+    /// code that follows moves: what a temporary needs while calls that may fail run, and no
+    /// longer after (the `managers` module).
+    pub(crate) fn forget(&mut self) {
+        self.temporaries.pop();
     }
 
     /// Whether [`drop_all`](Self::drop_all) would drop `local`: a variable or `Owned` parameter
