@@ -87,3 +87,10 @@ What becomes easier, what becomes harder, and what we give up.
 | [0052. HDF5 files are read with h5py's names](0052-hdf5-files.md) | Accepted, amended 2026-11-13 |
 | [0053. `with` and `for` work on any class with Python's dunder methods](0053-with-and-for-on-user-classes.md) | Accepted |
 | [0054. The libraries adapted from SciPy are top-level modules named as SciPy's submodules](0054-scipy-module-names.md) | Accepted |
+| [0055. Baryon is licensed Apache-2.0 OR MIT](0055-dual-license.md) | Accepted |
+| [0056. C++ interop is a C-shaped subset](0056-cpp-interop-is-a-c-shaped-subset.md) | Accepted |
+| [0057. The VS Code extension stays a `.vsix` file for now](0057-vscode-extension-stays-a-vsix.md) | Accepted |
+| [0058. User types define operators with Python's dunder methods](0058-operators-are-dunder-methods.md) | Accepted |
+| [0059. Physical units are checked at compile time first, with a run-time unit later](0059-units-compile-time-first.md) | Accepted |
+| [0060. Networking takes its TLS from the operating system](0060-tls-from-the-operating-system.md) | Accepted |
+| [0061. AstroBaryon ships in the standard distribution until a package registry exists](0061-astrobaryon-ships-with-baryon.md) | Accepted |

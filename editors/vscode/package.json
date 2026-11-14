@@ -4,7 +4,7 @@
   "description": "Syntax highlighting, editing support and live diagnostics for the Baryon programming language (.byn files).",
   "version": "0.2.0",
   "publisher": "baryon-lang",
-  "license": "Apache-2.0",
+  "license": "Apache-2.0 OR MIT",
   "private": true,
   "repository": {
     "type": "git",

@@ -591,8 +591,8 @@ Each open decision is a row in the roadmap's
 | D.1 | Team size and hours per week | Every estimate |
 | D.2 | Target workload for the Phase 3 gate (Lennard-Jones MD is suggested) | The Phase 3 gate |
 | D.3 | Mark `InOut` at the call site as well as the signature | Revisited after the example programs |
-| D.5 | C++ interop: full, a C-shaped subset, or dropped | Roadmap 4.1, the largest single item |
-| D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT | Outside contributions |
+| D.5 | C++ interop: full, a C-shaped subset, or dropped. Decided: a C-shaped subset ([0056](../decisions/0056-cpp-interop-is-a-c-shaped-subset.md)) | Roadmap 4.1, the largest single item |
+| D.8 | License: Apache-2.0 alone, or dual Apache-2.0 and MIT. Decided: Apache-2.0 OR MIT ([0055](../decisions/0055-dual-license.md)) | Outside contributions |
 | D.9 | How user code declares a trait and implements it: structurally like Python's `Protocol`, or by naming it like Rust. Decided: a `Protocol` class named as a base ([0031](../decisions/0031-traits-are-protocols.md)) | User-defined trait bounds in the type checker (1.7) |
 | D.10 | How to spell an enum whose variants carry data, in valid Python syntax. Decided: a union of structs ([0032](../decisions/0032-sum-types-are-unions-of-structs.md)) | Sum types and exhaustive `match` (1.7) |
 | D.11 | Integer overflow in release builds: wrap or panic. Decided: wrap ([0030](../decisions/0030-integer-overflow.md)) | The runtime's overflow traps (1.12) and the reference's arithmetic rules |
