@@ -36,7 +36,7 @@ def uses(bids: Array[f64 | None, 1], sizes: Array[i64 | None, 1], prices: Array[
     unknown = df.fillna({"ask": 1.0})
     text = df.fillna({"bid": "none"})
     none = df.fillna()
-    head = df.fillna({"bid": 0.0}).head(2)
+    head = df.fillna({"bid": 0.0}).describe()
 "#;
 
 /// What the checker reports for [`MISTAKES`], in source order.
@@ -107,12 +107,12 @@ error: `fillna` takes the value that replaces each `None`
    |            ^^^^^^^^^^^ wrong arguments
    = note: for example `values.fillna(0.0)`
 
-error: the method `head` is not built for a frame with a column that may hold `None` yet
+error: the method `describe` is not built for a frame with a column that may hold `None` yet
   --> main.byn:13:12
    |
-13 |     head = df.fillna({"bid": 0.0}).head(2)
-   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6"#;
+13 |     head = df.fillna({"bid": 0.0}).describe()
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a column may hold `None`
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` and `tail` and sorted with each `None` last, and its columns read, replaced and chosen by name; the rest comes with roadmap item 3.13.6"#;
 
 /// A program that drops and fills missing values only in the ways that are built.
 const BUILT: &str = r#"

@@ -198,8 +198,14 @@ This prints `3 None 3.0`, then `[False  True False]`.
 - **`len`, `shape`, `columns` and `copy()`** work as for any frame, and the frame is passed
   and returned as any frame is.
 - **Columns are chosen by name**, `quotes[["bid"]]`, each copied with its gaps.
-- **The other frame operations are not built yet** for a frame with such a column: choosing
-  rows, `head`, `tail`, `sort_values`, `groupby`, `merge`, `concat`, `drop_duplicates`,
+- **Rows are chosen as any frame's are**: a mask, `quotes[quotes.bid.notna()]`, a slice,
+  `quotes[1:3]`, `quotes.head(n)` and `quotes.tail(n)`. Each `None` stays with its row.
+- **`sort_values` puts `None` last.** `quotes.sort_values("bid")` sorts the rows that have a
+  bid and puts the rows whose bid is `None` after them, in the order they had, whether the
+  sort is rising or falling. A `NaN` is a number, so it comes after the other numbers and
+  before the `None`s. The sort is stable, as for any frame.
+- **The other frame operations are not built yet** for a frame with such a column: one row,
+  `quotes[0]`, `assign`, `drop`, `rename`, `groupby`, `merge`, `concat`, `drop_duplicates`,
   `describe`, `itertuples`, `DataFrame(rows)` and `print`. Each is a compile error that says
   so. They come with roadmap item 3.13.6. Until then, take the gaps out first, as the next
   section shows: the frame `dropna` or `fillna` gives does everything a frame does.

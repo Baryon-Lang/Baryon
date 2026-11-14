@@ -1,6 +1,6 @@
 //! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1),
-//! the incomplete gamma and beta functions (3.18.2), the error functions (3.18.3) and the Bessel
-//! functions of whole order (3.18.4) gives, at a few hundred arguments each, the value mpmath
+//! the incomplete gamma and beta functions (3.18.2), the error functions (3.18.3), the Bessel
+//! functions of whole order (3.18.4) and the distribution functions (3.18.12) gives, at a few hundred arguments each, the value mpmath
 //! computes to 50 digits, within a tolerance in units in the last place (ULP) stated for each
 //! function below, and `SciPy`'s value at its poles, zeros and infinities.
 //!
@@ -105,7 +105,9 @@ def main() -> Raises[None, OSError | ValueError]:
 /// for the gamma functions and 32 for the beta functions, whose sum has three terms. That is
 /// divided by the shape `a` when it is below 1: a small shape raises the value to the power
 /// 1/a in the inverses and makes the complement 1 minus a number near 1, so each ULP of input
-/// becomes 1/a of output. The smallest shape in the cases is 0.001.
+/// becomes 1/a of output. The smallest shape in the cases is 0.001. The distribution functions
+/// are the same functions after a change of variables, and are held to 32 ULP for each unit of
+/// the logarithm; their first argument is a count or degrees of freedom, not a shape.
 fn tolerance(name: &str, want: f64, first: f64) -> f64 {
     let logarithm = 1.0 + want.abs().ln().abs();
     let shape = first.abs().clamp(1e-3, 1.0);
@@ -115,7 +117,12 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         "j0" | "j1" | "jn" | "y0" | "y1" | "i0" | "i1" | "i0e" | "i1e" | "k0" | "k1" | "k0e"
         | "k1e" | "kn" => 16.0,
         "gammainc" | "gammaincc" | "gammaincinv" | "gammainccinv" => 16.0 * logarithm / shape,
-        "betainc" | "betaincc" | "betaincinv" => 32.0 * logarithm / shape,
+        "betainc" | "betaincc" | "betaincinv" | "betainccinv" => 32.0 * logarithm / shape,
+        "bdtr" | "bdtrc" | "bdtri" | "nbdtr" | "nbdtrc" | "nbdtri" | "pdtr" | "pdtrc" | "pdtri"
+        | "chdtr" | "chdtrc" | "chdtri" | "fdtr" | "fdtrc" | "fdtri" | "gdtr" | "gdtrc"
+        | "stdtr" | "stdtrit" | "kolmogorov" | "kolmogi" | "smirnov" | "smirnovi" | "owens_t" => {
+            32.0 * logarithm
+        }
         _ => 8.0,
     }
 }
@@ -252,7 +259,8 @@ def main() -> Raises[None, OSError | ValueError]:
 /// The incomplete gamma and beta functions' program, which reads the cases as [`GAMMA_FAMILY`]
 /// does.
 const INCOMPLETE_FUNCTIONS: &str = "\
-from special import betainc, betaincc, betaincinv, gammainc, gammaincc, gammainccinv, gammaincinv
+from special import betainc, betaincc, betainccinv, betaincinv, gammainc, gammaincc, gammainccinv
+from special import gammaincinv
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -276,6 +284,76 @@ def main() -> Raises[None, OSError | ValueError]:
                 print(betaincc(a, x, float(fields[3])))
             elif name == \"betaincinv\":
                 print(betaincinv(a, x, float(fields[3])))
+            elif name == \"betainccinv\":
+                print(betainccinv(a, x, float(fields[3])))
+";
+
+/// The distribution functions' program, which reads the cases as [`GAMMA_FAMILY`] does.
+const DISTRIBUTION_FUNCTIONS: &str = "\
+from special import bdtr, bdtrc, bdtri, chdtr, chdtrc, chdtri, fdtr, fdtrc, fdtri, gdtr, gdtrc
+from special import kolmogi, kolmogorov, nbdtr, nbdtrc, nbdtri, owens_t, pdtr, pdtrc, pdtri
+from special import smirnov, smirnovi, stdtr, stdtrit
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            a = float(fields[1])
+            if name == \"kolmogorov\":
+                print(kolmogorov(a))
+                continue
+            if name == \"kolmogi\":
+                print(kolmogi(a))
+                continue
+            b = float(fields[2])
+            if name == \"pdtr\":
+                print(pdtr(a, b))
+            elif name == \"pdtrc\":
+                print(pdtrc(a, b))
+            elif name == \"pdtri\":
+                print(pdtri(a, b))
+            elif name == \"chdtr\":
+                print(chdtr(a, b))
+            elif name == \"chdtrc\":
+                print(chdtrc(a, b))
+            elif name == \"chdtri\":
+                print(chdtri(a, b))
+            elif name == \"stdtr\":
+                print(stdtr(a, b))
+            elif name == \"stdtrit\":
+                print(stdtrit(a, b))
+            elif name == \"smirnov\":
+                print(smirnov(a, b))
+            elif name == \"smirnovi\":
+                print(smirnovi(a, b))
+            elif name == \"owens_t\":
+                print(owens_t(a, b))
+            else:
+                c = float(fields[3])
+                if name == \"bdtr\":
+                    print(bdtr(a, b, c))
+                elif name == \"bdtrc\":
+                    print(bdtrc(a, b, c))
+                elif name == \"bdtri\":
+                    print(bdtri(a, b, c))
+                elif name == \"nbdtr\":
+                    print(nbdtr(a, b, c))
+                elif name == \"nbdtrc\":
+                    print(nbdtrc(a, b, c))
+                elif name == \"nbdtri\":
+                    print(nbdtri(a, b, c))
+                elif name == \"fdtr\":
+                    print(fdtr(a, b, c))
+                elif name == \"fdtrc\":
+                    print(fdtrc(a, b, c))
+                elif name == \"fdtri\":
+                    print(fdtri(a, b, c))
+                elif name == \"gdtr\":
+                    print(gdtr(a, b, c))
+                elif name == \"gdtrc\":
+                    print(gdtrc(a, b, c))
 ";
 
 /// `gamma`, `rgamma`, `gammaln`, `loggamma`, `gammasgn`, `psi`, `digamma`, `polygamma`, `beta`,
@@ -300,8 +378,8 @@ fn bessel_functions_match_the_recorded_values() {
     check("special-bessel", BESSEL_FUNCTIONS, "bessel_functions.txt").unwrap();
 }
 
-/// `gammainc`, `gammaincc`, `gammaincinv`, `gammainccinv`, `betainc`, `betaincc` and
-/// `betaincinv` at the 1,058 cases of `incomplete_functions.txt`, with shapes from 0.001 to 1000
+/// `gammainc`, `gammaincc`, `gammaincinv`, `gammainccinv`, `betainc`, `betaincc`, `betaincinv`
+/// and `betainccinv` at the 1,166 cases of `incomplete_functions.txt`, with shapes from 0.001 to 1000
 /// and values down to 1e-297.
 #[test]
 fn incomplete_functions_match_the_recorded_values() {
@@ -309,6 +387,20 @@ fn incomplete_functions_match_the_recorded_values() {
         "special-incomplete",
         INCOMPLETE_FUNCTIONS,
         "incomplete_functions.txt",
+    )
+    .unwrap();
+}
+
+/// The binomial, negative binomial, Poisson, chi-squared, F, gamma, Student's t, Kolmogorov
+/// and Smirnov distribution functions, their complements and inverses, and Owen's T function,
+/// at the 1,918 cases of `distribution_functions.txt`, with counts up to 5,000 and values down
+/// to 1e-297.
+#[test]
+fn distribution_functions_match_the_recorded_values() {
+    check(
+        "special-distributions",
+        DISTRIBUTION_FUNCTIONS,
+        "distribution_functions.txt",
     )
     .unwrap();
 }

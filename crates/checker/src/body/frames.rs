@@ -215,11 +215,6 @@ impl<'db> Body<'db> {
         };
         let index = self.tree.child(node, Role::Index)?;
         let Some(name) = self.literal_text(index) else {
-            // A list of names copies whole columns, bitmaps included; rows are not chosen yet.
-            if self.has_missing_column(base) && self.tree.kind(index) != SyntaxKind::List {
-                self.expression(index, None);
-                return Some(self.missing_column_unbuilt(node, "choosing rows"));
-            }
             let chosen = self.frame_select(index, base);
             return Some(chosen.unwrap_or_else(|| self.frame_row(index, base, *row)));
         };
@@ -264,6 +259,11 @@ impl<'db> Body<'db> {
                      slice, `df[1:3]`",
                 ),
             );
+        }
+        // A mask or a slice chooses rows of any frame; one row as a struct is not built for a
+        // column that may hold `None`.
+        if self.has_missing_column(base) {
+            return self.missing_column_unbuilt(index, "reading one row");
         }
         row.unwrap_or_else(|| {
             let message = format!("no struct names the rows of `{}`", self.show(base));
@@ -411,7 +411,8 @@ impl<'db> Body<'db> {
         if let Some(frame) = self.missing_method(function, base, callee, arguments) {
             return frame;
         }
-        if callee != "copy" && self.has_missing_column(base) {
+        let built = ["copy", "head", "tail", "sort_values"];
+        if !built.contains(&callee) && self.has_missing_column(base) {
             self.untyped(arguments);
             return self.missing_column_unbuilt(function, &format!("the method `{callee}`"));
         }

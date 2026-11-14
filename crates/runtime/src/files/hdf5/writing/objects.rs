@@ -190,6 +190,7 @@ impl Writer {
         header.add(space, DATASPACE, dataspace(shape), 0);
         header.add(space, DATATYPE, pad8(&datatype(element)), 1);
         if let Some(chunked) = chunked {
+            let size = chunked.values_size();
             header.add(space, FILL, FILL_INCREMENTAL.to_vec(), 1);
             if !chunked.filters.is_empty() {
                 header.add(space, PIPELINE, chunked.filters.message(element.size()), 1);

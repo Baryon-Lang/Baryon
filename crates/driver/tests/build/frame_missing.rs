@@ -183,3 +183,213 @@ def main():
     );
     Ok(())
 }
+
+/// The rows of a frame with columns that may hold `None` are chosen as any frame's are, by
+/// `head`, `tail`, a slice with a step or reversed, a mask, and `sort_values` on its other
+/// columns, and each `None` stays with its row: the counts of the values that are there
+/// and the frame with its gaps filled show which rows came through, across more than one
+/// byte of validity bits. A choice of no rows gives an empty frame.
+#[test]
+fn rows_with_missing_values_are_chosen_and_sorted() -> io::Result<()> {
+    let program = r#"
+class Quote(Struct):
+    symbol: str
+    lot: i64
+    bid: f64 | None
+    size: i64 | None
+    live: bool | None
+
+
+def load() -> DataFrame[Quote]:
+    return DataFrame(
+        {
+            "symbol": Array(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]),
+            "lot": Array([5, 3, 9, 1, 7, 2, 8, 4, 6, 0]),
+            "bid": Array([1.5, None, 2.5, None, None, 6.0, 7.0, 8.0, 9.0, None]),
+            "size": Array([None, 20, 30, None, 50, 60, None, 80, 90, 100]),
+            "live": Array([True, None, False, None, True, None, False, None, True, None]),
+        }
+    )
+
+
+def show(quotes: DataFrame[Quote]):
+    filled = quotes.fillna({"bid": -1.0, "size": -1, "live": False})
+    print(len(quotes), quotes.bid.count(), quotes.size.count(), quotes.live.count())
+    print(filled)
+
+
+def main():
+    quotes = load()
+    show(quotes.head(3))
+    show(quotes.tail(2))
+    show(quotes[2:9:3])
+    show(quotes[::-1].head(4))
+    show(quotes[quotes.lot > 5])
+    show(quotes[quotes.bid.notna() & quotes.size.isna()])
+    show(quotes.sort_values("lot"))
+    show(quotes.sort_values(["symbol"], ascending=False).tail(3))
+    show(quotes[quotes.lot > 100])
+    print(quotes.head(2).bid[1], quotes.sort_values("lot").size[0], quotes[1:2].dropna())
+"#;
+    let (code, output, _) = run("frame_missing_rows", program)?;
+    assert_eq!(code, Some(0));
+    assert_eq!(
+        output,
+        "3 2 2 2\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      a    5  1.5    -1   True\n\
+         1      b    3 -1.0    20  False\n\
+         2      c    9  2.5    30  False\n\
+         2 1 2 1\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      i    6  9.0    90   True\n\
+         1      j    0 -1.0   100  False\n\
+         3 3 3 2\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      c    9  2.5    30  False\n\
+         1      f    2  6.0    60  False\n\
+         2      i    6  9.0    90   True\n\
+         4 3 3 2\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      j    0 -1.0   100  False\n\
+         1      i    6  9.0    90   True\n\
+         2      h    4  8.0    80  False\n\
+         3      g    8  7.0    -1  False\n\
+         4 3 3 4\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      c    9  2.5    30  False\n\
+         1      e    7 -1.0    50   True\n\
+         2      g    8  7.0    -1  False\n\
+         3      i    6  9.0    90   True\n\
+         2 2 0 2\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      a    5  1.5    -1   True\n\
+         1      g    8  7.0    -1  False\n\
+         10 6 7 5\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      j    0 -1.0   100  False\n\
+         1      d    1 -1.0    -1  False\n\
+         2      f    2  6.0    60  False\n\
+         3      b    3 -1.0    20  False\n\
+         4      h    4  8.0    80  False\n\
+         5      a    5  1.5    -1   True\n\
+         6      i    6  9.0    90   True\n\
+         7      e    7 -1.0    50   True\n\
+         8      g    8  7.0    -1  False\n\
+         9      c    9  2.5    30  False\n\
+         3 2 2 2\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      c    9  2.5    30  False\n\
+         1      b    3 -1.0    20  False\n\
+         2      a    5  1.5    -1   True\n\
+         0 0 0 0\n\
+         Empty DataFrame\n\
+         Columns: [symbol, lot, bid, size, live]\n\
+         Index: []\n\
+         None 100 Empty DataFrame\n\
+         Columns: [symbol, lot, bid, size, live]\n\
+         Index: []\n"
+    );
+    Ok(())
+}
+
+/// `sort_values` by a column that may hold `None` sorts the rows that have a value, rising
+/// or falling, a NaN after the numbers, and puts the rows that hold `None` last in both
+/// directions, in the order they had. With several keys the sort stays stable: rows equal
+/// in the first key are ordered by the next, their `None`s last. A `bool` column and an
+/// integer column sort the same way, and a frame of only `None`s keeps its order.
+#[test]
+fn sorting_by_a_column_with_missing_values_puts_none_last() -> io::Result<()> {
+    let program = r#"
+from math import nan
+
+
+class Quote(Struct):
+    symbol: str
+    lot: i64
+    bid: f64 | None
+    size: i64 | None
+    live: bool | None
+
+
+def load() -> DataFrame[Quote]:
+    return DataFrame(
+        {
+            "symbol": Array(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]),
+            "lot": Array([1, 1, 2, 2, 1, 2, 1, 2, 1, 2]),
+            "bid": Array([6.0, None, 2.5, None, None, 6.0, nan, 8.0, 1.0, None]),
+            "size": Array([None, 20, 30, None, 20, 60, None, 80, 20, 100]),
+            "live": Array([True, None, False, None, True, None, False, None, True, None]),
+        }
+    )
+
+
+def show(quotes: DataFrame[Quote]):
+    print(quotes.symbol, quotes.bid.count(), quotes.size.count(), quotes.live.count())
+    print(quotes.fillna({"bid": -1.0, "size": -1, "live": False}).head(4))
+
+
+def main():
+    quotes = load()
+    show(quotes.sort_values("bid"))
+    show(quotes.sort_values("bid", ascending=False))
+    show(quotes.sort_values(["size", "bid"], ascending=[False, True]))
+    show(quotes.sort_values(["lot", "size"]))
+    show(quotes.sort_values("live"))
+    show(quotes.sort_values(by=["live", "symbol"], ascending=False))
+    show(quotes[quotes.lot > 5].sort_values("bid"))
+    show(quotes[quotes.bid.isna()].sort_values("bid"))
+"#;
+    let (code, output, _) = run("frame_missing_sorted", program)?;
+    assert_eq!(code, Some(0));
+    assert_eq!(
+        output,
+        "['i' 'c' 'a' 'f' 'h' 'g' 'b' 'd' 'e' 'j'] 6 7 5\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      i    1  1.0    20   True\n\
+         1      c    2  2.5    30  False\n\
+         2      a    1  6.0    -1   True\n\
+         3      f    2  6.0    60  False\n\
+         ['h' 'a' 'f' 'c' 'i' 'g' 'b' 'd' 'e' 'j'] 6 7 5\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      h    2  8.0    80  False\n\
+         1      a    1  6.0    -1   True\n\
+         2      f    2  6.0    60  False\n\
+         3      c    2  2.5    30  False\n\
+         ['j' 'h' 'f' 'c' 'i' 'b' 'e' 'a' 'g' 'd'] 6 7 5\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      j    2 -1.0   100  False\n\
+         1      h    2  8.0    80  False\n\
+         2      f    2  6.0    60  False\n\
+         3      c    2  2.5    30  False\n\
+         ['b' 'e' 'i' 'a' 'g' 'c' 'f' 'h' 'j' 'd'] 6 7 5\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      b    1 -1.0    20  False\n\
+         1      e    1 -1.0    20   True\n\
+         2      i    1  1.0    20   True\n\
+         3      a    1  6.0    -1   True\n\
+         ['c' 'g' 'a' 'e' 'i' 'b' 'd' 'f' 'h' 'j'] 6 7 5\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      c    2  2.5    30  False\n\
+         1      g    1  NaN    -1  False\n\
+         2      a    1  6.0    -1   True\n\
+         3      e    1 -1.0    20   True\n\
+         ['i' 'e' 'a' 'g' 'c' 'j' 'h' 'f' 'd' 'b'] 6 7 5\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      i    1  1.0    20   True\n\
+         1      e    1 -1.0    20   True\n\
+         2      a    1  6.0    -1   True\n\
+         3      g    1  NaN    -1  False\n\
+         [] 0 0 0\n\
+         Empty DataFrame\n\
+         Columns: [symbol, lot, bid, size, live]\n\
+         Index: []\n\
+         ['b' 'd' 'e' 'j'] 0 3 1\n\
+         \x20 symbol  lot  bid  size   live\n\
+         0      b    1 -1.0    20  False\n\
+         1      d    2 -1.0    -1  False\n\
+         2      e    1 -1.0    20   True\n\
+         3      j    2 -1.0   100  False\n"
+    );
+    Ok(())
+}

@@ -1,6 +1,7 @@
 //! Taking the missing values out (decision 0045, part 3, roadmap 3.13.6): `dropna()` and
 //! `fillna(value)` of an array with missing values and of a frame, and the reductions of an
-//! array that skip them, `count`, `sum`, `mean`, `min` and `max`.
+//! array that skip them, `count`, `sum`, `mean`, `min` and `max`. The rows of a column that
+//! may hold `None` are chosen here too ([`Builder::chosen_column`]).
 //!
 //! The result holds no `None`, so it is stored as a plain array: `dropna` chooses the values
 //! whose validity bit is set, through the mask the library's `missing` makes and the
@@ -14,7 +15,7 @@ use crate::frames::erase;
 use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{BinaryOperator, Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Type, TypeKind};
+use types::{Column, Integer, Primitive, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// `values.dropna()` on the array with missing values `array`, into `place`: a new
@@ -157,6 +158,85 @@ impl<'db> Builder<'db> {
             Rvalue::Binary(BinaryOperator::Divide, total, count),
             node,
         );
+    }
+
+    /// The elements of the column `column`, stored at `from`, that the library function
+    /// `kernel.0` chooses with `kernel.1`: `masked` with a mask, or `taken` with positions.
+    /// The caller owns the new column. `None` after a report.
+    ///
+    /// A column of `str` goes through `text_masked` or `text_taken`. A column that may hold
+    /// `None` has its values chosen as any array's are, and its validity bitmap rebuilt for
+    /// the rows chosen by `masked_bits` or `taken_bits`, so a `None` stays with its row.
+    pub(crate) fn chosen_column(
+        &mut self,
+        from: Place,
+        column: &Column<'db>,
+        (function, by): (&str, &Place),
+        node: NodeId,
+    ) -> Option<Operand<'db>> {
+        let stored = erase(self.db, column.array(self.db));
+        let chosen = match column.element.kind(self.db) {
+            TypeKind::Str => {
+                let name = format!("text_{function}");
+                self.frame_call(&name, Vec::new(), vec![from, by.clone()], stored, node)?
+            }
+            &TypeKind::Optional(element) => {
+                let values = from.clone().project(Projection::Field(VALUES));
+                let bits = from.project(Projection::Field(VALIDITY));
+                let plain = self.array_of(element);
+                let arguments = vec![values, by.clone()];
+                let values = self.frame_call(function, vec![element], arguments, plain, node)?;
+                let name = format!("{function}_bits");
+                let bytes = self.array_of(Type::new(
+                    self.db,
+                    TypeKind::Primitive(Primitive::Integer(Integer::U8)),
+                ));
+                let arguments = vec![bits, by.clone()];
+                let bits = self.frame_call(&name, Vec::new(), arguments, bytes, node)?;
+                let parts = vec![
+                    Operand::Move(Place::from(values)),
+                    Operand::Move(Place::from(bits)),
+                ];
+                let whole = self.temporary(stored, node);
+                self.assign(Place::from(whole), Rvalue::Aggregate(stored, parts), node);
+                whole
+            }
+            _ => {
+                let types = vec![column.element];
+                self.frame_call(function, types, vec![from, by.clone()], stored, node)?
+            }
+        };
+        Some(Operand::Move(Place::from(chosen)))
+    }
+
+    /// The row positions `order` split by the validity bitmap of the column stored at
+    /// `column`, which may hold `None`: those of the rows that have a value, then those of
+    /// the rows that hold `None`, each in the order `order` has them. `sort_values` sorts the
+    /// first and puts the second after it. Both are dropped when the statement ends. `None`
+    /// after a report. Cost: two passes over `order` and two arrays of positions.
+    pub(crate) fn split_missing(
+        &mut self,
+        column: &Place,
+        order: Local,
+        node: NodeId,
+    ) -> Option<(Local, Local)> {
+        let boolean = self.boolean_type();
+        let positions = self.positions_type();
+        let bits = column.clone().project(Projection::Field(VALIDITY));
+        let mut halves = Vec::with_capacity(2);
+        for wanted in [true, false] {
+            let wanted = Constant {
+                ty: boolean,
+                value: ConstantValue::Bool(wanted),
+            };
+            let wanted = Place::from(self.held(boolean, Operand::Constant(wanted), node));
+            let arguments = vec![bits.clone(), Place::from(order), wanted];
+            let half =
+                self.frame_call("valid_positions", Vec::new(), arguments, positions, node)?;
+            self.drop_later(half);
+            halves.push(half);
+        }
+        Some((halves[0], halves[1]))
     }
 
     /// `df.dropna()` on the frame `frame`, into `place`: a new frame of the rows that have

@@ -18,8 +18,10 @@ const BUILT: &str = "an array with missing values has `len`, `values[i]`, which 
 /// What a frame with a column that may hold `None` can do, for messages.
 const BUILT_FRAME: &str = "a frame with a column that may hold `None` is built from its \
                            columns, counted with `len`, copied with `copy`, narrowed by \
-                           `dropna` and `fillna`, and its columns are read, replaced and \
-                           chosen by name; the rest comes with roadmap item 3.13.6";
+                           `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` \
+                           and `tail` and sorted with each `None` last, and its columns read, \
+                           replaced and chosen by name; the rest comes with roadmap item \
+                           3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.

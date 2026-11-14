@@ -1,9 +1,10 @@
 # Special-function reference values
 
-`gamma_family.txt`, `error_functions.txt`, `bessel_functions.txt` and `incomplete_functions.txt`
-hold the cases the build tests in [`../../build/special.rs`](../../build/special.rs) check the
-`special` module's gamma family (roadmap 3.18.1), error functions (3.18.3), Bessel functions of
-whole order (3.18.4) and incomplete gamma and beta functions (3.18.2) against. Each line is a
+`gamma_family.txt`, `error_functions.txt`, `bessel_functions.txt`, `incomplete_functions.txt` and
+`distribution_functions.txt` hold the cases the build tests in
+[`../../build/special.rs`](../../build/special.rs) check the `special` module's gamma family
+(roadmap 3.18.1), error functions (3.18.3), Bessel functions of whole order (3.18.4), incomplete
+gamma and beta functions (3.18.2) and distribution functions (3.18.12) against. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -12,13 +13,13 @@ gamma -16.481439370601617 -3.8732193888774417e-14
 polygamma 3 -8.996117952868211 26418492688.871017
 ```
 
-Most values were computed with mpmath 1.4.1 at 50 digits and rounded to `f64`, at arguments drawn
-at random, with a fixed seed, over each function's range. The last lines are the poles, zeros and
-infinities, where the value is SciPy 1.18.1's, which the module gives exactly, except the
-Bessel functions' limits at infinity, where SciPy gives NaN and the file holds the limit. The
-incomplete beta function's values were computed at 80 digits, so a value far in a tail keeps its
-own, and each inverse's value is the root mpmath finds of the forward function. Neither mpmath
-nor SciPy is needed to run the tests.
+Most values were computed with mpmath 1.4.1 at 50 digits and rounded to `f64`, at arguments drawn at
+random, with a fixed seed, over each function's range. The last lines are the poles, zeros and
+infinities, where the value is SciPy 1.18.1's, which the module gives exactly, except the Bessel
+functions' limits at infinity, `pdtri(k, 1.0)` and `stdtrit(df, 0.0)`, where SciPy gives NaN or the
+wrong infinity and the file holds the limit. The incomplete beta function's values were computed at
+80 digits, so a value far in a tail keeps its own, and each inverse's value is the root mpmath finds
+of the forward function. Neither mpmath nor SciPy is needed to run the tests.
 
 ## The coefficients in `special.byn`
 
@@ -356,6 +357,11 @@ for a, b, x in beta_cases[:120]:
     if 1e-300 < target < 1.0:
         root = bisect(lambda t: lower_beta(a, b, t) - target, x)
         lines.append(f"betaincinv {a!r} {b!r} {target!r} {float(root)!r}")
+for a, b, x in beta_cases[:120]:
+    target = float(upper_beta(a, b, x))
+    if 1e-300 < target < 1.0:
+        root = bisect(lambda t: target - upper_beta(a, b, t), x)
+        lines.append(f"betainccinv {a!r} {b!r} {target!r} {float(root)!r}")
 edges = [
     ("gammainc", (1.0, 0.0)), ("gammainc", (0.0, 1.0)), ("gammainc", (1.0, inf)),
     ("gammainc", (-1.0, 1.0)), ("gammaincc", (1.0, 0.0)), ("gammaincc", (1.0, inf)),
@@ -364,10 +370,272 @@ edges = [
     ("betainc", (1.0, 2.0, 0.0)), ("betainc", (1.0, 2.0, 1.0)), ("betainc", (1.0, 2.0, 1.5)),
     ("betaincc", (1.0, 2.0, 0.0)), ("betaincc", (1.0, 2.0, 1.0)),
     ("betaincinv", (1.0, 2.0, 0.0)), ("betaincinv", (1.0, 2.0, 1.0)),
+    ("betainccinv", (1.0, 2.0, 0.0)), ("betainccinv", (1.0, 2.0, 1.0)),
 ]
 for name, arguments in edges:
     value = float(getattr(scipy.special, name)(*arguments))
     lines.append(" ".join([name] + [repr(x) for x in arguments] + [repr(value)]))
 with open("incomplete_functions.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+
+# Distribution functions (roadmap 3.18.12), drawn after the incomplete functions.
+lines = []
+
+
+def regularized_beta(a, b, x, y):
+    """I_x(a, b), with y = 1 - x given exactly, at 80 digits: the integral from the nearer end."""
+    with mpmath.workdps(80):
+        x, y = mpmath.mpf(x), mpmath.mpf(y)
+        if x <= (a + 1) / (a + b + 2):
+            return +mpmath.betainc(a, b, 0, x, regularized=True)
+        return 1 - mpmath.betainc(b, a, 0, y, regularized=True)
+
+
+def regularized_beta_upper(a, b, x, y):
+    """1 - I_x(a, b) as I_y(b, a)."""
+    with mpmath.workdps(80):
+        x, y = mpmath.mpf(x), mpmath.mpf(y)
+        if y <= (b + 1) / (a + b + 2):
+            return +mpmath.betainc(b, a, 0, y, regularized=True)
+        return 1 - mpmath.betainc(a, b, 0, x, regularized=True)
+
+
+def lower_gamma(a, x):
+    with mpmath.workdps(60):
+        return +mpmath.gammainc(a, 0, x, regularized=True)
+
+
+def upper_gamma(a, x):
+    with mpmath.workdps(60):
+        return +mpmath.gammainc(a, x, mpmath.inf, regularized=True)
+
+
+def bdtr(k, n, p):
+    k = math.floor(k)
+    return regularized_beta(n - k, k + 1, 1 - mpmath.mpf(p), p)
+
+
+def bdtrc(k, n, p):
+    k = math.floor(k)
+    return regularized_beta(k + 1, n - k, p, 1 - mpmath.mpf(p))
+
+
+def nbdtr(k, n, p):
+    return regularized_beta(n, k + 1, p, 1 - mpmath.mpf(p))
+
+
+def nbdtrc(k, n, p):
+    return regularized_beta_upper(n, k + 1, p, 1 - mpmath.mpf(p))
+
+
+def fdtr(a, b, x):
+    w = mpmath.mpf(a) * x / (b + mpmath.mpf(a) * x)
+    return regularized_beta(a / 2, b / 2, w, 1 - w)
+
+
+def fdtrc(a, b, x):
+    w = mpmath.mpf(a) * x / (b + mpmath.mpf(a) * x)
+    return regularized_beta_upper(a / 2, b / 2, w, 1 - w)
+
+
+def stdtr(df, t):
+    with mpmath.workdps(80):
+        t = mpmath.mpf(t)
+        tail = regularized_beta(df / 2, 0.5, df / (df + t * t), t * t / (df + t * t)) / 2
+        return tail if t < 0 else 1 - tail
+
+
+def root(function, target, low, high):
+    """The x in (low, high) where the increasing `function` reaches `target`, bisected in the
+    logarithm of x to 1e-40."""
+    low, high = max(mpmath.mpf(low), mpmath.mpf("1e-320")), mpmath.mpf(high)
+    for _ in range(600):
+        middle = mpmath.sqrt(low * high)
+        if function(middle) < target:
+            low = middle
+        else:
+            high = middle
+        if high - low < mpmath.mpf(10) ** -40 * abs(high):
+            break
+    return (low + high) / 2
+
+
+# Whole-number counts, probabilities and positive shapes, with values far into both tails.
+for _ in range(80):
+    n = int(generator.integers(1, 2000))
+    k = float(generator.integers(0, n))
+    p = float(generator.uniform(0, 1)) ** 2
+    lines.append(f"bdtr {k!r} {float(n)!r} {p!r} {float(bdtr(k, n, p))!r}")
+    lines.append(f"bdtrc {k!r} {float(n)!r} {p!r} {float(bdtrc(k, n, p))!r}")
+    y = float(bdtr(k, n, p))
+    if 1e-300 < y < 1:
+        x = root(lambda q: -bdtr(k, n, q), -y, 0, 1)
+        lines.append(f"bdtri {k!r} {float(n)!r} {y!r} {float(x)!r}")
+for _ in range(60):
+    n = float(generator.integers(1, 500))
+    k = float(generator.integers(0, 1000))
+    p = float(generator.uniform(0, 1))
+    lines.append(f"nbdtr {k!r} {n!r} {p!r} {float(nbdtr(k, n, p))!r}")
+    lines.append(f"nbdtrc {k!r} {n!r} {p!r} {float(nbdtrc(k, n, p))!r}")
+    y = float(nbdtr(k, n, p))
+    if 1e-300 < y < 1:
+        x = root(lambda q: nbdtr(k, n, q), y, 0, 1)
+        lines.append(f"nbdtri {k!r} {n!r} {y!r} {float(x)!r}")
+for _ in range(80):
+    k = float(generator.integers(0, 1000))
+    m = float((k + 1) * math.exp(generator.uniform(-1.5, 1.5)))
+    lines.append(f"pdtr {k!r} {m!r} {float(upper_gamma(k + 1, m))!r}")
+    lines.append(f"pdtrc {k!r} {m!r} {float(lower_gamma(k + 1, m))!r}")
+    y = float(upper_gamma(k + 1, m))
+    if 1e-300 < y < 1:
+        x = root(lambda t: -upper_gamma(k + 1, t), -y, 0, 10 * (k + 50))
+        lines.append(f"pdtri {k!r} {y!r} {float(x)!r}")
+for v in spread(0.05, 2000, 80):
+    x = float(v * math.exp(generator.uniform(-2, 1.5)))
+    lines.append(f"chdtr {v!r} {x!r} {float(lower_gamma(v / 2, x / 2))!r}")
+    lines.append(f"chdtrc {v!r} {x!r} {float(upper_gamma(v / 2, x / 2))!r}")
+    q = float(upper_gamma(v / 2, x / 2))
+    if 1e-300 < q < 1:
+        x = root(lambda t: -upper_gamma(v / 2, t / 2), -q, 0, 100 * (v + 50))
+        lines.append(f"chdtri {v!r} {q!r} {float(x)!r}")
+for a, b in zip(spread(0.1, 1000, 80), spread(0.1, 1000, 80)):
+    x = float(math.exp(generator.uniform(-4, 4)))
+    lines.append(f"fdtr {a!r} {b!r} {x!r} {float(fdtr(a, b, x))!r}")
+    lines.append(f"fdtrc {a!r} {b!r} {x!r} {float(fdtrc(a, b, x))!r}")
+    y = float(fdtr(a, b, x))
+    if 1e-300 < y < 1:
+        r = root(lambda t: fdtr(a, b, t), y, 0, 1e300)
+        lines.append(f"fdtri {a!r} {b!r} {y!r} {float(r)!r}")
+for a, b in zip(spread(0.01, 100, 60), spread(0.1, 1000, 60)):
+    x = float(b / a * math.exp(generator.uniform(-2, 1.5)))
+    lines.append(f"gdtr {a!r} {b!r} {x!r} {float(lower_gamma(b, a * mpmath.mpf(x)))!r}")
+    lines.append(f"gdtrc {a!r} {b!r} {x!r} {float(upper_gamma(b, a * mpmath.mpf(x)))!r}")
+for df in spread(0.1, 1e4, 100):
+    t = float(generator.uniform(-1, 1) * math.exp(generator.uniform(-3, 4)))
+    lines.append(f"stdtr {df!r} {t!r} {float(stdtr(df, t))!r}")
+    p = float(stdtr(df, t))
+    if 1e-300 < p < 1:
+        with mpmath.workdps(60):
+            r = mpmath.findroot(lambda u: stdtr(df, u) - p, t, tol=mpmath.mpf(10) ** -45)
+        lines.append(f"stdtrit {df!r} {p!r} {float(r)!r}")
+edges = [
+    ("bdtr", (-1.0, 10.0, 0.5)), ("bdtr", (10.0, 10.0, 0.5)), ("bdtr", (11.0, 10.0, 0.5)),
+    ("bdtr", (0.0, 10.0, 0.5)), ("bdtr", (3.0, 10.0, 0.0)), ("bdtr", (3.0, 10.0, 1.0)),
+    ("bdtr", (3.0, 10.0, 1.5)), ("bdtr", (3.7, 10.0, 0.3)), ("bdtrc", (-1.0, 10.0, 0.5)),
+    ("bdtrc", (10.0, 10.0, 0.5)), ("bdtrc", (3.0, 10.0, 0.0)), ("bdtrc", (3.0, 10.0, 1.0)),
+    ("bdtri", (3.0, 10.0, 0.0)), ("bdtri", (3.0, 10.0, 1.0)), ("bdtri", (10.0, 10.0, 0.5)),
+    ("bdtri", (-1.0, 10.0, 0.5)), ("nbdtr", (-1.0, 10.0, 0.5)), ("nbdtr", (3.0, 10.0, 0.0)),
+    ("nbdtr", (3.0, 10.0, 1.0)), ("nbdtr", (3.0, 0.0, 0.5)), ("nbdtrc", (3.0, 10.0, 0.0)),
+    ("nbdtrc", (3.0, 10.0, 1.0)), ("nbdtri", (3.0, 10.0, 0.0)), ("nbdtri", (3.0, 10.0, 1.0)),
+    ("pdtr", (-1.0, 3.0)), ("pdtr", (3.0, 0.0)), ("pdtr", (3.0, inf)), ("pdtr", (2.7, 3.0)),
+    ("pdtr", (3.0, -1.0)), ("pdtrc", (3.0, 0.0)), ("pdtrc", (3.0, inf)), ("pdtri", (3.0, 0.0)),
+    ("pdtri", (3.0, 1.5)), ("chdtr", (2.0, 0.0)), ("chdtr", (2.0, -1.0)), ("chdtr", (2.0, inf)),
+    ("chdtr", (0.0, 1.0)), ("chdtrc", (2.0, 0.0)), ("chdtrc", (2.0, inf)), ("chdtri", (2.0, 0.0)),
+    ("chdtri", (2.0, 1.0)), ("chdtri", (0.0, 0.5)), ("fdtr", (2.0, 3.0, 0.0)),
+    ("fdtr", (2.0, 3.0, -1.0)), ("fdtr", (2.0, 3.0, inf)), ("fdtr", (0.0, 3.0, 1.0)),
+    ("fdtr", (inf, 3.0, 1.0)), ("fdtrc", (2.0, 3.0, 0.0)), ("fdtrc", (2.0, 3.0, inf)),
+    ("fdtri", (2.0, 3.0, 0.0)), ("fdtri", (2.0, 3.0, 1.0)), ("gdtr", (1.0, 2.0, 0.0)),
+    ("gdtr", (1.0, 2.0, -1.0)), ("gdtr", (1.0, 2.0, inf)), ("gdtr", (0.0, 2.0, 1.0)),
+    ("gdtr", (1.0, 0.0, 1.0)), ("gdtrc", (1.0, 2.0, 0.0)), ("gdtrc", (1.0, 2.0, inf)),
+    ("stdtr", (3.0, 0.0)), ("stdtr", (3.0, inf)), ("stdtr", (3.0, -inf)), ("stdtr", (inf, 1.0)),
+    ("stdtr", (0.0, 1.0)), ("stdtrit", (3.0, 1.0)), ("stdtrit", (3.0, 0.5)),
+    ("stdtrit", (inf, 0.3)), ("stdtrit", (0.0, 0.5)), ("bdtr", (1e300, 10.0, 0.5)),
+    ("pdtr", (1e300, 3.0)), ("pdtrc", (1e300, 3.0)), ("smirnov", (1e11, 1e-6)),
+]
+for name, arguments in edges:
+    value = float(getattr(scipy.special, name)(*arguments))
+    lines.append(" ".join([name] + [repr(x) for x in arguments] + [repr(value)]))
+# Where SciPy 1.18 gives NaN or the wrong infinity, the file holds the limit: pdtr(k, m) is 1
+# only at m = 0, and the t with probability 0 is minus infinity.
+lines.append("pdtri 3.0 1.0 0.0")
+lines.append("stdtrit 3.0 0.0 -inf")
+# The Kolmogorov distribution and Owen's T function, drawn after the other distribution
+# functions.
+
+
+def kolmogorov_parts(y):
+    """K(y) and 1 - K(y) at 50 digits, each from the series that converges fast for `y`."""
+    y = mpmath.mpf(y)
+    if y < 1:
+        lower = mpmath.sqrt(2 * mpmath.pi) / y * mpmath.nsum(
+            lambda k: mpmath.exp(-(2 * k - 1) ** 2 * mpmath.pi ** 2 / (8 * y * y)), [1, mpmath.inf])
+        return lower, 1 - lower
+    upper = 2 * mpmath.nsum(lambda k: (-1) ** (k - 1) * mpmath.exp(-2 * k * k * y * y),
+                            [1, mpmath.inf])
+    return 1 - upper, upper
+
+
+def owens_t(h, a):
+    """Owen's T by quadrature at 40 digits, over the range where the integrand is not below
+    exp(-800) of its peak."""
+    with mpmath.workdps(40):
+        h, a = mpmath.mpf(h), mpmath.mpf(a)
+        length = min(a, 40 / abs(h)) if h != 0 else a
+        integrand = lambda x: mpmath.exp(-h * h * (1 + x * x) / 2) / (1 + x * x)
+        points = [0] + [length / 2 ** j for j in range(6, -1, -1)]
+        return mpmath.quad(integrand, points) / (2 * mpmath.pi)
+
+
+for y in uniform(0.05, 1, 60) + uniform(1, 3, 40) + uniform(3, 27, 40):
+    lines.append(f"kolmogorov {y!r} {float(kolmogorov_parts(y)[1])!r}")
+for p in spread(1e-300, 0.5, 50) + uniform(0.5, 1, 40):
+    q = 1 - mpmath.mpf(p)
+    low, high = mpmath.mpf("0.01"), mpmath.mpf(30)
+    for _ in range(200):
+        middle = (low + high) / 2
+        lower, upper = kolmogorov_parts(middle)
+        if upper > p:
+            low = middle
+        else:
+            high = middle
+    lines.append(f"kolmogi {p!r} {float((low + high) / 2)!r}")
+for h, a in zip(uniform(-10, 10, 150), spread(1e-3, 100, 150)):
+    lines.append(f"owens_t {h!r} {a!r} {float(owens_t(h, a))!r}")
+edges = [
+    ("kolmogorov", (-1.0,)), ("kolmogorov", (0.0,)), ("kolmogorov", (inf,)),
+    ("kolmogi", (0.0,)), ("kolmogi", (1.0,)), ("kolmogi", (1.5,)),
+    ("owens_t", (0.0, 1.0)), ("owens_t", (1.0, 0.0)), ("owens_t", (1.0, inf)),
+    ("owens_t", (inf, 1.0)), ("owens_t", (0.0, inf)), ("owens_t", (1.0, -1.0)),
+]
+for name, arguments in edges:
+    value = float(getattr(scipy.special, name)(*arguments))
+    lines.append(" ".join([name] + [repr(x) for x in arguments] + [repr(value)]))
+
+
+def smirnov(n, d):
+    """Birnbaum and Tingey's exact sum at 40 digits; every term is positive."""
+    with mpmath.workdps(40):
+        d = mpmath.mpf(d)
+        total = mpmath.mpf(0)
+        for j in range(int(mpmath.floor(n * (1 - d))) + 1):
+            total += mpmath.binomial(n, j) * (1 - d - mpmath.mpf(j) / n) ** (n - j) * (
+                d + mpmath.mpf(j) / n) ** (j - 1)
+        return d * total
+
+
+for n in [int(x) for x in spread(1, 5000, 80)]:
+    d = float(generator.uniform(0, 1) ** 2 * min(1, 3 / math.sqrt(n)) + 1e-3)
+    lines.append(f"smirnov {float(n)!r} {d!r} {float(smirnov(n, d))!r}")
+for n in [int(x) for x in spread(1, 300, 40)]:
+    d = float(generator.uniform(0, 1) ** 2 * min(1, 3 / math.sqrt(n)) + 1e-3)
+    p = float(smirnov(n, d))
+    if 1e-300 < p < 1:
+        low, high = mpmath.mpf(0), mpmath.mpf(1)
+        for _ in range(140):
+            middle = (low + high) / 2
+            if smirnov(n, middle) > p:
+                low = middle
+            else:
+                high = middle
+        lines.append(f"smirnovi {float(n)!r} {p!r} {float((low + high) / 2)!r}")
+edges = [
+    ("smirnov", (1.0, 0.5)), ("smirnov", (10.0, 0.0)), ("smirnov", (10.0, 1.0)),
+    ("smirnov", (10.0, -0.1)), ("smirnov", (0.0, 0.5)), ("smirnov", (5.0, 0.9)),
+    ("smirnovi", (10.0, 0.0)), ("smirnovi", (10.0, 1.0)), ("smirnovi", (10.0, 1.5)),
+]
+for name, arguments in edges:
+    value = float(getattr(scipy.special, name)(*arguments))
+    lines.append(" ".join([name] + [repr(x) for x in arguments] + [repr(value)]))
+with open("distribution_functions.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```

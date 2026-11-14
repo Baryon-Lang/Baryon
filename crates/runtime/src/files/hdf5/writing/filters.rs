@@ -1,7 +1,11 @@
 //! What a chunked dataset's chunks pass through before they are stored, and the shape of its
-//! chunks when the program gives none: h5py's `shuffle=` and `fletcher32=` (`H5Zshuffle.c`,
-//! `H5Zfletcher32.c` and `H5checksum.c` in the HDF5 library 2.0) and h5py's `guess_chunk`
-//! (`h5py/_hl/filters.py`).
+//! chunks when the program gives none: h5py's `shuffle=`, `compression="gzip"` and
+//! `fletcher32=` (`H5Zshuffle.c`, `H5Zdeflate.c`, `H5Zfletcher32.c` and `H5checksum.c` in the
+//! HDF5 library 2.0) and h5py's `guess_chunk` (`h5py/_hl/filters.py`).
+//!
+//! The runtime does not compress: the caller deflates each shuffled chunk with the standard
+//! library's `zlib` and hands over the result. So, as decision 0052's amendment says, a gzip
+//! file's layout is h5py's but its compressed bytes are this zlib's, not the C zlib's.
 
 use super::encode::pad8;
 
@@ -11,12 +15,16 @@ pub(super) struct Filters {
     /// `shuffle=True`: each chunk's bytes are regrouped so that the first byte of every
     /// element comes first, then every second byte, and so on.
     pub(super) shuffle: bool,
+    /// `compression="gzip"` with its level, 0 to 9: each chunk is deflated, after the
+    /// shuffle, by the caller.
+    pub(super) deflate: Option<u8>,
     /// `fletcher32=True`: each chunk ends with its Fletcher-32 checksum.
     pub(super) fletcher32: bool,
 }
 
 impl Filters {
-    /// The filters `text` names, separated by commas: `shuffle` and `fletcher32`.
+    /// The filters `text` names, separated by commas: `shuffle`, `gzip=` and a level, and
+    /// `fletcher32`.
     ///
     /// # Errors
     ///
@@ -27,7 +35,15 @@ impl Filters {
             match name {
                 "shuffle" => filters.shuffle = true,
                 "fletcher32" => filters.fletcher32 = true,
-                _ => return Err(format!("not a filter: {name:?}")),
+                _ => {
+                    filters.deflate = name
+                        .strip_prefix("gzip=")
+                        .and_then(|level| level.parse().ok())
+                        .filter(|level| *level <= 9);
+                    if filters.deflate.is_none() {
+                        return Err(format!("not a filter: {name:?}"));
+                    }
+                }
             }
         }
         Ok(filters)
@@ -35,19 +51,22 @@ impl Filters {
 
     /// Whether there are none.
     pub(super) fn is_empty(self) -> bool {
-        !self.shuffle && !self.fletcher32
+        !self.shuffle && self.deflate.is_none() && !self.fletcher32
     }
 
-    /// The bytes a chunk of `bytes` takes once filtered.
-    pub(super) fn stored_size(self, bytes: u64) -> u64 {
-        bytes + if self.fletcher32 { 4 } else { 0 }
-    }
-
-    /// The chunk `chunk`, of elements of `element` bytes, as it is stored.
-    pub(super) fn apply(self, mut chunk: Vec<u8>, element: usize) -> Vec<u8> {
+    /// The chunk `chunk`, of elements of `element` bytes, shuffled if asked: what is
+    /// deflated, or stored when it is not.
+    pub(super) fn shuffled(self, chunk: Vec<u8>, element: usize) -> Vec<u8> {
         if self.shuffle {
-            chunk = shuffle(&chunk, element);
+            shuffle(&chunk, element)
+        } else {
+            chunk
         }
+    }
+
+    /// The chunk `chunk`, already through the filters before it, with its checksum added
+    /// if asked: what is stored.
+    pub(super) fn finish(self, mut chunk: Vec<u8>) -> Vec<u8> {
         if self.fletcher32 {
             let sum = fletcher32(&chunk);
             chunk.extend_from_slice(&sum.to_le_bytes());
@@ -62,6 +81,10 @@ impl Filters {
         if self.shuffle {
             // Optional (flag 1), with the element size as its one parameter.
             list.push((2, b"shuffle", 1, vec![u32::from(element)]));
+        }
+        if let Some(level) = self.deflate {
+            // Optional too, with the level as its parameter.
+            list.push((1, b"deflate", 1, vec![u32::from(level)]));
         }
         if self.fletcher32 {
             list.push((3, b"fletcher32", 0, Vec::new()));

@@ -49,6 +49,8 @@ print(trades.sort_values(["price", "volume"], ascending=[False, True]))
   here it is always so ([decision 0045](../decisions/0045-dataframe.md)).
 - **NaN goes last**, rising or falling, as in pandas. In a `bool` column `False` comes
   before `True`.
+- **`None` goes after everything**, rising or falling, in a
+  [column that may hold `None`](missing-values.md#in-a-dataframe).
 - **A column of `str` is sorted by code point**, the order of Python's `<` on `str`, as in
   pandas: `"Zed"` comes before `"apple"`, and the empty text comes first. The text is
   turned into whole numbers in that order first, which costs one more sort of that column

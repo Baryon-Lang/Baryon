@@ -72,13 +72,18 @@ for libver, name in [("earliest", "earliest.h5"), ("latest", "latest.h5")]:
 `writes.txt` holds the scenarios of the HDF5 writer's tests (`files::hdf5::writing` in the
 runtime). Each is a log of changes, in the lines that module documents, after a line
 `== name size digest`: the size and the 64-bit FNV-1a digest of the file h5py writes with the
-same calls. A dataset's values are 0, 1, 2 and so on in its element type. The digests stand in
-for the files, the largest of which is 17 MB: chunked scenarios that fill the chunk cache.
+same calls. A dataset's values are 0, 1, 2 and so on in its element type. A gzip dataset's
+line ends with the sizes of the chunks h5py deflated, and the line `V` after it holds those
+chunks in hexadecimal: the tests hand h5py's own compressed bytes to the writer, so the whole
+file, layout and all, must match byte for byte even though the writer's own zlib compresses
+differently. The digests stand in for the files, the largest of which is 17 MB: chunked
+scenarios that fill the chunk cache.
 
 To record the sizes and digests again, after adding a scenario with `== name 0 0`, run this in
 this directory as `python record.py writes.txt`:
 
 ```python
+import itertools
 import os
 import sys
 import tempfile
@@ -110,14 +115,17 @@ def run(lines, path):
                 if len(fields) == 4:
                     f.create_dataset(fields[1], data=values)
                 else:
-                    chunks, filters = fields[4].split("\t")
+                    chunks, filters = fields[4].split("\t")[:2]
                     names = filters.split(",")
+                    levels = [int(name[5:]) for name in names if name.startswith("gzip=")]
                     f.create_dataset(
                         fields[1],
                         data=values,
                         chunks=lengths(chunks) or True,
                         shuffle="shuffle" in names,
                         fletcher32="fletcher32" in names,
+                        compression="gzip" if levels else None,
+                        compression_opts=levels[0] if levels else None,
                     )
             elif fields[0] == "A":
                 target = f[fields[1]] if fields[1] else f
@@ -129,13 +137,35 @@ def run(lines, path):
                     target.attrs[fields[2]] = values.reshape(lengths(shape))[()]
 
 
-lines = open(sys.argv[1]).read().split("\n")
+def deflated(line, path):
+    """A gzip dataset's line with the sizes of h5py's deflated chunks, and those chunks."""
+    fields = line.split("\t")
+    with h5py.File(path, "r") as f:
+        dataset = f[fields[1]]
+        counts = [-(-n // c) for n, c in zip(dataset.shape, dataset.chunks)]
+        chunks = []
+        for position in itertools.product(*map(range, counts)):
+            offset = tuple(at * c for at, c in zip(position, dataset.chunks))
+            chunk = dataset.id.read_direct_chunk(offset)[1]
+            chunks.append(chunk[:-4] if dataset.fletcher32 else chunk)
+    sizes = ",".join(str(len(chunk)) for chunk in chunks)
+    return ["\t".join(fields[:6] + [sizes]), "V\t" + b"".join(chunks).hex()]
+
+
+lines = [line for line in open(sys.argv[1]).read().split("\n") if not line.startswith("V\t")]
 path = os.path.join(tempfile.gettempdir(), "record.h5")
+out = []
 heads = [index for index, line in enumerate(lines) if line.startswith("== ")]
+out.extend(lines[: heads[0]] if heads else lines)
 for start, end in zip(heads, heads[1:] + [len(lines)]):
-    log = [line for line in lines[start + 1 : end] if line and not line.startswith("#")]
-    run(log, path)
+    body = lines[start + 1 : end]
+    run([line for line in body if line and not line.startswith("#")], path)
     data = open(path, "rb").read()
-    lines[start] = f"== {lines[start].split()[1]} {len(data)} {fnv(data):016x}"
-open(sys.argv[1], "w").write("\n".join(lines))
+    out.append(f"== {lines[start].split()[1]} {len(data)} {fnv(data):016x}")
+    for line in body:
+        if line.startswith("D\t") and "gzip=" in line:
+            out.extend(deflated(line, path))
+        else:
+            out.append(line)
+open(sys.argv[1], "w").write("\n".join(out))
 ```

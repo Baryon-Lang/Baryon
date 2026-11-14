@@ -1,0 +1,416 @@
+"""Distribution functions for `special` (roadmap 3.18.12): the cumulative distribution
+functions of the binomial, negative binomial, Poisson, chi-squared, F, gamma and Student's t
+distributions, their complements and their inverses, each a change of variables into the
+incomplete gamma or beta function. Counts are rounded down to whole numbers, as SciPy does.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import inf, isinf, isnan, nan, sqrt
+from special_common import floor_count
+from special_error import square, ndtr, ndtri
+from special_incomplete_gamma import gammainc, gammaincc, gammainccinv
+from special_incomplete_beta import beta_parts, beta_inverse
+
+
+def bdtr(k: f64, n: f64, p: f64) -> f64:
+    """The binomial distribution function, as `scipy.special.bdtr`: the probability of at most
+    `k` successes in `n` independent trials that each succeed with probability `p`, which is
+    I₁₋ₚ(n − k, k + 1).
+
+    ```python
+    from special import bdtr
+
+    print(bdtr(3, 10, 0.5))     # 0.171875
+    ```
+    """
+    if isnan(k) or isnan(n) or isnan(p) or p < 0.0 or p > 1.0:
+        return nan
+    k = floor_count(k)
+    n = floor_count(n)
+    if k < 0.0 or n < k:
+        return nan
+    if k == n or p == 0.0:
+        return 1.0
+    if p == 1.0:
+        return 0.0
+    lower, _ = beta_parts(n - k, k + 1.0, 1.0 - p, p)
+    return lower
+
+
+def bdtrc(k: f64, n: f64, p: f64) -> f64:
+    """The complement of `bdtr`, as `scipy.special.bdtrc`: the probability of more than `k`
+    successes in `n` trials, Iₚ(k + 1, n − k), with its own precision in the tail.
+
+    ```python
+    from special import bdtrc
+
+    print(bdtrc(3, 10, 0.5))    # 0.828125
+    ```
+    """
+    if isnan(k) or isnan(n) or isnan(p) or p < 0.0 or p > 1.0:
+        return nan
+    k = floor_count(k)
+    n = floor_count(n)
+    if n < 0.0 or n < k:
+        return nan
+    if k < 0.0:
+        return 1.0
+    if k == n or p == 0.0:
+        return 0.0
+    if p == 1.0:
+        return 1.0
+    lower, _ = beta_parts(k + 1.0, n - k, p, 1.0 - p)
+    return lower
+
+
+def bdtri(k: f64, n: f64, y: f64) -> f64:
+    """The inverse of `bdtr` in `p`, as `scipy.special.bdtri`: the success probability with
+    `bdtr(k, n, p)` = `y`.
+
+    ```python
+    from special import bdtri
+
+    print(bdtri(3, 10, 0.5))    # 0.35509996791248855
+    ```
+    """
+    if isnan(k) or isnan(n) or isnan(y) or y < 0.0 or y > 1.0:
+        return nan
+    k = floor_count(k)
+    n = floor_count(n)
+    if k < 0.0 or n <= k:
+        return nan
+    if y == 0.0 or y == 1.0:
+        return 1.0 - y
+    return beta_inverse(k + 1.0, n - k, 1.0 - y, y)
+
+
+def nbdtr(k: f64, n: f64, p: f64) -> f64:
+    """The negative binomial distribution function, as `scipy.special.nbdtr`: the probability
+    of at most `k` failures before the `n`th success, in trials that each succeed with
+    probability `p`, which is Iₚ(n, k + 1).
+
+    ```python
+    from special import nbdtr
+
+    print(nbdtr(3, 10, 0.5))    # 0.04614257812500007
+    ```
+    """
+    if isnan(k) or isnan(n) or isnan(p) or p < 0.0 or p > 1.0:
+        return nan
+    k = floor_count(k)
+    n = floor_count(n)
+    if k < 0.0 or n <= 0.0:
+        return nan
+    if p == 0.0:
+        return 0.0
+    if p == 1.0:
+        return 1.0
+    lower, _ = beta_parts(n, k + 1.0, p, 1.0 - p)
+    return lower
+
+
+def nbdtrc(k: f64, n: f64, p: f64) -> f64:
+    """The complement of `nbdtr`, as `scipy.special.nbdtrc`: the probability of more than `k`
+    failures before the `n`th success, with its own precision in the tail.
+
+    ```python
+    from special import nbdtrc
+
+    print(nbdtrc(3, 10, 0.5))   # 0.9538574218749999
+    ```
+    """
+    if isnan(k) or isnan(n) or isnan(p) or p < 0.0 or p > 1.0:
+        return nan
+    k = floor_count(k)
+    n = floor_count(n)
+    if k < 0.0 or n <= 0.0:
+        return nan
+    if p == 0.0:
+        return 1.0
+    if p == 1.0:
+        return 0.0
+    _, upper = beta_parts(n, k + 1.0, p, 1.0 - p)
+    return upper
+
+
+def nbdtri(k: f64, n: f64, y: f64) -> f64:
+    """The inverse of `nbdtr` in `p`, as `scipy.special.nbdtri`: the success probability with
+    `nbdtr(k, n, p)` = `y`.
+
+    ```python
+    from special import nbdtri
+
+    print(nbdtri(3, 10, 0.5))   # 0.7247241675138478
+    ```
+    """
+    if isnan(k) or isnan(n) or isnan(y) or y < 0.0 or y > 1.0:
+        return nan
+    k = floor_count(k)
+    n = floor_count(n)
+    if k < 0.0 or n <= 0.0:
+        return nan
+    if y == 0.0 or y == 1.0:
+        return y
+    return beta_inverse(n, k + 1.0, y, 1.0 - y)
+
+
+def pdtr(k: f64, m: f64) -> f64:
+    """The Poisson distribution function, as `scipy.special.pdtr`: the probability of at most
+    `k` events when `m` are expected, which is Q(k + 1, m).
+
+    ```python
+    from special import pdtr
+
+    print(pdtr(2, 3.0))         # 0.42319008112684353
+    ```
+    """
+    if isnan(k) or isnan(m) or k < 0.0 or m < 0.0:
+        return nan
+    return gammaincc(floor_count(k) + 1.0, m)
+
+
+def pdtrc(k: f64, m: f64) -> f64:
+    """The complement of `pdtr`, as `scipy.special.pdtrc`: the probability of more than `k`
+    events when `m` are expected, P(k + 1, m), with its own precision in the tail.
+
+    ```python
+    from special import pdtrc
+
+    print(pdtrc(2, 3.0))        # 0.5768099188731565
+    ```
+    """
+    if isnan(k) or isnan(m) or k < 0.0 or m < 0.0:
+        return nan
+    return gammainc(floor_count(k) + 1.0, m)
+
+
+def pdtri(k: f64, y: f64) -> f64:
+    """The inverse of `pdtr` in `m`, as `scipy.special.pdtri`: the expected count with
+    `pdtr(k, m)` = `y`.
+
+    `y` of 1 gives 0, where SciPy 1.18 gives NaN: `pdtr(k, m)` is 1 only at m = 0.
+
+    ```python
+    from special import pdtri
+
+    print(pdtri(2, 0.5))        # 2.6740603137235617
+    ```
+    """
+    if isnan(k) or isnan(y) or k < 0.0 or y < 0.0 or y > 1.0:
+        return nan
+    return gammainccinv(floor_count(k) + 1.0, y)
+
+
+def chdtr(v: f64, x: f64) -> f64:
+    """The chi-squared distribution function with `v` degrees of freedom, as
+    `scipy.special.chdtr`: P(v/2, x/2).
+
+    ```python
+    from special import chdtr
+
+    print(chdtr(3.0, 2.0))      # 0.4275932955291202
+    ```
+    """
+    if isnan(v) or isnan(x) or v < 0.0 or x < 0.0:
+        return nan
+    return gammainc(0.5 * v, 0.5 * x)
+
+
+def chdtrc(v: f64, x: f64) -> f64:
+    """The complement of `chdtr`, as `scipy.special.chdtrc`: Q(v/2, x/2), with its own
+    precision in the tail.
+
+    ```python
+    from special import chdtrc
+
+    print(chdtrc(3.0, 2.0))     # 0.5724067044708798
+    ```
+    """
+    if isnan(v) or isnan(x) or v < 0.0 or x < 0.0:
+        return nan
+    return gammaincc(0.5 * v, 0.5 * x)
+
+
+def chdtri(v: f64, y: f64) -> f64:
+    """The inverse of `chdtrc` in `x`, as `scipy.special.chdtri`: the `x` with
+    `chdtrc(v, x)` = `y`.
+
+    ```python
+    from special import chdtri
+
+    print(chdtri(3.0, 0.05))    # 7.814727903251179
+    ```
+    """
+    if isnan(v) or isnan(y) or v <= 0.0 or y < 0.0 or y > 1.0:
+        return nan
+    return 2.0 * gammainccinv(0.5 * v, y)
+
+
+def _f_parts(a: f64, b: f64, x: f64) -> tuple[f64, f64]:
+    """The F distribution function with `a` and `b` degrees of freedom at `x` and its
+    complement: I_w(a/2, b/2) with w = a x / (b + a x) and 1 − w = b / (b + a x), each formed
+    with its own precision."""
+    denominator = b + a * x
+    lower, upper = beta_parts(0.5 * a, 0.5 * b, a * x / denominator, b / denominator)
+    return (lower, upper)
+
+
+def fdtr(a: f64, b: f64, x: f64) -> f64:
+    """The F distribution function with `a` and `b` degrees of freedom, as
+    `scipy.special.fdtr`.
+
+    ```python
+    from special import fdtr
+
+    print(fdtr(2.0, 3.0, 1.0))  # 0.5352419984551098
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(x) or a <= 0.0 or b <= 0.0 or isinf(a) or isinf(b):
+        return nan
+    if x < 0.0:
+        return nan
+    if x == 0.0:
+        return 0.0
+    if isinf(x):
+        return 1.0
+    lower, _ = _f_parts(a, b, x)
+    return lower
+
+
+def fdtrc(a: f64, b: f64, x: f64) -> f64:
+    """The complement of `fdtr`, as `scipy.special.fdtrc`, with its own precision in the tail.
+
+    ```python
+    from special import fdtrc
+
+    print(fdtrc(2.0, 3.0, 1.0))     # 0.4647580015448902
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(x) or a <= 0.0 or b <= 0.0 or isinf(a) or isinf(b):
+        return nan
+    if x < 0.0:
+        return nan
+    if x == 0.0:
+        return 1.0
+    if isinf(x):
+        return 0.0
+    _, upper = _f_parts(a, b, x)
+    return upper
+
+
+def fdtri(a: f64, b: f64, y: f64) -> f64:
+    """The inverse of `fdtr` in `x`, as `scipy.special.fdtri`: the `x` with
+    `fdtr(a, b, x)` = `y`.
+
+    The beta variable w = a x / (b + a x) is found first, and from it x = b w / (a (1 − w)).
+    When w is above ½, 1 − w is found instead, from the mirrored shapes, so a large `x` keeps
+    its precision.
+
+    ```python
+    from special import fdtri
+
+    print(fdtri(2.0, 3.0, 0.5))     # 0.8811015779522993
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(y) or a <= 0.0 or b <= 0.0 or y < 0.0 or y > 1.0:
+        return nan
+    if y == 0.0:
+        return 0.0
+    if y == 1.0:
+        return inf
+    w = beta_inverse(0.5 * a, 0.5 * b, y, 1.0 - y)
+    if w <= 0.5:
+        return b * w / (a * (1.0 - w))
+    rest = beta_inverse(0.5 * b, 0.5 * a, 1.0 - y, y)
+    return b * (1.0 - rest) / (a * rest)
+
+
+def gdtr(a: f64, b: f64, x: f64) -> f64:
+    """The gamma distribution function with rate `a` and shape `b`, as `scipy.special.gdtr`:
+    P(b, a x).
+
+    ```python
+    from special import gdtr
+
+    print(gdtr(1.0, 2.0, 3.0))  # 0.8008517265285442
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(x) or a < 0.0 or b < 0.0 or x < 0.0:
+        return nan
+    return gammainc(b, a * x)
+
+
+def gdtrc(a: f64, b: f64, x: f64) -> f64:
+    """The complement of `gdtr`, as `scipy.special.gdtrc`: Q(b, a x), with its own precision
+    in the tail.
+
+    ```python
+    from special import gdtrc
+
+    print(gdtrc(1.0, 2.0, 3.0))     # 0.1991482734714558
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(x) or a < 0.0 or b < 0.0 or x < 0.0:
+        return nan
+    return gammaincc(b, a * x)
+
+
+def stdtr(df: f64, t: f64) -> f64:
+    """Student's t distribution function with `df` degrees of freedom, as
+    `scipy.special.stdtr`.
+
+    Below 0 it is ½ I_w(df/2, ½) with w = df / (df + t²); above, ½ + ½ I₁₋w(½, df/2), so
+    neither tail is 1 minus a number near 1. Infinite `df` gives the normal distribution.
+
+    ```python
+    from special import stdtr
+
+    print(stdtr(3.0, 1.0))      # 0.8044988905221147
+    ```
+    """
+    if isnan(df) or isnan(t) or df <= 0.0:
+        return nan
+    if isinf(df):
+        return ndtr(t)
+    if t == 0.0:
+        return 0.5
+    if isinf(t):
+        if t > 0.0:
+            return 1.0
+        return 0.0
+    square = t * t
+    denominator = df + square
+    lower, upper = beta_parts(0.5 * df, 0.5, df / denominator, square / denominator)
+    if t < 0.0:
+        return 0.5 * lower
+    return 0.5 + 0.5 * upper
+
+
+def stdtrit(df: f64, p: f64) -> f64:
+    """The inverse of `stdtr` in `t`, as `scipy.special.stdtrit`: the `t` with
+    `stdtr(df, t)` = `p`.
+
+    `p` of 0 gives −∞, where SciPy 1.18 gives ∞.
+
+    ```python
+    from special import stdtrit
+
+    print(stdtrit(3.0, 0.975))  # 3.182446305283708
+    ```
+    """
+    if isnan(df) or isnan(p) or df <= 0.0 or p < 0.0 or p > 1.0:
+        return nan
+    if isinf(df):
+        return ndtri(p)
+    if p == 0.5:
+        return 0.0
+    if p > 0.5:
+        return -stdtrit(df, 1.0 - p)
+    if p == 0.0:
+        return -inf
+    w = beta_inverse(0.5 * df, 0.5, 2.0 * p, 1.0 - 2.0 * p)
+    if w <= 0.5:
+        return -sqrt(df * (1.0 - w) / w)
+    rest = beta_inverse(0.5, 0.5 * df, 1.0 - 2.0 * p, 2.0 * p)
+    return -sqrt(df * rest / (1.0 - rest))

@@ -127,8 +127,10 @@ and narrowed it on 2026-11-14 (card 35):
 3. **Gzip files are readable, not byte-identical.** They keep h5py's layout, settings and
    allocation order, and h5py reads them back, but their compressed chunks are the native
    zlib's (decision 0049, point 5, unchanged), so those bytes, and the addresses after them,
-   may differ from h5py's. Tests check the structure and a round trip through h5py. "Byte for
-   byte" anywhere in the reference means uncompressed files only.
+   may differ from h5py's. Tests check the structure by handing the writer h5py's own
+   compressed chunks, which must then give h5py's file byte for byte, and read back a file
+   whose chunks another zlib compressed. "Byte for byte" anywhere in the reference means
+   uncompressed files only.
 4. **A file is its log of changes.** The HDF5 library's choices of where each structure goes
    depend on everything done to the file since it was created, which the file itself does not
    record. So `h5by.File` keeps the list of changes made so far, one line each, and every
