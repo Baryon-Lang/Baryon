@@ -174,6 +174,8 @@ With four trades of the symbols 7, 3, 7 and 5, this prints:
   the order of `right`. pandas documents the same order but does not always give it when
   rows have several partners; sort both results to compare them.
 - **NaN joins NaN**, as in pandas, though the two are not equal.
+- **`None` joins `None`** in a key that
+  [may hold `None`](missing-values.md#in-a-dataframe), and no number.
 - **A key of `str` joins texts that are exactly equal**: `"IBM"` and `"ibm"` are no
   partners. It costs one copy of the key's text from both frames and a sort of it.
 - **Both frames are read, not taken**, and the result is a new frame, with no struct for

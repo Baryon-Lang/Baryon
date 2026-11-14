@@ -7,7 +7,9 @@
 //! then one of two columns of integers. Lowering calls the generic functions once for each
 //! key column and copies each column of the result with `taken`. Both frames are borrowed.
 //! A key of `str` is joined on the integers the library's `text_codes` gives for the text of
-//! the two columns end to end, and a column of `str` is copied with `text_taken`.
+//! the two columns end to end, and a column of `str` is copied with `text_taken`. A key that
+//! may hold `None` is joined as two columns ([`Builder::optional_keys`]), and a column that
+//! may hold `None` is copied with its validity bitmap.
 
 use crate::builder::Builder;
 use crate::frames::erase;
@@ -59,6 +61,24 @@ impl<'db> Builder<'db> {
                 left_source.clone().project(Projection::Field(left_at)),
                 right_source.clone().project(Projection::Field(right_at)),
             ];
+            // A key that may hold `None` is joined as two columns: whether each element is
+            // there, and its value with the filler under each `None`, so a `None` joins a
+            // `None` and no number, as a NaN joins a NaN.
+            if let &TypeKind::Optional(element) = column.element.kind(self.db) {
+                let [Some(left_keys), Some(right_keys)] =
+                    sides.map(|side| self.optional_keys(&side, element, key))
+                else {
+                    return;
+                };
+                for ((left_key, compared), (right_key, _)) in left_keys.into_iter().zip(right_keys)
+                {
+                    let Some(both) = self.joined_key([left_key, right_key], compared, key) else {
+                        return;
+                    };
+                    keys.push(both);
+                }
+                continue;
+            }
             let Some(both) = self.joined_key(sides, column.element, key) else {
                 return;
             };
@@ -90,10 +110,11 @@ impl<'db> Builder<'db> {
                     continue;
                 }
                 let from = source.clone().project(Projection::Field(position));
-                let Some(taken) = self.taken_column(from, column, Place::from(rows), node) else {
+                let chosen = ("taken", &Place::from(rows));
+                let Some(taken) = self.chosen_column(from, column, chosen, node) else {
                     return;
                 };
-                made.push(Operand::Move(Place::from(taken)));
+                made.push(taken);
             }
         }
         self.assign(place, Rvalue::Aggregate(ty, made), node);
