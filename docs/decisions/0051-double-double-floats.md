@@ -51,16 +51,17 @@ struct imported from `math` (this record), functions in a module of their own, s
 - `print(a)` writes the struct's fields, `f64x2(hi=..., lo=...)`; `a.to_str()` writes the
   decimal value.
 
-## Amendment, 2026-11-14: `f64x2.of(x)`
+## Amendment, 2026-11-14: `f64x2.of(x)`, as chosen
 
-Point 2 built an `f64x2` from an `f64` with the constructor because a struct had no functions
-called on its class. The card Collins chose on 2026-11-13 proposed `f64x2.of(x)`. Row 1.9.28
+This corrects the record to match Collins's choice. The card he answered, asked on
+2026-11-12 in the extended-precision sums work, listed `f64x2.of(x)` in its recommended option
+("`a.add(b)`, `a.mul(b)`, `a.sqrt()`, `a.lt(b)`, `f64x2.of(x)`, `a.to_f64()`, `a.to_str()`"),
+and he took that recommendation on 2026-11-13. Point 2 shipped only the constructor because a
+struct had no functions called on its class then. Row 1.9.28
 ([#398](https://github.com/Baryon-Lang/Baryon/pull/398)) made such functions work, so `f64x2`
-now has `of` too (roadmap 3.33.1):
+now has `of` as chosen (roadmap 3.33.1):
 
 - `f64x2.of(x)` is `x` as an `f64x2`, exactly, the same value as `f64x2(x, 0.0)`.
-- The constructor stays, and both spellings build the same value. `of` reads as a conversion,
-  which is what it is. The constructor shows the two parts, which code written against the
-  algorithms needs.
+- The constructor stays, and both spellings build the same value.
 - `f64x2.of(0.1)` holds the `f64` nearest 0.1, as `f64x2(0.1, 0.0)` does. To get 0.1 to 32
   digits, divide two exact values: `f64x2.of(1.0).div(f64x2.of(10.0))`.
