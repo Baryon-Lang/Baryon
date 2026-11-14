@@ -9,6 +9,8 @@
 //! ([`Builder::frame_columns`]).
 
 use crate::builder::Builder;
+use crate::optional_arrays::{VALIDITY, VALUES};
+use mir::{Argument, Builtin, Callee, TerminatorKind};
 use mir::{Constant, ConstantValue, Local, Operand, Piece, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Column, FormatSpec, Nominal, Type, TypeDb, TypeKind};
@@ -308,7 +310,8 @@ impl<'db> Builder<'db> {
     }
 
     /// The value of row `row` of `column`, whose values are at `values`, for a field of the
-    /// struct of one row: a copy of the element, and for a column of `str` a new `str` that
+    /// struct of one row: a copy of the element, for a column that may hold `None` the
+    /// element or `None`, and for a column of `str` a new `str` that
     /// owns a copy of the element's bytes, since the struct may outlive the frame. `row` is
     /// inside the column. Cost for a column of `str`: one allocation.
     pub(crate) fn row_field(
@@ -318,6 +321,21 @@ impl<'db> Builder<'db> {
         row: Local,
         node: NodeId,
     ) -> Operand<'db> {
+        if let &TypeKind::Optional(element) = column.element.kind(self.db) {
+            // A column that may hold `None` gives the field a `T | None`: the library's
+            // `optional_element` reads the value or, where the validity bit is 0, `None`.
+            let arguments = vec![
+                values.clone().project(Projection::Field(VALUES)),
+                values.clone().project(Projection::Field(VALIDITY)),
+                Place::from(row),
+            ];
+            let types = vec![element];
+            return match self.frame_call("optional_element", types, arguments, column.element, node)
+            {
+                Some(read) => Operand::Copy(Place::from(read)),
+                None => Operand::Copy(values.project(Projection::Index(vec![row]))),
+            };
+        }
         if !matches!(column.element.kind(self.db), TypeKind::Str) {
             return Operand::Copy(values.project(Projection::Index(vec![row])));
         }
@@ -332,7 +350,10 @@ impl<'db> Builder<'db> {
     /// frame's rows: one new array per field, of the list's length, filled in one pass over
     /// the list, so the cost is one read of the list and one write of the frame. A field of
     /// `str` becomes a text column in two more passes over the list
-    /// ([`Builder::text_array_of`]), which copy the text.
+    /// ([`Builder::text_array_of`]), which copy the text. A field that may be `None` is
+    /// gathered into a list in the pass, from which the library's `optional_parts` builds
+    /// the column's values and validity bitmap: one more pass, and the list, freed when the
+    /// statement ends.
     pub(crate) fn frame_from_rows(&mut self, place: Place, rows: NodeId, node: NodeId) {
         let ty = self.ty(node);
         let Some(columns) = self.frame_columns(node) else {
@@ -343,37 +364,79 @@ impl<'db> Builder<'db> {
         self.assign(Place::from(length), Rvalue::Length(list.clone(), 0), node);
         let length = Operand::Copy(Place::from(length));
         // A column of numbers is a new array filled in the pass below; a column of `str` is
-        // built from the rows' field in two passes of its own.
+        // built from the rows' field in two passes of its own; a column that may hold `None`
+        // is built after the pass from a list of the rows' field, which the pass fills.
         let arrays: Vec<_> = (0_u32..)
             .zip(columns)
             .map(|(position, column)| {
                 let array = erase(self.db, column.array(self.db));
                 let local = self.temporary(array, node);
-                let text = matches!(column.element.kind(self.db), TypeKind::Str);
-                if text {
-                    let field = (&list, Some(position));
-                    self.text_array_of(&Place::from(local), field, length.clone(), array, node);
-                } else {
-                    let lengths = vec![length.clone()];
-                    self.assign(Place::from(local), Rvalue::NewArray(array, lengths), node);
+                let mut items = None;
+                match column.element.kind(self.db) {
+                    TypeKind::Str => {
+                        let field = (&list, Some(position));
+                        self.text_array_of(&Place::from(local), field, length.clone(), array, node);
+                    }
+                    TypeKind::Optional(_) => {
+                        let gathered = Type::new(self.db, TypeKind::List(column.element));
+                        let fields = self.temporary(gathered, node);
+                        let empty = Rvalue::Aggregate(gathered, Vec::new());
+                        self.assign(Place::from(fields), empty, node);
+                        self.drop_later(fields);
+                        items = Some(fields);
+                    }
+                    _ => {
+                        let lengths = vec![length.clone()];
+                        self.assign(Place::from(local), Rvalue::NewArray(array, lengths), node);
+                    }
                 }
-                (local, text)
+                (local, column, items)
             })
             .collect();
+        let nothing = self.temporary(Type::new(self.db, TypeKind::None), node);
         self.loop_nest(&[length], &mut Vec::new(), node, &mut |builder, indices| {
             let row = list.clone().project(Projection::Index(indices.to_vec()));
-            for (position, &(array, text)) in (0_u32..).zip(&arrays) {
-                if text {
-                    continue;
-                }
+            for (position, &(array, column, items)) in (0_u32..).zip(&arrays) {
                 let field = row.clone().project(Projection::Field(position));
-                let element = Place::from(array).project(Projection::Index(indices.to_vec()));
-                builder.assign(element, Rvalue::Use(Operand::Copy(field)), node);
+                if let Some(items) = items {
+                    builder.then(node, |next| TerminatorKind::Call {
+                        callee: Callee::Builtin(Builtin::Append),
+                        arguments: vec![
+                            Argument::InOut(Place::from(items)),
+                            Argument::Owned(Operand::Copy(field)),
+                        ],
+                        destination: Place::from(nothing),
+                        target: next,
+                        error: None,
+                    });
+                } else if !matches!(column.element.kind(builder.db), TypeKind::Str) {
+                    let element = Place::from(array).project(Projection::Index(indices.to_vec()));
+                    builder.assign(element, Rvalue::Use(Operand::Copy(field)), node);
+                }
             }
         });
+        for &(array, column, items) in &arrays {
+            let (Some(items), &TypeKind::Optional(element)) = (items, column.element.kind(self.db))
+            else {
+                continue;
+            };
+            let Some(filler) = self.filler(element) else {
+                return self.unsupported(node, "a column with missing values of this type");
+            };
+            let filler = Place::from(self.held(element, Operand::Constant(filler), node));
+            let stored = erase(self.db, column.array(self.db));
+            let arguments = vec![Place::from(items), filler];
+            let Some(parts) =
+                self.frame_call("optional_parts", vec![element], arguments, stored, node)
+            else {
+                return;
+            };
+            let parts = Rvalue::Use(Operand::Move(Place::from(parts)));
+            self.assign(Place::from(array), parts, node);
+        }
         let columns = arrays
             .into_iter()
-            .map(|(array, _)| Operand::Move(Place::from(array)))
+            .map(|(array, _, _)| Operand::Move(Place::from(array)))
             .collect();
         self.assign(place, Rvalue::Aggregate(ty, columns), node);
     }
