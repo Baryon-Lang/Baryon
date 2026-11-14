@@ -143,9 +143,6 @@ impl<'db> Body<'db> {
         let &TypeKind::DataFrame { row, .. } = frame.kind(self.db) else {
             return None;
         };
-        if self.has_missing_column(frame) {
-            return Some(self.missing_column_unbuilt(iterator, "a loop over its rows"));
-        }
         Some(row.unwrap_or_else(|| {
             let message = format!("no struct names the rows of `{}`", self.show(frame));
             self.lowerer.error(
