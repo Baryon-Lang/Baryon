@@ -1,8 +1,8 @@
-//! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1), the
-//! error functions (3.18.3) and the Bessel functions of whole order (3.18.4) gives, at a few
-//! hundred arguments each, the value mpmath computes to 50 digits, within a tolerance in units in
-//! the last place (ULP) stated for each function below, and `SciPy`'s value at its poles, zeros and
-//! infinities.
+//! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1),
+//! the incomplete gamma and beta functions (3.18.2), the error functions (3.18.3) and the Bessel
+//! functions of whole order (3.18.4) gives, at a few hundred arguments each, the value mpmath
+//! computes to 50 digits, within a tolerance in units in the last place (ULP) stated for each
+//! function below, and `SciPy`'s value at its poles, zeros and infinities.
 //!
 //! The arguments and reference values are in `tests/fixtures/special`; its `README.md` holds the
 //! script that recorded them, so the tests run without Python or mpmath.
@@ -91,19 +91,31 @@ def main() -> Raises[None, OSError | ValueError]:
                 print(dawsn(x))
 ";
 
-/// How far a value may be from the reference, in ULP of `scale(name, want, x)`.
+/// How far a value may be from the reference, in ULP of `scale(name, want, x)`, for a case
+/// whose first argument is `first`.
 ///
 /// Most functions are relative: within 8 ULP of the reference. The Bessel functions are held to 16,
 /// since each is a sum or a recurrence of many terms, and `yn` to 32: its upward recurrence adds
 /// about half a ULP at each order, and the cases reach order 30. `beta` is held to 8 ULP plus 2 for
 /// each unit of the logarithm of the value: above 171 it is `exp(betaln)`, and the exponential
 /// turns each ULP of the logarithm's absolute error into its size in relative error.
-fn tolerance(name: &str, want: f64) -> f64 {
+///
+/// The incomplete gamma and beta functions are an exponential of a sum of logarithms times a
+/// series, so they too are held to a number of ULP for each unit of the value's logarithm, 16
+/// for the gamma functions and 32 for the beta functions, whose sum has three terms. That is
+/// divided by the shape `a` when it is below 1: a small shape raises the value to the power
+/// 1/a in the inverses and makes the complement 1 minus a number near 1, so each ULP of input
+/// becomes 1/a of output. The smallest shape in the cases is 0.001.
+fn tolerance(name: &str, want: f64, first: f64) -> f64 {
+    let logarithm = 1.0 + want.abs().ln().abs();
+    let shape = first.abs().clamp(1e-3, 1.0);
     match name {
         "beta" => 8.0 + 2.0 * want.abs().ln().abs(),
         "yn" => 32.0,
         "j0" | "j1" | "jn" | "y0" | "y1" | "i0" | "i1" | "i0e" | "i1e" | "k0" | "k1" | "k0e"
         | "k1e" | "kn" => 16.0,
+        "gammainc" | "gammaincc" | "gammaincinv" | "gammainccinv" => 16.0 * logarithm / shape,
+        "betainc" | "betaincc" | "betaincinv" => 32.0 * logarithm / shape,
         _ => 8.0,
     }
 }
@@ -161,6 +173,7 @@ fn check(name: &str, program: &str, fixture: &str) -> io::Result<()> {
         let fields: Vec<&str> = case.split(' ').collect();
         let want = number(fields[fields.len() - 1])?;
         let x = number(fields[fields.len() - 2])?;
+        let first = number(fields[1])?;
         let got = number(line)?;
         if want.is_nan() {
             assert!(got.is_nan(), "{case}: got {got}");
@@ -170,7 +183,7 @@ fn check(name: &str, program: &str, fixture: &str) -> io::Result<()> {
             assert_eq!(got.abs().to_bits(), 0, "{case}: got {got}");
         } else {
             let error = (got - want).abs() / ulp(scale(function, want, x));
-            let allowed = tolerance(function, want);
+            let allowed = tolerance(function, want, first);
             assert!(
                 error <= allowed,
                 "{case}: got {got}, {error} ULP, {allowed} allowed"
@@ -236,6 +249,35 @@ def main() -> Raises[None, OSError | ValueError]:
                 print(k1e(x))
 ";
 
+/// The incomplete gamma and beta functions' program, which reads the cases as [`GAMMA_FAMILY`]
+/// does.
+const INCOMPLETE_FUNCTIONS: &str = "\
+from special import betainc, betaincc, betaincinv, gammainc, gammaincc, gammainccinv, gammaincinv
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            a = float(fields[1])
+            x = float(fields[2])
+            if name == \"gammainc\":
+                print(gammainc(a, x))
+            elif name == \"gammaincc\":
+                print(gammaincc(a, x))
+            elif name == \"gammaincinv\":
+                print(gammaincinv(a, x))
+            elif name == \"gammainccinv\":
+                print(gammainccinv(a, x))
+            elif name == \"betainc\":
+                print(betainc(a, x, float(fields[3])))
+            elif name == \"betaincc\":
+                print(betaincc(a, x, float(fields[3])))
+            elif name == \"betaincinv\":
+                print(betaincinv(a, x, float(fields[3])))
+";
+
 /// `gamma`, `rgamma`, `gammaln`, `loggamma`, `gammasgn`, `psi`, `digamma`, `polygamma`, `beta`,
 /// `betaln` and `poch` at the 2,074 cases of `gamma_family.txt`.
 #[test]
@@ -256,4 +298,17 @@ fn error_functions_match_the_recorded_values() {
 #[test]
 fn bessel_functions_match_the_recorded_values() {
     check("special-bessel", BESSEL_FUNCTIONS, "bessel_functions.txt").unwrap();
+}
+
+/// `gammainc`, `gammaincc`, `gammaincinv`, `gammainccinv`, `betainc`, `betaincc` and
+/// `betaincinv` at the 1,058 cases of `incomplete_functions.txt`, with shapes from 0.001 to 1000
+/// and values down to 1e-297.
+#[test]
+fn incomplete_functions_match_the_recorded_values() {
+    check(
+        "special-incomplete",
+        INCOMPLETE_FUNCTIONS,
+        "incomplete_functions.txt",
+    )
+    .unwrap();
 }
