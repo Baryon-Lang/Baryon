@@ -6,9 +6,13 @@ CRC-32 and length of what it decompresses to. `decompress` reads every member an
 they hold, as Python's `gzip.decompress` does. Data that is not a gzip file raises `OSError`
 with the kind `INVALID_DATA` and the message Python's `gzip.BadGzipFile`, `EOFError` or
 `zlib.error` carries.
+
+`open` gives a `GzipFile`, which reads a gzip file a block at a time or writes one, in binary
+modes only (roadmap 3.27.4).
 """
 
 from os import ErrorKind
+from pathlib import Path
 import zlib
 
 
@@ -76,6 +80,248 @@ def decompress(data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
         for i in range(len(member)):
             joined[position + i] = member[i]
         position += len(member)
+    return joined
+
+
+def open(
+    filename: str, mode: str = "rb", compresslevel: int = 9
+) -> Raises[GzipFile, OSError | ValueError]:
+    """The gzip file at `filename`, opened as `gzip.open(filename, mode, compresslevel)` opens
+    it in Python, for `with` or for reading and writing until `close()`.
+
+    `mode` is `"rb"` (or `"r"`), the default, to read; `"wb"` (or `"w"`) to write a new file,
+    emptying one already there; `"ab"` (or `"a"`) to add a member after the file's end; and
+    `"xb"` (or `"x"`) to write a file that must not exist yet. Data is `Array[u8, 1]`, as
+    `gzip.compress` and `gzip.decompress` take and give it. `compresslevel` is the level each
+    member is written at, 0 to 9, as for `compress`.
+
+    Raises `OSError` when the file cannot be opened: `FILE_NOT_FOUND` to read a file that is not
+    there, `FILE_EXISTS` for `"xb"` when one is, and `INVALID_DATA` for a level outside -1 to 9.
+    Raises `ValueError` for any other mode; the text modes, `"rt"`, `"wt"`, `"at"` and `"xt"`,
+    are not built yet, since Baryon has no way yet to turn bytes into a `str`.
+    """
+    if mode not in ["r", "rb", "w", "wb", "a", "ab", "x", "xb"]:
+        if mode in ["rt", "wt", "at", "xt"]:
+            raise ValueError(
+                f"gzip.open's text mode '{mode}' is not built yet; open with \"rb\" or \"wb\""
+            )
+        raise ValueError(f"invalid mode: '{mode}'")
+    kind = mode[0:1]
+    if compresslevel < -1 or compresslevel > 9:
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), "Bad compression level", "")
+    empty = Array.zeros(0, u8)
+    file = GzipFile(
+        filename.copy(),
+        kind != "r",
+        compresslevel,
+        False,
+        0,
+        False,
+        False,
+        zlib.decompressobj(-15),
+        0,
+        0,
+        empty.copy(),
+        0,
+        empty.copy(),
+        [],
+        0,
+        [],
+    )
+    if kind == "r":
+        file._input = _block(filename, 0)
+        file._offset = len(file._input)
+        file._ended = len(file._input) < 65536
+    elif kind == "x" and Path(filename).exists():
+        raise OSError(ErrorKind.FILE_EXISTS, i32(17), "File exists", filename.copy())
+    elif kind == "a" and Path(filename).is_file():
+        file._members.append(Array.fromfile(filename, u8))
+    else:
+        empty.tofile(filename)
+    return file
+
+
+class GzipFile(Struct):
+    """A gzip file open to read or to write, as `gzip.open` gives it: Python's `gzip.GzipFile`
+    in binary mode. Use it in `with`, which closes it at the end of the block, or call
+    `close()`.
+
+    Reading takes the file 64 KiB at a time, so a file larger than memory can be read in parts
+    with `read(size)`. Members follow one another as in `gzip.decompress`, with the same checks
+    and messages, and zero bytes between and after them are skipped.
+
+    Writing gathers 4 MiB of data at a time and compresses it as one gzip member; `gzip`,
+    Python and `gunzip` read a file of several members as the data of all of them joined.
+    Baryon cannot yet add bytes to the end of a file, so the compressed members are held in
+    memory and written to the file when it is closed: writing needs memory for the compressed
+    file, not for the data. A file that is dropped without being closed, outside `with`, is
+    not written.
+    """
+
+    name: str  # the path the file was opened with
+    _writing: bool  # whether the file was opened to write
+    _level: int  # the level members are written at
+    _closed: bool  # whether `close` has run
+    _offset: int  # reading: the bytes of the file read so far
+    _ended: bool  # reading: whether the last block of the file has been read
+    _inside: bool  # reading: whether `_decoder` is part way through a member
+    _decoder: zlib.Decompress  # reading: the deflate stream of the current member
+    _crc: int  # reading: the CRC-32 of the current member's data so far
+    _size: int  # reading: the length of the current member's data so far
+    _ready: Array[u8, 1]  # reading: decoded data, of which `_at` bytes have been given
+    _at: int  # reading: the bytes of `_ready` already given
+    _input: Array[u8, 1]  # reading: bytes read from the file and not yet decoded
+    _held: list[Array[u8, 1]]  # writing: data not yet compressed
+    _gathered: int  # writing: the bytes in `_held`
+    _members: list[Array[u8, 1]]  # writing: the file's bytes so far, member by member
+
+    def __enter__(self: Owned[Self]) -> Self:
+        """The file itself, for `with gzip.open(...) as f:`."""
+        return self
+
+    def __exit__(self: InOut[Self]) -> Raises[None, OSError]:
+        """Closes the file at the end of a `with` block, as `close()` does."""
+        self.close()
+
+    def read(self: InOut[Self], size: int = -1) -> Raises[Array[u8, 1], OSError | ValueError]:
+        """The next `size` bytes of data, fewer at the end of the file, or the rest of the data
+        when `size` is negative, as `GzipFile.read(size)` gives them; an empty array at the
+        end. Raises `OSError` for a file that is not gzip or is damaged, with
+        `gzip.decompress`'s messages; raises `OSError` on a file opened to write and
+        `ValueError` on a closed one, with Python's messages."""
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
+        if self._writing:
+            raise OSError(ErrorKind.OTHER, i32(9), "read() on write-only GzipFile object", "")
+        parts: list[Array[u8, 1]] = []
+        gathered = 0
+        while size < 0 or gathered < size:
+            if self._at == len(self._ready):
+                if not self._advance():
+                    break
+            else:
+                stop = len(self._ready)
+                if size >= 0:
+                    stop = min(stop, self._at + size - gathered)
+                parts.append(self._ready[self._at : stop].copy())
+                gathered += stop - self._at
+                self._at = stop
+        return _concatenated(parts, gathered)
+
+    def write(self: InOut[Self], data: Array[u8, 1]) -> Raises[int, OSError | ValueError]:
+        """Adds `data` to the file and gives its length, as `GzipFile.write(data)` does.
+        Raises `OSError` on a file opened to read and `ValueError` on a closed one, with Python's
+        messages."""
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
+        if not self._writing:
+            raise OSError(ErrorKind.OTHER, i32(9), "write() on read-only GzipFile object", "")
+        self._held.append(data.copy())
+        self._gathered += len(data)
+        if self._gathered >= 4194304:
+            self._compress()
+        return len(data)
+
+    def close(self: InOut[Self]) -> Raises[None, OSError]:
+        """Closes the file, as `GzipFile.close()` does: a file opened to write is written out,
+        its last member holding the data not yet compressed. A second `close` does nothing."""
+        if self._closed:
+            return
+        self._closed = True
+        if self._writing:
+            if self._gathered > 0 or len(self._members) == 0:
+                self._compress()
+            _concatenated(self._members, -1).tofile(self.name)
+            self._members = []
+
+    def _compress(self: InOut[Self]) -> Raises[None, OSError]:
+        """Compresses the data held so far as one member."""
+        data = _concatenated(self._held, self._gathered)
+        self._members.append(compress(data, self._level))
+        self._held = []
+        self._gathered = 0
+
+    def _more(self: InOut[Self]) -> Raises[bool, OSError]:
+        """Reads the next block of the file onto `_input`; `False` at the end of the file."""
+        if self._ended:
+            return False
+        block = _block(self.name, self._offset)
+        length = len(block)
+        self._offset += length
+        self._ended = length < 65536
+        self._input = _concatenated([self._input.copy(), block], -1)
+        return length > 0
+
+    def _advance(self: InOut[Self]) -> Raises[bool, OSError]:
+        """Decodes the next part of the file into `_ready`, starting a member, ending one or
+        decoding a block of one; `False` at the end of the data."""
+        self._ready = Array.zeros(0, u8)
+        self._at = 0
+        if not self._inside:
+            skip = 0
+            while skip < len(self._input) and self._input[skip] == 0:
+                skip += 1
+            self._input = self._input[skip:].copy()
+            if len(self._input) == 0:
+                return self._more() and self._advance()
+            if len(self._input) < 65536:
+                self._more()
+            start = _header(self._input)
+            self._decoder = zlib.decompressobj(-15)
+            self._ready = self._decoder.decompress(self._input[start:].copy())
+            self._input = Array.zeros(0, u8)
+            self._inside = True
+            self._crc = 0
+            self._size = 0
+        elif self._decoder.eof:
+            self._input = _concatenated([self._decoder.unused_data.copy(), self._input.copy()], -1)
+            while len(self._input) < 8 and self._more():
+                pass
+            if len(self._input) < 8:
+                raise OSError(ErrorKind.INVALID_DATA, i32(0), _ended(), "")
+            if _word(self._input, 0) != self._crc:
+                raise OSError(ErrorKind.INVALID_DATA, i32(0), "CRC check failed", "")
+            if _word(self._input, 4) != self._size & 0xFFFFFFFF:
+                message = "Incorrect length of data produced"
+                raise OSError(ErrorKind.INVALID_DATA, i32(0), message, "")
+            self._input = self._input[8:].copy()
+            self._inside = False
+            return self._advance()
+        else:
+            if not self._more():
+                raise OSError(ErrorKind.INVALID_DATA, i32(0), _ended(), "")
+            self._ready = self._decoder.decompress(self._input)
+            self._input = Array.zeros(0, u8)
+        self._crc = zlib.crc32(self._ready, self._crc)
+        self._size += len(self._ready)
+        return True
+
+
+def _block(filename: str, offset: int) -> Raises[Array[u8, 1], OSError]:
+    """The 64 KiB of the file `filename` from `offset`, or all of them to the end when
+    fewer are left. `Array.fromfile` raises `INVALID_DATA` when a file holds fewer elements
+    than its `count`, so that is how the last block is found."""
+    try:
+        return Array.fromfile(filename, u8, count=65536, offset=offset)
+    except OSError as error:
+        if error.kind != ErrorKind.INVALID_DATA:
+            raise
+    return Array.fromfile(filename, u8, offset=offset)
+
+
+def _concatenated(parts: list[Array[u8, 1]], total: int) -> Array[u8, 1]:
+    """The bytes of `parts`, one after another, in a new array; `total` is their number of
+    bytes, or -1 to count them."""
+    if total < 0:
+        total = 0
+        for part in parts:
+            total += len(part)
+    joined = Array.zeros(total, u8)
+    position = 0
+    for part in parts:
+        for i in range(len(part)):
+            joined[position + i] = part[i]
+        position += len(part)
     return joined
 
 

@@ -37,6 +37,7 @@ mod frame_rows;
 mod frame_sort;
 mod frame_stack;
 mod frames;
+mod gzip_open;
 mod fusion;
 mod generic_methods;
 mod guide;
