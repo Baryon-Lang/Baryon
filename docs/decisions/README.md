@@ -95,3 +95,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0060. Networking takes its TLS from the operating system](0060-tls-from-the-operating-system.md) | Accepted |
 | [0061. AstroBaryon ships in the standard distribution until a package registry exists](0061-astrobaryon-ships-with-baryon.md) | Accepted |
 | [0062. A standard-library module re-exports a name with `from x import name as name`](0062-standard-library-reexports.md) | Accepted |
+| [0064. Bytes become text by UTF-8: `str.encode`, `Array.decode` and compressed text files](0064-utf-8-text-from-bytes.md) | Accepted |

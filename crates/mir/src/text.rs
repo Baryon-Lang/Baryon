@@ -1,7 +1,8 @@
 //! The methods of `str` a [`Builtin::Text`](crate::Builtin::Text) call performs (roadmap
 //! 1.13.12): taking characters by position, splitting, stripping, joining, searching, replacing
-//! and changing case, each as Python's method of the same name, and reading a number from text
-//! for `int(text)` and `float(text)`.
+//! and changing case, each as Python's method of the same name, reading a number from text
+//! for `int(text)` and `float(text)`, and turning text into UTF-8 bytes and back for
+//! `text.encode()` and `data.decode()` (decision 0064).
 
 /// A method of `str`, called by [`Builtin::Text`](crate::Builtin::Text).
 ///
@@ -68,6 +69,16 @@ pub enum TextMethod {
     /// `infinity` and `nan` in any case. Text that is not a number fails as
     /// [`ParseInt`](Self::ParseInt) does, with the same error edge.
     ParseFloat,
+    /// `text.encode()` (decision 0064): one argument, the text; the destination is an
+    /// `Array[u8, 1]` of the text's UTF-8 bytes, a new array of exactly their length. A `str`
+    /// is UTF-8 already (decision 0022), so this is one copy. The call cannot fail.
+    Encode,
+    /// `data.decode()` (decision 0064): one argument, an `Array[u8, 1]` passed `Borrow`; the
+    /// destination is a `str` of the same bytes. Bytes that are not UTF-8 fail as
+    /// [`ParseInt`](Self::ParseInt) does, with the same error edge, and the `ValueError` carries
+    /// Python's message, such as `'utf-8' codec can't decode byte 0xff in position 0: invalid
+    /// start byte`. The destination is written only on success.
+    Decode,
 }
 
 impl TextMethod {
@@ -78,6 +89,7 @@ impl TextMethod {
     /// assert_eq!(mir::TextMethod::SplitWhitespace.name(), "str.split");
     /// assert_eq!(mir::TextMethod::StripEnd.name(), "str.rstrip");
     /// assert_eq!(mir::TextMethod::ParseFloat.name(), "float");
+    /// assert_eq!(mir::TextMethod::Decode.name(), "Array.decode");
     /// ```
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -96,6 +108,8 @@ impl TextMethod {
             Self::Upper => "str.upper",
             Self::ParseInt => "int",
             Self::ParseFloat => "float",
+            Self::Encode => "str.encode",
+            Self::Decode => "Array.decode",
         }
     }
 }
