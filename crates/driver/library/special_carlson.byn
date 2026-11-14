@@ -1,0 +1,326 @@
+"""Carlson's symmetric elliptic integrals for `special` (roadmap 3.18.9): `elliprc`,
+`elliprd`, `elliprf`, `elliprg` and `elliprj` of real arguments, and `carlson_rf`,
+`carlson_rd` and `carlson_rg`, the same integrals without the checks of their arguments, which
+`special_elliptic` writes the Legendre integrals through.
+
+Carlson's duplication theorem computes each to full precision (B. C. Carlson, "Numerical
+computation of real or complex elliptic integrals", Numerical Algorithms 10, 1995).
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import inf, isinf, isnan, nan, sqrt
+
+
+# Carlson's stopping rule: duplicate until 4⁻ⁿ Q < |Aₙ|, where Q is the spread of the
+# arguments about their mean A₀ times r^(-1/6) for R_F, (r/4)^(-1/6) for R_D and R_J and
+# (3r)^(-1/8) for R_C, and r = 1e-16 bounds the relative error the truncated series leaves.
+_RF_SPREAD: Final = 386.8  # (3e-16)^(-1/6), rounded up
+_RD_SPREAD: Final = 584.8  # (2.5e-17)^(-1/6), rounded up
+_RC_SPREAD: Final = 87.2  # (3e-16)^(-1/8), rounded up
+
+
+def carlson_rf(x: f64, y: f64, z: f64) -> f64:
+    """R_F(x, y, z) for finite arguments of at least 0, at most one of them 0, by Carlson's
+    duplication: each step replaces every argument by (it + λ)/4, λ = √x√y + √x√z + √y√z,
+    which leaves R_F unchanged and brings the arguments four times closer together; then the
+    Taylor series about their mean, to fifth order. The deviations are taken from the original
+    arguments, (A₀ − x₀)/(4ⁿ Aₙ), which carry no rounding from the steps."""
+    mean0 = (x + y + z) / 3.0
+    x0 = x
+    y0 = y
+    spread = _RF_SPREAD * max(abs(mean0 - x), max(abs(mean0 - y), abs(mean0 - z)))
+    mean = mean0
+    scale = 1.0
+    while spread * scale >= abs(mean):
+        rx = sqrt(x)
+        ry = sqrt(y)
+        rz = sqrt(z)
+        step = rx * ry + rx * rz + ry * rz
+        x = (x + step) * 0.25
+        y = (y + step) * 0.25
+        z = (z + step) * 0.25
+        mean = (mean + step) * 0.25
+        scale *= 0.25
+    dx = (mean0 - x0) * scale / mean
+    dy = (mean0 - y0) * scale / mean
+    dz = -(dx + dy)
+    e2 = dx * dy - dz * dz
+    e3 = dx * dy * dz
+    series = 1.0 - e2 / 10.0 + e3 / 14.0 + e2 * e2 / 24.0 - 3.0 * e2 * e3 / 44.0
+    return series / sqrt(mean)
+
+
+def carlson_rd(x: f64, y: f64, z: f64) -> f64:
+    """R_D(x, y, z) for finite `x` and `y` of at least 0, not both 0, and finite `z` above 0,
+    by Carlson's duplication as for `carlson_rf`, adding at each step the term 4⁻ⁿ / (√z (z + λ))
+    that R_D's duplication sheds."""
+    mean0 = (x + y + 3.0 * z) / 5.0
+    x0 = x
+    y0 = y
+    spread = _RD_SPREAD * max(abs(mean0 - x), max(abs(mean0 - y), abs(mean0 - z)))
+    mean = mean0
+    scale = 1.0
+    total = 0.0
+    while spread * scale >= abs(mean):
+        rx = sqrt(x)
+        ry = sqrt(y)
+        rz = sqrt(z)
+        step = rx * ry + rx * rz + ry * rz
+        total += scale / (rz * (z + step))
+        x = (x + step) * 0.25
+        y = (y + step) * 0.25
+        z = (z + step) * 0.25
+        mean = (mean + step) * 0.25
+        scale *= 0.25
+    dx = (mean0 - x0) * scale / mean
+    dy = (mean0 - y0) * scale / mean
+    dz = -(dx + dy) / 3.0
+    xy = dx * dy
+    zz = dz * dz
+    e2 = xy - 6.0 * zz
+    e3 = (3.0 * xy - 8.0 * zz) * dz
+    e4 = 3.0 * (xy - zz) * zz
+    e5 = xy * zz * dz
+    series = (
+        1.0
+        - 3.0 * e2 / 14.0
+        + e3 / 6.0
+        + 9.0 * e2 * e2 / 88.0
+        - 3.0 * e4 / 22.0
+        - 9.0 * e2 * e3 / 52.0
+        + 3.0 * e5 / 26.0
+    )
+    return scale * series / (mean * sqrt(mean)) + 3.0 * total
+
+
+def _rc(x: f64, y: f64) -> f64:
+    """R_C(x, y) for finite `x` of at least 0 and finite `y` above 0, by Carlson's duplication,
+    λ = 2√x√y + y, to seventh order in s = 4⁻ⁿ (y₀ − A₀)/Aₙ. The closed forms through atan and
+    atanh lose their digits where `x` is near `y`; this does not."""
+    mean0 = (x + 2.0 * y) / 3.0
+    y0 = y
+    spread = _RC_SPREAD * abs(mean0 - x)
+    mean = mean0
+    scale = 1.0
+    while spread * scale >= abs(mean):
+        step = 2.0 * sqrt(x) * sqrt(y) + y
+        x = (x + step) * 0.25
+        y = (y + step) * 0.25
+        mean = (mean + step) * 0.25
+        scale *= 0.25
+    s = (y0 - mean0) * scale / mean
+    series = 1.0 + s * s * (
+        0.3 + s * (1.0 / 7.0 + s * (0.375 + s * (9.0 / 22.0 + s * (159.0 / 208.0 + s * 1.125))))
+    )
+    return series / sqrt(mean)
+
+
+def _rj(x: f64, y: f64, z: f64, p: f64) -> f64:
+    """R_J(x, y, z, p) for finite `x`, `y` and `z` of at least 0, at most one of them 0, and
+    finite `p` above 0, by Carlson's duplication, adding at each step 4⁻ⁿ R_C(1, 1 + e)/d with
+    d = (√p + √x)(√p + √y)(√p + √z) and e = (p − x)(p − y)(p − z)/d² in the current arguments.
+
+    1 + e is written as 2√p (p + λ)/d: since p − x = (√p − √x)(√p + √x), e is
+    Π(√p − √x)/Π(√p + √x), and the two products add to 2√p (p + λ). Formed as 1 + e, it
+    cancels when `p` is far below the others and e is near −1, and R_C near its singularity
+    turns that into 180 ULP; formed this way it never subtracts."""
+    mean0 = (x + y + z + 2.0 * p) / 5.0
+    x0 = x
+    y0 = y
+    z0 = z
+    spread = _RD_SPREAD * max(
+        max(abs(mean0 - x), abs(mean0 - y)), max(abs(mean0 - z), abs(mean0 - p))
+    )
+    mean = mean0
+    scale = 1.0
+    total = 0.0
+    while spread * scale >= abs(mean):
+        rx = sqrt(x)
+        ry = sqrt(y)
+        rz = sqrt(z)
+        rp = sqrt(p)
+        step = rx * ry + rx * rz + ry * rz
+        d = (rp + rx) * (rp + ry) * (rp + rz)
+        total += scale * _rc(1.0, 2.0 * rp * (p + step) / d) / d
+        x = (x + step) * 0.25
+        y = (y + step) * 0.25
+        z = (z + step) * 0.25
+        p = (p + step) * 0.25
+        mean = (mean + step) * 0.25
+        scale *= 0.25
+    dx = (mean0 - x0) * scale / mean
+    dy = (mean0 - y0) * scale / mean
+    dz = (mean0 - z0) * scale / mean
+    dp = -(dx + dy + dz) / 2.0
+    e2 = dx * dy + dx * dz + dy * dz - 3.0 * dp * dp
+    e3 = dx * dy * dz + 2.0 * e2 * dp + 4.0 * dp * dp * dp
+    e4 = (2.0 * dx * dy * dz + e2 * dp + 3.0 * dp * dp * dp) * dp
+    e5 = dx * dy * dz * dp * dp
+    series = (
+        1.0
+        - 3.0 * e2 / 14.0
+        + e3 / 6.0
+        + 9.0 * e2 * e2 / 88.0
+        - 3.0 * e4 / 22.0
+        - 9.0 * e2 * e3 / 52.0
+        + 3.0 * e5 / 26.0
+    )
+    return scale * series / (mean * sqrt(mean)) + 6.0 * total
+
+
+def carlson_rg(x: f64, y: f64, z: f64) -> f64:
+    """R_G(x, y, z) for finite arguments of at least 0, as
+    ½ [z R_F − (x − z)(y − z) R_D / 3 + √(xy/z)] with the arguments ordered so that `z` is the
+    middle one: then (x − z)(y − z) is at most 0 and the three terms never cancel, which keeps
+    `ellipe` exact near m = 1."""
+    if x > y:
+        x, y = y, x
+    if y > z:
+        y, z = z, y
+    if x > y:
+        x, y = y, x
+    # Now x ≤ y ≤ z; put the middle value last.
+    y, z = z, y
+    if z == 0.0:
+        return 0.5 * sqrt(y)
+    first = z * carlson_rf(x, y, z) - (x - z) * (y - z) * carlson_rd(x, y, z) / 3.0
+    return 0.5 * (first + sqrt(x * y / z))
+
+
+def _any_nan(a: f64, b: f64, c: f64) -> bool:
+    """Whether any of three arguments is NaN."""
+    return isnan(a) or isnan(b) or isnan(c)
+
+
+def _two_zero(x: f64, y: f64, z: f64) -> bool:
+    """Whether at least two of three arguments are 0."""
+    return (x == 0.0 and (y == 0.0 or z == 0.0)) or (y == 0.0 and z == 0.0)
+
+
+def _any_infinite(x: f64, y: f64, z: f64) -> bool:
+    """Whether any of three arguments is infinite."""
+    return isinf(x) or isinf(y) or isinf(z)
+
+
+def elliprf(x: f64, y: f64, z: f64) -> f64:
+    """Carlson's symmetric integral of the first kind,
+    R_F(x, y, z) = ½ ∫₀^∞ dt / √((t + x)(t + y)(t + z)), as `scipy.special.elliprf` for real
+    arguments: NaN when any is below 0, ∞ when two are 0, and 0 when one is ∞.
+
+    ```python
+    from special import elliprf
+
+    print(elliprf(0.0, 1.0, 2.0))  # 1.31102877714606, half the lemniscate constant ϖ
+    ```
+    """
+    if _any_nan(x, y, z) or x < 0.0 or y < 0.0 or z < 0.0:
+        return nan
+    if _two_zero(x, y, z):
+        return inf
+    if _any_infinite(x, y, z):
+        return 0.0
+    return carlson_rf(x, y, z)
+
+
+def elliprd(x: f64, y: f64, z: f64) -> f64:
+    """Carlson's symmetric integral of the second kind,
+    R_D(x, y, z) = (3/2) ∫₀^∞ dt / ((t + z) √((t + x)(t + y)(t + z))), as
+    `scipy.special.elliprd` for real arguments: NaN when any is below 0, ∞ when `z` is 0 or `x`
+    and `y` are both 0, and 0 when one is ∞.
+
+    ```python
+    from special import elliprd
+
+    print(elliprd(0.0, 2.0, 1.0))  # 1.7972103521033886
+    ```
+    """
+    if _any_nan(x, y, z) or x < 0.0 or y < 0.0 or z < 0.0:
+        return nan
+    if z == 0.0 or (x == 0.0 and y == 0.0):
+        return inf
+    if _any_infinite(x, y, z):
+        return 0.0
+    return carlson_rd(x, y, z)
+
+
+def elliprc(x: f64, y: f64) -> f64:
+    """Carlson's degenerate integral R_C(x, y) = R_F(x, y, y) = ½ ∫₀^∞ dt / ((t + y) √(t + x)),
+    as `scipy.special.elliprc` for real arguments. For `y` below 0 it is Cauchy's principal
+    value √(x/(x − y)) R_C(x − y, −y). NaN when `x` is below 0 or `y` is 0, where SciPy gives
+    NaN for the infinite integral, and 0 when either is ∞.
+
+    ```python
+    from special import elliprc
+
+    print(elliprc(0.0, 1.0))  # 1.5707963267948966, which is π/2
+    ```
+    """
+    if isnan(x) or isnan(y) or x < 0.0 or y == 0.0:
+        return nan
+    if isinf(x) or isinf(y):
+        return 0.0
+    if y < 0.0:
+        if x == 0.0:
+            return 0.0
+        return sqrt(x / (x - y)) * _rc(x - y, -y)
+    return _rc(x, y)
+
+
+def elliprj(x: f64, y: f64, z: f64, p: f64) -> f64:
+    """Carlson's symmetric integral of the third kind,
+    R_J(x, y, z, p) = (3/2) ∫₀^∞ dt / ((t + p) √((t + x)(t + y)(t + z))), as
+    `scipy.special.elliprj` for real arguments. For `p` below 0 it is Cauchy's principal value
+    (Carlson 1995, equation 4.3). NaN when any of `x`, `y` and `z` is below 0 or `p` is 0, where
+    SciPy gives NaN for the infinite integral, ∞ when two of `x`, `y` and `z` are 0, and 0 when
+    any is ∞.
+
+    ```python
+    from special import elliprj
+
+    print(elliprj(1.0, 2.0, 3.0, 4.0))  # 0.2398480997495678
+    ```
+    """
+    if _any_nan(x, y, z) or isnan(p) or x < 0.0 or y < 0.0 or z < 0.0:
+        return nan
+    if p == 0.0:
+        return nan
+    if _two_zero(x, y, z):
+        return inf
+    if _any_infinite(x, y, z) or isinf(p):
+        return 0.0
+    if p > 0.0:
+        return _rj(x, y, z, p)
+    # Order x ≤ y ≤ z; the principal value takes the largest as z.
+    if x > y:
+        x, y = y, x
+    if y > z:
+        y, z = z, y
+    if x > y:
+        x, y = y, x
+    q = -p
+    shifted = (z * (x + y + q) - x * y) / (z + q)
+    xy = x * y
+    value = (shifted - z) * _rj(x, y, z, shifted) - 3.0 * carlson_rf(x, y, z)
+    pq = shifted * q
+    value += 3.0 * sqrt(xy * z / (xy + pq)) * _rc(xy + pq, pq)
+    return value / (z + q)
+
+
+def elliprg(x: f64, y: f64, z: f64) -> f64:
+    """Carlson's completely symmetric integral of the second kind,
+    R_G(x, y, z) = (1/4π) ∫∫ √(x sin²θ cos²φ + y sin²θ sin²φ + z cos²θ) sin θ dθ dφ over the
+    sphere, as `scipy.special.elliprg` for real arguments: NaN when any is below 0, ∞ when any
+    is ∞, and 0 when all are 0.
+
+    ```python
+    from special import elliprg
+
+    print(elliprg(0.0, 1.0, 1.0))  # 0.7853981633974484, π/4 within a ULP
+    ```
+    """
+    if _any_nan(x, y, z) or x < 0.0 or y < 0.0 or z < 0.0:
+        return nan
+    if _any_infinite(x, y, z):
+        return inf
+    return carlson_rg(x, y, z)

@@ -79,6 +79,7 @@ mod shapes;
 mod slices;
 mod sorting;
 mod special;
+mod special_elliptic;
 mod special_everyday;
 mod spectral;
 mod statements;

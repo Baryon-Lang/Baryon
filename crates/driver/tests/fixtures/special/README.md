@@ -7,7 +7,9 @@ hold the cases the build tests check the `special` module against: those in
 functions (3.18.3), Bessel functions of whole order (3.18.4), incomplete gamma and beta
 functions (3.18.2) and distribution functions (3.18.12), and those in
 [`../../build/special_everyday.rs`](../../build/special_everyday.rs) its everyday helpers,
-exponential integrals, zeta and Spence's function, and Lambert W function (3.18.11). Each line is a
+exponential integrals, zeta and Spence's function, and Lambert W function (3.18.11), and those in
+[`../../build/special_elliptic.rs`](../../build/special_elliptic.rs) its elliptic integrals and
+functions (3.18.9), from `elliptic_functions.txt`. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -852,5 +854,126 @@ for k, z in [(0, 0j), (1, 0j), (-1, 0j), (0, 1 + 0j), (0, complex(inf, 0.0)),
              (0, complex(nan, 0.0))]:
     case(k, z, complex(scipy.special.lambertw(z, k)))
 with open("lambertw.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Elliptic integrals and functions
+
+`elliptic_functions.txt` has the usual format; a case of `ellipj` names one of its four values,
+`ellipj_sn`, `ellipj_cn`, `ellipj_dn` or `ellipj_ph`. The script below recorded it with its own
+seed, with mpmath 1.4.1 at 50 digits and SciPy 1.18.1 at the ends. The amplitude is mpmath's
+sn and cn at u − 2nK, brought back by nπ, since mpmath has no amplitude function, and
+`ellipkm1` is π/(2 AGM(1, √p)), which keeps every digit of `p`. For `y` or `p` below 0,
+`elliprc` and `elliprj` are the real parts of mpmath's values, which are Cauchy's principal
+values:
+
+```python
+import math
+
+import mpmath
+import numpy
+import scipy.special
+
+generator = numpy.random.default_rng(31809)
+inf, nan = math.inf, math.nan
+lines = []
+
+
+def uniform(low, high, count):
+    return [float(x) for x in generator.uniform(low, high, count)]
+
+
+def spread(low, high, count):
+    return [float(math.exp(x)) for x in generator.uniform(math.log(low), math.log(high), count)]
+
+
+def add(name, arguments, value):
+    lines.append(" ".join([name] + [repr(float(x)) for x in arguments] + [repr(float(value))]))
+
+
+def amplitude(u, m):
+    """am(u | m), continuous in u: am(u + 2K) = am(u) + π."""
+    k = mpmath.ellipk(m)
+    n = mpmath.nint(u / (2 * k))
+    rest = u - 2 * n * k
+    sn, cn = mpmath.ellipfun("sn", rest, m=m), mpmath.ellipfun("cn", rest, m=m)
+    return n * mpmath.pi + mpmath.atan2(sn, cn)
+
+
+with mpmath.workdps(50):
+    near_one = [1 - x for x in spread(1e-16, 0.1, 30)]
+    for m in uniform(-10, 1, 60) + near_one + [-x for x in spread(10, 1e300, 20)]:
+        add("ellipk", [m], mpmath.ellipk(m))
+        add("ellipe", [m], mpmath.ellipe(m))
+    for p in spread(1e-300, 1e3, 60):
+        add("ellipkm1", [p], mpmath.pi / (2 * mpmath.agm(1, mpmath.sqrt(p))))
+    for _ in range(150):
+        phi = float(generator.uniform(-12, 12))
+        m = float(generator.choice([generator.uniform(-5, 1),
+                                    1 - math.exp(generator.uniform(-36, -1))]))
+        add("ellipkinc", [phi, m], mpmath.ellipf(phi, m))
+        add("ellipeinc", [phi, m], mpmath.ellipe(phi, m))
+    for phi in [math.pi / 2 - x for x in spread(1e-12, 0.1, 20)]:
+        m = 1 - float(math.exp(generator.uniform(-36, -1)))
+        add("ellipkinc", [phi, m], mpmath.ellipf(phi, m))
+        add("ellipeinc", [phi, m], mpmath.ellipe(phi, m))
+    for phi in uniform(-1.5, 1.5, 10):
+        add("ellipkinc", [phi, 1.0], mpmath.ellipf(phi, 1))
+        add("ellipeinc", [phi, 1.0], mpmath.ellipe(phi, 1))
+    for _ in range(150):
+        u = float(generator.uniform(-20, 20))
+        m = float(generator.choice([generator.uniform(0, 1),
+                                    1 - math.exp(generator.uniform(-36, -1)),
+                                    math.exp(generator.uniform(-36, -1))]))
+        sn = mpmath.ellipfun("sn", u, m=m)
+        cn = mpmath.ellipfun("cn", u, m=m)
+        dn = mpmath.ellipfun("dn", u, m=m)
+        add("ellipj_sn", [u, m], sn)
+        add("ellipj_cn", [u, m], cn)
+        add("ellipj_dn", [u, m], dn)
+        add("ellipj_ph", [u, m], amplitude(u, m))
+    def positive(count):
+        return [float(x) for x in 10 ** generator.uniform(-20, 20, count)]
+    for x, y in zip(positive(60), positive(60)):
+        add("elliprc", [x, y], mpmath.elliprc(x, y))
+        add("elliprc", [x, -y], mpmath.re(mpmath.elliprc(x, -y)))
+    for x, y in zip(uniform(0.5, 2, 20), uniform(0.5, 2, 20)):
+        add("elliprc", [x, x * (1 + 1e-6 * y)], mpmath.elliprc(x, x * (1 + 1e-6 * y)))
+    for x, y, z in zip(positive(80), positive(80), positive(80)):
+        add("elliprf", [x, y, z], mpmath.elliprf(x, y, z))
+        add("elliprd", [x, y, z], mpmath.elliprd(x, y, z))
+        add("elliprg", [x, y, z], mpmath.elliprg(x, y, z))
+    for y, z in zip(positive(20), positive(20)):
+        add("elliprf", [0.0, y, z], mpmath.elliprf(0, y, z))
+        add("elliprd", [0.0, y, z], mpmath.elliprd(0, y, z))
+        add("elliprg", [0.0, y, z], mpmath.elliprg(0, y, z))
+    small = [float(x) for x in 10 ** generator.uniform(-5, 5, 240)]
+    for x, y, z, p in zip(small[0::4], small[1::4], small[2::4], small[3::4]):
+        add("elliprj", [x, y, z, p], mpmath.elliprj(x, y, z, p))
+        add("elliprj", [x, y, z, -p], mpmath.re(mpmath.elliprj(x, y, z, -p)))
+edges = [
+    ("ellipk", (1.0,)), ("ellipk", (1.5,)), ("ellipk", (-inf,)), ("ellipk", (0.0,)),
+    ("ellipkm1", (0.0,)), ("ellipkm1", (-1.0,)), ("ellipkm1", (inf,)),
+    ("ellipe", (1.0,)), ("ellipe", (1.5,)), ("ellipe", (-inf,)), ("ellipe", (0.0,)),
+    ("ellipkinc", (0.0, 0.5)), ("ellipkinc", (inf, 0.5)), ("ellipkinc", (-inf, 0.5)),
+    ("ellipkinc", (0.5, 2.0)), ("ellipkinc", (0.5, -inf)), ("ellipkinc", (math.pi / 2, 1.0)),
+    ("ellipkinc", (10.0, 1.0)), ("ellipkinc", (0.7, 0.0)),
+    ("ellipeinc", (0.0, 0.5)), ("ellipeinc", (inf, 0.5)), ("ellipeinc", (0.5, 2.0)),
+    ("ellipeinc", (0.5, -inf)), ("ellipeinc", (0.7, 0.0)),
+    ("elliprc", (1.0, 0.0)), ("elliprc", (-1.0, 1.0)), ("elliprc", (inf, 1.0)),
+    ("elliprc", (0.0, -1.0)), ("elliprf", (0.0, 0.0, 1.0)), ("elliprf", (1.0, 2.0, inf)),
+    ("elliprf", (-1.0, 2.0, 3.0)), ("elliprd", (0.0, 0.0, 1.0)), ("elliprd", (1.0, 2.0, 0.0)),
+    ("elliprd", (1.0, 2.0, inf)), ("elliprg", (0.0, 0.0, 0.0)), ("elliprg", (0.0, 0.0, 4.0)),
+    ("elliprg", (1.0, inf, 2.0)), ("elliprj", (0.0, 0.0, 1.0, 1.0)),
+    ("elliprj", (1.0, 2.0, 3.0, 0.0)),
+    ("elliprj", (1.0, 2.0, inf, 1.0)),
+]
+for name, arguments in edges:
+    add(name, arguments, getattr(scipy.special, name)(*arguments))
+for u, m in [(1.0, 0.0), (1.0, 1.0), (1.0, 1.5), (1.0, -0.5), (inf, 0.5)]:
+    sn, cn, dn, ph = scipy.special.ellipj(u, m)
+    for part, value in zip(("sn", "cn", "dn", "ph"), (sn, cn, dn, ph)):
+        add(f"ellipj_{part}", [u, m], value)
+with open("elliptic_functions.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
