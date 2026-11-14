@@ -104,6 +104,14 @@ impl<'db> Body<'db> {
                     .tree
                     .child(node, Role::Value)
                     .is_some_and(|value| self.is_environ(value)) => {}
+            // An element of an array of text with missing values is read as a copy, a new
+            // `str | None` each time.
+            SyntaxKind::Subscript
+                if self.tree.child(node, Role::Value).is_some_and(|value| {
+                    self.typed.expression(value).is_some_and(|array| {
+                        matches!(array.kind(self.db), TypeKind::OptionalArray(_))
+                    })
+                }) => {}
             // `header["OBJECT"]` is a call of a library function, which gives a new value.
             SyntaxKind::Subscript if self.typed.calls.contains_key(&Key(node)) => {}
             // A slice of a list is a new list, and a slice of a `str` a new `str`, as in

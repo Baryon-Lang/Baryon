@@ -5,15 +5,16 @@
 //! frames' columns of that name end to end, which the standard library's `joined` builds,
 //! or `text_joined` for a column of `str` (`<std>/frame_joins.byn`, decision 0038). A column
 //! that may hold `None` has its values and its validity bitmap put end to end apart, by
-//! `stacked` and `stacked_bits` (`<std>/frame_missing.byn`). Every
+//! `stacked`, or `text_joined` for text, and `stacked_bits` (`<std>/frame_missing.byn`). Every
 //! frame is borrowed. Cost: the result's columns are copied once for each frame after the
 //! first, so stacking many frames in one call copies the early ones several times.
 
 use crate::builder::Builder;
 use crate::frames::erase;
-use mir::{Operand, Place, Projection, Rvalue};
+use crate::optional_arrays::{VALIDITY, VALUES};
+use mir::{Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role};
-use types::{Primitive, Type, TypeKind};
+use types::{Integer, Primitive, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// The call `node`, `concat(list)` with `list` the frames written out, into `place`.
@@ -83,6 +84,72 @@ impl<'db> Builder<'db> {
             made.push(Operand::Move(Place::from(result)));
         }
         self.assign(place, Rvalue::Aggregate(ty, made), node);
+    }
+
+    /// The column `first`, which may hold `None` and whose values are `element`s, with each
+    /// column of `rest` after it, in order, as a new column: for each column of `rest`, which
+    /// is not empty, one call of the library's `stacked`, or `text_joined` for text, for the
+    /// values and one of
+    /// `stacked_bits` for the validity bitmaps. The steps on the way are dropped when the
+    /// statement ends. `None` after a report.
+    fn optional_stacked(
+        &mut self,
+        element: Type<'db>,
+        first: Place,
+        rest: Vec<Place>,
+        node: NodeId,
+    ) -> Option<Operand<'db>> {
+        let int = self.int_type();
+        let text = matches!(element.kind(self.db), TypeKind::Str);
+        let plain = self.values_type(element);
+        let bytes = self.array_of(Type::new(
+            self.db,
+            TypeKind::Primitive(Primitive::Integer(Integer::U8)),
+        ));
+        let stored = Type::new(self.db, TypeKind::Tuple(vec![plain, bytes]));
+        // Text is stacked by `text_joined`, which needs no filler.
+        let filler = if text {
+            None
+        } else {
+            let filler = Operand::Constant(self.filler(element)?);
+            Some(Place::from(self.held(element, filler, node)))
+        };
+        let mut values = first.clone().project(Projection::Field(VALUES));
+        let mut bits = first.project(Projection::Field(VALIDITY));
+        let mut newest: Option<(Local, Local)> = None;
+        for part in rest {
+            let more = part.clone().project(Projection::Field(VALUES));
+            let more_bits = part.project(Projection::Field(VALIDITY));
+            let mut counts = Vec::with_capacity(2);
+            for side in [&values, &more] {
+                let length = self.column_length(side.clone(), Some(plain), node);
+                counts.push(Place::from(self.held(int, length, node)));
+            }
+            let arguments = vec![bits, counts[0].clone(), more_bits, counts[1].clone()];
+            let next_bits = self.frame_call("stacked_bits", Vec::new(), arguments, bytes, node)?;
+            let next = if let Some(filler) = &filler {
+                let arguments = vec![values, more, filler.clone()];
+                self.frame_call("stacked", vec![element], arguments, plain, node)?
+            } else {
+                let arguments = vec![values, more];
+                self.frame_call("text_joined", Vec::new(), arguments, plain, node)?
+            };
+            // Every pair of arrays but the last is only a step on the way.
+            if let Some((step, step_bits)) = newest.replace((next, next_bits)) {
+                self.drop_later(step);
+                self.drop_later(step_bits);
+            }
+            values = Place::from(next);
+            bits = Place::from(next_bits);
+        }
+        let (values, bits) = newest?;
+        let parts = vec![
+            Operand::Move(Place::from(values)),
+            Operand::Move(Place::from(bits)),
+        ];
+        let whole = self.temporary(stored, node);
+        self.assign(Place::from(whole), Rvalue::Aggregate(stored, parts), node);
+        Some(Operand::Move(Place::from(whole)))
     }
 
     /// The text column `first` with each column of `rest` after it, in order, as a new text

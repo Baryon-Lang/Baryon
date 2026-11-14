@@ -62,8 +62,9 @@ A column holds numbers of any number type, `bool`s, or `str`s. A column of `str`
 [text array](text-arrays.md#in-a-dataframe), and a frame that has one can do less today than
 a frame of numbers: that page lists what.
 
-A column of numbers or `bool`s may also hold `None`: a field `bid: f64 | None` is a column
-read as an `Array[f64 | None, 1]`. [Missing values](missing-values.md#in-a-dataframe) says
+Any of those columns may also hold `None`: a field `bid: f64 | None` is a column read as
+an `Array[f64 | None, 1]`, and a field `name: str | None` is text with gaps.
+[Missing values](missing-values.md#in-a-dataframe) says
 what such a frame does today, and how `dropna` and `fillna` give a frame with no gaps.
 
 Two frame types are the same when their columns have the same names and types in the same
