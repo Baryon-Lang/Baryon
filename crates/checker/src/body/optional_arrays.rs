@@ -21,9 +21,10 @@ const BUILT_FRAME: &str = "a frame with a column that may hold `None` is built f
                            `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a \
                            mask, a slice, `head` and `tail` and sorted with each `None` \
                            last, stacked by `concat`, compared by `drop_duplicates` and \
-                           `value_counts`, summed up by `describe`, and its columns read, \
-                           replaced and chosen by name and by `assign`, `drop` and \
-                           `rename`; the rest comes with roadmap item 3.13.6";
+                           `value_counts`, summed up by `describe`, grouped by `groupby`, \
+                           and its columns read, replaced and chosen by name and by \
+                           `assign`, `drop` and `rename`; the rest comes with roadmap item \
+                           3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.

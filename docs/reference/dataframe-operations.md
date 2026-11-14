@@ -119,6 +119,8 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   value is skipped by every reduction, so `count` counts the values that are numbers. A
   group with no numbers has the sum 0, the count 0, and NaN for the rest; `var` and `std`
   of one value are NaN.
+- **`None` is left out too**, in a [column that may hold `None`](missing-values.md#in-a-dataframe):
+  a row whose key is `None` belongs to no group, and `agg` reduces the values that are there.
 - **`groupby` and `agg` are written together.** The groups are not a value: `g =
   df.groupby("symbol")` is a compile error. Group by several columns with a list,
   `df.groupby(["symbol", "day"])`.

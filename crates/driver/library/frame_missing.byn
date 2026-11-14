@@ -23,6 +23,8 @@ and the compiler puts them together.
   that are there, for `count()`, `sum()`, `mean()`, `min()` and `max()`.
 - `presence` and `present_rows` let `drop_duplicates` and `value_counts` compare rows whose
   columns may hold `None`.
+- `present_starts`, `group_bits` and `group_present_integers` reduce a column that may hold
+  `None` for `groupby`, each group by the values that are there.
 - `optional_cells`, `optional_float_cells` and `optional_single_cells` give a column's cells
   for `print(df)`, with `<NA>` for a missing value, and `optional_shown` gives the text of
   an array alone, `[1.5 None 2.5]`.
@@ -101,6 +103,66 @@ def present_rows(bits: Array[u8, 1], rows: Array[i64, 1]) -> Array[i64, 1]:
     """The positions of `rows` whose element is there by the validity bitmap `bits`, in the
     order of `rows`: `value_counts` counts no `None`. Cost: one pass over `rows`."""
     return Array([rows[at] for at in range(len(rows)) if _valid(bits, rows[at])])
+
+
+def present_starts(
+    bits: Array[u8, 1], order: Array[i64, 1], starts: Array[i64, 1]
+) -> Array[i64, 1]:
+    """Where each group of `groupby` starts once the rows of `order` whose element is `None`
+    by `bits` are left out, which `present_rows` does: `starts` for the rows that stay. A
+    group with no row left starts where the next one does. Cost: one pass over `order`."""
+    groups = len(starts) - 1
+    result = Array.fill((groups + 1,), 0)
+    kept = 0
+    for group in range(groups):
+        result[group] = kept
+        for at in range(starts[group], starts[group + 1]):
+            if _valid(bits, order[at]):
+                kept += 1
+    result[groups] = kept
+    return result
+
+
+def group_bits(starts: Array[i64, 1]) -> Array[u8, 1]:
+    """The validity bitmap of a column `agg` makes from a column that may hold `None`: bit
+    `g` is 1 when group `g` of `starts` has a row, so a value to give, and 0 when it has
+    none, so the group's `min`, `max`, `first` or `last` is `None`."""
+    groups = len(starts) - 1
+    bits = Array.fill(((groups + 7) // 8,), u8(0))
+    for group in range(groups):
+        if starts[group + 1] > starts[group]:
+            bits[group // 8] = bits[group // 8] | (u8(1) << u8(group % 8))
+    return bits
+
+
+def group_present_integers(
+    column: Array[i64, 1], order: Array[i64, 1], starts: Array[i64, 1], how: int
+) -> Array[i64, 1]:
+    """One integer for each group from the values of `column` in it, as the `group_integers`
+    of `<std>/frames.byn` gives, for groups that may have no rows: 0 sum, 1 min, 2 max,
+    3 first, 4 last, 5 count. A group with no rows has the sum and the count 0, and 0 stands
+    under the `None` of the others. Cost: one pass over `order`."""
+    groups = len(starts) - 1
+    result = Array.fill((groups,), 0)
+    for group in range(groups):
+        low = starts[group]
+        high = starts[group + 1]
+        if how == 5:
+            result[group] = high - low
+        elif high > low:
+            value = column[order[low]]
+            if how == 4:
+                value = column[order[high - 1]]
+            for at in range(low + 1, high):
+                other = column[order[at]]
+                if how == 0:
+                    value += other
+                if how == 1:
+                    value = min(value, other)
+                if how == 2:
+                    value = max(value, other)
+            result[group] = value
+    return result
 
 
 def present_count(bits: Array[u8, 1], count: int) -> int:

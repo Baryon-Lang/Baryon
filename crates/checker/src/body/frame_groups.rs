@@ -50,10 +50,6 @@ impl<'db> Body<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return None;
         };
-        if self.has_missing_column(base) {
-            self.untyped(arguments);
-            return Some(self.missing_column_unbuilt(node, "`groupby`"));
-        }
         let grouping = self
             .tree
             .child(node, Role::Function)
@@ -199,12 +195,27 @@ impl<'db> Body<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return None;
         };
-        let read = columns.iter().find(|read| read.name == name)?;
+        let stored = columns.iter().find(|read| read.name == name)?;
+        // A column that may hold `None` is reduced by the values that are there, as the
+        // column of those values would be. A group may have none: its `sum` and `count`
+        // are 0, its mean, spread and median NaN, as for a group of NaN, and the reductions
+        // that pick one of the values give `None`.
+        let optional = match stored.element.kind(self.db) {
+            TypeKind::Optional(element) => Some(*element),
+            _ => None,
+        };
+        let read = &Column {
+            name: stored.name.clone(),
+            element: optional.unwrap_or(stored.element),
+        };
         if matches!(read.element.kind(self.db), TypeKind::Str) {
             return self.text_reduction(column, read, &how);
         }
         if !self.orderable(column, read, "reduce") {
             return None;
+        }
+        if optional.is_some() && matches!(how.as_str(), "min" | "max" | "first" | "last") {
+            return Some(stored.element);
         }
         let primitive = |primitive| Type::new(self.db, TypeKind::Primitive(primitive));
         let single = matches!(
@@ -255,8 +266,12 @@ impl<'db> Body<'db> {
     /// Whether `column` holds values with an order, which grouping and reducing need: a
     /// complex column has none, and is reported at `node` as something `agg` cannot `verb`.
     fn orderable(&mut self, node: NodeId, column: &Column<'db>, verb: &str) -> bool {
+        let element = match column.element.kind(self.db) {
+            TypeKind::Optional(element) => *element,
+            _ => column.element,
+        };
         if !matches!(
-            column.element.kind(self.db),
+            element.kind(self.db),
             TypeKind::Primitive(Primitive::Complex(_))
         ) {
             return true;
