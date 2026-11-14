@@ -56,7 +56,9 @@ pub use files::{
     baryon_rt_file_write,
 };
 pub use fits::{baryon_rt_fits_cards, baryon_rt_fits_read, baryon_rt_fits_write};
-pub use hdf5::{baryon_rt_hdf5_chunks, baryon_rt_hdf5_open, baryon_rt_hdf5_read};
+pub use hdf5::{
+    baryon_rt_hdf5_chunks, baryon_rt_hdf5_open, baryon_rt_hdf5_read, baryon_rt_hdf5_write,
+};
 pub use memory::{baryon_rt_allocate, baryon_rt_allocate_array, baryon_rt_deallocate};
 pub use netcdf::{
     baryon_rt_netcdf_chunks, baryon_rt_netcdf_define, baryon_rt_netcdf_open, baryon_rt_netcdf_read,

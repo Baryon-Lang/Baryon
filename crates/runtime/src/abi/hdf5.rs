@@ -397,6 +397,10 @@ fn read(
     Ok((pointer.as_ptr(), shape))
 }
 
+mod writing;
+
+pub use writing::baryon_rt_hdf5_write;
+
 #[cfg(test)]
 #[allow(
     unsafe_code,

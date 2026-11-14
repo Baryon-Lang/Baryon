@@ -84,7 +84,7 @@ What becomes easier, what becomes harder, and what we give up.
 | [0049. Compression keeps Python's module names, works on byte arrays, and raises `OSError`](0049-compression.md) | Accepted |
 | [0050. Incremental builds: keep the compiler running rather than cache object files on disk](0050-incremental-builds.md) | Accepted |
 | [0051. Double-double floats are an `f64x2` struct in `math`, with methods until operators exist](0051-double-double-floats.md) | Accepted |
-| [0052. HDF5 files are read with h5py's names](0052-hdf5-files.md) | Accepted, amended 2026-11-13 |
+| [0052. HDF5 files are read with h5py's names](0052-hdf5-files.md) | Accepted, amended 2026-11-13 and 2026-11-14 |
 | [0053. `with` and `for` work on any class with Python's dunder methods](0053-with-and-for-on-user-classes.md) | Accepted |
 | [0054. The libraries adapted from SciPy are top-level modules named as SciPy's submodules](0054-scipy-module-names.md) | Accepted |
 | [0055. Baryon is licensed Apache-2.0 OR MIT](0055-dual-license.md) | Accepted |
