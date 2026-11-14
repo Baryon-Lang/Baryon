@@ -147,7 +147,8 @@ impl<'db> Body<'db> {
         };
         let rank = rank.unwrap_or(1);
         let hint = format!(
-            "write the members in a list, as in `values: Array[{union}, {rank}] = Array([...])`, or repeat one member with `Array.fill(shape, member)`"
+            "write the members in a list, as in `values: Array[{union}, {rank}] = Array([...])`, \
+             or repeat one member with `Array.fill(shape, member)`"
         );
         Some(self.lowerer.error(node, &message, label, Some(&hint)))
     }
