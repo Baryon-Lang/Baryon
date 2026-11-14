@@ -40,6 +40,7 @@ mod frames;
 mod fusion;
 mod generic_methods;
 mod guide;
+mod gzip_open;
 mod h5by;
 mod hoisting;
 mod kernels;
