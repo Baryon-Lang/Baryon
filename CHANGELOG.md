@@ -60,6 +60,9 @@ The [beginner's guide](docs/guide/README.md#1-install-baryon) shows both ways:
   them.
 - **A struct's methods called through its class**, `Point.origin()`, generic structs included,
   `Pair.both(1.5)` or `Pair[i64].both(2)`.
+- **`with` and `for` on your own classes**
+  ([decision 0053](docs/decisions/0053-with-and-for-on-user-classes.md)): `with` works on any class
+  with `__enter__` and `__exit__`, and `for` on any class with `__iter__` and `__next__`.
 - **Optional arguments of any type**: an `Array` or a `str` passes where a read-only parameter
   takes `T | None`, as `yerr=errors` does.
 - **Array slices**: `a[i:j]`, `a[i:j:k]` and `a[:, k]` are views that copy nothing. Read them,
