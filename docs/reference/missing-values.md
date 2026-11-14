@@ -228,11 +228,16 @@ This prints `3 None 3.0`, then `[False  True False]`.
   `median` are `NaN`, as for a group of `NaN`s, and its `min`, `max`, `first` and `last`
   are `None`, so those four give a column that may hold `None`. pandas shows `<NA>` for
   all of them but the count and the sum.
-- **The other frame operations are not built yet** for a frame with such a column: one row,
-  `quotes[0]`, `merge`, `itertuples` and `DataFrame(rows)`. Each is a
-  compile error that says so. They come with roadmap item 3.13.6. Until then, take the gaps
-  out first, as the next section shows: the frame `dropna` or `fillna` gives does everything
-  a frame does.
+- **`merge` joins a `None` to a `None`**, as it joins a `NaN` to a `NaN` and as pandas
+  joins its nullable keys, and to no number. Columns that may hold `None` come through a
+  join from either frame, each `None` on its row.
+- **A row holds a `T | None`.** `quotes[0]` and each row of `quotes.itertuples()` are the
+  schema's struct, whose field `bid` is an `f64 | None` the program checks before it uses
+  the number. `DataFrame(rows)` builds the frame from a list of that struct, each field
+  that is `None` becoming a gap in its column; it costs one more pass and a list of the
+  field for each such column.
+- **Every frame operation takes such a column.** Taking the gaps out first, as the next
+  section shows, is for the arithmetic that needs numbers.
 
 ### `dropna` and `fillna` of a frame
 

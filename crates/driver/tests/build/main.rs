@@ -52,6 +52,8 @@ mod managers;
 mod math;
 mod missing_distinct;
 mod missing_groups;
+mod missing_joins;
+mod missing_rows;
 mod missing_shown;
 mod modules;
 mod narrowing;

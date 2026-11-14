@@ -15,17 +15,6 @@ const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]
                      `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and \
                      `mean`; the rest comes with roadmap item 3.13.6";
 
-/// What a frame with a column that may hold `None` can do, for messages.
-const BUILT_FRAME: &str = "a frame with a column that may hold `None` is built from its \
-                           columns, shown by `print`, counted with `len`, copied with \
-                           `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a \
-                           mask, a slice, `head` and `tail` and sorted with each `None` \
-                           last, stacked by `concat`, compared by `drop_duplicates` and \
-                           `value_counts`, summed up by `describe`, grouped by `groupby`, \
-                           and its columns read, replaced and chosen by name and by \
-                           `assign`, `drop` and `rename`; the rest comes with roadmap item \
-                           3.13.6";
-
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.
     pub(super) fn has_missing_column(&self, ty: Type<'db>) -> bool {
@@ -35,20 +24,6 @@ impl<'db> Body<'db> {
                 .any(|column| matches!(column.element.kind(self.db), TypeKind::Optional(_))),
             _ => false,
         }
-    }
-
-    /// Reports `what`, such as "the method `head`" or "choosing rows", used at `node` on a
-    /// frame with a column that may hold `None`, which does not have it yet, and gives the
-    /// unknown type.
-    pub(super) fn missing_column_unbuilt(&mut self, node: NodeId, what: &str) -> Type<'db> {
-        let message =
-            format!("{what} is not built for a frame with a column that may hold `None` yet");
-        self.lowerer.error(
-            node,
-            &message,
-            "a column may hold `None`",
-            Some(BUILT_FRAME),
-        )
     }
 
     /// Whether `ty` is an array with missing values.
