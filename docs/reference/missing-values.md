@@ -36,7 +36,10 @@ This prints `3`.
 
 - **Write the type.** A list written with numbers and `None` in it, `[1.5, None, 2.5]`, needs
   the type it is for: the annotation above, a parameter's type, or a return type. Without one
-  the compiler reports that the list's items do not share one type.
+  the compiler reports that the list's items do not share one type. This rule is for now. It is
+  decided that such a list takes the type `list[f64 | None]` with no annotation, so
+  `Array([1.5, None, 2.5])` will build the same array; that comes with a later slice of roadmap
+  item 3.13.6, the one after the DataFrame operations.
 - **The list is borrowed**, so it stays usable.
 - **One dimension.** `Array[f64 | None, 2]` is a compile error; missing values in arrays of
   every rank are roadmap item 3.24.
