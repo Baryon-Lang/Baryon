@@ -214,8 +214,10 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
             // `File`, `ArrayFile`, `Path`, `Run` and `Input` can fail, so `call` sends them to
-            // `raising_builtin` with their error edge.
-            Builtin::File(_)
+            // `raising_builtin` with their error edge. `MatrixProduct` cannot fail, but lowering
+            // makes no call of it yet: `--blas` is the next step of roadmap 3.10.2.
+            Builtin::MatrixProduct
+            | Builtin::File(_)
             | Builtin::ArrayFile(_)
             | Builtin::Run
             | Builtin::Input
