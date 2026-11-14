@@ -113,3 +113,52 @@ fn the_reference_s_lzma_example_runs() {
         "11600 bytes, CRC-32 1019181682\n"
     );
 }
+
+/// `lzma.open` reads two streams back as the table, in two pieces and whole, and the files
+/// Python refuses raise its messages at the first `read`; a missing file, a mode that writes,
+/// an unknown mode and a closed file raise Python's errors.
+#[test]
+fn lzma_files_are_opened_to_read() {
+    let program = "\
+import lzma
+
+
+def attempt(path: str, mode: str):
+    try:
+        with lzma.open(path, mode) as f:
+            print(len(f.read()))
+    except OSError as error:
+        print(mode, error.strerror)
+    except ValueError as problem:
+        print(mode, problem.message)
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with lzma.open(\"streams.xz\") as f:
+        print(f.name, len(f.read(10)), len(f.read()), len(f.read()))
+    attempt(\"alone.lzma\", \"r\")
+    attempt(\"text.txt\", \"rb\")
+    attempt(\"missing.xz\", \"rb\")
+    attempt(\"level6.xz\", \"wb\")
+    attempt(\"level6.xz\", \"q\")
+    h = lzma.open(\"level6.xz\")
+    h.close()
+    h.close()
+    try:
+        h.read()
+    except ValueError as problem:
+        print(problem.message)
+";
+    let (output, _) = run("lzma_open", program).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "streams.xz 10 11590 0\n\
+         11600\n\
+         rb Input format not supported by decoder\n\
+         rb No such file or directory\n\
+         wb lzma.open's mode 'wb' is not built yet; open with \"rb\"\n\
+         q Invalid mode: 'q'\n\
+         I/O operation on closed file\n"
+    );
+}

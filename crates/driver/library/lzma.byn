@@ -1,5 +1,6 @@
 """The `lzma` module: xz files and `.lzma` files on byte arrays, with Python's names, written
-in Baryon (decision 0049). Only decompression is built yet.
+in Baryon (decision 0049). Only decompression is built yet: `decompress`, and `open` to read a
+file.
 
 An xz file (the `.xz` format of XZ Utils) is a stream of blocks, each LZMA2 data and an
 integrity check (CRC-32, CRC-64 or SHA-256), then an index of the blocks and a footer. LZMA2
@@ -766,3 +767,65 @@ def decompress(data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
         if position >= len(data):
             break
     return output.data[: output.length].copy()
+
+
+def open(filename: str, mode: str = "rb") -> Raises[LZMAFile, OSError | ValueError]:
+    """The xz or `.lzma` file at `filename`, opened to read as `lzma.open(filename, mode)` opens
+    it in Python, for `with` or for reading until `close()`. `mode` is `"rb"` or `"r"`.
+
+    The file's bytes are read now, and decompressed by the first `read`, all at once, so the
+    file and its data must both fit in memory. Raises `OSError` when the file cannot be read,
+    such as `FILE_NOT_FOUND`. Raises `ValueError` for any other mode: the modes that write,
+    `"wb"`, `"ab"` and `"xb"`, need `lzma.compress`, and the text modes, such as `"rt"`, a way
+    to turn bytes into a `str`, neither of which is built yet.
+    """
+    if mode not in ["r", "rb"]:
+        if mode in ["w", "wb", "a", "ab", "x", "xb", "rt", "wt", "at", "xt"]:
+            raise ValueError(f"lzma.open's mode '{mode}' is not built yet; open with \"rb\"")
+        raise ValueError(f"Invalid mode: '{mode}'")
+    data = Array.fromfile(filename, u8)
+    return LZMAFile(filename.copy(), data, 0, False, False)
+
+
+class LZMAFile(Struct):
+    """An xz or `.lzma` file open to read, as `lzma.open` gives it: Python's `lzma.LZMAFile`
+    in binary mode. Use it in `with`, which closes it at the end of the block, or call
+    `close()`. Its first `read` decompresses the whole file, so later reads only copy."""
+
+    name: str  # the path the file was opened with
+    _data: Array[u8, 1]  # the file's bytes before the first `read`, its data after
+    _at: int  # the bytes of data already given
+    _decoded: bool  # whether `_data` holds the data yet
+    _closed: bool  # whether `close` has run
+
+    def __enter__(self: Owned[Self]) -> Self:
+        """The file itself, for `with lzma.open(...) as f:`."""
+        return self
+
+    def __exit__(self: InOut[Self]):
+        """Closes the file at the end of a `with` block, as `close()` does."""
+        self.close()
+
+    def read(self: InOut[Self], size: int = -1) -> Raises[Array[u8, 1], OSError | ValueError]:
+        """The next `size` bytes of data, fewer at the end of the file, or the rest of the data
+        when `size` is negative, as `LZMAFile.read(size)` gives them; an empty array at the
+        end. Raises `OSError` with `decompress`'s messages for a file that is not xz or
+        `.lzma`, or is damaged, and `ValueError` `I/O operation on closed file` once the file
+        is closed."""
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
+        if not self._decoded:
+            self._data = decompress(self._data)
+            self._decoded = True
+        stop = len(self._data)
+        if size >= 0:
+            stop = min(stop, self._at + size)
+        start = self._at
+        self._at = stop
+        return self._data[start:stop].copy()
+
+    def close(self: InOut[Self]):
+        """Closes the file and lets go of its data, as `LZMAFile.close()` does. A second
+        `close` does nothing."""
+        self._closed = True
+        self._data = Array.zeros(0, u8)
