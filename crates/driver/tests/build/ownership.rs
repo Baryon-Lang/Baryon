@@ -158,6 +158,7 @@ const SITES: &[&str] = &[
     include_str!("../fixtures/ownership/containers.byn"),
     include_str!("../fixtures/ownership/calls.byn"),
     include_str!("../fixtures/ownership/errors.byn"),
+    include_str!("../fixtures/ownership/managers.byn"),
 ];
 
 /// Sites that fail today for every kind, each with the bug and who owns its fix. They are left

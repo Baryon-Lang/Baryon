@@ -37,12 +37,12 @@ LLVM into a native executable that starts at `main` in `main.byn`, with `clang` 
 installed; `baryon run` builds and runs it in one step, `baryon test` runs every `@test` function,
 and `baryon watch` rebuilds on every save. It builds numbers, complex numbers, `str`, lists, dicts,
 tuples, optionals, structs, enums, unions of structs with `match`, traits, generics, functions as
-arguments, errors, arrays with slices, broadcasting and `@`, `prange` and `simd` loops, and all
-six example programs. The standard library, written in Baryon itself, covers `math` (with the
-double-double `f64x2` and `fsum`), `random.Philox`, `stats`, `linalg` and `fft`, `DataFrame`
-with pandas's names, plotting with `byplot` (SVG, PNG and PDF), data files (text tables, `.npy`,
-FITS, NetCDF and HDF5 through `h5by`), compression (`zlib`, `gzip`, `compression.zstd`, `bz2` and
-`lzma`), and files, paths and processes. `baryon lsp` is a language server for any editor, and
+arguments, errors, arrays with slices, broadcasting and `@`, `prange` and `simd` loops, `with` and
+`for` on a program's own classes, and all seven example programs. The standard library, written
+in Baryon itself, covers `math` (with the double-double `f64x2` and `fsum`), `random.Philox`,
+`stats`, `linalg` and `fft`, `DataFrame` with pandas's names, plotting with `byplot` (SVG, PNG
+and PDF), data files (text tables, `.npy`, FITS, NetCDF and HDF5 through `h5by`), compression
+(`zlib`, `gzip`, `compression.zstd`, `bz2` and `lzma`), and files, paths and processes. `baryon lsp` is a language server for any editor, and
 the [VS Code extension](editors/vscode/README.md) runs it for you; `baryon doc` writes a
 package's documentation strings as Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`

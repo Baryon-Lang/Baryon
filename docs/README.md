@@ -22,7 +22,7 @@ through a first program there.
 
 The compiler is a prototype. `baryon check <directory>` reports every error the checker finds,
 but `baryon build`, `baryon run` and `baryon test` compile only part of the language so far, and
-all six [example programs](examples/README.md) build and run;
+all seven [example programs](examples/README.md) build and run;
 [What builds today](reference/status.md) lists, chapter by chapter, what builds.
 
 [The `baryon` command](reference/commands.md) says how to build the tool and what each of its
@@ -34,7 +34,7 @@ and runs `baryon lsp` for you. The [release notes](../CHANGELOG.md) say what eac
 - The [language reference](reference/README.md) defines what a program may say and what it means.
   Python programmers should start with its
   [differences from Python](reference/differences-from-python.md).
-- [`examples/`](examples/README.md) has six physics and mathematics programs written in the
+- [`examples/`](examples/README.md) has seven physics and mathematics programs written in the
   language, each explaining the features it uses.
 - The [decision records](decisions/README.md) explain each settled or proposed design choice.
 - The [design plan](design/language-design-plan.md) gives the reasoning behind the whole design.

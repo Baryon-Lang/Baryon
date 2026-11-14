@@ -143,7 +143,7 @@ error: `with` needs a `File`, found `i64`
    |
 11 |     with 3 as h:
    |          ^ not a file
-   = note: `with` is for `with open(...) as f:` and `with unsafe:` (decision 0036)
+   = note: `with` is for `with open(...) as f:`, `with unsafe:`, and a class that defines `__enter__` and `__exit__` (decisions 0036 and 0053)
 
 error: expected `str`, found `i64`
   --> main.byn:14:13

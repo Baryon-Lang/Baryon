@@ -9,7 +9,7 @@
 
 use super::Body;
 use super::calls::Arguments;
-use syntax::{NodeId, Role, SyntaxKind};
+use syntax::{NodeId, SyntaxKind};
 use types::{Call, Callee, Integer, Key, Primitive, StandardType, Type, TypeKind};
 
 /// The modes `open` takes, each with the number the `mir` call passes: read, write, append and
@@ -234,10 +234,14 @@ impl<'db> Body<'db> {
     /// to the file for the body and closes it at the end, which can fail with `OSError` as
     /// `close()` can. A `NetCDF` `Dataset` binds too, and closing it does nothing, as
     /// `ds.close()` does nothing (decision 0047); so does an `h5by` `File` (decision 0052).
-    /// Returns the type of `value`, `None` when it is neither, which is reported.
-    pub(super) fn with_file(&mut self, statement: NodeId, item: NodeId) -> Option<Type<'db>> {
-        let value = self.tree.child(item, Role::Value)?;
-        let ty = self.expression(value, None);
+    /// `ty` is the type of `value`, already checked. Returns it, or `None` when it is none of
+    /// these, which is reported.
+    pub(super) fn with_file(
+        &mut self,
+        statement: NodeId,
+        value: NodeId,
+        ty: Type<'db>,
+    ) -> Option<Type<'db>> {
         if self.is_netcdf(ty, "Dataset") || self.is_h5by(ty, "File") {
             return Some(ty);
         }
@@ -248,7 +252,9 @@ impl<'db> Body<'db> {
                 value,
                 &message,
                 "not a file",
-                Some("`with` is for `with open(...) as f:` and `with unsafe:` (decision 0036)"),
+                Some(
+                    "`with` is for `with open(...) as f:`, `with unsafe:`, and a class that defines `__enter__` and `__exit__` (decisions 0036 and 0053)",
+                ),
             );
             return None;
         }

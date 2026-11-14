@@ -64,6 +64,7 @@ mod generics;
 mod h5by;
 mod library;
 mod loops;
+mod managers;
 mod math;
 mod members;
 mod methods;
@@ -89,6 +90,7 @@ mod text;
 mod text_arrays;
 mod text_tables;
 mod union_methods;
+mod user_iterators;
 
 use crate::lower::Lowerer;
 use crate::outline::Entry;
@@ -126,6 +128,10 @@ pub(crate) fn check<'db>(
         modes: BTreeMap::new(),
         loops: Vec::new(),
         loop_ends: BTreeSet::new(),
+        held: Vec::new(),
+        with_ends: BTreeSet::new(),
+        iterating: None,
+        user_loops: BTreeSet::new(),
         parallel: Vec::new(),
         accumulate: Vec::new(),
         conditionals: BTreeSet::new(),
@@ -186,6 +192,20 @@ struct Body<'db> {
     /// recorded as moved at its target when the loop ends, and a read of it before it is
     /// assigned again is reported as a read after the loop (the `loops` module).
     loop_ends: BTreeSet<NodeId>,
+    /// The variables enclosing `with` blocks hold for `__exit__`, innermost last (the
+    /// `managers` module).
+    held: Vec<managers::Held>,
+    /// The names after `as` of `with` blocks whose `__exit__` takes `self` as `Owned`: the
+    /// variable is recorded as moved there when the block ends, and a later read is reported
+    /// as a read after the block (the `managers` module).
+    with_ends: BTreeSet<NodeId>,
+    /// The `for` statement whose iterator is being checked, while it is, so a loop over a
+    /// class with `__next__` or `__iter__` can record its calls there (the `user_iterators`
+    /// module). `None` in a comprehension and everywhere else.
+    iterating: Option<NodeId>,
+    /// The `for` statements over a class with `__next__` or `__iter__`, whose loop variable
+    /// owns each value (the `user_iterators` module).
+    user_loops: BTreeSet<NodeId>,
     /// The enclosing `prange` and `simd` loops, innermost last: at most one of each, the
     /// `simd` loop inside the `prange` one (the `parallel` module).
     parallel: Vec<parallel::Parallel>,
@@ -271,26 +291,7 @@ impl<'db> Body<'db> {
             SyntaxKind::If => return self.if_statement(statement),
             SyntaxKind::While => return self.while_statement(statement),
             SyntaxKind::For => self.for_statement(statement),
-            SyntaxKind::With => {
-                let items: Vec<NodeId> = self.tree.children_with(statement, Role::Item).collect();
-                for item in items {
-                    match self.tree.child(item, Role::Target) {
-                        // `with open(...) as f:`, the one `with` that binds (decision 0036).
-                        Some(target) => {
-                            if let Some(ty) = self.with_file(statement, item) {
-                                let value = self.tree.child(item, Role::Value);
-                                self.bind(target, ty, value);
-                            }
-                        }
-                        None => {
-                            if let Some(value) = self.tree.child(item, Role::Value) {
-                                self.expression(value, None);
-                            }
-                        }
-                    }
-                }
-                return self.block(statement, Role::Body);
-            }
+            SyntaxKind::With => return self.with_statement(statement),
             SyntaxKind::Delete => self.delete(statement),
             SyntaxKind::Match => return self.match_statement(statement),
             SyntaxKind::Try => return self.try_statement(statement),

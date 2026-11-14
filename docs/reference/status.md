@@ -31,13 +31,14 @@ each pull request added is in this file's history.
 
 ## The example programs
 
-All six [example programs](../examples/README.md) build and run:
+All seven [example programs](../examples/README.md) build and run:
 [`heat_equation.byn`](../examples/heat_equation.byn),
 [`lennard_jones.byn`](../examples/lennard_jones.byn),
 [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn),
 [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn),
-[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) and
-[`rod_boundaries.byn`](../examples/rod_boundaries.byn). Each is built and run by a test that
+[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn),
+[`rod_boundaries.byn`](../examples/rod_boundaries.byn) and
+[`energy_audit.byn`](../examples/energy_audit.byn). Each is built and run by a test that
 checks what it prints.
 
 | Example | Still needs |
@@ -48,6 +49,7 @@ checks what it prints.
 | [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | Nothing: it builds and runs |
 | [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | Nothing: it builds and runs |
 | [`rod_boundaries.byn`](../examples/rod_boundaries.byn) | Nothing: it builds and runs |
+| [`energy_audit.byn`](../examples/energy_audit.byn) | Nothing: it builds and runs |
 
 ## Syntax
 
@@ -57,12 +59,12 @@ checks what it prints.
 | `main` in `main.byn`; [`print`](syntax.md#what-print-writes-for-each-value) of numbers, `bool`, `str`, `None`, `T \| None`, tuples, enum members, structs, lists and dicts, with `sep=`, `end=`, [`file=` and `flush=`](files-and-processes.md#standard-streams); arrays of numbers and `bool`, [as NumPy writes them](arrays.md#printing) | `print` of arrays of `str` or structs; a tuple holding `None` |
 | Assignment, annotated assignment, augmented assignment including `**=`; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a`, and nested unpacking, `a, (b, c) = e` | |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
-| `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a list, such as `list[f64]` or `list[str]`; over a tuple whose items have one type, such as `(2, 3, 5)`; over the characters of a `str`, each a one-character `str`; over `enumerate`, `zip` and `reversed` of these, nested in each other; a loop over values that are not copied, such as `str`s, borrows each element; with a target that unpacks, `for x, y in points` | A `prange` step that is not a constant; `reversed` of a `str`; a `range` step that is not a constant inside `enumerate`, `zip` or `reversed`; `enumerate`, `zip` and `reversed` outside a `for` loop or comprehension, such as `list(zip(a, b))` |
+| `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a list, such as `list[f64]` or `list[str]`; over a tuple whose items have one type, such as `(2, 3, 5)`; over the characters of a `str`, each a one-character `str`; over `enumerate`, `zip` and `reversed` of these, nested in each other; over a class with `__next__` or `__iter__`, an [iterator](syntax.md#iterators); a loop over values that are not copied, such as `str`s, borrows each element; with a target that unpacks, `for x, y in points` | A `prange` step that is not a constant; a comprehension over an iterator of the program's own; `reversed` of a `str`; a `range` step that is not a constant inside `enumerate`, `zip` or `reversed`; `enumerate`, `zip` and `reversed` outside a `for` loop or comprehension, such as `list(zip(a, b))` |
 | `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values), each evaluated at every call that leaves its argument out | Leaving out an argument of a generic function |
 | `class` with `Struct`, `Copy`, `Exception`, `Enum` and `Protocol` bases, and the traits a struct names; `@layout("C")` | |
 | `raise` and `try`/`except`, including bare `raise` | |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
-| `with unsafe:` | |
+| `with unsafe:`; [context managers](syntax.md#with-and-context-managers), a class with `__enter__` and `__exit__`, whose `__exit__` runs on every way out of the block; several in one `with` | A file and a context manager in one `with` |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications; complex literals such as `2j` | `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
 | `+ - * / // % **`, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions; comparisons, `in` and `not in` between two `str`s | `in` and `not in` on arrays and tuples |
 | `min`, `max`, `len` of arrays, lists and `str`; `sum`, `min` and `max` of a list or rank-1 array of numbers, a list's float `sum` as CPython 3.12 adds it; `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`math.fsum`](arrays.md#exact-sums) of a list or rank-1 array of `f64`s; [`math.f64x2`](arrays.md#double-double-floats) double-double floats and their methods; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)` and `round(x, digits)` as Python rounds; `sorted` of a list of numbers or `str`s, with `reverse=`; `abs` of integers, floats and complex numbers | `float(text)` and the other conversions of a `str` to a number; `sorted` with `key=` or of other elements, such as tuples; `min` and `max` of a list of `str`s; `sum` of a list of complex numbers and of an array with a start; the integer functions of `math`, such as `gcd`, and `math.prod`; `fsum` of other element types and iterables; the rest of `random` |

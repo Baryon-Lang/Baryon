@@ -69,8 +69,14 @@ impl<'db> Builder<'db> {
             SyntaxKind::AugmentedAssign => self.augmented(statement),
             SyntaxKind::Return => {
                 match child(Role::Value) {
+                    Some(value) if !self.exits.is_empty() => {
+                        self.return_through_exits(value, statement);
+                    }
                     Some(value) => self.write(Place::from(Local::RETURN), self.returns, value),
-                    None => self.return_none(statement),
+                    None => {
+                        self.exit_from(0);
+                        self.return_none(statement);
+                    }
                 }
                 self.drop_all(statement);
                 self.terminate(TerminatorKind::Return, statement);
@@ -84,6 +90,13 @@ impl<'db> Builder<'db> {
                 let Some(&Loop { next, end }) = self.loops.last() else {
                     return;
                 };
+                // The `with` blocks inside the loop end here (decision 0053).
+                let inside = self
+                    .exits
+                    .iter()
+                    .position(|exit| exit.loops() >= self.loops.len())
+                    .unwrap_or(self.exits.len());
+                self.exit_from(inside);
                 let target = if self.tree.kind(statement) == SyntaxKind::Break {
                     end
                 } else {
@@ -112,7 +125,8 @@ impl<'db> Builder<'db> {
     }
 
     /// `with unsafe:`, which allows `a.unchecked[i]` in its body and otherwise runs the body as
-    /// it is. Other `with` statements are not lowered yet.
+    /// it is; `with open(...) as f:` and the other files (the `files` module); and context
+    /// managers (the `managers` module).
     fn with_statement(&mut self, statement: NodeId) {
         let items: Vec<NodeId> = self.tree.children_with(statement, Role::Item).collect();
         let is_unsafe = match items.as_slice() {
@@ -124,6 +138,9 @@ impl<'db> Builder<'db> {
             }
             _ => false,
         };
+        if self.with_manager(statement, &items) {
+            return;
+        }
         match items.as_slice() {
             _ if is_unsafe => self.block(statement, Role::Body),
             [item] if self.tree.child(*item, Role::Target).is_some() => {
