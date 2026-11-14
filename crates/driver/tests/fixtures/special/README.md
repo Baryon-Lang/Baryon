@@ -1,12 +1,12 @@
 # Special-function reference values
 
-`gamma_family.txt`, `error_functions.txt`, `bessel_functions.txt`, `incomplete_functions.txt` and
-`distribution_functions.txt` hold the cases the build tests in
+`gamma_family.txt`, `error_functions.txt`, `bessel_functions.txt`, `incomplete_functions.txt`,
+`distribution_functions.txt` and `helper_functions.txt` hold the cases the build tests in
 [`../../build/special.rs`](../../build/special.rs) check the `special` module's gamma family
-(roadmap 3.18.1), error functions (3.18.3), Bessel functions of whole order (3.18.4), incomplete
-gamma and beta functions (3.18.2) and distribution functions (3.18.12) against. Each line is a
-function's name, its arguments and the value the function should give, separated by spaces and
-written as Python's `repr` writes a float:
+(roadmap 3.18.1), error functions (3.18.3), Bessel functions of whole order (3.18.4),
+incomplete gamma and beta functions (3.18.2), distribution functions (3.18.12) and everyday
+helpers (3.18.11) against. Each line is a function's name, its arguments and the value the
+function should give, separated by spaces and written as Python's `repr` writes a float:
 
 ```text
 gamma -16.481439370601617 -3.8732193888774417e-14
@@ -637,5 +637,73 @@ for name, arguments in edges:
     value = float(getattr(scipy.special, name)(*arguments))
     lines.append(" ".join([name] + [repr(x) for x in arguments] + [repr(value)]))
 with open("distribution_functions.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+# The everyday helpers (roadmap 3.18.11), drawn after the distribution functions.
+lines = []
+
+
+def ref_binom(n, k):
+    with mpmath.workdps(60):
+        return mpmath.binomial(n, k)
+
+
+def ref_kl(x, y):
+    with mpmath.workdps(60):
+        x, y = mpmath.mpf(x), mpmath.mpf(y)
+        return x * mpmath.log(x / y) - x + y
+
+
+helpers = {
+    "expit": (lambda x: 1 / (1 + mpmath.exp(-mpmath.mpf(x))),
+              uniform(-40, 40, 80) + [-x for x in spread(40, 700, 20)]),
+    "log_expit": (lambda x: -mpmath.log1p(mpmath.exp(-mpmath.mpf(x))),
+                  uniform(-40, 40, 80) + spread(40, 700, 10) + [-x for x in spread(40, 1e300, 10)]),
+    "logit": (lambda p: mpmath.log(mpmath.mpf(p) / (1 - mpmath.mpf(p))),
+              uniform(0, 1, 80) + uniform(0.45, 0.55, 30) + spread(1e-300, 1e-3, 20)),
+    "entr": (lambda x: -mpmath.mpf(x) * mpmath.log(x),
+             uniform(0, 3, 40) + spread(1e-300, 1e300, 40)),
+}
+for name, (function, arguments) in helpers.items():
+    for x in arguments:
+        lines.append(f"{name} {x!r} {float(function(x))!r}")
+for x, y in zip(spread(1e-10, 1e10, 60), spread(1e-10, 1e10, 60)):
+    with mpmath.workdps(60):
+        lines.append(f"xlogy {x!r} {y!r} {float(x * mpmath.log(y))!r}")
+        lines.append(f"rel_entr {x!r} {y!r} {float(x * mpmath.log(mpmath.mpf(x) / y))!r}")
+        lines.append(f"kl_div {x!r} {y!r} {float(ref_kl(x, y))!r}")
+for x, y in zip(spread(1e-10, 1e10, 30), uniform(-0.99, 3, 30) + []):
+    with mpmath.workdps(60):
+        lines.append(f"xlog1py {x!r} {y!r} {float(x * mpmath.log1p(y))!r}")
+for y in uniform(0.5, 2, 40):
+    x = float(y * (1 + generator.uniform(-1e-3, 1e-3)))
+    lines.append(f"kl_div {x!r} {y!r} {float(ref_kl(x, y))!r}")
+for _ in range(60):
+    n = float(generator.integers(0, 1000))
+    k = float(generator.integers(0, n + 1))
+    lines.append(f"binom {n!r} {k!r} {float(ref_binom(n, k))!r}")
+    lines.append(f"comb {n!r} {k!r} {float(ref_binom(n, k))!r}")
+    with mpmath.workdps(60):
+        lines.append(f"perm {n!r} {k!r} {float(mpmath.rf(n - k + 1, k))!r}")
+for n, k in zip(uniform(-30, 30, 60), uniform(-10, 30, 60)):
+    if not (n < 0 and n == math.floor(n)):
+        lines.append(f"binom {n!r} {k!r} {float(ref_binom(n, k))!r}")
+for n in uniform(0, 170, 40):
+    lines.append(f"factorial {n!r} {float(mpmath.gamma(n + 1))!r}")
+edges = [
+    ("expit", (0.0,)), ("expit", (inf,)), ("expit", (-inf,)), ("log_expit", (inf,)),
+    ("log_expit", (-inf,)), ("logit", (0.0,)), ("logit", (1.0,)), ("logit", (0.5,)),
+    ("logit", (-0.1,)), ("xlogy", (0.0, 0.0)), ("xlogy", (0.0, -1.0)), ("xlogy", (1.0, 0.0)),
+    ("xlog1py", (0.0, -1.0)), ("xlog1py", (1.0, -1.0)), ("entr", (0.0,)), ("entr", (-1.0,)),
+    ("entr", (inf,)), ("rel_entr", (0.0, 0.0)), ("rel_entr", (1.0, 0.0)), ("rel_entr", (-1.0, 1.0)),
+    ("rel_entr", (1.0, inf)), ("kl_div", (0.0, 1.0)), ("kl_div", (1.0, 0.0)),
+    ("kl_div", (-1.0, 1.0)), ("kl_div", (inf, 1.0)), ("binom", (5.0, -1.0)), ("binom", (5.0, 6.0)),
+    ("binom", (-3.0, 2.0)), ("binom", (0.0, 0.0)), ("binom", (1e300, 2.0)), ("comb", (5.0, -1.0)),
+    ("comb", (5.0, 6.0)), ("comb", (-3.0, 2.0)), ("perm", (5.0, 6.0)), ("perm", (0.0, 0.0)),
+    ("factorial", (-1.0,)), ("factorial", (0.0,)), ("factorial", (171.0,)),
+]
+for name, arguments in edges:
+    value = float(getattr(scipy.special, name)(*arguments))
+    lines.append(" ".join([name] + [repr(x) for x in arguments] + [repr(value)]))
+with open("helper_functions.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```

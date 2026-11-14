@@ -22,7 +22,7 @@ and never sees the files behind it.
 
 from special_gamma import gamma as gamma, rgamma as rgamma, gammasgn as gammasgn, gammaln as gammaln
 from special_gamma import loggamma as loggamma, psi as psi, digamma as digamma
-from special_gamma import polygamma as polygamma
+from special_gamma import polygamma as polygamma, factorial as factorial
 from special_beta import beta as beta, betaln as betaln, poch as poch
 from special_error import erf as erf, erfc as erfc, erfcx as erfcx, erfinv as erfinv
 from special_error import erfcinv as erfcinv, ndtr as ndtr, ndtri as ndtri, log_ndtr as log_ndtr
@@ -41,3 +41,6 @@ from special_distributions import fdtr as fdtr, fdtrc as fdtrc, fdtri as fdtri, 
 from special_distributions import gdtrc as gdtrc, stdtr as stdtr, stdtrit as stdtrit
 from special_kolmogorov import kolmogorov as kolmogorov, kolmogi as kolmogi, owens_t as owens_t
 from special_kolmogorov import smirnov as smirnov, smirnovi as smirnovi
+from special_helpers import expit as expit, log_expit as log_expit, logit as logit, xlogy as xlogy
+from special_helpers import xlog1py as xlog1py, entr as entr, rel_entr as rel_entr, kl_div as kl_div
+from special_helpers import binom as binom, comb as comb, perm as perm

@@ -1,5 +1,6 @@
 """The gamma function and its relatives for `special` (roadmap 3.18.1): `gamma`, `rgamma`,
-`gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma` and `polygamma`.
+`gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma` and `polygamma`, with `factorial` (roadmap
+3.18.11), which `polygamma` uses.
 
 The coefficients are Taylor coefficients of 1/Γ and Bernoulli numbers, computed with mpmath and
 rounded to `f64`. The compiler reads this file for `<std>/special.byn`; a program cannot import
@@ -455,3 +456,25 @@ def polygamma(n: int, x: f64) -> f64:
     if n % 2 == 0:
         return -value
     return value
+
+
+def factorial(n: f64, exact: bool = False) -> f64:
+    """n!, as `scipy.special.factorial`: Γ(n + 1), and 0 for a negative `n`. With `exact`, `n`
+    is rounded down and the product formed in integer arithmetic, as in `comb`.
+
+    ```python
+    from special import factorial
+
+    print(factorial(5))     # 120.0
+    ```
+    """
+    if isnan(n):
+        return nan
+    if n < 0.0:
+        return 0.0
+    if not exact:
+        return gamma(n + 1.0)
+    count = 1
+    for i in range(2, int(floor(n)) + 1):
+        count = count * i
+    return float(count)
