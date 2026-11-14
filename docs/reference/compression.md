@@ -15,7 +15,7 @@ imports and calls.
 | [`gzip`](#gzip) | gzip files (RFC 1952) of one member or several | `compress`, `decompress` |
 | [`compression.zstd`](#compressionzstd) | Zstandard frames (RFC 8878) | `compress`, `decompress` |
 | [`bz2`](#bz2) | bzip2 streams of one block or several | `compress`, `decompress` |
-| [`lzma`](#lzma) | xz files and `.lzma` files | `decompress` |
+| [`lzma`](#lzma) | xz files and `.lzma` files | `decompress`, `open` to read |
 
 Python's functions take and give `bytes`. Baryon has no `bytes` type yet, so they take and give
 `Array[u8, 1]`, an array of bytes, which [`Array.fromfile`](files-and-processes.md#array-files)
@@ -404,7 +404,8 @@ Python's `bz2.compress` takes.
 
 xz files compress tighter than bzip2 and decompress faster; source archives, Linux packages and
 many data releases ship as `.xz`. Baryon's `lzma` module keeps Python's name and reads xz files
-and the older `.lzma` files. Writing them is not built yet.
+and the older `.lzma` files, whole or through [`lzma.open`](#lzmaopen). Writing them is not
+built yet.
 
 ```python
 import lzma
@@ -444,3 +445,26 @@ Python's message: all of 4,563 damaged and cut files in tests did.
 **Cost.** One pass over `data` and one over the output, which is copied each time its buffer
 doubles. The probabilities take 7 to 50 KiB, and up to 12 MiB for a `.lzma` file with the
 largest literal context. Decoding takes about three times the time Python's takes.
+
+### `lzma.open`
+
+`open(filename, mode="rb")` opens an xz or `.lzma` file to read and gives an `LZMAFile`, as
+Python's does: `with lzma.open("level6.xz") as f:` reads the table above with `f.read()`. Use it
+in `with`, which closes the file at the end of the block, or call `f.close()`.
+
+| Method | Gives | What it does |
+| --- | --- | --- |
+| `f.read()` | `Array[u8, 1]` | the rest of the data |
+| `f.read(size)` | `Array[u8, 1]` | the next `size` bytes, fewer at the end, none after it |
+| `f.close()` | `None` | lets go of the data; a second call does nothing |
+| `f.name` | `str` | the path the file was opened with |
+
+- **Read whole.** `open` reads the file's bytes, and the first `read` decompresses all of them
+  with [`decompress`](#lzmadecompress), so the file and its data must both fit in memory. A
+  file that is not xz or `.lzma` raises at that first `read`, as in Python, with the same
+  messages; a missing file raises `OSError` `FILE_NOT_FOUND` at `open`.
+- **Reading only.** `"rb"` and `"r"` are the modes built. The modes that write, `"wb"`, `"ab"`
+  and `"xb"`, wait on an `lzma.compress`, and the text modes, such as `"rt"`, on a way to turn
+  bytes into a `str`; they raise `ValueError` until then, and any other mode raises `ValueError`
+  `Invalid mode`, as in Python. `read` on a closed file raises `ValueError`
+  `I/O operation on closed file`.
