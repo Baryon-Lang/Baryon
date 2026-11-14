@@ -5,6 +5,7 @@
 //!
 //! The gzip files in `tests/fixtures/zlib` were written by Python; its `README.md` says how.
 
+use super::zlib::chapter_example;
 use super::{Scratch, baryon_build, package};
 use std::fs;
 use std::io;
@@ -162,25 +163,11 @@ def main() -> Raises[None, OSError | ValueError]:
     );
 }
 
-/// The example in the `gzip.open` section of the compression reference, as written there.
+/// The example in the `gzip.open` section of the compression reference, read from the chapter
+/// itself, prints what the chapter says it prints.
 #[test]
 fn the_reference_example_prints_what_it_says() {
-    let program = "\
-import gzip
-
-
-def main() -> Raises[None, OSError | ValueError]:
-    with gzip.open(\"table.txt.gz\", \"wb\") as f:
-        f.write(Array.fromfile(\"text.txt\", u8))
-    total = 0
-    with gzip.open(\"table.txt.gz\") as f:
-        piece = f.read(1000)
-        while len(piece) > 0:
-            total += len(piece)
-            piece = f.read(1000)
-    print(total, \"bytes\")
-";
-    let (output, _) = run("gzip_open_example", program).unwrap();
+    let (output, _) = run("gzip_open_example", chapter_example(4)).unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(String::from_utf8_lossy(&output.stdout), "11600 bytes\n");
 }

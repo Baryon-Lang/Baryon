@@ -106,7 +106,7 @@ def main() -> Raises[None, OSError]:
 /// The Compression chapter's xz example prints what the chapter says it prints.
 #[test]
 fn the_reference_s_lzma_example_runs() {
-    let (output, _) = run("lzma_reference", chapter_example(6)).unwrap();
+    let (output, _) = run("lzma_reference", chapter_example(7)).unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
