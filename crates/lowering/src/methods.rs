@@ -3,13 +3,13 @@
 //! arrays.
 //!
 //! `a.copy()` is the whole-array expression whose only leaf is `a`, so array expansion allocates
-//! the new array and copies each element in the same loop nest as `a + b`. `a.sum()` and
-//! `a.dot(b)` of floats call the runtime's pairwise sum and dot product, so both add in
-//! `NumPy`'s order; of integers, they add into an accumulator in a loop nest of their own, as
-//! does `v.dot(w)` of a `Fixed` vector shorter than 8, for which the pairwise order is the plain
-//! one. Each integer `+` and `*` is checked for overflow as the operators are. `a.min()` and
-//! `a.max()` scan in row-major order after checking the array is not empty.
-//! The same three along one axis, `a.sum(axis=k)`, are in the `axes` module, and `a.mean()`,
+//! the new array and copies each element in the same loop nest as `a + b`. `a.sum()` is in the
+//! `array_sums` module. `a.dot(b)` of floats calls the runtime's pairwise dot product, so it
+//! adds in `NumPy`'s order; of integers, it adds into an accumulator in a loop nest of its own,
+//! as does `v.dot(w)` of a `Fixed` vector shorter than 8, for which the pairwise order is the
+//! plain one. Each integer `+` and `*` is checked for overflow as the operators are. `a.min()`
+//! and `a.max()` scan in row-major order after checking the array is not empty.
+//! Reductions along one axis, `a.sum(axis=k)`, are in the `axes` module, and `a.mean()`,
 //! `a.var()` and `a.std()` in the `statistics` module.
 //! `a.round()` copies an `Array` and rounds each element in place; on a `Fixed` array it builds
 //! the new value from each element rounded, with one call per element, since a `Fixed` array is
@@ -69,115 +69,6 @@ impl<'db> Builder<'db> {
         let source = self.borrow(array);
         let tree = Elementwise::Leaf(Operand::Copy(source));
         self.assign(place, Rvalue::Elementwise(Box::new(tree)), node);
-    }
-
-    /// `a.sum()` on an `Array` or `Fixed` array of numbers, into `place`.
-    ///
-    /// Floats are added in `NumPy`'s pairwise tree, by a call of [`Builtin::Sum`], so the result
-    /// has the same bits as `numpy.sum` and rounding error grows only with the logarithm of the
-    /// length (Collins, 2026-11-08, roadmap I.22). Integers are added in a loop nest from 0 in
-    /// row-major order (decision 0008), since integer addition is exact in any order; each
-    /// addition is checked for overflow as `+` is, so a debug build panics and a release build
-    /// wraps (decision 0030). An empty array sums to 0.
-    pub(crate) fn array_sum(&mut self, place: Place, array: NodeId, node: NodeId) {
-        let ty = self.ty(array);
-        let element = self.element(ty);
-        if !matches!(element.kind(self.db), TypeKind::Primitive(_)) {
-            return self.unsupported(node, "`sum` of an array whose elements are not numbers");
-        }
-        // A complex sum must add in `NumPy`'s pairwise tree, as a float sum does, which the
-        // runtime does not do for complex numbers yet; adding in a loop would give other bits.
-        if self.is_complex(element) {
-            return self.unsupported(node, "`sum` of an array of complex numbers");
-        }
-        let source = self.borrow(array);
-        let result = self.ty(node);
-        self.sum_of(place, (&source, ty, result), node);
-    }
-
-    /// The sum of the array at `source`, of type `ty`, into `place` as type `result`, as
-    /// [`array_sum`](Self::array_sum) describes; the caller has checked the elements are real
-    /// numbers. `a.mean()` and `a.var()` sum through here too.
-    pub(crate) fn sum_of(
-        &mut self,
-        place: Place,
-        (source, ty, result): (&Place, types::Type<'db>, types::Type<'db>),
-        node: NodeId,
-    ) {
-        let element = self.element(ty);
-        if self.is_float(element) {
-            let total = self.temporary(element, node);
-            let next = self.new_block();
-            self.terminate(
-                TerminatorKind::Call {
-                    callee: Callee::Builtin(Builtin::Sum),
-                    arguments: vec![Argument::Borrow(source.clone())],
-                    destination: Place::from(total),
-                    target: next,
-                    error: None,
-                },
-                node,
-            );
-            self.start(next);
-            let rvalue = self.coerce(Operand::Copy(Place::from(total)), element, result);
-            return self.assign(place, rvalue, node);
-        }
-        let lengths: Vec<Operand<'db>> = (0..self.rank(ty))
-            .map(|dimension| self.length(source, ty, dimension, node))
-            .collect();
-        let counted = self.summand(element);
-        let total = self.temporary(counted, node);
-        let zero = Operand::Constant(self.number_constant(counted, 0));
-        self.assign(Place::from(total), Rvalue::Use(zero), node);
-        self.loop_nest(&lengths, &mut Vec::new(), node, &mut |builder, indices| {
-            let value = source.clone().project(Projection::Index(indices.to_vec()));
-            let value = builder.as_summand(value, element, node);
-            let operands = (Operand::Copy(Place::from(total)), value);
-            builder.arithmetic(
-                Place::from(total),
-                BinaryOperator::Add,
-                operands,
-                counted,
-                node,
-            );
-        });
-        let rvalue = self.coerce(Operand::Copy(Place::from(total)), counted, result);
-        self.assign(place, rvalue, node);
-    }
-
-    /// The type a sum of elements of type `element` adds in: `int` for `bool`, which counts the
-    /// `True` elements as `NumPy` does (roadmap 1.9.36), and `element` itself otherwise.
-    pub(crate) fn summand(&self, element: types::Type<'db>) -> types::Type<'db> {
-        if matches!(
-            element.kind(self.db),
-            TypeKind::Primitive(types::Primitive::Bool)
-        ) {
-            self.int_type()
-        } else {
-            element
-        }
-    }
-
-    /// The element at `value`, of type `element`, as a term of a sum: converted to `int`
-    /// through a temporary when it is a `bool`, as [`summand`](Self::summand) says, and read as
-    /// it is otherwise.
-    pub(crate) fn as_summand(
-        &mut self,
-        value: Place,
-        element: types::Type<'db>,
-        node: NodeId,
-    ) -> Operand<'db> {
-        let counted = self.summand(element);
-        if counted == element {
-            return Operand::Copy(value);
-        }
-        let term = self.temporary(counted, node);
-        self.assign(
-            Place::from(term),
-            Rvalue::Convert(Operand::Copy(value), counted),
-            node,
-        );
-        Operand::Copy(Place::from(term))
     }
 
     /// `a.dot(b)` on two rank-1 `Array` or `Fixed` arrays of numbers, into `place`: the sum of

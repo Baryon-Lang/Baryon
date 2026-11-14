@@ -306,20 +306,6 @@ impl<'db> Body<'db> {
         matched
     }
 
-    /// The type a sum of elements of type `element` gives: `int` for `bool`, counting the `True`
-    /// elements as `NumPy` does (roadmap 1.9.36), and `element` itself otherwise. `min` and
-    /// `max` keep the element type.
-    fn summed(&self, element: Type<'db>) -> Type<'db> {
-        if matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool)) {
-            Type::new(
-                self.db,
-                TypeKind::Primitive(Primitive::Integer(Integer::I64)),
-            )
-        } else {
-            element
-        }
-    }
-
     /// A method call on an array or a list, `a.dot(b)` or `values.append(x)`, or `None` when
     /// `base` is neither.
     pub(super) fn container_method(

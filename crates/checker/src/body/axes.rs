@@ -5,7 +5,8 @@
 //! `Final` constant, since the result's rank depends on it. As in `NumPy`, `-1` is the last axis
 //! and an axis outside the array's rank is an error. The result drops that axis: an
 //! `Array[T, R - 1]`, a `Fixed` array without that length, or one `T` when the array has rank 1,
-//! the same as `a.sum()`.
+//! the same as `a.sum()`. A sum of `bool` elements counts the `True` ones, an `int`, along an
+//! axis or not, as in `NumPy`.
 
 use super::Body;
 use super::calls::Arguments;
@@ -115,5 +116,19 @@ impl<'db> Body<'db> {
             },
         };
         Type::new(self.db, kind)
+    }
+
+    /// The type a sum of elements of type `element` gives: `int` for `bool`, counting the `True`
+    /// elements as `NumPy` does (roadmap 1.9.36), and `element` itself otherwise. `min` and
+    /// `max` keep the element type.
+    pub(super) fn summed(&self, element: Type<'db>) -> Type<'db> {
+        if matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool)) {
+            Type::new(
+                self.db,
+                TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+            )
+        } else {
+            element
+        }
     }
 }
