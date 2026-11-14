@@ -145,7 +145,7 @@ def main():
     # fsum adds without losing a digit; f64x2 carries about 32 significant digits.
     tiny = Array([1.0, 1e-16, 1e-16, 1e-16])
     print(tiny.sum(), fsum(tiny))
-    print(f64x2(2.0, 0.0).sqrt().to_str())
+    print(f64x2.of(2.0).sqrt().to_str())
 
     # Reproducible random numbers: a seed and a stream fix every number drawn.
     generator = Philox(42, stream=0)

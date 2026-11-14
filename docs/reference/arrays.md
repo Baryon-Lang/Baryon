@@ -787,11 +787,13 @@ from math import f64x2
 
 def residual(a: f64, x: f64, b: f64) -> f64:
     """`b - a * x` with the product kept exact, then rounded once."""
-    product = f64x2(a, 0.0).mul(f64x2(x, 0.0))
-    return f64x2(b, 0.0).sub(product).to_f64()
+    product = f64x2.of(a).mul(f64x2.of(x))
+    return f64x2.of(b).sub(product).to_f64()
 ```
 
-`f64x2(x, 0.0)` makes one from an `f64`, exactly. Until a struct can define operators
+`f64x2.of(x)` makes one from an `f64`, exactly, as the constructor `f64x2(x, 0.0)` does. It
+holds that `f64` and nothing more: `f64x2.of(0.1)` is the `f64` nearest 0.1, and
+`f64x2.of(1.0).div(f64x2.of(10.0))` is 0.1 to 32 digits. Until a struct can define operators
 ([decision 0058](../decisions/0058-operators-are-dunder-methods.md), roadmap 3.34), the
 operations are methods, each taking and returning an `f64x2`, so `a * b + c` is written
 `a.mul(b).add(c)`:
@@ -802,7 +804,7 @@ operations are methods, each taking and returning an `f64x2`, so `a * b + c` is 
 | `a.sqrt()`, `a.neg()`, `a.abs()` | The square root, `-a`, `abs(a)` |
 | `a.eq(b)`, `a.ne(b)`, `a.lt(b)`, `a.le(b)`, `a.gt(b)`, `a.ge(b)` | `==`, `!=`, `<`, `<=`, `>`, `>=` as a `bool` |
 | `a.to_f64()` | The value rounded to an `f64` |
-| `a.to_str()` | 31 significant digits: `f64x2(2.0, 0.0).sqrt().to_str()` is `1.414213562373095048801688724210e+00` |
+| `a.to_str()` | 31 significant digits: `f64x2.of(2.0).sqrt().to_str()` is `1.414213562373095048801688724210e+00` |
 
 Each operation is accurate to a few units of 2**-104, about 1e-32 relative; the last digit of
 `to_str` can be one off. An infinite or NaN result is the one an `f64` would give, and `sqrt` of

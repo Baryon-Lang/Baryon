@@ -121,3 +121,27 @@ def main():
     )
     .unwrap();
 }
+
+/// `f64x2.of(x)` builds an `f64x2` from an `f64` exactly, as `f64x2(x, 0.0)` does (roadmap
+/// 3.33.1, decision 0051 amended): `of(0.1)` keeps the `f64` nearest 0.1, while a quotient of
+/// two exact values gives 0.1 to 32 digits. The constructor still works.
+#[test]
+fn f64x2_of_builds_one_from_an_f64() {
+    let program = "\
+from math import f64x2
+
+
+def main():
+    tenth = f64x2.of(1.0).div(f64x2.of(10.0))
+    print(f64x2.of(0.1).to_str(), tenth.to_str())
+    negative = f64x2.of(-3.0)
+    print(f64x2.of(2.5).eq(f64x2(2.5, 0.0)), negative.lo)
+";
+    prints(
+        "math-f64x2-of",
+        program,
+        "1.000000000000000055511151231258e-01 1.000000000000000000000000000000e-01\n\
+         True 0.0\n",
+    )
+    .unwrap();
+}
