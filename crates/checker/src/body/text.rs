@@ -173,8 +173,9 @@ impl<'db> Body<'db> {
         if let Some(encoding) = encoding {
             self.encoding(encoding);
         }
+        let u8 = TypeKind::Primitive(Primitive::Integer(Integer::U8));
         let bytes = matches!(base.kind(self.db), TypeKind::Array { element, rank: 1 }
-            if matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Integer(Integer::U8))));
+            if *element.kind(self.db) == u8);
         if !bytes {
             let message = format!(
                 "`decode` needs an `Array[u8, 1]`, found `{}`",
