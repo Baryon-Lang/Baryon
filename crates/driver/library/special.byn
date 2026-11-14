@@ -53,3 +53,9 @@ from special_elliptic import ellipk as ellipk, ellipkm1 as ellipkm1, ellipe as e
 from special_elliptic import ellipkinc as ellipkinc, ellipeinc as ellipeinc, ellipj as ellipj
 from special_carlson import elliprc as elliprc, elliprd as elliprd, elliprf as elliprf
 from special_carlson import elliprg as elliprg, elliprj as elliprj
+from special_orthogonal import eval_legendre as eval_legendre, eval_chebyt as eval_chebyt
+from special_orthogonal import eval_chebyu as eval_chebyu, eval_hermite as eval_hermite
+from special_orthogonal import eval_hermitenorm as eval_hermitenorm, eval_laguerre as eval_laguerre
+from special_orthogonal import eval_genlaguerre as eval_genlaguerre, eval_jacobi as eval_jacobi
+from special_orthogonal import eval_gegenbauer as eval_gegenbauer, lpmv as lpmv
+from special_orthogonal import sph_harm_y as sph_harm_y

@@ -25,7 +25,7 @@ is built from the series and recurrences below and the elementary functions `exp
 ## Accuracy
 
 Each function is tested against values computed with mpmath to 50 digits, at a few hundred
-arguments spread over its range, about 14,000 in all
+arguments spread over its range, about 15,500 in all
 ([the fixtures](../../crates/driver/tests/fixtures/special/README.md)).
 The error is counted in units in the last place (ULP): the gap between adjacent `f64` values at
 the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
@@ -77,6 +77,10 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `elliprc`, `elliprd`, `elliprf`, `elliprg` | 8 ULP | 4 ULP | 7 ULP |
 | `elliprj` | 8 ULP | 6 ULP | 116 ULP where `p` is far below the other arguments |
 | `ellipj` | 128 ULP, of the larger of the value and 1 for sn, cn and dn | 96 ULP of the amplitude at m = 1 − 4e-11 | 13 billion ULP of sn at the same arguments |
+| `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer` | 8 ULP for each degree, of the largest value the recurrence passes through | 29 ULP for `eval_gegenbauer` at degree 85 | 439 ULP for `eval_jacobi` at degree 85 |
+| `eval_hermite`, `eval_hermitenorm` | The same | 156 ULP at degree 78 | 698 ULP for `eval_hermite` at degree 75 |
+| `lpmv` | 64 ULP of the largest value the recurrence passes through | 24 ULP | 154 ULP |
+| `sph_harm_y` | 8 ULP for each degree, of the largest value the recurrence passes through | 191 ULP at degree 46 | 148 ULP at the same arguments |
 | `lambertw` | 8 ULP of the size of W, for each part | 4 ULP | 2.8e11 ULP: on branch −1 at 7e-10 above −1/e, SciPy's value is off by 6e-5 |
 
 Where a function crosses zero, no formula keeps all of its relative precision there: the
@@ -595,6 +599,69 @@ an infinite `u`. Carlson's integrals are NaN for a negative argument, ∞ where 
 0, and 0 where one is ∞. `elliprc(x, 0.0)` and `elliprj(x, y, z, 0.0)` are NaN, as SciPy
 gives, although the integrals are infinite.
 
+## Orthogonal polynomials and spherical harmonics
+
+| Function | Result | Orthogonal on, with weight | SciPy |
+| --- | --- | --- | --- |
+| `eval_legendre(n, x)` | The Legendre polynomial Pₙ(x) | [−1, 1], 1 | `scipy.special.eval_legendre` |
+| `eval_chebyt(n, x)` | The Chebyshev polynomial of the first kind Tₙ(x) = cos(n acos x) | [−1, 1], 1/√(1 − x²) | `scipy.special.eval_chebyt` |
+| `eval_chebyu(n, x)` | The Chebyshev polynomial of the second kind Uₙ(x) | [−1, 1], √(1 − x²) | `scipy.special.eval_chebyu` |
+| `eval_hermite(n, x)` | The physicists' Hermite polynomial Hₙ(x) | (−∞, ∞), e^(−x²) | `scipy.special.eval_hermite` |
+| `eval_hermitenorm(n, x)` | The probabilists' Hermite polynomial Heₙ(x) | (−∞, ∞), e^(−x²/2) | `scipy.special.eval_hermitenorm` |
+| `eval_laguerre(n, x)` | The Laguerre polynomial Lₙ(x) | [0, ∞), e⁻ˣ | `scipy.special.eval_laguerre` |
+| `eval_genlaguerre(n, alpha, x)` | The generalized Laguerre polynomial Lₙ^(α)(x), for α above −1 | [0, ∞), xᵅ e⁻ˣ | `scipy.special.eval_genlaguerre` |
+| `eval_jacobi(n, alpha, beta, x)` | The Jacobi polynomial Pₙ^(α,β)(x) | [−1, 1], (1 − x)ᵅ (1 + x)ᵝ | `scipy.special.eval_jacobi` |
+| `eval_gegenbauer(n, alpha, x)` | The Gegenbauer polynomial Cₙ^(α)(x) | [−1, 1], (1 − x²)^(α − ½) | `scipy.special.eval_gegenbauer` |
+| `lpmv(m, v, x)` | The associated Legendre function Pᵥᵐ(x), with the Condon–Shortley phase (−1)ᵐ | | `scipy.special.lpmv` |
+| `sph_harm_y(n, m, theta, phi)` | The spherical harmonic Yₙᵐ(θ, φ), θ the polar angle, a `complex128` | The sphere | `scipy.special.sph_harm_y` |
+
+The degree `n` of the `eval_` functions is an `int`. **This differs from SciPy**, which also
+takes a float degree through the hypergeometric function; that comes with roadmap 3.18.8. For
+the same reason `lpmv` takes a whole degree `v`, as an `f64`. For now it gives NaN when `v` is
+not a whole number. `sph_harm_y` gives the value alone. SciPy's `diff_n` keyword, which adds
+derivatives, is not built.
+
+```python
+from math import pi
+from special import eval_hermite, eval_legendre, sph_harm_y
+
+
+def main():
+    print(eval_legendre(2, 0.5))         # -0.125, which is (3x² − 1)/2
+    print(eval_hermite(4, 1.0))          # -20.0
+    y = sph_harm_y(2, 1, pi / 3.0, 0.0)
+    print(y.real)                        # -0.33452327177864466
+```
+
+Each is its three-term recurrence in the degree, run up from degrees 0 and 1. On each
+polynomial's interval of orthogonality that recurrence is stable. Near one of the polynomial's
+zeros, though, the value is a small difference of large terms, so the error is a few ULP of the
+largest value the recurrence passes through, not of the value. The tests measure it that way,
+allowing 8 ULP for each degree.
+
+`sph_harm_y` carries the normalized functions √((2n + 1)/(4π) (n − m)!/(n + m)!) Pₙᵐ(cos θ)
+through their own recurrence, starting from sinᵐθ. No factorial is ever formed, so degrees in
+the thousands neither overflow nor underflow before the value does. `lpmv` runs the
+recurrence of Pᵥᵐ itself, as SciPy does. Its value overflows to ±∞ between orders 140 and
+160, where SciPy gives NaN.
+
+All eleven are held to their tolerances at the 1,487 cases of `orthogonal_polynomials.txt`.
+
+### At the ends
+
+As SciPy gives:
+
+- `eval_legendre(-n - 1, x)` is Pₙ(x).
+- `eval_chebyt(-n, x)` is Tₙ(x), and `eval_chebyu(-n, x)` is −Uₙ₋₂(x).
+- `eval_hermite` and `eval_hermitenorm` are NaN for a negative degree. `eval_laguerre`,
+  `eval_genlaguerre`, `eval_jacobi` and `eval_gegenbauer` are 0 there.
+- `eval_genlaguerre` is NaN for α of −1 or below.
+- `eval_gegenbauer` is 0 at α = 0, even at degree 0.
+- `eval_legendre` at x = ±∞ is ±∞ to the power n.
+- `lpmv` is NaN for |x| above 1. For |m| above v, it is 0 when m is positive and NaN when m is
+  negative.
+- `sph_harm_y` is 0 for |m| above n.
+
 ## Files under `special`
 
 `special` is one public file, `<std>/special.byn`, that re-exports each function from an internal
@@ -619,6 +686,7 @@ for those working on the library. A panic inside a function names the file it is
 | `special_integrals` | `exp1`, `expi`, `expn`, `sici`, `shichi` and `fresnel` |
 | `special_zeta` | `zeta`, `zetac` and `spence` |
 | `special_lambertw` | `lambertw` |
+| `special_orthogonal` | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_hermite`, `eval_hermitenorm`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer`, `lpmv` and `sph_harm_y` |
 | `special_carlson` | `elliprc`, `elliprd`, `elliprf`, `elliprg` and `elliprj`, and `carlson_rf`, `carlson_rd` and `carlson_rg`, the same integrals without the checks of their arguments |
 | `special_elliptic` | `ellipk`, `ellipkm1`, `ellipe`, `ellipkinc`, `ellipeinc` and `ellipj` |
 
@@ -628,6 +696,7 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
-complex order, Airy, Struve and Kelvin functions, hypergeometric functions, and orthogonal
-polynomials. Carlson's integrals of complex arguments are not built. `loggamma` of a complex
-argument comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).
+complex order, Airy, Struve and Kelvin functions, hypergeometric functions, and the nodes and
+weights of Gauss quadrature (the rest of 3.18.10). Carlson's integrals of complex arguments are not
+built. `loggamma` of a complex argument comes with the complex Bessel functions (3.18.6). See [What
+builds today](status.md).
