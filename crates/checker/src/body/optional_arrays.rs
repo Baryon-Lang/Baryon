@@ -22,7 +22,7 @@ const BUILT_FRAME: &str = "a frame with a column that may hold `None` is built f
                            mask, a slice, `head` and `tail` and sorted with each `None` \
                            last, stacked by `concat`, compared by `drop_duplicates` and \
                            `value_counts`, summed up by `describe`, grouped by `groupby`, \
-                           and its columns read, replaced and chosen by name and by \
+                           joined by `merge`, and its columns read, replaced and chosen by name and by \
                            `assign`, `drop` and `rename`; the rest comes with roadmap item \
                            3.13.6";
 

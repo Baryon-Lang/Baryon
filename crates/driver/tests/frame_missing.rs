@@ -46,7 +46,7 @@ def uses(quotes: DataFrame[Quote], rows: list[Quote], prices: DataFrame[Price]):
     full = quotes.dropna(how="all")
     order = quotes.bid.argsort()
     groups = quotes.groupby("price").agg(top=("bid", "top"))
-    joined = prices.merge(quotes, on="price")
+    joined = prices.merge(quotes, on="bid")
     stacked = quotes.bid.std()
     for row in quotes.itertuples():
         pass
@@ -68,14 +68,14 @@ error: building it from a list of rows is not built for a frame with a column th
    |
 16 |     made = DataFrame(rows)
    |                      ^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, shown by `print`, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` and `tail` and sorted with each `None` last, stacked by `concat`, compared by `drop_duplicates` and `value_counts`, summed up by `describe`, grouped by `groupby`, and its columns read, replaced and chosen by name and by `assign`, `drop` and `rename`; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, shown by `print`, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` and `tail` and sorted with each `None` last, stacked by `concat`, compared by `drop_duplicates` and `value_counts`, summed up by `describe`, grouped by `groupby`, joined by `merge`, and its columns read, replaced and chosen by name and by `assign`, `drop` and `rename`; the rest comes with roadmap item 3.13.6
 
 error: reading one row is not built for a frame with a column that may hold `None` yet
   --> main.byn:17:20
    |
 17 |     first = quotes[0]
    |                    ^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, shown by `print`, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` and `tail` and sorted with each `None` last, stacked by `concat`, compared by `drop_duplicates` and `value_counts`, summed up by `describe`, grouped by `groupby`, and its columns read, replaced and chosen by name and by `assign`, `drop` and `rename`; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, shown by `print`, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` and `tail` and sorted with each `None` last, stacked by `concat`, compared by `drop_duplicates` and `value_counts`, summed up by `describe`, grouped by `groupby`, joined by `merge`, and its columns read, replaced and chosen by name and by `assign`, `drop` and `rename`; the rest comes with roadmap item 3.13.6
 
 error: the column `price` cannot hold `None`
   --> main.byn:18:29
@@ -104,12 +104,12 @@ error: `agg` has no reduction `top`
    |                                                      ^^^^^ not a reduction
    = note: it has `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`
 
-error: `merge` is not built for a frame with a column that may hold `None` yet
-  --> main.byn:22:27
+error: `DataFrame[Price]` has no column `bid`
+  --> main.byn:22:38
    |
-22 |     joined = prices.merge(quotes, on="price")
-   |                           ^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, shown by `print`, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` and `tail` and sorted with each `None` last, stacked by `concat`, compared by `drop_duplicates` and `value_counts`, summed up by `describe`, grouped by `groupby`, and its columns read, replaced and chosen by name and by `assign`, `drop` and `rename`; the rest comes with roadmap item 3.13.6
+22 |     joined = prices.merge(quotes, on="bid")
+   |                                      ^^^^^ not a column
+   = note: its columns are `price`
 
 error: the method `std` is not built for an array with missing values yet
   --> main.byn:23:15
@@ -123,7 +123,7 @@ error: a loop over its rows is not built for a frame with a column that may hold
    |
 24 |     for row in quotes.itertuples():
    |                ^^^^^^^^^^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, shown by `print`, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` and `tail` and sorted with each `None` last, stacked by `concat`, compared by `drop_duplicates` and `value_counts`, summed up by `describe`, grouped by `groupby`, and its columns read, replaced and chosen by name and by `assign`, `drop` and `rename`; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, shown by `print`, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` and `tail` and sorted with each `None` last, stacked by `concat`, compared by `drop_duplicates` and `value_counts`, summed up by `describe`, grouped by `groupby`, joined by `merge`, and its columns read, replaced and chosen by name and by `assign`, `drop` and `rename`; the rest comes with roadmap item 3.13.6
 
 error: a value that holds an array with missing values cannot be shown yet
   --> main.byn:26:11

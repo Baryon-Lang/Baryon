@@ -228,8 +228,11 @@ This prints `3 None 3.0`, then `[False  True False]`.
   `median` are `NaN`, as for a group of `NaN`s, and its `min`, `max`, `first` and `last`
   are `None`, so those four give a column that may hold `None`. pandas shows `<NA>` for
   all of them but the count and the sum.
+- **`merge` joins a `None` to a `None`**, as it joins a `NaN` to a `NaN` and as pandas
+  joins its nullable keys, and to no number. Columns that may hold `None` come through a
+  join from either frame, each `None` on its row.
 - **The other frame operations are not built yet** for a frame with such a column: one row,
-  `quotes[0]`, `merge`, `itertuples` and `DataFrame(rows)`. Each is a
+  `quotes[0]`, `itertuples` and `DataFrame(rows)`. Each is a
   compile error that says so. They come with roadmap item 3.13.6. Until then, take the gaps
   out first, as the next section shows: the frame `dropna` or `fillna` gives does everything
   a frame does.
