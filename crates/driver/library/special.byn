@@ -30,3 +30,7 @@ from special_error import dawsn as dawsn
 from special_bessel_jy import j0 as j0, j1 as j1, y0 as y0, y1 as y1, jn as jn, yn as yn
 from special_bessel_ik import i0e as i0e, i1e as i1e, i0 as i0, i1 as i1, k0e as k0e, k1e as k1e
 from special_bessel_ik import k0 as k0, k1 as k1, kn as kn
+from special_incomplete_gamma import gammainc as gammainc, gammaincc as gammaincc
+from special_incomplete_gamma import gammaincinv as gammaincinv, gammainccinv as gammainccinv
+from special_incomplete_beta import betainc as betainc, betaincc as betaincc
+from special_incomplete_beta import betaincinv as betaincinv

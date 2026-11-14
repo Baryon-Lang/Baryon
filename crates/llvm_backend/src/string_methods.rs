@@ -137,6 +137,7 @@ impl<'db> Function<'_, '_, 'db> {
             TextMethod::ParseInt | TextMethod::ParseFloat => {
                 return Err(Unsupported::new("a number read with no error edge"));
             }
+            TextMethod::Encode | TextMethod::Decode => return Err(Unsupported::new(method.name())),
         };
         self.runtime_text_call(symbol, returns, values, destination)?;
         self.line(&format!("br label %{}", block_label(target)));

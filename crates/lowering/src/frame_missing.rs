@@ -1,5 +1,6 @@
 //! Taking the missing values out (decision 0045, part 3, roadmap 3.13.6): `dropna()` and
-//! `fillna(value)` of an array with missing values and of a frame.
+//! `fillna(value)` of an array with missing values and of a frame, and the reductions of an
+//! array that skip them, `count`, `sum`, `mean`, `min` and `max`.
 //!
 //! The result holds no `None`, so it is stored as a plain array: `dropna` chooses the values
 //! whose validity bit is set, through the mask the library's `missing` makes and the
@@ -11,7 +12,7 @@
 use crate::builder::Builder;
 use crate::frames::erase;
 use crate::optional_arrays::{VALIDITY, VALUES};
-use mir::{Local, Operand, Place, Projection, Rvalue};
+use mir::{BinaryOperator, Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Type, TypeKind};
 
@@ -77,6 +78,85 @@ impl<'db> Builder<'db> {
         let arguments = vec![values, bits, value];
         let filled = self.frame_call("filled", vec![element], arguments, narrowed, node)?;
         Some(Operand::Move(Place::from(filled)))
+    }
+
+    /// `values.count()`, `sum()`, `min()`, `max()` or `mean()`, the method `method`, on the
+    /// array with missing values `array`, into `place`: the reduction of the elements that
+    /// are there.
+    ///
+    /// `sum` and `mean` gather those elements into a new array, freed when the statement
+    /// ends, and add it up as any array is added ([`Builder::sum_of`]), so a float sum has
+    /// the bits of `values.dropna().sum()`. The mean is that sum over the count, NaN when no
+    /// element is there, as the mean of an empty array is. `min` and `max` scan in the
+    /// library after a check that an element is there, and panic as they do on an empty
+    /// array when none is.
+    pub(crate) fn optional_array_reduced(
+        &mut self,
+        place: Place,
+        method: &str,
+        array: NodeId,
+        node: NodeId,
+    ) {
+        let Some(element) = self.optional_array_element(array) else {
+            return self.unsupported(node, "this reduction of an array with missing values");
+        };
+        let int = self.int_type();
+        let result = self.ty(node);
+        let base = self.borrow(array);
+        let values = base.clone().project(Projection::Field(VALUES));
+        let bits = base.clone().project(Projection::Field(VALIDITY));
+        let length = self.optional_array_length(&base, node);
+        let length = Place::from(self.held(int, length, node));
+        let arguments = vec![bits.clone(), length];
+        let Some(count) = self.frame_call("present_count", Vec::new(), arguments, int, node) else {
+            return;
+        };
+        let count = Operand::Copy(Place::from(count));
+        if method == "count" {
+            return self.assign(place, Rvalue::Use(count), node);
+        }
+        if matches!(method, "min" | "max") {
+            self.not_empty(std::slice::from_ref(&count), false, node);
+            let Some(start) = self.filler(element) else {
+                return self.unsupported(node, "this reduction of an array with missing values");
+            };
+            let start = Place::from(self.held(element, Operand::Constant(start), node));
+            let boolean = self.boolean_type();
+            let smallest = Constant {
+                ty: boolean,
+                value: ConstantValue::Bool(method == "min"),
+            };
+            let smallest = Place::from(self.held(boolean, Operand::Constant(smallest), node));
+            let arguments = vec![values, bits, start, smallest];
+            let found = self.frame_call("present_extreme", vec![element], arguments, element, node);
+            if let Some(found) = found {
+                self.assign(place, Rvalue::Use(Operand::Copy(Place::from(found))), node);
+            }
+            return;
+        }
+        let gathered = self.array_of(element);
+        let arguments = vec![values, bits];
+        let Some(there) = self.frame_call("present", vec![element], arguments, gathered, node)
+        else {
+            return;
+        };
+        self.drop_later(there);
+        if method == "sum" {
+            return self.sum_of(place, (&Place::from(there), gathered, result), node);
+        }
+        let total = self.temporary(result, node);
+        self.sum_of(
+            Place::from(total),
+            (&Place::from(there), gathered, result),
+            node,
+        );
+        let count = self.convert(count, int, result, node);
+        let total = Operand::Copy(Place::from(total));
+        self.assign(
+            place,
+            Rvalue::Binary(BinaryOperator::Divide, total, count),
+            node,
+        );
     }
 
     /// `df.dropna()` on the frame `frame`, into `place`: a new frame of the rows that have

@@ -7,10 +7,11 @@ that did not report, a survey answer left blank, an empty cell of a CSV file
 
 This chapter covers what such an array does today: it is built from a list, counted, read one
 element at a time, copied, asked where its gaps are, turned into an array with no gaps by
-[`dropna` and `fillna`](#taking-the-gaps-out), and held as a column of a
-[`DataFrame`](dataframes.md): see [In a DataFrame](#in-a-dataframe). Arithmetic, reductions
-that skip `None` and the other frame operations on such a column come next, with roadmap item
-3.13.6, and the compiler says so by name when a program asks for one.
+[`dropna` and `fillna`](#taking-the-gaps-out), [reduced](#reductions-skip-none) by methods
+that skip `None`, and held as a column of a [`DataFrame`](dataframes.md): see
+[In a DataFrame](#in-a-dataframe). Arithmetic and the other frame operations on such a column
+come next, with roadmap item 3.13.6, and the compiler says so by name when a program asks for
+one.
 
 ## `None` is not `NaN`
 
@@ -121,6 +122,36 @@ This prints `[1.5 2.5] 4.0`, then `[1.5 0.  2.5]`, then `[1.5 2.  2.5]`.
   which it frees, and one pass that copies the values kept. `fillna` copies the values and
   makes one pass over the bitmap.
 
+## Reductions skip `None`
+
+`count()`, `sum()`, `mean()`, `min()` and `max()` reduce the elements that are there and pass
+over the gaps, as pandas does:
+
+```python
+def main():
+    bids: Array[f64 | None, 1] = Array([1.5, None, 2.5])
+    print(bids.count(), len(bids))
+    print(bids.sum(), bids.mean(), bids.min(), bids.max())
+```
+
+This prints `2 3`, then `4.0 2.0 1.5 2.5`.
+
+- **`count()` is how many elements are there**, an `i64`; `len` counts the gaps too. It works
+  for every element type. The others take integers and floats.
+- **Each gives what the method gives `bids.dropna()`**, bit for bit: a float sum adds in the
+  same [pairwise order](arrays.md#the-order-sum-adds-in), `mean()` of integers is an `f64`,
+  and a `NaN` that is there makes `min()` and `max()` `NaN`, since `NaN` is a number and not
+  a gap.
+- **With no element there**, `count()` and `sum()` give 0 and `mean()` gives `NaN`, as for an
+  empty array. `min()` and `max()` stop the program, as they do for an empty array: there is
+  no smallest element. pandas gives `NaN` for those two; check `count()` first where every
+  element may be missing.
+- **Not built yet:** `var`, `std`, `argmin`, `argmax` and the built-ins `sum(bids)`,
+  `min(bids)` and `max(bids)`.
+- **Cost:** `count` is one pass over the bitmap. `min` and `max` add one pass over the
+  values. `sum` and `mean` copy the elements that are there into a new array, add it, and
+  free it.
+
 ## How it is stored
 
 An array with missing values is two pieces of memory, whatever its length:
@@ -160,7 +191,8 @@ This prints `3 None 3.0`, then `[False  True False]`.
 - **The schema gives the list its type.** `Array([1.0, None, 3.0])` needs no annotation of
   its own here: the frame's type says the column `bid` holds `f64 | None`.
 - **A column reads as an array with missing values**, `quotes.bid` or `quotes["bid"]`, and
-  does what one does: `len`, an element, `isna`, `notna`, `copy`.
+  does what one does: `len`, an element, `isna`, `notna`, `copy`, `dropna`, `fillna` and the
+  reductions, so `quotes.bid.mean()` is the mean of the bids that are there.
 - **A column can be replaced**, `quotes.bid = Array([None, None, 9.0])`, by an array of the
   frame's length. Another length stops the program.
 - **`len`, `shape`, `columns` and `copy()`** work as for any frame, and the frame is passed
@@ -229,7 +261,8 @@ This prints:
 Each of these is a compile error that names what an array with missing values has today:
 
 - operators, `bids + 1.0`, and comparisons, `bids == 1.5`;
-- methods other than `isna`, `notna`, `dropna`, `fillna` and `copy`: `sum`, `mean`;
+- methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `count`, `sum`, `mean`,
+  `min` and `max`: `var`, `std`, `argsort`;
 - a slice, a mask or a list of positions, `bids[1:3]`;
 - assigning an element, `bids[0] = 2.0`;
 - a `for` loop over the array, and `print` of it;

@@ -28,7 +28,7 @@ def _rgamma_of_sum(a: f64, b: f64) -> f64:
     return rgamma(total) * (1.0 - psi(total) * lost)
 
 
-def _log_gamma_ratio(a: f64, b: f64) -> f64:
+def log_gamma_ratio(a: f64, b: f64) -> f64:
     """log Γ(b) − log Γ(a + b) for `b` and `a + b` from 10 up, without the cancellation of
     subtracting two large logarithms: −(b − ½) log1p(a/b) − a log(a + b) + a + S(b) − S(a + b),
     with S Stirling's remainder."""
@@ -120,7 +120,7 @@ def betaln(a: f64, b: f64) -> f64:
         if small >= 10.0:
             return _log_beta_large(small, large)
         if large >= 10.0:
-            return gammaln(small) + _log_gamma_ratio(small, large)
+            return gammaln(small) + log_gamma_ratio(small, large)
         return gammaln(small) + gammaln(large) - _gammaln_of_sum(small, large)
     return gammaln(a) + gammaln(b) - _gammaln_of_sum(a, b)
 
