@@ -9,7 +9,9 @@ functions (3.18.2) and distribution functions (3.18.12), and those in
 [`../../build/special_everyday.rs`](../../build/special_everyday.rs) its everyday helpers,
 exponential integrals, zeta and Spence's function, and Lambert W function (3.18.11), and those in
 [`../../build/special_elliptic.rs`](../../build/special_elliptic.rs) its elliptic integrals and
-functions (3.18.9), from `elliptic_functions.txt`. Each line is a
+functions (3.18.9), from `elliptic_functions.txt`, and those in
+[`../../build/special_polynomials.rs`](../../build/special_polynomials.rs) its orthogonal
+polynomials and spherical harmonics (3.18.10), from `orthogonal_polynomials.txt`. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -975,5 +977,135 @@ for u, m in [(1.0, 0.0), (1.0, 1.0), (1.0, 1.5), (1.0, -0.5), (inf, 0.5)]:
     for part, value in zip(("sn", "cn", "dn", "ph"), (sn, cn, dn, ph)):
         add(f"ellipj_{part}", [u, m], value)
 with open("elliptic_functions.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Orthogonal polynomials and spherical harmonics
+
+In `orthogonal_polynomials.txt` each case holds, before the reference value, the size its error
+is measured against: the largest value the polynomial's recurrence passes through on its way to
+the degree, computed at 60 digits. A case of `sph_harm_y` is one part, `sph_harm_y_re` or
+`sph_harm_y_im`. The script below recorded it with its own seed, with mpmath 1.4.1 and SciPy
+1.18.1 at the ends; mpmath's `legenp` of type 2 and `spherharm` carry the Condon–Shortley phase,
+as SciPy's `lpmv` and `sph_harm_y` do:
+
+```python
+import math
+
+import mpmath
+import numpy
+import scipy.special
+
+generator = numpy.random.default_rng(318010)
+inf, nan = math.inf, math.nan
+lines = []
+
+
+def add(name, arguments, size, value):
+    lines.append(" ".join([name] + [repr(x) if isinstance(x, float) else str(x) for x in arguments]
+                          + [repr(float(size)), repr(float(value))]))
+
+
+def largest(step, n, first, second):
+    """The largest size the recurrence passes through on its way to degree n: its error is a
+    few ULP of that, not of a value near one of the polynomial's zeros."""
+    values = [first, second]
+    for k in range(1, n):
+        values.append(step(k, values[-1], values[-2]))
+    return max(abs(v) for v in values[: n + 1])
+
+
+def degree(high):
+    """A degree below `high` half the time, below 12 otherwise."""
+    if generator.uniform() < 0.5:
+        return int(generator.integers(0, high))
+    return int(generator.integers(0, 12))
+
+
+with mpmath.workdps(60):
+    for _ in range(120):
+        n = degree(200)
+        inside = generator.uniform() < 0.8
+        x = float(generator.uniform(-1, 1)) if inside else float(generator.uniform(-3, 3))
+        X = mpmath.mpf(x)
+        size = largest(lambda k, a, b: ((2 * k + 1) * X * a - k * b) / (k + 1), n, 1, X)
+        add("eval_legendre", [n, x], size, mpmath.legendre(n, x))
+        size = largest(lambda k, a, b: 2 * X * a - b, n, 1, X)
+        add("eval_chebyt", [n, x], size, mpmath.chebyt(n, x))
+        size = largest(lambda k, a, b: 2 * X * a - b, n, 1, 2 * X)
+        add("eval_chebyu", [n, x], size, mpmath.chebyu(n, x))
+    for _ in range(120):
+        n = degree(120)
+        x = float(generator.uniform(-1, 1) * math.sqrt(2 * n + 1) * 1.2)
+        X = mpmath.mpf(x)
+        add("eval_hermite", [n, x], largest(lambda k, a, b: 2 * X * a - 2 * k * b, n, 1, 2 * X),
+            mpmath.hermite(n, x))
+        add("eval_hermitenorm", [n, x], largest(lambda k, a, b: X * a - k * b, n, 1, X),
+            mpmath.hermite(n, X / mpmath.sqrt(2)) / mpmath.mpf(2) ** (mpmath.mpf(n) / 2))
+    for _ in range(120):
+        n = degree(120)
+        alpha = float(generator.choice([0.0, generator.uniform(-0.9, 5)]))
+        x = float(generator.uniform(0, 4 * n + 10))
+        A, X = mpmath.mpf(alpha), mpmath.mpf(x)
+        size = largest(lambda k, a, b: ((2 * k + 1 + A - X) * a - (k + A) * b) / (k + 1),
+                       n, 1, 1 + A - X)
+        add("eval_genlaguerre", [n, alpha, x], size, mpmath.laguerre(n, alpha, x))
+        if alpha == 0.0:
+            add("eval_laguerre", [n, x], size, mpmath.laguerre(n, 0, x))
+    for _ in range(120):
+        n = degree(100)
+        alpha, beta = (float(v) for v in generator.uniform(-0.9, 4, 2))
+        x = float(generator.uniform(-1, 1))
+        A, B, X = mpmath.mpf(alpha), mpmath.mpf(beta), mpmath.mpf(x)
+
+        def jacobi_step(k, a, b):
+            s = 2 * k + A + B
+            return (((s + 1) * ((s + 2) * s * X + A * A - B * B)) * a
+                    - 2 * (k + A) * (k + B) * (s + 2) * b) / (2 * (k + 1) * (k + A + B + 1) * s)
+        size = largest(jacobi_step, n, 1, (A + 1) + (A + B + 2) * (X - 1) / 2)
+        add("eval_jacobi", [n, alpha, beta, x], size, mpmath.jacobi(n, alpha, beta, x))
+        gamma_alpha = float(generator.uniform(-0.45, 4))
+        G = mpmath.mpf(gamma_alpha)
+        size = largest(lambda k, a, b: (2 * (k + G) * X * a - (k + 2 * G - 1) * b) / (k + 1),
+                       n, 1, 2 * G * X)
+        add("eval_gegenbauer", [n, gamma_alpha, x], size, mpmath.gegenbauer(n, gamma_alpha, x))
+    for _ in range(150):
+        level_top = int(generator.integers(0, 60))
+        m = int(generator.integers(-level_top, level_top + 1)) if level_top else 0
+        x = float(generator.uniform(-1, 1))
+        X = mpmath.mpf(x)
+        order = abs(m)
+        values = [mpmath.legenp(level, order, X, type=2) for level in range(order, level_top + 1)]
+        scale = 1
+        if m < 0:
+            scale = ((-1) ** order * mpmath.factorial(level_top - order)
+                     / mpmath.factorial(level_top + order))
+        size = max(abs(v) for v in values) * abs(scale)
+        add("lpmv", [m, float(level_top), x], size, mpmath.legenp(level_top, m, X, type=2))
+    for _ in range(150):
+        n = int(generator.integers(0, 80))
+        m = int(generator.integers(-n, n + 1)) if n else 0
+        theta = float(generator.uniform(0, math.pi))
+        phi = float(generator.uniform(-math.pi, math.pi))
+        values = [mpmath.spherharm(level, abs(m), theta, 0) for level in range(abs(m), n + 1)]
+        size = max(abs(v) for v in values)
+        y = mpmath.spherharm(n, m, theta, phi)
+        add("sph_harm_y_re", [n, m, theta, phi], size, mpmath.re(y))
+        add("sph_harm_y_im", [n, m, theta, phi], size, mpmath.im(y))
+edges = [
+    ("eval_legendre", (-3, 0.5)), ("eval_legendre", (3, inf)), ("eval_legendre", (0, nan)),
+    ("eval_chebyt", (-2, 0.3)), ("eval_chebyu", (-2, 0.3)), ("eval_chebyu", (-1, 0.3)),
+    ("eval_hermite", (-1, 0.5)), ("eval_hermitenorm", (-1, 0.5)), ("eval_laguerre", (-1, 0.5)),
+    ("eval_genlaguerre", (2, -1.5, 0.5)), ("eval_genlaguerre", (2, -1.0, 0.5)),
+    ("eval_genlaguerre", (-2, 0.5, 0.5)), ("eval_gegenbauer", (3, 0.0, 0.5)),
+    ("eval_gegenbauer", (0, 0.0, 0.5)), ("eval_gegenbauer", (-1, 0.5, 0.5)),
+    ("eval_jacobi", (-1, 0.5, 0.5, 0.3)), ("lpmv", (2, 3.0, 1.5)), ("lpmv", (4, 3.0, 0.5)),
+    ("lpmv", (2, -4.0, 0.5)), ("lpmv", (-4, 3.0, 0.5)),
+]
+for name, arguments in edges:
+    value = float(getattr(scipy.special, name)(*arguments))
+    lines.append(" ".join([name] + [repr(x) if isinstance(x, float) else str(x) for x in arguments]
+                          + [repr(abs(value) if math.isfinite(value) else 1.0), repr(value)]))
+with open("orthogonal_polynomials.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```

@@ -1,0 +1,354 @@
+"""Classical orthogonal polynomials for `special` (roadmap 3.18.10): `eval_legendre`,
+`eval_chebyt`, `eval_chebyu`, `eval_hermite`, `eval_hermitenorm`, `eval_laguerre`,
+`eval_genlaguerre`, `eval_jacobi` and `eval_gegenbauer` of a whole degree, the associated
+Legendre function `lpmv` and the spherical harmonic `sph_harm_y`.
+
+Each is its three-term recurrence in the degree, run upwards from degrees 0 and 1. For the
+classical polynomials on their intervals of orthogonality that recurrence is stable: its
+rounding errors stay a few ULP of the largest value it passes through.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import cos, fmod, inf, isinf, isnan, nan, pi, sin, sqrt
+
+
+def eval_legendre(n: int, x: f64) -> f64:
+    """The Legendre polynomial Pₙ(x), as `scipy.special.eval_legendre` for a whole degree, by
+    (k + 1) Pₖ₊₁ = (2k + 1) x Pₖ − k Pₖ₋₁. A negative degree is P₋ₙ₋₁ = Pₙ, as SciPy gives.
+
+    ```python
+    from special import eval_legendre
+
+    print(eval_legendre(3, 0.5))  # -0.4375, which is (5x³ − 3x)/2
+    ```
+
+    At x = ±∞ it is ±∞ to the power n, as SciPy gives, where the recurrence would subtract
+    infinities.
+    """
+    if n < 0:
+        n = -n - 1
+    if n == 0:
+        return 1.0
+    if isinf(x):
+        return _infinite(n, x)
+    previous = 1.0
+    current = x
+    for k in range(1, n):
+        following = ((2 * k + 1) * x * current - k * previous) / (k + 1)
+        previous = current
+        current = following
+    return current
+
+
+def eval_chebyt(n: int, x: f64) -> f64:
+    """The Chebyshev polynomial of the first kind Tₙ(x), cos(n acos x) on [−1, 1], as
+    `scipy.special.eval_chebyt` for a whole degree, by Tₖ₊₁ = 2x Tₖ − Tₖ₋₁. T₋ₙ = Tₙ.
+
+    ```python
+    from special import eval_chebyt
+
+    print(eval_chebyt(3, 0.5))  # -1.0, which is 4x³ − 3x
+    ```
+    """
+    if n < 0:
+        n = -n
+    if n == 0:
+        return 1.0
+    previous = 1.0
+    current = x
+    for _ in range(1, n):
+        following = 2.0 * x * current - previous
+        previous = current
+        current = following
+    return current
+
+
+def eval_chebyu(n: int, x: f64) -> f64:
+    """The Chebyshev polynomial of the second kind Uₙ(x), sin((n + 1)θ)/sin θ at x = cos θ, as
+    `scipy.special.eval_chebyu` for a whole degree, by Uₖ₊₁ = 2x Uₖ − Uₖ₋₁. U₋₁ = 0 and
+    U₋ₙ = −Uₙ₋₂, as SciPy gives.
+
+    ```python
+    from special import eval_chebyu
+
+    print(eval_chebyu(3, 0.5))  # -1.0, which is 8x³ − 4x
+    ```
+    """
+    if n == -1:
+        return 0.0
+    if n < -1:
+        return -eval_chebyu(-n - 2, x)
+    previous = 1.0
+    current = 2.0 * x
+    if n == 0:
+        return previous
+    for _ in range(1, n):
+        following = 2.0 * x * current - previous
+        previous = current
+        current = following
+    return current
+
+
+def eval_hermite(n: int, x: f64) -> f64:
+    """The physicists' Hermite polynomial Hₙ(x), orthogonal with weight e^(−x²), as
+    `scipy.special.eval_hermite`, by Hₖ₊₁ = 2x Hₖ − 2k Hₖ₋₁. NaN for a negative degree.
+
+    ```python
+    from special import eval_hermite
+
+    print(eval_hermite(3, 0.5))  # -5.0, which is 8x³ − 12x
+    ```
+    """
+    if n < 0:
+        return nan
+    if n == 0:
+        return 1.0
+    previous = 1.0
+    current = 2.0 * x
+    for k in range(1, n):
+        following = 2.0 * x * current - 2.0 * k * previous
+        previous = current
+        current = following
+    return current
+
+
+def eval_hermitenorm(n: int, x: f64) -> f64:
+    """The probabilists' Hermite polynomial Heₙ(x), orthogonal with weight e^(−x²/2), as
+    `scipy.special.eval_hermitenorm`, by Heₖ₊₁ = x Heₖ − k Heₖ₋₁. NaN for a negative degree.
+
+    ```python
+    from special import eval_hermitenorm
+
+    print(eval_hermitenorm(3, 0.5))  # -1.375, which is x³ − 3x
+    ```
+    """
+    if n < 0:
+        return nan
+    if n == 0:
+        return 1.0
+    previous = 1.0
+    current = x
+    for k in range(1, n):
+        following = x * current - k * previous
+        previous = current
+        current = following
+    return current
+
+
+def eval_genlaguerre(n: int, alpha: f64, x: f64) -> f64:
+    """The generalized Laguerre polynomial Lₙ^(α)(x), orthogonal with weight xᵅ e⁻ˣ on
+    [0, ∞), as `scipy.special.eval_genlaguerre` for a whole degree, by
+    (k + 1) Lₖ₊₁ = (2k + 1 + α − x) Lₖ − (k + α) Lₖ₋₁. NaN for α of −1 or below, and 0 for a
+    negative degree, as SciPy gives.
+
+    ```python
+    from special import eval_genlaguerre
+
+    print(eval_genlaguerre(2, 0.5, 1.0))  # -0.125
+    ```
+    """
+    if isnan(alpha) or alpha <= -1.0:
+        return nan
+    if n < 0:
+        return 0.0
+    if n == 0:
+        return 1.0
+    previous = 1.0
+    current = 1.0 + alpha - x
+    for k in range(1, n):
+        following = ((2 * k + 1 + alpha - x) * current - (k + alpha) * previous) / (k + 1)
+        previous = current
+        current = following
+    return current
+
+
+def eval_laguerre(n: int, x: f64) -> f64:
+    """The Laguerre polynomial Lₙ(x), orthogonal with weight e⁻ˣ on [0, ∞), as
+    `scipy.special.eval_laguerre` for a whole degree: `eval_genlaguerre` at α = 0. 0 for a
+    negative degree, as SciPy gives.
+
+    ```python
+    from special import eval_laguerre
+
+    print(eval_laguerre(2, 1.0))  # -0.5, which is (x² − 4x + 2)/2
+    ```
+    """
+    return eval_genlaguerre(n, 0.0, x)
+
+
+def eval_jacobi(n: int, alpha: f64, beta: f64, x: f64) -> f64:
+    """The Jacobi polynomial Pₙ^(α,β)(x), orthogonal with weight (1 − x)ᵅ (1 + x)ᵝ on
+    [−1, 1], as `scipy.special.eval_jacobi` for a whole degree, by the recurrence of DLMF
+    18.9.2. 0 for a negative degree.
+
+    ```python
+    from special import eval_jacobi
+
+    print(eval_jacobi(2, 0.5, 1.5, 0.3))  # -0.6625
+    ```
+    """
+    if n < 0:
+        return 0.0
+    if n == 0:
+        return 1.0
+    previous = 1.0
+    current = (alpha + 1.0) + (alpha + beta + 2.0) * (x - 1.0) / 2.0
+    ab = alpha + beta
+    for k in range(1, n):
+        a = 2.0 * k + ab
+        scale = 2.0 * (k + 1) * (k + ab + 1.0) * a
+        slope = (a + 1.0) * ((a + 2.0) * a * x + alpha * alpha - beta * beta)
+        back = 2.0 * (k + alpha) * (k + beta) * (a + 2.0)
+        following = (slope * current - back * previous) / scale
+        previous = current
+        current = following
+    return current
+
+
+def eval_gegenbauer(n: int, alpha: f64, x: f64) -> f64:
+    """The Gegenbauer polynomial Cₙ^(α)(x), orthogonal with weight (1 − x²)^(α − ½) on
+    [−1, 1], as `scipy.special.eval_gegenbauer` for a whole degree, by
+    (k + 1) Cₖ₊₁ = 2(k + α) x Cₖ − (k + 2α − 1) Cₖ₋₁. At α = 0 every degree is 0, even
+    degree 0, and a negative degree is 0, as SciPy gives.
+
+    ```python
+    from special import eval_gegenbauer
+
+    print(eval_gegenbauer(3, 1.5, 0.5))  # -1.5625
+    ```
+    """
+    if isnan(alpha):
+        return nan
+    if n < 0 or alpha == 0.0:
+        return 0.0
+    if n == 0:
+        return 1.0
+    previous = 1.0
+    current = 2.0 * alpha * x
+    for k in range(1, n):
+        rising = 2.0 * (k + alpha) * x * current
+        following = (rising - (k + 2.0 * alpha - 1.0) * previous) / (k + 1)
+        previous = current
+        current = following
+    return current
+
+
+def lpmv(m: int, v: f64, x: f64) -> f64:
+    """The associated Legendre function Pᵥᵐ(x) of order `m` and degree `v`, with the
+    Condon–Shortley phase (−1)ᵐ, as `scipy.special.lpmv`, for a whole degree `v` and x in
+    [−1, 1]. Pᵥ^(−m) = (−1)ᵐ (v − m)!/(v + m)! Pᵥᵐ, a negative degree is P₋ᵥ₋₁ = Pᵥ, and
+    `m` above `v` gives 0 and below −v NaN, as SciPy gives. NaN for |x| above 1, as SciPy
+    gives, for a degree past 1e9 in size, and for a degree that is not a whole number, which
+    comes with the hypergeometric functions (3.18.8).
+
+    From Pₘᵐ = (−1)ᵐ (2m − 1)!! (1 − x²)^(m/2) up the degree by
+    (l − m + 1) Pₗ₊₁ᵐ = (2l + 1) x Pₗᵐ − (l + m) Pₗ₋₁ᵐ.
+
+    ```python
+    from special import lpmv
+
+    print(lpmv(1, 2.0, 0.5))  # -1.299038105676658, which is −3x√(1 − x²)
+    ```
+    """
+    if isnan(v) or isnan(x) or abs(x) > 1.0 or abs(v) > 1e9 or fmod(v, 1.0) != 0.0:
+        return nan
+    degree = int(v)
+    if degree < 0:
+        degree = -degree - 1
+    order = m
+    if order < 0:
+        order = -order
+    if order > degree:
+        if m < 0:
+            return nan
+        return 0.0
+    value = _associated_legendre(order, degree, x)
+    if m < 0:
+        ratio = 1.0
+        for k in range(degree - order + 1, degree + order + 1):
+            ratio /= k
+        if order % 2 == 1:
+            ratio = -ratio
+        value *= ratio
+    return value
+
+
+def _associated_legendre(m: int, degree: int, x: f64) -> f64:
+    """Pₗᵐ(x) for whole 0 ≤ m ≤ l = `degree` and x in [−1, 1], by the recurrence in `lpmv`.
+    (1 − x²) is formed as (1 − x)(1 + x), which keeps its digits near ±1."""
+    sine = sqrt((1.0 - x) * (1.0 + x))
+    current = 1.0
+    for k in range(1, m + 1):
+        current *= -(2.0 * k - 1.0) * sine
+    if degree == m:
+        return current
+    previous = current
+    current = (2.0 * m + 1.0) * x * previous
+    for k in range(m + 1, degree):
+        following = ((2.0 * k + 1.0) * x * current - (k + m) * previous) / (k - m + 1)
+        previous = current
+        current = following
+    return current
+
+
+def sph_harm_y(n: int, m: int, theta: f64, phi: f64) -> complex128:
+    """The spherical harmonic Yₙᵐ(θ, φ), with polar angle `theta` and azimuth `phi`, as
+    `scipy.special.sph_harm_y`: √((2n + 1)/(4π) (n − m)!/(n + m)!) Pₙᵐ(cos θ) e^(imφ), with the
+    Condon–Shortley phase. Yₙ^(−m) = (−1)ᵐ conj(Yₙᵐ), and |m| above n gives 0.
+
+    The normalized functions are carried through their own recurrence, from
+    P̄ₘᵐ = (−1)ᵐ √((2m + 1)!!/((2m)!! 4π)) sinᵐθ, so no factorial is ever formed and a degree of
+    several thousand neither overflows nor underflows before the value does.
+
+    ```python
+    from special import sph_harm_y
+
+    print(sph_harm_y(1, 0, 0.0, 0.0))  # (0.48860251190291987+0j), which is √(3/(4π))
+    ```
+    """
+    order = m
+    if order < 0:
+        order = -order
+    if n < 0 or order > n:
+        return complex(0.0, 0.0)
+    value = _normalized_legendre(order, n, theta)
+    angle = order * phi
+    real = value * cos(angle)
+    imaginary = value * sin(angle)
+    if m < 0:
+        imaginary = -imaginary
+        if order % 2 == 1:
+            real = -real
+            imaginary = -imaginary
+    return complex(real, imaginary)
+
+
+def _normalized_legendre(m: int, degree: int, theta: f64) -> f64:
+    """√((2l + 1)/(4π) (l − m)!/(l + m)!) Pₗᵐ(cos θ) for whole 0 ≤ m ≤ l = `degree`, by
+    P̄ₗ = aₗ (cos θ P̄ₗ₋₁ − P̄ₗ₋₂ / aₗ₋₁) with aₗ = √((4l² − 1)/(l² − m²))."""
+    sine = sin(theta)
+    cosine = cos(theta)
+    current = sqrt(0.25 / pi)
+    for k in range(1, m + 1):
+        current *= -sqrt((2.0 * k + 1.0) / (2.0 * k)) * sine
+    if degree == m:
+        return current
+    previous = current
+    factor = sqrt(2.0 * m + 3.0)
+    current = factor * cosine * previous
+    for k in range(m + 2, degree + 1):
+        following_factor = sqrt((4.0 * k * k - 1.0) / ((k - m) * (k + m)))
+        following = following_factor * (cosine * current - previous / factor)
+        previous = current
+        current = following
+        factor = following_factor
+    return current
+
+
+def _infinite(n: int, x: f64) -> f64:
+    """xⁿ for x = ±∞ and `n` of at least 1: the value at infinity of a polynomial of degree n
+    whose leading coefficient is positive."""
+    if x > 0.0 or n % 2 == 0:
+        return inf
+    return -inf

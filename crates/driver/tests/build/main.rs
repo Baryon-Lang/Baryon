@@ -82,6 +82,7 @@ mod sorting;
 mod special;
 mod special_elliptic;
 mod special_everyday;
+mod special_polynomials;
 mod spectral;
 mod statements;
 mod statistics;
