@@ -35,7 +35,7 @@ impl<'db> Body<'db> {
             }
             self.change(target);
             let held = self.expression(target, None);
-            if self.text_array_element_assigned(target) || self.frame_attribute_assigned(target) {
+            if self.array_element_unassignable(target) || self.frame_attribute_assigned(target) {
                 self.expression(value, None);
                 return;
             }

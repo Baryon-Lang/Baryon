@@ -91,6 +91,17 @@ impl<'db> Lowerer<'db> {
                 ),
             );
         }
+        if crate::body::relations::holds_optional_array(self.db, ty) {
+            return self.error(
+                annotation,
+                "a struct field cannot hold an array with missing values yet",
+                "holds an array that may hold `None`",
+                Some(
+                    "keep the array in a variable and pass it beside the struct; like a frame \
+                     in a struct field, this is roadmap idea I.49",
+                ),
+            );
+        }
         if !crate::body::relations::holds_frame(self.db, ty) {
             return ty;
         }

@@ -47,7 +47,7 @@ use types::{Checked, Item, TypeDb, TypedBody};
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-const LIBRARY: [(&str, &str); 41] = [
+const LIBRARY: [(&str, &str); 42] = [
     ("<std>/arrays.byn", include_str!("../library/arrays.byn")),
     ("<std>/artist.byn", include_str!("../library/artist.byn")),
     ("<std>/axis.byn", include_str!("../library/axis.byn")),
@@ -95,6 +95,10 @@ const LIBRARY: [(&str, &str); 41] = [
     (
         "<std>/frame_joins.byn",
         include_str!("../library/frame_joins.byn"),
+    ),
+    (
+        "<std>/frame_missing.byn",
+        include_str!("../library/frame_missing.byn"),
     ),
     ("<std>/frames.byn", include_str!("../library/frames.byn")),
     ("<std>/gzip.byn", include_str!("../library/gzip.byn")),

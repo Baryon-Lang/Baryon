@@ -1,0 +1,52 @@
+"""Arrays with missing values, written in Baryon (decision 0045, part 3).
+
+The compiler calls these functions; a program cannot import this file.
+
+An `Array[T | None, 1]` is stored as two arrays, as Arrow stores a column that may hold
+nulls: the values, an `Array[T, 1]`, and the validity bitmap, an `Array[u8, 1]` with one bit
+for each element, eight to a byte, lowest bit first. Bit `at % 8` of byte `at // 8` is 1 when
+element `at` is there and 0 when it is `None`. The value stored where an element is missing
+is a filler that is never read as a value. The functions here take and give the two arrays,
+and the compiler puts them together.
+
+- `optional_parts` builds the two arrays from a list, for `Array(items)`.
+- `optional_element` reads one element as a `T | None`, for `values[i]`.
+- `missing` gives the mask `isna()` and `notna()` return.
+"""
+
+
+def _valid(bits: Array[u8, 1], at: int) -> bool:
+    """Whether element `at` is there: its bit in the validity bitmap `bits` is 1."""
+    return ((bits[at // 8] >> u8(at % 8)) & u8(1)) == u8(1)
+
+
+def optional_parts[T: Copy](
+    items: list[T | None], filler: T
+) -> tuple[Array[T, 1], Array[u8, 1]]:
+    """The values and the validity bitmap of an array holding `items`. `filler` is stored
+    where an item is `None`. Cost: one pass over `items` and two allocations, of the size of
+    the values and of one bit for each."""
+    count = len(items)
+    values = Array.fill((count,), filler)
+    bits = Array.fill(((count + 7) // 8,), u8(0))
+    for at in range(count):
+        item = items[at]
+        if item is not None:
+            values[at] = item
+            bits[at // 8] = bits[at // 8] | (u8(1) << u8(at % 8))
+    return (values, bits)
+
+
+def optional_element[T: Copy](values: Array[T, 1], bits: Array[u8, 1], at: int) -> T | None:
+    """Element `at` of the array stored as `values` and `bits`: the value, or `None` when
+    its bit is 0. The compiler has checked that `at` is in range."""
+    if _valid(bits, at):
+        return values[at]
+    return None
+
+
+def missing(bits: Array[u8, 1], count: int, wanted: bool) -> Array[bool, 1]:
+    """For each of the `count` elements whose validity bitmap is `bits`, whether it is
+    missing, when `wanted`, or there, when not: the masks of `isna()` and `notna()`. Cost:
+    one pass and one array of `count` `bool`s."""
+    return Array([_valid(bits, at) != wanted for at in range(count)])

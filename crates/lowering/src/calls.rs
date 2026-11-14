@@ -128,6 +128,9 @@ impl<'db> Builder<'db> {
             (None, [list]) if name == "Array" && self.is_text_array(node) => {
                 self.text_array_from_list(&place, *list, node);
             }
+            (None, [list]) if name == "Array" && self.optional_array_element(node).is_some() => {
+                self.optional_array_from_list(&place, *list, node);
+            }
             (None, [list]) if name == "Array" => self.array_from_list(&place, *list, node),
             (None, [table])
                 if name == "DataFrame" && self.tree.kind(*table) == SyntaxKind::Dictionary =>
@@ -167,9 +170,15 @@ impl<'db> Builder<'db> {
                 self.list_append(place, *list, *value, node);
             }
             (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
-            // A text array is two arrays in a tuple, as a frame is its columns.
-            (Some(("Array", "copy")), [array]) if self.is_text_array(*array) => {
+            // A text array is two arrays in a tuple, as a frame is its columns, and so is an
+            // array with missing values.
+            (Some(("Array", "copy")), [array])
+                if self.is_text_array(*array) || self.optional_array_element(*array).is_some() =>
+            {
                 self.frame_copy(place, *array, node);
+            }
+            (Some(("Array", method @ ("isna" | "notna"))), [array]) => {
+                self.optional_array_missing(place, *array, method == "isna", node);
             }
             (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
             (Some(("dict", method)), _) => self.dict_method(place, method, arguments, node),

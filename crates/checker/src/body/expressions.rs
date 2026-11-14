@@ -306,6 +306,9 @@ impl<'db> Body<'db> {
             (TypeKind::List(item), [_]) => *item,
             (TypeKind::Str, [_]) => base,
             (TypeKind::TextArray, _) => self.text_array_index(node, sliced, &indices),
+            (TypeKind::OptionalArray(element), _) => {
+                self.optional_array_index(node, *element, sliced, &indices)
+            }
             (TypeKind::Tuple(items), [index]) => match self.lowerer.evaluate_quietly(*index) {
                 Some(Value::Integer(position)) => usize::try_from(position)
                     .ok()
@@ -537,6 +540,7 @@ impl<'db> Body<'db> {
             TypeKind::Standard(types::StandardType::File) | TypeKind::TextArray => {
                 Type::new(self.db, TypeKind::Str)
             }
+            TypeKind::OptionalArray(_) => self.optional_array_unbuilt(iterator, "a `for` loop"),
             TypeKind::Primitive(_) | TypeKind::None => {
                 let message = format!("a value of type `{}` cannot be looped over", self.show(ty));
                 self.lowerer

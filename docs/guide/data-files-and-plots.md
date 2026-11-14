@@ -164,6 +164,7 @@ peak: 0.7988
   read these files back, and the other way round.
 - **Compression works on byte arrays**, `Array[u8, 1]`, since there is no `bytes` type yet.
   `zlib`, `gzip`, `bz2` and `compression.zstd` compress and decompress; `lzma` decompresses.
+  `with gzip.open(path) as f:` reads a large `.gz` file a block at a time with `f.read(size)`.
 - `sys.argv`, `sys.exit`, `os.getenv` and `subprocess.run` work as in Python;
   [Files and processes](../reference/files-and-processes.md) has them.
 

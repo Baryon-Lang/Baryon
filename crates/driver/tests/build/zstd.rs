@@ -103,7 +103,7 @@ def main() -> Raises[None, OSError]:
 /// The Compression chapter's Zstandard example prints what the chapter says it prints.
 #[test]
 fn the_reference_s_zstd_example_runs() {
-    let (output, _) = run("zstd_reference", chapter_example(4)).unwrap();
+    let (output, _) = run("zstd_reference", chapter_example(5)).unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),

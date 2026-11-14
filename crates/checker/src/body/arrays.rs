@@ -185,6 +185,10 @@ impl<'db> Body<'db> {
                 let text = Type::new(self.db, TypeKind::Str);
                 Some(Type::new(self.db, TypeKind::List(text)))
             }
+            Some(TypeKind::OptionalArray(element)) => {
+                let item = Type::new(self.db, TypeKind::Optional(*element));
+                Some(Type::new(self.db, TypeKind::List(item)))
+            }
             _ => None,
         };
         let [values] = arguments.positional.as_slice() else {
@@ -205,6 +209,11 @@ impl<'db> Body<'db> {
                     rank: 1,
                 },
             ),
+            // A list whose items may be `None` gives an array with missing values.
+            TypeKind::List(item) if self.lowerer.optional_element(*item).is_some() => {
+                let element = self.lowerer.optional_element(*item).unwrap_or(*item);
+                Type::new(self.db, TypeKind::OptionalArray(element))
+            }
             // A list of `str` gives a text array (decision 0045), which reads the list.
             TypeKind::List(element) if matches!(element.kind(self.db), TypeKind::Str) => {
                 Type::new(self.db, TypeKind::TextArray)
@@ -315,6 +324,9 @@ impl<'db> Body<'db> {
             }
             TypeKind::TextArray => {
                 return Some(self.text_array_method(node, base, name, arguments));
+            }
+            TypeKind::OptionalArray(_) => {
+                return Some(self.optional_array_method(node, base, name, arguments));
             }
             TypeKind::List(item) => {
                 let item = *item;

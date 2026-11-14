@@ -162,8 +162,8 @@ which is often 16 to 64 KiB of output, decode its start several times. It also k
 ## `gzip`
 
 A gzip file is one or more members, each a header, a deflate stream, and the CRC-32 and length
-of what it decompresses to. `gzip` writes and reads them on arrays, as Python's does; reading
-and writing a gzip file piece by piece, larger than memory, is `gzip.open`, roadmap 3.27.4.
+of what it decompresses to. `gzip` writes and reads them on arrays, as Python's does, and
+[`gzip.open`](#gzipopen) reads a file piece by piece, so a file larger than memory can be read.
 
 ```python
 import gzip
@@ -210,6 +210,66 @@ Python raises `gzip.BadGzipFile`, `EOFError` or `zlib.error` for these. Baryon r
 member, as Python's makes, and one of the output to join the members. A file of thousands of
 small members, such as a BGZF file, copies its tail once per member and is better read with
 `gzip.open`.
+
+### `gzip.open`
+
+`open(filename, mode="rb", compresslevel=9)` opens a gzip file and gives a `GzipFile`, as
+Python's does. Use it in `with`, which closes the file at the end of the block, however the
+block ends ([decision 0053](../decisions/0053-with-and-for-on-user-classes.md)), or call
+`f.close()` yourself.
+
+```python
+import gzip
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with gzip.open("table.txt.gz", "wb") as f:
+        f.write(Array.fromfile("text.txt", u8))
+    total = 0
+    with gzip.open("table.txt.gz") as f:
+        piece = f.read(1000)
+        while len(piece) > 0:
+            total += len(piece)
+            piece = f.read(1000)
+    print(total, "bytes")
+```
+
+This writes the 11,600-byte table as a gzip file, reads it back 1,000 bytes at a time, and
+prints `11600 bytes`.
+
+| Mode | What it does | When the file is there | When it is not |
+| --- | --- | --- | --- |
+| `"rb"` or `"r"`, the default | read | reads it from the start | `OSError` `FILE_NOT_FOUND` |
+| `"wb"` or `"w"` | write | empties it first | creates it |
+| `"ab"` or `"a"` | write a new member after the file's end | keeps what it holds | creates it |
+| `"xb"` or `"x"` | write | `OSError` `FILE_EXISTS` | creates it |
+
+| Method | Gives | What it does |
+| --- | --- | --- |
+| `f.read()` | `Array[u8, 1]` | the rest of the data |
+| `f.read(size)` | `Array[u8, 1]` | the next `size` bytes, fewer at the end, none after it |
+| `f.write(data)` | `int` | adds the bytes of `data`, an `Array[u8, 1]`, and gives how many |
+| `f.close()` | `None` | writes the file out, for a file opened to write; a second call does nothing |
+| `f.name` | `str` | the path the file was opened with |
+
+- **Reading streams.** A `GzipFile` reads its file 64 KiB at a time and decodes it a deflate
+  block at a time, so `read(size)` holds about one block of data, whatever the file's size.
+  Members follow one another as in [`gzip.decompress`](#gzipdecompress), with the same checks
+  and the same messages, and zero bytes between and after them are skipped.
+- **Writing holds the compressed file.** Data is gathered 4 MiB at a time and compressed as one
+  member; any gzip reader, Python and `gunzip` included, reads the members back as one stream
+  of data. Baryon cannot yet add bytes to the end of a file, so the compressed members stay in
+  memory until `close` writes them, and `"ab"` reads the file's bytes in first. Writing needs
+  memory for the compressed file, not for the data.
+- **Close a file you write.** Outside `with`, a file opened to write is written out only by
+  `close()`. One dropped without it, at the end of a function, is left empty.
+- **Binary modes only.** The data is `Array[u8, 1]`, as for `compress` and `decompress`. The
+  text modes, `"rt"`, `"wt"`, `"at"` and `"xt"`, which give and take `str`, raise `ValueError`:
+  Baryon has no way yet to turn bytes into a `str`. Any other mode raises `ValueError`, as in
+  Python.
+- **Errors.** `read` on a file opened to write, or `write` on one opened to read, raises
+  `OSError`, and either on a closed file raises `ValueError` `I/O operation on closed file`, as
+  in Python. Python's `readline`, iteration over lines, `seek`, `peek` and `mtime` are not built.
 
 ## `compression.zstd`
 
