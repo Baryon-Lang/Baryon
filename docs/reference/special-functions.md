@@ -239,7 +239,7 @@ for `j0`, `j1`, `jn`, `y0`, `i0` and `i1`.
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: the incomplete gamma and beta
-functions, Bessel functions of real and complex order, Airy, Struve and Kelvin functions, hypergeometric and
-elliptic functions, orthogonal polynomials, exponential integrals and zeta, and the
-distribution functions. `loggamma` of a complex argument comes with the complex Bessel
-functions (3.18.6). See [What builds today](status.md).
+functions, Bessel functions of real and complex order, Airy, Struve and Kelvin functions,
+hypergeometric and elliptic functions, orthogonal polynomials, exponential integrals and zeta, and
+the distribution functions. `loggamma` of a complex argument comes with the complex Bessel functions
+(3.18.6). See [What builds today](status.md).

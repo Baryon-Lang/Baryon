@@ -11,11 +11,11 @@ gamma -16.481439370601617 -3.8732193888774417e-14
 polygamma 3 -8.996117952868211 26418492688.871017
 ```
 
-Most values were computed with mpmath 1.4.1 at 50 digits and rounded to `f64`, at arguments drawn
-at random, with a fixed seed, over each function's range. The last lines are the poles, zeros and
-infinities, where the value is SciPy 1.18.1's, which the module gives exactly, except the
-Bessel functions' limits at infinity, where SciPy gives NaN and the file holds the limit. Neither mpmath nor
-SciPy is needed to run the tests.
+Most values were computed with mpmath 1.4.1 at 50 digits and rounded to `f64`, at arguments drawn at
+random, with a fixed seed, over each function's range. The last lines are the poles, zeros and
+infinities, where the value is SciPy 1.18.1's, which the module gives exactly, except the Bessel
+functions' limits at infinity, where SciPy gives NaN and the file holds the limit. Neither mpmath
+nor SciPy is needed to run the tests.
 
 ## The coefficients in `special.byn`
 

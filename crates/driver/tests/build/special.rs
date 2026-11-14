@@ -1,7 +1,8 @@
-//! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1),
-//! the error functions (3.18.3) and the Bessel functions of whole order (3.18.4) gives, at a few hundred arguments each, the value mpmath
-//! computes to 50 digits, within a tolerance in units in the last place (ULP) stated for each
-//! function below, and `SciPy`'s value at its poles, zeros and infinities.
+//! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1), the
+//! error functions (3.18.3) and the Bessel functions of whole order (3.18.4) gives, at a few
+//! hundred arguments each, the value mpmath computes to 50 digits, within a tolerance in units in
+//! the last place (ULP) stated for each function below, and `SciPy`'s value at its poles, zeros and
+//! infinities.
 //!
 //! The arguments and reference values are in `tests/fixtures/special`; its `README.md` holds the
 //! script that recorded them, so the tests run without Python or mpmath.
@@ -92,12 +93,11 @@ def main() -> Raises[None, OSError | ValueError]:
 
 /// How far a value may be from the reference, in ULP of `scale(name, want, x)`.
 ///
-/// Most functions are relative: within 8 ULP of the reference. The Bessel functions are held
-/// to 16, since each is a sum or a recurrence of many terms, and `yn` to 32: its upward
-/// recurrence adds about half a ULP at each order, and the cases reach order 30. `beta` is held to 8 ULP plus 2
-/// for each unit of the logarithm of the value: above 171 it is `exp(betaln)`, and the
-/// exponential turns each ULP of the logarithm's absolute error into its size in relative
-/// error.
+/// Most functions are relative: within 8 ULP of the reference. The Bessel functions are held to 16,
+/// since each is a sum or a recurrence of many terms, and `yn` to 32: its upward recurrence adds
+/// about half a ULP at each order, and the cases reach order 30. `beta` is held to 8 ULP plus 2 for
+/// each unit of the logarithm of the value: above 171 it is `exp(betaln)`, and the exponential
+/// turns each ULP of the logarithm's absolute error into its size in relative error.
 fn tolerance(name: &str, want: f64) -> f64 {
     match name {
         "beta" => 8.0 + 2.0 * want.abs().ln().abs(),
