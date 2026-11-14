@@ -49,7 +49,7 @@ def uses(quotes: DataFrame[Quote], rows: list[Quote], prices: DataFrame[Price]):
     order = quotes.bid.argsort()
     groups = quotes.groupby("price").agg(top=("bid", "top"))
     joined = prices.merge(quotes, on="bid")
-    stacked = quotes.bid.std()
+    stacked = quotes.bid.median()
     for row in quotes.itertuples():
         total = row.bid + 1.0
     print((quotes.copy(), 1))
@@ -76,7 +76,7 @@ error: the method `max` is not built for an array with missing values yet
    |
 18 |     longest = words.max()
    |               ^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes with roadmap item 3.13.6
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`; the rest comes with roadmap item 3.13.6
 
 error: this value may be `None`
   --> main.byn:19:18
@@ -103,7 +103,7 @@ error: the method `argsort` is not built for an array with missing values yet
    |
 22 |     order = quotes.bid.argsort()
    |             ^^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes with roadmap item 3.13.6
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`; the rest comes with roadmap item 3.13.6
 
 error: `agg` has no reduction `top`
   --> main.byn:23:54
@@ -119,12 +119,12 @@ error: `DataFrame[Price]` has no column `bid`
    |                                      ^^^^^ not a column
    = note: its columns are `price`
 
-error: the method `std` is not built for an array with missing values yet
+error: the method `median` is not built for an array with missing values yet
   --> main.byn:25:15
    |
-25 |     stacked = quotes.bid.std()
-   |               ^^^^^^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes with roadmap item 3.13.6
+25 |     stacked = quotes.bid.median()
+   |               ^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`; the rest comes with roadmap item 3.13.6
 
 error: this value may be `None`
   --> main.byn:27:17

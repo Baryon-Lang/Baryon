@@ -212,6 +212,30 @@ def main():
     Ok(())
 }
 
+/// `var()` and `std()` of floats skip each `None` and take `ddof=`, giving what the method
+/// gives `values.dropna()`, which is what numpy gives for the elements that are there, and NaN
+/// when no element is there.
+#[test]
+fn the_spread_skips_missing_values() -> io::Result<()> {
+    let program = r"
+def main():
+    bids = Array([1.5, None, 2.5, 4.0, None])
+    print(bids.var(), bids.std(), bids.var(ddof=1), bids.std(ddof=1))
+    print(bids.dropna().var(), bids.dropna().std(ddof=1))
+    gone: Array[f64 | None, 1] = Array([None, None])
+    print(gone.var(), gone.std(), gone.mean())
+";
+    let (code, output, report) = run("optional_arrays_spread", program)?;
+    assert_eq!(code, Some(0), "{report}");
+    assert_eq!(
+        output,
+        "1.0555555555555556 1.0274023338281628 1.5833333333333333 1.2583057392117916\n\
+         1.0555555555555556 1.2583057392117916\n\
+         nan nan nan\n"
+    );
+    Ok(())
+}
+
 /// `min()` of an array whose elements are all `None` panics as `min` of an empty array
 /// does, since no element is the smallest.
 #[test]

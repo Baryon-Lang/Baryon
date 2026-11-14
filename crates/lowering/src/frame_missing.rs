@@ -14,7 +14,7 @@ use crate::builder::Builder;
 use crate::frame_distinct::Key;
 use crate::frames::erase;
 use crate::optional_arrays::{VALIDITY, VALUES};
-use mir::{BinaryOperator, Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
+use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Column, Integer, Primitive, Type, TypeKind};
 
@@ -136,14 +136,15 @@ impl<'db> Builder<'db> {
         Some(flags)
     }
 
-    /// `values.count()`, `sum()`, `min()`, `max()` or `mean()`, the method `method`, on the
-    /// array with missing values `array`, into `place`: the reduction of the elements that
-    /// are there.
+    /// `values.count()`, `sum()`, `min()`, `max()`, `mean()`, `var()` or `std()`, the method
+    /// `method`, on the array with missing values `array`, into `place`: the reduction of the
+    /// elements that are there.
     ///
-    /// `sum` and `mean` gather those elements into a new array, freed when the statement
-    /// ends, and add it up as any array is added ([`Builder::sum_of`]), so a float sum has
-    /// the bits of `values.dropna().sum()`. The mean is that sum over the count, NaN when no
-    /// element is there, as the mean of an empty array is. `min` and `max` scan in the
+    /// `sum`, `mean`, `var` and `std` gather those elements into a new array, freed when the
+    /// statement ends, and reduce it as any array is reduced ([`Builder::sum_of`],
+    /// [`Builder::statistic_of`]), so a float sum has the bits of `values.dropna().sum()`.
+    /// The mean, the variance and the standard deviation are NaN when no element is there,
+    /// as those of an empty array are. `min` and `max` scan in the
     /// library after a check that an element is there, and panic as they do on an empty
     /// array when none is.
     pub(crate) fn optional_array_reduced(
@@ -200,19 +201,14 @@ impl<'db> Builder<'db> {
         if method == "sum" {
             return self.sum_of(place, (&Place::from(there), gathered, result), node);
         }
-        let total = self.temporary(result, node);
-        self.sum_of(
-            Place::from(total),
-            (&Place::from(there), gathered, result),
-            node,
-        );
-        let count = self.convert(count, int, result, node);
-        let total = Operand::Copy(Place::from(total));
-        self.assign(
-            place,
-            Rvalue::Binary(BinaryOperator::Divide, total, count),
-            node,
-        );
+        // The mean and the spread are those of the elements gathered, NaN when there are
+        // none, as they are of an empty array.
+        let (_, keywords) = self.call_arguments(node);
+        let ddof = keywords
+            .iter()
+            .find(|(keyword, _)| *keyword == "ddof")
+            .map(|&(_, value)| value);
+        self.statistic_of(place, method, (&Place::from(there), gathered), ddof, node);
     }
 
     /// The elements of the column `column`, stored at `from`, that the library function

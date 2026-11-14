@@ -12,8 +12,8 @@ use types::{Integer, Primitive, Type, TypeKind};
 /// What an array with missing values can do, for messages.
 const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]`, which \
                      gives a `T | None`, and the methods `isna`, `notna`, `dropna`, \
-                     `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and \
-                     `mean`; the rest comes with roadmap item 3.13.6";
+                     `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, \
+                     `mean`, `var` and `std`; the rest comes with roadmap item 3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.
@@ -91,7 +91,16 @@ impl<'db> Body<'db> {
             if let Some(narrowed) = self.optional_array_narrowed(node, element, name, arguments) {
                 return narrowed;
             }
-            if plain && let Some(reduced) = self.optional_array_reduced(node, element, name) {
+            // `var` and `std` take `ddof=`, as they do on any array.
+            let spread = matches!(name, "var" | "std")
+                && arguments.positional.is_empty()
+                && arguments
+                    .keywords
+                    .iter()
+                    .all(|&(keyword, _)| self.tree.text(keyword, self.text) == "ddof");
+            if (plain || spread)
+                && let Some(reduced) = self.optional_array_reduced(node, element, name, arguments)
+            {
                 return reduced;
             }
         }
@@ -100,16 +109,18 @@ impl<'db> Body<'db> {
     }
 
     /// A reduction of an array with missing values whose elements are `element`s, the method
-    /// `name` called at `node` with no arguments. Each skips the elements that are `None`, as
-    /// pandas does: `count()` is how many elements are there, an `i64`, and `sum()`, `min()`,
-    /// `max()` and `mean()` of numbers give what the same method gives the array of the
-    /// elements that are there, `values.dropna()`. `None`, with nothing reported, for any
-    /// other method and for elements that are not integers or floats.
+    /// `name` called at `node` with `arguments`, which are empty but for the `ddof=` of `var`
+    /// and `std`. Each skips the elements that are `None`, as pandas does: `count()` is how
+    /// many elements are there, an `i64`, and `sum()`, `min()`, `max()`, `mean()`, `var()`
+    /// and `std()` of numbers give what the same method gives the array of the elements that
+    /// are there, `values.dropna()`. `None`, with nothing reported, for any other method and
+    /// for elements that are not integers or floats.
     fn optional_array_reduced(
         &mut self,
         node: NodeId,
         element: Type<'db>,
         name: &str,
+        arguments: &Arguments,
     ) -> Option<Type<'db>> {
         if name == "count" {
             let whole = Primitive::Integer(Integer::I64);
@@ -119,15 +130,11 @@ impl<'db> Body<'db> {
             element.kind(self.db),
             TypeKind::Primitive(Primitive::Integer(_) | Primitive::Float(_))
         );
-        if !number || !matches!(name, "sum" | "min" | "max" | "mean") {
+        if !number || !matches!(name, "sum" | "min" | "max" | "mean" | "var" | "std") {
             return None;
         }
         let there = Type::new(self.db, TypeKind::Array { element, rank: 1 });
-        let empty = Arguments {
-            positional: Vec::new(),
-            keywords: Vec::new(),
-        };
-        self.container_method(node, there, name, &empty)
+        self.container_method(node, there, name, arguments)
     }
 
     /// Reports the call of the built-in function `name` when one of its arguments, the nodes
