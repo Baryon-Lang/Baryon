@@ -452,14 +452,18 @@ impl<'db> Body<'db> {
 
     /// `[a, b, c]`: a list whose items share one type. An empty list takes its type from the
     /// context, and is an error without one.
+    ///
+    /// With no type from the context, items of one type `T` and `None` make a `list[T | None]`
+    /// (decision 0045, part 3), so `[1.5, None, 2.5]` needs no annotation. Lowering wraps each
+    /// item into the element type. Two different types other than `None` stay an error.
     fn list(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
-        let mut item_type = match expected.map(|ty| ty.kind(self.db)) {
+        let written = match expected.map(|ty| ty.kind(self.db)) {
             Some(TypeKind::List(item)) => Some(*item),
             _ => None,
         };
         let items: Vec<NodeId> = self.tree.children_with(node, Role::Item).collect();
         if items.is_empty() {
-            return match item_type {
+            return match written {
                 Some(item) => Type::new(self.db, TypeKind::List(item)),
                 None => self.lowerer.error(
                     node,
@@ -469,9 +473,15 @@ impl<'db> Body<'db> {
                 ),
             };
         }
+        let mut item_type = written;
+        let mut gaps = false;
         for item in items {
             let found = self.expression(item, item_type);
             self.consume(item, found);
+            if written.is_none() && matches!(found.kind(self.db), TypeKind::None) {
+                gaps = true;
+                continue;
+            }
             match item_type {
                 None => item_type = Some(found),
                 Some(first) if !relations::compatible(self.db, first, found) => {
@@ -485,7 +495,12 @@ impl<'db> Body<'db> {
                 Some(_) => {}
             }
         }
-        let item = item_type.unwrap_or_else(|| self.lowerer.unknown());
+        let nothing = Type::new(self.db, TypeKind::None);
+        let item = match item_type {
+            Some(item) if gaps => types::union(self.db, [item, nothing]),
+            Some(item) => item,
+            None => nothing,
+        };
         Type::new(self.db, TypeKind::List(item))
     }
 

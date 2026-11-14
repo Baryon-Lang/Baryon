@@ -57,6 +57,7 @@ mod npy;
 mod one_pass;
 mod optional_arguments;
 mod optional_arrays;
+mod optional_lists;
 mod overflow;
 mod ownership;
 mod parallel;
