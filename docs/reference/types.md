@@ -702,6 +702,9 @@ followed by room for its largest member, so an `Array` of a union stores every e
 size of the largest kind: a `Periodic` in a `Boundary` array takes 32 bytes, 24 for the fields of a
 `Robin` and 8 for the tag and its padding.
 A hot loop over millions of values of one kind is faster with its own array of that kind.
+An array of a union is built from members the program names, with `Array.fill` or from a list;
+`Array.zeros` and `Array.ones` of a union are errors, since a union has no zero
+([Creating arrays](arrays.md#creating-arrays)).
 
 What builds today, and what a union cannot do yet, is in [What builds today](status.md#types).
 
