@@ -87,10 +87,17 @@ impl<'db> Builder<'db> {
     /// `place`: the
     /// float rounded by `function`, then converted, which panics when the result does not fit,
     /// as every float-to-integer conversion does. An integer is already whole.
+    ///
+    /// `trunc` is the conversion alone: converting a float to an integer rounds toward zero and
+    /// checks the rounded value fits, so a separate `trunc` first changes nothing but the cost.
+    /// On x86-64 CPUs without SSE4.1, LLVM's `trunc` is a call into the C math library that
+    /// spills every float register around it. Dropping it took the Lennard-Jones benchmark,
+    /// whose `anint` is `math.trunc(math.fabs(x) + 0.5)`, from 5.4 s to 4.2 s, level with
+    /// gfortran (roadmap 1.14.4).
     fn whole(&mut self, place: Place, function: MathFunction, argument: NodeId, node: NodeId) {
         let (from, to) = (self.ty(argument), self.ty(node));
         let value = self.operand(argument);
-        if !self.is_float(from) {
+        if !self.is_float(from) || function == MathFunction::Truncate {
             let rvalue = self.coerce(value, from, to);
             return self.assign(place, rvalue, node);
         }

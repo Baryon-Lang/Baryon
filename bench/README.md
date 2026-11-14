@@ -219,8 +219,14 @@ What the audit found, and what came of it:
   do not change; `nbody` went from 1.01 s to 0.72 s.
 - **`floor` and `trunc`.** On x86-64 without SSE4.1, LLVM calls these as functions, and the
   runtime's portable Rust versions were linked ahead of the C library's. The C library now comes
-  first; `lennard_jones` went from 8.1 s to 6.4 s. The rest of its gap is the minimum-image
-  rounding, which gfortran's `anint` does in two instructions, and the gathered indices below.
+  first; `lennard_jones` went from 8.1 s to 6.4 s. The rest of its gap was the minimum-image
+  rounding, which gfortran's `anint` does in two instructions. Roadmap 1.14.4 found the
+  `trunc` call there was not needed: converting a float to `int` already rounds toward zero and
+  checks the result fits, so `math.trunc(x)` is now that conversion alone, two instructions and
+  no call. Every float register is saved by the caller on x86-64, so each call had spilled the
+  pair loop's distances to the stack and read them back, three times per pair. Timed again on
+  the same kind of machine, `lennard_jones` went from 5.40 s to 4.22 s best of 5, against
+  gfortran's 4.37 s, with the same checksum to the last bit.
 - **Strides.** Every `Array` access multiplies its index by a stride read from the array, since
   a view may skip elements. Idea I.43 would run loops over contiguous arrays in a copy with every
   stride 1.
