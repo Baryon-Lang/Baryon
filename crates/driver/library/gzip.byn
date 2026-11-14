@@ -112,12 +112,8 @@ def open(
     empty = Array.zeros(0, u8)
     file = GzipFile(
         filename.copy(),
-        kind != "r",
         compresslevel,
-        False,
         0,
-        False,
-        False,
         zlib.decompressobj(-15),
         0,
         0,
@@ -127,6 +123,10 @@ def open(
         [],
         0,
         [],
+        kind != "r",
+        False,
+        False,
+        False,
     )
     if kind == "r":
         file._input = _block(filename, 0)
@@ -159,12 +159,8 @@ class GzipFile(Struct):
     """
 
     name: str  # the path the file was opened with
-    _writing: bool  # whether the file was opened to write
     _level: int  # the level members are written at
-    _closed: bool  # whether `close` has run
     _offset: int  # reading: the bytes of the file read so far
-    _ended: bool  # reading: whether the last block of the file has been read
-    _inside: bool  # reading: whether `_decoder` is part way through a member
     _decoder: zlib.Decompress  # reading: the deflate stream of the current member
     _crc: int  # reading: the CRC-32 of the current member's data so far
     _size: int  # reading: the length of the current member's data so far
@@ -174,6 +170,10 @@ class GzipFile(Struct):
     _held: list[Array[u8, 1]]  # writing: data not yet compressed
     _gathered: int  # writing: the bytes in `_held`
     _members: list[Array[u8, 1]]  # writing: the file's bytes so far, member by member
+    _writing: bool  # whether the file was opened to write
+    _closed: bool  # whether `close` has run
+    _ended: bool  # reading: whether the last block of the file has been read
+    _inside: bool  # reading: whether `_decoder` is part way through a member
 
     def __enter__(self: Owned[Self]) -> Self:
         """The file itself, for `with gzip.open(...) as f:`."""
