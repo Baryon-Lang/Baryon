@@ -1,9 +1,9 @@
 //! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1), the
 //! incomplete gamma and beta functions (3.18.2), the error functions (3.18.3), the Bessel functions
-//! of whole order (3.18.4), the everyday helpers, integrals and zeta functions (3.18.11) and the
-//! distribution functions (3.18.12) gives, at a few hundred arguments each, the value mpmath
-//! computes to 50 digits, within a tolerance in units in the last place (ULP) stated for each
-//! function below, and `SciPy`'s value at its poles, zeros and infinities.
+//! of whole order (3.18.4), the everyday helpers, integrals, zeta functions and Lambert W function
+//! (3.18.11) and the distribution functions (3.18.12) gives, at a few hundred arguments each, the
+//! value mpmath computes to 50 digits, within a tolerance in units in the last place (ULP) stated
+//! for each function below, and `SciPy`'s value at its poles, zeros and infinities.
 //!
 //! The arguments and reference values are in `tests/fixtures/special`; its `README.md` holds the
 //! script that recorded them, so the tests run without Python or mpmath.
@@ -139,11 +139,14 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
 /// precision of the terms they are formed from. `ci`, the second value of `sici`, oscillates like
 /// sin(x)/x, and is measured against the larger of the reference and 1/x. The Bessel functions of
 /// the first and second kind oscillate, so near each zero they are measured against the larger of
-/// the reference and their envelope √(2/(π|x|)), for `|x|` above 1.
+/// the reference and their envelope √(2/(π|x|)), for `|x|` above 1. Each part of the complex
+/// `lambertw` is measured against the size of the whole value, |W|, which its case records in
+/// the place of `x`: a part far smaller than the other has only the precision of the larger.
 fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
         "gammaln" | "psi" | "betaln" | "expi" | "chi" => want.abs().max(1.0),
         "ci" => want.abs().max(1.0 / x.abs().max(1.0)),
+        "lambertw_re" | "lambertw_im" => x,
         "j0" | "j1" | "jn" | "y0" | "y1" | "yn" if x.abs() > 1.0 => want
             .abs()
             .max((2.0 / (std::f64::consts::PI * x.abs())).sqrt()),
@@ -453,6 +456,25 @@ def main() -> Raises[None, OSError | ValueError]:
                     print(c)
 ";
 
+/// The Lambert W function's program. A case is one part of Wₖ(z): `lambertw_re` or
+/// `lambertw_im`, the branch `k`, the real and imaginary parts of `z`, the size |Wₖ(z)| the
+/// error is measured against, and the part's reference value.
+const LAMBERT_W: &str = "\
+from special import lambertw
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            w = lambertw(complex(float(fields[2]), float(fields[3])), int(fields[1]))
+            if name == \"lambertw_re\":
+                print(w.real)
+            else:
+                print(w.imag)
+";
+
 /// `gamma`, `rgamma`, `gammaln`, `loggamma`, `gammasgn`, `psi`, `digamma`, `polygamma`, `beta`,
 /// `betaln` and `poch` at the 2,074 cases of `gamma_family.txt`.
 #[test]
@@ -519,6 +541,14 @@ fn integral_functions_match_the_recorded_values() {
         "integral_functions.txt",
     )
     .unwrap();
+}
+
+/// `lambertw` at the 1,038 cases of `lambertw.txt`: branches −3 to 3 and 40, real arguments
+/// on both real branches from the branch point −1/e out to 1e300, complex arguments from 1e-10
+/// to 1e10 in size, and `SciPy`'s values at 0, 1, infinity and NaN.
+#[test]
+fn lambert_w_matches_the_recorded_values() {
+    check("special-lambertw", LAMBERT_W, "lambertw.txt").unwrap();
 }
 
 /// `logsumexp` and `softmax`, which take arrays, give `SciPy` 1.18's values, its infinities

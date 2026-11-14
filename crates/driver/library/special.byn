@@ -48,3 +48,4 @@ from special_helpers import softmax as softmax
 from special_integrals import exp1 as exp1, expi as expi, expn as expn, sici as sici
 from special_integrals import shichi as shichi, fresnel as fresnel
 from special_zeta import zeta as zeta, zetac as zetac, spence as spence
+from special_lambertw import lambertw as lambertw

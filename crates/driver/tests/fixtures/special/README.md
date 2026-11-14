@@ -1,11 +1,12 @@
 # Special-function reference values
 
 `gamma_family.txt`, `error_functions.txt`, `bessel_functions.txt`, `incomplete_functions.txt`,
-`distribution_functions.txt`, `helper_functions.txt` and `integral_functions.txt` hold the cases the
-build tests in [`../../build/special.rs`](../../build/special.rs) check the `special` module's gamma
-family (roadmap 3.18.1), error functions (3.18.3), Bessel functions of whole order (3.18.4),
-incomplete gamma and beta functions (3.18.2), distribution functions (3.18.12), everyday helpers
-(3.18.11) and exponential integrals, zeta and Spence's function (3.18.11) against. Each line is a
+`distribution_functions.txt`, `helper_functions.txt`, `integral_functions.txt` and `lambertw.txt`
+hold the cases the build tests in [`../../build/special.rs`](../../build/special.rs) check the
+`special` module's gamma family (roadmap 3.18.1), error functions (3.18.3), Bessel functions of
+whole order (3.18.4), incomplete gamma and beta functions (3.18.2), distribution functions
+(3.18.12), everyday helpers (3.18.11), exponential integrals, zeta and Spence's function
+(3.18.11) and Lambert W function (3.18.11) against. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -779,5 +780,76 @@ for x in [0.0, inf, -inf]:
               f"chi {x!r} {float(chi)!r}", f"fresnel_s {x!r} {float(s)!r}",
               f"fresnel_c {x!r} {float(c)!r}"]
 with open("integral_functions.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## The Lambert W function
+
+`lambertw.txt` has its own format, since W is complex: each value is two lines, `lambertw_re`
+and `lambertw_im`, each holding the branch `k`, the real and imaginary parts of `z`, the size
+|W_k(z)| the part's error is measured against, and the part's value. The script below recorded
+it with its own seed, with mpmath 1.4.1 at 50 digits and SciPy 1.18.1 at the ends:
+
+```python
+import math
+
+import mpmath
+import numpy
+import scipy.special
+
+generator = numpy.random.default_rng(3181101)
+inf, nan = math.inf, math.nan
+lines = []
+
+
+def case(k, z, w):
+    """Two lines for W_k(z) = w, its real and its imaginary part, each with |w| as the size
+    its error is measured against, or the part's own size where |w| is infinite."""
+    for part, value in (("re", w.real), ("im", w.imag)):
+        size = abs(w) if math.isfinite(abs(w)) else abs(value)
+        lines.append(f"lambertw_{part} {k} {z.real!r} {z.imag!r} {size!r} {value!r}")
+
+
+def record(k, z):
+    with mpmath.workdps(50):
+        w = complex(mpmath.lambertw(mpmath.mpc(z), k))
+    case(k, z, w)
+
+
+# Real arguments on the two real branches: branch 0 from just above -1/e to 1e300, branch -1
+# from just above -1/e to just below 0.
+edge = -math.exp(-1)
+for x in [edge + float(10 ** generator.uniform(-12, -0.5)) for _ in range(30)]:
+    record(0, complex(x, 0.0))
+    if x < 0:
+        record(-1, complex(x, 0.0))
+for x in generator.uniform(-0.36, 3, 40):
+    record(0, complex(float(x), 0.0))
+for x in 10 ** generator.uniform(-300, 300, 40):
+    record(0, complex(float(x), 0.0))
+for x in -(10 ** generator.uniform(-300, math.log10(-edge) - 1e-3, 30)):
+    record(-1, complex(float(x), 0.0))
+# Complex arguments, and real ones off the real branches, on branches -3 to 3 and 40.
+for k in (0, -1, 1, 2, -2, 3, -3, 40):
+    for _ in range(30):
+        size = float(10 ** generator.uniform(-10, 10))
+        angle = float(generator.uniform(-math.pi, math.pi))
+        record(k, complex(size * math.cos(angle), size * math.sin(angle)))
+    for x in generator.uniform(-5, 5, 10):
+        record(k, complex(float(x), 0.0))
+# Near the branch point, from above and below the cut.
+for _ in range(20):
+    record(0, complex(edge + float(generator.uniform(-0.2, 0.2)),
+                      float(generator.uniform(-0.2, 0.2))))
+# The branch point itself, rounded to f64, and its neighbours.
+for x in [edge, math.nextafter(edge, 0), math.nextafter(edge, -1)]:
+    record(0, complex(x, 0.0))
+    record(-1, complex(x, 0.0))
+# SciPy's values at 0, 1, the branch point and infinity, and NaN.
+for k, z in [(0, 0j), (1, 0j), (-1, 0j), (0, 1 + 0j), (0, complex(inf, 0.0)),
+             (2, complex(inf, 1.0)), (0, complex(-inf, 0.0)), (-1, complex(-inf, 2.0)),
+             (0, complex(nan, 0.0))]:
+    case(k, z, complex(scipy.special.lambertw(z, k)))
+with open("lambertw.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
