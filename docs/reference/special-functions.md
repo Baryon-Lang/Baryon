@@ -721,10 +721,10 @@ exactly opposite in pairs and weights equal in pairs, as SciPy makes them. Cheby
 rules have closed forms.
 
 **Weights differ from SciPy's in the last digits.** SciPy rescales its weights so that they sum
-to μ₀ exactly. These are left as computed, each to its own precision, so their sum can differ from μ₀
-in the last few digits (by 2.5e-13 of it for `roots_gegenbauer(150, -0.4)`), but each weight
-is far closer to the true one: at 150 nodes SciPy's are off by up
-to 1.2 million ULP, and these by under 3,000. A weight's error comes mostly from its node's
+to μ₀ exactly. These are left as computed, each to its own precision, so their sum can differ
+from μ₀ in the last few digits (by 2.5e-13 of it for `roots_gegenbauer(150, -0.4)`), but each
+weight is far closer to the true one: at 150 nodes SciPy's are off by up to 1.2 million ULP,
+and these by under 3,000. A weight's error comes mostly from its node's
 rounding to `f64`. Near the end of the interval a weight changes fast with its node, and the
 outermost node of a large rule lies close to the end, so the allowance grows with n. The tests
 hold the weights to 32 ULP for each node of the rule, and the nodes to 16 ULP.
@@ -784,6 +784,6 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
-complex order, Airy, Struve and Kelvin functions, and hypergeometric functions. Carlson's integrals of complex arguments are not
-built. `loggamma` of a complex argument comes with the complex Bessel functions (3.18.6). See [What
-builds today](status.md).
+complex order, Airy, Struve and Kelvin functions, and hypergeometric functions. Carlson's
+integrals of complex arguments are not built. `loggamma` of a complex argument comes with the
+complex Bessel functions (3.18.6). See [What builds today](status.md).
