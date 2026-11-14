@@ -224,7 +224,7 @@ def main() -> Raises[None, LinAlgError]:
     assert_eq!(
         panic_report(&ran),
         "panic: assertion failed: len(b) == a.shape[0], \"solve needs b as long as a has rows\"\n  \
-         --> <std>/linalg.byn:93:5\n"
+         --> <std>/linalg_factor.byn:85:5\n"
     );
 }
 
@@ -291,7 +291,8 @@ fn f32_matrices_match_numpy() {
 
 /// A library function is compiled only into a program that calls it: a program that never
 /// calls `solve` has no `solve` in its module, so the library costs it nothing. `solve` is
-/// generic over its float type, so the program that calls it gets its `f64` instance.
+/// generic over its float type, so the program that calls it gets its `f64` instance, named for
+/// the internal file that defines it, `linalg_factor` (decision 0062).
 #[test]
 fn library_functions_are_compiled_only_when_called() {
     let compiled = |program: &str| {
@@ -300,12 +301,12 @@ fn library_functions_are_compiled_only_when_called() {
         session.compile(None, driver::Profile::Debug).unwrap()
     };
     let unused = compiled("def main():\n    print(1)\n");
-    assert!(!unused.contains("<std>.linalg.solve"), "{unused}");
+    assert!(!unused.contains("<std>.linalg_factor.solve"), "{unused}");
     let used = compiled(
         "from linalg import LinAlgError, solve\n\n\n\
          def main() -> Raises[None, LinAlgError]:\n    print(solve(Array.fill((1, 1), 2.0), Array([1.0])))\n",
     );
-    assert!(used.contains("@\"<std>.linalg.solve[f64]\""), "{used}");
+    assert!(used.contains("@\"<std>.linalg_factor.solve[f64]\""), "{used}");
 }
 
 /// The worked example of `linalg.solve` in the reference's Linear algebra chapter, read from
