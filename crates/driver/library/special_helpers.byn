@@ -199,12 +199,12 @@ def binom(n: f64, k: f64) -> f64:
         rest = difference + 1.0
         rest_lost = rounding(n, -k, difference) + rounding(difference, 1.0, rest)
         value = gamma(top) * rgamma(chosen) * rgamma(rest)
-        correction = 1.0 + _shift(top, top_lost) - _shift(chosen, chosen_lost)
-        return value * (correction - _shift(rest, rest_lost))
+        correction = 1.0 + shift(top, top_lost) - shift(chosen, chosen_lost)
+        return value * (correction - shift(rest, rest_lost))
     return 1.0 / (n + 1.0) / beta(1.0 + n - k, 1.0 + k)
 
 
-def _shift(x: f64, lost: f64) -> f64:
+def shift(x: f64, lost: f64) -> f64:
     """ψ(x) δ, the first-order change in log Γ when its argument `x` gains the rounding error
     δ = `lost`, and 0 when nothing was lost, so a pole of ψ does not turn 0 into NaN."""
     if lost == 0.0:
@@ -277,3 +277,57 @@ def perm(n: f64, k: f64, exact: bool = False) -> f64:
     for i in range(whole - chosen + 1, whole + 1):
         count = count * i
     return float(count)
+
+
+def logsumexp(a: Array[f64, 1]) -> f64:
+    """log Σ exp(aᵢ) over the whole of the rank-1 array `a`, as `scipy.special.logsumexp`
+    without its keywords: the largest element is taken out first, so nothing overflows. −∞ for
+    an empty array, and the largest element itself when it is ±∞.
+
+    ```python
+    from special import logsumexp
+
+    print(logsumexp(Array([1000.0, 1000.0])))   # 1000.6931471805599
+    ```
+    """
+    if len(a) == 0:
+        return -inf
+    largest = a[0]
+    for i in range(len(a)):
+        if isnan(a[i]):
+            return nan
+        if a[i] > largest:
+            largest = a[i]
+    if isinf(largest):
+        return largest
+    total = 0.0
+    for i in range(len(a)):
+        total += exp(a[i] - largest)
+    return largest + log(total)
+
+
+def softmax(a: Array[f64, 1]) -> Array[f64, 1]:
+    """exp(aᵢ) / Σ exp(aⱼ) for each element of the rank-1 array `a`, as
+    `scipy.special.softmax` without `axis`: the elements of a probability vector, formed after
+    the largest element is taken out so nothing overflows.
+
+    ```python
+    from special import softmax
+
+    print(softmax(Array([0.0, 0.0])))   # [0.5 0.5]
+    ```
+    """
+    result = Array.zeros(len(a))
+    if len(a) == 0:
+        return result
+    largest = a[0]
+    for i in range(len(a)):
+        if a[i] > largest:
+            largest = a[i]
+    total = 0.0
+    for i in range(len(a)):
+        result[i] = exp(a[i] - largest)
+        total += result[i]
+    for i in range(len(a)):
+        result[i] = result[i] / total
+    return result

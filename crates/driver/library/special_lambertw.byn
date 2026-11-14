@@ -1,0 +1,162 @@
+"""The Lambert W function for `special` (roadmap 3.18.11): `lambertw`, the inverse of w eʷ, on
+every branch and for complex arguments, as `scipy.special.lambertw` computes it.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import atan2, cos, exp, hypot, inf, isnan, log, nan, pi, sin, sqrt
+
+
+_E: Final = 2.718281828459045  # e, rounded to f64
+_TWO_E: Final = 5.43656365691809  # 2e, rounded to f64
+_EXP_MINUS_ONE: Final = 0.36787944117144233  # 1/e, the branch point's distance from 0
+_EXP_MINUS_ONE_LOW: Final = -1.2428753672788363e-17  # 1/e minus `_EXP_MINUS_ONE`
+_OMEGA: Final = 0.5671432904097838  # the omega constant, W(1) on branch 0
+
+
+def lambertw(z: complex128, k: int = 0, tol: f64 = 1e-8) -> complex128:
+    """W_k(z), the value w on branch `k` of the Lambert W function with w eʷ = `z`, as
+    `scipy.special.lambertw`.
+
+    Branch 0 is real and at least −1 for real `z` from −1/e up, and branch −1 is real and at
+    most −1 for real `z` from −1/e to 0; every other value is complex. A real argument converts
+    to `complex128`, so `lambertw(1.0)` is the omega constant 0.5671432904097838 + 0j. The value
+    is refined by Halley's method until a step is at most `tol` times its size; each step
+    triples the digits, so the value is within a few ULP of the true one well before `tol`
+    stops it. Within 0.00184 of the branch point −1/e, on branch 0 and on branch −1 for real
+    `z`, a series in √(z + 1/e) gives the value instead, to the last digit, where `SciPy`'s
+    iteration loses up to half its digits: at 7e-10 above −1/e, `SciPy`'s branch −1 is wrong
+    by 6e-5.
+
+    W_k(0) is 0 on branch 0 and −∞ on every other, NaN in either part gives back `z`, and an
+    infinite real part gives `z` + 2πk i, as `SciPy` gives. NaN when 100 steps do not settle,
+    where `SciPy` warns and gives NaN too.
+
+    ```python
+    from special import lambertw
+
+    w = lambertw(1.0)
+    print(w.real)  # 0.5671432904097838, the omega constant: w eʷ = 1
+    print(lambertw(-0.25, -1).real)  # -2.1532923641103494
+    ```
+    """
+    if isnan(z.real) or isnan(z.imag):
+        return z
+    if z.real == inf:
+        return complex(z.real, z.imag + 2.0 * pi * float(k))
+    if z.real == -inf:
+        return complex(-z.real, -z.imag + (2.0 * pi * float(k) + pi))
+    if z.real == 0.0 and z.imag == 0.0:
+        if k == 0:
+            return z
+        return complex(-inf, 0.0)
+    if z.real == 1.0 and z.imag == 0.0 and k == 0:
+        return complex(_OMEGA, 0.0)
+    near = _branch_point_series(z, k)
+    if near is not None:
+        return near
+    w = _start(z, k)
+    for _ in range(100):
+        if w.real >= 0.0:
+            # w − (w − z e⁻ʷ) / (w + 1 − (w + 2)(w − z e⁻ʷ) / (2w + 2)), which keeps e⁻ʷ small
+            ew = _exp(-w)
+            wewz = w - z * ew
+            step = wewz / (w + 1.0 - (w + 2.0) * wewz / (2.0 * w + 2.0))
+        else:
+            ew = _exp(w)
+            wew = w * ew
+            wewz = wew - z
+            step = wewz / (wew + ew - (w + 2.0) * wewz / (2.0 * w + 2.0))
+        refined = w - step
+        if abs(refined - w) <= tol * abs(refined):
+            return refined
+        w = refined
+    return complex(nan, nan)
+
+
+def _branch_point_series(z: complex128, k: int) -> complex128 | None:
+    """W_k(`z`) from its series in p = ±√(2e(z + 1/e)) when `z` is within 0.00184 of the branch
+    point −1/e, so |p| < 0.1, on branch 0, and on branch −1 for real `z`; None elsewhere.
+
+    W = −1 + p − p²/3 + 11/72 p³ − ..., with p's sign chosen by the branch; 16 terms leave an
+    error below 1e-19 of the value. Near −1/e the residual w eʷ − z that Halley's method drives
+    to 0 is a difference of two numbers near −1/e, so it cannot see the last digits of `z`: there
+    W loses as many digits as 1/√|z + 1/e| has, about 5,000 ULP at 1e-8 from the branch point.
+    The series instead takes z + 1/e directly, with 1/e in two parts so the sum is exact, and
+    keeps every digit. The coefficients are those of Corless et al. (1996), equation 4.22,
+    computed exactly as fractions and rounded to `f64`.
+    """
+    if k != 0 and not (k == -1 and z.imag == 0.0):
+        return None
+    distance = complex((z.real + _EXP_MINUS_ONE) + _EXP_MINUS_ONE_LOW, z.imag)
+    if abs(distance) >= 0.00184:
+        return None
+    p = _sqrt(_TWO_E * distance)
+    if k == -1:
+        p = -p
+    total = complex(0.0004424730618146209, 0.0)
+    total = total * p + -0.0006720616311561362
+    total = total * p + 0.0010262633205076071
+    total = total * p + -0.0015769303446867841
+    total = total * p + 0.0024408779911439826
+    total = total * p + -0.0038112980348919993
+    total = total * p + 0.006014543252956118
+    total = total * p + -0.009616892024299432
+    total = total * p + 0.01563563253233392
+    total = total * p + -0.02598471487360376
+    total = total * p + 0.044502314814814814
+    total = total * p + -0.07962962962962963
+    total = total * p + 0.1527777777777778
+    total = total * p + -0.3333333333333333
+    total = total * p + 1.0
+    total = total * p + -1.0
+    return total
+
+
+def _start(z: complex128, k: int) -> complex128:
+    """The first guess for W_k(`z`), as `SciPy` takes it: near the branch point −1/e, the
+    series in p = √(2(ez + 1)) on branch 0, and log(−z) for real `z` in (−1/e, 0) on branch −1;
+    near 0 on branch 0, a Padé approximant; everywhere else, the asymptotic
+    log z + 2πk i − log(log z + 2πk i)."""
+    if k == 0:
+        if abs(z + _EXP_MINUS_ONE) < 0.3:
+            p = _sqrt(2.0 * (_E * z + 1.0))
+            return -1.0 + p * (1.0 + p * (-1.0 / 3.0 + p * (11.0 / 72.0)))
+        if (
+            -1.0 < z.real
+            and z.real < 1.5
+            and abs(z.imag) < 1.0
+            and -2.5 * abs(z.imag) - 0.2 < z.real
+        ):
+            numerator = (12.85106382978723404255 * z + 12.34042553191489361902) * z + 1.0
+            denominator = (32.53191489361702127660 * z + 14.34042553191489361702) * z + 1.0
+            return z * numerator / denominator
+    if k == -1 and abs(z) <= _EXP_MINUS_ONE and z.imag == 0.0 and z.real < 0.0:
+        return complex(log(-z.real), 0.0)
+    w = _log(z) + complex(0.0, 2.0 * pi * float(k))
+    return w - _log(w)
+
+
+def _exp(z: complex128) -> complex128:
+    """eᶻ, as eˣ (cos y + i sin y) for `z` = x + iy."""
+    scale = exp(z.real)
+    return complex(scale * cos(z.imag), scale * sin(z.imag))
+
+
+def _log(z: complex128) -> complex128:
+    """The principal logarithm of `z`: log |z| + i arg z, with arg z in (−π, π]."""
+    return complex(log(hypot(z.real, z.imag)), atan2(z.imag, z.real))
+
+
+def _sqrt(z: complex128) -> complex128:
+    """The principal square root of `z`, with a real part of at least 0, computed so that
+    neither part cancels: the larger part is √((|x| + |z|)/2), and the other is y over twice it.
+    """
+    if z.real == 0.0 and z.imag == 0.0:
+        return complex(0.0, z.imag)
+    t = sqrt((abs(z.real) + hypot(z.real, z.imag)) / 2.0)
+    if z.real >= 0.0:
+        return complex(t, z.imag / (2.0 * t))
+    if z.imag >= 0.0:
+        return complex(abs(z.imag) / (2.0 * t), t)
+    return complex(abs(z.imag) / (2.0 * t), -t)

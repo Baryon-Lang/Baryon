@@ -1,0 +1,368 @@
+"""Exponential, sine and cosine integrals and Fresnel integrals for `special` (roadmap
+3.18.11): `exp1`, `expi`, `expn`, `sici`, `shichi` and `fresnel`.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import cos, exp, inf, isinf, isnan, log, nan, pi, sin
+from special_common import EULER, sinpi, cospi
+from special_error import square
+
+
+def _exp1_positive(x: f64) -> f64:
+    """E₁(x) for `x` above 0: the series −γ − log x − Σ (−x)ᵏ / (k k!) up to 1, and above,
+    e⁻ˣ times the continued fraction of `_exponential_fraction`."""
+    if x <= 1.0:
+        total = 0.0
+        term = 1.0
+        for k in range(1, 60):
+            term *= -x / k
+            change = term / k
+            total += change
+            if abs(change) <= 1.0e-17 * abs(total):
+                break
+        return -EULER - log(x) - total
+    return exp(-x) * _exponential_fraction(1.0, x)
+
+
+def _exponential_fraction(order: f64, x: f64) -> f64:
+    """eˣ Eₙ(x) for `x` above 1, with n = `order`, as the continued fraction
+    1/(x + n − n/(x + n + 2 − 2(n + 1)/(x + n + 4 − ⋯))).
+
+    It is evaluated from its tail backwards, from 30 + 100/x terms in, which is past where it
+    has converged: each step then divides by a number above 1, and the rounding errors shrink
+    instead of adding up as they do when Lentz's method runs forwards, about 30 ULP at x = 1.
+    """
+    count = 30 + int(100.0 / x)
+    tail = 0.0
+    for i in range(count, 0, -1):
+        tail = -1.0 * i * (order - 1.0 + i) / (x + order + 2.0 * i + tail)
+    return 1.0 / (x + order + tail)
+
+
+def exp1(x: f64) -> f64:
+    """The exponential integral E₁(x) = ∫ₓ^∞ e⁻ᵗ / t dt, as `scipy.special.exp1` for a real
+    argument: ∞ at 0, and NaN below, where E₁ is complex.
+
+    ```python
+    from special import exp1
+
+    print(exp1(1.0))        # 0.21938393439552029
+    ```
+    """
+    if isnan(x) or x < 0.0:
+        return nan
+    if x == 0.0:
+        return inf
+    if isinf(x):
+        return 0.0
+    return _exp1_positive(x)
+
+
+def expi(x: f64) -> f64:
+    """The exponential integral Ei(x), the principal value of ∫₋∞ˣ eᵗ / t dt, as
+    `scipy.special.expi`: −E₁(−x) below 0, the series γ + log x + Σ xᵏ / (k k!) up to 40, all
+    of whose terms are then positive, and the asymptotic series eˣ/x Σ k!/xᵏ above.
+
+    Near its zero at 0.3725 the result is a difference of terms near 1, and keeps the precision
+    of 1, not its own, as `gammaln` near its zeros does.
+
+    ```python
+    from special import expi
+
+    print(expi(1.0))        # 1.8951178163559368
+    ```
+    """
+    if isnan(x):
+        return nan
+    if x < 0.0:
+        return -exp1(-x)
+    if x == 0.0:
+        return -inf
+    if isinf(x):
+        return inf
+    if x <= 40.0:
+        total = 0.0
+        term = 1.0
+        for k in range(1, 200):
+            term *= x / k
+            change = term / k
+            total += change
+            if change <= 1.0e-17 * total:
+                break
+        return EULER + log(x) + total
+    total = 1.0
+    term = 1.0
+    for k in range(1, 40):
+        term *= k / x
+        total += term
+        if term <= 1.0e-17 * total:
+            break
+    half = exp(0.5 * x)
+    return half * (half / x) * total
+
+
+def expn(n: int, x: f64) -> f64:
+    """The generalized exponential integral Eₙ(x) = ∫₁^∞ e^(−xt) / tⁿ dt for a whole `n`, as
+    `scipy.special.expn`.
+
+    Above 1 it is e⁻ˣ times a continued fraction, evaluated backwards; up to 1 a series with
+    ψ(n) in the term where xⁿ⁻¹ meets log x. NaN for a negative `n` or `x`; at 0 it is ∞ for
+    `n` of 0 or 1 and 1/(n − 1) above.
+
+    ```python
+    from special import expn
+
+    print(expn(2, 1.0))     # 0.14849550677592205
+    ```
+    """
+    if isnan(x) or n < 0 or x < 0.0:
+        return nan
+    if isinf(x):
+        return 0.0
+    if x == 0.0:
+        if n <= 1:
+            return inf
+        return 1.0 / (n - 1)
+    if n == 0:
+        return exp(-x) / x
+    order = 1.0 * n
+    if x > 1.0:
+        return exp(-x) * _exponential_fraction(order, x)
+    if n == 1:
+        total = -log(x) - EULER
+    else:
+        total = 1.0 / (order - 1.0)
+    factor = 1.0
+    for i in range(1, 200):
+        factor *= -x / i
+        if i != n - 1:
+            change = -factor / (i - order + 1.0)
+        else:
+            digamma_n = -EULER
+            for j in range(1, n):
+                digamma_n += 1.0 / j
+            change = factor * (-log(x) + digamma_n)
+        total += change
+        if abs(change) <= 1.0e-17 * abs(total):
+            break
+    return total
+
+
+def _complex_divide(a: f64, b: f64, c: f64, d: f64) -> tuple[f64, f64]:
+    """(a + bi) / (c + di), by Smith's method, which never squares `c` or `d` and so never
+    overflows where the quotient does not."""
+    if abs(c) >= abs(d):
+        r = d / c
+        denominator = c + d * r
+        return ((a + b * r) / denominator, (b - a * r) / denominator)
+    r = c / d
+    denominator = c * r + d
+    return ((a * r + b) / denominator, (b * r - a) / denominator)
+
+
+def _sici_fraction(t: f64) -> tuple[f64, f64]:
+    """E₁(it) for `t` above 2, as (real, imaginary): e^(−it) times the continued fraction of
+    `_exponential_fraction` at the imaginary argument it, evaluated backwards from 30 + 200/t
+    terms in, in complex arithmetic, so its rounding errors shrink as they go."""
+    count = 30 + int(200.0 / t)
+    tail_re = 0.0
+    tail_im = 0.0
+    for i in range(count, 0, -1):
+        tail_re, tail_im = _complex_divide(-1.0 * i * i, 0.0, 2.0 * i + 1.0 + tail_re, t + tail_im)
+    h_re, h_im = _complex_divide(1.0, 0.0, 1.0 + tail_re, t + tail_im)
+    cosine = cos(t)
+    sine = sin(t)
+    return (h_re * cosine + h_im * sine, h_im * cosine - h_re * sine)
+
+
+def sici(x: f64) -> tuple[f64, f64]:
+    """The sine and cosine integrals, (Si(x), Ci(x)), as `scipy.special.sici` for a real
+    argument: Si(x) = ∫₀ˣ sin t / t dt and Ci(x) = γ + log x + ∫₀ˣ (cos t − 1) / t dt.
+
+    Up to 2 both are power series; above, Ci(x) − i Si(x) + iπ/2 = E₁(ix), a continued fraction.
+    Si is odd; below 0, Ci is the real part SciPy gives, Ci(|x|), and NaN at −∞.
+
+    ```python
+    from special import sici
+
+    si, ci = sici(1.0)
+    print(si)               # 0.946083070367183
+    print(ci)               # 0.3374039229009681
+    ```
+    """
+    if isnan(x):
+        return (nan, nan)
+    t = abs(x)
+    if t == 0.0:
+        return (0.0, -inf)
+    if isinf(t):
+        si = 0.5 * pi
+        ci = 0.0
+        if x < 0.0:
+            ci = nan
+    elif t <= 2.0:
+        square = t * t
+        si = 0.0
+        ci = 0.0
+        term = t
+        for k in range(0, 40):
+            if k > 0:
+                term *= -square / ((2.0 * k) * (2.0 * k + 1.0))
+            change = term / (2.0 * k + 1.0)
+            si += change
+            if abs(change) <= 1.0e-17 * abs(si):
+                break
+        term = 1.0
+        for k in range(1, 40):
+            term *= -square / ((2.0 * k - 1.0) * (2.0 * k))
+            change = term / (2.0 * k)
+            ci += change
+            if abs(change) <= 1.0e-17 * abs(ci):
+                break
+        ci += EULER + log(t)
+    else:
+        e_re, e_im = _sici_fraction(t)
+        ci = -e_re
+        si = 0.5 * pi + e_im
+    if x < 0.0:
+        si = -si
+    return (si, ci)
+
+
+def shichi(x: f64) -> tuple[f64, f64]:
+    """The hyperbolic sine and cosine integrals, (Shi(x), Chi(x)), as `scipy.special.shichi`
+    for a real argument: Shi(x) = ∫₀ˣ sinh t / t dt and
+    Chi(x) = γ + log x + ∫₀ˣ (cosh t − 1) / t dt.
+
+    Up to 2 both are power series of positive terms; above, Shi = (Ei(x) + E₁(x))/2 and
+    Chi = (Ei(x) − E₁(x))/2. Shi is odd; below 0, Chi is the real part SciPy gives, Chi(|x|).
+
+    ```python
+    from special import shichi
+
+    shi, chi = shichi(1.0)
+    print(shi)              # 1.0572508753757286
+    print(chi)              # 0.8378669409802083
+    ```
+    """
+    if isnan(x):
+        return (nan, nan)
+    t = abs(x)
+    if t == 0.0:
+        return (0.0, -inf)
+    if isinf(t):
+        shi = inf
+        chi = inf
+    elif t <= 2.0:
+        square = t * t
+        shi = 0.0
+        chi = 0.0
+        term = t
+        for k in range(0, 40):
+            if k > 0:
+                term *= square / ((2.0 * k) * (2.0 * k + 1.0))
+            change = term / (2.0 * k + 1.0)
+            shi += change
+            if change <= 1.0e-17 * shi:
+                break
+        term = 1.0
+        for k in range(1, 40):
+            term *= square / ((2.0 * k - 1.0) * (2.0 * k))
+            change = term / (2.0 * k)
+            chi += change
+            if change <= 1.0e-17 * chi:
+                break
+        chi += EULER + log(t)
+    else:
+        grown = expi(t)
+        decayed = _exp1_positive(t)
+        shi = 0.5 * (grown + decayed)
+        chi = 0.5 * (grown - decayed)
+    if x < 0.0:
+        shi = -shi
+    return (shi, chi)
+
+
+def _half_pi_square(x: f64) -> tuple[f64, f64]:
+    """sin(πx²/2) and cos(πx²/2), with x² split exactly by `fma` into a rounded square and
+    what rounding lost: the first is reduced as a multiple of π, the second, up to ½ once x²
+    passes 2⁵³, is a small angle of its own, and the two are added by the angle-sum formulas.
+    So a large `x` keeps its phase, which πx²/2 itself would round away."""
+    high, low = square(x)
+    half = 0.5 * high
+    sine = sinpi(half)
+    cosine = cospi(half)
+    angle = 0.5 * pi * low
+    small_sine = sin(angle)
+    small_cosine = cos(angle)
+    return (sine * small_cosine + cosine * small_sine, cosine * small_cosine - sine * small_sine)
+
+
+def fresnel(x: f64) -> tuple[f64, f64]:
+    """The Fresnel integrals, (S(x), C(x)) in SciPy's order, as `scipy.special.fresnel`:
+    S(x) = ∫₀ˣ sin(πt²/2) dt and C(x) = ∫₀ˣ cos(πt²/2) dt.
+
+    Below 1.5 both are power series; above, C + iS = (1 + i)/2 (1 − e^(iπx²/2) w) with w from
+    the continued fraction of the complementary error function, evaluated backwards from its
+    tail so its rounding errors shrink.
+    Both are odd.
+
+    ```python
+    from special import fresnel
+
+    s, c = fresnel(1.0)
+    print(s)                # 0.4382591473903548
+    print(c)                # 0.7798934003768228
+    ```
+    """
+    if isnan(x):
+        return (nan, nan)
+    t = abs(x)
+    if isinf(t):
+        s = 0.5
+        c = 0.5
+    elif t < 1.5:
+        fourth = t * t * t * t
+        half_pi = 0.5 * pi
+        s = 0.0
+        c = 0.0
+        term = t
+        for k in range(0, 40):
+            if k > 0:
+                term *= -half_pi * half_pi * fourth / ((2.0 * k - 1.0) * (2.0 * k))
+            change = term / (4.0 * k + 1.0)
+            c += change
+            if abs(change) <= 1.0e-17 * abs(c):
+                break
+        term = half_pi * t * t * t
+        for k in range(0, 40):
+            if k > 0:
+                term *= -half_pi * half_pi * fourth / ((2.0 * k) * (2.0 * k + 1.0))
+            change = term / (4.0 * k + 3.0)
+            s += change
+            if abs(change) <= 1.0e-17 * abs(s):
+                break
+    else:
+        phase = pi * t * t
+        count = 20 + int(120.0 / (t * t))
+        tail_re = 0.0
+        tail_im = 0.0
+        for k in range(count, 1, -1):
+            odd = 2.0 * k - 3.0
+            tail_re, tail_im = _complex_divide(
+                -odd * (odd + 1.0), 0.0, 4.0 * k - 3.0 + tail_re, tail_im - phase
+            )
+        h_re, h_im = _complex_divide(1.0, 0.0, 1.0 + tail_re, tail_im - phase)
+        w_re = h_re * t + h_im * t
+        w_im = h_im * t - h_re * t
+        sine, cosine = _half_pi_square(t)
+        product_re = cosine * w_re - sine * w_im
+        product_im = cosine * w_im + sine * w_re
+        rest_re = 1.0 - product_re
+        rest_im = -product_im
+        c = 0.5 * (rest_re - rest_im)
+        s = 0.5 * (rest_re + rest_im)
+    if x < 0.0:
+        return (-s, -c)
+    return (s, c)

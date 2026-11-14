@@ -25,7 +25,7 @@ is built from the series and recurrences below and the elementary functions `exp
 ## Accuracy
 
 Each function is tested against values computed with mpmath to 50 digits, at a few hundred
-arguments spread over its range, about 9,600 in all
+arguments spread over its range, about 12,000 in all
 ([the fixtures](../../crates/driver/tests/fixtures/special/README.md)).
 The error is counted in units in the last place (ULP): the gap between adjacent `f64` values at
 the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
@@ -72,6 +72,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `kl_div` | 8 ULP | 3 ULP | 8.8 billion ULP at `kl_div(0.6515198, 0.6515264)`, where x − y cancels |
 | `binom`, `comb` | 8 ULP plus 2 for each unit of the result's logarithm | 18 ULP at a result of 5e160 | 8,523 ULP |
 | `perm`, `factorial` | 8 ULP | 4 ULP | 7 ULP |
+| `lambertw` | 8 ULP of the size of W, for each part | 4 ULP | 2.8e11 ULP: on branch −1 at 7e-10 above −1/e, SciPy's value is off by 6e-5 |
 
 Where a function crosses zero, no formula keeps all of its relative precision there: the
 result is a small difference of two numbers near 1. Those functions are held to a precision of
@@ -409,8 +410,116 @@ sum.
 
 `exact=True` in `comb`, `perm` and `factorial` counts in integer arithmetic and returns the
 count as an `f64`, where SciPy returns a Python `int` of any size: exact up to 2⁵³, and a count
-past the `int` range, about 9.2e18, is an overflow like any other. `logsumexp` and `softmax`,
-which take arrays, come with array arguments (roadmap 3.18.13).
+past the `int` range, about 9.2e18, is an overflow like any other.
+
+`logsumexp(a)` and `softmax(a)` take a rank-1 `Array[f64, 1]`, as `scipy.special.logsumexp` and
+`softmax` do without their `axis`, `b` and `return_sign` keywords. Each takes the largest
+element out first, so nothing overflows: `logsumexp(Array([1000.0, 1000.0]))` is
+1000.6931471805599, where the plain formula would give ∞. `logsumexp` of an empty array is −∞.
+
+## Exponential integrals, zeta and the dilogarithm
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `exp1(x)` | The exponential integral E₁(x) = ∫ₓ^∞ e⁻ᵗ / t dt | `scipy.special.exp1` |
+| `expi(x)` | The exponential integral Ei(x), the principal value of ∫₋∞ˣ eᵗ / t dt | `scipy.special.expi` |
+| `expn(n, x)` | The generalized exponential integral Eₙ(x) = ∫₁^∞ e^(−xt) / tⁿ dt, for a whole `n` | `scipy.special.expn` |
+| `sici(x)` | The sine and cosine integrals, `(Si(x), Ci(x))` | `scipy.special.sici` |
+| `shichi(x)` | The hyperbolic sine and cosine integrals, `(Shi(x), Chi(x))` | `scipy.special.shichi` |
+| `fresnel(x)` | The Fresnel integrals, `(S(x), C(x))` in SciPy's order | `scipy.special.fresnel` |
+| `zeta(x)`, `zeta(x, q)` | The Riemann zeta function ζ(x), or the Hurwitz zeta function ζ(x, q) | `scipy.special.zeta` |
+| `zetac(x)` | ζ(x) − 1, with its own precision where ζ is near 1 | `scipy.special.zetac` |
+| `spence(x)` | Spence's function ∫₁ˣ log t / (1 − t) dt, which is Li₂(1 − x) | `scipy.special.spence` |
+
+```python
+from special import exp1, fresnel, spence, zeta
+
+
+def main():
+    print(exp1(1.0))            # 0.21938393439552029
+    s, c = fresnel(1.0)
+    print(s, c)                 # 0.4382591473903548 0.7798934003768228
+    print(zeta(2.0))            # 1.6449340668482264, which is π²/6
+    print(spence(2.0))          # -0.8224670334241132
+```
+
+How each is computed:
+
+- **E₁ and Eₙ** are power series up to 1 and e⁻ˣ times a continued fraction above, evaluated
+  backwards from its tail so its rounding errors shrink. **Ei** is −E₁(−x) below 0, the series
+  γ + log x + Σ xᵏ / (k k!) up to 40, all of whose terms are then positive, and its asymptotic
+  series eˣ/x Σ k!/xᵏ above.
+- **Si and Ci** are power series up to 2; above, Ci(x) − i Si(x) + iπ/2 = E₁(ix), the same
+  continued fraction with a complex argument. **Shi and Chi** are power series of positive
+  terms up to 2, and (Ei(x) ± E₁(x))/2 above.
+- **S and C** are power series below 1.5; above, C + iS comes from the continued fraction of
+  the complementary error function.
+- **ζ(x)** is an Euler–Maclaurin sum from 0 up, and the reflection formula below 0, with
+  log 2π carried as two `f64`s so that large negative arguments keep their digits. ζ(x, q) is
+  the same sum from `q`. `zetac` sums from 2 for large `x`, so 1 is never subtracted from a
+  number near 1.
+- **Spence's function** is the dilogarithm Li₂(1 − x), summed as a series in −log(1 − y) from
+  ½ to 2, where 1 − x is exact; below ½ and above 2, identities of the dilogarithm bring the
+  argument into that range. So its zero at 1 keeps its relative precision.
+
+All nine are held to 16 ULP of the mpmath value, at the 1,375 cases of
+`integral_functions.txt`. Ei near its zero at 0.3725 and Chi near its zero at 0.5238 are held
+to 16 ULP of 1, the size of the terms they are formed from, and Ci, which oscillates as
+sin(x)/x does, to 16 ULP of the larger of its value and 1/x.
+
+### At the ends
+
+As SciPy gives: `exp1(0.0)` is ∞ and `exp1` of a negative argument NaN, where E₁ is complex;
+`expn(n, 0.0)` is ∞ for `n` of 0 or 1 and 1/(n − 1) above; below 0, `Ci` and `Chi` are the real
+parts SciPy gives, Ci(|x|) and Chi(|x|); `zeta(1.0)` is ∞, and the Hurwitz `zeta(x, q)` is NaN
+for `x` below 1; `spence` is NaN below 0 and at ∞.
+
+## The Lambert W function
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `lambertw(z, k=0, tol=1e-8)` | W_k(z), the solution w of w eʷ = z on branch `k`, a `complex128` | `scipy.special.lambertw` |
+
+W turns up wherever an unknown sits both outside and inside an exponential: the time a
+population with delayed growth takes to reach a size, the current through a diode and a
+resistor in series, the Wien displacement constant. Every branch `k` is a whole number; branch
+0 is the principal one. For real `z` from −1/e up, branch 0 is real and at least −1, and for
+real `z` from −1/e to 0, branch −1 is real and at most −1; all other values are complex. A real
+argument converts to `complex128`, and the value is always a `complex128`, as in SciPy: take
+`.real` for a real branch.
+
+```python
+from special import lambertw
+
+
+def main():
+    w = lambertw(1.0)
+    print(w.real)                         # 0.5671432904097838, the omega constant
+    print(lambertw(-0.25, -1).real)       # -2.1532923641103494
+    print(lambertw(complex(1.0, 2.0), 3)) # (-2.1072075066264553+18.27108543113687j)
+```
+
+The value is found as SciPy finds it: a first guess from a Padé approximant near 0, a series
+near the branch point −1/e, or the asymptotic log z + 2πik − log(log z + 2πik) elsewhere, then
+Halley's method until a step is at most `tol` times the value. Each step triples the number of
+correct digits, so the value is within a few ULP when `tol` stops it.
+
+Within 0.00184 of −1/e, on branch 0 and on branch −1 for real `z`, the iteration cannot reach
+full precision: its residual w eʷ − z is a difference of two numbers near −1/e. There
+`lambertw` sums 16 terms of the series in p = ±√(2e(z + 1/e)) instead, with z + 1/e computed
+exactly, and keeps every digit. **This differs from SciPy**, whose iteration loses up to half
+the digits there and, on branch −1 at 7e-10 above −1/e, gives −1.0000000060 where the answer is
+−1.0000633.
+
+`lambertw` is held to 8 ULP of |W| in each part, at the 1,050 cases of `lambertw.txt`:
+branches −3 to 3 and 40, real arguments on both real branches from the branch point out to
+1e300, and complex arguments from 1e-10 to 1e10 in size.
+
+### At the ends
+
+As SciPy gives: `lambertw(0.0)` is 0, and 0 on any other branch is −∞; NaN in either part
+gives `z` back; an infinite real part gives `z` + 2πik i, with π more for −∞. Where 100 steps of
+Halley's method do not settle, the value is NaN in both parts, where SciPy warns and gives NaN.
 
 ## Files under `special`
 
@@ -432,7 +541,10 @@ for those working on the library. A panic inside a function names the file it is
 | `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
 | `special_distributions` | `bdtr`, `bdtrc`, `bdtri`, `nbdtr`, `nbdtrc`, `nbdtri`, `pdtr`, `pdtrc`, `pdtri`, `chdtr`, `chdtrc`, `chdtri`, `fdtr`, `fdtrc`, `fdtri`, `gdtr`, `gdtrc`, `stdtr` and `stdtrit` |
 | `special_kolmogorov` | `kolmogorov`, `kolmogi`, `smirnov`, `smirnovi` and `owens_t` |
-| `special_helpers` | `expit`, `log_expit`, `logit`, `xlogy`, `xlog1py`, `entr`, `rel_entr`, `kl_div`, `binom`, `comb` and `perm` |
+| `special_helpers` | `expit`, `log_expit`, `logit`, `xlogy`, `xlog1py`, `entr`, `rel_entr`, `kl_div`, `binom`, `comb`, `perm`, `logsumexp` and `softmax` |
+| `special_integrals` | `exp1`, `expi`, `expn`, `sici`, `shichi` and `fresnel` |
+| `special_zeta` | `zeta`, `zetac` and `spence` |
+| `special_lambertw` | `lambertw` |
 
 A new function goes in the file of its family, and a name of `special` gets its line in
 `special.byn`. A family file kept under about 500 lines is split again by responsibility.
@@ -440,6 +552,6 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
-complex order, Airy, Struve and Kelvin functions, hypergeometric and elliptic functions, orthogonal
-polynomials, exponential integrals and zeta, and `lambertw` (3.18.11). `loggamma` of a complex
-argument comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).
+complex order, Airy, Struve and Kelvin functions, hypergeometric and elliptic functions, and
+orthogonal polynomials. `loggamma` of a complex argument comes with the complex Bessel functions
+(3.18.6). See [What builds today](status.md).

@@ -43,4 +43,9 @@ from special_kolmogorov import kolmogorov as kolmogorov, kolmogi as kolmogi, owe
 from special_kolmogorov import smirnov as smirnov, smirnovi as smirnovi
 from special_helpers import expit as expit, log_expit as log_expit, logit as logit, xlogy as xlogy
 from special_helpers import xlog1py as xlog1py, entr as entr, rel_entr as rel_entr, kl_div as kl_div
-from special_helpers import binom as binom, comb as comb, perm as perm
+from special_helpers import binom as binom, comb as comb, perm as perm, logsumexp as logsumexp
+from special_helpers import softmax as softmax
+from special_integrals import exp1 as exp1, expi as expi, expn as expn, sici as sici
+from special_integrals import shichi as shichi, fresnel as fresnel
+from special_zeta import zeta as zeta, zetac as zetac, spence as spence
+from special_lambertw import lambertw as lambertw

@@ -385,9 +385,9 @@ def digamma(x: f64) -> f64:
     return psi(x)
 
 
-def _hurwitz_zeta(s: f64, q: f64) -> f64:
-    """The Hurwitz zeta function ζ(s, q), the sum of (q + k)^(−s) over k from 0, for whole `s`
-    from 2 up, by the Euler–Maclaurin formula.
+def hurwitz_zeta(s: f64, q: f64) -> f64:
+    """The Hurwitz zeta function ζ(s, q), the sum of (q + k)^(−s) over k from 0, for `s` from 0
+    up other than 1, by the Euler–Maclaurin formula, which holds on both sides of the pole.
 
     Sums the first terms directly until q + k is at least 10 more than `s`, then adds the
     integral, half the next term and Bernoulli terms until they stop changing the sum. A `q` at
@@ -452,7 +452,7 @@ def polygamma(n: int, x: f64) -> f64:
     factorial = 1.0
     for k in range(2, n + 1):
         factorial *= k
-    value = factorial * _hurwitz_zeta(n + 1.0, x)
+    value = factorial * hurwitz_zeta(n + 1.0, x)
     if n % 2 == 0:
         return -value
     return value
