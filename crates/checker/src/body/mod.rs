@@ -37,6 +37,7 @@ mod builtins;
 mod calls;
 mod class_functions;
 mod class_patterns;
+mod collections;
 mod complex;
 mod conditionals;
 mod dicts;
