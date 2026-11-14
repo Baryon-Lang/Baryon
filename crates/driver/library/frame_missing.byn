@@ -21,6 +21,8 @@ and the compiler puts them together.
 - `filled` gives the values with one value where an element is `None`, for `fillna(value)`.
 - `present_count`, `present` and `present_extreme` count, gather and compare the elements
   that are there, for `count()`, `sum()`, `mean()`, `min()` and `max()`.
+- `presence` and `present_rows` let `drop_duplicates` and `value_counts` compare rows whose
+  columns may hold `None`.
 - `optional_cells`, `optional_float_cells` and `optional_single_cells` give a column's cells
   for `print(df)`, with `<NA>` for a missing value, and `optional_shown` gives the text of
   an array alone, `[1.5 None 2.5]`.
@@ -82,6 +84,23 @@ def filled[T: Copy](values: Array[T, 1], bits: Array[u8, 1], value: T) -> Array[
         if not _valid(bits, at):
             result[at] = value
     return result
+
+
+def presence(bits: Array[u8, 1], count: int) -> Array[i64, 1]:
+    """For each of the `count` elements the validity bitmap `bits` covers, 1 when it is there
+    and 0 when it is `None`: a key column that keeps rows with a `None` apart from rows with
+    a value, for `drop_duplicates` and `value_counts`. Cost: one pass and the new array."""
+    flags = Array.fill((count,), 0)
+    for at in range(count):
+        if _valid(bits, at):
+            flags[at] = 1
+    return flags
+
+
+def present_rows(bits: Array[u8, 1], rows: Array[i64, 1]) -> Array[i64, 1]:
+    """The positions of `rows` whose element is there by the validity bitmap `bits`, in the
+    order of `rows`: `value_counts` counts no `None`. Cost: one pass over `rows`."""
+    return Array([rows[at] for at in range(len(rows)) if _valid(bits, rows[at])])
 
 
 def present_count(bits: Array[u8, 1], count: int) -> int:

@@ -49,8 +49,13 @@ impl<'db> Body<'db> {
             element: Type::new(self.db, TypeKind::Str),
         }];
         for column in columns {
+            // A column of numbers that may hold `None` is described by the numbers there.
+            let element = match column.element.kind(self.db) {
+                TypeKind::Optional(element) => *element,
+                _ => column.element,
+            };
             if matches!(
-                column.element.kind(self.db),
+                element.kind(self.db),
                 TypeKind::Primitive(Primitive::Integer(_) | Primitive::Float(_))
             ) {
                 result.push(Column {

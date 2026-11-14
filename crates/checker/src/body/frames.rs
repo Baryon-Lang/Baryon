@@ -419,6 +419,9 @@ impl<'db> Body<'db> {
             "assign",
             "drop",
             "rename",
+            "drop_duplicates",
+            "value_counts",
+            "describe",
         ];
         if !built.contains(&callee) && self.has_missing_column(base) {
             self.untyped(arguments);

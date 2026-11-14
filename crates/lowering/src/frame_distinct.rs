@@ -22,8 +22,9 @@ impl<'db> Builder<'db> {
     /// compares: the frame borrowed, the positions of the columns `subset` names, by
     /// position or keyword, in the order written, or of every column, and each of those
     /// columns as a key the library compares with its element type, a `bool` column as the
-    /// integers 0 and 1 and a column of `str` as the integers for its text. `None` after a
-    /// report. The checker has made sure of the columns.
+    /// integers 0 and 1, a column of `str` as the integers for its text, and a column that
+    /// may hold `None` as two keys ([`Builder::optional_keys`]). `None` after a report. The
+    /// checker has made sure of the columns.
     pub(crate) fn compared_columns(
         &mut self,
         frame: NodeId,
@@ -59,6 +60,10 @@ impl<'db> Builder<'db> {
             }
             let values = source.clone().project(Projection::Field(position));
             keys.push(match column.element.kind(self.db) {
+                &TypeKind::Optional(element) => {
+                    keys.extend(self.optional_keys(&values, element, node)?);
+                    continue;
+                }
                 TypeKind::Str => (self.text_codes(values, node)?, int),
                 TypeKind::Primitive(Primitive::Bool) => {
                     (self.converted(values, column.element, int, node), int)
