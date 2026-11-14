@@ -9,6 +9,17 @@ class Rec(Struct):
     tags: list[str]
 
 
+# A struct whose drop runs code of its own first (decision 0063). Its `__del__` grows the list it
+# holds, so Valgrind sees a leak if the fields are not dropped after it, and a read of freed
+# memory if they were dropped before it or it runs on a value already dropped.
+class Closer(Struct):
+    name: str
+    tags: list[str]
+
+    def __del__(self: InOut[Self]):
+        self.tags.append(self.name.copy())
+
+
 class Circle(Struct):
     label: str
 

@@ -68,7 +68,8 @@ pub(super) fn ready_body<'db>(
         item: *wanted.item(db),
         arguments: wanted.arguments(db).clone(),
     };
-    match instances::ready(db, &instance, &declared, &implementation) {
+    let destructor = |nominal: &Nominal<'db>| checker::destructor(db, package, nominal).is_some();
+    match instances::ready(db, &instance, &declared, &destructor, &implementation) {
         Ok(body) => Ready::Body(body),
         Err(errors) => Ready::Errors(errors),
     }
@@ -108,7 +109,9 @@ pub(super) fn written<'db>(
         own: file,
         prefix: source_before(db, file, body.span.end()).0.as_ref(),
     };
+    let destructor = destructors(db, package);
     let mut module = llvm_backend::Module::new(db, &sources, &declared, &names, &symbol);
+    module.destructors(&destructor);
     if let Some(root) = settings.root(db) {
         module.debug_info(root);
     }
@@ -267,6 +270,30 @@ pub(super) fn declared<'db>(
     package: Package,
 ) -> impl Fn(&Nominal<'db>) -> types::Declared<'db> {
     move |nominal| checker::declared(db, package, nominal)
+}
+
+/// The `__del__` a drop of each struct of `package` calls first, when its class has one
+/// (decision 0063): the method's symbol, the class's name for the panic when it raises, and
+/// the errors it can raise.
+pub(super) fn destructors<'db>(
+    db: &'db dyn TypeDb,
+    package: Package,
+) -> impl Fn(&Nominal<'db>) -> Option<llvm_backend::Destructor<'db>> {
+    move |nominal| {
+        let (item, fallible) = checker::destructor(db, package, nominal)?;
+        let errors = match &db.declaration(item).declaration {
+            Declaration::Function(signature) if fallible => match signature.returns.kind(db) {
+                TypeKind::Fallible { errors, .. } => errors.clone(),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+        Some(llvm_backend::Destructor {
+            symbol: symbol(db, package, item, &[]),
+            class: names(db, package)(nominal).class,
+            errors,
+        })
+    }
 }
 
 /// The names `print` writes for each struct or enum of `package`: the class's name, then its

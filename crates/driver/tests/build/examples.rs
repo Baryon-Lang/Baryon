@@ -66,6 +66,21 @@ fn energy_audit_builds_and_runs() {
     .unwrap();
 }
 
+/// A ball thrown upward, with and without drag, recorded in a log whose `__del__` reports it
+/// when `fly` returns (decision 0063). Python, running the same steps, prints the same numbers.
+#[test]
+fn flight_log_builds_and_runs() {
+    prints(
+        "example-flight-log",
+        include_str!("../../../../docs/examples/flight_log.byn"),
+        "vacuum: 4076 samples, highest 20.3774 m\n\
+         landed after 4.077 s, exactly 4.077 s without drag\n\
+         air: 3487 samples, highest 14.8952 m\n\
+         landed after 3.488 s with drag\n",
+    )
+    .unwrap();
+}
+
 /// Unpacking a tuple, a tuple display and a `Fixed` vector; a copy that changes apart from its
 /// original; and sums of a 2D array, an integer array, a `Fixed` vector and an empty array.
 #[test]

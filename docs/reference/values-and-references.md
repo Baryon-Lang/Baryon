@@ -28,6 +28,56 @@ A value is destroyed when its owner is destroyed:
 Destroying an array frees its memory. There is no garbage collector and no reference counting, so
 memory is freed at a point the source shows, and a loop that allocates frees as it goes.
 
+### Code that runs when a value is dropped: `__del__`
+
+A struct class may define `__del__`, which the compiler calls when a value of the class is
+dropped ([decision 0063](../decisions/0063-drop-hooks.md)). It is for a value that holds work
+not yet done, such as a writer that keeps data in memory until it is closed:
+
+```python
+class Buffered(Struct):
+    path: str
+    lines: list[str]
+    closed: bool
+
+    def close(self: InOut[Self]) -> Raises[None, OSError]:
+        if not self.closed:
+            self.closed = True
+            with open(self.path, "w") as f:
+                for line in self.lines:
+                    f.write(line)
+
+    def __del__(self: InOut[Self]) -> Raises[None, OSError]:
+        self.close()
+```
+
+- **The method is `def __del__(self: InOut[Self])`**, returning `None`, or `Raises[None, E]`
+  when it can fail. `self` is the whole value, still owning every field. Any other signature is
+  an error that shows this one.
+- **It runs exactly once for each value, where the value is dropped:** at the end of the
+  function that owns it, on every path out, `return` and `raise` included; when the variable,
+  field or element holding it is given a new value; at the end of the statement that made a
+  temporary; and when what holds it, a list, dict, tuple, optional, union or struct, is dropped.
+  A value that is moved runs it once, where its last owner drops it.
+- **It runs first, then the fields are dropped**, in the order they are declared, each running
+  its own `__del__` if its class has one. An outer value is finished before what it holds.
+- **An error that escapes it panics.** A drop cannot raise, since it may come at the end of a
+  function that raises nothing, so the program prints the error as an uncaught error is
+  printed, then stops:
+
+  ```text
+  error: OSError(kind=ErrorKind.FILE_NOT_FOUND, errno=2, strerror='No such file or directory', filename='results/out.txt')
+  panic: `Buffered.__del__` raised the error above when its value was dropped
+  ```
+
+  Code inside `__del__` can still catch an error with `try`.
+- **A panic and `sys.exit` do not run it** for the values still alive. To finish a value on
+  every path, use [`with`](syntax.md#with-and-context-managers) or call `close()` yourself.
+- **The compiler forbids** calling `__del__` by name, since it would then run twice; moving a
+  field out of a value whose class has it, `kept = log.lines`, since it needs the whole value
+  (take a copy with `.copy()`); `__del__` on a class declared `Copy`, which is copied and never
+  dropped; and, for now, `__del__` on a generic class.
+
 ## Copy types
 
 Some types copy instead of moving. Using a value of a copy type leaves the original untouched.

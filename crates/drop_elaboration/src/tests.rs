@@ -138,7 +138,7 @@ fn elaborated<'db>(
     mut body: Body<'db>,
     declared: &dyn Fn(&Nominal<'db>) -> Declared<'db>,
 ) -> String {
-    elaborate(database, &mut body, declared);
+    elaborate(database, &mut body, declared, &|_| false);
     assert_eq!(body.validate(database), Vec::new());
     body.display(database).to_string()
 }
