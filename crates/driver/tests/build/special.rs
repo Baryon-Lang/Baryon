@@ -1,6 +1,7 @@
 //! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1),
 //! the incomplete gamma and beta functions (3.18.2), the error functions (3.18.3), the Bessel
-//! functions of whole order (3.18.4) and the distribution functions (3.18.12) gives, at a few hundred arguments each, the value mpmath
+//! functions of whole order (3.18.4), the everyday helpers (3.18.11) and the distribution
+//! functions (3.18.12) gives, at a few hundred arguments each, the value mpmath
 //! computes to 50 digits, within a tolerance in units in the last place (ULP) stated for each
 //! function below, and `SciPy`'s value at its poles, zeros and infinities.
 //!
@@ -98,7 +99,9 @@ def main() -> Raises[None, OSError | ValueError]:
 /// since each is a sum or a recurrence of many terms, and `yn` to 32: its upward recurrence adds
 /// about half a ULP at each order, and the cases reach order 30. `beta` is held to 8 ULP plus 2 for
 /// each unit of the logarithm of the value: above 171 it is `exp(betaln)`, and the exponential
-/// turns each ULP of the logarithm's absolute error into its size in relative error.
+/// turns each ULP of the logarithm's absolute error into its size in relative error. `binom` and
+/// `comb` are held to the same: past 1,000 factors they are 1/beta, and a product of hundreds of
+/// factors rounds once for each.
 ///
 /// The incomplete gamma and beta functions are an exponential of a sum of logarithms times a
 /// series, so they too are held to a number of ULP for each unit of the value's logarithm, 16
@@ -112,7 +115,7 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
     let logarithm = 1.0 + want.abs().ln().abs();
     let shape = first.abs().clamp(1e-3, 1.0);
     match name {
-        "beta" => 8.0 + 2.0 * want.abs().ln().abs(),
+        "beta" | "binom" | "comb" => 8.0 + 2.0 * want.abs().ln().abs(),
         "yn" => 32.0,
         "j0" | "j1" | "jn" | "y0" | "y1" | "i0" | "i1" | "i0e" | "i1e" | "k0" | "k1" | "k0e"
         | "k1e" | "kn" => 16.0,
@@ -356,6 +359,46 @@ def main() -> Raises[None, OSError | ValueError]:
                     print(gdtrc(a, b, c))
 ";
 
+/// The everyday helpers' program, which reads the cases as [`GAMMA_FAMILY`] does.
+const HELPER_FUNCTIONS: &str = "\
+from special import binom, comb, entr, expit, factorial, kl_div, log_expit, logit, perm, rel_entr
+from special import xlog1py, xlogy
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            a = float(fields[1])
+            if name == \"expit\":
+                print(expit(a))
+            elif name == \"log_expit\":
+                print(log_expit(a))
+            elif name == \"logit\":
+                print(logit(a))
+            elif name == \"entr\":
+                print(entr(a))
+            elif name == \"factorial\":
+                print(factorial(a))
+            else:
+                b = float(fields[2])
+                if name == \"xlogy\":
+                    print(xlogy(a, b))
+                elif name == \"xlog1py\":
+                    print(xlog1py(a, b))
+                elif name == \"rel_entr\":
+                    print(rel_entr(a, b))
+                elif name == \"kl_div\":
+                    print(kl_div(a, b))
+                elif name == \"binom\":
+                    print(binom(a, b))
+                elif name == \"comb\":
+                    print(comb(a, b))
+                elif name == \"perm\":
+                    print(perm(a, b))
+";
+
 /// `gamma`, `rgamma`, `gammaln`, `loggamma`, `gammasgn`, `psi`, `digamma`, `polygamma`, `beta`,
 /// `betaln` and `poch` at the 2,074 cases of `gamma_family.txt`.
 #[test]
@@ -378,8 +421,8 @@ fn bessel_functions_match_the_recorded_values() {
     check("special-bessel", BESSEL_FUNCTIONS, "bessel_functions.txt").unwrap();
 }
 
-/// `gammainc`, `gammaincc`, `gammaincinv`, `gammainccinv`, `betainc`, `betaincc`, `betaincinv`
-/// and `betainccinv` at the 1,166 cases of `incomplete_functions.txt`, with shapes from 0.001 to 1000
+/// `gammainc`, `gammaincc`, `gammaincinv`, `gammainccinv`, `betainc`, `betaincc`, `betaincinv` and
+/// `betainccinv` at the 1,166 cases of `incomplete_functions.txt`, with shapes from 0.001 to 1000
 /// and values down to 1e-297.
 #[test]
 fn incomplete_functions_match_the_recorded_values() {
@@ -403,4 +446,11 @@ fn distribution_functions_match_the_recorded_values() {
         "distribution_functions.txt",
     )
     .unwrap();
+}
+
+/// `expit`, `log_expit`, `logit`, `xlogy`, `xlog1py`, `entr`, `rel_entr`, `kl_div`, `binom`,
+/// `comb`, `perm` and `factorial` at the 978 cases of `helper_functions.txt`.
+#[test]
+fn helper_functions_match_the_recorded_values() {
+    check("special-helpers", HELPER_FUNCTIONS, "helper_functions.txt").unwrap();
 }
