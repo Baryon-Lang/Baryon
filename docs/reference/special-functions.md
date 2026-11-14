@@ -25,7 +25,7 @@ is built from the series and recurrences below and the elementary functions `exp
 ## Accuracy
 
 Each function is tested against values computed with mpmath to 50 digits, at a few hundred
-arguments spread over its range, about 15,500 in all
+arguments spread over its range, about 18,500 in all
 ([the fixtures](../../crates/driver/tests/fixtures/special/README.md)).
 The error is counted in units in the last place (ULP): the gap between adjacent `f64` values at
 the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
@@ -81,6 +81,8 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `eval_hermite`, `eval_hermitenorm` | The same | 156 ULP at degree 78 | 698 ULP for `eval_hermite` at degree 75 |
 | `lpmv` | 64 ULP of the largest value the recurrence passes through | 24 ULP | 154 ULP |
 | `sph_harm_y` | 8 ULP for each degree, of the largest value the recurrence passes through | 191 ULP at degree 46 | 148 ULP at the same arguments |
+| `roots_legendre`, `roots_chebyt`, `roots_chebyu`, `roots_hermite`, `roots_hermitenorm`, `roots_laguerre`, `roots_genlaguerre`, `roots_jacobi`, `roots_gegenbauer`: nodes | 16 ULP | 7 ULP | 39 ULP for `roots_jacobi` at 150 nodes |
+| The same: weights | 32 ULP for each node of the rule | 2,890 ULP for `roots_gegenbauer` at 150 nodes | 1.2 million ULP at the same arguments |
 | `lambertw` | 8 ULP of the size of W, for each part | 4 ULP | 2.8e11 ULP: on branch −1 at 7e-10 above −1/e, SciPy's value is off by 6e-5 |
 
 Where a function crosses zero, no formula keeps all of its relative precision there: the
@@ -662,6 +664,91 @@ As SciPy gives:
   negative.
 - `sph_harm_y` is 0 for |m| above n.
 
+## Gauss quadrature
+
+An n-point Gauss rule turns an integral into a weighted sum, ∫ f(x) w(x) dx ≈ Σ wᵢ f(xᵢ), and is
+exact when f is a polynomial of degree below 2n. Each function returns the nodes xᵢ, in
+increasing order, and the weights wᵢ, as two `Array[f64, 1]` of length n. Integration
+(roadmap 3.19) builds on them.
+
+| Function | Integral | SciPy |
+| --- | --- | --- |
+| `roots_legendre(n)` | ∫₋₁¹ f(x) dx | `scipy.special.roots_legendre` |
+| `roots_chebyt(n)` | ∫₋₁¹ f(x)/√(1 − x²) dx | `scipy.special.roots_chebyt` |
+| `roots_chebyu(n)` | ∫₋₁¹ f(x) √(1 − x²) dx | `scipy.special.roots_chebyu` |
+| `roots_hermite(n)` | ∫ f(x) e^(−x²) dx over the real line | `scipy.special.roots_hermite` |
+| `roots_hermitenorm(n)` | ∫ f(x) e^(−x²/2) dx over the real line | `scipy.special.roots_hermitenorm` |
+| `roots_laguerre(n)` | ∫₀^∞ f(x) e⁻ˣ dx | `scipy.special.roots_laguerre` |
+| `roots_genlaguerre(n, alpha)` | ∫₀^∞ f(x) xᵅ e⁻ˣ dx, for α above −1 | `scipy.special.roots_genlaguerre` |
+| `roots_jacobi(n, alpha, beta_)` | ∫₋₁¹ f(x) (1 − x)ᵅ (1 + x)ᵝ dx, for α and β above −1 | `scipy.special.roots_jacobi` |
+| `roots_gegenbauer(n, alpha)` | ∫₋₁¹ f(x) (1 − x²)^(α − ½) dx, for α above −½ | `scipy.special.roots_gegenbauer` |
+
+```python
+from math import exp, pi, sqrt
+from special import roots_hermite, roots_legendre
+
+
+def main():
+    x, w = roots_legendre(5)
+    total = 0.0
+    for i in range(5):
+        total += w[i] * exp(x[i])
+    print(total)                         # 2.3504023864628256, e − 1/e to 9 digits
+
+    x, w = roots_hermite(3)
+    moment = 0.0
+    for i in range(3):
+        moment += w[i] * x[i] ** 4
+    print(moment, 3.0 * sqrt(pi) / 4.0)  # 1.329340388179137 1.329340388179137: exact
+```
+
+The third argument of `roots_jacobi` is named `beta_`, so that inside the function the name
+`beta` still means the beta function. A call that passes it by position, as almost every call
+does, reads as SciPy's. SciPy's `mu=True`, which also returns the integral of the weight, is
+not built.
+
+**How they work.** The nodes are the eigenvalues of the family's Jacobi matrix, the symmetric
+tridiagonal matrix of its three-term recurrence (Golub and Welsch, 1969), found by the
+implicit QL method in about 30n² operations. Two steps of Newton's method on the polynomial
+then sharpen each node, as SciPy does. Laguerre's polynomials are evaluated there in the
+difference form SciPy's `eval_genlaguerre` uses, which keeps the relative precision of nodes
+near 0. Each weight is μ₀ / Σ qₖ(xᵢ)², where the qₖ are the orthonormal polynomials and μ₀ is
+the integral of the weight function. That is a sum of positive terms, so even a weight of
+1e-300 keeps its relative precision. Where the qₖ would pass the range of `f64`, far out in
+the tail of a rule of a few hundred nodes, the recurrence rescales itself by 2⁵⁰⁰, so a weight
+underflows to 0 only where the true weight does. Rules for even weight functions have nodes
+exactly opposite in pairs and weights equal in pairs, as SciPy makes them. Chebyshev's two
+rules have closed forms.
+
+**Weights differ from SciPy's in the last digits.** SciPy rescales its weights so that they sum
+to μ₀ exactly. These are left as computed, each to its own precision, so their sum can differ
+from μ₀ in the last few digits (by 2.5e-13 of it for `roots_gegenbauer(150, -0.4)`), but each
+weight is far closer to the true one: at 150 nodes SciPy's are off by up to 1.2 million ULP,
+and these by under 3,000. A weight's error comes mostly from its node's
+rounding to `f64`. Near the end of the interval a weight changes fast with its node, and the
+outermost node of a large rule lies close to the end, so the allowance grows with n. The tests
+hold the weights to 32 ULP for each node of the rule, and the nodes to 16 ULP.
+
+**SciPy switches to an asymptotic formula for Hermite rules above 150 nodes.** These keep the
+eigenvalue method at every size. It costs O(n²), about 0.1 s at
+1,000 nodes. At 400 Hermite or Laguerre nodes, where SciPy's Laguerre rule is all NaN, these
+match mpmath.
+
+All nine are held to their tolerances at the 3,100 cases of `gauss_quadrature.txt`, from 1 to
+400 nodes.
+
+### At the ends
+
+- A rule of fewer than 1 node, an α or β of `roots_jacobi` of −1 or below, an α of
+  `roots_genlaguerre` below −1, or an α of `roots_gegenbauer` below −½ stops the program with
+  SciPy's message, where SciPy raises ValueError.
+- At exactly α = −1, `roots_genlaguerre` gives NaN nodes and weights, as SciPy gives. At exactly
+  α = −½, `roots_gegenbauer` does too, except that the middle node of an odd rule is 0, as SciPy
+  gives.
+- `roots_gegenbauer` at α = 0 is `roots_chebyt`, as SciPy gives.
+- The middle node of an odd `roots_chebyu` rule is exactly 0. SciPy gives 6.1e-17 there,
+  cos(π/2) in `f64`.
+
 ## Files under `special`
 
 `special` is one public file, `<std>/special.byn`, that re-exports each function from an internal
@@ -689,6 +776,7 @@ for those working on the library. A panic inside a function names the file it is
 | `special_orthogonal` | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_hermite`, `eval_hermitenorm`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer`, `lpmv` and `sph_harm_y` |
 | `special_carlson` | `elliprc`, `elliprd`, `elliprf`, `elliprg` and `elliprj`, and `carlson_rf`, `carlson_rd` and `carlson_rg`, the same integrals without the checks of their arguments |
 | `special_elliptic` | `ellipk`, `ellipkm1`, `ellipe`, `ellipkinc`, `ellipeinc` and `ellipj` |
+| `special_quadrature` | `roots_legendre`, `roots_chebyt`, `roots_chebyu`, `roots_hermite`, `roots_hermitenorm`, `roots_laguerre`, `roots_genlaguerre`, `roots_jacobi` and `roots_gegenbauer` |
 
 A new function goes in the file of its family, and a name of `special` gets its line in
 `special.byn`. A family file kept under about 500 lines is split again by responsibility.
@@ -696,7 +784,6 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
-complex order, Airy, Struve and Kelvin functions, hypergeometric functions, and the nodes and
-weights of Gauss quadrature (the rest of 3.18.10). Carlson's integrals of complex arguments are not
-built. `loggamma` of a complex argument comes with the complex Bessel functions (3.18.6). See [What
-builds today](status.md).
+complex order, Airy, Struve and Kelvin functions, and hypergeometric functions. Carlson's
+integrals of complex arguments are not built. `loggamma` of a complex argument comes with the
+complex Bessel functions (3.18.6). See [What builds today](status.md).

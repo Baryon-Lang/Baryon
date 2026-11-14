@@ -1,0 +1,434 @@
+"""Nodes and weights of Gauss quadrature for `special` (roadmap 3.18.10): `roots_legendre`,
+`roots_chebyt`, `roots_chebyu`, `roots_hermite`, `roots_hermitenorm`, `roots_laguerre`,
+`roots_genlaguerre`, `roots_jacobi` and `roots_gegenbauer`, which integration (3.19) builds on.
+
+An n-point rule Σ wᵢ f(xᵢ) integrates f times the family's weight exactly for every polynomial
+f of degree below 2n. The nodes are the zeros of the degree-n orthogonal polynomial: the
+eigenvalues of its Jacobi matrix (Golub and Welsch, 1969), found by the implicit QL method and
+then sharpened by two Newton steps on the polynomial, as SciPy does. Each weight is
+μ₀ / Σₖ qₖ(xᵢ)², the Christoffel function, a sum of positive terms that keeps every weight's
+relative precision, even the smallest. Chebyshev's rules have closed forms.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import copysign, fabs, hypot, isfinite, isnan, nan, pi, sin, sqrt
+from special_beta import beta
+from special_gamma import gamma
+
+
+_HUGE: Final = 3.273390607896142e150  # 2^500: past it, a recurrence's values are scaled down
+_SHRINK: Final = 3.054936363499605e-151  # 2^−500, which scales them by an exact power of 2
+
+class _Recurrence(Struct):
+    """The three-term recurrence of a family's monic orthogonal polynomials,
+    pₖ₊₁ = (x − aₖ) pₖ − bₖ pₖ₋₁: `diagonal[k]` is aₖ, `off[k]` is √bₖ₊₁ (the entry of the
+    symmetric Jacobi matrix between rows k and k + 1), and `total` is μ₀, the integral of the
+    weight."""
+
+    diagonal: Array[f64, 1]
+    off: Array[f64, 1]
+    total: f64
+
+
+def _rule(
+    recurrence: _Recurrence, symmetric: bool, laguerre: f64
+) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The nodes, in increasing order, and weights of the Gauss rule for `recurrence`. For a
+    `symmetric` weight the nodes are made exactly opposite in pairs and the weights equal in
+    pairs, as SciPy makes them. `laguerre` is α for the Laguerre family and NaN for the others:
+    the Laguerre recurrence's diagonal grows with the degree, so near 0 its values are small
+    differences of large terms, and Newton's method there uses `_laguerre_step` instead, which
+    keeps each node's relative precision however small it is. A Newton step that is not finite,
+    where the polynomial overflows far out in the tail of a large rule, is skipped: the
+    eigenvalue stands."""
+    n = recurrence.diagonal.shape[0]
+    nodes = _eigenvalues(recurrence.diagonal, recurrence.off)
+    weights = Array.zeros(n, f64)
+    for i in range(n):
+        x = nodes[i]
+        for step in range(2):
+            change = 0.0
+            if isnan(laguerre):
+                value, slope, unused = _evaluate(recurrence, x)
+                change = value / slope
+            else:
+                change = _laguerre_step(n, laguerre, x)
+            if isfinite(change):
+                x -= change
+        nodes[i] = x
+        value, slope, weight = _evaluate(recurrence, x)
+        weights[i] = weight
+    if symmetric:
+        for i in range(n // 2):
+            j = n - 1 - i
+            node = (nodes[j] - nodes[i]) / 2.0
+            weight = (weights[i] + weights[j]) / 2.0
+            nodes[i] = -node
+            nodes[j] = node
+            weights[i] = weight
+            weights[j] = weight
+        if n % 2 == 1:
+            nodes[n // 2] = 0.0
+    return nodes, weights
+
+
+def _evaluate(recurrence: _Recurrence, x: f64) -> tuple[f64, f64, f64]:
+    """At `x`: qₙ and its derivative, both divided by the same power of 2, and the weight
+    μ₀ / Σₖ₍ₖ₌₀..ₙ₋₁₎ qₖ², for the orthonormal polynomials scaled so that q₀ = 1, by
+    √bₖ₊₁ qₖ₊₁ = (x − aₖ) qₖ − √bₖ qₖ₋₁ and its derivative. Far out in the tail of a large rule
+    the qₖ pass the range of `f64` (beyond x ≈ 27 for Hermite's), so whenever one passes 2⁵⁰⁰
+    every running value is scaled down by 2⁵⁰⁰, and the sum by 2¹⁰⁰⁰; the weight, then tiny, is
+    scaled back down at the end and underflows to 0 only where the true weight does."""
+    n = recurrence.diagonal.shape[0]
+    previous = 0.0
+    current = 1.0
+    previous_slope = 0.0
+    slope = 0.0
+    squares = 0.0
+    back = 0.0
+    scalings = 0
+    for k in range(n):
+        squares += current * current
+        shift = x - recurrence.diagonal[k]
+        following = (shift * current - back * previous) / recurrence.off[k]
+        following_slope = (current + shift * slope - back * previous_slope) / recurrence.off[k]
+        previous = current
+        current = following
+        previous_slope = slope
+        slope = following_slope
+        back = recurrence.off[k]
+        if fabs(current) > _HUGE or fabs(slope) > _HUGE:
+            previous *= _SHRINK
+            current *= _SHRINK
+            previous_slope *= _SHRINK
+            slope *= _SHRINK
+            squares *= _SHRINK * _SHRINK
+            scalings += 1
+    weight = recurrence.total / squares
+    for scaling in range(scalings):
+        weight *= _SHRINK * _SHRINK
+    return current, slope, weight
+
+
+def _laguerre_step(n: int, alpha: f64, x: f64) -> f64:
+    """Newton's step Lₙ^(α)(x) / Lₙ^(α)′(x) for the Laguerre nodes. Each polynomial is written
+    as binom(n + α, n) Pₙ, with Pₙ from the difference form SciPy's `eval_genlaguerre` uses,
+    dₖ = −x/(k + α + 1) Pₖ₋₁ + k/(k + α + 1) dₖ₋₁ and Pₖ = Pₖ₋₁ + dₖ, which adds small
+    corrections to 1 rather than subtracting large terms. With Lₙ^(α)′ = −Lₙ₋₁^(α+1) the
+    binomials leave the factor (α + 1)/n."""
+    value, value_scalings = _laguerre_scaled(n, alpha, x)
+    slope, slope_scalings = _laguerre_scaled(n - 1, alpha + 1.0, x)
+    step = -value * (alpha + 1.0) / (n * slope)
+    for scaling in range(value_scalings - slope_scalings):
+        step *= _HUGE
+    for scaling in range(slope_scalings - value_scalings):
+        step *= _SHRINK
+    return step
+
+
+def _laguerre_scaled(n: int, alpha: f64, x: f64) -> tuple[f64, int]:
+    """Lₙ^(α)(x) / binom(n + α, n) by the difference form of `_laguerre_step`, 1 at n = 0,
+    divided by 2⁵⁰⁰ as many times as the second value says, so that it never overflows."""
+    if n == 0:
+        return 1.0, 0
+    difference = -x / (alpha + 1.0)
+    value = difference + 1.0
+    scalings = 0
+    for k in range(1, n):
+        difference = -x / (k + alpha + 1.0) * value + k / (k + alpha + 1.0) * difference
+        value += difference
+        if fabs(value) > _HUGE:
+            value *= _SHRINK
+            difference *= _SHRINK
+            scalings += 1
+    return value, scalings
+
+
+def _eigenvalues(diagonal: Array[f64, 1], off: Array[f64, 1]) -> Array[f64, 1]:
+    """The eigenvalues of the symmetric tridiagonal matrix with `diagonal` and the first n − 1
+    entries of `off` beside it, in increasing order, by the implicit QL method with Wilkinson's
+    shift (the `tqli` of Numerical Recipes, without eigenvectors): about 30n² operations."""
+    n = diagonal.shape[0]
+    d = diagonal.copy()
+    e = Array.zeros(n, f64)
+    for i in range(n - 1):
+        e[i] = off[i]
+    for low in range(n):
+        for _ in range(60):
+            high = low
+            while high < n - 1:
+                size = fabs(d[high]) + fabs(d[high + 1])
+                if fabs(e[high]) <= 2.2e-16 * size:
+                    break
+                high += 1
+            if high == low:
+                break
+            g = (d[low + 1] - d[low]) / (2.0 * e[low])
+            r = hypot(g, 1.0)
+            g = d[high] - d[low] + e[low] / (g + copysign(r, g))
+            s = 1.0
+            c = 1.0
+            p = 0.0
+            deflated = False
+            i = high - 1
+            while i >= low:
+                f = s * e[i]
+                b = c * e[i]
+                r = hypot(f, g)
+                e[i + 1] = r
+                if r == 0.0:
+                    d[i + 1] -= p
+                    e[high] = 0.0
+                    deflated = True
+                    break
+                s = f / r
+                c = g / r
+                g = d[i + 1] - p
+                r = (d[i] - g) * s + 2.0 * c * b
+                p = s * r
+                d[i + 1] = g + p
+                g = c * r - b
+                i -= 1
+            if not deflated:
+                d[low] -= p
+                e[low] = g
+                e[high] = 0.0
+    for i in range(1, n):
+        value = d[i]
+        j = i - 1
+        while j >= 0 and d[j] > value:
+            d[j + 1] = d[j]
+            j -= 1
+        d[j + 1] = value
+    return d
+
+
+def _check(n: int):
+    """Panics, with SciPy's message, when `n` is below 1."""
+    assert n >= 1, "n must be a positive integer."
+
+
+def _nan_rule(n: int) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """n NaN nodes and n NaN weights, which SciPy gives for a parameter at the edge of its
+    range."""
+    nodes = Array.zeros(n, f64)
+    weights = Array.zeros(n, f64)
+    for i in range(n):
+        nodes[i] = nan
+        weights[i] = nan
+    return nodes, weights
+
+
+def _jacobi_recurrence(n: int, alpha: f64, beta_: f64, total: f64) -> _Recurrence:
+    """The Jacobi family's recurrence of DLMF 18.9.2 in monic form, with μ₀ = `total`. The first
+    off-diagonal entry is written with the factor m + α + β = t − 1 cancelled, since both are 0
+    at α + β = −1."""
+    diagonal = Array.zeros(n, f64)
+    off = Array.zeros(n, f64)
+    ab = alpha + beta_
+    for k in range(n):
+        s = 2.0 * k + ab
+        if k == 0:
+            diagonal[k] = (beta_ - alpha) / (ab + 2.0)
+        else:
+            diagonal[k] = (beta_ * beta_ - alpha * alpha) / (s * (s + 2.0))
+        m = k + 1.0
+        t = 2.0 * m + ab
+        if k == 0:
+            squared = 4.0 * (1.0 + alpha) * (1.0 + beta_) / (t * t * (t + 1.0))
+        else:
+            squared = 4.0 * m * (m + alpha) * (m + beta_) * (m + ab)
+            squared /= t * t * (t + 1.0) * (t - 1.0)
+        off[k] = sqrt(squared)
+    return _Recurrence(diagonal, off, total)
+
+
+def roots_legendre(n: int) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The nodes and weights of n-point Gauss–Legendre quadrature, for ∫₋₁¹ f(x) dx, as
+    `scipy.special.roots_legendre`. Panics when `n` is below 1, where SciPy raises ValueError.
+
+    ```python
+    from special import roots_legendre
+
+    x, w = roots_legendre(3)
+    print(x[2], w[0])  # 0.7745966692414834 0.5555555555555556: √(3/5) and 5/9
+    ```
+    """
+    _check(n)
+    diagonal = Array.zeros(n, f64)
+    off = Array.zeros(n, f64)
+    for k in range(n):
+        m = k + 1.0
+        off[k] = m / sqrt(4.0 * m * m - 1.0)
+    return _rule(_Recurrence(diagonal, off, 2.0), True, nan)
+
+
+def roots_chebyt(n: int) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The nodes and weights of n-point Gauss–Chebyshev quadrature of the first kind, for
+    ∫₋₁¹ f(x)/√(1 − x²) dx, as `scipy.special.roots_chebyt`: xₖ = sin(π(2k − n + 1)/(2n)) and
+    every weight π/n. Panics when `n` is below 1.
+
+    ```python
+    from special import roots_chebyt
+
+    x, w = roots_chebyt(2)
+    print(x[1], w[0])  # 0.7071067811865475 1.5707963267948966: √2/2 and π/2
+    ```
+    """
+    _check(n)
+    nodes = Array.zeros(n, f64)
+    weights = Array.zeros(n, f64)
+    for k in range(n):
+        nodes[k] = sin(pi * (2.0 * k - n + 1.0) / (2.0 * n))
+        weights[k] = pi / n
+    return nodes, weights
+
+
+def roots_chebyu(n: int) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The nodes and weights of n-point Gauss–Chebyshev quadrature of the second kind, for
+    ∫₋₁¹ f(x) √(1 − x²) dx, as `scipy.special.roots_chebyu`: xₖ = cos tₖ with
+    tₖ = π(n − k)/(n + 1), and weights π sin²tₖ/(n + 1). Panics when `n` is below 1. Each node
+    is written as sin(π/2 − tₖ), so the middle node of an odd n is exactly 0, where SciPy's
+    cos(π/2) gives 6.1e-17, and nodes near 0 keep their relative precision.
+
+    ```python
+    from special import roots_chebyu
+
+    x, w = roots_chebyu(1)
+    print(x[0], w[0])  # 0.0 1.5707963267948966: 0 and π/2
+    ```
+    """
+    _check(n)
+    nodes = Array.zeros(n, f64)
+    weights = Array.zeros(n, f64)
+    for k in range(n):
+        t = (n - k) * pi / (n + 1.0)
+        nodes[k] = sin(pi * (2.0 * k - n + 1.0) / (2.0 * (n + 1.0)))
+        weights[k] = pi * sin(t) * sin(t) / (n + 1.0)
+    return nodes, weights
+
+
+def roots_hermite(n: int) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The nodes and weights of n-point Gauss–Hermite quadrature, for ∫ f(x) e^(−x²) dx over
+    the real line, as `scipy.special.roots_hermite`. Panics when `n` is below 1.
+
+    ```python
+    from special import roots_hermite
+
+    x, w = roots_hermite(2)
+    print(x[1], w[0])  # 0.7071067811865476 0.8862269254527579: 1/√2 and √π/2, to 1 ULP
+    ```
+    """
+    _check(n)
+    diagonal = Array.zeros(n, f64)
+    off = Array.zeros(n, f64)
+    for k in range(n):
+        off[k] = sqrt((k + 1.0) / 2.0)
+    return _rule(_Recurrence(diagonal, off, sqrt(pi)), True, nan)
+
+
+def roots_hermitenorm(n: int) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The nodes and weights of n-point Gauss–Hermite quadrature for the probabilists' weight,
+    ∫ f(x) e^(−x²/2) dx over the real line, as `scipy.special.roots_hermitenorm`. Panics when
+    `n` is below 1.
+
+    ```python
+    from special import roots_hermitenorm
+
+    x, w = roots_hermitenorm(2)
+    print(x[1], w[0])  # 1.0 1.2533141373155001: 1 and √(π/2)
+    ```
+    """
+    _check(n)
+    diagonal = Array.zeros(n, f64)
+    off = Array.zeros(n, f64)
+    for k in range(n):
+        off[k] = sqrt(k + 1.0)
+    return _rule(_Recurrence(diagonal, off, sqrt(2.0 * pi)), True, nan)
+
+
+def roots_genlaguerre(n: int, alpha: f64) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The nodes and weights of n-point generalized Gauss–Laguerre quadrature, for
+    ∫₀^∞ f(x) xᵅ e⁻ˣ dx, as `scipy.special.roots_genlaguerre`. Panics when `n` is below 1 or α
+    is below −1, where SciPy raises ValueError; at α = −1 every node and weight is NaN, as SciPy
+    gives.
+
+    ```python
+    from special import roots_genlaguerre
+
+    x, w = roots_genlaguerre(1, 0.5)
+    print(x[0], w[0])  # 1.5 0.886226925452758: α + 1 and Γ(3/2)
+    ```
+    """
+    _check(n)
+    assert alpha >= -1.0, "alpha must be greater than -1."
+    if alpha == -1.0:
+        return _nan_rule(n)
+    diagonal = Array.zeros(n, f64)
+    off = Array.zeros(n, f64)
+    for k in range(n):
+        diagonal[k] = 2.0 * k + alpha + 1.0
+        off[k] = sqrt((k + 1.0) * (k + 1.0 + alpha))
+    return _rule(_Recurrence(diagonal, off, gamma(alpha + 1.0)), False, alpha)
+
+
+def roots_laguerre(n: int) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The nodes and weights of n-point Gauss–Laguerre quadrature, for ∫₀^∞ f(x) e⁻ˣ dx, as
+    `scipy.special.roots_laguerre`: `roots_genlaguerre` at α = 0. Panics when `n` is below 1.
+
+    ```python
+    from special import roots_laguerre
+
+    x, w = roots_laguerre(2)
+    print(x[0], w[0])  # 0.585786437626905 0.8535533905932737: 2 − √2, to 1 ULP, and (2 + √2)/4
+    ```
+    """
+    return roots_genlaguerre(n, 0.0)
+
+
+def roots_jacobi(n: int, alpha: f64, beta_: f64) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The nodes and weights of n-point Gauss–Jacobi quadrature, for
+    ∫₋₁¹ f(x) (1 − x)ᵅ (1 + x)ᵝ dx, as `scipy.special.roots_jacobi`, with `beta_` = β (the
+    trailing underscore keeps the name of the beta function free). Panics when `n` is below 1
+    or α or β is −1 or below, where SciPy raises ValueError.
+
+    ```python
+    from special import roots_jacobi
+
+    x, w = roots_jacobi(1, 0.5, 0.5)
+    print(x[0], w[0])  # 0.0 1.5707963267948968: 0 and π/2, to 1 ULP
+    ```
+    """
+    _check(n)
+    assert alpha > -1.0 and beta_ > -1.0, "alpha and beta must be greater than -1."
+    total = 2.0 ** (alpha + beta_ + 1.0) * beta(alpha + 1.0, beta_ + 1.0)
+    return _rule(_jacobi_recurrence(n, alpha, beta_, total), alpha == beta_, nan)
+
+
+def roots_gegenbauer(n: int, alpha: f64) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """The nodes and weights of n-point Gauss–Gegenbauer quadrature, for
+    ∫₋₁¹ f(x) (1 − x²)^(α − ½) dx, as `scipy.special.roots_gegenbauer`: Gauss–Jacobi with
+    α = β = `alpha` − ½, and `roots_chebyt` at α = 0. Panics when `n` is below 1 or α is below
+    −½, where SciPy raises ValueError; at α = −½ every node and weight is NaN but the middle node
+    of an odd n, which is 0, as SciPy gives.
+
+    ```python
+    from special import roots_gegenbauer
+
+    x, w = roots_gegenbauer(1, 1.0)
+    print(x[0], w[0])  # 0.0 1.5707963267948966: 0 and π/2
+    ```
+    """
+    _check(n)
+    assert alpha >= -0.5, "alpha must be greater than -0.5."
+    if alpha == -0.5:
+        nodes, weights = _nan_rule(n)
+        if n % 2 == 1:
+            nodes[n // 2] = 0.0
+        return nodes, weights
+    if alpha == 0.0:
+        return roots_chebyt(n)
+    half = alpha - 0.5
+    total = sqrt(pi) * gamma(alpha + 0.5) / gamma(alpha + 1.0)
+    return _rule(_jacobi_recurrence(n, half, half, total), True, nan)

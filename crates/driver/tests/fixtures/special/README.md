@@ -11,7 +11,8 @@ exponential integrals, zeta and Spence's function, and Lambert W function (3.18.
 [`../../build/special_elliptic.rs`](../../build/special_elliptic.rs) its elliptic integrals and
 functions (3.18.9), from `elliptic_functions.txt`, and those in
 [`../../build/special_polynomials.rs`](../../build/special_polynomials.rs) its orthogonal
-polynomials and spherical harmonics (3.18.10), from `orthogonal_polynomials.txt`. Each line is a
+polynomials and spherical harmonics (3.18.10), from `orthogonal_polynomials.txt`, and its Gauss
+quadrature rules (3.18.10), from `gauss_quadrature.txt`. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -1107,5 +1108,166 @@ for name, arguments in edges:
     lines.append(" ".join([name] + [repr(x) if isinstance(x, float) else str(x) for x in arguments]
                           + [repr(abs(value) if math.isfinite(value) else 1.0), repr(value)]))
 with open("orthogonal_polynomials.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Gauss quadrature
+
+In `gauss_quadrature.txt` each case is one node, `roots_<family>_x`, or one weight,
+`roots_<family>_w`, of a rule: the number of nodes, the node's index, the parameters α and β (0.0
+where the family has none), the size its error is measured against, and the reference. A weight's
+size is its own; a node's is the larger of itself and its distance to the nearest other node, since
+Newton's method fixes a node to a fraction of that gap, and a node near 0 has no more precision than
+that. The rules of 10 nodes or fewer are recorded whole, and of larger rules the three nodes at each
+end, the node a quarter of the way in and the middle one. The script below recorded them with mpmath
+1.4.1 at 60 digits. It starts from NumPy's eigenvalues of each Jacobi matrix in `f64`, polishes
+every node with Newton's method at 60 digits, and checks that no two nodes met. The weights are μ₀ /
+Σ qₖ(xᵢ)², exact at the polished node. Chebyshev's rules are their closed forms at 60 digits. The
+last lines are SciPy 1.18.1's NaN rules at the edge of a parameter's range. Run it from this
+directory with `python3 -I`; it takes about a minute.
+
+```python
+import math
+
+import mpmath
+import numpy
+import scipy.special
+
+lines = []
+nan = math.nan
+
+
+def add(name, n, i, alpha, beta, size, value):
+    lines.append(" ".join([name, str(n), str(i), repr(alpha), repr(beta),
+                           repr(float(size)), repr(float(value))]))
+
+
+def jacobi_matrix(family, n, alpha, beta):
+    """The diagonal, the off-diagonal and μ₀ of the family's Jacobi matrix, at mpmath's
+    precision."""
+    a, b = mpmath.mpf(alpha), mpmath.mpf(beta)
+    if family == "legendre":
+        return [0] * n, [(k + 1) / mpmath.sqrt(4 * (k + 1) ** 2 - 1) for k in range(n)], 2
+    if family == "hermite":
+        off = [mpmath.sqrt(mpmath.mpf(k + 1) / 2) for k in range(n)]
+        return [0] * n, off, mpmath.sqrt(mpmath.pi)
+    if family == "hermitenorm":
+        return [0] * n, [mpmath.sqrt(k + 1) for k in range(n)], mpmath.sqrt(2 * mpmath.pi)
+    if family in ("laguerre", "genlaguerre"):
+        diagonal = [2 * k + a + 1 for k in range(n)]
+        return diagonal, [mpmath.sqrt((k + 1) * (k + 1 + a)) for k in range(n)], mpmath.gamma(a + 1)
+    if family == "gegenbauer":
+        total = mpmath.sqrt(mpmath.pi) * mpmath.gamma(a + 0.5) / mpmath.gamma(a + 1)
+        a = b = a - mpmath.mpf(0.5)
+    else:
+        total = 2 ** (a + b + 1) * mpmath.beta(a + 1, b + 1)
+    diagonal, off = [], []
+    for k in range(n):
+        s = 2 * k + a + b
+        diagonal.append((b - a) / (a + b + 2) if k == 0 else (b * b - a * a) / (s * (s + 2)))
+        m = k + 1
+        t = 2 * m + a + b
+        if k == 0:
+            squared = 4 * (1 + a) * (1 + b) / (t * t * (t + 1))
+        else:
+            squared = 4 * m * (m + a) * (m + b) * (m + a + b) / (t * t * (t + 1) * (t - 1))
+        off.append(mpmath.sqrt(squared))
+    return diagonal, off, total
+
+
+def evaluate(diagonal, off, x):
+    """qₙ(x), its derivative and Σ qₖ(x)² below n, with q₀ = 1."""
+    previous, current, previous_slope, slope, squares, back = 0, 1, 0, 0, 0, 0
+    for k in range(len(diagonal)):
+        squares += current * current
+        shift = x - diagonal[k]
+        following = (shift * current - back * previous) / off[k]
+        following_slope = (current + shift * slope - back * previous_slope) / off[k]
+        previous, current, previous_slope, slope = current, following, slope, following_slope
+        back = off[k]
+    return current, slope, squares
+
+
+def rule(family, n, alpha, beta):
+    """The n-point rule at 50 digits: NumPy's eigenvalues of the Jacobi matrix, each polished
+    by Newton's method on qₙ until it stops moving, and the weights μ₀ / Σ qₖ(xᵢ)²."""
+    if family == "chebyt":
+        nodes = [mpmath.sin((2 * k - n + 1) * mpmath.pi / (2 * n)) for k in range(n)]
+        return nodes, [mpmath.pi / n] * n
+    if family == "chebyu":
+        angles = [(n - k) * mpmath.pi / (n + 1) for k in range(n)]
+        nodes = [mpmath.sin((2 * k - n + 1) * mpmath.pi / (2 * (n + 1))) for k in range(n)]
+        return nodes, [mpmath.pi * mpmath.sin(t) ** 2 / (n + 1) for t in angles]
+    diagonal, off, total = jacobi_matrix(family, n, alpha, beta)
+    matrix = numpy.diag([float(d) for d in diagonal])
+    for k in range(n - 1):
+        matrix[k, k + 1] = matrix[k + 1, k] = float(off[k])
+    start = numpy.linalg.eigvalsh(matrix)
+    nodes, weights = [], []
+    for guess in start:
+        x = mpmath.mpf(float(guess))
+        for _ in range(100):
+            value, slope, _ = evaluate(diagonal, off, x)
+            step = value / slope
+            x -= step
+            if abs(step) <= mpmath.mpf(10) ** -55 * (1 + abs(x)):
+                break
+        nodes.append(x)
+        weights.append(total / evaluate(diagonal, off, x)[2])
+    for left, right in zip(nodes, nodes[1:]):
+        assert right - left > mpmath.mpf(10) ** -10, (family, n, alpha, beta)
+    return nodes, weights
+
+
+def scipy_rule(family, n, alpha, beta):
+    if family in ("genlaguerre", "gegenbauer"):
+        return getattr(scipy.special, "roots_" + family)(n, alpha)
+    if family == "jacobi":
+        return scipy.special.roots_jacobi(n, alpha, beta)
+    return getattr(scipy.special, "roots_" + family)(n)
+
+
+def node_size(nodes, i):
+    """The size a node's error is measured against: the larger of the node and its distance to
+    the nearest other node, the scale on which Newton's method fixes it."""
+    gaps = [abs(nodes[i] - nodes[j]) for j in (i - 1, i + 1) if 0 <= j < len(nodes)]
+    return max([abs(nodes[i])] + ([min(gaps)] if gaps else []))
+
+
+def indices(n):
+    if n <= 10:
+        return range(n)
+    return sorted({0, 1, 2, n // 4, n // 2, n - 3, n - 2, n - 1})
+
+
+rules = [("legendre", 0.0, 0.0), ("chebyt", 0.0, 0.0), ("chebyu", 0.0, 0.0),
+         ("hermite", 0.0, 0.0), ("hermitenorm", 0.0, 0.0), ("laguerre", 0.0, 0.0)]
+rules += [("genlaguerre", alpha, 0.0) for alpha in (-0.75, 0.5, 3.0, 20.0)]
+rules += [("jacobi", alpha, beta) for alpha, beta in
+          ((-0.5, -0.5), (0.5, 1.5), (-0.75, 0.25), (3.0, -0.9), (10.0, 2.0))]
+rules += [("gegenbauer", alpha, 0.0) for alpha in (-0.4, 0.25, 1.0, 2.5)]
+with mpmath.workdps(60):
+    for family, alpha, beta in rules:
+        for n in (1, 2, 3, 4, 5, 7, 10, 16, 25, 40, 64, 100, 150):
+            nodes, weights = rule(family, n, alpha, beta)
+            for i in indices(n):
+                add("roots_" + family + "_x", n, i, alpha, beta, node_size(nodes, i), nodes[i])
+            for i in indices(n):
+                add("roots_" + family + "_w", n, i, alpha, beta, weights[i], weights[i])
+    # Rules large enough that the recurrences pass the range of f64 in their tails.
+    for family in ("hermite", "hermitenorm", "laguerre"):
+        nodes, weights = rule(family, 400, 0.0, 0.0)
+        for i in indices(400):
+            add("roots_" + family + "_x", 400, i, 0.0, 0.0, node_size(nodes, i), nodes[i])
+        for i in indices(400):
+            add("roots_" + family + "_w", 400, i, 0.0, 0.0, weights[i], weights[i])
+# The ends, as SciPy 1.18.1 gives them: NaN rules at the edge of the parameter's range, below
+# which SciPy raises ValueError.
+for family, alpha in (("genlaguerre", -1.0), ("gegenbauer", -0.5)):
+    x, w = scipy_rule(family, 3, alpha, 0.0)
+    for i in range(3):
+        add("roots_" + family + "_x", 3, i, alpha, 0.0, 1.0, x[i])
+        add("roots_" + family + "_w", 3, i, alpha, 0.0, 1.0, w[i])
+with open("gauss_quadrature.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
