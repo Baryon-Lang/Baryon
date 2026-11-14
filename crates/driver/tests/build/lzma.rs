@@ -106,7 +106,7 @@ def main() -> Raises[None, OSError]:
 /// The Compression chapter's xz example prints what the chapter says it prints.
 #[test]
 fn the_reference_s_lzma_example_runs() {
-    let (output, _) = run("lzma_reference", chapter_example(7)).unwrap();
+    let (output, _) = run("lzma_reference", chapter_example(8)).unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
@@ -116,7 +116,8 @@ fn the_reference_s_lzma_example_runs() {
 
 /// `lzma.open` reads two streams back as the table, in two pieces and whole, and the files
 /// Python refuses raise its messages at the first `read`; a missing file, a mode that writes,
-/// an unknown mode and a closed file raise Python's errors.
+/// a text mode held in a variable, an unknown mode and a closed file raise
+/// Python's errors.
 #[test]
 fn lzma_files_are_opened_to_read() {
     let program = "\
@@ -140,6 +141,7 @@ def main() -> Raises[None, OSError | ValueError]:
     attempt(\"text.txt\", \"rb\")
     attempt(\"missing.xz\", \"rb\")
     attempt(\"level6.xz\", \"wb\")
+    attempt(\"level6.xz\", \"rt\")
     attempt(\"level6.xz\", \"q\")
     h = lzma.open(\"level6.xz\")
     h.close()
@@ -158,6 +160,7 @@ def main() -> Raises[None, OSError | ValueError]:
          rb Input format not supported by decoder\n\
          rb No such file or directory\n\
          wb lzma.open's mode 'wb' is not built yet; open with \"rb\"\n\
+         rt lzma.open's text mode 'rt' must be written as a literal\n\
          q Invalid mode: 'q'\n\
          I/O operation on closed file\n"
     );

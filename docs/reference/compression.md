@@ -263,13 +263,58 @@ prints `11600 bytes`.
   memory for the compressed file, not for the data.
 - **Close a file you write.** Outside `with`, a file opened to write is written out only by
   `close()`. One dropped without it, at the end of a function, is left empty.
-- **Binary modes only.** The data is `Array[u8, 1]`, as for `compress` and `decompress`. The
-  text modes, `"rt"`, `"wt"`, `"at"` and `"xt"`, which give and take `str`, raise `ValueError`:
-  Baryon has no way yet to turn bytes into a `str`. Any other mode raises `ValueError`, as in
-  Python.
+- **Text modes.** `"rt"`, `"wt"`, `"at"` and `"xt"` give a `GzipTextFile`, which reads and
+  writes `str` as UTF-8; see [Text modes](#text-modes) below. Any other mode raises
+  `ValueError`, as in Python.
 - **Errors.** `read` on a file opened to write, or `write` on one opened to read, raises
   `OSError`, and either on a closed file raises `ValueError` `I/O operation on closed file`, as
-  in Python. Python's `readline`, iteration over lines, `seek`, `peek` and `mtime` are not built.
+  in Python. A `GzipFile`'s `readline`, iteration over lines, `seek`, `peek` and `mtime` are
+  not built; open the file in a text mode to read it line by line.
+
+### Text modes
+
+`gzip.open(path, "rt")` reads a gzip file of text, and `"wt"`, `"at"` and `"xt"` write one, as in
+Python ([decision 0064](../decisions/0064-utf-8-text-from-bytes.md)). The file gives and takes
+`str`, stored as UTF-8, with the methods of a text file from `open`:
+
+```python
+import gzip
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with gzip.open("notes.txt.gz", "wt") as f:
+        f.write("T = 293.15 K\n")
+        f.write("Å = 1e-10 m\n")
+    with gzip.open("notes.txt.gz", "rt") as f:
+        for line in f:
+            print(line.strip())
+```
+
+This prints `T = 293.15 K` and `Å = 1e-10 m`, and Python's `gzip.open("notes.txt.gz", "rt")`
+reads the same two lines.
+
+| Method | Gives | What it does |
+| --- | --- | --- |
+| `f.readline()` | `str` | the next line with its `"\n"`, or `""` at the end |
+| `f.readlines()` | `list[str]` | the remaining lines |
+| `f.read()` | `str` | the rest of the text |
+| `for line in f:` | `str` | each line in turn |
+| `f.write(text)` | `int` | adds the UTF-8 bytes of `text`, and gives its length in characters |
+| `f.close()` | `None` | as for a `GzipFile` |
+
+- **The mode is written out.** The compiler picks the class from the mode, so a text mode must
+  be a string literal: `gzip.open(path, mode)` with `mode` holding `"rt"` raises `ValueError`.
+  The class is `gzip.GzipTextFile`; Python's is `io.TextIOWrapper`.
+- **UTF-8 only.** `encoding="utf-8"` may be written; any other encoding raises `ValueError`.
+  Bytes that are not UTF-8 raise `ValueError` with Python's message, such as
+  `'utf-8' codec can't decode byte 0xff in position 3: invalid start byte`, from the read that
+  reaches them. `errors=` and `newline=` are not built.
+- **Line ends.** Reading turns `"\r\n"` and `"\r"` into `"\n"`, as Python does by default.
+  Writing writes the text as it is.
+- **Cost.** Reading decodes the file 64 KiB at a time, holding back a character or a `"\r"` cut
+  at the end of a block, so a file larger than memory can be read line by line; each byte is
+  decoded and split once. 200,000 lines of 15 characters read in about the time Python takes.
+  Writing holds the compressed file in memory until `close`, as for a `GzipFile`.
 
 ## `compression.zstd`
 
@@ -463,8 +508,10 @@ in `with`, which closes the file at the end of the block, or call `f.close()`.
   with [`decompress`](#lzmadecompress), so the file and its data must both fit in memory. A
   file that is not xz or `.lzma` raises at that first `read`, as in Python, with the same
   messages; a missing file raises `OSError` `FILE_NOT_FOUND` at `open`.
-- **Reading only.** `"rb"` and `"r"` are the modes built. The modes that write, `"wb"`, `"ab"`
-  and `"xb"`, wait on an `lzma.compress`, and the text modes, such as `"rt"`, on a way to turn
-  bytes into a `str`; they raise `ValueError` until then, and any other mode raises `ValueError`
-  `Invalid mode`, as in Python. `read` on a closed file raises `ValueError`
+- **Reading only.** `"rb"`, `"r"` and `"rt"` are the modes built. `"rt"`, written as a literal,
+  gives an `LZMATextFile` that reads `str` as the [gzip text modes](#text-modes) do, with
+  `read()`, `readline()`, `readlines()` and `for line in f:`; it decodes the whole file at its
+  first read. The modes that write, such as `"wb"` and `"wt"`, wait on an `lzma.compress` and
+  raise `ValueError` until then, and any other mode raises `ValueError` `Invalid mode`, as in
+  Python. `read` on a closed file raises `ValueError`
   `I/O operation on closed file`.

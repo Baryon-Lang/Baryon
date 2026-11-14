@@ -59,6 +59,35 @@ impl<'db> Body<'db> {
         Some((file, function))
     }
 
+    /// The function a call of the library function `name` of `file` is checked as: `gzip`'s or
+    /// `lzma`'s `_open_text` for its `open` called with a mode written as a literal with `t` in
+    /// it, such as `gzip.open(path, "rt")`, so the call gives a text file (decision 0064); the
+    /// function itself for any other call. The mode is the second argument, by position or as
+    /// `mode=`.
+    pub(super) fn text_mode_open(
+        &self,
+        file: File,
+        name: NodeId,
+        arguments: &Arguments,
+    ) -> (File, NodeId) {
+        let mode = arguments.positional.get(1).copied().or_else(|| {
+            arguments
+                .keywords
+                .iter()
+                .find(|&&(keyword, _)| self.tree.text(keyword, self.text) == "mode")
+                .map(|&(_, value)| value)
+        });
+        let text = mode
+            .and_then(|mode| super::files::literal(self.tree, self.text, mode))
+            .is_some_and(|mode| mode.contains('t'));
+        ["gzip", "lzma"]
+            .into_iter()
+            .filter(|_| text)
+            .find(|module| self.library_function(module, "open") == Some((file, name)))
+            .and_then(|module| self.library_function(module, "_open_text"))
+            .unwrap_or((file, name))
+    }
+
     /// `Raises[value, E]`, with `E` the library's error class `name`, for a built-in call `node`
     /// that can fail with it. The class is missing only when the library's files were left out
     /// of the package, which the driver never does, so that is reported at `node`.

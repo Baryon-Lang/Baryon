@@ -96,6 +96,7 @@ mod timings;
 mod traits;
 mod unions;
 mod user_iterators;
+mod utf8_text;
 mod vector;
 mod watching;
 mod zlib;

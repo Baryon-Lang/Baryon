@@ -12,6 +12,7 @@ Python's `LZMAError` carries.
 """
 
 from os import ErrorKind
+from text_lines import Lines, empty_lines
 import zlib
 
 
@@ -776,15 +777,88 @@ def open(filename: str, mode: str = "rb") -> Raises[LZMAFile, OSError | ValueErr
     The file's bytes are read now, and decompressed by the first `read`, all at once, so the
     file and its data must both fit in memory. Raises `OSError` when the file cannot be read,
     such as `FILE_NOT_FOUND`. Raises `ValueError` for any other mode: the modes that write,
-    `"wb"`, `"ab"` and `"xb"`, need `lzma.compress`, and the text modes, such as `"rt"`, a way
-    to turn bytes into a `str`, neither of which is built yet.
+    `"wb"`, `"ab"` and `"xb"`, need `lzma.compress`, which is not built yet. The text mode
+    `"rt"` written as a literal gives an `LZMATextFile` (decision 0064); held in a variable it
+    raises `ValueError`, since the class a call gives must be known when compiling.
     """
     if mode not in ["r", "rb"]:
-        if mode in ["w", "wb", "a", "ab", "x", "xb", "rt", "wt", "at", "xt"]:
+        if mode in ["w", "wb", "a", "ab", "x", "xb", "wt", "at", "xt"]:
             raise ValueError(f"lzma.open's mode '{mode}' is not built yet; open with \"rb\"")
+        if mode == "rt":
+            raise ValueError("lzma.open's text mode 'rt' must be written as a literal")
         raise ValueError(f"Invalid mode: '{mode}'")
     data = Array.fromfile(filename, u8)
     return LZMAFile(filename.copy(), data, 0, False, False)
+
+
+def _open_text(
+    filename: str, mode: str, encoding: str = "utf-8"
+) -> Raises[LZMATextFile, OSError | ValueError]:
+    """`lzma.open(filename, mode)` in a text mode, which the compiler calls in place of `open`
+    when the mode is a literal with `t` in it (decision 0064): an `LZMATextFile` over the
+    `LZMAFile` `open` gives. Only `"rt"` is built; the modes that write raise `ValueError`, as
+    in `open`. `encoding` must be `"utf-8"`; any other raises `ValueError`."""
+    if encoding.lower() not in ["utf-8", "utf8"]:
+        raise ValueError(f"text is UTF-8 in Baryon; encoding '{encoding}' is not built")
+    if mode in ["wt", "at", "xt"]:
+        raise ValueError(f"lzma.open's mode '{mode}' is not built yet; open with \"rt\"")
+    if mode != "rt":
+        raise ValueError(f"Invalid mode: '{mode}'")
+    binary = open(filename, "rb")
+    return LZMATextFile(filename.copy(), binary, empty_lines())
+
+
+class LZMATextFile(Struct):
+    """An xz or `.lzma` file open to read text, as `lzma.open(path, "rt")` gives it: Python's
+    `io.TextIOWrapper` around an `LZMAFile` (decision 0064). It reads `str` as UTF-8 with the
+    methods of a text `File` open to read: `read()`, `readline()`, `readlines()`, a `for` loop
+    over its lines, `close()` and `with`. The first read decompresses and decodes the whole
+    file, as the `LZMAFile`'s first `read` does. `"\r\n"` and `"\r"` are read as `"\n"`, and
+    bytes that are not UTF-8 raise `ValueError` with Python's message."""
+
+    name: str  # the path the file was opened with
+    _binary: LZMAFile  # the file the text is read from
+    _lines: Lines  # the text, once read
+
+    def __enter__(self: Owned[Self]) -> Self:
+        """The file itself, for `with lzma.open(path, "rt") as f:`."""
+        return self
+
+    def __exit__(self: InOut[Self]):
+        """Closes the file at the end of a `with` block, as `close()` does."""
+        self.close()
+
+    def readline(self: InOut[Self]) -> Raises[str, OSError | ValueError]:
+        """The next line with its `"\n"`, or `""` at the end of the file. Raises what the
+        `LZMAFile`'s `read` raises, and `ValueError` for bytes that are not UTF-8."""
+        if not self._lines.ready():
+            self._lines.feed(self._binary.read(), True)
+        return self._lines.line()
+
+    def read(self: InOut[Self]) -> Raises[str, OSError | ValueError]:
+        """The rest of the text, `""` at the end, raising as `readline` does."""
+        return "".join(self.readlines())
+
+    def readlines(self: InOut[Self]) -> Raises[list[str], OSError | ValueError]:
+        """The remaining lines, each with its `"\n"`, raising as `readline` does."""
+        lines: list[str] = []
+        while True:
+            line = self.readline()
+            if line == "":
+                return lines
+            lines.append(line)
+
+    def __next__(self: InOut[Self]) -> Raises[str, StopIteration | OSError | ValueError]:
+        """The next line, for `for line in f:`; the loop ends at the end of the file."""
+        line = self.readline()
+        if line == "":
+            raise StopIteration()
+        return line
+
+    def close(self: InOut[Self]):
+        """Closes the file and lets go of its text. A second `close` does nothing."""
+        self._binary.close()
+        self._lines = empty_lines()
 
 
 class LZMAFile(Struct):

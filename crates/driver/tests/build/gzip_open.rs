@@ -112,8 +112,8 @@ def main() -> Raises[None, OSError | ValueError]:
 }
 
 /// A file that is not gzip, one cut short and one that is missing raise `OSError` with
-/// Python's messages; a text mode, an unknown mode, `"xb"` on a file that exists, and reading a
-/// closed file or one opened to write raise errors with Python's words.
+/// Python's messages; a text mode held in a variable, an unknown mode, `"xb"` on a file that
+/// exists, and reading a closed file or one opened to write raise errors with Python's words.
 #[test]
 fn gzip_open_raises_python_s_errors() {
     let program = "\
@@ -155,7 +155,7 @@ def main() -> Raises[None, OSError | ValueError]:
         "rb True Not a gzipped file (b'  ')\n\
          rb True Compressed file ended before the end-of-stream marker was reached\n\
          rb False No such file or directory\n\
-         rt gzip.open's text mode 'rt' is not built yet; open with \"rb\" or \"wb\"\n\
+         rt gzip.open's text mode 'rt' must be written as a literal, such as \"rt\"\n\
          rw invalid mode: 'rw'\n\
          xb False File exists\n\
          wb False read() on write-only GzipFile object\n\

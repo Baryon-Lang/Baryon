@@ -34,6 +34,7 @@ mod strings;
 mod subprocess;
 mod sum;
 mod text;
+mod utf8;
 
 pub use accumulate::{
     baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
@@ -120,6 +121,7 @@ pub use text::{
     baryon_rt_text_complex128, baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish,
     baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
 };
+pub use utf8::{baryon_rt_array_decode, baryon_rt_str_encode};
 
 use crate::Location;
 

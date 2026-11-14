@@ -366,7 +366,7 @@ error: `str` has no method `title`
   |
 5 |     return s.title()
   |            ^^^^^^^ not defined on `str`
-  = note: a `str` has the methods `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower`, `upper` and `copy`"
+  = note: a `str` has the methods `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower`, `upper`, `encode` and `copy`"
     );
 }
 
