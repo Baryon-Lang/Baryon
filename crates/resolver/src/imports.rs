@@ -122,10 +122,10 @@ impl<'a> Importer<'a> {
     fn member(&self, module: &str, member: &str, depth: usize) -> Result<Definition, Failure> {
         if let Some(standard) = standard(module) {
             self.unshadowed(standard, At::Module)?;
-            return Ok(self.standard_member(standard, member));
+            return Ok(self.standard_member_at(standard, member, depth));
         }
         if self.in_library && self.modules.library(module).is_some() {
-            return self.library(module, member).ok_or_else(|| {
+            return self.library_at(module, member, depth).ok_or_else(|| {
                 Failure::new(
                     format!("module `{module}` has no `{member}`"),
                     "not defined there",
@@ -248,7 +248,13 @@ impl<'a> Importer<'a> {
     /// library's source file for the module defines (decision 0038), such as `os.ErrorKind`,
     /// or else a member the compiler builds in, such as `os.getenv`.
     pub(crate) fn standard_member(&self, module: &'static str, member: &str) -> Definition {
-        self.library(module, member)
+        self.standard_member_at(module, member, 0)
+    }
+
+    /// [`standard_member`](Self::standard_member), after passing through `depth` re-exports
+    /// already.
+    fn standard_member_at(&self, module: &'static str, member: &str, depth: usize) -> Definition {
+        self.library_at(module, member, depth)
             .unwrap_or_else(|| Definition::Standard {
                 module,
                 member: Some(member.to_owned()),
@@ -256,16 +262,36 @@ impl<'a> Importer<'a> {
     }
 
     /// The definition of `name` in the standard library's source file for `module`, if the
-    /// package has that file and it defines the name at its top level. A name starting with `_`
-    /// is the library's own and is never found; neither is a name the file imports, so each
-    /// library name has one home.
+    /// package has that file and it defines or re-exports the name at its top level. A name
+    /// starting with `_` is the library's own and is never found.
+    ///
+    /// A plain import is never found either, so a library file's own imports, such as
+    /// `from math import sqrt`, do not become names of its module. Only a re-export is followed:
+    /// `from special_gamma import gamma as gamma`, the name imported under its own name with
+    /// `as` (decision 0062). That lets one public module, such as `special`, keep its functions
+    /// in internal files of one family each, while every name still has one home: the file
+    /// that defines it.
     pub(crate) fn library(&self, module: &str, name: &str) -> Option<Definition> {
+        self.library_at(module, name, 0)
+    }
+
+    /// [`library`](Self::library), after passing through `depth` re-exports already. A chain
+    /// longer than [`MAXIMUM_CHAIN`] is not followed, so a circle of re-exports finds nothing.
+    fn library_at(&self, module: &str, name: &str, depth: usize) -> Option<Definition> {
         if name.starts_with('_') {
             return None;
         }
         let file = self.modules.library(module)?;
         match module_items(self.db, file).get(name)? {
             Binding::Defined(node) => Some(Definition::Item(file, *node)),
+            Binding::Imported(import) if depth < MAXIMUM_CHAIN && is_reexport(import) => {
+                let ImportTarget::Member { module, member, .. } = &import.target else {
+                    return None;
+                };
+                Importer::new(self.db, self.modules, true)
+                    .member(module, member, depth + 1)
+                    .ok()
+            }
             Binding::Imported(_) => None,
         }
     }
@@ -282,6 +308,18 @@ impl<'a> Importer<'a> {
             Binding::Imported(import) => self.resolve(tree, import),
         }
     }
+}
+
+/// Whether `import` is a re-export: `from module import name as name`, a member imported
+/// under its own name with `as`, the form Python's type checkers read as a re-export (PEP 484).
+/// The standard library follows it (decision 0062); any other import binds a name for the file
+/// alone.
+fn is_reexport(import: &Import) -> bool {
+    matches!(
+        &import.target,
+        ImportTarget::Member { member, member_node, .. }
+            if *member_node != import.node && *member == import.name
+    )
 }
 
 /// The standard library module called `name`, if there is one.

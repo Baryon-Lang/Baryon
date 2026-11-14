@@ -103,7 +103,9 @@ The repository should look like someone obsessive built it, because someone did.
 - No dead code, no commented-out code, no `TODO` comments. Open an issue instead.
 - Names are full words: `expression`, not `expr`. Universal abbreviations (`id`, `io`, `ir`) are
   fine.
-- A file past about 500 lines is split by responsibility.
+- A file past about 500 lines is split by responsibility. A standard-library module splits into
+  internal files that its public file re-exports with `from file import name as name`
+  ([decision 0062](docs/decisions/0062-standard-library-reexports.md)).
 - The top-level layout in the [README](README.md#repository-layout) is fixed. A new top-level
   directory needs a decision record.
 
