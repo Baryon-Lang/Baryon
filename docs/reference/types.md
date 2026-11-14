@@ -302,6 +302,13 @@ with a step, `values[::2] = more`, cannot be assigned to yet. A list is for buil
 unknown length; convert it to an `Array` with `Array(values)` for numeric work. An empty list
 needs its type written: `columns: list[i64] = []`.
 
+A list's items share one type, so `[1, "a"]` is a compile error. `None` is the one exception:
+items of one type `T` and `None` make a `list[T | None]`, a list of
+[optional values](#optional-values), with no annotation. `[1.5, None, 2.5]` is a
+`list[f64 | None]`, wherever it is written and whichever item comes first. Two types other
+than `None` stay an error, with or without a `None` beside them, and so does a `None` in a list
+whose written type has no room for one, such as `values: list[f64] = [1.5, None]`.
+
 ```python
 def main():
     levels = [1, 2, 3, 4, 5]

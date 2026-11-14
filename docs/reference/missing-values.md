@@ -37,12 +37,10 @@ def main():
 
 This prints `3`.
 
-- **Write the type.** A list written with numbers and `None` in it, `[1.5, None, 2.5]`, needs
-  the type it is for: the annotation above, a parameter's type, or a return type. Without one
-  the compiler reports that the list's items do not share one type. This rule is for now. It is
-  decided that such a list takes the type `list[f64 | None]` with no annotation, so
-  `Array([1.5, None, 2.5])` will build the same array; that comes with a later slice of roadmap
-  item 3.13.6, the one after the DataFrame operations.
+- **No type needs writing.** A list written with numbers and `None` in it,
+  `[1.5, None, 2.5]`, is a `list[f64 | None]` on its own ([lists](types.md#lists)), so
+  `bids = Array([1.5, None, 2.5])` builds the same array as the line above. An annotation is
+  still how to pick another element type: `counts: Array[i32 | None, 1] = Array([1, None])`.
 - **The list is borrowed**, so it stays usable.
 - **One dimension.** `Array[f64 | None, 2]` is a compile error; missing values in arrays of
   every rank are roadmap item 3.24.
@@ -190,8 +188,9 @@ def main():
 
 This prints `3 None 3.0`, then `[False  True False]`.
 
-- **The schema gives the list its type.** `Array([1.0, None, 3.0])` needs no annotation of
-  its own here: the frame's type says the column `bid` holds `f64 | None`.
+- **The schema gives the list its type.** The frame's type says the column `bid` holds
+  `f64 | None`, so the items of `Array([1.0, None, 3.0])` are read as that type; with
+  `bid: f32 | None` the same list would hold `f32`s.
 - **A column reads as an array with missing values**, `quotes.bid` or `quotes["bid"]`, and
   does what one does: `len`, an element, `isna`, `notna`, `copy`, `dropna`, `fillna` and the
   reductions, so `quotes.bid.mean()` is the mean of the bids that are there.
