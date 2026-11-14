@@ -2,6 +2,7 @@
 //! attributes, built in the order h5py's calls build them.
 
 use super::attributes::{GlobalHeap, Value, set};
+use super::chunked::Chunked;
 use super::encode::{Element, dataspace, datatype, pad8};
 use super::groups::{Entry, SymbolTable};
 use super::header::Header;
@@ -15,6 +16,8 @@ const DATATYPE: u16 = 0x03;
 const FILL: u16 = 0x05;
 /// The type number of a layout message.
 const LAYOUT: u16 = 0x08;
+/// The type number of a filter pipeline message.
+const PIPELINE: u16 = 0x0b;
 /// The type number of a symbol table message.
 const SYMBOL_TABLE: u16 = 0x11;
 /// The header room a group starts with: its symbol table message (`H5G_CRT_OBJ_HEADER`'s hint).
@@ -26,6 +29,9 @@ const SUPERBLOCK: u64 = 96;
 /// The fill value message h5py's datasets get: version 2, space allocated late, fill values
 /// written if set, the default fill value defined.
 const FILL_LATE: [u8; 8] = [2, 2, 2, 1, 0, 0, 0, 0];
+/// The fill value message of h5py's chunked datasets: the same, but space allocated chunk by
+/// chunk.
+const FILL_INCREMENTAL: [u8; 8] = [2, 3, 2, 1, 0, 0, 0, 0];
 
 /// What an object is.
 #[derive(Clone, Debug)]
@@ -35,6 +41,8 @@ pub(super) enum Kind {
     Group(SymbolTable, Vec<(Vec<u8>, usize)>),
     /// A dataset whose values are one block: its address and size.
     Contiguous(u64, u64),
+    /// A dataset whose values are stored in chunks.
+    Chunked(Box<Chunked>),
 }
 
 /// A group or a dataset.
@@ -161,13 +169,15 @@ impl Writer {
     }
 
     /// `create_dataset(path, data=values)` for values of `element` in `shape`, stored in one
-    /// block. Returns the block's address and size, where the values go.
+    /// block, or in chunks when `chunked` holds them. Returns the dataset's index and the
+    /// size of its values in bytes.
     pub(super) fn create_dataset(
         &mut self,
         path: &str,
         element: Element,
         shape: &[u64],
-    ) -> Result<(u64, u64), String> {
+        chunked: Option<Chunked>,
+    ) -> Result<(usize, u64), String> {
         let (parent, name) = self.parent(path)?;
         let size = shape
             .iter()
@@ -179,6 +189,27 @@ impl Writer {
         let mut header = Header::new(space, DATASET_HINT);
         header.add(space, DATASPACE, dataspace(shape), 0);
         header.add(space, DATATYPE, pad8(&datatype(element)), 1);
+        if let Some(chunked) = chunked {
+            header.add(space, FILL, FILL_INCREMENTAL.to_vec(), 1);
+            if !chunked.filters.is_empty() {
+                header.add(space, PIPELINE, chunked.filters.message(element.size()), 1);
+            }
+            let layout = header.add(space, LAYOUT, chunked.layout(), 0);
+            self.objects.push(Object {
+                header,
+                attributes: Vec::new(),
+                kind: Kind::Chunked(Box::new(chunked)),
+            });
+            let index = self.objects.len() - 1;
+            self.link(parent, name, index);
+            // The chunks are stored when the values are written, after the dataset is linked.
+            let object = &mut self.objects[index];
+            if let Kind::Chunked(chunked) = &mut object.kind {
+                chunked.store(&mut self.space);
+                object.header.set_body(layout, chunked.layout());
+            }
+            return Ok((index, size));
+        }
         header.add(space, FILL, FILL_LATE.to_vec(), 1);
         let layout = header.add(space, LAYOUT, contiguous(UNDEFINED, size), 0);
         self.objects.push(Object {
@@ -197,7 +228,7 @@ impl Writer {
         let object = &mut self.objects[index];
         object.header.set_body(layout, contiguous(address, size));
         object.kind = Kind::Contiguous(address, size);
-        Ok((address, size))
+        Ok((index, size))
     }
 
     /// `attrs[name] = value` on the object at `path`.
@@ -225,14 +256,34 @@ impl Writer {
         Ok(())
     }
 
+    /// Where every dataset's values are: each block's address and size.
+    pub(super) fn raw(&self) -> Vec<(u64, u64)> {
+        let mut raw = Vec::new();
+        for object in &self.objects {
+            match &object.kind {
+                Kind::Contiguous(address, size) if *size > 0 => raw.push((*address, *size)),
+                Kind::Chunked(chunked) => raw.extend(
+                    chunked
+                        .stored
+                        .iter()
+                        .map(|&(_, address, size)| (address, size)),
+                ),
+                _ => {}
+            }
+        }
+        raw
+    }
+
     /// Every structure's bytes, by address, and the end of the file, after closing its space.
     pub(super) fn encode(mut self) -> (u64, Vec<(u64, Vec<u8>)>) {
         self.space.close();
         let mut blocks = vec![(0, self.superblock())];
         for object in &self.objects {
             blocks.extend(object.header.encode());
-            if let Kind::Group(table, _) = &object.kind {
-                blocks.extend(table.encode(|entry| self.entry(entry)));
+            match &object.kind {
+                Kind::Group(table, _) => blocks.extend(table.encode(|entry| self.entry(entry))),
+                Kind::Chunked(chunked) => blocks.extend(chunked.encode()),
+                Kind::Contiguous(..) => {}
             }
         }
         blocks.extend(self.global.encode());

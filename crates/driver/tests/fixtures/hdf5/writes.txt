@@ -1497,3 +1497,44 @@ D	n324	<f8	2
 D	n243	<f8	2
 D	n162	<f8	2
 D	n81	<f8	2
+== k1 4816 63d4e9eec921b488
+D	z	<f8	10,10	5,5	
+== k2 4832 1a08ff6d165233fa
+D	z	<f8	10,10	5,5	shuffle,fletcher32
+== kedge 5168 db78b01625f3f61b
+D	z	<f8	10,10	4,3	shuffle
+== k1d 7656 bc48d8d66e652222
+D	v	<i4	1000	64	fletcher32
+== k3d 4760 ea1a97e5151eec94
+D	v	<f4	2,3,4	1,2,3	shuffle,fletcher32
+== kmany 121224 9a1a120dea8243f2
+D	v	<f8	10000	10	
+== kmix 14568 548cd8e3bc4f583e
+D	a	<f8	5
+D	z	<f8	10,10	5,5	shuffle,fletcher32
+A	z	units	str	m
+G	g
+D	g/w	<f8	3,10	2,2	fletcher32
+== kcoll 913864 2bc884af0f4638c5
+D	v	<f8	20000	1	
+== kdeep 690848 c28f58175b549e98
+D	v	<i2	300,300	3,3	shuffle,fletcher32
+== khuge 17603504 12f290eb798a9886
+D	v	<f8	1200000	1100000	fletcher32
+== kedgeprune 8824016 71447e9298d23e99
+D	v	<f8	1001,1001	150,150	shuffle
+== kmixall 22140 a015a9c1feff869a
+G	a
+A	a	x	str	hi
+D	a/b	<u8	500	7	shuffle,fletcher32
+D	c	<f8	3
+A	a/b	n	<i8		0500000000000000
+D	e	|i1	8,8	8,8	shuffle
+== kguess 84016 94a4499ae19c6cfd
+D	v	<f8	100,100		shuffle
+== kguess1 403624 2b6195b01c54c236
+D	v	<i4	100000		fletcher32
+== kzero 1400 3f80f676a979796a
+D	z	<f8	0,3		shuffle
+== kplain 3736 ebe1de2d07702e87
+D	v	<f8	30		

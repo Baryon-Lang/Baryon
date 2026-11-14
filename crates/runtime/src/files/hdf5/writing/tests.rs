@@ -72,21 +72,16 @@ fn file(name: &str) -> String {
 /// values at the address its replay gives.
 fn replayed(log: &[&str]) -> Vec<u8> {
     let mut writer = Writer::new();
+    let mut made = Vec::new();
     for line in log {
-        apply(&mut writer, line).unwrap();
+        if let Some((index, _)) = apply(&mut writer, line).unwrap() {
+            made.push((index, values(line)));
+        }
     }
-    let blocks: Vec<(u64, Vec<u8>)> = writer
-        .objects
+    let blocks: Vec<(u64, Vec<u8>)> = made
         .iter()
-        .filter_map(|object| match object.kind {
-            Kind::Contiguous(address, size) if size > 0 => Some(address),
-            _ => None,
-        })
-        .zip(
-            log.iter()
-                .filter(|line| line.starts_with('D'))
-                .map(|line| values(line)),
-        )
+        .flat_map(|(index, values)| place(&writer.objects[*index].kind, values))
+        .map(|(address, bytes)| (address, bytes.into_owned()))
         .collect();
     let (end, mut structures) = writer.encode();
     structures.extend(blocks);
@@ -179,6 +174,32 @@ fn a_line_the_log_does_not_hold_is_refused() {
     assert_eq!(
         refusal("length", &["D\tx\t<f8\ttwo"], &[]),
         "not a length: \"two\""
+    );
+}
+
+#[test]
+fn chunks_h5py_refuses_are_refused() {
+    let line = |chunk: &str| format!("D\tx\t<f8\t10\t{chunk}\t");
+    assert_eq!(
+        refusal("wide", &[&line("20")], &[]),
+        "Chunk shape must not be greater than data shape in any dimension. \
+         (20,) is not compatible with (10,)"
+    );
+    assert_eq!(
+        refusal("rank", &[&line("2,2")], &[]),
+        "'chunks' must have same rank as dataset shape"
+    );
+    assert_eq!(
+        refusal("zero", &[&line("0")], &[]),
+        "All chunk dimensions must be positive (all chunk dimensions must be positive)"
+    );
+    assert_eq!(
+        refusal("scalar", &["D\tx\t<f8\t\t\tshuffle"], &[]),
+        "Scalar datasets don't support chunk/filter options"
+    );
+    assert_eq!(
+        refusal("filter", &["D\tx\t<f8\t10\t\tszip"], &[]),
+        "not a filter: \"szip\""
     );
 }
 

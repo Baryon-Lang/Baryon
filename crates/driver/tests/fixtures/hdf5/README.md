@@ -73,7 +73,7 @@ for libver, name in [("earliest", "earliest.h5"), ("latest", "latest.h5")]:
 runtime). Each is a log of changes, in the lines that module documents, after a line
 `== name size digest`: the size and the 64-bit FNV-1a digest of the file h5py writes with the
 same calls. A dataset's values are 0, 1, 2 and so on in its element type. The digests stand in
-for the files, some of which are hundreds of kilobytes.
+for the files, the largest of which is 17 MB: chunked scenarios that fill the chunk cache.
 
 To record the sizes and digests again, after adding a scenario with `== name 0 0`, run this in
 this directory as `python record.py writes.txt`:
@@ -107,7 +107,18 @@ def run(lines, path):
             elif fields[0] == "D":
                 shape = lengths(fields[3])
                 values = np.arange(int(np.prod(shape))).astype(fields[2]).reshape(shape)
-                f.create_dataset(fields[1], data=values)
+                if len(fields) == 4:
+                    f.create_dataset(fields[1], data=values)
+                else:
+                    chunks, filters = fields[4].split("\t")
+                    names = filters.split(",")
+                    f.create_dataset(
+                        fields[1],
+                        data=values,
+                        chunks=lengths(chunks) or True,
+                        shuffle="shuffle" in names,
+                        fletcher32="fletcher32" in names,
+                    )
             elif fields[0] == "A":
                 target = f[fields[1]] if fields[1] else f
                 if fields[3] == "str":
