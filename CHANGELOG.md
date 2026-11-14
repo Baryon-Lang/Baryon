@@ -78,11 +78,11 @@ The [beginner's guide](docs/guide/README.md#1-install-baryon) shows both ways:
   pass them to read-only and `InOut` parameters, use them in whole-array arithmetic, and assign
   into them with `=` and `+=`, including `forces[a:b] += v` in a `prange` loop with
   `accumulate=`.
-- **Arrays as NumPy has them**: [broadcasting](docs/reference/arrays.md#broadcasting) between
-  arrays of different ranks, new axes with `None`, comparisons that give arrays of `bool`s,
-  `a[mask]` and `a[positions]`, `sum`, `min` and `max` along an axis, `mean`, `var` and `std` with NumPy's
-  bits, `argsort`, `unique` and `nunique`, the matrix product `@`, and `print(a)` in
-  [NumPy's form](docs/decisions/0033-printing-arrays.md).
+- **Arrays as NumPy has them**: [broadcasting](docs/reference/arrays.md#broadcasting) between arrays
+  of different ranks, new axes with `None`, comparisons that give arrays of `bool`s, `a[mask]` and
+  `a[positions]`, `sum`, `min` and `max` along an axis, `mean`, `var` and `std` with NumPy's bits,
+  `argsort`, `unique` and `nunique`, the matrix product `@`, and `print(a)` in [NumPy's
+  form](docs/decisions/0033-printing-arrays.md).
 - **Arrays of text**, `Array[str, 1]` ([text arrays](docs/reference/text-arrays.md)): built from a
   list, sliced, masked, compared, sorted, searched with `in` and printed as NumPy prints them.
 - **Complex numbers**: `complex128` (`complex`) and `complex64`, `2j` literals, arithmetic,
@@ -128,9 +128,9 @@ library at run time, and keeps the Python or NumPy names its users already know.
   `lu_solve`, `det`, `inv`, `cholesky`, `qr`, `eigh`, `eigvalsh`, `svd`, `svdvals`, `eig` and
   `eigvals`, at `f64` and most at `f32`, raising `LinAlgError`; `fft`, `ifft`, `rfft`, `irfft`,
   `fftfreq`, `rfftfreq` and the two-dimensional transforms.
-- **[Statistics](docs/reference/statistics.md)** ([decision 0042](docs/decisions/0042-statistics.md)):
-  `stats.median`, `quantile`, `percentile`, `average`, `histogram`, `cov` and `corrcoef`, with
-  NumPy's bits.
+- **[Statistics](docs/reference/statistics.md)** ([decision
+  0042](docs/decisions/0042-statistics.md)): `stats.median`, `quantile`, `percentile`, `average`,
+  `histogram`, `cov` and `corrcoef`, with NumPy's bits.
 - **[Special functions](docs/reference/special-functions.md)**
   ([decision 0054](docs/decisions/0054-scipy-module-names.md)): a top-level `special` module with
   SciPy's gamma family (`gamma`, `gammaln`, `loggamma`, `digamma`, `polygamma`, `beta`, `poch` and
@@ -140,10 +140,10 @@ library at run time, and keeps the Python or NumPy names its users already know.
 - **[Data files](docs/reference/data-files.md)**: text tables with `Array.loadtxt` and `savetxt`,
   raw arrays with `Array.fromfile` and `a.tofile`, NumPy's `.npy` with `Array.load` and `save`
   ([decision 0043](docs/decisions/0043-array-data-files.md)); FITS images and headers with
-  `fits.getdata`, `getheader` and `writeto` ([decision 0044](docs/decisions/0044-fits-images-and-headers.md));
-  NetCDF classic files read and written through `netCDF4.Dataset`, and NetCDF-4 files read,
-  compressed variables included,
-  ([decision 0047](docs/decisions/0047-netcdf-classic-files.md)); HDF5 files read through `h5by.File`
+  `fits.getdata`, `getheader` and `writeto` ([decision
+  0044](docs/decisions/0044-fits-images-and-headers.md)); NetCDF classic files read and written
+  through `netCDF4.Dataset`, and NetCDF-4 files read, compressed variables included, ([decision
+  0047](docs/decisions/0047-netcdf-classic-files.md)); HDF5 files read through `h5by.File`
   ([decision 0052](docs/decisions/0052-hdf5-files.md)).
 - **[DataFrame](docs/reference/dataframes.md)** ([decision 0045](docs/decisions/0045-dataframe.md)):
   a table whose schema is part of its type, `DataFrame[S]`, built from arrays or rows, with
@@ -215,10 +215,10 @@ a `.vsix` attached to each release, not on the Marketplace
 
 ### Known limits
 
-- [What builds today](docs/reference/status.md) lists what `baryon check` accepts that the
-  compiler does not build yet, such as CSV and Parquet files, missing values in tables, writing
-  HDF5, and most of the libraries SciPy users expect beyond `special`. Each is reported as an error that names it, never
-  miscompiled.
+- [What builds today](docs/reference/status.md) lists what `baryon check` accepts that the compiler
+  does not build yet, such as CSV and Parquet files, missing values in tables, writing HDF5, and
+  most of the libraries SciPy users expect beyond `special`. Each is reported as an error that names
+  it, never miscompiled.
 - Two bugs found while checking the documentation stay open: in a `for` loop over a list of paths,
   reading `entry.name` gives a false "moved" error (roadmap 1.9.31), and a `try` cannot reuse one
   name in two `except ... as error` clauses, which Python allows (1.9.32).
