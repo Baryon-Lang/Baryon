@@ -325,7 +325,8 @@ With the prices 189.5, 410.0, 191.0 and 20.0 and the volumes 100, 250, 50 and 10
   not a number. A frame with no column of numbers is a compile error, and so is a column
   of numbers named `statistic`.
 - **NaN is left out**, as in pandas. `std` divides by one less than the count, so one value
-  has none and gives NaN. A column with no values has the count 0 and NaN for the rest.
+  has none and gives NaN. A column's own `std()` divides by the count unless given `ddof=1`
+  ([Columns](dataframes.md#columns)). A column with no values has the count 0 and NaN for the rest.
 - **A quartile between two values is taken on the line between them**, as pandas and
   NumPy's `percentile` take it.
 - **The frame is read, not taken.**

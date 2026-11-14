@@ -24,7 +24,7 @@ impl<'db> Body<'db> {
             return self.text_array_unbuilt(node, &format!("`{}`", operator.symbol()));
         }
         if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
-            return self.optional_array_unbuilt(node, &format!("`{}`", operator.symbol()));
+            return self.optional_array_arithmetic(node, operator, left_type, right_type);
         }
         if operator == Operator::Divide
             && let Some(path) = self.path_join(node, left_type, right_type)
@@ -156,7 +156,7 @@ impl<'db> Body<'db> {
             return self.text_array_unbuilt(node, &format!("`{}`", operator.symbol()));
         }
         if self.is_optional_array(operand) {
-            return self.optional_array_unbuilt(node, &format!("`{}`", operator.symbol()));
+            return self.optional_array_unary(node, operator, operand);
         }
         if matches!(operator, Operator::Negate | Operator::Plus)
             && self.number_context(operand) == Some(operand)

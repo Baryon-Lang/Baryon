@@ -76,6 +76,7 @@ mod netcdf_writing;
 mod npy;
 mod numbers;
 mod operators;
+mod optional_arithmetic;
 mod optional_arrays;
 mod parallel;
 mod paths;
@@ -402,9 +403,9 @@ impl<'db> Body<'db> {
     fn number_context(&self, ty: Type<'db>) -> Option<Type<'db>> {
         match ty.kind(self.db) {
             TypeKind::Primitive(primitive) if numbers::is_number(*primitive) => Some(ty),
-            TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
-                self.number_context(*element)
-            }
+            TypeKind::Array { element, .. }
+            | TypeKind::Fixed { element, .. }
+            | TypeKind::OptionalArray(element) => self.number_context(*element),
             // `3 in counts` looks up a key, so the literal takes the key type.
             TypeKind::Dict { key, .. } => self.number_context(*key),
             _ => self.generic_literal(ty),

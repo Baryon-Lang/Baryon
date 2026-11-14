@@ -155,6 +155,45 @@ This prints `2 3`, then `4.0 2.0 1.5 2.5`.
   values. `sum`, `mean`, `var` and `std` copy the elements that are there into a new
   array, reduce it, and free it.
 
+## Arithmetic
+
+`+`, `-`, `*`, `/`, `//` and `%`, and `-bids`, work element by element on numbers, and give
+`None` wherever a side is `None`, as pandas's nullable columns do:
+
+```python
+def main():
+    bids: Array[f64 | None, 1] = Array([1.5, None, 2.5])
+    asks = Array([2.0, 3.0, 4.0])
+    print(asks - bids)
+    print((bids + asks) / 2.0)
+```
+
+This prints `[0.5 None 1.5]`, then `[1.75 None 3.25]`.
+
+- **The other side** is another array with missing values, an `Array` of numbers of one
+  dimension, or a single number, on either side. The result is an `Array[T | None, 1]`
+  whose `T` is the type the operator gives two plain arrays, so integers and floats mix as
+  they do [there](arrays.md#whole-array-arithmetic).
+- **The lengths must match.** Arrays of different lengths stop the program with both
+  lengths in the message. An array with missing values does not
+  [broadcast](arrays.md#broadcasting), not even one of length 1.
+- **A `None` never causes an error.** What is stored under a `None` is not computed with:
+  the largest `i64` beside a `None` does not overflow, and a zero under a `None`, or beside
+  one, does not divide. Two integers that are both there overflow as they do in any array,
+  and `//` and `%` by a zero that is there stop the program.
+- **`/` of two integers gives floats**, as it does for plain arrays, and `inf` or `NaN` for
+  a zero divisor that is there.
+- **A `NaN` the arithmetic makes stays a `NaN`.** `2.5 % 0.0` is `NaN`, a number, and not a
+  gap. pandas turns it into `<NA>`.
+- **A column works the same way**, since a column that may hold `None` reads as such an
+  array: `quotes.assign(mid=(quotes.bid + quotes.ask) / 2.0)`.
+- **Not built yet:** `**`, the bitwise operators, and the
+  in-place forms: write `bids = bids + 1.0` for `bids += 1.0`.
+- **Cost:** floats are one fused loop over the stored values, like any
+  [array expression](arrays.md#whole-array-arithmetic), plus one pass over the bitmaps.
+  Integers copy the elements that are there out of each array first, compute, and put the
+  results back, which is one more pass and one more array for each array in the expression.
+
 ## Text that may be `None`
 
 An `Array[str | None, 1]` holds text with gaps, and a frame's field `name: str | None` is a
@@ -278,8 +317,9 @@ This prints `3 None 3.0`, then `[False  True False]`.
   the number. `DataFrame(rows)` builds the frame from a list of that struct, each field
   that is `None` becoming a gap in its column; it costs one more pass and a list of the
   field for each such column.
-- **Every frame operation takes such a column.** Taking the gaps out first, as the next
-  section shows, is for the arithmetic that needs numbers.
+- **Every frame operation takes such a column**, and [arithmetic](#arithmetic) on one
+  gives a column that may hold `None`. Take the gaps out first, as the next section shows,
+  where the result must be plain numbers.
 
 ### `dropna` and `fillna` of a frame
 
@@ -386,7 +426,8 @@ def main():
 
 Each of these is a compile error that names what an array with missing values has today:
 
-- operators, `bids + 1.0`, and comparisons, `bids == 1.5`;
+- comparisons, `bids == 1.5`, and `**`, the bitwise operators and the in-place operators,
+  `bids += 1.0`;
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `count`, `sum`, `mean`,
   `min`, `max`, `var` and `std`: `median`, `argsort`; and `min` and `max` of text;
 - a slice, a mask or a list of positions, `bids[1:3]`;
