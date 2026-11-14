@@ -136,7 +136,9 @@ fn every_scenario_matches_h5py_byte_for_byte() {
 /// The message of the failure the change that is the last of `log` meets, with `last` as
 /// its values.
 fn refusal(name: &str, log: &[&str], last: &[u8]) -> String {
-    let path = file(name);
+    // Its own prefix keeps its file apart from a scenario's of the same name, whose test runs
+    // in another thread of this process at the same time.
+    let path = file(&format!("refused-{name}"));
     for count in 0..log.len() {
         let values = count
             .checked_sub(1)
