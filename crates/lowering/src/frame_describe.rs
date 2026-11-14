@@ -4,11 +4,13 @@
 //!
 //! The work is Baryon code in the standard library's `<std>/frame_joins.byn` (decision
 //! 0038): `statistic_names` makes the first column, and `described` the eight numbers of one
-//! column. Cost for `n` rows: a copy and a sort of each column of numbers, and one more copy
+//! column. A column that may hold `None` is described by the values that are there. Cost for
+//! `n` rows: a copy and a sort of each column of numbers, and one more copy
 //! of a column that is not `f64`.
 
 use crate::builder::Builder;
 use crate::frames::erase;
+use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{Operand, Place, Projection, Rvalue};
 use syntax::NodeId;
 use types::{Float, Primitive, Type, TypeKind};
@@ -32,14 +34,33 @@ impl Builder<'_> {
         };
         let mut made = vec![Operand::Move(Place::from(names))];
         for (position, column) in (0_u32..).zip(columns) {
+            let stored = source.clone().project(Projection::Field(position));
+            // A column that may hold `None` is described by the values that are there, which
+            // the library's `present` gathers into an array dropped with the statement.
+            let (values, element) = match column.element.kind(self.db) {
+                &TypeKind::Optional(element) => {
+                    let arguments = vec![
+                        stored.clone().project(Projection::Field(VALUES)),
+                        stored.project(Projection::Field(VALIDITY)),
+                    ];
+                    let gathered = self.array_of(element);
+                    let Some(there) =
+                        self.frame_call("present", vec![element], arguments, gathered, node)
+                    else {
+                        return;
+                    };
+                    self.drop_later(there);
+                    (Place::from(there), element)
+                }
+                _ => (stored, column.element),
+            };
             if !matches!(
-                column.element.kind(self.db),
+                element.kind(self.db),
                 TypeKind::Primitive(Primitive::Integer(_) | Primitive::Float(_))
             ) {
                 continue;
             }
-            let values = source.clone().project(Projection::Field(position));
-            let values = self.converted(values, column.element, float, node);
+            let values = self.converted(values, element, float, node);
             let Some(described) =
                 self.frame_call("described", Vec::new(), vec![values], numbers, node)
             else {

@@ -11,6 +11,7 @@
 //! of them, and copies or chooses from its other columns.
 
 use crate::builder::Builder;
+use crate::frame_distinct::Key;
 use crate::frames::erase;
 use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{BinaryOperator, Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
@@ -79,6 +80,41 @@ impl<'db> Builder<'db> {
         let arguments = vec![values, bits, value];
         let filled = self.frame_call("filled", vec![element], arguments, narrowed, node)?;
         Some(Operand::Move(Place::from(filled)))
+    }
+
+    /// The two keys that stand for the column that may hold `None` stored at `column`, whose
+    /// values are `element`s, where rows are compared: the library's `presence`, 1 for a
+    /// value and 0 for `None`, and the values with the filler where one is `None`, a `bool`
+    /// as the integers 0 and 1. Two rows match in both exactly when both hold `None` or both
+    /// hold the same value, so a `None` equals a `None`, as pandas compares rows for
+    /// `drop_duplicates`. Both arrays are dropped when the statement ends. `None` after a
+    /// report.
+    pub(crate) fn optional_keys(
+        &mut self,
+        column: &Place,
+        element: Type<'db>,
+        node: NodeId,
+    ) -> Option<[Key<'db>; 2]> {
+        let int = self.int_type();
+        let count = self.optional_array_length(column, node);
+        let count = Place::from(self.held(int, count, node));
+        let bits = column.clone().project(Projection::Field(VALIDITY));
+        let positions = self.positions_type();
+        let flags = self.frame_call("presence", Vec::new(), vec![bits, count], positions, node)?;
+        self.drop_later(flags);
+        let filler = Operand::Constant(self.filler(element)?);
+        let Operand::Move(values) = self.none_filled(column, element, filler, node)? else {
+            return None;
+        };
+        let local = values.local;
+        self.drop_later(local);
+        let values = match element.kind(self.db) {
+            TypeKind::Primitive(Primitive::Bool) => {
+                (self.converted(values, element, int, node), int)
+            }
+            _ => (values, element),
+        };
+        Some([(Place::from(flags), int), values])
     }
 
     /// `values.count()`, `sum()`, `min()`, `max()` or `mean()`, the method `method`, on the

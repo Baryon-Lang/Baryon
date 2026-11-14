@@ -6,12 +6,13 @@
 //! The work is Baryon code in the standard library's `<std>/frame_joins.byn` (decision
 //! 0038). The rows are numbered by their values as `drop_duplicates` numbers them,
 //! `first_rows` finds where each value first stands, `valued_rows` leaves out a value with
-//! a NaN, `id_counts` counts the rows of each, and the stable sort puts the counts in
+//! a NaN or a `None`, `id_counts` counts the rows of each, and the stable sort puts the counts in
 //! falling order, so values with one count stay in the order they first appear, as in
 //! pandas. Cost for `n` rows: `n log n` comparisons for each column named, and a copy of
 //! the distinct values.
 
 use crate::builder::Builder;
+use crate::optional_arrays::VALIDITY;
 use mir::{Constant, ConstantValue, Operand, Place, Projection, Rvalue};
 use syntax::NodeId;
 use types::{Primitive, TypeKind};
@@ -54,6 +55,21 @@ impl Builder<'_> {
                 rows = kept;
             }
         }
+        // Nor is a value with a `None` in it.
+        for (&position, column) in compared.iter().zip(
+            compared
+                .iter()
+                .filter_map(|&at| columns.get(usize::try_from(at).ok()?)),
+        ) {
+            if matches!(column.element.kind(self.db), TypeKind::Optional(_)) {
+                let stored = source.clone().project(Projection::Field(position));
+                let bits = stored.project(Projection::Field(VALIDITY));
+                let Some(kept) = call(self, "present_rows", Vec::new(), vec![bits, rows]) else {
+                    return;
+                };
+                rows = kept;
+            }
+        }
         let Some(counts) = call(self, "id_counts", Vec::new(), vec![ids, rows.clone()]) else {
             return;
         };
@@ -88,10 +104,10 @@ impl Builder<'_> {
                 return self.unsupported(node, "this `value_counts`");
             };
             let from = source.clone().project(Projection::Field(position));
-            let Some(taken) = self.taken_column(from, column, rows.clone(), node) else {
+            let Some(taken) = self.chosen_column(from, column, ("taken", &rows), node) else {
                 return;
             };
-            made.push(Operand::Move(Place::from(taken)));
+            made.push(taken);
         }
         let arguments = vec![counts, order];
         let Some(count) = self.frame_call("taken", vec![int], arguments, positions, node) else {

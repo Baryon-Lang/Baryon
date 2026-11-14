@@ -211,11 +211,21 @@ This prints `3 None 3.0`, then `[False  True False]`.
   `quotes.assign(bid=Array([None, 2.0, None]))`. Filling one column this way narrows it:
   `quotes.assign(bid=quotes.bid.fillna(0.0))`.
 - **`concat` stacks frames with one schema**, each `None` staying with its row.
+- **`drop_duplicates` counts a `None` as equal to a `None`** and as different from every
+  number, so two rows with no bid repeat each other and a row with a bid of `0.0` repeats
+  neither. pandas compares its nullable columns the same way.
+- **`value_counts` counts no row with a `None`** in a column it counts by, as it counts none
+  with a `NaN`, which is what pandas does unless told otherwise. The columns of its result
+  keep their types, so `quotes.value_counts("bid")` has a `bid` of `f64 | None`.
+- **`describe` sums up the values that are there.** The `count` of a column that may hold
+  `None` is how many values it has, and the mean, the deviation and the quartiles are
+  theirs. A column with no values at all has a count of 0 and `NaN` for the rest, where
+  pandas shows `<NA>`.
 - **The other frame operations are not built yet** for a frame with such a column: one row,
-  `quotes[0]`, `groupby`, `merge`, `drop_duplicates`, `value_counts`,
-  `describe`, `itertuples` and `DataFrame(rows)`. Each is a compile error that says
-  so. They come with roadmap item 3.13.6. Until then, take the gaps out first, as the next
-  section shows: the frame `dropna` or `fillna` gives does everything a frame does.
+  `quotes[0]`, `groupby`, `merge`, `itertuples` and `DataFrame(rows)`. Each is a
+  compile error that says so. They come with roadmap item 3.13.6. Until then, take the gaps
+  out first, as the next section shows: the frame `dropna` or `fillna` gives does everything
+  a frame does.
 
 ### `dropna` and `fillna` of a frame
 
