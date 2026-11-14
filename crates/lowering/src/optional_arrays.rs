@@ -68,7 +68,7 @@ impl<'db> Builder<'db> {
 
     /// The value stored where an element of type `element` is missing: zero, or `False`.
     /// `None` when `element` is not a number or `bool`.
-    fn filler(&self, element: Type<'db>) -> Option<Constant<'db>> {
+    pub(crate) fn filler(&self, element: Type<'db>) -> Option<Constant<'db>> {
         let value = match element.kind(self.db) {
             TypeKind::Primitive(Primitive::Bool) => ConstantValue::Bool(false),
             TypeKind::Primitive(Primitive::Integer(_)) => ConstantValue::Integer(0),

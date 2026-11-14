@@ -1,6 +1,7 @@
 //! Arrays with missing values, `Array[T | None, 1]` (roadmap 3.13.6, decision 0045), built
 //! and run: one made from a list, counted, read one element at a time, asked where its gaps
-//! are, copied, passed, returned, moved and kept in a tuple.
+//! are, copied, passed, returned, moved and kept in a tuple, narrowed by `dropna` and
+//! `fillna`, and reduced by the methods that skip `None`.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -146,6 +147,86 @@ def main():
          [ True] [False  True False]\n\
          [] 0 [7 7]\n\
          [] []\n"
+    );
+    Ok(())
+}
+
+/// The reductions skip the elements that are `None`: `count()` counts those that are there,
+/// `sum()` and `mean()` add them, with the bits `dropna()` and the array's own method give,
+/// and `min()` and `max()` compare them, a NaN that is there winning as in any array. With
+/// no element there the count and the sum are 0 and the mean is NaN. Floats of both widths
+/// and integers reduce, a `bool` array counts, and a frame's column reduces as an array.
+#[test]
+fn reductions_skip_missing_values() -> io::Result<()> {
+    let program = r#"
+from math import nan
+
+
+class Quote(Struct):
+    bid: f64 | None
+    size: i64 | None
+
+
+def spread(bids: Array[f64 | None, 1]) -> f64:
+    return bids.max() - bids.min()
+
+
+def main():
+    bids: Array[f64 | None, 1] = Array([1.5, None, 2.5, None, None, 6.0, 7.0, 8.0, 9.0, None])
+    print(bids.count(), len(bids), bids.sum(), bids.mean(), bids.min(), bids.max(), spread(bids))
+    print(bids.sum() == bids.dropna().sum(), bids.mean() == bids.dropna().mean())
+    sizes: Array[i32 | None, 1] = Array([4, None, 3])
+    print(sizes.count(), sizes.sum(), sizes.mean(), sizes.min(), sizes.max())
+    small: Array[f32 | None, 1] = Array([0.5, None, 0.25])
+    print(small.sum(), small.mean(), small.max())
+    none: Array[f64 | None, 1] = Array([None, None])
+    print(none.count(), none.sum(), none.mean())
+    whole: Array[i64 | None, 1] = Array([None])
+    print(whole.count(), whole.sum(), whole.mean())
+    empty: Array[i64 | None, 1] = Array([])
+    print(empty.count(), empty.sum())
+    flags: Array[bool | None, 1] = Array([True, None])
+    print(flags.count())
+    quotes: DataFrame[Quote] = DataFrame(
+        {"bid": Array([1.0, None, 3.0]), "size": Array([None, 2, 4])}
+    )
+    print(quotes.bid.mean(), quotes["size"].sum(), quotes.bid.count(), quotes.size.max())
+    odd: Array[f64 | None, 1] = Array([2.0, None, nan, 1.0])
+    print(odd.min(), odd.max(), odd.count(), odd.sum())
+"#;
+    let (code, output, _) = run("optional_arrays_reduced", program)?;
+    assert_eq!(code, Some(0));
+    assert_eq!(
+        output,
+        "6 10 34.0 5.666666666666667 1.5 9.0 7.5\n\
+         True True\n\
+         2 7 3.5 3 4\n\
+         0.75 0.375 0.5\n\
+         0 0.0 nan\n\
+         0 0 nan\n\
+         0 0\n\
+         1\n\
+         2.0 6 2 4\n\
+         nan nan 3 nan\n"
+    );
+    Ok(())
+}
+
+/// `min()` of an array whose elements are all `None` panics as `min` of an empty array
+/// does, since no element is the smallest.
+#[test]
+fn the_smallest_of_no_elements_panics() -> io::Result<()> {
+    let program = r"
+def main():
+    none: Array[f64 | None, 1] = Array([None, None])
+    print(none.min())
+";
+    let (code, output, report) = run("optional_arrays_no_least", program)?;
+    assert_eq!(code, Some(101));
+    assert_eq!(output, "");
+    assert!(
+        report.contains("panic: `none.min()` of an empty array"),
+        "{report}"
     );
     Ok(())
 }

@@ -7,12 +7,13 @@ use super::Body;
 use super::calls::Arguments;
 use super::relations;
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Primitive, Type, TypeKind};
+use types::{Integer, Primitive, Type, TypeKind};
 
 /// What an array with missing values can do, for messages.
 const BUILT: &str = "an array with missing values has `len`, `values[i]`, which gives a \
-                     `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna` and `copy`; \
-                     the rest comes with roadmap item 3.13.6";
+                     `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, \
+                     `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes \
+                     with roadmap item 3.13.6";
 
 /// What a frame with a column that may hold `None` can do, for messages.
 const BUILT_FRAME: &str = "a frame with a column that may hold `None` is built from its \
@@ -106,13 +107,47 @@ impl<'db> Body<'db> {
             let element = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
             return Type::new(self.db, TypeKind::Array { element, rank: 1 });
         }
-        if let &TypeKind::OptionalArray(element) = base.kind(self.db)
-            && let Some(narrowed) = self.optional_array_narrowed(node, element, name, arguments)
-        {
-            return narrowed;
+        if let &TypeKind::OptionalArray(element) = base.kind(self.db) {
+            if let Some(narrowed) = self.optional_array_narrowed(node, element, name, arguments) {
+                return narrowed;
+            }
+            if plain && let Some(reduced) = self.optional_array_reduced(node, element, name) {
+                return reduced;
+            }
         }
         self.untyped(arguments);
         self.optional_array_unbuilt(node, &format!("the method `{name}`"))
+    }
+
+    /// A reduction of an array with missing values whose elements are `element`s, the method
+    /// `name` called at `node` with no arguments. Each skips the elements that are `None`, as
+    /// pandas does: `count()` is how many elements are there, an `i64`, and `sum()`, `min()`,
+    /// `max()` and `mean()` of numbers give what the same method gives the array of the
+    /// elements that are there, `values.dropna()`. `None`, with nothing reported, for any
+    /// other method and for elements that are not integers or floats.
+    fn optional_array_reduced(
+        &mut self,
+        node: NodeId,
+        element: Type<'db>,
+        name: &str,
+    ) -> Option<Type<'db>> {
+        if name == "count" {
+            let whole = Primitive::Integer(Integer::I64);
+            return Some(Type::new(self.db, TypeKind::Primitive(whole)));
+        }
+        let number = matches!(
+            element.kind(self.db),
+            TypeKind::Primitive(Primitive::Integer(_) | Primitive::Float(_))
+        );
+        if !number || !matches!(name, "sum" | "min" | "max" | "mean") {
+            return None;
+        }
+        let there = Type::new(self.db, TypeKind::Array { element, rank: 1 });
+        let empty = Arguments {
+            positional: Vec::new(),
+            keywords: Vec::new(),
+        };
+        self.container_method(node, there, name, &empty)
     }
 
     /// Reports the call of the built-in function `name` when one of its arguments, the nodes
