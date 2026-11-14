@@ -52,6 +52,7 @@ mod lzma;
 mod managers;
 mod math;
 mod missing_distinct;
+mod missing_dropped;
 mod missing_groups;
 mod missing_joins;
 mod missing_rows;

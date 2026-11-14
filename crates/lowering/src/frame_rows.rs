@@ -41,7 +41,7 @@ impl<'db> Builder<'db> {
             return;
         }
         match (method, rest) {
-            ("dropna", []) => return self.frame_dropna(place, frame, node),
+            ("dropna", _) => return self.frame_dropna(place, frame, node),
             ("fillna", &[value]) => return self.frame_fillna(place, frame, value, node),
             _ => {}
         }

@@ -54,6 +54,7 @@ mod flow;
 mod formatted;
 mod frame_describe;
 mod frame_distinct;
+mod frame_dropna;
 mod frame_groups;
 mod frame_joins;
 mod frame_missing;

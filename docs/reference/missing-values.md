@@ -366,11 +366,16 @@ This prints:
   groups and joins. A partial fill leaves a frame that still has such a column.
 - **A frame with no column that may hold `None`** is copied by both, so code written for
   either kind of frame can call them.
-- **`dropna` takes no arguments yet.** pandas's `subset=` is spelled by choosing the columns
-  first, `quotes[["bid", "size"]].dropna()`, which keeps only those columns; `how=`, `thresh=`
-  and `axis=` are not built.
-- **Cost:** `dropna` makes one mask of a byte for each row for each column that may hold
-  `None`, which it frees, then one pass over each column that copies the rows kept.
+- **`subset=` names the columns `dropna` looks at**, one name or a list, written as string
+  literals: `quotes.dropna(subset=["bid"])` keeps the rows that have a bid. Only the columns
+  looked at lose their `None` in the result's type; `size` above would still be
+  `i64 | None`.
+- **`how="all"` drops a row only when every column looked at is `None`**, where the
+  default, `how="any"`, drops it for one. After `how="all"` a kept row may still have a
+  `None`, so no column changes its type. Both arguments are literals, since the result's
+  type depends on them. pandas's `thresh=` and `axis=` are not built.
+- **Cost:** `dropna` makes one mask of a byte for each row for each column it looks at that
+  may hold `None`, which it frees, then one pass over each column that copies the rows kept.
   `fillna` copies every column.
 
 ## Printing
