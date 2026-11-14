@@ -398,6 +398,6 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
-complex order, Airy, Struve and Kelvin functions, hypergeometric and elliptic functions,
-orthogonal polynomials, exponential integrals and zeta, and the everyday helpers. `loggamma` of a
-complex argument comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).
+complex order, Airy, Struve and Kelvin functions, hypergeometric and elliptic functions, orthogonal
+polynomials, exponential integrals and zeta, and the everyday helpers. `loggamma` of a complex
+argument comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).
