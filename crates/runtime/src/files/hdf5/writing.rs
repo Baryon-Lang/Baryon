@@ -19,6 +19,10 @@
 //! - `G`, a path: `create_group(path)`;
 //! - `D`, a path, the element type as `NumPy` names it (`<f8`), and the lengths separated by
 //!   commas, none for a single value: `create_dataset(path, data=values)`, stored in one block;
+//! - the same with two more fields, the chunk's lengths, none to take h5py's guess, and the
+//!   filters separated by commas, `shuffle` and `fletcher32`, possibly none:
+//!   `create_dataset(path, data=values, chunks=..., shuffle=..., fletcher32=...)`, stored in
+//!   chunks ([`chunked`]);
 //! - `A`, the object's path, the attribute's name, then `str` and the text, the rest of the
 //!   line, or the element type, the lengths and the values' bytes in hexadecimal:
 //!   `attrs[name] = value`.
@@ -33,16 +37,22 @@
 use super::OsFailure;
 use crate::files::ErrorKind;
 use attributes::Value;
+use chunked::Chunked;
 use encode::Element;
+use filters::Filters;
 use header::to_usize;
 use objects::{Kind, Writer};
+use std::borrow::Cow;
 use std::fs;
 use std::io::{Seek, SeekFrom, Write};
 
 mod attributes;
 mod btree;
+mod chunked;
+mod chunks;
 mod condense;
 mod encode;
+mod filters;
 mod groups;
 mod header;
 mod objects;
@@ -63,9 +73,9 @@ pub(crate) fn write(path: &str, log: &[&str], values: &[u8]) -> Result<(), OsFai
     let mut writer = Writer::new();
     let mut new = None;
     for (number, line) in log.iter().enumerate() {
-        let block = apply(&mut writer, line).map_err(invalid)?;
+        let made = apply(&mut writer, line).map_err(invalid)?;
         if number + 1 == log.len() {
-            new = block;
+            new = made;
         }
     }
     if let Some((_, size)) = new
@@ -76,35 +86,37 @@ pub(crate) fn write(path: &str, log: &[&str], values: &[u8]) -> Result<(), OsFai
             values.len()
         )));
     }
-    let raw: Vec<(u64, u64)> = writer
-        .objects
-        .iter()
-        .filter_map(|object| match object.kind {
-            Kind::Contiguous(address, size) if size > 0 => Some((address, size)),
-            _ => None,
-        })
-        .collect();
+    let placed = new.map_or_else(Vec::new, |(index, _)| {
+        place(&writer.objects[index].kind, values)
+    });
+    let raw = writer.raw();
     let (end, blocks) = writer.encode();
-    save(
-        path,
-        (end, blocks),
-        &raw,
-        new.map(|(address, _)| (address, values)),
-    )
-    .map_err(|error| OsFailure::from_io(&error, path))
+    save(path, (end, blocks), &raw, &placed).map_err(|error| OsFailure::from_io(&error, path))
 }
 
-/// Applies one line of the log to `writer`. Returns the address and size of a new dataset's
-/// values.
-fn apply(writer: &mut Writer, line: &str) -> Result<Option<(u64, u64)>, String> {
+/// Where a new dataset's `values` go: one block, or each chunk as it is stored.
+fn place<'a>(kind: &Kind, values: &'a [u8]) -> Vec<(u64, Cow<'a, [u8]>)> {
+    match kind {
+        Kind::Contiguous(address, size) if *size > 0 => vec![(*address, Cow::Borrowed(values))],
+        Kind::Chunked(chunked) => chunked
+            .chunks(values)
+            .into_iter()
+            .map(|(address, bytes)| (address, Cow::Owned(bytes)))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Applies one line of the log to `writer`. Returns a new dataset's index and the size of
+/// its values in bytes.
+fn apply(writer: &mut Writer, line: &str) -> Result<Option<(usize, u64)>, String> {
     let fields: Vec<&str> = line.splitn(5, '\t').collect();
     match fields[..] {
         ["G", path] => writer.create_group(path).map(|()| None),
-        ["D", path, element, shape] => {
-            let element = Element::parse(element).ok_or("an element type")?;
-            writer
-                .create_dataset(path, element, &lengths(shape)?)
-                .map(Some)
+        ["D", path, element, shape] => dataset(writer, path, element, shape, None).map(Some),
+        ["D", path, element, shape, rest] => {
+            let (chunk, filters) = rest.split_once('\t').ok_or("a dataset's filters")?;
+            dataset(writer, path, element, shape, Some((chunk, filters))).map(Some)
         }
         ["A", path, name, "str", text] => writer
             .set_attribute(path, name, &Value::Text(text.to_owned()))
@@ -116,6 +128,65 @@ fn apply(writer: &mut Writer, line: &str) -> Result<Option<(u64, u64)>, String> 
             writer.set_attribute(path, name, &value).map(|()| None)
         }
         _ => Err(format!("not a line of an HDF5 file's log: {line:?}")),
+    }
+}
+
+/// Applies a `D` line: its path, element type and shape as the log spells them, and for a
+/// chunked dataset the chunk's lengths, none to let h5py's guess pick them, and the filters.
+/// Refuses what h5py refuses, with its messages.
+fn dataset(
+    writer: &mut Writer,
+    path: &str,
+    element: &str,
+    shape: &str,
+    chunked: Option<(&str, &str)>,
+) -> Result<(usize, u64), String> {
+    let element = Element::parse(element).ok_or("an element type")?;
+    let shape = lengths(shape)?;
+    let Some((chunk, filters)) = chunked else {
+        return writer.create_dataset(path, element, &shape, None);
+    };
+    let filters = Filters::parse(filters)?;
+    if shape.is_empty() {
+        return Err("Scalar datasets don't support chunk/filter options".to_owned());
+    }
+    let chunk = if chunk.is_empty() {
+        filters::guess(&shape, element.size())
+    } else {
+        let chunk = lengths(chunk)?;
+        if chunk.len() != shape.len() {
+            return Err("'chunks' must have same rank as dataset shape".to_owned());
+        }
+        if chunk
+            .iter()
+            .zip(&shape)
+            .any(|(length, total)| length > total)
+        {
+            return Err(format!(
+                "Chunk shape must not be greater than data shape in any dimension. \
+                 {} is not compatible with {}",
+                python_tuple(&chunk),
+                python_tuple(&shape)
+            ));
+        }
+        if chunk.contains(&0) {
+            return Err("All chunk dimensions must be positive \
+                        (all chunk dimensions must be positive)"
+                .to_owned());
+        }
+        chunk
+    };
+    let chunked = Chunked::new(&shape, &chunk, element.size(), filters);
+    writer.create_dataset(path, element, &shape, Some(chunked))
+}
+
+/// `lengths` as Python prints a tuple of them: `(4,)`, `(2, 3)`.
+fn python_tuple(lengths: &[u64]) -> String {
+    let items: Vec<String> = lengths.iter().map(u64::to_string).collect();
+    if items.len() == 1 {
+        format!("({},)", items[0])
+    } else {
+        format!("({})", items.join(", "))
     }
 }
 
@@ -149,12 +220,13 @@ fn from_hex(text: &str) -> Result<Vec<u8>, String> {
 }
 
 /// Writes the file at `path`: `end` bytes long, the structures `blocks` and zeros everywhere
-/// except the values in `raw`, which are left as they are, and `new` values at their address.
+/// except the values in `raw`, which are left as they are, and the `new` values at their
+/// addresses.
 fn save(
     path: &str,
     (end, mut blocks): (u64, Vec<(u64, Vec<u8>)>),
     raw: &[(u64, u64)],
-    new: Option<(u64, &[u8])>,
+    new: &[(u64, Cow<[u8]>)],
 ) -> std::io::Result<()> {
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -182,8 +254,8 @@ fn save(
         }
         at = at.max(stretch.0 + stretch.1);
     }
-    if let Some((address, values)) = new {
-        file.seek(SeekFrom::Start(address))?;
+    for (address, values) in new {
+        file.seek(SeekFrom::Start(*address))?;
         file.write_all(values)?;
     }
     file.set_len(end)?;
