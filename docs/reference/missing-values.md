@@ -221,8 +221,15 @@ This prints `3 None 3.0`, then `[False  True False]`.
   `None` is how many values it has, and the mean, the deviation and the quartiles are
   theirs. A column with no values at all has a count of 0 and `NaN` for the rest, where
   pandas shows `<NA>`.
+- **`groupby` leaves out a row whose key is `None`**, as it leaves out one whose key is
+  `NaN`, and the key column of the result keeps its type.
+- **`agg` reduces the values that are there.** `count` is how many a group has and `sum`
+  adds them. A group may have none: its count and sum are 0, its `mean`, `var`, `std` and
+  `median` are `NaN`, as for a group of `NaN`s, and its `min`, `max`, `first` and `last`
+  are `None`, so those four give a column that may hold `None`. pandas shows `<NA>` for
+  all of them but the count and the sum.
 - **The other frame operations are not built yet** for a frame with such a column: one row,
-  `quotes[0]`, `groupby`, `merge`, `itertuples` and `DataFrame(rows)`. Each is a
+  `quotes[0]`, `merge`, `itertuples` and `DataFrame(rows)`. Each is a
   compile error that says so. They come with roadmap item 3.13.6. Until then, take the gaps
   out first, as the next section shows: the frame `dropna` or `fillna` gives does everything
   a frame does.
