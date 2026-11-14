@@ -323,6 +323,7 @@ mod matrix;
 mod methods;
 mod netcdf;
 mod operators;
+mod optional_arrays;
 mod parallel;
 mod paths;
 mod patterns;

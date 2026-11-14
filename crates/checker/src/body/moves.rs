@@ -37,6 +37,7 @@ impl<'db> Body<'db> {
         match ty.kind(self.db) {
             TypeKind::Str
             | TypeKind::TextArray
+            | TypeKind::OptionalArray(_)
             | TypeKind::List(_)
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }

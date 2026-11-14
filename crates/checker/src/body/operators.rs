@@ -23,6 +23,9 @@ impl<'db> Body<'db> {
         if self.is_text_array(left_type) || self.is_text_array(right_type) {
             return self.text_array_unbuilt(node, &format!("`{}`", operator.symbol()));
         }
+        if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
+            return self.optional_array_unbuilt(node, &format!("`{}`", operator.symbol()));
+        }
         if operator == Operator::Divide
             && let Some(path) = self.path_join(node, left_type, right_type)
         {
@@ -151,6 +154,9 @@ impl<'db> Body<'db> {
         }
         if self.is_text_array(operand) {
             return self.text_array_unbuilt(node, &format!("`{}`", operator.symbol()));
+        }
+        if self.is_optional_array(operand) {
+            return self.optional_array_unbuilt(node, &format!("`{}`", operator.symbol()));
         }
         if matches!(operator, Operator::Negate | Operator::Plus)
             && self.number_context(operand) == Some(operand)
@@ -316,6 +322,10 @@ impl<'db> Body<'db> {
                     );
                 }
                 return compared;
+            }
+            if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
+                let what = format!("`{}`", operator.symbol());
+                return self.optional_array_unbuilt(comparator, &what);
             }
             let ordering = matches!(
                 operator,

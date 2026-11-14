@@ -52,6 +52,10 @@ impl<'db> Body<'db> {
             let what = format!("`{name}`");
             return self.text_array_unbuilt(node, &what);
         }
+        if self.is_optional_array(base) {
+            let what = format!("`{name}`");
+            return self.optional_array_unbuilt(node, &what);
+        }
         if let Some(ty) = self.array_attribute(node, base, name) {
             return ty;
         }
