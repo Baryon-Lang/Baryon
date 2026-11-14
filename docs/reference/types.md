@@ -22,7 +22,9 @@ a number live in a register; Python's unbounded integers cannot.
 
 Floating-point arithmetic follows IEEE 754 exactly, with no reordering, unless a future
 `with fastmath:` block allows it. Dividing a float by zero gives an infinity or NaN, as in IEEE
-754 and NumPy; dividing an integer by zero panics.
+754 and NumPy: `/` and `//` give an infinity with the sign of the quotient, or NaN when both sides
+are zero, and `%` gives NaN. Dividing an integer by zero with `//` or `%` panics, for two numbers
+and for arrays alike.
 
 ### Number literals
 

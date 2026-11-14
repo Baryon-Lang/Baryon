@@ -1,6 +1,7 @@
 //! Expands one whole-array statement into its loop nest.
 
 mod broadcast;
+mod checks;
 mod summed;
 
 pub(crate) use summed::summed;
@@ -9,12 +10,11 @@ use crate::leaves::{ArrayLeaf, fused};
 use crate::place_types::{Shape, Types};
 use broadcast::{Broadcast, Step};
 use mir::{
-    BasicBlock, BinaryOperator, BlockId, Body, Check, Constant, Elementwise, Local, LocalKind,
-    Operand, Place, Projection, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
-    UnaryOperator,
+    BasicBlock, BinaryOperator, BlockId, Body, Constant, Elementwise, Local, LocalKind, Operand,
+    Place, Projection, Rvalue, Statement, StatementKind, Terminator, TerminatorKind, UnaryOperator,
 };
 use source::Span;
-use types::{Integer, Primitive, Type, TypeKind};
+use types::{Float, Integer, Primitive, Type, TypeKind};
 
 /// Writes the blocks of one expansion, one block at a time.
 pub(crate) struct Expander<'a, 'b, 'db> {
@@ -292,9 +292,22 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
             Elementwise::Binary(operator, left, right) => {
                 let (left, left_type) = self.element(left, leaves, indices, indexing);
                 let (right, right_type) = self.element(right, leaves, indices, indexing);
-                let ty = self.common(left_type, right_type);
+                let mut ty = self.common(left_type, right_type);
+                let integer =
+                    matches!(ty.kind(self.db), TypeKind::Primitive(Primitive::Integer(_)));
+                if *operator == BinaryOperator::Divide && integer {
+                    // `/` of integers gives a float, as in Python and `NumPy` (roadmap 1.9.38).
+                    ty = Type::new(self.db, TypeKind::Primitive(Primitive::Float(Float::F64)));
+                }
                 let left = self.convert(left, left_type, ty);
                 let right = self.convert(right, right_type, ty);
+                let divides = matches!(
+                    operator,
+                    BinaryOperator::FloorDivide | BinaryOperator::Remainder
+                );
+                if divides && integer {
+                    self.nonzero_divisor(&right, ty);
+                }
                 let overflows = matches!(
                     operator,
                     BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
@@ -377,38 +390,6 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
             });
         }
         own
-    }
-
-    /// `left op right` for integer `+`, `-` or `*` on elements of type `ty`, checked for
-    /// overflow as lowering checks the same operator on two integers (decision 0030): a
-    /// [`CheckedBinary`](Rvalue::CheckedBinary) into a `tuple[T, bool]` local and an `Assert`
-    /// that its flag is `False`, so a debug build panics at the expression and a release
-    /// build's backend drops the check and keeps the wrapped result. Returns the result.
-    fn checked(
-        &mut self,
-        operator: BinaryOperator,
-        (left, right): (Operand<'db>, Operand<'db>),
-        ty: Type<'db>,
-    ) -> Operand<'db> {
-        let bool = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
-        let pair = self.local(Type::new(self.db, TypeKind::Tuple(vec![ty, bool])));
-        self.assign(
-            Place::from(pair),
-            Rvalue::CheckedBinary(operator, left, right),
-        );
-        let fits = self.local(bool);
-        let flag = Operand::Copy(Place::from(pair).project(Projection::Field(1)));
-        self.assign(Place::from(fits), Rvalue::Unary(UnaryOperator::Not, flag));
-        let next = self.new_block();
-        self.finish(
-            TerminatorKind::Assert {
-                condition: Operand::Copy(Place::from(fits)),
-                check: Check::NoOverflow(operator),
-                target: next,
-            },
-            next,
-        );
-        Operand::Copy(Place::from(pair).project(Projection::Field(0)))
     }
 
     /// The type of the value at `place` in the body.

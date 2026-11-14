@@ -171,6 +171,9 @@ direction = residual + beta * direction
   checked when the line runs, and shapes that do not broadcast panic; shapes of `Fixed` operands
   are checked when compiling. An `Array` and a `Fixed` array do not combine.
 - The number mixing rules of [Types](types.md#number-mixing) apply to the element types.
+- `/` of integer arrays gives an `f64` array, as in NumPy, and integer `//` and `%` panic on a
+  zero divisor, as they do for two integers. Float division by zero gives NumPy's infinities and
+  NaN; [Numbers](types.md#numbers) has the rule.
 - `-a` negates each element and `+a` keeps it. Both need an array of numbers.
 - An expression of element-wise operations runs as a single loop with no temporary arrays.
   `x += alpha * direction` reads each element of `direction` once and writes each element of `x`
