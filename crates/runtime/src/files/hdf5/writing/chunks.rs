@@ -94,7 +94,7 @@ impl Class for Chunks {
         &mut self,
         _: &mut Space,
         _: u64,
-        left: &mut Key,
+        _: &mut Key,
         _: &mut Changed,
         middle: &mut Key,
         value: &Stored,
@@ -102,7 +102,6 @@ impl Class for Chunks {
     ) -> (Insert, u64) {
         // Every chunk is stored once, so it never matches the chunk on its left: it goes to
         // that chunk's right.
-        let _ = left;
         *middle = (value.size, 0, value.position.clone());
         (Insert::Right, value.address)
     }
