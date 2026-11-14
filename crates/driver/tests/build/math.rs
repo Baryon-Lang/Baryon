@@ -4,6 +4,9 @@
 //! significant digits, so the test passes on macOS and Linux alike.
 
 use super::examples::prints;
+use super::{baryon_build, package, panic_report, stderr};
+use driver::{Profile, Session};
+use std::process::Command;
 
 /// Every function of `math` for real numbers: the trigonometric, inverse and hyperbolic
 /// functions, logarithms and exponentials, `erf` and `gamma`, `fma`, `fmod` beside `%`,
@@ -144,4 +147,77 @@ def main():
          True 0.0\n",
     )
     .unwrap();
+}
+
+/// `math.trunc` is the checked float-to-integer conversion alone, with no separate rounding
+/// call (roadmap 1.14.4), so it must round toward zero and fit-check exactly as before: halves
+/// and negatives go toward zero as CPython's do, the largest `f64` below 2^63 and -2^63 itself
+/// fit, an `f32` truncates, and 2^63 stops the program naming `i64`.
+#[test]
+fn trunc_rounds_toward_zero_and_checks_the_range() {
+    let program = "\
+import math
+import sys
+
+
+def main():
+    big = 2.0 ** 63
+    values = [-0.5, 0.999, -2.7, 4503599627370495.5, big - 1024.0, -big, float(len(sys.argv)) - 1.5]
+    for value in values:
+        print(math.trunc(value), f64(math.trunc(value)))
+    small: f32 = -3.75
+    print(math.trunc(small))
+    print(math.trunc(big))
+";
+    let directory = package("math-trunc", &[("main.byn", program)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let run = Command::new(&executable).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "\
+0 0.0
+0 0.0
+-2 -2.0
+4503599627370495 4503599627370495.0
+9223372036854774784 9.223372036854775e+18
+-9223372036854775808 -9.223372036854776e+18
+0 0.0
+-3
+"
+    );
+    assert_eq!(run.status.code(), Some(101));
+    assert_eq!(
+        panic_report(&run),
+        "panic: the value does not fit in `i64`\n  --> main.byn:12:11\n"
+    );
+}
+
+/// `math.trunc` to `int` emits the checked conversion alone, never LLVM's `trunc`, which on
+/// x86-64 CPUs without SSE4.1 is a call into the C math library that spills every float
+/// register around it (roadmap 1.14.4). `math.floor` still rounds first, since the conversion
+/// rounds toward zero.
+#[test]
+fn trunc_is_the_conversion_alone() {
+    let mut session = Session::new();
+    let program = "\
+import math
+
+
+def whole(x: f64) -> int:
+    return math.trunc(x)
+
+
+def below(x: f64) -> int:
+    return math.floor(x)
+
+
+def main():
+    print(whole(2.5), below(2.5))
+";
+    session.add_file("main.byn", program.to_owned()).unwrap();
+    let modules = session.compile_parts(None, Profile::Release, 1).unwrap();
+    let text = modules.concat();
+    assert!(!text.contains("@llvm.trunc.f64("), "{text}");
+    assert!(text.contains("@llvm.floor.f64("), "{text}");
 }
