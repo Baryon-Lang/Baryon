@@ -68,6 +68,17 @@ pub enum Builtin {
     /// has the same bits as `(a * b).sum()` without building `a * b`. A multiply and an add are
     /// never fused into one rounding. Integer dot products lower to a loop, as integer sums do.
     Dot,
+    /// `left @ right` of two matrices through the system BLAS, in a program built with
+    /// `--blas` (decision 0040): three arguments, `left` and `right` passed `Borrow` and the
+    /// result passed `InOut`, each a rank-2 `Array` of one float type, `f32` or `f64`. Lowering
+    /// has checked that `left`'s columns match `right`'s rows and made the result with
+    /// `left`'s rows and `right`'s columns; the call overwrites every element of it. The
+    /// destination has type `None`. The backend calls `cblas_dgemm` or `cblas_sgemm`, which
+    /// may add the products in any order and on several threads, so the result can differ from
+    /// the native `@` in the last bits, as `NumPy`'s does. A build without `--blas` never makes
+    /// this call: lowering writes `@` as a loop nest with a fixed order instead. The call
+    /// cannot fail.
+    MatrixProduct,
     /// How many leaves the pairwise tree of [`Sum`](Self::Sum) has for `count` values (decision
     /// 0041): one argument, `count`, an `i64` passed `Owned`; the destination is an `i64`, 1 for
     /// up to 128 values. Array expansion calls it, with
@@ -281,6 +292,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Math(mir::MathFunction::Sqrt).name(), "math.sqrt");
     /// assert_eq!(mir::Builtin::Sum.name(), "sum");
     /// assert_eq!(mir::Builtin::Dot.name(), "dot");
+    /// assert_eq!(mir::Builtin::MatrixProduct.name(), "@ through BLAS");
     /// assert_eq!(mir::Builtin::PairwiseCombine.name(), "pairwise combine");
     /// assert_eq!(mir::Builtin::Append.name(), "list.append");
     /// assert_eq!(mir::Builtin::Pop.name(), "list.pop");
@@ -306,6 +318,7 @@ impl Builtin {
             Self::Math(function) => function.name(),
             Self::Sum => "sum",
             Self::Dot => "dot",
+            Self::MatrixProduct => "@ through BLAS",
             Self::PairwiseLeaves => "pairwise leaves",
             Self::PairwiseLeafEnd => "pairwise leaf end",
             Self::PairwiseCombine => "pairwise combine",
