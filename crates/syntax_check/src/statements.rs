@@ -114,7 +114,9 @@ impl Checker<'_> {
         );
     }
 
-    /// Checks a `with` statement: the only form is `with unsafe:`.
+    /// Checks a `with` statement: not `async`, and each name after `as` is a single name. Which
+    /// values `with` takes, `unsafe`, a file or a context manager, is the type checker's to say
+    /// (decisions 0036 and 0053).
     fn with(&mut self, id: NodeId) {
         let node = self.tree.node(id);
         if node.flags().contains(Flags::ASYNC) {
@@ -125,38 +127,20 @@ impl Checker<'_> {
             );
         }
         let items: Vec<NodeId> = self.tree.children_with(id, Role::Item).collect();
-        let is_unsafe = |item: NodeId| {
-            self.tree.child(item, Role::Target).is_none()
-                && self.tree.child(item, Role::Value).is_some_and(|value| {
-                    self.tree.kind(value) == SyntaxKind::Name && self.text(value) == "unsafe"
-                })
-        };
-        // `with value as name:`, which the type checker accepts for a `File` (decision 0036).
-        let binds_a_name = |item: NodeId| {
-            self.tree
-                .child(item, Role::Target)
-                .is_some_and(|target| self.tree.kind(target) == SyntaxKind::Name)
-        };
-        if items.len() == 1 && (is_unsafe(items[0]) || binds_a_name(items[0])) {
-            return;
+        for item in items {
+            let Some(target) = self.tree.child(item, Role::Target) else {
+                continue;
+            };
+            if self.tree.kind(target) == SyntaxKind::Name {
+                continue;
+            }
+            self.error(
+                "the target of `with ... as` must be a single name",
+                self.tree.span(target),
+                "not a name",
+                &["unpack the value on the next line: `with m as pair:` then `a, b = pair`"],
+            );
         }
-        let span = match (items.first(), items.last()) {
-            (Some(&first), Some(&last)) => source::Span::new(
-                self.tree.file(),
-                self.tree.node(first).start(),
-                self.tree.node(last).end(),
-            ),
-            _ => self.tree.span(id),
-        };
-        self.error(
-            "`with` is supported only as `with unsafe:` and `with open(...) as f:`",
-            span,
-            "",
-            &[
-                "other context managers are not in Baryon",
-                "cleanup is automatic: every value is destroyed when its owner goes out of scope",
-            ],
-        );
     }
 
     /// Checks a `try` statement: every `except` names its types, and there is no `except*`,

@@ -6,7 +6,7 @@ members = ["bench", "crates/*", "xtask"]
 version = "0.2.0"
 edition = "2024"
 rust-version = "1.97"
-license = "Apache-2.0"
+license = "Apache-2.0 OR MIT"
 repository = "https://github.com/Baryon-Lang/Baryon"
 publish = false
 

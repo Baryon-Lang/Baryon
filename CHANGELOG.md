@@ -22,6 +22,14 @@ whole of version 0 of the language, and the compiler builds most of it.
 yet. Please [open an issue](https://github.com/Baryon-Lang/Baryon/issues) for anything wrong,
 unclear or missing, with what `baryon --version` prints.
 
+### License
+
+Baryon is now dual-licensed: Apache-2.0 OR MIT, at your choice, as most Rust projects are
+([decision 0055](docs/decisions/0055-dual-license.md)). 0.1.0 was Apache-2.0 only. Third-party
+content the compiler carries, such as the font `byplot` draws text in, is listed with its license
+in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md), and each archive holds both licenses and the
+notices.
+
 ### Platforms
 
 | Platform | Needs |
@@ -193,8 +201,16 @@ now version 0.3.0, runs one test from the editor with `baryon test -k`, and the
 
 ### Decisions made for this release
 
-Decisions 0031 to 0052 were accepted between the two releases; the
-[decision index](docs/decisions/README.md) lists each with its status.
+Decisions 0031 to 0061 were accepted between the two releases; the
+[decision index](docs/decisions/README.md) lists each with its status. Those that shape what comes
+next, not built yet: operators on your own types through Python's dunder methods
+([0058](docs/decisions/0058-operators-are-dunder-methods.md)), physical units checked at compile
+time first ([0059](docs/decisions/0059-units-compile-time-first.md)), C++ interop as a C-shaped
+subset ([0056](docs/decisions/0056-cpp-interop-is-a-c-shaped-subset.md)), TLS from the operating
+system ([0060](docs/decisions/0060-tls-from-the-operating-system.md)), and AstroBaryon shipped with
+Baryon ([0061](docs/decisions/0061-astrobaryon-ships-with-baryon.md)). The VS Code extension stays
+a `.vsix` attached to each release, not on the Marketplace
+([0057](docs/decisions/0057-vscode-extension-stays-a-vsix.md)).
 
 ### Known limits
 

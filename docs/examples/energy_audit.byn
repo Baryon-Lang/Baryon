@@ -1,0 +1,72 @@
+"""Energy drift of a harmonic oscillator under leapfrog steps, checked by a context manager.
+
+`EnergyAudit` records the oscillator's energy when its `with` block starts and reports how far
+it drifted when the block ends, however it ends. `Samples` is an iterator: a `for` loop over it
+gets one `(t, x)` pair per step until it raises `StopIteration` (decision 0053). Leapfrog is
+symplectic, so the drift stays small and shrinks as the square of the time step.
+"""
+
+from math import cos
+
+
+class Oscillator(Struct):
+    """A unit mass on a unit spring: position `x` and velocity `v`."""
+
+    x: f64
+    v: f64
+
+    def energy(self) -> f64:
+        return 0.5 * (self.v * self.v + self.x * self.x)
+
+
+class EnergyAudit(Struct):
+    """Holds an oscillator for a block of steps and reports its energy drift at the end."""
+
+    label: str
+    state: Oscillator
+    start: f64
+
+    def __enter__(self: Owned[Self]) -> Self:
+        self.start = self.state.energy()
+        return self
+
+    def __exit__(self):
+        drift = (self.state.energy() - self.start) / self.start
+        print(f"{self.label}: relative energy drift {drift:.3e}")
+
+
+def leapfrog(state: InOut[Oscillator], dt: f64, steps: int):
+    """Advances `state` by `steps` kick-drift-kick steps of length `dt`."""
+    for _ in range(steps):
+        state.v -= 0.5 * dt * state.x
+        state.x += dt * state.v
+        state.v -= 0.5 * dt * state.x
+
+
+class Samples(Struct):
+    """Steps an oscillator and hands out the time and position after each step."""
+
+    state: Oscillator
+    dt: f64
+    t: f64
+    left: int
+
+    def __next__(self: InOut[Self]) -> Raises[tuple[f64, f64], StopIteration]:
+        if self.left == 0:
+            raise StopIteration()
+        self.left -= 1
+        leapfrog(self.state, self.dt, 1)
+        self.t += self.dt
+        return (self.t, self.state.x)
+
+
+def main():
+    for steps in [100, 1000]:
+        dt = 10.0 / f64(steps)
+        with EnergyAudit(f"{steps} steps", Oscillator(1.0, 0.0), 0.0) as audit:
+            leapfrog(audit.state, dt, steps)
+        print(f"x(10) = {audit.state.x:.6f}")
+    worst = 0.0
+    for t, x in Samples(Oscillator(1.0, 0.0), 0.01, 0.0, 1000):
+        worst = max(worst, abs(x - cos(t)))
+    print(f"largest error against cos(t): {worst:.3e}")
