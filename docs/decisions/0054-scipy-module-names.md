@@ -1,6 +1,6 @@
 # 0054. The libraries adapted from SciPy are top-level modules named as SciPy's submodules
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-13
 Roadmap: 3.18, 3.19, 3.20, 3.21, 3.22, 3.23
 
@@ -26,7 +26,7 @@ A name is chosen once: every program imports it, and changing it later breaks th
 
 ## Options
 
-### A. Top-level modules named as SciPy's submodules (recommended)
+### A. Top-level modules named as SciPy's submodules (chosen)
 
 `special`, `integrate`, `optimize`, `interpolate`, `spatial` and `ndimage`, with the
 distributions in the existing `stats`.
@@ -71,10 +71,10 @@ from sciby.special import gamma, jv
 
 ## Decision
 
-Pending Collins's choice. Recommended: **A**, top-level `special`, `integrate`, `optimize`,
-`interpolate`, `spatial` and `ndimage`, with distributions in `stats`.
+**A** (Collins, 2026-11-13): top-level `special`, `integrate`, `optimize`, `interpolate`,
+`spatial` and `ndimage`, with SciPy's distributions in the existing `stats`.
 
-Whatever the module names, inside each module:
+Inside each module:
 
 1. **Names are SciPy's where behavior matches**: `gamma`, `gammaln`, `jv`, `hyp2f1`,
    `quad`, `solve_ivp`, `curve_fit`, `CubicSpline`, `KDTree` and the rest. Where a Baryon
@@ -92,10 +92,10 @@ Whatever the module names, inside each module:
 
 ## Consequences
 
-- Under A, porting a SciPy program changes `from scipy.X import` to `from X import` and nothing
-  else, and the rule is the same one NumPy programs already follow.
-- Under B, porting changes `scipy` to `sciby` in every import, and the standard library gains its
-  first package.
+- Porting a SciPy program changes `from scipy.X import` to `from X import` and nothing else,
+  and the rule is the same one NumPy programs already follow.
+- The standard library's top level gains six names. A program's own `special.byn` or
+  `optimize.byn` must be renamed, and the compiler says so.
 - The kernels of 3.18 are written in a module whose name is one line in the driver's library
   table and one in the resolver's list of standard modules, so building them does not wait on
   this record.
