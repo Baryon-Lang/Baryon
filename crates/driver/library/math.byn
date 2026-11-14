@@ -121,7 +121,8 @@ class f64x2(Struct, Copy):
 
     `hi` is the value rounded to an `f64`, and `lo` is what that rounding left out, no larger than
     half a unit in the last place of `hi`. Every method keeps that true. Build one from an `f64`
-    as `f64x2(x, 0.0)`, which is exact; a pair whose `lo` is larger is not a valid `f64x2`.
+    as `f64x2.of(x)`, or `f64x2(x, 0.0)`, which are exact; a pair whose `lo` is larger is not a
+    valid `f64x2`.
 
     The methods are the four operations, `sqrt`, comparisons and conversions. Each operation is
     the classic double-double algorithm of Dekker, Knuth and the QD library, built on `fma`, with
@@ -137,6 +138,15 @@ class f64x2(Struct, Copy):
 
     hi: f64
     lo: f64
+
+    def of(x: f64) -> f64x2:
+        """`x` as an `f64x2`, exactly.
+
+        `f64x2.of(0.1)` holds the `f64` nearest 0.1, not 0.1 to 32 digits: write the value as a
+        quotient, `f64x2.of(1.0).div(f64x2.of(10.0))`, to get those. The same as
+        `f64x2(x, 0.0)` (decision 0051, amended).
+        """
+        return f64x2(x, 0.0)
 
     def add(self: Self, other: f64x2) -> f64x2:
         """`self + other`, rounded to an `f64x2`. About 20 `f64` operations."""
