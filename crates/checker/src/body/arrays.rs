@@ -357,6 +357,9 @@ impl<'db> Body<'db> {
         if name == "tofile" && is_array {
             return Some(self.array_tofile(node, arguments));
         }
+        if name == "decode" && is_array {
+            return Some(self.decode(node, base, arguments));
+        }
         if matches!(name, "mean" | "var" | "std") {
             return Some(self.statistic(node, (base, element), name, arguments));
         }

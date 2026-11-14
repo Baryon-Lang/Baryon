@@ -7,6 +7,9 @@
 //! range is checked against it exactly as an array's is, then [`TextMethod::Take`] copies the
 //! characters out.
 //!
+//! `text.encode()` and `data.decode()` (decision 0064) are [`TextMethod::Encode`] and
+//! [`TextMethod::Decode`] calls; `decode` can fail as `int(text)` does.
+//!
 //! `int(text)` and `float(text)` (decision 0037) are [`TextMethod::ParseInt`] and
 //! [`TextMethod::ParseFloat`] calls that can fail: the checker records the library's
 //! `ValueError` as the call's error, and the call gets an error edge like any fallible call.
@@ -75,8 +78,8 @@ impl<'db> Builder<'db> {
 
     /// `text.method(arguments…)` into `place`, `arguments` starting with the text: `split`,
     /// `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`,
-    /// `lower` or `upper`, each argument borrowed, or `copy`, which builds a new `str`. `split`
-    /// and the strips without an argument work on whitespace.
+    /// `lower`, `upper` or `encode`, each argument borrowed, or `copy`, which builds a new `str`.
+    /// `split` and the strips without an argument work on whitespace.
     pub(crate) fn text_method(
         &mut self,
         place: Place,
@@ -98,6 +101,7 @@ impl<'db> Builder<'db> {
             ("replace", _) => TextMethod::Replace,
             ("lower", _) => TextMethod::Lower,
             ("upper", _) => TextMethod::Upper,
+            ("encode", _) => TextMethod::Encode,
             _ => return self.unsupported(node, &format!("the `str` method `{method}`")),
         };
         let arguments = arguments
@@ -105,6 +109,14 @@ impl<'db> Builder<'db> {
             .map(|&argument| Argument::Borrow(self.borrow(argument)))
             .collect();
         self.text_call(place, Builtin::Text(text_method), arguments, node);
+    }
+
+    /// `data.decode()` into `place` (decision 0064): a new `str` of the borrowed bytes, or the
+    /// `ValueError` the checker recorded for `node` when they are not UTF-8. An `encoding`
+    /// argument, which the checker allows only as `"utf-8"`, is not passed on.
+    pub(crate) fn decode(&mut self, place: Place, data: NodeId, node: NodeId) {
+        let data = Argument::Borrow(self.borrow(data));
+        self.raising_call(Builtin::Text(TextMethod::Decode), vec![data], place, node);
     }
 
     /// `int(text)` or `float(text)` into `place`, of the number type `to`: a call that reads the

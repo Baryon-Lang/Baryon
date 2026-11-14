@@ -9,7 +9,8 @@
 //!
 //! `int(text)` and `float(text)` (decision 0037) can fail, so they are written by
 //! `parse_number`, which branches to the call's error edge as a call of a compiled function that
-//! raises does.
+//! raises does; so is `data.decode()` (decision 0064), by `decode`. `text.encode()` cannot fail,
+//! and the runtime writes its new `Array[u8, 1]` straight into the destination's header.
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -26,8 +27,8 @@ enum Returns {
     Boolean,
     /// An `i64`.
     Integer,
-    /// Nothing: the runtime writes a `list[str]` through a pointer to the destination, passed
-    /// last.
+    /// Nothing: the runtime writes a `list[str]`, or the `Array[u8, 1]` of `encode`, through a
+    /// pointer to the destination, passed last.
     List,
 }
 
@@ -125,19 +126,19 @@ impl<'db> Function<'_, '_, 'db> {
                     self.text_values(arguments)?,
                 )
             }
-            TextMethod::Lower | TextMethod::Upper => {
+            TextMethod::Lower | TextMethod::Upper | TextMethod::Encode => {
                 shape(1)?;
-                let symbol = if method == TextMethod::Lower {
-                    "baryon_rt_str_lower"
-                } else {
-                    "baryon_rt_str_upper"
+                let (symbol, returns) = match method {
+                    TextMethod::Lower => ("baryon_rt_str_lower", Returns::Text),
+                    TextMethod::Upper => ("baryon_rt_str_upper", Returns::Text),
+                    _ => ("baryon_rt_str_encode", Returns::List),
                 };
-                (symbol, Returns::Text, self.text_values(arguments)?)
+                (symbol, returns, self.text_values(arguments)?)
             }
-            TextMethod::ParseInt | TextMethod::ParseFloat => {
-                return Err(Unsupported::new("a number read with no error edge"));
+            TextMethod::ParseInt | TextMethod::ParseFloat | TextMethod::Decode => {
+                let name = method.name();
+                return Err(Unsupported::new(format!("`{name}` with no error edge")));
             }
-            TextMethod::Encode | TextMethod::Decode => return Err(Unsupported::new(method.name())),
         };
         self.runtime_text_call(symbol, returns, values, destination)?;
         self.line(&format!("br label %{}", block_label(target)));
@@ -176,6 +177,41 @@ impl<'db> Function<'_, '_, 'db> {
         );
         let failed = self.emit(&format!(
             "call zeroext i1 @{symbol}(ptr {bytes}, i64 {length}, ptr {out}, ptr {raised})"
+        ));
+        self.line(&format!(
+            "br i1 {failed}, label %{}, label %{}",
+            block_label(edge.target),
+            block_label(target)
+        ));
+        Ok(())
+    }
+
+    /// Writes `destination = data.decode()` (decision 0064) and goes to `target`, or to the
+    /// error edge's block with the `ValueError` in its local when the bytes are not UTF-8.
+    /// `baryon_rt_array_decode` takes the address of the borrowed `Array[u8, 1]`'s header, the
+    /// destination's address, written only on success, and the error local's address, and
+    /// returns an `i1` that is true when it failed.
+    pub(crate) fn decode(
+        &mut self,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+        target: BlockId,
+        error: Option<&ErrorEdge>,
+    ) -> Result<(), Unsupported> {
+        let edge = error.ok_or_else(|| Unsupported::new("`Array.decode` with no error edge"))?;
+        let [Argument::Borrow(array)] = arguments else {
+            return Err(Unsupported::new("`Array.decode` with these arguments"));
+        };
+        let (array, _) = self.place(array)?;
+        let (out, _) = self.place(destination)?;
+        let (raised, _) = self.place(&edge.error.into())?;
+        let symbol = "baryon_rt_array_decode";
+        self.declare(
+            symbol,
+            &format!("declare zeroext i1 @{symbol}(ptr, ptr, ptr) nounwind"),
+        );
+        let failed = self.emit(&format!(
+            "call zeroext i1 @{symbol}(ptr {array}, ptr {out}, ptr {raised})"
         ));
         self.line(&format!(
             "br i1 {failed}, label %{}, label %{}",

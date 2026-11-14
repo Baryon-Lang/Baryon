@@ -46,6 +46,7 @@ impl<'db> Body<'db> {
                 self.h5by_call(node, "File", &arguments)
             }
             Some(&Definition::Item(file, name)) => {
+                let (file, name) = self.text_mode_open(file, name, &arguments);
                 self.call_item(node, &callee, file, name, &arguments)
             }
             Some(Definition::Builtin("Array")) => self.array_from_list(node, &arguments, expected),

@@ -7,12 +7,15 @@ they hold, as Python's `gzip.decompress` does. Data that is not a gzip file rais
 with the kind `INVALID_DATA` and the message Python's `gzip.BadGzipFile`, `EOFError` or
 `zlib.error` carries.
 
-`open` gives a `GzipFile`, which reads a gzip file a block at a time or writes one, in binary
-modes only (roadmap 3.27.4).
+`open` gives a `GzipFile`, which reads a gzip file a block at a time or writes one (roadmap
+3.27.4). In a text mode, such as `"rt"`, it gives a `GzipTextFile` instead, which reads and
+writes `str` as UTF-8 (decision 0064): the compiler picks the class from the mode, written as a
+literal.
 """
 
 from os import ErrorKind
 from pathlib import Path
+from text_lines import Lines, empty_lines
 import zlib
 
 
@@ -97,13 +100,14 @@ def open(
 
     Raises `OSError` when the file cannot be opened: `FILE_NOT_FOUND` to read a file that is not
     there, `FILE_EXISTS` for `"xb"` when one is, and `INVALID_DATA` for a level outside -1 to 9.
-    Raises `ValueError` for any other mode; the text modes, `"rt"`, `"wt"`, `"at"` and `"xt"`,
-    are not built yet, since Baryon has no way yet to turn bytes into a `str`.
+    Raises `ValueError` for any other mode. A text mode, `"rt"`, `"wt"`, `"at"` or `"xt"`,
+    written as a literal gives a `GzipTextFile` (decision 0064); one held in a variable raises
+    `ValueError`, since the class a call gives must be known when compiling.
     """
     if mode not in ["r", "rb", "w", "wb", "a", "ab", "x", "xb"]:
         if mode in ["rt", "wt", "at", "xt"]:
             raise ValueError(
-                f"gzip.open's text mode '{mode}' is not built yet; open with \"rb\" or \"wb\""
+                f"gzip.open's text mode '{mode}' must be written as a literal, such as \"rt\""
             )
         raise ValueError(f"invalid mode: '{mode}'")
     kind = mode[0:1]
@@ -139,6 +143,85 @@ def open(
     else:
         empty.tofile(filename)
     return file
+
+
+def _open_text(
+    filename: str, mode: str, compresslevel: int = 9, encoding: str = "utf-8"
+) -> Raises[GzipTextFile, OSError | ValueError]:
+    """`gzip.open(filename, mode)` in a text mode, which the compiler calls in place of `open`
+    when the mode is a literal with `t` in it (decision 0064): a `GzipTextFile` over the
+    `GzipFile` that `open` gives in the matching binary mode. `encoding` must be `"utf-8"`, the
+    one encoding Baryon's text has; any other raises `ValueError`."""
+    if encoding.lower() not in ["utf-8", "utf8"]:
+        raise ValueError(f"text is UTF-8 in Baryon; encoding '{encoding}' is not built")
+    if mode not in ["rt", "wt", "at", "xt"]:
+        raise ValueError(f"invalid mode: '{mode}'")
+    binary = open(filename, mode.replace("t", "b"), compresslevel)
+    return GzipTextFile(filename.copy(), binary, empty_lines())
+
+
+class GzipTextFile(Struct):
+    """A gzip file open to read or write text, as `gzip.open` gives it in a text mode: Python's
+    `io.TextIOWrapper` around a `GzipFile` (decision 0064). It reads and writes `str` as
+    UTF-8, with the methods of a text `File`: `read()`, `readline()`, `readlines()`, a `for`
+    loop over its lines, `write(text)` and `close()`, and `with`.
+
+    Reading decodes the file 64 KiB at a time, so a file larger than memory can be read line by
+    line. `"\r\n"` and `"\r"` are read as `"\n"`, as Python reads them by default. Bytes that
+    are not UTF-8 raise `ValueError` with Python's message from the read that reaches them.
+    Writing writes each text's UTF-8 bytes as they are, through the `GzipFile`.
+    """
+
+    name: str  # the path the file was opened with
+    _binary: GzipFile  # the file the text is read from or written to
+    _lines: Lines  # reading: the text decoded so far
+
+    def __enter__(self: Owned[Self]) -> Self:
+        """The file itself, for `with gzip.open(path, "rt") as f:`."""
+        return self
+
+    def __exit__(self: InOut[Self]) -> Raises[None, OSError]:
+        """Closes the file at the end of a `with` block, as `close()` does."""
+        self.close()
+
+    def readline(self: InOut[Self]) -> Raises[str, OSError | ValueError]:
+        """The next line with its `"\n"`, or `""` at the end of the file. Raises what the
+        `GzipFile`'s `read` raises, and `ValueError` for bytes that are not UTF-8."""
+        while not self._lines.ready():
+            block = self._binary.read(65536)
+            self._lines.feed(block, len(block) == 0)
+        return self._lines.line()
+
+    def read(self: InOut[Self]) -> Raises[str, OSError | ValueError]:
+        """The rest of the text, `""` at the end, raising as `readline` does."""
+        return "".join(self.readlines())
+
+    def readlines(self: InOut[Self]) -> Raises[list[str], OSError | ValueError]:
+        """The remaining lines, each with its `"\n"`, raising as `readline` does."""
+        lines: list[str] = []
+        while True:
+            line = self.readline()
+            if line == "":
+                return lines
+            lines.append(line)
+
+    def __next__(self: InOut[Self]) -> Raises[str, StopIteration | OSError | ValueError]:
+        """The next line, for `for line in f:`; the loop ends at the end of the file."""
+        line = self.readline()
+        if line == "":
+            raise StopIteration()
+        return line
+
+    def write(self: InOut[Self], text: str) -> Raises[int, OSError | ValueError]:
+        """Writes `text` as UTF-8 and gives its length in characters, as Python's `write`
+        does. Raises what the `GzipFile`'s `write` raises."""
+        self._binary.write(text.encode())
+        return len(text)
+
+    def close(self: InOut[Self]) -> Raises[None, OSError]:
+        """Closes the file, writing it out when it was opened to write. A second `close` does
+        nothing."""
+        self._binary.close()
 
 
 class GzipFile(Struct):

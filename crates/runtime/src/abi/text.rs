@@ -99,6 +99,14 @@ pub unsafe extern "C" fn baryon_rt_text_str(
     // SAFETY: the caller guarantees `text` points to `length` readable bytes.
     let bytes = unsafe { std::slice::from_raw_parts(text, length) };
     let text = String::from_utf8_lossy(bytes);
+    // SAFETY: the caller guarantees the pointer is null or valid.
+    if unsafe { spec.as_ref() }.is_none_or(FormatSpec::is_default) {
+        // The common case, a piece with no width or precision, is appended as it is: going
+        // through `format::text` would copy it twice and count its characters.
+        // SAFETY: the caller guarantees the builder is live, and nothing else refers to it.
+        unsafe { &mut *builder }.text.push_str(&text);
+        return;
+    }
     // SAFETY: the caller's promises, passed on.
     unsafe { push(builder, spec, |spec| format::text(&text, spec)) };
 }
