@@ -233,6 +233,37 @@ fn a_standard_module_reexports_from_its_internal_files() {
     );
 }
 
+/// Only the re-export form passes a name on from a standard-library file (decision 0062). A
+/// plain import stays the file's own: `byplot` imports `save_axes` from its internal `figure`,
+/// and `linalg` imports `sqrt` from `math`, and neither name is `byplot`'s or `linalg`'s. Had
+/// either import been followed, the call would have the found function's type and the `str`
+/// annotations below would be errors; a name a standard module does not define is left for
+/// lowering to report.
+#[test]
+fn a_plain_import_in_a_standard_file_is_not_reexported() {
+    let helper = "from byplot import save_axes\n\n\ndef main():\n    label: str = save_axes(1)\n    print(label)\n";
+    assert_eq!(check_one(helper), "");
+    let standard = "import linalg\nfrom linalg import sqrt\n\n\ndef main():\n    label: str = sqrt(4.0)\n    other: str = linalg.sqrt(4.0)\n    print(label, other)\n";
+    assert_eq!(check_one(standard), "");
+}
+
+/// A program's own modules pass on every name they import, with or without `as`, as Python's
+/// do and as they did before decision 0062: the re-export rule is the standard library's only.
+#[test]
+fn a_program_module_passes_on_what_it_imports() {
+    let source = "def mass() -> f64:\n    return 1.0\n\n\ndef charge() -> f64:\n    return 2.0\n";
+    let middle = "from source import mass\nfrom source import charge as charge\n";
+    let program = "from middle import charge, mass\n\n\ndef main():\n    first: str = mass()\n    second: str = charge()\n    print(first, second)\n";
+    assert_eq!(
+        check(&[
+            ("source.byn", source),
+            ("middle.byn", middle),
+            ("main.byn", program)
+        ]),
+        "error: expected `str`, found `f64`\n --> main.byn:5:18\n  |\n5 |     first: str = mass()\n  |                  ^^^^^^ the annotation says `str`\n\nerror: expected `str`, found `f64`\n --> main.byn:6:19\n  |\n6 |     second: str = charge()\n  |                   ^^^^^^^^ the annotation says `str`"
+    );
+}
+
 /// A program's module named as a standard module can never be imported, so importing that name
 /// says so, instead of failing later on a member the standard module lacks.
 #[test]
