@@ -379,7 +379,7 @@ impl<'db> Body<'db> {
 
     /// The type of a column read from a frame: an array of rank 1 of the column's elements,
     /// or a text array for a column of `str`.
-    fn column_type(&self, column: &Column<'db>) -> Type<'db> {
+    pub(super) fn column_type(&self, column: &Column<'db>) -> Type<'db> {
         column.array(self.db)
     }
 
@@ -411,7 +411,15 @@ impl<'db> Body<'db> {
         if let Some(frame) = self.missing_method(function, base, callee, arguments) {
             return frame;
         }
-        let built = ["copy", "head", "tail", "sort_values"];
+        let built = [
+            "copy",
+            "head",
+            "tail",
+            "sort_values",
+            "assign",
+            "drop",
+            "rename",
+        ];
         if !built.contains(&callee) && self.has_missing_column(base) {
             self.untyped(arguments);
             return self.missing_column_unbuilt(function, &format!("the method `{callee}`"));

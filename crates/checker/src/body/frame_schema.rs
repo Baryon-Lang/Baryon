@@ -104,10 +104,18 @@ impl<'db> Body<'db> {
         let mut complete = true;
         for &(name, value) in &arguments.keywords {
             let name = self.tree.text(name, self.text).to_owned();
-            let found = self.expression(value, None);
+            // A column that may hold `None` gives a list written with `None` its type, as
+            // the schema does when the frame is built.
+            let optional = columns
+                .iter()
+                .find(|column| column.name == name)
+                .filter(|column| matches!(column.element.kind(self.db), TypeKind::Optional(_)))
+                .map(|column| self.column_type(column));
+            let found = self.expression(value, optional);
             self.consume(value, found);
             let element = match *found.kind(self.db) {
                 TypeKind::Array { element, rank: 1 } if is_column(self.db, element) => element,
+                TypeKind::OptionalArray(element) => Type::new(self.db, TypeKind::Optional(element)),
                 _ if relations::is_open(self.db, found) => {
                     complete = false;
                     continue;

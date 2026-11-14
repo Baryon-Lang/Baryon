@@ -1,0 +1,279 @@
+"""Everyday helpers for `special` (roadmap 3.18.11): the logistic function and its inverse,
+the terms of entropy, counting, and the log-sum-exp and softmax of an array.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, floor, inf, isinf, isnan, log, log1p, nan
+from special_common import is_integer
+from special_gamma import gamma, rgamma, psi
+from special_beta import rounding, beta, betaln, poch
+from special_incomplete_gamma import log1pmx
+
+
+def expit(x: f64) -> f64:
+    """The logistic sigmoid 1 / (1 + e⁻ˣ), as `scipy.special.expit`, written so that no
+    exponential overflows: below 0 it is eˣ / (1 + eˣ).
+
+    ```python
+    from special import expit
+
+    print(expit(2.0))       # 0.8807970779778823
+    ```
+    """
+    if x >= 0.0:
+        return 1.0 / (1.0 + exp(-x))
+    grown = exp(x)
+    return grown / (1.0 + grown)
+
+
+def log_expit(x: f64) -> f64:
+    """log(expit(x)), as `scipy.special.log_expit`: −log1p(e⁻ˣ) from 0 up and x − log1p(eˣ)
+    below, finite where `expit` itself underflows.
+
+    ```python
+    from special import log_expit
+
+    print(log_expit(-800.0))    # -800.0
+    ```
+    """
+    if x >= 0.0:
+        return -log1p(exp(-x))
+    return x - log1p(exp(x))
+
+
+def logit(p: f64) -> f64:
+    """The inverse of `expit`, log(p / (1 − p)), as `scipy.special.logit`. Near ½ it is
+    log1p((2p − 1) / (1 − p)), whose numerator is exact, so a result near 0 keeps its digits.
+
+    ```python
+    from special import logit
+
+    print(logit(0.25))      # -1.0986122886681098
+    ```
+    """
+    if isnan(p) or p < 0.0 or p > 1.0:
+        return nan
+    if p < 0.3 or p > 0.7:
+        return log(p / (1.0 - p))
+    return log1p((2.0 * p - 1.0) / (1.0 - p))
+
+
+def xlogy(x: f64, y: f64) -> f64:
+    """x log(y), and 0 when `x` is 0 and `y` is not NaN, as `scipy.special.xlogy`: the term
+    0 log 0 of an entropy is 0.
+
+    ```python
+    from special import xlogy
+
+    print(xlogy(0.0, 0.0))  # 0.0
+    ```
+    """
+    if x == 0.0 and not isnan(y):
+        return 0.0
+    return x * log(y)
+
+
+def xlog1py(x: f64, y: f64) -> f64:
+    """x log(1 + y), and 0 when `x` is 0 and `y` is not NaN, as `scipy.special.xlog1py`.
+
+    ```python
+    from special import xlog1py
+
+    print(xlog1py(2.0, 1.0e-10))    # 1.9999999999000001e-10
+    ```
+    """
+    if x == 0.0 and not isnan(y):
+        return 0.0
+    return x * log1p(y)
+
+
+def entr(x: f64) -> f64:
+    """The entropy term −x log x, as `scipy.special.entr`: 0 at 0 and −∞ below.
+
+    ```python
+    from special import entr
+
+    print(entr(0.5))        # 0.34657359027997264
+    ```
+    """
+    if isnan(x):
+        return nan
+    if x > 0.0:
+        return -x * log(x)
+    if x == 0.0:
+        return 0.0
+    return -inf
+
+
+def rel_entr(x: f64, y: f64) -> f64:
+    """The relative entropy term x log(x / y), as `scipy.special.rel_entr`: 0 when `x` is 0
+    and `y` is not negative, and ∞ for a negative argument or `y` of 0 under a positive `x`.
+
+    ```python
+    from special import rel_entr
+
+    print(rel_entr(0.5, 0.25))  # 0.34657359027997264
+    ```
+    """
+    if isnan(x) or isnan(y):
+        return nan
+    if x > 0.0 and y > 0.0:
+        return x * log(x / y)
+    if x == 0.0 and y >= 0.0:
+        return 0.0
+    return inf
+
+
+def kl_div(x: f64, y: f64) -> f64:
+    """The Kullback-Leibler divergence term x log(x / y) − x + y, as `scipy.special.kl_div`.
+
+    It is y (r log r − r + 1) with r = x/y, formed as y ((1 + t)(log1p(t) − t) + t²) with
+    t = (x − y)/y, whose numerator is exact when `x` and `y` are close; so the result, which
+    is about (x − y)²/(2y) there, keeps its digits instead of being the difference of terms
+    near `x`.
+
+    ```python
+    from special import kl_div
+
+    print(kl_div(0.5, 0.25))    # 0.09657359027997264
+    ```
+    """
+    if isnan(x) or isnan(y):
+        return nan
+    if x > 0.0 and y > 0.0:
+        if isinf(x) or isinf(y):
+            return nan
+        t = (x - y) / y
+        if abs(t) < 0.5:
+            return y * ((1.0 + t) * log1pmx(t) + t * t)
+        return x * log(x / y) - x + y
+    if x == 0.0 and y >= 0.0:
+        return y
+    return inf
+
+
+def binom(n: f64, k: f64) -> f64:
+    """The binomial coefficient Γ(n + 1) / (Γ(k + 1) Γ(n − k + 1)) for real `n` and `k`, as
+    `scipy.special.binom`, which gives NaN for a negative whole `n`.
+
+    For a whole `k` below 1,000, after `k` is replaced by n − k when that is smaller, it is
+    the product of k ratios, rescaled before it overflows, so whole-number results are exact
+    up to 2⁵³. Otherwise, while every Γ is finite, it is Γ(n + 1) / (Γ(k + 1) Γ(n − k + 1)),
+    each argument corrected for the rounding of its sum, which near a pole of Γ costs ψ times
+    the rounding; beyond, 1 / ((n + 1) B(n − k + 1, k + 1)).
+
+    ```python
+    from special import binom
+
+    print(binom(10.0, 3.0))     # 120.0
+    ```
+    """
+    if isnan(n) or isnan(k):
+        return nan
+    if n < 0.0 and is_integer(n):
+        return nan
+    if not isinf(k) and is_integer(k):
+        if is_integer(n) and k > 0.5 * n and n > 0.0:
+            k = n - k
+        if k >= 0.0 and k < 1000.0:
+            numerator = 1.0
+            denominator = 1.0
+            i = 1.0
+            while i <= k:
+                numerator *= n - k + i
+                denominator *= i
+                if abs(numerator) > 1.0e250:
+                    numerator /= denominator
+                    denominator = 1.0
+                i += 1.0
+            return numerator / denominator
+    if k > 0.0 and n >= 1.0e10 * k:
+        return exp(-betaln(1.0 + n - k, 1.0 + k) - log(n + 1.0))
+    if abs(n) < 170.0 and abs(k) < 170.0 and abs(n - k) < 170.0:
+        top = n + 1.0
+        top_lost = rounding(n, 1.0, top)
+        chosen = k + 1.0
+        chosen_lost = rounding(k, 1.0, chosen)
+        difference = n - k
+        rest = difference + 1.0
+        rest_lost = rounding(n, -k, difference) + rounding(difference, 1.0, rest)
+        value = gamma(top) * rgamma(chosen) * rgamma(rest)
+        correction = 1.0 + _shift(top, top_lost) - _shift(chosen, chosen_lost)
+        return value * (correction - _shift(rest, rest_lost))
+    return 1.0 / (n + 1.0) / beta(1.0 + n - k, 1.0 + k)
+
+
+def _shift(x: f64, lost: f64) -> f64:
+    """ψ(x) δ, the first-order change in log Γ when its argument `x` gains the rounding error
+    δ = `lost`, and 0 when nothing was lost, so a pole of ψ does not turn 0 into NaN."""
+    if lost == 0.0:
+        return 0.0
+    return psi(x) * lost
+
+
+def comb(n: f64, k: f64, exact: bool = False, repetition: bool = False) -> f64:
+    """The number of ways to choose `k` of `n` things, as `scipy.special.comb`: `binom(n, k)`,
+    0 when `k` is above `n` or either is negative, and with `repetition` the number of ways
+    with repetition, comb(n + k − 1, k).
+
+    With `exact`, `n` and `k` are rounded down to whole numbers and the count is formed in
+    integer arithmetic, then returned as an `f64`, where SciPy returns a Python `int`: exact up
+    to 2⁵³, and an overflow of `int` past about 9.2e18 is caught as any `int` overflow is.
+
+    ```python
+    from special import comb
+
+    print(comb(10, 3))                      # 120.0
+    print(comb(10, 3, repetition=True))     # 220.0
+    ```
+    """
+    if repetition:
+        return comb(n + k - 1.0, k, exact)
+    if isnan(n) or isnan(k):
+        return nan
+    if k > n or n < 0.0 or k < 0.0:
+        return 0.0
+    if not exact:
+        return binom(n, k)
+    whole = int(floor(n))
+    chosen = int(floor(k))
+    if chosen > whole - chosen:
+        chosen = whole - chosen
+    count = 1
+    for i in range(1, chosen + 1):
+        count = count * (whole - chosen + i) // i
+    return float(count)
+
+
+def perm(n: f64, k: f64, exact: bool = False) -> f64:
+    """The number of ordered choices of `k` of `n` things, n! / (n − k)!, as
+    `scipy.special.perm`: 0 when `k` is above `n` or either is negative. For whole numbers it
+    is the product of the k factors, and otherwise `poch(n − k + 1, k)`. With `exact`, as in
+    `comb`.
+
+    ```python
+    from special import perm
+
+    print(perm(10, 3))      # 720.0
+    ```
+    """
+    if isnan(n) or isnan(k):
+        return nan
+    if k > n or n < 0.0 or k < 0.0:
+        return 0.0
+    if not exact:
+        if is_integer(n) and is_integer(k) and k < 1000.0:
+            product = 1.0
+            factor = n - k + 1.0
+            while factor <= n:
+                product *= factor
+                factor += 1.0
+            return product
+        return poch(n - k + 1.0, k)
+    whole = int(floor(n))
+    chosen = int(floor(k))
+    count = 1
+    for i in range(whole - chosen + 1, whole + 1):
+        count = count * i
+    return float(count)

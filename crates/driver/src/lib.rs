@@ -147,6 +147,10 @@ const LIBRARY: [(&str, &str); 53] = [
         include_str!("../library/special_gamma.byn"),
     ),
     (
+        "<std>/special_helpers.byn",
+        include_str!("../library/special_helpers.byn"),
+    ),
+    (
         "<std>/special_incomplete_beta.byn",
         include_str!("../library/special_incomplete_beta.byn"),
     ),

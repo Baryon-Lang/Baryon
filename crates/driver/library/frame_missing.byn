@@ -17,6 +17,7 @@ and the compiler puts them together.
   positions choose.
 - `valid_positions` splits row positions into those with a value and those without, for
   `sort_values`, which puts `None` last.
+- `stacked` and `stacked_bits` put two columns end to end, for `concat`.
 - `filled` gives the values with one value where an element is `None`, for `fillna(value)`.
 - `present_count`, `present` and `present_extreme` count, gather and compare the elements
   that are there, for `count()`, `sum()`, `mean()`, `min()` and `max()`.
@@ -155,3 +156,29 @@ def valid_positions(bits: Array[u8, 1], order: Array[i64, 1], wanted: bool) -> A
     """The positions of `order`, in order, whose element is there, when `wanted`, or is
     `None`, when not, by the validity bitmap `bits`."""
     return Array([at for at in order if _valid(bits, at) == wanted])
+
+
+def stacked[T: Copy](left: Array[T, 1], right: Array[T, 1], filler: T) -> Array[T, 1]:
+    """The elements of `left`, then those of `right`, as a new array. `filler` is any value
+    of the element type, which every element then replaces."""
+    count = len(left)
+    result = Array.fill((count + len(right),), filler)
+    for at in range(count):
+        result[at] = left[at]
+    for at in range(len(right)):
+        result[count + at] = right[at]
+    return result
+
+
+def stacked_bits(
+    left: Array[u8, 1], left_count: int, right: Array[u8, 1], right_count: int
+) -> Array[u8, 1]:
+    """The validity bitmap of `left_count` elements with the bitmap `left`, then
+    `right_count` elements with the bitmap `right`."""
+    count = left_count + right_count
+    result = Array.fill(((count + 7) // 8,), u8(0))
+    for at in range(count):
+        there = _valid(left, at) if at < left_count else _valid(right, at - left_count)
+        if there:
+            result[at // 8] = result[at // 8] | (u8(1) << u8(at % 8))
+    return result
