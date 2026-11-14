@@ -50,6 +50,7 @@ mod list_slices;
 mod lzma;
 mod managers;
 mod math;
+mod missing_shown;
 mod modules;
 mod narrowing;
 mod netcdf;

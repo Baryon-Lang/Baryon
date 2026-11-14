@@ -112,7 +112,7 @@ error: the method `describe` is not built for a frame with a column that may hol
    |
 13 |     head = df.fillna({"bid": 0.0}).describe()
    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` and `tail` and sorted with each `None` last, stacked by `concat`, and its columns read, replaced and chosen by name and by `assign`, `drop` and `rename`; the rest comes with roadmap item 3.13.6"#;
+   = note: a frame with a column that may hold `None` is built from its columns, shown by `print`, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` and `tail` and sorted with each `None` last, stacked by `concat`, and its columns read, replaced and chosen by name and by `assign`, `drop` and `rename`; the rest comes with roadmap item 3.13.6"#;
 
 /// A program that drops and fills missing values only in the ways that are built.
 const BUILT: &str = r#"

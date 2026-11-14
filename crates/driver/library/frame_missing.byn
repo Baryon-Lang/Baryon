@@ -21,7 +21,12 @@ and the compiler puts them together.
 - `filled` gives the values with one value where an element is `None`, for `fillna(value)`.
 - `present_count`, `present` and `present_extreme` count, gather and compare the elements
   that are there, for `count()`, `sum()`, `mean()`, `min()` and `max()`.
+- `optional_cells`, `optional_float_cells` and `optional_single_cells` give a column's cells
+  for `print(df)`, with `<NA>` for a missing value, and `optional_shown` gives the text of
+  an array alone, `[1.5 None 2.5]`.
 """
+
+from math import isinf, isnan
 
 
 def _valid(bits: Array[u8, 1], at: int) -> bool:
@@ -182,3 +187,108 @@ def stacked_bits(
         if there:
             result[at // 8] = result[at // 8] | (u8(1) << u8(at % 8))
     return result
+
+
+def _shown_row(cell: int, count: int) -> int:
+    """The row that cell `cell` of a printed column of `count` rows shows: every row of 60
+    rows or fewer, or else the first 5 and the last 5, as `<std>/frames.byn` chooses them."""
+    if count <= 60 or cell < 5:
+        return cell
+    return count - 10 + cell
+
+
+def _shown_count(count: int) -> int:
+    """How many rows of a frame of `count` rows are printed: all of 60 or fewer, or else 10."""
+    if count <= 60:
+        return count
+    return 10
+
+
+def optional_cells[T: Copy](values: Array[T, 1], bits: Array[u8, 1]) -> list[str]:
+    """The cells of a column of integers or of `bool` that may hold `None`: each value as
+    `print` writes it, and `<NA>` for a missing one, as pandas shows its nullable columns.
+    Cost: one text for each row that is printed, at most 60."""
+    count = len(values)
+    cells: list[str] = []
+    for cell in range(_shown_count(count)):
+        row = _shown_row(cell, count)
+        if _valid(bits, row):
+            text = f"{values[row]}"
+            if text.startswith("-"):
+                cells.append(text)
+            else:
+                cells.append(" " + text)
+        else:
+            cells.append(" <NA>")
+    return cells
+
+
+def _float_cell(value: f64) -> str:
+    """One cell of a column of floats that may hold `None`: `value` with 6 decimals and the
+    zeros it ends with removed, down to one decimal, so 1.5 is ` 1.5` and 2.0 is ` 2.0`.
+    pandas formats each cell of a nullable column alone like this, where a plain column of
+    floats shares one number of decimals."""
+    if isnan(value):
+        return " NaN"
+    if isinf(value):
+        if value > 0.0:
+            return " inf"
+        return "-inf"
+    text = f"{value:.6f}"
+    while text.endswith("0") and not text.endswith(".0"):
+        text = text[:len(text) - 1]
+    if text.startswith("-"):
+        return text
+    return " " + text
+
+
+def optional_float_cells(values: Array[f64, 1], bits: Array[u8, 1]) -> list[str]:
+    """The cells of an `f64` column that may hold `None`: `<NA>` for a missing value, and a
+    real NaN as `NaN`. Cost: one text for each row that is printed, at most 60."""
+    count = len(values)
+    cells: list[str] = []
+    for cell in range(_shown_count(count)):
+        row = _shown_row(cell, count)
+        if _valid(bits, row):
+            cells.append(_float_cell(values[row]))
+        else:
+            cells.append(" <NA>")
+    return cells
+
+
+def optional_single_cells(values: Array[f32, 1], bits: Array[u8, 1]) -> list[str]:
+    """The cells of an `f32` column that may hold `None`, formatted as the same values in
+    `f64`. Cost: one text for each row that is printed, at most 60."""
+    count = len(values)
+    cells: list[str] = []
+    for cell in range(_shown_count(count)):
+        row = _shown_row(cell, count)
+        if _valid(bits, row):
+            cells.append(_float_cell(f64(values[row])))
+        else:
+            cells.append(" <NA>")
+    return cells
+
+
+def optional_shown[T: Copy](values: Array[T, 1], bits: Array[u8, 1]) -> str:
+    """An array with missing values as `print` shows it, which is how NumPy shows an array of
+    objects: each element as `print` writes it, `None` for a missing one, a space between
+    two, the whole in brackets, so `[1.5 None 2.5]`. Of more than 1000 elements the first
+    three and the last three are shown, with `...` between. Cost: one text for each element
+    shown."""
+    count = len(values)
+    shown = [at for at in range(count)]
+    if count > 1000:
+        shown = [0, 1, 2, -1, count - 3, count - 2, count - 1]
+    text = "["
+    for position in range(len(shown)):
+        at = shown[position]
+        if position > 0:
+            text = f"{text} "
+        if at < 0:
+            text = f"{text}..."
+        elif _valid(bits, at):
+            text = f"{text}{values[at]}"
+        else:
+            text = f"{text}None"
+    return f"{text}]"

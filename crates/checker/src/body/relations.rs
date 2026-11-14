@@ -68,6 +68,16 @@ pub(crate) fn holds_optional_array<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> b
     })
 }
 
+/// Whether `ty` is or holds a frame with a column that may hold `None`.
+pub(crate) fn holds_missing_column<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
+    contains(db, ty, &|ty| match ty.kind(db) {
+        TypeKind::DataFrame { columns, .. } => columns
+            .iter()
+            .any(|column| matches!(column.element.kind(db), TypeKind::Optional(_))),
+        _ => false,
+    })
+}
+
 /// `ty` with every frame type in it replaced by the frame of the same columns whose rows no
 /// struct names, so two types that differ only in what names the rows of their frames become
 /// equal.
