@@ -201,3 +201,23 @@ def main():
     assert_eq!((code, report.as_str()), (Some(0), ""));
     assert_eq!(stdout, "[2 1 2] [2 3] 5\n2 2 0\n3\n");
 }
+
+/// `min` and `max` of `bool` elements order `False` before `True`, as `NumPy` does, whole or
+/// along an axis (roadmap 1.9.40); before, the backend could not compare two `bool`s.
+#[test]
+fn extremes_of_bools_order_false_first() {
+    let program = "\
+def main():
+    grid = Array.ones((2, 3))
+    grid[0, 1] = -1.0
+    mask = grid > 0.0
+    print(mask.min(), mask.max(), mask.min(axis=0), mask.max(axis=1))
+    print(Array([True, True]).min(), Array([False]).max())
+";
+    let (code, stdout, report) = run("axes-bool-extremes", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(
+        stdout,
+        "False True [ True False  True] [ True  True]\nTrue False\n"
+    );
+}

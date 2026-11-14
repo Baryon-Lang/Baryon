@@ -173,3 +173,63 @@ def main():
         "[1.+0.j 2.+0.j]\n[-1.+2.j -2.+4.j]\n[2.5 3.5]\n[1.5 3. ]\n"
     );
 }
+
+/// Integer `//` and `%` of arrays check each divisor, as the same operators on two integers do,
+/// so a zero divisor panics at the expression rather than stopping the program with `SIGFPE`
+/// (roadmap 1.9.37). `NumPy` gives 0 with a warning there instead; Baryon keeps one rule for
+/// integers, scalar or array.
+#[test]
+fn integer_array_division_by_zero_panics() {
+    let program = "\
+def main():
+    a = Array([7, -7, 4])
+    print(a // Array([2, 2, 3]), a % Array([2, 2, 3]), a // 2)
+    print(a % Array([1, 0, 2]))
+";
+    let (code, stdout, report) = run("broadcast-divide-by-zero", program).unwrap();
+    assert_eq!(code, Some(101));
+    assert_eq!(stdout, "[ 3 -4  1] [1 1 1] [ 3 -4  2]\n");
+    assert_eq!(
+        report,
+        "panic: integer division by zero\n  --> main.byn:4:11\n"
+    );
+}
+
+/// `/` of integer arrays gives a float array, as in `NumPy`, whatever side the integers are on
+/// (roadmap 1.9.38); before, the backend could not divide two integers.
+#[test]
+fn integer_arrays_divide_to_floats() {
+    let program = "\
+def main():
+    c = Array([1, 2, 3])
+    d = Array([1, 4, 2])
+    print(c / d, c / 2, 3 / d, d / Array([0, 0, 0]))
+";
+    let (code, stdout, report) = run("broadcast-true-divide", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(
+        stdout,
+        "[1.  0.5 1.5] [0.5 1.  1.5] [3.   0.75 1.5 ] [inf inf inf]\n"
+    );
+}
+
+/// Float `//` by zero gives `a / b`, as `NumPy` does, for a scalar and an array alike: an
+/// infinity with the quotient's sign, or NaN for `0.0 // 0.0`; `%` by zero gives NaN (roadmap
+/// 1.9.39). Python raises `ZeroDivisionError` for both.
+#[test]
+fn float_floor_division_by_zero_follows_numpy() {
+    let program = "\
+def main():
+    a = 2.0
+    zero = 0.0
+    print(a // zero, -a // zero, zero // zero, a % zero, -7.0 // 2.0, -0.0 // 3.0)
+    print(Array([2.0, -2.0, 0.0]) // Array([0.0, 0.0, 0.0]), Array([2.0, -2.0]) // -0.0)
+    print(Array([2.0, -2.0]) % Array([0.0, 0.0]))
+";
+    let (code, stdout, report) = run("broadcast-float-floor-by-zero", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(
+        stdout,
+        "inf -inf nan nan -4.0 -0.0\n[ inf -inf  nan] [-inf  inf]\n[nan nan]\n"
+    );
+}
