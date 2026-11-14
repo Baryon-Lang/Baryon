@@ -10,18 +10,19 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Integer, Primitive, Type, TypeKind};
 
 /// What an array with missing values can do, for messages.
-const BUILT: &str = "an array with missing values has `len`, `values[i]`, which gives a \
-                     `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, \
-                     `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes \
-                     with roadmap item 3.13.6";
+const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]`, which \
+                     gives a `T | None`, and the methods `isna`, `notna`, `dropna`, \
+                     `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and \
+                     `mean`; the rest comes with roadmap item 3.13.6";
 
 /// What a frame with a column that may hold `None` can do, for messages.
 const BUILT_FRAME: &str = "a frame with a column that may hold `None` is built from its \
-                           columns, counted with `len`, copied with `copy`, narrowed by \
-                           `dropna` and `fillna`, its rows chosen by a mask, a slice, `head` \
-                           and `tail` and sorted with each `None` last, stacked by `concat`, \
-                           and its columns read, replaced and chosen by name and by `assign`, \
-                           `drop` and `rename`; the rest comes with roadmap item 3.13.6";
+                           columns, shown by `print`, counted with `len`, copied with \
+                           `copy`, narrowed by `dropna` and `fillna`, its rows chosen by a \
+                           mask, a slice, `head` and `tail` and sorted with each `None` \
+                           last, stacked by `concat`, and its columns read, replaced and \
+                           chosen by name and by `assign`, `drop` and `rename`; the rest \
+                           comes with roadmap item 3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.
@@ -199,20 +200,21 @@ impl<'db> Body<'db> {
         true
     }
 
-    /// Reports a value that is or holds an array with missing values, or a frame with a
-    /// column that may hold `None`, shown by `print` or an f-string at `node`, which cannot
-    /// write one yet.
+    /// Reports a value that holds an array with missing values, or a frame with a column
+    /// that may hold `None`, inside another value, such as a tuple or a list, shown by
+    /// `print` or an f-string at `node`, which cannot write one yet. An array with missing
+    /// values alone is shown, and so is such a frame alone.
     pub(super) fn shows_no_optional_array(&mut self, node: NodeId, ty: Type<'db>) {
-        if relations::holds_optional_array(self.db, ty) {
+        let alone = self.is_optional_array(ty) || self.has_missing_column(ty);
+        let holds = relations::holds_optional_array(self.db, ty)
+            || relations::holds_missing_column(self.db, ty);
+        if holds && !alone {
             self.lowerer.error(
                 node,
-                "an array with missing values cannot be shown yet",
+                "a value that holds an array with missing values cannot be shown yet",
                 "holds an array that may hold `None`",
-                Some("show its elements: `for at in range(len(values)): print(values[at])`"),
+                Some("show the array or the frame alone: `print(values)`"),
             );
-        }
-        if self.has_missing_column(ty) {
-            self.missing_column_unbuilt(node, "showing it");
         }
     }
 }

@@ -10,6 +10,7 @@
 
 use crate::builder::Builder;
 use crate::frames::erase;
+use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{Argument, Callee, Constant, ConstantValue, Operand, Place, Projection, Rvalue};
 use mir::{Local, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
@@ -17,11 +18,25 @@ use types::{Column, Float, Item, Primitive, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// The place to read as text where the expression `node`, of type `ty` and borrowed at
-    /// `place`, is printed or formatted in an f-string: a frame's table, a text array's
-    /// elements as `NumPy` shows them, which the library's `text_shown` writes into a new `str`
-    /// dropped with the statement's temporaries, a `Path`'s text ([`Builder::text_place`]),
-    /// and any other value as it is.
+    /// `place`, is printed or formatted in an f-string: a frame's table, the elements of an
+    /// array with missing values with `None` for each gap (the library's `optional_shown`),
+    /// a text array's elements as `NumPy` shows them, which the library's `text_shown` writes,
+    /// each into a new `str` dropped with the statement's temporaries, a `Path`'s text
+    /// ([`Builder::text_place`]), and any other value as it is.
     pub(crate) fn shown_place(&mut self, node: NodeId, place: Place, ty: Type<'db>) -> Place {
+        if let Some(element) = self.optional_array_element(node) {
+            let text = Type::new(self.db, TypeKind::Str);
+            let arguments = vec![
+                place.clone().project(Projection::Field(VALUES)),
+                place.clone().project(Projection::Field(VALIDITY)),
+            ];
+            let shown = self.frame_call("optional_shown", vec![element], arguments, text, node);
+            if let Some(shown) = shown {
+                self.drop_later(shown);
+                return Place::from(shown);
+            }
+            return place;
+        }
         if self.is_text_array(node) {
             let text = Type::new(self.db, TypeKind::Str);
             let arguments = vec![place.clone()];
@@ -35,6 +50,34 @@ impl<'db> Builder<'db> {
             Some(text) => text,
             None => self.text_place(place, ty),
         }
+    }
+
+    /// The cells, a new `list[str]`, of the column that may hold `None` stored at `column`,
+    /// whose values are `element`s: the library's `optional_float_cells` for `f64`,
+    /// `optional_single_cells` for `f32` and `optional_cells` for integers and `bool`, each
+    /// of which writes `<NA>` for a missing value. `None` after a report.
+    fn optional_cells(
+        &mut self,
+        column: &Place,
+        element: Type<'db>,
+        node: NodeId,
+    ) -> Option<Local> {
+        let text = Type::new(self.db, TypeKind::Str);
+        let list = Type::new(self.db, TypeKind::List(text));
+        let (function, type_arguments) = match element.kind(self.db) {
+            TypeKind::Primitive(Primitive::Float(Float::F64)) => {
+                ("optional_float_cells", Vec::new())
+            }
+            TypeKind::Primitive(Primitive::Float(Float::F32)) => {
+                ("optional_single_cells", Vec::new())
+            }
+            _ => ("optional_cells", vec![element]),
+        };
+        let arguments = vec![
+            column.clone().project(Projection::Field(VALUES)),
+            column.clone().project(Projection::Field(VALIDITY)),
+        ];
+        self.frame_call(function, type_arguments, arguments, list, node)
     }
 
     /// The place of the text of the frame the expression `node` gives, which `frame` holds: a
@@ -56,14 +99,20 @@ impl<'db> Builder<'db> {
                 ty: boolean,
                 value: ConstantValue::Bool(matches!(column.element.kind(self.db), TypeKind::Str)),
             }));
-            let (function, type_arguments) = match column.element.kind(self.db) {
-                TypeKind::Primitive(Primitive::Float(Float::F64)) => ("float_cells", Vec::new()),
-                TypeKind::Primitive(Primitive::Float(Float::F32)) => ("single_cells", Vec::new()),
-                TypeKind::Str => ("text_cells", Vec::new()),
-                _ => ("cells", vec![column.element]),
+            let stored = frame.clone().project(Projection::Field(position));
+            let formatted = match column.element.kind(self.db) {
+                TypeKind::Optional(element) => self.optional_cells(&stored, *element, node)?,
+                TypeKind::Primitive(Primitive::Float(Float::F64)) => {
+                    self.frame_call("float_cells", Vec::new(), vec![stored], list, node)?
+                }
+                TypeKind::Primitive(Primitive::Float(Float::F32)) => {
+                    self.frame_call("single_cells", Vec::new(), vec![stored], list, node)?
+                }
+                TypeKind::Str => {
+                    self.frame_call("text_cells", Vec::new(), vec![stored], list, node)?
+                }
+                _ => self.frame_call("cells", vec![column.element], vec![stored], list, node)?,
             };
-            let values = frame.clone().project(Projection::Field(position));
-            let formatted = self.frame_call(function, type_arguments, vec![values], list, node)?;
             cells.push(Operand::Move(Place::from(formatted)));
             names.push(Operand::Constant(Constant {
                 ty: text,

@@ -371,7 +371,9 @@ options:
 - **Floats.** A column of floats shows up to 6 decimals, and as many as its longest value
   needs: 1.5 and 2.25 print as `1.50` and `2.25`. The column switches to powers of ten,
   `1.500000e+10`, when a value is under 0.000001 in size and not zero, or when one is over
-  1,000,000 and the column would be over 12 characters wide. A missing number prints as `NaN`.
+  1,000,000 and the column would be over 12 characters wide. A `NaN` prints as `NaN`.
+- **Missing values.** A `None` in a column that may hold one prints as `<NA>`, and that
+  column's floats each have their own decimals: [missing values](missing-values.md#printing).
 - **Long frames.** A frame of more than 60 rows prints its first 5 and last 5 rows, with a row
   of dots between them.
 - **Wide frames.** Columns that do not fit in 80 characters are left out of the middle, with

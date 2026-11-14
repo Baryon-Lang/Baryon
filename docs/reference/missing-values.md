@@ -213,7 +213,7 @@ This prints `3 None 3.0`, then `[False  True False]`.
 - **`concat` stacks frames with one schema**, each `None` staying with its row.
 - **The other frame operations are not built yet** for a frame with such a column: one row,
   `quotes[0]`, `groupby`, `merge`, `drop_duplicates`, `value_counts`,
-  `describe`, `itertuples`, `DataFrame(rows)` and `print`. Each is a compile error that says
+  `describe`, `itertuples` and `DataFrame(rows)`. Each is a compile error that says
   so. They come with roadmap item 3.13.6. Until then, take the gaps out first, as the next
   section shows: the frame `dropna` or `fillna` gives does everything a frame does.
 
@@ -269,6 +269,54 @@ This prints:
   `None`, which it frees, then one pass over each column that copies the rows kept.
   `fillna` copies every column.
 
+## Printing
+
+`print(bids)` writes the elements between brackets with `None` for each gap, which is how
+NumPy prints an array of objects, and `print(df)` writes `<NA>` for each missing cell, as
+pandas does for its nullable columns. An f-string gives the same text.
+
+```python
+from math import nan
+
+
+class Quote(Struct):
+    bid: f64 | None
+    size: i64 | None
+    last: f64
+
+
+def main():
+    bids = Array([1.5, None, 2.25])
+    print(bids)
+    quotes: DataFrame[Quote] = DataFrame({
+        "bid": bids,
+        "size": Array([100, None, -3]),
+        "last": Array([1.0, nan, 2.5]),
+    })
+    print(quotes)
+```
+
+```text
+[1.5 None 2.25]
+    bid  size  last
+0   1.5   100   1.0
+1  <NA>  <NA>   NaN
+2  2.25    -3   2.5
+```
+
+- **`<NA>` is a gap and `NaN` is a number.** A real `NaN` prints as `NaN` in every column,
+  one that may hold `None` included. pandas shows a `NaN` in a nullable column as `<NA>`;
+  Baryon keeps the two apart.
+- **Each float has its own decimals** in a column that may hold `None`: up to 6, without the
+  zeros at the end, so `1.5` and `2.25` above. pandas writes its nullable columns this way.
+  A column with no gaps in its type shares one number of decimals,
+  as [a frame's floats](dataframes.md#printing) do.
+- **A long array is cut** as NumPy cuts one: of more than 1000 elements the first three and
+  the last three print, with `...` between. A long frame prints its first and last 5 rows.
+- **Alone only.** A tuple or a list that holds an array with missing values, or a frame
+  with such a column, is a compile error in `print`. Print each one alone.
+- **Cost:** one text for each element or row shown.
+
 ## What is not built
 
 Each of these is a compile error that names what an array with missing values has today:
@@ -278,5 +326,6 @@ Each of these is a compile error that names what an array with missing values ha
   `min` and `max`: `var`, `std`, `argsort`;
 - a slice, a mask or a list of positions, `bids[1:3]`;
 - assigning an element, `bids[0] = 2.0`;
-- a `for` loop over the array, and `print` of it;
+- a `for` loop over the array;
+- `print` of a tuple or a list that holds one, or that holds a frame with such a column;
 - one as a struct field.
