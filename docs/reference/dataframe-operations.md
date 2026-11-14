@@ -180,11 +180,53 @@ With four trades of the symbols 7, 3, 7 and 5, this prints:
   partners. It costs one copy of the key's text from both frames and a sort of it.
 - **Both frames are read, not taken**, and the result is a new frame, with no struct for
   its rows until it meets one.
-- **Only the inner join is built.** `how="inner"` can be written out; `"left"`, `"right"`
-  and `"outer"` give rows with missing values, which come with roadmap item 3.13.6.
-  pandas's other arguments, such as `left_on=`, `right_on=` and `suffixes=`, are not built.
+- **This is the inner join**, which `how="inner"` also names: a row with no partner is
+  left out. [The other joins](#left-right-and-outer-joins) keep such rows.
+- **pandas's other arguments**, such as `left_on=`, `right_on=` and `suffixes=`, are not
+  built.
 - **Cost:** for `n` rows in the two frames together and `k` pairs, a sort of `n` rows for
   each key column, then `n + k` steps and one copy of each column of the result.
+
+### Left, right and outer joins
+
+`how="left"` keeps every row of `left`, `how="right"` every row of `right`, and
+`how="outer"` every row of both. A row with no partner holds `None` in the other frame's
+columns, so those columns [may hold `None`](missing-values.md#in-a-dataframe) in the
+result's type:
+
+```python
+print(trades.merge(listings, on="symbol", how="left"))
+print(trades.merge(listings, on="symbol", how="outer"))
+```
+
+With trades of the symbols 7, 3 and 5 and the listings above, this prints:
+
+```text
+   symbol   price   lot
+0       7  189.50   100
+1       3  410.00    10
+2       5   12.25  <NA>
+   symbol  price   lot
+0       3  410.0    10
+1       5  12.25  <NA>
+2       7  189.5   100
+3       8   <NA>     1
+```
+
+- **Which columns may hold `None`** is known when compiling, from `how`, which is why it
+  is a string literal: the columns of `right` that are no keys in a left join, those of
+  `left` in a right join, and both in an outer join. A left join's `lot` above is an
+  `Array[i64 | None, 1]`, so the program checks an element, or calls
+  [`fillna` or `dropna`](missing-values.md#dropna-and-fillna-of-a-frame), before it uses
+  the numbers. A key keeps its type: every row has one, from the frame that has the row.
+- **The rows** of a left join follow `left`, as the inner join's do. Those of a right join
+  follow `right`, and for one row of `right` its partners in the order of `left`. Those of
+  an outer join follow the keys in sorted order, a `None` or a NaN key last, and for one key
+  the rows of `left`, each with its partners in the order of `right`. This is pandas's
+  order.
+- **A column that already may hold `None`** keeps its type, and a `None` it held looks the
+  same as one the join put there.
+- **Cost:** as the inner join, and one validity bitmap for each column that may hold `None`.
 
 ## Rows that repeat
 
