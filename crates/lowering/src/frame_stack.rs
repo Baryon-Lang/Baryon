@@ -3,7 +3,9 @@
 //!
 //! The checker has made sure the frames have one schema, so each column of the result is the
 //! frames' columns of that name end to end, which the standard library's `joined` builds,
-//! or `text_joined` for a column of `str` (`<std>/frame_joins.byn`, decision 0038). Every
+//! or `text_joined` for a column of `str` (`<std>/frame_joins.byn`, decision 0038). A column
+//! that may hold `None` has its values and its validity bitmap put end to end apart, by
+//! `stacked` and `stacked_bits` (`<std>/frame_missing.byn`). Every
 //! frame is borrowed. Cost: the result's columns are copied once for each frame after the
 //! first, so stacking many frames in one call copies the early ones several times.
 
@@ -43,6 +45,13 @@ impl<'db> Builder<'db> {
                     return;
                 };
                 made.push(text);
+                continue;
+            }
+            if let &TypeKind::Optional(inner) = element.kind(self.db) {
+                let Some(whole) = self.optional_stacked(inner, first, parts.collect(), node) else {
+                    return;
+                };
+                made.push(whole);
                 continue;
             }
             // `joined` takes numbers, so a `bool` column is stacked as the integers 0 and 1.

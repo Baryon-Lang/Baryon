@@ -25,7 +25,7 @@ is built from the series and recurrences below and the elementary functions `exp
 ## Accuracy
 
 Each function is tested against values computed with mpmath to 50 digits, at a few hundred
-arguments spread over its range, about 8,600 in all
+arguments spread over its range, about 9,600 in all
 ([the fixtures](../../crates/driver/tests/fixtures/special/README.md)).
 The error is counted in units in the last place (ULP): the gap between adjacent `f64` values at
 the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
@@ -68,6 +68,10 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `kolmogorov`, `kolmogi` | The same | 395 ULP at a result of 3e-224 | 1 ULP |
 | `smirnov`, `smirnovi` | The same | 179 ULP for `smirnovi` at p = 0.9977, where `d` depends on 1 − p | 1 ULP |
 | `owens_t` | The same | 34 ULP at a result of 5e-24 | 1 ULP |
+| `expit`, `log_expit`, `logit`, `xlogy`, `xlog1py`, `entr`, `rel_entr` | 8 ULP | 2 ULP | 1 ULP |
+| `kl_div` | 8 ULP | 3 ULP | 8.8 billion ULP at `kl_div(0.6515198, 0.6515264)`, where x − y cancels |
+| `binom`, `comb` | 8 ULP plus 2 for each unit of the result's logarithm | 18 ULP at a result of 5e160 | 8,523 ULP |
+| `perm`, `factorial` | 8 ULP | 4 ULP | 7 ULP |
 
 Where a function crosses zero, no formula keeps all of its relative precision there: the
 result is a small difference of two numbers near 1. Those functions are held to a precision of
@@ -371,6 +375,43 @@ where the integrand has fallen below exp(−72) of its peak, with 20 Gauss-Legen
 
 SciPy is within a ULP on these five; the functions here meet the same rule as the others.
 
+## Everyday helpers
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `expit(x)` | The logistic sigmoid 1 / (1 + e⁻ˣ) | `scipy.special.expit` |
+| `log_expit(x)` | log(expit(x)), finite where `expit` underflows | `scipy.special.log_expit` |
+| `logit(p)` | log(p / (1 − p)), the inverse of `expit` | `scipy.special.logit` |
+| `xlogy(x, y)`, `xlog1py(x, y)` | x log y and x log(1 + y), 0 when `x` is 0 | `scipy.special.xlogy`, `xlog1py` |
+| `entr(x)` | The entropy term −x log x | `scipy.special.entr` |
+| `rel_entr(x, y)` | The relative entropy term x log(x / y) | `scipy.special.rel_entr` |
+| `kl_div(x, y)` | The Kullback-Leibler term x log(x / y) − x + y | `scipy.special.kl_div` |
+| `binom(n, k)` | The binomial coefficient for real `n` and `k` | `scipy.special.binom` |
+| `comb(n, k, exact=False, repetition=False)` | The number of ways to choose `k` of `n` | `scipy.special.comb` |
+| `perm(n, k, exact=False)` | The number of ordered choices, n! / (n − k)! | `scipy.special.perm` |
+| `factorial(n, exact=False)` | n!, and Γ(n + 1) away from whole numbers | `scipy.special.factorial` |
+
+```python
+from special import comb, expit, kl_div
+
+
+def main():
+    print(expit(2.0))                       # 0.8807970779778823
+    print(comb(10, 3))                      # 120.0
+    print(kl_div(1.0, 1.000001))            # 4.999996665846501e-13
+```
+
+`kl_div` keeps its digits when `x` and `y` are close, where the result is about
+(x − y)²/(2y) and the three terms of its formula cancel: it is formed from t = (x − y)/y, whose
+numerator is exact there. `binom` multiplies its factors for a whole `k` below 1,000, so whole
+results are exact up to 2⁵³, and otherwise corrects each argument of Γ for the rounding of its
+sum.
+
+`exact=True` in `comb`, `perm` and `factorial` counts in integer arithmetic and returns the
+count as an `f64`, where SciPy returns a Python `int` of any size: exact up to 2⁵³, and a count
+past the `int` range, about 9.2e18, is an overflow like any other. `logsumexp` and `softmax`,
+which take arrays, come with array arguments (roadmap 3.18.13).
+
 ## Files under `special`
 
 `special` is one public file, `<std>/special.byn`, that re-exports each function from an internal
@@ -382,7 +423,7 @@ for those working on the library. A panic inside a function names the file it is
 | File | Holds |
 | --- | --- |
 | `special_common` | The whole-number tests `is_integer` and `is_odd`, `floor_count`, which rounds a count down, `sinpi` and `cospi`, and the constants more than one family uses |
-| `special_gamma` | `gamma`, `rgamma`, `gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma`, `polygamma` and the Hurwitz zeta function `polygamma` sums |
+| `special_gamma` | `gamma`, `rgamma`, `gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma`, `polygamma`, the Hurwitz zeta function `polygamma` sums, and `factorial`, which `polygamma` uses |
 | `special_beta` | `beta`, `betaln` and `poch` |
 | `special_error` | `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `ndtri`, `log_ndtr` and `dawsn` |
 | `special_bessel_jy` | `j0`, `j1`, `jn`, `y0`, `y1` and `yn` |
@@ -391,6 +432,7 @@ for those working on the library. A panic inside a function names the file it is
 | `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
 | `special_distributions` | `bdtr`, `bdtrc`, `bdtri`, `nbdtr`, `nbdtrc`, `nbdtri`, `pdtr`, `pdtrc`, `pdtri`, `chdtr`, `chdtrc`, `chdtri`, `fdtr`, `fdtrc`, `fdtri`, `gdtr`, `gdtrc`, `stdtr` and `stdtrit` |
 | `special_kolmogorov` | `kolmogorov`, `kolmogi`, `smirnov`, `smirnovi` and `owens_t` |
+| `special_helpers` | `expit`, `log_expit`, `logit`, `xlogy`, `xlog1py`, `entr`, `rel_entr`, `kl_div`, `binom`, `comb` and `perm` |
 
 A new function goes in the file of its family, and a name of `special` gets its line in
 `special.byn`. A family file kept under about 500 lines is split again by responsibility.
@@ -399,5 +441,5 @@ A new function goes in the file of its family, and a name of `special` gets its 
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
 complex order, Airy, Struve and Kelvin functions, hypergeometric and elliptic functions, orthogonal
-polynomials, exponential integrals and zeta, and the everyday helpers. `loggamma` of a complex
+polynomials, exponential integrals and zeta, and `lambertw` (3.18.11). `loggamma` of a complex
 argument comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).
