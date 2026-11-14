@@ -409,8 +409,69 @@ sum.
 
 `exact=True` in `comb`, `perm` and `factorial` counts in integer arithmetic and returns the
 count as an `f64`, where SciPy returns a Python `int` of any size: exact up to 2⁵³, and a count
-past the `int` range, about 9.2e18, is an overflow like any other. `logsumexp` and `softmax`,
-which take arrays, come with array arguments (roadmap 3.18.13).
+past the `int` range, about 9.2e18, is an overflow like any other.
+
+`logsumexp(a)` and `softmax(a)` take a rank-1 `Array[f64, 1]`, as `scipy.special.logsumexp` and
+`softmax` do without their `axis`, `b` and `return_sign` keywords. Each takes the largest
+element out first, so nothing overflows: `logsumexp(Array([1000.0, 1000.0]))` is
+1000.6931471805599, where the plain formula would give ∞. `logsumexp` of an empty array is −∞.
+
+## Exponential integrals, zeta and the dilogarithm
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `exp1(x)` | The exponential integral E₁(x) = ∫ₓ^∞ e⁻ᵗ / t dt | `scipy.special.exp1` |
+| `expi(x)` | The exponential integral Ei(x), the principal value of ∫₋∞ˣ eᵗ / t dt | `scipy.special.expi` |
+| `expn(n, x)` | The generalized exponential integral Eₙ(x) = ∫₁^∞ e^(−xt) / tⁿ dt, for a whole `n` | `scipy.special.expn` |
+| `sici(x)` | The sine and cosine integrals, `(Si(x), Ci(x))` | `scipy.special.sici` |
+| `shichi(x)` | The hyperbolic sine and cosine integrals, `(Shi(x), Chi(x))` | `scipy.special.shichi` |
+| `fresnel(x)` | The Fresnel integrals, `(S(x), C(x))` in SciPy's order | `scipy.special.fresnel` |
+| `zeta(x)`, `zeta(x, q)` | The Riemann zeta function ζ(x), or the Hurwitz zeta function ζ(x, q) | `scipy.special.zeta` |
+| `zetac(x)` | ζ(x) − 1, with its own precision where ζ is near 1 | `scipy.special.zetac` |
+| `spence(x)` | Spence's function ∫₁ˣ log t / (1 − t) dt, which is Li₂(1 − x) | `scipy.special.spence` |
+
+```python
+from special import exp1, fresnel, spence, zeta
+
+
+def main():
+    print(exp1(1.0))            # 0.21938393439552029
+    s, c = fresnel(1.0)
+    print(s, c)                 # 0.4382591473903548 0.7798934003768228
+    print(zeta(2.0))            # 1.6449340668482264, which is π²/6
+    print(spence(2.0))          # -0.8224670334241132
+```
+
+How each is computed:
+
+- **E₁ and Eₙ** are power series up to 1 and e⁻ˣ times a continued fraction above, evaluated
+  backwards from its tail so its rounding errors shrink. **Ei** is −E₁(−x) below 0, the series
+  γ + log x + Σ xᵏ / (k k!) up to 40, all of whose terms are then positive, and its asymptotic
+  series eˣ/x Σ k!/xᵏ above.
+- **Si and Ci** are power series up to 2; above, Ci(x) − i Si(x) + iπ/2 = E₁(ix), the same
+  continued fraction with a complex argument. **Shi and Chi** are power series of positive
+  terms up to 2, and (Ei(x) ± E₁(x))/2 above.
+- **S and C** are power series below 1.5; above, C + iS comes from the continued fraction of
+  the complementary error function.
+- **ζ(x)** is an Euler–Maclaurin sum from 0 up, and the reflection formula below 0, with
+  log 2π carried as two `f64`s so that large negative arguments keep their digits. ζ(x, q) is
+  the same sum from `q`. `zetac` sums from 2 for large `x`, so 1 is never subtracted from a
+  number near 1.
+- **Spence's function** is the dilogarithm Li₂(1 − x), summed as a series in −log(1 − y) from
+  ½ to 2, where 1 − x is exact; below ½ and above 2, identities of the dilogarithm bring the
+  argument into that range. So its zero at 1 keeps its relative precision.
+
+All nine are held to 16 ULP of the mpmath value, at the 1,375 cases of
+`integral_functions.txt`. Ei near its zero at 0.3725 and Chi near its zero at 0.5238 are held
+to 16 ULP of 1, the size of the terms they are formed from, and Ci, which oscillates as
+sin(x)/x does, to 16 ULP of the larger of its value and 1/x.
+
+### At the ends
+
+As SciPy gives: `exp1(0.0)` is ∞ and `exp1` of a negative argument NaN, where E₁ is complex;
+`expn(n, 0.0)` is ∞ for `n` of 0 or 1 and 1/(n − 1) above; below 0, `Ci` and `Chi` are the real
+parts SciPy gives, Ci(|x|) and Chi(|x|); `zeta(1.0)` is ∞, and the Hurwitz `zeta(x, q)` is NaN
+for `x` below 1; `spence` is NaN below 0 and at ∞.
 
 ## Files under `special`
 
@@ -432,7 +493,9 @@ for those working on the library. A panic inside a function names the file it is
 | `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
 | `special_distributions` | `bdtr`, `bdtrc`, `bdtri`, `nbdtr`, `nbdtrc`, `nbdtri`, `pdtr`, `pdtrc`, `pdtri`, `chdtr`, `chdtrc`, `chdtri`, `fdtr`, `fdtrc`, `fdtri`, `gdtr`, `gdtrc`, `stdtr` and `stdtrit` |
 | `special_kolmogorov` | `kolmogorov`, `kolmogi`, `smirnov`, `smirnovi` and `owens_t` |
-| `special_helpers` | `expit`, `log_expit`, `logit`, `xlogy`, `xlog1py`, `entr`, `rel_entr`, `kl_div`, `binom`, `comb` and `perm` |
+| `special_helpers` | `expit`, `log_expit`, `logit`, `xlogy`, `xlog1py`, `entr`, `rel_entr`, `kl_div`, `binom`, `comb`, `perm`, `logsumexp` and `softmax` |
+| `special_integrals` | `exp1`, `expi`, `expn`, `sici`, `shichi` and `fresnel` |
+| `special_zeta` | `zeta`, `zetac` and `spence` |
 
 A new function goes in the file of its family, and a name of `special` gets its line in
 `special.byn`. A family file kept under about 500 lines is split again by responsibility.
@@ -441,5 +504,5 @@ A new function goes in the file of its family, and a name of `special` gets its 
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
 complex order, Airy, Struve and Kelvin functions, hypergeometric and elliptic functions, orthogonal
-polynomials, exponential integrals and zeta, and `lambertw` (3.18.11). `loggamma` of a complex
-argument comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).
+polynomials, and `lambertw`, whose values are complex (3.18.11). `loggamma` of a complex argument
+comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).

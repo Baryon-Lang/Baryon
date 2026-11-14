@@ -1,7 +1,7 @@
-//! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1),
-//! the incomplete gamma and beta functions (3.18.2), the error functions (3.18.3), the Bessel
-//! functions of whole order (3.18.4), the everyday helpers (3.18.11) and the distribution
-//! functions (3.18.12) gives, at a few hundred arguments each, the value mpmath
+//! Special functions (roadmap 3.18), built and run: each function of the gamma family (3.18.1), the
+//! incomplete gamma and beta functions (3.18.2), the error functions (3.18.3), the Bessel functions
+//! of whole order (3.18.4), the everyday helpers, integrals and zeta functions (3.18.11) and the
+//! distribution functions (3.18.12) gives, at a few hundred arguments each, the value mpmath
 //! computes to 50 digits, within a tolerance in units in the last place (ULP) stated for each
 //! function below, and `SciPy`'s value at its poles, zeros and infinities.
 //!
@@ -95,13 +95,14 @@ def main() -> Raises[None, OSError | ValueError]:
 /// How far a value may be from the reference, in ULP of `scale(name, want, x)`, for a case
 /// whose first argument is `first`.
 ///
-/// Most functions are relative: within 8 ULP of the reference. The Bessel functions are held to 16,
-/// since each is a sum or a recurrence of many terms, and `yn` to 32: its upward recurrence adds
-/// about half a ULP at each order, and the cases reach order 30. `beta` is held to 8 ULP plus 2 for
-/// each unit of the logarithm of the value: above 171 it is `exp(betaln)`, and the exponential
-/// turns each ULP of the logarithm's absolute error into its size in relative error. `binom` and
-/// `comb` are held to the same: past 1,000 factors they are 1/beta, and a product of hundreds of
-/// factors rounds once for each.
+/// Most functions are relative: within 8 ULP of the reference. The exponential, sine, cosine and
+/// Fresnel integrals, zeta and Spence's function are held to 16: each is a series or a continued
+/// fraction of many terms. The Bessel functions are held to 16, since each is a sum or a recurrence
+/// of many terms, and `yn` to 32: its upward recurrence adds about half a ULP at each order, and
+/// the cases reach order 30. `beta` is held to 8 ULP plus 2 for each unit of the logarithm of the
+/// value: above 171 it is `exp(betaln)`, and the exponential turns each ULP of the logarithm's
+/// absolute error into its size in relative error. `binom` and `comb` are held to the same: past
+/// 1,000 factors they are 1/beta, and a product of hundreds of factors rounds once for each.
 ///
 /// The incomplete gamma and beta functions are an exponential of a sum of logarithms times a
 /// series, so they too are held to a number of ULP for each unit of the value's logarithm, 16
@@ -118,7 +119,8 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         "beta" | "binom" | "comb" => 8.0 + 2.0 * want.abs().ln().abs(),
         "yn" => 32.0,
         "j0" | "j1" | "jn" | "y0" | "y1" | "i0" | "i1" | "i0e" | "i1e" | "k0" | "k1" | "k0e"
-        | "k1e" | "kn" => 16.0,
+        | "k1e" | "kn" | "exp1" | "expi" | "expn" | "si" | "ci" | "shi" | "chi" | "fresnel_s"
+        | "fresnel_c" | "zeta" | "zetac" | "hurwitz" | "spence" => 16.0,
         "gammainc" | "gammaincc" | "gammaincinv" | "gammainccinv" => 16.0 * logarithm / shape,
         "betainc" | "betaincc" | "betaincinv" | "betainccinv" => 32.0 * logarithm / shape,
         "bdtr" | "bdtrc" | "bdtri" | "nbdtr" | "nbdtrc" | "nbdtri" | "pdtr" | "pdtrc" | "pdtri"
@@ -130,15 +132,18 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
     }
 }
 
-/// The magnitude a function's error is measured against. `gammaln`, `psi` and `betaln` have
-/// zeros where no formula keeps relative precision (`gammaln` between −3 and −2, `psi` between
-/// each pair of negative whole numbers), so they are measured against the larger of the
-/// reference and 1, the precision of the terms they are formed from. The Bessel functions of
-/// the first and second kind oscillate, so near each zero they are measured against the larger
-/// of the reference and their envelope √(2/(π|x|)), for `|x|` above 1.
+/// The magnitude a function's error is measured against. `gammaln`, `psi`, `betaln`, `expi` and
+/// `chi` (the second value of `shichi`) have zeros where no formula keeps relative precision
+/// (`gammaln` between −3 and −2, `psi` between each pair of negative whole numbers, `expi` at
+/// 0.3725 and `chi` at 0.5238), so they are measured against the larger of the reference and 1, the
+/// precision of the terms they are formed from. `ci`, the second value of `sici`, oscillates like
+/// sin(x)/x, and is measured against the larger of the reference and 1/x. The Bessel functions of
+/// the first and second kind oscillate, so near each zero they are measured against the larger of
+/// the reference and their envelope √(2/(π|x|)), for `|x|` above 1.
 fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
-        "gammaln" | "psi" | "betaln" => want.abs().max(1.0),
+        "gammaln" | "psi" | "betaln" | "expi" | "chi" => want.abs().max(1.0),
+        "ci" => want.abs().max(1.0 / x.abs().max(1.0)),
         "j0" | "j1" | "jn" | "y0" | "y1" | "yn" if x.abs() > 1.0 => want
             .abs()
             .max((2.0 / (std::f64::consts::PI * x.abs())).sqrt()),
@@ -399,6 +404,55 @@ def main() -> Raises[None, OSError | ValueError]:
                     print(perm(a, b))
 ";
 
+/// The integrals' and zeta functions' program, which reads the cases as [`GAMMA_FAMILY`]
+/// does. A case names one value of a function that returns two: `si` and `ci` for `sici`, `shi`
+/// and `chi` for `shichi`, and `fresnel_s` and `fresnel_c` for `fresnel`; `hurwitz` is `zeta`
+/// with its second argument.
+const INTEGRAL_FUNCTIONS: &str = "\
+from special import exp1, expi, expn, fresnel, shichi, sici, spence, zeta, zetac
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            if name == \"expn\":
+                print(expn(int(fields[1]), float(fields[2])))
+                continue
+            x = float(fields[1])
+            if name == \"hurwitz\":
+                print(zeta(x, float(fields[2])))
+            elif name == \"exp1\":
+                print(exp1(x))
+            elif name == \"expi\":
+                print(expi(x))
+            elif name == \"zeta\":
+                print(zeta(x))
+            elif name == \"zetac\":
+                print(zetac(x))
+            elif name == \"spence\":
+                print(spence(x))
+            elif name == \"si\" or name == \"ci\":
+                si, ci = sici(x)
+                if name == \"si\":
+                    print(si)
+                else:
+                    print(ci)
+            elif name == \"shi\" or name == \"chi\":
+                shi, chi = shichi(x)
+                if name == \"shi\":
+                    print(shi)
+                else:
+                    print(chi)
+            else:
+                s, c = fresnel(x)
+                if name == \"fresnel_s\":
+                    print(s)
+                else:
+                    print(c)
+";
+
 /// `gamma`, `rgamma`, `gammaln`, `loggamma`, `gammasgn`, `psi`, `digamma`, `polygamma`, `beta`,
 /// `betaln` and `poch` at the 2,074 cases of `gamma_family.txt`.
 #[test]
@@ -453,4 +507,48 @@ fn distribution_functions_match_the_recorded_values() {
 #[test]
 fn helper_functions_match_the_recorded_values() {
     check("special-helpers", HELPER_FUNCTIONS, "helper_functions.txt").unwrap();
+}
+
+/// `exp1`, `expi`, `expn`, `sici`, `shichi`, `fresnel`, `zeta`, `zetac` and `spence` at the
+/// 1,375 cases of `integral_functions.txt`.
+#[test]
+fn integral_functions_match_the_recorded_values() {
+    check(
+        "special-integrals",
+        INTEGRAL_FUNCTIONS,
+        "integral_functions.txt",
+    )
+    .unwrap();
+}
+
+/// `logsumexp` and `softmax`, which take arrays, give `SciPy` 1.18's values, its infinities
+/// included.
+#[test]
+fn array_helpers_match_scipy() -> io::Result<()> {
+    let program = "\
+from math import inf
+from special import logsumexp, softmax
+
+
+def main():
+    print(logsumexp(Array([1000.0, 1000.0])))
+    print(logsumexp(Array([-1.0, 0.5, 3.0])))
+    weights = softmax(Array([1.0, 2.0, 3.0]))
+    print(weights[0])
+    print(weights[1])
+    print(weights[2])
+    print(logsumexp(Array([-inf, -inf])))
+    print(logsumexp(Array([inf, 1.0])))
+";
+    let directory = package("special-arrays", &[("main.byn", program)])?;
+    let (output, executable) = baryon_build(&directory)?;
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&executable).output()?;
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "1000.6931471805599\n3.0956743294143823\n0.09003057317038046\n\
+         0.24472847105479764\n0.6652409557748218\n-inf\ninf\n"
+    );
+    Ok(())
 }

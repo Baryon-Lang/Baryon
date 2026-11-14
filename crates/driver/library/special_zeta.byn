@@ -1,0 +1,159 @@
+"""The zeta functions and the dilogarithm for `special` (roadmap 3.18.11): `zeta`, `zetac`
+and `spence`.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, fma, inf, isinf, isnan, log, log1p, nan, pi
+from special_common import sinpi
+from special_gamma import gamma, hurwitz_zeta
+from special_beta import rounding
+from special_helpers import shift
+
+
+_PI_SQUARED_OVER_SIX: Final = 1.6449340668482264  # ζ(2) = π²/6
+_LOG_TWO_PI: Final = 1.8378770664093456  # log 2π, rounded to f64
+_LOG_TWO_PI_LOW: Final = -7.756588316134483e-17  # log 2π minus `_LOG_TWO_PI`
+
+
+def _riemann_zeta(x: f64) -> f64:
+    """The Riemann zeta function ζ(x) for `x` other than 1.
+
+    From 0 up it is `hurwitz_zeta` at q = 1, the Euler–Maclaurin sum, which holds on both
+    sides of the pole. Below 0, where that sum cancels, it is the reflection
+    ζ(x) = (2π)ˣ/π sin(πx/2) Γ(1 − x) ζ(1 − x), exactly 0 at the negative even numbers.
+
+    (2π)ˣ is exp(x log 2π) with x log 2π carried as a rounded product and its exact remainder,
+    log 2π itself in two parts, since a ULP of an exponent near −400 is 260 ULP of the power;
+    Γ(1 − x) is corrected for the rounding of 1 − x. Past 171, where Γ overflows, the last
+    factors of Γ are multiplied in after the small power, so nothing overflows before the
+    result does.
+    """
+    if x >= 0.0:
+        return hurwitz_zeta(x, 1.0)
+    sine = sinpi(0.5 * x)
+    if sine == 0.0:
+        return 0.0
+    mirror = 1.0 - x
+    lost = rounding(1.0, -x, mirror)
+    reflected = hurwitz_zeta(mirror, 1.0)
+    product = x * _LOG_TWO_PI
+    remainder = fma(x, _LOG_TWO_PI, -product) + x * _LOG_TWO_PI_LOW
+    power = exp(product) * (1.0 + remainder) / pi
+    steps = 0
+    shifted = mirror
+    while shifted > 171.0:
+        shifted -= 1.0
+        steps += 1
+    value = power * sine * reflected * gamma(shifted) * (1.0 + shift(mirror, lost))
+    for i in range(steps):
+        value *= shifted + i
+    return value
+
+
+def zeta(x: f64, q: f64 | None = None) -> f64:
+    """The Riemann zeta function ζ(x) = Σ k⁻ˣ, or with `q` the Hurwitz zeta function
+    ζ(x, q) = Σ (k + q)⁻ˣ over k from 0, as `scipy.special.zeta`.
+
+    The Riemann function is defined for every `x` but 1, where it is ∞; the Hurwitz function,
+    as SciPy has it, only above 1, and NaN below. At `x` = ∞ the Hurwitz function is 1 for
+    `q` = 1, ∞ below and NaN above, as SciPy gives.
+
+    ```python
+    from special import zeta
+
+    print(zeta(2.0))        # 1.6449340668482264, which is π²/6
+    print(zeta(2.0, 2.0))   # 0.6449340668482264
+    ```
+    """
+    if isnan(x):
+        return nan
+    if x == 1.0:
+        return inf
+    if q is None:
+        if isinf(x):
+            if x > 0.0:
+                return 1.0
+            return nan
+        return _riemann_zeta(x)
+    shift = q
+    if isnan(shift) or x < 1.0:
+        return nan
+    if isinf(x):
+        if shift == 1.0:
+            return 1.0
+        if shift < 1.0:
+            return inf
+        return nan
+    return hurwitz_zeta(x, shift)
+
+
+def zetac(x: f64) -> f64:
+    """ζ(x) − 1, as `scipy.special.zetac`, with its own precision where ζ is near 1: for large
+    `x` it is the Hurwitz sum from 2, Σ (k + 2)⁻ˣ, never 1 subtracted from a number near 1.
+
+    ```python
+    from special import zetac
+
+    print(zetac(60.0))      # 8.673617380119934e-19
+    ```
+    """
+    if isnan(x):
+        return nan
+    if x == 1.0:
+        return inf
+    if isinf(x):
+        if x > 0.0:
+            return 0.0
+        return nan
+    if x >= 2.0:
+        return hurwitz_zeta(x, 2.0)
+    return _riemann_zeta(x) - 1.0
+
+
+def _dilogarithm_small(y: f64) -> f64:
+    """The dilogarithm Li₂(y) for `y` from −1 to ½, by the series in u = −log(1 − y) whose
+    coefficients are Bernoulli numbers: u − u²/4 + u Σ B₂ₖ u²ᵏ / (2k + 1)!, with |u| at most
+    log 2, where 11 terms reach 1e-19."""
+    u = -log1p(-y)
+    w = u * u
+    s = 2.395218621026187e-19
+    s = s * w - 1.0356517612181247e-17
+    s = s * w + 4.518980029619918e-16
+    s = s * w - 1.9939295860721074e-14
+    s = s * w + 8.921691020456452e-13
+    s = s * w - 4.0647616451442256e-11
+    s = s * w + 1.8978869988971e-09
+    s = s * w - 9.185773074661964e-08
+    s = s * w + 4.72411186696901e-06
+    s = s * w - 0.0002777777777777778
+    s = s * w + 0.027777777777777776
+    return u - 0.25 * w + u * w * s
+
+
+def spence(x: f64) -> f64:
+    """Spence's function ∫₁ˣ log t / (1 − t) dt = Li₂(1 − x) for `x` from 0 up, as
+    `scipy.special.spence` for a real argument: NaN below 0 and, as SciPy gives, at ∞.
+
+    From ½ to 2, 1 − x is exact and goes to the series directly. Below ½, it is
+    π²/6 − log(x) log1p(−x) − Li₂(x); above 2, −π²/6 − ½ log²(x − 1) − Li₂(1/(1 − x)). So the
+    zero at 1 keeps its relative precision.
+
+    ```python
+    from special import spence
+
+    print(spence(2.0))      # -0.8224670334241132
+    ```
+    """
+    if isnan(x) or x < 0.0:
+        return nan
+    if x == 0.0:
+        return _PI_SQUARED_OVER_SIX
+    if isinf(x):
+        return nan
+    if x >= 0.5 and x <= 2.0:
+        return _dilogarithm_small(1.0 - x)
+    if x < 0.5:
+        return _PI_SQUARED_OVER_SIX - log(x) * log1p(-x) - _dilogarithm_small(x)
+    excess = log(x - 1.0)
+    return -_PI_SQUARED_OVER_SIX - 0.5 * excess * excess - _dilogarithm_small(1.0 / (1.0 - x))
