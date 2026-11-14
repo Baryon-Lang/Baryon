@@ -37,6 +37,10 @@ impl<'db> Body<'db> {
                 TypeKind::Primitive(Primitive::Bool | Primitive::Integer(Integer::I64))
             )
         });
+        // An array with missing values reports that a choice of its elements is not built.
+        if indices.len() == 1 && self.is_optional_array(base) {
+            return None;
+        }
         let chosen_from = rank_one(base).is_some() || self.is_text_array(base);
         if indices.len() == 1 && chosen_from && chooses {
             return Some(base);

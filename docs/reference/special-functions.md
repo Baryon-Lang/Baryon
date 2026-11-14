@@ -48,6 +48,13 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `ndtri` | 8 ULP | 2 ULP | 2 ULP |
 | `log_ndtr` | 8 ULP | 3 ULP | 52 ULP at 9.76 |
 | `dawsn` | 8 ULP | 6 ULP | 10 ULP |
+| `j0`, `j1` | 16 ULP of the larger of the value and its envelope | 7 ULP | 4 ULP |
+| `y0`, `y1` | 16 ULP of the larger of the value and its envelope | 10 ULP | 17 ULP; 35 million at `y1(6.8e7)` |
+| `jn` | 16 ULP of the larger of the value and its envelope | 8 ULP | 152 ULP at `jn(30, 0.0013)` |
+| `yn` | 32 ULP of the larger of the value and its envelope | 18 ULP at order 30 | 12 ULP |
+| `i0`, `i1`, `i0e`, `i1e` | 16 ULP | 8 ULP | 8 ULP |
+| `k0`, `k1`, `k0e`, `k1e` | 16 ULP | 4 ULP | 4 ULP |
+| `kn` | 16 ULP | 7 ULP | 67 ULP at `kn(30, 3.8)` |
 
 Where a function crosses zero, no formula keeps all of its relative precision there: the
 result is a small difference of two numbers near 1. Those functions are held to a precision of
@@ -173,10 +180,66 @@ At the ends of their ranges they give what SciPy gives: `erf(±inf)` is ±1, `er
 `erfcx(-inf)` ∞, `erfinv(±1.0)` ±∞, `erfcinv(0.0)` ∞ and `erfcinv(2.0)` −∞, `ndtri(0.0)` −∞
 and `ndtri(1.0)` ∞, `log_ndtr(-inf)` −∞, and NaN outside each function's domain.
 
+## Bessel functions of whole order
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `j0(x)`, `j1(x)`, `jn(n, x)` | Bessel functions of the first kind, Jₙ(x) | `scipy.special.j0`, `j1`, `jn` |
+| `y0(x)`, `y1(x)`, `yn(n, x)` | Bessel functions of the second kind, Yₙ(x), for x > 0 | `scipy.special.y0`, `y1`, `yn` |
+| `i0(x)`, `i1(x)` | Modified Bessel functions of the first kind, Iₙ(x) | `scipy.special.i0`, `i1` |
+| `i0e(x)`, `i1e(x)` | Iₙ(x) e^−\|x\|, finite where Iₙ overflows | `scipy.special.i0e`, `i1e` |
+| `k0(x)`, `k1(x)`, `kn(n, x)` | Modified Bessel functions of the second kind, Kₙ(x), for x > 0 | `scipy.special.k0`, `k1`, `kn` |
+| `k0e(x)`, `k1e(x)` | Kₙ(x) eˣ, finite where Kₙ underflows | `scipy.special.k0e`, `k1e` |
+
+The order `n` of `jn`, `yn` and `kn` is an `int`. Bessel functions of any real order, `jv`,
+`yv`, `iv` and `kv`, come in roadmap 3.18.5.
+
+```python
+from special import j0, jn
+
+
+def main():
+    # The first zero of J₀, rounded to f64: the true value there is -6.1e-17.
+    print(j0(2.404825557695773))    # 0.0, within a ULP of the envelope
+    print(jn(5, 2.0))               # 0.007039629755871685
+```
+
+How each is computed:
+
+- **J₀ and J₁** sum their power series up to |x| = 2, where the first term is the largest.
+  From 2 to 25, Miller's backward recurrence Jₖ₋₁ = (2k/x) Jₖ − Jₖ₊₁ runs down from an order
+  about x/2 + 15 + √x above the one wanted, where the starting guess no longer matters, and the
+  ladder is scaled so that J₀ + 2 Σ J₂ₖ = 1. From 25 up, Hankel's asymptotic expansion, whose
+  phase is formed from `cos(x)` and `sin(x)` of the exact argument.
+- **Y₀ and Y₁** use their logarithmic series up to 2, Neumann's series over the same ladder of J
+  from 2 to 25, and Hankel's expansion beyond.
+- **`jn`** recurs upward from J₀ and J₁ while the order is below |x|, where that is stable, and
+  runs Miller's recurrence above. **`yn`** and **`kn`** recur upward from orders 0 and 1, which
+  is stable for Y and K at every order.
+- **I₀ and I₁** sum their power series, all of whose terms are positive, below 20, and their
+  asymptotic series above; `i0` and `i1` are the scaled functions times e^|x|.
+- **K₀ and K₁** use their logarithmic series up to 0.5. From 0.5 to 20 they are integrals,
+  Kₙ(x) eˣ = ∫₀^∞ exp(−2x sinh²(t/2)) cosh(nt) dt, by the trapezoid rule with steps of 0.1:
+  the integrand is analytic and falls faster than exponentially, so the rule's error is about
+  exp(−π²/0.1), far below a ULP, in 18 to 80 points. Above 20, the asymptotic series.
+
+### Accuracy near zeros
+
+J and Y oscillate, and near each zero no formula keeps the value's relative precision: it is
+the small difference of two terms of the size of the envelope √(2/(πx)). Away from 0 they are
+tested to a few ULP of the larger of the value and the envelope, which is what SciPy reaches
+too. Close to 0, J₀, J₁ and their series are relative.
+
+### At the ends
+
+`y0`, `y1`, `yn`, `k0`, `k1` and `kn` are −∞ or ∞ at 0 and NaN below 0, as SciPy gives. At
+infinity each function gives its limit, 0 for J and Y and ∞ for I, where SciPy 1.18 gives NaN
+for `j0`, `j1`, `jn`, `y0`, `i0` and `i1`.
+
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: the incomplete gamma and beta
-functions, Bessel, Airy, Struve and Kelvin functions, hypergeometric and
-elliptic functions, orthogonal polynomials, exponential integrals and zeta, and the
-distribution functions. `loggamma` of a complex argument comes with the complex Bessel
-functions (3.18.6). See [What builds today](status.md).
+functions, Bessel functions of real and complex order, Airy, Struve and Kelvin functions,
+hypergeometric and elliptic functions, orthogonal polynomials, exponential integrals and zeta, and
+the distribution functions. `loggamma` of a complex argument comes with the complex Bessel functions
+(3.18.6). See [What builds today](status.md).

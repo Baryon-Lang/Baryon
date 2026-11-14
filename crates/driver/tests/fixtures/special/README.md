@@ -1,8 +1,9 @@
 # Special-function reference values
 
-`gamma_family.txt` and `error_functions.txt` hold the cases the build tests in
-[`../../build/special.rs`](../../build/special.rs) check the `special` module's gamma family
-(roadmap 3.18.1) and error functions (3.18.3) against. Each line is a function's name, its arguments and the value the
+`gamma_family.txt`, `error_functions.txt` and `bessel_functions.txt` hold the cases the build
+tests in [`../../build/special.rs`](../../build/special.rs) check the `special` module's gamma
+family (roadmap 3.18.1), error functions (3.18.3) and Bessel functions of whole order (3.18.4)
+against. Each line is a function's name, its arguments and the value the
 function should give, separated by spaces and written as Python's `repr` writes a float:
 
 ```text
@@ -10,10 +11,11 @@ gamma -16.481439370601617 -3.8732193888774417e-14
 polygamma 3 -8.996117952868211 26418492688.871017
 ```
 
-Most values were computed with mpmath 1.4.1 at 50 digits and rounded to `f64`, at arguments drawn
-at random, with a fixed seed, over each function's range. The last lines are the poles, zeros and
-infinities, where the value is SciPy 1.18.1's, which the module gives exactly. Neither mpmath nor
-SciPy is needed to run the tests.
+Most values were computed with mpmath 1.4.1 at 50 digits and rounded to `f64`, at arguments drawn at
+random, with a fixed seed, over each function's range. The last lines are the poles, zeros and
+infinities, where the value is SciPy 1.18.1's, which the module gives exactly, except the Bessel
+functions' limits at infinity, where SciPy gives NaN and the file holds the limit. Neither mpmath
+nor SciPy is needed to run the tests.
 
 ## The coefficients in `special.byn`
 
@@ -88,9 +90,9 @@ print("# 2/sqrtpi", f(2/mp.sqrt(mp.pi)), "1/sqrtpi", f(1/mp.sqrt(mp.pi)), "sqrt2
 
 ## Recording the cases again
 
-Run this in this directory, with mpmath, NumPy and SciPy installed. It writes both files; the
-error functions' cases are drawn after the gamma family's, so adding them left
-`gamma_family.txt` as it was:
+Run this in this directory, with mpmath, NumPy and SciPy installed. It writes all three files;
+each family's cases are drawn after the ones before, so adding a family leaves the earlier
+files as they were:
 
 ```text
 import math
@@ -228,5 +230,56 @@ for name, arguments in edges:
     value = float(getattr(scipy.special, name)(*arguments))
     lines.append(" ".join([name] + [repr(x) for x in arguments] + [repr(value)]))
 with open("error_functions.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+# Bessel functions of whole order (roadmap 3.18.4), drawn after the error functions.
+lines = []
+bessel_one = {
+    "j0": (lambda x: mpmath.besselj(0, x), uniform(-2, 2, 40) + uniform(2, 25, 80)
+           + uniform(25, 200, 40) + spread(200, 1e8, 20)),
+    "j1": (lambda x: mpmath.besselj(1, x), uniform(-2, 2, 40) + uniform(2, 25, 80)
+           + uniform(-200, -25, 40) + spread(200, 1e8, 20)),
+    "y0": (lambda x: mpmath.bessely(0, x), spread(1e-300, 2, 40) + uniform(2, 25, 80)
+           + uniform(25, 200, 40) + spread(200, 1e8, 20)),
+    "y1": (lambda x: mpmath.bessely(1, x), spread(1e-300, 2, 40) + uniform(2, 25, 80)
+           + uniform(25, 200, 40) + spread(200, 1e8, 20)),
+    "i0e": (lambda x: mpmath.besseli(0, x) * mpmath.exp(-abs(mpmath.mpf(x))),
+            uniform(-20, 20, 80) + spread(20, 1e8, 30)),
+    "i1e": (lambda x: mpmath.besseli(1, x) * mpmath.exp(-abs(mpmath.mpf(x))),
+            uniform(-20, 20, 80) + spread(20, 1e8, 30)),
+    "i0": (lambda x: mpmath.besseli(0, x), uniform(-700, 700, 60)),
+    "i1": (lambda x: mpmath.besseli(1, x), uniform(-700, 700, 60)),
+    "k0e": (lambda x: mpmath.besselk(0, x) * mpmath.exp(x), spread(1e-300, 0.5, 30)
+            + uniform(0.5, 20, 80) + spread(20, 1e8, 30)),
+    "k1e": (lambda x: mpmath.besselk(1, x) * mpmath.exp(x), spread(1e-300, 0.5, 30)
+            + uniform(0.5, 20, 80) + spread(20, 1e8, 30)),
+    "k0": (lambda x: mpmath.besselk(0, x), spread(1e-300, 0.5, 30) + uniform(0.5, 700, 60)),
+    "k1": (lambda x: mpmath.besselk(1, x), spread(1e-300, 0.5, 30) + uniform(0.5, 700, 60)),
+}
+for name, (function, arguments) in bessel_one.items():
+    for x in arguments:
+        lines.append(f"{name} {x!r} {float(function(x))!r}")
+for n in [2, 3, 5, 10, 30, -4, -7]:
+    for x in uniform(-60, 60, 20) + spread(1e-3, 1, 5):
+        lines.append(f"jn {n} {x!r} {float(mpmath.besselj(n, x))!r}")
+    for x in spread(0.05, 60, 20):
+        lines.append(f"yn {n} {x!r} {float(mpmath.bessely(n, x))!r}")
+        lines.append(f"kn {n} {x!r} {float(mpmath.besselk(n, x))!r}")
+edges = [
+    ("j0", (0.0,)), ("j1", (0.0,)), ("y0", (0.0,)), ("y0", (-1.0,)), ("y1", (0.0,)),
+    ("y1", (-1.0,)), ("i0", (0.0,)), ("i0e", (inf,)), ("i1e", (inf,)), ("k0", (0.0,)),
+    ("k0", (-1.0,)), ("k0", (inf,)), ("k0e", (0.0,)), ("k1", (0.0,)), ("k1e", (inf,)),
+]
+for name, arguments in edges:
+    value = float(getattr(scipy.special, name)(*arguments))
+    lines.append(" ".join([name] + [repr(x) for x in arguments] + [repr(value)]))
+for name, n, x in [("jn", 3, 0.0), ("yn", 2, 0.0), ("yn", 2, -1.0), ("kn", 2, 0.0),
+                   ("kn", 2, -1.0)]:
+    value = float(getattr(scipy.special, name)(n, x))
+    lines.append(f"{name} {n} {x!r} {value!r}")
+# The limits at infinity, where SciPy 1.18 gives NaN: Jₙ and Yₙ fall to 0 and I₀ and I₁ grow
+# without bound.
+lines += ["j0 inf 0.0", "j1 -inf 0.0", "y0 inf 0.0", "i0 inf inf", "i1 -inf -inf",
+          "jn 4 inf 0.0"]
+with open("bessel_functions.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```

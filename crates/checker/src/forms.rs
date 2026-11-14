@@ -9,8 +9,12 @@ use types::{Shape, Type, TypeDb, TypeKind, Value};
 impl<'db> Lowerer<'db> {
     /// `Array[element, rank]`.
     pub(crate) fn array(&mut self, element: NodeId, rank_node: NodeId) -> Type<'db> {
-        if matches!(self.lower(element).kind(self.db), TypeKind::Str) {
+        let lowered = self.lower(element);
+        if matches!(lowered.kind(self.db), TypeKind::Str) {
             return self.text_array(rank_node);
+        }
+        if matches!(lowered.kind(self.db), TypeKind::Optional(_)) {
+            return self.optional_array(element, lowered, rank_node);
         }
         let element = self.element(element);
         let rank = match self.evaluate(rank_node) {
@@ -40,6 +44,47 @@ impl<'db> Lowerer<'db> {
                 "an array of `str` has one dimension",
                 "not 1",
                 Some("write `Array[str, 1]`; for a grid of text use a `list` of them"),
+            ),
+        }
+    }
+
+    /// The `T` of `ty` when it is `T | None` with `T` a number or `bool`: what an array with
+    /// missing values (decision 0045) may hold today.
+    pub(crate) fn optional_element(&self, ty: Type<'db>) -> Option<Type<'db>> {
+        match ty.kind(self.db) {
+            TypeKind::Optional(element)
+                if matches!(element.kind(self.db), TypeKind::Primitive(_)) =>
+            {
+                Some(*element)
+            }
+            _ => None,
+        }
+    }
+
+    /// `Array[T | None, rank]`: an array with missing values (decision 0045), which has one
+    /// dimension and holds numbers or `bool`s. `element` is where `ty`, the `T | None`, is
+    /// written.
+    fn optional_array(&mut self, element: NodeId, ty: Type<'db>, rank_node: NodeId) -> Type<'db> {
+        let Some(present) = self.optional_element(ty) else {
+            let message = format!("an array cannot hold `{}` yet", ty.display(self.db));
+            return self.error(
+                element,
+                &message,
+                "not a number or `bool`, or `None`",
+                Some(
+                    "an array with missing values holds numbers or `bool`s today, such as \
+                     `Array[f64 | None, 1]`; the rest comes with roadmap item 3.13.6",
+                ),
+            );
+        };
+        match self.evaluate(rank_node) {
+            Some(Value::Integer(1)) => Type::new(self.db, TypeKind::OptionalArray(present)),
+            None => self.unknown(),
+            Some(_) => self.error(
+                rank_node,
+                "an array with missing values has one dimension",
+                "not 1",
+                Some("write `Array[f64 | None, 1]`; more dimensions are roadmap item 3.24"),
             ),
         }
     }

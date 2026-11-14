@@ -66,3 +66,65 @@ for libver, name in [("earliest", "earliest.h5"), ("latest", "latest.h5")]:
     with h5py.File(name, "w", libver=libver) as f:
         fill(f)
 ```
+
+## Writing
+
+`writes.txt` holds the scenarios of the HDF5 writer's tests (`files::hdf5::writing` in the
+runtime). Each is a log of changes, in the lines that module documents, after a line
+`== name size digest`: the size and the 64-bit FNV-1a digest of the file h5py writes with the
+same calls. A dataset's values are 0, 1, 2 and so on in its element type. The digests stand in
+for the files, some of which are hundreds of kilobytes.
+
+To record the sizes and digests again, after adding a scenario with `== name 0 0`, run this in
+this directory as `python record.py writes.txt`:
+
+```python
+import os
+import sys
+import tempfile
+
+import h5py
+import numpy as np
+
+
+def fnv(data):
+    digest = 0xCBF29CE484222325
+    for byte in data:
+        digest = ((digest ^ byte) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return digest
+
+
+def lengths(text):
+    return tuple(int(length) for length in text.split(",") if length)
+
+
+def run(lines, path):
+    with h5py.File(path, "w") as f:
+        for line in lines:
+            fields = line.split("\t", 4)
+            if fields[0] == "G":
+                f.create_group(fields[1])
+            elif fields[0] == "D":
+                shape = lengths(fields[3])
+                values = np.arange(int(np.prod(shape))).astype(fields[2]).reshape(shape)
+                f.create_dataset(fields[1], data=values)
+            elif fields[0] == "A":
+                target = f[fields[1]] if fields[1] else f
+                if fields[3] == "str":
+                    target.attrs[fields[2]] = fields[4]
+                else:
+                    shape, digits = fields[4].split("\t")
+                    values = np.frombuffer(bytes.fromhex(digits), dtype=fields[3])
+                    target.attrs[fields[2]] = values.reshape(lengths(shape))[()]
+
+
+lines = open(sys.argv[1]).read().split("\n")
+path = os.path.join(tempfile.gettempdir(), "record.h5")
+heads = [index for index, line in enumerate(lines) if line.startswith("== ")]
+for start, end in zip(heads, heads[1:] + [len(lines)]):
+    log = [line for line in lines[start + 1 : end] if line and not line.startswith("#")]
+    run(log, path)
+    data = open(path, "rb").read()
+    lines[start] = f"== {lines[start].split()[1]} {len(data)} {fnv(data):016x}"
+open(sys.argv[1], "w").write("\n".join(lines))
+```

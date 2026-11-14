@@ -75,8 +75,8 @@ jobs:
         run: |
           name="baryon-${{ steps.version.outputs.version }}-${{ matrix.target }}"
           mkdir -p "dist/$name"
-          cp target/release/baryon target/release/libruntime.a LICENSE LICENSE-MIT THIRD-PARTY-NOTICES.md \
-            "dist/$name/"
+          cp target/release/baryon target/release/libruntime.a "dist/$name/"
+          cp LICENSE LICENSE-MIT THIRD-PARTY-NOTICES.md "dist/$name/"
           cargo xtask crate-licenses "dist/$name/CRATE-LICENSES.md"
           cd dist
           tar -czf "$name.tar.gz" "$name"
