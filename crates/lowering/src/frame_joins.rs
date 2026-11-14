@@ -13,6 +13,7 @@
 
 use crate::builder::Builder;
 use crate::frames::erase;
+use crate::optional_arrays::VALUES;
 use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
@@ -61,28 +62,10 @@ impl<'db> Builder<'db> {
                 left_source.clone().project(Projection::Field(left_at)),
                 right_source.clone().project(Projection::Field(right_at)),
             ];
-            // A key that may hold `None` is joined as two columns: whether each element is
-            // there, and its value with the filler under each `None`, so a `None` joins a
-            // `None` and no number, as a NaN joins a NaN.
-            if let &TypeKind::Optional(element) = column.element.kind(self.db) {
-                let [Some(left_keys), Some(right_keys)] =
-                    sides.map(|side| self.optional_keys(&side, element, key))
-                else {
-                    return;
-                };
-                for ((left_key, compared), (right_key, _)) in left_keys.into_iter().zip(right_keys)
-                {
-                    let Some(both) = self.joined_key([left_key, right_key], compared, key) else {
-                        return;
-                    };
-                    keys.push(both);
-                }
-                continue;
-            }
-            let Some(both) = self.joined_key(sides, column.element, key) else {
+            let Some(joined) = self.joined_keys(sides, column.element, key) else {
                 return;
             };
-            keys.push(both);
+            keys.extend(joined);
         }
         let count = self.counted_rows(left, &left_source, node);
         let Some(pairs) = self.join_pairs(&keys, count, node) else {
@@ -118,6 +101,46 @@ impl<'db> Builder<'db> {
             }
         }
         self.assign(place, Rvalue::Aggregate(ty, made), node);
+    }
+
+    /// The key columns that stand for one key of `merge` whose elements are `element`, from
+    /// the key's column in each frame, `sides` with the left frame's first: one column for a
+    /// key that holds no `None` ([`Builder::joined_key`]), and two for a key that may. Those
+    /// two are whether each element is there, and its value with the filler under each
+    /// `None`, so a `None` joins a `None` and no value, as a NaN joins a NaN. `None` after an
+    /// error is reported.
+    fn joined_keys(
+        &mut self,
+        sides: [Place; 2],
+        element: Type<'db>,
+        key: NodeId,
+    ) -> Option<Vec<(Place, Type<'db>)>> {
+        let &TypeKind::Optional(inner) = element.kind(self.db) else {
+            return Some(vec![self.joined_key(sides, element, key)?]);
+        };
+        if matches!(inner.kind(self.db), TypeKind::Str) {
+            // Text is numbered over both frames at once, so the flags are made apart from
+            // the values, which hold an empty text under each `None`.
+            let [left, right] = sides;
+            let flags = [
+                Place::from(self.presence(&left, inner, key)?),
+                Place::from(self.presence(&right, inner, key)?),
+            ];
+            let values = [left, right].map(|side| side.project(Projection::Field(VALUES)));
+            let int = self.int_type();
+            return Some(vec![
+                self.joined_key(flags, int, key)?,
+                self.joined_key(values, inner, key)?,
+            ]);
+        }
+        let [left, right] = sides;
+        let left = self.optional_keys(&left, inner, key)?;
+        let right = self.optional_keys(&right, inner, key)?;
+        let mut keys = Vec::with_capacity(2);
+        for ((left_key, compared), (right_key, _)) in left.into_iter().zip(right) {
+            keys.push(self.joined_key([left_key, right_key], compared, key)?);
+        }
+        Some(keys)
     }
 
     /// The key column of the two frames end to end, `sides` with the left frame's first,

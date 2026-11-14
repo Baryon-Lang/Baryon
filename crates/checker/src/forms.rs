@@ -48,12 +48,15 @@ impl<'db> Lowerer<'db> {
         }
     }
 
-    /// The `T` of `ty` when it is `T | None` with `T` a number or `bool`: what an array with
-    /// missing values (decision 0045) may hold today.
+    /// The `T` of `ty` when it is `T | None` with `T` a number, a `bool` or `str`: what an
+    /// array with missing values (decision 0045) may hold today.
     pub(crate) fn optional_element(&self, ty: Type<'db>) -> Option<Type<'db>> {
         match ty.kind(self.db) {
             TypeKind::Optional(element)
-                if matches!(element.kind(self.db), TypeKind::Primitive(_)) =>
+                if matches!(
+                    element.kind(self.db),
+                    TypeKind::Primitive(_) | TypeKind::Str
+                ) =>
             {
                 Some(*element)
             }
@@ -62,7 +65,7 @@ impl<'db> Lowerer<'db> {
     }
 
     /// `Array[T | None, rank]`: an array with missing values (decision 0045), which has one
-    /// dimension and holds numbers or `bool`s. `element` is where `ty`, the `T | None`, is
+    /// dimension and holds numbers, `bool`s or text. `element` is where `ty`, the `T | None`, is
     /// written.
     fn optional_array(&mut self, element: NodeId, ty: Type<'db>, rank_node: NodeId) -> Type<'db> {
         let Some(present) = self.optional_element(ty) else {
@@ -70,10 +73,10 @@ impl<'db> Lowerer<'db> {
             return self.error(
                 element,
                 &message,
-                "not a number or `bool`, or `None`",
+                "not a number, a `bool` or `str`, or `None`",
                 Some(
-                    "an array with missing values holds numbers or `bool`s today, such as \
-                     `Array[f64 | None, 1]`; the rest comes with roadmap item 3.13.6",
+                    "an array with missing values holds numbers, `bool`s or `str` today, such \
+                     as `Array[f64 | None, 1]`",
                 ),
             );
         };

@@ -106,7 +106,7 @@ error: a column of a `DataFrame` cannot hold `list[f64]` yet
    |
 19 | def types(a: DataFrame[f64], b: DataFrame[Named], c: DataFrame[Empty], d: DataFrame):
    |                                           ^^^^^ the field `name` would be such a column
-   = note: a column holds numbers, `bool` or `str` today, and numbers or `bool`s that may be `None`
+   = note: a column holds numbers, `bool` or `str` today, any of which may be `None`
 
 error: `Empty` has no fields, so a `DataFrame` of it would have no columns
   --> main.byn:19:64
