@@ -20,6 +20,9 @@ pub(super) struct Chunked {
     pub(super) element: u8,
     /// The filters each chunk passes through.
     pub(super) filters: Filters,
+    /// For a deflated dataset, the size of each chunk the caller deflated, in C order of
+    /// position. The library stores a deflated chunk even when it is larger than the chunk.
+    pub(super) deflated: Vec<u64>,
     /// The B-tree of chunks, once values are written.
     pub(super) btree: Option<Btree<Key>>,
     /// The chunks stored: position in chunks, address and stored size, in the order stored.
@@ -35,9 +38,62 @@ impl Chunked {
             chunk: chunk.to_vec(),
             element,
             filters,
+            deflated: Vec::new(),
             btree: None,
             stored: Vec::new(),
         }
+    }
+
+    /// The bytes of one chunk before any filter.
+    fn chunk_bytes(&self) -> u64 {
+        self.chunk.iter().product::<u64>() * u64::from(self.element)
+    }
+
+    /// The number of chunks along each axis.
+    fn counts(&self) -> Vec<u64> {
+        self.shape
+            .iter()
+            .zip(&self.chunk)
+            .map(|(length, chunk)| length.div_ceil(*chunk))
+            .collect()
+    }
+
+    /// Sets the sizes of the deflated chunks, `deflated`, as [`Chunked::deflated`] holds them.
+    ///
+    /// # Errors
+    ///
+    /// Fails unless there is one size per chunk.
+    pub(super) fn set_deflated(&mut self, deflated: Vec<u64>) -> Result<(), String> {
+        let count: u64 = self.counts().iter().product();
+        if deflated.len() as u64 != count {
+            return Err(format!(
+                "the dataset has {count} chunks, not {}",
+                deflated.len()
+            ));
+        }
+        self.deflated = deflated;
+        Ok(())
+    }
+
+    /// The bytes of values the caller hands over: the dataset's values, or for a deflated
+    /// dataset its deflated chunks one after another.
+    pub(super) fn values_size(&self) -> u64 {
+        if self.filters.deflate.is_some() {
+            self.deflated.iter().sum()
+        } else {
+            self.shape.iter().product::<u64>() * u64::from(self.element)
+        }
+    }
+
+    /// The index in C order of the chunk at `position`.
+    fn linear(&self, position: &[u64]) -> usize {
+        let counts = self.counts();
+        to_usize(
+            position
+                .iter()
+                .zip(&counts)
+                .fold(0, |linear, (at, count)| linear * count + at),
+        )
     }
 
     /// The size of a chunk's key in the B-tree: its size and filter mask, then an offset per
@@ -57,9 +113,15 @@ impl Chunked {
         let node_size = 24 + two_k as u64 * 8 + (two_k as u64 + 1) * self.key_size();
         let empty: Key = (0, 0, vec![0; self.chunk.len() + 1]);
         let mut btree = Btree::new(space, node_size, two_k, empty);
-        let bytes = self.chunk.iter().product::<u64>() * u64::from(self.element);
-        let size = self.filters.stored_size(bytes);
+        let bytes = self.chunk_bytes();
+        let checksum = if self.filters.fletcher32 { 4 } else { 0 };
         for position in order(&self.shape, &self.chunk, u64::from(self.element)) {
+            let inner = if self.filters.deflate.is_some() {
+                self.deflated[self.linear(&position)]
+            } else {
+                bytes
+            };
+            let size = inner + checksum;
             let address = space.allocate(Use::Raw, size);
             let mut key_position = position.clone();
             key_position.push(0);
@@ -112,15 +174,30 @@ impl Chunked {
         })
     }
 
-    /// Each stored chunk's address and bytes, cut from `values`, the dataset's values in C
-    /// order, padded with zeros past the dataset's edge, and filtered.
+    /// Each stored chunk's address and bytes, made from `values`: the dataset's values in C
+    /// order, cut into chunks padded with zeros past the dataset's edge and filtered, or for
+    /// a deflated dataset the deflated chunks in C order of position, which only take their
+    /// checksum.
     pub(super) fn chunks(&self, values: &[u8]) -> Vec<(u64, Vec<u8>)> {
         let element = usize::from(self.element);
+        let mut starts = Vec::with_capacity(self.deflated.len());
+        let mut start = 0;
+        for &size in &self.deflated {
+            starts.push(start);
+            start += to_usize(size);
+        }
         self.stored
             .iter()
             .map(|(position, address, _)| {
-                let chunk = cut(values, &self.shape, &self.chunk, position, element);
-                (*address, self.filters.apply(chunk, element))
+                let chunk = if self.filters.deflate.is_some() {
+                    let index = self.linear(position);
+                    let start = starts[index];
+                    values[start..start + to_usize(self.deflated[index])].to_vec()
+                } else {
+                    let chunk = cut(values, &self.shape, &self.chunk, position, element);
+                    self.filters.shuffled(chunk, element)
+                };
+                (*address, self.filters.finish(chunk))
             })
             .collect()
     }

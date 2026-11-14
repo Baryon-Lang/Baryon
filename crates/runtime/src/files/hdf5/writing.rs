@@ -20,9 +20,11 @@
 //! - `D`, a path, the element type as `NumPy` names it (`<f8`), and the lengths separated by
 //!   commas, none for a single value: `create_dataset(path, data=values)`, stored in one block;
 //! - the same with two more fields, the chunk's lengths, none to take h5py's guess, and the
-//!   filters separated by commas, `shuffle` and `fletcher32`, possibly none:
-//!   `create_dataset(path, data=values, chunks=..., shuffle=..., fletcher32=...)`, stored in
-//!   chunks ([`chunked`]);
+//!   filters separated by commas, `shuffle`, `gzip=` and a level, and `fletcher32`, possibly
+//!   none: `create_dataset(path, data=values, chunks=..., compression="gzip", ...)`, stored
+//!   in chunks ([`chunked`]). With `gzip`, one more field lists the deflated chunks' sizes in
+//!   C order of position, separated by commas, and the values are those chunks, one after
+//!   another;
 //! - `A`, the object's path, the attribute's name, then `str` and the text, the rest of the
 //!   line, or the element type, the lengths and the values' bytes in hexadecimal:
 //!   `attrs[name] = value`.
@@ -115,8 +117,7 @@ fn apply(writer: &mut Writer, line: &str) -> Result<Option<(usize, u64)>, String
         ["G", path] => writer.create_group(path).map(|()| None),
         ["D", path, element, shape] => dataset(writer, path, element, shape, None).map(Some),
         ["D", path, element, shape, rest] => {
-            let (chunk, filters) = rest.split_once('\t').ok_or("a dataset's filters")?;
-            dataset(writer, path, element, shape, Some((chunk, filters))).map(Some)
+            dataset(writer, path, element, shape, Some(rest)).map(Some)
         }
         ["A", path, name, "str", text] => writer
             .set_attribute(path, name, &Value::Text(text.to_owned()))
@@ -132,19 +133,26 @@ fn apply(writer: &mut Writer, line: &str) -> Result<Option<(usize, u64)>, String
 }
 
 /// Applies a `D` line: its path, element type and shape as the log spells them, and for a
-/// chunked dataset the chunk's lengths, none to let h5py's guess pick them, and the filters.
+/// chunked dataset the rest of the line, `chunked`: the chunk's lengths, none to let h5py's
+/// guess pick them, the filters, and for a deflated dataset the deflated chunks' sizes.
 /// Refuses what h5py refuses, with its messages.
 fn dataset(
     writer: &mut Writer,
     path: &str,
     element: &str,
     shape: &str,
-    chunked: Option<(&str, &str)>,
+    chunked: Option<&str>,
 ) -> Result<(usize, u64), String> {
     let element = Element::parse(element).ok_or("an element type")?;
     let shape = lengths(shape)?;
-    let Some((chunk, filters)) = chunked else {
+    let Some(chunked) = chunked else {
         return writer.create_dataset(path, element, &shape, None);
+    };
+    let fields: Vec<&str> = chunked.split('\t').collect();
+    let (chunk, filters, deflated) = match fields[..] {
+        [chunk, filters] => (chunk, filters, None),
+        [chunk, filters, deflated] => (chunk, filters, Some(deflated)),
+        _ => return Err("a dataset's chunks and filters".to_owned()),
     };
     let filters = Filters::parse(filters)?;
     if shape.is_empty() {
@@ -176,7 +184,12 @@ fn dataset(
         }
         chunk
     };
-    let chunked = Chunked::new(&shape, &chunk, element.size(), filters);
+    let mut chunked = Chunked::new(&shape, &chunk, element.size(), filters);
+    match (filters.deflate, deflated) {
+        (Some(_), Some(sizes)) => chunked.set_deflated(lengths(sizes)?)?,
+        (None, None) => {}
+        _ => return Err("deflated chunk sizes go with gzip and only with it".to_owned()),
+    }
     writer.create_dataset(path, element, &shape, Some(chunked))
 }
 

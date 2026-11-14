@@ -69,13 +69,13 @@ fn file(name: &str) -> String {
 }
 
 /// The file `log` makes, built in memory from one replay: the structures, and each dataset's
-/// values at the address its replay gives.
-fn replayed(log: &[&str]) -> Vec<u8> {
+/// values, `given` line by line, at the address its replay gives.
+fn replayed(log: &[&str], given: &[Vec<u8>]) -> Vec<u8> {
     let mut writer = Writer::new();
     let mut made = Vec::new();
-    for line in log {
+    for (line, values) in log.iter().zip(given) {
         if let Some((index, _)) = apply(&mut writer, line).unwrap() {
-            made.push((index, values(line)));
+            made.push((index, values));
         }
     }
     let blocks: Vec<(u64, Vec<u8>)> = made
@@ -96,18 +96,27 @@ fn replayed(log: &[&str]) -> Vec<u8> {
 fn every_scenario_matches_h5py_byte_for_byte() {
     let mut failures = Vec::new();
     for (name, size, expected, log) in scenarios() {
-        let lines: Vec<&str> = log.iter().map(String::as_str).collect();
+        // A `V` line holds the values of the line before it, a gzip dataset's deflated chunks
+        // as h5py deflated them; other datasets' values are made by `values`.
+        let mut lines: Vec<&str> = Vec::new();
+        let mut given: Vec<Vec<u8>> = Vec::new();
+        for line in &log {
+            if let Some(hex) = line.strip_prefix("V\t") {
+                *given.last_mut().unwrap() = from_hex(hex).unwrap();
+            } else {
+                lines.push(line);
+                given.push(values(line));
+            }
+        }
         // Long logs are replayed once; short ones are written change by change, as a program
         // writes them, which also shows that values written earlier are kept.
         let bytes = if lines.len() > 100 {
-            replayed(&lines)
+            replayed(&lines, &given)
         } else {
             let path = file(&name);
-            for count in 0..=lines.len() {
-                let values = count
-                    .checked_sub(1)
-                    .map_or_else(Vec::new, |last| values(lines[last]));
-                write(&path, &lines[..count], &values).unwrap();
+            write(&path, &[], &[]).unwrap();
+            for count in 1..=lines.len() {
+                write(&path, &lines[..count], &given[count - 1]).unwrap();
             }
             let bytes = fs::read(&path).unwrap();
             fs::remove_file(&path).unwrap();
@@ -226,4 +235,59 @@ fn the_written_file_reads_back() {
             "A\t/runs/t\tstr\t\tunits\tK"
         ]
     );
+}
+
+/// `bytes` as a zlib stream of one stored block, not compressed: valid deflated data, but
+/// not the bytes h5py's zlib makes.
+fn stored_zlib(bytes: &[u8]) -> Vec<u8> {
+    let length = u16::try_from(bytes.len()).unwrap();
+    let mut stream = vec![0x78, 0x01, 0x01];
+    stream.extend_from_slice(&length.to_le_bytes());
+    stream.extend_from_slice(&(!length).to_le_bytes());
+    stream.extend_from_slice(bytes);
+    let (mut low, mut high) = (1_u32, 0_u32);
+    for &byte in bytes {
+        low = (low + u32::from(byte)) % 65521;
+        high = (high + low) % 65521;
+    }
+    stream.extend_from_slice(&((high << 16) | low).to_be_bytes());
+    stream
+}
+
+#[test]
+fn chunks_deflated_by_another_zlib_read_back() {
+    // Ten doubles in chunks of four, the last chunk padded with zeros, each chunk deflated as
+    // one stored block: what card 35 promises for gzip, a file readable whatever zlib made
+    // its chunks.
+    let path = file("deflated");
+    let ten: Vec<Vec<u8>> = values("D\tz\t<f8\t10")
+        .chunks(32)
+        .map(|chunk| {
+            let mut chunk = chunk.to_vec();
+            chunk.resize(32, 0);
+            stored_zlib(&chunk)
+        })
+        .collect();
+    let sizes: Vec<String> = ten.iter().map(|chunk| chunk.len().to_string()).collect();
+    let line = format!("D\tz\t<f8\t10\t4\tgzip=4,fletcher32\t{}", sizes.join(","));
+    write(&path, &[], &[]).unwrap();
+    write(&path, &[&line], &ten.concat()).unwrap();
+    let file = super::super::read_file(&path).unwrap();
+    let dataset = file.find("/z").unwrap().dataset.as_ref().unwrap();
+    let mut memory = vec![0; 80];
+    let mut inflate = |stream: &[u8]| -> Result<Vec<u8>, String> {
+        let length = usize::from(u16::from_le_bytes([stream[3], stream[4]]));
+        Ok(stream[7..7 + length].to_vec())
+    };
+    super::super::values::read_dataset(
+        &path,
+        &file,
+        ("z", dataset, &[]),
+        crate::files::fits::Pixel::F64,
+        &mut memory,
+        &mut inflate,
+    )
+    .unwrap();
+    fs::remove_file(&path).unwrap();
+    assert_eq!(memory, values("D\tz\t<f8\t10"));
 }
