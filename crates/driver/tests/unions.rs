@@ -312,3 +312,43 @@ error: `Dimer`, a member of `Atom | Dimer`, has no method `mass`
    = note: a method called on a union must be defined by every member (decision 0032); match on the union to call it on some members"
     );
 }
+
+/// `Array.zeros` and `Array.ones` of a union are checker errors (row 1.9.33): a union has no
+/// zero or one, so no member is picked silently. The hint names both ways that still check
+/// clean, `Array.fill` with one member and a list of members with the array type written out.
+#[test]
+fn a_union_array_has_no_zeros_or_ones() {
+    let program = format!(
+        "{BOUNDARY}{}",
+        r"
+
+def main() -> None:
+    walls: Array[Boundary, 1] = Array.zeros(4)
+    sides = Array.ones((2, 2), dtype=Boundary)
+    filled: Array[Boundary, 1] = Array.fill(4, Periodic())
+    listed: Array[Boundary, 1] = Array([Periodic(), Dirichlet(1.0)])
+"
+    );
+    let union = "Dirichlet | Neumann | Periodic | Robin";
+    let hint = "write the members in a list, as in";
+    let fill = "or repeat one member with `Array.fill(shape, member)`";
+    assert_eq!(
+        check_one(&program),
+        format!(
+            "\
+error: `Array.zeros` cannot make an array of the union `{union}`
+  --> main.byn:23:33
+   |
+23 |     walls: Array[Boundary, 1] = Array.zeros(4)
+   |                                 ^^^^^^^^^^^^^^ a union has no zero
+   = note: {hint} `values: Array[{union}, 1] = Array([...])`, {fill}
+
+error: `Array.ones` cannot make an array of the union `{union}`
+  --> main.byn:24:13
+   |
+24 |     sides = Array.ones((2, 2), dtype=Boundary)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a union has no one
+   = note: {hint} `values: Array[{union}, 2] = Array([...])`, {fill}"
+        )
+    );
+}

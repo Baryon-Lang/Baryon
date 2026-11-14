@@ -10,6 +10,9 @@
 //! ```text
 //! error: `flux` differs between `Dirichlet` and `Neumann`
 //! ```
+//!
+//! `Array.zeros` and `Array.ones` of a union are errors here too: a union has no zero or one,
+//! so the array must be built from members the program names.
 
 use super::Body;
 use super::calls::Arguments;
@@ -115,6 +118,38 @@ impl<'db> Body<'db> {
             return None;
         };
         Some((item, signature.clone()))
+    }
+
+    /// Reports `Array.zeros` or `Array.ones` (`name`, the call `node`) whose element type is
+    /// the union `element`, and returns the error type; returns `None` for any other element.
+    /// `rank` is the shape's rank, when it is known, for the array type the hint writes out.
+    ///
+    /// A union has no zero or one of its own, and picking a member to stand for it would choose
+    /// a value the program never wrote (Collins, 2026-11-13, row 1.9.33). The error points to
+    /// the two ways that state the members: a list of them with the array type written out, or
+    /// `Array.fill` with one. Lifting the error later breaks no program.
+    pub(super) fn union_has_no_zero(
+        &mut self,
+        node: NodeId,
+        name: &str,
+        element: Type<'db>,
+        rank: Option<u32>,
+    ) -> Option<Type<'db>> {
+        if !matches!(element.kind(self.db), TypeKind::Union(_)) {
+            return None;
+        }
+        let union = self.show(element);
+        let message = format!("`Array.{name}` cannot make an array of the union `{union}`");
+        let label = if name == "ones" {
+            "a union has no one"
+        } else {
+            "a union has no zero"
+        };
+        let rank = rank.unwrap_or(1);
+        let hint = format!(
+            "write the members in a list, as in `values: Array[{union}, {rank}] = Array([...])`, or repeat one member with `Array.fill(shape, member)`"
+        );
+        Some(self.lowerer.error(node, &message, label, Some(&hint)))
     }
 }
 
