@@ -27,8 +27,9 @@ unclear or missing, with what `baryon --version` prints.
 Baryon is now dual-licensed: Apache-2.0 OR MIT, at your choice, as most Rust projects are
 ([decision 0055](docs/decisions/0055-dual-license.md)). 0.1.0 was Apache-2.0 only. Third-party
 content the compiler carries, such as the font `byplot` draws text in, is listed with its license
-in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md), and each archive holds both licenses and the
-notices.
+in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md). Each archive holds both licenses, those
+notices, and `CRATE-LICENSES.md`, the licenses of the Rust crates compiled into `baryon` and
+`libruntime.a`.
 
 ### Platforms
 

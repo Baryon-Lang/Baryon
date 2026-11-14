@@ -131,6 +131,10 @@ The repository should look like someone obsessive built it, because someone did.
   listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) with its license text and the files
   that hold it, in the same pull request that adds it. Its license must permit the use and be
   compatible with Apache-2.0 and MIT.
+- The licenses of external crates need no hand-written list: each release archive carries
+  `CRATE-LICENSES.md`, which `cargo xtask crate-licenses` writes from `Cargo.lock` with every
+  linked crate's license files. A crate that ships no license file and is not MIT stops the
+  release until its license is added.
 
 ## Rule 7: decisions are written down
 

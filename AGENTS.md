@@ -47,6 +47,7 @@ undocumented code is unfinished code.
 | Leftover merge-conflict markers only | `cargo xtask check-conflicts` |
 | Example programs parse as Python only | `cargo xtask check-examples` |
 | Roadmap only | `cargo xtask check-roadmap` |
+| Licenses of the crates linked into a release, as the release workflow writes them | `cargo xtask crate-licenses <output>` |
 | Build and open the API docs | `cargo doc --workspace --no-deps --open` |
 | Tests for one crate | `cargo test --package <crate>` |
 | Ownership sweep only: every kind of value through every ownership site, under Valgrind | `cargo test --package driver --test build ownership` |

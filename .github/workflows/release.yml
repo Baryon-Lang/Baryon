@@ -69,13 +69,15 @@ jobs:
           fi
       - name: Pack the archive
         # One directory, so unpacking never scatters files: baryon, libruntime.a, both licenses
-        # (Apache-2.0 OR MIT) and the third-party notices, which the font compiled into baryon for
-        # `byplot` requires to travel with every copy.
+        # (Apache-2.0 OR MIT), the third-party notices, which the font compiled into baryon for
+        # `byplot` requires to travel with every copy, and the licenses of the external crates
+        # linked into both binaries, written from Cargo.lock for this platform.
         run: |
           name="baryon-${{ steps.version.outputs.version }}-${{ matrix.target }}"
           mkdir -p "dist/$name"
           cp target/release/baryon target/release/libruntime.a LICENSE LICENSE-MIT THIRD-PARTY-NOTICES.md \
             "dist/$name/"
+          cargo xtask crate-licenses "dist/$name/CRATE-LICENSES.md"
           cd dist
           tar -czf "$name.tar.gz" "$name"
           shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
