@@ -236,6 +236,26 @@ too. Close to 0, J₀, J₁ and their series are relative.
 infinity each function gives its limit, 0 for J and Y and ∞ for I, where SciPy 1.18 gives NaN
 for `j0`, `j1`, `jn`, `y0`, `i0` and `i1`.
 
+## Files under `special`
+
+`special` is one public file, `<std>/special.byn`, that re-exports each function from an internal
+file of its family, as `from special_gamma import gamma as gamma`
+([decision 0062](../decisions/0062-standard-library-reexports.md)). A program cannot import the
+internal files, and a program's own `special_gamma.byn` is never hidden by them. This table is
+for those working on the library. A panic inside a function names the file it is in.
+
+| File | Holds |
+| --- | --- |
+| `special_common` | The whole-number tests `is_integer` and `is_odd`, `sinpi` and `cospi`, and the constants more than one family uses |
+| `special_gamma` | `gamma`, `rgamma`, `gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma`, `polygamma` and the Hurwitz zeta function `polygamma` sums |
+| `special_beta` | `beta`, `betaln` and `poch` |
+| `special_error` | `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `ndtri`, `log_ndtr` and `dawsn` |
+| `special_bessel_jy` | `j0`, `j1`, `jn`, `y0`, `y1` and `yn` |
+| `special_bessel_ik` | `i0`, `i1`, `i0e`, `i1e`, `k0`, `k1`, `k0e`, `k1e` and `kn` |
+
+A new function goes in the file of its family, and a name of `special` gets its line in
+`special.byn`. A family file kept under about 500 lines is split again by responsibility.
+
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: the incomplete gamma and beta
