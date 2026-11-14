@@ -87,7 +87,13 @@ impl<'db> Body<'db> {
         };
         let found = self.expression(rows, wanted);
         match found.kind(self.db) {
-            &TypeKind::List(row) => self.lowerer.frame_of(rows, row),
+            &TypeKind::List(row) => {
+                let frame = self.lowerer.frame_of(rows, row);
+                if self.has_missing_column(frame) {
+                    return self.missing_column_unbuilt(rows, "building it from a list of rows");
+                }
+                frame
+            }
             _ if relations::is_open(self.db, found) => self.lowerer.unknown(),
             _ => {
                 let message = format!(
@@ -148,6 +154,7 @@ impl<'db> Body<'db> {
         let element = match *found.kind(self.db) {
             TypeKind::Array { element, rank: 1 } if is_column(self.db, element) => element,
             TypeKind::TextArray => Type::new(self.db, TypeKind::Str),
+            TypeKind::OptionalArray(element) => Type::new(self.db, TypeKind::Optional(element)),
             _ if relations::is_open(self.db, found) => return None,
             TypeKind::Array { element, rank: 1 } => {
                 let message = format!(
@@ -208,6 +215,10 @@ impl<'db> Body<'db> {
         };
         let index = self.tree.child(node, Role::Index)?;
         let Some(name) = self.literal_text(index) else {
+            if self.has_missing_column(base) {
+                self.expression(index, None);
+                return Some(self.missing_column_unbuilt(node, "choosing rows or columns"));
+            }
             let chosen = self.frame_select(index, base);
             return Some(chosen.unwrap_or_else(|| self.frame_row(index, base, *row)));
         };
@@ -396,6 +407,10 @@ impl<'db> Body<'db> {
         callee: &str,
         arguments: &Arguments,
     ) -> Type<'db> {
+        if callee != "copy" && self.has_missing_column(base) {
+            self.untyped(arguments);
+            return self.missing_column_unbuilt(function, &format!("the method `{callee}`"));
+        }
         if let Some(rows) = self.rows_method(function, base, callee, arguments) {
             return rows;
         }

@@ -6,9 +6,10 @@ that did not report, a survey answer left blank, an empty cell of a CSV file
 ([decision 0045](../decisions/0045-dataframe.md), part 3).
 
 This chapter covers what such an array does today: it is built from a list, counted, read one
-element at a time, copied, and asked where its gaps are. Arithmetic, reductions that skip `None`,
-`fillna`, `dropna` and columns of a [`DataFrame`](dataframes.md) that may hold `None` come
-next, with roadmap item 3.13.6, and the compiler says so by name when a program asks for one.
+element at a time, copied, asked where its gaps are, and held as a column of a
+[`DataFrame`](dataframes.md): see [In a DataFrame](#in-a-dataframe). Arithmetic, reductions
+that skip `None`, `fillna`, `dropna` and the frame operations on such a column come next, with
+roadmap item 3.13.6, and the compiler says so by name when a program asks for one.
 
 ## `None` is not `NaN`
 
@@ -43,7 +44,8 @@ This prints `3`.
 - **The list is borrowed**, so it stays usable.
 - **One dimension.** `Array[f64 | None, 2]` is a compile error; missing values in arrays of
   every rank are roadmap item 3.24.
-- **Text is not built yet.** `Array[str | None, 1]` is a compile error for now.
+- **Text is not built yet.** `Array[str | None, 1]` is a compile error for now, and so is a
+  column `name: str | None`.
 - **Cost:** one pass over the list and two allocations.
 
 ## Reading an element
@@ -103,6 +105,41 @@ So a gap costs one bit, and a million `f64 | None` elements take 8 megabytes and
 kilobytes, not the 16 megabytes a list of `f64 | None` takes. This is the layout of a nullable
 column in the Arrow columnar format, which is why a frame can later be written to Parquet, or
 handed to Arrow, without copying.
+
+## In a DataFrame
+
+A field of a frame's schema written `T | None` is a column that may hold `None`, stored as an
+array with missing values:
+
+```python
+class Quote(Struct):
+    price: f64
+    bid: f64 | None
+
+
+def main():
+    quotes: DataFrame[Quote] = DataFrame({
+        "price": Array([1.5, 2.5, 3.5]),
+        "bid": Array([1.0, None, 3.0]),
+    })
+    print(len(quotes), quotes.bid[1], quotes.bid[2])
+    print(quotes.bid.isna())
+```
+
+This prints `3 None 3.0`, then `[False  True False]`.
+
+- **The schema gives the list its type.** `Array([1.0, None, 3.0])` needs no annotation of
+  its own here: the frame's type says the column `bid` holds `f64 | None`.
+- **A column reads as an array with missing values**, `quotes.bid` or `quotes["bid"]`, and
+  does what one does: `len`, an element, `isna`, `notna`, `copy`.
+- **A column can be replaced**, `quotes.bid = Array([None, None, 9.0])`, by an array of the
+  frame's length. Another length stops the program.
+- **`len`, `shape`, `columns` and `copy()`** work as for any frame, and the frame is passed
+  and returned as any frame is.
+- **The frame operations are not built yet** for a frame with such a column: choosing rows or
+  columns, `head`, `tail`, `sort_values`, `groupby`, `merge`, `concat`, `drop_duplicates`,
+  `describe`, `itertuples`, `DataFrame(rows)` and `print`. Each is a compile error that says
+  so. They come with roadmap item 3.13.6, with `dropna` and `fillna`.
 
 ## What is not built
 

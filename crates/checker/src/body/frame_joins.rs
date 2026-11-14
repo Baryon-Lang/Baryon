@@ -51,6 +51,9 @@ impl<'db> Body<'db> {
             ));
         };
         let right = self.expression(other, None);
+        if self.has_missing_column(right) {
+            return Some(self.missing_column_unbuilt(other, "`merge`"));
+        }
         let (TypeKind::DataFrame { columns: left, .. }, TypeKind::DataFrame { columns: found, .. }) =
             (base.kind(self.db), right.kind(self.db))
         else {

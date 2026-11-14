@@ -48,14 +48,27 @@ impl<'db> Builder<'db> {
     }
 
     /// The number of rows of the column at `column`, stored as `stored`: the elements of a
-    /// text column, which is stored as a tuple of its two buffers, or the length of an array.
+    /// text column, which is stored as a tuple of its two buffers, the length of the values
+    /// of a column that may hold `None`, which is stored as a tuple of its values and its
+    /// validity bitmap, or the length of an array.
     pub(crate) fn column_length(
         &mut self,
         column: Place,
         stored: Option<Type<'db>>,
         node: NodeId,
     ) -> Operand<'db> {
-        if stored.is_some_and(|stored| matches!(stored.kind(self.db), TypeKind::Tuple(_))) {
+        if let Some(TypeKind::Tuple(parts)) = stored.map(|stored| stored.kind(self.db)) {
+            // A text column's second buffer is its offsets, an array of `i64`; a column that
+            // may hold `None` ends in its validity bitmap, an array of `u8`.
+            let bitmap = parts.last().is_some_and(|&last| {
+                let byte = TypeKind::Primitive(Primitive::Integer(Integer::U8));
+                matches!(last.kind(self.db), TypeKind::Array { element, .. }
+                    if *element.kind(self.db) == byte)
+            });
+            if bitmap {
+                let values = column.project(Projection::Field(0));
+                return self.column_length(values, parts.first().copied(), node);
+            }
             return self.text_array_length(&column, node);
         }
         let length = self.temporary(self.int_type(), node);

@@ -14,7 +14,36 @@ const BUILT: &str = "an array with missing values has `len`, `values[i]`, which 
                      `T | None`, and the methods `isna`, `notna` and `copy`; the rest comes with \
                      roadmap item 3.13.6";
 
+/// What a frame with a column that may hold `None` can do, for messages.
+const BUILT_FRAME: &str = "a frame with a column that may hold `None` is built from its \
+                           columns, counted with `len`, copied with `copy`, and its columns \
+                           are read and replaced; the rest comes with roadmap item 3.13.6";
+
 impl<'db> Body<'db> {
+    /// Whether `ty` is a frame with a column that may hold `None`.
+    pub(super) fn has_missing_column(&self, ty: Type<'db>) -> bool {
+        match ty.kind(self.db) {
+            TypeKind::DataFrame { columns, .. } => columns
+                .iter()
+                .any(|column| matches!(column.element.kind(self.db), TypeKind::Optional(_))),
+            _ => false,
+        }
+    }
+
+    /// Reports `what`, such as "the method `head`" or "choosing rows", used at `node` on a
+    /// frame with a column that may hold `None`, which does not have it yet, and gives the
+    /// unknown type.
+    pub(super) fn missing_column_unbuilt(&mut self, node: NodeId, what: &str) -> Type<'db> {
+        let message =
+            format!("{what} is not built for a frame with a column that may hold `None` yet");
+        self.lowerer.error(
+            node,
+            &message,
+            "a column may hold `None`",
+            Some(BUILT_FRAME),
+        )
+    }
+
     /// Whether `ty` is an array with missing values.
     pub(super) fn is_optional_array(&self, ty: Type<'db>) -> bool {
         matches!(ty.kind(self.db), TypeKind::OptionalArray(_))
@@ -127,8 +156,9 @@ impl<'db> Body<'db> {
         true
     }
 
-    /// Reports a value that is or holds an array with missing values, shown by `print` or an
-    /// f-string at `node`, which cannot write one yet.
+    /// Reports a value that is or holds an array with missing values, or a frame with a
+    /// column that may hold `None`, shown by `print` or an f-string at `node`, which cannot
+    /// write one yet.
     pub(super) fn shows_no_optional_array(&mut self, node: NodeId, ty: Type<'db>) {
         if relations::holds_optional_array(self.db, ty) {
             self.lowerer.error(
@@ -137,6 +167,9 @@ impl<'db> Body<'db> {
                 "holds an array that may hold `None`",
                 Some("show its elements: `for at in range(len(values)): print(values[at])`"),
             );
+        }
+        if self.has_missing_column(ty) {
+            self.missing_column_unbuilt(node, "showing it");
         }
     }
 }
