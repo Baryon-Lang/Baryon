@@ -25,7 +25,7 @@ is built from the series and recurrences below and the elementary functions `exp
 ## Accuracy
 
 Each function is tested against values computed with mpmath to 50 digits, at a few hundred
-arguments spread over its range, about 2,000 in all
+arguments spread over its range, about 6,600 in all
 ([the fixtures](../../crates/driver/tests/fixtures/special/README.md)).
 The error is counted in units in the last place (ULP): the gap between adjacent `f64` values at
 the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
@@ -55,6 +55,10 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `i0`, `i1`, `i0e`, `i1e` | 16 ULP | 8 ULP | 8 ULP |
 | `k0`, `k1`, `k0e`, `k1e` | 16 ULP | 4 ULP | 4 ULP |
 | `kn` | 16 ULP | 7 ULP | 67 ULP at `kn(30, 3.8)` |
+| `gammainc`, `gammaincc` | 16 ULP for each unit of the result's logarithm, over `a` below 1 | 465 ULP at a result of 4e-146 | 1,441 ULP; 0 at `gammaincc(401.5, 1695.6)`, where the true value is 8.7e-314 |
+| `gammaincinv`, `gammainccinv` | The same | 8 ULP | 109 ULP |
+| `betainc`, `betaincc` | 32 ULP for each unit of the result's logarithm, over `a` below 1 | 369 ULP at a result of 1e-237 | 566 ULP for `betainc`; `betaincc` within 1 ULP |
+| `betaincinv` | The same | 35 ULP at `a` = 0.03 | 1,303 ULP at `betaincinv(280.7, 0.67, 4.5e-144)` |
 
 Where a function crosses zero, no formula keeps all of its relative precision there: the
 result is a small difference of two numbers near 1. Those functions are held to a precision of
@@ -236,6 +240,65 @@ too. Close to 0, J₀, J₁ and their series are relative.
 infinity each function gives its limit, 0 for J and Y and ∞ for I, where SciPy 1.18 gives NaN
 for `j0`, `j1`, `jn`, `y0`, `i0` and `i1`.
 
+## Incomplete gamma and beta functions
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `gammainc(a, x)` | The regularized lower incomplete gamma function, P(a, x) = γ(a, x) / Γ(a) | `scipy.special.gammainc` |
+| `gammaincc(a, x)` | Its complement, Q(a, x) = 1 − P(a, x), with its own precision in the tail | `scipy.special.gammaincc` |
+| `gammaincinv(a, p)`, `gammainccinv(a, q)` | The `x` with P(a, x) = p, or with Q(a, x) = q | `scipy.special.gammaincinv`, `gammainccinv` |
+| `betainc(a, b, x)` | The regularized incomplete beta function, Iₓ(a, b) | `scipy.special.betainc` |
+| `betaincc(a, b, x)` | Its complement, 1 − Iₓ(a, b), with its own precision in the tail | `scipy.special.betaincc` |
+| `betaincinv(a, b, p)` | The `x` with Iₓ(a, b) = p | `scipy.special.betaincinv` |
+
+P(a, x) is the probability that a gamma variable with shape `a` and scale 1 is below `x`, and
+Iₓ(a, b) that a beta variable with shapes `a` and `b` is. They are the distribution functions
+of the chi-squared, Poisson, Student's t and F distributions (roadmap 3.18.12).
+
+```python
+from special import betainc, gammainc, gammaincc, gammaincinv
+
+
+def main():
+    print(gammainc(2.0, 1.0))           # 0.2642411176571153, which is 1 − 2/e
+    print(gammaincc(100.0, 200.0))      # 1.8438936497115686e-15, where 1 − P would be 0
+    print(gammaincinv(2.0, 0.5))        # 1.6783469900166605, the median
+    print(betainc(2.0, 3.0, 0.4))       # 0.5247999999999999
+```
+
+How each is computed:
+
+- **P and Q** share a prefix xᵃ e⁻ˣ / Γ(a). Below x = a + 1, P is the series
+  Σ xⁿ / ((a + 1)⋯(a + n)) times the prefix; above, Q is Legendre's continued fraction,
+  evaluated by Lentz's method. The other is 1 minus the one computed. For `a` below 1 and `x`
+  below 2, where P is near 1, both come from a series in which 1 − P has no cancellation.
+- **Iₓ(a, b)** is the continued fraction of Abramowitz and Stegun 26.5.8 times the prefix
+  xᵃ (1 − x)ᵇ / (a B(a, b)), below the mean (a + 1)/(a + b + 2); above it, the same fraction of
+  the mirrored shapes gives the complement. For a shape below 1 with `x` close to its own end,
+  where the value is near 1, a power series in `x` gives both the value and its complement.
+- For shapes from 10 up, the prefixes are formed from log r − (r − 1) with r the ratio of `x`
+  to the peak, so no two large logarithms cancel near the peak.
+- **The inverses** start from Wilson and Hilferty's normal approximation or from the
+  leading power of the series, and refine by Newton's method on the logarithm of the smaller
+  of the value and its complement, so a target of 1e-300 is reached as surely as 0.5.
+  `betaincinv` keeps a bracket and bisects whenever a Newton step leaves it.
+
+### Accuracy in the tails
+
+Each value is an exponential of a sum of logarithms, such as a log x − x − log Γ(a), times a
+series. A ULP of absolute error in a sum of size L becomes L ULP of relative error in its
+exponential, so a value of 1e-146, whose logarithm is −336, is held to 16 × 337 ULP; SciPy
+loses the same digits there. A shape `a` below 1 divides the tolerance by `a`: the inverses
+raise their target to the power 1/a, which multiplies its relative error by 1/a.
+
+### At the ends
+
+As SciPy gives: `gammainc(a, 0.0)` is 0 and `gammainc(a, inf)` 1; `gammainc(0.0, x)` is 1 for
+`x` above 0; `gammaincinv(a, 1.0)` and `gammainccinv(a, 0.0)` are ∞; `betainc(a, b, 0.0)` is 0
+and `betainc(a, b, 1.0)` 1; `betainc(0.0, b, x)` is 1 and `betainc(a, 0.0, x)` 0 for `x`
+strictly between 0 and 1. A negative shape, an `x` outside the domain or a target outside
+0 to 1 gives NaN.
+
 ## Files under `special`
 
 `special` is one public file, `<std>/special.byn`, that re-exports each function from an internal
@@ -252,14 +315,15 @@ for those working on the library. A panic inside a function names the file it is
 | `special_error` | `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `ndtri`, `log_ndtr` and `dawsn` |
 | `special_bessel_jy` | `j0`, `j1`, `jn`, `y0`, `y1` and `yn` |
 | `special_bessel_ik` | `i0`, `i1`, `i0e`, `i1e`, `k0`, `k1`, `k0e`, `k1e` and `kn` |
+| `special_incomplete_gamma` | `gammainc`, `gammaincc`, `gammaincinv` and `gammainccinv` |
+| `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
 
 A new function goes in the file of its family, and a name of `special` gets its line in
 `special.byn`. A family file kept under about 500 lines is split again by responsibility.
 
 ## Not built yet
 
-The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: the incomplete gamma and beta
-functions, Bessel functions of real and complex order, Airy, Struve and Kelvin functions,
-hypergeometric and elliptic functions, orthogonal polynomials, exponential integrals and zeta, and
-the distribution functions. `loggamma` of a complex argument comes with the complex Bessel functions
-(3.18.6). See [What builds today](status.md).
+The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
+complex order, Airy, Struve and Kelvin functions, hypergeometric and elliptic functions, orthogonal
+polynomials, exponential integrals and zeta, and the distribution functions. `loggamma` of a complex
+argument comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).

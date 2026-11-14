@@ -1,0 +1,260 @@
+"""The regularized incomplete beta function, its complement and their inverses for `special`
+(roadmap 3.18.2): `betainc`, `betaincc`, `betaincinv` and `betainccinv`.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, expm1, isinf, isnan, log, log1p, nan, pi, pow, sqrt
+from special_gamma import rgamma_near_one, rgamma_near_two, stirling
+from special_beta import log_gamma_ratio, betaln
+from special_error import ndtri
+from special_incomplete_gamma import log_minus_linear
+
+
+def _beta_prefix(a: f64, b: f64, x: f64, y: f64) -> f64:
+    """xᵃ yᵇ / B(a, b) with y = 1 − x, the factor every incomplete beta function carries.
+
+    From a and b of 10 up it is √(ab / (2π(a + b))) exp(a (log r − (r − 1)) + b (log s − (s − 1))
+    − S(a) − S(b) + S(a + b)), with r = x(a + b)/a and s = y(a + b)/b, whose linear terms
+    cancel exactly; so near the peak at x = a/(a + b) no large logarithms cancel. Below,
+    the logarithms are added directly.
+    """
+    if x == 0.0 or y == 0.0:
+        return 0.0
+    if a >= 10.0 and b >= 10.0:
+        total = a + b
+        exponent = a * log_minus_linear(x * total / a) + b * log_minus_linear(y * total / b)
+        correction = stirling(total) - stirling(a) - stirling(b)
+        return sqrt(a * b / (2.0 * pi * total)) * exp(exponent + correction)
+    if x <= 0.5:
+        logarithm = a * log(x) + b * log1p(-x)
+    else:
+        logarithm = a * log1p(-y) + b * log(y)
+    return exp(logarithm - betaln(a, b))
+
+
+def _beta_fraction(a: f64, b: f64, x: f64) -> f64:
+    """The continued fraction of Iₓ(a, b) / (xᵃ yᵇ / (a B(a, b))), Abramowitz and Stegun
+    26.5.8, evaluated by Lentz's method. It converges fast for `x` below (a + 1)/(a + b + 2)."""
+    tiny = 1.0e-300
+    total = a + b
+    c = 1.0
+    d = 1.0 - total * x / (a + 1.0)
+    if abs(d) < tiny:
+        d = tiny
+    d = 1.0 / d
+    value = d
+    for m in range(1, 1000000):
+        twice = 2.0 * m
+        numerator = m * (b - m) * x / ((a + twice - 1.0) * (a + twice))
+        d = 1.0 + numerator * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + numerator / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        value *= d * c
+        numerator = -(a + m) * (total + m) * x / ((a + twice) * (a + twice + 1.0))
+        d = 1.0 + numerator * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + numerator / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        change = d * c
+        value *= change
+        if abs(change - 1.0) <= 1.0e-16:
+            break
+    return value
+
+
+def _log_gamma_shift(a: f64, b: f64) -> f64:
+    """log Γ(b + a) − log Γ(b) for `a` from 0 to 1 and `b` above 0, with the relative precision
+    of its size, about a log b. Below 10, `b` is raised past 10 by Γ(c + 1) = c Γ(c), each step
+    adding −log1p(a/c), so no two large logarithms are subtracted."""
+    shifted = b
+    total = 0.0
+    while shifted < 10.0:
+        total -= log1p(a / shifted)
+        shifted += 1.0
+    return total - log_gamma_ratio(a, shifted)
+
+
+def _beta_small_parts(a: f64, b: f64, x: f64) -> tuple[f64, f64]:
+    """Iₓ(a, b) and 1 − Iₓ(a, b) for `a` below 1 and x max(b, 1) up to 0.7, where Iₓ is near 1
+    and 1 minus it would lose the complement's digits.
+
+    Iₓ(a, b) = C (1 + T), with C = xᵃ Γ(a + b) / (Γ(1 + a) Γ(b)) and
+    T = a Σ (1 − b)ⱼ xʲ / (j! (a + j)) from j = 1, and C the exponential of a sum of
+    logarithms. When the value is above ½, its complement is −(E + T + E T) with E = C − 1
+    from `expm1`, which has no cancellation, as in `_gamma_small_parts`.
+    """
+    if a < 0.5:
+        reciprocal = rgamma_near_one(a)
+    else:
+        reciprocal = rgamma_near_two(a - 1.0)
+    exponent = a * log(x) + _log_gamma_shift(a, b) + log1p(reciprocal)
+    tail = 0.0
+    term = 1.0
+    for j in range(1, 200):
+        term *= (j - b) * x / j
+        change = term * a / (a + j)
+        tail += change
+        if abs(change) <= 1.0e-17 * abs(tail):
+            break
+    value = exp(exponent) * (1.0 + tail)
+    if value <= 0.5:
+        return (value, 1.0 - value)
+    grown = expm1(exponent)
+    return (value, -(grown + tail + grown * tail))
+
+
+def _beta_parts(a: f64, b: f64, x: f64) -> tuple[f64, f64]:
+    """Iₓ(a, b) and 1 − Iₓ(a, b) for `a` and `b` above 0 and `x` strictly between 0 and 1.
+
+    A shape below 1 with `x` close to its own end makes the value near that end's 1, so it is
+    summed as a series whose complement keeps its digits. Otherwise the continued fraction
+    converges fast only on one side of the mean, (a + 1)/(a + b + 2), so below it the
+    fraction gives Iₓ(a, b) and above it the fraction of the mirrored shapes gives
+    1 − Iₓ(a, b); the other value is 1 minus the one computed.
+    """
+    y = 1.0 - x
+    if a < 1.0 and x * max(b, 1.0) <= 0.7:
+        return _beta_small_parts(a, b, x)
+    if b < 1.0 and y * max(a, 1.0) <= 0.7:
+        upper, lower = _beta_small_parts(b, a, y)
+        return (lower, upper)
+    if x <= (a + 1.0) / (a + b + 2.0):
+        lower = _beta_prefix(a, b, x, y) * _beta_fraction(a, b, x) / a
+        return (lower, 1.0 - lower)
+    upper = _beta_prefix(a, b, x, y) * _beta_fraction(b, a, y) / b
+    return (1.0 - upper, upper)
+
+
+def betainc(a: f64, b: f64, x: f64) -> f64:
+    """The regularized incomplete beta function Iₓ(a, b), as `scipy.special.betainc`: the
+    probability that a beta variable with shapes `a` and `b` is below `x`.
+
+    0 at x = 0 and 1 at x = 1; NaN for a negative `a` or `b`, or `x` outside [0, 1].
+
+    ```python
+    from special import betainc
+
+    print(betainc(2.0, 3.0, 0.4))   # 0.5247999999999999
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(x) or a < 0.0 or b < 0.0 or x < 0.0 or x > 1.0:
+        return nan
+    if a == 0.0 and b == 0.0:
+        return nan
+    if x == 0.0:
+        return 0.0
+    if x == 1.0:
+        return 1.0
+    if a == 0.0 or isinf(b):
+        return 1.0
+    if b == 0.0 or isinf(a):
+        return 0.0
+    lower, _ = _beta_parts(a, b, x)
+    return lower
+
+
+def betaincc(a: f64, b: f64, x: f64) -> f64:
+    """The complement of `betainc`, 1 − Iₓ(a, b), as `scipy.special.betaincc`, with its own
+    precision where Iₓ is near 1.
+
+    ```python
+    from special import betaincc
+
+    print(betaincc(2.0, 3.0, 0.4))  # 0.47520000000000007
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(x) or a < 0.0 or b < 0.0 or x < 0.0 or x > 1.0:
+        return nan
+    if a == 0.0 and b == 0.0:
+        return nan
+    if x == 0.0:
+        return 1.0
+    if x == 1.0:
+        return 0.0
+    if a == 0.0 or isinf(b):
+        return 0.0
+    if b == 0.0 or isinf(a):
+        return 1.0
+    _, upper = _beta_parts(a, b, x)
+    return upper
+
+
+def _beta_inverse_guess(a: f64, b: f64, y: f64) -> f64:
+    """A first guess at the `x` with Iₓ(a, b) = y: Abramowitz and Stegun 26.5.22's normal
+    approximation when `a` and `b` are above 1, and the leading term of the series at either
+    end otherwise."""
+    if a > 1.0 and b > 1.0:
+        z = -ndtri(y)
+        lam = (z * z - 3.0) / 6.0
+        h = 2.0 / (1.0 / (2.0 * a - 1.0) + 1.0 / (2.0 * b - 1.0))
+        w = z * sqrt(h + lam) / h - (1.0 / (2.0 * b - 1.0) - 1.0 / (2.0 * a - 1.0)) * (
+            lam + 5.0 / 6.0 - 2.0 / (3.0 * h)
+        )
+        return a / (a + b * exp(2.0 * w))
+    total = a + b
+    left = exp(a * log(a / total)) / a
+    right = exp(b * log(b / total)) / b
+    whole = left + right
+    if y < left / whole:
+        return pow(a * whole * y, 1.0 / a)
+    return 1.0 - pow(b * whole * (1.0 - y), 1.0 / b)
+
+
+def betaincinv(a: f64, b: f64, y: f64) -> f64:
+    """The inverse of `betainc` in `x`, as `scipy.special.betaincinv`: the `x` with
+    Iₓ(a, b) = y, for `y` from 0 to 1.
+
+    Newton's method on the logarithm of whichever of Iₓ and 1 − Iₓ is smaller, from a first
+    guess, kept inside a bracket that shrinks with every step; a step that would leave the
+    bracket halves it instead, by its geometric mean near 0 so tiny roots are reached.
+
+    ```python
+    from special import betaincinv
+
+    print(betaincinv(2.0, 3.0, 0.5))    # 0.38572756813238956
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(y) or a <= 0.0 or b <= 0.0 or y < 0.0 or y > 1.0:
+        return nan
+    if y == 0.0 or y == 1.0:
+        return y
+    low = 0.0
+    high = 1.0
+    x = min(max(_beta_inverse_guess(a, b, y), 1.0e-300), 1.0 - 1.0e-16)
+    for _ in range(400):
+        lower, upper = _beta_parts(a, b, x)
+        if y <= 0.5:
+            value = lower
+            target = y
+            sign = 1.0
+        else:
+            value = upper
+            target = 1.0 - y
+            sign = -1.0
+        if value == target:
+            return x
+        if (value > target) == (sign > 0.0):
+            high = x
+        else:
+            low = x
+        if low > 0.0 and high < 1.0e-3:
+            following = sqrt(low) * sqrt(high)
+        else:
+            following = 0.5 * (low + high)
+        slope = _beta_prefix(a, b, x, 1.0 - x) / (x * (1.0 - x))
+        if value > 0.0 and slope > 0.0 and not isinf(slope):
+            step = log(value / target) / (sign * slope / value)
+            if x - step > low and x - step < high:
+                following = x - step
+        if abs(following - x) <= 4.0e-16 * x:
+            return following
+        x = following
+    return x

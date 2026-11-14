@@ -1,20 +1,23 @@
 # Special-function reference values
 
-`gamma_family.txt`, `error_functions.txt` and `bessel_functions.txt` hold the cases the build
-tests in [`../../build/special.rs`](../../build/special.rs) check the `special` module's gamma
-family (roadmap 3.18.1), error functions (3.18.3) and Bessel functions of whole order (3.18.4)
-against. Each line is a function's name, its arguments and the value the
-function should give, separated by spaces and written as Python's `repr` writes a float:
+`gamma_family.txt`, `error_functions.txt`, `bessel_functions.txt` and `incomplete_functions.txt`
+hold the cases the build tests in [`../../build/special.rs`](../../build/special.rs) check the
+`special` module's gamma family (roadmap 3.18.1), error functions (3.18.3), Bessel functions of
+whole order (3.18.4) and incomplete gamma and beta functions (3.18.2) against. Each line is a
+function's name, its arguments and the value the function should give, separated by spaces and
+written as Python's `repr` writes a float:
 
 ```text
 gamma -16.481439370601617 -3.8732193888774417e-14
 polygamma 3 -8.996117952868211 26418492688.871017
 ```
 
-Most values were computed with mpmath 1.4.1 at 50 digits and rounded to `f64`, at arguments drawn at
-random, with a fixed seed, over each function's range. The last lines are the poles, zeros and
-infinities, where the value is SciPy 1.18.1's, which the module gives exactly, except the Bessel
-functions' limits at infinity, where SciPy gives NaN and the file holds the limit. Neither mpmath
+Most values were computed with mpmath 1.4.1 at 50 digits and rounded to `f64`, at arguments drawn
+at random, with a fixed seed, over each function's range. The last lines are the poles, zeros and
+infinities, where the value is SciPy 1.18.1's, which the module gives exactly, except the
+Bessel functions' limits at infinity, where SciPy gives NaN and the file holds the limit. The
+incomplete beta function's values were computed at 80 digits, so a value far in a tail keeps its
+own, and each inverse's value is the root mpmath finds of the forward function. Neither mpmath
 nor SciPy is needed to run the tests.
 
 ## The coefficients in `special.byn`
@@ -281,5 +284,90 @@ for name, n, x in [("jn", 3, 0.0), ("yn", 2, 0.0), ("yn", 2, -1.0), ("kn", 2, 0.
 lines += ["j0 inf 0.0", "j1 -inf 0.0", "y0 inf 0.0", "i0 inf inf", "i1 -inf -inf",
           "jn 4 inf 0.0"]
 with open("bessel_functions.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+
+# Incomplete gamma and beta functions and their inverses (roadmap 3.18.2), drawn after the
+# Bessel functions.
+lines = []
+
+
+def lower_gamma(a, x):
+    return mpmath.gammainc(a, 0, x, regularized=True)
+
+
+def upper_gamma(a, x):
+    return mpmath.gammainc(a, x, mpmath.inf, regularized=True)
+
+
+def lower_beta(a, b, x):
+    """I_x(a, b), with 80 digits of working precision so a tail value keeps its own."""
+    with mpmath.workdps(80):
+        return +mpmath.betainc(a, b, 0, x, regularized=True)
+
+
+def upper_beta(a, b, x):
+    """1 - I_x(a, b), as I_{1-x}(b, a) with 1 - x formed exactly."""
+    with mpmath.workdps(80):
+        return +mpmath.betainc(b, a, 0, 1 - mpmath.mpf(x), regularized=True)
+
+
+def bisect(function, x):
+    """The root of the increasing `function` near `x` in (0, 1), by bisection to 1e-40."""
+    low = mpmath.mpf(x) * (1 - mpmath.mpf(1e-6))
+    high = 1 - (1 - mpmath.mpf(x)) * (1 - mpmath.mpf(1e-6))
+    while function(low) > 0:
+        low /= 2
+    while function(high) < 0:
+        high = (1 + high) / 2
+    for _ in range(400):
+        middle = (low + high) / 2
+        if function(middle) < 0:
+            low = middle
+        else:
+            high = middle
+        if high - low < mpmath.mpf(10) ** -40 * high:
+            break
+    return (low + high) / 2
+
+
+shapes = spread(1e-3, 1e3, 150)
+gamma_cases = [(a, float(a * math.exp(generator.uniform(-3, 2)))) for a in shapes]
+gamma_cases += [(a, float(generator.uniform(0, 2))) for a in spread(1e-3, 1, 40)]
+for a, x in gamma_cases:
+    lines.append(f"gammainc {a!r} {x!r} {float(lower_gamma(a, x))!r}")
+    lines.append(f"gammaincc {a!r} {x!r} {float(upper_gamma(a, x))!r}")
+for a in spread(1e-2, 1e3, 80):
+    x = float(a * math.exp(generator.uniform(-2, 1.5)))
+    for name, function in [("gammaincinv", lower_gamma), ("gammainccinv", upper_gamma)]:
+        target = float(function(a, x))
+        if 0.0 < target < 1.0:
+            root = mpmath.findroot(lambda t: function(a, t) - target, x)
+            lines.append(f"{name} {a!r} {target!r} {float(root)!r}")
+beta_cases = []
+for a, b in zip(spread(1e-2, 500, 200), spread(1e-2, 500, 200)):
+    mean = a / (a + b)
+    x = float(min(max(mean * math.exp(generator.uniform(-2, 0.5)), 1e-12), 1 - 1e-12))
+    beta_cases.append((a, b, x))
+for a, b, x in beta_cases:
+    lines.append(f"betainc {a!r} {b!r} {x!r} {float(lower_beta(a, b, x))!r}")
+    lines.append(f"betaincc {a!r} {b!r} {x!r} {float(upper_beta(a, b, x))!r}")
+for a, b, x in beta_cases[:120]:
+    target = float(lower_beta(a, b, x))
+    if 1e-300 < target < 1.0:
+        root = bisect(lambda t: lower_beta(a, b, t) - target, x)
+        lines.append(f"betaincinv {a!r} {b!r} {target!r} {float(root)!r}")
+edges = [
+    ("gammainc", (1.0, 0.0)), ("gammainc", (0.0, 1.0)), ("gammainc", (1.0, inf)),
+    ("gammainc", (-1.0, 1.0)), ("gammaincc", (1.0, 0.0)), ("gammaincc", (1.0, inf)),
+    ("gammaincinv", (1.0, 0.0)), ("gammaincinv", (1.0, 1.0)), ("gammaincinv", (1.0, 2.0)),
+    ("gammainccinv", (1.0, 0.0)), ("gammainccinv", (1.0, 1.0)),
+    ("betainc", (1.0, 2.0, 0.0)), ("betainc", (1.0, 2.0, 1.0)), ("betainc", (1.0, 2.0, 1.5)),
+    ("betaincc", (1.0, 2.0, 0.0)), ("betaincc", (1.0, 2.0, 1.0)),
+    ("betaincinv", (1.0, 2.0, 0.0)), ("betaincinv", (1.0, 2.0, 1.0)),
+]
+for name, arguments in edges:
+    value = float(getattr(scipy.special, name)(*arguments))
+    lines.append(" ".join([name] + [repr(x) for x in arguments] + [repr(value)]))
+with open("incomplete_functions.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```

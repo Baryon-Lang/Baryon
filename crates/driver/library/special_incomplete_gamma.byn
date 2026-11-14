@@ -1,0 +1,297 @@
+"""The regularized incomplete gamma functions and their inverses for `special` (roadmap
+3.18.2): `gammainc`, `gammaincc`, `gammaincinv` and `gammainccinv`.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, expm1, inf, isinf, isnan, log, log1p, nan, pi, pow, sqrt
+from special_gamma import rgamma_near_one, rgamma_near_two, stirling, gamma, gammaln
+from special_error import ndtri
+
+
+def _log1pmx(t: f64) -> f64:
+    """log(1 + t) − t for `t` above −1, keeping its relative precision near 0, where it is
+    about −t²/2 and `log1p(t) - t` would cancel: the series Σ (−1)ᵏ⁺¹ tᵏ / k from k = 2 for
+    |t| below 0.5, at most about 55 terms."""
+    if abs(t) >= 0.5:
+        return log1p(t) - t
+    power = t * t
+    total = 0.0
+    for k in range(2, 120):
+        term = power / k
+        if k % 2 == 1:
+            total += term
+        else:
+            total -= term
+        if abs(term) <= 1.0e-17 * abs(total):
+            break
+        power *= t
+    return total
+
+
+def log_minus_linear(r: f64) -> f64:
+    """log(r) − (r − 1) for `r` above 0: `_log1pmx(r - 1)` near 1, and the logarithm of `r`
+    itself away from 1, so a ratio far below 1 is not first rounded to 1 + t."""
+    if abs(r - 1.0) < 0.5:
+        return _log1pmx(r - 1.0)
+    return log(r) - (r - 1.0)
+
+
+def _gamma_prefix(a: f64, x: f64) -> f64:
+    """xᵃ e⁻ˣ / Γ(a), the factor every incomplete gamma function carries.
+
+    From a = 10 up it is √(a/(2π)) exp(a (log r − (r − 1)) − S(a)) with r = x/a and S
+    Stirling's remainder, so near its peak at x = a no large logarithms cancel. Below, the
+    logarithms are small enough to add directly.
+    """
+    if x == 0.0:
+        return 0.0
+    if a < 10.0:
+        return exp(a * log(x) - x - gammaln(a))
+    if abs(x - a) < 0.5 * a:
+        shape = _log1pmx((x - a) / a)
+    else:
+        shape = log_minus_linear(x / a)
+    return sqrt(a / (2.0 * pi)) * exp(a * shape - stirling(a))
+
+
+def _gamma_lower_series(a: f64, x: f64) -> f64:
+    """P(a, x) for `x` below a + 1, by the series xᵃ e⁻ˣ / Γ(a + 1) Σ xⁿ / ((a + 1) ⋯ (a + n)),
+    whose terms are all positive. It needs about √a terms near x = a."""
+    term = 1.0
+    total = 1.0
+    for n in range(1, 1000000):
+        term *= x / (a + n)
+        total += term
+        if term <= 1.0e-17 * total:
+            break
+    return _gamma_prefix(a, x) / a * total
+
+
+def _gamma_upper_fraction(a: f64, x: f64) -> f64:
+    """Q(a, x) for `x` from a + 1 up, by Legendre's continued fraction
+    xᵃ e⁻ˣ / Γ(a) · 1 / (x + 1 − a − 1(1 − a) / (x + 3 − a − 2(2 − a) / (x + 5 − a − ⋯))),
+    evaluated forwards by Lentz's method until a step changes nothing."""
+    tiny = 1.0e-300
+    b = x + 1.0 - a
+    c = 1.0 / tiny
+    d = 1.0 / b
+    value = d
+    for i in range(1, 1000000):
+        numerator = -i * (i - a)
+        b += 2.0
+        d = numerator * d + b
+        if abs(d) < tiny:
+            d = tiny
+        c = b + numerator / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        change = d * c
+        value *= change
+        if abs(change - 1.0) <= 1.0e-16:
+            break
+    return _gamma_prefix(a, x) * value
+
+
+def _gamma_small_parts(a: f64, x: f64) -> tuple[f64, f64]:
+    """P(a, x) and Q(a, x) for `a` below 1 and `x` below 2, where P is near 1 and 1 − P
+    would lose Q's digits.
+
+    With E = xᵃ − 1 from `expm1`, q = 1/Γ(1 + a) − 1 from its Taylor series and
+    T = Σ (−x)ⁿ a / (n! (a + n)) from n = 1, P = (1 + E)(1 + q)(1 + T) and
+    Q = −(E + q + E q) − (1 + E)(1 + q) T, each without cancellation.
+    """
+    grown = expm1(a * log(x))
+    if a < 0.5:
+        reciprocal = rgamma_near_one(a)
+    else:
+        reciprocal = rgamma_near_two(a - 1.0)
+    tail = 0.0
+    term = 1.0
+    for n in range(1, 60):
+        term *= -x / n
+        change = term * a / (a + n)
+        tail += change
+        if abs(change) <= 1.0e-17 * abs(tail):
+            break
+    factor = (1.0 + grown) * (1.0 + reciprocal)
+    upper = -(grown + reciprocal + grown * reciprocal) - factor * tail
+    return (factor * (1.0 + tail), upper)
+
+
+def _gamma_parts(a: f64, x: f64) -> tuple[f64, f64]:
+    """P(a, x) and Q(a, x) = 1 − P(a, x) for `a` above 0 and finite `x` above 0, each with
+    its own precision: the smaller is computed and the larger is 1 minus it."""
+    if a < 1.0 and x < 2.0:
+        return _gamma_small_parts(a, x)
+    if x < a + 1.0:
+        lower = _gamma_lower_series(a, x)
+        return (lower, 1.0 - lower)
+    upper = _gamma_upper_fraction(a, x)
+    return (1.0 - upper, upper)
+
+
+def gammainc(a: f64, x: f64) -> f64:
+    """The regularized lower incomplete gamma function P(a, x) = γ(a, x) / Γ(a), as
+    `scipy.special.gammainc`: the probability that a gamma variable of shape `a` is below `x`.
+
+    0 at x = 0 and 1 at ∞; NaN for a negative `a` or `x`. For `x` below a + 1 it sums its
+    power series, and above it is 1 − Q(a, x) from Legendre's continued fraction; for `a`
+    below 1 and `x` below 2 both come from series that do not cancel.
+
+    ```python
+    from special import gammainc
+
+    print(gammainc(2.0, 3.0))   # 0.8008517265285442
+    ```
+    """
+    if isnan(a) or isnan(x) or a < 0.0 or x < 0.0:
+        return nan
+    if a == 0.0:
+        if x > 0.0:
+            return 1.0
+        return nan
+    if x == 0.0:
+        return 0.0
+    if isinf(x):
+        if isinf(a):
+            return nan
+        return 1.0
+    if isinf(a):
+        return 0.0
+    lower, _ = _gamma_parts(a, x)
+    return lower
+
+
+def gammaincc(a: f64, x: f64) -> f64:
+    """The regularized upper incomplete gamma function Q(a, x) = Γ(a, x) / Γ(a) = 1 − P(a, x),
+    as `scipy.special.gammaincc`, with its own precision in its tail: `gammaincc(1.0, 700.0)`
+    is e⁻⁷⁰⁰, about 1e-304, where 1 − P would be 0.
+
+    ```python
+    from special import gammaincc
+
+    print(gammaincc(2.0, 3.0))  # 0.1991482734714558
+    ```
+    """
+    if isnan(a) or isnan(x) or a < 0.0 or x < 0.0:
+        return nan
+    if a == 0.0:
+        if x > 0.0:
+            return 0.0
+        return nan
+    if x == 0.0:
+        return 1.0
+    if isinf(x):
+        if isinf(a):
+            return nan
+        return 0.0
+    if isinf(a):
+        return 1.0
+    _, upper = _gamma_parts(a, x)
+    return upper
+
+
+def _gamma_inverse_guess(a: f64, lower: f64, upper: f64) -> f64:
+    """A first guess at the `x` with P(a, x) = lower and Q(a, x) = upper: in the far upper tail
+    the fixed point of x = −log(Q Γ(a)) + (a − 1) log x, from Q's leading term
+    xᵃ⁻¹ e⁻ˣ / Γ(a); otherwise the Wilson–Hilferty cube of a normal quantile from a = 1 up,
+    and the leading term of P's series or of Q's asymptote below."""
+    if upper < 1.0e-10:
+        start = -log(upper) - gammaln(a)
+        x = max(max(start, a), 1.0)
+        for _ in range(8):
+            x = max(start + (a - 1.0) * log(x), 1.0e-3)
+        return x
+    if a >= 1.0:
+        if lower < 0.5:
+            z = ndtri(lower)
+        else:
+            z = -ndtri(upper)
+        s = 1.0 / (9.0 * a)
+        root = 1.0 - s + z * sqrt(s)
+        if root > 0.0:
+            return a * root * root * root
+        return pow(lower * gamma(a + 1.0), 1.0 / a)
+    if lower < 0.8:
+        return pow(lower * gamma(a + 1.0), 1.0 / a)
+    return max(-log(upper) - gammaln(a), 1.0e-3)
+
+
+def _gamma_inverse(a: f64, lower: f64, upper: f64) -> f64:
+    """The `x` with P(a, x) = lower and Q(a, x) = upper, `lower + upper` being 1, by Newton's
+    method on the logarithm of whichever of the two is smaller, log P(a, x) = log lower or
+    log Q(a, x) = log upper, from `_gamma_inverse_guess`.
+
+    Matching the smaller keeps a target near 1 from losing its digits, and the logarithm keeps
+    the steps well behaved far into either tail, where P or Q is below 1e-300. A step that
+    would leave x > 0 is shortened.
+    """
+    x = _gamma_inverse_guess(a, lower, upper)
+    for _ in range(100):
+        p, q = _gamma_parts(a, x)
+        if lower <= upper:
+            value = p
+            target = lower
+            sign = 1.0
+        else:
+            value = q
+            target = upper
+            sign = -1.0
+        if value == 0.0:
+            if sign > 0.0:
+                x *= 2.0
+            else:
+                x *= 0.5
+            continue
+        slope = sign * _gamma_prefix(a, x) / (x * value)
+        if slope == 0.0 or isinf(slope) or isnan(slope):
+            break
+        step = log(value / target) / slope
+        following = x - step
+        if following <= 0.0:
+            following = 0.1 * x
+        if abs(following - x) <= 4.0e-16 * x:
+            return following
+        x = following
+    return x
+
+
+def gammaincinv(a: f64, y: f64) -> f64:
+    """The inverse of `gammainc` in `x`, as `scipy.special.gammaincinv`: the `x` with
+    P(a, x) = y, for `y` from 0 to 1. 0 at y = 0, ∞ at y = 1, NaN outside.
+
+    ```python
+    from special import gammaincinv
+
+    print(gammaincinv(2.0, 0.5))    # 1.6783469900166605
+    ```
+    """
+    if isnan(a) or isnan(y) or a < 0.0 or y < 0.0 or y > 1.0:
+        return nan
+    if y == 0.0:
+        return 0.0
+    if y == 1.0:
+        return inf
+    return _gamma_inverse(a, y, 1.0 - y)
+
+
+def gammainccinv(a: f64, y: f64) -> f64:
+    """The inverse of `gammaincc` in `x`, as `scipy.special.gammainccinv`: the `x` with
+    Q(a, x) = y, for `y` from 0 to 1. ∞ at y = 0, 0 at y = 1, NaN outside. A tiny `y` keeps its
+    digits, so `gammainccinv(1.0, 1e-300)` is 690.7755278982137.
+
+    ```python
+    from special import gammainccinv
+
+    print(gammainccinv(2.0, 0.5))   # 1.6783469900166605
+    ```
+    """
+    if isnan(a) or isnan(y) or a < 0.0 or y < 0.0 or y > 1.0:
+        return nan
+    if y == 0.0:
+        return inf
+    if y == 1.0:
+        return 0.0
+    return _gamma_inverse(a, 1.0 - y, y)
