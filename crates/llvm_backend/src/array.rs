@@ -216,7 +216,8 @@ impl<'db> Function<'_, '_, 'db> {
     }
 
     /// Ends the value at `place`: frees an array's elements, and every array inside a tuple or
-    /// struct, and closes a `File`; any other value owns nothing, so dropping it does nothing.
+    /// struct, closes a `File`, and runs a struct's `__del__` (decision 0063); any other value
+    /// owns nothing, so dropping it does nothing.
     pub(crate) fn drop_place(&mut self, place: &Place) -> Result<(), Unsupported> {
         let (address, ty) = self.place(place)?;
         self.drop_value(&address, ty)
@@ -237,6 +238,7 @@ impl<'db> Function<'_, '_, 'db> {
                 Ok(())
             }
             TypeKind::Tuple(_) | TypeKind::Struct(_) => {
+                self.destroy(address, ty)?;
                 let container = self.types.value(ty)?;
                 let mut position = 0;
                 while let Ok(field) = self.field(ty, position) {
@@ -273,7 +275,8 @@ impl<'db> Function<'_, '_, 'db> {
     }
 
     /// Whether a value of `ty` owns memory a drop frees, or a file a drop closes: an array, a
-    /// list, a `dict`, a `str` or a `File`, or a tuple, struct, optional or union holding one.
+    /// list, a `dict`, a `str` or a `File`, or a tuple, struct, optional or union holding one;
+    /// or is a struct whose class has `__del__`, which its drop calls.
     pub(crate) fn owns_memory(&self, ty: Type<'db>) -> bool {
         match ty.kind(self.types.db) {
             TypeKind::Array { .. } | TypeKind::List(_) | TypeKind::Dict { .. } | TypeKind::Str => {
@@ -282,6 +285,7 @@ impl<'db> Function<'_, '_, 'db> {
             TypeKind::Optional(value) => self.owns_memory(*value),
             TypeKind::Standard(standard) => standard.owns_resources(),
             TypeKind::Union(members) => members.iter().any(|&member| self.owns_memory(member)),
+            TypeKind::Struct(_) if self.has_destructor(ty) => true,
             TypeKind::Tuple(_) | TypeKind::Struct(_) => (0..)
                 .map_while(|position| self.field(ty, position).ok())
                 .any(|field| self.owns_memory(field)),

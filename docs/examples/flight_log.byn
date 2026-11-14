@@ -1,0 +1,43 @@
+# The flight of a ball thrown upward with air drag, recorded in a log that reports itself when
+# it is dropped (decision 0063). The `Log` class gathers samples and defines `__del__`, which
+# the compiler calls when a log's owner is done with it, so a run that forgets to report still
+# reports. Each `fly` call owns its log, so the log reports when `fly` returns, before `main`
+# prints the next line.
+
+
+class Log(Struct):
+    name: str
+    heights: list[f64]
+
+    def record(self: InOut[Self], height: f64):
+        self.heights.append(height)
+
+    def __del__(self: InOut[Self]):
+        highest = 0.0
+        for height in self.heights:
+            highest = max(highest, height)
+        print(f"{self.name}: {len(self.heights)} samples, highest {highest:.4f} m")
+
+
+def fly(name: str, speed: f64, drag: f64) -> f64:
+    # Semi-implicit Euler steps of dv/dt = -g - drag * v * |v| until the ball lands.
+    log = Log(name.copy(), [])
+    g = 9.81
+    dt = 0.001
+    height = 0.0
+    velocity = speed
+    time = 0.0
+    while True:
+        velocity -= (g + drag * velocity * abs(velocity)) * dt
+        height += velocity * dt
+        time += dt
+        if height <= 0.0:
+            return time
+        log.record(height)
+
+
+def main():
+    vacuum = fly("vacuum", 20.0, 0.0)
+    print(f"landed after {vacuum:.3f} s, exactly {2.0 * 20.0 / 9.81:.3f} s without drag")
+    air = fly("air", 20.0, 0.02)
+    print(f"landed after {air:.3f} s with drag")

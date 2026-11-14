@@ -22,7 +22,7 @@ through a first program there.
 
 The compiler is a prototype. `baryon check <directory>` reports every error the checker finds,
 but `baryon build`, `baryon run` and `baryon test` compile only part of the language so far, and
-all seven [example programs](examples/README.md) build and run;
+all eight [example programs](examples/README.md) build and run;
 [What builds today](reference/status.md) lists, chapter by chapter, what builds.
 
 [The `baryon` command](reference/commands.md) says how to build the tool and what each of its

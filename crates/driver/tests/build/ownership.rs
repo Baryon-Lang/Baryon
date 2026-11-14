@@ -15,7 +15,7 @@
 //!
 //! Each kind gets one program: the prelude, the kind's `show`, `size` and `make`, and every site
 //! with `ITEM` replaced by the kind's type, each called from `main` after printing its name. One
-//! program per kind, not per site, keeps the sweep to twelve builds.
+//! program per kind, not per site, keeps the sweep to fourteen builds.
 //!
 //! A site the compiler does not build yet for a kind, such as `copy()` of a list of structs, is
 //! reported by `baryon build` as not lowered or as a type error. The test drops each site the
@@ -49,7 +49,8 @@ struct Kind {
 }
 
 /// Every kind the sweep covers: text, lists, dicts and arrays, structs, unions and tuples that
-/// hold them, an optional, and containers nested two deep.
+/// hold them, an optional, containers nested two deep, and a struct whose class has `__del__`
+/// (decision 0063), alone and in a list.
 const KINDS: &[Kind] = &[
     Kind {
         name: "str",
@@ -137,6 +138,20 @@ const KINDS: &[Kind] = &[
         annotation: "list[Rec]",
         new: r#"[Rec(f"l{@}", [f"u{@}"])]"#,
         show: &["print(v[0].name, v[0].tags[0])"],
+        size: "len(v)",
+    },
+    Kind {
+        name: "destructor",
+        annotation: "Closer",
+        new: r#"Closer(f"c{@}", [f"x{@}"])"#,
+        show: &["print(v.name, len(v.tags), v.tags[0])"],
+        size: "len(v.tags)",
+    },
+    Kind {
+        name: "list-of-destructors",
+        annotation: "list[Closer]",
+        new: r#"[Closer(f"h{@}", [f"y{@}"]), Closer(f"i{@}", [])]"#,
+        show: &["print(len(v), v[0].name, v[0].tags[0])"],
         size: "len(v)",
     },
     Kind {
@@ -386,13 +401,15 @@ sweeps! {
     ownership_of_nested_list => 8,
     ownership_of_dict_of_lists => 9,
     ownership_of_list_of_structs => 10,
-    ownership_of_tuple => 11,
+    ownership_of_destructor => 11,
+    ownership_of_list_of_destructors => 12,
+    ownership_of_tuple => 13,
 }
 
 /// The kinds and the test functions agree: one test per kind.
 #[test]
 fn every_kind_has_a_test() {
-    assert_eq!(KINDS.len(), 12);
+    assert_eq!(KINDS.len(), 14);
     assert!(sites().len() > 100);
     assert!(
         KNOWN

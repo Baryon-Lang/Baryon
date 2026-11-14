@@ -261,8 +261,10 @@ prints `11600 bytes`.
   of data. Baryon cannot yet add bytes to the end of a file, so the compressed members stay in
   memory until `close` writes them, and `"ab"` reads the file's bytes in first. Writing needs
   memory for the compressed file, not for the data.
-- **Close a file you write.** Outside `with`, a file opened to write is written out only by
-  `close()`. One dropped without it, at the end of a function, is left empty.
+- **A dropped file is closed.** A file opened to write and dropped without `close()`, at the
+  end of a function or when its variable is given a new value, is closed then and written out,
+  as in CPython ([decision 0063](../decisions/0063-drop-hooks.md)). An error writing it there
+  cannot be raised, so it ends the program with a panic; `with` or `close()` raises it instead.
 - **Text modes.** `"rt"`, `"wt"`, `"at"` and `"xt"` give a `GzipTextFile`, which reads and
   writes `str` as UTF-8; see [Text modes](#text-modes) below. Any other mode raises
   `ValueError`, as in Python.

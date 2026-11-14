@@ -76,6 +76,53 @@ impl<'db> Instances<'db> {
     }
 }
 
+impl<'db> Instances<'db> {
+    /// Adds the `__del__` of each struct a drop in `body` may reach and is not yet found
+    /// (decision 0063): the struct of a local, or one a local holds in a field, an element or a
+    /// member, however deep. The backend calls the method from inside a drop, which no call in
+    /// the body names, so a library class's method, never a root, is found here.
+    pub(crate) fn follow_drops(
+        &mut self,
+        db: &'db dyn TypeDb,
+        body: &Body<'db>,
+        declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
+        destructor: &dyn Fn(&Nominal<'db>) -> Option<Item<'db>>,
+    ) {
+        let mut visited = std::collections::HashSet::new();
+        let mut pending: Vec<types::Type<'db>> = body.locals.iter().map(|local| local.ty).collect();
+        pending.extend(
+            body.outlined
+                .iter()
+                .flat_map(|outlined| outlined.locals.iter().map(|local| local.ty)),
+        );
+        while let Some(ty) = pending.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
+            match ty.kind(db) {
+                TypeKind::Tuple(members) | TypeKind::Union(members) => pending.extend(members),
+                TypeKind::List(element) | TypeKind::Optional(element) => pending.push(*element),
+                TypeKind::Dict { key, value } => pending.extend([*key, *value]),
+                TypeKind::Struct(nominal) => {
+                    if let Some(item) = destructor(nominal) {
+                        let instance = Instance {
+                            item,
+                            arguments: Vec::new(),
+                        };
+                        if self.seen.insert(instance.clone()) {
+                            self.found.push(instance);
+                        }
+                    }
+                    if let types::Declared::Struct(fields) = declared(nominal) {
+                        pending.extend(fields);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 /// The body of `instance`, ready for a backend: lowered, its type parameters replaced by the
 /// instance's arguments, each call of a trait's method sent to the method that implements it
 /// (`implementation`, decision 0031), its drops elaborated and its whole-array expressions
@@ -88,6 +135,7 @@ pub(crate) fn ready<'db>(
     db: &'db dyn TypeDb,
     instance: &Instance<'db>,
     declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
+    destructor: &dyn Fn(&Nominal<'db>) -> bool,
     implementation: &monomorphize::Implementation<'_, 'db>,
 ) -> Result<Body<'db>, Vec<Diagnostic>> {
     let mut body = lowering::lower(db, instance.item)?;
@@ -120,7 +168,7 @@ pub(crate) fn ready<'db>(
         monomorphize::trait_calls(db, &mut body, implementation);
     }
     array_fusion::fuse(db, &mut body);
-    drop_elaboration::elaborate(db, &mut body, declared);
+    drop_elaboration::elaborate(db, &mut body, declared, destructor);
     array_expansion::expand(db, &mut body, declared);
     bounds_hoisting::hoist(db, &mut body, declared);
     body.phase = Phase::Ready;

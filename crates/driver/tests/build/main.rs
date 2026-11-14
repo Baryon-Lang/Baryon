@@ -22,6 +22,7 @@ mod clang;
 mod comparisons;
 mod complex;
 mod defaults;
+mod destructors;
 mod dicts;
 mod errors;
 mod examples;

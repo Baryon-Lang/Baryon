@@ -115,6 +115,9 @@ impl<'db> Body<'db> {
             }
             _ => return self.untyped(arguments),
         };
+        if self.tree.text(attribute, self.text) == "__del__" {
+            return self.called_destructor(function, arguments);
+        }
         match self.member(function, &nominal, base, attribute) {
             Some(Member::Method {
                 item,
@@ -153,6 +156,20 @@ impl<'db> Body<'db> {
         }
     }
 
+    /// Reports `function`, a call of `__del__` by name, which would run it a second time
+    /// (decision 0063, part 6), after checking its `arguments`.
+    fn called_destructor(&mut self, function: NodeId, arguments: &Arguments) -> Type<'db> {
+        self.untyped(arguments);
+        self.lowerer.error(
+            function,
+            "`__del__` is called when the value is dropped, never by name",
+            "called here",
+            Some(
+                "calling it here would run it twice; put the work in a method such as \
+                 `close()`, call that, and call it from `__del__` too (decision 0063)",
+            ),
+        )
+    }
     /// `Class.function(arguments)`, where `value` names a class rather than a value:
     /// `Array.zeros(n)`, `Vec3.zeros()` on an alias of a `Fixed` type, or a method of a struct
     /// called through its class, `Point.origin()` (the `struct_function` method), a generic

@@ -81,6 +81,9 @@ impl<'db> Body<'db> {
             // A field of an element, `people[0].name`, is part of the element: moving it out
             // is moving out of an element, the error below.
             SyntaxKind::Attribute if self.inside_element(node) => self.moved_out_of_element(node),
+            SyntaxKind::Attribute if self.field_of_destructor(node) => {
+                self.moved_out_of_destructor(node);
+            }
             SyntaxKind::Attribute => {
                 // Moving a field out moves the whole struct: one with a hole cannot be used.
                 if let Some(root) = self.place_root(node) {
@@ -148,6 +151,36 @@ impl<'db> Body<'db> {
             }
         }
         false
+    }
+
+    /// Whether the field access `node` reads a field of a value whose class has `__del__`,
+    /// which needs the whole value when it runs (decision 0063, part 6).
+    fn field_of_destructor(&self, node: NodeId) -> bool {
+        let Some(value) = self.tree.child(node, Role::Value) else {
+            return false;
+        };
+        let Some(ty) = self.typed.expressions.get(&Key(value)).copied() else {
+            return false;
+        };
+        let TypeKind::Struct(nominal) = ty.kind(self.db) else {
+            return false;
+        };
+        crate::destructors::own_destructor(self.db, self.lowerer.package, nominal).is_some()
+    }
+
+    /// Reports `node`, a field moved out of a value whose class has `__del__`.
+    fn moved_out_of_destructor(&mut self, node: NodeId) {
+        let hint = format!(
+            "`__del__` runs on the whole value when it is dropped (decision 0063); move a copy \
+             instead: `{}.copy()`",
+            self.tree.text(node, self.text)
+        );
+        self.lowerer.error(
+            node,
+            "a field cannot be moved out of a value whose class has `__del__`",
+            "moved out here",
+            Some(&hint),
+        );
     }
 
     /// Reports `node`, an element or a field of one, moved out of its container. The container
