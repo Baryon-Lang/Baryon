@@ -1115,14 +1115,16 @@ with open("orthogonal_polynomials.txt", "w") as out:
 
 In `gauss_quadrature.txt` each case is one node, `roots_<family>_x`, or one weight,
 `roots_<family>_w`, of a rule: the number of nodes, the node's index, the parameters α and β (0.0
-where the family has none), the size its error is measured against, which is the reference's own
-size, and the reference. The rules of 10 nodes or fewer are recorded whole, and of larger rules
-the three nodes at each end, the node a quarter of the way in and the middle one. The script
-below recorded them with mpmath 1.4.1 at 60 digits. It starts from NumPy's eigenvalues of each
-Jacobi matrix in `f64`, polishes every node with Newton's method at 60 digits, and checks that no
-two nodes met. The weights are μ₀ / Σ qₖ(xᵢ)², exact at the polished node. Chebyshev's rules are
-their closed forms at 60 digits. The last lines are SciPy 1.18.1's NaN rules at the edge of a
-parameter's range. Run it from this directory with `python3 -I`; it takes about a minute.
+where the family has none), the size its error is measured against, and the reference. A weight's
+size is its own; a node's is the larger of itself and its distance to the nearest other node, since
+Newton's method fixes a node to a fraction of that gap, and a node near 0 has no more precision than
+that. The rules of 10 nodes or fewer are recorded whole, and of larger rules the three nodes at each
+end, the node a quarter of the way in and the middle one. The script below recorded them with mpmath
+1.4.1 at 60 digits. It starts from NumPy's eigenvalues of each Jacobi matrix in `f64`, polishes
+every node with Newton's method at 60 digits, and checks that no two nodes met. The weights are μ₀ /
+Σ qₖ(xᵢ)², exact at the polished node. Chebyshev's rules are their closed forms at 60 digits. The
+last lines are SciPy 1.18.1's NaN rules at the edge of a parameter's range. Run it from this
+directory with `python3 -I`; it takes about a minute.
 
 ```python
 import math
@@ -1225,6 +1227,13 @@ def scipy_rule(family, n, alpha, beta):
     return getattr(scipy.special, "roots_" + family)(n)
 
 
+def node_size(nodes, i):
+    """The size a node's error is measured against: the larger of the node and its distance to
+    the nearest other node, the scale on which Newton's method fixes it."""
+    gaps = [abs(nodes[i] - nodes[j]) for j in (i - 1, i + 1) if 0 <= j < len(nodes)]
+    return max([abs(nodes[i])] + ([min(gaps)] if gaps else []))
+
+
 def indices(n):
     if n <= 10:
         return range(n)
@@ -1242,14 +1251,14 @@ with mpmath.workdps(60):
         for n in (1, 2, 3, 4, 5, 7, 10, 16, 25, 40, 64, 100, 150):
             nodes, weights = rule(family, n, alpha, beta)
             for i in indices(n):
-                add("roots_" + family + "_x", n, i, alpha, beta, abs(nodes[i]), nodes[i])
+                add("roots_" + family + "_x", n, i, alpha, beta, node_size(nodes, i), nodes[i])
             for i in indices(n):
                 add("roots_" + family + "_w", n, i, alpha, beta, weights[i], weights[i])
     # Rules large enough that the recurrences pass the range of f64 in their tails.
     for family in ("hermite", "hermitenorm", "laguerre"):
         nodes, weights = rule(family, 400, 0.0, 0.0)
         for i in indices(400):
-            add("roots_" + family + "_x", 400, i, 0.0, 0.0, abs(nodes[i]), nodes[i])
+            add("roots_" + family + "_x", 400, i, 0.0, 0.0, node_size(nodes, i), nodes[i])
         for i in indices(400):
             add("roots_" + family + "_w", 400, i, 0.0, 0.0, weights[i], weights[i])
 # The ends, as SciPy 1.18.1 gives them: NaN rules at the edge of the parameter's range, below
