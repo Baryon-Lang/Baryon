@@ -101,3 +101,51 @@ def main():
     );
     Ok(())
 }
+
+/// `dropna()` gives the elements that are there, in order, as an array of numbers a function
+/// of `Array[f64, 1]` takes, and `fillna(value)` every element with the value where one was
+/// `None`, the value given by position or as `value=` and converted to the element's type.
+/// The array they read is left as it was. Floats, 32-bit integers and `bool`s are narrowed;
+/// an array of `None`s only and an empty one drop to no elements.
+#[test]
+fn missing_values_are_dropped_and_filled() -> io::Result<()> {
+    let program = r"
+def bids() -> Array[f64 | None, 1]:
+    return Array([1.5, None, 2.5, None, None, 6.0, 7.0, 8.0, 9.0, None])
+
+
+def mean(values: Array[f64, 1]) -> f64:
+    return values.sum() / f64(len(values))
+
+
+def main():
+    values = bids()
+    there = values.dropna()
+    print(there, len(there), mean(there))
+    print(values.fillna(0.0))
+    print(values.fillna(value=-1), mean(values.fillna(mean(there))))
+    print(len(values), values[1], values.isna()[1])
+    counts: Array[i32 | None, 1] = Array([1, None, 3])
+    print(counts.dropna(), counts.fillna(2), counts.fillna(2).sum())
+    flags: Array[bool | None, 1] = Array([None, True, None])
+    print(flags.dropna(), flags.fillna(False))
+    none: Array[i64 | None, 1] = Array([None, None])
+    print(none.dropna(), len(none.dropna()), none.fillna(7))
+    empty: Array[f64 | None, 1] = Array([])
+    print(empty.dropna(), empty.fillna(1.0))
+";
+    let (code, output, _) = run("optional_arrays_narrowed", program)?;
+    assert_eq!(code, Some(0));
+    assert_eq!(
+        output,
+        "[1.5 2.5 6.  7.  8.  9. ] 6 5.666666666666667\n\
+         [1.5 0.  2.5 0.  0.  6.  7.  8.  9.  0. ]\n\
+         [ 1.5 -1.   2.5 -1.  -1.   6.   7.   8.   9.  -1. ] 5.666666666666666\n\
+         10 None True\n\
+         [1 3] [1 2 3] 6\n\
+         [ True] [False  True False]\n\
+         [] 0 [7 7]\n\
+         [] []\n"
+    );
+    Ok(())
+}

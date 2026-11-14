@@ -41,6 +41,11 @@ impl<'db> Builder<'db> {
         if self.schema_method(&place, method, frame, node) {
             return;
         }
+        match (method, rest) {
+            ("dropna", []) => return self.frame_dropna(place, frame, node),
+            ("fillna", &[value]) => return self.frame_fillna(place, frame, value, node),
+            _ => {}
+        }
         if method == "merge" {
             return self.frame_merge(place, frame, rest, node);
         }

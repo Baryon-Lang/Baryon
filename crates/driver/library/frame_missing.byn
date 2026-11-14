@@ -11,7 +11,9 @@ and the compiler puts them together.
 
 - `optional_parts` builds the two arrays from a list, for `Array(items)`.
 - `optional_element` reads one element as a `T | None`, for `values[i]`.
-- `missing` gives the mask `isna()` and `notna()` return.
+- `missing` gives the mask `isna()` and `notna()` return, and `both` joins the masks of a
+  frame's columns for `dropna()`.
+- `filled` gives the values with one value where an element is `None`, for `fillna(value)`.
 """
 
 
@@ -50,3 +52,21 @@ def missing(bits: Array[u8, 1], count: int, wanted: bool) -> Array[bool, 1]:
     missing, when `wanted`, or there, when not: the masks of `isna()` and `notna()`. Cost:
     one pass and one array of `count` `bool`s."""
     return Array([_valid(bits, at) != wanted for at in range(count)])
+
+
+def both(mask: Array[bool, 1], bits: Array[u8, 1]) -> Array[bool, 1]:
+    """A new mask that is true where `mask` is and the validity bitmap `bits` has its bit set.
+
+    `dropna()` of a frame joins the masks of its columns this way, so a row is kept when
+    every column has a value in it.
+    """
+    return Array([mask[at] and _valid(bits, at) for at in range(len(mask))])
+
+
+def filled[T: Copy](values: Array[T, 1], bits: Array[u8, 1], value: T) -> Array[T, 1]:
+    """A copy of `values` with `value` where the validity bitmap `bits` says `None`."""
+    result = values.copy()
+    for at in range(len(values)):
+        if not _valid(bits, at):
+            result[at] = value
+    return result

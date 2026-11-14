@@ -44,9 +44,9 @@ def uses(quotes: DataFrame[Quote], rows: list[Quote], prices: DataFrame[Price]):
     first = quotes[0]
     part = quotes[1:]
     chosen = quotes[quotes.bid.notna()]
-    narrow = quotes[["price"]]
+    narrow = quotes.fillna({"price": 1.0})
     top = quotes.head(2)
-    full = quotes.dropna()
+    full = quotes.dropna(how="all")
     order = quotes.sort_values("price")
     groups = quotes.groupby("price").agg(count=("bid", "count"))
     joined = prices.merge(quotes, on="price")
@@ -72,98 +72,97 @@ error: building it from a list of rows is not built for a frame with a column th
    |
 16 |     made = DataFrame(rows)
    |                      ^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
-error: choosing rows or columns is not built for a frame with a column that may hold `None` yet
+error: choosing rows is not built for a frame with a column that may hold `None` yet
   --> main.byn:17:13
    |
 17 |     first = quotes[0]
    |             ^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
-error: choosing rows or columns is not built for a frame with a column that may hold `None` yet
+error: choosing rows is not built for a frame with a column that may hold `None` yet
   --> main.byn:18:12
    |
 18 |     part = quotes[1:]
    |            ^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
-error: choosing rows or columns is not built for a frame with a column that may hold `None` yet
+error: choosing rows is not built for a frame with a column that may hold `None` yet
   --> main.byn:19:14
    |
 19 |     chosen = quotes[quotes.bid.notna()]
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
-error: choosing rows or columns is not built for a frame with a column that may hold `None` yet
-  --> main.byn:20:14
+error: the column `price` cannot hold `None`
+  --> main.byn:20:29
    |
-20 |     narrow = quotes[["price"]]
-   |              ^^^^^^^^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+20 |     narrow = quotes.fillna({"price": 1.0})
+   |                             ^^^^^^^ has nothing to fill
 
 error: the method `head` is not built for a frame with a column that may hold `None` yet
   --> main.byn:21:11
    |
 21 |     top = quotes.head(2)
    |           ^^^^^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
-error: the method `dropna` is not built for a frame with a column that may hold `None` yet
+error: `dropna` of a `DataFrame` takes no arguments yet
   --> main.byn:22:12
    |
-22 |     full = quotes.dropna()
-   |            ^^^^^^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+22 |     full = quotes.dropna(how="all")
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+   = note: `df.dropna()` drops each row with a `None` in any column; to look at some columns only, take them first: `df[["bid", "ask"]].dropna()`
 
 error: the method `sort_values` is not built for a frame with a column that may hold `None` yet
   --> main.byn:23:13
    |
 23 |     order = quotes.sort_values("price")
    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
 error: `groupby` is not built for a frame with a column that may hold `None` yet
   --> main.byn:24:14
    |
 24 |     groups = quotes.groupby("price").agg(count=("bid", "count"))
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
 error: `merge` is not built for a frame with a column that may hold `None` yet
   --> main.byn:25:27
    |
 25 |     joined = prices.merge(quotes, on="price")
    |                           ^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
 error: `concat` is not built for a frame with a column that may hold `None` yet
   --> main.byn:26:23
    |
 26 |     stacked = concat([quotes])
    |                       ^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
 error: a loop over its rows is not built for a frame with a column that may hold `None` yet
   --> main.byn:27:16
    |
 27 |     for row in quotes.itertuples():
    |                ^^^^^^^^^^^^^^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
 error: showing it is not built for a frame with a column that may hold `None` yet
   --> main.byn:29:11
    |
 29 |     print(quotes)
    |           ^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
 error: showing it is not built for a frame with a column that may hold `None` yet
   --> main.byn:30:15
    |
 30 |     text = f"{quotes}"
    |               ^^^^^^ a column may hold `None`
-   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, and its columns are read and replaced; the rest comes with roadmap item 3.13.6
+   = note: a frame with a column that may hold `None` is built from its columns, counted with `len`, copied with `copy`, narrowed by `dropna` and `fillna`, and its columns are read, replaced and chosen by name; the rest comes with roadmap item 3.13.6
 
 error: a column cannot be moved out of its `DataFrame`
   --> main.byn:31:12
@@ -192,6 +191,8 @@ def fine(quotes: DataFrame[Quote]) -> DataFrame[Quote]:
     there = quotes.bid.notna() | quotes["bid"].isna()
     twin = quotes.copy()
     twin.bid = Array([None, 2.0])
+    narrow = quotes[["bid"]]
+    total = quotes.dropna().bid.sum() + quotes.fillna(0.0).bid.sum()
     return twin
 "#;
 
@@ -203,7 +204,8 @@ fn unbuilt_uses_of_a_frame_with_missing_values_are_reported() {
 }
 
 /// The schema, `len`, `shape`, `columns`, a column read as an array with missing values,
-/// `copy` and a column replaced check clean.
+/// `copy`, a column replaced, columns chosen by name, and `dropna` and `fillna`, whose
+/// columns are numbers, check clean.
 #[test]
 fn the_built_uses_of_a_frame_with_missing_values_check_clean() {
     assert_eq!(check_one(BUILT), "");

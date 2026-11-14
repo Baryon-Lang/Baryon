@@ -6,10 +6,11 @@ that did not report, a survey answer left blank, an empty cell of a CSV file
 ([decision 0045](../decisions/0045-dataframe.md), part 3).
 
 This chapter covers what such an array does today: it is built from a list, counted, read one
-element at a time, copied, asked where its gaps are, and held as a column of a
+element at a time, copied, asked where its gaps are, turned into an array with no gaps by
+[`dropna` and `fillna`](#taking-the-gaps-out), and held as a column of a
 [`DataFrame`](dataframes.md): see [In a DataFrame](#in-a-dataframe). Arithmetic, reductions
-that skip `None`, `fillna`, `dropna` and the frame operations on such a column come next, with
-roadmap item 3.13.6, and the compiler says so by name when a program asks for one.
+that skip `None` and the other frame operations on such a column come next, with roadmap item
+3.13.6, and the compiler says so by name when a program asks for one.
 
 ## `None` is not `NaN`
 
@@ -92,6 +93,34 @@ This prints `[False  True False]`, then `[ True False  True]`.
 
 - **Cost:** one pass and one new array of `bool`s.
 
+## Taking the gaps out
+
+`bids.dropna()` gives the elements that are there, in order, and `bids.fillna(value)` gives
+every element, with `value` where one was `None`. Both give a new `Array[f64, 1]`, an array
+with no gaps, so everything an [array](arrays.md) does is open to the result:
+
+```python
+def main():
+    bids: Array[f64 | None, 1] = Array([1.5, None, 2.5])
+    there = bids.dropna()
+    print(there, there.sum())
+    print(bids.fillna(0.0))
+    print(bids.fillna(there.mean()))
+```
+
+This prints `[1.5 2.5] 4.0`, then `[1.5 0.  2.5]`, then `[1.5 2.  2.5]`.
+
+- **The type changes, and that is the point.** The result cannot hold `None`, so the
+  compiler knows the gaps are dealt with and asks for no check on the numbers. pandas gives
+  back a column that may still hold `NaN`.
+- **The value has the element's type.** `bids.fillna("none")` is a compile error. A whole
+  number fills an array of floats, `bids.fillna(0)`, as it does anywhere a float is expected.
+- **`value=`** may name the argument, as in pandas: `bids.fillna(value=0.0)`.
+- **`bids` is read, not changed.** pandas's `inplace=`, `method=` and `limit=` are not built.
+- **Cost:** `dropna` makes one pass over the bitmap for a mask of a byte for each element,
+  which it frees, and one pass that copies the values kept. `fillna` copies the values and
+  makes one pass over the bitmap.
+
 ## How it is stored
 
 An array with missing values is two pieces of memory, whatever its length:
@@ -136,17 +165,71 @@ This prints `3 None 3.0`, then `[False  True False]`.
   frame's length. Another length stops the program.
 - **`len`, `shape`, `columns` and `copy()`** work as for any frame, and the frame is passed
   and returned as any frame is.
-- **The frame operations are not built yet** for a frame with such a column: choosing rows or
-  columns, `head`, `tail`, `sort_values`, `groupby`, `merge`, `concat`, `drop_duplicates`,
+- **Columns are chosen by name**, `quotes[["bid"]]`, each copied with its gaps.
+- **The other frame operations are not built yet** for a frame with such a column: choosing
+  rows, `head`, `tail`, `sort_values`, `groupby`, `merge`, `concat`, `drop_duplicates`,
   `describe`, `itertuples`, `DataFrame(rows)` and `print`. Each is a compile error that says
-  so. They come with roadmap item 3.13.6, with `dropna` and `fillna`.
+  so. They come with roadmap item 3.13.6. Until then, take the gaps out first, as the next
+  section shows: the frame `dropna` or `fillna` gives does everything a frame does.
+
+### `dropna` and `fillna` of a frame
+
+`quotes.dropna()` gives the rows with no `None` in any column. `quotes.fillna(value)` gives
+every row, with the value in place of each `None`. In the result a column that held
+`f64 | None` holds `f64`:
+
+```python
+class Quote(Struct):
+    symbol: str
+    bid: f64 | None
+    size: i64 | None
+
+
+def main():
+    quotes: DataFrame[Quote] = DataFrame({
+        "symbol": Array(["a", "b", "c"]),
+        "bid": Array([1.5, None, 2.5]),
+        "size": Array([10, 20, None]),
+    })
+    print(quotes.dropna())
+    print(quotes.fillna({"bid": 0.0, "size": 0}))
+```
+
+This prints:
+
+```text
+  symbol  bid  size
+0      a  1.5    10
+  symbol  bid  size
+0      a  1.5    10
+1      b  0.0    20
+2      c  2.5     0
+```
+
+- **One value fills every column that may hold `None`**, so it must have the type of each:
+  `quotes[["bid"]].fillna(0.0)`. Where the columns have different types, as `bid` and `size`
+  do here, the compiler reports the column the value does not fit.
+- **A dict gives each column its own value**, `quotes.fillna({"bid": 0.0, "size": 0})`. Its
+  keys are column names written as string literals. A column the dict leaves out keeps its
+  type and its gaps; naming a column that cannot hold `None`, or one the frame does not have,
+  is a compile error.
+- **The result is an ordinary frame** once no column may hold `None`: it prints, sorts,
+  groups and joins. A partial fill leaves a frame that still has such a column.
+- **A frame with no column that may hold `None`** is copied by both, so code written for
+  either kind of frame can call them.
+- **`dropna` takes no arguments yet.** pandas's `subset=` is spelled by choosing the columns
+  first, `quotes[["bid", "size"]].dropna()`, which keeps only those columns; `how=`, `thresh=`
+  and `axis=` are not built.
+- **Cost:** `dropna` makes one mask of a byte for each row for each column that may hold
+  `None`, which it frees, then one pass over each column that copies the rows kept.
+  `fillna` copies every column.
 
 ## What is not built
 
 Each of these is a compile error that names what an array with missing values has today:
 
 - operators, `bids + 1.0`, and comparisons, `bids == 1.5`;
-- methods other than `isna`, `notna` and `copy`: `sum`, `mean`, `fillna`, `dropna`;
+- methods other than `isna`, `notna`, `dropna`, `fillna` and `copy`: `sum`, `mean`;
 - a slice, a mask or a list of positions, `bids[1:3]`;
 - assigning an element, `bids[0] = 2.0`;
 - a `for` loop over the array, and `print` of it;

@@ -180,6 +180,12 @@ impl<'db> Builder<'db> {
             (Some(("Array", method @ ("isna" | "notna"))), [array]) => {
                 self.optional_array_missing(place, *array, method == "isna", node);
             }
+            (Some(("Array", "dropna")), [array]) => {
+                self.optional_array_dropped(place, *array, node);
+            }
+            (Some(("Array", "fillna")), [array, value]) => {
+                self.optional_array_filled(place, *array, *value, node);
+            }
             (Some(("list", "pop")), [list]) => self.list_pop(place, *list, node),
             (Some(("dict", method)), _) => self.dict_method(place, method, arguments, node),
             (Some(("Array" | "Fixed", method)), _) => {
