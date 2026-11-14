@@ -6,7 +6,7 @@ The compiler reads this file for `<std>/special.byn`; a program cannot import it
 
 from math import exp, expm1, isinf, isnan, log, log1p, nan, pi, pow, sqrt
 from special_gamma import rgamma_near_one, rgamma_near_two, stirling
-from special_beta import log_gamma_ratio, betaln
+from special_beta import log_gamma_ratio, beta, betaln
 from special_error import ndtri
 from special_incomplete_gamma import log_minus_linear
 
@@ -16,8 +16,9 @@ def _beta_prefix(a: f64, b: f64, x: f64, y: f64) -> f64:
 
     From a and b of 10 up it is √(ab / (2π(a + b))) exp(a (log r − (r − 1)) + b (log s − (s − 1))
     − S(a) − S(b) + S(a + b)), with r = x(a + b)/a and s = y(a + b)/b, whose linear terms
-    cancel exactly; so near the peak at x = a/(a + b) no large logarithms cancel. Below,
-    the logarithms are added directly.
+    cancel exactly; so near the peak at x = a/(a + b) no large logarithms cancel. With both
+    shapes below 10 and nothing to overflow, it is the product of the powers, each within a ULP,
+    over `beta`. Otherwise the logarithms are added directly.
     """
     if x == 0.0 or y == 0.0:
         return 0.0
@@ -30,7 +31,10 @@ def _beta_prefix(a: f64, b: f64, x: f64, y: f64) -> f64:
         logarithm = a * log(x) + b * log1p(-x)
     else:
         logarithm = a * log1p(-y) + b * log(y)
-    return exp(logarithm - betaln(a, b))
+    scale = betaln(a, b)
+    if a < 10.0 and b < 10.0 and logarithm > -700.0 and abs(scale) < 700.0:
+        return pow(x, a) * pow(y, b) / beta(a, b)
+    return exp(logarithm - scale)
 
 
 def _beta_fraction(a: f64, b: f64, x: f64) -> f64:
@@ -111,8 +115,10 @@ def _beta_small_parts(a: f64, b: f64, x: f64) -> tuple[f64, f64]:
     return (value, -(grown + tail + grown * tail))
 
 
-def _beta_parts(a: f64, b: f64, x: f64) -> tuple[f64, f64]:
-    """Iₓ(a, b) and 1 − Iₓ(a, b) for `a` and `b` above 0 and `x` strictly between 0 and 1.
+def beta_parts(a: f64, b: f64, x: f64, y: f64) -> tuple[f64, f64]:
+    """Iₓ(a, b) and 1 − Iₓ(a, b) for `a` and `b` above 0, `x` strictly between 0 and 1 and
+    `y` = 1 − x, which a caller passes with its own precision when it has it, as the
+    distribution functions do.
 
     A shape below 1 with `x` close to its own end makes the value near that end's 1, so it is
     summed as a series whose complement keeps its digits. Otherwise the continued fraction
@@ -120,7 +126,6 @@ def _beta_parts(a: f64, b: f64, x: f64) -> tuple[f64, f64]:
     fraction gives Iₓ(a, b) and above it the fraction of the mirrored shapes gives
     1 − Iₓ(a, b); the other value is 1 minus the one computed.
     """
-    y = 1.0 - x
     if a < 1.0 and x * max(b, 1.0) <= 0.7:
         return _beta_small_parts(a, b, x)
     if b < 1.0 and y * max(a, 1.0) <= 0.7:
@@ -157,7 +162,7 @@ def betainc(a: f64, b: f64, x: f64) -> f64:
         return 1.0
     if b == 0.0 or isinf(a):
         return 0.0
-    lower, _ = _beta_parts(a, b, x)
+    lower, _ = beta_parts(a, b, x, 1.0 - x)
     return lower
 
 
@@ -183,16 +188,19 @@ def betaincc(a: f64, b: f64, x: f64) -> f64:
         return 0.0
     if b == 0.0 or isinf(a):
         return 1.0
-    _, upper = _beta_parts(a, b, x)
+    _, upper = beta_parts(a, b, x, 1.0 - x)
     return upper
 
 
-def _beta_inverse_guess(a: f64, b: f64, y: f64) -> f64:
-    """A first guess at the `x` with Iₓ(a, b) = y: Abramowitz and Stegun 26.5.22's normal
-    approximation when `a` and `b` are above 1, and the leading term of the series at either
-    end otherwise."""
+def _beta_inverse_guess(a: f64, b: f64, lower: f64, upper: f64) -> f64:
+    """A first guess at the `x` with Iₓ(a, b) = `lower` and 1 − Iₓ(a, b) = `upper`:
+    Abramowitz and Stegun 26.5.22's normal approximation when `a` and `b` are above 1, and the
+    leading term of the series at either end otherwise."""
     if a > 1.0 and b > 1.0:
-        z = -ndtri(y)
+        if lower <= 0.5:
+            z = -ndtri(lower)
+        else:
+            z = ndtri(upper)
         lam = (z * z - 3.0) / 6.0
         h = 2.0 / (1.0 / (2.0 * a - 1.0) + 1.0 / (2.0 * b - 1.0))
         w = z * sqrt(h + lam) / h - (1.0 / (2.0 * b - 1.0) - 1.0 / (2.0 * a - 1.0)) * (
@@ -203,41 +211,31 @@ def _beta_inverse_guess(a: f64, b: f64, y: f64) -> f64:
     left = exp(a * log(a / total)) / a
     right = exp(b * log(b / total)) / b
     whole = left + right
-    if y < left / whole:
-        return pow(a * whole * y, 1.0 / a)
-    return 1.0 - pow(b * whole * (1.0 - y), 1.0 / b)
+    if lower < left / whole:
+        return pow(a * whole * lower, 1.0 / a)
+    return 1.0 - pow(b * whole * upper, 1.0 / b)
 
 
-def betaincinv(a: f64, b: f64, y: f64) -> f64:
-    """The inverse of `betainc` in `x`, as `scipy.special.betaincinv`: the `x` with
-    Iₓ(a, b) = y, for `y` from 0 to 1.
+def beta_inverse(a: f64, b: f64, lower: f64, upper: f64) -> f64:
+    """The `x` with Iₓ(a, b) = `lower` and 1 − Iₓ(a, b) = `upper`, both strictly between 0
+    and 1, each passed with its own precision so a target near 1 loses nothing.
 
     Newton's method on the logarithm of whichever of Iₓ and 1 − Iₓ is smaller, from a first
     guess, kept inside a bracket that shrinks with every step; a step that would leave the
     bracket halves it instead, by its geometric mean near 0 so tiny roots are reached.
-
-    ```python
-    from special import betaincinv
-
-    print(betaincinv(2.0, 3.0, 0.5))    # 0.38572756813238956
-    ```
     """
-    if isnan(a) or isnan(b) or isnan(y) or a <= 0.0 or b <= 0.0 or y < 0.0 or y > 1.0:
-        return nan
-    if y == 0.0 or y == 1.0:
-        return y
     low = 0.0
     high = 1.0
-    x = min(max(_beta_inverse_guess(a, b, y), 1.0e-300), 1.0 - 1.0e-16)
+    x = min(max(_beta_inverse_guess(a, b, lower, upper), 1.0e-300), 1.0 - 1.0e-16)
     for _ in range(400):
-        lower, upper = _beta_parts(a, b, x)
-        if y <= 0.5:
-            value = lower
-            target = y
+        below, above = beta_parts(a, b, x, 1.0 - x)
+        if lower <= 0.5:
+            value = below
+            target = lower
             sign = 1.0
         else:
-            value = upper
-            target = 1.0 - y
+            value = above
+            target = upper
             sign = -1.0
         if value == target:
             return x
@@ -258,3 +256,37 @@ def betaincinv(a: f64, b: f64, y: f64) -> f64:
             return following
         x = following
     return x
+
+
+def betaincinv(a: f64, b: f64, y: f64) -> f64:
+    """The inverse of `betainc` in `x`, as `scipy.special.betaincinv`: the `x` with
+    Iₓ(a, b) = y, for `y` from 0 to 1.
+
+    ```python
+    from special import betaincinv
+
+    print(betaincinv(2.0, 3.0, 0.5))    # 0.3857275681323897
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(y) or a <= 0.0 or b <= 0.0 or y < 0.0 or y > 1.0:
+        return nan
+    if y == 0.0 or y == 1.0:
+        return y
+    return beta_inverse(a, b, y, 1.0 - y)
+
+
+def betainccinv(a: f64, b: f64, y: f64) -> f64:
+    """The inverse of `betaincc` in `x`, as `scipy.special.betainccinv`: the `x` with
+    1 − Iₓ(a, b) = y, for `y` from 0 to 1, with its own precision when `y` is tiny.
+
+    ```python
+    from special import betainccinv
+
+    print(betainccinv(2.0, 3.0, 0.5))   # 0.3857275681323897
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(y) or a <= 0.0 or b <= 0.0 or y < 0.0 or y > 1.0:
+        return nan
+    if y == 0.0 or y == 1.0:
+        return 1.0 - y
+    return beta_inverse(a, b, 1.0 - y, y)

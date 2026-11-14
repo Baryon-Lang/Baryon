@@ -7,10 +7,10 @@ it.
 """
 
 from math import exp, floor, inf, isinf, isnan, log, log1p, nan, pi, pow
-from special_common import HALF_LOG_TWO_PI, LARGEST_GAMMA, is_integer, is_odd, sinpi, cospi
+from special_common import SQRT_TWO_PI, HALF_LOG_TWO_PI, LARGEST_GAMMA, is_integer, is_odd, sinpi
+from special_common import cospi
 
 
-_SQRT_TWO_PI: Final = 2.5066282746310007  # the square root of 2π
 _PSI_ROOT: Final = 1.4616321449683622  # the positive zero of `psi`, rounded to f64
 _PSI_ROOT_LOW: Final = 9.549995429965697e-17  # the zero minus `_PSI_ROOT`
 
@@ -108,7 +108,7 @@ def _gamma_large(x: f64) -> f64:
     halves so that it does not overflow before `exp(-x)` scales it down.
     """
     half = pow(x, 0.5 * x - 0.25)
-    return _SQRT_TWO_PI * half * (exp(-x) * half) * exp(stirling(x))
+    return SQRT_TWO_PI * half * (exp(-x) * half) * exp(stirling(x))
 
 
 def gamma(x: f64) -> f64:
@@ -185,7 +185,7 @@ def rgamma(x: f64) -> f64:
     if x < 10.0:
         return 1.0 / gamma(x)
     half = pow(x, 0.5 * x - 0.25)
-    return exp(x) / half / half * exp(-stirling(x)) / _SQRT_TWO_PI
+    return exp(x) / half / half * exp(-stirling(x)) / SQRT_TWO_PI
 
 
 def gammasgn(x: f64) -> f64:

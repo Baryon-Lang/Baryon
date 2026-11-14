@@ -1,0 +1,341 @@
+"""The Kolmogorov and Smirnov distributions and Owen's T function for `special` (roadmap
+3.18.12): `kolmogorov`, `kolmogi`, `smirnov`, `smirnovi` and `owens_t`.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, inf, isinf, isnan, log, log1p, nan, pi, sqrt
+from special_common import SQRT_TWO_PI, HALF_LOG_TWO_PI, floor_count
+from special_gamma import stirling, gammaln
+from special_beta import rounding
+from special_error import square, ndtr
+from special_incomplete_gamma import log1pmx
+
+
+def _kolmogorov_parts(y: f64) -> tuple[f64, f64]:
+    """The Kolmogorov distribution function K(y) and its complement Q(y) = 1 − K(y), for `y`
+    above 0, each with its own precision.
+
+    Below 1, K is the theta series √(2π)/y Σ exp(−(2k − 1)² π² / (8y²)) from k = 1, whose terms
+    fall fast for small `y`, and Q is 1 minus it. From 1 up, Q is 2 Σ (−1)ᵏ⁻¹ exp(−2k²y²), whose
+    terms fall fast for large `y`, and K is 1 minus it.
+    """
+    if y < 1.0:
+        scale = pi * pi / (8.0 * y * y)
+        total = 0.0
+        for k in range(1, 40):
+            odd = 2.0 * k - 1.0
+            term = exp(-odd * odd * scale)
+            total += term
+            if term <= 1.0e-17 * total:
+                break
+        lower = SQRT_TWO_PI / y * total
+        return (lower, 1.0 - lower)
+    square = y * y
+    total = 0.0
+    sign = 1.0
+    for k in range(1, 40):
+        term = exp(-2.0 * k * k * square)
+        total += sign * term
+        sign = -sign
+        if term <= 1.0e-17 * total:
+            break
+    upper = 2.0 * total
+    return (1.0 - upper, upper)
+
+
+def _kolmogorov_density(y: f64) -> f64:
+    """The Kolmogorov distribution's density, K′(y), for `y` above 0, by the derivative of
+    whichever series `_kolmogorov_parts` uses."""
+    if y < 1.0:
+        scale = pi * pi / (8.0 * y * y)
+        total = 0.0
+        for k in range(1, 40):
+            odd = 2.0 * k - 1.0
+            exponent = odd * odd * scale
+            term = exp(-exponent) * (2.0 * exponent - 1.0)
+            total += term
+            if abs(term) <= 1.0e-17 * abs(total):
+                break
+        return SQRT_TWO_PI / (y * y) * total
+    square = y * y
+    total = 0.0
+    sign = 1.0
+    for k in range(1, 40):
+        term = k * k * exp(-2.0 * k * k * square)
+        total += sign * term
+        sign = -sign
+        if term <= 1.0e-17 * total:
+            break
+    return 8.0 * y * total
+
+
+def kolmogorov(y: f64) -> f64:
+    """The complementary distribution function of the Kolmogorov distribution, as
+    `scipy.special.kolmogorov`: the limit, as the sample grows, of the probability that the
+    Kolmogorov-Smirnov statistic √n Dₙ exceeds `y`.
+
+    ```python
+    from special import kolmogorov
+
+    print(kolmogorov(1.0))      # 0.26999967167735456
+    ```
+    """
+    if isnan(y):
+        return nan
+    if y <= 0.0:
+        return 1.0
+    if isinf(y):
+        return 0.0
+    _, upper = _kolmogorov_parts(y)
+    return upper
+
+
+def kolmogi(p: f64) -> f64:
+    """The inverse of `kolmogorov`, as `scipy.special.kolmogi`: the `y` with
+    `kolmogorov(y)` = `p`.
+
+    Newton's method on the logarithm of the smaller of K and 1 − K, from the leading term of
+    its series, kept inside a bracket that shrinks with every step.
+
+    ```python
+    from special import kolmogi
+
+    print(kolmogi(0.05))        # 1.3580986393225505
+    ```
+    """
+    if isnan(p) or p < 0.0 or p > 1.0:
+        return nan
+    if p == 0.0:
+        return inf
+    if p == 1.0:
+        return 0.0
+    complement = 1.0 - p
+    low = 0.0
+    high = inf
+    if p <= 0.5:
+        y = sqrt(-0.5 * log(0.5 * p))
+    else:
+        y = pi / sqrt(-8.0 * log(complement * 0.4))
+    for _ in range(100):
+        lower, upper = _kolmogorov_parts(y)
+        if p <= 0.5:
+            value = upper
+            target = p
+            sign = -1.0
+        else:
+            value = lower
+            target = complement
+            sign = 1.0
+        if value == target:
+            return y
+        if (value > target) == (sign > 0.0):
+            high = y
+        else:
+            low = y
+        following = 0.5 * (low + high)
+        if isinf(high):
+            following = 2.0 * y
+        density = _kolmogorov_density(y)
+        if value > 0.0 and density > 0.0:
+            step = log(value / target) / (sign * density / value)
+            if y - step > low and y - step < high:
+                following = y - step
+        if abs(following - y) <= 4.0e-16 * y:
+            return following
+        y = following
+    return y
+
+
+def _owen_integrand(h: f64, x: f64) -> f64:
+    """exp(−h²x²/2) / (1 + x²), the integrand of Owen's T function without its constant
+    factor exp(−h²/2)."""
+    square = x * x
+    return exp(-0.5 * h * h * square) / (1.0 + square)
+
+
+def _owen_pair(h: f64, middle: f64, half: f64, node: f64) -> f64:
+    """The integrand at the two Gauss-Legendre points `middle` ± `half` × `node`."""
+    return _owen_integrand(h, middle + half * node) + _owen_integrand(h, middle - half * node)
+
+
+def _owen_small(h: f64, a: f64) -> f64:
+    """Owen's T function for `h` from 0 up and `a` from 0 to 1, by 20-point Gauss-Legendre
+    quadrature of its integral.
+
+    The integrand exp(−h²(1 + x²)/2) / (1 + x²) is analytic, with its nearest poles at ±i, and
+    beyond x = 12/h it is below exp(−72) of its peak, so the range is cut there; 20 points then
+    reach a ULP, as a test against mpmath at 300 random arguments finds.
+    """
+    length = a
+    if h > 0.0:
+        length = min(a, 12.0 / h)
+    middle = 0.5 * length
+    half = 0.5 * length
+    total = 0.0
+    total += 0.15275338713072628 * _owen_pair(h, middle, half, 0.07652652113349734)
+    total += 0.14917298647260424 * _owen_pair(h, middle, half, 0.22778585114164507)
+    total += 0.1420961093183824 * _owen_pair(h, middle, half, 0.37370608871541955)
+    total += 0.1316886384491769 * _owen_pair(h, middle, half, 0.5108670019508271)
+    total += 0.1181945319615186 * _owen_pair(h, middle, half, 0.636053680726515)
+    total += 0.1019301198172407 * _owen_pair(h, middle, half, 0.7463319064601508)
+    total += 0.08327674157670471 * _owen_pair(h, middle, half, 0.8391169718222188)
+    total += 0.06267204833410879 * _owen_pair(h, middle, half, 0.912234428251326)
+    total += 0.040601429800386446 * _owen_pair(h, middle, half, 0.9639719272779138)
+    total += 0.017614007139150893 * _owen_pair(h, middle, half, 0.993128599185095)
+    hi, lo = square(h)
+    return total * half * exp(-0.5 * hi) * (1.0 - 0.5 * lo) / (2.0 * pi)
+
+
+def owens_t(h: f64, a: f64) -> f64:
+    """Owen's T function, as `scipy.special.owens_t`:
+    T(h, a) = (1/2π) ∫₀ᵃ exp(−h²(1 + x²)/2) / (1 + x²) dx, the probability that a pair of
+    standard normal variables X > h and 0 < Y < aX, for `h` and `a` from 0 up.
+
+    Above `a` = 1 it is ½(Q(h) + Q(ah)) − Q(h) Q(ah) − T(ah, 1/a), with Q(x) = 1 − Φ(x), so
+    neither tail is 1 minus a number near 1. T is even in `h` and odd in `a`.
+
+    ```python
+    from special import owens_t
+
+    print(owens_t(1.0, 0.5))    # 0.04306469112078537
+    ```
+    """
+    if isnan(h) or isnan(a):
+        return nan
+    if a < 0.0:
+        return -owens_t(h, -a)
+    h = abs(h)
+    if a == 0.0 or isinf(h):
+        return 0.0
+    if a <= 1.0:
+        return _owen_small(h, a)
+    tail = ndtr(-h)
+    if isinf(a):
+        return 0.5 * tail
+    far = ndtr(-a * h)
+    return 0.5 * (tail + far) - tail * far - _owen_small(a * h, 1.0 / a)
+
+
+def _stirling_any(k: f64) -> f64:
+    """Stirling's remainder S(k) = log Γ(k) − (k − ½) log k + k − ½ log 2π for `k` from 1 up:
+    `stirling` from 10, and from `gammaln` below, where every term is small."""
+    if k >= 10.0:
+        return stirling(k)
+    return gammaln(k) - (k - 0.5) * log(k) + k - HALF_LOG_TWO_PI
+
+
+def _log1pmx_any(t: f64) -> f64:
+    """log(1 + t) − t for `t` above −1, with its relative precision near 0."""
+    if abs(t) < 0.5:
+        return log1pmx(t)
+    return log1p(t) - t
+
+
+def smirnov(n: f64, d: f64) -> f64:
+    """The complementary distribution function of the one-sided Kolmogorov-Smirnov statistic
+    Dₙ⁺ for a sample of `n`, as `scipy.special.smirnov`: the probability that the largest gap
+    by which the empirical distribution rises above the true one is at least `d`.
+
+    It is the exact sum of Birnbaum and Tingey, d Σ C(n, j) (1 − d − j/n)ⁿ⁻ʲ (d + j/n)ʲ⁻¹ for
+    j from 0 to ⌊n(1 − d)⌋. Each term is a binomial probability at p = d + j/n over p, formed
+    by Loader's saddle-point method, whose deviations from the mean are exactly ±nd, so every
+    term keeps its relative precision, and the sum, all of whose terms are positive, is
+    compensated, so it does too. The cost is one term per j, about n(1 − d) exponentials, so
+    `n` above 10¹⁰, which would take minutes, gives NaN; SciPy switches to an asymptotic series
+    there.
+
+    ```python
+    from special import smirnov
+
+    print(smirnov(10, 0.3))     # 0.1354635556
+    ```
+    """
+    if isnan(n) or isnan(d) or d < 0.0 or d > 1.0:
+        return nan
+    n = floor_count(n)
+    if n < 1.0 or n > 1.0e10:
+        return nan
+    if d == 0.0:
+        return 1.0
+    if d == 1.0:
+        return 0.0
+    shift = n * d
+    last = floor_count(n * (1.0 - d))
+    whole = _stirling_any(n)
+    total = 0.0
+    lost = 0.0
+    j = 1.0
+    while j <= last and j < n:
+        rest = n - j
+        exponent = (
+            whole
+            - _stirling_any(j)
+            - _stirling_any(rest)
+            + j * _log1pmx_any(shift / j)
+            + rest * _log1pmx_any(-shift / rest)
+        )
+        probability = sqrt(n / (2.0 * pi * j * rest)) * exp(exponent)
+        term = probability / (d + j / n)
+        following = total + term
+        lost += rounding(total, term, following)
+        total = following
+        j += 1.0
+    return exp(n * log1p(-d)) + d * (total + lost)
+
+
+def smirnovi(n: f64, p: f64) -> f64:
+    """The inverse of `smirnov` in `d`, as `scipy.special.smirnovi`: the `d` with
+    `smirnov(n, d)` = `p`.
+
+    The Illinois method, a secant method kept inside a bracket, on log `smirnov`, which is
+    close to a straight line in `d`; the end of the bracket that stays put has its value halved,
+    so the bracket shrinks from both sides.
+
+    ```python
+    from special import smirnovi
+
+    print(smirnovi(10, 0.1))    # 0.3226015596262795
+    ```
+    """
+    if isnan(n) or isnan(p) or p < 0.0 or p > 1.0:
+        return nan
+    n = floor_count(n)
+    if n < 1.0 or n > 1.0e10:
+        return nan
+    if p == 0.0:
+        return 1.0
+    if p == 1.0:
+        return 0.0
+    target = log(p)
+    low = 0.0
+    high = 1.0
+    low_value = -target
+    high_value = -inf
+    side = 0
+    d = min(max(sqrt(-0.5 * log(p) / n), 1.0e-12), 0.999)
+    for _ in range(200):
+        value = log(smirnov(n, d)) - target
+        if value == 0.0:
+            return d
+        if value > 0.0:
+            low = d
+            low_value = value
+            if side > 0:
+                high_value *= 0.5
+            side = 1
+        else:
+            high = d
+            high_value = value
+            if side < 0:
+                low_value *= 0.5
+            side = -1
+        following = 0.5 * (low + high)
+        if not isinf(high_value):
+            secant = low + (high - low) * low_value / (low_value - high_value)
+            if secant > low and secant < high:
+                following = secant
+        if abs(following - d) <= 2.0e-16 * d or high - low <= 2.0e-16 * high:
+            return following
+        d = following
+    return d

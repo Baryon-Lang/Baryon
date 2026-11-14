@@ -25,7 +25,7 @@ is built from the series and recurrences below and the elementary functions `exp
 ## Accuracy
 
 Each function is tested against values computed with mpmath to 50 digits, at a few hundred
-arguments spread over its range, about 6,600 in all
+arguments spread over its range, about 8,600 in all
 ([the fixtures](../../crates/driver/tests/fixtures/special/README.md)).
 The error is counted in units in the last place (ULP): the gap between adjacent `f64` values at
 the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
@@ -58,7 +58,16 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `gammainc`, `gammaincc` | 16 ULP for each unit of the result's logarithm, over `a` below 1 | 465 ULP at a result of 4e-146 | 1,441 ULP; 0 at `gammaincc(401.5, 1695.6)`, where the true value is 8.7e-314 |
 | `gammaincinv`, `gammainccinv` | The same | 8 ULP | 109 ULP |
 | `betainc`, `betaincc` | 32 ULP for each unit of the result's logarithm, over `a` below 1 | 369 ULP at a result of 1e-237 | 566 ULP for `betainc`; `betaincc` within 1 ULP |
-| `betaincinv` | The same | 35 ULP at `a` = 0.03 | 1,303 ULP at `betaincinv(280.7, 0.67, 4.5e-144)` |
+| `betaincinv`, `betainccinv` | The same | 37 ULP at `a` = 0.03 | 1,303 ULP at `betaincinv(280.7, 0.67, 4.5e-144)` |
+| `bdtr`, `bdtrc`, `nbdtr`, `nbdtrc` | 32 ULP for each unit of the result's logarithm | 1,185 ULP at a result of 3e-202 | 16,462 ULP at a result of 0.0037 |
+| `bdtri`, `nbdtri` | The same | 4 ULP | 3e16 ULP: `bdtri(45, 852, 7.4e-22)` gives 0.9999999999999999 where the answer is 0.159 |
+| `pdtr`, `pdtrc`, `chdtr`, `chdtrc`, `gdtr`, `gdtrc` | The same | 1,102 ULP at a result of 1e-297 | 6,633 ULP; 0 at `pdtr(510, 1902.5)`, where the true value is 1.7e-315 |
+| `pdtri`, `chdtri` | The same | 7 ULP | 25 ULP |
+| `fdtr`, `fdtrc`, `fdtri` | The same | 136 ULP at a result of 1e-35 | 298 ULP |
+| `stdtr`, `stdtrit` | The same | 642 ULP at a result of 2e-116 | 320 ULP for `stdtrit`, 190 for `stdtr` |
+| `kolmogorov`, `kolmogi` | The same | 395 ULP at a result of 3e-224 | 1 ULP |
+| `smirnov`, `smirnovi` | The same | 179 ULP for `smirnovi` at p = 0.9977, where `d` depends on 1 − p | 1 ULP |
+| `owens_t` | The same | 34 ULP at a result of 5e-24 | 1 ULP |
 
 Where a function crosses zero, no formula keeps all of its relative precision there: the
 result is a small difference of two numbers near 1. Those functions are held to a precision of
@@ -250,6 +259,7 @@ for `j0`, `j1`, `jn`, `y0`, `i0` and `i1`.
 | `betainc(a, b, x)` | The regularized incomplete beta function, Iₓ(a, b) | `scipy.special.betainc` |
 | `betaincc(a, b, x)` | Its complement, 1 − Iₓ(a, b), with its own precision in the tail | `scipy.special.betaincc` |
 | `betaincinv(a, b, p)` | The `x` with Iₓ(a, b) = p | `scipy.special.betaincinv` |
+| `betainccinv(a, b, q)` | The `x` with 1 − Iₓ(a, b) = q, with its own precision when `q` is tiny | `scipy.special.betainccinv` |
 
 P(a, x) is the probability that a gamma variable with shape `a` and scale 1 is below `x`, and
 Iₓ(a, b) that a beta variable with shapes `a` and `b` is. They are the distribution functions
@@ -299,6 +309,68 @@ and `betainc(a, b, 1.0)` 1; `betainc(0.0, b, x)` is 1 and `betainc(a, 0.0, x)` 0
 strictly between 0 and 1. A negative shape, an `x` outside the domain or a target outside
 0 to 1 gives NaN.
 
+## Distribution functions
+
+The distribution functions of seven distributions, each a change of variables into the
+incomplete gamma or beta function, as SciPy's `scipy.stats` builds on them. Counts `k` and `n`
+are rounded down to whole numbers, as SciPy does.
+
+| Function | Result | Computed as |
+| --- | --- | --- |
+| `bdtr(k, n, p)`, `bdtrc(k, n, p)` | The probability of at most `k`, or more than `k`, successes in `n` trials that each succeed with probability `p` | I₁₋ₚ(n − k, k + 1) and Iₚ(k + 1, n − k) |
+| `bdtri(k, n, y)` | The `p` with `bdtr(k, n, p)` = y | |
+| `nbdtr(k, n, p)`, `nbdtrc(k, n, p)` | The probability of at most `k`, or more than `k`, failures before the `n`th success | Iₚ(n, k + 1) and its complement |
+| `nbdtri(k, n, y)` | The `p` with `nbdtr(k, n, p)` = y | |
+| `pdtr(k, m)`, `pdtrc(k, m)` | The probability of at most `k`, or more than `k`, events of a Poisson process with mean `m` | Q(k + 1, m) and P(k + 1, m) |
+| `pdtri(k, y)` | The `m` with `pdtr(k, m)` = y | |
+| `chdtr(v, x)`, `chdtrc(v, x)` | The chi-squared distribution with `v` degrees of freedom, and its complement | P(v/2, x/2) and Q(v/2, x/2) |
+| `chdtri(v, y)` | The `x` with `chdtrc(v, x)` = y | |
+| `fdtr(a, b, x)`, `fdtrc(a, b, x)` | The F distribution with `a` and `b` degrees of freedom, and its complement | I_w(a/2, b/2) with w = ax/(b + ax) |
+| `fdtri(a, b, y)` | The `x` with `fdtr(a, b, x)` = y | |
+| `gdtr(a, b, x)`, `gdtrc(a, b, x)` | The gamma distribution with rate `a` and shape `b`, and its complement | P(b, ax) and Q(b, ax) |
+| `stdtr(df, t)` | Student's t distribution with `df` degrees of freedom | ½ I_w(df/2, ½) with w = df/(df + t²) below 0 |
+| `stdtrit(df, p)` | The `t` with `stdtr(df, t)` = p | |
+| `kolmogorov(y)`, `kolmogi(p)` | The limit, for large samples, of the probability that the Kolmogorov-Smirnov statistic √n Dₙ exceeds `y`, and its inverse | Theta series |
+| `smirnov(n, d)`, `smirnovi(n, p)` | The probability that the one-sided statistic Dₙ⁺ of a sample of `n` is at least `d`, and its inverse | Birnbaum and Tingey's exact sum |
+| `owens_t(h, a)` | Owen's T function, (1/2π) ∫₀ᵃ exp(−h²(1 + x²)/2) / (1 + x²) dx, the bivariate normal probability over a wedge | Gauss-Legendre quadrature |
+
+Each SciPy name is `scipy.special`'s.
+
+```python
+from special import bdtr, chdtri, stdtrit
+
+
+def main():
+    print(bdtr(3, 10, 0.5))     # 0.171875, the chance of at most 3 heads in 10 tosses
+    print(chdtri(3.0, 0.05))    # 7.814727903251179, the 5% critical value with 3 degrees
+    print(stdtrit(3.0, 0.975))  # 3.182446305283708, the two-sided 95% t value
+```
+
+Each complement is computed from its own side, never as 1 minus the function, so a p-value of
+1e-200 keeps its digits. The variable that a distribution passes to the beta function is formed
+with its complement beside it: for the F distribution, w = ax/(b + ax) and 1 − w = b/(b + ax),
+each from one division. The inverses solve for whichever of w and 1 − w is smaller, so a large
+F or t value keeps its precision too.
+
+### At the ends
+
+As SciPy gives: a probability outside 0 to 1, a negative count or `k` above `n` in `bdtr` gives
+NaN; `bdtr(k, n, 0.0)` is 1 and `bdtrc(-1, n, p)` is 1; `pdtri(k, 0.0)` and `chdtri(v, 0.0)`
+are ∞; `stdtr(inf, t)` is the normal distribution's `ndtr(t)`. Two differ from SciPy 1.18:
+`pdtri(k, 1.0)` is 0, where SciPy gives NaN, since `pdtr(k, m)` is 1 only at m = 0; and
+`stdtrit(df, 0.0)` is −∞, where SciPy gives ∞.
+
+`kolmogorov` sums whichever of its two theta series falls fast: √(2π)/y Σ exp(−(2k − 1)²π²/(8y²))
+for the distribution below 1, and 2 Σ (−1)ᵏ⁻¹ exp(−2k²y²) for the complement from 1 up. `smirnov` is
+exact for every `n`, never an asymptotic formula: each of its n(1 − d) terms is a binomial
+probability formed by Loader's saddle-point method, so `smirnov(1000000, 0.001)` costs about a
+million exponentials. Above n = 10¹⁰, where the sum would take minutes, `smirnov` and `smirnovi`
+give NaN; SciPy switches to an asymptotic series there. `owens_t` integrates over at most 12/h,
+where the integrand has fallen below exp(−72) of its peak, with 20 Gauss-Legendre points; above `a`
+= 1 it uses T(h, a) = ½(Q(h) + Q(ah)) − Q(h) Q(ah) − T(ah, 1/a), with Q the normal tail.
+
+SciPy is within a ULP on these five; the functions here meet the same rule as the others.
+
 ## Files under `special`
 
 `special` is one public file, `<std>/special.byn`, that re-exports each function from an internal
@@ -309,7 +381,7 @@ for those working on the library. A panic inside a function names the file it is
 
 | File | Holds |
 | --- | --- |
-| `special_common` | The whole-number tests `is_integer` and `is_odd`, `sinpi` and `cospi`, and the constants more than one family uses |
+| `special_common` | The whole-number tests `is_integer` and `is_odd`, `floor_count`, which rounds a count down, `sinpi` and `cospi`, and the constants more than one family uses |
 | `special_gamma` | `gamma`, `rgamma`, `gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma`, `polygamma` and the Hurwitz zeta function `polygamma` sums |
 | `special_beta` | `beta`, `betaln` and `poch` |
 | `special_error` | `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `ndtri`, `log_ndtr` and `dawsn` |
@@ -317,6 +389,8 @@ for those working on the library. A panic inside a function names the file it is
 | `special_bessel_ik` | `i0`, `i1`, `i0e`, `i1e`, `k0`, `k1`, `k0e`, `k1e` and `kn` |
 | `special_incomplete_gamma` | `gammainc`, `gammaincc`, `gammaincinv` and `gammainccinv` |
 | `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
+| `special_distributions` | `bdtr`, `bdtrc`, `bdtri`, `nbdtr`, `nbdtrc`, `nbdtri`, `pdtr`, `pdtrc`, `pdtri`, `chdtr`, `chdtrc`, `chdtri`, `fdtr`, `fdtrc`, `fdtri`, `gdtr`, `gdtrc`, `stdtr` and `stdtrit` |
+| `special_kolmogorov` | `kolmogorov`, `kolmogi`, `smirnov`, `smirnovi` and `owens_t` |
 
 A new function goes in the file of its family, and a name of `special` gets its line in
 `special.byn`. A family file kept under about 500 lines is split again by responsibility.
@@ -324,6 +398,6 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
-complex order, Airy, Struve and Kelvin functions, hypergeometric and elliptic functions, orthogonal
-polynomials, exponential integrals and zeta, and the distribution functions. `loggamma` of a complex
-argument comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).
+complex order, Airy, Struve and Kelvin functions, hypergeometric and elliptic functions,
+orthogonal polynomials, exponential integrals and zeta, and the everyday helpers. `loggamma` of a
+complex argument comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).

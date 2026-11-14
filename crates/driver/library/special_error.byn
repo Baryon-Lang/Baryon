@@ -16,7 +16,7 @@ _ONE_OVER_SQRT_TWO: Final = 0.7071067811865476  # 1/√2, rounded to f64
 _ONE_OVER_SQRT_TWO_LOW: Final = -4.833646656726457e-17  # 1/√2 minus `_ONE_OVER_SQRT_TWO`
 
 
-def _square(x: f64) -> tuple[f64, f64]:
+def square(x: f64) -> tuple[f64, f64]:
     """x² as the sum of two `f64`s, the rounded square and what rounding lost, found exactly
     with `fma`. exp(−x²) of a rounded square is off by 2x² times its rounding, about 1,400 ULP
     at x = 26; exp(−high) (1 − low) is not."""
@@ -199,11 +199,11 @@ def erf(x: f64) -> f64:
 
 
 def _erfc_positive(x: f64) -> f64:
-    """erfc(x) for `x` from 0.5 up: exp(−x²) erfcx(x), with x² split by `_square` so its
+    """erfc(x) for `x` from 0.5 up: exp(−x²) erfcx(x), with x² split by `square` so its
     rounding does not reach the exponential."""
     if x == inf:
         return 0.0
-    high, low = _square(x)
+    high, low = square(x)
     return exp(-high) * (1.0 - low) * _erfcx_positive(x)
 
 
@@ -246,7 +246,7 @@ def erfcx(x: f64) -> f64:
         return nan
     if x >= 0.5:
         return _erfcx_positive(x)
-    high, low = _square(x)
+    high, low = square(x)
     growth = exp(high) * (1.0 + low)
     if x > -0.5:
         return growth * (1.0 - _erf_small(x))
@@ -421,7 +421,7 @@ def log_ndtr(x: f64) -> f64:
     if x == -inf:
         return -inf
     high, low = _over_root_two(-x)
-    square_high, square_low = _square(high)
+    square_high, square_low = square(high)
     scaled = _erfcx_positive(high)
     slope = 2.0 * high - _TWO_OVER_SQRT_PI / scaled
     return log(0.5 * scaled) - square_high - (square_low + 2.0 * high * low) + low * slope

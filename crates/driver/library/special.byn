@@ -33,4 +33,11 @@ from special_bessel_ik import k0 as k0, k1 as k1, kn as kn
 from special_incomplete_gamma import gammainc as gammainc, gammaincc as gammaincc
 from special_incomplete_gamma import gammaincinv as gammaincinv, gammainccinv as gammainccinv
 from special_incomplete_beta import betainc as betainc, betaincc as betaincc
-from special_incomplete_beta import betaincinv as betaincinv
+from special_incomplete_beta import betaincinv as betaincinv, betainccinv as betainccinv
+from special_distributions import bdtr as bdtr, bdtrc as bdtrc, bdtri as bdtri, nbdtr as nbdtr
+from special_distributions import nbdtrc as nbdtrc, nbdtri as nbdtri, pdtr as pdtr, pdtrc as pdtrc
+from special_distributions import pdtri as pdtri, chdtr as chdtr, chdtrc as chdtrc, chdtri as chdtri
+from special_distributions import fdtr as fdtr, fdtrc as fdtrc, fdtri as fdtri, gdtr as gdtr
+from special_distributions import gdtrc as gdtrc, stdtr as stdtr, stdtrit as stdtrit
+from special_kolmogorov import kolmogorov as kolmogorov, kolmogi as kolmogi, owens_t as owens_t
+from special_kolmogorov import smirnov as smirnov, smirnovi as smirnovi
