@@ -25,7 +25,7 @@ is built from the series and recurrences below and the elementary functions `exp
 ## Accuracy
 
 Each function is tested against values computed with mpmath to 50 digits, at a few hundred
-arguments spread over its range, about 18,500 in all
+arguments spread over its range, about 24,800 in all
 ([the fixtures](../../crates/driver/tests/fixtures/special/README.md)).
 The error is counted in units in the last place (ULP): the gap between adjacent `f64` values at
 the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
@@ -77,6 +77,8 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `elliprc`, `elliprd`, `elliprf`, `elliprg` | 8 ULP | 4 ULP | 7 ULP |
 | `elliprj` | 8 ULP | 6 ULP | 116 ULP where `p` is far below the other arguments |
 | `ellipj` | 128 ULP, of the larger of the value and 1 for sn, cn and dn | 96 ULP of the amplitude at m = 1 − 4e-11 | 13 billion ULP of sn at the same arguments |
+| `jv`, `yv`, `jvp`, `yvp`, `spherical_jn`, `spherical_yn` | 256 ULP, of the modulus √(J² + Y²) past the turning point x = \|v\| | 106 ULP at `yv(214.4, 22.6)` | 4,723 ULP at `jv(57.7, 845.8)` |
+| `iv`, `ive`, `kv`, `kve`, `ivp`, `kvp`, `spherical_in`, `spherical_kn` | 256 ULP | 96 ULP at `kv(234.1, 60.6)` | 442 ULP; NaN for `ive` and `kve` from about 1e10 |
 | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer` | 8 ULP for each degree, of the largest value the recurrence passes through | 29 ULP for `eval_gegenbauer` at degree 85 | 439 ULP for `eval_jacobi` at degree 85 |
 | `eval_hermite`, `eval_hermitenorm` | The same | 156 ULP at degree 78 | 698 ULP for `eval_hermite` at degree 75 |
 | `lpmv` | 64 ULP of the largest value the recurrence passes through | 24 ULP | 154 ULP |
@@ -220,8 +222,8 @@ and `ndtri(1.0)` ∞, `log_ndtr(-inf)` −∞, and NaN outside each function's d
 | `k0(x)`, `k1(x)`, `kn(n, x)` | Modified Bessel functions of the second kind, Kₙ(x), for x > 0 | `scipy.special.k0`, `k1`, `kn` |
 | `k0e(x)`, `k1e(x)` | Kₙ(x) eˣ, finite where Kₙ underflows | `scipy.special.k0e`, `k1e` |
 
-The order `n` of `jn`, `yn` and `kn` is an `int`. Bessel functions of any real order, `jv`,
-`yv`, `iv` and `kv`, come in roadmap 3.18.5.
+The order `n` of `jn`, `yn` and `kn` is an `int`. The Bessel functions of any real order,
+`jv`, `yv`, `iv` and `kv`, are in [the next section](#bessel-functions-of-real-order).
 
 ```python
 from special import j0, jn
@@ -264,6 +266,90 @@ too. Close to 0, J₀, J₁ and their series are relative.
 `y0`, `y1`, `yn`, `k0`, `k1` and `kn` are −∞ or ∞ at 0 and NaN below 0, as SciPy gives. At
 infinity each function gives its limit, 0 for J and Y and ∞ for I, where SciPy 1.18 gives NaN
 for `j0`, `j1`, `jn`, `y0`, `i0` and `i1`.
+
+## Bessel functions of real order
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `jv(v, x)`, `yv(v, x)` | Bessel functions of the first and second kinds, Jᵥ(x) and Yᵥ(x), of any real order | `scipy.special.jv`, `yv` |
+| `iv(v, x)`, `kv(v, x)` | Modified Bessel functions Iᵥ(x) and Kᵥ(x) | `scipy.special.iv`, `kv` |
+| `jve(v, x)`, `yve(v, x)` | Jᵥ(x) e^(−\|Im x\|) and the same for Y: for a real x, `jv` and `yv` | `scipy.special.jve`, `yve` |
+| `ive(v, x)`, `kve(v, x)` | Iᵥ(x) e^(−\|x\|) and Kᵥ(x) eˣ, finite where I overflows or K underflows | `scipy.special.ive`, `kve` |
+| `jvp(v, x, n=1)`, `yvp`, `ivp`, `kvp` | The n-th derivative with respect to x | `scipy.special.jvp`, `yvp`, `ivp`, `kvp` |
+| `spherical_jn(n, x, derivative=False)`, `spherical_yn` | Spherical Bessel functions jₙ(x) = √(π/(2x)) Jₙ₊½(x) and yₙ(x), or their derivatives | `scipy.special.spherical_jn`, `spherical_yn` |
+| `spherical_in(n, x, derivative=False)`, `spherical_kn` | Modified spherical Bessel functions iₙ(x) and kₙ(x), or their derivatives | `scipy.special.spherical_in`, `spherical_kn` |
+
+The order `v` is an `f64` of either sign; the spherical functions' `n` is an `int`. The argument
+is a real `f64`: the same names of a complex argument come in roadmap 3.18.6.
+
+```python
+from special import jv, kv, spherical_jn
+
+
+def main():
+    print(jv(2.5, 3.0))             # 0.41271003220971597
+    print(kv(0.5, 2.0))             # 0.11993777196806145, which is √(π/4) e⁻²
+    print(spherical_jn(0, 1.0))     # 0.8414709848078964, within a ULP of sin(1)
+```
+
+**How they work.** For an order of 0 or more, by the method of Temme and Steed (as Numerical
+Recipes §6.7 sets it out): a continued fraction gives Jᵥ′/Jᵥ, the recurrence carries it down
+to an order μ within ½ of 0, Temme's series (below x = 2) or Steed's complex continued fraction
+(above) gives Y there, the Wronskian fixes the scale, and the recurrence carries Y back up.
+Three other methods take over where they are more accurate:
+
+- Below x² = 6(v + 1) for J, and 100(v + 1) for I, the power series, which keeps each value's
+  relative precision where the recurrences lose up to 20,000 ULP.
+- From x = 30 and above v²/4, Hankel's asymptotic expansion, with its phase formed from cos x
+  and sin x of the exact argument. For I and K the same holds above v².
+- From x = 30 and above v, below v²/4, Hankel's expansion at the small order μ and μ + 1, then
+  the recurrence up to v, which is stable for both J and Y while the order is below x. The
+  continued fraction would take about x steps there and lose up to 100,000 ULP.
+
+A negative order uses the reflection formulas J₋ᵥ = cos(vπ) Jᵥ − sin(vπ) Yᵥ,
+Y₋ᵥ = sin(vπ) Jᵥ + cos(vπ) Yᵥ, I₋ᵥ = Iᵥ + (2/π) sin(vπ) Kᵥ and K₋ᵥ = Kᵥ, with a cosine and sine
+of vπ that are exact at whole and half-whole orders. `jvp` and the other derivatives take the
+method's own derivative for n = 1 and the sum 2⁻ⁿ Σ (−1)ᵏ C(n, k) Jᵥ₋ₙ₊₂ₖ (DLMF 10.6.7) above it,
+as SciPy does. The spherical functions are √(π/(2x)) times J, Y, I or K of order n + ½.
+
+**Accuracy.** J and Y oscillate past the turning point x = |v|, so there they are tested
+against the modulus √(J² + Y²), the envelope they oscillate under, and elsewhere against
+themselves. The worst errors, about 100 ULP, come at orders above 200, where the recurrences
+of Steed's method run for v steps; up to order 60 these are within about 60 ULP, and often
+closer to the true value than SciPy: `jv(2.5, 3.0)` is correctly rounded here and 2 ULP off in
+SciPy, and `spherical_jn(2, 1.5)` 1 ULP here and 9 there. Each factor of those recurrences is
+formed afresh rather than carried down by steps of 1/x, and 1/Γ(v + 1) is taken as
+(1/Γ(v))/v, since v + 1 can round and Γ is steep enough there to turn that into v ψ(v) ULP.
+
+The orders recorded in the tests reach 250, and the arguments 1e8. A larger order works, at a
+cost of about v + x steps; above about 170 the power series gives way to the recurrence.
+
+### At the ends
+
+Each function gives its limit where SciPy 1.18 gives NaN or a wrong infinity:
+
+- At x = 0 and a negative order v that is not whole, Jᵥ and Iᵥ are ±∞ with the sign of
+  1/Γ(v + 1), the sign of their leading term. SciPy gives +∞ for `iv(-1.5, 0.0)`, where the
+  limit is −∞, and NaN for `jve` and `ive`.
+- `yv(v, 0.0)` is −∞ for v of 0 or more, and for a negative v it is −∞ times the sign of
+  cos(vπ), and 0 when −v is half-whole, since Yᵥ is then ±J₋ᵥ. SciPy gives an infinity there.
+  `yve` is `yv` at 0, where SciPy gives NaN.
+- `ive` and `kve` stay finite for every finite x: `ive(0.0, 1e10)` is 3.99e-6, where SciPy
+  gives NaN from about 1e10.
+- At x = ∞, J, Y and the scaled functions are 0 and I is ∞, where SciPy gives NaN for J and Y
+  of non-whole order. At an infinite order, `yv(inf, x)` is −∞ and `kv(±inf, x)` is ∞, where
+  SciPy gives NaN; `jv(-inf, x)` and `iv(-inf, x)` are NaN, where SciPy gives 0, since the
+  reflection formulas have no limit there.
+- `spherical_yn(n, 0.0, True)` is ∞ for every n, where SciPy gives NaN from n = 1, and
+  `spherical_in(n, inf, True)` is ∞, where SciPy gives NaN from n = 3.
+
+As SciPy gives: NaN for a negative x unless v is whole, where Jᵥ(−x) = (−1)ᵛ Jᵥ(x) and the same
+for I; NaN for Y and K of a negative x; and `kv(v, 0.0)` = ∞. The spherical functions of a
+negative argument follow their parity, jₙ(−x) = (−1)ⁿ jₙ(x), yₙ(−x) = (−1)ⁿ⁺¹ yₙ(x) and
+iₙ(−x) = (−1)ⁿ iₙ(x), and `spherical_kn` continues SciPy's closed form
+(π/2) e⁻ˣ/x Σₖ (n + k)!/(k! (n − k)!) (2x)⁻ᵏ there, as −π iₙ(|x|) − (−1)ⁿ kₙ(|x|). They are
+NaN for a negative n. A negative derivative order stops the program with SciPy's message,
+where SciPy raises ValueError.
 
 ## Incomplete gamma and beta functions
 
@@ -765,6 +851,9 @@ for those working on the library. A panic inside a function names the file it is
 | `special_error` | `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `ndtri`, `log_ndtr` and `dawsn` |
 | `special_bessel_jy` | `j0`, `j1`, `jn`, `y0`, `y1` and `yn` |
 | `special_bessel_ik` | `i0`, `i1`, `i0e`, `i1e`, `k0`, `k1`, `k0e`, `k1e` and `kn` |
+| `special_bessel_steed` | `bessel_jy` and `bessel_ik`, the methods behind the functions of real order: Temme and Steed's, the power series and Hankel's expansions |
+| `special_bessel_real` | `jv`, `yv`, `iv`, `kv`, `jve`, `yve`, `ive`, `kve`, `jvp`, `yvp`, `ivp` and `kvp` |
+| `special_bessel_spherical` | `spherical_jn`, `spherical_yn`, `spherical_in` and `spherical_kn` |
 | `special_incomplete_gamma` | `gammainc`, `gammaincc`, `gammaincinv` and `gammainccinv` |
 | `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
 | `special_distributions` | `bdtr`, `bdtrc`, `bdtri`, `nbdtr`, `nbdtrc`, `nbdtri`, `pdtr`, `pdtrc`, `pdtri`, `chdtr`, `chdtrc`, `chdtri`, `fdtr`, `fdtrc`, `fdtri`, `gdtr`, `gdtrc`, `stdtr` and `stdtrit` |
@@ -783,7 +872,7 @@ A new function goes in the file of its family, and a name of `special` gets its 
 
 ## Not built yet
 
-The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
-complex order, Airy, Struve and Kelvin functions, and hypergeometric functions. Carlson's
-integrals of complex arguments are not built. `loggamma` of a complex argument comes with the
-complex Bessel functions (3.18.6). See [What builds today](status.md).
+The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of a complex
+argument, Airy, Struve and Kelvin functions, and hypergeometric functions. Carlson's integrals of
+complex arguments are not built. `loggamma` of a complex argument comes with the complex Bessel
+functions (3.18.6). See [What builds today](status.md).

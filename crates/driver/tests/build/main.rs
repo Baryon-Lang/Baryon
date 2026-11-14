@@ -84,6 +84,7 @@ mod shapes;
 mod slices;
 mod sorting;
 mod special;
+mod special_bessel;
 mod special_elliptic;
 mod special_everyday;
 mod special_polynomials;

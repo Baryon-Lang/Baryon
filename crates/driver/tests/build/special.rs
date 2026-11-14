@@ -126,6 +126,11 @@ def main() -> Raises[None, OSError | ValueError]:
 /// for each degree up to the first argument, n, and `lpmv`, whose first argument is the order, to
 /// 64; the worst is about 4 ULP for each degree, for `sph_harm_y` at degree 46.
 ///
+/// The Bessel functions of real order are held to 256 ULP of the size their case records: past
+/// the turning point x = |v| the modulus √(J² + Y²), the envelope J and Y oscillate under, and
+/// elsewhere the value itself. The worst is 106 ULP, at orders above 200, where the
+/// recurrences of Steed's method run for about v steps.
+///
 /// The nodes of Gauss quadrature, `roots_..._x`, are held to 16 ULP of the larger of themselves and
 /// the gap to the nearest node: Newton's method on the polynomial leaves 7 at worst. Their weights,
 /// `roots_..._w`, are held to 32 ULP for each node of the rule, the first argument, n: a weight is
@@ -154,6 +159,8 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         | "stdtr" | "stdtrit" | "kolmogorov" | "kolmogi" | "smirnov" | "smirnovi" | "owens_t" => {
             32.0 * logarithm
         }
+        "jv" | "yv" | "jve" | "yve" | "jvp" | "yvp" | "spherical_jn" | "spherical_yn" | "iv"
+        | "ive" | "kv" | "kve" | "ivp" | "kvp" | "spherical_in" | "spherical_kn" => 256.0,
         _ if name.starts_with("roots_") && name.ends_with("_w") => 32.0 * first,
         _ if name.starts_with("roots_") => 16.0,
         _ => 8.0,
@@ -178,6 +185,8 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
 /// weight of Gauss quadrature is measured against the size its case records in the place of `x`:
 /// a weight against itself, and a node against the larger of itself and the gap to its nearest
 /// neighbour, since Newton's method fixes a node near 0 only to a fraction of that gap.
+/// The Bessel functions of real order and the spherical Bessel functions are measured against the
+/// size their case records in the place of `x`, as the tolerances above describe.
 fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
         "gammaln" | "psi" | "betaln" | "expi" | "chi" | "ellipj_sn" | "ellipj_cn" | "ellipj_dn" => {
@@ -186,7 +195,9 @@ fn scale(name: &str, want: f64, x: f64) -> f64 {
         "ci" => want.abs().max(1.0 / x.abs().max(1.0)),
         "lambertw_re" | "lambertw_im" | "eval_legendre" | "eval_chebyt" | "eval_chebyu"
         | "eval_hermite" | "eval_hermitenorm" | "eval_laguerre" | "eval_genlaguerre"
-        | "eval_jacobi" | "eval_gegenbauer" | "lpmv" | "sph_harm_y_re" | "sph_harm_y_im" => x,
+        | "eval_jacobi" | "eval_gegenbauer" | "lpmv" | "sph_harm_y_re" | "sph_harm_y_im" | "jv"
+        | "yv" | "iv" | "kv" | "jve" | "yve" | "ive" | "kve" | "jvp" | "yvp" | "ivp" | "kvp"
+        | "spherical_jn" | "spherical_yn" | "spherical_in" | "spherical_kn" => x,
         "j0" | "j1" | "jn" | "y0" | "y1" | "yn" if x.abs() > 1.0 => want
             .abs()
             .max((2.0 / (std::f64::consts::PI * x.abs())).sqrt()),
