@@ -11,17 +11,56 @@
 //! panic: `GzipFile.__del__` raised the error above when its value was dropped
 //! ```
 
-use crate::Unsupported;
 use crate::function::Function;
 use crate::panic::Failure;
 use crate::print::STDERR;
 use crate::ty::Repr;
+use crate::{Module, Unsupported};
 use types::{Nominal, Type, TypeKind};
 
 /// The callback a module without [`Module::destructors`](crate::Module::destructors) uses: no
 /// struct has `__del__`.
 pub(crate) fn none<'db>(_: &Nominal<'db>) -> Option<crate::Destructor<'db>> {
     None
+}
+
+impl<'a, 'db> Module<'a, 'db> {
+    /// Calls `destructor`'s method, for a struct whose class has `__del__`, whenever a value of
+    /// the struct is dropped, before its fields are dropped (decision 0063). Without it, no
+    /// struct has one. Call it before [`define`](Self::define).
+    ///
+    /// Cost: one call per drop of such a struct; a struct without one costs nothing more.
+    ///
+    /// ```
+    /// # #[salsa::db]
+    /// # #[derive(Clone, Default)]
+    /// # struct Database { storage: salsa::Storage<Self> }
+    /// # #[salsa::db]
+    /// # impl salsa::Database for Database {}
+    /// # #[salsa::db]
+    /// # impl database::Db for Database {
+    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
+    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
+    /// #         unreachable!()
+    /// #     }
+    /// # }
+    /// let database = Database::default();
+    /// let sources = source::SourceMap::new();
+    /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
+    /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
+    /// let names = |_: &types::Nominal<'_>| llvm_backend::ClassNames::default();
+    /// let destructor = |_: &types::Nominal<'_>| None;
+    /// let mut module =
+    ///     llvm_backend::Module::new(&database, &sources, &declared, &names, &symbol);
+    /// module.destructors(&destructor);
+    /// assert!(!module.finish().contains("__del__"));
+    /// ```
+    pub fn destructors(
+        &mut self,
+        destructor: &'a dyn Fn(&Nominal<'db>) -> Option<crate::Destructor<'db>>,
+    ) {
+        self.types.destructor = destructor;
+    }
 }
 
 impl<'db> Function<'_, '_, 'db> {

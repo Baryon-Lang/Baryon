@@ -12,7 +12,7 @@ use types::{Declared, Item, Nominal, Type};
 /// function they call that the module does not define.
 pub struct Module<'a, 'db> {
     /// How to represent each type.
-    types: ty::Types<'a, 'db>,
+    pub(crate) types: ty::Types<'a, 'db>,
     /// The symbol of a function instance: an item with its type arguments.
     symbol: &'a dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
     /// Each definition, in the order they were made: a function with the outlined `prange`
@@ -462,43 +462,6 @@ impl<'a, 'db> Module<'a, 'db> {
     /// ```
     pub fn wrap_on_overflow(&mut self) {
         self.constants.wraps = true;
-    }
-
-    /// Calls `destructor`'s method, for a struct whose class has `__del__`, whenever a value of
-    /// the struct is dropped, before its fields are dropped (decision 0063). Without it, no
-    /// struct has one. Call it before [`define`](Self::define).
-    ///
-    /// Cost: one call per drop of such a struct; a struct without one costs nothing more.
-    ///
-    /// ```
-    /// # #[salsa::db]
-    /// # #[derive(Clone, Default)]
-    /// # struct Database { storage: salsa::Storage<Self> }
-    /// # #[salsa::db]
-    /// # impl salsa::Database for Database {}
-    /// # #[salsa::db]
-    /// # impl database::Db for Database {
-    /// #     fn parse(&self, _: database::File) -> &database::ParsedFile { unreachable!() }
-    /// #     fn resolve(&self, _: database::Package, _: database::File) -> &database::Resolution {
-    /// #         unreachable!()
-    /// #     }
-    /// # }
-    /// let database = Database::default();
-    /// let sources = source::SourceMap::new();
-    /// let declared = |_: &types::Nominal<'_>| types::Declared::Struct(Vec::new());
-    /// let symbol = |_: &types::Item<'_>, _: &[types::Type<'_>]| String::new();
-    /// let names = |_: &types::Nominal<'_>| llvm_backend::ClassNames::default();
-    /// let destructor = |_: &types::Nominal<'_>| None;
-    /// let mut module =
-    ///     llvm_backend::Module::new(&database, &sources, &declared, &names, &symbol);
-    /// module.destructors(&destructor);
-    /// assert!(!module.finish().contains("__del__"));
-    /// ```
-    pub fn destructors(
-        &mut self,
-        destructor: &'a dyn Fn(&Nominal<'db>) -> Option<crate::Destructor<'db>>,
-    ) {
-        self.types.destructor = destructor;
     }
 }
 

@@ -186,3 +186,18 @@ fn an_error_from_del_panics() {
          \x20 --> main.byn:10:1\n"
     );
 }
+
+/// A ball thrown upward, with and without drag, recorded in a log whose `__del__` reports it
+/// when `fly` returns (decision 0063). Python, running the same steps, prints the same numbers.
+#[test]
+fn flight_log_builds_and_runs() {
+    prints(
+        "example-flight-log",
+        include_str!("../../../../docs/examples/flight_log.byn"),
+        "vacuum: 4076 samples, highest 20.3774 m\n\
+         landed after 4.077 s, exactly 4.077 s without drag\n\
+         air: 3487 samples, highest 14.8952 m\n\
+         landed after 3.488 s with drag\n",
+    )
+    .unwrap();
+}
