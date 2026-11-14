@@ -1,0 +1,223 @@
+# Ownership sweep sites (roadmap 1.18.2): `with` blocks of context managers (decision 0053),
+# left by each way out: the end of the block, `return`, `break`, `continue`, a `raise` caught
+# outside, and an `__exit__` that raises while another error is in flight; and `for` loops over
+# an iterator and an iterable of the program's own.
+# Each `# site:` block is one function the test calls; `once` marks a site that does not use
+# `ITEM` and runs only in the first kind's program. See crates/driver/tests/build/ownership.rs.
+
+
+# site: with_end
+# A manager holding a value, consumed by an `Owned` `__exit__` at the end of the block.
+class WithEndKeeper(Struct):
+    item: ITEM
+
+    def __enter__(self: Owned[Self]) -> Self:
+        return self
+
+    def __exit__(self: Owned[Self]):
+        show(self.item)
+
+
+def with_end():
+    with WithEndKeeper(make(1)) as keeper:
+        show(keeper.item)
+
+
+# site: with_hidden
+# A manager without `as`, borrowed by `__exit__`, so the block drops it after the call.
+class WithHiddenKeeper(Struct):
+    item: ITEM
+
+    def __enter__(self: Owned[Self]) -> Self:
+        return self
+
+    def __exit__(self):
+        show(self.item)
+
+
+def with_hidden():
+    with WithHiddenKeeper(make(2)):
+        a = make(3)
+        show(a)
+
+
+# site: with_return
+# A `return` from inside the block whose value is built from the manager's before `__exit__`
+# consumes it.
+class WithReturnKeeper(Struct):
+    item: ITEM
+
+    def __enter__(self: Owned[Self]) -> Self:
+        return self
+
+    def __exit__(self: Owned[Self]):
+        show(self.item)
+
+
+def with_return_pick(k: int) -> ITEM:
+    with WithReturnKeeper(make(k)) as keeper:
+        a = make(k + 1)
+        if k > 0:
+            return make(size(keeper.item))
+        show(a)
+    return make(k + 2)
+
+
+def with_return():
+    show(with_return_pick(1))
+    show(with_return_pick(0))
+
+
+# site: with_loop
+# `break` and `continue` out of a block inside a loop, with a local alive.
+class WithLoopKeeper(Struct):
+    item: ITEM
+
+    def __enter__(self: Owned[Self]) -> Self:
+        return self
+
+    def __exit__(self: InOut[Self]):
+        show(self.item)
+
+
+def with_loop():
+    for k in range(3):
+        with WithLoopKeeper(make(k)) as keeper:
+            a = make(k + 1)
+            if k == 0:
+                continue
+            if k == 1:
+                break
+            show(a)
+
+
+# site: with_raise
+# A `raise` from inside the block, caught outside it, with a local alive.
+class WithRaiseKeeper(Struct):
+    item: ITEM
+
+    def __enter__(self: Owned[Self]) -> Self:
+        return self
+
+    def __exit__(self: Owned[Self]):
+        show(self.item)
+
+
+def with_raise_risky(k: int) -> Raises[int, Oops]:
+    with WithRaiseKeeper(make(k)) as keeper:
+        a = make(k + 1)
+        if k > 1:
+            raise Oops(f"bad{k}")
+        show(a)
+    return k
+
+
+def with_raise():
+    try:
+        print(with_raise_risky(1))
+        print(with_raise_risky(3))
+    except Oops as error:
+        print(error.what)
+
+
+# site: with_exit_raises
+# An `__exit__` that raises while a `raise` from the block is in flight, which it replaces.
+class WithExitRaisesKeeper(Struct):
+    item: ITEM
+
+    def __enter__(self: Owned[Self]) -> Self:
+        return self
+
+    def __exit__(self: Owned[Self]) -> Raises[None, Oops]:
+        show(self.item)
+        raise Oops(f"exit{size(self.item)}")
+
+
+def with_exit_raises_risky(k: int) -> Raises[int, Oops]:
+    with WithExitRaisesKeeper(make(k)) as keeper:
+        if k > 1:
+            raise Oops(f"body{k}")
+    return k
+
+
+def with_exit_raises():
+    for k in range(1, 4, 2):
+        try:
+            print(with_exit_raises_risky(k))
+        except Oops as error:
+            print(error.what)
+
+
+# site: for_iterator
+# A loop over an iterator that hands out new values the loop variable owns, left by `break`,
+# by `return` and at its end, over a temporary and over a variable kept after the loop.
+class ForIteratorMaker(Struct):
+    made: int
+    stop: int
+
+    def __next__(self: InOut[Self]) -> Raises[ITEM, StopIteration]:
+        if self.made == self.stop:
+            raise StopIteration()
+        self.made += 1
+        return make(self.made)
+
+
+def for_iterator_first(stop: int) -> ITEM:
+    for v in ForIteratorMaker(0, stop):
+        if size(v) > 0:
+            return v
+    return make(9)
+
+
+def for_iterator():
+    for v in ForIteratorMaker(0, 2):
+        show(v)
+    maker = ForIteratorMaker(0, 3)
+    for v in maker:
+        show(v)
+        break
+    for v in maker:
+        show(v)
+    show(for_iterator_first(2))
+
+
+# site: for_iterable
+# A loop over an iterable whose `__iter__` makes a new iterator holding a value, which the loop
+# drops at its end, at `continue` and at an error.
+class ForIterableItems(Struct):
+    count: int
+
+    def __iter__(self) -> ForIterableCursor:
+        return ForIterableCursor(make(self.count), 0, self.count)
+
+
+class ForIterableCursor(Struct):
+    held: ITEM
+    position: int
+    stop: int
+
+    def __next__(self: InOut[Self]) -> Raises[ITEM, StopIteration | Oops]:
+        if self.position == self.stop:
+            raise StopIteration()
+        if self.position == 2:
+            raise Oops(f"at{size(self.held)}")
+        self.position += 1
+        return make(self.position)
+
+
+def for_iterable_count(n: int) -> Raises[int, Oops]:
+    count = 0
+    for v in ForIterableItems(n):
+        count += 1
+        if count == 1:
+            continue
+        show(v)
+    return count
+
+
+def for_iterable():
+    try:
+        print(for_iterable_count(2))
+        print(for_iterable_count(3))
+    except Oops as error:
+        print(error.what)

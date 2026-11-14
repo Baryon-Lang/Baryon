@@ -31,13 +31,14 @@ each pull request added is in this file's history.
 
 ## The example programs
 
-All six [example programs](../examples/README.md) build and run:
+All seven [example programs](../examples/README.md) build and run:
 [`heat_equation.byn`](../examples/heat_equation.byn),
 [`lennard_jones.byn`](../examples/lennard_jones.byn),
 [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn),
 [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn),
-[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) and
-[`rod_boundaries.byn`](../examples/rod_boundaries.byn). Each is built and run by a test that
+[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn),
+[`rod_boundaries.byn`](../examples/rod_boundaries.byn) and
+[`energy_audit.byn`](../examples/energy_audit.byn). Each is built and run by a test that
 checks what it prints.
 
 | Example | Still needs |
@@ -48,6 +49,7 @@ checks what it prints.
 | [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | Nothing: it builds and runs |
 | [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | Nothing: it builds and runs |
 | [`rod_boundaries.byn`](../examples/rod_boundaries.byn) | Nothing: it builds and runs |
+| [`energy_audit.byn`](../examples/energy_audit.byn) | Nothing: it builds and runs |
 
 ## Syntax
 
@@ -57,12 +59,12 @@ checks what it prints.
 | `main` in `main.byn`; [`print`](syntax.md#what-print-writes-for-each-value) of numbers, `bool`, `str`, `None`, `T \| None`, tuples, enum members, structs, lists and dicts, with `sep=`, `end=`, [`file=` and `flush=`](files-and-processes.md#standard-streams); arrays of numbers and `bool`, [as NumPy writes them](arrays.md#printing) | `print` of arrays of `str` or structs; a tuple holding `None` |
 | Assignment, annotated assignment, augmented assignment including `**=`; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a`, and nested unpacking, `a, (b, c) = e` | |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
-| `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a list, such as `list[f64]` or `list[str]`; over a tuple whose items have one type, such as `(2, 3, 5)`; over the characters of a `str`, each a one-character `str`; over `enumerate`, `zip` and `reversed` of these, nested in each other; a loop over values that are not copied, such as `str`s, borrows each element; with a target that unpacks, `for x, y in points` | A `prange` step that is not a constant; `reversed` of a `str`; a `range` step that is not a constant inside `enumerate`, `zip` or `reversed`; `enumerate`, `zip` and `reversed` outside a `for` loop or comprehension, such as `list(zip(a, b))` |
+| `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a list, such as `list[f64]` or `list[str]`; over a tuple whose items have one type, such as `(2, 3, 5)`; over the characters of a `str`, each a one-character `str`; over `enumerate`, `zip` and `reversed` of these, nested in each other; over a class with `__next__` or `__iter__`, an [iterator](syntax.md#iterators); a loop over values that are not copied, such as `str`s, borrows each element; with a target that unpacks, `for x, y in points` | A `prange` step that is not a constant; a comprehension over an iterator of the program's own; `reversed` of a `str`; a `range` step that is not a constant inside `enumerate`, `zip` or `reversed`; `enumerate`, `zip` and `reversed` outside a `for` loop or comprehension, such as `list(zip(a, b))` |
 | `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values), each evaluated at every call that leaves its argument out | Leaving out an argument of a generic function |
 | `class` with `Struct`, `Copy`, `Exception`, `Enum` and `Protocol` bases, and the traits a struct names; `@layout("C")` | |
 | `raise` and `try`/`except`, including bare `raise` | |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
-| `with unsafe:` | |
+| `with unsafe:`; [context managers](syntax.md#with-and-context-managers), a class with `__enter__` and `__exit__`, whose `__exit__` runs on every way out of the block; several in one `with` | A file and a context manager in one `with` |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications; complex literals such as `2j` | `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
 | `+ - * / // % **`, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions; comparisons, `in` and `not in` between two `str`s | `in` and `not in` on arrays and tuples |
 | `min`, `max`, `len` of arrays, lists and `str`; `sum`, `min` and `max` of a list or rank-1 array of numbers, a list's float `sum` as CPython 3.12 adds it; `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`math.fsum`](arrays.md#exact-sums) of a list or rank-1 array of `f64`s; [`math.f64x2`](arrays.md#double-double-floats) double-double floats and their methods; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)` and `round(x, digits)` as Python rounds; `sorted` of a list of numbers or `str`s, with `reverse=`; `abs` of integers, floats and complex numbers | `float(text)` and the other conversions of a `str` to a number; `sorted` with `key=` or of other elements, such as tuples; `min` and `max` of a list of `str`s; `sum` of a list of complex numbers and of an array with a start; the integer functions of `math`, such as `gcd`, and `math.prod`; `fsum` of other element types and iterables; the rest of `random` |
@@ -125,6 +127,7 @@ out of a function, including through a `raise`.
 | [Methods](arrays.md#methods): `a.copy()` of an `Array`; of `Array` and `Fixed` arrays, `a.sum()` and `a.dot(b)`, floats in [NumPy's pairwise order](arrays.md#the-order-sum-adds-in), the float sum of a whole-array expression, `(a * b).sum()`, without storing it, `a.min()`, `a.max()`, [`sum`, `min` and `max` along an axis](arrays.md#reductions-along-an-axis) with NumPy's bits, [`a.mean()`, `a.var(ddof)` and `a.std(ddof)`](arrays.md#means-and-variances), of the whole array and along an axis, with NumPy's bits, `a.round()` and `a.fill(value)`; [`print(a)`](arrays.md#printing), as NumPy writes it | Printing an array of `str` or structs; `var` and `std` of integers or complex numbers, and `mean` of integers along an axis |
 | [Arrays of text](text-arrays.md), `Array[str, 1]`: built from a list with `Array(words)`, `len`, an element read by position and borrowed, `for` loops with `enumerate`, `reversed` and `zip`, comprehensions, `copy()`, a slice, a mask and positions, each a new array, comparisons with a `str` or another text array, `in`, `print`, `str` and f-strings in NumPy's form, `argsort()`, `min()` and `max()`, as a variable, parameter, return value, item of a list or tuple, dict value and `T \| None` | Assigning an element, `+`, `shape`, and the built-ins `sorted`, `min`, `max` and `list` (roadmap idea I.60); a struct field of one (I.49) |
 | [The `stats` module](statistics.md): `median`, `quantile`, `percentile`, `average` and `histogram` of an `Array[f64, 1]`, with NumPy's bits; `cov` and `corrcoef` of two, to NumPy's last bit but one | `axis=`, several quantiles at once, the other quantile methods and other element types; `histogram` with other bins or `range=`, `weights=` and `density=`; `cov` and `corrcoef` of more than two variables |
+| [The `special` module](special-functions.md): the gamma family, `gamma`, `rgamma`, `gammaln`, `loggamma`, `gammasgn`, `psi`, `digamma`, `polygamma`, `beta`, `betaln` and `poch`, and the error functions, `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `ndtri`, `log_ndtr` and `dawsn`, of `f64` arguments, within a few ULP of the true value | Array arguments (roadmap 3.18.13); the rest of `scipy.special`, in the other sub-rows of roadmap 3.18 |
 
 ## DataFrames
 

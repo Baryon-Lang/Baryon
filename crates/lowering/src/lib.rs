@@ -43,6 +43,12 @@
 //!   `raise`, goes to the innermost `except` that names the error, or else drops what the
 //!   function owns and [`Raise`](mir::TerminatorKind::Raise)s it to the caller. A bare `raise`
 //!   raises the caught error again.
+//! - **Context managers.** `with m as name:` calls `__enter__` and binds its result; `__exit__`
+//!   is called at the end of the block and before every `return`, `break`, `continue` and error
+//!   that leaves it, innermost block first, so nothing unwinds (decision 0053, the `managers`
+//!   module). A `for` loop over a class with `__next__` calls it once a pass, and its
+//!   `StopIteration` edge leaves the loop; over one with only `__iter__`, it calls that once
+//!   first (the `user_iterators` module).
 //! - **`match`.** Each case tests its pattern part by part, branching to the next case at the
 //!   first part that does not match, then assigns its captures and tests its guard.
 //! - **Arrays.** `a[i, j]` is a place with one index local per dimension, and a negative literal
@@ -311,6 +317,7 @@ mod iterators;
 mod lanes;
 mod lists;
 mod loops;
+mod managers;
 mod math;
 mod matrix;
 mod methods;
@@ -335,6 +342,7 @@ mod text_arrays;
 mod text_methods;
 mod unions;
 mod unpacking;
+mod user_iterators;
 
 use builder::Builder;
 use diagnostics::Diagnostic;

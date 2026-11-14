@@ -1,0 +1,1138 @@
+"""The `special` module: special functions written in Baryon, with SciPy's names (roadmap 3.18).
+
+Each function takes and returns `f64`, as `scipy.special`'s functions do for a float argument,
+and each is written here in Baryon: nothing calls SciPy, Cephes or the C library's `tgamma`,
+`lgamma` or `erf`. Only the elementary functions the compiler provides are used, such as `exp`,
+`log` and `sin`.
+
+The values are tested against mpmath at 50 digits, and the tolerance of each test is stated in
+units in the last place (ULP) in the reference. Where SciPy's answer at a pole or an infinity
+differs from the mathematical one, the reference says which this module gives.
+
+The coefficients of the series below are Taylor coefficients of the functions themselves and
+Bernoulli numbers, computed with mpmath and rounded to `f64`. The special-functions fixtures'
+README holds the script that writes them.
+"""
+
+from math import cos, exp, floor, fma, fmod, inf, isinf, isnan, log, log1p, nan, pi, pow, sin
+from math import sqrt
+
+
+_SQRT_TWO_PI: Final = 2.5066282746310007  # the square root of 2π
+_HALF_LOG_TWO_PI: Final = 0.9189385332046728  # log(2π) / 2
+_PSI_ROOT: Final = 1.4616321449683622  # the positive zero of `psi`, rounded to f64
+_PSI_ROOT_LOW: Final = 9.549995429965697e-17  # the zero minus `_PSI_ROOT`
+_TWO_52: Final = 4503599627370496.0  # 2^52: every f64 at least this large is a whole number
+_LARGEST_GAMMA: Final = 171.62437695630272  # `gamma` overflows above this argument
+_SQRT_PI: Final = 1.7724538509055159  # √π
+_ONE_OVER_SQRT_PI: Final = 0.5641895835477563  # 1/√π
+_TWO_OVER_SQRT_PI: Final = 1.1283791670955126  # 2/√π
+_SQRT_TWO: Final = 1.4142135623730951  # √2
+_ONE_OVER_SQRT_TWO: Final = 0.7071067811865476  # 1/√2, rounded to f64
+_ONE_OVER_SQRT_TWO_LOW: Final = -4.833646656726457e-17  # 1/√2 minus `_ONE_OVER_SQRT_TWO`
+
+
+def _is_integer(x: f64) -> bool:
+    """Whether the finite `x` is a whole number."""
+    if abs(x) >= _TWO_52:
+        return True
+    return x == float(floor(x))
+
+
+def _is_odd(x: f64) -> bool:
+    """Whether the whole number `x` is odd. Every f64 from 2^53 up is even."""
+    if abs(x) >= 2.0 * _TWO_52:
+        return False
+    return fmod(x, 2.0) != 0.0
+
+
+def _sinpi(x: f64) -> f64:
+    """sin(πx), exact at whole and half numbers and accurate for large `x`, where `sin(pi * x)`
+    would lose every digit to the rounding of `pi * x`.
+
+    Reduces `|x|` modulo 2 with `fmod`, which is exact, and then to within a quarter of a
+    zero or an extremum, where each subtraction is exact.
+    """
+    y = fmod(abs(x), 2.0)
+    if y < 0.25:
+        value = sin(pi * y)
+    elif y < 0.75:
+        value = cos(pi * (y - 0.5))
+    elif y < 1.25:
+        value = -sin(pi * (y - 1.0))
+    elif y < 1.75:
+        value = -cos(pi * (y - 1.5))
+    else:
+        value = sin(pi * (y - 2.0))
+    if x < 0.0:
+        return -value
+    return value
+
+
+def _cospi(x: f64) -> f64:
+    """cos(πx), exact at whole and half numbers, reduced as `_sinpi` reduces."""
+    y = fmod(abs(x), 2.0)
+    if y < 0.25:
+        return cos(pi * y)
+    if y < 0.75:
+        return -sin(pi * (y - 0.5))
+    if y < 1.25:
+        return -cos(pi * (y - 1.0))
+    if y < 1.75:
+        return sin(pi * (y - 1.5))
+    return cos(pi * (y - 2.0))
+
+
+def _rgamma_minus_one(x: f64) -> f64:
+    """1/Γ(x) − 1 for `x` from −0.5 to 2.5, by the Taylor series of 1/Γ around 1 or around 2.
+
+    1/Γ is entire, so both series converge everywhere; within half a unit of the centre they
+    reach full precision in about 22 terms. Returning the difference from 1 keeps the relative
+    precision of `gammaln` near its zeros at 1 and 2, as `-log1p` of it.
+    Below 0.5 the argument is read as `p` in 1/Γ(1 + p), which `gamma` uses for small `x`.
+    """
+    if x < 1.5:
+        if x < 0.5:
+            p = x
+        else:
+            p = x - 1.0
+        q = -2.0583260535665066e-14
+        q = q * p + 5.100370287454476e-13
+        q = q * p - 3.696805618642206e-12
+        q = q * p + 7.782263439905071e-12
+        q = q * p + 1.0434267116911005e-10
+        q = q * p - 1.18127457048702e-09
+        q = q * p + 5.002007644469223e-09
+        q = q * p + 6.116095104481416e-09
+        q = q * p - 2.056338416977607e-07
+        q = q * p + 1.133027231981696e-06
+        q = q * p - 1.2504934821426706e-06
+        q = q * p - 2.013485478078824e-05
+        q = q * p + 0.0001280502823881162
+        q = q * p - 0.00021524167411495098
+        q = q * p - 0.0011651675918590652
+        q = q * p + 0.0072189432466631
+        q = q * p - 0.009621971527876973
+        q = q * p - 0.04219773455554433
+        q = q * p + 0.16653861138229148
+        q = q * p - 0.04200263503409524
+        q = q * p - 0.6558780715202539
+        q = q * p + 0.5772156649015329
+        return p * q
+    p = x - 2.0
+    q = -1.3890705776659689e-14
+    q = q * p + 5.239277345221073e-13
+    q = q * p - 4.220733353164313e-12
+    q = q * p + 1.2002996793069383e-11
+    q = q * p + 9.233967437604067e-11
+    q = q * p - 1.2736142448630608e-09
+    q = q * p + 6.275621889332284e-09
+    q = q * p - 1.5952678485086793e-10
+    q = q * p - 2.0547431491290985e-07
+    q = q * p + 1.3385015468946058e-06
+    q = q * p - 2.5889950290372764e-06
+    q = q * p - 1.7545859751750962e-05
+    q = q * p + 0.00014559614213986716
+    q = q * p - 0.0003608378162548181
+    q = q * p - 0.000804329775604247
+    q = q * p + 0.008023273022267347
+    q = q * p - 0.01764524455014432
+    q = q * p - 0.024552490005400017
+    q = q * p + 0.1910911013876915
+    q = q * p - 0.23309373642178674
+    q = q * p - 0.42278433509846713
+    return p * q
+
+
+def _stirling(x: f64) -> f64:
+    """The remainder of Stirling's series for log Γ(x) at `x` from 10 up: the sum of
+    B₂ₖ / (2k(2k − 1) x^(2k − 1)) for k from 1 to 10, below 1e-19 relative from 10 up."""
+    w = 1.0 / (x * x)
+    s = -1.3924322169059011
+    s = s * w + 0.17964437236883057
+    s = s * w - 0.029550653594771242
+    s = s * w + 0.00641025641025641
+    s = s * w - 0.0019175269175269176
+    s = s * w + 0.0008417508417508417
+    s = s * w - 0.0005952380952380953
+    s = s * w + 0.0007936507936507937
+    s = s * w - 0.002777777777777778
+    s = s * w + 0.08333333333333333
+    return s / x
+
+
+def _gamma_large(x: f64) -> f64:
+    """Γ(x) for `x` from 10 to the largest argument that does not overflow, by Stirling's
+    formula √(2π) x^(x − 1/2) e^(−x) e^S(x).
+
+    `x` is exact, so each of `pow` and `exp` adds about one rounding. The power is taken in two
+    halves so that it does not overflow before `exp(-x)` scales it down.
+    """
+    half = pow(x, 0.5 * x - 0.25)
+    return _SQRT_TWO_PI * half * (exp(-x) * half) * exp(_stirling(x))
+
+
+def gamma(x: f64) -> f64:
+    """The gamma function Γ(x), as `scipy.special.gamma`: (x − 1)! at whole numbers.
+
+    Infinity at 0 with the sign of the zero, NaN at the negative whole numbers and at −∞, and
+    infinity above about 171.62, where Γ overflows. Whole numbers up to 23 give the exact
+    factorial. Accurate to a few ULP elsewhere. Below 0 the reflection formula
+    Γ(x) = −π / (x sin(πx) Γ(−x)) is used, with Γ(−x) rather than Γ(1 − x) so that no argument
+    is rounded; the result is 0 below about −171.
+
+    ```python
+    from special import gamma
+
+    print(gamma(5.0))   # 24.0
+    print(gamma(0.5))   # 1.7724538509055159, the square root of π
+    ```
+    """
+    if isnan(x) or x == -inf:
+        return nan
+    if x == inf:
+        return inf
+    if x == 0.0:
+        return 1.0 / x
+    if x < 0.0 and _is_integer(x):
+        return nan
+    if abs(x) < 0.5:
+        return 1.0 / (x * (1.0 + _rgamma_minus_one(x)))
+    if x < 0.0:
+        return -pi / (x * _sinpi(x) * gamma(-x))
+    if x < 2.5:
+        return 1.0 / (1.0 + _rgamma_minus_one(x))
+    if x > _LARGEST_GAMMA:
+        return inf
+    if x < 10.0 or (x < 24.0 and _is_integer(x)):
+        steps = floor(x - 1.5)
+        y = x - steps
+        product = 1.0
+        for k in range(steps):
+            product *= y + k
+        return product / (1.0 + _rgamma_minus_one(y))
+    return _gamma_large(x)
+
+
+def rgamma(x: f64) -> f64:
+    """The reciprocal of the gamma function, 1/Γ(x), as `scipy.special.rgamma`.
+
+    An entire function: 0 at 0 and at the negative whole numbers, with the sign of a zero
+    argument, and 0 at ∞ and at −∞, as SciPy gives, though at −∞ it has no limit. It stays
+    finite, and correct, where `gamma` overflows above 171.62, down to where it underflows near
+    179.
+
+    ```python
+    from special import rgamma
+
+    print(rgamma(4.0))  # 0.16666666666666666
+    print(rgamma(-2.0)) # 0.0
+    ```
+    """
+    if isnan(x):
+        return nan
+    if isinf(x):
+        return 0.0
+    if x <= 0.0 and _is_integer(x):
+        if x == 0.0:
+            return x
+        return 0.0
+    if abs(x) < 0.5:
+        return x * (1.0 + _rgamma_minus_one(x))
+    if x < 0.0:
+        return -x * _sinpi(x) * gamma(-x) / pi
+    if x < 2.5:
+        return 1.0 + _rgamma_minus_one(x)
+    if x < 10.0:
+        return 1.0 / gamma(x)
+    half = pow(x, 0.5 * x - 0.25)
+    return exp(x) / half / half * exp(-_stirling(x)) / _SQRT_TWO_PI
+
+
+def gammasgn(x: f64) -> f64:
+    """The sign of the gamma function, as `scipy.special.gammasgn`: 1.0 or −1.0.
+
+    1.0 above 0 and at +0.0, −1.0 at −0.0, NaN at the negative whole numbers, at −∞ and at NaN.
+    Between −1 and 0 Γ is negative, between −2 and −1 positive, and so on.
+
+    ```python
+    from special import gammasgn
+
+    print(gammasgn(-0.5))   # -1.0
+    print(gammasgn(-1.5))   # 1.0
+    ```
+    """
+    if isnan(x) or x == -inf:
+        return nan
+    if x == 0.0:
+        if 1.0 / x < 0.0:
+            return -1.0
+        return 1.0
+    if x > 0.0:
+        return 1.0
+    if _is_integer(x):
+        return nan
+    if _is_odd(float(floor(x))):
+        return -1.0
+    return 1.0
+
+
+def gammaln(x: f64) -> f64:
+    """The logarithm of the absolute value of the gamma function, log|Γ(x)|, as
+    `scipy.special.gammaln`.
+
+    Infinity at 0, at the negative whole numbers and at ∞, and −∞ at −∞ as SciPy gives, though
+    log|Γ| has no limit there. Near the zeros at 1 and 2 the
+    result keeps its relative precision. Below 0 the reflection formula is used, which loses
+    relative precision near the zeros of log|Γ| between −3 and −2 and further left.
+
+    ```python
+    from special import gammaln
+
+    print(gammaln(100.0))   # 359.1342053695754
+    print(gammaln(1.0))     # 0.0
+    ```
+    """
+    if isnan(x):
+        return nan
+    if isinf(x):
+        return x
+    if x <= 0.0 and _is_integer(x):
+        return inf
+    if abs(x) < 0.5:
+        return -log(abs(x)) - log1p(_rgamma_minus_one(x))
+    if x < 0.0:
+        return log(pi / abs(x * _sinpi(x))) - gammaln(-x)
+    if x < 2.5:
+        # `0.0 -` rather than `-`, so the zeros at 1 and 2 are +0.0, as SciPy gives.
+        return 0.0 - log1p(_rgamma_minus_one(x))
+    if x < 10.0:
+        steps = floor(x - 1.5)
+        y = x - steps
+        product = 1.0
+        for k in range(steps):
+            product *= y + k
+        return log(product) - log1p(_rgamma_minus_one(y))
+    logarithm = log(x)
+    return x * (logarithm - 1.0) - 0.5 * logarithm + _HALF_LOG_TWO_PI + _stirling(x)
+
+
+def loggamma(x: f64) -> f64:
+    """The logarithm of the gamma function, as `scipy.special.loggamma` of a real argument:
+    `gammaln(x)` from 0 up, and NaN below 0, where Γ can be negative and its logarithm is not
+    real.
+
+    Infinity at +0.0 and at −0.0, as SciPy gives. The complex `loggamma` is not built yet.
+
+    ```python
+    from special import loggamma
+
+    print(loggamma(3.0))    # 0.6931471805599453, log 2
+    print(loggamma(-0.5))   # nan
+    ```
+    """
+    if x < 0.0:
+        return nan
+    return gammaln(x)
+
+
+def _psi_near_root(x: f64) -> f64:
+    """ψ(x) for `x` from 1 to 2, by its Taylor series around its zero x₀ ≈ 1.4616.
+
+    The distance from the zero, d = x − x₀, is formed in two parts so that ψ(x) ≈ ψ′(x₀) d
+    keeps its relative precision near x₀, where adding up terms of the recurrence would not.
+    """
+    d = (x - _PSI_ROOT) - _PSI_ROOT_LOW
+    s = 2.549626552021554e-07
+    s = s * d - 3.7266161283438227e-07
+    s = s * d + 5.446941930669446e-07
+    s = s * d - 7.96142543124197e-07
+    s = s * d + 1.1636675363548843e-06
+    s = s * d - 1.7008538854332607e-06
+    s = s * d + 2.486022733129538e-06
+    s = s * d - 3.6336507898010456e-06
+    s = s * d + 5.3110609208898636e-06
+    s = s * d - 7.762817668462094e-06
+    s = s * d + 1.134638458466385e-05
+    s = s * d - 1.6584242271854135e-05
+    s = s * d + 2.424006611860132e-05
+    s = s * d - 3.5430070947659604e-05
+    s = s * d + 5.178575795222081e-05
+    s = s * d - 7.569179582195066e-05
+    s = s * d + 0.0001106337276874741
+    s = s * d - 0.00016170622091974803
+    s = s * d + 0.00023635601564027053
+    s = s * d - 0.0003454680251063077
+    s = s * d + 0.000504953265834602
+    s = s * d - 0.0007380709389960052
+    s = s * d + 0.0010788252019162967
+    s = s * d - 0.0015769367714301972
+    s = s * d + 0.002305126326734928
+    s = s * d - 0.003369801655439328
+    s = s * d + 0.004926781395729853
+    s = s * d - 0.007204534386356869
+    s = s * d + 0.010538791616612175
+    s = s * d - 0.01542476590494896
+    s = s * d + 0.022597648232218104
+    s = s * d - 0.03316112647484736
+    s = s * d + 0.04880428816414311
+    s = s * d - 0.07219956125645471
+    s = s * d + 0.10782405069126237
+    s = s * d - 0.16394270544240652
+    s = s * d + 0.258499760955651
+    s = s * d - 0.4427631689835921
+    s = s * d + 0.9676722454476212
+    return s * d
+
+
+def psi(x: f64) -> f64:
+    """The digamma function ψ(x) = Γ′(x) / Γ(x), as `scipy.special.psi`.
+
+    −∞ at −0.0 and ∞ at +0.0 as SciPy gives, NaN at the negative whole numbers and at −∞, and
+    ∞ at ∞. Below 0 the reflection formula ψ(x) = ψ(−x) − 1/x − π / tan(πx) is used, with
+    ψ(−x) rather than ψ(1 − x) so that no argument is rounded.
+
+    ```python
+    from special import psi
+
+    print(psi(1.0))     # -0.5772156649015329, minus Euler's constant
+    ```
+    """
+    if isnan(x) or x == -inf:
+        return nan
+    if x == inf:
+        return inf
+    if x == 0.0:
+        return -1.0 / x
+    if x < 0.0:
+        if _is_integer(x):
+            return nan
+        return psi(-x) - 1.0 / x - pi * _cospi(x) / _sinpi(x)
+    if x < 1.0:
+        return psi(x + 1.0) - 1.0 / x
+    if x < 2.0:
+        return _psi_near_root(x)
+    if x < 10.0:
+        steps = floor(x - 1.0)
+        y = x - steps
+        total = 0.0
+        for k in range(steps):
+            total += 1.0 / (y + k)
+        return _psi_near_root(y) + total
+    w = 1.0 / (x * x)
+    s = -26.456212121212122
+    s = s * w + 3.0539543302701198
+    s = s * w - 0.4432598039215686
+    s = s * w + 0.08333333333333333
+    s = s * w - 0.021092796092796094
+    s = s * w + 0.007575757575757576
+    s = s * w - 0.004166666666666667
+    s = s * w + 0.003968253968253968
+    s = s * w - 0.008333333333333333
+    s = s * w + 0.08333333333333333
+    return log(x) - 0.5 / x - s * w
+
+
+def digamma(x: f64) -> f64:
+    """The digamma function, SciPy's other name for `psi`.
+
+    ```python
+    from special import digamma
+
+    print(digamma(2.0))     # 0.42278433509846713
+    ```
+    """
+    return psi(x)
+
+
+def _hurwitz_zeta(s: f64, q: f64) -> f64:
+    """The Hurwitz zeta function ζ(s, q), the sum of (q + k)^(−s) over k from 0, for whole `s`
+    from 2 up, by the Euler–Maclaurin formula.
+
+    Sums the first terms directly until q + k is at least 10 more than `s`, then adds the
+    integral, half the next term and Bernoulli terms until they stop changing the sum. A `q` at
+    0 or a negative whole number is a pole: infinity.
+    """
+    if q <= 0.0 and _is_integer(q):
+        return inf
+    a = q
+    total = 0.0
+    while a < 10.0 + s:
+        total += pow(a, -s)
+        a += 1.0
+    term = pow(a, -s)
+    total += a * term / (s - 1.0) + 0.5 * term
+    factor = s
+    power = term / a
+    weights = Array([
+        0.08333333333333333,
+        -0.001388888888888889,
+        3.306878306878307e-05,
+        -8.267195767195768e-07,
+        2.08767569878681e-08,
+        -5.284190138687493e-10,
+        1.3382536530684679e-11,
+        -3.3896802963225827e-13,
+        8.586062056277845e-15,
+        -2.174868698558062e-16,
+        5.5090028283602295e-18,
+        -1.3954464685812522e-19,
+    ])
+    for j in range(len(weights)):
+        change = weights[j] * factor * power
+        total += change
+        if abs(change) <= 1.0e-17 * abs(total):
+            break
+        factor *= (s + 2.0 * j + 1.0) * (s + 2.0 * j + 2.0)
+        power /= a * a
+    return total
+
+
+def polygamma(n: int, x: f64) -> f64:
+    """The polygamma function ψ⁽ⁿ⁾(x), the `n`th derivative of `psi`, as
+    `scipy.special.polygamma`: `psi(x)` for `n` 0, and (−1)ⁿ⁺¹ n! ζ(n + 1, x) above.
+
+    NaN for a negative `n`. A pole at 0 and the negative whole numbers, infinite with the sign
+    of (−1)ⁿ⁺¹; 0 at ∞.
+
+    ```python
+    from special import polygamma
+
+    print(polygamma(1, 1.0))    # 1.6449340668482264, π²/6
+    ```
+    """
+    if n < 0 or isnan(x):
+        return nan
+    if n == 0:
+        return psi(x)
+    if x == inf:
+        return 0.0
+    if x == -inf:
+        return nan
+    factorial = 1.0
+    for k in range(2, n + 1):
+        factorial *= k
+    value = factorial * _hurwitz_zeta(n + 1.0, x)
+    if n % 2 == 0:
+        return -value
+    return value
+
+
+def _rounding(a: f64, b: f64, total: f64) -> f64:
+    """What rounding lost when `total` was formed as `a + b`: a + b − total, exactly (Knuth's
+    two-sum). The functions of a sum, such as Γ(a + b), add the first-order correction
+    f′(total) times it, so that the sum's rounding does not cost them ψ(total) · total ULP."""
+    rounded_b = total - a
+    return (a - (total - rounded_b)) + (b - rounded_b)
+
+
+def _rgamma_of_sum(a: f64, b: f64) -> f64:
+    """1/Γ(a + b), corrected for the rounding of `a + b`: 1/Γ(c) (1 − ψ(c) δ) with c the
+    rounded sum and δ what rounding lost."""
+    total = a + b
+    lost = _rounding(a, b, total)
+    if lost == 0.0:
+        return rgamma(total)
+    return rgamma(total) * (1.0 - psi(total) * lost)
+
+
+def _log_gamma_ratio(a: f64, b: f64) -> f64:
+    """log Γ(b) − log Γ(a + b) for `b` and `a + b` from 10 up, without the cancellation of
+    subtracting two large logarithms: −(b − ½) log1p(a/b) − a log(a + b) + a + S(b) − S(a + b),
+    with S Stirling's remainder."""
+    return -(b - 0.5) * log1p(a / b) - a * log(a + b) + a + _stirling(b) - _stirling(a + b)
+
+
+def _beta_negative_integer(a: f64, b: f64) -> f64:
+    """The beta function when `a` is 0 or a negative whole number, as SciPy gives it: the
+    limit when `b` is a whole number with 1 − a − b above 0, and infinity otherwise."""
+    if _is_integer(b) and 1.0 - a - b > 0.0:
+        value = beta(1.0 - a - b, b)
+        if _is_odd(b):
+            return -value
+        return value
+    return inf
+
+
+def _log_beta_large(a: f64, b: f64) -> f64:
+    """log B(a, b) for `a` and `b` from 10 up, from Stirling's series for each gamma function,
+    arranged so that no two large terms cancel: −(a − ½) log1p(b/a) − (b − ½) log1p(a/b)
+    − ½ log(a + b) + ½ log 2π + S(a) + S(b) − S(a + b)."""
+    total = a + b
+    return (
+        -(a - 0.5) * log1p(b / a)
+        - (b - 0.5) * log1p(a / b)
+        - 0.5 * log(total)
+        + _HALF_LOG_TWO_PI
+        + _stirling(a)
+        + _stirling(b)
+        - _stirling(total)
+    )
+
+
+def beta(a: f64, b: f64) -> f64:
+    """The beta function B(a, b) = Γ(a) Γ(b) / Γ(a + b), as `scipy.special.beta`.
+
+    For positive arguments the gamma functions are formed so that none overflows before the
+    ratio is taken; above 171 the logarithm `betaln` is used, which costs a few ULP for each
+    unit of its size. At 0 and the negative whole numbers it follows SciPy: infinity, or the
+    limit when the other argument makes one.
+
+    ```python
+    from special import beta
+
+    print(beta(2.0, 3.0))   # 0.08333333333333333, 1/12
+    ```
+    """
+    if isnan(a) or isnan(b):
+        return nan
+    if a <= 0.0 and _is_integer(a):
+        return _beta_negative_integer(a, b)
+    if b <= 0.0 and _is_integer(b):
+        return _beta_negative_integer(b, a)
+    if a > 0.0 and b > 0.0:
+        small = min(a, b)
+        large = max(a, b)
+        if isinf(large):
+            return 0.0
+        if small + large <= _LARGEST_GAMMA:
+            return gamma(small) * (gamma(large) * _rgamma_of_sum(small, large))
+        return exp(betaln(small, large))
+    return gamma(a) * gamma(b) * _rgamma_of_sum(a, b)
+
+
+def betaln(a: f64, b: f64) -> f64:
+    """The logarithm of the absolute value of the beta function, log|B(a, b)|, as
+    `scipy.special.betaln`.
+
+    When the larger argument is 10 or more, the difference log Γ(b) − log Γ(a + b) is formed
+    without subtracting two large logarithms, so `betaln(1.0, 1e300)` keeps its digits.
+
+    ```python
+    from special import betaln
+
+    print(betaln(1.0, 1.0e10))  # -23.025850929940457, log(1e-10)
+    ```
+    """
+    if isnan(a) or isnan(b):
+        return nan
+    if a <= 0.0 and _is_integer(a):
+        return log(abs(_beta_negative_integer(a, b)))
+    if b <= 0.0 and _is_integer(b):
+        return log(abs(_beta_negative_integer(b, a)))
+    if a > 0.0 and b > 0.0:
+        small = min(a, b)
+        large = max(a, b)
+        if isinf(large):
+            return -inf
+        if small >= 10.0:
+            return _log_beta_large(small, large)
+        if large >= 10.0:
+            return gammaln(small) + _log_gamma_ratio(small, large)
+        return gammaln(small) + gammaln(large) - _gammaln_of_sum(small, large)
+    return gammaln(a) + gammaln(b) - _gammaln_of_sum(a, b)
+
+
+def _gammaln_of_sum(a: f64, b: f64) -> f64:
+    """log|Γ(a + b)|, corrected for the rounding of `a + b`: log|Γ(c)| + ψ(c) δ with c the
+    rounded sum and δ what rounding lost."""
+    total = a + b
+    lost = _rounding(a, b, total)
+    if lost == 0.0:
+        return gammaln(total)
+    return gammaln(total) + psi(total) * lost
+
+
+def poch(z: f64, m: f64) -> f64:
+    """The Pochhammer symbol, the rising factorial (z)ₘ = Γ(z + m) / Γ(z), as
+    `scipy.special.poch`: z (z + 1) ⋯ (z + m − 1) for a whole number `m`.
+
+    A whole `m` from −64 to 64 is a product of `m` factors. Otherwise, with `z` and `z + m`
+    from 10 up, it is z^m times a correction from Stirling's series, without forming either
+    gamma function, so `poch(1e10, 0.5)` keeps its digits; elsewhere it is Γ(z + m) times
+    1/Γ(z), corrected for the rounding of `z + m`.
+
+    ```python
+    from special import poch
+
+    print(poch(3.0, 2.0))   # 12.0, 3 × 4
+    ```
+    """
+    if isnan(z) or isnan(m):
+        return nan
+    if m == 0.0:
+        return 1.0
+    if _is_integer(m) and abs(m) <= 64.0:
+        count = floor(abs(m))
+        product = 1.0
+        if m > 0.0:
+            for k in range(count):
+                product *= z + k
+            return product
+        for k in range(1, count + 1):
+            product *= z - k
+        return 1.0 / product
+    if isinf(m):
+        if m > 0.0:
+            return inf
+        return 0.0
+    if z >= 10.0 and z + m >= 10.0:
+        growth = log1p(m / z)
+        rest = (z + m - 0.5) * growth - m + _stirling(z + m) - _stirling(z)
+        return pow(z, m) * exp(rest)
+    total = z + m
+    lost = _rounding(z, m, total)
+    if lost == 0.0:
+        return gamma(total) * rgamma(z)
+    return gamma(total) * rgamma(z) * (1.0 + psi(total) * lost)
+
+
+def _square(x: f64) -> tuple[f64, f64]:
+    """x² as the sum of two `f64`s, the rounded square and what rounding lost, found exactly
+    with `fma`. exp(−x²) of a rounded square is off by 2x² times its rounding, about 1,400 ULP
+    at x = 26; exp(−high) (1 − low) is not."""
+    high = x * x
+    return (high, fma(x, x, -high))
+
+
+def _erf_small(x: f64) -> f64:
+    """erf(x) for |x| up to 0.5, by its Taylor series x (2/√π) Σ (−x²)ⁿ / (n! (2n + 1))."""
+    w = x * x
+    s = -6.7113668551641105e-12
+    s = s * w + 9.422759064650411e-11
+    s = s * w - 1.2290555301717928e-09
+    s = s * w + 1.4807192815879218e-08
+    s = s * w - 1.6365844691234924e-07
+    s = s * w + 1.6462114365889248e-06
+    s = s * w - 1.492565035840625e-05
+    s = s * w + 0.00012055332981789664
+    s = s * w - 0.0008548327023450853
+    s = s * w + 0.005223977625442188
+    s = s * w - 0.026866170645131252
+    s = s * w + 0.11283791670955126
+    s = s * w - 0.37612638903183754
+    s = s * w + 1.1283791670955126
+    return x * s
+
+
+def _erfcx_continued_fraction(x: f64) -> f64:
+    """exp(x²) erfc(x) for `x` from 3 up, by Laplace's continued fraction
+    1 / (√π (x + (1/2) / (x + 1 / (x + (3/2) / (x + ⋯))))), evaluated from its depth up.
+    Forty levels reach full precision at 3, twenty at 4 and ten from 8 up."""
+    depth = 10
+    if x < 4.0:
+        depth = 40
+    elif x < 8.0:
+        depth = 20
+    t = x
+    for k in range(depth, 0, -1):
+        t = x + 0.5 * k / t
+    return _ONE_OVER_SQRT_PI / t
+
+
+def _erfcx_positive(x: f64) -> f64:
+    """exp(x²) erfc(x) for `x` from 0.5 up: the Taylor series of the function around the
+    middle of each half-unit interval below 3, and the continued fraction above."""
+    if x >= 3.0:
+        return _erfcx_continued_fraction(x)
+    if x < 1.0:
+        d = x - 0.75
+        s = -1.0639550902512525e-08
+        s = s * d + 3.750604434348139e-08
+        s = s * d - 1.2920526683148003e-07
+        s = s * d + 4.3445834921494253e-07
+        s = s * d - 1.424088529978787e-06
+        s = s * d + 4.543733191203631e-06
+        s = s * d - 1.4088463868243626e-05
+        s = s * d + 4.237248023960813e-05
+        s = s * d - 0.00012335437532328967
+        s = s * d + 0.0003467506629301161
+        s = s * d - 0.0009385120614756802
+        s = s * d + 0.0024376373607573405
+        s = s * d - 0.006051532297208567
+        s = s * d + 0.014289198665935787
+        s = s * d - 0.03189726203968182
+        s = s * d + 0.06679054252756873
+        s = s * d - 0.1298360619948811
+        s = s * d + 0.2309581315512983
+        s = s * d - 0.3679726916557954
+        s = s * d + 0.5069376502931449
+        return s
+    if x < 1.5:
+        d = x - 1.25
+        s = 2.8134647900514105e-09
+        s = s * d - 1.051812852332897e-08
+        s = s * d + 3.8468843764623906e-08
+        s = s * d - 1.374901471540761e-07
+        s = s * d + 4.796134340595864e-07
+        s = s * d - 1.630692896230054e-06
+        s = s * d + 5.3956601587046725e-06
+        s = s * d - 1.734407902387619e-05
+        s = s * d + 5.405405973207327e-05
+        s = s * d - 0.00016296000929641064
+        s = s * d + 0.00047397031028087965
+        s = s * d - 0.0013257829296849475
+        s = s * d + 0.003553109903229703
+        s = s * d - 0.009081627632934445
+        s = s * d + 0.022011364250857163
+        s = s * d - 0.05021827439590757
+        s = s * d + 0.1067955714965988
+        s = s * d - 0.20882187596460985
+        s = s * d + 0.3678229164523611
+        return s
+    if x < 2.0:
+        d = x - 1.75
+        s = -1.0409739103245152e-09
+        s = s * d + 4.1343784318510716e-09
+        s = s * d - 1.6083440493497754e-08
+        s = s * d + 6.122104831842964e-08
+        s = s * d - 2.2776263825848503e-07
+        s = s * d + 8.271319551813563e-07
+        s = s * d - 2.927938070247526e-06
+        s = s * d + 1.0086683354021308e-05
+        s = s * d - 3.3755355255898685e-05
+        s = s * d + 0.00010950528846792923
+        s = s * d - 0.00034353335347042023
+        s = s * d + 0.0010392045224449525
+        s = s * d - 0.0030209746514251374
+        s = s * d + 0.008404319207328847
+        s = s * d - 0.022259995241388327
+        s = s * d + 0.05576363008708727
+        s = s * d - 0.1309763455144852
+        s = s * d + 0.2849722347374364
+        return s
+    if x < 2.5:
+        d = x - 2.25
+        s = 5.290411486474393e-10
+        s = s * d - 2.235123061166767e-09
+        s = s * d + 9.26135607680474e-09
+        s = s * d - 3.7601474131561415e-08
+        s = s * d + 1.4943280933364636e-07
+        s = s * d - 5.806334028558536e-07
+        s = s * d + 2.2030220124275485e-06
+        s = s * d - 8.150283243669179e-06
+        s = s * d + 2.9353247360393394e-05
+        s = s * d - 0.00010272108115739644
+        s = s * d + 0.00034853542204571556
+        s = s * d - 0.0011437284836537476
+        s = s * d + 0.0036189953543580788
+        s = s * d - 0.011002060756440047
+        s = s * d + 0.03199262741070626
+        s = s * d - 0.08848650280874916
+        s = s * d + 0.23108725873039188
+        return s
+    d = x - 2.75
+    s = 7.917677614226405e-11
+    s = s * d - 3.623625548087981e-10
+    s = s * d + 1.6299112348623071e-09
+    s = s * d - 7.19997505693733e-09
+    s = s * d + 3.120931005061381e-08
+    s = s * d - 1.3262544050928062e-07
+    s = s * d + 5.519758217042046e-07
+    s = s * d - 2.247373432487606e-06
+    s = s * d + 8.94015604786194e-06
+    s = s * d - 3.469860957781456e-05
+    s = s * d + 0.0001311818005304378
+    s = s * d - 0.0004821950849810549
+    s = s * d + 0.0017195818852892143
+    s = s * d - 0.005934337896997976
+    s = s * d + 0.019758592987322864
+    s = s * d - 0.06323763756063484
+    s = s * d + 0.1936620962790687
+    return s
+
+
+def erf(x: f64) -> f64:
+    """The error function, erf(x) = (2/√π) ∫₀ˣ exp(−t²) dt, as `scipy.special.erf`.
+
+    An odd function rising from −1 to 1; it is ±1.0 exactly from |x| = 6 out, where the
+    difference from 1 is below half a ULP. Below 0.5 it sums its Taylor series, which keeps
+    its relative precision near 0, and above it is 1 − erfc(x).
+
+    ```python
+    from special import erf
+
+    print(erf(0.5))     # 0.5204998778130465
+    ```
+    """
+    if isnan(x):
+        return nan
+    if abs(x) < 0.5:
+        return _erf_small(x)
+    if abs(x) >= 6.0:
+        if x > 0.0:
+            return 1.0
+        return -1.0
+    value = 1.0 - _erfc_positive(abs(x))
+    if x < 0.0:
+        return -value
+    return value
+
+
+def _erfc_positive(x: f64) -> f64:
+    """erfc(x) for `x` from 0.5 up: exp(−x²) erfcx(x), with x² split by `_square` so its
+    rounding does not reach the exponential."""
+    if x == inf:
+        return 0.0
+    high, low = _square(x)
+    return exp(-high) * (1.0 - low) * _erfcx_positive(x)
+
+
+def erfc(x: f64) -> f64:
+    """The complementary error function, erfc(x) = 1 − erf(x), as `scipy.special.erfc`.
+
+    Keeps its relative precision in its tail, where 1 − erf(x) would be 0: `erfc(10.0)` is
+    2.088487583762545e-45. It underflows to 0 above about 27.2 and is 2.0 below −6.
+
+    ```python
+    from special import erfc
+
+    print(erfc(3.0))    # 2.209049699858544e-05
+    ```
+    """
+    if isnan(x):
+        return nan
+    if x < -6.0:
+        return 2.0
+    if x < 0.5:
+        if x > -0.5:
+            return 1.0 - _erf_small(x)
+        return 2.0 - _erfc_positive(-x)
+    return _erfc_positive(x)
+
+
+def erfcx(x: f64) -> f64:
+    """The scaled complementary error function, exp(x²) erfc(x), as `scipy.special.erfcx`.
+
+    Finite where erfc underflows: about 1 / (x √π) for large `x`, so `erfcx(1e10)` is
+    5.641895835477563e-11. It grows as 2 exp(x²) below 0 and overflows below about −26.6.
+
+    ```python
+    from special import erfcx
+
+    print(erfcx(1.0))   # 0.42758357615580705
+    ```
+    """
+    if isnan(x):
+        return nan
+    if x >= 0.5:
+        return _erfcx_positive(x)
+    high, low = _square(x)
+    growth = exp(high) * (1.0 + low)
+    if x > -0.5:
+        return growth * (1.0 - _erf_small(x))
+    if x < -26.7:
+        return inf
+    return 2.0 * growth - _erfcx_positive(-x)
+
+
+def _erfinv_guess(y: f64) -> f64:
+    """A first guess at erfinv(y) for |y| below 1, good to about 0.2 percent: Winitzki's
+    formula with a = 0.147."""
+    a = 0.147
+    logarithm = log1p(-y * y)
+    first = 2.0 / (pi * a) + 0.5 * logarithm
+    value = sqrt(sqrt(first * first - logarithm / a) - first)
+    if y < 0.0:
+        return -value
+    return value
+
+
+def erfinv(y: f64) -> f64:
+    """The inverse of the error function, as `scipy.special.erfinv`: the `x` with
+    erf(x) = y, for `y` from −1 to 1.
+
+    ±∞ at ±1 and NaN outside [−1, 1]. Halley's method refines a first guess until a step
+    changes nothing; above |y| = 0.5 the work moves to `erfcinv(1 − |y|)`, where the
+    subtraction is exact, so values near ±1 keep their precision.
+
+    ```python
+    from special import erfinv
+
+    print(erfinv(0.5))  # 0.4769362762044699
+    ```
+    """
+    if isnan(y) or abs(y) > 1.0:
+        return nan
+    if abs(y) == 1.0:
+        return y * inf
+    if abs(y) > 0.5:
+        value = erfcinv(1.0 - abs(y))
+        if y < 0.0:
+            return -value
+        return value
+    if y == 0.0:
+        return y
+    x = _erfinv_guess(y)
+    for _ in range(6):
+        error = erf(x) - y
+        slope = _TWO_OVER_SQRT_PI * exp(-x * x)
+        step = error / (slope * (1.0 + x * error / slope))
+        x -= step
+        if abs(step) <= 1.0e-17 * abs(x):
+            break
+    return x
+
+
+def erfcinv(q: f64) -> f64:
+    """The inverse of the complementary error function, as `scipy.special.erfcinv`: the `x`
+    with erfc(x) = q, for `q` from 0 to 2.
+
+    ∞ at 0, −∞ at 2 and NaN outside [0, 2]. Below 0.5 Newton's method solves
+    log erfc(x) = log q, written as −x² + log erfcx(x), which stays finite for the smallest
+    `q`, so `erfcinv(1e-300)` keeps its digits; from 0.5 to 1.5 it is `erfinv(1 − q)`.
+
+    ```python
+    from special import erfcinv
+
+    print(erfcinv(1e-10))   # 4.572824967389486
+    ```
+    """
+    if isnan(q) or q < 0.0 or q > 2.0:
+        return nan
+    if q == 0.0:
+        return inf
+    if q == 2.0:
+        return -inf
+    if q > 1.5:
+        return -erfcinv(2.0 - q)
+    if q >= 0.5:
+        return erfinv(1.0 - q)
+    target = log(q)
+    t = -target
+    x = sqrt(max(t - 0.5 * log(pi * t), 0.01))
+    for _ in range(12):
+        scaled = _erfcx_any(x)
+        error = -x * x + log(scaled) - target
+        step = error * _SQRT_PI * scaled / 2.0
+        x += step
+        if abs(step) <= 1.0e-17 * x:
+            break
+    return x
+
+
+def _erfcx_any(x: f64) -> f64:
+    """`erfcx(x)` for any `x` from 0 up, which Newton's method in `erfcinv` can reach."""
+    if x >= 0.5:
+        return _erfcx_positive(x)
+    return erfcx(x)
+
+
+def _erfc_of_sum(high: f64, low: f64) -> f64:
+    """erfc(high + low) for a `low` below half a ULP of `high`: erfc(high) plus the first
+    term of its Taylor series, −low (2/√π) exp(−high²)."""
+    return erfc(high) - low * _TWO_OVER_SQRT_PI * exp(-high * high)
+
+
+def _over_root_two(x: f64) -> tuple[f64, f64]:
+    """x / √2 as the sum of two `f64`s, so `ndtr` does not lose 2u² ULP to its rounding."""
+    high = x * _ONE_OVER_SQRT_TWO
+    low = fma(x, _ONE_OVER_SQRT_TWO, -high) + x * _ONE_OVER_SQRT_TWO_LOW
+    return (high, low)
+
+
+def ndtr(x: f64) -> f64:
+    """The standard normal cumulative distribution function, Φ(x) = erfc(−x/√2) / 2, as
+    `scipy.special.ndtr`: the probability that a normal variable with mean 0 and standard
+    deviation 1 is below `x`.
+
+    The argument −x/√2 is carried as two `f64`s, so the tail keeps its relative precision:
+    `ndtr(-30.0)` is 4.906713927148187e-198. 0 below about −38.5, 1 above about 8.3.
+
+    ```python
+    from special import ndtr
+
+    print(ndtr(1.96))   # 0.9750021048517795
+    ```
+    """
+    if isnan(x):
+        return nan
+    if x == inf:
+        return 1.0
+    if x == -inf:
+        return 0.0
+    high, low = _over_root_two(-x)
+    return 0.5 * _erfc_of_sum(high, low)
+
+
+def ndtri(p: f64) -> f64:
+    """The inverse of `ndtr`, as `scipy.special.ndtri`: the `x` with Φ(x) = p, for `p`
+    from 0 to 1. −∞ at 0, ∞ at 1 and NaN outside [0, 1].
+
+    ```python
+    from special import ndtri
+
+    print(ndtri(0.975)) # 1.959963984540054
+    ```
+    """
+    if isnan(p) or p < 0.0 or p > 1.0:
+        return nan
+    return -_SQRT_TWO * erfcinv(2.0 * p)
+
+
+def log_ndtr(x: f64) -> f64:
+    """The logarithm of `ndtr`, as `scipy.special.log_ndtr`, finite far into the lower tail,
+    where `ndtr` itself is 0: `log_ndtr(-1e5)` is about −5e9.
+
+    Above 0 it is log1p(−Φ(−x)), which keeps the digits of a result near 0; below −20 it is
+    log(erfcx(u) / 2) − u² with u = −x/√2 and u² carried as two `f64`s.
+
+    ```python
+    from special import log_ndtr
+
+    print(log_ndtr(-40.0))  # -804.6084420137538
+    ```
+    """
+    if isnan(x):
+        return nan
+    if x > 0.0:
+        return log1p(-ndtr(-x))
+    if x > -20.0:
+        return log(ndtr(x))
+    if x == -inf:
+        return -inf
+    high, low = _over_root_two(-x)
+    square_high, square_low = _square(high)
+    scaled = _erfcx_positive(high)
+    slope = 2.0 * high - _TWO_OVER_SQRT_PI / scaled
+    return log(0.5 * scaled) - square_high - (square_low + 2.0 * high * low) + low * slope
+
+
+def dawsn(x: f64) -> f64:
+    """Dawson's integral, F(x) = exp(−x²) ∫₀ˣ exp(t²) dt, as `scipy.special.dawsn`.
+
+    An odd function, largest at x ≈ 0.924 with F ≈ 0.541, and about 1/(2x) far out. Below 8
+    it is the continued fraction x / (1 + 2x² / (3 − 4x² / (5 + 6x² / (7 − ⋯)))), evaluated
+    from a depth that grows with x; from 8 out, the asymptotic series
+    (1/(2x)) Σ (2k − 1)!! / (2x²)ᵏ.
+
+    ```python
+    from special import dawsn
+
+    print(dawsn(1.0))   # 0.5380795069127684
+    ```
+    """
+    if isnan(x):
+        return nan
+    size = abs(x)
+    if size >= 8.0:
+        w = 0.5 / (size * size)
+        if w == 0.0:
+            return 0.5 / x
+        total = 1.0
+        term = 1.0
+        for k in range(1, 30):
+            term *= (2.0 * k - 1.0) * w
+            total += term
+            if term <= 1.0e-17 * total:
+                break
+        return total * 0.5 / x
+    depth = 24 + 12 * floor(size)
+    w = 2.0 * x * x
+    t = 2.0 * depth + 1.0
+    for k in range(depth, 0, -1):
+        if k % 2 == 1:
+            t = 2.0 * k - 1.0 + k * w / t
+        else:
+            t = 2.0 * k - 1.0 - k * w / t
+    return x / t
