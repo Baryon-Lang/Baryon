@@ -68,7 +68,7 @@ impl FormatSpec {
     }
 
     /// Whether it is the empty specification.
-    fn is_default(&self) -> bool {
+    pub(crate) fn is_default(&self) -> bool {
         *self == Self::DEFAULT
     }
 }

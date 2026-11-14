@@ -36,7 +36,9 @@ modes of `gzip.open` and `lzma.open`, the class picked from the mode literal.
    `lzma.LZMATextFile`. The checker picks the class from the mode, which must then be a string
    literal; a binary mode, or a mode that is not a literal, gives `GzipFile` or `LZMAFile` as
    today. The text file has the methods of a `File` opened the same way: `read()`, `readline()`,
-   `readlines()`, `for line in f`, `write(text)`, `close()` and `with`.
+   `readlines()`, `for line in f`, `write(text)`, `close()` and `with`. A text mode held in a
+   variable, which the checker cannot see, raises `ValueError` when the call runs, and so does an
+   `encoding=` other than `"utf-8"`, since it is an ordinary argument of the call.
 4. **Reading text** decodes as it reads, holding back the bytes of a character cut at the end of
    a block, and turns `"\r\n"` and `"\r"` into `"\n"`, as Python's default `newline=None` does.
    Bytes that are not UTF-8 raise `ValueError` from the read that reaches them.

@@ -1,0 +1,98 @@
+"""Lines of text decoded from UTF-8 bytes a block at a time: the reading half of the text modes
+of `gzip.open` and `lzma.open` (decision 0064). An internal file: programs cannot import it.
+
+A `Lines` takes blocks of bytes as a binary file gives them and hands out lines, each with its
+`"\\n"`, as Python's `io.TextIOWrapper` does with its default `newline=None`: `"\\r\\n"` and
+`"\\r"` become `"\\n"`. A character cut at the end of a block, and a `"\\r"` that may be the start
+of `"\\r\\n"`, wait for the next block. Each block is decoded and split once, so reading a file
+line by line costs time linear in its length.
+"""
+
+
+class Lines(Struct):
+    """The lines of a text being read, as far as its bytes have arrived. `feed` gives it the
+    next block, `ready` says whether `line` can give a line without one, and `line` gives it."""
+
+    _held: Array[u8, 1]  # bytes after the last complete character, and a final "\r"
+    _lines: list[str]  # the whole lines of the last block, without their "\n"
+    _at: int  # how many of `_lines` `line` has given
+    _partial: str  # the text after the last "\n", which the next block continues
+    _ended: bool  # whether the last block has been fed
+
+    def ready(self) -> bool:
+        """Whether `line` can give the next line, or the empty end, without another block."""
+        return self._at < len(self._lines) or self._ended
+
+    def line(self: InOut[Self]) -> str:
+        """The next line, with its `"\\n"` unless it is the last line of a text that does not
+        end with one; `""` once every line has been given. Call it only when `ready()`."""
+        if self._at < len(self._lines):
+            self._at += 1
+            return self._lines[self._at - 1] + "\n"
+        rest = self._partial.copy()
+        self._partial = ""
+        return rest
+
+    def feed(self: InOut[Self], block: Array[u8, 1], final: bool) -> Raises[None, ValueError]:
+        """Decodes `block` after the bytes held back, and splits it into lines; `final` says it
+        is the last block, which may be empty. Raises `ValueError` with Python's message for
+        bytes that are not UTF-8: in Python's words, their position counts from the start of
+        what this call decodes. Call it only when every line has been given."""
+        data = _joined(self._held, block)
+        cut = len(data)
+        if not final:
+            cut = _complete(data)
+            if cut > 0 and data[cut - 1] == u8(13):
+                cut -= 1
+        text = data[0:cut].decode()
+        self._held = data[cut : len(data)].copy()
+        whole = self._partial + text
+        if whole.find("\r") >= 0:
+            whole = whole.replace("\r\n", "\n").replace("\r", "\n")
+        self._lines = whole.split("\n")
+        self._partial = self._lines.pop()
+        self._at = 0
+        self._ended = final
+
+
+def empty_lines() -> Lines:
+    """A `Lines` before any block has been fed."""
+    return Lines(Array.zeros(0, u8), [], 0, "", False)
+
+
+def _complete(data: Array[u8, 1]) -> int:
+    """How many bytes at the start of `data` end on a whole UTF-8 character: all of them, or
+    all but the 1 to 3 bytes of a character the next block may finish. A byte no character
+    starts with, such as 0xff, is left for `decode` to report at once, as Python's decoder
+    reports it, so its position counts from the start of this block."""
+    end = len(data)
+    start = end - 1
+    while start >= 0 and start >= end - 4:
+        byte = i64(data[start])
+        if byte < 128:
+            return end
+        if byte == 192 or byte == 193 or byte >= 245:
+            return end
+        if byte >= 192:
+            needed = 2
+            if byte >= 224:
+                needed = 3
+            if byte >= 240:
+                needed = 4
+            if start + needed > end:
+                return start
+            return end
+        start -= 1
+    return end
+
+
+def _joined(first: Array[u8, 1], second: Array[u8, 1]) -> Array[u8, 1]:
+    """`first`'s bytes then `second`'s, in a new array."""
+    if len(first) == 0:
+        return second.copy()
+    joined = Array.zeros(len(first) + len(second), u8)
+    for i in range(len(first)):
+        joined[i] = first[i]
+    for i in range(len(second)):
+        joined[len(first) + i] = second[i]
+    return joined

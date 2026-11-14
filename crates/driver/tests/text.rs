@@ -1,6 +1,7 @@
 //! `str` values built at run time, end to end (decision 0022): f-strings, `copy()` and `+`
 //! lowered to the mid-level IR, and the checker's diagnostics for a format specification that
-//! does not fit its value.
+//! does not fit its value, and those for `encode` and `decode` arguments that are not UTF-8 or
+//! not bytes (decision 0064).
 
 use driver::Session;
 
@@ -123,5 +124,41 @@ error: `q` is not a format specification
   |                                                 ^ formats a value of type `str`
 {note}"
         )
+    );
+}
+
+/// `encode` and `decode` take only the encoding `"utf-8"`, as `open` does, and `decode` needs
+/// an `Array[u8, 1]`; `decode` takes no `errors=` (decision 0064).
+#[test]
+fn encode_and_decode_are_utf_8_only() {
+    let program = r#"def main() -> Raises[None, ValueError]:
+    data = "é".encode("latin-1")
+    floats = Array.zeros(3, f64)
+    print(floats.decode())
+    print(data.decode(errors="replace"))
+    print(data.decode("utf8"), len("x".encode(encoding="utf-8")))
+"#;
+    assert_eq!(
+        check(program),
+        r#"error: text files are UTF-8
+ --> main.byn:2:23
+  |
+2 |     data = "é".encode("latin-1")
+  |                       ^^^^^^^^^ not UTF-8
+  = note: leave `encoding` out, or write `encoding="utf-8"`
+
+error: `decode` needs an `Array[u8, 1]`, found `Array[f64, 1]`
+ --> main.byn:4:11
+  |
+4 |     print(floats.decode())
+  |           ^^^^^^^^^^^^^^^ not bytes
+  = note: `decode` reads UTF-8 bytes, as `gzip.decompress` gives them
+
+error: `decode` takes only `encoding="utf-8"`
+ --> main.byn:5:11
+  |
+5 |     print(data.decode(errors="replace"))
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+  = note: bytes are decoded as UTF-8: write `data.decode()` (decision 0064)"#
     );
 }

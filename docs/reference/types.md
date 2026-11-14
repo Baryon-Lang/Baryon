@@ -245,6 +245,22 @@ def total(line: str) -> Raises[float, ValueError]:
     return result
 ```
 
+`text.encode()` gives the text's UTF-8 bytes as a new `Array[u8, 1]`, and `data.decode()`, on
+an `Array[u8, 1]`, gives them back as a `str`
+([decision 0064](../decisions/0064-utf-8-text-from-bytes.md)). Bytes that are not UTF-8 raise
+`ValueError` with Python's message, such as
+`'utf-8' codec can't decode byte 0xff in position 0: invalid start byte`; Python raises
+`UnicodeDecodeError`, which `except ValueError` also catches there. Both take `encoding="utf-8"`
+and no other encoding, which is a compile error, and `decode` takes no `errors=`. Each costs one
+pass over the bytes and one copy. They turn the output of
+[`gzip.decompress`](compression.md#gzipdecompress) and the other codecs into text:
+
+```python
+def first_line(data: Array[u8, 1]) -> Raises[str, ValueError]:
+    """The bytes of `"T = 293.15 K\nP = 1 bar\n"` give `"T = 293.15 K"`."""
+    return data.decode().split("\n")[0].copy()
+```
+
 An f-string formats each value with a specification from Python's format mini-language, and
 writes what Python writes:
 

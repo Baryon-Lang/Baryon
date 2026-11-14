@@ -119,6 +119,7 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Path(method) => self.path_call(method, arguments, destination, target, error),
             Builtin::Run => self.subprocess_run(arguments, destination, target, error),
             Builtin::Input => self.input(arguments, destination, target, error),
+            Builtin::Text(TextMethod::Decode) => self.decode(arguments, destination, target, error),
             Builtin::Text(method) => {
                 self.parse_number(method, arguments, destination, target, error)
             }
@@ -224,8 +225,8 @@ impl<'db> Function<'_, '_, 'db> {
 }
 
 /// Whether a call of `builtin` can fail, and so raises through its error edge: a file
-/// operation, an array file, a path or directory operation, `subprocess.run`, `input`, or
-/// `int(text)` and `float(text)`.
+/// operation, an array file, a path or directory operation, `subprocess.run`, `input`,
+/// `int(text)` and `float(text)`, or `data.decode()`.
 fn raises(builtin: Builtin) -> bool {
     matches!(
         builtin,
@@ -234,6 +235,6 @@ fn raises(builtin: Builtin) -> bool {
             | Builtin::Path(_)
             | Builtin::Run
             | Builtin::Input
-            | Builtin::Text(TextMethod::ParseInt | TextMethod::ParseFloat)
+            | Builtin::Text(TextMethod::ParseInt | TextMethod::ParseFloat | TextMethod::Decode)
     )
 }

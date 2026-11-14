@@ -60,6 +60,7 @@ impl<'db> Builder<'db> {
             ("round", [array]) => self.array_round(place, *array, node),
             ("fill", [array, value]) => self.array_fill(place, (*array, *value), node),
             ("tofile", [array, path]) if !fixed => self.array_tofile(place, *array, *path, node),
+            ("decode", [array, ..]) if !fixed => self.decode(place, *array, node),
             _ => self.unsupported(node, &format!("the array method `{method}`")),
         }
     }
