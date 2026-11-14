@@ -12,6 +12,7 @@
 mod architecture;
 mod ci;
 mod conflicts;
+mod crate_licenses;
 mod dependencies;
 mod examples;
 mod links;
@@ -37,6 +38,8 @@ Commands:
   check-examples       Verify every example program is valid Python 3.12 syntax
   check-links          Verify every relative link in the Markdown documentation resolves
   check-roadmap        Verify ROADMAP.md is well formed and updated by the current change
+  crate-licenses <out> Write the licenses of every external crate linked into baryon and
+                       libruntime.a to <out>, for the release archives
   help                 Show this message";
 
 /// Directories never searched for files: version-control data, build output, and the
@@ -57,6 +60,9 @@ fn main() -> ExitCode {
         Some("check-examples") => examples::check(),
         Some("check-links") => links::check(),
         Some("check-roadmap") => roadmap::check(),
+        Some("crate-licenses") => {
+            crate_licenses::write(&std::env::args().skip(2).collect::<Vec<_>>())
+        }
         Some("help" | "--help" | "-h") => {
             println!("{USAGE}");
             Ok(())

@@ -195,6 +195,9 @@ impl<'db> Body<'db> {
                 let Some(&Definition::Local(binding)) = self.lowerer.definition(target) else {
                     return;
                 };
+                if self.held_by_with(target, "assigned") {
+                    return;
+                }
                 self.change(target);
                 self.state.assigned.insert(binding);
                 self.state.moved.remove(&binding);

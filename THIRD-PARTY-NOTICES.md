@@ -1,8 +1,10 @@
 # Third-party notices
 
-Baryon is licensed under the [Apache License 2.0](LICENSE). This file lists every piece of
-third-party content the repository carries, as opposed to a dependency `Cargo.toml` declares,
-with its license and the files that hold it. Each license below permits the use made of it.
+Baryon is licensed under the [Apache License 2.0](LICENSE) or the [MIT License](LICENSE-MIT), at
+your option. This file lists every piece of third-party content the repository carries, as
+opposed to a dependency `Cargo.toml` declares, with its license and the files that hold it. Each
+license below permits the use made of it. [Rule 6](CONTRIBUTING.md#rule-6-few-dependencies) asks
+that new content be listed here in the pull request that adds it.
 
 ## DejaVu Sans
 
@@ -13,10 +15,7 @@ text in, for 135 characters: printable ASCII, the Greek letters, `×`, `−`, `�
 
 | File | Holds |
 | --- | --- |
-| [`crates/driver/library/dejavu_sans.byn`](crates/driver/library/dejavu_sans.byn) | The
-outlines and the notice below, written from matplotlib's copy of `DejaVuSans.ttf` by the script
-in the [plotting fixtures' README](crates/driver/tests/fixtures/plotting/README.md#dejavu-sans)
-|
+| [`crates/driver/library/dejavu_sans.byn`](crates/driver/library/dejavu_sans.byn) | The outlines and the notice below, written from matplotlib's copy of `DejaVuSans.ttf` by the script in the [plotting fixtures' README](crates/driver/tests/fixtures/plotting/README.md#dejavu-sans) |
 
 Its notice, as the font states it:
 

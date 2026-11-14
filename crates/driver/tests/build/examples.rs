@@ -49,6 +49,23 @@ fn rod_boundaries_builds_and_runs() {
     .unwrap();
 }
 
+/// A harmonic oscillator under leapfrog steps inside a context manager's `with` block, whose
+/// `__exit__` reports the energy drift, then a `for` loop over an iterator of samples
+/// (decision 0053). Python, running the same steps, prints the same numbers.
+#[test]
+fn energy_audit_builds_and_runs() {
+    prints(
+        "example-energy-audit",
+        include_str!("../../../../docs/examples/energy_audit.byn"),
+        "100 steps: relative energy drift -7.494e-04\n\
+         x(10) = -0.836795\n\
+         1000 steps: relative energy drift -7.400e-06\n\
+         x(10) = -0.839049\n\
+         largest error against cos(t): 3.299e-05\n",
+    )
+    .unwrap();
+}
+
 /// Unpacking a tuple, a tuple display and a `Fixed` vector; a copy that changes apart from its
 /// original; and sums of a 2D array, an integer array, a `Fixed` vector and an empty array.
 #[test]

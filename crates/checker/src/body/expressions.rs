@@ -522,6 +522,10 @@ impl<'db> Body<'db> {
             return element;
         }
         let ty = self.expression(iterator, None);
+        let statement = self.iterating.take();
+        if let Some(element) = self.user_iteration(iterator, ty, statement) {
+            return element;
+        }
         let unknown = self.lowerer.unknown();
         match ty.kind(self.db) {
             TypeKind::List(item) | TypeKind::Dict { key: item, .. } => *item,

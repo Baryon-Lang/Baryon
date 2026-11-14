@@ -55,7 +55,7 @@ with `$HOME/Baryon` replaced by wherever you cloned the repository.
 
 ## 3. Install the extension
 
-The extension is not on the Visual Studio Marketplace. If you were given `baryon-0.2.0.vsix`, skip
+The extension is not on the Visual Studio Marketplace. If you were given `baryon-0.3.0.vsix`, skip
 to the second step. Otherwise package it from the clone:
 
 ```sh
@@ -65,11 +65,11 @@ npx @vscode/vsce package
 ```
 
 `npm ci` installs the extension's one dependency, Microsoft's language server client, at the
-versions `package-lock.json` pins. The last command writes `baryon-0.2.0.vsix`.
+versions `package-lock.json` pins. The last command writes `baryon-0.3.0.vsix`.
 
 Then install it: in VS Code, open the Extensions view (the four squares in the left bar), click
 the `...` at its top right, choose **Install from VSIX...** and pick the file. From a terminal,
-`code --install-extension baryon-0.2.0.vsix` does the same.
+`code --install-extension baryon-0.3.0.vsix` does the same.
 
 ## 4. Point the extension at `baryon`
 

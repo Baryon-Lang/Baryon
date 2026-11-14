@@ -153,6 +153,11 @@ A function says, for each parameter, how it receives its argument
 
 Call sites look the same in every mode: `saxpy(2.0, x, y)`.
 
+An `InOut` argument has exactly its parameter's type. A read-only parameter of type `str | None`
+accepts a `str`, but an `InOut[str | None]` one does not: the function may assign it `None`, which
+a `str` variable cannot hold. The same goes for a member of a union passed where the union is
+changed. Declare the variable with the parameter's type, `a: str | None = name.copy()`, to pass it.
+
 A borrow lasts exactly as long as the call. A function cannot store a borrowed parameter in a
 struct, return it, or put it in a list; it can copy it, or pass it on to another call. This is what
 lets the language skip Rust's lifetime annotations: every borrow ends where the call ends, so the

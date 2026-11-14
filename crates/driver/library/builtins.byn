@@ -60,3 +60,10 @@ class AttributeError(Exception):
     """
 
     message: str
+
+
+class StopIteration(Exception):
+    """The end of an iterator: what a class's `__next__` raises when it has no value left, which
+    ends the `for` loop over it (decision 0053). It has no fields: there is nothing more to say
+    about it.
+    """

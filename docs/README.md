@@ -5,14 +5,24 @@ missing or unclear, that is a bug: open an issue.
 
 ## Learning the language
 
-Start with the [beginner's guide](guide/README.md): it installs `baryon`, runs a first program,
-writes tests and simulates a mass on a spring, using only what builds today. To work in an
-editor, [Coding Baryon in VS Code](guide/vscode.md) sets up VS Code and walks through a first
-program there. CI runs every step of both as written.
+How to code in Baryon is taught by four guide pages, read in order. CI runs every step of each
+as written, so every program in them builds and prints what the page shows.
+
+1. The [beginner's guide](guide/README.md) installs `baryon`, runs a first program, lets the
+   compiler catch a mistake, simulates a mass on a spring and tests it.
+2. [A tour of the language](guide/language-tour.md) covers values, strings and collections,
+   structs, enums and unions, generics and traits, who owns a value, errors and modules.
+3. [Arrays and numbers](guide/arrays-and-numbers.md) covers `Array`, parallel and vector loops,
+   `math`, exact sums, random numbers, `linalg`, `fft` and `stats`.
+4. [Data, files and plots](guide/data-files-and-plots.md) covers `DataFrame`, files and paths,
+   text tables and `.npy`, NetCDF, HDF5 and FITS, compression, and plots with `byplot`.
+
+To work in an editor, [Coding Baryon in VS Code](guide/vscode.md) sets up VS Code and walks
+through a first program there.
 
 The compiler is a prototype. `baryon check <directory>` reports every error the checker finds,
 but `baryon build`, `baryon run` and `baryon test` compile only part of the language so far, and
-all six [example programs](examples/README.md) build and run;
+all seven [example programs](examples/README.md) build and run;
 [What builds today](reference/status.md) lists, chapter by chapter, what builds.
 
 [The `baryon` command](reference/commands.md) says how to build the tool and what each of its
@@ -24,7 +34,7 @@ and runs `baryon lsp` for you. The [release notes](../CHANGELOG.md) say what eac
 - The [language reference](reference/README.md) defines what a program may say and what it means.
   Python programmers should start with its
   [differences from Python](reference/differences-from-python.md).
-- [`examples/`](examples/README.md) has six physics and mathematics programs written in the
+- [`examples/`](examples/README.md) has seven physics and mathematics programs written in the
   language, each explaining the features it uses.
 - The [decision records](decisions/README.md) explain each settled or proposed design choice.
 - The [design plan](design/language-design-plan.md) gives the reasoning behind the whole design.

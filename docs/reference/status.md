@@ -24,48 +24,21 @@ the language that is specified and checked, but not built yet. The editor sees t
 [Coding Baryon in VS Code](../guide/vscode.md) underlines every error `baryon check` finds as you
 type, while `baryon run` builds only what this page lists.
 
-This page was last brought up to date on 2026-11-13, when PDF files from `savefig`, and before them
-NetCDF-4 files read with `netCDF4.Dataset`, and before them PNG files from `savefig`, and before
-them HDF5 files read with `h5by.File`, its groups, datasets and attributes, and before them
-logarithmic axes, and before them images and colorbars, and before them text columns of a
-`DataFrame` joined it, and before them arrays of text, `Array[str, 1]`, and before them
-`a.argsort()`, and before it `concat` of `DataFrame`s, and before it `drop_duplicates`, and before
-it the inner `merge` of two `DataFrame`s, and before it `groupby(...).agg(...)`, and before it
-`lzma.decompress`, and before it `sort_values` on a `DataFrame`, and before it `bz2.compress` and
-`bz2.decompress`, and before them `df[["a", "b"]]`, `assign`, `drop` and `rename`, and before them
-`for row in df.itertuples()`, and before it the rows of a `DataFrame` chosen by `df[mask]`,
-`df[i:j]`, `head` and `tail`, and before them `compression.zstd.compress`, and before it `fft2`,
-`ifft2`, `rfft2` and `irfft2`, and before them `compression.zstd.decompress`, and before it
-`print(df)`, a frame printed as pandas prints it, and before it `zlib.decompressobj` and `gzip`, and
-before them a `DataFrame` built from rows and `df[i]`, and before them `DataFrame[S]` built from
-arrays, with its columns, and before them `zlib.compress`, and before it `zlib.decompress`,
-`zlib.crc32` and `zlib.adler32`, and before them scatter plots, bars, histograms, legends and grid
-lines, and before them comparisons of arrays and `a[mask]`, and before them line plots with `byplot`
-and `ticker`, saved as SVG, and before them slices of a NetCDF variable, `var[0, :, ::2]` read and
-written, and before them writing NetCDF classic files, `Dataset(path, "w", format=...)`,
-`createDimension`, `createVariable`, `setncattr` and `var[:] = values`, and before them reading
-NetCDF classic files, `netCDF4.Dataset`, its variables, dimensions and attributes, and
-`AttributeError`, and before them FITS images and headers, `fits.getdata`, `fits.getheader`,
-`fits.writeto` and `KeyError`, and before them, on 2026-11-11, the standard streams, `print(...,
-file=)` and `input`, `.npy` files, `Array.load` and `Array.save`, `linalg.svd`, `svdvals`, `eig` and
-`eigvals`, `fft`, text tables, `Array.loadtxt` and `Array.savetxt`, and before them `linalg.eigh`,
-`eigvalsh`, `cholesky` and `qr`, `solve`, `lu_factor`, `lu_solve`, `det` and `inv` and, before them,
-array files, `Array.fromfile` and `a.tofile`, and before them `for line in f` over a text file,
-`int(text)` and `float(text)`, began to build. Before that, on 2026-11-10, text files, `open`, the
-`File` methods and `with open(...) as f`, then `OSError`, `os.ErrorKind`, unions of structs and,
-before them, `sys.argv`, `sys.exit` and `os.getenv` began to build. Every pull request that teaches
-lowering or the backend something new updates the table it affects, in the same pull request, as
-roadmap item 0.8.1 asks.
+This page was last checked against `main` on 2026-11-13. Every pull request that teaches lowering
+or the backend something new updates the table it affects, in the same pull request, as roadmap
+item 0.8.1 asks. What each release added is in the [release notes](../../CHANGELOG.md), and what
+each pull request added is in this file's history.
 
 ## The example programs
 
-All six [example programs](../examples/README.md) build and run:
+All seven [example programs](../examples/README.md) build and run:
 [`heat_equation.byn`](../examples/heat_equation.byn),
 [`lennard_jones.byn`](../examples/lennard_jones.byn),
 [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn),
 [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn),
-[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) and
-[`rod_boundaries.byn`](../examples/rod_boundaries.byn). Each is built and run by a test that
+[`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn),
+[`rod_boundaries.byn`](../examples/rod_boundaries.byn) and
+[`energy_audit.byn`](../examples/energy_audit.byn). Each is built and run by a test that
 checks what it prints.
 
 | Example | Still needs |
@@ -76,6 +49,7 @@ checks what it prints.
 | [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn) | Nothing: it builds and runs |
 | [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn) | Nothing: it builds and runs |
 | [`rod_boundaries.byn`](../examples/rod_boundaries.byn) | Nothing: it builds and runs |
+| [`energy_audit.byn`](../examples/energy_audit.byn) | Nothing: it builds and runs |
 
 ## Syntax
 
@@ -85,12 +59,12 @@ checks what it prints.
 | `main` in `main.byn`; [`print`](syntax.md#what-print-writes-for-each-value) of numbers, `bool`, `str`, `None`, `T \| None`, tuples, enum members, structs, lists and dicts, with `sep=`, `end=`, [`file=` and `flush=`](files-and-processes.md#standard-streams); arrays of numbers and `bool`, [as NumPy writes them](arrays.md#printing) | `print` of arrays of `str` or structs; a tuple holding `None` |
 | Assignment, annotated assignment, augmented assignment including `**=`; unpacking a tuple or a rank-1 `Fixed` array, `a, b = b, a`, and nested unpacking, `a, (b, c) = e` | |
 | `if`, `elif`, `else`, `while`, `break`, `continue`, `pass`, `return`, `assert` | |
-| `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a list, such as `list[f64]` or `list[str]`; over a tuple whose items have one type, such as `(2, 3, 5)`; over the characters of a `str`, each a one-character `str`; over `enumerate`, `zip` and `reversed` of these, nested in each other; a loop over values that are not copied, such as `str`s, borrows each element; with a target that unpacks, `for x, y in points` | A `prange` step that is not a constant; `reversed` of a `str`; a `range` step that is not a constant inside `enumerate`, `zip` or `reversed`; `enumerate`, `zip` and `reversed` outside a `for` loop or comprehension, such as `list(zip(a, b))` |
+| `for` over `range`, with a step that is a constant or computed at run time, where a zero step panics; over a rank-1 `Array` or `Fixed` array; over a list, such as `list[f64]` or `list[str]`; over a tuple whose items have one type, such as `(2, 3, 5)`; over the characters of a `str`, each a one-character `str`; over `enumerate`, `zip` and `reversed` of these, nested in each other; over a class with `__next__` or `__iter__`, an [iterator](syntax.md#iterators); a loop over values that are not copied, such as `str`s, borrows each element; with a target that unpacks, `for x, y in points` | A `prange` step that is not a constant; a comprehension over an iterator of the program's own; `reversed` of a `str`; a `range` step that is not a constant inside `enumerate`, `zip` or `reversed`; `enumerate`, `zip` and `reversed` outside a `for` loop or comprehension, such as `list(zip(a, b))` |
 | `def` at module level and methods; keyword arguments; [default parameter values](types.md#default-parameter-values), each evaluated at every call that leaves its argument out | Leaving out an argument of a generic function |
 | `class` with `Struct`, `Copy`, `Exception`, `Enum` and `Protocol` bases, and the traits a struct names; `@layout("C")` | |
 | `raise` and `try`/`except`, including bare `raise` | |
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
-| `with unsafe:` | |
+| `with unsafe:`; [context managers](syntax.md#with-and-context-managers), a class with `__enter__` and `__exit__`, whose `__exit__` runs on every way out of the block; several in one `with` | A file and a context manager in one `with` |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications; complex literals such as `2j` | `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
 | `+ - * / // % **`, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions; comparisons, `in` and `not in` between two `str`s | `in` and `not in` on arrays and tuples |
 | `min`, `max`, `len` of arrays, lists and `str`; `sum`, `min` and `max` of a list or rank-1 array of numbers, a list's float `sum` as CPython 3.12 adds it; `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`math.fsum`](arrays.md#exact-sums) of a list or rank-1 array of `f64`s; [`math.f64x2`](arrays.md#double-double-floats) double-double floats and their methods; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)` and `round(x, digits)` as Python rounds; `sorted` of a list of numbers or `str`s, with `reverse=`; `abs` of integers, floats and complex numbers | `float(text)` and the other conversions of a `str` to a number; `sorted` with `key=` or of other elements, such as tuples; `min` and `max` of a list of `str`s; `sum` of a list of complex numbers and of an array with a start; the integer functions of `math`, such as `gcd`, and `math.prod`; `fsum` of other element types and iterables; the rest of `random` |
@@ -105,8 +79,8 @@ checks what it prints.
 | Conversions that panic when the value does not fit | |
 | `str`: literals, f-strings, `+`, `+=` on a variable, field or list element, `s.copy()`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in` and `len`; [indexing and slicing](types.md#indexing-slicing-and-methods) by character; `split`, `strip`, `lstrip`, `rstrip`, `join`, `startswith`, `endswith`, `find`, `replace`, `lower` and `upper`; `int(text)` and `float(text)`, which raise `ValueError` | `str`'s other methods, such as `count`, `rfind` and `isdigit`; `split` with `maxsplit`, `find` with `start` and `end`, and `startswith` of a tuple |
 | Tuples: building one, reading `t[0]` with a constant index, and unpacking | |
-| `T \| None`, with every narrowing rule | |
-| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, methods called through their class, `Point.origin()`, generic structs and their methods, each method compiled once per type its struct is used at | |
+| `T \| None`, with every narrowing rule; a value of any type, an `Array` or a `str` included, passed where a read-only parameter takes `T \| None`, as `yerr=errors` is | |
+| Structs, `Copy` structs, fields, methods, `InOut[Self]` methods, methods called through their class, `Point.origin()`, generic structs and their methods, called through their class too, `Pair.both(1.5)` or `Pair[i64].both(2)`, each method compiled once per type its struct is used at | |
 | Enums: members, `==` and `!=`, `match` | |
 | [Unions](types.md#unions-of-structs) of structs, enums, error types and `None`: a member passed, assigned or returned where its union is expected, `match` with class patterns by position and keyword, `print`, members that own memory, freed by the member they hold, shared methods called on a union, and unions as the type of a trait-bounded parameter | A shared method that a member gets from an embedded field; `Array.zeros` of a union; class patterns on generic structs; a capture of a field that is not a copy type |
 | Type aliases, including as a constructor: `Vec3(1.0, 0.0, 0.0)` | |
@@ -154,6 +128,7 @@ out of a function, including through a `raise`.
 | [Arrays of text](text-arrays.md), `Array[str, 1]`: built from a list with `Array(words)`, `len`, an element read by position and borrowed, `for` loops with `enumerate`, `reversed` and `zip`, comprehensions, `copy()`, a slice, a mask and positions, each a new array, comparisons with a `str` or another text array, `in`, `print`, `str` and f-strings in NumPy's form, `argsort()`, `min()` and `max()`, as a variable, parameter, return value, item of a list or tuple, dict value and `T \| None` | Assigning an element, `+`, `shape`, and the built-ins `sorted`, `min`, `max` and `list` (roadmap idea I.60); a struct field of one (I.49) |
 | [Arrays with missing values](missing-values.md), `Array[T \| None, 1]` of numbers or `bool`s: built from a `list[T \| None]` with `Array(items)`, `len`, an element read as a `T \| None`, `isna()`, `notna()` and `copy()`; held in variables, tuples and lists, passed and returned | Everything else, each a compile error that says so: operators and comparisons, reductions, `fillna` and `dropna`, slices and masks, assigning an element, `for` loops, `print`, text elements, more than one dimension (roadmap 3.24), and a frame column that may hold `None` |
 | [The `stats` module](statistics.md): `median`, `quantile`, `percentile`, `average` and `histogram` of an `Array[f64, 1]`, with NumPy's bits; `cov` and `corrcoef` of two, to NumPy's last bit but one | `axis=`, several quantiles at once, the other quantile methods and other element types; `histogram` with other bins or `range=`, `weights=` and `density=`; `cov` and `corrcoef` of more than two variables |
+| [The `special` module](special-functions.md): the gamma family, `gamma`, `rgamma`, `gammaln`, `loggamma`, `gammasgn`, `psi`, `digamma`, `polygamma`, `beta`, `betaln` and `poch`, and the error functions, `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `ndtri`, `log_ndtr` and `dawsn`, of `f64` arguments, within a few ULP of the true value | Array arguments (roadmap 3.18.13); the rest of `scipy.special`, in the other sub-rows of roadmap 3.18 |
 
 ## DataFrames
 
@@ -207,7 +182,7 @@ today, before it can be built.
 
 | Builds today | Not built yet |
 | --- | --- |
-| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments`; [`.npy` files](data-files.md#npy-files): `Array.load` and `Array.save` of arrays of numbers, `bool`s and complex numbers of any rank, a view included; [FITS files](data-files.md#fits-files): `fits.getdata` of any HDU's image as integers or floats of any rank, scaled as AstroPy scales, `fits.getheader`, `fits.writeto` with a header and `overwrite`, and a `Header`'s `header[key]` typed by the context, `get`, `in` and `header[key] = value` or `(value, comment)`, raising `KeyError`; [NetCDF classic files](data-files.md#netcdf-files): `Dataset(path)`, `ds.variables[name][:]` of a whole variable or a subscript of integers and slices, `var[0, :, ::2]`, as signed integers or floats of any rank, unpacked as `netCDF4` unpacks, `ds.dimensions[name]` with `name`, `size` and `isunlimited()`, `getncattr` typed by the context and `ncattrs` of a file or a variable, raising `KeyError` and `AttributeError`; writing them with `Dataset(path, "w", format=...)` of either classic format or the mode `"a"`, alone or in a `with` block, `createDimension`, `createVariable` of up to four dimensions, `setncattr` of a `str`, `int` or `float`, and `var[:] = values` or a subscript's values, `var[1, ::2] = values`, past the last record too, a subscript that picks nothing raising `IndexError` or `ValueError` as `netCDF4` raises them, of signed integers or floats, packed as `netCDF4` packs, byte for byte as `netCDF4` writes; reading NetCDF-4 files the same way, their variables stored without compression; [HDF5 files](data-files.md#hdf5-files): `h5by.File(path)`, alone or in a `with` block, `f[path]` and `group[path]` as a `Group` or a `Dataset` by their use, `dset[...]` or a subscript of integers and slices as integers or floats of any rank, from every layout, chunk index and the deflate, shuffle and fletcher32 filters, `shape`, `ndim`, `size`, `dtype` and `name`, `attrs[name]` typed by the context, `keys()` and `in`, raising `KeyError`, `IndexError` and `ValueError` as h5py raises them | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files of structs, in Fortran order or big-endian, and `.npz` archives; `fits.open`, FITS tables, compressed images and `fits.Header()`; NetCDF subscripts of index arrays, listing a NetCDF file's variables and dimensions, and NetCDF-4 files' compressed variables, groups, unsigned, 64-bit and string types, and writing; writing HDF5 files and HDF5 datasets of strings or compound types; CSV into a DataFrame and Parquet (roadmap 3.14.4 and 3.14.6) |
+| [Text tables](data-files.md#text-tables): `Array.loadtxt` of `f64` with `dtype`, `comments`, `delimiter`, `skiprows` and `max_rows`, as a table or, where the context needs it, a rank-1 array; `Array.savetxt` of an `Array[f64, 1]` or `Array[f64, 2]` with `delimiter`, `newline`, `header`, `footer` and `comments`; [`.npy` files](data-files.md#npy-files): `Array.load` and `Array.save` of arrays of numbers, `bool`s and complex numbers of any rank, a view included; [FITS files](data-files.md#fits-files): `fits.getdata` of any HDU's image as integers or floats of any rank, scaled as AstroPy scales, `fits.getheader`, `fits.writeto` with a header and `overwrite`, and a `Header`'s `header[key]` typed by the context, `get`, `in` and `header[key] = value` or `(value, comment)`, raising `KeyError`; [NetCDF classic files](data-files.md#netcdf-files): `Dataset(path)`, `ds.variables[name][:]` of a whole variable or a subscript of integers and slices, `var[0, :, ::2]`, as signed integers or floats of any rank, unpacked as `netCDF4` unpacks, `ds.dimensions[name]` with `name`, `size` and `isunlimited()`, `getncattr` typed by the context and `ncattrs` of a file or a variable, raising `KeyError` and `AttributeError`; writing them with `Dataset(path, "w", format=...)` of either classic format or the mode `"a"`, alone or in a `with` block, `createDimension`, `createVariable` of up to four dimensions, `setncattr` of a `str`, `int` or `float`, and `var[:] = values` or a subscript's values, `var[1, ::2] = values`, past the last record too, a subscript that picks nothing raising `IndexError` or `ValueError` as `netCDF4` raises them, of signed integers or floats, packed as `netCDF4` packs, byte for byte as `netCDF4` writes; reading NetCDF-4 files the same way, their variables stored plain or with the deflate and shuffle filters; [HDF5 files](data-files.md#hdf5-files): `h5by.File(path)`, alone or in a `with` block, `f[path]` and `group[path]` as a `Group` or a `Dataset` by their use, `dset[...]` or a subscript of integers and slices as integers or floats of any rank, from every layout, chunk index and the deflate, shuffle and fletcher32 filters, `shape`, `ndim`, `size`, `dtype` and `name`, `attrs[name]` typed by the context, `keys()` and `in`, raising `KeyError`, `IndexError` and `ValueError` as h5py raises them | `loadtxt` of other element types, `usecols`, `unpack`, `converters` and `ndmin`; `savetxt`'s `fmt`; `.npy` files of structs, in Fortran order or big-endian, and `.npz` archives; `fits.open`, FITS tables, compressed images and `fits.Header()`; NetCDF subscripts of index arrays, listing a NetCDF file's variables and dimensions, and NetCDF-4 files' groups, unsigned, 64-bit and string types, and writing; writing HDF5 files and HDF5 datasets of strings or compound types; CSV into a DataFrame and Parquet (roadmap 3.14.4 and 3.14.6) |
 
 ## Plotting
 

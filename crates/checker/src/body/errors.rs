@@ -171,7 +171,7 @@ impl<'db> Body<'db> {
     /// Checks that each of `errors`, which `node` can fail with, is caught by an enclosing
     /// `try` or listed in the function's `Raises`. `what` starts the message, such as
     /// "`solve` can fail with".
-    fn propagate(&mut self, node: NodeId, what: &str, errors: &[Type<'db>]) {
+    pub(super) fn propagate(&mut self, node: NodeId, what: &str, errors: &[Type<'db>]) {
         let (value, allowed) = match self.signature.returns.kind(self.db) {
             TypeKind::Fallible { value, errors } => (*value, errors.clone()),
             _ => (self.signature.returns, Vec::new()),

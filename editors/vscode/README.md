@@ -24,10 +24,10 @@ packaged extension:
    ```
 
    `npm ci` installs the language server client the extension runs on, at the exact versions in
-   `package-lock.json`, into `node_modules/`. The second command writes `baryon-0.2.0.vsix` next
+   `package-lock.json`, into `node_modules/`. The second command writes `baryon-0.3.0.vsix` next
    to `package.json`, with those packages inside it (about 470 KB). Git ignores both.
 2. In VS Code, open the Extensions view, choose **Install from VSIX...** in its `...` menu, and
-   pick the file. From a terminal, `code --install-extension baryon-0.2.0.vsix` does the same.
+   pick the file. From a terminal, `code --install-extension baryon-0.3.0.vsix` does the same.
 3. Install `baryon` so VS Code can run it: build it as
    [The `baryon` command](../../docs/reference/commands.md) says, and put it on your `PATH` or set
    `baryon.path` (below).

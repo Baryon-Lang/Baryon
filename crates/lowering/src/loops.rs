@@ -54,7 +54,8 @@ impl<'db> Builder<'db> {
     }
 
     /// `for target in iterator: body`: over `range`, `prange` or `simd(range(…))` when the
-    /// iterator is such a call, and over the elements of a collection otherwise.
+    /// iterator is such a call, over a class with `__next__` or `__iter__` (the
+    /// `user_iterators` module), and over the elements of a collection otherwise.
     pub(crate) fn for_statement(&mut self, statement: NodeId) {
         let (Some(target), Some(iterator)) = (
             self.tree.child(statement, Role::Target),
@@ -67,7 +68,7 @@ impl<'db> Builder<'db> {
             self.range_loop(statement, target, iterator, pass);
         } else if self.is_dict_loop(iterator) {
             self.dict_loop(statement, target, iterator, pass);
-        } else {
+        } else if !self.user_loop(statement, target, iterator, pass) {
             self.collection_loop(statement, target, iterator, pass);
         }
     }

@@ -127,11 +127,27 @@ The repository should look like someone obsessive built it, because someone did.
   compatible with Apache-2.0 and MIT, no RustSec advisory, one version per crate, and crates.io
   as the only source. `cargo xtask check-dependencies` enforces them; `deny.toml` says how to
   record an exception and why each one exists.
+- Third-party content carried in the repository, such as a font's outlines or a data table, is
+  listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) with its license text and the files
+  that hold it, in the same pull request that adds it. Its license must permit the use and be
+  compatible with Apache-2.0 and MIT.
+- The licenses of external crates need no hand-written list: each release archive carries
+  `CRATE-LICENSES.md`, which `cargo xtask crate-licenses` writes from `Cargo.lock` with every
+  linked crate's license files. A crate that ships no license file and is not MIT stops the
+  release until its license is added.
 
 ## Rule 7: decisions are written down
 
 A choice that is hard to reverse, or that affects more than one crate, gets a decision record in
 [`docs/decisions/`](docs/decisions/README.md) before or with the code that implements it.
+
+## License
+
+Baryon is licensed under either of the [Apache License 2.0](LICENSE) or the
+[MIT License](LICENSE-MIT), at the user's option
+([decision 0055](docs/decisions/0055-dual-license.md)). Unless you say otherwise, a contribution
+you submit is licensed the same way, under both, with no further terms. That is why every
+dependency must be usable under both licenses (rule 6).
 
 ## Workflow
 

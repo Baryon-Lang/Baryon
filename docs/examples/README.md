@@ -1,8 +1,8 @@
 # Example programs
 
-Six small physics and mathematics programs written in the language as currently designed. They
+Seven small physics and mathematics programs written in the language as currently designed. They
 are roadmap item 0.2: the way to test the design on real code before any compiler exists. The
-compiler now builds and runs all six, and a test checks what each prints;
+compiler now builds and runs all seven, and a test checks what each prints;
 [What builds today](../reference/status.md#the-example-programs) says so. `baryon run` runs a
 program from a directory holding it as `main.byn`.
 
@@ -19,8 +19,9 @@ Baryon source files end in `.byn` ([decision 0023](../decisions/0023-language-na
 | [`lorenz_rk4.byn`](lorenz_rk4.byn) | Lorenz system, fourth-order Runge-Kutta | generic functions with trait bounds, functions as arguments |
 | [`monte_carlo_pi.byn`](monte_carlo_pi.byn) | Monte Carlo estimate of pi | reproducible parallel random streams, integer reductions, number mixing |
 | [`rod_boundaries.byn`](rod_boundaries.byn) | 1D heat equation with a different boundary condition at each end | a union of structs as a sum type, class patterns in `match` ([decision 0032](../decisions/0032-sum-types-are-unions-of-structs.md)) |
+| [`energy_audit.byn`](energy_audit.byn) | Energy drift of a harmonic oscillator under leapfrog steps | a context manager, a class with `__enter__` and `__exit__` in a `with` block, and an iterator, a class with `__next__` in a `for` loop ([decision 0053](../decisions/0053-with-and-for-on-user-classes.md)) |
 
-The design plan calls for 20 programs before the Phase 0 gate; these are the first six.
+The design plan calls for 20 programs before the Phase 0 gate; these are the first seven.
 
 ## Where the design got in the way
 

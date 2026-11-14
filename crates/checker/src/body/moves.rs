@@ -66,6 +66,8 @@ impl<'db> Body<'db> {
         }
         match self.tree.kind(node) {
             SyntaxKind::Name | SyntaxKind::Attribute if self.borrowed_by_loop(node, "moved") => {}
+            SyntaxKind::Name | SyntaxKind::Attribute
+                if !self.inside_element(node) && self.held_by_with(node, "moved") => {}
             SyntaxKind::Name => self.move_variable(node, node),
             SyntaxKind::Attribute if self.is_frame_attribute(node) => {}
             // `df[i]` is a new struct each time it is read, so keeping it moves nothing.
@@ -240,6 +242,18 @@ impl<'db> Body<'db> {
                 .with_note(format!(
                     "to keep an element, copy it inside the loop: `last = {name}.copy()`"
                 ));
+            self.lowerer.diagnostics.push(diagnostic);
+            return;
+        }
+        if self.with_ends.contains(&site) {
+            let diagnostic =
+                Diagnostic::error(format!("`{name}` is read after its `with` block ended"))
+                    .with_primary(self.tree.span(node), "read after the block")
+                    .with_secondary(
+                        self.tree.span(site),
+                        format!("`__exit__` takes `{name}` as `Owned` when the block ends"),
+                    )
+                    .with_note("read what you need from it inside the block (decision 0053)");
             self.lowerer.diagnostics.push(diagnostic);
             return;
         }

@@ -8,7 +8,6 @@ and Fortran's speed into one language. Source files end in `.byn`, and the comma
 `baryon`. [Decision 0023](docs/decisions/0023-language-name-baryon.md) records the choice.
 
 ```python
-# Planned syntax, not final.
 def heat_step(u: Array[f64, 2], alpha: f64) -> Array[f64, 2]:
     out = u.copy()
     for i in range(1, u.shape[0] - 1):
@@ -33,27 +32,26 @@ def heat_step(u: Array[f64, 2], alpha: f64) -> Array[f64, 2]:
 
 ## Status
 
-Phase 0, specification and foundation, is nearly done, and the Phase 1 compiler has started. The
-compiler parses source files, rejects the Python constructs the language does not support, and
-reports syntax errors, module errors, undefined names, bad imports and type errors with `baryon
-check`. `baryon build <directory> <output>` compiles a package through LLVM into an executable that
-runs the `main` function in `main.byn`; it handles numbers, control flow, calls, generic functions
-and functions as arguments, structs and traits, arrays and their slices, complex numbers, lists
-and dicts of any type, optionals, `str` values and f-strings, `prange` and `simd` loops, errors,
-`math`, `random.Philox`, `assert` and `print` so far, with `clang` 15 or newer installed, and all six example programs build and run. `baryon run <directory>` builds
-and runs it in one step, and `baryon test <directory>` runs every `@test` function and reports
-which passed. `baryon lsp` is a language server that shows the same diagnostics in any editor with
-a Language Server Protocol client, as you type, along with types and documentation on hover, go to
-definition and completion; the [VS Code extension](editors/vscode/README.md)
-runs it for you and adds syntax highlighting for `.byn` files. `baryon doc` writes a package's
-documentation strings as Markdown pages.
+The compiler is a working prototype. `baryon build <directory> <output>` compiles a package through
+LLVM into a native executable that starts at `main` in `main.byn`, with `clang` 15 or newer
+installed; `baryon run` builds and runs it in one step, `baryon test` runs every `@test` function,
+and `baryon watch` rebuilds on every save. It builds numbers, complex numbers, `str`, lists, dicts,
+tuples, optionals, structs, enums, unions of structs with `match`, traits, generics, functions as
+arguments, errors, arrays with slices, broadcasting and `@`, `prange` and `simd` loops, `with` and
+`for` on a program's own classes, and all seven example programs. The standard library, written
+in Baryon itself, covers `math` (with the double-double `f64x2` and `fsum`), `random.Philox`,
+`stats`, `linalg` and `fft`, `DataFrame` with pandas's names, plotting with `byplot` (SVG, PNG
+and PDF), data files (text tables, `.npy`, FITS, NetCDF and HDF5 through `h5by`), compression
+(`zlib`, `gzip`, `compression.zstd`, `bz2` and `lzma`), and files, paths and processes. `baryon lsp` is a language server for any editor, and
+the [VS Code extension](editors/vscode/README.md) runs it for you; `baryon doc` writes a
+package's documentation strings as Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
 compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
-Release 0.1.0, a review release, is out. Releases are time-based: a new one every two weeks, cut
-from `main`. The next, 0.2.0, due on 2026-11-25, is the first with prebuilt downloads for Linux and macOS
-and the basics of a standard library; [`CHANGELOG.md`](CHANGELOG.md) says what each holds, and the
-[roadmap](ROADMAP.md#releases) says how releases are made.
+Release 0.2.0 is the first with prebuilt downloads for Linux and macOS and the first standard
+libraries. Releases are time-based: a new one every two weeks, cut from `main`.
+[`CHANGELOG.md`](CHANGELOG.md) says what each holds, and the [roadmap](ROADMAP.md#releases) says
+how releases are made.
 
 [`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the
 place to add new ideas. The reasoning behind it is in the
@@ -61,7 +59,11 @@ place to add new ideas. The reasoning behind it is in the
 
 ## Getting started
 
-Install [rustup](https://rustup.rs). The pinned toolchain installs itself on first use.
+To write Baryon programs, follow the [beginner's guide](docs/guide/README.md): it installs
+`baryon`, from a download or from source, and runs a first program.
+
+To work on the compiler, install [rustup](https://rustup.rs). The pinned toolchain installs itself
+on first use.
 
 ```sh
 cargo xtask ci
@@ -78,7 +80,10 @@ cargo install --locked cargo-deny@0.20.2
 
 ## Documentation
 
-New to Baryon? Start with the [beginner's guide](docs/guide/README.md). To try it in an editor,
+New to Baryon? Start with the [beginner's guide](docs/guide/README.md), the first of four pages
+on how to code in Baryon: then [a tour of the language](docs/guide/language-tour.md),
+[arrays and numbers](docs/guide/arrays-and-numbers.md), and
+[data, files and plots](docs/guide/data-files-and-plots.md). To try it in an editor,
 [Coding Baryon in VS Code](docs/guide/vscode.md) sets up VS Code, from building `baryon` to
 running and testing a first program. [`CHANGELOG.md`](CHANGELOG.md) says what each release
 holds.
@@ -102,7 +107,7 @@ contributing to the compiler, or integrating one of its crates.
 | `docs/architecture.md` | Crate kinds and dependency rules |
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan and the AstroBaryon roadmap |
-| `docs/guide/` | The beginner's guide and the VS Code setup guide, both run in CI as written |
+| `docs/guide/` | How to code in Baryon, from installing it to data and plots, and the VS Code setup guide, all run in CI as written |
 | `docs/examples/` | Example programs written in the language |
 | `docs/reference/` | The language reference: what a program may say and what it means |
 | `.github/` | CI workflow and pull request template |
@@ -114,6 +119,9 @@ AI agents start with [`AGENTS.md`](AGENTS.md).
 
 ## License
 
-[Apache License 2.0](LICENSE). Third-party content the repository carries, such as the DejaVu Sans
+Baryon is licensed under either of the [Apache License 2.0](LICENSE) or the
+[MIT License](LICENSE-MIT), at your option ([decision 0055](docs/decisions/0055-dual-license.md)).
+Unless you say otherwise, a contribution you submit is licensed the same way, under both, with no
+further terms. Third-party content the repository carries, such as the DejaVu Sans
 font's outlines, is under its own licenses, listed in
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

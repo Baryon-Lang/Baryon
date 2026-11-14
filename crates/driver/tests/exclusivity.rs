@@ -538,3 +538,78 @@ error: `row` is read after its loop ended
    = note: to keep an element, copy it inside the loop: `last = row.copy()`"
     );
 }
+
+/// An `InOut` argument has exactly its parameter's type (roadmap 1.9.29). A `str` only fits a
+/// `str | None`, and a `Circle` a `Circle | Square`: the function may assign `None` or a
+/// `Square`, which the caller's variable cannot hold, and the layouts differ, so the call
+/// overwrote the caller's value with the wrong shape. A variable declared with the parameter's
+/// type passes.
+#[test]
+fn an_in_out_argument_has_its_parameters_exact_type() {
+    let program = r#"
+class Circle(Struct):
+    r: f64
+
+
+class Square(Struct):
+    side: f64
+
+
+Shape = Circle | Square
+
+
+def reset(x: InOut[str | None]):
+    x = None
+
+
+def grow(n: InOut[f64 | None]):
+    n = 2.0
+
+
+def square(s: InOut[Shape]):
+    s = Square(1.0)
+
+
+def main():
+    a = "ab" + "cd"
+    reset(a)
+    b: str | None = "x" + "y"
+    reset(b)
+    k = 1.0
+    grow(k)
+    c = Circle(1.0)
+    square(c)
+    xs = ["p"]
+    reset(xs[0])
+"#;
+    assert_eq!(
+        check_one(program),
+        "\
+error: `x` is changed by the call, so it must have type `str | None`, found `str`
+  --> main.byn:26:11
+   |
+26 |     reset(a)
+   |           ^ type `str`
+   = note: the function may give it any `str | None`; declare the variable with that type: `a: str | None`
+
+error: `n` is changed by the call, so it must have type `f64 | None`, found `f64`
+  --> main.byn:30:10
+   |
+30 |     grow(k)
+   |          ^ type `f64`
+   = note: the function may give it any `f64 | None`; declare the variable with that type: `k: f64 | None`
+
+error: `s` is changed by the call, so it must have type `Circle | Square`, found `Circle`
+  --> main.byn:32:12
+   |
+32 |     square(c)
+   |            ^ type `Circle`
+   = note: the function may give it any `Circle | Square`; declare the variable with that type: `c: Circle | Square`
+
+error: `x` is changed by the call, so it must have type `str | None`, found `str`
+  --> main.byn:34:11
+   |
+34 |     reset(xs[0])
+   |           ^^^^^ type `str`"
+    );
+}
