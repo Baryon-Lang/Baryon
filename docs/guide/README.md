@@ -31,7 +31,7 @@ there run `sudo apt install clang-15` as well; `baryon` finds `clang-15` by itse
 
 ### Download a prebuilt `baryon`
 
-Prebuilt archives start with release 0.2.0, due on 2026-11-25, for two platforms:
+Prebuilt archives start with release 0.2.0, for two platforms:
 
 | Platform | Archive |
 | --- | --- |
