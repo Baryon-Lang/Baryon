@@ -119,6 +119,7 @@ impl<'db> Builder<'db> {
         }
         let temporary = self.temporary(ty, node);
         self.write(Place::from(temporary), ty, node);
+        self.drop_later(temporary);
         self.take(Place::from(temporary), ty)
     }
 
@@ -143,6 +144,7 @@ impl<'db> Builder<'db> {
         let rvalue = self.coerce(operand, from, to);
         let temporary = self.temporary(to, node);
         self.assign(Place::from(temporary), rvalue, node);
+        self.drop_later(temporary);
         self.take(Place::from(temporary), to)
     }
 
@@ -201,18 +203,23 @@ impl<'db> Builder<'db> {
         }
         match self.tree.kind(node) {
             SyntaxKind::Name => {
-                if let Some(&Definition::Local(binding)) = self.definition(node)
-                    && let Some(element) = self.aliases.get(&binding)
+                let (place, held) = if let Some(&Definition::Local(binding)) = self.definition(node)
+                    && let Some((element, ty)) = self.aliases.get(&binding)
                 {
-                    return Some(element.clone());
-                }
-                let Some(local) = self.variable(node) else {
-                    self.unsupported(node, "names other than variables, parameters and constants");
-                    return None;
+                    (element.clone(), *ty)
+                } else {
+                    let Some(local) = self.variable(node) else {
+                        self.unsupported(
+                            node,
+                            "names other than variables, parameters and constants",
+                        );
+                        return None;
+                    };
+                    (Place::from(local), self.local_type(local))
                 };
-                let held = self.local_type(local);
+                // A loop variable that borrows its element is narrowed as any variable is
+                // (roadmap 1.9.35).
                 let read = self.typed.expression(node);
-                let place = Place::from(local);
                 Some(match read {
                     Some(read) if read != held && self.optional_value(held) == Some(read) => {
                         place.project(Projection::Value)

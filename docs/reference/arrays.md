@@ -333,7 +333,7 @@ set.
 | Method | Result |
 | --- | --- |
 | `a.copy()` | A new contiguous array with the same elements |
-| `a.sum()`, `a.min()`, `a.max()` | The sum, smallest and largest element |
+| `a.sum()`, `a.min()`, `a.max()` | The sum, smallest and largest element. The sum of `bool` elements counts the `True` ones and is an `int`, as in NumPy: `(a > 0.0).sum()` is how many elements are positive |
 | `a.sum(axis=k)`, `a.min(axis=k)`, `a.max(axis=k)` | The sums, smallest and largest elements along axis `k`: an array with that axis removed. See [Reductions along an axis](#reductions-along-an-axis) |
 | `a.mean()`, `a.mean(axis=k)` | The mean of the elements, or of each line along axis `k`, with NumPy's bits. See [Means and variances](#means-and-variances) |
 | `a.var(ddof=0)`, `a.std(ddof=0)`, each with `axis=k` | The variance and standard deviation of float elements, dividing by `n - ddof`, with NumPy's bits |

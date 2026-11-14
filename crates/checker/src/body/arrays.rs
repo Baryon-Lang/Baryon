@@ -363,12 +363,17 @@ impl<'db> Body<'db> {
         if matches!(name, "mean" | "var" | "std") {
             return Some(self.statistic(node, (base, element), name, arguments));
         }
+        let reduced = if name == "sum" {
+            self.summed(element)
+        } else {
+            element
+        };
         Some(match (name, arguments.positional.as_slice()) {
             ("copy" | "round", []) => base,
-            ("sum" | "min" | "max", []) if arguments.keywords.is_empty() => element,
+            ("sum" | "min" | "max", []) if arguments.keywords.is_empty() => reduced,
             ("sum" | "min" | "max", _) => {
                 let axis = self.axis_argument(arguments);
-                self.axis_reduction(node, (base, element), name, axis, arguments)
+                self.axis_reduction(node, (base, reduced), name, axis, arguments)
             }
             ("argsort" | "unique" | "nunique", [])
                 if is_array && rank_one && arguments.keywords.is_empty() =>

@@ -51,6 +51,7 @@ mod lzma;
 mod managers;
 mod math;
 mod modules;
+mod narrowing;
 mod netcdf;
 mod netcdf_writing;
 mod npy;

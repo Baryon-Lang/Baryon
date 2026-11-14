@@ -2,8 +2,9 @@
 //! up through them.
 //!
 //! The rules are Python's. A name bound anywhere in a function, by an assignment, a `for`
-//! target, an `except ... as`, a pattern or an import, is local to the whole function, even
-//! before the binding. A class body is a scope of its own that its methods do not see. A
+//! target, a pattern or an import, is local to the whole function, even before the binding.
+//! The name an `except ... as` binds is local to its clause, as Python deletes it when the
+//! clause ends. A class body is a scope of its own that its methods do not see. A
 //! comprehension's targets are local to the comprehension. Type parameters, `[T]` after a
 //! function or class name, are visible in its signature and body. What is not local comes from
 //! the module's top level, then from the names the language provides.
@@ -24,6 +25,9 @@ pub(crate) enum ScopeKind {
     Class,
     /// A comprehension's targets.
     Comprehension,
+    /// The one name an `except ... as` clause binds, which Python deletes when the clause ends.
+    /// Every other name bound inside the clause belongs to the enclosing scope.
+    Handler,
 }
 
 /// The names bound in one scope.
@@ -75,10 +79,15 @@ impl Scopes {
         self.stack.pop();
     }
 
-    /// The innermost scope, where new bindings go. `None` only before the module scope is
-    /// entered.
-    pub(crate) fn innermost(&mut self) -> Option<&mut Scope> {
-        self.stack.last_mut()
+    /// The scope where a binding of `name` goes: the innermost one, except that a clause's
+    /// [`ScopeKind::Handler`] scope takes only the name it binds, and passes any other to the
+    /// scope around it. `None` only before the module scope is entered.
+    pub(crate) fn binding(&mut self, name: &str) -> Option<&mut Scope> {
+        let index = self
+            .stack
+            .iter()
+            .rposition(|scope| scope.kind != ScopeKind::Handler || scope.get(name).is_some())?;
+        self.stack.get_mut(index)
     }
 
     /// Looks `name` up from the innermost scope outward. A class scope counts only when it is

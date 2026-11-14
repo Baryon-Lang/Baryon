@@ -282,6 +282,7 @@
 
 mod accumulate;
 mod array_files;
+mod array_sums;
 mod arrays;
 mod axes;
 mod builder;

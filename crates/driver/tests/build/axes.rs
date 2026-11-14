@@ -179,3 +179,25 @@ def main():
         "panic: `a.min(axis=0)` of an empty array\n  --> main.byn:5:11\n"
     );
 }
+
+/// A sum of `bool` elements counts the `True` ones and gives an `int`, whole or along an axis,
+/// as `NumPy` does, so `values.isna().sum()` is the number of missing values (roadmap 1.9.36).
+/// Before, the checker typed the sum as a `bool` and the backend could not add two of them.
+#[test]
+fn sums_of_bools_count_the_true_elements() {
+    let program = "\
+def main():
+    grid = Array.ones((2, 3))
+    grid[0, 1] = -1.0
+    mask = grid > 0.0
+    print(mask.sum(axis=0), mask.sum(axis=1), mask.sum())
+    flags = Array([True, False, True])
+    count: int = flags.sum()
+    print(count, flags.sum(axis=0), Array([False]).sum())
+    values: list[f64 | None] = [1.0, None, 3.0, None, None]
+    print(Array(values).isna().sum())
+";
+    let (code, stdout, report) = run("axes-bools", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, "[2 1 2] [2 3] 5\n2 2 0\n3\n");
+}

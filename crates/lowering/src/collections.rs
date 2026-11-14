@@ -274,7 +274,7 @@ impl<'db> Builder<'db> {
         match (self.tree.kind(target), ty.kind(self.db)) {
             (SyntaxKind::Name, _) => {
                 if let Some(&Definition::Local(binding)) = self.definition(target) {
-                    self.aliases.insert(binding, place);
+                    self.aliases.insert(binding, (place, ty));
                 }
             }
             (SyntaxKind::Tuple, TypeKind::Tuple(items)) => {

@@ -448,6 +448,7 @@ fn() -> f64 {
         _2 = NamedError("odd");
         drop(_1);
         _1 = move _2;
+        drop(_2);
         goto -> bb1;
     }
 

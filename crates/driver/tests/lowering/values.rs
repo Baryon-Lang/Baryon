@@ -110,12 +110,13 @@ fn(_1: f64) -> Cell {
     let _5: Cell; // d
     let _6: bool;
     let _7: Bad;
-    let _8: str;
-    let _9: Cell;
-    let _10: str;
-    let _11: Cell;
-    let _12: f64;
-    let _13: Cell;
+    let _8: Bad;
+    let _9: str;
+    let _10: Cell;
+    let _11: str;
+    let _12: Cell;
+    let _13: f64;
+    let _14: Cell;
 
     bb0: {
         _6 = Less(copy _1, 0.0_f64);
@@ -124,38 +125,40 @@ fn(_1: f64) -> Cell {
 
     bb1: {
         _7 = Bad();
+        _8 = move _7;
+        drop(_7);
         drop(_5);
         drop(_3);
         drop(_2);
-        raise move _7;
+        raise move _8;
     }
 
     bb2: {
-        _8 = \"cell\";
+        _9 = \"cell\";
         drop(_2);
-        _2 = move _8;
-        _9 = Cell(move _2, copy _1);
+        _2 = move _9;
+        _10 = Cell(move _2, copy _1);
         drop(_3);
-        _3 = move _9;
+        _3 = move _10;
         _4 = call weigh(_3) -> [return: bb3];
     }
 
     bb3: {
-        _10 = \"other\";
+        _11 = \"other\";
         drop(_2);
-        _2 = move _10;
-        _11 = call keep(owned move _3) -> [return: bb4];
+        _2 = move _11;
+        _12 = call keep(owned move _3) -> [return: bb4];
     }
 
     bb4: {
         drop(_5);
-        _5 = move _11;
-        _13 = Cell(\"x\", 2.0_f64);
-        _12 = call weigh(_13) -> [return: bb5];
+        _5 = move _12;
+        _14 = Cell(\"x\", 2.0_f64);
+        _13 = call weigh(_14) -> [return: bb5];
     }
 
     bb5: {
-        drop(_13);
+        drop(_14);
         _0 = move _5;
         drop(_5);
         drop(_3);

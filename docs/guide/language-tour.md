@@ -396,8 +396,8 @@ not a number: could not convert string to float: 'heavy'
 
 - An error type is a class with the base `Exception` and typed fields, like a struct.
 - `float(text)` raises `ValueError` with Python's message.
-- Give each `except ... as` its own name: a name keeps one type for its whole scope, so the two
-  clauses cannot share `error` as they can in Python.
+- The name after `as` belongs to its `except` block, so two clauses can each call their error
+  `error`, as in Python.
 - `main` may raise too, as `def main() -> Raises[None, OSError]:`. An error that reaches the
   end of `main` prints its message and exits with status 1.
 

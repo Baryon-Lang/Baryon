@@ -954,8 +954,10 @@ ion.energy()    # ion.particle.energy()
 ## Scope and definite assignment
 
 Variables have function scope, as in Python: one assigned inside an `if` or a loop is visible after
-it. A variable may be used only where every path that reaches the use has assigned it; the compiler
-checks this and names the path that does not.
+it. The one exception is the name an `except ... as` binds, which belongs to its `except` block
+(see [Errors](errors.md)), as Python deletes it when the block ends. A variable may be used only
+where every path that reaches the use has assigned it; the compiler checks this and names the path
+that does not.
 
 ```python
 def classify(energy: f64) -> str:
