@@ -125,6 +125,14 @@ def main() -> Raises[None, OSError | ValueError]:
 /// add a few ULP of the largest value they pass through at each degree, so they are held to 8 ULP
 /// for each degree up to the first argument, n, and `lpmv`, whose first argument is the order, to
 /// 64; the worst is about 4 ULP for each degree, for `sph_harm_y` at degree 46.
+///
+/// The nodes of Gauss quadrature, `roots_..._x`, are held to 16 ULP of themselves: Newton's method
+/// on the polynomial leaves 7 at worst. Their weights, `roots_..._w`, are held to 32 ULP for each
+/// node of the rule, the first argument, n: a weight is exact for the node as rounded to `f64`,
+/// and near the end of the interval it changes fast, so one ULP of a node moves it by about
+/// 1/(1 − |x|) ULP, and the outermost node of a rule lies closer to the end the more nodes it
+/// has. The worst is 19 ULP for each node, at n = 150, where `SciPy`'s weights are off by
+/// 1.2 million ULP.
 fn tolerance(name: &str, want: f64, first: f64) -> f64 {
     let logarithm = 1.0 + want.abs().ln().abs();
     let shape = first.abs().clamp(1e-3, 1.0);
@@ -146,6 +154,8 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         | "stdtr" | "stdtrit" | "kolmogorov" | "kolmogi" | "smirnov" | "smirnovi" | "owens_t" => {
             32.0 * logarithm
         }
+        _ if name.starts_with("roots_") && name.ends_with("_w") => 32.0 * first,
+        _ if name.starts_with("roots_") => 16.0,
         _ => 8.0,
     }
 }
