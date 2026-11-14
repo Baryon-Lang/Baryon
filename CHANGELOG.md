@@ -122,6 +122,12 @@ library at run time, and keeps the Python or NumPy names its users already know.
 - **[Statistics](docs/reference/statistics.md)** ([decision 0042](docs/decisions/0042-statistics.md)):
   `stats.median`, `quantile`, `percentile`, `average`, `histogram`, `cov` and `corrcoef`, with
   NumPy's bits.
+- **[Special functions](docs/reference/special-functions.md)**
+  ([decision 0054](docs/decisions/0054-scipy-module-names.md)): a top-level `special` module with
+  SciPy's gamma family (`gamma`, `gammaln`, `loggamma`, `digamma`, `polygamma`, `beta`, `poch` and
+  more) and error functions (`erf`, `erfc`, `erfcx`, `erfinv`, `ndtr`, `ndtri`, `dawsn` and more),
+  tested against high-precision values. The rest of SciPy's special functions follow (roadmap
+  3.18).
 - **[Data files](docs/reference/data-files.md)**: text tables with `Array.loadtxt` and `savetxt`,
   raw arrays with `Array.fromfile` and `a.tofile`, NumPy's `.npy` with `Array.load` and `save`
   ([decision 0043](docs/decisions/0043-array-data-files.md)); FITS images and headers with
@@ -194,7 +200,7 @@ Decisions 0031 to 0052 were accepted between the two releases; the
 
 - [What builds today](docs/reference/status.md) lists what `baryon check` accepts that the
   compiler does not build yet, such as CSV and Parquet files, missing values in tables, writing
-  HDF5 and the `scipy`-style libraries. Each is reported as an error that names it, never
+  HDF5, and most of the libraries SciPy users expect beyond `special`. Each is reported as an error that names it, never
   miscompiled.
 - Two bugs found while checking the documentation stay open: in a `for` loop over a list of paths,
   reading `entry.name` gives a false "moved" error (roadmap 1.9.31), and a `try` cannot reuse one
