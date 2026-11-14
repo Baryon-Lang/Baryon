@@ -2,11 +2,12 @@
 
 `gamma_family.txt`, `error_functions.txt`, `bessel_functions.txt`, `incomplete_functions.txt`,
 `distribution_functions.txt`, `helper_functions.txt`, `integral_functions.txt` and `lambertw.txt`
-hold the cases the build tests in [`../../build/special.rs`](../../build/special.rs) check the
-`special` module's gamma family (roadmap 3.18.1), error functions (3.18.3), Bessel functions of
-whole order (3.18.4), incomplete gamma and beta functions (3.18.2), distribution functions
-(3.18.12), everyday helpers (3.18.11), exponential integrals, zeta and Spence's function
-(3.18.11) and Lambert W function (3.18.11) against. Each line is a
+hold the cases the build tests check the `special` module against: those in
+[`../../build/special.rs`](../../build/special.rs) its gamma family (roadmap 3.18.1), error
+functions (3.18.3), Bessel functions of whole order (3.18.4), incomplete gamma and beta
+functions (3.18.2) and distribution functions (3.18.12), and those in
+[`../../build/special_everyday.rs`](../../build/special_everyday.rs) its everyday helpers,
+exponential integrals, zeta and Spence's function, and Lambert W function (3.18.11). Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
