@@ -1,5 +1,6 @@
-//! Methods of generic structs, `Callable` parameters passed on, and arguments to generic
-//! parameters, built and run (roadmap 1.9.18, decision 0026).
+//! Generic functions built at each type they are called at (roadmap 1.9.5), methods of
+//! generic structs, `Callable` parameters passed on, and arguments to generic parameters,
+//! built and run (roadmap 1.9.18, decision 0026).
 
 use super::{baryon_build, package, stderr};
 use std::io;
@@ -263,4 +264,29 @@ def main():
         output("generic-class-functions", program).unwrap(),
         "1.5 3.0 4 2\n['hi'] [3]\n"
     );
+}
+
+/// A generic function compiles once per type it is called at (roadmap 1.9.5): `twice` and the
+/// `square` it calls each at `f64` and at `i64`, with the literal `2` an `f64` in one and an
+/// `i64` in the other.
+#[test]
+fn generic_functions_build_at_each_type() {
+    let program = "\
+def square[T: Number](x: T) -> T:
+    return x * x
+
+
+def twice[T: Number](x: T) -> T:
+    return square(x) * 2 - x
+
+
+def main():
+    print(twice(3.0), twice(4))
+";
+    let directory = package("generics", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), "15.0 28\n");
 }
