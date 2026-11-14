@@ -32,6 +32,11 @@ names it adds where Python has no spelling.
   the same wherever the file sits.
 - A name starting with `_` is private to its module: importing it, or reading it as
   `module._name`, is an error.
+- A name a module imports can be imported from that module in turn, as in Python. The standard
+  library is stricter: a library file's imports stay its own unless written as a re-export,
+  `from special_gamma import gamma as gamma`, Python's spelling of one, so `special` offers
+  `gamma` but not the `exp` its files import from `math`
+  ([decision 0062](../decisions/0062-standard-library-reexports.md)).
 
 - A string literal as the first statement of a module, function or class is its documentation, as
   in Python. A string literal right after a `Final` constant or a field documents that constant or

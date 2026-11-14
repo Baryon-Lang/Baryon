@@ -1,0 +1,64 @@
+"""Helpers every family of `special` shares: whole-number tests and `sinpi` and `cospi`,
+the sine and cosine of πx exact at whole and half numbers.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import cos, floor, fmod, pi, sin
+
+
+HALF_LOG_TWO_PI: Final = 0.9189385332046728  # log(2π) / 2
+_TWO_52: Final = 4503599627370496.0  # 2^52: every f64 at least this large is a whole number
+LARGEST_GAMMA: Final = 171.62437695630272  # `gamma` overflows above this argument
+EULER: Final = 0.5772156649015329  # Euler's constant γ
+
+
+def is_integer(x: f64) -> bool:
+    """Whether the finite `x` is a whole number."""
+    if abs(x) >= _TWO_52:
+        return True
+    return x == float(floor(x))
+
+
+def is_odd(x: f64) -> bool:
+    """Whether the whole number `x` is odd. Every f64 from 2^53 up is even."""
+    if abs(x) >= 2.0 * _TWO_52:
+        return False
+    return fmod(x, 2.0) != 0.0
+
+
+def sinpi(x: f64) -> f64:
+    """sin(πx), exact at whole and half numbers and accurate for large `x`, where `sin(pi * x)`
+    would lose every digit to the rounding of `pi * x`.
+
+    Reduces `|x|` modulo 2 with `fmod`, which is exact, and then to within a quarter of a
+    zero or an extremum, where each subtraction is exact.
+    """
+    y = fmod(abs(x), 2.0)
+    if y < 0.25:
+        value = sin(pi * y)
+    elif y < 0.75:
+        value = cos(pi * (y - 0.5))
+    elif y < 1.25:
+        value = -sin(pi * (y - 1.0))
+    elif y < 1.75:
+        value = -cos(pi * (y - 1.5))
+    else:
+        value = sin(pi * (y - 2.0))
+    if x < 0.0:
+        return -value
+    return value
+
+
+def cospi(x: f64) -> f64:
+    """cos(πx), exact at whole and half numbers, reduced as `sinpi` reduces."""
+    y = fmod(abs(x), 2.0)
+    if y < 0.25:
+        return cos(pi * y)
+    if y < 0.75:
+        return -sin(pi * (y - 0.5))
+    if y < 1.25:
+        return -cos(pi * (y - 1.0))
+    if y < 1.75:
+        return sin(pi * (y - 1.5))
+    return cos(pi * (y - 2.0))

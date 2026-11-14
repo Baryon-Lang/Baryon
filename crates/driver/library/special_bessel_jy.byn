@@ -1,0 +1,344 @@
+"""Bessel functions of the first and second kinds and integer order for `special` (roadmap
+3.18.4): `j0`, `j1`, `jn`, `y0`, `y1` and `yn`.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import cos, floor, inf, isinf, isnan, log, nan, pi, sin, sqrt
+from special_common import EULER
+
+
+def _bessel_j_series(order: int, x: f64) -> f64:
+    """Jₙ(x) for |x| up to 2 by its power series (x/2)ⁿ Σ (−x²/4)ᵏ / (k! (k + n)!), whose
+    largest term is the first, so nothing cancels."""
+    w = -0.25 * x * x
+    term = 1.0
+    for k in range(1, order + 1):
+        term *= 0.5 * x / k
+    total = term
+    for k in range(1, 40):
+        term *= w / (k * (k + order))
+        total += term
+        if abs(term) <= 1.0e-17 * abs(total):
+            break
+    return total
+
+
+def _bessel_j_ladder(x: f64) -> Array[f64, 1]:
+    """J₀(x), J₁(x), … for `x` from 2 to 25, by Miller's backward recurrence
+    Jₖ₋₁ = (2k/x) Jₖ − Jₖ₊₁, started far enough above `x` that the start's error has died
+    away, and scaled so that J₀ + 2 Σ J₂ₖ = 1.
+
+    Returns the whole ladder, from J₀ to the start, so `y0` and `y1` can sum their Neumann
+    series over it. Backward recurrence is stable for J, whose values fall as the order rises
+    past `x`.
+    """
+    top = 2 * floor(0.5 * x + 15.0 + sqrt(x))
+    ladder = Array.zeros(top + 2)
+    ladder[top] = 1.0e-300
+    for k in range(top, 0, -1):
+        ladder[k - 1] = 2.0 * k / x * ladder[k] - ladder[k + 1]
+        if abs(ladder[k - 1]) > 1.0e250:
+            for i in range(k - 1, top + 1):
+                ladder[i] *= 1.0e-250
+    norm = ladder[0]
+    for k in range(2, top + 1, 2):
+        norm += 2.0 * ladder[k]
+    for k in range(top + 2):
+        ladder[k] /= norm
+    return ladder
+
+
+def _bessel_hankel(order: int, x: f64) -> tuple[f64, f64]:
+    """Jₙ(x) and Yₙ(x) for `n` 0 or 1 and `x` from 25 up, by Hankel's asymptotic expansion
+    √(2/(πx)) (P cos χ − Q sin χ) and √(2/(πx)) (P sin χ + Q cos χ), χ = x − (2n + 1)π/4.
+
+    The terms of P and Q fall below 1e-18 before they start to grow, since the smallest is
+    about exp(−2x). cos χ and sin χ are formed from `cos(x)` and `sin(x)`, whose argument is
+    exact, so χ is never rounded; near a zero the result is accurate to a few ULP of the
+    envelope √(2/(πx)) rather than of itself.
+    """
+    mu = 4.0 * order * order
+    z = 8.0 * x
+    p = 1.0
+    q = 0.0
+    term = 1.0
+    for k in range(1, 60):
+        term *= (mu - (2.0 * k - 1.0) * (2.0 * k - 1.0)) / (k * z)
+        if k % 4 == 1:
+            q += term
+        elif k % 4 == 2:
+            p -= term
+        elif k % 4 == 3:
+            q -= term
+        else:
+            p += term
+        if abs(term) <= 1.0e-18:
+            break
+    cosine = cos(x)
+    sine = sin(x)
+    if order == 0:
+        along = cosine + sine
+        across = sine - cosine
+    else:
+        along = sine - cosine
+        across = -sine - cosine
+    scale = sqrt(1.0 / (pi * x))
+    return (scale * (p * along - q * across), scale * (p * across + q * along))
+
+
+def j0(x: f64) -> f64:
+    """The Bessel function of the first kind of order 0, J₀(x), as `scipy.special.j0`.
+
+    An even function, 1 at 0, oscillating with an envelope √(2/(πx)) far out. The power series
+    below |x| = 2, Miller's backward recurrence to 25 and Hankel's expansion beyond; near a
+    zero away from 0 the error is a few ULP of the envelope, not of the value itself.
+
+    ```python
+    from special import j0
+
+    print(j0(1.0))  # 0.7651976865579666
+    ```
+    """
+    if isnan(x):
+        return nan
+    size = abs(x)
+    if size <= 2.0:
+        return _bessel_j_series(0, size)
+    if size < 25.0:
+        return _bessel_j_ladder(size)[0]
+    if isinf(size):
+        return 0.0
+    first, _ = _bessel_hankel(0, size)
+    return first
+
+
+def j1(x: f64) -> f64:
+    """The Bessel function of the first kind of order 1, J₁(x), as `scipy.special.j1`: an odd
+    function, 0 at 0, computed as `j0` is.
+
+    ```python
+    from special import j1
+
+    print(j1(1.0))  # 0.44005058574493355
+    ```
+    """
+    if isnan(x):
+        return nan
+    size = abs(x)
+    if size <= 2.0:
+        value = _bessel_j_series(1, size)
+    elif size < 25.0:
+        value = _bessel_j_ladder(size)[1]
+    elif isinf(size):
+        value = 0.0
+    else:
+        value, _ = _bessel_hankel(1, size)
+    if x < 0.0:
+        return -value
+    return value
+
+
+def _bessel_y_small(order: int, x: f64) -> f64:
+    """Y₀(x) or Y₁(x) for `x` above 0 up to 2, from the series of J and the logarithmic
+    series of Y: Y₀ = (2/π)(log(x/2) + γ) J₀ + (2/π) Σ (−1)ᵏ⁺¹ Hₖ (x²/4)ᵏ / (k!)², and
+    Y₁ = (2/π)(log(x/2) J₁ − 1/x) − (x/(2π)) Σ (ψ(k + 1) + ψ(k + 2)) (−x²/4)ᵏ / (k! (k + 1)!),
+    Hₖ being the harmonic numbers."""
+    logarithm = log(0.5 * x) + EULER
+    w = -0.25 * x * x
+    if order == 0:
+        term = 1.0
+        harmonic = 0.0
+        total = 0.0
+        for k in range(1, 40):
+            term *= w / (k * k)
+            harmonic += 1.0 / k
+            total -= term * harmonic
+            if abs(term * harmonic) <= 1.0e-17 * abs(total):
+                break
+        return 2.0 / pi * (logarithm * _bessel_j_series(0, x) + total)
+    term = 1.0
+    digammas = 1.0 - 2.0 * EULER
+    total = digammas
+    for k in range(1, 40):
+        term *= w / (k * (k + 1))
+        digammas += 1.0 / k + 1.0 / (k + 1)
+        total += term * digammas
+        if abs(term * digammas) <= 1.0e-17 * abs(total):
+            break
+    plain = log(0.5 * x)
+    return 2.0 / pi * (plain * _bessel_j_series(1, x) - 1.0 / x) - x / (2.0 * pi) * total
+
+
+def _bessel_y_ladder(x: f64) -> tuple[f64, f64]:
+    """Y₀(x) and Y₁(x) for `x` from 2 to 25, by Neumann's series over the ladder of J that
+    `_bessel_j_ladder` gives: Y₀ = (2/π)(log(x/2) + γ) J₀ − (4/π) Σ (−1)ᵏ J₂ₖ / k, and Y₁ its
+    derivative's negative, (2/π)((log(x/2) + γ) J₁ − J₀/x) + (2/π) Σ (−1)ᵏ (J₂ₖ₋₁ − J₂ₖ₊₁) / k."""
+    ladder = _bessel_j_ladder(x)
+    logarithm = log(0.5 * x) + EULER
+    even = 0.0
+    odd = 0.0
+    for k in range(1, len(ladder) // 2 - 1):
+        sign = 1.0
+        if k % 2 == 1:
+            sign = -1.0
+        even += sign * ladder[2 * k] / k
+        odd += sign * (ladder[2 * k - 1] - ladder[2 * k + 1]) / k
+    zeroth = 2.0 / pi * logarithm * ladder[0] - 4.0 / pi * even
+    first = 2.0 / pi * (logarithm * ladder[1] - ladder[0] / x) + 2.0 / pi * odd
+    return (zeroth, first)
+
+
+def y0(x: f64) -> f64:
+    """The Bessel function of the second kind of order 0, Y₀(x), as `scipy.special.y0`.
+
+    −∞ at 0 and NaN below 0, as SciPy gives. Accurate to a few ULP of the envelope
+    √(2/(πx)) away from 0, as `j0` is.
+
+    ```python
+    from special import y0
+
+    print(y0(1.0))  # 0.088256964215677
+    ```
+    """
+    if isnan(x) or x < 0.0:
+        return nan
+    if x == 0.0:
+        return -inf
+    if x <= 2.0:
+        return _bessel_y_small(0, x)
+    if x < 25.0:
+        zeroth, _ = _bessel_y_ladder(x)
+        return zeroth
+    if isinf(x):
+        return 0.0
+    _, second = _bessel_hankel(0, x)
+    return second
+
+
+def y1(x: f64) -> f64:
+    """The Bessel function of the second kind of order 1, Y₁(x), as `scipy.special.y1`: about
+    −2/(πx) near 0, −∞ at 0 and NaN below 0.
+
+    ```python
+    from special import y1
+
+    print(y1(1.0))  # -0.7812128213002887
+    ```
+    """
+    if isnan(x) or x < 0.0:
+        return nan
+    if x == 0.0:
+        return -inf
+    if x <= 2.0:
+        return _bessel_y_small(1, x)
+    if x < 25.0:
+        _, first = _bessel_y_ladder(x)
+        return first
+    if isinf(x):
+        return 0.0
+    _, second = _bessel_hankel(1, x)
+    return second
+
+
+def jn(n: int, x: f64) -> f64:
+    """The Bessel function of the first kind of whole order `n`, Jₙ(x), as `scipy.special.jn`.
+
+    Upward recurrence from J₀ and J₁ while the order is below |x|, where it is stable, and
+    Miller's backward recurrence above, normalized by J₀ + 2 Σ J₂ₖ = 1. J₋ₙ = (−1)ⁿ Jₙ.
+
+    ```python
+    from special import jn
+
+    print(jn(5, 2.0))   # 0.007039629755871685
+    ```
+    """
+    if isnan(x):
+        return nan
+    if n < 0:
+        if n % 2 == 0:
+            return jn(-n, x)
+        return -jn(-n, x)
+    if n == 0:
+        return j0(x)
+    if n == 1:
+        return j1(x)
+    if x == 0.0:
+        return 0.0
+    if isinf(x):
+        return 0.0
+    size = abs(x)
+    if n < size:
+        before = j0(size)
+        current = j1(size)
+        for k in range(1, n):
+            after = 2.0 * k / size * current - before
+            before = current
+            current = after
+        value = current
+    else:
+        value = _bessel_j_high(n, size)
+    if x < 0.0 and n % 2 == 1:
+        return -value
+    return value
+
+
+def _bessel_j_high(n: int, x: f64) -> f64:
+    """Jₙ(x) for an order `n` from 2 up and at least `x`, by Miller's backward recurrence from
+    an order well above both, normalized by J₀ + 2 Σ J₂ₖ = 1."""
+    top = 2 * floor(0.5 * (n + x) + 15.0 + sqrt(n + x))
+    above = 0.0
+    current = 1.0e-300
+    norm = 0.0
+    wanted = 0.0
+    for k in range(top, 0, -1):
+        below = 2.0 * k / x * current - above
+        above = current
+        current = below
+        if k - 1 == n:
+            wanted = current
+        if (k - 1) % 2 == 0 and k - 1 > 0:
+            norm += 2.0 * current
+        if abs(current) > 1.0e250:
+            current *= 1.0e-250
+            above *= 1.0e-250
+            norm *= 1.0e-250
+            wanted *= 1.0e-250
+    norm += current
+    return wanted / norm
+
+
+def yn(n: int, x: f64) -> f64:
+    """The Bessel function of the second kind of whole order `n`, Yₙ(x), as
+    `scipy.special.yn`, by upward recurrence from Y₀ and Y₁, which is stable for Y at every
+    order. Y₋ₙ = (−1)ⁿ Yₙ; −∞ at 0 and NaN below 0.
+
+    ```python
+    from special import yn
+
+    print(yn(3, 2.0))   # -1.1277837768404282
+    ```
+    """
+    if n < 0:
+        if n % 2 == 0:
+            return yn(-n, x)
+        return -yn(-n, x)
+    if n == 0:
+        return y0(x)
+    if n == 1:
+        return y1(x)
+    if isnan(x) or x < 0.0:
+        return nan
+    if x == 0.0:
+        return -inf
+    if isinf(x):
+        return 0.0
+    before = y0(x)
+    current = y1(x)
+    for k in range(1, n):
+        after = 2.0 * k / x * current - before
+        before = current
+        current = after
+        if isinf(current):
+            break
+    return current

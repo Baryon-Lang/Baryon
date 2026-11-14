@@ -1,0 +1,281 @@
+"""Modified Bessel functions of integer order for `special` (roadmap 3.18.4): `i0`, `i1`,
+`i0e`, `i1e`, `k0`, `k1`, `k0e`, `k1e` and `kn`.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, inf, isinf, isnan, log, nan, pi, cosh, sinh, sqrt
+from special_common import EULER
+
+
+def _bessel_i_scaled_series(order: int, x: f64) -> f64:
+    """Iₙ(x) e⁻ˣ for `n` 0 or 1 and `x` from 0 up to 20, by the power series of Iₙ, whose
+    terms are all positive, times e⁻ˣ."""
+    w = 0.25 * x * x
+    term = 1.0
+    if order == 1:
+        term = 0.5 * x
+    total = term
+    for k in range(1, 80):
+        term *= w / (k * (k + order))
+        total += term
+        if term <= 1.0e-17 * total:
+            break
+    return total * exp(-x)
+
+
+def _bessel_asymptotic(order: int, x: f64, sign: f64) -> f64:
+    """The asymptotic series Σ aₖ(n) / xᵏ shared by Iₙ e⁻ˣ (with `sign` −1) and Kₙ eˣ (with
+    `sign` 1) from x = 20 up, aₖ = Π (4n² − (2j − 1)²) / (k! 8ᵏ), stopped when a term falls
+    below 1e-18; the smallest term is about exp(−2x)."""
+    mu = 4.0 * order * order
+    z = 8.0 * x
+    term = 1.0
+    total = 1.0
+    for k in range(1, 80):
+        term *= sign * (mu - (2.0 * k - 1.0) * (2.0 * k - 1.0)) / (k * z)
+        total += term
+        if abs(term) <= 1.0e-18:
+            break
+    return total
+
+
+def i0e(x: f64) -> f64:
+    """The exponentially scaled modified Bessel function of order 0, I₀(x) e^−|x|, as
+    `scipy.special.i0e`: finite for every `x`, about 1/√(2π|x|) far out.
+
+    ```python
+    from special import i0e
+
+    print(i0e(1.0))     # 0.4657596075936404
+    ```
+    """
+    if isnan(x):
+        return nan
+    size = abs(x)
+    if size < 20.0:
+        return _bessel_i_scaled_series(0, size)
+    if isinf(size):
+        return 0.0
+    return _bessel_asymptotic(0, size, -1.0) / sqrt(2.0 * pi * size)
+
+
+def i1e(x: f64) -> f64:
+    """The exponentially scaled modified Bessel function of order 1, I₁(x) e^−|x|, as
+    `scipy.special.i1e`: an odd function.
+
+    ```python
+    from special import i1e
+
+    print(i1e(1.0))     # 0.20791041534970847
+    ```
+    """
+    if isnan(x):
+        return nan
+    size = abs(x)
+    if size < 20.0:
+        value = _bessel_i_scaled_series(1, size)
+    elif isinf(size):
+        value = 0.0
+    else:
+        value = _bessel_asymptotic(1, size, -1.0) / sqrt(2.0 * pi * size)
+    if x < 0.0:
+        return -value
+    return value
+
+
+def i0(x: f64) -> f64:
+    """The modified Bessel function of the first kind of order 0, I₀(x), as
+    `scipy.special.i0`: `i0e(x)` times e^|x|, so it overflows above about 713.
+
+    ```python
+    from special import i0
+
+    print(i0(1.0))  # 1.2660658777520082
+    ```
+    """
+    if isnan(x):
+        return nan
+    size = abs(x)
+    if isinf(size):
+        return inf
+    if size < 700.0:
+        return i0e(size) * exp(size)
+    half = exp(0.5 * size)
+    return i0e(size) * half * half
+
+
+def i1(x: f64) -> f64:
+    """The modified Bessel function of the first kind of order 1, I₁(x), as
+    `scipy.special.i1`: `i1e(x)` times e^|x|.
+
+    ```python
+    from special import i1
+
+    print(i1(1.0))  # 0.5651591039924851
+    ```
+    """
+    if isnan(x):
+        return nan
+    if isinf(x):
+        return x
+    size = abs(x)
+    half = exp(0.5 * size)
+    return i1e(x) * half * half
+
+
+def _bessel_k_small(order: int, x: f64) -> f64:
+    """K₀(x) or K₁(x) for `x` above 0 up to 0.5, by their logarithmic series:
+    K₀ = −(log(x/2) + γ) I₀ + Σ Hₖ (x²/4)ᵏ / (k!)², and
+    K₁ = 1/x + log(x/2) I₁ − (x/4) Σ (ψ(k + 1) + ψ(k + 2)) (x²/4)ᵏ / (k! (k + 1)!)."""
+    logarithm = log(0.5 * x)
+    w = 0.25 * x * x
+    if order == 0:
+        term = 1.0
+        harmonic = 0.0
+        total = 0.0
+        for k in range(1, 40):
+            term *= w / (k * k)
+            harmonic += 1.0 / k
+            total += term * harmonic
+            if term * harmonic <= 1.0e-17 * total:
+                break
+        return -(logarithm + EULER) * _bessel_i_scaled_series(0, x) * exp(x) + total
+    term = 1.0
+    digammas = 1.0 - 2.0 * EULER
+    total = digammas
+    for k in range(1, 40):
+        term *= w / (k * (k + 1))
+        digammas += 1.0 / k + 1.0 / (k + 1)
+        total += term * digammas
+        if abs(term * digammas) <= 1.0e-17 * abs(total):
+            break
+    return 1.0 / x + logarithm * _bessel_i_scaled_series(1, x) * exp(x) - 0.25 * x * total
+
+
+def _bessel_k_scaled_integral(order: int, x: f64) -> f64:
+    """Kₙ(x) eˣ for `n` 0 or 1 and `x` from 0.5 to 20, by the trapezoid rule on
+    Kₙ(x) eˣ = ∫₀^∞ exp(−2x sinh²(t/2)) cosh(nt) dt with steps of 0.1.
+
+    The integrand is analytic and falls faster than exponentially, so the trapezoid rule's
+    error falls as exp(−π²/h) for a step h: about 1e-43 at 0.1, far below a ULP. Writing
+    cosh t − 1 as 2 sinh²(t/2) keeps the exponent's precision near t = 0. Between 18 and 80
+    points are summed.
+    """
+    step = 0.1
+    total = 0.5
+    for k in range(1, 400):
+        t = k * step
+        half = sinh(0.5 * t)
+        value = exp(-2.0 * x * half * half)
+        if order == 1:
+            value *= cosh(t)
+        total += value
+        if value <= 1.0e-18 * total:
+            break
+    return total * step
+
+
+def k0e(x: f64) -> f64:
+    """The exponentially scaled modified Bessel function of the second kind of order 0,
+    K₀(x) eˣ, as `scipy.special.k0e`: about √(π/(2x)) far out, ∞ at 0 and NaN below 0.
+
+    ```python
+    from special import k0e
+
+    print(k0e(1.0))     # 1.144463079806895
+    ```
+    """
+    if isnan(x) or x < 0.0:
+        return nan
+    if x == 0.0:
+        return inf
+    if x <= 0.5:
+        return _bessel_k_small(0, x) * exp(x)
+    if x < 20.0:
+        return _bessel_k_scaled_integral(0, x)
+    return _bessel_asymptotic(0, x, 1.0) * sqrt(0.5 * pi / x)
+
+
+def k1e(x: f64) -> f64:
+    """The exponentially scaled modified Bessel function of the second kind of order 1,
+    K₁(x) eˣ, as `scipy.special.k1e`: about 1/x near 0, ∞ at 0 and NaN below 0.
+
+    ```python
+    from special import k1e
+
+    print(k1e(1.0))     # 1.6361534862632585
+    ```
+    """
+    if isnan(x) or x < 0.0:
+        return nan
+    if x == 0.0:
+        return inf
+    if x <= 0.5:
+        return _bessel_k_small(1, x) * exp(x)
+    if x < 20.0:
+        return _bessel_k_scaled_integral(1, x)
+    return _bessel_asymptotic(1, x, 1.0) * sqrt(0.5 * pi / x)
+
+
+def k0(x: f64) -> f64:
+    """The modified Bessel function of the second kind of order 0, K₀(x), as
+    `scipy.special.k0`: `k0e(x)` times e⁻ˣ, so it underflows to 0 above about 745.
+
+    ```python
+    from special import k0
+
+    print(k0(1.0))  # 0.42102443824070834
+    ```
+    """
+    if x > 0.0 and x <= 0.5:
+        return _bessel_k_small(0, x)
+    half = exp(-0.5 * x)
+    return k0e(x) * half * half
+
+
+def k1(x: f64) -> f64:
+    """The modified Bessel function of the second kind of order 1, K₁(x), as
+    `scipy.special.k1`: `k1e(x)` times e⁻ˣ.
+
+    ```python
+    from special import k1
+
+    print(k1(1.0))  # 0.6019072301972347
+    ```
+    """
+    if x > 0.0 and x <= 0.5:
+        return _bessel_k_small(1, x)
+    half = exp(-0.5 * x)
+    return k1e(x) * half * half
+
+
+def kn(n: int, x: f64) -> f64:
+    """The modified Bessel function of the second kind of whole order `n`, Kₙ(x), as
+    `scipy.special.kn`, by upward recurrence Kₖ₊₁ = Kₖ₋₁ + (2k/x) Kₖ from K₀ and K₁, which is
+    stable for K. K₋ₙ = Kₙ; ∞ at 0 and NaN below 0.
+
+    ```python
+    from special import kn
+
+    print(kn(3, 2.0))   # 0.6473853909486341
+    ```
+    """
+    if n < 0:
+        return kn(-n, x)
+    if n == 0:
+        return k0(x)
+    if isnan(x) or x < 0.0:
+        return nan
+    if x == 0.0:
+        return inf
+    scaled_before = k0e(x)
+    scaled = k1e(x)
+    for k in range(1, n):
+        after = scaled_before + 2.0 * k / x * scaled
+        scaled_before = scaled
+        scaled = after
+        if isinf(scaled):
+            return inf
+    half = exp(-0.5 * x)
+    return scaled * half * half

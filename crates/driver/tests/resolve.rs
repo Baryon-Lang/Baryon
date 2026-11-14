@@ -208,6 +208,62 @@ fn a_program_module_named_as_a_plotting_helper_is_its_own() {
     );
 }
 
+/// A standard module's public file re-exports names from internal files with
+/// `from special_gamma import gamma as gamma` (decision 0062): a program finds them by
+/// `from special import` and by `special.`, the internal files stay hidden, and a program's own
+/// module named as one is the one it imports, while `special` still finds the library's.
+#[test]
+fn a_standard_module_reexports_from_its_internal_files() {
+    let program = "import special\nfrom special import gamma, j0\n\n\ndef main():\n    print(gamma(4.0), j0(0.0), special.erf(1.0), special.kn(2, 1.0))\n";
+    assert_eq!(check_one(program), "");
+    let typed = "from special import gamma\n\n\ndef main():\n    label: str = gamma(4.0)\n    print(label)\n";
+    assert_eq!(
+        check_one(typed),
+        "error: expected `str`, found `f64`\n --> main.byn:5:18\n  |\n5 |     label: str = gamma(4.0)\n  |                  ^^^^^^^^^^ the annotation says `str`"
+    );
+    assert_eq!(
+        check_one("from special_gamma import gamma\n"),
+        "error: no module named `special_gamma`\n --> main.byn:1:6\n  |\n1 | from special_gamma import gamma\n  |      ^^^^^^^^^^^^^ no such module"
+    );
+    let mine = "def gamma() -> str:\n    return \"mine\"\n";
+    let program = "from special import erf\nfrom special_gamma import gamma\n\n\ndef main():\n    print(gamma(), erf(1.0))\n";
+    assert_eq!(
+        check(&[("special_gamma.byn", mine), ("main.byn", program)]),
+        ""
+    );
+}
+
+/// Only the re-export form passes a name on from a standard-library file (decision 0062). A
+/// plain import stays the file's own: `byplot` imports `save_axes` from its internal `figure`,
+/// and `linalg` imports `sqrt` from `math`, and neither name is `byplot`'s or `linalg`'s. Had
+/// either import been followed, the call would have the found function's type and the `str`
+/// annotations below would be errors; a name a standard module does not define is left for
+/// lowering to report.
+#[test]
+fn a_plain_import_in_a_standard_file_is_not_reexported() {
+    let helper = "from byplot import save_axes\n\n\ndef main():\n    label: str = save_axes(1)\n    print(label)\n";
+    assert_eq!(check_one(helper), "");
+    let standard = "import linalg\nfrom linalg import sqrt\n\n\ndef main():\n    label: str = sqrt(4.0)\n    other: str = linalg.sqrt(4.0)\n    print(label, other)\n";
+    assert_eq!(check_one(standard), "");
+}
+
+/// A program's own modules pass on every name they import, with or without `as`, as Python's
+/// do and as they did before decision 0062: the re-export rule is the standard library's only.
+#[test]
+fn a_program_module_passes_on_what_it_imports() {
+    let source = "def mass() -> f64:\n    return 1.0\n\n\ndef charge() -> f64:\n    return 2.0\n";
+    let middle = "from source import mass\nfrom source import charge as charge\n";
+    let program = "from middle import charge, mass\n\n\ndef main():\n    first: str = mass()\n    second: str = charge()\n    print(first, second)\n";
+    assert_eq!(
+        check(&[
+            ("source.byn", source),
+            ("middle.byn", middle),
+            ("main.byn", program)
+        ]),
+        "error: expected `str`, found `f64`\n --> main.byn:5:18\n  |\n5 |     first: str = mass()\n  |                  ^^^^^^ the annotation says `str`\n\nerror: expected `str`, found `f64`\n --> main.byn:6:19\n  |\n6 |     second: str = charge()\n  |                   ^^^^^^^^ the annotation says `str`"
+    );
+}
+
 /// A program's module named as a standard module can never be imported, so importing that name
 /// says so, instead of failing later on a member the standard module lacks.
 #[test]
