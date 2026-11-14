@@ -127,6 +127,11 @@ impl<'db> Body<'db> {
             None => self.lowerer.unknown(),
         };
         let value = self.tree.child(statement, Role::Value);
+        if let (Some(target), Some(value)) = (self.tree.child(statement, Role::Target), value)
+            && matches!(ty.kind(self.db), TypeKind::Callable { .. })
+        {
+            return self.annotated_function(target, value, ty);
+        }
         if let Some(target) = self.tree.child(statement, Role::Target) {
             self.bind(target, ty, None);
             if value.is_none()
@@ -141,6 +146,22 @@ impl<'db> Body<'db> {
             self.consume(value, found);
             self.expect(value, ty, found, "the annotation says");
         }
+    }
+
+    /// `target: Callable[...] = value`, such as `f: Callable[[f64], f64] = sq`. The local takes
+    /// the type of the function assigned, `sq`'s own type, as `f = sq` does (decision 0026), so
+    /// the function is known when compiling and passing `f` on calls `sq` directly. The
+    /// annotation only checks the signature. Assigning another function later is then the
+    /// usual "a variable keeps one type" error, as for `f = sq`.
+    fn annotated_function(&mut self, target: NodeId, value: NodeId, ty: Type<'db>) {
+        let found = self.expression(value, Some(ty));
+        self.consume(value, found);
+        self.expect(value, ty, found, "the annotation says");
+        let held = match found.kind(self.db) {
+            TypeKind::Function { .. } if relations::compatible(self.db, ty, found) => found,
+            _ => ty,
+        };
+        self.bind(target, held, None);
     }
 
     /// `target += value` and the other in-place operators: the result must keep the target's
