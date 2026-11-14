@@ -789,8 +789,9 @@ def residual(a: f64, x: f64, b: f64) -> f64:
 ```
 
 `f64x2(x, 0.0)` makes one from an `f64`, exactly. Until a struct can define operators
-([decision 0058](../decisions/0058-operators-are-dunder-methods.md), roadmap 3.34), the operations are methods, each taking and returning an
-`f64x2`, so `a * b + c` is written `a.mul(b).add(c)`:
+([decision 0058](../decisions/0058-operators-are-dunder-methods.md), roadmap 3.34), the
+operations are methods, each taking and returning an `f64x2`, so `a * b + c` is written
+`a.mul(b).add(c)`:
 
 | Method | Gives |
 | --- | --- |
