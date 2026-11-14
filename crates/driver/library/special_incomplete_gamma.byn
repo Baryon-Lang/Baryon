@@ -9,7 +9,7 @@ from special_gamma import rgamma_near_one, rgamma_near_two, stirling, gamma, gam
 from special_error import ndtri
 
 
-def _log1pmx(t: f64) -> f64:
+def log1pmx(t: f64) -> f64:
     """log(1 + t) − t for `t` above −1, keeping its relative precision near 0, where it is
     about −t²/2 and `log1p(t) - t` would cancel: the series Σ (−1)ᵏ⁺¹ tᵏ / k from k = 2 for
     |t| below 0.5, at most about 55 terms."""
@@ -30,10 +30,10 @@ def _log1pmx(t: f64) -> f64:
 
 
 def log_minus_linear(r: f64) -> f64:
-    """log(r) − (r − 1) for `r` above 0: `_log1pmx(r - 1)` near 1, and the logarithm of `r`
+    """log(r) − (r − 1) for `r` above 0: `log1pmx(r - 1)` near 1, and the logarithm of `r`
     itself away from 1, so a ratio far below 1 is not first rounded to 1 + t."""
     if abs(r - 1.0) < 0.5:
-        return _log1pmx(r - 1.0)
+        return log1pmx(r - 1.0)
     return log(r) - (r - 1.0)
 
 
@@ -49,7 +49,7 @@ def _gamma_prefix(a: f64, x: f64) -> f64:
     if a < 10.0:
         return exp(a * log(x) - x - gammaln(a))
     if abs(x - a) < 0.5 * a:
-        shape = _log1pmx((x - a) / a)
+        shape = log1pmx((x - a) / a)
     else:
         shape = log_minus_linear(x / a)
     return sqrt(a / (2.0 * pi)) * exp(a * shape - stirling(a))
