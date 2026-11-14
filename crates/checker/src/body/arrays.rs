@@ -306,6 +306,20 @@ impl<'db> Body<'db> {
         matched
     }
 
+    /// The type a sum of elements of type `element` gives: `int` for `bool`, counting the `True`
+    /// elements as `NumPy` does (roadmap 1.9.36), and `element` itself otherwise. `min` and
+    /// `max` keep the element type.
+    fn summed(&self, element: Type<'db>) -> Type<'db> {
+        if matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool)) {
+            Type::new(
+                self.db,
+                TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+            )
+        } else {
+            element
+        }
+    }
+
     /// A method call on an array or a list, `a.dot(b)` or `values.append(x)`, or `None` when
     /// `base` is neither.
     pub(super) fn container_method(
@@ -360,12 +374,17 @@ impl<'db> Body<'db> {
         if matches!(name, "mean" | "var" | "std") {
             return Some(self.statistic(node, (base, element), name, arguments));
         }
+        let reduced = if name == "sum" {
+            self.summed(element)
+        } else {
+            element
+        };
         Some(match (name, arguments.positional.as_slice()) {
             ("copy" | "round", []) => base,
-            ("sum" | "min" | "max", []) if arguments.keywords.is_empty() => element,
+            ("sum" | "min" | "max", []) if arguments.keywords.is_empty() => reduced,
             ("sum" | "min" | "max", _) => {
                 let axis = self.axis_argument(arguments);
-                self.axis_reduction(node, (base, element), name, axis, arguments)
+                self.axis_reduction(node, (base, reduced), name, axis, arguments)
             }
             ("argsort" | "unique" | "nunique", [])
                 if is_array && rank_one && arguments.keywords.is_empty() =>

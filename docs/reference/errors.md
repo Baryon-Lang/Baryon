@@ -96,6 +96,10 @@ def main():
 - Each `except` names one error type, or a parenthesized tuple of them, and may bind the error to a
   name with `as`. A name bound by a tuple `except` has no single type, so its fields cannot be
   read; give each error type its own `except` to read them.
+- The name `as` binds belongs to its `except` block, as in Python, which deletes it when the block
+  ends. Each `except` of a `try` can use the same name, `except ValueError as error:` and
+  `except ConvergenceError as error:`, each with its own type, and the name is not defined after
+  the block. Unlike Python, a variable of the same name outside the block keeps its value.
 - A bare `raise` inside an `except` block raises the caught error again, so the function must
   declare it in its `Raises` or a `try` around the block must handle it.
 - Errors do not chain: `raise ... from` is an error. An error that needs the one that led to it

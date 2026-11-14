@@ -142,6 +142,40 @@ error: a bare `raise` must be inside an `except` block
     );
 }
 
+/// The name an `except ... as` binds belongs to its clause, as Python deletes it when the
+/// clause ends (roadmap 1.9.32): each clause may give `error` its own type, and a read after the
+/// `try` finds no `error`.
+#[test]
+fn except_names_belong_to_their_clause() {
+    let program = r#"
+class Negative(Exception):
+    value: f64
+
+
+def parse(text: str) -> Raises[f64, ValueError | Negative]:
+    return float(text)
+
+
+def main():
+    try:
+        print(parse("1"))
+    except Negative as error:
+        print(error.value)
+    except ValueError as error:
+        print(error.message)
+    print(error)
+"#;
+    assert_eq!(
+        check_one(program),
+        "\
+error: undefined name `error`
+  --> main.byn:16:11
+   |
+16 |     print(error)
+   |           ^^^^^ not defined in this scope"
+    );
+}
+
 /// `int(text)` and `float(text)` raise the library's `ValueError` (decision 0037), so a
 /// function that neither catches it nor lists it is told to; another number type cannot read
 /// text, and a number converts as before, without `Raises`.

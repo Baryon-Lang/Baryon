@@ -68,9 +68,9 @@ pub(crate) struct Builder<'db> {
     /// elsewhere.
     pub(crate) lanes: Vec<(Local, Place)>,
     /// While a loop over a list or tuple of values that are not copied runs, the place each of
-    /// its loop variables borrows, by binding: the element itself, which a read of the variable
-    /// reads in place (the `loops` module). Empty elsewhere.
-    pub(crate) aliases: BTreeMap<NodeId, Place>,
+    /// its loop variables borrows, by binding, with the element's type: the element itself,
+    /// which a read of the variable reads in place (the `loops` module). Empty elsewhere.
+    pub(crate) aliases: BTreeMap<NodeId, (Place, Type<'db>)>,
 }
 
 /// One `try` statement whose body is being lowered.

@@ -125,22 +125,59 @@ impl<'db> Builder<'db> {
         let lengths: Vec<Operand<'db>> = (0..self.rank(ty))
             .map(|dimension| self.length(source, ty, dimension, node))
             .collect();
-        let total = self.temporary(element, node);
-        let zero = Operand::Constant(self.number_constant(element, 0));
+        let counted = self.summand(element);
+        let total = self.temporary(counted, node);
+        let zero = Operand::Constant(self.number_constant(counted, 0));
         self.assign(Place::from(total), Rvalue::Use(zero), node);
         self.loop_nest(&lengths, &mut Vec::new(), node, &mut |builder, indices| {
             let value = source.clone().project(Projection::Index(indices.to_vec()));
-            let operands = (Operand::Copy(Place::from(total)), Operand::Copy(value));
+            let value = builder.as_summand(value, element, node);
+            let operands = (Operand::Copy(Place::from(total)), value);
             builder.arithmetic(
                 Place::from(total),
                 BinaryOperator::Add,
                 operands,
-                element,
+                counted,
                 node,
             );
         });
-        let rvalue = self.coerce(Operand::Copy(Place::from(total)), element, result);
+        let rvalue = self.coerce(Operand::Copy(Place::from(total)), counted, result);
         self.assign(place, rvalue, node);
+    }
+
+    /// The type a sum of elements of type `element` adds in: `int` for `bool`, which counts the
+    /// `True` elements as `NumPy` does (roadmap 1.9.36), and `element` itself otherwise.
+    pub(crate) fn summand(&self, element: types::Type<'db>) -> types::Type<'db> {
+        if matches!(
+            element.kind(self.db),
+            TypeKind::Primitive(types::Primitive::Bool)
+        ) {
+            self.int_type()
+        } else {
+            element
+        }
+    }
+
+    /// The element at `value`, of type `element`, as a term of a sum: converted to `int`
+    /// through a temporary when it is a `bool`, as [`summand`](Self::summand) says, and read as
+    /// it is otherwise.
+    pub(crate) fn as_summand(
+        &mut self,
+        value: Place,
+        element: types::Type<'db>,
+        node: NodeId,
+    ) -> Operand<'db> {
+        let counted = self.summand(element);
+        if counted == element {
+            return Operand::Copy(value);
+        }
+        let term = self.temporary(counted, node);
+        self.assign(
+            Place::from(term),
+            Rvalue::Convert(Operand::Copy(value), counted),
+            node,
+        );
+        Operand::Copy(Place::from(term))
     }
 
     /// `a.dot(b)` on two rank-1 `Array` or `Fixed` arrays of numbers, into `place`: the sum of

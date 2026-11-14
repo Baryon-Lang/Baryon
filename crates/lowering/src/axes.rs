@@ -185,9 +185,10 @@ impl<'db> Builder<'db> {
     }
 
     /// Sets each place of the result to 0, then adds every element of the array into its place,
-    /// in row-major order.
+    /// in row-major order; a `bool` element adds as an `int`, counting the `True` ones.
     fn sum_along(&mut self, reduced: &Reduced<'_, 'db>, element: types::Type<'db>, node: NodeId) {
-        let zero = Operand::Constant(self.number_constant(element, 0));
+        let counted = self.summand(element);
+        let zero = Operand::Constant(self.number_constant(counted, 0));
         self.loop_nest(
             reduced.kept,
             &mut Vec::new(),
@@ -206,8 +207,9 @@ impl<'db> Builder<'db> {
                     .source
                     .clone()
                     .project(Projection::Index(indices.to_vec()));
-                let terms = (Operand::Copy(at.clone()), Operand::Copy(value));
-                builder.arithmetic(at, BinaryOperator::Add, terms, element, node);
+                let value = builder.as_summand(value, element, node);
+                let terms = (Operand::Copy(at.clone()), value);
+                builder.arithmetic(at, BinaryOperator::Add, terms, counted, node);
             },
         );
     }

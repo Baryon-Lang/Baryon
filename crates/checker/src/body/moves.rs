@@ -65,6 +65,9 @@ impl<'db> Body<'db> {
             return;
         }
         match self.tree.kind(node) {
+            // `path.name` and the other parts of a `Path` are new values each time, so reading
+            // one moves nothing, even from a path a loop borrows (roadmap 1.9.31).
+            SyntaxKind::Attribute if self.is_path_part(node) => {}
             SyntaxKind::Name | SyntaxKind::Attribute if self.borrowed_by_loop(node, "moved") => {}
             SyntaxKind::Name | SyntaxKind::Attribute
                 if !self.inside_element(node) && self.held_by_with(node, "moved") => {}
@@ -75,8 +78,6 @@ impl<'db> Body<'db> {
             SyntaxKind::Attribute | SyntaxKind::Subscript if self.is_column_read(node) => {
                 self.moved_out_of_frame(node);
             }
-            // `path.name` and the other parts of a `Path` are new values each time.
-            SyntaxKind::Attribute if self.is_path_part(node) => {}
             // A field of an element, `people[0].name`, is part of the element: moving it out
             // is moving out of an element, the error below.
             SyntaxKind::Attribute if self.inside_element(node) => self.moved_out_of_element(node),

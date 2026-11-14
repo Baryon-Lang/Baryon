@@ -92,6 +92,8 @@ def main():
 
 This prints `[False  True False]`, then `[ True False  True]`.
 
+- **Counting the gaps:** `bids.isna().sum()` is the number of `None` elements, an `int`, since a
+  sum of `bool`s counts the `True` ones, as in NumPy and pandas.
 - **Cost:** one pass and one new array of `bool`s.
 
 ## Taking the gaps out
