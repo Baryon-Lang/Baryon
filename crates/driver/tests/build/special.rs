@@ -120,6 +120,11 @@ def main() -> Raises[None, OSError | ValueError]:
 /// Landen steps takes the arcsine of a number near 1, which multiplies its rounding error, and
 /// reaches 96 ULP of the amplitude at u = 20 and m = 1 − 4e-11, where `SciPy` is 10 billion ULP
 /// off.
+///
+/// The orthogonal polynomials and spherical harmonics are their three-term recurrences, which
+/// add a few ULP of the largest value they pass through at each degree, so they are held to 8 ULP
+/// for each degree up to the first argument, n, and `lpmv`, whose first argument is the order, to
+/// 64; the worst is about 4 ULP for each degree, for `sph_harm_y` at degree 46.
 fn tolerance(name: &str, want: f64, first: f64) -> f64 {
     let logarithm = 1.0 + want.abs().ln().abs();
     let shape = first.abs().clamp(1e-3, 1.0);
@@ -127,6 +132,10 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         "beta" | "binom" | "comb" => 8.0 + 2.0 * want.abs().ln().abs(),
         "yn" => 32.0,
         "ellipj_sn" | "ellipj_cn" | "ellipj_dn" | "ellipj_ph" => 128.0,
+        "lpmv" => 64.0,
+        "eval_legendre" | "eval_chebyt" | "eval_chebyu" | "eval_hermite" | "eval_hermitenorm"
+        | "eval_laguerre" | "eval_genlaguerre" | "eval_jacobi" | "eval_gegenbauer"
+        | "sph_harm_y_re" | "sph_harm_y_im" => 8.0 * (first.abs() + 1.0),
         "j0" | "j1" | "jn" | "y0" | "y1" | "i0" | "i1" | "i0e" | "i1e" | "k0" | "k1" | "k0e"
         | "k1e" | "kn" | "exp1" | "expi" | "expn" | "si" | "ci" | "shi" | "chi" | "fresnel_s"
         | "fresnel_c" | "zeta" | "zetac" | "hurwitz" | "spence" => 16.0,
@@ -152,14 +161,19 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
 /// `lambertw` is measured against the size of the whole value, |W|, which its case records in
 /// the place of `x`: a part far smaller than the other has only the precision of the larger.
 /// Jacobi's sn, cn and dn are at most 1 in size and come from sines and cosines of the amplitude,
-/// so they too are measured against the larger of the reference and 1.
+/// so they too are measured against the larger of the reference and 1. An orthogonal polynomial,
+/// `lpmv` and a part of `sph_harm_y` are measured against the largest size their recurrence
+/// passes through on the way to the degree, which the case records in the place of `x`: near
+/// one of the polynomial's zeros the value is a small difference of large terms.
 fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
         "gammaln" | "psi" | "betaln" | "expi" | "chi" | "ellipj_sn" | "ellipj_cn" | "ellipj_dn" => {
             want.abs().max(1.0)
         }
         "ci" => want.abs().max(1.0 / x.abs().max(1.0)),
-        "lambertw_re" | "lambertw_im" => x,
+        "lambertw_re" | "lambertw_im" | "eval_legendre" | "eval_chebyt" | "eval_chebyu"
+        | "eval_hermite" | "eval_hermitenorm" | "eval_laguerre" | "eval_genlaguerre"
+        | "eval_jacobi" | "eval_gegenbauer" | "lpmv" | "sph_harm_y_re" | "sph_harm_y_im" => x,
         "j0" | "j1" | "jn" | "y0" | "y1" | "yn" if x.abs() > 1.0 => want
             .abs()
             .max((2.0 / (std::f64::consts::PI * x.abs())).sqrt()),
