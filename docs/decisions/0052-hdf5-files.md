@@ -1,6 +1,6 @@
 # 0052. HDF5 files are read with h5py's names
 
-Status: Accepted (Collins, 2026-11-13), amended 2026-11-13
+Status: Accepted (Collins, 2026-11-13), amended 2026-11-13 and 2026-11-14
 Date: 2026-11-12
 Roadmap: 3.14.6.1
 
@@ -110,3 +110,38 @@ Everything inside the module keeps h5py's names and behavior, as point 1 says: `
 `dset[...]`, `shape`, `dtype`, `attrs`, `keys()`, h5py's error messages, and the rest. Moving a
 program from Python changes its imports, `import h5py` to `import h5by`, and nothing else. The
 reference and this record still name h5py where they mean the Python library.
+
+## Amendment, 2026-11-14: writing
+
+Point 7 left writing to row 3.14.6.2. Collins settled what it writes on 2026-11-13 (card 22)
+and narrowed it on 2026-11-14 (card 35):
+
+1. **`h5by.File(path, "w")` writes h5py's default layout**, the "earliest" one: a version 0
+   superblock, version 1 object headers, symbol table groups and version 1 B-trees. The
+   calls are h5py's: `create_group`, `create_dataset(name, data=..., chunks=...,
+   compression="gzip", shuffle=..., fletcher32=...)` and `attrs[name] = value`. Groups on
+   the way to a new name are made, as h5py makes them.
+2. **Uncompressed files match h5py byte for byte**: contiguous datasets, and chunked ones with
+   or without `shuffle` and `fletcher32`. The same calls give the same file as h5py 3.16
+   (HDF5 2.0) with its defaults, each dataset closed when `create_dataset` returns.
+3. **Gzip files are readable, not byte-identical.** They keep h5py's layout, settings and
+   allocation order, and h5py reads them back, but their compressed chunks are the native
+   zlib's (decision 0049, point 5, unchanged), so those bytes, and the addresses after them,
+   may differ from h5py's. Tests check the structure and a round trip through h5py. "Byte for
+   byte" anywhere in the reference means uncompressed files only.
+4. **A file is its log of changes.** The HDF5 library's choices of where each structure goes
+   depend on everything done to the file since it was created, which the file itself does not
+   record. So `h5by.File` keeps the list of changes made so far, one line each, and every
+   change passes the whole list to the runtime, which replays it through an emulation of the
+   library's allocator, object headers, heaps and B-trees, closes the file as the library
+   closes it, and writes all metadata again. Values written earlier stay in place, untouched.
+   The file on disk is complete after every change, so nothing is lost when a program drops a
+   `File` without closing it.
+5. **Mode `"a"` is not offered** in the first version: an existing file's allocator state
+   cannot be recovered from the file, so appending could not match the library.
+
+What it costs: each change replays the log, a few hundred bytes of metadata per object, so a
+program making `n` objects does work in proportion to `n²`, small next to the values of any
+real dataset. The alternative, keeping the emulated file in memory behind a handle, would avoid
+the replay but give the runtime state that outlives a call, which it has avoided so far: the
+NetCDF writer of decision 0047 keeps its state in the file.
