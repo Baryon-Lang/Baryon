@@ -114,12 +114,19 @@ def main() -> Raises[None, OSError | ValueError]:
 /// becomes 1/a of output. The smallest shape in the cases is 0.001. The distribution functions
 /// are the same functions after a change of variables, and are held to 32 ULP for each unit of
 /// the logarithm; their first argument is a count or degrees of freedom, not a shape.
+///
+/// The elliptic integrals are held to the default 8 ULP: Carlson's duplication converges to the
+/// last digit. Jacobi's elliptic functions are held to 128: near m = 1 the first of the descending
+/// Landen steps takes the arcsine of a number near 1, which multiplies its rounding error, and
+/// reaches 96 ULP of the amplitude at u = 20 and m = 1 − 4e-11, where `SciPy` is 10 billion ULP
+/// off.
 fn tolerance(name: &str, want: f64, first: f64) -> f64 {
     let logarithm = 1.0 + want.abs().ln().abs();
     let shape = first.abs().clamp(1e-3, 1.0);
     match name {
         "beta" | "binom" | "comb" => 8.0 + 2.0 * want.abs().ln().abs(),
         "yn" => 32.0,
+        "ellipj_sn" | "ellipj_cn" | "ellipj_dn" | "ellipj_ph" => 128.0,
         "j0" | "j1" | "jn" | "y0" | "y1" | "i0" | "i1" | "i0e" | "i1e" | "k0" | "k1" | "k0e"
         | "k1e" | "kn" | "exp1" | "expi" | "expn" | "si" | "ci" | "shi" | "chi" | "fresnel_s"
         | "fresnel_c" | "zeta" | "zetac" | "hurwitz" | "spence" => 16.0,
@@ -144,9 +151,13 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
 /// the reference and their envelope √(2/(π|x|)), for `|x|` above 1. Each part of the complex
 /// `lambertw` is measured against the size of the whole value, |W|, which its case records in
 /// the place of `x`: a part far smaller than the other has only the precision of the larger.
+/// Jacobi's sn, cn and dn are at most 1 in size and come from sines and cosines of the amplitude,
+/// so they too are measured against the larger of the reference and 1.
 fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
-        "gammaln" | "psi" | "betaln" | "expi" | "chi" => want.abs().max(1.0),
+        "gammaln" | "psi" | "betaln" | "expi" | "chi" | "ellipj_sn" | "ellipj_cn" | "ellipj_dn" => {
+            want.abs().max(1.0)
+        }
         "ci" => want.abs().max(1.0 / x.abs().max(1.0)),
         "lambertw_re" | "lambertw_im" => x,
         "j0" | "j1" | "jn" | "y0" | "y1" | "yn" if x.abs() > 1.0 => want

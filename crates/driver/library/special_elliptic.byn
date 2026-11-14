@@ -1,0 +1,230 @@
+"""Legendre's elliptic integrals and Jacobi's elliptic functions for `special` (roadmap 3.18.9):
+the complete integrals `ellipk`, `ellipkm1` and `ellipe`, the incomplete `ellipkinc` and
+`ellipeinc`, and Jacobi's `ellipj`, of real arguments.
+
+Every integral is written through Carlson's integrals in `special_carlson`; `ellipj` is the
+arithmetic-geometric mean with descending Landen transformations. The parameter is m = k², as in
+`SciPy`.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import asin, asinh, atan, copysign, cos, cosh, exp, fmod, inf, isinf, isnan, nan, pi
+from math import sin, sqrt, tanh
+from special_carlson import carlson_rd, carlson_rf, carlson_rg
+
+
+def ellipk(m: f64) -> f64:
+    """The complete elliptic integral of the first kind,
+    K(m) = ∫₀^(π/2) dθ / √(1 − m sin²θ) = R_F(0, 1 − m, 1), as `scipy.special.ellipk`: ∞ at
+    m = 1, NaN above 1, and 0 at −∞.
+
+    ```python
+    from special import ellipk
+
+    print(ellipk(0.5))  # 1.854074677301372
+    ```
+    """
+    if isnan(m) or m > 1.0:
+        return nan
+    if m == 1.0:
+        return inf
+    if isinf(m):
+        return 0.0
+    return carlson_rf(0.0, 1.0 - m, 1.0)
+
+
+def ellipkm1(p: f64) -> f64:
+    """K(1 − p), the complete elliptic integral of the first kind at m = 1 − `p`, as
+    `scipy.special.ellipkm1`: for `p` near 0, where 1 − p would lose the digits of `p`. ∞ at 0,
+    NaN below, and 0 at ∞.
+
+    ```python
+    from special import ellipkm1
+
+    print(ellipkm1(1e-10))  # 12.899219826387599
+    ```
+    """
+    if isnan(p) or p < 0.0:
+        return nan
+    if p == 0.0:
+        return inf
+    if isinf(p):
+        return 0.0
+    return carlson_rf(0.0, p, 1.0)
+
+
+def ellipe(m: f64) -> f64:
+    """The complete elliptic integral of the second kind,
+    E(m) = ∫₀^(π/2) √(1 − m sin²θ) dθ = 2 R_G(0, 1 − m, 1), as `scipy.special.ellipe`: 1 at
+    m = 1, NaN above 1, and ∞ at −∞.
+
+    ```python
+    from special import ellipe
+
+    print(ellipe(0.5))  # 1.3506438810476755
+    ```
+    """
+    if isnan(m) or m > 1.0:
+        return nan
+    if isinf(m):
+        return inf
+    return 2.0 * carlson_rg(0.0, 1.0 - m, 1.0)
+
+
+def _reduce(phi: f64) -> tuple[f64, f64]:
+    """`phi` as nπ + φ with φ in [−π/2, π/2]: the whole number n, as an `f64`, and φ."""
+    t = phi / pi + 0.5
+    n = t - fmod(t, 1.0)
+    if n > t:
+        n -= 1.0
+    return n, phi - n * pi
+
+
+def ellipkinc(phi: f64, m: f64) -> f64:
+    """The incomplete elliptic integral of the first kind,
+    F(φ, m) = ∫₀^φ dθ / √(1 − m sin²θ), as `scipy.special.ellipkinc`, with `phi` = φ. Outside
+    [−π/2, π/2] it is 2nK(m) + F(φ − nπ, m). NaN for `m` above 1, as SciPy gives, ∞ with the
+    sign of `phi` when `phi` is infinite or m = 1 and |φ| is at least π/2, and 0 at m = −∞.
+
+    ```python
+    from special import ellipkinc
+
+    print(ellipkinc(1.0, 0.5))  # 1.0832167728451687
+    ```
+    """
+    if isnan(phi) or isnan(m) or m > 1.0:
+        return nan
+    if isinf(m):
+        return 0.0
+    if isinf(phi):
+        return phi
+    if m == 0.0:
+        return phi
+    if m == 1.0:
+        if abs(phi) >= pi / 2.0:
+            return copysign(inf, phi)
+        return asinh(sin(phi) / cos(phi))
+    n, reduced = _reduce(phi)
+    value = _incomplete_first(reduced, m)
+    if n != 0.0:
+        value += 2.0 * n * carlson_rf(0.0, 1.0 - m, 1.0)
+    return value
+
+
+def _incomplete_first(phi: f64, m: f64) -> f64:
+    """F(φ, m) for φ in [−π/2, π/2] and `m` below 1: sin φ R_F(cos²φ, Δ², 1), with
+    Δ² = 1 − m sin²φ written as cos²φ + (1 − m) sin²φ, a sum of two terms of at least 0 for `m`
+    up to 1, so it never cancels."""
+    s = sin(phi)
+    c = cos(phi)
+    delta = c * c + (1.0 - m) * s * s
+    return s * carlson_rf(c * c, delta, 1.0)
+
+
+def ellipeinc(phi: f64, m: f64) -> f64:
+    """The incomplete elliptic integral of the second kind,
+    E(φ, m) = ∫₀^φ √(1 − m sin²θ) dθ, as `scipy.special.ellipeinc`, with `phi` = φ. Outside
+    [−π/2, π/2] it is 2nE(m) + E(φ − nπ, m). NaN for `m` above 1, as SciPy gives, ∞ with the
+    sign of `phi` when `phi` is infinite, and ∞ at m = −∞.
+
+    ```python
+    from special import ellipeinc
+
+    print(ellipeinc(1.0, 0.5))  # 0.92732988362444
+    ```
+    """
+    if isnan(phi) or isnan(m) or m > 1.0:
+        return nan
+    if isinf(m):
+        return inf
+    if isinf(phi):
+        return phi
+    if m == 0.0:
+        return phi
+    n, reduced = _reduce(phi)
+    value = _incomplete_second(reduced, m)
+    if n != 0.0:
+        value += 2.0 * n * (2.0 * carlson_rg(0.0, 1.0 - m, 1.0))
+    return value
+
+
+def _incomplete_second(phi: f64, m: f64) -> f64:
+    """E(φ, m) for φ in [−π/2, π/2] and `m` up to 1. Below 0 it is
+    sin φ R_F(c², Δ², 1) + (|m|/3) sin³φ R_D(c², Δ², 1), two terms of one sign. From 0 up it is
+    (1 − m) s R_F(c², Δ², 1) + (m(1 − m)/3) s³ R_D(c², 1, Δ²) + m s c/Δ (DLMF 19.25.10), again
+    terms of one sign: the first form would subtract two large numbers near m = 1 and
+    φ = π/2, where R_F and R_D grow without bound and E is near 1."""
+    s = sin(phi)
+    c = cos(phi)
+    cc = c * c
+    delta = cc + (1.0 - m) * s * s
+    if m <= 0.0:
+        return s * carlson_rf(cc, delta, 1.0) - m / 3.0 * s * s * s * carlson_rd(cc, delta, 1.0)
+    rest = 1.0 - m
+    value = m * s * c / sqrt(delta)
+    if rest > 0.0:
+        value += rest * s * carlson_rf(cc, delta, 1.0)
+        value += m * rest / 3.0 * s * s * s * carlson_rd(cc, 1.0, delta)
+    return value
+
+
+def ellipj(u: f64, m: f64) -> tuple[f64, f64, f64, f64]:
+    """Jacobi's elliptic functions of `u` at parameter `m`, as `scipy.special.ellipj`: the tuple
+    (sn, cn, dn, ph), where ph is the amplitude φ with F(φ, m) = u, sn = sin φ, cn = cos φ and
+    dn = √(1 − m sn²). NaN in all four for `m` outside [0, 1] or `u` not finite.
+
+    From the arithmetic-geometric mean of 1 and √(1 − m), as Abramowitz and Stegun 16.4: the
+    sequence cₙ₊₁ = cₙ²/(4aₙ₊₁), which never subtracts, then φ = 2ᴺ a_N u, brought back down
+    by φₙ₋₁ = (φₙ + asin(cₙ sin φₙ / aₙ))/2. dn is √(1 − m sn²) while m sn² is at most ½, and
+    cos φ₀ / cos(φ₁ − φ₀) above, where the square root would cancel. At m = 0 they are sin,
+    cos, 1 and u, and at m = 1 tanh, sech, sech and the Gudermannian function.
+
+    ```python
+    from special import ellipj
+
+    sn, cn, dn, ph = ellipj(0.5, 0.3)
+    print(sn, cn, dn)  # 0.4742156227118206 0.8804087364264624 0.9656789647459513
+    ```
+    """
+    if isnan(u) or isnan(m) or isinf(u) or m < 0.0 or m > 1.0:
+        return nan, nan, nan, nan
+    if m == 0.0:
+        return sin(u), cos(u), 1.0, u
+    if m == 1.0:
+        sech = 1.0 / cosh(u)
+        return tanh(u), sech, sech, 2.0 * _atan_exp(u) - pi / 2.0
+    a = Array.zeros(10, f64)
+    c = Array.zeros(10, f64)
+    a[0] = 1.0
+    b = sqrt(1.0 - m)
+    c[0] = sqrt(m)
+    twos = 1.0
+    count = 0
+    while abs(c[count]) > 1e-17 * a[count] and count < 9:
+        mean = (a[count] + b) / 2.0
+        c[count + 1] = c[count] * c[count] / (4.0 * mean)
+        b = sqrt(a[count] * b)
+        count += 1
+        a[count] = mean
+        twos *= 2.0
+    phi = twos * a[count] * u
+    previous = phi
+    for i in range(count, 0, -1):
+        previous = phi
+        phi = (asin(c[i] * sin(phi) / a[i]) + phi) / 2.0
+    sn = sin(phi)
+    cn = cos(phi)
+    lost = m * sn * sn
+    if count == 0 or lost <= 0.5:
+        return sn, cn, sqrt(1.0 - lost), phi
+    return sn, cn, cn / cos(previous - phi), phi
+
+
+def _atan_exp(u: f64) -> f64:
+    """atan(eᵘ), written so that it neither overflows nor rounds to π/2 early: for `u` above 0,
+    π/2 − atan(e⁻ᵘ)."""
+    if u > 0.0:
+        return pi / 2.0 - atan(exp(-u))
+    return atan(exp(u))
+

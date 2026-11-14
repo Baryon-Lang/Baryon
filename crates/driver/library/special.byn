@@ -49,3 +49,7 @@ from special_integrals import exp1 as exp1, expi as expi, expn as expn, sici as 
 from special_integrals import shichi as shichi, fresnel as fresnel
 from special_zeta import zeta as zeta, zetac as zetac, spence as spence
 from special_lambertw import lambertw as lambertw
+from special_elliptic import ellipk as ellipk, ellipkm1 as ellipkm1, ellipe as ellipe
+from special_elliptic import ellipkinc as ellipkinc, ellipeinc as ellipeinc, ellipj as ellipj
+from special_carlson import elliprc as elliprc, elliprd as elliprd, elliprf as elliprf
+from special_carlson import elliprg as elliprg, elliprj as elliprj

@@ -25,7 +25,7 @@ is built from the series and recurrences below and the elementary functions `exp
 ## Accuracy
 
 Each function is tested against values computed with mpmath to 50 digits, at a few hundred
-arguments spread over its range, about 12,000 in all
+arguments spread over its range, about 14,000 in all
 ([the fixtures](../../crates/driver/tests/fixtures/special/README.md)).
 The error is counted in units in the last place (ULP): the gap between adjacent `f64` values at
 the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
@@ -72,6 +72,11 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `kl_div` | 8 ULP | 3 ULP | 8.8 billion ULP at `kl_div(0.6515198, 0.6515264)`, where x − y cancels |
 | `binom`, `comb` | 8 ULP plus 2 for each unit of the result's logarithm | 18 ULP at a result of 5e160 | 8,523 ULP |
 | `perm`, `factorial` | 8 ULP | 4 ULP | 7 ULP |
+| `ellipk`, `ellipkm1`, `ellipe` | 8 ULP | 3 ULP | 2 ULP |
+| `ellipkinc`, `ellipeinc` | 8 ULP | 4 ULP | 4 ULP |
+| `elliprc`, `elliprd`, `elliprf`, `elliprg` | 8 ULP | 4 ULP | 7 ULP |
+| `elliprj` | 8 ULP | 6 ULP | 116 ULP where `p` is far below the other arguments |
+| `ellipj` | 128 ULP, of the larger of the value and 1 for sn, cn and dn | 96 ULP of the amplitude at m = 1 − 4e-11 | 13 billion ULP of sn at the same arguments |
 | `lambertw` | 8 ULP of the size of W, for each part | 4 ULP | 2.8e11 ULP: on branch −1 at 7e-10 above −1/e, SciPy's value is off by 6e-5 |
 
 Where a function crosses zero, no formula keeps all of its relative precision there: the
@@ -521,6 +526,75 @@ As SciPy gives: `lambertw(0.0)` is 0, and 0 on any other branch is −∞; NaN i
 gives `z` back; an infinite real part gives `z` + 2πik i, with π more for −∞. Where 100 steps of
 Halley's method do not settle, the value is NaN in both parts, where SciPy warns and gives NaN.
 
+## Elliptic integrals and Jacobi's elliptic functions
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `ellipk(m)` | The complete elliptic integral of the first kind, K(m) = ∫₀^(π/2) dθ / √(1 − m sin²θ) | `scipy.special.ellipk` |
+| `ellipkm1(p)` | K(1 − p), for `p` near 0 | `scipy.special.ellipkm1` |
+| `ellipe(m)` | The complete elliptic integral of the second kind, E(m) = ∫₀^(π/2) √(1 − m sin²θ) dθ | `scipy.special.ellipe` |
+| `ellipkinc(phi, m)` | The incomplete integral of the first kind, F(φ, m) = ∫₀^φ dθ / √(1 − m sin²θ) | `scipy.special.ellipkinc` |
+| `ellipeinc(phi, m)` | The incomplete integral of the second kind, E(φ, m) = ∫₀^φ √(1 − m sin²θ) dθ | `scipy.special.ellipeinc` |
+| `ellipj(u, m)` | Jacobi's elliptic functions `(sn, cn, dn, ph)`, ph being the amplitude φ with F(φ, m) = u | `scipy.special.ellipj` |
+| `elliprf(x, y, z)` | Carlson's R_F(x, y, z) = ½ ∫₀^∞ dt / √((t + x)(t + y)(t + z)) | `scipy.special.elliprf` |
+| `elliprd(x, y, z)` | Carlson's R_D(x, y, z) = (3/2) ∫₀^∞ dt / ((t + z) √((t + x)(t + y)(t + z))) | `scipy.special.elliprd` |
+| `elliprj(x, y, z, p)` | Carlson's R_J(x, y, z, p) = (3/2) ∫₀^∞ dt / ((t + p) √((t + x)(t + y)(t + z))) | `scipy.special.elliprj` |
+| `elliprc(x, y)` | Carlson's R_C(x, y) = R_F(x, y, y) | `scipy.special.elliprc` |
+| `elliprg(x, y, z)` | Carlson's R_G(x, y, z), the mean of √(x sin²θ cos²φ + y sin²θ sin²φ + z cos²θ) over the sphere | `scipy.special.elliprg` |
+
+The parameter is m = k², as in SciPy, not the modulus k. A pendulum swinging to angle θ₀ has
+period 4√(L/g) K(sin²(θ₀/2)); an ellipse with semi-axes a ≥ b has perimeter 4a E(1 − b²/a²).
+
+```python
+from math import sin
+from special import ellipe, ellipj, ellipk
+
+
+def main():
+    swing = 2.0                                    # radians, about 115 degrees
+    print(4.0 * ellipk(sin(swing / 2.0) ** 2))     # 8.349752926918494, the period over √(L/g)
+    print(4.0 * 3.0 * ellipe(1.0 - (2.0 / 3.0) ** 2))  # 15.865439589290586, the perimeter
+    sn, cn, dn, ph = ellipj(0.5, 0.3)
+    print(sn * sn + cn * cn)                       # 1.0
+```
+
+How each is computed:
+
+- **Carlson's integrals** use Carlson's duplication theorem (Carlson 1995): each step moves the
+  arguments four times closer together without changing the integral, and a fifth-order Taylor
+  series finishes once they agree to about 1e-16. `elliprj` writes each step's 1 + e as
+  2√p (p + λ)/d. The usual form subtracts two nearly equal numbers when `p` is far below the
+  other arguments. That is where SciPy's `elliprj` loses 116 ULP; this one stays within 6.
+  `elliprg` is ½[z R_F − (x − z)(y − z) R_D/3 + √(xy/z)] with z the middle argument, so the
+  three terms never cancel. For `y` below 0, `elliprc` is Cauchy's principal value. For `p`
+  below 0, so is `elliprj` (Carlson 1995, equation 4.3).
+- **The complete integrals**: K(m) = R_F(0, 1 − m, 1) and E(m) = 2 R_G(0, 1 − m, 1). `ellipkm1`
+  takes `p` directly, so K stays exact as `p` goes to 1e-300.
+- **The incomplete integrals** reduce φ to [−π/2, π/2] plus a multiple of π, which adds a
+  multiple of 2K or 2E. F is sin φ R_F(cos²φ, Δ², 1), with Δ² = 1 − m sin²φ formed as
+  cos²φ + (1 − m) sin²φ so it never cancels. For m from 0 up, E uses DLMF 19.25.10, whose
+  terms all have one sign. The textbook form subtracts two large numbers near m = 1 and
+  φ = π/2.
+- **`ellipj`** takes the arithmetic-geometric mean of 1 and √(1 − m), then descending Landen
+  steps back to the amplitude (Abramowitz and Stegun 16.4). SciPy switches to rough
+  approximations near m = 0 and m = 1. Those lose up to 13 billion ULP at m = 1 − 4e-11, where
+  this loses 96 ULP of the amplitude. The first Landen step there takes the arcsine of a number
+  near 1, which magnifies its rounding.
+
+The integrals are held to 8 ULP of the mpmath value, and `ellipj` to 128 ULP, at the 1,860 cases
+of `elliptic_functions.txt`. Each of sn, cn and dn is measured against the larger of its value
+and 1, since all three come from the sine and cosine of the amplitude.
+
+### At the ends
+
+As SciPy gives: `ellipk(1.0)` is ∞, `ellipe(1.0)` is 1, and both are NaN above 1. At m = −∞,
+`ellipk` is 0 and `ellipe` is ∞. `ellipkinc` and `ellipeinc` are NaN for every `m` above 1,
+even where m sin²φ is below 1 and the integral is real; that matches SciPy. They are ∞ with
+the sign of φ when φ is infinite. `ellipj` is NaN in all four values for `m` outside [0, 1] or
+an infinite `u`. Carlson's integrals are NaN for a negative argument, ∞ where two arguments are
+0, and 0 where one is ∞. `elliprc(x, 0.0)` and `elliprj(x, y, z, 0.0)` are NaN, as SciPy
+gives, although the integrals are infinite.
+
 ## Files under `special`
 
 `special` is one public file, `<std>/special.byn`, that re-exports each function from an internal
@@ -545,6 +619,8 @@ for those working on the library. A panic inside a function names the file it is
 | `special_integrals` | `exp1`, `expi`, `expn`, `sici`, `shichi` and `fresnel` |
 | `special_zeta` | `zeta`, `zetac` and `spence` |
 | `special_lambertw` | `lambertw` |
+| `special_carlson` | `elliprc`, `elliprd`, `elliprf`, `elliprg` and `elliprj`, and `carlson_rf`, `carlson_rd` and `carlson_rg`, the same integrals without the checks of their arguments |
+| `special_elliptic` | `ellipk`, `ellipkm1`, `ellipe`, `ellipkinc`, `ellipeinc` and `ellipj` |
 
 A new function goes in the file of its family, and a name of `special` gets its line in
 `special.byn`. A family file kept under about 500 lines is split again by responsibility.
@@ -552,6 +628,6 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of real and
-complex order, Airy, Struve and Kelvin functions, hypergeometric and elliptic functions, and
-orthogonal polynomials. `loggamma` of a complex argument comes with the complex Bessel functions
-(3.18.6). See [What builds today](status.md).
+complex order, Airy, Struve and Kelvin functions, hypergeometric functions, and orthogonal
+polynomials. Carlson's integrals of complex arguments are not built. `loggamma` of a complex
+argument comes with the complex Bessel functions (3.18.6). See [What builds today](status.md).
