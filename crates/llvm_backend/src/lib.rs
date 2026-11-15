@@ -156,6 +156,7 @@ mod complex;
 mod constants;
 mod convert;
 mod debug;
+mod destructors;
 mod dict;
 mod entry;
 mod errors;
@@ -210,6 +211,20 @@ pub struct ClassNames {
     pub class: String,
     /// A struct's field names, or an enum's member names, in declaration order.
     pub members: Vec<String>,
+}
+
+/// The `__del__` of a struct's class, which a drop of the struct calls before it drops the
+/// fields (decision 0063): the symbol of the method, which takes the struct by pointer, and the
+/// error types it can raise, none when it cannot fail. The type checker knows it; the
+/// application passes it to [`Module::destructors`] through a callback.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Destructor<'db> {
+    /// The symbol of the method, as the application names its instance.
+    pub symbol: String,
+    /// The class's name, for the panic when the method raises: `GzipFile`.
+    pub class: String,
+    /// The error types its `Raises` lists, in order.
+    pub errors: Vec<Type<'db>>,
 }
 
 /// A form of the mid-level IR this slice of the backend does not translate yet, such as a call

@@ -38,7 +38,7 @@ installed; `baryon run` builds and runs it in one step, `baryon test` runs every
 and `baryon watch` rebuilds on every save. It builds numbers, complex numbers, `str`, lists, dicts,
 tuples, optionals, structs, enums, unions of structs with `match`, traits, generics, functions as
 arguments, errors, arrays with slices, broadcasting and `@`, `prange` and `simd` loops, `with` and
-`for` on a program's own classes, and all seven example programs. The standard library, written
+`for` on a program's own classes, and all eight example programs. The standard library, written
 in Baryon itself, covers `math` (with the double-double `f64x2` and `fsum`), `random.Philox`,
 `stats`, `linalg` and `fft`, `DataFrame` with pandas's names, plotting with `byplot` (SVG, PNG
 and PDF), data files (text tables, `.npy`, FITS, NetCDF and HDF5 through `h5by`), compression

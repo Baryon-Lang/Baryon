@@ -68,7 +68,7 @@
 //! let join = body.push_block(end(TerminatorKind::Return));
 //! body.blocks[join.index()].statements = vec![statement(StatementKind::Drop(a.into()))];
 //!
-//! drop_elaboration::elaborate(&database, &mut body, &|_| unreachable!());
+//! drop_elaboration::elaborate(&database, &mut body, &|_| unreachable!(), &|_| false);
 //!
 //! // `a` is still there only when `c` was false, so its drop is guarded by a new flag, `_4`.
 //! let text = body.display(&database).to_string();
@@ -89,7 +89,8 @@ use types::{Declared, Nominal};
 /// out, guards drops of values moved on some paths with new `bool` flag locals, and replaces the
 /// drop of a partly moved struct with drops of its remaining fields. `declared` says what a
 /// struct declares, with its type arguments substituted; it is called only for structs a field was
-/// moved out of.
+/// moved out of. `destructor` says whether a struct's class has `__del__` (decision 0063), so a
+/// remaining field of such a struct keeps its drop even when it owns no memory.
 ///
 /// The bodies of the function's `prange` loops are elaborated too, each on its own.
 ///
@@ -102,16 +103,17 @@ pub fn elaborate<'db>(
     db: &'db dyn salsa::Database,
     body: &mut mir::Body<'db>,
     declared: &dyn Fn(&Nominal<'db>) -> Declared<'db>,
+    destructor: &dyn Fn(&Nominal<'db>) -> bool,
 ) {
     for outlined in &mut body.outlined {
-        elaborate(db, outlined, declared);
+        elaborate(db, outlined, declared, destructor);
     }
     let paths = Paths::collect(&body.blocks);
     if paths.is_empty() {
         return;
     }
     let entries = block_entries(&body.blocks, &paths, body.parameter_count);
-    rewrite::rewrite(db, body, &paths, &entries, declared);
+    rewrite::rewrite(db, body, &paths, &entries, declared, destructor);
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 //! `gzip.open` (roadmap 3.27.4, decision 0049), built and run: a `GzipFile` reads the members
 //! Python wrote, whole or in pieces, and a file of several members and many 64 KiB blocks; it
 //! writes files Python reads back, adds members with `"ab"`, and raises Python's errors for a
-//! bad file, a bad mode and a closed file.
+//! bad file, a bad mode and a closed file, and a file dropped without `close()` is written out.
 //!
 //! The gzip files in `tests/fixtures/zlib` were written by Python; its `README.md` says how.
 
@@ -170,4 +170,37 @@ fn the_reference_example_prints_what_it_says() {
     let (output, _) = run("gzip_open_example", chapter_example(4)).unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(String::from_utf8_lossy(&output.stdout), "11600 bytes\n");
+}
+
+/// A file opened to write and dropped without `close()` is written out by `GzipFile.__del__`
+/// (decision 0063): at the end of the function that opened it, and when its variable is given a
+/// new value, for a text file too. A file already closed is not written twice.
+#[test]
+fn a_dropped_gzip_file_is_written() {
+    let program = "\
+import gzip
+
+
+def write(path: str) -> Raises[None, OSError | ValueError]:
+    f = gzip.open(path, \"wb\")
+    f.write(\"dropped, not closed\\n\".encode())
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    write(\"a.gz\")
+    t = gzip.open(\"b.gz\", \"wt\")
+    t.write(\"text too\\n\")
+    t = gzip.open(\"c.gz\", \"wt\")
+    t.close()
+    with gzip.open(\"a.gz\", \"rt\") as f:
+        print(f.read(), end=\"\")
+    with gzip.open(\"b.gz\", \"rt\") as f:
+        print(f.read(), end=\"\")
+";
+    let (output, _) = run("gzip_dropped", program).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "dropped, not closed\ntext too\n"
+    );
 }

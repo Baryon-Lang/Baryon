@@ -158,6 +158,7 @@ mod classes;
 mod conformance;
 mod constant;
 mod declare;
+mod destructors;
 mod embed;
 mod forms;
 mod frames;
@@ -165,6 +166,8 @@ mod lower;
 mod outline;
 mod padding;
 mod traits;
+
+pub use destructors::destructor;
 
 use database::{File, Package};
 use diagnostics::Diagnostic;
@@ -296,8 +299,9 @@ pub fn implementation<'db>(
 /// Every type error and warning in `file`, a file of `package`: the errors of each definition's
 /// declaration and, for a function, of its body, in source order, methods after their class,
 /// then the errors that compare classes, such as a struct missing a method of a trait it names
-/// (the `classes` module), then a warning for each struct whose fields would take fewer bytes in
-/// another order (the `padding` module).
+/// (the `classes` module), then the errors of each class's `__del__` (the `destructors` module,
+/// decision 0063), then a warning for each struct whose fields would take fewer bytes in another
+/// order (the `padding` module).
 ///
 /// The application caches this per file in a tracked function. See the crate example.
 #[must_use]
@@ -314,6 +318,7 @@ pub fn check_file(db: &dyn TypeDb, package: Package, file: File) -> Vec<Diagnost
             diagnostics
         })
         .chain(classes::check(db, package, file))
+        .chain(destructors::check(db, package, file))
         .chain(padding::padding(db, package, file))
         .collect()
 }

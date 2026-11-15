@@ -29,6 +29,8 @@ struct Decider<'a, 'db> {
     paths: &'a Paths,
     /// What each struct declares.
     declared: &'a dyn Fn(&Nominal<'db>) -> Declared<'db>,
+    /// Whether a struct's class has `__del__`.
+    destructor: &'a dyn Fn(&Nominal<'db>) -> bool,
 }
 
 /// The drops that replace each built drop of a move path, keyed by block and statement position.
@@ -41,12 +43,14 @@ pub(crate) fn rewrite<'db>(
     paths: &Paths,
     entries: &[State],
     declared: &dyn Fn(&Nominal<'db>) -> Declared<'db>,
+    destructor: &dyn Fn(&Nominal<'db>) -> bool,
 ) {
     let decider = Decider {
         db,
         locals: &body.locals,
         paths,
         declared,
+        destructor,
     };
     let mut decisions = decider.decide_all(&body.blocks, entries);
     let flags = Flags::allocate(db, body, paths, &decisions);
@@ -350,7 +354,8 @@ impl<'db> Decider<'_, 'db> {
         }
     }
 
-    /// Whether a value of type `ty` owns memory a drop must free, or a file a drop must close.
+    /// Whether a value of type `ty` owns memory a drop must free, or a file a drop must close,
+    /// or is a struct whose class has `__del__`, which its drop runs.
     /// `open` holds the structs being looked into, so a struct that contains itself, an error
     /// reported earlier, ends the search.
     fn owns_memory(&self, ty: Type<'db>, open: &mut Vec<Type<'db>>) -> bool {
@@ -380,6 +385,7 @@ impl<'db> Decider<'_, 'db> {
                 self.owns_memory(*value, open)
                     || errors.iter().any(|&error| self.owns_memory(error, open))
             }
+            TypeKind::Struct(nominal) if (self.destructor)(nominal) => true,
             TypeKind::Struct(_) => {
                 if open.contains(&ty) {
                     return false;
