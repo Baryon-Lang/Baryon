@@ -113,6 +113,7 @@ impl<'db> Body<'db> {
             _ if self.has_no_members(base) => {
                 return self.no_method(function, base, &callee, arguments);
             }
+            TypeKind::Parameter { .. } => return self.parameter_method(function, base, arguments),
             _ => return self.untyped(arguments),
         };
         match self.member(function, &nominal, base, attribute) {

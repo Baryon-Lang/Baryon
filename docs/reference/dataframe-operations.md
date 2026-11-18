@@ -220,7 +220,7 @@ With trades of the symbols 7, 3 and 5 and the listings above, this prints:
   is a string literal: the columns of `right` that are no keys in a left join, those of
   `left` in a right join, and both in an outer join. A left join's `lot` above is an
   `Array[i64 | None, 1]`, so the program checks an element, or calls
-  [`fillna` or `dropna`](missing-values.md#dropna-and-fillna-of-a-frame), before it uses
+  [`fillna` or `dropna`](missing-values-in-frames.md#dropna-and-fillna-of-a-frame), before it uses
   the numbers. A key keeps its type: every row has one, from the frame that has the row.
 - **The rows** of a left join follow `left`, as the inner join's do. Those of a right join
   follow `right`, and for one row of `right` its partners in the order of `left`. Those of

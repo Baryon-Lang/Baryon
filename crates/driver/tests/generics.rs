@@ -240,3 +240,74 @@ error: `self` has type `Bag[i64]`, found `Bag[f64]`
    |                                          ^ type `Bag[f64]`"
     );
 }
+
+/// Calls the checker cannot type are reported where they are written (roadmap 1.9.48 and
+/// 1.9.49): a type parameter called as a conversion, a generic struct built with its type
+/// arguments written, a method on a type parameter with no trait that has it, and a generic
+/// function whose arguments do not fix its type parameter. Before, each got an unknown type
+/// with no error, and the build stopped on "lowering does not handle this call yet" or "the
+/// LLVM backend does not compile values of type `unknown` yet".
+#[test]
+fn calls_the_checker_cannot_type_are_reported() {
+    let program = r"
+class Box[T](Struct):
+    items: list[T]
+
+
+def mean[T: Float](xs: Array[T, 1]) -> T:
+    s: T = 0.0
+    for i in range(len(xs)):
+        s += xs[i]
+    return s / T(len(xs))
+
+
+def last[T](xs: list[T]) -> T:
+    return xs[len(xs) - 1].copy()
+
+
+def make[T]() -> list[T]:
+    out: list[T] = []
+    return out
+
+
+def use_them() -> int:
+    b = Box[f64]([1.0])
+    xs = make()
+    return len(b.items) + len(xs)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `T` is a type parameter, which cannot be called
+ --> main.byn:9:16
+  |
+9 |     return s / T(len(xs))
+  |                ^^^^^^^^^^ not a function
+  = note: a type parameter has only what its bound allows; a conversion names a number type, \
+such as `f64(n)`, and a literal takes the type `T` under `Float`
+
+error: `T` has no method `copy`
+  --> main.byn:13:12
+   |
+13 |     return xs[len(xs) - 1].copy()
+   |            ^^^^^^^^^^^^^^^^^^^^ not known for a type parameter
+   = note: a type parameter has only what its bound allows, and a trait has methods only: bound \
+it by a trait that lists the method
+
+error: `Box` is built without its type arguments written
+  --> main.byn:22:9
+   |
+22 |     b = Box[f64]([1.0])
+   |         ^^^^^^^^^^^^^^^ type arguments written
+   = note: the arguments say what they are, `Box(...)`; give an empty list a typed variable \
+first, `items: list[f64] = []`
+
+error: `make` does not say what `T` is from its arguments
+  --> main.byn:23:10
+   |
+23 |     xs = make()
+   |          ^^^^^^ type argument not found
+   = note: a type argument is never written at a call; give the function a parameter whose \
+argument fixes `T`"
+    );
+}

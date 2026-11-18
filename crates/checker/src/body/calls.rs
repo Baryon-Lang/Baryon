@@ -35,6 +35,9 @@ impl<'db> Body<'db> {
                 .and_then(|attribute| self.lowerer.definition(attribute)),
             _ => None,
         };
+        if let Some(error) = self.untyped_call(node, function, &arguments) {
+            return error;
+        }
         let callee = self.tree.text(function, self.text).to_owned();
         let ty = match resolved {
             Some(&Definition::Item(file, name)) if self.is_path_class(file, name) => {
@@ -196,14 +199,12 @@ impl<'db> Body<'db> {
         let item = Item::new(self.db, self.lowerer.package, file, name);
         let declaration = self.db.declaration(item).declaration.clone();
         match (kind, declaration) {
-            (Kind::Function, Declaration::Function(signature)) => self.check_call(
-                node,
-                callee,
-                &signature,
-                None,
-                Callee::Function(item),
-                arguments,
-            ),
+            (Kind::Function, Declaration::Function(signature)) => {
+                let (function, before) = (Callee::Function(item), self.lowerer.diagnostics.len());
+                let returns = self.check_call(node, callee, &signature, None, function, arguments);
+                self.unfixed_type_argument((node, before), callee, &signature)
+                    .unwrap_or(returns)
+            }
             (Kind::Class(class), Declaration::Struct { fields, .. })
                 if class.base != Base::Enum =>
             {
@@ -239,14 +240,10 @@ impl<'db> Body<'db> {
                     parameters,
                     returns: Type::new(self.db, TypeKind::Struct(nominal)),
                 };
-                self.check_call(
-                    node,
-                    callee,
-                    &constructor,
-                    None,
-                    Callee::Constructor(item),
-                    arguments,
-                )
+                let (built, before) = (Callee::Constructor(item), self.lowerer.diagnostics.len());
+                let returns = self.check_call(node, callee, &constructor, None, built, arguments);
+                self.unfixed_type_argument((node, before), callee, &constructor)
+                    .unwrap_or(returns)
             }
             (Kind::Alias, Declaration::Alias(ty)) => self.construct(node, callee, ty, arguments),
             (Kind::Class(_), Declaration::Trait { .. }) => {
