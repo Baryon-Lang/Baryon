@@ -1,5 +1,6 @@
-//! `argsort` of an array with missing values (roadmap 3.13.6, decision 0045), built and run:
-//! the positions that put the elements in rising order, with those of the `None`s last.
+//! `argsort`, `unique` and `nunique` of an array with missing values (roadmap 3.13.6, decision
+//! 0045), built and run: the positions that put the elements in rising order, with those of
+//! the `None`s last, and the distinct elements, a `None` among them, and how many are there.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -55,6 +56,48 @@ def main():
          [] 0\n\
          [0 1]\n\
          [2 0 1]\n"
+    );
+    Ok(())
+}
+
+/// `unique` keeps the first of each distinct element, one `None` and one NaN among them,
+/// and `nunique` counts the distinct values that are there, for floats, integers, `bool`s
+/// and text, for an array with no elements and for one that has only `None`s after
+/// assignments.
+#[test]
+fn distinct_elements_keep_one_none() -> io::Result<()> {
+    let program = r#"
+import math
+
+
+def main():
+    bids: Array[f64 | None, 1] = Array([3.0, None, 1.0, math.nan, 3.0, None, math.nan])
+    print(bids.unique(), bids.nunique())
+    names: Array[str | None, 1] = Array([None, "b", "a", "b", None])
+    print(names.unique(), names.nunique())
+    flags: Array[bool | None, 1] = Array([True, None, True])
+    print(flags.unique(), flags.nunique())
+    ids: Array[i64 | None, 1] = Array([5, 4, 5])
+    print(ids.unique(), ids.nunique())
+    empty = bids[0:0]
+    print(empty.unique(), empty.nunique())
+    ids[0] = None
+    ids[2] = None
+    print(ids.unique(), ids.nunique())
+"#;
+    let directory = package("optional_sorts_distinct", &[("main.byn", program)])?;
+    let (output, executable) = baryon_build(&directory)?;
+    assert!(output.status.success(), "{}", stderr(&output));
+    let run = Command::new(&executable).output()?;
+    assert_eq!(run.status.code(), Some(0), "{}", panic_report(&run));
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "[3.0 None 1.0 nan] 2\n\
+         [None 'b' 'a'] 2\n\
+         [True None] 1\n\
+         [5 4] 2\n\
+         [] 0\n\
+         [None 4] 1\n"
     );
     Ok(())
 }
