@@ -89,6 +89,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `hyperu` | 512 ULP, of the same | 385 ULP at `hyperu(0.017, -146.0, 0.0019)` | 3e-256 at `hyperu(143.0, -27.0, 2.42)`, where the value is 3e-284; NaN at `hyperu(84.8, -14.7, 1.04)` |
 | `hyp2f1` | 128 ULP, of the same | 68 ULP at `hyp2f1(-13.0, -0.381, 0.0145, 0.995)` | 1.6e22 ULP at `hyp2f1(-18.000000001, 19.0, 1.445, 0.970)`, 3.6 million where the value is 0.035 |
 | `pbdv`, `pbvv`, with their derivatives | 32 ULP, of the largest of \|f\|, \|v ∂f/∂v\| and \|x ∂f/∂x\| | 10 ULP at the derivative of `pbdv(1.62, 3.31)` | 2.4e270 ULP at the derivative of `pbvv(4.0, -9.32)`, where the value is 151,288; NaN at `pbdv(54.4, -47.3)` |
+| `pbwa`, with its derivative | 32 ULP, of the largest of \|f\|, \|a ∂f/∂a\| and \|x ∂f/∂x\| | 0 ULP: every case rounds as mpmath's value does | 20,104 ULP at `pbwa(3.50, 2.55)`; NaN past \|x\| = 5 |
 | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer` | 8 ULP for each degree, of the largest value the recurrence passes through | 29 ULP for `eval_gegenbauer` at degree 85 | 439 ULP for `eval_jacobi` at degree 85 |
 | `eval_hermite`, `eval_hermitenorm` | The same | 156 ULP at degree 78 | 698 ULP for `eval_hermite` at degree 75 |
 | `lpmv` | 64 ULP of the largest value the recurrence passes through | 24 ULP | 154 ULP |
@@ -616,14 +617,17 @@ it is summed from cancel by up to 64 times. Outside the tested ranges these can 
 | --- | --- | --- |
 | `pbdv(v, x)` | Weber's function D_v(x) and its derivative D_v′(x), as a tuple | `scipy.special.pbdv` |
 | `pbvv(v, x)` | The second solution V_v(x), V(a, x) of DLMF 12.2 with a = −v − ½, and its derivative V_v′(x), as a tuple | `scipy.special.pbvv` |
+| `pbwa(a, x)` | W(a, x) of DLMF 12.14, a solution of w″ + (x²/4 − a) w = 0, and its derivative W′(a, x), as a tuple, for \|a\| up to 5 and \|x\| up to 10 | `scipy.special.pbwa` |
 
 Both solve w″ − (x²/4 + a) w = 0, the equation of the quantum harmonic oscillator and of
 waves near a parabolic boundary. D_v decays as x grows and V_v grows; at a whole v = n,
-D_n(x) is e^(−x²/4) Heₙ(x), the oscillator's n-th state. The tuple holds the value first and
-the derivative second, in SciPy's order.
+D_n(x) is e^(−x²/4) Heₙ(x), the oscillator's n-th state. W(a, x) solves the equation with the
+sign of x²/4 turned, w″ + (x²/4 − a) w = 0, which describes a wave meeting a parabolic barrier
+of height a: it oscillates where x²/4 is above a and grows or decays where it is below. Each
+tuple holds the value first and the derivative second, in SciPy's order.
 
 ```python
-from special import pbdv, pbvv
+from special import pbdv, pbvv, pbwa
 
 
 def main():
@@ -631,6 +635,7 @@ def main():
     print(d)                    # 0.7357588823428848, 2/e
     print(slope)                # -0.3678794411714422, −1/e
     print(pbvv(0.5, 1.0)[0])    # 0.22003508652565454
+    print(pbwa(1.0, 0.5)[0])    # 0.4679105355315861
 ```
 
 **How they work.** From x of 0 up, D_v(x) is 2^(v/2) e^(−x²/4) U(−v/2, ½, x²/2), Tricomi's
@@ -643,10 +648,21 @@ V_v(−x) = −sin(πv)/Γ(1 + v) D_v(x) − cos(πv) V_v(x). The derivatives co
 recurrences D_v′ = x/2 D_v − D_{v+1} and V_v′ = V_{v−1} − x/2 V_v (DLMF 12.8.3 and 12.8.9).
 e^(−x²/4) is taken with x² carried as two `f64`s, so that it is rounded once.
 
+W(a, ±x) is 2^(−3/4) (√(G₁/G₃) y₁(x) ∓ √(2G₃/G₁) y₂(x)) (DLMF 12.14.4 to 12.14.9), with y₁
+and y₂ the even and odd solutions of its power series and G₁ = |Γ(¼ + ia/2)|,
+G₃ = |Γ(¾ + ia/2)|. Where a and x are both above 0, W can be 10¹⁵ times smaller than the two
+parts, so the series and the Γ ratio are carried in `f64x2`, about 30 digits, and the parts
+are subtracted there. The Γ ratio moves both Γ up by 24 and uses the expansion of
+log Γ(u + ½) − log Γ(u) in odd powers of 1/u, whose coefficients come from Bernoulli
+polynomials. That costs about 8 µs a call, three times SciPy's.
+
 **Accuracy.** As for the hypergeometric functions, each case is measured against the largest of
 |f|, |v ∂f/∂v| and |x ∂f/∂x|, the error that rounding v and x alone would make. The tests reach
 orders and arguments from −60 to 60. The worst is 10 ULP. SciPy misses 289 of the 1,750 cases
-by more than 64 ULP, some by 10²⁷⁰ times the value or by giving NaN.
+by more than 64 ULP, some by 10²⁷⁰ times the value or by giving NaN. `pbwa` rounds as mpmath
+does at all 600 of its cases, a from −5 to 5 and x from −10 to 10. SciPy gives NaN past |x| = 5,
+and within it misses 58 of 390 cases by more than 64 ULP, by 20,104 ULP at worst, where it
+keeps 11 digits of the value.
 
 ### At the ends
 
@@ -655,6 +671,9 @@ by more than 64 ULP, some by 10²⁷⁰ times the value or by giving NaN.
   −cos(πv), or 0 where v is a half-odd number; each derivative has the opposite sign. SciPy
   gives NaN at both ends.
 - A NaN or an infinite v gives NaN in both places, as SciPy gives.
+- `pbwa` gives NaN for |a| above 5 or |x| above 10, its domain, where SciPy gives NaN past 5
+  for both. Past |x| = 10 its power series would need more than 30 digits; the asymptotic
+  expansions that would take over are not built.
 - Where the value passes the largest `f64` it is ∞, and where it falls below the smallest it is
   0: `pbdv(1.0, 100.0)` is 0, the value being 2e-1084.
 
@@ -1174,7 +1193,7 @@ for those working on the library. A panic inside a function names the file it is
 | `special_hyp1f1` | `hyp1f1` |
 | `special_hyperu` | `hyperu` |
 | `special_hyp2f1` | `hyp2f1` |
-| `special_parabolic` | `pbdv` and `pbvv` |
+| `special_parabolic` | `pbdv`, `pbvv` and `pbwa` |
 | `special_incomplete_gamma` | `gammainc`, `gammaincc`, `gammaincinv` and `gammainccinv` |
 | `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
 | `special_distributions` | `bdtr`, `bdtrc`, `bdtri`, `nbdtr`, `nbdtrc`, `nbdtri`, `pdtr`, `pdtrc`, `pdtri`, `chdtr`, `chdtrc`, `chdtri`, `fdtr`, `fdtrc`, `fdtri`, `gdtr`, `gdtrc`, `stdtr` and `stdtrit` |
@@ -1194,7 +1213,7 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18, Bessel functions of a complex
-argument (3.18.6) among them. Of 3.18.14, `pbwa`, the Mathieu functions and the spheroidal wave
+argument (3.18.6) among them. Of 3.18.14, the Mathieu functions and the spheroidal wave
 functions are still to come. The hypergeometric functions and Carlson's integrals of complex
 arguments are not built. `loggamma` of a complex argument comes with the complex Bessel functions.
 See [What builds today](status.md).

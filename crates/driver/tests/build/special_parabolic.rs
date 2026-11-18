@@ -1,5 +1,5 @@
-//! The parabolic cylinder functions of `special` (roadmap 3.18.14), `pbdv` and `pbvv` with their
-//! derivatives, built and run and checked against the values mpmath records, as
+//! The parabolic cylinder functions of `special` (roadmap 3.18.14), `pbdv`, `pbvv` and `pbwa` with
+//! their derivatives, built and run and checked against the values mpmath records, as
 //! [`super::special`] checks the other families, with its tolerances.
 
 use super::special::check;
@@ -32,4 +32,30 @@ def main() -> Raises[None, OSError | ValueError]:
 #[test]
 fn parabolic_cylinder_functions_match_the_recorded_values() {
     check("special-parabolic", PARABOLIC, "parabolic.txt").unwrap();
+}
+
+/// The program for `weber.txt`: the same reading, with a and x, for `pbwa`.
+const WEBER: &str = "\
+from special import pbwa
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            a = float(fields[1])
+            x = float(fields[2])
+            if name == \"pbwa\":
+                print(pbwa(a, x)[0])
+            else:
+                print(pbwa(a, x)[1])
+";
+
+/// `pbwa` and its derivative at the 614 cases of `weber.txt`: a from −5 to 5 and x from −10
+/// to 10, where W can be 1e15 times smaller than the parts it is formed from, its edges, and
+/// NaN outside it.
+#[test]
+fn weber_function_matches_the_recorded_values() {
+    check("special-weber", WEBER, "weber.txt").unwrap();
 }
