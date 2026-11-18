@@ -21,7 +21,7 @@ and the compiler puts them together.
 - `filled` gives the values with one value where an element is `None`, for `fillna(value)`.
 - `present_count`, `present` and `present_extreme` count, gather and compare the elements
   that are there, for `count()`, `sum()`, `mean()`, `min()` and `max()`.
-- `presence` and `present_rows` let `drop_duplicates` and `value_counts` compare rows whose
+- `absence` and `present_rows` let `drop_duplicates` and `value_counts` compare rows whose
   columns may hold `None`.
 - `present_starts`, `group_bits` and `group_present_integers` reduce a column that may hold
   `None` for `groupby`, each group by the values that are there.
@@ -144,14 +144,15 @@ def filled[T: Copy](values: Array[T, 1], bits: Array[u8, 1], value: T) -> Array[
     return result
 
 
-def presence(bits: Array[u8, 1], count: int) -> Array[i64, 1]:
-    """For each of the `count` elements the validity bitmap `bits` covers, 1 when it is there
-    and 0 when it is `None`: a key column that keeps rows with a `None` apart from rows with
-    a value, for `drop_duplicates` and `value_counts`. Cost: one pass and the new array."""
-    flags = Array.fill((count,), 0)
+def absence(bits: Array[u8, 1], count: int) -> Array[i64, 1]:
+    """For each of the `count` elements the validity bitmap `bits` covers, 0 when it is there
+    and 1 when it is `None`: a key column that keeps rows with a `None` apart from rows with
+    a value, for `drop_duplicates`, `value_counts` and `merge`, and sorts them after the
+    rows with a value, where an outer `merge` puts them. Cost: one pass and the new array."""
+    flags = Array.fill((count,), 1)
     for at in range(count):
         if _valid(bits, at):
-            flags[at] = 1
+            flags[at] = 0
     return flags
 
 
