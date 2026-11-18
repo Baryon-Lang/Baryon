@@ -244,6 +244,9 @@ impl<'db> Builder<'db> {
         if self.is_selection(target) {
             return self.unsupported(statement, "in-place operators on elements an array chooses");
         }
+        if self.is_optional_augmented(statement) {
+            return self.optional_augmented(statement);
+        }
         let ty = self.ty(target);
         let array = self.is_array(ty);
         let float_parameter = self.is_float_parameter(ty);

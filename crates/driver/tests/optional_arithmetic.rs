@@ -63,7 +63,8 @@ def uses(grid: Array[f64, 2]):
     turned = -flags
     masked = counts & counts
     larger = bids in bids
-    bids += 1.0
+    bids **= 2.0
+    counts /= 2
     plain: Array[f64, 1] = bids + 1.0
 "#;
 
@@ -130,17 +131,24 @@ error: `in` is not built for an array with missing values yet
    |                  ^^^^^^^^ an array that may hold `None`
    = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
 
-error: `+=` is not built for an array with missing values yet
+error: `**` is not built for an array with missing values yet
   --> main.byn:15:5
    |
-15 |     bids += 1.0
-   |     ^^^^^^^^^^^ an array that may hold `None`
+15 |     bids **= 2.0
+   |     ^^^^^^^^^^^^ an array that may hold `None`
    = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
 
-error: expected `Array[f64, 1]`, found `Array[f64 | None, 1]`
-  --> main.byn:16:28
+error: `/=` gives `Array[f64 | None, 1]`, but the target has type `Array[i64 | None, 1]`
+  --> main.byn:16:5
    |
-16 |     plain: Array[f64, 1] = bids + 1.0
+16 |     counts /= 2
+   |     ^^^^^^^^^^^ would change the target's type
+   = note: a variable keeps one type for its whole scope; convert the value, or use a new name
+
+error: expected `Array[f64, 1]`, found `Array[f64 | None, 1]`
+  --> main.byn:17:28
+   |
+17 |     plain: Array[f64, 1] = bids + 1.0
    |                            ^^^^^^^^^^ the annotation says `Array[f64, 1]`"#;
 
 #[test]
