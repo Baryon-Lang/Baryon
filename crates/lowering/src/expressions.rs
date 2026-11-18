@@ -47,6 +47,9 @@ impl<'db> Builder<'db> {
             SyntaxKind::Subscript if self.is_environ_item(node) => {
                 self.environ_item(place, node);
             }
+            SyntaxKind::Subscript if self.is_optional_text_item(node) => {
+                self.optional_text_item(place, node);
+            }
             SyntaxKind::Subscript if self.is_text_subscript(node) => {
                 self.text_subscript(place, node);
             }

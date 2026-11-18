@@ -87,6 +87,18 @@ def twice[T: Number](values: Array[T, 1]) -> Array[T, 1]:
 `twice(Array([1, 2, 3]))` gives `[2 4 6]`, an array of `int`, and `twice(Array([1.5, 2.0]))`
 gives `[3. 4.]`. A parameter with no bound has no zero, so `Array.zeros(n, T)` is an error there.
 
+A [union](types.md#unions-of-structs) has no zero or one either, so `Array.zeros` and
+`Array.ones` of a union are errors: no member is picked to stand for the union. Name the members
+the array starts with instead, in a list with the array type written out, or repeat one member
+with `Array.fill`:
+
+```python
+Shape = Circle | Square
+
+shapes: Array[Shape, 1] = Array([Circle(1.0), Square(2.0)])
+walls: Array[Shape, 1] = Array.fill(100, Circle(0.0))
+```
+
 A `Fixed` array is created by calling its type with its elements, or with one of the same
 functions without the shape:
 

@@ -31,7 +31,7 @@ class Quote(Struct):
 
 
 class Named(Struct):
-    name: str | None
+    name: list[str] | None
 
 
 class Price(Struct):
@@ -40,6 +40,9 @@ class Price(Struct):
 
 def uses(quotes: DataFrame[Quote], rows: list[Quote], prices: DataFrame[Price]):
     names: DataFrame[Named] = DataFrame({"name": Array(["a"])})
+    words = Array(["a", None])
+    filled = words.fillna(1)
+    longest = words.max()
     first: f64 = quotes[0].bid
     narrow = quotes.fillna({"price": 1.0})
     full = quotes.dropna(how="all")
@@ -55,86 +58,99 @@ def uses(quotes: DataFrame[Quote], rows: list[Quote], prices: DataFrame[Price]):
 "#;
 
 /// What the checker reports for [`MISTAKES`], in source order.
-const EXPECTED: &str = r#"error: a column of a `DataFrame` cannot hold `str | None` yet
+const EXPECTED: &str = r#"error: a column of a `DataFrame` cannot hold `list[str] | None` yet
   --> main.byn:15:22
    |
 15 |     names: DataFrame[Named] = DataFrame({"name": Array(["a"])})
    |                      ^^^^^ the field `name` would be such a column
-   = note: a column holds numbers, `bool` or `str` today, and numbers or `bool`s that may be `None`
+   = note: a column holds numbers, `bool` or `str` today, any of which may be `None`
+
+error: expected `str`, found `i64`
+  --> main.byn:17:27
+   |
+17 |     filled = words.fillna(1)
+   |                           ^ the array holds `str`
+
+error: the method `max` is not built for an array with missing values yet
+  --> main.byn:18:15
+   |
+18 |     longest = words.max()
+   |               ^^^^^^^^^^^ an array that may hold `None`
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes with roadmap item 3.13.6
 
 error: this value may be `None`
-  --> main.byn:16:18
+  --> main.byn:19:18
    |
-16 |     first: f64 = quotes[0].bid
+19 |     first: f64 = quotes[0].bid
    |                  ^^^^^^^^^^^^^ has type `f64 | None`
    = note: give it a name and check it first: `if value is not None:`
 
 error: the column `price` cannot hold `None`
-  --> main.byn:17:29
+  --> main.byn:20:29
    |
-17 |     narrow = quotes.fillna({"price": 1.0})
+20 |     narrow = quotes.fillna({"price": 1.0})
    |                             ^^^^^^^ has nothing to fill
 
 error: `dropna` of a `DataFrame` takes no arguments yet
-  --> main.byn:18:12
+  --> main.byn:21:12
    |
-18 |     full = quotes.dropna(how="all")
+21 |     full = quotes.dropna(how="all")
    |            ^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
    = note: `df.dropna()` drops each row with a `None` in any column; to look at some columns only, take them first: `df[["bid", "ask"]].dropna()`
 
 error: the method `argsort` is not built for an array with missing values yet
-  --> main.byn:19:13
+  --> main.byn:22:13
    |
-19 |     order = quotes.bid.argsort()
+22 |     order = quotes.bid.argsort()
    |             ^^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
    = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes with roadmap item 3.13.6
 
 error: `agg` has no reduction `top`
-  --> main.byn:20:54
+  --> main.byn:23:54
    |
-20 |     groups = quotes.groupby("price").agg(top=("bid", "top"))
+23 |     groups = quotes.groupby("price").agg(top=("bid", "top"))
    |                                                      ^^^^^ not a reduction
    = note: it has `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`
 
 error: `DataFrame[Price]` has no column `bid`
-  --> main.byn:21:38
+  --> main.byn:24:38
    |
-21 |     joined = prices.merge(quotes, on="bid")
+24 |     joined = prices.merge(quotes, on="bid")
    |                                      ^^^^^ not a column
    = note: its columns are `price`
 
 error: the method `std` is not built for an array with missing values yet
-  --> main.byn:22:15
+  --> main.byn:25:15
    |
-22 |     stacked = quotes.bid.std()
+25 |     stacked = quotes.bid.std()
    |               ^^^^^^^^^^^^^^^^ an array that may hold `None`
    = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes with roadmap item 3.13.6
 
 error: this value may be `None`
-  --> main.byn:24:17
+  --> main.byn:27:17
    |
-24 |         total = row.bid + 1.0
+27 |         total = row.bid + 1.0
    |                 ^^^^^^^ has type `f64 | None`
    = note: give it a name and check it first: `if value is not None:`
 
 error: a value that holds an array with missing values cannot be shown yet
-  --> main.byn:25:11
+  --> main.byn:28:11
    |
-25 |     print((quotes.copy(), 1))
+28 |     print((quotes.copy(), 1))
    |           ^^^^^^^^^^^^^^^^^^ holds an array that may hold `None`
    = note: show the array or the frame alone: `print(values)`
 
 error: a column cannot be moved out of its `DataFrame`
-  --> main.byn:26:12
+  --> main.byn:29:12
    |
-26 |     kept = quotes.bid
+29 |     kept = quotes.bid
    |            ^^^^^^^^^^ moved out of the frame
    = note: a column can be read, passed to a call or assigned to; to keep it on its own, copy it: `quotes.bid.copy()`
 
 error: list items must share one type, found `f64 | None` and `str`
-  --> main.byn:27:79
+  --> main.byn:30:79
    |
-27 |     wrong: DataFrame[Quote] = DataFrame({"price": Array([1.0]), "bid": Array(["a"])})
+30 |     wrong: DataFrame[Quote] = DataFrame({"price": Array([1.0]), "bid": Array(["a"])})
    |                                                                               ^^^ a different type"#;
 
 /// A program that uses a frame with a column that may hold `None` only in the ways that are

@@ -1,6 +1,6 @@
-//! The orthogonal polynomials, associated Legendre functions and spherical harmonics of
-//! `special` (roadmap 3.18.10), built and run and checked against the values mpmath records, as
-//! [`super::special`] checks the other families, with its tolerances.
+//! The orthogonal polynomials, associated Legendre functions, spherical harmonics and Gauss
+//! quadrature rules of `special` (roadmap 3.18.10), built and run and checked against the values
+//! mpmath records, as [`super::special`] checks the other families, with its tolerances.
 
 use super::special::check;
 
@@ -56,6 +56,69 @@ fn orthogonal_polynomials_match_the_recorded_values() {
         "special-orthogonal",
         ORTHOGONAL_POLYNOMIALS,
         "orthogonal_polynomials.txt",
+    )
+    .unwrap();
+}
+
+/// The Gauss quadrature program: reads `cases.txt`, one case a line, `roots_<family>_x` or
+/// `roots_<family>_w`, the number of nodes n, the index of the node, the parameters α and β
+/// (0.0 where the family has none), the size its error is measured against and the reference,
+/// and prints that node or weight. Consecutive cases of one rule share it, so each rule is built
+/// once.
+const GAUSS_QUADRATURE: &str = "\
+from special import roots_chebyt, roots_chebyu, roots_gegenbauer, roots_genlaguerre, roots_hermite
+from special import roots_hermitenorm, roots_jacobi, roots_laguerre, roots_legendre
+
+
+def rule(family: str, n: int, alpha: f64, beta: f64) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    if family == \"roots_legendre\":
+        return roots_legendre(n)
+    if family == \"roots_chebyt\":
+        return roots_chebyt(n)
+    if family == \"roots_chebyu\":
+        return roots_chebyu(n)
+    if family == \"roots_hermite\":
+        return roots_hermite(n)
+    if family == \"roots_hermitenorm\":
+        return roots_hermitenorm(n)
+    if family == \"roots_laguerre\":
+        return roots_laguerre(n)
+    if family == \"roots_genlaguerre\":
+        return roots_genlaguerre(n, alpha)
+    if family == \"roots_jacobi\":
+        return roots_jacobi(n, alpha, beta)
+    return roots_gegenbauer(n, alpha)
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    key = \"\"
+    nodes = Array.zeros(1, f64)
+    weights = Array.zeros(1, f64)
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            n = int(fields[1])
+            i = int(fields[2])
+            case = name[:-2] + \" \" + fields[1] + \" \" + fields[3] + \" \" + fields[4]
+            if case != key:
+                nodes, weights = rule(name[:-2], n, float(fields[3]), float(fields[4]))
+                key = case
+            if name.endswith(\"_x\"):
+                print(nodes[i])
+            else:
+                print(weights[i])
+";
+
+/// The nine `roots_` rules at the 3,100 cases of `gauss_quadrature.txt`: rules of 1 to 150 nodes
+/// for every family and parameter, 400 nodes for Hermite's and Laguerre's, whose recurrences pass
+/// the range of `f64` in the tails, and `SciPy`'s NaN rules at the edge of a parameter's range.
+#[test]
+fn gauss_quadrature_matches_the_recorded_values() {
+    check(
+        "special-quadrature",
+        GAUSS_QUADRATURE,
+        "gauss_quadrature.txt",
     )
     .unwrap();
 }

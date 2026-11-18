@@ -23,7 +23,11 @@ impl<'db> Body<'db> {
         name: &str,
         arguments: &Arguments,
     ) -> Option<Type<'db>> {
-        let narrowed = Type::new(self.db, TypeKind::Array { element, rank: 1 });
+        // Text with no gaps is a text array, the type of `Array[str, 1]`.
+        let narrowed = match element.kind(self.db) {
+            TypeKind::Str => Type::new(self.db, TypeKind::TextArray),
+            _ => Type::new(self.db, TypeKind::Array { element, rank: 1 }),
+        };
         let given = (
             arguments.positional.as_slice(),
             arguments.keywords.as_slice(),

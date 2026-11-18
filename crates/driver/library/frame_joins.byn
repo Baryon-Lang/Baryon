@@ -221,11 +221,14 @@ def group_rows(
     2 the largest, 3 the group's first row and 4 its last. `values` are the numbers
     `text_codes` gives the column, so the smallest is the text that comes first by `<`; of
     equal ones the first row is given. `order` and `starts` are the groups as `frames.byn`
-    finds them. One pass over the rows."""
+    finds them. A group with no rows, which a column that may hold `None` can leave, is
+    given row 0, and the caller marks its text as `None`. One pass over the rows."""
     result = [0 for group in range(len(starts) - 1)]
     for group in range(len(starts) - 1):
         low = starts[group]
         high = starts[group + 1]
+        if high <= low:
+            continue
         row = order[low]
         if how == 4:
             row = order[high - 1]
@@ -344,6 +347,31 @@ def text_shown(column: Array[str, 1]) -> str:
             words.append("...")
         else:
             words.append(_quoted(column[at]))
+    return _wrapped(words)
+
+
+def text_optional_shown(values: Array[str, 1], bits: Array[u8, 1]) -> str:
+    """A text array with missing values as `print` shows it: as `text_shown` shows a text
+    array, with `None` for each element whose bit in the validity bitmap `bits` is 0, so
+    `['a' None 'c']`. Cost: one copy of each element shown."""
+    count = len(values)
+    shown = [at for at in range(count)]
+    if count > 1000:
+        shown = [0, 1, 2, -1, count - 3, count - 2, count - 1]
+    words: list[str] = []
+    for at in shown:
+        if at < 0:
+            words.append("...")
+        elif ((bits[at // 8] >> u8(at % 8)) & u8(1)) == u8(1):
+            words.append(_quoted(values[at]))
+        else:
+            words.append("None")
+    return _wrapped(words)
+
+
+def _wrapped(words: list[str]) -> str:
+    """`words` with a space between two, the whole in brackets. A line holds at most 75
+    characters and the next starts under the first word."""
     text = ""
     line = " "
     for at in range(len(words)):

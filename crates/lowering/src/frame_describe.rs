@@ -37,6 +37,16 @@ impl Builder<'_> {
             let stored = source.clone().project(Projection::Field(position));
             // A column that may hold `None` is described by the values that are there, which
             // the library's `present` gathers into an array dropped with the statement.
+            let inner = match column.element.kind(self.db) {
+                &TypeKind::Optional(element) => element,
+                _ => column.element,
+            };
+            if !matches!(
+                inner.kind(self.db),
+                TypeKind::Primitive(Primitive::Integer(_) | Primitive::Float(_))
+            ) {
+                continue;
+            }
             let (values, element) = match column.element.kind(self.db) {
                 &TypeKind::Optional(element) => {
                     let arguments = vec![
@@ -54,12 +64,6 @@ impl Builder<'_> {
                 }
                 _ => (stored, column.element),
             };
-            if !matches!(
-                element.kind(self.db),
-                TypeKind::Primitive(Primitive::Integer(_) | Primitive::Float(_))
-            ) {
-                continue;
-            }
             let values = self.converted(values, element, float, node);
             let Some(described) =
                 self.frame_call("described", Vec::new(), vec![values], numbers, node)

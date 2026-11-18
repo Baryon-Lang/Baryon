@@ -30,7 +30,11 @@ impl<'db> Builder<'db> {
                 place.clone().project(Projection::Field(VALUES)),
                 place.clone().project(Projection::Field(VALIDITY)),
             ];
-            let shown = self.frame_call("optional_shown", vec![element], arguments, text, node);
+            let shown = if matches!(element.kind(self.db), TypeKind::Str) {
+                self.frame_call("text_optional_shown", Vec::new(), arguments, text, node)
+            } else {
+                self.frame_call("optional_shown", vec![element], arguments, text, node)
+            };
             if let Some(shown) = shown {
                 self.drop_later(shown);
                 return Place::from(shown);
@@ -55,7 +59,8 @@ impl<'db> Builder<'db> {
     /// The cells, a new `list[str]`, of the column that may hold `None` stored at `column`,
     /// whose values are `element`s: the library's `optional_float_cells` for `f64`,
     /// `optional_single_cells` for `f32` and `optional_cells` for integers and `bool`, each
-    /// of which writes `<NA>` for a missing value. `None` after a report.
+    /// of which writes `<NA>` for a missing value. The cells of text are those of its
+    /// values, from `text_cells`, with `<NA>` put in by `gap_cells`. `None` after a report.
     fn optional_cells(
         &mut self,
         column: &Place,
@@ -64,6 +69,17 @@ impl<'db> Builder<'db> {
     ) -> Option<Local> {
         let text = Type::new(self.db, TypeKind::Str);
         let list = Type::new(self.db, TypeKind::List(text));
+        if matches!(element.kind(self.db), TypeKind::Str) {
+            let values = column.clone().project(Projection::Field(VALUES));
+            let plain = self.frame_call("text_cells", Vec::new(), vec![values], list, node)?;
+            self.drop_later(plain);
+            let int = self.int_type();
+            let count = self.optional_array_length(column, element, node);
+            let count = Place::from(self.held(int, count, node));
+            let bits = column.clone().project(Projection::Field(VALIDITY));
+            let arguments = vec![Place::from(plain), bits, count];
+            return self.frame_call("gap_cells", Vec::new(), arguments, list, node);
+        }
         let (function, type_arguments) = match element.kind(self.db) {
             TypeKind::Primitive(Primitive::Float(Float::F64)) => {
                 ("optional_float_cells", Vec::new())
@@ -78,6 +94,16 @@ impl<'db> Builder<'db> {
             column.clone().project(Projection::Field(VALIDITY)),
         ];
         self.frame_call(function, type_arguments, arguments, list, node)
+    }
+
+    /// Whether a column whose elements are of type `element` holds text: `str`, or `str` that
+    /// may be `None`.
+    pub(crate) fn holds_text(&self, element: Type<'db>) -> bool {
+        match element.kind(self.db) {
+            TypeKind::Str => true,
+            TypeKind::Optional(inner) => matches!(inner.kind(self.db), TypeKind::Str),
+            _ => false,
+        }
     }
 
     /// The place of the text of the frame the expression `node` gives, which `frame` holds: a
@@ -97,7 +123,7 @@ impl<'db> Builder<'db> {
         for (position, column) in (0..).zip(columns) {
             flags.push(Operand::Constant(Constant {
                 ty: boolean,
-                value: ConstantValue::Bool(matches!(column.element.kind(self.db), TypeKind::Str)),
+                value: ConstantValue::Bool(self.holds_text(column.element)),
             }));
             let stored = frame.clone().project(Projection::Field(position));
             let formatted = match column.element.kind(self.db) {
