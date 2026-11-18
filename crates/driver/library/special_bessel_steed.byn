@@ -1,0 +1,500 @@
+"""The Bessel functions of real order for `special` (roadmap 3.18.5): the machinery behind `jv`,
+`yv`, `iv`, `kv` and the rest in `special_bessel_real`.
+
+`bessel_jy` gives J_ν, Y_ν and their derivatives and `bessel_ik` gives I_ν and K_ν, or
+I_ν e⁻ˣ and K_ν eˣ, and theirs, for ν of 0 or more and x above 0, by the method of Temme and
+Steed (Temme 1976, Barnett et al. 1974, as Numerical Recipes §6.7 sets it out):
+
+1. Write ν = μ + l, with l whole and |μ| at most ½.
+2. A continued fraction (CF1) gives the ratio J′_ν/J_ν (or I′_ν/I_ν), and the recurrence run
+   down from ν to μ gives J_ν and J′_ν up to one common factor.
+3. Y_μ and Y_{μ+1} (or K) come from Temme's series below x = 2 and from Steed's complex
+   continued fraction (CF2) above it; the Wronskian then fixes the factor of step 2.
+4. The recurrence run up from μ to ν gives Y_ν (or K_ν), which grows in that direction.
+
+Every recurrence runs in the direction in which it is stable. Far beyond the order, where CF1
+would take about x steps, `bessel_jy` uses Hankel's asymptotic expansion instead.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import cos, cosh, exp, fabs, inf, isinf, log, pi, pow, sin, sinh, sqrt
+from special_common import EULER, cospi, sinpi
+from special_gamma import rgamma, rgamma_near_one
+
+_EPSILON: Final = 1.0e-16  # the relative size at which a continued fraction or series stops
+_TINY: Final = 1.0e-300  # stands in for 0 in a modified Lentz continued fraction
+_HUGE: Final = 1.0e250  # past it, the downward recurrence of J or I is scaled down
+_STEPS: Final = 1000000  # a bound on the steps of CF1, which needs about x of them
+
+
+def _gammas(mu: f64) -> tuple[f64, f64, f64, f64]:
+    """For |μ| at most ½: Temme's Γ₁ = (1/Γ(1 − μ) − 1/Γ(1 + μ))/(2μ), Γ₂ = (1/Γ(1 − μ) +
+    1/Γ(1 + μ))/2, 1/Γ(1 + μ) and 1/Γ(1 − μ). Γ₁ is −γ at μ = 0; elsewhere its two terms are
+    each 1/Γ − 1 from the Taylor series, whose odd parts, which Γ₁ keeps, never cancel."""
+    plus = rgamma_near_one(mu)
+    minus = rgamma_near_one(-mu)
+    first = -EULER
+    if mu != 0.0:
+        first = (minus - plus) / (2.0 * mu)
+    return first, 1.0 + (minus + plus) / 2.0, 1.0 + plus, 1.0 + minus
+
+
+def bessel_jy(nu: f64, x: f64) -> tuple[f64, f64, f64, f64]:
+    """J_ν(x), Y_ν(x), J′_ν(x) and Y′_ν(x) for `nu` of 0 or more and `x` above 0.
+
+    Far beyond the order, from x = 30 and x above ν²/4, Hankel's expansion takes over, and
+    between ν and ν²/4 Hankel's expansion at a small order and the recurrence up from it;
+    below x² = 6(ν + 1) the power series gives J; anywhere else Temme and Steed's method, whose
+    CF1 takes about x + ν steps. J far above x underflows to 0 and Y overflows to −∞ as the true
+    values do; once Y_ν is −∞, Y′_ν is ∞."""
+    if x >= 30.0 and x > nu * nu / 4.0:
+        return _hankel(nu, x)
+    if x >= 30.0 and x > nu:
+        return _hankel_up(nu, x)
+    whole = 0
+    if x < 2.0:
+        whole = int(nu + 0.5)
+    elif nu - x + 1.5 > 0.0:
+        whole = int(nu - x + 1.5)
+    mu = nu - whole
+    inverse = 1.0 / x
+    twice = 2.0 * inverse
+    # CF1: J′_ν/J_ν = ν/x − J_{ν+1}/J_ν, by the modified Lentz method.
+    sign = 1.0
+    ratio = nu * inverse
+    if ratio < _TINY:
+        ratio = _TINY
+    b = twice * nu
+    d = 0.0
+    c = ratio
+    for step in range(_STEPS):
+        b += twice
+        d = b - d
+        if fabs(d) < _TINY:
+            d = _TINY
+        c = b - 1.0 / c
+        if fabs(c) < _TINY:
+            c = _TINY
+        d = 1.0 / d
+        change = c * d
+        ratio *= change
+        if d < 0.0:
+            sign = -sign
+        if fabs(change - 1.0) < _EPSILON:
+            break
+    # Down from ν to μ, from J_ν = ±tiny: only the ratio of the ends matters.
+    value = sign * _TINY
+    slope = ratio * value
+    top_value = value
+    top_slope = slope
+    # Each factor (ν − l)/x is formed afresh: carried down by subtracting 1/x, its rounding
+    # would build up over the steps and cost about l²/2 ULP, 1,000 at ν = 116.
+    for level in range(whole):
+        following = (nu - level) / x * value + slope
+        slope = (nu - level - 1.0) / x * following - value
+        value = following
+        if fabs(value) > _HUGE:
+            value /= _HUGE
+            slope /= _HUGE
+            top_value /= _HUGE
+            top_slope /= _HUGE
+    if value == 0.0:
+        value = _EPSILON
+    low_ratio = slope / value
+    w = twice / pi
+    j_mu = 0.0
+    y_mu = 0.0
+    y_next = 0.0
+    if x < 2.0:
+        y_mu, y_next = _temme_y(mu, x)
+        y_slope = mu * inverse * y_mu - y_next
+        j_mu = w / (y_slope - low_ratio * y_mu)
+    else:
+        p, q = _steed_jy(mu, x)
+        gamma = (p - low_ratio) / q
+        j_mu = sqrt(w / ((p - low_ratio) * gamma + q))
+        if value < 0.0:
+            j_mu = -j_mu
+        y_mu = j_mu * gamma
+        y_slope = y_mu * (p + q / gamma)
+        y_next = mu * inverse * y_mu - y_slope
+    scale = j_mu / value
+    for level in range(1, whole + 1):
+        following = (mu + level) * twice * y_next - y_mu
+        if isinf(following) and level < whole:
+            return top_value * scale, -inf, top_slope * scale, inf
+        y_mu = y_next
+        y_next = following
+    j = top_value * scale
+    j_slope = top_slope * scale
+    if _series_fits(nu, x, False):
+        j, j_slope = _series(nu, x, -1.0)
+    return j, y_mu, j_slope, nu * inverse * y_mu - y_next
+
+
+def _series_fits(nu: f64, x: f64, modified: bool) -> bool:
+    """Whether `_series` gives J_ν, or I_ν when `modified`, here. Below ν = 170, and where
+    (x/2)^ν stays below 1e300, neither Γ(ν + 1) nor the leading power leaves the range of
+    `f64`. J's terms alternate, so it is used only below x² = 6(ν + 1), where the largest
+    term is at most about 10 times the sum; I's are all positive and never cancel, so it is
+    used up to x² = 100(ν + 1). There the series keeps each value's relative precision, where
+    the recurrence and Wronskian of Steed's method lose up to 20,000 ULP for x far below ν."""
+    if nu >= 170.0 or nu * log(x / 2.0) >= 690.0:
+        return False
+    if modified:
+        return x * x < 100.0 * (nu + 1.0)
+    return x * x < 6.0 * (nu + 1.0)
+
+
+def _series(nu: f64, x: f64, sign: f64) -> tuple[f64, f64]:
+    """J_ν(x) and J′_ν(x) when `sign` is −1, or I_ν(x) and I′_ν(x) when it is 1, by the power
+    series (x/2)^ν Σₖ (±x²/4)ᵏ / (k! Γ(ν + k + 1)) (DLMF 10.2.2 and 10.25.2), with the
+    derivative from J′_ν = (ν/x) J_ν − J_{ν+1} and I′_ν = (ν/x) I_ν + I_{ν+1}."""
+    quarter = sign * x * x / 4.0
+    total = 1.0
+    total_next = 1.0
+    term = 1.0
+    term_next = 1.0
+    for k in range(1, 400):
+        term *= quarter / (k * (nu + k))
+        term_next *= quarter / (k * (nu + 1.0 + k))
+        total += term
+        total_next += term_next
+        if fabs(term) <= _EPSILON * fabs(total) and fabs(term_next) <= _EPSILON * fabs(total_next):
+            break
+    # 1/Γ(ν + 1) as (1/Γ(ν))/ν: ν + 1 itself can round, by up to half a unit of ν, and Γ is so
+    # steep that this alone would cost ν ψ(ν) ULP, 250 at ν = 63.
+    lead = 1.0
+    if nu != 0.0:
+        lead = pow(x / 2.0, nu) * rgamma(nu) / nu
+    value = lead * total
+    following = lead * x / (2.0 * (nu + 1.0)) * total_next
+    return value, nu / x * value + sign * following
+
+
+def _temme_y(mu: f64, x: f64) -> tuple[f64, f64]:
+    """Y_μ(x) and Y_{μ+1}(x) for |μ| at most ½ and `x` below 2, by Temme's series (Numerical
+    Recipes 6.7.12 to 6.7.21): about x + 10 terms."""
+    half = x / 2.0
+    angle = pi * mu
+    fact = 1.0
+    if fabs(angle) >= _EPSILON:
+        fact = angle / sin(angle)
+    d = -log(half)
+    e = mu * d
+    fact2 = 1.0
+    if fabs(e) >= _EPSILON:
+        fact2 = sinh(e) / e
+    first, second, plus, minus = _gammas(mu)
+    f = 2.0 / pi * fact * (first * cosh(e) + second * fact2 * d)
+    e = exp(e)
+    p = e / (plus * pi)
+    q = 1.0 / (e * pi * minus)
+    half_angle = angle / 2.0
+    fact3 = 1.0
+    if fabs(half_angle) >= _EPSILON:
+        fact3 = sin(half_angle) / half_angle
+    r = pi * half_angle * fact3 * fact3
+    c = 1.0
+    d = -half * half
+    total = f + r * q
+    total_next = p
+    for i in range(1, 200):
+        f = (i * f + p + q) / (i * i - mu * mu)
+        c *= d / i
+        p /= i - mu
+        q /= i + mu
+        term = c * (f + r * q)
+        total += term
+        total_next += c * p - i * term
+        if fabs(term) < (1.0 + fabs(total)) * _EPSILON:
+            break
+    return -total, -total_next * 2.0 / x
+
+
+def _steed_jy(mu: f64, x: f64) -> tuple[f64, f64]:
+    """p + iq = (J′_μ + iY′_μ)/(J_μ + iY_μ) for |μ| at most ½ and `x` from 2, by Steed's
+    complex continued fraction CF2 (Numerical Recipes 6.7.3), in complex arithmetic written
+    out: about 1 + 30/x steps."""
+    inverse = 1.0 / x
+    a = 0.25 - mu * mu
+    p = -0.5 * inverse
+    q = 1.0
+    br = 2.0 * x
+    bi = 2.0
+    fact = a * inverse / (p * p + q * q)
+    cr = br + q * fact
+    ci = bi + p * fact
+    den = br * br + bi * bi
+    dr = br / den
+    di = -bi / den
+    dlr = cr * dr - ci * di
+    dli = cr * di + ci * dr
+    temp = p * dlr - q * dli
+    q = p * dli + q * dlr
+    p = temp
+    for i in range(2, _STEPS):
+        a += 2.0 * (i - 1)
+        bi += 2.0
+        dr = a * dr + br
+        di = a * di + bi
+        if fabs(dr) + fabs(di) < _TINY:
+            dr = _TINY
+        fact = a / (cr * cr + ci * ci)
+        cr = br + cr * fact
+        ci = bi - ci * fact
+        if fabs(cr) + fabs(ci) < _TINY:
+            cr = _TINY
+        den = dr * dr + di * di
+        dr /= den
+        di /= -den
+        dlr = cr * dr - ci * di
+        dli = cr * di + ci * dr
+        temp = p * dlr - q * dli
+        q = p * dli + q * dlr
+        p = temp
+        if fabs(dlr - 1.0) + fabs(dli) < _EPSILON:
+            break
+    return p, q
+
+
+def _hankel(nu: f64, x: f64) -> tuple[f64, f64, f64, f64]:
+    """J_ν, Y_ν, J′_ν and Y′_ν for x from 30 and above ν²/4, from `_hankel_jy` at ν and ν − 1
+    with J′_ν = J_{ν−1} − (ν/x) J_ν and the same for Y. Hankel's own expansions of the
+    derivatives (DLMF 10.17.9) have larger terms, and lose up to 1,000 ULP where these lose
+    100."""
+    j, y = _hankel_jy(nu, x)
+    j_below, y_below = _hankel_jy(nu - 1.0, x)
+    return j, y, j_below - nu / x * j, y_below - nu / x * y
+
+
+def _hankel_up(nu: f64, x: f64) -> tuple[f64, f64, f64, f64]:
+    """J_ν, Y_ν, J′_ν and Y′_ν for x from 30 and above ν, below ν²/4: Hankel's expansion at
+    the order μ = ν − round(ν) and μ + 1, where it converges at once, then the recurrence
+    C_{k+1} = (2k/x) C_k − C_{k−1} up to ν, which is stable for both J and Y while the order
+    stays below x. CF1 would take about x steps here and lose up to 100,000 ULP at ν = 90."""
+    whole = int(nu + 0.5)
+    mu = nu - whole
+    j, y = _hankel_jy(mu, x)
+    j_next, y_next = _hankel_jy(mu + 1.0, x)
+    for level in range(whole):
+        factor = 2.0 * (mu + level + 1.0) / x
+        j_following = factor * j_next - j
+        y_following = factor * y_next - y
+        j = j_next
+        y = y_next
+        j_next = j_following
+        y_next = y_following
+    return j, y, nu / x * j - j_next, nu / x * y - y_next
+
+
+def _hankel_jy(nu: f64, x: f64) -> tuple[f64, f64]:
+    """J_ν and Y_ν by Hankel's expansion (DLMF 10.17.3), for x from 30 and above ν²/4, where
+    the terms of P and Q grow by at most a factor of 2 before they fall:
+    J = √(2/(πx)) (P cos χ − Q sin χ) and Y = √(2/(πx)) (P sin χ + Q cos χ), with
+    χ = x − (ν/2 + ¼)π. cos χ and sin χ are formed from cos x and sin x and from `cospi` and
+    `sinpi` of ν/2 + ¼, so χ is never rounded."""
+    mu = 4.0 * nu * nu
+    z = 8.0 * x
+    p = 1.0
+    q = 0.0
+    term = 1.0
+    for k in range(1, 80):
+        odd = 2.0 * k - 1.0
+        term *= (mu - odd * odd) / (k * z)
+        if k % 4 == 1:
+            q += term
+        elif k % 4 == 2:
+            p -= term
+        elif k % 4 == 3:
+            q -= term
+        else:
+            p += term
+        if fabs(term) <= 1.0e-18:
+            break
+    phase = nu / 2.0 + 0.25
+    cos_phase = cospi(phase)
+    sin_phase = sinpi(phase)
+    cosine = cos(x) * cos_phase + sin(x) * sin_phase
+    sine = sin(x) * cos_phase - cos(x) * sin_phase
+    scale = sqrt(2.0 / (pi * x))
+    return scale * (p * cosine - q * sine), scale * (p * sine + q * cosine)
+
+
+def bessel_ik(nu: f64, x: f64, scaled: bool) -> tuple[f64, f64, f64, f64]:
+    """I_ν(x), K_ν(x), I′_ν(x) and K′_ν(x) for `nu` of 0 or more and `x` above 0, each times
+    e⁻ˣ for I and eˣ for K when `scaled`, by Temme and Steed's method for the modified
+    functions (Numerical Recipes `bessik`). The scale is applied to I_μ and K_μ, before the
+    recurrences carry them to ν, so that I_ν far above x, which is far below e⁻ˣ, does not
+    underflow on the way when unscaled, nor K_ν overflow: CF1 for I′_ν/I_ν, the downward
+    recurrence to μ, K_μ and K_{μ+1} from Temme's series below x = 2 and from Steed's CF2 above,
+    the Wronskian I K′ − I′ K = −1/x for the scale, and the upward recurrence for K. Far beyond
+    the order, from x = 30 and x above ν², where CF1 would take about x steps, the asymptotic
+    expansions of `_hankel_ik` take over."""
+    if x >= 30.0 and x > nu * nu:
+        i, k, i_slope, k_slope = _hankel_ik(nu, x)
+        if scaled:
+            return i, k, i_slope, k_slope
+        up = exp(x / 2.0)
+        return i * up * up, k / up / up, i_slope * up * up, k_slope / up / up
+    whole = int(nu + 0.5)
+    mu = nu - whole
+    inverse = 1.0 / x
+    twice = 2.0 * inverse
+    ratio = nu * inverse
+    if ratio < _TINY:
+        ratio = _TINY
+    b = twice * nu
+    d = 0.0
+    c = ratio
+    for step in range(_STEPS):
+        b += twice
+        d = 1.0 / (b + d)
+        c = b + 1.0 / c
+        change = c * d
+        ratio *= change
+        if fabs(change - 1.0) < _EPSILON:
+            break
+    value = _TINY
+    slope = ratio * value
+    top_value = value
+    top_slope = slope
+    for level in range(whole):
+        following = (nu - level) / x * value + slope
+        slope = (nu - level - 1.0) / x * following + value
+        value = following
+        if fabs(value) > _HUGE:
+            value /= _HUGE
+            slope /= _HUGE
+            top_value /= _HUGE
+            top_slope /= _HUGE
+    low_ratio = slope / value
+    k_mu = 0.0
+    k_next = 0.0
+    if x < 2.0:
+        k_mu, k_next = _temme_k(mu, x)
+        if scaled:
+            k_mu *= exp(x)
+            k_next *= exp(x)
+    else:
+        k_mu, k_next = _steed_k(mu, x)
+        if not scaled:
+            down = exp(-x / 2.0)
+            k_mu = k_mu * down * down
+            k_next = k_next * down * down
+    k_slope = mu * inverse * k_mu - k_next
+    i_mu = inverse / (low_ratio * k_mu - k_slope)
+    for level in range(1, whole + 1):
+        following = (mu + level) * twice * k_next + k_mu
+        if isinf(following) and level < whole:
+            return top_value / value * i_mu, inf, top_slope / value * i_mu, -inf
+        k_mu = k_next
+        k_next = following
+    i = top_value / value * i_mu
+    i_slope = top_slope / value * i_mu
+    if _series_fits(nu, x, True):
+        i, i_slope = _series(nu, x, 1.0)
+        if scaled:
+            i *= exp(-x)
+            i_slope *= exp(-x)
+    return i, k_mu, i_slope, nu * inverse * k_mu - k_next
+
+
+def _temme_k(mu: f64, x: f64) -> tuple[f64, f64]:
+    """K_μ(x) and K_{μ+1}(x) for |μ| at most ½ and `x` below 2, by Temme's series (Numerical
+    Recipes 6.7.39 to 6.7.43)."""
+    half = x / 2.0
+    angle = pi * mu
+    fact = 1.0
+    if fabs(angle) >= _EPSILON:
+        fact = angle / sin(angle)
+    d = -log(half)
+    e = mu * d
+    fact2 = 1.0
+    if fabs(e) >= _EPSILON:
+        fact2 = sinh(e) / e
+    first, second, plus, minus = _gammas(mu)
+    f = fact * (first * cosh(e) + second * fact2 * d)
+    total = f
+    e = exp(e)
+    p = 0.5 * e / plus
+    q = 0.5 / (e * minus)
+    c = 1.0
+    d = half * half
+    total_next = p
+    for i in range(1, 200):
+        f = (i * f + p + q) / (i * i - mu * mu)
+        c *= d / i
+        p /= i - mu
+        q /= i + mu
+        term = c * f
+        total += term
+        total_next += c * (p - i * f)
+        if fabs(term) < fabs(total) * _EPSILON:
+            break
+    return total, total_next * 2.0 / x
+
+
+def _steed_k(mu: f64, x: f64) -> tuple[f64, f64]:
+    """K_μ(x) eˣ and K_{μ+1}(x) eˣ for |μ| at most ½ and `x` from 2, by Steed's CF2 in Temme's
+    form (Numerical Recipes 6.7.47 to 6.7.50), summing the series for the scale at the same
+    time: about 1 + 30/x steps."""
+    b = 2.0 * (1.0 + x)
+    d = 1.0 / b
+    h = d
+    delta = d
+    q1 = 0.0
+    q2 = 1.0
+    a1 = 0.25 - mu * mu
+    q = a1
+    c = a1
+    a = -a1
+    s = 1.0 + q * delta
+    for i in range(1, _STEPS):
+        a -= 2.0 * i
+        c = -a * c / (i + 1.0)
+        following = (q1 - b * q2) / a
+        q1 = q2
+        q2 = following
+        q += c * following
+        b += 2.0
+        d = 1.0 / (b + a * d)
+        delta = (b * d - 1.0) * delta
+        h += delta
+        change = q * delta
+        s += change
+        if fabs(change / s) < _EPSILON:
+            break
+    k_mu = sqrt(pi / (2.0 * x)) / s
+    k_next = k_mu * (mu + x + 0.5 - a1 * h) * (1.0 / x)
+    return k_mu, k_next
+
+
+def _hankel_ik(nu: f64, x: f64) -> tuple[f64, f64, f64, f64]:
+    """I_ν e⁻ˣ, K_ν eˣ, I′_ν e⁻ˣ and K′_ν eˣ by the large-argument expansions (DLMF 10.40.1 to
+    10.40.4) for x from 30 and above ν²: I_ν e⁻ˣ = Σ (−1)ᵏ aₖ(ν)/xᵏ / √(2πx) and
+    K_ν eˣ = √(π/(2x)) Σ aₖ(ν)/xᵏ, and the derivatives from the same sums with
+    bₖ(ν) = aₖ₋₁(ν) (4ν² + (2k − 1)(2k + 1))/(8k) in place of aₖ(ν). I's
+    expansion leaves out a term of size e⁻²ˣ times K's, below 1e-26 of it from x = 30."""
+    mu = 4.0 * nu * nu
+    alternating = 1.0
+    plain = 1.0
+    alternating_slope = 1.0
+    plain_slope = 1.0
+    term = 1.0
+    sign = 1.0
+    for k in range(1, 80):
+        odd = 2.0 * k - 1.0
+        derivative = term * (mu + odd * (odd + 2.0)) / (8.0 * k * x)
+        term *= (mu - odd * odd) / (8.0 * k * x)
+        sign = -sign
+        alternating += sign * term
+        plain += term
+        alternating_slope += sign * derivative
+        plain_slope += derivative
+        if fabs(term) <= 1.0e-18 and fabs(derivative) <= 1.0e-18:
+            break
+    root = sqrt(2.0 * pi * x)
+    half = sqrt(pi / (2.0 * x))
+    return alternating / root, half * plain, alternating_slope / root, -half * plain_slope

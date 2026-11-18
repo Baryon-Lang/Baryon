@@ -1,0 +1,343 @@
+"""Bessel functions of real order and real argument for `special` (roadmap 3.18.5): `jv`, `yv`,
+`iv`, `kv`, the scaled `jve`, `yve`, `ive` and `kve`, and the derivatives `jvp`, `yvp`, `ivp`
+and `kvp`.
+
+Each is computed for an order of 0 or more by `special_bessel_steed`, and for a negative order
+by the reflection formulas J₋ᵥ = cos(νπ) Jᵥ − sin(νπ) Yᵥ, Y₋ᵥ = sin(νπ) Jᵥ + cos(νπ) Yᵥ,
+I₋ᵥ = Iᵥ + (2/π) sin(νπ) Kᵥ and K₋ᵥ = Kᵥ, with `cospi` and `sinpi`, which are exact at whole
+orders, so J₋ₙ = (−1)ⁿ Jₙ holds to the last bit.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, inf, isinf, isnan, nan, pi
+from special_bessel_steed import bessel_ik, bessel_jy
+from special_common import cospi, is_integer, is_odd, sinpi
+from special_gamma import gammasgn
+
+
+def _jy(v: f64, x: f64, derivative: bool) -> tuple[f64, f64]:
+    """Jᵥ(x) and Yᵥ(x), or their derivatives when `derivative`, for a finite order `v` of
+    either sign and `x` above 0. The reflection formulas hold for the derivatives too."""
+    j, y, j_slope, y_slope = bessel_jy(abs(v), x)
+    if derivative:
+        j = j_slope
+        y = y_slope
+    if v >= 0.0:
+        return j, y
+    c = cospi(-v)
+    s = sinpi(-v)
+    if s == 0.0:
+        return c * j, c * y
+    if c == 0.0:
+        return -s * y, s * j
+    return c * j - s * y, s * j + c * y
+
+
+def _at_zero(v: f64) -> f64:
+    """Jᵥ(0), which is also Iᵥ(0): 1 at order 0, 0 above it and at negative whole orders, and
+    an infinity with the sign of 1/Γ(v + 1) at other negative orders, as xᵛ/(2ᵛ Γ(v + 1))
+    gives."""
+    if v == 0.0:
+        return 1.0
+    if v > 0.0 or is_integer(v):
+        return 0.0
+    return gammasgn(v + 1.0) * inf
+
+
+def jv(v: f64, x: f64) -> f64:
+    """The Bessel function of the first kind of real order, Jᵥ(x), as `scipy.special.jv` for a
+    real `x`. NaN for a negative `x` unless `v` is a whole number, where Jᵥ(−x) = (−1)ᵛ Jᵥ(x),
+    and 0 at x = ±∞ and at v = ∞.
+
+    ```python
+    from special import jv
+
+    print(jv(2.5, 3.0))  # 0.41271003220971597
+    ```
+    """
+    if isnan(v) or isnan(x):
+        return nan
+    if isinf(v):
+        if v > 0.0:
+            return 0.0
+        return nan
+    if x < 0.0:
+        if not is_integer(v):
+            return nan
+        if is_odd(v):
+            return -jv(v, -x)
+        return jv(v, -x)
+    if x == 0.0:
+        return _at_zero(v)
+    if isinf(x):
+        return 0.0
+    j, y = _jy(v, x, False)
+    return j
+
+
+def yv(v: f64, x: f64) -> f64:
+    """The Bessel function of the second kind of real order, Yᵥ(x), as `scipy.special.yv` for a
+    real `x`. NaN for a negative `x`, −∞ at x = 0 for an order of 0 or more, and 0 at x = ∞.
+
+    ```python
+    from special import yv
+
+    print(yv(2.5, 3.0))  # -0.3690407300737977
+    ```
+    """
+    if isnan(v) or isnan(x) or x < 0.0:
+        return nan
+    if isinf(v):
+        if v > 0.0:
+            return -inf
+        return nan
+    if x == 0.0:
+        if v >= 0.0:
+            return -inf
+        c = cospi(-v)
+        if c == 0.0:
+            return 0.0
+        if c > 0.0:
+            return -inf
+        return inf
+    if isinf(x):
+        return 0.0
+    j, y = _jy(v, x, False)
+    return y
+
+
+def jve(v: f64, x: f64) -> f64:
+    """Jᵥ(x) e^(−|Im x|), as `scipy.special.jve`: for a real `x` the scale is 1, so this is
+    `jv`.
+
+    ```python
+    from special import jve
+
+    print(jve(2.5, 3.0))  # 0.41271003220971597
+    ```
+    """
+    return jv(v, x)
+
+
+def yve(v: f64, x: f64) -> f64:
+    """Yᵥ(x) e^(−|Im x|), as `scipy.special.yve`: for a real `x` the scale is 1, so this is
+    `yv`, also at x = 0, where SciPy gives NaN.
+
+    ```python
+    from special import yve
+
+    print(yve(2.5, 3.0))  # -0.3690407300737977
+    ```
+    """
+    return yv(v, x)
+
+
+def _ik(v: f64, x: f64, scaled: bool, derivative: bool) -> tuple[f64, f64]:
+    """Iᵥ(x) and Kᵥ(x), or Iᵥ(x) e⁻ˣ and Kᵥ(x) eˣ when `scaled`, or their derivatives when
+    `derivative`, for a finite order `v` of either sign and `x` above 0."""
+    i, k, i_slope, k_slope = bessel_ik(abs(v), x, scaled)
+    if derivative:
+        i = i_slope
+        k = k_slope
+    s = sinpi(-v)
+    if v >= 0.0 or s == 0.0:
+        return i, k
+    if scaled:
+        return i + 2.0 / pi * s * k * exp(-2.0 * x), k
+    return i + 2.0 / pi * s * k, k
+
+
+def _modified(v: f64, x: f64, scaled: bool) -> f64:
+    """`iv`, or `ive` when `scaled`, for every argument: NaN for a negative `x` unless `v` is a
+    whole number, where Iᵥ(−x) = (−1)ᵛ Iᵥ(x), and the values at 0 and the infinities."""
+    if isnan(v) or isnan(x):
+        return nan
+    if isinf(v):
+        if v > 0.0:
+            return 0.0
+        return nan
+    if x < 0.0:
+        if not is_integer(v):
+            return nan
+        if is_odd(v):
+            return -_modified(v, -x, scaled)
+        return _modified(v, -x, scaled)
+    if x == 0.0:
+        return _at_zero(v)
+    if isinf(x):
+        if scaled:
+            return 0.0
+        return inf
+    i, k = _ik(v, x, scaled, False)
+    return i
+
+
+def ive(v: f64, x: f64) -> f64:
+    """The exponentially scaled modified Bessel function of the first kind, Iᵥ(x) e^(−|x|), as
+    `scipy.special.ive`, which stays finite for every `x`: about 1/√(2π|x|) for large |x|,
+    where SciPy gives NaN from about 1e10. NaN for a negative `x` unless `v` is a whole
+    number, where Iᵥ(−x) = (−1)ᵛ Iᵥ(x).
+
+    ```python
+    from special import ive
+
+    print(ive(2.5, 3.0))  # 0.07544430863247613
+    ```
+    """
+    return _modified(v, x, True)
+
+
+def iv(v: f64, x: f64) -> f64:
+    """The modified Bessel function of the first kind of real order, Iᵥ(x), as
+    `scipy.special.iv` for a real `x`. NaN for a negative `x` unless `v` is a whole number, and
+    ∞ at x = ∞.
+
+    ```python
+    from special import iv
+
+    print(iv(2.5, 3.0))  # 1.5153394466819654
+    ```
+    """
+    return _modified(v, x, False)
+
+
+def _second(v: f64, x: f64, scaled: bool) -> f64:
+    """`kv`, or `kve` when `scaled`, for every argument: NaN for a negative `x`, ∞ at x = 0 and
+    at an infinite order, and 0 at x = ∞."""
+    if isnan(v) or isnan(x) or x < 0.0:
+        return nan
+    if x == 0.0 or isinf(v):
+        return inf
+    if isinf(x):
+        return 0.0
+    i, k = _ik(v, x, scaled, False)
+    return k
+
+
+def kve(v: f64, x: f64) -> f64:
+    """The exponentially scaled modified Bessel function of the second kind, Kᵥ(x) eˣ, as
+    `scipy.special.kve`: about √(π/(2x)) for large `x`. K₋ᵥ = Kᵥ.
+
+    ```python
+    from special import kve
+
+    print(kve(2.5, 3.0))  # 1.6884029273026244
+    ```
+    """
+    return _second(v, x, True)
+
+
+def kv(v: f64, x: f64) -> f64:
+    """The modified Bessel function of the second kind of real order, Kᵥ(x), as
+    `scipy.special.kv` for a real `x`. K₋ᵥ = Kᵥ.
+
+    ```python
+    from special import kv
+
+    print(kv(2.5, 3.0))  # 0.08406063197411735
+    ```
+    """
+    return _second(v, x, False)
+
+
+def _check(n: int):
+    """Panics, with SciPy's message, when the derivative's order `n` is negative."""
+    assert n >= 0, "n must be a non-negative integer"
+
+
+def _direct(v: f64, x: f64, n: int) -> bool:
+    """Whether a first derivative comes straight from the method's own derivative, for a
+    finite order and `x` above 0 and finite. The sum of `jvp` would take orders v ± 1, and
+    v + 1 can round: K changes by ln(2v/x) of itself for each unit of order, so at v = 32 and
+    x = 0.01 that rounding alone costs 300 ULP."""
+    return n == 1 and x > 0.0 and not isinf(x) and not isnan(v) and not isinf(v)
+
+
+def jvp(v: f64, x: f64, n: int = 1) -> f64:
+    """The `n`-th derivative of Jᵥ(x) with respect to `x`, as `scipy.special.jvp` for a real
+    `x`: 2⁻ⁿ Σₖ (−1)ᵏ C(n, k) Jᵥ₋ₙ₊₂ₖ(x) (DLMF 10.6.7). Panics when `n` is negative, where
+    SciPy raises ValueError.
+
+    ```python
+    from special import jvp
+
+    print(jvp(2.5, 3.0))  # 0.13379318824566183
+    ```
+    """
+    _check(n)
+    if _direct(v, x, n):
+        j, y = _jy(v, x, True)
+        return j
+    total = 0.0
+    weight = 1.0
+    for k in range(n + 1):
+        total += weight * jv(v - n + 2.0 * k, x)
+        weight *= -(n - k) / (k + 1.0)
+    return total / 2.0**n
+
+
+def yvp(v: f64, x: f64, n: int = 1) -> f64:
+    """The `n`-th derivative of Yᵥ(x), as `scipy.special.yvp` for a real `x`, by the same sum
+    as `jvp`. Panics when `n` is negative.
+
+    ```python
+    from special import yvp
+
+    print(yvp(2.5, 3.0))  # 0.3945420324490002
+    ```
+    """
+    _check(n)
+    if _direct(v, x, n):
+        j, y = _jy(v, x, True)
+        return y
+    total = 0.0
+    weight = 1.0
+    for k in range(n + 1):
+        total += weight * yv(v - n + 2.0 * k, x)
+        weight *= -(n - k) / (k + 1.0)
+    return total / 2.0**n
+
+
+def ivp(v: f64, x: f64, n: int = 1) -> f64:
+    """The `n`-th derivative of Iᵥ(x), as `scipy.special.ivp` for a real `x`:
+    2⁻ⁿ Σₖ C(n, k) Iᵥ₋ₙ₊₂ₖ(x) (DLMF 10.29.5). Panics when `n` is negative.
+
+    ```python
+    from special import ivp
+
+    print(ivp(2.5, 3.0))  # 1.836700584490665
+    ```
+    """
+    _check(n)
+    if _direct(v, x, n):
+        value, other = _ik(v, x, False, True)
+        return value
+    total = 0.0
+    weight = 1.0
+    for k in range(n + 1):
+        total += weight * iv(v - n + 2.0 * k, x)
+        weight *= (n - k) / (k + 1.0)
+    return total / 2.0**n
+
+
+def kvp(v: f64, x: f64, n: int = 1) -> f64:
+    """The `n`-th derivative of Kᵥ(x), as `scipy.special.kvp` for a real `x`:
+    (−2)⁻ⁿ Σₖ C(n, k) Kᵥ₋ₙ₊₂ₖ(x) (DLMF 10.29.5). Panics when `n` is negative.
+
+    ```python
+    from special import kvp
+
+    print(kvp(2.5, 3.0))  # -0.11808517348745054
+    ```
+    """
+    _check(n)
+    if _direct(v, x, n):
+        other, value = _ik(v, x, False, True)
+        return value
+    total = 0.0
+    weight = 1.0
+    for k in range(n + 1):
+        total += weight * kv(v - n + 2.0 * k, x)
+        weight *= (n - k) / (k + 1.0)
+    return total / (-2.0) ** n

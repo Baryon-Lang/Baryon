@@ -12,7 +12,9 @@ exponential integrals, zeta and Spence's function, and Lambert W function (3.18.
 functions (3.18.9), from `elliptic_functions.txt`, and those in
 [`../../build/special_polynomials.rs`](../../build/special_polynomials.rs) its orthogonal
 polynomials and spherical harmonics (3.18.10), from `orthogonal_polynomials.txt`, and its Gauss
-quadrature rules (3.18.10), from `gauss_quadrature.txt`. Each line is a
+quadrature rules (3.18.10), from `gauss_quadrature.txt`, and those in
+[`../../build/special_bessel.rs`](../../build/special_bessel.rs) its Bessel functions of real
+order and spherical Bessel functions (3.18.5), from `bessel_real.txt`. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -1269,5 +1271,226 @@ for family, alpha in (("genlaguerre", -1.0), ("gegenbauer", -0.5)):
         add("roots_" + family + "_x", 3, i, alpha, 0.0, 1.0, x[i])
         add("roots_" + family + "_w", 3, i, alpha, 0.0, 1.0, w[i])
 with open("gauss_quadrature.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Bessel functions of real order
+
+In `bessel_real.txt` each case holds, before the reference value, the size its error is
+measured against. Past the turning point x = |v|, J and Y and their derivatives are measured
+against the modulus √(J² + Y²), the envelope they oscillate under; everywhere else, and for I
+and K always, against the value itself. A case of `jvp`, `yvp`, `ivp` or `kvp` holds the order
+of the derivative after the argument, and a case of a spherical function holds 1 there for its
+derivative and 0 for its value. mpmath's `besselk` gives no derivative, so the script sums K at
+neighbouring orders (DLMF 10.29.5) at 50 digits instead. The script below recorded the cases
+with its own seed, with mpmath 1.4.1 and SciPy 1.18.1 at the ends; run it from this directory
+with `python3 -I`:
+
+```python
+import math
+
+import mpmath
+import numpy
+import scipy.special
+
+generator = numpy.random.default_rng(318005)
+inf, nan = math.inf, math.nan
+lines = []
+
+
+def add(name, arguments, size, value):
+    lines.append(" ".join([name] + [repr(x) if isinstance(x, float) else str(x) for x in arguments]
+                          + [repr(float(size)), repr(float(value))]))
+
+
+def besselk_slope(v, x, n):
+    """The n-th derivative of K_v(x), which mpmath's besselk does not give, by DLMF 10.29.5."""
+    return sum(mpmath.binomial(n, k) * mpmath.besselk(v - n + 2 * k, x)
+               for k in range(n + 1)) / (-2) ** n
+
+
+def order():
+    """An order: small, whole or half-whole, or anywhere up to 60 in size, of either sign."""
+    kind = generator.uniform()
+    if kind < 0.3:
+        v = float(generator.uniform(0, 3))
+    elif kind < 0.45:
+        v = float(generator.integers(0, 40))
+    elif kind < 0.6:
+        v = float(generator.integers(0, 40)) + 0.5
+    else:
+        v = float(generator.uniform(0, 60))
+    if generator.uniform() < 0.3:
+        v = -v
+    return v
+
+
+def argument(v):
+    """An argument: spread from 1e-3 to 1e4 on a log scale, near the turning point |v|, or
+    far out, up to 1e8."""
+    kind = generator.uniform()
+    if kind < 0.6:
+        return float(10 ** generator.uniform(-3, 4))
+    if kind < 0.85:
+        return float(abs(v) * generator.uniform(0.8, 1.2) + generator.uniform(0, 1))
+    return float(10 ** generator.uniform(4, 8))
+
+
+with mpmath.workdps(50):
+    for _ in range(500):
+        v = order()
+        x = argument(v)
+        V, X = mpmath.mpf(v), mpmath.mpf(x)
+        j, y = mpmath.besselj(V, X), mpmath.bessely(V, X)
+        jp, yp = mpmath.besselj(V, X, derivative=1), mpmath.bessely(V, X, derivative=1)
+        modulus, slope = mpmath.sqrt(j * j + y * y), mpmath.sqrt(jp * jp + yp * yp)
+        # Past the turning point |v| the functions oscillate, and are measured against the
+        # modulus sqrt(J² + Y²), their envelope; before it, against themselves.
+        inside = x <= abs(v)
+        add("jv", [v, x], abs(j) if inside else modulus, j)
+        add("yv", [v, x], abs(y) if inside else modulus, y)
+        add("jvp", [v, x, 1], abs(jp) if inside else slope, jp)
+        add("yvp", [v, x, 1], abs(yp) if inside else slope, yp)
+        if x < 700:
+            i, k = mpmath.besseli(V, X), mpmath.besselk(V, X)
+            add("iv", [v, x], abs(i), i)
+            add("kv", [v, x], abs(k), k)
+            ip, kp = mpmath.besseli(V, X, derivative=1), besselk_slope(V, X, 1)
+            add("ivp", [v, x, 1], abs(ip), ip)
+            add("kvp", [v, x, 1], abs(kp), kp)
+        ie = mpmath.besseli(V, X) * mpmath.exp(-X)
+        ke = mpmath.besselk(V, X) * mpmath.exp(X)
+        add("ive", [v, x], abs(ie), ie)
+        add("kve", [v, x], abs(ke), ke)
+    # Higher derivatives at moderate arguments.
+    for _ in range(40):
+        v = order()
+        x = float(10 ** generator.uniform(-1, 2))
+        n = int(generator.integers(2, 5))
+        V, X = mpmath.mpf(v), mpmath.mpf(x)
+        jp, yp = mpmath.besselj(V, X, derivative=n), mpmath.bessely(V, X, derivative=n)
+        slope = mpmath.sqrt(jp * jp + yp * yp)
+        add("jvp", [v, x, n], slope, jp)
+        add("yvp", [v, x, n], slope, yp)
+        ip, kp = mpmath.besseli(V, X, derivative=n), besselk_slope(V, X, n)
+        add("ivp", [v, x, n], abs(ip), ip)
+        add("kvp", [v, x, n], abs(kp), kp)
+    # Negative arguments at whole orders.
+    for _ in range(20):
+        v = float(generator.integers(-20, 21))
+        x = -float(10 ** generator.uniform(-2, 2.5))
+        V, X = mpmath.mpf(v), mpmath.mpf(x)
+        j = mpmath.besselj(V, X)
+        add("jv", [v, x], mpmath.sqrt(j * j + mpmath.bessely(V, -X) ** 2), j)
+        i = mpmath.besseli(V, X)
+        add("iv", [v, x], abs(i), i)
+        add("ive", [v, x], abs(i) * mpmath.exp(X), i * mpmath.exp(X))
+    # Spherical Bessel functions and their derivatives, of either sign of argument.
+    def spherical(kind, n, x):
+        """jₙ, yₙ, iₙ or kₙ at 50 digits; below 0 by their parity, and kₙ by SciPy's closed
+        form, which continues it there."""
+        if kind == "kn" and x < 0:
+            return (mpmath.pi / 2 * mpmath.exp(-x) / x
+                    * sum(mpmath.factorial(n + k) / (mpmath.factorial(k) * mpmath.factorial(n - k))
+                          * (2 * x) ** -k for k in range(n + 1)))
+        if x < 0:
+            sign = (-1) ** n if kind in ("jn", "in") else (-1) ** (n + 1)
+            return sign * spherical(kind, n, -x)
+        cylinder = {"jn": mpmath.besselj, "yn": mpmath.bessely, "in": mpmath.besseli,
+                    "kn": mpmath.besselk}[kind]
+        return mpmath.sqrt(mpmath.pi / (2 * x)) * cylinder(n + mpmath.mpf(0.5), x)
+
+    def slope(kind, n, x):
+        """The derivative, by DLMF 10.51.2 and 10.51.5 at 50 digits."""
+        if n == 0:
+            return {"jn": -1, "yn": -1, "in": 1, "kn": -1}[kind] * spherical(kind, 1, x)
+        below = -1 if kind == "kn" else 1
+        return below * spherical(kind, n - 1, x) - (n + 1) / x * spherical(kind, n, x)
+
+    for _ in range(150):
+        n = int(generator.integers(0, 12)) if generator.uniform() < 0.5 else int(
+            generator.integers(0, 60))
+        x = float(10 ** generator.uniform(-3, 3.5))
+        if generator.uniform() < 0.15:
+            x = -x
+        X = mpmath.mpf(x)
+        for kind in ("jn", "yn", "in", "kn"):
+            if kind in ("in", "kn") and abs(x) > 700:
+                continue
+            for derivative in (0, 1):
+                value = slope(kind, n, X) if derivative else spherical(kind, n, X)
+                size = abs(value)
+                if kind in ("jn", "yn") and abs(x) > n:
+                    pair = [slope(k, n, X) if derivative else spherical(k, n, X)
+                            for k in ("jn", "yn")]
+                    size = mpmath.sqrt(pair[0] ** 2 + pair[1] ** 2)
+                add("spherical_" + kind, [n, x, derivative], size, value)
+# Large orders, from 60 to 250, where the recurrences of Steed's method run long. mpmath's
+# besselk needs more digits here, as I₋ᵥ − Iᵥ cancels.
+with mpmath.workdps(150):
+    for _ in range(100):
+        v = float(generator.uniform(60, 250))
+        x = float(10 ** generator.uniform(0, 3.3))
+        V, X = mpmath.mpf(v), mpmath.mpf(x)
+        j, y = mpmath.besselj(V, X), mpmath.bessely(V, X)
+        modulus = mpmath.sqrt(j * j + y * y)
+        inside = x <= abs(v)
+        for name, value in (("jv", j), ("yv", y)):
+            if 1e-300 < abs(value) < 1e300:
+                add(name, [v, x], abs(value) if inside else modulus, value)
+        for name, value in (("iv", mpmath.besseli(V, X)), ("kv", mpmath.besselk(V, X))):
+            if 1e-300 < abs(value) < 1e300:
+                add(name, [v, x], abs(value), value)
+# The ends, as SciPy 1.18.1 gives them, except where SciPy's value is not the limit, which the
+# reference lists. At x = 0 and a negative order v that is not whole, J_v and I_v are infinite
+# with the sign of 1/gamma(v + 1), where SciPy gives +inf for iv and NaN for jve and ive, and
+# Y_v is 0 when -v is half-whole, since Y_v = ±J_(-v) there, where SciPy gives an infinity.
+# The scaled forms are their functions at 0 and at an infinite order, where SciPy gives NaN,
+# and ive and kve stay finite past 1e10. yv and kv at an infinite order, K of either sign, and
+# jv, yv and iv at an infinite argument, are their limits.
+large = mpmath.mpf(10) ** 10
+ends = {
+    ("yv", -0.5, 0.0): 0.0, ("yv", -1.5, 0.0): 0.0, ("iv", -1.5, 0.0): -inf,
+    ("jve", -0.5, 0.0): inf, ("jve", -1.5, 0.0): -inf,
+    ("ive", -0.5, 0.0): inf, ("ive", -1.5, 0.0): -inf,
+    ("yve", 0.0, 0.0): -inf, ("yve", 1.0, 0.0): -inf, ("yve", 0.5, 0.0): -inf,
+    ("yve", -0.5, 0.0): 0.0, ("yve", -1.0, 0.0): inf, ("yve", -1.5, 0.0): 0.0,
+    ("yve", 2.5, 0.0): -inf, ("yve", -2.0, 0.0): -inf,
+    ("ive", 0.0, 1e10): float(1 / mpmath.sqrt(2 * mpmath.pi * large)),
+    ("ive", 0.7, 1e10): float(mpmath.besseli(0.7, large) * mpmath.exp(-large)),
+    ("kve", 0.0, 1e10): float(mpmath.besselk(0, large) * mpmath.exp(large)),
+    ("kve", 0.7, 1e10): float(mpmath.besselk(0.7, large) * mpmath.exp(large)),
+    ("kv", -inf, 1.0): inf, ("kve", -inf, 1.0): inf,
+    ("jv", 0.5, inf): 0.0, ("yv", 0.5, inf): 0.0, ("iv", 0.5, inf): inf, ("ive", 0.5, inf): 0.0,
+    ("kve", 0.5, inf): 0.0, ("jve", 0.5, inf): 0.0, ("yve", 0.5, inf): 0.0,
+    ("yv", inf, 1.0): -inf, ("kv", inf, 1.0): inf, ("kve", inf, 1.0): inf,
+    ("jv", -inf, 1.0): nan, ("iv", -inf, 1.0): nan, ("jve", inf, 1.0): 0.0,
+    ("ive", inf, 1.0): 0.0, ("yve", inf, 1.0): -inf,
+}
+points = [(0.0, 0.0), (1.0, 0.0), (0.5, 0.0), (-0.5, 0.0), (-1.0, 0.0), (-1.5, 0.0), (2.5, 0.0),
+          (-2.0, 0.0), (2.0, -1.5), (2.5, -1.5), (-3.0, -1.5), (0.5, inf), (0.5, -inf), (inf, 1.0),
+          (-inf, 1.0), (nan, 1.0), (1.0, nan), (0.0, 1e10), (0.7, 1e10)]
+for name in ("jv", "yv", "iv", "kv", "jve", "yve", "ive", "kve"):
+    for v, x in points:
+        with numpy.errstate(all="ignore"):
+            value = float(getattr(scipy.special, name)(v, x))
+        value = ends.get((name, v, x), value)
+        if math.isfinite(value) and value != 0.0 and (name, v, x) not in ends:
+            continue
+        add(name, [v, x], 1.0, value)
+# The spherical functions' ends, as SciPy gives them, except yₙ′(0) for n from 1, which is ∞
+# where SciPy gives NaN, and iₙ′(∞), which is ∞ where SciPy gives NaN from n = 3.
+for kind in ("jn", "yn", "in", "kn"):
+    for derivative in (False, True):
+        for n, x in [(0, 0.0), (1, 0.0), (2, 0.0), (-1, 1.0), (0, inf), (0, -inf), (3, inf),
+                     (0, nan)]:
+            with numpy.errstate(all="ignore"):
+                value = float(getattr(scipy.special, "spherical_" + kind)(n, x, derivative))
+            if kind == "yn" and derivative and x == 0.0 and n >= 1:
+                value = inf
+            if kind == "in" and derivative and x == inf:
+                value = inf
+            add("spherical_" + kind, [n, x, int(derivative)], 1.0, value)
+with open("bessel_real.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
