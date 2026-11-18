@@ -860,7 +860,9 @@ from the arguments. Each type parameter takes the type of the first argument tha
 left to right and number literals last, so `largest(x, 0)` with `x: f32` makes the `0` an `f32`.
 Every other argument must then have the same type: `largest(x, n)` with `x: f64` and `n: i64` is an
 error, as in non-generic code. A generic struct is built the same way: `Pair(1.5, 2.5)` is a
-`Pair[f64]`. A `None` passed for a `T | None` fixes `T` only when no other argument
+`Pair[f64]`, and writing its type arguments, `Pair[f64](1.5, 2.5)`, is an error. A call whose
+arguments leave a type parameter unfixed, such as `make()` for `def make[T]() -> list[T]`, is an
+error too. A `None` passed for a `T | None` fixes `T` only when no other argument
 does: `pick(None, 3)` with `def pick[T: Number](a: T | None, b: T | None)` takes `T` from the
 `3`.
 
@@ -890,9 +892,10 @@ print(Pair.total(p))        # 3.0, the same as p.total()
 ```
 
 Inside a generic function, a type parameter is its own type: a `T` matches only `T`, and only the
-operations its bound allows apply to it. A number literal takes the type `T` under `Float`; under
-`Number` only an integer literal does, since `T` may be an integer type, so `x * 0.5` needs
-`[T: Float]`. Under `VectorSpace` a literal is an `f64`, which is what scales a vector.
+operations its bound allows apply to it. It is not a conversion, so `T(0)` is an error, and it
+has no methods but its trait's, so `x.copy()` on an unbounded `T` is one too. A number literal
+takes the type `T` under `Float`; under `Number` only an integer literal does, since `T` may be an
+integer type, so `x * 0.5` needs `[T: Float]`. Under `VectorSpace` a literal is an `f64`, which is what scales a vector.
 
 ### Traits
 
