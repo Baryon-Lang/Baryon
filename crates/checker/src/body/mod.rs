@@ -96,6 +96,7 @@ mod text_arrays;
 mod text_tables;
 mod union_methods;
 mod user_iterators;
+mod value_calls;
 
 use crate::lower::Lowerer;
 use crate::outline::Entry;

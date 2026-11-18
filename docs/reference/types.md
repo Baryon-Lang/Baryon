@@ -487,7 +487,9 @@ class Particle(Struct):
 - A struct that defines `__call__` can be called like a function, as a Python object can:
   `p(3.0)` is `p.__call__(3.0)`, with `p` passed as `self`
   ([decision 0058](../decisions/0058-operators-are-dunder-methods.md)). It costs what the
-  method call costs. A struct without `__call__` cannot be called.
+  method call costs. The struct can be any expression, not only a name: a field,
+  `result.sol(0.5)`, or the result of a call, `p.derivative()(2.0)`. A struct without `__call__`
+  cannot be called.
 
   ```python
   class Line(Struct, Copy):

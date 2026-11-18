@@ -133,6 +133,29 @@ error: `p` has type `Plain`, which cannot be called
     );
 }
 
+/// Calling the result of a call that is not a function or a struct with `__call__` is an
+/// error that names the expression and its type.
+#[test]
+fn results_that_are_not_functions_are_not_called() {
+    let program = r"
+def two() -> f64:
+    return 2.0
+
+
+def main():
+    print(two()(1.0))
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `two()` has type `f64`, which cannot be called
+ --> main.byn:6:11
+  |
+6 |     print(two()(1.0))
+  |           ^^^^^^^^^^ not a function"
+    );
+}
+
 /// A `Callable` in a struct field, inside a parameter's type, and as a return type.
 #[test]
 fn stored_callables_are_reported() {
