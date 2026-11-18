@@ -159,30 +159,53 @@ impl<'db> Builder<'db> {
     /// in rising order, with equal elements in the order they stand in and NaN last. It is
     /// the sort `sort_values` uses, on one column that is the array. Cost: `n log n`
     /// comparisons and two arrays of `n` positions. A text array is put in the order of
-    /// Python's `<` on `str`, at the cost of one more sort, by `text_codes`.
+    /// Python's `<` on `str`, at the cost of one more sort, by `text_codes`. An array with
+    /// missing values has the positions of its `None`s last, after any NaN, in the order
+    /// they stand in, as a column of `sort_values` has: three more arrays of positions.
     pub(crate) fn array_argsort(&mut self, place: Place, array: NodeId, node: NodeId) {
         let int = self.int_type();
-        let source = self.borrow(array);
-        // A text array is sorted by the whole numbers that stand for its text.
-        let (source, element) = if self.is_text_array(array) {
-            let Some(codes) = self.text_codes(source, node) else {
-                return;
-            };
-            (codes, int)
-        } else if let TypeKind::Array { element, .. } = self.ty(array).kind(self.db) {
-            (source, *element)
-        } else {
-            return self.unsupported(node, "`argsort` of this value");
-        };
-        let count = self.temporary(int, node);
-        self.assign(Place::from(count), Rvalue::Length(source.clone(), 0), node);
         let positions = self.ty(node);
-        let start = vec![Place::from(count)];
-        let Some(order) = self.frame_call("row_positions", Vec::new(), start, positions, node)
+        let whole = self.borrow(array);
+        let (mut source, mut element, count) =
+            if let Some(inner) = self.optional_array_element(array) {
+                let values = whole.clone().project(Projection::Field(VALUES));
+                (
+                    values,
+                    inner,
+                    self.optional_array_length(&whole, inner, node),
+                )
+            } else if self.is_text_array(array) {
+                let text = Type::new(self.db, TypeKind::Str);
+                (whole.clone(), text, self.text_array_length(&whole, node))
+            } else if let TypeKind::Array { element, .. } = self.ty(array).kind(self.db) {
+                let count = self.temporary(int, node);
+                self.assign(Place::from(count), Rvalue::Length(whole.clone(), 0), node);
+                (whole.clone(), *element, Operand::Copy(Place::from(count)))
+            } else {
+                return self.unsupported(node, "`argsort` of this value");
+            };
+        let start = vec![Place::from(self.held(int, count, node))];
+        let Some(mut order) = self.frame_call("row_positions", Vec::new(), start, positions, node)
         else {
             return;
         };
         self.drop_later(order);
+        // The positions of the `None`s are set aside and put after the sorted rest.
+        let mut gone = None;
+        if self.optional_array_element(array).is_some() {
+            let Some((there, rest)) = self.split_missing(&whole, order, node) else {
+                return;
+            };
+            order = there;
+            gone = Some(rest);
+        }
+        // A text array is sorted by the whole numbers that stand for its text.
+        if matches!(element.kind(self.db), TypeKind::Str) {
+            let Some(codes) = self.text_codes(source, node) else {
+                return;
+            };
+            (source, element) = (codes, int);
+        }
         let rising = Operand::Constant(Constant {
             ty: self.boolean_type(),
             value: ConstantValue::Bool(true),
@@ -195,10 +218,19 @@ impl<'db> Builder<'db> {
             ("ordered", vec![element])
         };
         let arguments = vec![source, Place::from(order), Place::from(rising)];
-        let Some(sorted) = self.frame_call(function, type_arguments, arguments, positions, node)
+        let Some(mut sorted) =
+            self.frame_call(function, type_arguments, arguments, positions, node)
         else {
             return;
         };
+        if let Some(gone) = gone {
+            self.drop_later(sorted);
+            let ends = vec![Place::from(sorted), Place::from(gone)];
+            let Some(joined) = self.frame_call("joined", vec![int], ends, positions, node) else {
+                return;
+            };
+            sorted = joined;
+        }
         self.assign(place, Rvalue::Use(Operand::Move(Place::from(sorted))), node);
     }
 

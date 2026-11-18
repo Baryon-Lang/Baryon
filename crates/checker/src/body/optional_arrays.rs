@@ -13,10 +13,10 @@ use types::{Integer, Primitive, Type, TypeKind};
 const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]`, which \
                      gives a `T | None` and for numbers and `bool`s can be assigned, `for` \
                      loops over numbers and `bool`s, slices, masks and arrays of positions, \
-                     the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, \
-                     for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s \
-                     `sum`, `any` and `all`, the comparisons, and for numbers `+`, `-`, `*`, \
-                     `/`, `//` and `%`; the rest comes with roadmap item 3.13.6";
+                     the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, \
+                     `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, \
+                     for `bool`s `sum`, `any` and `all`, the comparisons, and for numbers \
+                     `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.
@@ -77,8 +77,10 @@ impl<'db> Body<'db> {
 
     /// A method call on the array with missing values of type `base`: `isna()` gives an
     /// `Array[bool, 1]` that is true where an element is `None`, and `notna()` one that is
-    /// true where it is not, as in pandas; `copy()` gives a new array with its own memory. No
-    /// other method is built.
+    /// true where it is not, as in pandas; `copy()` gives a new array with its own memory;
+    /// `argsort()` gives the positions that put the elements in rising order with the
+    /// `None`s last, an `Array[i64, 1]`; and the reductions skip `None`. No other method is
+    /// built.
     pub(super) fn optional_array_method(
         &mut self,
         node: NodeId,
@@ -92,6 +94,13 @@ impl<'db> Body<'db> {
         }
         if plain && matches!(name, "isna" | "notna") {
             let element = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
+            return Type::new(self.db, TypeKind::Array { element, rank: 1 });
+        }
+        if plain && name == "argsort" {
+            let element = Type::new(
+                self.db,
+                TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+            );
             return Type::new(self.db, TypeKind::Array { element, rank: 1 });
         }
         if let &TypeKind::OptionalArray(element) = base.kind(self.db) {
