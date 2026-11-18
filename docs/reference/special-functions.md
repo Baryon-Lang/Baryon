@@ -34,7 +34,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 
 | Function | Tested to | Worst seen | SciPy 1.18's worst at the same arguments |
 | --- | --- | --- | --- |
-| `gamma` | 8 ULP | 4 ULP | 4 ULP |
+| `gamma` | 8 ULP | 5 ULP | 4 ULP |
 | `rgamma` | 8 ULP | 3 ULP | 0 from 171.62 up, where the true value is still above 1e-311 |
 | `gammaln` | 8 ULP of the larger of the result and 1 | 1 ULP | 2 ULP |
 | `psi` | 8 ULP of the larger of the result and 1 | 4 ULP | 13 ULP |
@@ -64,7 +64,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `bdtr`, `bdtrc`, `nbdtr`, `nbdtrc` | 32 ULP for each unit of the result's logarithm | 1,185 ULP at a result of 3e-202 | 16,462 ULP at a result of 0.0037 |
 | `bdtri`, `nbdtri` | The same | 4 ULP | 3e16 ULP: `bdtri(45, 852, 7.4e-22)` gives 0.9999999999999999 where the answer is 0.159 |
 | `pdtr`, `pdtrc`, `chdtr`, `chdtrc`, `gdtr`, `gdtrc` | The same | 1,102 ULP at a result of 1e-297 | 6,633 ULP; 0 at `pdtr(510, 1902.5)`, where the true value is 1.7e-315 |
-| `pdtri`, `chdtri` | The same | 7 ULP | 25 ULP |
+| `pdtri`, `chdtri` | The same | 9 ULP | 25 ULP |
 | `fdtr`, `fdtrc`, `fdtri` | The same | 136 ULP at a result of 1e-35 | 298 ULP |
 | `stdtr`, `stdtrit` | The same | 642 ULP at a result of 2e-116 | 320 ULP for `stdtrit`, 190 for `stdtr` |
 | `kolmogorov`, `kolmogi` | The same | 395 ULP at a result of 3e-224 | 1 ULP |
