@@ -306,7 +306,10 @@ fn library_functions_are_compiled_only_when_called() {
         "from linalg import LinAlgError, solve\n\n\n\
          def main() -> Raises[None, LinAlgError]:\n    print(solve(Array.fill((1, 1), 2.0), Array([1.0])))\n",
     );
-    assert!(used.contains("@\"<std>.linalg_factor.solve[f64]\""), "{used}");
+    assert!(
+        used.contains("@\"<std>.linalg_factor.solve[f64]\""),
+        "{used}"
+    );
 }
 
 /// The worked example of `linalg.solve` in the reference's Linear algebra chapter, read from
