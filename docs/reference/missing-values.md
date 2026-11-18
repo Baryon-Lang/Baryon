@@ -71,6 +71,10 @@ def main():
 This prints `1.5 None 2.5`, then `4.0`.
 
 - **An index out of range stops the program**, as it does for any array.
+- **`bids[i] = 2.0` and `bids[i] = None` change one element** of an array of numbers or
+  `bool`s, and take any `f64 | None`. An element of text cannot be assigned, as in
+  [an array of text](text-arrays.md), and neither can several at once, `bids[mask] = 0.0`:
+  build the array again with `fillna` or from a list.
 - **A `for` loop gives each element in turn**, an `f64 | None` here, alone or inside
   `enumerate`, `zip` and `reversed`, and in a comprehension:
   `[bid for bid in bids if bid is not None]`. The array is borrowed for the loop, as any
@@ -479,7 +483,7 @@ Each of these is a compile error that names what an array with missing values ha
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `count`, `sum`, `mean`,
   `min`, `max`, `var` and `std`: `median`, `argsort`; and `min` and `max` of text;
 - a `list` of positions, `bids[[0, 2]]`;
-- assigning an element, `bids[0] = 2.0`;
+- assigning an element of text, or several elements at once, `bids[mask] = 0.0`;
 - a `for` loop over text that may be `None`;
 - `print` of a tuple or a list that holds one, or that holds a frame with such a column;
 - one as a struct field.

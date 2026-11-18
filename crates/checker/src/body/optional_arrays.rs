@@ -11,12 +11,12 @@ use types::{Integer, Primitive, Type, TypeKind};
 
 /// What an array with missing values can do, for messages.
 const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]`, which \
-                     gives a `T | None`, `for` loops over numbers and `bool`s, slices, masks \
-                     and arrays of positions, the methods `isna`, `notna`, `dropna`, \
-                     `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, \
-                     `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, the \
-                     comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest \
-                     comes with roadmap item 3.13.6";
+                     gives a `T | None` and for numbers and `bool`s can be assigned, `for` \
+                     loops over numbers and `bool`s, slices, masks and arrays of positions, \
+                     the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, \
+                     for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s \
+                     `sum`, `any` and `all`, the comparisons, and for numbers `+`, `-`, `*`, \
+                     `/`, `//` and `%`; the rest comes with roadmap item 3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.
@@ -174,24 +174,38 @@ impl<'db> Body<'db> {
     }
 
     /// Reports the assignment whose target is `target` when it writes an element of a text
-    /// array or of an array with missing values, neither of which is built, and returns
+    /// array, or into an array with missing values in a way that is not built, and returns
     /// whether it was one.
     pub(super) fn array_element_unassignable(&mut self, target: NodeId) -> bool {
         self.text_array_element_assigned(target) || self.optional_array_element_assigned(target)
     }
 
-    /// Reports the assignment whose target is `target` when it writes an element of an array
-    /// with missing values, `values[i] = 2.0`, which is not built yet, and returns whether it
-    /// was one.
+    /// Reports the assignment whose target is `target` when it writes into an array with
+    /// missing values in a way that is not built, and returns whether it did. One element of
+    /// numbers or `bool`s, `values[i] = 2.0` or `values[i] = None`, is built and checked as
+    /// any assignment to a `T | None` is. An element of text is not, since text is stored
+    /// end to end, and neither are several elements at once, `values[mask] = 0.0`.
     fn optional_array_element_assigned(&mut self, target: NodeId) -> bool {
         let base = (self.tree.kind(target) == SyntaxKind::Subscript)
             .then(|| self.tree.child(target, Role::Value))
             .flatten()
             .and_then(|value| self.typed.expression(value));
-        if !base.is_some_and(|base| self.is_optional_array(base)) {
+        let Some(TypeKind::OptionalArray(element)) = base.map(|base| base.kind(self.db)) else {
             return false;
-        }
-        self.optional_array_unbuilt(target, "assigning an element");
+        };
+        // The target names one element when it is a `T | None`, and several when it is an
+        // array; a target already reported has an open type.
+        let one = self.typed.expression(target).is_none_or(|ty| {
+            matches!(ty.kind(self.db), TypeKind::Optional(_)) || relations::is_open(self.db, ty)
+        });
+        let what = if matches!(element.kind(self.db), TypeKind::Str) {
+            "assigning an element of text"
+        } else if one {
+            return false;
+        } else {
+            "assigning through a slice, a mask or positions"
+        };
+        self.optional_array_unbuilt(target, what);
         true
     }
 

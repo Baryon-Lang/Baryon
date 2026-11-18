@@ -252,6 +252,35 @@ impl<'db> Builder<'db> {
         Some(result)
     }
 
+    /// Calls the procedure `name` of the same files with the one type argument `element`,
+    /// which changes each of `changed` in place and borrows each of `read`, in that order,
+    /// and returns nothing. Reports and does nothing when the library is missing.
+    pub(crate) fn frame_update(
+        &mut self,
+        name: &str,
+        element: Type<'db>,
+        (changed, read): (Vec<Place>, Vec<Place>),
+        node: NodeId,
+    ) {
+        let Some(item) = self.frame_function(name) else {
+            return self.unsupported(node, "a `DataFrame` as text without the standard library");
+        };
+        let nothing = self.temporary(Type::new(self.db, TypeKind::None), node);
+        let changed = changed.into_iter().map(Argument::InOut);
+        self.then(node, |next| TerminatorKind::Call {
+            callee: Callee::Function {
+                item,
+                type_arguments: vec![element],
+            },
+            arguments: changed
+                .chain(read.into_iter().map(Argument::Borrow))
+                .collect(),
+            destination: Place::from(nothing),
+            target: next,
+            error: None,
+        });
+    }
+
     /// The function `name` that `<std>/frames.byn`, `<std>/frame_joins.byn`,
     /// `<std>/frame_missing.byn`, `<std>/frame_outer.byn`, `<std>/frame_masks.byn` or
     /// `<std>/frame_order.byn` defines at its top level. Costs one pass over the top-level

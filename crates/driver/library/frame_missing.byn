@@ -70,6 +70,21 @@ def optional_element[T: Copy](values: Array[T, 1], bits: Array[u8, 1], at: int) 
     return None
 
 
+def set_optional_element[T: Copy](
+    values: InOut[Array[T, 1]], bits: InOut[Array[u8, 1]], at: int, item: T | None, filler: T
+) -> None:
+    """Stores `item` as element `at` of the array stored as `values` and `bits`, in place:
+    the value with its bit set to 1, or `filler` with its bit set to 0 for `None`. The
+    compiler has checked that `at` is in range."""
+    bit = u8(1) << u8(at % 8)
+    if item is not None:
+        values[at] = item
+        bits[at // 8] = bits[at // 8] | bit
+    else:
+        values[at] = filler
+        bits[at // 8] = bits[at // 8] & (u8(255) ^ bit)
+
+
 def _word(item: str | None) -> str:
     """A copy of the text `item`, or an empty text for `None`: what is stored for one item of
     a text array with missing values."""

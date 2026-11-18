@@ -195,6 +195,51 @@ impl<'db> Builder<'db> {
         Place::from(read.unwrap_or_else(|| self.temporary(element, node)))
     }
 
+    /// Whether `node` is `values[index]` naming one element of an array with missing values.
+    pub(crate) fn is_optional_element(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::Subscript
+            && !self.is_selection(node)
+            && self
+                .tree
+                .child(node, Role::Value)
+                .is_some_and(|value| self.optional_array_element(value).is_some())
+    }
+
+    /// `values[index] = value`, where `target` names one element of an array of numbers or
+    /// `bool`s with missing values: the element becomes `value`, a number or `None`. The
+    /// value is computed first, then `index` is checked to be in range, and the library's
+    /// `set_optional_element` writes the stored value and its validity bit in place. Under
+    /// a `None` it stores the filler, so the stored values never depend on what was there.
+    pub(crate) fn optional_element_store(&mut self, target: NodeId, value: NodeId) {
+        let (Some(array), Some(index)) = (
+            self.tree.child(target, Role::Value),
+            self.tree.child(target, Role::Index),
+        ) else {
+            return;
+        };
+        let Some(element) = self.optional_array_element(array) else {
+            return;
+        };
+        let Some(filler) = self.filler(element) else {
+            return self.unsupported(target, "assigning an element of this array");
+        };
+        let optional = Type::new(self.db, TypeKind::Optional(element));
+        let item = self.temporary(optional, value);
+        self.write(Place::from(item), optional, value);
+        let Some(base) = self.changed_place(array) else {
+            return;
+        };
+        let length = self.optional_array_length(&base, element, target);
+        let position = Place::from(self.index_within(Some(length), 0, index, false));
+        let filler = Place::from(self.held(element, Operand::Constant(filler), target));
+        let changed = vec![
+            base.clone().project(Projection::Field(VALUES)),
+            base.project(Projection::Field(VALIDITY)),
+        ];
+        let read = vec![position, Place::from(item), filler];
+        self.frame_update("set_optional_element", element, (changed, read), target);
+    }
+
     /// Whether `node` is `names[index]` on an array of text with missing values, which
     /// names no place: each read copies the text into a new `str | None`.
     pub(crate) fn is_optional_text_item(&self, node: NodeId) -> bool {
