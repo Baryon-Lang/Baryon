@@ -45,6 +45,7 @@ mod guide;
 mod gzip_open;
 mod h5by;
 mod hoisting;
+mod integrate;
 mod kernels;
 mod linalg;
 mod list_slices;
