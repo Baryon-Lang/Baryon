@@ -105,7 +105,11 @@ impl<'db> Builder<'db> {
                 key: map(*key),
                 value: map(*value),
             },
-            TypeKind::Optional(value) => TypeKind::Optional(map(*value)),
+            // `T | None` with `T` the type `None` is `None`: a union's repeats do not matter.
+            TypeKind::Optional(value) => match map(*value) {
+                none if matches!(none.kind(self.db), TypeKind::None) => return none,
+                value => TypeKind::Optional(value),
+            },
             TypeKind::Array { element, rank } => TypeKind::Array {
                 element: map(*element),
                 rank: *rank,

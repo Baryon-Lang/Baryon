@@ -135,3 +135,45 @@ def main():
         "3 2.5 1.5\nNone 2.0 1.0 2.0\nx\n"
     );
 }
+
+/// A type parameter that a `None` argument makes the type `None` gives `T | None` the type
+/// `None`, as a union's repeats do not matter (roadmap 1.9.51): `show(None)`, `echo(None)` and
+/// `first(None, None)` build and run beside the same functions at `f64`, `int` and `str`.
+/// Before, the backend stopped on "does not compile values of type `None` yet".
+#[test]
+fn a_type_parameter_can_be_none() {
+    let program = "\
+def show[T](x: T | None) -> str:
+    if x is None:
+        return \"none\"
+    return \"some\"
+
+
+def echo[T](x: Owned[T | None]) -> T | None:
+    print(x)
+    return x
+
+
+def first[T](a: T | None, b: T | None) -> bool:
+    match a:
+        case None:
+            return b is None
+        case _:
+            return True
+
+
+def main():
+    print(show(None), show(2.0), show(f\"s{1}\"))
+    print(echo(None), echo(1), echo(f\"t{2}\"))
+    print(first(None, None), first(None, 2))
+";
+    let directory = package("none_type_arguments", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "none some some\nNone\n1\nt2\nNone 1 t2\nTrue False\n"
+    );
+}

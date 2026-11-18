@@ -201,7 +201,11 @@ pub(crate) fn substitute<'db>(
             key: map(*key),
             value: map(*value),
         },
-        TypeKind::Optional(value) => TypeKind::Optional(map(*value)),
+        // `T | None` with `T` the type `None` is `None`, as a union's repeats do not matter.
+        TypeKind::Optional(value) => match map(*value) {
+            none if matches!(none.kind(db), TypeKind::None) => return none,
+            value => TypeKind::Optional(value),
+        },
         // Rebuilt through `types::union`, since two members may become one type.
         TypeKind::Union(members) => return types::union(db, all(members)),
         TypeKind::Array { element, rank } => TypeKind::Array {

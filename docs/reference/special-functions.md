@@ -1277,5 +1277,6 @@ The rest of `scipy.special` comes in the sub-rows of roadmap 3.18, Bessel functi
 argument (3.18.6) among them. Of 3.18.14, the modified Mathieu functions, `mathieu_modcem1`
 and the rest, the Fourier coefficients `mathieu_even_coef` and `mathieu_odd_coef`, and the
 spheroidal wave functions are still to come. The hypergeometric functions and Carlson's
-integrals of complex arguments are not built. `loggamma` of a complex argument comes with the complex Bessel functions.
+integrals of complex arguments are not built. `loggamma` of a complex argument comes with the
+complex Bessel functions.
 See [What builds today](status.md).

@@ -867,7 +867,8 @@ error, as in non-generic code. A generic struct is built the same way: `Pair(1.5
 arguments leave a type parameter unfixed, such as `make()` for `def make[T]() -> list[T]`, is an
 error too. A `None` passed for a `T | None` fixes `T` only when no other argument
 does: `pick(None, 3)` with `def pick[T: Number](a: T | None, b: T | None)` takes `T` from the
-`3`.
+`3`. When only `None` fixes it, `T` is the type `None`, and `T | None` is then `None`, since
+a union's repeats do not matter: `show(None)` for `def show[T](x: T | None)` builds.
 
 A generic struct's method called through its class finds the class's type arguments the same
 way, from all its arguments: `Pair.both(1.5)` is the `both` of `Pair[f64]`, and
