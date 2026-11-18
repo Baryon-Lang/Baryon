@@ -210,8 +210,9 @@ impl<'db> Builder<'db> {
     }
 
     /// Calls the function `name` of `<std>/frames.byn`, `<std>/frame_joins.byn`,
-    /// `<std>/frame_missing.byn` or `<std>/frame_outer.byn` with `type_arguments`, borrowing
-    /// each of `arguments`, and gives the temporary of type `returns` that holds its result.
+    /// `<std>/frame_missing.byn`, `<std>/frame_outer.byn` or `<std>/frame_masks.byn` with
+    /// `type_arguments`, borrowing each of `arguments`, and gives the temporary of type
+    /// `returns` that holds its result.
     /// The functions called this way take every parameter borrowed and raise nothing. `None`
     /// after reporting that the library's file or the function is missing, which happens only
     /// when the library's files were left out of the package.
@@ -242,21 +243,27 @@ impl<'db> Builder<'db> {
     }
 
     /// The function `name` that `<std>/frames.byn`, `<std>/frame_joins.byn`,
-    /// `<std>/frame_missing.byn` or `<std>/frame_outer.byn` defines at its top level. Costs
-    /// one pass over the top-level statements of each file looked in.
+    /// `<std>/frame_missing.byn`, `<std>/frame_outer.byn` or `<std>/frame_masks.byn` defines
+    /// at its top level. Costs one pass over the top-level statements of each file looked in.
     fn frame_function(&self, name: &str) -> Option<Item<'db>> {
-        ["frames", "frame_joins", "frame_missing", "frame_outer"]
-            .into_iter()
-            .find_map(|module| {
-                let file = database::modules(self.db, self.package).library(module)?;
-                let tree = self.db.parse(file).tree();
-                let text = file.source(self.db).text();
-                let function = tree
-                    .children_with(tree.root(), Role::Body)
-                    .filter(|&statement| tree.kind(statement) == SyntaxKind::FunctionDefinition)
-                    .filter_map(|function| tree.child(function, Role::Name))
-                    .find(|&function| tree.text(function, text) == name)?;
-                Some(Item::new(self.db, self.package, file, function))
-            })
+        [
+            "frames",
+            "frame_joins",
+            "frame_missing",
+            "frame_outer",
+            "frame_masks",
+        ]
+        .into_iter()
+        .find_map(|module| {
+            let file = database::modules(self.db, self.package).library(module)?;
+            let tree = self.db.parse(file).tree();
+            let text = file.source(self.db).text();
+            let function = tree
+                .children_with(tree.root(), Role::Body)
+                .filter(|&statement| tree.kind(statement) == SyntaxKind::FunctionDefinition)
+                .filter_map(|function| tree.child(function, Role::Name))
+                .find(|&function| tree.text(function, text) == name)?;
+            Some(Item::new(self.db, self.package, file, function))
+        })
     }
 }
