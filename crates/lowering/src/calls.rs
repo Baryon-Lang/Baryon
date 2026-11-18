@@ -399,7 +399,8 @@ impl<'db> Builder<'db> {
     /// A call of a `Callable` value, such as the parameter `derivative` in
     /// `derivative(t, state)`, into `place`. Each argument is borrowed, the mode a `Callable`
     /// gives every parameter. Monomorphization turns it into a direct call of the function the
-    /// instance received (decision 0026).
+    /// instance received (decision 0026), or the function a local holds (roadmap 1.9.43). A
+    /// function that can raise gets the call's error edge, as a direct call of it does.
     fn value_call(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
         let Some(function) = self.tree.child(node, Role::Function) else {
             return self.unsupported(node, "this call");
@@ -409,18 +410,8 @@ impl<'db> Builder<'db> {
             .iter()
             .map(|&argument| Argument::Borrow(self.borrow(argument)))
             .collect();
-        let next = self.new_block();
-        self.terminate(
-            TerminatorKind::Call {
-                callee: Callee::Value(callee),
-                arguments: passed,
-                destination: place,
-                target: next,
-                error: None,
-            },
-            node,
-        );
-        self.start(next);
+        // A function that raises raises through the call, as any call of it does.
+        self.raising_callee(Callee::Value(callee), passed, place, node);
     }
 
     /// The declared types of the fields of the struct `item`, in declaration order; empty when
