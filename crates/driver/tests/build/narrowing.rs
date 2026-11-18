@@ -89,3 +89,49 @@ def main():
         "None 2.0 3.0\nNone\ntext Circle(r=1.0)\n"
     );
 }
+
+/// A `None` passed to a `T | None` parameter tells nothing of `T`, so `T` comes from the other
+/// arguments (roadmap 1.9.47): `pick(None, 3)` and `pick(2.5, None)` call the `int` and `f64`
+/// instances, and `Slot(None, 2.0)` builds a `Slot[f64]`. A generic struct's optional field
+/// takes a value converted into its optional type, `Slot(1.0, 2.0)` and `Named(name)`. Before,
+/// the `None` made `T` the type `None` and the checker reported "`b` has type `None | None`
+/// here, found `i64`", and `Slot(1.0, 2.0)` gave `clang` IR whose types disagreed.
+#[test]
+fn none_arguments_leave_type_parameters_to_the_others() {
+    let program = "\
+class Slot[T](Struct, Copy):
+    a: T | None
+    b: T
+
+
+class Named[T](Struct):
+    label: T | None
+
+
+def pick[T: Number](a: T | None, b: T | None) -> T:
+    if a is not None:
+        return a
+    if b is not None:
+        return b
+    return 0
+
+
+def main():
+    print(pick(None, 3), pick(2.5, None), pick(None, 1.5))
+    s = Slot(None, 2.0)
+    t = Slot(1.0, 2.0)
+    print(s.a, s.b, t.a, t.b)
+    name = \"x\"
+    named = Named(name)
+    print(named.label)
+";
+    let directory = package("optional_type_arguments", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "3 2.5 1.5\nNone 2.0 1.0 2.0\nx\n"
+    );
+}
