@@ -52,6 +52,8 @@ This prints `[True None False]`, `[False None True]` and `[False None True]`.
   as pandas does.
 - **As a mask of an array, the same:** `asks[bids > 2.0]` is the elements of the rank-1
   `Array` `asks` where the comparison is `True`, and `asks[bids > 2.0] = 0.0` sets those.
+  It chooses elements of an array of text and of
+  [an array with missing values](missing-values.md#choosing-elements) too.
 - **`sum()`, `any()` and `all()` skip `None`**, as pandas does: `(bids > 2.0).sum()` is how
   many comparisons are `True`, `any()` whether one is, and `all()` whether every one that
   is there is. With none there, they give `0`, `False` and `True`. Cost: one pass that
@@ -59,8 +61,7 @@ This prints `[True None False]`, `[False None True]` and `[False None True]`.
 - **For a plain mask, fill it:** `(bids > 2.0).fillna(False)` is an `Array[bool, 1]`.
 - **`==` is not a test for `None`.** `bids == None` is not written; ask `bids.isna()`.
 - **Not built yet:** a chain `1.0 < bids < 2.0`, `in`, and such a mask choosing elements
-  of an array of text, of an array of more than one dimension, or of an array with missing
-  values.
+  of an array of more than one dimension.
 - **Cost:** one loop over the stored values and one pass over the bitmaps. Text is one
   pass that compares each pair of texts, and one over the bitmaps. As a mask, two more
   passes make the plain mask of a byte for each element.
