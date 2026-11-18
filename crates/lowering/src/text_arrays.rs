@@ -274,6 +274,12 @@ impl<'db> Builder<'db> {
                 return;
             };
             ("text_taken", Place::from(positions))
+        } else if self.optional_array_element(index).is_some() {
+            // A mask that may hold `None` chooses where it is `True`, as a plain mask.
+            let Some(mask) = self.chosen_mask(length, index) else {
+                return;
+            };
+            ("text_masked", Place::from(mask))
         } else {
             let by = self.borrow(index);
             let by_type = self.ty(index);

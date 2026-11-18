@@ -11,11 +11,11 @@ use types::{Integer, Primitive, Type, TypeKind};
 
 /// What an array with missing values can do, for messages.
 const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]`, which \
-                     gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, \
-                     `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` \
-                     and `std`, for `bool`s `sum`, `any` and `all`, the comparisons, and for \
-                     numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap \
-                     item 3.13.6";
+                     gives a `T | None`, slices, masks and arrays of positions, the methods \
+                     `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, \
+                     `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` \
+                     and `all`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` \
+                     and `%`; the rest comes with roadmap item 3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.
@@ -42,7 +42,10 @@ impl<'db> Body<'db> {
     }
 
     /// `values[i]` on an array with missing values whose elements are `element`s: the element,
-    /// an `element | None`. A slice, a mask and more than one index are not built.
+    /// an `element | None`. A slice, `values[1:3]`, is a new array with missing values that
+    /// holds a copy of the elements it takes, as a slice of a text array is. A mask and an
+    /// array of positions are checked with the other choices of elements (the `selection`
+    /// module). More than one index is an error.
     pub(super) fn optional_array_index(
         &mut self,
         node: NodeId,
@@ -60,7 +63,8 @@ impl<'db> Body<'db> {
             [index] if !sliced && whole(self, index) => {
                 Type::new(self.db, TypeKind::Optional(element))
             }
-            [_] => self.optional_array_unbuilt(node, "a slice, a mask or a list of positions"),
+            [_] if sliced => Type::new(self.db, TypeKind::OptionalArray(element)),
+            [_] => self.optional_array_unbuilt(node, "this index"),
             _ => self.lowerer.error(
                 node,
                 "an array with missing values has one dimension, so it takes one index",
