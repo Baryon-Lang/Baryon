@@ -71,7 +71,11 @@ impl<'db> Substitution<'_, 'db> {
                 key: self.ty(*key),
                 value: self.ty(*value),
             },
-            TypeKind::Optional(value) => TypeKind::Optional(self.ty(*value)),
+            // `T | None` with `T` the type `None` is `None`: a union's repeats do not matter.
+            TypeKind::Optional(value) => match self.ty(*value) {
+                none if matches!(none.kind(self.db), TypeKind::None) => return none,
+                value => TypeKind::Optional(value),
+            },
             TypeKind::Array { element, rank } => TypeKind::Array {
                 element: self.ty(*element),
                 rank: *rank,
