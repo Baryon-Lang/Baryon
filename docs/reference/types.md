@@ -660,7 +660,10 @@ it is one. A union is not accepted where a wider union is expected yet, such as 
 
 `match` takes a union apart with class patterns. A class pattern names a struct and matches its
 fields by position, in declaration order, or by keyword; fields it does not name match anything.
-A capture binds the field's value.
+A capture binds the field's value. A field of a copy type is copied; any other field is borrowed
+when the subject is borrowed, such as a read-only parameter or `self`, so the capture can be read
+in its case but not moved or changed, and `name.copy()` keeps it (decision 0032). A capture from
+any other subject, such as a local variable, that is not a copy type is not built yet.
 
 ```python
 def ghost_value(boundary: Boundary, inside: f64, dx: f64) -> f64:

@@ -35,6 +35,7 @@ mod axes;
 mod binding;
 mod builtins;
 mod calls;
+mod captures;
 mod class_functions;
 mod class_patterns;
 mod collections;
@@ -133,6 +134,8 @@ pub(crate) fn check<'db>(
         caught: Vec::new(),
         bound: BTreeSet::new(),
         modes: BTreeMap::new(),
+        subject: None,
+        captures: BTreeMap::new(),
         loops: Vec::new(),
         loop_ends: BTreeSet::new(),
         held: Vec::new(),
@@ -193,6 +196,12 @@ struct Body<'db> {
     bound: BTreeSet<NodeId>,
     /// How each parameter, by its `Name` node, receives its argument (the `moves` module).
     modes: BTreeMap<NodeId, types::Mode>,
+    /// The subject of the `match` whose patterns are being checked, which a capture of a part
+    /// that is not a copy type borrows (the `captures` module).
+    subject: Option<NodeId>,
+    /// The captures that borrow part of their `match` subject, each `Name` binding with the
+    /// subject it borrows from (the `captures` module).
+    captures: BTreeMap<NodeId, NodeId>,
     /// The enclosing `for` loops over collections, innermost last (the `loops` module).
     loops: Vec<loops::Loop>,
     /// The loop targets that ended a borrow: a loop variable that borrows an element is

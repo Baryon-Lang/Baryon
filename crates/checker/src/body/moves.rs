@@ -68,7 +68,9 @@ impl<'db> Body<'db> {
             // `path.name` and the other parts of a `Path` are new values each time, so reading
             // one moves nothing, even from a path a loop borrows (roadmap 1.9.31).
             SyntaxKind::Attribute if self.is_path_part(node) => {}
-            SyntaxKind::Name | SyntaxKind::Attribute if self.borrowed_by_loop(node, "moved") => {}
+            SyntaxKind::Name | SyntaxKind::Attribute
+                if self.borrowed_by_loop(node, "moved")
+                    || self.borrowed_by_capture(node, "moved") => {}
             SyntaxKind::Name | SyntaxKind::Attribute
                 if !self.inside_element(node) && self.held_by_with(node, "moved") => {}
             SyntaxKind::Name => self.move_variable(node, node),
