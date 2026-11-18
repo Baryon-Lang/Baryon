@@ -13,8 +13,9 @@ use types::{Integer, Primitive, Type, TypeKind};
 const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]`, which \
                      gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, \
                      `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` \
-                     and `std`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` \
-                     and `%`; the rest comes with roadmap item 3.13.6";
+                     and `std`, for `bool`s `sum`, `any` and `all`, the comparisons, and for \
+                     numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap \
+                     item 3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.
@@ -114,8 +115,9 @@ impl<'db> Body<'db> {
     /// and `std`. Each skips the elements that are `None`, as pandas does: `count()` is how
     /// many elements are there, an `i64`, and `sum()`, `min()`, `max()`, `mean()`, `var()`
     /// and `std()` of numbers give what the same method gives the array of the elements that
-    /// are there, `values.dropna()`. `None`, with nothing reported, for any other method and
-    /// for elements that are not integers or floats.
+    /// are there, `values.dropna()`. A mask of `bool`s has `sum()`, how many elements are
+    /// `True`, and `any()` and `all()`, which with no element there are `False` and `True`.
+    /// `None`, with nothing reported, for any other method or kind of element.
     fn optional_array_reduced(
         &mut self,
         node: NodeId,
@@ -127,11 +129,14 @@ impl<'db> Body<'db> {
             let whole = Primitive::Integer(Integer::I64);
             return Some(Type::new(self.db, TypeKind::Primitive(whole)));
         }
-        let number = matches!(
-            element.kind(self.db),
-            TypeKind::Primitive(Primitive::Integer(_) | Primitive::Float(_))
-        );
-        if !number || !matches!(name, "sum" | "min" | "max" | "mean" | "var" | "std") {
+        let built = match element.kind(self.db) {
+            TypeKind::Primitive(Primitive::Integer(_) | Primitive::Float(_)) => {
+                matches!(name, "sum" | "min" | "max" | "mean" | "var" | "std")
+            }
+            TypeKind::Primitive(Primitive::Bool) => matches!(name, "sum" | "any" | "all"),
+            _ => false,
+        };
+        if !built {
             return None;
         }
         let there = Type::new(self.db, TypeKind::Array { element, rank: 1 });

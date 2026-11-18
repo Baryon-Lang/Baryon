@@ -52,8 +52,11 @@ This prints `[True None False]`, `[False None True]` and `[False None True]`.
   as pandas does.
 - **As a mask of an array, the same:** `asks[bids > 2.0]` is the elements of the rank-1
   `Array` `asks` where the comparison is `True`, and `asks[bids > 2.0] = 0.0` sets those.
-- **For a plain mask, fill it:** `(bids > 2.0).fillna(False)` is an `Array[bool, 1]`, which
-  can be counted with `sum()`.
+- **`sum()`, `any()` and `all()` skip `None`**, as pandas does: `(bids > 2.0).sum()` is how
+  many comparisons are `True`, `any()` whether one is, and `all()` whether every one that
+  is there is. With none there, they give `0`, `False` and `True`. Cost: one pass that
+  copies the elements that are there, and one over the copy.
+- **For a plain mask, fill it:** `(bids > 2.0).fillna(False)` is an `Array[bool, 1]`.
 - **`==` is not a test for `None`.** `bids == None` is not written; ask `bids.isna()`.
 - **Not built yet:** a chain `1.0 < bids < 2.0`, `in`, and such a mask choosing elements
   of an array of text, of an array of more than one dimension, or of an array with missing
@@ -98,8 +101,7 @@ and `[2.]`.
 - **`~` and a `None`:** `quotes[~(quotes.bid > 2.0)]` does not choose the rows whose bid is
   `None`, and neither does `quotes[quotes.bid > 2.0]`. Ask for them with
   `quotes[quotes.bid.isna()]`.
-- **Not built yet:** a single `True` or `False` as a side, `and` and `or` of whole masks,
-  which Python does not define for arrays either, and `any()`, `all()` and `sum()` of a
-  mask that may hold `None`: fill it first.
+- **Not built yet:** a single `True` or `False` as a side, and `and` and `or` of whole
+  masks, which Python does not define for arrays either.
 - **Cost:** one loop over the stored values, and for `&` and `|` one pass over both sides
   that makes the bitmap. A plain side costs one more bitmap of a bit for each element.

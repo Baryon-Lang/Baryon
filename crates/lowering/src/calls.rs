@@ -183,7 +183,8 @@ impl<'db> Builder<'db> {
             (
                 Some((
                     "Array",
-                    method @ ("count" | "sum" | "min" | "max" | "mean" | "var" | "std"),
+                    method @ ("count" | "sum" | "min" | "max" | "mean" | "var" | "std" | "any"
+                    | "all"),
                 )),
                 [array, ..],
             ) if self.optional_array_element(*array).is_some() => {

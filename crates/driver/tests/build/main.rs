@@ -54,6 +54,7 @@ mod linalg;
 mod list_slices;
 mod lzma;
 mod managers;
+mod mask_truth;
 mod math;
 mod missing_distinct;
 mod missing_dropped;
