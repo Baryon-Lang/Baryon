@@ -9,8 +9,9 @@
 //! element type as the type argument, and the results are the new frame's columns.
 
 use crate::builder::Builder;
+use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{BinaryOperator, Check, Constant, Local, Operand, Place, Projection, Rvalue};
-use mir::{ConstantValue, StatementKind, TerminatorKind};
+use mir::{ConstantValue, Elementwise, StatementKind, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Column, Type, TypeKind};
 
@@ -88,15 +89,52 @@ impl<'db> Builder<'db> {
         self.taken_rows(place, frame, &source, (function, arguments), node);
     }
 
+    /// The mask `index`, an `Array[bool | None, 1]`, as a plain mask of `bool`s that is true
+    /// where the element is there and `True`, so a `None` chooses nothing, as in pandas. It
+    /// must have `count` elements, which is checked when the program runs. The mask is
+    /// dropped when the statement ends. `None` after a report. Cost: two passes and two
+    /// arrays of a byte for each element.
+    fn chosen_mask(&mut self, count: Operand<'db>, index: NodeId) -> Option<Local> {
+        let base = self.borrow(index);
+        let values = base.clone().project(Projection::Field(VALUES));
+        let bits = base.project(Projection::Field(VALIDITY));
+        let found = self.temporary(self.int_type(), index);
+        self.assign(Place::from(found), Rvalue::Length(values.clone(), 0), index);
+        let found = Operand::Copy(Place::from(found));
+        self.same_length(0, count, found.clone(), index);
+        let there = self.validity_mask(bits, found, false, index)?;
+        self.drop_later(there);
+        let both = Elementwise::Binary(
+            BinaryOperator::BitAnd,
+            Box::new(Elementwise::Leaf(Operand::Copy(values))),
+            Box::new(Elementwise::Leaf(Operand::Copy(Place::from(there)))),
+        );
+        let mask = self.temporary(self.array_of(self.boolean_type()), index);
+        self.assign(
+            Place::from(mask),
+            Rvalue::Elementwise(Box::new(both)),
+            index,
+        );
+        self.drop_later(mask);
+        Some(mask)
+    }
+
     /// `df[mask]` or `df[i:j]`, the subscript `node` of the frame `value` with the index
     /// `index`, into `place`: a new frame of the rows chosen.
     ///
     /// A mask of another length than the frame panics here, at the mask, before any column
-    /// is read. A slice follows Python: its bounds are clamped to the frame, and a step of 0
-    /// panics.
+    /// is read. A mask that may hold `None` chooses the rows where it is `True`, not those
+    /// where it is `None`. A slice follows Python: its bounds are clamped to the frame, and a
+    /// step of 0 panics.
     pub(crate) fn frame_rows(&mut self, place: Place, value: NodeId, index: NodeId, node: NodeId) {
         let source = self.borrow(value);
         let count = self.counted_rows(value, &source, node);
+        if self.optional_array_element(index).is_some() {
+            let Some(mask) = self.chosen_mask(Operand::Copy(Place::from(count)), index) else {
+                return;
+            };
+            return self.each_column(place, value, &source, ("masked", &Place::from(mask)), node);
+        }
         if self.tree.kind(index) != SyntaxKind::Slice {
             let mask = self.borrow(index);
             let chosen = self.length(&mask, self.ty(index), 0, index);
