@@ -1,5 +1,7 @@
-//! Structs built and run: arrays of `Copy` structs, and constructors with optional fields.
+//! Structs built and run: arrays of `Copy` structs, constructors with optional fields, and
+//! structs called through `__call__`.
 
+use super::examples::prints;
 use super::{baryon_build, package, stderr};
 use std::process::Command;
 
@@ -101,4 +103,93 @@ def main():
         String::from_utf8_lossy(&ran.stdout),
         "heater! heater!\n2.0\n2 b\n"
     );
+}
+
+/// A struct called like a function through its `__call__` method (decision 0058): a generic
+/// struct at two float types, a call in a loop, a field's struct called as `SciPy` calls
+/// `sol.sol(t)`, `InOut` and `Owned` receivers, and an error raised from the call. Each line
+/// is what Python prints for the same program, except the caught error, which prints as Baryon
+/// prints an error value.
+#[test]
+fn structs_with_call_are_called_like_functions() {
+    let program = "\
+class Line[T: Float](Struct, Copy):
+    slope: T
+    intercept: T
+
+    def __call__(self, x: T) -> T:
+        return self.slope * x + self.intercept
+
+
+class Table(Struct):
+    xs: Array[f64, 1]
+    ys: Array[f64, 1]
+
+    def __call__(self, x: f64) -> f64:
+        i = 0
+        while i < len(self.xs) - 2 and self.xs[i + 1] < x:
+            i += 1
+        w = (x - self.xs[i]) / (self.xs[i + 1] - self.xs[i])
+        return (1.0 - w) * self.ys[i] + w * self.ys[i + 1]
+
+
+class Result(Struct):
+    t: Array[f64, 1]
+    sol: Table
+
+
+class Counter(Struct):
+    seen: list[int]
+
+    def __call__(self: InOut[Self], value: int) -> int:
+        self.seen.append(value)
+        return len(self.seen)
+
+
+class Bag(Struct):
+    items: list[str]
+
+    def __call__(self: Owned[Self], last: str) -> list[str]:
+        items = self.items
+        items.append(last.copy())
+        return items
+
+
+class Limited(Struct, Copy):
+    limit: float
+
+    def __call__(self, x: float) -> Raises[float, ValueError]:
+        if x > self.limit:
+            raise ValueError(\"over the limit\")
+        return x
+
+
+def main():
+    line = Line(2.0, 1.0)
+    narrow = Line(f32(0.5), f32(0.25))
+    print(line(3.0), narrow(f32(2.0)))
+    total = 0.0
+    for i in range(4):
+        total += line(float(i))
+    print(total)
+    result = Result(Array([0.0, 1.0]), Table(Array([0.0, 1.0, 2.0]), Array([0.0, 10.0, 40.0])))
+    print(result.sol(0.5), result.sol(1.5))
+    counter = Counter([])
+    counter(7)
+    print(counter(8), counter.seen)
+    bag = Bag([\"a\"])
+    print(bag(\"b\"))
+    limited = Limited(1.0)
+    try:
+        print(limited(0.5))
+        print(limited(2.0))
+    except ValueError as error:
+        print(error)
+";
+    prints(
+        "call-dunder",
+        program,
+        "7.0 1.25\n16.0\n5.0 25.0\n2 [7, 8]\n['a', 'b']\n0.5\nValueError(message='over the limit')\n",
+    )
+    .unwrap();
 }

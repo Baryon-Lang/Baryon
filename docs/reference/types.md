@@ -478,6 +478,23 @@ class Particle(Struct):
   start = Point.origin()
   end = Point.on_axis(2.5)
   ```
+- A struct that defines `__call__` can be called like a function, as a Python object can:
+  `p(3.0)` is `p.__call__(3.0)`, with `p` passed as `self`
+  ([decision 0058](../decisions/0058-operators-are-dunder-methods.md)). It costs what the
+  method call costs. A struct without `__call__` cannot be called.
+
+  ```python
+  class Line(Struct, Copy):
+      slope: f64
+      intercept: f64
+
+      def __call__(self, x: f64) -> f64:
+          return self.slope * x + self.intercept
+
+
+  f = Line(2.0, 1.0)
+  print(f(3.0))       # 7.0
+  ```
 - Structs have no inheritance
   ([decision 0015](../decisions/0015-no-class-inheritance.md)): no base besides `Struct` and,
   optionally, `Copy`. Types share behavior through traits and generic functions, and share data
@@ -788,8 +805,8 @@ error that names decision 0026, at the expression or annotation:
 - a `Callable` in a struct field, a return type, or inside a parameter's type, such as
   `Callable[[f64], f64] | None` or `list[Callable[[f64], f64]]`: a `Callable` must be a
   parameter's whole type;
-- a struct value called through its `__call__` method, `p(3.0)`; call the method by name,
-  `p.__call__(3.0)`, instead.
+- a struct value with a `__call__` method passed to a `Callable` parameter. The struct can be
+  called, `p(3.0)`, but it carries data, so passing it would make it a closure.
 
 Lambdas, nested functions and module-level variables are errors of their own. To pass a method
 or a generic function, wrap it in a module-level function:

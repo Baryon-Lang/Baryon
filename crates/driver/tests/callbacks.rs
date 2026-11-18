@@ -46,11 +46,11 @@ def twice[T: Float](x: T) -> T:
     return x + x
 ";
 
-/// A bound method, a function of a class and a generic function read as a value, and a struct
-/// value called through `__call__`. The method called by name, and a module-level function
-/// passed, still check clean.
+/// A bound method, a function of a class and a generic function read as a value are reported.
+/// A struct value called through `__call__` (decision 0058), the method called by name, and a
+/// module-level function passed check clean.
 #[test]
-fn methods_generic_functions_and_called_structs_are_reported() {
+fn methods_and_generic_functions_as_values_are_reported() {
     let program = format!(
         "{SHARED}{}",
         r"
@@ -90,14 +90,46 @@ error: the generic function `twice` cannot be used as a value in version 0
    |
 30 |     print(apply(twice, 1.0))
    |                 ^^^^^ a generic function, not called
-   = note: its type arguments cannot be worked out from a `Callable` yet (decision 0026); pass a function that is not generic, which may call this one
+   = note: its type arguments cannot be worked out from a `Callable` yet (decision 0026); pass a function that is not generic, which may call this one"
+    );
+}
 
-error: `s` has type `Scale`, which cannot be called in version 0
-  --> main.byn:31:11
+/// A struct with `__call__` passed to a `Callable` parameter is an error whose note names
+/// decisions 0026 and 0058, and calling a struct without `__call__` is an error that says what
+/// a struct needs to be called.
+#[test]
+fn callable_structs_are_not_function_values() {
+    let program = format!(
+        "{SHARED}{}",
+        r"
+
+class Plain(Struct, Copy):
+    k: f64
+
+
+def main():
+    s = Scale(2.0)
+    print(apply(s, 1.0))
+    p = Plain(1.0)
+    print(p(2.0))
+"
+    );
+    assert_eq!(
+        check_one(&program),
+        "\
+error: `f` has type `Callable[[f64], f64]`, found `Scale`
+  --> main.byn:28:17
    |
-31 |     print(s(3.0))
-   |           ^^^^^^ a struct, not a function
-   = note: calling a struct value through its `__call__` method is not supported yet (decision 0026); call the method by name: `s.__call__(...)`"
+28 |     print(apply(s, 1.0))
+   |                 ^ type `Scale`
+   = note: a struct with `__call__` can be called, but a `Callable` takes only a module-level function (decisions 0026 and 0058); pass a function that calls it
+
+error: `p` has type `Plain`, which cannot be called
+  --> main.byn:30:11
+   |
+30 |     print(p(2.0))
+   |           ^^^^^^ not a function
+   = note: a struct is called through a `__call__` method, which this one does not define"
     );
 }
 
