@@ -364,6 +364,7 @@ machine, and the least affected by other work on the computer.
 | `kernels/support/` | The shared generator, timer, argument parsing and report, in each language |
 | `src/` | The harness: `cargo kernels` |
 | `baselines/` | Recorded baselines, one JSON file per platform |
+| `dataframe/` | The `DataFrame` benchmark against pandas and Polars, with [its own page](dataframe/README.md) |
 
 Builds go to `target/bench/`, which Git ignores.
 

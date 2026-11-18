@@ -16,6 +16,8 @@ as written, so every program in them builds and prints what the page shows.
    `math`, exact sums, random numbers, `linalg`, `fft` and `stats`.
 4. [Data, files and plots](guide/data-files-and-plots.md) covers `DataFrame`, files and paths,
    text tables and `.npy`, NetCDF, HDF5 and FITS, compression, and plots with `byplot`.
+5. [A worked analysis with DataFrame](guide/dataframes.md) writes one pandas analysis again in
+   Baryon, missing values included, and times `DataFrame` against pandas and Polars.
 
 To work in an editor, [Coding Baryon in VS Code](guide/vscode.md) sets up VS Code and walks
 through a first program there.
@@ -49,6 +51,7 @@ and runs `baryon lsp` for you. The [release notes](../CHANGELOG.md) say what eac
 | [`AGENTS.md`](../AGENTS.md) | Extra rules for AI coding agents |
 | [`architecture.md`](architecture.md) | Crate kinds, what may depend on what, and how stages connect |
 | [`bench/README.md`](../bench/README.md) | The baseline benchmark suite: the kernels, how to run and record them, and the numbers Baryon must match |
+| [`bench/dataframe/README.md`](../bench/dataframe/README.md) | The `DataFrame` benchmark against pandas and Polars at 10 million rows: the operations, how they are timed, and the recorded numbers |
 | [`decisions/`](decisions/README.md) | Every hard-to-reverse choice, why it was made, and what it costs |
 | [`design/language-design-plan.md`](design/language-design-plan.md) | Goals, language design, compiler architecture, roadmap and open questions |
 | [`design/astrobaryon-roadmap.md`](design/astrobaryon-roadmap.md) | AstroBaryon, the astronomy library: scope, build order, prerequisite libraries, and the documentation each piece ships with, including the transition guide from AstroPy |
