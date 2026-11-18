@@ -194,6 +194,12 @@ This prints `[0.5 None 1.5]`, then `[1.75 None 3.25]`.
   Integers copy the elements that are there out of each array first, compute, and put the
   results back, which is one more pass and one more array for each array in the expression.
 
+## Comparisons
+
+`bids > 2.0` gives an `Array[bool | None, 1]`, `None` wherever `bids` is, and such a mask
+chooses rows of a frame, `quotes[quotes.bid > 2.0]`. See
+[Comparing missing values](missing-comparisons.md).
+
 ## Text that may be `None`
 
 An `Array[str | None, 1]` holds text with gaps, and a frame's field `name: str | None` is a
@@ -281,7 +287,9 @@ This prints `3 None 3.0`, then `[False  True False]`.
   and returned as any frame is.
 - **Columns are chosen by name**, `quotes[["bid"]]`, each copied with its gaps.
 - **Rows are chosen as any frame's are**: a mask, `quotes[quotes.bid.notna()]`, a slice,
-  `quotes[1:3]`, `quotes.head(n)` and `quotes.tail(n)`. Each `None` stays with its row.
+  `quotes[1:3]`, `quotes.head(n)` and `quotes.tail(n)`. Each `None` stays with its row. A
+  mask may be a [comparison](missing-comparisons.md) with such a column,
+  `quotes[quotes.bid > 2.0]`.
 - **`sort_values` puts `None` last.** `quotes.sort_values("bid")` sorts the rows that have a
   bid and puts the rows whose bid is `None` after them, in the order they had, whether the
   sort is rising or falling. A `NaN` is a number, so it comes after the other numbers and
@@ -431,8 +439,8 @@ def main():
 
 Each of these is a compile error that names what an array with missing values has today:
 
-- comparisons, `bids == 1.5`, and `**`, the bitwise operators and the in-place operators,
-  `bids += 1.0`;
+- `**`, the bitwise operators and the in-place operators, `bids += 1.0`;
+- comparisons of text or `bool`s, and `&`, `|` and `~` of two masks that may hold `None`;
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `count`, `sum`, `mean`,
   `min`, `max`, `var` and `std`: `median`, `argsort`; and `min` and `max` of text;
 - a slice, a mask or a list of positions, `bids[1:3]`;

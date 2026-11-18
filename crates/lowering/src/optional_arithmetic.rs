@@ -13,9 +13,12 @@
 //!   is first gathered down to the elements the result keeps (the library's `present`), the
 //!   tree runs over those, and the library's `spread` puts the results back in their
 //!   places. Cost: one more pass and one more array for each array in the expression.
+//!
+//! A comparison, `bids > 1.0`, gives an `Array[bool | None, 1]` the same way. No comparison
+//! panics, so it is always one loop over the stored values of its two sides.
 
 use crate::builder::Builder;
-use crate::operators::arithmetic;
+use crate::operators::{arithmetic, comparison};
 use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{Elementwise, Local, Operand, Place, Projection, Rvalue, UnaryOperator};
 use syntax::{NodeId, Operator, Role, SyntaxKind};
@@ -94,6 +97,70 @@ impl<'db> Builder<'db> {
         }
     }
 
+    /// Whether `node` is a comparison whose result is an array with missing values.
+    pub(crate) fn is_optional_comparison(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::Compare && self.optional_array_element(node).is_some()
+    }
+
+    /// The comparison `node`, `left > right`, whose result is an array of `bool`s with
+    /// missing values, into `place`: `None` wherever a side is `None`. Each side is read
+    /// once, an expression into a temporary first, and a side that is a single number
+    /// converts to the type the two sides' elements meet in. Two arrays must have the same
+    /// length, which is checked when the program runs.
+    pub(crate) fn optional_comparison(&mut self, place: Place, node: NodeId) {
+        let Some(comparator) = self.tree.children_with(node, Role::Item).next() else {
+            return;
+        };
+        let syntax = self.tree.node(comparator).operator();
+        let (Some(left), Some(right), Some(operator)) = (
+            self.tree.child(node, Role::Left),
+            self.tree.child(comparator, Role::Right),
+            comparison(syntax),
+        ) else {
+            return self.unsupported(node, "this comparison of an array with missing values");
+        };
+        let own = |builder: &Self, side: NodeId| {
+            let ty = builder.ty(side);
+            match builder.optional_array_element(side) {
+                Some(element) => element,
+                None if builder.is_array(ty) => builder.element(ty),
+                None => ty,
+            }
+        };
+        let common = self.common(own(self, left), own(self, right));
+        let mut leaves = Leaves::default();
+        self.leaf(left, common, &mut leaves);
+        self.leaf(right, common, &mut leaves);
+        let Some(((first, _), rest)) = leaves.arrays.split_first() else {
+            return;
+        };
+        let count = self.values_length(first, node);
+        for (other, _) in rest {
+            let found = self.values_length(other, node);
+            self.same_length(0, count.clone(), found, node);
+        }
+        let (Some(bits), [first, second]) = (
+            self.joined_bitmaps(&leaves.bitmaps, node),
+            leaves.operands.as_slice(),
+        ) else {
+            return;
+        };
+        let tree = Elementwise::Binary(
+            operator,
+            Box::new(Elementwise::Leaf(first.clone())),
+            Box::new(Elementwise::Leaf(second.clone())),
+        );
+        let boolean = self.boolean_type();
+        let values = self.temporary(self.array_of(boolean), node);
+        self.assign(
+            Place::from(values),
+            Rvalue::Elementwise(Box::new(tree)),
+            node,
+        );
+        let whole = self.with_bits(boolean, values, bits, node);
+        self.assign(place, Rvalue::Use(whole), node);
+    }
+
     /// Reads every operand of the arithmetic at `node` once, in the order written, into
     /// `leaves`. A single number converts to `element`, the result's element type.
     fn gather_leaves(&mut self, node: NodeId, element: Type<'db>, leaves: &mut Leaves<'db>) {
@@ -105,6 +172,12 @@ impl<'db> Builder<'db> {
             }
             return;
         }
+        self.leaf(node, element, leaves);
+    }
+
+    /// Reads `node`, one operand, into `leaves`: an array with or without missing values,
+    /// an expression into a temporary first, or a single number, converted to `element`.
+    fn leaf(&mut self, node: NodeId, element: Type<'db>, leaves: &mut Leaves<'db>) {
         let array = if let Some(own) = self.optional_array_element(node) {
             let base = self.borrow(node);
             leaves

@@ -1,10 +1,11 @@
 //! Arithmetic on arrays with missing values (decision 0045, part 3): `bids + asks`,
 //! `bids * 2.0` and `-bids` give an array with missing values that is `None` wherever a
-//! side is `None`, as pandas's nullable columns do.
+//! side is `None`, as pandas's nullable columns do. A comparison, `bids > 1.0`, gives an
+//! `Array[bool | None, 1]` the same way (Collins, 2026-11-14): `None` where a side is.
 
 use super::{Body, numbers, relations};
 use syntax::{NodeId, Operator};
-use types::{Type, TypeKind};
+use types::{Primitive, Type, TypeKind};
 
 impl<'db> Body<'db> {
     /// `left operator right` at `node`, where a side is an array with missing values. The
@@ -56,6 +57,69 @@ impl<'db> Body<'db> {
                 Type::new(self.db, TypeKind::OptionalArray(*element))
             }
             _ => result,
+        }
+    }
+
+    /// `left operator right` at the comparator `node`, where a side is an array with missing
+    /// values: an `Array[bool | None, 1]` that is `None` wherever a side is, as pandas's
+    /// nullable columns compare. The sides are what arithmetic takes, and `==`, `!=`, `<`,
+    /// `<=`, `>` and `>=` of numbers are built; `in`, `is` and comparing text or `bool`s are
+    /// not.
+    pub(super) fn optional_array_comparison(
+        &mut self,
+        node: NodeId,
+        operator: Operator,
+        left: Type<'db>,
+        right: Type<'db>,
+    ) -> Type<'db> {
+        let symbol = operator.symbol();
+        if relations::is_open(self.db, left) || relations::is_open(self.db, right) {
+            return self.lowerer.unknown();
+        }
+        if !matches!(
+            operator,
+            Operator::Equal
+                | Operator::NotEqual
+                | Operator::Less
+                | Operator::LessEqual
+                | Operator::Greater
+                | Operator::GreaterEqual
+        ) {
+            return self.optional_array_unbuilt(node, &format!("`{symbol}`"));
+        }
+        let unbuilt = |ty: Type<'db>| match ty.kind(self.db) {
+            TypeKind::OptionalArray(element) => matches!(
+                element.kind(self.db),
+                TypeKind::Str | TypeKind::Primitive(Primitive::Bool)
+            ),
+            _ => false,
+        };
+        if unbuilt(left) || unbuilt(right) {
+            let what = format!("`{symbol}` of text or of `bool`s");
+            return self.optional_array_unbuilt(node, &what);
+        }
+        let (Some(first), Some(second)) = (self.gap_operand(left), self.gap_operand(right)) else {
+            let message = format!(
+                "`{symbol}` cannot compare `{}` and `{}`",
+                self.show(left),
+                self.show(right)
+            );
+            return self.lowerer.error(
+                node,
+                &message,
+                "an array that may hold `None`",
+                Some(
+                    "an array of numbers with missing values compares with another, with an \
+                     `Array` of numbers of one dimension, or with a number",
+                ),
+            );
+        };
+        match self.array_comparison(node, operator, first, second) {
+            Some(_) => {
+                let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
+                Type::new(self.db, TypeKind::OptionalArray(boolean))
+            }
+            None => self.lowerer.unknown(),
         }
     }
 

@@ -13,14 +13,16 @@ use types::{Integer, Primitive, Type, TypeKind};
 impl<'db> Body<'db> {
     /// Whether the subscript's index `index`, whose type is `found` unless it is a slice,
     /// chooses rows of a frame: a slice, `df[1:3]`, or a mask, an `Array[bool, 1]` as in
-    /// `df[df.price > 100.0]`. The bounds of a slice are checked here.
+    /// `df[df.price > 100.0]`. A mask may hold `None`, as a comparison with a column that
+    /// may hold `None` gives; a row whose mask is `None` is not chosen, as in pandas. The
+    /// bounds of a slice are checked here.
     pub(super) fn chooses_rows(&mut self, index: NodeId, found: Option<Type<'db>>) -> bool {
         if self.tree.kind(index) == SyntaxKind::Slice {
             self.index(index);
             return true;
         }
         found.is_some_and(|found| match found.kind(self.db) {
-            &TypeKind::Array { element, rank: 1 } => {
+            &TypeKind::Array { element, rank: 1 } | &TypeKind::OptionalArray(element) => {
                 matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool))
             }
             _ => false,

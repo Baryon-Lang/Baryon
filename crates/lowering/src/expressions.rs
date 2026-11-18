@@ -62,6 +62,9 @@ impl<'db> Builder<'db> {
             {
                 self.optional_arithmetic(place, node);
             }
+            SyntaxKind::Compare if self.is_optional_comparison(node) => {
+                self.optional_comparison(place, node);
+            }
             SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation | SyntaxKind::Compare
                 if self.is_array(ty) =>
             {

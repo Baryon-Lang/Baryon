@@ -23,9 +23,19 @@ impl<'db> Body<'db> {
         base: Type<'db>,
         indices: &[NodeId],
     ) -> Option<Type<'db>> {
+        let recorded = |index: &NodeId| self.recorded(*index);
+        if !self.is_optional_array(base)
+            && indices
+                .iter()
+                .filter_map(recorded)
+                .any(|ty| self.is_optional_array(ty))
+        {
+            let what = "choosing an array's elements with a mask";
+            return Some(self.optional_array_unbuilt(node, what));
+        }
         let by = indices
             .iter()
-            .filter_map(|&index| self.recorded(index))
+            .filter_map(recorded)
             .find(|&ty| self.is_any_array(ty))?;
         let rank_one = |ty: Type<'db>| match ty.kind(self.db) {
             TypeKind::Array { element, rank: 1 } => Some(*element),

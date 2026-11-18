@@ -293,7 +293,10 @@ impl<'db> Builder<'db> {
         if self.tree.kind(index) == SyntaxKind::List {
             return self.frame_select(place, value, node);
         }
-        if self.tree.kind(index) == SyntaxKind::Slice || self.is_array(self.ty(index)) {
+        if self.tree.kind(index) == SyntaxKind::Slice
+            || self.is_array(self.ty(index))
+            || self.optional_array_element(index).is_some()
+        {
             return self.frame_rows(place, value, index, node);
         }
         let frame = self.borrow(value);
