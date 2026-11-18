@@ -47,7 +47,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `erfcx` | 8 ULP | 1 ULP | 443 ULP at −25.8 |
 | `erfinv`, `erfcinv` | 8 ULP | 2 ULP | 3 ULP |
 | `ndtr` | 8 ULP | 3 ULP | 0 from −37.68 down, where the true value is still above 1e-310 |
-| `ndtri` | 8 ULP | 3 ULP | 2 ULP |
+| `ndtri` | 8 ULP | 2 ULP | 2 ULP |
 | `log_ndtr` | 8 ULP | 3 ULP | 52 ULP at 9.76 |
 | `dawsn` | 8 ULP | 6 ULP | 10 ULP |
 | `j0`, `j1` | 16 ULP of the larger of the value and its envelope | 7 ULP | 4 ULP |
@@ -209,9 +209,10 @@ How each is computed:
 - **`erfinv`** refines a first guess by Halley's method. Above |y| = 0.5 it is
   `erfcinv(1 − |y|)`, where the subtraction is exact. **`erfcinv`** below 0.5 solves
   −x² + log erfcx(x) = log q by Newton's method, which stays finite for the smallest `q`.
-- **`ndtri`** is one rational function, fitted with mpmath: of 0.180625 − q² times q = p − ½
-  for |q| up to 0.425, and of t = √(−log p) beyond, in two pieces split at t = 5, with p taken
-  as 1 − p above ½. There is no iteration: 10 million calls take 0.09 s, where SciPy's take 0.13.
+- **`ndtri`** starts from a rational function fitted with mpmath: of 0.180625 − q² times
+  q = p − ½ for |q| up to 0.425, and of t = √(−log p) beyond, in two pieces split at t = 5,
+  with p taken as 1 − p above ½. One Halley step on erf(x/√2) = 2q in the centre, or one Newton
+  step on −v² + log erfcx(v) = log 2p in the tails, takes the fit's 6 ULP to 2.
 - **`log_ndtr`** is log1p(−Φ(−x)) above 0, log Φ(x) down to −20, and log(erfcx(u) / 2) − u²
   with u = −x/√2 below, so it is finite where Φ underflows.
 - **`dawsn`** below 8 is the continued fraction x / (1 + 2x² / (3 − 4x² / (5 + ⋯))), from a

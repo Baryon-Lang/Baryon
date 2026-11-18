@@ -1,17 +1,32 @@
-"""`ndtri` for `special`, the inverse of the standard normal cumulative distribution, from
-three rational functions fitted to it (roadmap 3.18.17).
+"""`ndtri` for `special`, the inverse of the standard normal cumulative distribution
+(roadmap 3.18.17): a first value from one of three fitted rational functions, then one step of
+Newton's or Halley's method.
 
-Each fit is the ratio of two polynomials whose coefficients were fitted with mpmath by the
-script in `crates/driver/tests/fixtures/special/README.md`, to a relative error of a few ULP:
-one rational function costs a dozen multiplications and one division, where solving for the
-answer by Newton's method costs several evaluations of `erfc`. The ranges and variables follow
-the shape Wichura used for Algorithm AS 241: the centre in q = p − ½, the tails in
-t = √(−log p), where the answer is close to a linear function of t.
+Each rational function is the ratio of two polynomials whose coefficients were fitted with
+mpmath by the script in `crates/driver/tests/fixtures/special/README.md`. The ranges and
+variables follow the shape Wichura used for Algorithm AS 241: the centre in q = p − ½, the tails
+in t = √(−log p), where the answer is close to a linear function of t. The fit alone is within
+6 ULP, its error coming from rounding as it is evaluated; one step with `erf` or `erfcx`, the
+same forms `erfinv` and `erfcinv` iterate, brings that to 3 ULP and the usual case to the
+correctly rounded value, at the cost of one more function evaluation, where solving from a rough
+guess took several.
 
 The compiler reads this file for `<std>/special.byn`; a program cannot import it.
 """
 
-from math import inf, isnan, log, nan, sqrt
+from math import exp, fma, inf, isnan, log, nan, sqrt
+from special_error import erf, erfcx
+
+_SQRT_TWO: Final = 1.4142135623730951  # √2, rounded to f64
+_SQRT_TWO_LOW: Final = -9.667293313452913e-17  # √2 minus `_SQRT_TWO`
+_ONE_OVER_SQRT_TWO: Final = 0.7071067811865476  # 1/√2, rounded to f64
+_SQRT_PI: Final = 1.7724538509055159  # √π
+_TWO_OVER_SQRT_PI: Final = 1.1283791670955126  # 2/√π
+
+
+def _times_sqrt_two(u: f64) -> f64:
+    """√2 u with √2 carried as two `f64`s, so the product is rounded once, not twice."""
+    return fma(u, _SQRT_TWO, u * _SQRT_TWO_LOW)
 
 
 def _centre(s: f64) -> f64:
@@ -83,8 +98,11 @@ def ndtri(p: f64) -> f64:
     """The inverse of `ndtr`, as `scipy.special.ndtri`: the `x` with Φ(x) = p, for `p`
     from 0 to 1. −∞ at 0, ∞ at 1 and NaN outside [0, 1].
 
-    For |p − ½| up to 0.425 it is q times a rational function of 0.180625 − q²; beyond, a
-    rational function of t = √(−log p), with p replaced by 1 − p above ½, which is exact there.
+    For |p − ½| up to 0.425 the first value is q times a rational function of 0.180625 − q²,
+    refined by one Halley step on erf(x/√2) = 2q. Beyond, it is a rational function of
+    t = √(−log p), with p replaced by 1 − p above ½, which is exact there, refined by one
+    Newton step on −v² + log erfcx(v) = log 2p, v = |x|/√2, which stays finite for the
+    smallest `p`.
 
     ```python
     from special import ndtri
@@ -96,7 +114,12 @@ def ndtri(p: f64) -> f64:
         return nan
     q = p - 0.5
     if abs(q) <= 0.425:
-        return q * _centre(0.180625 - q * q)
+        # One Halley step on erf(u) = 2q, u = x/√2, whose error does not grow near 0.
+        u = q * _centre(0.180625 - q * q) * _ONE_OVER_SQRT_TWO
+        error = erf(u) - 2.0 * q
+        slope = _TWO_OVER_SQRT_PI * exp(-u * u)
+        u -= error / (slope * (1.0 + u * error / slope))
+        return _times_sqrt_two(u)
     if p == 0.0:
         return -inf
     if p == 1.0:
@@ -107,9 +130,15 @@ def ndtri(p: f64) -> f64:
     t = sqrt(-log(smaller))
     x = 0.0
     if t <= 5.0:
-        x = -_near_tail(t - 1.6)
+        x = _near_tail(t - 1.6)
     else:
-        x = -_far_tail(t - 5.0)
-    if q > 0.0:
+        x = _far_tail(t - 5.0)
+    # One Newton step on log erfc(v) = −v² + log erfcx(v) = log 2p, v = |x|/√2, which stays
+    # finite for the smallest p.
+    v = x * _ONE_OVER_SQRT_TWO
+    scaled = erfcx(v)
+    v += (-v * v + log(scaled) - log(2.0 * smaller)) * _SQRT_PI * scaled / 2.0
+    x = _times_sqrt_two(v)
+    if q < 0.0:
         return -x
     return x
