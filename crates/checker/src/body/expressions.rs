@@ -190,7 +190,7 @@ impl<'db> Body<'db> {
                     .copied()
                     .unwrap_or_else(|| self.lowerer.unknown())
             }
-            Some(&Definition::Item(file, name)) => self.item_value(file, name),
+            Some(&Definition::Item(file, name)) => self.item_value(node, file, name),
             Some(Definition::Standard {
                 module: "math",
                 member: Some(member),
@@ -210,8 +210,9 @@ impl<'db> Body<'db> {
 
     /// The type of a module-level definition read as a value: a constant's type, or a
     /// function's own type, which matches a `Callable` with its signature (decision 0026). A
-    /// class or alias read as a value, which only a later slice gives a type, is unknown.
-    fn item_value(&mut self, file: database::File, name: NodeId) -> Type<'db> {
+    /// class or alias read as a value, which only a later slice gives a type, is unknown. A
+    /// generic function read as a value is an error at `node`, the name as written.
+    fn item_value(&mut self, node: NodeId, file: database::File, name: NodeId) -> Type<'db> {
         let kind = outline(self.db, file)
             .get(name)
             .map(|entry| entry.kind.clone());
@@ -230,6 +231,22 @@ impl<'db> Body<'db> {
                     },
                 );
                 Type::new(self.db, TypeKind::Function { item, callable })
+            }
+            (Some(Kind::Function), Declaration::Function(_)) => {
+                let shown = self.tree.text(node, self.text);
+                let message = format!(
+                    "the generic function `{shown}` cannot be used as a value in version 0"
+                );
+                self.lowerer.error(
+                    node,
+                    &message,
+                    "a generic function, not called",
+                    Some(
+                        "its type arguments cannot be worked out from a `Callable` yet \
+                         (decision 0026); pass a function that is not generic, which may call \
+                         this one",
+                    ),
+                )
             }
             _ => self.lowerer.unknown(),
         }

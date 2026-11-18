@@ -1,5 +1,6 @@
 //! Names after a dot: a module's member, an enum's member, a struct's field or method, its own
-//! or an embedded struct's (the `embed` module), and an array's attributes.
+//! or an embedded struct's (the `embed` module), and an array's attributes; and the errors for
+//! a method used as a value or a struct value called as a function (decision 0026).
 
 use super::Body;
 use crate::embed::{self, Lookup, Own};
@@ -90,8 +91,27 @@ impl<'db> Body<'db> {
         };
         match self.member(node, nominal, base, attribute) {
             Some(Member::Field(ty)) => ty,
-            _ => self.lowerer.unknown(),
+            Some(Member::Method { .. } | Member::Copy) => self.method_value(node, name),
+            None => self.lowerer.unknown(),
         }
+    }
+
+    /// Reports the method `name` read as a value, `node`, such as `s.at` passed where a
+    /// `Callable` is expected, or `Scale.double`. Version 0 passes only a module-level function
+    /// as a value (decision 0026); a bound method would need its receiver kept with it at run
+    /// time. Before, this failed in lowering or the backend.
+    fn method_value(&mut self, node: NodeId, name: &str) -> Type<'db> {
+        let message = format!("the method `{name}` cannot be used as a value in version 0");
+        self.lowerer.error(
+            node,
+            &message,
+            "a method, not called",
+            Some(
+                "only a module-level function can be passed as a `Callable` (decision 0026); \
+                 call the method inside one, or make the type implement a trait and pass the \
+                 value",
+            ),
+        )
     }
 
     /// Whether a value of type `ty` has no fields or methods at all in version 0, so any name
@@ -143,10 +163,10 @@ impl<'db> Body<'db> {
             outline(self.db, file).get(class).map(|entry| &entry.kind),
             Some(Kind::Class(class)) if class.base == Base::Enum
         );
-        if !is_enum {
-            return self.lowerer.unknown();
-        }
         let item = Item::new(self.db, self.lowerer.package, file, class);
+        if !is_enum {
+            return self.class_function_value(node, item, attribute);
+        }
         let Declaration::Enum { variants } = &self.db.declaration(item).declaration else {
             return self.lowerer.unknown();
         };
@@ -166,6 +186,47 @@ impl<'db> Body<'db> {
             arguments: Vec::new(),
         };
         Type::new(self.db, TypeKind::Enum(nominal))
+    }
+
+    /// Reports the call `node` of `callee`, a value of the struct type `ty`, such as `p(3.0)`
+    /// on a struct that defines `__call__`. Version 0 calls only functions (decision 0026);
+    /// the method can be called by name. Before, this failed in lowering.
+    pub(super) fn called_struct(&mut self, node: NodeId, callee: &str, ty: Type<'db>) -> Type<'db> {
+        let message = format!(
+            "`{callee}` has type `{}`, which cannot be called in version 0",
+            self.show(ty)
+        );
+        let hint = format!(
+            "calling a struct value through its `__call__` method is not supported yet \
+             (decision 0026); call the method by name: `{callee}.__call__(...)`"
+        );
+        self.lowerer
+            .error(node, &message, "a struct, not a function", Some(&hint))
+    }
+
+    /// `Class.name` on a class that is not an enum: an error when `name` is one of the class's
+    /// methods or functions, which version 0 cannot pass as a value (decision 0026), and unknown
+    /// otherwise, for a later slice to type.
+    fn class_function_value(
+        &mut self,
+        node: NodeId,
+        class: Item<'db>,
+        attribute: NodeId,
+    ) -> Type<'db> {
+        let wanted = self.tree.text(attribute, self.text);
+        let Declaration::Struct { methods, .. } = &self.db.declaration(class).declaration else {
+            return self.lowerer.unknown();
+        };
+        let is_method = methods.iter().any(|method| {
+            let file = method.file(self.db);
+            let tree = self.db.parse(file).tree();
+            tree.text(method.name(self.db), file.source(self.db).text()) == wanted
+        });
+        if !is_method {
+            return self.lowerer.unknown();
+        }
+        let wanted = wanted.to_owned();
+        self.method_value(node, &wanted)
     }
 
     /// The field or method `attribute` names on a struct of type `base`, its own or one
