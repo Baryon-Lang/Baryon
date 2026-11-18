@@ -860,7 +860,9 @@ from the arguments. Each type parameter takes the type of the first argument tha
 left to right and number literals last, so `largest(x, 0)` with `x: f32` makes the `0` an `f32`.
 Every other argument must then have the same type: `largest(x, n)` with `x: f64` and `n: i64` is an
 error, as in non-generic code. A generic struct is built the same way: `Pair(1.5, 2.5)` is a
-`Pair[f64]`.
+`Pair[f64]`. A `None` passed for a `T | None` fixes `T` only when no other argument
+does: `pick(None, 3)` with `def pick[T: Number](a: T | None, b: T | None)` takes `T` from the
+`3`.
 
 A generic struct's method called through its class finds the class's type arguments the same
 way, from all its arguments: `Pair.both(1.5)` is the `both` of `Pair[f64]`, and
