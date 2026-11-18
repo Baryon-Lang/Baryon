@@ -21,8 +21,8 @@ def draw_image[R: RendererBase](image: Image, view: View, renderer: InOut[R]) ->
     the colormap; a NaN is left transparent. An image whose cells are at least three pixels
     across each way, at matplotlib's default 100 dots an inch, keeps them sharp, as
     matplotlib's `"nearest"` interpolation does; a smaller one lets the viewer smooth it, as
-    matplotlib's antialiasing does. Costs a few operations and about 5.5 bytes of the file a
-    cell.
+    matplotlib's antialiasing does. Costs a few operations a cell and, in an SVG file, from
+    about 0.5 bytes a cell for a smooth field to about 2.3 for noise, as its PNG compresses.
     """
     rows = image.data.shape[0]
     columns = image.data.shape[1]
