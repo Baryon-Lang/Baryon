@@ -10,7 +10,8 @@
 //! - a generic function or constructor whose arguments do not fix one of its type parameters,
 //!   `make()` for `def make[T]() -> list[T]`;
 //! - a member a standard module does not have, `math.nothing(1.0)`, or `norm(r)` after
-//!   `from linalg import norm` (roadmap 1.9.52).
+//!   `from linalg import norm` (roadmap 1.9.52), and such a member read as a value with no
+//!   call, `zlib.nothing` or `math.sqrt` (roadmap 1.9.56).
 //!
 //! ```text
 //! error: `T` is a type parameter, which cannot be called
@@ -163,6 +164,19 @@ impl<'db> Body<'db> {
              place to ask for more"
         );
         self.lowerer.error(node, &message, "not built", Some(&hint))
+    }
+
+    /// The error for `module.member` read as a value at `node`, where `member` is no constant
+    /// the compiler builds in: `zlib.nothing`, or `math.sqrt` without its call. Only a call of
+    /// a built-in function has a type (roadmap 1.9.56).
+    pub(super) fn standard_value(&mut self, node: NodeId, module: &str, member: &str) -> Type<'db> {
+        let message = format!("`{module}.{member}` is not a value in Baryon");
+        let hint = format!(
+            "only a module's constants are read without a call, such as `math.pi`; the language \
+             reference lists what `{module}` has"
+        );
+        self.lowerer
+            .error(node, &message, "not a constant", Some(&hint))
     }
 
     /// A call the checker has no rule for, at `node`, whose callee resolved to `resolved`: the

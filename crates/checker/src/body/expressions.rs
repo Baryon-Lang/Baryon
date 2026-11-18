@@ -204,6 +204,13 @@ impl<'db> Body<'db> {
                 let (module, member) = (*module, member.clone());
                 self.process_value(node, module, &member)
             }
+            Some(Definition::Standard {
+                module,
+                member: Some(member),
+            }) => {
+                let (module, member) = (*module, member.clone());
+                self.standard_value(node, module, &member)
+            }
             _ => self.lowerer.unknown(),
         }
     }
