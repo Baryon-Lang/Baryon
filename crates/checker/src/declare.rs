@@ -1,5 +1,6 @@
 //! Declarations: what each kind of definition declares, from its annotations.
 
+use crate::callables::Place;
 use crate::constant::to_float;
 use crate::lower::Lowerer;
 use crate::outline::{Base, Entry, Kind};
@@ -104,7 +105,10 @@ impl<'db> Lowerer<'db> {
             };
             let name = self.tree.text(name, self.text).to_owned();
             let (ty, mode) = match self.tree.child(node, Role::Annotation) {
-                Some(annotation) => self.parameter(annotation),
+                Some(annotation) => {
+                    let (ty, mode) = self.parameter(annotation);
+                    (self.kept_callable(annotation, ty, Place::Parameter), mode)
+                }
                 None if position == 0 && entry.class.is_some() => (self.self_type(), Mode::Borrow),
                 None => {
                     let message = format!("parameter `{name}` needs a type");
@@ -122,7 +126,10 @@ impl<'db> Lowerer<'db> {
             });
         }
         let returns = match self.tree.child(statement, Role::Returns) {
-            Some(returns) => self.lower(returns),
+            Some(returns) => {
+                let ty = self.lower(returns);
+                self.kept_callable(returns, ty, Place::Return)
+            }
             None => Type::new(self.db, TypeKind::None),
         };
         Signature {
@@ -154,7 +161,10 @@ impl<'db> Lowerer<'db> {
                         None => (self.unknown(), false),
                     };
                     let ty = match self.tree.child(statement, Role::Annotation) {
-                        Some(annotation) => self.without_frame(annotation, ty),
+                        Some(annotation) => {
+                            let ty = self.without_frame(annotation, ty);
+                            self.kept_callable(annotation, ty, Place::Field)
+                        }
                         None => ty,
                     };
                     if let Some(value) = self.tree.child(statement, Role::Value) {

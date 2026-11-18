@@ -1,7 +1,9 @@
 //! Joining two frames (decision 0045, roadmap 3.13.8): `left.merge(right, on="symbol")`.
 //!
 //! The result has one row for each pair of a row of `left` and a row of `right` whose key
-//! columns hold the same values: an inner join. Its columns are those of `left`, then those
+//! columns hold the same values: an inner join. `how="left"`, `"right"` and `"outer"` also
+//! keep the rows of one frame or both that have no partner, and the other frame's columns
+//! then may hold `None`. Its columns are those of `left`, then those
 //! of `right` that are not keys; two columns left with one name are told apart as pandas
 //! tells them, with `_x` for the left one and `_y` for the right one. The keys are string
 //! literals, checked against both frames when compiling, and a key must have one type in
@@ -11,6 +13,19 @@ use super::Body;
 use super::calls::Arguments;
 use syntax::{NodeId, SyntaxKind};
 use types::{Column, Primitive, Type, TypeKind};
+
+/// The join a `merge` makes, which `how=` names.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Join {
+    /// Rows with a partner only.
+    Inner,
+    /// Every row of the left frame, so the right frame's columns may hold `None`.
+    Left,
+    /// Every row of the right frame, so the left frame's columns may hold `None`.
+    Right,
+    /// Every row of both frames.
+    Outer,
+}
 
 impl<'db> Body<'db> {
     /// The call `node` of `merge` on a frame of type `base`, with `callee` the method's name:
@@ -62,7 +77,8 @@ impl<'db> Body<'db> {
                 .error(other, &message, "not a `DataFrame`", None);
             return Some(self.lowerer.unknown());
         };
-        let mut complete = self.inner_join(how);
+        let kind = self.join_kind(how);
+        let mut complete = kind.is_some();
         let keys = if self.tree.kind(on) == SyntaxKind::List {
             self.column_names(on, base)
         } else {
@@ -85,22 +101,34 @@ impl<'db> Body<'db> {
         if !complete {
             return Some(self.lowerer.unknown());
         }
-        Some(self.joined_columns(node, left, found, &keys))
+        let kind = kind.unwrap_or(Join::Inner);
+        Some(self.joined_columns(node, [left, found], &keys, kind))
     }
 
-    /// The type of the frame an inner join of frames with the columns `left` and `right` on
-    /// `keys` gives, for the call `node`: the columns of `left`, then those of `right` that
-    /// are no keys. As in pandas, a column the two frames share that is no key gets `_x` on
-    /// the left and `_y` on the right; two columns still left with one name are an error.
+    /// The type of the frame a join of kind `kind` of frames with the columns `left` and
+    /// `right`, the two of `sides`, on `keys` gives, for the call `node`: the columns of
+    /// `left`, then those of `right` that are no keys. As in pandas, a column the two frames
+    /// share that is no key gets `_x` on the left and `_y` on the right; two columns still
+    /// left with one name are an error. A column that is no key, of a frame that may have no
+    /// row for a row of the result, may hold `None` there (decision 0045): the right frame's
+    /// in a left join, the left frame's in a right join, and both in an outer join.
     fn joined_columns(
         &mut self,
         node: NodeId,
-        left: &[Column<'db>],
-        right: &[Column<'db>],
+        [left, right]: [&[Column<'db>]; 2],
         keys: &[String],
+        kind: Join,
     ) -> Type<'db> {
         let shared = |name: &String, others: &[Column<'db>]| {
             !keys.contains(name) && others.iter().any(|column| column.name == *name)
+        };
+        let gaps = |side: Join, column: &Column<'db>| {
+            let optional = matches!(column.element.kind(self.db), TypeKind::Optional(_));
+            if optional || keys.contains(&column.name) || !(kind == side || kind == Join::Outer) {
+                column.element
+            } else {
+                Type::new(self.db, TypeKind::Optional(column.element))
+            }
         };
         let mut columns: Vec<Column<'db>> = Vec::with_capacity(left.len() + right.len());
         for column in left {
@@ -111,14 +139,16 @@ impl<'db> Body<'db> {
             };
             columns.push(Column {
                 name: format!("{}{suffix}", column.name),
-                element: column.element,
+                // A right join may find no left row.
+                element: gaps(Join::Right, column),
             });
         }
         for column in right.iter().filter(|column| !keys.contains(&column.name)) {
             let suffix = if shared(&column.name, left) { "_y" } else { "" };
             columns.push(Column {
                 name: format!("{}{suffix}", column.name),
-                element: column.element,
+                // A left join may find no right row.
+                element: gaps(Join::Left, column),
             });
         }
         for (position, column) in columns.iter().enumerate() {
@@ -141,31 +171,29 @@ impl<'db> Body<'db> {
         Type::new(self.db, TypeKind::DataFrame { columns, row: None })
     }
 
-    /// Whether `how`, the `how=` of a `merge`, asks for the inner join, which it does when
-    /// left out. The other joins are reported as not built yet.
-    fn inner_join(&mut self, how: Option<NodeId>) -> bool {
+    /// The join `how`, the `how=` of a `merge`, asks for: the inner join when it is left
+    /// out. `None` after a report when it is not one of the four names, written as a string
+    /// literal, since the result's type depends on it.
+    fn join_kind(&mut self, how: Option<NodeId>) -> Option<Join> {
         let Some(how) = how else {
-            return true;
+            return Some(Join::Inner);
         };
-        let written = self.literal_text(how).map(str::to_owned);
-        if written.as_deref() == Some("inner") {
-            return true;
+        match self.literal_text(how) {
+            Some("inner") => return Some(Join::Inner),
+            Some("left") => return Some(Join::Left),
+            Some("right") => return Some(Join::Right),
+            Some("outer") => return Some(Join::Outer),
+            _ => {}
         }
         self.expression(how, None);
-        let (message, hint) = match written.as_deref() {
-            Some("left" | "right" | "outer") => (
-                "`merge` joins only with `how=\"inner\"` yet",
-                "a left, right or outer join gives rows with missing values, which come with \
-                 roadmap item 3.13.6",
-            ),
-            _ => (
-                "`how` is `\"inner\"`, written as a string literal",
-                "the result's type depends on it, so it must be known when compiling",
-            ),
-        };
-        self.lowerer
-            .error(how, message, "not an inner join", Some(hint));
-        false
+        self.lowerer.error(
+            how,
+            "`how` is `\"inner\"`, `\"left\"`, `\"right\"` or `\"outer\"`, written as a string \
+             literal",
+            "not a join",
+            Some("the result's type depends on it, so it must be known when compiling"),
+        );
+        None
     }
 
     /// Whether the key column `key` of the left frame can be joined with the frame of type

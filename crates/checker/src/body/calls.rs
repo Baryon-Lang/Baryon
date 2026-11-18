@@ -334,6 +334,10 @@ impl<'db> Body<'db> {
                 };
                 self.check_call(node, callee, &signature, None, Callee::Value, arguments)
             }
+            TypeKind::Struct(_) => {
+                self.untyped(arguments);
+                self.called_struct(node, callee, ty)
+            }
             _ if relations::is_open(self.db, ty) || !self.is_value_scalar(ty) => {
                 self.untyped(arguments)
             }

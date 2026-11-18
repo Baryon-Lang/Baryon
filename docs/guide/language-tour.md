@@ -258,7 +258,8 @@ $ baryon run generic
   from the arguments.
 - **`Callable[[f64], f64]`** takes a module-level function. The compiler builds a copy of
   `integrate` for each function passed, so the call to `f` is inlined and as fast as writing
-  `x * x` in the loop. Lambdas and closures are not in the language yet.
+  `x * x` in the loop. Lambdas, closures, methods and generic functions cannot be passed yet;
+  wrap one in a module-level function.
 
 [Generics](../reference/types.md#generics) and
 [functions as arguments](../reference/types.md#functions-as-arguments) have the rules.

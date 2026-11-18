@@ -81,8 +81,8 @@ impl<'db> Builder<'db> {
     }
 
     /// The two keys that stand for the column that may hold `None` stored at `column`, whose
-    /// values are `element`s, where rows are compared: the library's `presence`, 1 for a
-    /// value and 0 for `None`, and the values with the filler where one is `None`, a `bool`
+    /// values are `element`s, where rows are compared: the library's `absence`, 0 for a
+    /// value and 1 for `None`, and the values with the filler where one is `None`, a `bool`
     /// as the integers 0 and 1. Two rows match in both exactly when both hold `None` or both
     /// hold the same value, so a `None` equals a `None`, as pandas compares rows for
     /// `drop_duplicates`. Both arrays are dropped when the statement ends. `None` after a
@@ -94,7 +94,7 @@ impl<'db> Builder<'db> {
         node: NodeId,
     ) -> Option<[Key<'db>; 2]> {
         let int = self.int_type();
-        let flags = self.presence(column, element, node)?;
+        let flags = self.absence(column, element, node)?;
         if matches!(element.kind(self.db), TypeKind::Str) {
             // The values hold an empty text under each `None`, and the flags tell that from
             // a row whose text is empty.
@@ -117,10 +117,11 @@ impl<'db> Builder<'db> {
         Some([(Place::from(flags), int), values])
     }
 
-    /// The library's `presence` for the column that may hold `None` stored at `column`, whose
-    /// values are `element`s: a new array of 1 for each row that has a value and 0 for each
-    /// `None`, dropped when the statement ends. `None` after a report.
-    pub(crate) fn presence(
+    /// The library's `absence` for the column that may hold `None` stored at `column`, whose
+    /// values are `element`s: a new array of 0 for each row that has a value and 1 for each
+    /// `None`, so a sort by it puts each `None` last. It is dropped when the statement
+    /// ends. `None` after a report.
+    pub(crate) fn absence(
         &mut self,
         column: &Place,
         element: Type<'db>,
@@ -130,7 +131,7 @@ impl<'db> Builder<'db> {
         let count = Place::from(self.held(self.int_type(), count, node));
         let bits = column.clone().project(Projection::Field(VALIDITY));
         let positions = self.positions_type();
-        let flags = self.frame_call("presence", Vec::new(), vec![bits, count], positions, node)?;
+        let flags = self.frame_call("absence", Vec::new(), vec![bits, count], positions, node)?;
         self.drop_later(flags);
         Some(flags)
     }
