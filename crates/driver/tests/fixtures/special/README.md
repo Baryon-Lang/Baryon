@@ -2126,6 +2126,76 @@ with open("parabolic.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
 
+## Weber's function
+
+In `weber.txt` the cases of `pbwa` hold, before the reference value, the size its error is
+measured against, the largest of |f|, |a ∂f/∂a| and |x ∂f/∂x|, as in `parabolic.txt`.
+`pbwa_d` is the derivative, by central differences of mpmath's `pcfw` with a step of 10⁻²⁵ at
+60 digits. The script below recorded the cases with mpmath 1.4.1; run it from this directory
+with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(3181415)
+lines = []
+STEP = mpmath.mpf(10) ** -25
+
+
+def w(a, x):
+    return mpmath.pcfw(a, x)
+
+
+def slope(a, x):
+    return (w(a, x + STEP) - w(a, x - STEP)) / (2 * STEP)
+
+
+FUNCTIONS = [("pbwa", w), ("pbwa_d", slope)]
+
+
+def record(name, f, a, x):
+    # Each case is measured against the largest of |f|, |a ∂f/∂a| and |x ∂f/∂x|, the error a
+    # rounding of the arguments alone would make, by central differences at 60 digits.
+    with mpmath.workdps(60):
+        pa, px = mpmath.mpf(a), mpmath.mpf(x)
+        value = f(pa, px)
+        along_a = (f(pa + STEP, px) - f(pa - STEP, px)) / (2 * STEP)
+        along_x = (f(pa, px + STEP) - f(pa, px - STEP)) / (2 * STEP)
+        size = max(abs(value), abs(pa * along_a), abs(px * along_x))
+    lines.append(f"{name} {a!r} {x!r} {float(size)!r} {float(value)!r}")
+
+
+for _ in range(300):
+    # Parameters across the domain, whole and near 0, and its edges; arguments across it,
+    # through the turning points at ±2√a, near 0 and at its edges.
+    a = random.choice([
+        random.uniform(-5.0, 5.0),
+        float(random.randint(-5, 5)),
+        random.uniform(-0.5, 0.5),
+        random.choice([-5.0, 5.0]),
+    ])
+    x = random.choice([
+        random.uniform(-10.0, 10.0),
+        random.uniform(-5.0, 5.0),
+        math.copysign(10 ** random.uniform(-4.0, 0.0), random.uniform(-1, 1)),
+        random.choice([-10.0, 10.0]),
+    ])
+    for name, f in FUNCTIONS:
+        record(name, f, a, x)
+# Outside the domain, |a| above 5 or |x| above 10, and at NaN, the answer is NaN.
+inf = math.inf
+nan = math.nan
+for name in ("pbwa", "pbwa_d"):
+    for a, x in [(5.5, 1.0), (-6.0, 1.0), (1.0, 10.5), (1.0, -inf), (inf, 0.0), (nan, 1.0),
+                 (1.0, nan)]:
+        lines.append(f"{name} {a!r} {x!r} 1.0 nan")
+with open("weber.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
 ## Fitted coefficients
 
 Some functions are a ratio of fitted polynomials rather than a series (roadmap 3.18.17): one
