@@ -131,6 +131,12 @@ def main() -> Raises[None, OSError | ValueError]:
 /// elsewhere the value itself. The worst is 106 ULP, at orders above 200, where the
 /// recurrences of Steed's method run for about v steps.
 ///
+/// The Airy functions are held to 64 ULP, the Kelvin functions to 32 and the Struve functions to
+/// 128, of the size their case records: for Airy below 0, the envelope √(Ai² + Bi²) or
+/// √(Ai′² + Bi′²); for each Kelvin function, the size of the complex value it is a part of; for
+/// H past the turning point x = |v|, the larger of H and the modulus √(J² + Y²), since H is Y
+/// plus a smooth part there; and elsewhere the value itself. The worst are 36, 13 and 57 ULP.
+///
 /// The nodes of Gauss quadrature, `roots_..._x`, are held to 16 ULP of the larger of themselves and
 /// the gap to the nearest node: Newton's method on the polynomial leaves 7 at worst. Their weights,
 /// `roots_..._w`, are held to 32 ULP for each node of the rule, the first argument, n: a weight is
@@ -161,6 +167,9 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         }
         "jv" | "yv" | "jve" | "yve" | "jvp" | "yvp" | "spherical_jn" | "spherical_yn" | "iv"
         | "ive" | "kv" | "kve" | "ivp" | "kvp" | "spherical_in" | "spherical_kn" => 256.0,
+        _ if name.starts_with("airy") => 64.0,
+        "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" => 32.0,
+        "struve" | "modstruve" => 128.0,
         _ if name.starts_with("roots_") && name.ends_with("_w") => 32.0 * first,
         _ if name.starts_with("roots_") => 16.0,
         _ => 8.0,
@@ -185,8 +194,9 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
 /// weight of Gauss quadrature is measured against the size its case records in the place of `x`:
 /// a weight against itself, and a node against the larger of itself and the gap to its nearest
 /// neighbour, since Newton's method fixes a node near 0 only to a fraction of that gap.
-/// The Bessel functions of real order and the spherical Bessel functions are measured against the
-/// size their case records in the place of `x`, as the tolerances above describe.
+/// The Bessel functions of real order and the spherical Bessel functions, and the Airy, Kelvin
+/// and Struve functions, are measured against the size their case records in the place of `x`,
+/// as the tolerances above describe.
 fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
         "gammaln" | "psi" | "betaln" | "expi" | "chi" | "ellipj_sn" | "ellipj_cn" | "ellipj_dn" => {
@@ -201,7 +211,9 @@ fn scale(name: &str, want: f64, x: f64) -> f64 {
         "j0" | "j1" | "jn" | "y0" | "y1" | "yn" if x.abs() > 1.0 => want
             .abs()
             .max((2.0 / (std::f64::consts::PI * x.abs())).sqrt()),
-        _ if name.starts_with("roots_") => x,
+        _ if name.starts_with("roots_") || name.starts_with("airy") => x,
+        "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" | "struve"
+        | "modstruve" => x,
         _ => want.abs(),
     }
 }

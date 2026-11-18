@@ -7,7 +7,7 @@
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-pub(crate) const LIBRARY: [(&str, &str); 70] = [
+pub(crate) const LIBRARY: [(&str, &str); 73] = [
     ("<std>/arrays.byn", include_str!("../library/arrays.byn")),
     ("<std>/artist.byn", include_str!("../library/artist.byn")),
     ("<std>/axis.byn", include_str!("../library/axis.byn")),
@@ -103,6 +103,10 @@ pub(crate) const LIBRARY: [(&str, &str); 70] = [
     ("<std>/raster.byn", include_str!("../library/raster.byn")),
     ("<std>/special.byn", include_str!("../library/special.byn")),
     (
+        "<std>/special_airy.byn",
+        include_str!("../library/special_airy.byn"),
+    ),
+    (
         "<std>/special_bessel_ik.byn",
         include_str!("../library/special_bessel_ik.byn"),
     ),
@@ -167,6 +171,10 @@ pub(crate) const LIBRARY: [(&str, &str); 70] = [
         include_str!("../library/special_integrals.byn"),
     ),
     (
+        "<std>/special_kelvin.byn",
+        include_str!("../library/special_kelvin.byn"),
+    ),
+    (
         "<std>/special_kolmogorov.byn",
         include_str!("../library/special_kolmogorov.byn"),
     ),
@@ -181,6 +189,10 @@ pub(crate) const LIBRARY: [(&str, &str); 70] = [
     (
         "<std>/special_quadrature.byn",
         include_str!("../library/special_quadrature.byn"),
+    ),
+    (
+        "<std>/special_struve.byn",
+        include_str!("../library/special_struve.byn"),
     ),
     (
         "<std>/special_zeta.byn",

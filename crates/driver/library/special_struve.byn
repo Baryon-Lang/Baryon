@@ -1,0 +1,278 @@
+"""Struve functions for `special` (roadmap 3.18.7): `struve`, Hᵥ(x), and `modstruve`, Lᵥ(x),
+of real order.
+
+Each has a power series (DLMF 11.2.1 and 11.2.2), which keeps its precision where its terms
+do not cancel: always for L above order −3/2, whose terms are then all positive, and for H while
+x is small beside the order. Elsewhere H is Yᵥ + Kᵥ, the Bessel function of the second kind
+plus the Laplace integral Kᵥ(x) = 2(x/2)ᵛ/(√π Γ(ν + ½)) ∫₀^∞ e^{−xt} (1 + t²)^{ν−½} dt
+(DLMF 11.5.2), whose integrand is smooth and of one sign, by double-exponential quadrature; and
+L far out is I₋ᵥ(x) plus its asymptotic series (DLMF 11.6.2), which is far below I₋ᵥ there.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, inf, isinf, isnan, log, log1p, nan, pi, pow, sqrt
+from special_bessel_real import iv, yv
+from special_common import is_integer, is_odd
+from special_gamma import gammaln, gammasgn, psi, rgamma
+
+_EPSILON: Final = 1.0e-17  # where a series or a quadrature stops
+_STEP: Final = 0.0625  # the step of the double-exponential quadrature
+_CANCEL: Final = 8.0  # the most a series may lose to cancellation: its terms' sum over its own
+_FAR: Final = 40.0  # from here the series of H is not tried, and L takes its asymptotic series
+_ROOT_PI: Final = 1.7724538509055159  # √π
+
+
+def _rgamma_sum(nu: f64, shift: f64) -> f64:
+    """1/Γ(ν + shift) for the exact sum: ν + shift is rounded to a, its rounding error e found
+    by Knuth's two-sum, and 1/Γ(a + e) taken as (1/Γ(a))(1 − e ψ(a)). Without the step, the
+    half unit that ν + 3/2 can lose costs about ν ψ(ν) ULP, 100 at ν = 30."""
+    a = nu + shift
+    back = a - nu
+    error = (nu - (a - back)) + (shift - back)
+    value = rgamma(a)
+    if error == 0.0 or value == 0.0:
+        return value
+    return value * (1.0 - error * psi(a))
+
+
+def _power(base: f64, nu: f64, extra: f64, a: f64, shift: f64) -> f64:
+    """base^{ν+extra}/(Γ(a) Γ(ν + shift)) for `base` above 0, `extra` a small whole or half-whole
+    number: the power as baseᵛ base^extra, so ν + extra is never rounded, and 1/Γ(ν + shift) by
+    `_rgamma_sum`. By `pow` and `rgamma` while every factor stays in range, then with baseᵛ
+    split in two halves, one beside each 1/Γ, and only where even those leave the range by
+    logarithms, which lose about |log| ULP."""
+    first = rgamma(a)
+    second = _rgamma_sum(nu, shift)
+    if first == 0.0 or second == 0.0:
+        return 0.0
+    small = pow(base, extra)
+    whole = pow(base, nu)
+    if whole != 0.0 and not isinf(whole) and not isinf(first) and not isinf(second):
+        direct = whole * small * first * second
+        if direct != 0.0 and not isinf(direct):
+            return direct
+    half = pow(base, nu / 2.0)
+    left = half * small * first
+    right = half * second
+    if left != 0.0 and right != 0.0 and not isinf(left) and not isinf(right):
+        split = left * right
+        if split != 0.0 and not isinf(split):
+            return split
+    size = (nu + extra) * log(base) - gammaln(a) - gammaln(nu + shift)
+    return gammasgn(a) * gammasgn(nu + shift) * exp(size)
+
+
+def _series(nu: f64, x: f64, sign: f64) -> tuple[f64, f64]:
+    """The power series Σ signᵏ (x/2)^{2k+ν+1}/(Γ(k + 3/2) Γ(k + ν + 3/2)), which is Hᵥ(x) for
+    `sign` −1 and Lᵥ(x) for 1, and the sum of its terms' sizes. Where ν + 3/2 is 0 or a negative
+    whole number, the first terms are 0, and the series starts at the first that is not."""
+    half = x / 2.0
+    square = half * half
+    first = 0
+    if is_integer(nu + 1.5) and nu + 1.5 <= 0.0:
+        first = int(-(nu + 1.5)) + 1
+    k = float(first)
+    term = _power(half, nu, 2.0 * k + 1.0, k + 1.5, k + 1.5)
+    if first % 2 == 1:
+        term *= sign
+    total = term
+    size = abs(term)
+    for step in range(100000):
+        term *= sign * square / ((k + 1.5) * (k + nu + 1.5))
+        k += 1.0
+        total += term
+        size += abs(term)
+        if abs(term) <= _EPSILON * abs(total) and k > half:
+            break
+        if term == 0.0:
+            break
+    return total, size
+
+
+def _bessel_series(nu: f64, x: f64) -> f64:
+    """Hᵥ(x) = √(x/(2π)) Σ (x/2)ᵏ/(k! (k + ½)) J_{a+k}(x) with a = ν + ½ (DLMF 11.4.19), for x
+    below ν, where every J is of an order above x and so positive, and no term cancels another.
+    The J come from Miller's algorithm: the recurrence J_{n−1} = (2n/x) Jₙ − J_{n+1}, run down
+    from an order where J is below 1e-36 of J_a and the terms below 1e-20 of the first, the
+    direction in which it is stable, gives them up to one factor, which Neumann's sum
+    (x/2)ᵃ = Γ(a) Σ (a + 2k) (a)ₖ/k! J_{a+2k}(x) (DLMF 10.23.15), again of positive terms,
+    fixes. Every value and every sum is then of one sign. Yᵥ + Kᵥ, the other way, cancels
+    without limit here, where Y is far larger than H."""
+    half = x / 2.0
+    a = nu + 0.5
+    # The start: where J has fallen to 1e-36 of J_a and the terms of both sums to 1e-20 of
+    # their first, with J_{n+1}/Jₙ about x/(n + √(n² − x²)); the weights of the sums rise first.
+    fall = 1.0
+    terms = 1.0
+    neumann_terms = 1.0
+    last = 0
+    for k in range(1, 1000000):
+        order = a + k
+        ratio = x / (order + sqrt((order - x) * (order + x)))
+        fall *= ratio
+        terms *= ratio * half / k * (k - 0.5) / (k + 0.5)
+        neumann_terms *= ratio
+        if k % 2 == 0:
+            neumann_terms *= (a + k / 2 - 1.0) / (k / 2)
+        last = k
+        if fall <= 1.0e-36 and terms <= 1.0e-20 and neumann_terms <= 1.0e-20:
+            break
+    values: list[f64] = []
+    following = 0.0
+    current = 1.0e-300
+    for k in range(last, -1, -1):
+        values.append(current)
+        previous = 2.0 * (a + k) / x * current - following
+        following = current
+        current = previous
+        if current > 1.0e250:
+            for index in range(len(values)):
+                values[index] /= 1.0e250
+            current /= 1.0e250
+            following /= 1.0e250
+    total = 0.0
+    neumann = 0.0
+    weight = 2.0
+    pochhammer = 1.0
+    for k in range(last + 1):
+        value = values[last - k]
+        total += weight * value
+        weight *= half / (k + 1.0) * (k + 0.5) / (k + 1.5)
+        if k % 2 == 0:
+            neumann += (a + k) * pochhammer * value
+            pochhammer *= (a + k / 2) / (k / 2 + 1.0)
+    return sqrt(x / (2.0 * pi)) * (total / neumann) * _power(half, nu, 0.5, 1.0, 0.5)
+
+
+def _laplace(nu: f64, x: f64) -> f64:
+    """Kᵥ(x) = Hᵥ(x) − Yᵥ(x) for `x` above 0, by DLMF 11.5.2 with t = u/x:
+    2(x/2)ᵛ/(√π Γ(ν + ½) x) ∫₀^∞ e^{−u} (1 + (u/x)²)^{ν−½} du. The integral is taken by the
+    double-exponential rule for a falling integrand (Ooura and Mori 1991),
+    u = exp(s − e^{−s}), with steps of 1/16 in s until the terms are below 1e-17 of the sum, which
+    takes 100 to 250 of them. 0 where ν + ½ is 0 or a negative whole number, where H = Y."""
+    if rgamma(nu + 0.5) == 0.0:
+        return 0.0
+    power = nu - 0.5
+    total = 0.0
+    for direction in range(2):
+        s = 0.0
+        if direction == 1:
+            s = -_STEP
+        for step in range(100000):
+            fall = exp(-s)
+            u = exp(s - fall)
+            weight = u * (1.0 + fall)
+            ratio = u / x
+            term = exp(power * log1p(ratio * ratio) - u) * weight
+            total += term
+            if term <= _EPSILON * total and (direction == 1 or u > 2.0 * abs(power) + 10.0):
+                break
+            if direction == 0:
+                s += _STEP
+            else:
+                s -= _STEP
+    return total * _STEP * 2.0 * _power(x / 2.0, nu, 0.0, 1.0, 0.5) / (_ROOT_PI * x)
+
+
+def _asymptotic(nu: f64, x: f64) -> f64:
+    """Lᵥ(x) − I₋ᵥ(x) for large `x` (DLMF 11.6.2):
+    (1/π) Σ (−1)^{k+1} Γ(k + ½) (x/2)^{ν−2k−1}/Γ(ν + ½ − k), summed while its terms fall."""
+    half = x / 2.0
+    term = -_power(half, nu, -1.0, 1.0, 0.5) * _ROOT_PI / pi
+    total = term
+    k = 0.0
+    for step in range(1000):
+        following = -term * (k + 0.5) * (nu - 0.5 - k) / (half * half)
+        if abs(following) >= abs(term) or following == 0.0:
+            break
+        term = following
+        total += term
+        k += 1.0
+        if abs(term) <= _EPSILON * abs(total):
+            break
+    return total
+
+
+def _at_zero(nu: f64) -> f64:
+    """Hᵥ(0), which is also Lᵥ(0): the first term of the series, (x/2)^{ν+1}/(Γ(3/2) Γ(ν + 3/2))
+    at x = 0. It is 0 above order −1 and 2/π at −1. Below it, it is an infinity with the sign of
+    1/Γ(ν + 3/2), except at the orders −3/2, −5/2 and so on, where that term is 0 and the
+    function, ±J_{−ν}, is 0 too."""
+    if nu > -1.0:
+        return 0.0
+    if nu == -1.0:
+        return 2.0 / pi
+    if is_integer(nu + 1.5):
+        return 0.0
+    return gammasgn(nu + 1.5) * inf
+
+
+def _struve(nu: f64, x: f64, modified: bool) -> f64:
+    """`struve`, or `modstruve` when `modified`, for every argument."""
+    if isnan(nu) or isnan(x):
+        return nan
+    if isinf(nu):
+        if nu > 0.0 or modified:
+            return 0.0
+        return nan
+    if x < 0.0:
+        if not is_integer(nu):
+            return nan
+        if is_odd(nu):
+            return _struve(nu, -x, modified)
+        return -_struve(nu, -x, modified)
+    if x == 0.0:
+        return _at_zero(nu)
+    if isinf(x):
+        if modified:
+            return inf
+        if nu > 1.0:
+            return inf
+        if nu == 1.0:
+            return 2.0 / pi
+        return 0.0
+    if modified:
+        if x >= _FAR and x > abs(nu):
+            return iv(-nu, x) + _asymptotic(nu, x)
+        total, size = _series(nu, x, 1.0)
+        return total
+    if x < nu:
+        return _bessel_series(nu, x)
+    second = yv(nu, x)
+    if x < _FAR or x < abs(nu):
+        total, size = _series(nu, x, -1.0)
+        if size <= _CANCEL * abs(total) or size <= abs(second):
+            return total
+    return second + _laplace(nu, x)
+
+
+def struve(v: f64, x: f64) -> f64:
+    """The Struve function Hᵥ(x) of real order, as `scipy.special.struve` for a real `x`: the
+    solution of Bessel's equation with the right-hand side (x/2)^{v−1}/(√π Γ(v + ½)) that is
+    small at 0. For a negative `x` it is NaN unless `v` is whole, where
+    Hᵥ(−x) = (−1)^{v+1} Hᵥ(x). At x = ∞ it is 0 below order 1, 2/π at 1 and ∞ above, and at
+    x = 0 as `_at_zero` says; `SciPy` gives ∞ at x = ∞ and loses its precision for x past
+    about 1e9.
+
+    ```python
+    from special import struve
+
+    print(struve(0.0, 1.0))  # 0.5686566270482879
+    ```
+    """
+    return _struve(v, x, False)
+
+
+def modstruve(v: f64, x: f64) -> f64:
+    """The modified Struve function Lᵥ(x) of real order, as `scipy.special.modstruve` for a
+    real `x`: −i e^{−iνπ/2} Hᵥ(ix). It grows like I₋ᵥ(x) and overflows with it, from about
+    x = 710; for a negative `x` it is NaN unless `v` is whole, where Lᵥ(−x) = (−1)^{v+1} Lᵥ(x).
+
+    ```python
+    from special import modstruve
+
+    print(modstruve(0.0, 1.0))  # 0.7102431859378907
+    ```
+    """
+    return _struve(v, x, True)
