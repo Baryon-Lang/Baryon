@@ -95,6 +95,7 @@ mod text;
 mod text_arrays;
 mod text_tables;
 mod union_methods;
+mod untyped_calls;
 mod user_iterators;
 mod value_calls;
 
