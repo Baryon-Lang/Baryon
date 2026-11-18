@@ -2025,3 +2025,83 @@ for arguments, value in ends:
 with open("gauss.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
+
+## Fitted coefficients
+
+Some functions are a ratio of fitted polynomials rather than a series (roadmap 3.18.17): one
+rational function costs a dozen multiplications, where a series or an iteration costs many
+more. This script, run with mpmath 1.4, prints the coefficients of each, lowest power first,
+exactly as the library holds them: `_centre`, `_near_tail` and `_far_tail` in
+`special_ndtri.byn`, and `_k_fitted` and `_e_fitted` in `special_elliptic.byn`. The tests in
+`error_functions.txt` and `elliptic_functions.txt` check the result.
+
+```python
+import mpmath as mp
+
+
+def fit(function, points, variable, numerator, denominator, steps):
+    """Coefficients of P/Q, Q(0) = 1, fitting `function` at `points` in relative error:
+    linear least squares on P − fQ, reweighted by 1/|Q| `steps` times (Loeb's method)."""
+    weights = [mp.mpf(1)] * len(points)
+    for _ in range(steps):
+        rows, right = [], []
+        for u, w0 in zip(points, weights):
+            z, v = variable(u), function(u)
+            w = 1 / (abs(v) * w0)
+            rows.append([w * z**k for k in range(numerator + 1)]
+                        + [-w * v * z**k for k in range(1, denominator + 1)])
+            right.append(w * v)
+        solution, _ = mp.qr_solve(mp.matrix(rows), mp.matrix(right))
+        top = [solution[k] for k in range(numerator + 1)]
+        bottom = [mp.mpf(1)] + [solution[numerator + k] for k in range(1, denominator + 1)]
+        weights = [abs(mp.polyval(bottom[::-1], variable(u))) for u in points]
+    return [float(c) for c in top], [float(c) for c in bottom]
+
+
+def chebyshev(low, high, n):
+    """`n` Chebyshev points on [low, high], which spread the error evenly."""
+    return [(low + high) / 2 + (high - low) / 2 * mp.cos(mp.pi * (i + 0.5) / n) for i in range(n)]
+
+
+def quantile(p):
+    """The normal quantile Φ⁻¹(p), at 420 digits so 1 − 2p keeps the smallest `p`."""
+    with mp.workdps(420):
+        value = -mp.sqrt(2) * mp.erfinv(1 - 2 * mp.mpf(p))
+    return +value
+
+
+mp.mp.dps = 90
+def centre(s):
+    """x / q at s = 0.180625 − q², for p = ½ + q."""
+    q = mp.sqrt(mp.mpf(0.180625) - s)
+    return quantile(mp.mpf(0.5) + q) / q
+def tail(t):
+    """−x at t = √(−log p)."""
+    return -quantile(mp.exp(-t * t))
+print("_centre", fit(centre, chebyshev(0, mp.mpf(0.425) ** 2, 400), lambda s: s, 7, 7, 8))
+near = chebyshev(mp.mpf(1.6094), 5, 400)
+print("_near_tail", fit(tail, near, lambda t: t - mp.mpf(1.6), 8, 8, 8))
+print("_far_tail", fit(tail, chebyshev(5, mp.mpf(27.3), 400), lambda t: t - 5, 7, 7, 8))
+
+
+def fit_logarithmic(function, points, degree):
+    """Coefficients of P and Q, polynomials of `degree`, fitting `function`(x) as
+    P(x) − log(x) Q(x) at `points` in relative error, by linear least squares."""
+    rows, right = [], []
+    for x in points:
+        v = function(x)
+        w = 1 / abs(v)
+        rows.append([w * x**k for k in range(degree + 1)]
+                    + [-w * mp.log(x) * x**k for k in range(degree + 1)])
+        right.append(w * v)
+    solution, _ = mp.qr_solve(mp.matrix(rows), mp.matrix(right))
+    return ([float(solution[k]) for k in range(degree + 1)],
+            [float(solution[degree + 1 + k]) for k in range(degree + 1)])
+
+
+mp.mp.dps = 80
+points = [(1 - mp.cos(mp.pi * (i + 0.5) / 600)) / 2 for i in range(600)]
+points += [mp.mpf(10) ** (-k) for k in range(2, 40, 2)]
+print("_k_fitted", fit_logarithmic(lambda x: mp.ellipk(1 - x), points, 9))
+print("_e_fitted", fit_logarithmic(lambda x: mp.ellipe(1 - x), points, 10))
+```

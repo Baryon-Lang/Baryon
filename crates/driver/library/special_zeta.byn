@@ -6,7 +6,8 @@ The compiler reads this file for `<std>/special.byn`; a program cannot import it
 
 from math import exp, fma, inf, isinf, isnan, log, log1p, nan, pi
 from special_common import sinpi
-from special_gamma import gamma, hurwitz_zeta
+from special_gamma import gamma
+from special_hurwitz import hurwitz_zeta
 from special_beta import rounding
 from special_helpers import shift
 

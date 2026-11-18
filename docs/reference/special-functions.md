@@ -74,7 +74,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `kl_div` | 8 ULP | 3 ULP | 8.8 billion ULP at `kl_div(0.6515198, 0.6515264)`, where x − y cancels |
 | `binom`, `comb` | 8 ULP plus 2 for each unit of the result's logarithm | 18 ULP at a result of 5e160 | 8,523 ULP |
 | `perm`, `factorial` | 8 ULP | 4 ULP | 7 ULP |
-| `ellipk`, `ellipkm1`, `ellipe` | 8 ULP | 3 ULP | 2 ULP |
+| `ellipk`, `ellipkm1`, `ellipe` | 8 ULP | 2 ULP | 2 ULP |
 | `ellipkinc`, `ellipeinc` | 8 ULP | 4 ULP | 4 ULP |
 | `elliprc`, `elliprd`, `elliprf`, `elliprg` | 8 ULP | 4 ULP | 7 ULP |
 | `elliprj` | 8 ULP | 6 ULP | 116 ULP where `p` is far below the other arguments |
@@ -209,7 +209,10 @@ How each is computed:
 - **`erfinv`** refines a first guess by Halley's method. Above |y| = 0.5 it is
   `erfcinv(1 − |y|)`, where the subtraction is exact. **`erfcinv`** below 0.5 solves
   −x² + log erfcx(x) = log q by Newton's method, which stays finite for the smallest `q`.
-  `ndtri(p)` is −√2 erfcinv(2p).
+- **`ndtri`** starts from a rational function fitted with mpmath: of 0.180625 − q² times
+  q = p − ½ for |q| up to 0.425, and of t = √(−log p) beyond, in two pieces split at t = 5,
+  with p taken as 1 − p above ½. One Halley step on erf(x/√2) = 2q in the centre, or one Newton
+  step on −v² + log erfcx(v) = log 2p in the tails, takes the fit's 6 ULP to 2.
 - **`log_ndtr`** is log1p(−Φ(−x)) above 0, log Φ(x) down to −20, and log(erfcx(u) / 2) − u²
   with u = −x/√2 below, so it is finite where Φ underflows.
 - **`dawsn`** below 8 is the continued fraction x / (1 + 2x² / (3 − 4x² / (5 + ⋯))), from a
@@ -802,7 +805,8 @@ How each is computed:
   terms up to 2, and (Ei(x) ± E₁(x))/2 above.
 - **S and C** are power series below 1.5; above, C + iS comes from the continued fraction of
   the complementary error function.
-- **ζ(x)** is an Euler–Maclaurin sum from 0 up, and the reflection formula below 0, with
+- **ζ(x)** is an Euler–Maclaurin sum from 0 up, which stops summing powers directly once the
+  rest is below 1e-17 of the sum, and the reflection formula below 0, with
   log 2π carried as two `f64`s so that large negative arguments keep their digits. ζ(x, q) is
   the same sum from `q`. `zetac` sums from 2 for large `x`, so 1 is never subtracted from a
   number near 1.
@@ -911,8 +915,11 @@ How each is computed:
   `elliprg` is ½[z R_F − (x − z)(y − z) R_D/3 + √(xy/z)] with z the middle argument, so the
   three terms never cancel. For `y` below 0, `elliprc` is Cauchy's principal value. For `p`
   below 0, so is `elliprj` (Carlson 1995, equation 4.3).
-- **The complete integrals**: K(m) = R_F(0, 1 − m, 1) and E(m) = 2 R_G(0, 1 − m, 1). `ellipkm1`
-  takes `p` directly, so K stays exact as `p` goes to 1e-300.
+- **The complete integrals** K(m) and E(m) are P(p) − log(p) Q(p) in p = 1 − m, the form both
+  take near m = 1, with polynomials P and Q of degree 9 for K and 10 for E fitted with mpmath.
+  Below m = 0 they use K(m) = K(m/(m − 1))/√(1 − m) and E(m) = √(1 − m) E(m/(m − 1)), where
+  1 − m/(m − 1) is 1/(1 − m). `ellipkm1` takes `p` directly, so K stays exact as `p` goes to
+  1e-300.
 - **The incomplete integrals** reduce φ to [−π/2, π/2] plus a multiple of π, which adds a
   multiple of 2K or 2E. F is sin φ R_F(cos²φ, Δ², 1), with Δ² = 1 − m sin²φ formed as
   cos²φ + (1 − m) sin²φ so it never cancels. For m from 0 up, E uses DLMF 19.25.10, whose
@@ -1097,9 +1104,11 @@ for those working on the library. A panic inside a function names the file it is
 | File | Holds |
 | --- | --- |
 | `special_common` | The whole-number tests `is_integer` and `is_odd`, `floor_count`, which rounds a count down, `sinpi` and `cospi`, and the constants more than one family uses |
-| `special_gamma` | `gamma`, `rgamma`, `gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma`, `polygamma`, the Hurwitz zeta function `polygamma` sums, and `factorial`, which `polygamma` uses |
+| `special_gamma` | `gamma`, `rgamma`, `gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma`, `polygamma` and `factorial`, which `polygamma` uses |
+| `special_hurwitz` | The Hurwitz zeta function, which `polygamma` and `zeta` sum |
 | `special_beta` | `beta`, `betaln` and `poch` |
-| `special_error` | `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `ndtri`, `log_ndtr` and `dawsn` |
+| `special_error` | `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `log_ndtr` and `dawsn` |
+| `special_ndtri` | `ndtri` and the three rational functions it is made of |
 | `special_bessel_jy` | `j0`, `j1`, `jn`, `y0`, `y1` and `yn` |
 | `special_bessel_ik` | `i0`, `i1`, `i0e`, `i1e`, `k0`, `k1`, `k0e`, `k1e` and `kn` |
 | `special_bessel_steed` | `bessel_jy` and `bessel_ik`, the methods behind the functions of real order: Temme and Steed's, the power series and Hankel's expansions |

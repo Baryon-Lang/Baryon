@@ -212,7 +212,7 @@ means SciPy was faster.
 | `digamma(x)` | 0.1 to 100 | 0.18 | 0.12 | 1.5 |
 | `erf(x)` | −5 to 5 | 0.50 | 0.14 | 3.6 |
 | `erfc(x)` | −5 to 25 | 0.38 | 0.13 | 2.9 |
-| `ndtri(p)` | 0 to 1 | 3.69 | 0.13 | 27.8 |
+| `ndtri(p)` | 0 to 1 | 0.50 | 0.13 | 3.8 |
 | `j0(x)` | 0 to 100 | 1.20 | 0.30 | 3.9 |
 | `jv(2.5, x)` | 0 to 100 | 2.07 | 3.45 | 0.6 |
 | `kv(1.3, x)` | 0.01 to 50 | 2.73 | 2.57 | 1.1 |
@@ -220,19 +220,21 @@ means SciPy was faster.
 | `gammainc(3.7, x)` | 0 to 20 | 1.58 | 0.95 | 1.7 |
 | `betainc(2.5, 3.5, x)` | 0 to 1 | 3.58 | 2.61 | 1.4 |
 | `stdtr(5.0, x)` | −10 to 10 | 3.16 | 1.56 | 2.0 |
-| `ellipk(m)` | −10 to 1 | 0.58 | 0.18 | 3.2 |
-| `ellipe(m)` | −10 to 1 | 1.49 | 0.18 | 8.4 |
+| `ellipk(m)` | −10 to 1 | 0.17 | 0.18 | 0.9 |
+| `ellipe(m)` | −10 to 1 | 0.16 | 0.18 | 0.9 |
 | `expi(x)` | −50 to 50 | 1.58 | 2.57 | 0.6 |
-| `zeta(x)` | 1.01 to 50 | 6.97 | 0.34 | 20.2 |
+| `zeta(x)` | 1.01 to 50 | 1.31 | 0.34 | 3.9 |
 | `eval_legendre(10, x)` | −1 to 1 | 0.24 | 0.27 | 0.9 |
 | `hyp1f1(1.5, 2.5, x)` | −50 to 50 | 20.47 | 7.19 | 2.8 |
 | `hyp2f1(0.5, 1.5, 2.5, x)` | −10 to 0.99 | 13.49 | 5.13 | 2.6 |
 
-Baryon is faster for `jv`, `airy` and `expi`, level for `kv` and `eval_legendre`, and slower for the
-rest, by 28 times for `ndtri` and 20 for `zeta`. SciPy's `ndtri`, `ellipe` and `j0` come from
-Cephes, which fits one short rational or polynomial formula to each range of the argument. Baryon's
-versions use general methods held to the accuracy above: `ndtri` solves for its answer by Newton's
-method in the tails, `zeta` sums the Euler–Maclaurin series, `ellipe` runs Carlson's iteration.
+Baryon is faster for `jv`, `airy` and `expi`, level for `kv`, `ellipk`, `ellipe` and
+`eval_legendre`, and slower for the rest, by up to 3.9 times, for `zeta`, `j0` and `ndtri`. The
+slower functions use general methods held to the accuracy above, such as series and iterations,
+where SciPy's Cephes fits one short rational or polynomial formula to each range of the argument.
+Roadmap 3.18.17 speeds them up, slowest first. `ellipk` and `ellipe` are now formulas fitted for
+Baryon and took 0.6 and 1.5 seconds before it; `ndtri` starts from one and took 3.7; `zeta`, which
+now stops summing once the rest cannot change the result, took 7.0.
 [`bench/special`](../../bench/special/README.md) holds both programs, to run on your own machine.
 
 ## Where to go next

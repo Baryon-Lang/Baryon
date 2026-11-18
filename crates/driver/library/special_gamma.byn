@@ -10,6 +10,7 @@ it.
 from math import exp, floor, inf, isinf, isnan, log, log1p, nan, pi, pow
 from special_common import SQRT_TWO_PI, HALF_LOG_TWO_PI, LARGEST_GAMMA, is_integer, is_odd, sinpi
 from special_common import cospi
+from special_hurwitz import hurwitz_zeta
 
 
 _PSI_ROOT: Final = 1.4616321449683622  # the positive zero of `psi`, rounded to f64
@@ -383,49 +384,6 @@ def digamma(x: f64) -> f64:
     ```
     """
     return psi(x)
-
-
-def hurwitz_zeta(s: f64, q: f64) -> f64:
-    """The Hurwitz zeta function ζ(s, q), the sum of (q + k)^(−s) over k from 0, for `s` from 0
-    up other than 1, by the Euler–Maclaurin formula, which holds on both sides of the pole.
-
-    Sums the first terms directly until q + k is at least 10 more than `s`, then adds the
-    integral, half the next term and Bernoulli terms until they stop changing the sum. A `q` at
-    0 or a negative whole number is a pole: infinity.
-    """
-    if q <= 0.0 and is_integer(q):
-        return inf
-    a = q
-    total = 0.0
-    while a < 10.0 + s:
-        total += pow(a, -s)
-        a += 1.0
-    term = pow(a, -s)
-    total += a * term / (s - 1.0) + 0.5 * term
-    factor = s
-    power = term / a
-    weights = Array([
-        0.08333333333333333,
-        -0.001388888888888889,
-        3.306878306878307e-05,
-        -8.267195767195768e-07,
-        2.08767569878681e-08,
-        -5.284190138687493e-10,
-        1.3382536530684679e-11,
-        -3.3896802963225827e-13,
-        8.586062056277845e-15,
-        -2.174868698558062e-16,
-        5.5090028283602295e-18,
-        -1.3954464685812522e-19,
-    ])
-    for j in range(len(weights)):
-        change = weights[j] * factor * power
-        total += change
-        if abs(change) <= 1.0e-17 * abs(total):
-            break
-        factor *= (s + 2.0 * j + 1.0) * (s + 2.0 * j + 2.0)
-        power /= a * a
-    return total
 
 
 def polygamma(n: int, x: f64) -> f64:
