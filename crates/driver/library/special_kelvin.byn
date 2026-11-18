@@ -1,0 +1,305 @@
+"""Kelvin functions for `special` (roadmap 3.18.7): `ber`, `bei`, `ker`, `kei`, their
+derivatives `berp`, `beip`, `kerp` and `keip`, and `kelvin`, which gives all eight as four
+complex numbers.
+
+They are the modified Bessel functions of order 0 on the ray at 45° (DLMF 10.61.1 and 10.61.2):
+ber x + i bei x = I₀(z) and ker x + i kei x = K₀(z), with z = x e^{iπ/4}. Up to x = 2 the power
+series give I₀, I₁, K₀ and K₁. Above it, Steed's continued fraction CF2 gives K₀ eᶻ and K₁ eᶻ,
+the continued fraction CF1 gives I₁/I₀, and the Wronskian I₀K₁ + I₁K₀ = 1/z gives I₀ e⁻ᶻ, the
+same method as `bessel_ik` of `special_bessel_steed`, in complex arithmetic. The power series
+alone would lose a factor of e^{0.3x} to cancellation, 360 at x = 20.
+
+The factor e^{±z} is applied last: its size e^{±x/√2} in two halves, so a value overflows only
+when it is too large itself, and its phase x/√2 as two `f64`s, so the oscillation is as exact as
+`x`: rounding x/√2 to one `f64` would lose up to x/√2 ULP.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import cos, exp, fma, hypot, inf, isinf, isnan, log, nan, pi, sin, sqrt
+from special_common import EULER
+
+_HALF_ROOT: Final = 0.7071067811865476  # 1/√2, rounded to f64
+_HALF_ROOT_LOW: Final = -4.833646656726457e-17  # 1/√2 minus `_HALF_ROOT`
+_SERIES: Final = 2.0  # the power series is used up to here, as CF2 is (Numerical Recipes)
+_EPSILON: Final = 1.0e-17  # where a series or continued fraction stops
+_TINY: Final = 1.0e-300  # stands in for 0 in the modified Lentz method
+
+
+def _sqrt(z: complex128) -> complex128:
+    """The principal square root of `z`, for z off the negative real axis."""
+    size = sqrt((hypot(z.real, z.imag) + abs(z.real)) / 2.0)
+    if z.real >= 0.0:
+        return complex(size, z.imag / (2.0 * size))
+    if z.imag >= 0.0:
+        return complex(abs(z.imag) / (2.0 * size), size)
+    return complex(abs(z.imag) / (2.0 * size), -size)
+
+
+def _series(x: f64) -> tuple[complex128, complex128, complex128, complex128]:
+    """I₀(z), I₁(z), K₀(z) and K₁(z) at z = x e^{iπ/4}, x up to 2, from their power series
+    (DLMF 10.25.2 and 10.31.1) in q = z²/4 = i x²/4: I₀ = Σ qᵐ/(m!)², I₁ = (z/2) Σ qᵐ/(m!(m + 1)!),
+    K₀ = −(ln(z/2) + γ) I₀ + Σ Hₘ qᵐ/(m!)², and K₁ = 1/z + ln(z/2) I₁
+    − (z/4) Σ (ψ(m + 1) + ψ(m + 2)) qᵐ/(m!(m + 1)!), with Hₘ the harmonic numbers."""
+    z = complex(x * _HALF_ROOT, x * _HALF_ROOT)
+    q = complex(0.0, x * x / 4.0)
+    logarithm = complex(log(x / 2.0), pi / 4.0)
+    first = complex(1.0, 0.0)
+    second = complex(1.0, 0.0)
+    first_term = complex(1.0, 0.0)
+    second_term = complex(1.0, 0.0)
+    first_extra = complex(0.0, 0.0)
+    second_extra = complex(-2.0 * EULER + 1.0, 0.0) * second_term
+    harmonic = 0.0
+    for m in range(1, 40):
+        whole = float(m)
+        first_term = first_term * q / (whole * whole)
+        second_term = second_term * q / (whole * (whole + 1.0))
+        harmonic += 1.0 / whole
+        first = first + first_term
+        second = second + second_term
+        first_extra = first_extra + first_term * harmonic
+        digamma_sum = -2.0 * EULER + 2.0 * harmonic + 1.0 / (whole + 1.0)
+        second_extra = second_extra + second_term * digamma_sum
+        if hypot(first_term.real, first_term.imag) <= _EPSILON:
+            break
+    half = z / 2.0
+    i_zero = first
+    i_one = half * second
+    k_zero = first_extra - (logarithm + EULER) * i_zero
+    k_one = 1.0 / z + logarithm * i_one - half / 2.0 * second_extra
+    return i_zero, i_one, k_zero, k_one
+
+
+def _steed(x: f64) -> tuple[complex128, complex128, complex128, complex128]:
+    """I₀(z) e⁻ᶻ, I₁(z) e⁻ᶻ, K₀(z) eᶻ and K₁(z) eᶻ at z = x e^{iπ/4}, x above 2: Steed's CF2
+    in Temme's form for K (Numerical Recipes 6.7.47 to 6.7.50, at order 0), CF1 by the modified
+    Lentz method for the ratio I₁/I₀ = 1/(2/z + 1/(4/z + ...)), which takes about x steps, and
+    the Wronskian for I₀."""
+    z = complex(x * _HALF_ROOT, x * _HALF_ROOT)
+    inverse = 1.0 / z
+    b = 2.0 * (1.0 + z)
+    d = 1.0 / b
+    h = d
+    delta = d
+    q1 = complex(0.0, 0.0)
+    q2 = complex(1.0, 0.0)
+    q = complex(0.25, 0.0)
+    c = complex(0.25, 0.0)
+    a = -0.25
+    s = 1.0 + q * delta
+    for i in range(1, 100000):
+        a -= 2.0 * i
+        c = -a * c / (i + 1.0)
+        following = (q1 - b * q2) / a
+        q1 = q2
+        q2 = following
+        q = q + c * following
+        b = b + 2.0
+        d = 1.0 / (b + a * d)
+        delta = (b * d - 1.0) * delta
+        h = h + delta
+        change = q * delta
+        s = s + change
+        ratio = change / s
+        if hypot(ratio.real, ratio.imag) < _EPSILON:
+            break
+    k_zero = _sqrt(pi / 2.0 * inverse) / s
+    k_one = k_zero * (z + 0.5 - 0.25 * h) * inverse
+    twice = 2.0 * inverse
+    b = complex(0.0, 0.0)
+    d = complex(0.0, 0.0)
+    c = complex(_TINY, 0.0)
+    fraction = complex(_TINY, 0.0)
+    for step in range(1000000):
+        b = b + twice
+        d = b + d
+        if hypot(d.real, d.imag) < _TINY:
+            d = complex(_TINY, 0.0)
+        d = 1.0 / d
+        c = b + 1.0 / c
+        if hypot(c.real, c.imag) < _TINY:
+            c = complex(_TINY, 0.0)
+        change = c * d
+        fraction = fraction * change
+        miss = change - 1.0
+        if hypot(miss.real, miss.imag) < _EPSILON:
+            break
+    i_zero = inverse / (fraction * k_zero + k_one)
+    return i_zero, fraction * i_zero, k_zero, k_one
+
+
+def _phase(x: f64) -> tuple[f64, f64, f64]:
+    """For θ = x/√2: e^{θ/2}, and cos θ and sin θ with θ carried as two `f64`s, so that its
+    rounding, up to θ ULP of the result, is put back by a first-order step."""
+    high = x * _HALF_ROOT
+    low = fma(x, _HALF_ROOT, -high) + x * _HALF_ROOT_LOW
+    cosine = cos(high)
+    sine = sin(high)
+    return exp(high / 2.0) * (1.0 + low / 2.0), cosine - low * sine, sine + low * cosine
+
+
+def _kelvin(x: f64) -> tuple[complex128, complex128, complex128, complex128]:
+    """ber + i bei, ker + i kei, ber′ + i bei′ and ker′ + i kei′ at `x` above 0 and finite:
+    I₀(z), K₀(z), e^{iπ/4} I₁(z) and −e^{iπ/4} K₁(z)."""
+    turn = complex(_HALF_ROOT, _HALF_ROOT)
+    if x <= _SERIES:
+        i_zero, i_one, k_zero, k_one = _series(x)
+        return i_zero, k_zero, turn * i_one, -turn * k_one
+    i_zero, i_one, k_zero, k_one = _steed(x)
+    half, cosine, sine = _phase(x)
+    grow = complex(cosine, sine)
+    shrink = complex(cosine, -sine)
+    # Every complex product is taken before the real scale, so that an overflow gives an
+    # infinity in each part with its sign, never ∞ − ∞.
+    first = i_zero * grow * half * half
+    first_slope = turn * i_one * grow * half * half
+    second = k_zero * shrink / half / half
+    second_slope = -turn * k_one * shrink / half / half
+    return first, second, first_slope, second_slope
+
+
+def kelvin(x: f64) -> tuple[complex128, complex128, complex128, complex128]:
+    """The Kelvin functions as `scipy.special.kelvin` gives them: (ber x + i bei x,
+    ker x + i kei x, ber′ x + i bei′ x, ker′ x + i kei′ x). ber and bei are even and their
+    derivatives odd, so a negative `x` takes the value at |x|; ker and kei have a logarithm at 0
+    and are NaN below it. At x = 0 the values are 1, ∞ − iπ/4, 0 and −∞. As x grows, ber, bei
+    and their derivatives grow like e^{x/√2} and overflow from x = 1004, and ker and kei fall like
+    e^{−x/√2}; at x = ∞ ber and bei, which oscillate without bound, are NaN and ker and kei 0,
+    where `SciPy` gives NaN for all.
+
+    ```python
+    from special import kelvin
+
+    be, ke, be_slope, ke_slope = kelvin(2.0)
+    print(be.real)  # 0.7517341827138083
+    ```
+    """
+    if isnan(x):
+        unknown = complex(nan, nan)
+        return unknown, unknown, unknown, unknown
+    size = abs(x)
+    first = complex(nan, nan)
+    second = complex(nan, nan)
+    first_slope = complex(nan, nan)
+    second_slope = complex(nan, nan)
+    if size == 0.0:
+        first = complex(1.0, 0.0)
+        second = complex(inf, -pi / 4.0)
+        first_slope = complex(0.0, 0.0)
+        second_slope = complex(-inf, 0.0)
+    elif isinf(size):
+        second = complex(0.0, 0.0)
+        second_slope = complex(0.0, 0.0)
+    else:
+        first, second, first_slope, second_slope = _kelvin(size)
+    if x < 0.0:
+        unknown = complex(nan, nan)
+        return first, unknown, -first_slope, unknown
+    return first, second, first_slope, second_slope
+
+
+def ber(x: f64) -> f64:
+    """The Kelvin function ber x, the real part of I₀(x e^{iπ/4}), as `scipy.special.ber`.
+
+    ```python
+    from special import ber
+
+    print(ber(2.0))  # 0.7517341827138083
+    ```
+    """
+    first, second, first_slope, second_slope = kelvin(x)
+    return first.real
+
+
+def bei(x: f64) -> f64:
+    """The Kelvin function bei x, the imaginary part of I₀(x e^{iπ/4}), as `scipy.special.bei`.
+
+    ```python
+    from special import bei
+
+    print(bei(2.0))  # 0.9722916273066612
+    ```
+    """
+    first, second, first_slope, second_slope = kelvin(x)
+    return first.imag
+
+
+def ker(x: f64) -> f64:
+    """The Kelvin function ker x, the real part of K₀(x e^{iπ/4}), as `scipy.special.ker`: ∞ at
+    0 and NaN below it.
+
+    ```python
+    from special import ker
+
+    print(ker(2.0))  # -0.04166451399150961
+    ```
+    """
+    first, second, first_slope, second_slope = kelvin(x)
+    return second.real
+
+
+def kei(x: f64) -> f64:
+    """The Kelvin function kei x, the imaginary part of K₀(x e^{iπ/4}), as `scipy.special.kei`:
+    −π/4 at 0 and NaN below it.
+
+    ```python
+    from special import kei
+
+    print(kei(2.0))  # -0.20240006776470443
+    ```
+    """
+    first, second, first_slope, second_slope = kelvin(x)
+    return second.imag
+
+
+def berp(x: f64) -> f64:
+    """The derivative of ber, as `scipy.special.berp`.
+
+    ```python
+    from special import berp
+
+    print(berp(2.0))  # -0.49306712470943925
+    ```
+    """
+    first, second, first_slope, second_slope = kelvin(x)
+    return first_slope.real
+
+
+def beip(x: f64) -> f64:
+    """The derivative of bei, as `scipy.special.beip`.
+
+    ```python
+    from special import beip
+
+    print(beip(2.0))  # 0.9170136133840364
+    ```
+    """
+    first, second, first_slope, second_slope = kelvin(x)
+    return first_slope.imag
+
+
+def kerp(x: f64) -> f64:
+    """The derivative of ker, as `scipy.special.kerp`: −∞ at 0 and NaN below it.
+
+    ```python
+    from special import kerp
+
+    print(kerp(2.0))  # -0.1066009658810527
+    ```
+    """
+    first, second, first_slope, second_slope = kelvin(x)
+    return second_slope.real
+
+
+def keip(x: f64) -> f64:
+    """The derivative of kei, as `scipy.special.keip`: 0 at 0 and NaN below it.
+
+    ```python
+    from special import keip
+
+    print(keip(2.0))  # 0.21980790991960555
+    ```
+    """
+    first, second, first_slope, second_slope = kelvin(x)
+    return second_slope.imag

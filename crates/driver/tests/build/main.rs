@@ -90,6 +90,7 @@ mod special_bessel;
 mod special_elliptic;
 mod special_everyday;
 mod special_polynomials;
+mod special_waves;
 mod spectral;
 mod statements;
 mod statistics;

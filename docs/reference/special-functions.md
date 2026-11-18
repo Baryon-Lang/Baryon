@@ -25,7 +25,7 @@ is built from the series and recurrences below and the elementary functions `exp
 ## Accuracy
 
 Each function is tested against values computed with mpmath to 50 digits, at a few hundred
-arguments spread over its range, about 24,800 in all
+arguments spread over its range, about 32,500 in all
 ([the fixtures](../../crates/driver/tests/fixtures/special/README.md)).
 The error is counted in units in the last place (ULP): the gap between adjacent `f64` values at
 the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
@@ -79,6 +79,9 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `ellipj` | 128 ULP, of the larger of the value and 1 for sn, cn and dn | 96 ULP of the amplitude at m = 1 − 4e-11 | 13 billion ULP of sn at the same arguments |
 | `jv`, `yv`, `jvp`, `yvp`, `spherical_jn`, `spherical_yn` | 256 ULP, of the modulus √(J² + Y²) past the turning point x = \|v\| | 106 ULP at `yv(214.4, 22.6)` | 4,723 ULP at `jv(57.7, 845.8)` |
 | `iv`, `ive`, `kv`, `kve`, `ivp`, `kvp`, `spherical_in`, `spherical_kn` | 256 ULP | 96 ULP at `kv(234.1, 60.6)` | 442 ULP; NaN for `ive` and `kve` from about 1e10 |
+| `airy`, `airye` | 64 ULP, of the envelope √(Ai² + Bi²) or √(Ai′² + Bi′²) below 0 | 36 ULP at x = −11.9 | 394,000 ULP at `airy(-8408.2)`; NaN from x = 103.9 for Bi and past about 1e8 for all |
+| `ber`, `bei`, `ker`, `kei`, `berp`, `beip`, `kerp`, `keip`, `kelvin` | 32 ULP of the size of the complex value each is a part of | 13 ULP | 4.4 million ULP at `ker(9.70)` |
+| `struve`, `modstruve` | 128 ULP, of the larger of H and the modulus √(J² + Y²) past the turning point x = \|v\| | 57 ULP at `struve(-1.56, 26.3)` | 13,138 ULP at `modstruve(0.28, 13.6)` |
 | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer` | 8 ULP for each degree, of the largest value the recurrence passes through | 29 ULP for `eval_gegenbauer` at degree 85 | 439 ULP for `eval_jacobi` at degree 85 |
 | `eval_hermite`, `eval_hermitenorm` | The same | 156 ULP at degree 78 | 698 ULP for `eval_hermite` at degree 75 |
 | `lpmv` | 64 ULP of the largest value the recurrence passes through | 24 ULP | 154 ULP |
@@ -350,6 +353,142 @@ iₙ(−x) = (−1)ⁿ iₙ(x), and `spherical_kn` continues SciPy's closed form
 (π/2) e⁻ˣ/x Σₖ (n + k)!/(k! (n − k)!) (2x)⁻ᵏ there, as −π iₙ(|x|) − (−1)ⁿ kₙ(|x|). They are
 NaN for a negative n. A negative derivative order stops the program with SciPy's message,
 where SciPy raises ValueError.
+
+## Airy functions
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `airy(x)` | The tuple (Ai(x), Ai′(x), Bi(x), Bi′(x)) of the Airy functions, the solutions of w″ = x w that fall and grow above 0 and oscillate below it | `scipy.special.airy` |
+| `airye(x)` | The same scaled: Ai eᶻ, Ai′ eᶻ, Bi e⁻ᶻ and Bi′ e⁻ᶻ with ζ = ⅔ x^{3/2} above 0, finite where Ai underflows and Bi overflows; below 0 the scale is 1 | `scipy.special.airye` |
+
+```python
+from special import airy, airye
+
+
+def main():
+    ai, ai_slope, bi, bi_slope = airy(1.0)
+    print(ai)                       # 0.13529241631288147
+    ai, ai_slope, bi, bi_slope = airye(10.0)
+    print(bi)                       # 0.3183401053367345, where Bi itself is 4.6e8
+```
+
+**How they work.** From x = −2 to 1, the Maclaurin series of Ai and Bi and their derivatives.
+Elsewhere they are Bessel functions of order ⅓ and ⅔ at ζ = ⅔|x|^{3/2} (DLMF 9.6): Kᵥ and Iᵥ,
+scaled, above 0, where every term has one sign, and Jᵥ and Yᵥ below it, from the methods of the
+[Bessel functions of real order](#bessel-functions-of-real-order). ζ is formed as two `f64`s
+and the part rounding would drop is put back by a first-order step, so the phase of the
+oscillation below 0 and the exponent above it are as exact as x itself. Rounding ζ to one `f64`
+would lose up to ζ ULP: 1,900 at x = −200.
+
+**Accuracy.** Below 0 each value is tested against its envelope, √(Ai² + Bi²) for Ai and Bi and
+√(Ai′² + Bi′²) for the derivatives, since it crosses zero; above 0 against itself. The worst
+is 36 ULP, from x = −8 to −12, where Steed's method passes the turning point; SciPy loses up to
+394,000 ULP far below 0.
+
+### At the ends
+
+Where SciPy gives NaN, these give the limits and the true values:
+
+- Bi and Bi′ are ∞ from x = 104, where they overflow, and Ai and Ai′ fall to 0; SciPy gives
+  NaN for Bi and Bi′ from x = 103.9, and for all four past |x| = 1e8 or so.
+- `airye` below 0 is `airy`, since ζ of a negative x is imaginary and the scale e^{−|Re ζ|} is 1;
+  SciPy gives NaN for its first two values there.
+- At x = ∞, `airy` is (0, 0, ∞, ∞) and `airye` (0, −∞, 0, ∞); at x = −∞, Ai and Bi are 0 and
+  Ai′ and Bi′, which oscillate without bound, NaN. SciPy gives NaN at both.
+- Past |x| = 1.5e205, where ζ overflows, `airye` above 0 is the first term of each asymptotic
+  expansion, which is exact there, and below 0 every value is NaN, since the phase is lost.
+
+## Kelvin functions
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `ber(x)`, `bei(x)` | The Kelvin functions ber x + i bei x = I₀(x e^{iπ/4}) | `scipy.special.ber`, `bei` |
+| `ker(x)`, `kei(x)` | The Kelvin functions ker x + i kei x = K₀(x e^{iπ/4}) | `scipy.special.ker`, `kei` |
+| `berp(x)`, `beip(x)`, `kerp(x)`, `keip(x)` | Their derivatives | `scipy.special.berp`, `beip`, `kerp`, `keip` |
+| `kelvin(x)` | All eight at once, as four `complex128`: (ber + i bei, ker + i kei, ber′ + i bei′, ker′ + i kei′) | `scipy.special.kelvin` |
+
+They describe, among other things, the current in a wire carrying alternating current, where
+the skin effect pushes it to the surface.
+
+```python
+from special import ber, kelvin
+
+
+def main():
+    print(ber(2.0))                 # 0.7517341827138083
+    be, ke, be_slope, ke_slope = kelvin(2.0)
+    print(ke.imag)                  # -0.20240006776470443, which is kei(2.0)
+```
+
+**How they work.** They are modified Bessel functions of order 0 on the ray at 45°: up to
+x = 2 their power series give I₀, I₁, K₀ and K₁ there, and above it Steed's continued fraction
+gives K₀ eᶻ and K₁ eᶻ, a second continued fraction gives I₁/I₀, and the Wronskian gives I₀ e⁻ᶻ,
+all in complex arithmetic. The factor e^{±z} is applied last: its size in two halves, so a value
+overflows only when it is too large itself, and its phase x/√2 carried as two `f64`s. The
+power series alone would lose a factor of e^{0.3x} to cancellation.
+
+**Accuracy.** Each part is tested against the size of the complex value it belongs to, since
+each part crosses zero while the whole does not. The worst is 13 ULP; SciPy loses up to 4.4
+million ULP of `ker` near x = 9.7, where its methods meet.
+
+### At the ends
+
+As SciPy gives: ber and bei are even and their derivatives odd, so a negative x takes the
+value at |x|; ker and kei and their derivatives are NaN below 0; at 0 the values are 1, 0, ∞,
+−π/4, 0, 0, −∞ and 0. From x = 1,004 ber, bei and their derivatives overflow to infinities with
+the sign of their phase, and ker and kei fall to 0. At x = ∞, where SciPy gives NaN for all,
+ker, kei and their derivatives are 0, and ber, bei and theirs, which oscillate without bound,
+NaN.
+
+## Struve functions
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `struve(v, x)` | The Struve function Hᵥ(x), the solution of Bessel's equation with the right-hand side (x/2)^{v−1}/(√π Γ(v + ½)) that is small at 0 | `scipy.special.struve` |
+| `modstruve(v, x)` | The modified Struve function Lᵥ(x) = −i e^{−ivπ/2} Hᵥ(ix) | `scipy.special.modstruve` |
+
+They appear in the radiation of a vibrating piston and in the impedance of acoustic and
+electromagnetic apertures.
+
+```python
+from special import modstruve, struve
+
+
+def main():
+    print(struve(0.0, 1.0))         # 0.5686566270482879
+    print(modstruve(0.0, 1.0))      # 0.7102431859378907
+```
+
+**How they work.** Each has a power series (DLMF 11.2.1 and 11.2.2), used where its terms do
+not cancel: always for L above order −3/2, whose terms are then all positive, and for H while x
+is small. Elsewhere:
+
+- H below its order, x < v, is the Bessel series √(x/(2π)) Σ (x/2)ᵏ/(k! (k + ½)) J_{k+v+½}(x)
+  (DLMF 11.4.19), whose terms are all positive there. Its J come from Miller's algorithm, the
+  recurrence run down from a high order, fixed by Neumann's sum, also of positive terms.
+- H elsewhere is Yᵥ plus the Laplace integral 2(x/2)ᵛ/(√π Γ(v + ½)) ∫₀^∞ e^{−xt} (1 + t²)^{v−½} dt
+  (DLMF 11.5.2), whose integrand is smooth and of one sign, by double-exponential quadrature.
+- L from x = 40 and above its order is I₋ᵥ(x) plus its asymptotic series (DLMF 11.6.2).
+
+1/Γ(v + 3/2) and the other gamma functions of a shifted order are taken at the exact sum, with
+the rounding of v + 3/2 put back by a step of ψ: Γ is so steep that this rounding alone would
+cost about v ψ(v) ULP.
+
+**Accuracy.** Past the turning point x = |v|, H is tested against the larger of itself and the
+modulus √(Jᵥ² + Yᵥ²), since there it is Y plus a smooth part and crosses zero; before it, and L
+everywhere, against itself. The tests reach orders from −10 to 100 and arguments up to 1e9. The
+worst is 57 ULP, near zeros of H at negative orders; SciPy loses up to 13,138 ULP.
+
+### At the ends
+
+- At x = 0 the value is the first term of the series: 0 above order −1, 2/π at −1, and below
+  it an infinity with the sign of 1/Γ(v + 3/2), as SciPy gives. At the orders −3/2, −5/2 and so
+  on that term is 0 and the function is ±J₋ᵥ(0) = 0, where SciPy gives ∞ or NaN.
+- At x = ∞, H is 0 below order 1, 2/π at 1 and ∞ above, where SciPy gives ∞ for every order,
+  and L is ∞, where SciPy gives NaN at order 0. SciPy's H also loses its precision past about
+  x = 1e9: `struve(0.5, 1e10)` is 1e10 there, where the value is about 8e-6.
+- As SciPy gives: a negative x is NaN unless v is whole, where Hᵥ(−x) = (−1)^{v+1} Hᵥ(x) and the
+  same for L; at v = ∞ both are 0, and at v = −∞ H is NaN and L 0.
 
 ## Incomplete gamma and beta functions
 
@@ -854,6 +993,9 @@ for those working on the library. A panic inside a function names the file it is
 | `special_bessel_steed` | `bessel_jy` and `bessel_ik`, the methods behind the functions of real order: Temme and Steed's, the power series and Hankel's expansions |
 | `special_bessel_real` | `jv`, `yv`, `iv`, `kv`, `jve`, `yve`, `ive`, `kve`, `jvp`, `yvp`, `ivp` and `kvp` |
 | `special_bessel_spherical` | `spherical_jn`, `spherical_yn`, `spherical_in` and `spherical_kn` |
+| `special_airy` | `airy` and `airye` |
+| `special_kelvin` | `kelvin`, `ber`, `bei`, `ker`, `kei`, `berp`, `beip`, `kerp` and `keip` |
+| `special_struve` | `struve` and `modstruve` |
 | `special_incomplete_gamma` | `gammainc`, `gammaincc`, `gammaincinv` and `gammainccinv` |
 | `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
 | `special_distributions` | `bdtr`, `bdtrc`, `bdtri`, `nbdtr`, `nbdtrc`, `nbdtri`, `pdtr`, `pdtrc`, `pdtri`, `chdtr`, `chdtrc`, `chdtri`, `fdtr`, `fdtrc`, `fdtri`, `gdtr`, `gdtrc`, `stdtr` and `stdtrit` |
@@ -873,6 +1015,6 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of a complex
-argument, Airy, Struve and Kelvin functions, and hypergeometric functions. Carlson's integrals of
+argument and hypergeometric functions. Carlson's integrals of
 complex arguments are not built. `loggamma` of a complex argument comes with the complex Bessel
 functions (3.18.6). See [What builds today](status.md).

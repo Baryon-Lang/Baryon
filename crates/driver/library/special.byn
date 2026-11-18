@@ -37,6 +37,10 @@ from special_bessel_spherical import spherical_jn as spherical_jn
 from special_bessel_spherical import spherical_yn as spherical_yn
 from special_bessel_spherical import spherical_in as spherical_in
 from special_bessel_spherical import spherical_kn as spherical_kn
+from special_airy import airy as airy, airye as airye
+from special_kelvin import kelvin as kelvin, ber as ber, bei as bei, ker as ker, kei as kei
+from special_kelvin import berp as berp, beip as beip, kerp as kerp, keip as keip
+from special_struve import struve as struve, modstruve as modstruve
 from special_incomplete_gamma import gammainc as gammainc, gammaincc as gammaincc
 from special_incomplete_gamma import gammaincinv as gammaincinv, gammainccinv as gammainccinv
 from special_incomplete_beta import betainc as betainc, betaincc as betaincc

@@ -14,7 +14,9 @@ functions (3.18.9), from `elliptic_functions.txt`, and those in
 polynomials and spherical harmonics (3.18.10), from `orthogonal_polynomials.txt`, and its Gauss
 quadrature rules (3.18.10), from `gauss_quadrature.txt`, and those in
 [`../../build/special_bessel.rs`](../../build/special_bessel.rs) its Bessel functions of real
-order and spherical Bessel functions (3.18.5), from `bessel_real.txt`. Each line is a
+order and spherical Bessel functions (3.18.5), from `bessel_real.txt`, and those in
+[`../../build/special_waves.rs`](../../build/special_waves.rs) its Airy, Kelvin and Struve
+functions (3.18.7), from `airy.txt`, `kelvin.txt` and `struve.txt`. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -1492,5 +1494,252 @@ for kind in ("jn", "yn", "in", "kn"):
                 value = inf
             add("spherical_" + kind, [n, x, int(derivative)], 1.0, value)
 with open("bessel_real.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Airy functions
+
+In `airy.txt` each case holds, before the reference value, the size its error is measured
+against: below 0, where Ai and Bi oscillate, the envelope √(Ai² + Bi²) for Ai and Bi and
+√(Ai′² + Bi′²) for the derivatives; above 0, the value itself. Each of `airy` and `airye` is
+recorded as four names, one for each value it returns. The script below recorded the cases with
+its own seed, with mpmath 1.4.1 at 60 digits; run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318007)
+lines = []
+
+
+def add(name, x, size, value):
+    lines.append(f"{name} {x!r} {float(size)!r} {float(value)!r}")
+
+
+def record(x):
+    with mpmath.workdps(60):
+        m = mpmath.mpf(x)
+        ai, aip = mpmath.airyai(m), mpmath.airyai(m, derivative=1)
+        bi, bip = mpmath.airybi(m), mpmath.airybi(m, derivative=1)
+        if x < 0:
+            # Below 0 each value is measured against its envelope, √(Ai² + Bi²) or
+            # √(Ai′² + Bi′²), and the scale of `airye` is 1.
+            values = mpmath.sqrt(ai ** 2 + bi ** 2)
+            slopes = mpmath.sqrt(aip ** 2 + bip ** 2)
+            sizes = [values, slopes, values, slopes]
+            scaled = [ai, aip, bi, bip]
+        else:
+            zeta = 2 * m ** mpmath.mpf(1.5) / 3
+            scaled = [ai * mpmath.exp(zeta), aip * mpmath.exp(zeta),
+                      bi * mpmath.exp(-zeta), bip * mpmath.exp(-zeta)]
+            sizes = None
+        for name, value, size in zip(("ai", "aip", "bi", "bip"), (ai, aip, bi, bip),
+                                     sizes or (ai, aip, bi, bip)):
+            if abs(value) < 1e-300 or abs(value) > 1e300:
+                continue
+            add("airy_" + name, x, abs(size), value)
+        for name, value, size in zip(("ai", "aip", "bi", "bip"), scaled, sizes or scaled):
+            add("airye_" + name, x, abs(size), value)
+
+
+points = [random.uniform(-2.0, 1.0) for _ in range(150)]
+points += [-math.exp(random.uniform(math.log(2.0), math.log(1e4))) for _ in range(150)]
+points += [math.exp(random.uniform(0.0, math.log(103.0))) for _ in range(120)]
+points += [math.exp(random.uniform(math.log(103.0), math.log(1e8))) for _ in range(30)]
+points += [0.0, 1.0, -2.0, 1e-300, -1e-300, -2.3381074104597670, -1.0187929716474710]
+for x in points:
+    record(x)
+# The ends. Where SciPy gives NaN, at x = ±∞ and past |x| = 1e8 or so, these are the limits
+# and the true values; past |x| = 1.5e205, where ζ overflows, `airye` above 0 is the first term
+# of each expansion, exact there, and below 0 every value is NaN, since the phase is lost.
+inf, nan = math.inf, math.nan
+huge = 1e210
+quarter = huge ** 0.25
+root_pi = math.sqrt(math.pi)
+ends = [
+    ("airy", inf, (0.0, 0.0, inf, inf)),
+    ("airye", inf, (0.0, -inf, 0.0, inf)),
+    ("airy", -inf, (0.0, nan, 0.0, nan)),
+    ("airye", -inf, (0.0, nan, 0.0, nan)),
+    ("airy", nan, (nan, nan, nan, nan)),
+    ("airye", nan, (nan, nan, nan, nan)),
+    ("airy", huge, (0.0, 0.0, inf, inf)),
+    ("airye", huge, (1 / (2 * root_pi * quarter), -quarter / (2 * root_pi),
+                     1 / (root_pi * quarter), quarter / root_pi)),
+    ("airy", -huge, (nan, nan, nan, nan)),
+    ("airye", -huge, (nan, nan, nan, nan)),
+    ("airy", 200.0, (0.0, 0.0, inf, inf)),
+]
+for family, x, values in ends:
+    for name, value in zip(("ai", "aip", "bi", "bip"), values):
+        add(family + "_" + name, x, abs(value) if math.isfinite(value) else 1.0, value)
+with open("airy.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Kelvin functions
+
+In `kelvin.txt` each case holds, before the reference value, the size its error is measured
+against: the modulus of the complex value the function is a part of, |ber + i bei| for `ber` and
+`bei` and so on, since each part passes through 0 as the phase turns. The script below recorded
+the cases with its own seed, with mpmath 1.4.1 at 60 digits; run it from this directory with
+`python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318070)
+lines = []
+
+
+def add(name, x, size, value):
+    lines.append(f"{name} {x!r} {float(size)!r} {float(value)!r}")
+
+
+def record(x):
+    with mpmath.workdps(60):
+        m = mpmath.mpf(abs(x))
+        z = m * mpmath.expjpi(mpmath.mpf(1) / 4)
+        rot = mpmath.expjpi(mpmath.mpf(1) / 4)
+        i0, i1 = mpmath.besseli(0, z), mpmath.besseli(1, z)
+        k0, k1 = mpmath.besselk(0, z), mpmath.besselk(1, z)
+        be, bep = i0, rot * i1
+        ke, kep = k0, -rot * k1
+        if x < 0:
+            bep = -bep
+        # Each part is measured against the size of the complex value it belongs to.
+        for name, value in (("ber", be.real), ("bei", be.imag), ("berp", bep.real),
+                            ("beip", bep.imag)):
+            size = abs(be) if name in ("ber", "bei") else abs(bep)
+            if size < 1e300:
+                add(name, x, size, value)
+        if x > 0:
+            for name, value in (("ker", ke.real), ("kei", ke.imag), ("kerp", kep.real),
+                                ("keip", kep.imag)):
+                size = abs(ke) if name in ("ker", "kei") else abs(kep)
+                if size > 1e-300:
+                    add(name, x, size, value)
+
+
+points = [random.uniform(0.0, 1.0) for _ in range(60)]
+points += [random.uniform(1.0, 30.0) for _ in range(200)]
+points += [math.exp(random.uniform(math.log(30.0), math.log(1000.0))) for _ in range(80)]
+points += [-random.uniform(0.0, 50.0) for _ in range(30)]
+points += [1e-10, 1.0, 1.01, 1.08, 2.0, 2.5, 1003.0]
+for x in points:
+    record(x)
+# The ends: at 0, the series' first terms, with ker = ∞ and ker′ = −∞; below 0, ker and kei
+# and their derivatives NaN; at x = ∞, where SciPy gives NaN for all, ker and kei and their
+# derivatives 0 and the rest NaN; and from x = 1004 the overflow of ber and bei, with the sign of
+# the phase.
+inf, nan = math.inf, math.nan
+names = ("ber", "bei", "ker", "kei", "berp", "beip", "kerp", "keip")
+ends = [
+    (0.0, (1.0, 0.0, inf, -math.pi / 4, 0.0, 0.0, -inf, 0.0)),
+    (inf, (nan, nan, 0.0, 0.0, nan, nan, 0.0, 0.0)),
+    (nan, (nan,) * 8),
+    (-2.0, (None, None, nan, nan, None, None, nan, nan)),
+]
+with mpmath.workdps(60):
+    z = 1100 * mpmath.expjpi(mpmath.mpf(1) / 4)
+    be, bep = mpmath.besseli(0, z), mpmath.expjpi(mpmath.mpf(1) / 4) * mpmath.besseli(1, z)
+    signs = [math.copysign(inf, float(mpmath.sign(part)))
+             for part in (be.real, be.imag, bep.real, bep.imag)]
+ends.append((1100.0, (signs[0], signs[1], 0.0, 0.0, signs[2], signs[3], 0.0, 0.0)))
+for x, values in ends:
+    for name, value in zip(names, values):
+        if value is not None:
+            add(name, x, abs(value) if math.isfinite(value) and value != 0 else 1.0, value)
+with open("kelvin.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Struve functions
+
+In `struve.txt` each case holds, before the reference value, the size its error is measured
+against: for H past the turning point x = |v|, where it oscillates about Yᵥ, the envelope
+max(|H|, √(Jᵥ² + Yᵥ²)); everywhere else, and for L always, the value itself. The script below
+recorded the cases with its own seed, with mpmath 1.4.1's `struveh` and `struvel` at 60 digits;
+run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318071)
+lines = []
+
+
+def add(name, v, x, size, value):
+    lines.append(f"{name} {v!r} {x!r} {float(size)!r} {float(value)!r}")
+
+
+def record(v, x):
+    with mpmath.workdps(60):
+        mv, mx = mpmath.mpf(v), mpmath.mpf(x)
+        h = mpmath.struveh(mv, mx)
+        l = mpmath.struvel(mv, mx)
+        modulus = mpmath.hypot(mpmath.besselj(mv, mx), mpmath.bessely(mv, mx))
+        # Past the turning point x = |v|, H is measured against the larger of itself and the
+        # modulus √(Jᵥ² + Yᵥ²) that Yᵥ, of which it is a sum, oscillates under; before it, and
+        # L everywhere, against itself.
+        size = abs(h)
+        if x > abs(v):
+            size = max(size, modulus)
+        if 1e-300 < abs(h) < 1e300:
+            add("struve", v, x, size, h)
+        if 1e-300 < abs(l) < 1e300:
+            add("modstruve", v, x, abs(l), l)
+
+
+for _ in range(400):
+    v = random.uniform(-10.0, 30.0)
+    x = math.exp(random.uniform(math.log(1e-3), math.log(500.0)))
+    record(v, x)
+for _ in range(100):
+    v = float(random.randint(-6, 12)) + random.choice([0.0, 0.5])
+    x = math.exp(random.uniform(math.log(1e-2), math.log(200.0)))
+    record(v, x)
+for _ in range(60):
+    v = random.uniform(-5.0, 5.0)
+    x = math.exp(random.uniform(math.log(500.0), math.log(1e9)))
+    record(v, x)
+for _ in range(40):
+    v = random.uniform(30.0, 100.0)
+    x = math.exp(random.uniform(math.log(1.0), math.log(300.0)))
+    record(v, x)
+# The ends. At x = 0, the first term of the series: 0 above order −1, 2/π at −1, and below it
+# an infinity with the sign of 1/Γ(v + 3/2), except at the orders −3/2, −5/2 and so on, where
+# the function is ±J₋ᵥ(0) = 0 and SciPy gives ∞ or NaN. At x = ∞, H is 0 below order 1, 2/π at
+# 1 and ∞ above, where SciPy gives ∞, and L is ∞, where SciPy gives NaN at order 0. A negative
+# x is NaN unless v is whole, and NaN gives NaN.
+inf, nan = math.inf, math.nan
+ends = [(0.0, 0.0, 0.0, 0.0), (-1.0, 0.0, 2 / math.pi, 2 / math.pi), (-1.2, 0.0, inf, inf),
+        (-1.5, 0.0, 0.0, 0.0), (-2.0, 0.0, -inf, -inf), (-2.5, 0.0, 0.0, 0.0),
+        (-3.0, 0.0, inf, inf), (0.5, -2.0, nan, nan), (0.0, inf, 0.0, inf),
+        (1.0, inf, 2 / math.pi, inf), (2.0, inf, inf, inf), (inf, 1.0, 0.0, 0.0),
+        (-inf, 1.0, nan, 0.0), (nan, 1.0, nan, nan), (1.0, nan, nan, nan), (0.0, 1000.0, None, inf)]
+for v, x, h, l in ends:
+    for name, value in (("struve", h), ("modstruve", l)):
+        if value is not None:
+            add(name, v, x, abs(value) if math.isfinite(value) and value != 0 else 1.0, value)
+# Whole orders at negative x, by Hᵥ(−x) = (−1)^{v+1} Hᵥ(x) and the same for L.
+for v, x in ((0.0, -1.0), (1.0, -3.0), (2.0, -2.0), (-3.0, -4.5)):
+    with mpmath.workdps(60):
+        sign = (-1) ** (int(v) + 1)
+        h = sign * mpmath.struveh(v, -x)
+        l = sign * mpmath.struvel(v, -x)
+        modulus = mpmath.hypot(mpmath.besselj(v, -x), mpmath.bessely(v, -x))
+        add("struve", v, x, max(abs(h), modulus) if -x > abs(v) else abs(h), h)
+        add("modstruve", v, x, abs(l), l)
+with open("struve.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
