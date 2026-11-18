@@ -1,8 +1,9 @@
 # Special functions against SciPy
 
 This benchmark times `special` against `scipy.special` on 10 million arguments for each family
-of functions (roadmap 3.18.15). [Special functions](../../docs/guide/special-functions.md#6-how-fast)
-in the guide shows the results and what they mean.
+of functions (roadmap 3.18.15).
+[Special functions](../../docs/guide/special-functions.md#6-how-fast) in the guide shows the results
+and what they mean.
 
 `main.byn` calls the function its first argument names on 10 million evenly spaced arguments,
 x = lo + (hi − lo)(i + ½)/n, and prints the sum of the results. The script below builds it,
