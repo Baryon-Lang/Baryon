@@ -309,7 +309,9 @@ VEGA
 
 - **It has what an array of numbers with gaps has:** `len`, an element read, `isna()`,
   `notna()`, `count()`, `copy()`, and `dropna()` and `fillna(text)`, which give a
-  [text array](text-arrays.md). It has no `sum`, `mean`, `min` or `max` yet.
+  [text array](text-arrays.md). `min()` and `max()` give the first and the last text by
+  `<` among those that are there, a new `str`, and panic when none is, as those of
+  numbers do.
 - **An element read is a copy.** `names[0]` gives a new `str | None` that owns its text, so
   it can be kept in a variable, a list or a struct after the array is gone. A
   [text array](text-arrays.md) with no gaps lends its element instead. Cost: one allocation
@@ -396,8 +398,7 @@ Each of these is a compile error that names what an array with missing values ha
 
 - `**`, the bitwise operators and the in-place operators, `bids += 1.0`;
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`,
-  `nunique`, `count`, `sum`, `mean`, `min`, `max`, `var` and `std`; and `min` and `max` of
-  text;
+  `nunique`, `count`, `sum`, `mean`, `min`, `max`, `var` and `std`;
 - assigning an element of text;
 - `print` of a tuple or a list that holds one, or that holds a frame with such a column;
 - one as a struct field.
