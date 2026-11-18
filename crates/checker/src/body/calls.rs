@@ -1,5 +1,6 @@
 //! Calls: to functions, struct constructors, aliases of `Fixed` vectors, number conversions
-//! and the language's built-in functions. Method calls are in the `methods` module.
+//! and the language's built-in functions. Method calls are in the `methods` module, and calls
+//! of a value, such as a `Callable` parameter, in `value_calls`.
 
 use super::exclusive::Passed;
 use super::{Body, relations};
@@ -306,62 +307,6 @@ impl<'db> Body<'db> {
             }
             _ => self.untyped(arguments),
         }
-    }
-
-    /// A call to a value, such as a `Callable` parameter or a struct with `__call__`. `node` is
-    /// the call and `function` the expression called.
-    pub(super) fn call_value(
-        &mut self,
-        (node, function): (NodeId, NodeId),
-        callee: &str,
-        ty: Type<'db>,
-        arguments: &Arguments,
-    ) -> Type<'db> {
-        if let TypeKind::Function { callable, .. } = ty.kind(self.db) {
-            return self.call_value((node, function), callee, *callable, arguments);
-        }
-        match ty.kind(self.db) {
-            TypeKind::Callable {
-                parameters,
-                returns,
-            } => {
-                let signature = Signature {
-                    type_parameters: Vec::new(),
-                    parameters: parameters
-                        .iter()
-                        .enumerate()
-                        .map(|(index, &ty)| Parameter {
-                            name: format!("argument {}", index + 1),
-                            ty,
-                            mode: Mode::Borrow,
-                            default: false,
-                        })
-                        .collect(),
-                    returns: *returns,
-                };
-                self.check_call(node, callee, &signature, None, Callee::Value, arguments)
-            }
-            TypeKind::Struct(_) => self.called_struct((node, function), callee, ty, arguments),
-            _ if relations::is_open(self.db, ty) || !self.is_value_scalar(ty) => {
-                self.untyped(arguments)
-            }
-            _ => {
-                self.untyped(arguments);
-                let message = format!(
-                    "`{callee}` has type `{}`, which cannot be called",
-                    self.show(ty)
-                );
-                self.lowerer.error(node, &message, "not a function", None)
-            }
-        }
-    }
-
-    /// Whether `ty` is a number, `bool`, `str` or `None`.
-    fn is_value_scalar(&self, ty: Type<'db>) -> bool {
-        matches!(
-            ty.kind(self.db),
-            TypeKind::Primitive(_) | TypeKind::Str | TypeKind::None
-        )
     }
 
     /// Checks a call's arguments against `signature`, and returns the call's type. A method
