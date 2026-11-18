@@ -70,9 +70,9 @@ impl<'db> Body<'db> {
 
     /// `left operator right` at the comparator `node`, where a side is an array with missing
     /// values: an `Array[bool | None, 1]` that is `None` wherever a side is, as pandas's
-    /// nullable columns compare. The sides are what arithmetic takes, and `==`, `!=`, `<`,
-    /// `<=`, `>` and `>=` of numbers are built; `in`, `is` and comparing text or `bool`s are
-    /// not.
+    /// nullable columns compare. `==`, `!=`, `<`, `<=`, `>` and `>=` are built, between
+    /// numbers, between text, and `==` and `!=` between `bool`s, which have no order; `in`
+    /// and `is` are not.
     pub(super) fn optional_array_comparison(
         &mut self,
         node: NodeId,
@@ -95,18 +95,22 @@ impl<'db> Body<'db> {
         ) {
             return self.optional_array_unbuilt(node, &format!("`{symbol}`"));
         }
-        let unbuilt = |ty: Type<'db>| match ty.kind(self.db) {
-            TypeKind::OptionalArray(element) => matches!(
-                element.kind(self.db),
-                TypeKind::Str | TypeKind::Primitive(Primitive::Bool)
-            ),
-            _ => false,
+        let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
+        let text = |ty: Type<'db>| {
+            self.is_text_array(self.without_gaps(ty)) || matches!(ty.kind(self.db), TypeKind::Str)
         };
-        if unbuilt(left) || unbuilt(right) {
-            let what = format!("`{symbol}` of text or of `bool`s");
-            return self.optional_array_unbuilt(node, &what);
+        if text(left) && text(right) {
+            return Type::new(self.db, TypeKind::OptionalArray(boolean));
         }
-        let (Some(first), Some(second)) = (self.gap_operand(left), self.gap_operand(right)) else {
+        let operand = |ty: Type<'db>| {
+            let plain = self.without_gaps(ty);
+            match plain.kind(self.db) {
+                TypeKind::Array { element, rank: 1 } if *element == boolean => Some(plain),
+                _ if ty == boolean => Some(ty),
+                _ => self.gap_operand(ty),
+            }
+        };
+        let (Some(first), Some(second)) = (operand(left), operand(right)) else {
             let message = format!(
                 "`{symbol}` cannot compare `{}` and `{}`",
                 self.show(left),
@@ -117,16 +121,13 @@ impl<'db> Body<'db> {
                 &message,
                 "an array that may hold `None`",
                 Some(
-                    "an array of numbers with missing values compares with another, with an \
-                     `Array` of numbers of one dimension, or with a number",
+                    "an array with missing values compares with another, with an `Array` of \
+                     one dimension, or with one value, of numbers, of text or of `bool`s",
                 ),
             );
         };
         match self.array_comparison(node, operator, first, second) {
-            Some(_) => {
-                let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
-                Type::new(self.db, TypeKind::OptionalArray(boolean))
-            }
+            Some(_) => Type::new(self.db, TypeKind::OptionalArray(boolean)),
             None => self.lowerer.unknown(),
         }
     }
@@ -176,6 +177,24 @@ impl<'db> Body<'db> {
         let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
         (self.is_mask(left) && self.is_mask(right))
             .then(|| Type::new(self.db, TypeKind::OptionalArray(boolean)))
+    }
+
+    /// `ty` with its missing values left out of the type: the `Array[T, 1]` of an
+    /// `Array[T | None, 1]`, which for text is the text array, and any other type as it is.
+    fn without_gaps(&self, ty: Type<'db>) -> Type<'db> {
+        match ty.kind(self.db) {
+            TypeKind::OptionalArray(element) if matches!(element.kind(self.db), TypeKind::Str) => {
+                Type::new(self.db, TypeKind::TextArray)
+            }
+            TypeKind::OptionalArray(element) => Type::new(
+                self.db,
+                TypeKind::Array {
+                    element: *element,
+                    rank: 1,
+                },
+            ),
+            _ => ty,
+        }
     }
 
     /// The type that stands for `ty` when the checker combines the operands of arithmetic on

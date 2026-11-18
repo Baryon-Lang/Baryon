@@ -76,7 +76,7 @@ error: the method `max` is not built for an array with missing values yet
    |
 18 |     longest = words.max()
    |               ^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and the comparisons; the rest comes with roadmap item 3.13.6
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
 
 error: this value may be `None`
   --> main.byn:19:18
@@ -103,7 +103,7 @@ error: the method `argsort` is not built for an array with missing values yet
    |
 22 |     order = quotes.bid.argsort()
    |             ^^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and the comparisons; the rest comes with roadmap item 3.13.6
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
 
 error: `agg` has no reduction `top`
   --> main.byn:23:54
@@ -124,7 +124,7 @@ error: the method `median` is not built for an array with missing values yet
    |
 25 |     stacked = quotes.bid.median()
    |               ^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and the comparisons; the rest comes with roadmap item 3.13.6
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
 
 error: this value may be `None`
   --> main.byn:27:17
