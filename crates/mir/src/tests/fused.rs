@@ -70,3 +70,52 @@ fn fused_subexpressions_are_part_of_their_expression() {
     body.phase = Phase::Ready;
     assert_eq!(body.validate(&database), vec![Invalid::NotExpanded(entry)]);
 }
+
+/// `a ** 2.0` of an array is a `Power` node of a whole-array expression, written `Power`, and
+/// `Power` on two numbers is reported: `**` there is a call (roadmap 1.9.58).
+#[test]
+fn power_belongs_only_in_whole_array_expressions() {
+    let database = Database::default();
+    let f64 = primitive(&database, Primitive::Float(Float::F64));
+    let vector = Type::new(
+        &database,
+        TypeKind::Array {
+            element: f64,
+            rank: 1,
+        },
+    );
+    let mut body = Body::new(vector, span());
+    let a = body.push_local(
+        vector,
+        LocalKind::Parameter {
+            name: "a".into(),
+            mode: Mode::Borrow,
+        },
+        span(),
+    );
+    let x = body.push_local(f64, LocalKind::Temporary, span());
+    let entry = body.push_block(end(TerminatorKind::Return));
+    let leaf = |operand| Box::new(Elementwise::Leaf(operand));
+    let two = Operand::Constant(crate::Constant::float(f64, 2.0));
+    let squares = Rvalue::Elementwise(Box::new(Elementwise::Binary(
+        BinaryOperator::Power,
+        leaf(Operand::Copy(a.into())),
+        leaf(two.clone()),
+    )));
+    body.blocks[entry.index()].statements = vec![assign(Local::RETURN, squares)];
+    assert_eq!(body.validate(&database), Vec::new());
+    let shown = body.display(&database).to_string();
+    assert!(
+        shown.contains("_0 = elementwise Power(copy _1, 2.0_f64);"),
+        "{shown}"
+    );
+
+    let scalar = Rvalue::Binary(BinaryOperator::Power, Operand::Copy(x.into()), two);
+    body.blocks[entry.index()].statements = vec![assign(x, scalar)];
+    let problems = body.validate(&database);
+    assert_eq!(problems, [Invalid::ScalarPower(entry)]);
+    assert_eq!(
+        problems[0].to_string(),
+        "bb0 holds `**` outside a whole-array expression"
+    );
+}

@@ -217,8 +217,8 @@ pub enum UnaryOperator {
 }
 
 /// A two-operand operation on two values of one type. The source's `and` and `or` are not here:
-/// they skip their right side, so they lower to branches. Neither is `**` on floats and complex
-/// numbers, which lowers to a call of [`MathFunction::Power`](crate::MathFunction::Power).
+/// they skip their right side, so they lower to branches. `**` is here only for whole arrays,
+/// [`Power`](Self::Power); on two numbers it lowers to a call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryOperator {
     /// `+`.
@@ -234,6 +234,11 @@ pub enum BinaryOperator {
     FloorDivide,
     /// `%`: the remainder that has the sign of the divisor, as Python defines it.
     Remainder,
+    /// `**` of every pair of elements, only inside an [`Elementwise`] tree (roadmap 1.9.58).
+    /// `**` on two numbers is a call instead, of [`MathFunction::Power`](crate::MathFunction::Power)
+    /// for floats and complex numbers and a loop of checked multiplications for integers, and
+    /// array expansion makes the same per element, so no other rvalue holds it.
+    Power,
     /// `&`.
     BitAnd,
     /// `|`.
