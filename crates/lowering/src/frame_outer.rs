@@ -82,7 +82,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The type of an array of validity bytes.
-    fn bitmap_type(&self) -> Type<'db> {
+    pub(crate) fn bitmap_type(&self) -> Type<'db> {
         self.array_of(Type::new(
             self.db,
             TypeKind::Primitive(Primitive::Integer(Integer::U8)),
@@ -91,7 +91,7 @@ impl<'db> Builder<'db> {
 
     /// The values and the validity bitmap `bits` put together as a column that may hold
     /// `None`, whose values are `element`s. The caller owns the column.
-    fn with_bits(
+    pub(crate) fn with_bits(
         &mut self,
         element: Type<'db>,
         values: Local,

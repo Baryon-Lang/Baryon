@@ -57,6 +57,11 @@ impl<'db> Builder<'db> {
                 let operand = self.operand(node);
                 self.assign(place, Rvalue::Use(operand), node);
             }
+            SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation
+                if self.is_optional_arithmetic(node) =>
+            {
+                self.optional_arithmetic(place, node);
+            }
             SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation | SyntaxKind::Compare
                 if self.is_array(ty) =>
             {

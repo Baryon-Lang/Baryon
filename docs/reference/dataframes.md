@@ -129,6 +129,14 @@ for price in trades.price:
     print(price)
 ```
 
+**`var()` and `std()` of a column divide by the count.** A column is an array, so
+`trades.price.std()` is the [array method](arrays.md#means-and-variances), whose `ddof` is 0
+when left out, as NumPy's is ([decision 0042](../decisions/0042-statistics.md)). pandas's
+`Series.std()` divides by one less than the count: write `trades.price.std(ddof=1)` for the
+number pandas prints. The `"var"` and `"std"` of [`agg`](dataframe-operations.md#grouping) and
+the `std` row of [`describe`](dataframe-operations.md#describing-columns) divide by one less
+than the count, as pandas does.
+
 A name the frame does not have is a compile error that lists the names it has:
 
 ```text

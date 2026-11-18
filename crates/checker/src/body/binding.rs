@@ -190,6 +190,12 @@ impl<'db> Body<'db> {
             return;
         }
         let operand = self.expression(value, self.number_context(current));
+        if self.is_optional_array(current) || self.is_optional_array(operand) {
+            // `a = a + b` builds; changing the array in place does not yet.
+            let what = format!("`{}=`", operator.symbol());
+            self.optional_array_unbuilt(statement, &what);
+            return;
+        }
         let result = self.combine(statement, operator, current, operand);
         if !relations::compatible(self.db, current, result) {
             let message = format!(

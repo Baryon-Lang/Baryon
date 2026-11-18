@@ -11,9 +11,10 @@ use types::{Integer, Primitive, Type, TypeKind};
 
 /// What an array with missing values can do, for messages.
 const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]`, which \
-                     gives a `T | None`, and the methods `isna`, `notna`, `dropna`, \
-                     `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, \
-                     `mean`, `var` and `std`; the rest comes with roadmap item 3.13.6";
+                     gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, \
+                     `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` \
+                     and `std`, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest \
+                     comes with roadmap item 3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.

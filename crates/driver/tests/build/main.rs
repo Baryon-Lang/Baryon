@@ -64,6 +64,7 @@ mod netcdf_writing;
 mod npy;
 mod one_pass;
 mod optional_arguments;
+mod optional_arithmetic;
 mod optional_arrays;
 mod optional_lists;
 mod overflow;

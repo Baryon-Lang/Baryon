@@ -21,6 +21,9 @@ and the compiler puts them together.
 - `filled` gives the values with one value where an element is `None`, for `fillna(value)`.
 - `present_count`, `present` and `present_extreme` count, gather and compare the elements
   that are there, for `count()`, `sum()`, `mean()`, `min()` and `max()`.
+- `both_bits` and `spread` serve arithmetic: the bitmap of a result that is `None` where
+  either side is, and the results computed for the elements that are there put back in
+  their places.
 - `absence` and `present_rows` let `drop_duplicates` and `value_counts` compare rows whose
   columns may hold `None`.
 - `present_starts`, `group_bits` and `group_present_integers` reduce a column that may hold
@@ -141,6 +144,28 @@ def filled[T: Copy](values: Array[T, 1], bits: Array[u8, 1], value: T) -> Array[
     for at in range(len(values)):
         if not _valid(bits, at):
             result[at] = value
+    return result
+
+
+def both_bits(left: Array[u8, 1], right: Array[u8, 1]) -> Array[u8, 1]:
+    """The validity bitmap with a 1 only where `left` and `right` both have one: that of
+    `a + b`, which is `None` where either side is. The two cover the same number of
+    elements."""
+    result = left.copy()
+    for at in range(len(left)):
+        result[at] = left[at] & right[at]
+    return result
+
+
+def spread[T: Copy](dense: Array[T, 1], bits: Array[u8, 1], count: int, filler: T) -> Array[T, 1]:
+    """The opposite of `present`: `count` elements, those of `dense` in order where the
+    validity bitmap `bits` has a 1, and `filler` under each `None`."""
+    result = Array.fill((count,), filler)
+    taken = 0
+    for at in range(count):
+        if _valid(bits, at):
+            result[at] = dense[taken]
+            taken += 1
     return result
 
 
