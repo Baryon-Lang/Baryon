@@ -90,7 +90,7 @@ fn airy_functions_match_the_recorded_values() {
     check("special-airy", AIRY, "airy.txt").unwrap();
 }
 
-/// `ber`, `bei`, `ker`, `kei` and their derivatives at the 2,892 cases of `kelvin.txt`:
+/// `ber`, `bei`, `ker`, `kei` and their derivatives at the 2,916 cases of `kelvin.txt`:
 /// arguments from −50 to 1,000 and the ends.
 #[test]
 fn kelvin_functions_match_the_recorded_values() {
