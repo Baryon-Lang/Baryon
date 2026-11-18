@@ -8,7 +8,9 @@
 //! - a method called on a value whose type is a type parameter with no trait that has the
 //!   method, `x.copy()` for `def last[T](xs: list[T])`;
 //! - a generic function or constructor whose arguments do not fix one of its type parameters,
-//!   `make()` for `def make[T]() -> list[T]`.
+//!   `make()` for `def make[T]() -> list[T]`;
+//! - a member a standard module does not have, `math.nothing(1.0)`, or `norm(r)` after
+//!   `from linalg import norm` (roadmap 1.9.52).
 //!
 //! ```text
 //! error: `T` is a type parameter, which cannot be called
@@ -143,5 +145,44 @@ impl<'db> Body<'db> {
             self.lowerer
                 .error(node, &message, "type argument not found", Some(&hint)),
         )
+    }
+
+    /// The error for the call `node` of `module.member`, a member the standard module `module`
+    /// does not have: neither its library source (decision 0038) nor the compiler defines it,
+    /// as for `norm` after `from linalg import norm`.
+    pub(super) fn missing_member(
+        &mut self,
+        node: NodeId,
+        (module, member): (&str, &str),
+        arguments: &Arguments,
+    ) -> Type<'db> {
+        self.untyped(arguments);
+        let message = format!("`{module}.{member}` is not in Baryon yet");
+        let hint = format!(
+            "the language reference lists what `{module}` has; the roadmap's Ideas table is the \
+             place to ask for more"
+        );
+        self.lowerer.error(node, &message, "not built", Some(&hint))
+    }
+
+    /// A call the checker has no rule for, at `node`, whose callee resolved to `resolved`: the
+    /// error for a member a standard module does not have, or else the unknown type, as for
+    /// a callee whose own error was reported where it is named.
+    pub(super) fn unresolved_call(
+        &mut self,
+        node: NodeId,
+        resolved: Option<&Definition>,
+        arguments: &Arguments,
+    ) -> Type<'db> {
+        match resolved {
+            Some(&Definition::Standard {
+                module,
+                member: Some(ref member),
+            }) => {
+                let member = member.clone();
+                self.missing_member(node, (module, &member), arguments)
+            }
+            _ => self.untyped(arguments),
+        }
     }
 }

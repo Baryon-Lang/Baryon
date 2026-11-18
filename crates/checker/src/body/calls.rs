@@ -72,7 +72,7 @@ impl<'db> Body<'db> {
                 let member = member.clone();
                 match self.math(node, &member, &arguments) {
                     Some(ty) => ty,
-                    None => self.untyped(&arguments),
+                    None => self.missing_member(node, ("math", &member), &arguments),
                 }
             }
             Some(Definition::Standard {
@@ -116,7 +116,7 @@ impl<'db> Body<'db> {
                 let ty = self.expression(function, None);
                 self.call_value((node, function), &callee, ty, &arguments)
             }
-            Some(_) | None => self.untyped(&arguments),
+            Some(_) | None => self.unresolved_call(node, resolved, &arguments),
         };
         if !self.typed.calls.contains_key(&Key(node)) {
             self.record_builtin(node, function, &arguments, ty);
