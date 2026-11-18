@@ -109,7 +109,7 @@ This prints `[None 2.5]`, `[4.0 1.5 None]`, `[1.5 2.5 4.0]` and `[2.5 4.0]`.
 - **A slice is a copy**, not a view, as a slice of [an array of text](text-arrays.md) is:
   the bits that mark the gaps cannot be shared from the middle of a byte. Its bounds are
   clamped to the array as Python's are, and a step of 0 stops the program.
-- **Not built yet:** a `list` of positions, `bids[[0, 2]]`; write `bids[Array([0, 2])]`.
+- **A `list` chooses too**, as the array of its items does: `bids[[0, 2]]`.
 - **Cost:** what the same choice costs an array of numbers, and one more pass that
   chooses the bits. A slice costs an array of 8 bytes for each element it takes as well.
 
@@ -377,7 +377,6 @@ Each of these is a compile error that names what an array with missing values ha
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `count`,
   `sum`, `mean`, `min`, `max`, `var` and `std`: `unique`, `nunique`; and `min` and `max` of
   text;
-- a `list` of positions, `bids[[0, 2]]`;
 - assigning an element of text, or several elements at once, `bids[mask] = 0.0`;
 - a `for` loop over text that may be `None`;
 - `print` of a tuple or a list that holds one, or that holds a frame with such a column;

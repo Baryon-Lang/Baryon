@@ -281,8 +281,7 @@ impl<'db> Builder<'db> {
             };
             ("text_masked", Place::from(mask))
         } else {
-            let by = self.borrow(index);
-            let by_type = self.ty(index);
+            let (by, by_type) = self.chooser(index);
             if self.element(by_type) == self.boolean_type() {
                 let chosen = self.length(&by, by_type, 0, index);
                 self.same_length(0, length, chosen, index);
