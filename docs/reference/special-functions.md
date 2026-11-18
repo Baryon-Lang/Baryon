@@ -20,7 +20,9 @@ functions apply element by element to arrays, and Baryon's will once the library
 
 Nothing here calls SciPy, Cephes or the C library's `tgamma`, `lgamma` or `erf`. Each function
 is built from the series and recurrences below and the elementary functions `exp`, `log`,
-`pow`, `sin` and `cos`.
+`pow`, `sin` and `cos`. [Special functions](../guide/special-functions.md) in the guide shows
+them in programs, tabulates the changes a program moving from SciPy needs, and times 20 of them
+against SciPy on 10 million arguments each.
 
 ## Accuracy
 
