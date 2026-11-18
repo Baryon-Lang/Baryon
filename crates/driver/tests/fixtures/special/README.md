@@ -18,7 +18,8 @@ order and spherical Bessel functions (3.18.5), from `bessel_real.txt`, and those
 [`../../build/special_waves.rs`](../../build/special_waves.rs) its Airy, Kelvin and Struve
 functions (3.18.7), from `airy.txt`, `kelvin.txt` and `struve.txt`, and those in
 [`../../build/special_hypergeometric.rs`](../../build/special_hypergeometric.rs) its confluent
-hypergeometric functions (3.18.8), from `hypergeometric.txt`. Each line is a
+hypergeometric functions (3.18.8), from `hypergeometric.txt`, and the Gauss function `hyp2f1`,
+from `gauss.txt`. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -1900,5 +1901,127 @@ ends = [
 for name, arguments, value in ends:
     add(name, arguments, abs(value) if math.isfinite(value) and value != 0 else 1.0, value)
 with open("hypergeometric.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## The Gauss hypergeometric function
+
+In `gauss.txt` each case holds, before the reference value, the size its error is measured
+against, as for the confluent functions: the largest of |F| and |t ∂F/∂t| for each of a, b, c
+and x. ∂F/∂x is exact, (ab/c) F(a + 1, b + 1; c + 1; x); the others are central differences with
+a step of 10⁻²⁵ at 60 digits. The script below recorded the cases with its own seed, with
+mpmath 1.4.1's `hyp2f1` at 60 digits; run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318082)
+lines = []
+STEP = mpmath.mpf(10) ** -25
+
+
+def add(arguments, size, value):
+    fields = " ".join(repr(float(t)) for t in arguments)
+    lines.append(f"hyp2f1 {fields} {float(size)!r} {float(value)!r}")
+
+
+def f(a, b, c, x):
+    return mpmath.hyp2f1(a, b, c, x, maxterms=10**6, maxprec=20000)
+
+
+def record(arguments):
+    # Measured against the largest of |F| and |t ∂F/∂t| for each argument t; ∂F/∂x is
+    # (ab/c) F(a + 1, b + 1; c + 1; x), the others central differences at 60 digits.
+    try:
+        with mpmath.workdps(60):
+            a, b, c, x = (mpmath.mpf(t) for t in arguments)
+            value = f(a, b, c, x)
+            if not 1e-300 < abs(value) < 1e300:
+                return False
+            size = max(abs(value), abs(x * a * b / c * f(a + 1, b + 1, c + 1, x)))
+            point = [a, b, c, x]
+            for index in range(3):
+                above = list(point)
+                below = list(point)
+                above[index] += STEP
+                below[index] -= STEP
+                size = max(size, abs(point[index] * (f(*above) - f(*below)) / (2 * STEP)))
+            if size > 1e300:
+                return False
+    except (mpmath.libmp.NoConvergence, ZeroDivisionError, ValueError):
+        return False
+    add(arguments, size, value)
+    return True
+
+
+def parameter():
+    # Parameters up to 20 in size, where the reference says hyp2f1 holds: uniform, whole,
+    # near 0, near a whole number, and spread over decades.
+    r = random.random()
+    if r < 0.35:
+        return random.uniform(-20.0, 20.0)
+    if r < 0.5:
+        return float(round(random.uniform(-20.0, 20.0)))
+    if r < 0.7:
+        return random.uniform(-2.0, 3.0)
+    if r < 0.8:
+        return round(random.uniform(-20.0, 20.0)) + random.choice([1e-9, -1e-9, 1e-5, -1e-5])
+    return math.copysign(10 ** random.uniform(-4.0, math.log10(20.0)), random.uniform(-1, 1))
+
+
+def point():
+    # Across (−1, 1), close to 1, and far below −1.
+    r = random.random()
+    if r < 0.3:
+        return random.uniform(-1.0, 1.0)
+    if r < 0.6:
+        return 1.0 - 10 ** random.uniform(-8.0, 0.0)
+    if r < 0.8:
+        return -(10 ** random.uniform(-3.0, 4.0))
+    return random.uniform(-0.6, 0.6)
+
+
+count = 0
+while count < 1200:
+    a, b, c = parameter(), parameter(), parameter()
+    if c <= 0 and c == int(c):
+        continue
+    if random.random() < 0.15:
+        # c − a − b whole or near it, where the series in 1 − x needs its logarithm.
+        c = a + b + random.choice([0.0, 1.0, 2.0, -1.0, 3.0, 1e-7, 0.01])
+    count += record((a, b, c, point()))
+# Polynomials past x = 1, where the function is real.
+for _ in range(40):
+    a = float(random.randint(-12, -1))
+    b, c = parameter(), parameter()
+    if c <= 0 and c == int(c):
+        continue
+    record((a, b, c, random.uniform(1.0, 50.0)))
+# The ends, with SciPy's value or, where it differs, the one the reference documents.
+inf = math.inf
+nan = math.nan
+ends = [
+    ((1.0, 1.0, 2.0, 2.0), nan),
+    ((0.5, 0.5, 1.5, 1.0), math.pi / 2),
+    ((1.0, 1.0, 1.5, 1.0), inf),
+    ((1.0, 1.0, 2.0, 1.0), inf),
+    ((1.0, 2.0, -3.0, 0.5), inf),
+    ((-2.0, 1.0, -3.0, 0.5), 17.0 / 12.0),
+    ((-2.0, 1.0, -1.0, 0.5), inf),
+    ((-2.0, 3.0, 4.0, 5.0), 8.5),
+    ((1.0, 1.0, 2.0, 0.0), 1.0),
+    ((1.0, 1.0, inf, 0.5), 1.0),
+    ((inf, 1.0, 2.0, 0.5), nan),
+    ((1.0, 1.0, 2.0, -inf), 0.0),
+    ((-1.0, 1.0, 2.0, inf), -inf),
+    ((-2.0, 1.0, 2.0, -inf), inf),
+    ((1.0, 1.0, 2.0, nan), nan),
+]
+for arguments, value in ends:
+    add(arguments, abs(value) if math.isfinite(value) and value != 0 else 1.0, value)
+with open("gauss.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
