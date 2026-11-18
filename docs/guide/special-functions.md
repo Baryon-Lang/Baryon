@@ -207,9 +207,9 @@ means SciPy was faster.
 
 | Function | Arguments | Baryon (s) | SciPy (s) | Baryon / SciPy |
 | --- | --- | --- | --- | --- |
-| `gamma(x)` | 0.1 to 20 | 0.33 | 0.13 | 2.6 |
-| `gammaln(x)` | 0.1 to 100 | 0.19 | 0.11 | 1.6 |
-| `digamma(x)` | 0.1 to 100 | 0.18 | 0.12 | 1.5 |
+| `gamma(x)` | 0.1 to 20 | 0.21 | 0.13 | 1.6 |
+| `gammaln(x)` | 0.1 to 100 | 0.17 | 0.11 | 1.5 |
+| `digamma(x)` | 0.1 to 100 | 0.16 | 0.12 | 1.3 |
 | `erf(x)` | −5 to 5 | 0.20 | 0.14 | 1.4 |
 | `erfc(x)` | −5 to 25 | 0.20 | 0.13 | 1.5 |
 | `ndtri(p)` | 0 to 1 | 0.50 | 0.13 | 3.8 |
@@ -225,17 +225,20 @@ means SciPy was faster.
 | `expi(x)` | −50 to 50 | 1.58 | 2.57 | 0.6 |
 | `zeta(x)` | 1.01 to 50 | 1.31 | 0.34 | 3.9 |
 | `eval_legendre(10, x)` | −1 to 1 | 0.24 | 0.27 | 0.9 |
-| `hyp1f1(1.5, 2.5, x)` | −50 to 50 | 20.47 | 7.19 | 2.8 |
-| `hyp2f1(0.5, 1.5, 2.5, x)` | −10 to 0.99 | 13.49 | 5.13 | 2.6 |
+| `hyp1f1(1.5, 2.5, x)` | −50 to 50 | 1.81 | 7.19 | 0.3 |
+| `hyp2f1(0.5, 1.5, 2.5, x)` | −10 to 0.99 | 5.98 | 5.13 | 1.2 |
 
-Baryon is faster for `jv`, `airy` and `expi`, level for `kv`, `ellipk`, `ellipe` and
+Baryon is faster for `hyp1f1`, `jv`, `airy` and `expi`, level for `kv`, `ellipk`, `ellipe` and
 `eval_legendre`, and slower for the rest, by up to 3.9 times, for `zeta` and `ndtri`. The slower
 functions use general methods held to the accuracy above, such as series and iterations, where
 SciPy's Cephes fits one short rational or polynomial formula to each range of the argument. Roadmap
-3.18.17 speeds them up, slowest first, with formulas fitted for Baryon where they keep the accuracy:
+3.18.17 speeds them up, slowest first, with formulas fitted for Baryon where they keep the accuracy,
+and with shorter routes to the same answer:
 `ellipk`, `ellipe`, `erf`, `erfc` and `j0` took 0.6, 1.5, 0.5, 0.4 and 1.2 seconds before it;
-`ndtri`, which now starts from a fitted value, 3.7; and `zeta`, which now stops summing once the
-rest cannot change the result, 7.0.
+`ndtri`, which now starts from a fitted value, 3.7; `zeta`, which now stops summing once the
+rest cannot change the result, 7.0; `gamma`, which now sums its series in four chains at once,
+0.33; `hyp1f1`, which below 0 now goes straight to Kummer's transformation, whose terms do not
+cancel, 20.5; and `hyp2f1`, which below 0 now tries Pfaff's transformation first, 13.5.
 [`bench/special`](../../bench/special/README.md) holds both programs, to run on your own machine.
 
 ## Where to go next

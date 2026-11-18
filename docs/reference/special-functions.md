@@ -34,7 +34,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 
 | Function | Tested to | Worst seen | SciPy 1.18's worst at the same arguments |
 | --- | --- | --- | --- |
-| `gamma` | 8 ULP | 4 ULP | 4 ULP |
+| `gamma` | 8 ULP | 5 ULP | 4 ULP |
 | `rgamma` | 8 ULP | 3 ULP | 0 from 171.62 up, where the true value is still above 1e-311 |
 | `gammaln` | 8 ULP of the larger of the result and 1 | 1 ULP | 2 ULP |
 | `psi` | 8 ULP of the larger of the result and 1 | 4 ULP | 13 ULP |
@@ -64,7 +64,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `bdtr`, `bdtrc`, `nbdtr`, `nbdtrc` | 32 ULP for each unit of the result's logarithm | 1,185 ULP at a result of 3e-202 | 16,462 ULP at a result of 0.0037 |
 | `bdtri`, `nbdtri` | The same | 4 ULP | 3e16 ULP: `bdtri(45, 852, 7.4e-22)` gives 0.9999999999999999 where the answer is 0.159 |
 | `pdtr`, `pdtrc`, `chdtr`, `chdtrc`, `gdtr`, `gdtrc` | The same | 1,102 ULP at a result of 1e-297 | 6,633 ULP; 0 at `pdtr(510, 1902.5)`, where the true value is 1.7e-315 |
-| `pdtri`, `chdtri` | The same | 7 ULP | 25 ULP |
+| `pdtri`, `chdtri` | The same | 9 ULP | 25 ULP |
 | `fdtr`, `fdtrc`, `fdtri` | The same | 136 ULP at a result of 1e-35 | 298 ULP |
 | `stdtr`, `stdtrit` | The same | 642 ULP at a result of 2e-116 | 320 ULP for `stdtrit`, 190 for `stdtr` |
 | `kolmogorov`, `kolmogi` | The same | 395 ULP at a result of 3e-224 | 1 ULP |
@@ -541,22 +541,24 @@ the first of several that keeps its digits:
   (DLMF 13.7.2), where the term it drops is below e⁻⁴⁰ of the one it keeps; and, for a below 0
   and x above 0, the recurrences: b is raised above x, a is taken down its recurrence, which is
   stable there, and b brought back down by its own (DLMF 13.3.1 and 13.3.2). A negative x is
-  sent to a positive one by Kummer's transformation M(a, b, x) = eˣ M(b − a, b, −x).
+  sent to a positive one by Kummer's transformation M(a, b, x) = eˣ M(b − a, b, −x): at once
+  for b above 0 and at least a, where the new series' terms are all positive, and otherwise
+  where M's own series cancels.
 - U is its asymptotic expansion for large x (DLMF 13.7.3); the polynomial it is for a whole a at
   most 0 (DLMF 13.2.7); for a at least 1, its integral 1/Γ(a) ∫₀^∞ t^{a−1} (1 + t)^{b−a−1}
   e^{−xt} dt (DLMF 13.4.4) by double-exponential quadrature centred on the integrand's peak; for
   a whole b, the series with a logarithm (DLMF 13.2.9); otherwise two of Kummer's M
   (DLMF 13.2.42); and last the same integral through x^{1−b} U(a − b + 1, 2 − b, x), or the
   recurrence in a run down from two values by quadrature.
-- F is the series of whichever of four equal forms cancels least: F itself, Euler's
-  (1 − x)^{c−a−b} F(c − a, c − b; c; x), and Pfaff's two in x/(x − 1) (DLMF 15.8.1), in `f64`
-  or double-double. Near x = 1, and far below 0 through Pfaff's form, it is a series in 1 − x
-  (DLMF 15.8.4), which has two parts that grow as 1/ε where c − a − b is ε from a whole number:
-  there the parts are joined term by term, and at ε = 0 the series with a logarithm
-  (DLMF 15.8.10) takes over. Below −1 it can also be a series in 1/x (DLMF 15.8.2). A
-  polynomial is summed in x, 1 − x or 1/x, whichever cancels least. Each derived parameter,
-  such as a − b + 1, is kept as an exact sum of two `f64`s, so a factor (a − b + 1 + k) near 0
-  keeps its digits.
+- F is the series of whichever of four equal forms cancels least: F itself, Euler's (1 − x)^{c−a−b}
+  F(c − a, c − b; c; x), and Pfaff's two in x/(x − 1) (DLMF 15.8.1), in `f64` or double-double. The
+  first that barely cancels is taken; below 0 Pfaff's are tried first. Near x = 1, and far below 0
+  through Pfaff's form, it is a series in 1 − x (DLMF 15.8.4), which has two parts that grow as 1/ε
+  where c − a − b is ε from a whole number: there the parts are joined term by term, and at ε = 0
+  the series with a logarithm (DLMF 15.8.10) takes over. Below −1 it can also be a series in 1/x
+  (DLMF 15.8.2). A polynomial is summed in x, 1 − x or 1/x, whichever cancels least. Each derived
+  parameter, such as a − b + 1, is kept as an exact sum of two `f64`s, so a factor (a − b + 1 + k)
+  near 0 keeps its digits.
 
 **Accuracy.** A small change in a parameter can move these functions far, so each case is
 measured against the largest of |f| and |t ∂f/∂t| for each argument t: the error that rounding
