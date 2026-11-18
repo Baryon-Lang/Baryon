@@ -1,0 +1,288 @@
+"""Tricomi's confluent hypergeometric function for `special` (roadmap 3.18.8): `hyperu`,
+U(a, b, x), the solution of Kummer's equation x w″ + (b − x) w′ − a w = 0 that grows no faster
+than a power of x as x → ∞, for real a and b and x at least 0.
+
+Each value takes the first of these that keeps its digits: the asymptotic expansion for large x
+(DLMF 13.7.3); the polynomial for a whole a at most 0 (DLMF 13.2.7); for a at least 1, the
+integral U = 1/Γ(a) ∫₀^∞ t^(a−1) (1 + t)^(b−a−1) e^(−xt) dt (DLMF 13.4.4) by double-exponential
+quadrature centred on the integrand's peak; for a whole b, the series with a logarithm
+(DLMF 13.2.9); for any other b, U as two of Kummer's M (DLMF 13.2.42); the integral again
+through U(a, b, x) = x^(1−b) U(a − b + 1, 2 − b, x) (DLMF 13.2.40); and last the recurrence in
+a, U(a − 1) = (2a − b + x) U(a) − a(a − b + 1) U(a + 1) (DLMF 13.3.7), stable going down,
+from two values by quadrature.
+
+The quadrature keeps its value as a fraction times a power of 2⁴⁰⁰, so neither Γ(a) nor the
+powers of the peak overflow before they cancel.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, fabs, floor, inf, isinf, isnan, log, log1p, nan, pi, pow, sqrt
+from special_beta import poch
+from special_common import is_odd
+from special_gamma import factorial, gamma, psi, rgamma
+from special_hyp1f1 import hyp1f1
+
+_EPSILON: Final = 1.0e-17  # where a series or the expansion stops
+_STEP: Final = 0.0625  # the widest quadrature step
+_TERMS: Final = 5000  # the most terms a series takes
+_NODES: Final = 100000  # the most quadrature nodes on each side of the peak
+_BIG: Final = 2.5822498780869086e120  # 2⁴⁰⁰, the unit of a scaled value's exponent
+_SMALL: Final = 3.872591914849318e-121  # 2⁻⁴⁰⁰
+_HIGH: Final = 1.6069380442589903e60  # 2²⁰⁰: a scaled fraction is kept below this
+_LOW: Final = 6.223015277861142e-61  # 2⁻²⁰⁰: and above this
+_POLYNOMIAL: Final = 500.0  # the highest degree the polynomial is summed to
+
+
+def _times(result: f64, count: int, factor: f64) -> tuple[f64, int]:
+    """result · factor, the fraction kept between 2⁻²⁰⁰ and 2²⁰⁰ by powers of 2⁴⁰⁰ counted in
+    `count`. A factor is at most 2⁴⁰⁰ in size, so no product overflows on the way."""
+    result *= factor
+    while fabs(result) > _HIGH and not isinf(result):
+        result *= _SMALL
+        count += 1
+    while result != 0.0 and fabs(result) < _LOW:
+        result *= _BIG
+        count -= 1
+    return result, count
+
+
+def _times_power(result: f64, count: int, base: f64, power: f64) -> tuple[f64, int]:
+    """result · base^power, as two half powers wherever one would be beyond 2^±400."""
+    value = pow(base, power)
+    if (fabs(value) > _BIG or fabs(value) < _SMALL) and fabs(power) > 1.0:
+        result, count = _times_power(result, count, base, power / 2.0)
+        return _times_power(result, count, base, power / 2.0)
+    return _times(result, count, value)
+
+
+def _unscale(result: f64, count: int) -> f64:
+    """result · 2^(400 count), which may overflow to ∞ or underflow to 0."""
+    for k in range(count):
+        result *= _BIG
+    for k in range(-count):
+        result *= _SMALL
+    return result
+
+
+def _quadrature(a: f64, b: f64, x: f64, lift: f64) -> f64:
+    """x^lift U(a, b, x) for a at least 1 by 1/Γ(a) ∫₀^∞ t^(a−1) (1 + t)^p e^(−xt) dt,
+    p = b − a − 1. With t = t* v, t* the power of two nearest the peak of the integrand, 1 + t*,
+    1/t* and x t* are exact and each node's exponent is small; the substitution
+    v = exp(s − e⁻ˢ) makes the nodes double-exponentially sparse at both ends, and the step is
+    narrowed where the peak is sharp. About 50 to a few thousand nodes."""
+    power = b - a - 1.0
+    linear = a + power - x
+    root = sqrt(linear * linear + 4.0 * a * x)
+    peak = (linear + root) / (2.0 * x)
+    if linear < 0.0:
+        peak = 2.0 * a / (root - linear)
+    peak = pow(2.0, floor(log(peak) / log(2.0) + 0.5))
+    rate = x * peak
+    shift = peak / (1.0 + peak)
+    curve = fabs(power * peak / ((1.0 + peak) * (1.0 + peak)) - rate) + a / 16.0
+    width = min(_STEP, 0.2 / sqrt(curve))
+    total = 0.0
+    for direction in range(2):
+        s = 0.0
+        if direction == 1:
+            s = -width
+        for index in range(_NODES):
+            fall = exp(-s)
+            v = exp(s - fall)
+            gap = v - 1.0
+            term = exp(a * log(v) + power * log1p(shift * gap) - rate * gap) * (1.0 + fall)
+            total += term
+            if term <= 0.1 * _EPSILON * total and (direction == 1 or v > 2.0):
+                break
+            if direction == 0:
+                s += width
+            else:
+                s -= width
+    result = total * width
+    count = 0
+    if peak >= 1.0:
+        result, count = _times_power(result, count, 1.0 + peak, a + power)
+        result, count = _times_power(result, count, 1.0 + 1.0 / peak, -a)
+    else:
+        result, count = _times_power(result, count, peak, a)
+        result, count = _times_power(result, count, 1.0 + peak, power)
+    result, count = _times_power(result, count, exp(-1.0), rate)
+    if a < 150.0:
+        result, count = _times(result, count, rgamma(a))
+    else:
+        result, count = _times(result, count, sqrt(pi))
+        result, count = _times_power(result, count, 2.0, 1.0 - a)
+        result, count = _times(result, count, rgamma(a / 2.0))
+        result, count = _times(result, count, rgamma((a + 1.0) / 2.0))
+    if lift != 0.0:
+        result, count = _times_power(result, count, x, lift)
+    return _unscale(result, count)
+
+
+def _asymptotic(a: f64, b: f64, x: f64) -> f64:
+    """U ~ x⁻ᵃ Σ (a)ₛ (a − b + 1)ₛ / s! (−x)⁻ˢ (DLMF 13.7.3), or NaN where the terms start to
+    grow before they reach 1e-17 of the sum."""
+    term = 1.0
+    total = 1.0
+    last = inf
+    for s in range(300):
+        term *= -(a + s) * (a - b + 1.0 + s) / ((s + 1.0) * x)
+        if fabs(term) > last:
+            return nan
+        last = fabs(term)
+        total += term
+        if fabs(term) <= _EPSILON * fabs(total):
+            return pow(x, -a) * total
+    return nan
+
+
+def _polynomial(m: int, b: f64, x: f64) -> tuple[f64, f64]:
+    """U(−m, b, x) = (−1)ᵐ Σₛ C(m, s) (b + s)ₘ₋ₛ (−x)ˢ (DLMF 13.2.7) for x above 0, and how
+    much its terms cancel. The terms are built from s = m down: t_m = (−x)ᵐ and
+    t_{s−1} = t_s s (b + s − 1) / ((m − s + 1)(−x))."""
+    term = 1.0
+    for s in range(m):
+        term *= -x
+    total = term
+    size = fabs(term)
+    for k in range(m):
+        s = m - k
+        term = term * s * (b + s - 1.0) / ((m - s + 1.0) * (-x))
+        total += term
+        size += fabs(term)
+    if m % 2 == 1:
+        total = -total
+    return total, size / fabs(total)
+
+
+def _whole_b(a: f64, n: int, x: f64) -> tuple[f64, f64]:
+    """U(a, n + 1, x) for a whole n from 0 by the series with a logarithm (DLMF 13.2.9), and
+    how much its terms cancel."""
+    sign = 1.0
+    if n % 2 == 0:
+        sign = -1.0
+    lead = sign * rgamma(a - n) / factorial(n + 0.0)
+    total = 0.0
+    size = 0.0
+    if lead != 0.0:
+        term = 1.0
+        logarithm = log(x)
+        for k in range(_TERMS):
+            if k > 0:
+                term *= (a + k - 1.0) * x / ((n + k + 0.0) * k)
+            bracket = logarithm + psi(a + k) - psi(1.0 + k) - psi(n + k + 1.0)
+            piece = term * bracket
+            total += piece
+            size += fabs(piece)
+            if fabs(piece) <= 0.1 * _EPSILON * fabs(total) and k + a > 0.0 and k > 2 and k > x:
+                break
+        total *= lead
+        size *= fabs(lead)
+    inverse = rgamma(a)
+    if inverse != 0.0:
+        for k in range(1, n + 1):
+            piece = inverse * factorial(k - 1.0) * poch(1.0 - a + k, n - k + 0.0)
+            piece = piece / factorial(n - k + 0.0) * pow(x, -k + 0.0)
+            total += piece
+            size += fabs(piece)
+    return total, size / fabs(total)
+
+
+def _kummer(a: f64, b: f64, x: f64) -> f64:
+    """U for b not whole as M(a, b, x)/(1 − b)ₐ + Γ(b)/((b − 1) Γ(a)) x^(1−b)
+    M(a − b + 1, 2 − b, x) (DLMF 13.2.42, with Γ(1 − b)/Γ(a − b + 1) as 1/(1 − b)ₐ and Γ(b − 1)
+    as Γ(b)/(b − 1), which form no argument near a pole), or NaN where the two cancel by more
+    than a factor of 4."""
+    first = hyp1f1(a, b, x) / poch(1.0 - b, a)
+    second = gamma(b) / (b - 1.0) * rgamma(a) * pow(x, 1.0 - b)
+    second *= hyp1f1(a - b + 1.0, 2.0 - b, x)
+    total = first + second
+    if total == 0.0 or isinf(total) or isnan(total):
+        return nan
+    if fabs(first) + fabs(second) > 4.0 * fabs(total):
+        return nan
+    return total
+
+
+def _down(a: f64, b: f64, x: f64) -> f64:
+    """U for a below 1 from U at a₀ = a − ⌊a⌋ + 1 in [1, 2) and a₀ + 1 by quadrature, down the
+    recurrence U(a − 1) = (2a − b + x) U(a) − a(a − b + 1) U(a + 1) (DLMF 13.3.7)."""
+    start = a - floor(a) + 1.0
+    here = _quadrature(start, b, x, 0.0)
+    above = _quadrature(start + 1.0, b, x, 0.0)
+    level = start
+    while level > a + 0.5:
+        below = (2.0 * level - b + x) * here - level * (level - b + 1.0) * above
+        above = here
+        here = below
+        level -= 1.0
+    return here
+
+
+def _edge(a: f64, b: f64, x: f64) -> f64:
+    """U at x = 0 or x = ∞. At 0, a whole a = −m gives the polynomial's constant (−1)ᵐ (b)ₘ;
+    otherwise U is Γ(1 − b)/Γ(a − b + 1) for b below 1 (DLMF 13.2.22) and ∞ from b = 1 up. At ∞,
+    U falls as x⁻ᵃ to 0 for a above 0 and grows to ∞ for a below."""
+    if x > 0.0:
+        if a > 0.0:
+            return 0.0
+        return inf
+    if a <= 0.0 and a == floor(a):
+        value = poch(b, -a)
+        if is_odd(a):
+            return -value
+        return value
+    if b < 1.0:
+        return gamma(1.0 - b) * rgamma(a - b + 1.0)
+    return inf
+
+
+def hyperu(a: f64, b: f64, x: f64) -> f64:
+    """Tricomi's confluent hypergeometric function U(a, b, x), as `scipy.special.hyperu`: the
+    solution of x w″ + (b − x) w′ − a w = 0 that behaves as x⁻ᵃ for large x.
+
+    A negative x, or an infinite a or b, gives NaN, as `SciPy` gives. At x = 0 a whole a at
+    most 0 gives the polynomial's value, where `SciPy` gives ∞, so `hyperu(-2.0, 3.0, 0.0)` is
+    12; at x = ∞ this gives the limit, 0 for a above 0 and ∞ below, where `SciPy` gives NaN.
+
+    ```python
+    from special import hyperu
+
+    print(hyperu(1.0, 1.0, 1.0))  # 0.5963473623231941, e E₁(1)
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(x) or x < 0.0 or isinf(a) or isinf(b):
+        return nan
+    if a == 0.0:
+        return 1.0
+    if x == 0.0 or isinf(x):
+        return _edge(a, b, x)
+    far = _asymptotic(a, b, x)
+    if not isnan(far):
+        return far
+    if a <= 0.0 and a == floor(a) and -a < _POLYNOMIAL:
+        value, ratio = _polynomial(int(-a), b, x)
+        if ratio <= 4.0 or (b <= 0.0 and b == floor(b)):
+            return value
+        value = poch(b, -a) * hyp1f1(a, b, x)
+        if is_odd(a):
+            return -value
+        return value
+    if a >= 1.0:
+        return _quadrature(a, b, x, 0.0)
+    if b == floor(b):
+        if b >= 1.0:
+            value, ratio = _whole_b(a, int(b) - 1, x)
+        else:
+            value, ratio = _whole_b(a - b + 1.0, int(1.0 - b), x)
+            value *= pow(x, 1.0 - b)
+        if ratio <= 64.0:
+            return value
+    else:
+        value = _kummer(a, b, x)
+        if not isnan(value):
+            return value
+    if a - b + 1.0 >= 1.0:
+        return _quadrature(a - b + 1.0, 2.0 - b, x, 1.0 - b)
+    return _down(a, b, x)

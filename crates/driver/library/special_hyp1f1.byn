@@ -1,0 +1,264 @@
+"""Kummer's confluent hypergeometric function for `special` (roadmap 3.18.8): `hyp1f1`,
+M(a, b, x) = ₁F₁(a; b; x) = Σ (a)ₖ xᵏ / ((b)ₖ k!), for real a, b and x.
+
+No one method holds everywhere, so each value takes the first of these that keeps its digits:
+the series in `f64` where its terms barely cancel; the series in double-double (`math.f64x2`)
+where its terms cancel by less than 10¹⁴; the asymptotic expansion for large |x| (DLMF 13.7.2),
+where the term it drops is below e⁻⁴⁰ of the one it keeps; and, for a below 0, the
+recurrences: b is raised above x, where the recurrence in a is stable going down, a is taken
+down to its value there, and b is brought back down by its own recurrence (DLMF 13.3.1 and
+13.3.2), as Boost's `hypergeometric_1F1` does. A negative x is first sent to a positive one by
+Kummer's transformation M(a, b, x) = eˣ M(b − a, b, −x) (DLMF 13.2.39) where that helps.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, f64x2, fabs, floor, inf, isinf, isnan, log, nan, pow
+from special_beta import poch
+from special_common import is_odd
+from special_gamma import gamma, gammaln, gammasgn, rgamma
+
+_EPSILON: Final = 1.0e-17  # where an `f64` series stops
+_WIDE_EPSILON: Final = 1.0e-33  # where a double-double series stops
+_CLEAN: Final = 2.0  # an `f64` series whose terms sum to at most this over its value is kept
+_WIDE: Final = 1.0e14  # a double-double series whose terms sum to less than this is kept
+_DROPPED: Final = -40.0  # the expansion is used where the log of the term it drops is below
+_TERMS: Final = 5000  # the most terms a series takes
+
+
+def _settled(a: f64, b: f64, x: f64, k: int) -> bool:
+    """Whether the series' terms only fall after term k + 1: a + k and b + k are past 0, so no
+    factor changes sign again, and the next ratio, (a + k + 1) x / ((b + k + 1)(k + 2)), is
+    below 1 in size. A small term before that is no sign of the end: for b below 0 the terms
+    can shrink to 10⁻²⁰ of the sum and then grow past it once b + k crosses 0."""
+    if k + a <= 0.0 or k + b <= 0.0:
+        return False
+    return fabs((a + k + 1.0) * x) < fabs((b + k + 1.0) * (k + 2.0))
+
+
+def _series(a: f64, b: f64, x: f64, first: f64 = 1.0) -> tuple[f64, f64]:
+    """`first` times M(a, b, x) by its series, and the sum of its terms' sizes, which over the
+    value is the factor its rounding errors are magnified by. NaN, with an infinite size, where
+    the series has not converged after `_TERMS` terms. The series stops at once when a is 0 or
+    a negative whole number, where it is a polynomial. A `first` below 1 scales every term down,
+    so a sum past the largest `f64` can still be summed."""
+    term = first
+    total = first
+    size = fabs(first)
+    for k in range(_TERMS):
+        if a + k == 0.0:
+            return total, size
+        term *= (a + k) * x / ((b + k) * (k + 1.0))
+        total += term
+        size += fabs(term)
+        if fabs(term) <= _EPSILON * fabs(total) and _settled(a, b, x, k):
+            return total, size
+    return nan, inf
+
+
+def _series_wide(a: f64, b: f64, x: f64) -> f64:
+    """M(a, b, x) by its series in double-double arithmetic, rounded to `f64`: each term is
+    carried to about 32 digits, so a sum whose terms cancel by a factor below 10¹⁴ still keeps
+    every digit of an `f64`. About 100 operations a term."""
+    first = f64x2.of(a)
+    second = f64x2.of(b)
+    point = f64x2.of(x)
+    term = f64x2.of(1.0)
+    total = f64x2.of(1.0)
+    for k in range(_TERMS):
+        if a + k == 0.0:
+            return total.hi
+        count = f64x2.of(k + 0.0)
+        upper = first.add(count).mul(point)
+        lower = second.add(count).mul(f64x2.of(k + 1.0))
+        term = term.mul(upper).div(lower)
+        total = total.add(term)
+        if fabs(term.hi) <= _WIDE_EPSILON * fabs(total.hi) and _settled(a, b, x, k):
+            return total.hi
+    return nan
+
+
+def _expansion(a: f64, b: f64, x: f64) -> f64:
+    """Σ (1 − a)ₛ (b − a)ₛ / (s! xˢ), the sum in the asymptotic expansion of M for large x, or
+    NaN where it does not reach 1e-17 of its value before its terms start to grow again, or
+    where they cancel by more than a factor of 4. The terms may rise at first, while s is below
+    about |ab|/x, and fall after."""
+    term = 1.0
+    total = 1.0
+    last = 1.0
+    peak = 1.0
+    falling = False
+    for s in range(_TERMS):
+        term *= (1.0 - a + s) * (b - a + s) / ((s + 1.0) * x)
+        if fabs(term) > last and falling:
+            return nan
+        falling = fabs(term) < last
+        last = fabs(term)
+        peak = max(peak, last)
+        total += term
+        if peak > 4.0 * fabs(total) + 1.0e6:
+            return nan
+        if fabs(term) <= _EPSILON * fabs(total):
+            if peak > 4.0 * fabs(total):
+                return nan
+            return total
+    return nan
+
+
+def _ratio(z: f64, m: f64, b: f64) -> f64:
+    """Γ(b)/Γ(z) for b = z + m: `poch(z, m)`, which corrects the rounding of z + m, except
+    near b = 0, where it is Γ(b) times 1/Γ(z), both of exact arguments."""
+    if fabs(b) < 0.5:
+        return gamma(b) * rgamma(z)
+    return poch(z, m)
+
+
+def _above(a: f64, b: f64, x: f64) -> f64:
+    """M(a, b, x) for large x above 0 (DLMF 13.7.2): Γ(b)/Γ(a) eˣ x^(a−b) Σ (1−a)ₛ (b−a)ₛ / (s!
+    xˢ), or NaN where it does not hold to an `f64`. The expansion drops the term
+    Γ(b)/Γ(b − a) x⁻ᵃ, so it is used only where that is below e⁻⁴⁰ of the one it keeps."""
+    if -x + (b - 2.0 * a) * log(x) + gammaln(a) - gammaln(b - a) > _DROPPED:
+        return nan
+    total = _expansion(a, b, x)
+    lead = _ratio(a, b - a, b)
+    if isnan(total) or isnan(lead) or isinf(lead) or lead == 0.0:
+        return nan
+    return lead * exp(x) * pow(x, a - b) * total
+
+
+def _below(a: f64, b: f64, y: f64) -> f64:
+    """M(a, b, −y) for large y above 0, by Kummer's transformation and `_above`:
+    Γ(b)/Γ(b − a) y⁻ᵃ Σ (1 − b + a)ₛ (a)ₛ / (s! yˢ), with eˣ e⁻ˣ cancelled by hand so neither
+    overflows, or NaN where it does not hold to an `f64`."""
+    if -y + (2.0 * a - b) * log(y) + gammaln(b - a) - gammaln(a) > _DROPPED:
+        return nan
+    total = _expansion(b - a, b, y)
+    lead = _ratio(b - a, a, b)
+    if isnan(total) or isnan(lead) or isinf(lead) or lead == 0.0:
+        return nan
+    return lead * pow(y, -a) * total
+
+
+def _cancellation(total: f64, size: f64) -> f64:
+    """How much a sum's terms cancel: their sizes' sum over its value, or ∞ where the sum is
+    not finite or is 0."""
+    if isnan(total) or isinf(total) or isinf(size) or total == 0.0:
+        return inf
+    return size / fabs(total)
+
+
+def _down_a(a: f64, b: f64, x: f64) -> f64:
+    """M(a, b, x) for a below 0 and b above x: M(a₀) and M(a₀ − 1), a₀ in (1, 2], by the
+    series, whose terms are then all positive, and down the recurrence in a (DLMF 13.3.1),
+    (b − a) M(a − 1) = a M(a + 1) − (2a − b + x) M(a), which is stable going down while b is
+    above x. A whole a reaches M(0) = 1 exactly."""
+    steps = int(floor(-a)) + 2
+    if a + steps - 2.0 == 0.0:
+        steps -= 1
+    start = a + steps
+    high = _series(start, b, x)[0]
+    low = _series(start - 1.0, b, x)[0]
+    for k in range(steps - 1):
+        level = start - 1.0 - k
+        previous = ((2.0 * level - b + x) * low - level * high) / (level - b)
+        high = low
+        low = previous
+    return low
+
+
+def _down_b(a: f64, b: f64, x: f64) -> f64:
+    """M(a, b, x) for a below 0 and x above 0: `_down_a` at b′ = b + n and b′ + 1, both above
+    x, then down the recurrence in b (DLMF 13.3.2),
+    b(b − 1) M(b − 1) = b(b − 1 + x) M(b) − x(b − a) M(b + 1), which is stable going down for
+    a below 0. Where M oscillates, a below about −(x − 2b)/4, every recurrence in a alone loses
+    digits, by up to 10⁴⁰ at x = 100; this path keeps them."""
+    shift = max(int(floor(x - b)) + 2, 0)
+    top = b + shift
+    here = _down_a(a, top, x)
+    above = _down_a(a, top + 1.0, x)
+    for k in range(shift):
+        level = top - k
+        below = (level * (level - 1.0 + x) * here - x * (level - a) * above) / (
+            level * (level - 1.0)
+        )
+        above = here
+        here = below
+    return here
+
+
+def _positive(a: f64, b: f64, x: f64) -> f64:
+    """M(a, b, x) for x above 0, by the first method that keeps its digits."""
+    total, size = _series(a, b, x)
+    cancelled = _cancellation(total, size)
+    if cancelled <= _CLEAN:
+        return total
+    if cancelled < _WIDE:
+        return _series_wide(a, b, x)
+    far = _above(a, b, x)
+    if not isnan(far) and not isinf(far):
+        return far
+    if a < 0.0:
+        return _down_b(a, b, x)
+    return total
+
+
+def _infinite(a: f64, b: f64, x: f64) -> f64:
+    """M(a, b, ±∞): for a whole a = −n, a polynomial of degree n, whose leading term
+    (−1)ⁿ xⁿ/(b)ₙ sets the sign; otherwise eˣ x^(a−b) Γ(b)/Γ(a) at +∞, and at −∞
+    Γ(b)/Γ(b − a) |x|⁻ᵃ, which is 0 for a above 0 or where 1/Γ(b − a) is 0."""
+    if a == floor(a) and a < 0.0:
+        sign = gammasgn(b) * gammasgn(b - a)
+        if x > 0.0 and is_odd(a):
+            sign = -sign
+        return sign * inf
+    if x > 0.0:
+        return gammasgn(b) * gammasgn(a) * inf
+    if a > 0.0 or rgamma(b - a) == 0.0:
+        return 0.0
+    return gammasgn(b) * gammasgn(b - a) * inf
+
+
+def hyp1f1(a: f64, b: f64, x: f64) -> f64:
+    """Kummer's confluent hypergeometric function M(a, b, x) = ₁F₁(a; b; x), as
+    `scipy.special.hyp1f1` for real arguments: the solution of x w″ + (b − x) w′ − a w = 0 that
+    is 1 at x = 0.
+
+    A b of 0 or a negative whole number is a pole, ∞ as `SciPy` gives, unless a is a negative
+    whole number no further from 0, where the series is a polynomial that stops first. An
+    infinite b gives 1, an infinite a NaN. At x = ±∞ this gives the limit, where `SciPy` gives
+    NaN or does not return.
+
+    ```python
+    from special import hyp1f1
+
+    print(hyp1f1(1.0, 2.0, 1.0))  # 1.718281828459045, e − 1
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(x) or isinf(a):
+        return nan
+    if b <= 0.0 and b == floor(b):
+        if a <= 0.0 and a == floor(a) and a >= b:
+            return _series(a, b, x)[0]
+        return inf
+    if isinf(b) or a == 0.0 or x == 0.0:
+        return 1.0
+    if isinf(x):
+        return _infinite(a, b, x)
+    if x > 0.0:
+        return _positive(a, b, x)
+    total, size = _series(a, b, x)
+    cancelled = _cancellation(total, size)
+    if cancelled <= _CLEAN:
+        return total
+    if cancelled < _WIDE:
+        return _series_wide(a, b, x)
+    far = _below(a, b, -x)
+    if not isnan(far) and not isinf(far):
+        return far
+    value = _positive(b - a, b, -x)
+    if isinf(value):
+        # M(b − a, b, −x) is past the largest `f64` though eˣ times it is not: its series is
+        # summed from e^(x/2), and the other half multiplied in after.
+        half = exp(x / 2.0)
+        return _series(b - a, b, -x, half)[0] * half
+    return exp(x) * value

@@ -324,8 +324,17 @@ impl<'db> Body<'db> {
                 return compared;
             }
             if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
-                let what = format!("`{}`", operator.symbol());
-                return self.optional_array_unbuilt(comparator, &what);
+                let compared =
+                    self.optional_array_comparison(comparator, operator, left_type, right_type);
+                if count > 1 {
+                    self.lowerer.error(
+                        node,
+                        "a chain of comparisons cannot compare arrays",
+                        "more than one comparison",
+                        Some("compare in pairs and combine them: `(a < b) & (b < c)`"),
+                    );
+                }
+                return compared;
             }
             let ordering = matches!(
                 operator,
