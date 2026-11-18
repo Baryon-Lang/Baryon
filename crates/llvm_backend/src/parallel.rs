@@ -10,7 +10,7 @@
 //! - `f.chunk0`, the chunk function the runtime calls, `(context, chunk, start, end)`, which
 //!   unpacks the context, gives each reduction a private copy at the operator's identity, calls
 //!   `f.body0` for each iteration of the chunk in order, then stores each copy as the chunk's
-//!   partial result.
+//!   partial result. The `parallel_chunk` module writes it.
 //!
 //! The runtime's chunks depend only on the iteration count (decision 0021), and the partials
 //! combine in a fixed pairwise tree that depends only on the chunk count, never on the thread
@@ -24,10 +24,10 @@ use crate::Unsupported;
 use crate::accumulate;
 use crate::function::{Function, block_label};
 use crate::literal::{float, global};
-use crate::ty::Number;
+use crate::parallel_chunk::{Passed, chunk_function};
+use crate::ty::{Number, Repr};
 use mir::ReductionOperator;
 use mir::{Argument, BinaryOperator, BlockId, Body, Check, LocalKind, Operand, Place, Reduction};
-use std::fmt::Write as _;
 use types::{Layout, Mode, Type};
 
 /// The runtime functions a `prange` loop calls, as the runtime exports them (decision 0021).
@@ -42,15 +42,6 @@ const STACK_SAVE: &str = "declare ptr @llvm.stacksave()";
 
 /// See [`STACK_SAVE`].
 const STACK_RESTORE: &str = "declare void @llvm.stackrestore(ptr)";
-
-/// How one argument reaches the outlined body: through its address, or loaded from it.
-#[derive(Clone, Debug)]
-enum Passed {
-    /// As a pointer: an `InOut` argument, or a borrow of a value passed by reference.
-    Pointer,
-    /// As a value of this LLVM type, loaded once per chunk.
-    Value(String),
-}
 
 /// One reduction of a loop, as the parent function writes it.
 struct Reduced<'db> {
@@ -116,10 +107,7 @@ impl<'db> Function<'_, '_, 'db> {
         let saved = self.emit("call ptr @llvm.stacksave()");
         let slots = arguments.len() + reductions.len() + 2 * accumulated.len();
         let context = self.emit(&format!("alloca [{slots} x ptr]"));
-        for (position, argument) in arguments.iter().enumerate() {
-            let address = self.argument_address(argument)?;
-            self.store_slot(&context, slots, position, &address);
-        }
+        self.store_arguments(&context, slots, arguments, &passed)?;
         let first = arguments.len() + reductions.len();
         for (index, array) in accumulated.iter().enumerate() {
             self.store_slot(&context, slots, first + 2 * index, &array.address);
@@ -197,6 +185,10 @@ impl<'db> Function<'_, '_, 'db> {
             let LocalKind::Parameter { mode, .. } = &local.kind else {
                 break;
             };
+            if self.types.repr(local.ty)? == Repr::Empty {
+                passed.push(Passed::Nothing);
+                continue;
+            }
             passed.push(match mode {
                 Mode::InOut => Passed::Pointer,
                 Mode::Borrow if !self.types.by_value(local.ty) => Passed::Pointer,
@@ -204,6 +196,26 @@ impl<'db> Function<'_, '_, 'db> {
             });
         }
         Ok(passed)
+    }
+
+    /// Stores the address of each of `arguments` in its slot of `context`, an array of `slots`
+    /// pointers, in order. An argument [`Passed::Nothing`] takes no bytes and its slot is left
+    /// unwritten, since the chunk function never reads it.
+    fn store_arguments(
+        &mut self,
+        context: &str,
+        slots: usize,
+        arguments: &[Argument<'db>],
+        passed: &[Passed],
+    ) -> Result<(), Unsupported> {
+        for (position, (argument, how)) in arguments.iter().zip(passed).enumerate() {
+            if matches!(how, Passed::Nothing) {
+                continue;
+            }
+            let address = self.argument_address(argument)?;
+            self.store_slot(context, slots, position, &address);
+        }
+        Ok(())
     }
 
     /// The address the context holds for `argument`: the place itself, or for an `Owned`
@@ -421,73 +433,4 @@ fn identity(
         // Unsigned, the smallest is 0, the identity of a sum too.
         (ReductionOperator::Add | ReductionOperator::Max, Number::Integer { .. }) => "0".to_owned(),
     })
-}
-
-/// The chunk function `symbol` the runtime calls with `(context, chunk, first, last)`: it
-/// loads each argument from the context as `passed` says, starts each reduction's private copy
-/// at its identity, calls `body` for iterations `first..last` in order, and stores each copy
-/// in the chunk's place among the reduction's partials. `reductions` holds each reduced
-/// value's LLVM type and identity, and `accumulated` each accumulated array's header type: the
-/// body gets a view of each array, and the runtime hears when the chunk is done.
-fn chunk_function(
-    symbol: &str,
-    body: &str,
-    passed: &[Passed],
-    reductions: &[(String, String)],
-    accumulated: &[String],
-) -> String {
-    let slots = passed.len() + reductions.len() + 2 * accumulated.len();
-    let mut entry = String::new();
-    let mut arguments = vec!["i64 %iteration".to_owned()];
-    let slot = |entry: &mut String, position: usize| {
-        let _ = writeln!(
-            entry,
-            "  %s{position} = getelementptr inbounds [{slots} x ptr], ptr %context, i64 0, \
-             i64 {position}\n  %p{position} = load ptr, ptr %s{position}"
-        );
-    };
-    for (position, how) in passed.iter().enumerate() {
-        slot(&mut entry, position);
-        match how {
-            Passed::Pointer => arguments.push(format!("ptr %p{position}")),
-            Passed::Value(llvm) => {
-                let _ = writeln!(entry, "  %v{position} = load {llvm}, ptr %p{position}");
-                arguments.push(format!("{llvm} %v{position}"));
-            }
-        }
-    }
-    let mut finish = String::new();
-    for (index, (llvm, identity)) in reductions.iter().enumerate() {
-        let position = passed.len() + index;
-        slot(&mut entry, position);
-        let _ = writeln!(
-            entry,
-            "  %r{index} = alloca {llvm}\n  store {llvm} {identity}, ptr %r{index}"
-        );
-        arguments.push(format!("ptr %r{index}"));
-        let _ = writeln!(
-            finish,
-            "  %f{index} = load {llvm}, ptr %r{index}\n  \
-             %e{index} = getelementptr inbounds {llvm}, ptr %p{position}, i64 %chunk\n  \
-             store {llvm} %f{index}, ptr %e{index}"
-        );
-    }
-    let [views, viewed, done] =
-        accumulate::chunk_views(accumulated, passed.len() + reductions.len(), slots);
-    entry.push_str(&views);
-    if !viewed.is_empty() {
-        arguments.push(viewed);
-    }
-    finish.push_str(&done);
-    format!(
-        "define internal void {}(ptr %context, i64 %chunk, i64 %first, i64 %last) {{\n\
-         entry:\n{entry}  br label %test\n\
-         test:\n  %iteration = phi i64 [ %first, %entry ], [ %next, %step ]\n  \
-         %more = icmp slt i64 %iteration, %last\n  br i1 %more, label %step, label %done\n\
-         step:\n  call void {}({})\n  %next = add i64 %iteration, 1\n  br label %test\n\
-         done:\n{finish}  ret void\n}}\n",
-        global(symbol),
-        global(body),
-        arguments.join(", ")
-    )
 }

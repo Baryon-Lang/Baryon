@@ -804,7 +804,8 @@ a local. A local may hold a module-level function too, `f = sq`, with or without
 `f: Callable[[f64], f64] = sq` checks `sq`'s signature, and `f` is still `sq`, so `f(2.0)` is a
 direct call of `sq`, and a function that raises raises through it. Which function a
 name holds must be known when compiling, so a local that holds one of two different functions
-depending on a branch is reported when building.
+depending on a branch is reported when building. A `prange` loop may call a `Callable` parameter
+or such a local; each iteration calls the function directly.
 
 These forms need a function value at run time, which version 0 leaves out. Each is a checker
 error that names decision 0026, at the expression or annotation:
