@@ -1104,7 +1104,8 @@ for those working on the library. A panic inside a function names the file it is
 | File | Holds |
 | --- | --- |
 | `special_common` | The whole-number tests `is_integer` and `is_odd`, `floor_count`, which rounds a count down, `sinpi` and `cospi`, and the constants more than one family uses |
-| `special_gamma` | `gamma`, `rgamma`, `gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma`, `polygamma`, the Hurwitz zeta function `polygamma` sums, and `factorial`, which `polygamma` uses |
+| `special_gamma` | `gamma`, `rgamma`, `gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma`, `polygamma` and `factorial`, which `polygamma` uses |
+| `special_hurwitz` | The Hurwitz zeta function, which `polygamma` and `zeta` sum |
 | `special_beta` | `beta`, `betaln` and `poch` |
 | `special_error` | `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `log_ndtr` and `dawsn` |
 | `special_ndtri` | `ndtri` and the three rational functions it is made of |
