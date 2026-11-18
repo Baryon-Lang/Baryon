@@ -201,6 +201,9 @@ impl<'db> Body<'db> {
             return;
         }
         let operand = self.expression(value, self.number_context(current));
+        if self.maybe_none(value, operand) {
+            return;
+        }
         if self.is_optional_array(current) || self.is_optional_array(operand) {
             // `a = a + b` builds; changing the array in place does not yet.
             let what = format!("`{}=`", operator.symbol());

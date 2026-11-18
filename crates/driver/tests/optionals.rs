@@ -127,3 +127,57 @@ error: `distance` may be `None`
    = note: check it first: `if distance is not None:`"
     );
 }
+
+/// The value of an in-place operator is checked like either side of the operator: `total += x`
+/// with `x` unchecked is the error `total = total + x` is, where it once reached the backend
+/// (roadmap 1.9.54). A field is not narrowed by a check, so `row.rain` stays optional.
+#[test]
+fn in_place_operators_check_their_value() {
+    let program = "\
+class Reading(Struct):
+    rain: f64 | None
+
+
+def add(x: f64 | None, n: i64 | None, s: str | None, row: Reading):
+    total = 0.0
+    total += x
+    k = 1
+    k *= n
+    t = \"a\"
+    t += s
+    if row.rain is not None:
+        total += row.rain
+    print(total, k, t)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `x` may be `None`
+ --> main.byn:7:14
+  |
+7 |     total += x
+  |              ^ has type `f64 | None`
+  = note: check it first: `if x is not None:`
+
+error: `n` may be `None`
+ --> main.byn:9:10
+  |
+9 |     k *= n
+  |          ^ has type `i64 | None`
+  = note: check it first: `if n is not None:`
+
+error: `s` may be `None`
+  --> main.byn:11:10
+   |
+11 |     t += s
+   |          ^ has type `str | None`
+   = note: check it first: `if s is not None:`
+
+error: this value may be `None`
+  --> main.byn:13:18
+   |
+13 |         total += row.rain
+   |                  ^^^^^^^^ has type `f64 | None`
+   = note: give it a name and check it first: `if value is not None:`"
+    );
+}
