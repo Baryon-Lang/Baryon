@@ -50,9 +50,9 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `ndtri` | 8 ULP | 2 ULP | 2 ULP |
 | `log_ndtr` | 8 ULP | 3 ULP | 52 ULP at 9.76 |
 | `dawsn` | 8 ULP | 6 ULP | 10 ULP |
-| `j0`, `j1` | 16 ULP of the larger of the value and its envelope | 7 ULP | 4 ULP |
-| `y0`, `y1` | 16 ULP of the larger of the value and its envelope | 10 ULP | 17 ULP; 35 million at `y1(6.8e7)` |
-| `jn` | 16 ULP of the larger of the value and its envelope | 8 ULP | 152 ULP at `jn(30, 0.0013)` |
+| `j0`, `j1` | 16 ULP of the larger of the value and its envelope | 3 ULP | 4 ULP |
+| `y0`, `y1` | 16 ULP of the larger of the value and its envelope | 5 ULP | 17 ULP; 35 million at `y1(6.8e7)` |
+| `jn` | 16 ULP of the larger of the value and its envelope | 6 ULP | 152 ULP at `jn(30, 0.0013)` |
 | `yn` | 32 ULP of the larger of the value and its envelope | 18 ULP at order 30 | 12 ULP |
 | `i0`, `i1`, `i0e`, `i1e` | 16 ULP | 8 ULP | 8 ULP |
 | `k0`, `k1`, `k0e`, `k1e` | 16 ULP | 4 ULP | 4 ULP |
@@ -198,8 +198,9 @@ How each is computed:
 - **`erf` below 0.5** sums its Taylor series in x², 14 terms, so it keeps its relative precision
   near 0.
 - **`erfcx` from 0.5 to 3** sums the Taylor series of erfcx itself around the middle of each
-  half-unit interval, 16 to 19 terms; **from 3 up**, Laplace's continued fraction, 40 levels at
-  3 and 10 from 8 up.
+  half-unit interval, 16 to 19 terms; **from 3 up**, (1 + z S(z)) / (x√π) with z = 1/x²
+  and S a rational function of degree 6 fitted with mpmath, which replaced Laplace's continued
+  fraction of 10 to 40 levels (roadmap 3.18.17).
 - **`erfc` from 0.5 up** is exp(−x²) erfcx(x). The square x² is carried as two `f64`s, its
   rounded value and the rounding error found with `fma`, so the rounding does not reach the
   exponential; a rounded square alone would cost 2x² ULP, about 1,400 at x = 26. `erf` above
@@ -250,12 +251,13 @@ def main():
 How each is computed:
 
 - **J₀ and J₁** sum their power series up to |x| = 2, where the first term is the largest.
-  From 2 to 25, Miller's backward recurrence Jₖ₋₁ = (2k/x) Jₖ − Jₖ₊₁ runs down from an order
+  From 2 to 5, Miller's backward recurrence Jₖ₋₁ = (2k/x) Jₖ − Jₖ₊₁ runs down from an order
   about x/2 + 15 + √x above the one wanted, where the starting guess no longer matters, and the
-  ladder is scaled so that J₀ + 2 Σ J₂ₖ = 1. From 25 up, Hankel's asymptotic expansion, whose
-  phase is formed from `cos(x)` and `sin(x)` of the exact argument.
+  ladder is scaled so that J₀ + 2 Σ J₂ₖ = 1. From 5 up, Hankel's form √(2/(πx)) (P cos χ −
+  Q sin χ), with P and xQ rational functions of 1/x² fitted with mpmath (roadmap 3.18.17) and
+  the phase formed from `cos(x)` and `sin(x)` of the exact argument.
 - **Y₀ and Y₁** use their logarithmic series up to 2, Neumann's series over the same ladder of J
-  from 2 to 25, and Hankel's expansion beyond.
+  from 2 to 5, and Hankel's form beyond.
 - **`jn`** recurs upward from J₀ and J₁ while the order is below |x|, where that is stable, and
   runs Miller's recurrence above. **`yn`** and **`kn`** recur upward from orders 0 and 1, which
   is stable for Y and K at every order.
