@@ -1,24 +1,27 @@
 //! Writing a `NetCDF` classic file as `netCDF4` writes it (decision 0047). The file is the state:
 //! each change a program makes, a dimension, a variable, an attribute or a variable's values,
-//! reads the whole file, changes it in memory, and writes it again, laid out as the C library
-//! `netCDF4` calls lays it out, so the bytes match `netCDF4`'s for the same calls.
+//! is written to the file at once, laid out as the C library `netCDF4` calls lays it out, so
+//! the bytes match `netCDF4`'s for the same calls.
 //!
 //! The layout: the header, with no free space after it; then each fixed-size variable's values,
 //! in the order they were defined, each padded to a multiple of 4 bytes; then the records, each
 //! holding one slot of every record variable in the order they were defined. A slot is padded
 //! to a multiple of 4 bytes, unless there is only one record variable. Values not written hold
 //! the type's fill value, padding included: a write that adds records fills them for every
-//! record variable before it writes its values, as the C library does. The `storage` module
-//! reads a file into memory and writes it out again in this layout.
+//! record variable before it writes its values, as the C library does.
 //!
-//! Cost: each change reads and writes the whole file. A program defines its dimensions and
-//! variables while the file is small, then writes each variable once, so each variable's
-//! values are copied about as many times as variables are written after it.
+//! Cost: a definition changes the header's length, which moves every variable, so the
+//! `streaming` module copies the file into its new layout through a fixed buffer: one pass over
+//! the file and a few megabytes of memory. A write of values still reads the whole file into
+//! memory and writes it again (the `storage` module), so a program should define everything
+//! first and write values after.
 
-use super::encoding::{encode, store};
-use super::storage::{Contents, load, save, slot};
+use super::encoding::store;
+use super::storage::{Contents, fill, load, save, slot};
+use super::streaming::{check, rewrite};
 use super::{
-    Attribute, Header, Item, Kind, SubscriptFailure, Values, Variable, is_whole, scaling, select,
+    Attribute, Header, Item, Kind, SubscriptFailure, Values, Variable, is_whole, read_header,
+    scaling, select,
 };
 use crate::files::fits::Pixel;
 use crate::files::{ErrorKind, OsFailure};
@@ -53,34 +56,49 @@ pub(crate) fn define(path: &str, line: &str) -> Result<(), OsFailure> {
             variables: Vec::new(),
             netcdf4: None,
         };
-        return save(
-            path,
-            &Contents {
-                header,
-                slots: Vec::new(),
-            },
-        );
+        return rewrite(path, None, &header);
     }
-    let mut contents = load(path)?;
+    let old = classic(path)?;
+    let mut header = old.clone();
     match fields[..] {
         ["D", name, length] => {
             let length: u64 = length
                 .parse()
                 .map_err(|_| invalid("a dimension's length"))?;
-            add_dimension(&mut contents.header, name, length)
-                .map_err(|message| invalid(&message))?;
+            add_dimension(&mut header, name, length).map_err(|message| invalid(&message))?;
         }
         ["V", name, kind, spans] => {
-            add_variable(&mut contents, name, kind, spans).map_err(|message| invalid(&message))?;
+            add_variable(&mut header, name, kind, spans).map_err(|message| invalid(&message))?;
         }
         ["A", owner, kind, name, value] => {
             let attribute = attribute(kind, name, value).map_err(|message| invalid(&message))?;
-            set_attribute(&mut contents.header, owner, attribute)
-                .map_err(|message| invalid(&message))?;
+            set_attribute(&mut header, owner, attribute).map_err(|message| invalid(&message))?;
         }
         _ => return Err(invalid("not a change to a NetCDF file")),
     }
-    save(path, &contents)
+    rewrite(path, Some(&old), &header)
+}
+
+/// The header of the classic file at `path`, checked against the file's length.
+///
+/// # Errors
+///
+/// As [`read_header`] fails, and with `INVALID_DATA` for a NetCDF-4 file or a header that
+/// claims more than the file holds.
+fn classic(path: &str) -> Result<Header, OsFailure> {
+    let header = read_header(path)?;
+    if header.netcdf4.is_some() {
+        return Err(OsFailure::new(
+            ErrorKind::InvalidData,
+            "the file is a NetCDF-4 (HDF5) file, which is not written yet",
+            path,
+        ));
+    }
+    let length = std::fs::metadata(path)
+        .map_err(|error| OsFailure::from_io(&error, path))?
+        .len();
+    check(path, &header, length)?;
+    Ok(header)
 }
 
 /// Writes `values`, every element of an array of `pixel`s with the lengths `shape`, in
@@ -231,30 +249,6 @@ fn add_records(contents: &mut Contents, needed: u64) -> Result<(), String> {
     Ok(())
 }
 
-/// The big-endian bytes of `variable`'s fill value: its `_FillValue` attribute's, or the
-/// type's default, as the C library fills.
-fn fill(variable: &Variable) -> Vec<u8> {
-    let own = variable
-        .attributes
-        .iter()
-        .find(|attribute| attribute.name == "_FillValue" && attribute.kind == variable.kind)
-        .and_then(|attribute| match &attribute.values {
-            Values::Numbers(numbers) => numbers.first().copied(),
-            Values::Text(_) => None,
-        });
-    match own {
-        Some(value) => encode(value, variable.kind),
-        None => match variable.kind {
-            Kind::Byte => vec![0x81],
-            Kind::Char => vec![0],
-            Kind::Short => vec![0x80, 0x01],
-            Kind::Int => vec![0x80, 0, 0, 0x01],
-            Kind::Float => vec![0x7C, 0xF0, 0, 0],
-            Kind::Double => vec![0x47, 0x9E, 0, 0, 0, 0, 0, 0],
-        },
-    }
-}
-
 /// `size` bytes of the fill value `fill` repeated.
 fn filled(fill: &[u8], size: usize) -> Vec<u8> {
     fill.iter().copied().cycle().take(size).collect()
@@ -277,14 +271,9 @@ fn add_dimension(header: &mut Header, name: &str, length: u64) -> Result<(), Str
 }
 
 /// Adds the variable `name` of the type `kind`, as `netCDF4` names it, over the dimensions
-/// named in `spans`, separated by commas, to `contents`, its values all fill values.
-fn add_variable(
-    contents: &mut Contents,
-    name: &str,
-    kind: &str,
-    spans: &str,
-) -> Result<(), String> {
-    let header = &mut contents.header;
+/// named in `spans`, separated by commas, to `header`. Its values are filled when the file is
+/// written again.
+fn add_variable(header: &mut Header, name: &str, kind: &str, spans: &str) -> Result<(), String> {
     if header
         .variables
         .iter()
@@ -315,58 +304,20 @@ fn add_variable(
         }
         dimensions.push(index);
     }
-    let variable = Variable {
+    header.variables.push(Variable {
         name: name.to_owned(),
         dimensions,
         attributes: Vec::new(),
         kind,
         begin: 0,
         size: 0,
-    };
-    let before: Vec<usize> = header
-        .variables
-        .iter()
-        .map(|known| slot(header, known))
-        .collect();
-    header.variables.push(variable);
+    });
     let added = &header.variables[header.variables.len() - 1];
-    let size = slot(header, added);
-    // The header stores a variable's size in 32 bits, so a larger one, whose fill values this
-    // would also have to hold in memory, is refused before anything is allocated.
-    if u32::try_from(size).is_err() {
+    // The header stores a variable's size in 32 bits.
+    if u32::try_from(slot(header, added)).is_err() {
         header.variables.pop();
         return Err("NetCDF: One or more variable sizes violate format constraints".to_owned());
     }
-    let count = if header.is_record(added) {
-        header.records
-    } else {
-        1
-    };
-    let fill = fill(added);
-    // A second record variable pads the first one's slots, which were unpadded while it was
-    // the only one. The C library moves each record as a block of the new slot's size from
-    // where the old record began, so the padding holds the bytes that followed it; this does
-    // the same, with zeros past the end.
-    for (index, &old) in before.iter().enumerate() {
-        let new = slot(header, &header.variables[index]);
-        if header.is_record(&header.variables[index]) && new != old {
-            let region = &contents.slots[index];
-            let mut moved = Vec::with_capacity(new * region.len() / old.max(1));
-            for record in 0..region.len() / old.max(1) {
-                let start = record * old;
-                let end = (start + new).min(region.len());
-                let mut slot = region[start..end].to_vec();
-                slot.resize(new, 0);
-                moved.extend(slot);
-            }
-            contents.slots[index] = moved;
-        }
-    }
-    let mut bytes = Vec::new();
-    for _ in 0..count {
-        bytes.extend(filled(&fill, size));
-    }
-    contents.slots.push(bytes);
     Ok(())
 }
 

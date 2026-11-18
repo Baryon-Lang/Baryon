@@ -3,13 +3,16 @@
 //! the C library `netCDF4` calls gives a file: the header, the fixed-size variables, then the
 //! records.
 
-use super::encoding::encode_header;
-use super::{Header, Variable, read_header};
+use super::encoding::{encode, encode_header};
+use super::{Header, Kind, Values, Variable, read_header};
 use crate::files::{ErrorKind, OsFailure};
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
+
+/// The size of the buffers that stream a file: a megabyte, many records' worth for most files.
+pub(super) const BUFFER: usize = 1 << 20;
 
 /// A file in memory: its header and every variable's slots.
 pub(super) struct Contents {
@@ -39,6 +42,30 @@ pub(super) fn slot(header: &Header, variable: &Variable) -> usize {
         size.checked_next_multiple_of(4).unwrap_or(u64::MAX)
     };
     usize::try_from(size).unwrap_or(usize::MAX)
+}
+
+/// The big-endian bytes of `variable`'s fill value: its `_FillValue` attribute's, or the
+/// type's default, as the C library fills.
+pub(super) fn fill(variable: &Variable) -> Vec<u8> {
+    let own = variable
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "_FillValue" && attribute.kind == variable.kind)
+        .and_then(|attribute| match &attribute.values {
+            Values::Numbers(numbers) => numbers.first().copied(),
+            Values::Text(_) => None,
+        });
+    match own {
+        Some(value) => encode(value, variable.kind),
+        None => match variable.kind {
+            Kind::Byte => vec![0x81],
+            Kind::Char => vec![0],
+            Kind::Short => vec![0x80, 0x01],
+            Kind::Int => vec![0x80, 0, 0, 0x01],
+            Kind::Float => vec![0x7C, 0xF0, 0, 0],
+            Kind::Double => vec![0x47, 0x9E, 0, 0, 0, 0, 0, 0],
+        },
+    }
 }
 
 /// Reads the whole file at `path` into memory.
@@ -106,47 +133,64 @@ pub(super) fn load(path: &str) -> Result<Contents, OsFailure> {
     Ok(Contents { header, slots })
 }
 
-/// Writes `contents` to `path`, laid out as the module's documentation says, replacing the file.
-pub(super) fn save(path: &str, contents: &Contents) -> Result<(), OsFailure> {
-    let invalid = |message: &str| OsFailure::new(ErrorKind::InvalidData, message, path);
-    let too_large = || invalid("NetCDF: One or more variable sizes violate format constraints");
-    let mut header = contents.header.clone();
-    let slots: Vec<usize> = header
+/// `header` with each variable's size and beginning set as the module's layout puts them: the
+/// header, the fixed-size variables, then the records, each variable where the last one ends.
+///
+/// # Errors
+///
+/// `netCDF4`'s message when a variable is too large for the header's 32-bit sizes, or a
+/// classic (CDF-1) file grows past its 32-bit offsets.
+pub(super) fn laid_out(header: &Header) -> Result<Header, String> {
+    let too_large = || "NetCDF: One or more variable sizes violate format constraints".to_owned();
+    let mut laid = header.clone();
+    let slots: Vec<usize> = laid
         .variables
         .iter()
-        .map(|variable| slot(&header, variable))
+        .map(|variable| slot(header, variable))
         .collect();
-    for (variable, &size) in header.variables.iter_mut().zip(&slots) {
+    for (variable, &size) in laid.variables.iter_mut().zip(&slots) {
         variable.size = (size as u64)
             .checked_next_multiple_of(4)
             .ok_or_else(too_large)?;
     }
-    let length = encode_header(&header).len() as u64;
-    let mut at = length;
+    let mut at = encode_header(&laid).len() as u64;
     // The fixed variables first, then the record variables, each where the last one ends.
     for records in [false, true] {
-        for (variable, &size) in header.variables.iter_mut().zip(&slots) {
+        for (variable, &size) in laid.variables.iter_mut().zip(&slots) {
             let is_record = variable
                 .dimensions
                 .first()
-                .is_some_and(|&dimension| contents.header.dimensions[dimension].1 == 0);
+                .is_some_and(|&dimension| header.dimensions[dimension].1 == 0);
             if is_record == records {
                 variable.begin = at;
                 at = at.checked_add(size as u64).ok_or_else(too_large)?;
             }
         }
     }
-    if !header.wide
-        && header
+    if !laid.wide
+        && laid
             .variables
             .iter()
             .any(|variable| variable.begin > u64::from(u32::MAX))
     {
-        return Err(invalid(
+        return Err(
             "the file is too large for the classic format; write it with \
-             format=\"NETCDF3_64BIT_OFFSET\"",
-        ));
+                    format=\"NETCDF3_64BIT_OFFSET\""
+                .to_owned(),
+        );
     }
+    Ok(laid)
+}
+
+/// Writes `contents` to `path`, laid out as the module's documentation says, replacing the file.
+pub(super) fn save(path: &str, contents: &Contents) -> Result<(), OsFailure> {
+    let header = laid_out(&contents.header)
+        .map_err(|message| OsFailure::new(ErrorKind::InvalidData, &message, path))?;
+    let slots: Vec<usize> = header
+        .variables
+        .iter()
+        .map(|variable| slot(&header, variable))
+        .collect();
     let mut bytes = encode_header(&header);
     for (index, variable) in header.variables.iter().enumerate() {
         if !header.is_record(variable) {
@@ -161,11 +205,11 @@ pub(super) fn save(path: &str, contents: &Contents) -> Result<(), OsFailure> {
             }
         }
     }
-    replace(path, &bytes).map_err(|error| OsFailure::from_io(&error, path))
+    replace(path, |file| file.write_all(&bytes)).map_err(|error| OsFailure::from_io(&error, path))
 }
 
-/// Makes `bytes` the file at `path` in one step: they are written to a new file beside it,
-/// flushed to the disk, then renamed over it, so a program that stops partway, a crash or a
+/// Makes what `contents` writes the file at `path` in one step: it is written to a new file beside
+/// it, flushed to the disk, then renamed over it, so a program that stops partway, a crash or a
 /// full disk leave the old file or the new one, never one cut short. Each change rewrites the
 /// whole file, so a file cut short would lose everything written before it, not just the
 /// change.
@@ -176,9 +220,12 @@ pub(super) fn save(path: &str, contents: &Contents) -> Result<(), OsFailure> {
 ///
 /// # Errors
 ///
-/// The first error the operating system gives: making, writing or flushing the new file, or
-/// renaming it.
-fn replace(path: &str, bytes: &[u8]) -> io::Result<()> {
+/// The first error the operating system gives, or `contents` gives: making, writing or flushing
+/// the new file, or renaming it.
+pub(super) fn replace(
+    path: &str,
+    contents: impl FnOnce(&mut dyn Write) -> io::Result<()>,
+) -> io::Result<()> {
     let target = Path::new(path);
     let name = target
         .file_name()
@@ -188,8 +235,9 @@ fn replace(path: &str, bytes: &[u8]) -> io::Result<()> {
     temporary.push(format!(".baryon-{}", std::process::id()));
     let temporary = target.with_file_name(temporary);
     let written = (|| {
-        let mut file = fs::File::create(&temporary)?;
-        file.write_all(bytes)?;
+        let mut file = BufWriter::with_capacity(BUFFER, fs::File::create(&temporary)?);
+        contents(&mut file)?;
+        let file = file.into_inner().map_err(io::IntoInnerError::into_error)?;
         if let Ok(old) = fs::metadata(target) {
             file.set_permissions(old.permissions())?;
         }
@@ -233,9 +281,12 @@ mod tests {
         let directory = directory("replaced");
         let path = directory.join("out.nc");
         fs::write(&path, b"old bytes, longer than the new").unwrap();
-        replace(path.to_str().unwrap(), b"new").unwrap();
+        replace(path.to_str().unwrap(), |file| file.write_all(b"new")).unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"new");
-        replace(directory.join("fresh.nc").to_str().unwrap(), b"made").unwrap();
+        replace(directory.join("fresh.nc").to_str().unwrap(), |file| {
+            file.write_all(b"made")
+        })
+        .unwrap();
         assert_eq!(names(&directory), ["fresh.nc", "out.nc"]);
         fs::remove_dir_all(&directory).unwrap();
     }
@@ -248,11 +299,11 @@ mod tests {
         let target = directory.join("data.nc");
         fs::create_dir(&target).unwrap();
         fs::write(target.join("inside"), b"kept").unwrap();
-        assert!(replace(target.to_str().unwrap(), b"new").is_err());
+        assert!(replace(target.to_str().unwrap(), |file| file.write_all(b"new")).is_err());
         assert_eq!(names(&directory), ["data.nc"]);
         assert_eq!(fs::read(target.join("inside")).unwrap(), b"kept");
         let missing = directory.join("missing").join("data.nc");
-        assert!(replace(missing.to_str().unwrap(), b"new").is_err());
+        assert!(replace(missing.to_str().unwrap(), |file| file.write_all(b"new")).is_err());
         assert_eq!(names(&directory), ["data.nc"]);
         fs::remove_dir_all(&directory).unwrap();
     }
@@ -265,7 +316,7 @@ mod tests {
         let path = directory.join("out.nc");
         fs::write(&path, b"old").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
-        replace(path.to_str().unwrap(), b"new").unwrap();
+        replace(path.to_str().unwrap(), |file| file.write_all(b"new")).unwrap();
         let mode = fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o640);
         fs::remove_dir_all(&directory).unwrap();
