@@ -180,9 +180,13 @@ impl<'db> Builder<'db> {
             (Some(("Array", method @ ("isna" | "notna"))), [array]) => {
                 self.optional_array_missing(place, *array, method == "isna", node);
             }
-            (Some(("Array", method @ ("count" | "sum" | "min" | "max" | "mean"))), [array])
-                if self.optional_array_element(*array).is_some() =>
-            {
+            (
+                Some((
+                    "Array",
+                    method @ ("count" | "sum" | "min" | "max" | "mean" | "var" | "std"),
+                )),
+                [array, ..],
+            ) if self.optional_array_element(*array).is_some() => {
                 self.optional_array_reduced(place, method, *array, node);
             }
             (Some(("Array", "dropna")), [array]) => {

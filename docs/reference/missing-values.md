@@ -124,8 +124,8 @@ This prints `[1.5 2.5] 4.0`, then `[1.5 0.  2.5]`, then `[1.5 2.  2.5]`.
 
 ## Reductions skip `None`
 
-`count()`, `sum()`, `mean()`, `min()` and `max()` reduce the elements that are there and pass
-over the gaps, as pandas does:
+`count()`, `sum()`, `mean()`, `min()`, `max()`, `var()` and `std()` reduce the elements that
+are there and pass over the gaps, as pandas does:
 
 ```python
 def main():
@@ -142,15 +142,18 @@ This prints `2 3`, then `4.0 2.0 1.5 2.5`.
   same [pairwise order](arrays.md#the-order-sum-adds-in), `mean()` of integers is an `f64`,
   and a `NaN` that is there makes `min()` and `max()` `NaN`, since `NaN` is a number and not
   a gap.
-- **With no element there**, `count()` and `sum()` give 0 and `mean()` gives `NaN`, as for an
-  empty array. `min()` and `max()` stop the program, as they do for an empty array: there is
-  no smallest element. pandas gives `NaN` for those two; check `count()` first where every
-  element may be missing.
-- **Not built yet:** `var`, `std`, `argmin`, `argmax` and the built-ins `sum(bids)`,
+- **`var()` and `std()` take floats and `ddof=`**, as they do on
+  [any array](arrays.md): `ddof` is 0 when left out, which is NumPy's default. pandas's is
+  1, so write `bids.std(ddof=1)` for the number pandas prints.
+- **With no element there**, `count()` and `sum()` give 0 and `mean()`, `var()` and `std()`
+  give `NaN`, as for an empty array. `min()` and `max()` stop the program, as they do for an
+  empty array: there is no smallest element. pandas gives `NaN` for those two; check
+  `count()` first where every element may be missing.
+- **Not built yet:** `argmin`, `argmax` and the built-ins `sum(bids)`,
   `min(bids)` and `max(bids)`.
 - **Cost:** `count` is one pass over the bitmap. `min` and `max` add one pass over the
-  values. `sum` and `mean` copy the elements that are there into a new array, add it, and
-  free it.
+  values. `sum`, `mean`, `var` and `std` copy the elements that are there into a new
+  array, reduce it, and free it.
 
 ## Text that may be `None`
 
@@ -385,7 +388,7 @@ Each of these is a compile error that names what an array with missing values ha
 
 - operators, `bids + 1.0`, and comparisons, `bids == 1.5`;
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `count`, `sum`, `mean`,
-  `min` and `max`: `var`, `std`, `argsort`; and `min` and `max` of text;
+  `min`, `max`, `var` and `std`: `median`, `argsort`; and `min` and `max` of text;
 - a slice, a mask or a list of positions, `bids[1:3]`;
 - assigning an element, `bids[0] = 2.0`;
 - a `for` loop over the array;
