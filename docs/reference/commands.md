@@ -174,7 +174,8 @@ What changes with the flag:
   On Linux the machine that runs it needs OpenBLAS's shared library, which the
   `libopenblas0` package installs and `libopenblas-dev` brings with it; without it the program
   does not start, and the system says `error while loading shared libraries:
-  libopenblas.so.0`. A build without OpenBLAS installed stops with exit status 2, the linker's message and how to install it:
+  libopenblas.so.0`. A build without OpenBLAS installed stops with exit status 2, the linker's
+  message and how to install it:
 
   ```text
   baryon: ld.lld: error: unable to find library -lopenblas
