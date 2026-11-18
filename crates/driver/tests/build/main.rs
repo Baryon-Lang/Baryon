@@ -51,6 +51,7 @@ mod inflate;
 mod integrate;
 mod kernels;
 mod linalg;
+mod list_choosers;
 mod list_slices;
 mod lzma;
 mod managers;

@@ -9,6 +9,7 @@ use crate::builder::Builder;
 use mir::{BinaryOperator, Check, Constant, Local, Operand, Place, Projection, Rvalue};
 use mir::{StatementKind, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
+use types::{Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// Whether the subscript `node` chooses elements with an array, `a[mask]` or
@@ -20,6 +21,7 @@ impl<'db> Builder<'db> {
         self.tree.kind(node) == SyntaxKind::Subscript
             && self.tree.child(node, Role::Index).is_some_and(|index| {
                 self.is_array(self.ty(index))
+                    || self.is_chooser_list(index)
                     || self.optional_array_element(index).is_some()
                     || self.is_text_slice(node)
                     || self.is_optional_slice(node)
@@ -47,7 +49,7 @@ impl<'db> Builder<'db> {
         if self.optional_array_element(value).is_some() {
             return self.optional_selection(place, value, index, node);
         }
-        let (ty, by_type) = (self.ty(node), self.ty(index));
+        let ty = self.ty(node);
         let source = self.borrow(value);
         if self.optional_array_element(index).is_some() {
             // A mask that may hold `None` chooses where it is `True`, as a plain mask.
@@ -59,7 +61,7 @@ impl<'db> Builder<'db> {
             }
             return;
         }
-        let by = self.borrow(index);
+        let (by, by_type) = self.chooser(index);
         let length = self.length(&source, self.ty(value), 0, node);
         let chosen = self.length(&by, by_type, 0, index);
         let result = self.temporary(ty, node);
@@ -91,7 +93,7 @@ impl<'db> Builder<'db> {
         ) else {
             return;
         };
-        let (array_type, by_type) = (self.ty(array), self.ty(index));
+        let array_type = self.ty(array);
         let element = self.element(array_type);
         let stored = self.temporary(element, value);
         let operand = self.operand_as(value, element);
@@ -106,7 +108,7 @@ impl<'db> Builder<'db> {
             };
             (Place::from(mask), length.clone(), true)
         } else {
-            let by = self.borrow(index);
+            let (by, by_type) = self.chooser(index);
             let chosen = self.length(&by, by_type, 0, index);
             let masked = self.element(by_type) == self.boolean_type();
             if masked {
@@ -136,6 +138,45 @@ impl<'db> Builder<'db> {
                 }
             },
         );
+    }
+
+    /// Whether the index `index` is a `list`, which chooses elements as the array of its
+    /// items does: `a[[0, 2]]`, as in `NumPy`.
+    fn is_chooser_list(&self, index: NodeId) -> bool {
+        matches!(self.ty(index).kind(self.db), TypeKind::List(_))
+    }
+
+    /// The array that chooses elements in `a[index]`, with its type: the mask or the
+    /// positions `index` is, borrowed, or, when `index` is a `list` of `bool`s or of `i64`s,
+    /// a new array of its items that is dropped when the statement ends. Cost for a list:
+    /// one allocation and one pass over its items.
+    pub(crate) fn chooser(&mut self, index: NodeId) -> (Place, Type<'db>) {
+        let listed = self.ty(index);
+        let source = self.borrow(index);
+        let &TypeKind::List(element) = listed.kind(self.db) else {
+            return (source, listed);
+        };
+        let ty = Type::new(self.db, TypeKind::Array { element, rank: 1 });
+        let length = self.length(&source, listed, 0, index);
+        let array = self.temporary(ty, index);
+        self.assign(
+            Place::from(array),
+            Rvalue::NewArray(ty, vec![length.clone()]),
+            index,
+        );
+        self.drop_later(array);
+        // Each index is below the length the loop runs to, so neither step needs a check.
+        self.loop_nest(
+            &[length],
+            &mut Vec::new(),
+            index,
+            &mut |builder, indices| {
+                let from = source.clone().project(Projection::Index(indices.to_vec()));
+                let to = Place::from(array).project(Projection::Index(indices.to_vec()));
+                builder.assign(to, Rvalue::Use(Operand::Copy(from)), index);
+            },
+        );
+        (Place::from(array), ty)
     }
 
     /// The position `by[indices]` names, as an `i64` local, checked to lie within `length` as an

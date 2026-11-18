@@ -38,7 +38,7 @@ def uses(asks: Array[f64, 1]):
     wrong: Array[f64 | None, 1] = asks.copy()
     number: f64 = bids[0]
     both = bids[0, 1]
-    part = bids[[0, 1]]
+    part = bids[[0.5]]
     chosen = bids[asks]
     bids[0] = "two"
     bids[asks > 1.0] = 2.0
@@ -113,12 +113,12 @@ error: an array with missing values has one dimension, so it takes one index
    |            ^^^^^^^^^^ more than one index
    = note: for example `values[i]`
 
-error: this index is not built for an array with missing values yet
+error: `Array[f64 | None, 1]` cannot be indexed by `list[f64]`
   --> main.byn:14:12
    |
-14 |     part = bids[[0, 1]]
-   |            ^^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops over numbers and `bool`s, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
+14 |     part = bids[[0.5]]
+   |            ^^^^^^^^^^^ not a choice of elements
+   = note: a rank-1 `Array` takes one rank-1 array: a mask of `bool`s, `a[a > 0.0]`, or `i64` positions, `a[order]`
 
 error: `Array[f64 | None, 1]` cannot be indexed by `Array[f64, 1]`
   --> main.byn:15:14

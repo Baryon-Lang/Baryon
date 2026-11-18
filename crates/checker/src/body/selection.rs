@@ -5,6 +5,8 @@
 //!   `mask` is `True`.
 //! - `a[positions]`, with `positions` an `Array[i64, 1]`, is a new array of the elements of `a`
 //!   at those positions, in that order.
+//! - `a[[0, 2]]`, with a `list` of `bool`s or of `i64`s, chooses as the array of its items
+//!   does.
 //!
 //! `a` is a rank-1 `Array`, an array of `str` or an array with missing values, and the
 //! result is one of the same type. A mask may hold `None`, as `a[bids > 1.0]` does when
@@ -49,11 +51,16 @@ impl<'db> Body<'db> {
                         a mask,";
             return Some(self.optional_array_unbuilt(node, what));
         }
+        // A list chooses as the array of its items does, as in NumPy: `a[[0, 2]]`.
+        let listed = |ty: Type<'db>| match ty.kind(self.db) {
+            TypeKind::List(element) => Some(*element),
+            _ => None,
+        };
         let by = indices
             .iter()
             .filter_map(recorded)
-            .find(|&ty| self.is_any_array(ty))?;
-        let chooses = rank_one(by).is_some_and(|element| {
+            .find(|&ty| self.is_any_array(ty) || (chosen_from && listed(ty).is_some()))?;
+        let chooses = rank_one(by).or(listed(by)).is_some_and(|element| {
             matches!(
                 element.kind(self.db),
                 TypeKind::Primitive(Primitive::Bool | Primitive::Integer(Integer::I64))
@@ -94,7 +101,10 @@ impl<'db> Body<'db> {
         (sliced && copied)
             || index
                 .and_then(|index| self.recorded(index))
-                .is_some_and(|ty| self.is_any_array(ty) || self.is_optional_array(ty))
+                .is_some_and(|ty| {
+                    let listed = matches!(ty.kind(self.db), TypeKind::List(_));
+                    self.is_any_array(ty) || self.is_optional_array(ty) || listed
+                })
     }
 
     /// The type the checker recorded for the expression `node`, once it has been typed.

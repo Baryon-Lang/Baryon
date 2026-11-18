@@ -332,6 +332,8 @@ def main():
   that order; a position may repeat. Each position is bounds-checked as an index is, so one
   below 0 or past the end panics. NumPy counts a negative position from the end; here only a
   negative literal index does, as in [Indexing](#indexing).
+- A `list` chooses as the array of its items does, as in NumPy: `prices[[3, 0]]` is
+  `prices[Array([3, 0])]`. The list is copied into an array first, one allocation.
 - Either is a new array that owns its elements, not a view, so it can be kept in a name,
   returned, or chosen from again: `volume[order][volume[order] > 60]`.
 - `a[mask] = value` and `a[positions] = value` set every chosen element to one value, which is
