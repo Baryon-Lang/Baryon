@@ -27,7 +27,7 @@ Baryon keeps them apart, as Arrow and Polars do:
 ## Making one
 
 `Array(items)` with `items` a `list[T | None]` gives an array with missing values holding a
-copy of each item. `T` is a number type or `bool`:
+copy of each item. `T` is a number type, `bool` or `str`:
 
 ```python
 def main():
@@ -44,8 +44,8 @@ This prints `3`.
 - **The list is borrowed**, so it stays usable.
 - **One dimension.** `Array[f64 | None, 2]` is a compile error; missing values in arrays of
   every rank are roadmap item 3.24.
-- **Text is not built yet.** `Array[str | None, 1]` is a compile error for now, and so is a
-  column `name: str | None`.
+- **Text works the same way.** `Array(["Vega", None])` is an `Array[str | None, 1]`:
+  see [text that may be `None`](#text-that-may-be-none).
 - **Cost:** one pass over the list and two allocations.
 
 ## Reading an element
@@ -151,6 +151,45 @@ This prints `2 3`, then `4.0 2.0 1.5 2.5`.
 - **Cost:** `count` is one pass over the bitmap. `min` and `max` add one pass over the
   values. `sum` and `mean` copy the elements that are there into a new array, add it, and
   free it.
+
+## Text that may be `None`
+
+An `Array[str | None, 1]` holds text with gaps, and a frame's field `name: str | None` is a
+column of it. An empty text and a missing one are different values:
+
+```python
+def main():
+    names = Array(["Vega", None, ""])
+    print(names)
+    print(len(names), names.count())
+    first = names[0]
+    if first is not None:
+        print(first.upper())
+    print(names.fillna("?"))
+    print(names.dropna())
+```
+
+```text
+['Vega' None '']
+3 2
+VEGA
+['Vega' '?' '']
+['Vega' '']
+```
+
+- **It has what an array of numbers with gaps has:** `len`, an element read, `isna()`,
+  `notna()`, `count()`, `copy()`, and `dropna()` and `fillna(text)`, which give a
+  [text array](text-arrays.md). It has no `sum`, `mean`, `min` or `max` yet.
+- **An element read is a copy.** `names[0]` gives a new `str | None` that owns its text, so
+  it can be kept in a variable, a list or a struct after the array is gone. A
+  [text array](text-arrays.md) with no gaps lends its element instead. Cost: one allocation
+  for each read, of the size of the text.
+- **In a frame** such a column does everything
+  [a column that may hold `None`](#in-a-dataframe) does. `sort_values` puts the texts in
+  the order of `<` with each `None` last, and `agg` has `count`, `first`, `last`, `min` and
+  `max` for it, which give `None` for a group whose texts are all missing.
+- **Stored** as a text array with an empty text under each `None`, and the validity bitmap,
+  which is Arrow's layout for nullable text.
 
 ## How it is stored
 
@@ -295,7 +334,8 @@ This prints:
 
 `print(bids)` writes the elements between brackets with `None` for each gap, which is how
 NumPy prints an array of objects, and `print(df)` writes `<NA>` for each missing cell, as
-pandas does for its nullable columns. An f-string gives the same text.
+pandas does for its nullable columns. An f-string gives the same text. Text is written as a
+[text array](text-arrays.md) writes it, in quotes alone and without them in a frame.
 
 ```python
 from math import nan
@@ -345,7 +385,7 @@ Each of these is a compile error that names what an array with missing values ha
 
 - operators, `bids + 1.0`, and comparisons, `bids == 1.5`;
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `count`, `sum`, `mean`,
-  `min` and `max`: `var`, `std`, `argsort`;
+  `min` and `max`: `var`, `std`, `argsort`; and `min` and `max` of text;
 - a slice, a mask or a list of positions, `bids[1:3]`;
 - assigning an element, `bids[0] = 2.0`;
 - a `for` loop over the array;

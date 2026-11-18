@@ -150,6 +150,7 @@ impl<'db> Builder<'db> {
                         TypeKind::Primitive(Primitive::Bool) => {
                             (self.converted(values, element, int, node), int)
                         }
+                        TypeKind::Str => (self.text_codes(values, node)?, int),
                         _ => (values, element),
                     }
                 }
@@ -281,14 +282,22 @@ impl<'db> Builder<'db> {
             element,
         };
         let read = (stored.project(Projection::Field(VALUES)), &values);
+        let text = matches!(element.kind(self.db), TypeKind::Str);
         let &TypeKind::Optional(given) = new.element.kind(self.db) else {
+            if text {
+                return self.group_text(&there, read, how, node);
+            }
             return self.group_column(&there, read, how, new, node);
         };
         let plain = Column {
             name: new.name.clone(),
             element: given,
         };
-        let reduced = self.group_column(&there, read, how, &plain, node)?;
+        let reduced = if text {
+            self.group_text(&there, read, how, node)?
+        } else {
+            self.group_column(&there, read, how, &plain, node)?
+        };
         let bytes = self.array_of(Type::new(
             self.db,
             TypeKind::Primitive(Primitive::Integer(Integer::U8)),
@@ -338,8 +347,13 @@ impl<'db> Builder<'db> {
             Place::from(how_held),
         ];
         if how == 5 {
-            let counts =
-                self.frame_call("group_integers", Vec::new(), arguments, positions, node)?;
+            // A group may be empty once the rows that hold `None` have left it.
+            let function = if groups.gaps {
+                "group_present_integers"
+            } else {
+                "group_integers"
+            };
+            let counts = self.frame_call(function, Vec::new(), arguments, positions, node)?;
             return Some(Place::from(counts));
         }
         let rows = self.frame_call("group_rows", Vec::new(), arguments, positions, node)?;

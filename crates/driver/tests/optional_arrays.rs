@@ -33,7 +33,7 @@ class Book(Struct):
 def uses(asks: Array[f64, 1]):
     bids: Array[f64 | None, 1] = Array([1.5, None])
     grid: Array[f64 | None, 2] = Array([1.0])
-    texts: Array[str | None, 1] = Array(["a"])
+    texts: Array[list[i64] | None, 1] = Array([[1]])
     plain: Array[f64, 1] = Array([1.0, None])
     wrong: Array[f64 | None, 1] = asks.copy()
     number: f64 = bids[0]
@@ -72,12 +72,18 @@ error: an array with missing values has one dimension
   |                             ^ not 1
   = note: write `Array[f64 | None, 1]`; more dimensions are roadmap item 3.24
 
-error: an array cannot hold `str | None` yet
+error: an array cannot hold `list[i64] | None` yet
  --> main.byn:9:18
   |
-9 |     texts: Array[str | None, 1] = Array(["a"])
-  |                  ^^^^^^^^^^ not a number or `bool`, or `None`
-  = note: an array with missing values holds numbers or `bool`s today, such as `Array[f64 | None, 1]`; the rest comes with roadmap item 3.13.6
+9 |     texts: Array[list[i64] | None, 1] = Array([[1]])
+  |                  ^^^^^^^^^^^^^^^^ not a number, a `bool` or `str`, or `None`
+  = note: an array with missing values holds numbers, `bool`s or `str` today, such as `Array[f64 | None, 1]`
+
+error: an array's elements must be a copy type, found `list[i64]`
+ --> main.byn:9:47
+  |
+9 |     texts: Array[list[i64] | None, 1] = Array([[1]])
+  |                                               ^^^^^ not a copy type
 
 error: list items must share one type, found `f64` and `None`
   --> main.byn:10:40

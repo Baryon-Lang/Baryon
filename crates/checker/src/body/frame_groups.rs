@@ -209,7 +209,12 @@ impl<'db> Body<'db> {
             element: optional.unwrap_or(stored.element),
         };
         if matches!(read.element.kind(self.db), TypeKind::Str) {
-            return self.text_reduction(column, read, &how);
+            let reduced = self.text_reduction(column, read, &how)?;
+            // The text picked from a group whose texts are all `None` is `None`.
+            if optional.is_some() && matches!(reduced.kind(self.db), TypeKind::Str) {
+                return Some(stored.element);
+            }
+            return Some(reduced);
         }
         if !self.orderable(column, read, "reduce") {
             return None;

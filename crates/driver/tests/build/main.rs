@@ -55,6 +55,7 @@ mod missing_groups;
 mod missing_joins;
 mod missing_rows;
 mod missing_shown;
+mod missing_text;
 mod modules;
 mod narrowing;
 mod netcdf;

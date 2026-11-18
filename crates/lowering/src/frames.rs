@@ -241,7 +241,9 @@ impl<'db> Builder<'db> {
     }
 
     /// A copy of the column at `column`, stored as `stored`: a copy of the array, or of both
-    /// buffers of a text column, which is stored as a tuple of the two.
+    /// buffers of a text column, which is stored as a tuple of the two, or of the values and
+    /// the validity bitmap of a column that may hold `None`, whose values are a tuple too
+    /// when they are text.
     pub(crate) fn column_copy(
         &mut self,
         column: Place,
@@ -255,8 +257,7 @@ impl<'db> Builder<'db> {
         let mut copies = Vec::with_capacity(buffers.len());
         for (position, &buffer) in (0_u32..).zip(buffers) {
             let source = column.clone().project(Projection::Field(position));
-            let copy = self.copy_view(source, buffer, node);
-            copies.push(Operand::Move(Place::from(copy)));
+            copies.push(self.column_copy(source, buffer, node));
         }
         let whole = self.temporary(stored, node);
         self.assign(Place::from(whole), Rvalue::Aggregate(stored, copies), node);
@@ -329,6 +330,15 @@ impl<'db> Builder<'db> {
                 values.clone().project(Projection::Field(VALIDITY)),
                 Place::from(row),
             ];
+            if matches!(element.kind(self.db), TypeKind::Str) {
+                // The field owns a copy of the text, as a field of `str` does.
+                let name = "text_optional_element";
+                let read = self.frame_call(name, Vec::new(), arguments, column.element, node);
+                return match read {
+                    Some(read) => Operand::Move(Place::from(read)),
+                    None => Operand::Copy(values),
+                };
+            }
             let types = vec![element];
             return match self.frame_call("optional_element", types, arguments, column.element, node)
             {
@@ -399,12 +409,20 @@ impl<'db> Builder<'db> {
             for (position, &(array, column, items)) in (0_u32..).zip(&arrays) {
                 let field = row.clone().project(Projection::Field(position));
                 if let Some(items) = items {
+                    // Text is copied for the list, which owns its items.
+                    let item = if builder.holds_text(column.element) {
+                        let name = "text_copied";
+                        let fields = vec![field];
+                        match builder.frame_call(name, Vec::new(), fields, column.element, node) {
+                            Some(copy) => Operand::Move(Place::from(copy)),
+                            None => return,
+                        }
+                    } else {
+                        Operand::Copy(field)
+                    };
                     builder.then(node, |next| TerminatorKind::Call {
                         callee: Callee::Builtin(Builtin::Append),
-                        arguments: vec![
-                            Argument::InOut(Place::from(items)),
-                            Argument::Owned(Operand::Copy(field)),
-                        ],
+                        arguments: vec![Argument::InOut(Place::from(items)), Argument::Owned(item)],
                         destination: Place::from(nothing),
                         target: next,
                         error: None,
@@ -420,15 +438,19 @@ impl<'db> Builder<'db> {
             else {
                 continue;
             };
-            let Some(filler) = self.filler(element) else {
-                return self.unsupported(node, "a column with missing values of this type");
-            };
-            let filler = Place::from(self.held(element, Operand::Constant(filler), node));
             let stored = erase(self.db, column.array(self.db));
-            let arguments = vec![Place::from(items), filler];
-            let Some(parts) =
+            let parts = if matches!(element.kind(self.db), TypeKind::Str) {
+                let items = vec![Place::from(items)];
+                self.frame_call("text_optional_parts", Vec::new(), items, stored, node)
+            } else {
+                let Some(filler) = self.filler(element) else {
+                    return self.unsupported(node, "a column with missing values of this type");
+                };
+                let filler = Place::from(self.held(element, Operand::Constant(filler), node));
+                let arguments = vec![Place::from(items), filler];
                 self.frame_call("optional_parts", vec![element], arguments, stored, node)
-            else {
+            };
+            let Some(parts) = parts else {
                 return;
             };
             let parts = Rvalue::Use(Operand::Move(Place::from(parts)));

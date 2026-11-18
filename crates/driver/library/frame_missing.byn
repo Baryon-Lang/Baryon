@@ -28,6 +28,10 @@ and the compiler puts them together.
 - `optional_cells`, `optional_float_cells` and `optional_single_cells` give a column's cells
   for `print(df)`, with `<NA>` for a missing value, and `optional_shown` gives the text of
   an array alone, `[1.5 None 2.5]`.
+- Text that may be `None` is stored as a text array with an empty text under each `None`.
+  `text_optional_parts`, `text_optional_element`, `text_filled` and `text_present` do for
+  it what the functions without `text_` do for numbers, `text_copied` copies one field of a
+  row for `DataFrame(rows)`, and `gap_cells` puts `<NA>` in the cells of such a column.
 """
 
 from math import isinf, isnan
@@ -61,6 +65,58 @@ def optional_element[T: Copy](values: Array[T, 1], bits: Array[u8, 1], at: int) 
     if _valid(bits, at):
         return values[at]
     return None
+
+
+def _word(item: str | None) -> str:
+    """A copy of the text `item`, or an empty text for `None`: what is stored for one item of
+    a text array with missing values."""
+    if item is not None:
+        return item.copy()
+    return ""
+
+
+def text_copied(item: str | None) -> str | None:
+    """A copy of `item` that the caller owns: `DataFrame(rows)` gathers a field of text that
+    may be `None` from each row with it. Cost: one allocation, of the size of the text."""
+    if item is not None:
+        return item.copy()
+    return None
+
+
+def text_optional_parts(items: list[str | None]) -> tuple[Array[str, 1], Array[u8, 1]]:
+    """`optional_parts` for text: the values, a text array with an empty text where an item
+    is `None`, and the validity bitmap. Cost: one copy of each text in a list before the
+    array is built from it, and the bitmap."""
+    count = len(items)
+    bits = Array.fill(((count + 7) // 8,), u8(0))
+    at = 0
+    for item in items:
+        if item is not None:
+            bits[at // 8] = bits[at // 8] | (u8(1) << u8(at % 8))
+        at += 1
+    return (Array([_word(item) for item in items]), bits)
+
+
+def text_optional_element(values: Array[str, 1], bits: Array[u8, 1], at: int) -> str | None:
+    """`optional_element` for text: a copy of element `at`, or `None` when its bit is 0.
+    Cost: one allocation, of the size of the text."""
+    if _valid(bits, at):
+        return values[at].copy()
+    return None
+
+
+def text_filled(values: Array[str, 1], bits: Array[u8, 1], value: str) -> Array[str, 1]:
+    """`filled` for text: a new text array with `value` where `bits` says `None`. Cost: one
+    copy of each element in a list before the array is built from it."""
+    return Array([
+        values[at].copy() if _valid(bits, at) else value.copy() for at in range(len(values))
+    ])
+
+
+def text_present(values: Array[str, 1], bits: Array[u8, 1]) -> Array[str, 1]:
+    """`present` for text: the elements whose bit in `bits` is 1, in order, as a new text
+    array. Cost: as `text_filled`."""
+    return Array([values[at].copy() for at in range(len(values)) if _valid(bits, at)])
 
 
 def missing(bits: Array[u8, 1], count: int, wanted: bool) -> Array[bool, 1]:
@@ -302,6 +358,16 @@ def optional_cells[T: Copy](values: Array[T, 1], bits: Array[u8, 1]) -> list[str
         else:
             cells.append(" <NA>")
     return cells
+
+
+def gap_cells(cells: list[str], bits: Array[u8, 1], count: int) -> list[str]:
+    """The cells of a column of `str` that may hold `None`: `cells`, the cells of its values
+    for the rows that are printed of `count`, with `<NA>` where the validity bitmap `bits`
+    says the row holds `None`. Cost: one copy of each cell, at most 60."""
+    return [
+        cells[cell].copy() if _valid(bits, _shown_row(cell, count)) else " <NA>"
+        for cell in range(len(cells))
+    ]
 
 
 def _float_cell(value: f64) -> str:

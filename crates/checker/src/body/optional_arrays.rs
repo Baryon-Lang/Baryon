@@ -1,7 +1,7 @@
 //! Arrays with missing values, `Array[T | None, 1]` (decision 0045, part 3): one dimension of
-//! numbers or `bool`s, any of which may be `None`. Reading an element gives a `T | None`,
-//! which the program must check before it uses the number, so a missing value is never read
-//! as a number by accident.
+//! numbers, `bool`s or text, any of which may be `None`. Reading an element gives a
+//! `T | None`, which the program must check before it uses the value, so a missing value is
+//! never read as a value by accident.
 
 use super::Body;
 use super::calls::Arguments;

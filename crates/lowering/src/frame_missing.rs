@@ -28,7 +28,7 @@ impl<'db> Builder<'db> {
             return self.unsupported(node, "`dropna` of this value");
         };
         let base = self.borrow(array);
-        let length = self.optional_array_length(&base, node);
+        let length = self.optional_array_length(&base, element, node);
         let bits = base.clone().project(Projection::Field(VALIDITY));
         let Some(mask) = self.validity_mask(bits, length, false, node) else {
             return;
@@ -36,8 +36,7 @@ impl<'db> Builder<'db> {
         self.drop_later(mask);
         let values = base.project(Projection::Field(VALUES));
         let arguments = vec![values, Place::from(mask)];
-        let narrowed = self.array_of(element);
-        if let Some(kept) = self.frame_call("masked", vec![element], arguments, narrowed, node) {
+        if let Some(kept) = self.values_call("masked", element, arguments, node) {
             self.assign(place, Rvalue::Use(Operand::Move(Place::from(kept))), node);
         }
     }
@@ -76,9 +75,8 @@ impl<'db> Builder<'db> {
         let value = Place::from(self.held(element, value, node));
         let values = base.clone().project(Projection::Field(VALUES));
         let bits = base.clone().project(Projection::Field(VALIDITY));
-        let narrowed = self.array_of(element);
         let arguments = vec![values, bits, value];
-        let filled = self.frame_call("filled", vec![element], arguments, narrowed, node)?;
+        let filled = self.values_call("filled", element, arguments, node)?;
         Some(Operand::Move(Place::from(filled)))
     }
 
@@ -96,12 +94,14 @@ impl<'db> Builder<'db> {
         node: NodeId,
     ) -> Option<[Key<'db>; 2]> {
         let int = self.int_type();
-        let count = self.optional_array_length(column, node);
-        let count = Place::from(self.held(int, count, node));
-        let bits = column.clone().project(Projection::Field(VALIDITY));
-        let positions = self.positions_type();
-        let flags = self.frame_call("presence", Vec::new(), vec![bits, count], positions, node)?;
-        self.drop_later(flags);
+        let flags = self.presence(column, element, node)?;
+        if matches!(element.kind(self.db), TypeKind::Str) {
+            // The values hold an empty text under each `None`, and the flags tell that from
+            // a row whose text is empty.
+            let values = column.clone().project(Projection::Field(VALUES));
+            let codes = self.text_codes(values, node)?;
+            return Some([(Place::from(flags), int), (codes, int)]);
+        }
         let filler = Operand::Constant(self.filler(element)?);
         let Operand::Move(values) = self.none_filled(column, element, filler, node)? else {
             return None;
@@ -115,6 +115,24 @@ impl<'db> Builder<'db> {
             _ => (values, element),
         };
         Some([(Place::from(flags), int), values])
+    }
+
+    /// The library's `presence` for the column that may hold `None` stored at `column`, whose
+    /// values are `element`s: a new array of 1 for each row that has a value and 0 for each
+    /// `None`, dropped when the statement ends. `None` after a report.
+    pub(crate) fn presence(
+        &mut self,
+        column: &Place,
+        element: Type<'db>,
+        node: NodeId,
+    ) -> Option<Local> {
+        let count = self.optional_array_length(column, element, node);
+        let count = Place::from(self.held(self.int_type(), count, node));
+        let bits = column.clone().project(Projection::Field(VALIDITY));
+        let positions = self.positions_type();
+        let flags = self.frame_call("presence", Vec::new(), vec![bits, count], positions, node)?;
+        self.drop_later(flags);
+        Some(flags)
     }
 
     /// `values.count()`, `sum()`, `min()`, `max()` or `mean()`, the method `method`, on the
@@ -142,7 +160,7 @@ impl<'db> Builder<'db> {
         let base = self.borrow(array);
         let values = base.clone().project(Projection::Field(VALUES));
         let bits = base.clone().project(Projection::Field(VALIDITY));
-        let length = self.optional_array_length(&base, node);
+        let length = self.optional_array_length(&base, element, node);
         let length = Place::from(self.held(int, length, node));
         let arguments = vec![bits.clone(), length];
         let Some(count) = self.frame_call("present_count", Vec::new(), arguments, int, node) else {
@@ -219,9 +237,8 @@ impl<'db> Builder<'db> {
             &TypeKind::Optional(element) => {
                 let values = from.clone().project(Projection::Field(VALUES));
                 let bits = from.project(Projection::Field(VALIDITY));
-                let plain = self.array_of(element);
                 let arguments = vec![values, by.clone()];
-                let values = self.frame_call(function, vec![element], arguments, plain, node)?;
+                let values = self.values_call(function, element, arguments, node)?;
                 let name = format!("{function}_bits");
                 let bytes = self.array_of(Type::new(
                     self.db,
@@ -273,61 +290,6 @@ impl<'db> Builder<'db> {
             halves.push(half);
         }
         Some((halves[0], halves[1]))
-    }
-
-    /// The column `first`, which may hold `None` and whose values are `element`s, with each
-    /// column of `rest` after it, in order, as a new column: for each column of `rest`, which
-    /// is not empty, one call of the library's `stacked` for the values and one of
-    /// `stacked_bits` for the validity bitmaps. The steps on the way are dropped when the
-    /// statement ends. `None` after a report.
-    pub(crate) fn optional_stacked(
-        &mut self,
-        element: Type<'db>,
-        first: Place,
-        rest: Vec<Place>,
-        node: NodeId,
-    ) -> Option<Operand<'db>> {
-        let int = self.int_type();
-        let plain = self.array_of(element);
-        let bytes = self.array_of(Type::new(
-            self.db,
-            TypeKind::Primitive(Primitive::Integer(Integer::U8)),
-        ));
-        let stored = Type::new(self.db, TypeKind::Tuple(vec![plain, bytes]));
-        let filler = self.filler(element)?;
-        let filler = Place::from(self.held(element, Operand::Constant(filler), node));
-        let mut values = first.clone().project(Projection::Field(VALUES));
-        let mut bits = first.project(Projection::Field(VALIDITY));
-        let mut newest: Option<(Local, Local)> = None;
-        for part in rest {
-            let more = part.clone().project(Projection::Field(VALUES));
-            let more_bits = part.project(Projection::Field(VALIDITY));
-            let mut counts = Vec::with_capacity(2);
-            for side in [&values, &more] {
-                let length = self.temporary(int, node);
-                self.assign(Place::from(length), Rvalue::Length(side.clone(), 0), node);
-                counts.push(Place::from(length));
-            }
-            let arguments = vec![bits, counts[0].clone(), more_bits, counts[1].clone()];
-            let next_bits = self.frame_call("stacked_bits", Vec::new(), arguments, bytes, node)?;
-            let arguments = vec![values, more, filler.clone()];
-            let next = self.frame_call("stacked", vec![element], arguments, plain, node)?;
-            // Every pair of arrays but the last is only a step on the way.
-            if let Some((step, step_bits)) = newest.replace((next, next_bits)) {
-                self.drop_later(step);
-                self.drop_later(step_bits);
-            }
-            values = Place::from(next);
-            bits = Place::from(next_bits);
-        }
-        let (values, bits) = newest?;
-        let parts = vec![
-            Operand::Move(Place::from(values)),
-            Operand::Move(Place::from(bits)),
-        ];
-        let whole = self.temporary(stored, node);
-        self.assign(Place::from(whole), Rvalue::Aggregate(stored, parts), node);
-        Some(Operand::Move(Place::from(whole)))
     }
 
     /// `df.dropna()` on the frame `frame`, into `place`: a new frame of the rows that have
@@ -389,8 +351,7 @@ impl<'db> Builder<'db> {
             let by = Place::from(mask);
             let result = if let Some(element) = optional(self, column.element) {
                 let values = from.project(Projection::Field(VALUES));
-                let narrowed = self.array_of(element);
-                self.frame_call("masked", vec![element], vec![values, by], narrowed, node)
+                self.values_call("masked", element, vec![values, by], node)
             } else if matches!(column.element.kind(self.db), TypeKind::Str) {
                 let array = erase(self.db, column.array(self.db));
                 self.frame_call("text_masked", Vec::new(), vec![from, by], array, node)
