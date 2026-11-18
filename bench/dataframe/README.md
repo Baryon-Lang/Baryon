@@ -2,8 +2,8 @@
 
 Six `DataFrame` operations on a table of 10 million rows, written three times: in Baryon, in
 pandas and in Polars. It is the measurement roadmap item 3.13.10 asks for. The parallel and
-fused versions of the column loops, and faster sorting, grouping and joining, start from these
-numbers: performance work begins with a benchmark that shows the problem and ends with one
+fused versions of the column loops start from these numbers, as the faster sorts of item
+3.13.12 did: performance work begins with a benchmark that shows the problem and ends with one
 that shows the gain.
 
 ## Run it
@@ -52,6 +52,32 @@ fastest of 3. Your numbers will differ.
 
 ```text
 operation     Baryon    pandas    Polars  checksum
+filter         0.083     0.121     0.019  identical
+assign         0.082     0.069     0.033  identical
+groupby        1.106     0.238     0.101  identical
+sort           1.142     1.355     0.471  identical
+merge          1.056     0.979     0.086  identical
+missing        0.247     0.139     0.026  identical
+```
+
+What they say:
+
+- `filter`, `assign` and `missing` are single compiled loops over the columns, and are level
+  with pandas on one core. Polars is ahead because it uses every core.
+- `sort` and `merge` are level with pandas. `sort_values` by a column of `f64` deals the
+  values into buckets and sorts each one, and half of what is left is copying the three
+  columns into their new order. `merge` sorts the keys of both frames by counting.
+- `groupby` is five times behind pandas. About half of its time is the sums: Baryon's `sum`
+  and `mean` of a group are correctly rounded (`math.fsum`), where pandas's are compensated
+  but not exact. The rest is gathering each group's values through the sorted positions.
+- Polars is 2 to 12 times ahead on these three, with every core and hash tables.
+
+### Before roadmap item 3.13.12
+
+The first measurement, on the same machine and day, which the faster sorts started from:
+
+```text
+operation     Baryon    pandas    Polars  checksum
 filter         0.137     0.121     0.019  identical
 assign         0.052     0.065     0.035  identical
 groupby        3.584     0.194     0.120  identical
@@ -60,13 +86,9 @@ merge          4.392     0.936     0.116  identical
 missing        0.224     0.141     0.024  identical
 ```
 
-What they say:
-
-- `filter`, `assign` and `missing` are single compiled loops over the columns, and are level
-  with pandas on one core. Polars is ahead because it uses every core.
-- `groupby`, `sort` and `merge` are far behind. All three sort row positions with a merge sort
-  written in Baryon (`crates/driver/library/frames.byn`), on one core, comparing through the
-  position array. pandas and Polars group and join with hash tables.
+Then all three sorted row positions with one merge sort that read the column through the
+position array, which misses the processor's cache at every comparison once a column is larger
+than it. Item 3.13.12 replaced it (`crates/driver/library/frame_order.byn`).
 
 ## How the time is measured
 

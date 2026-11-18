@@ -178,19 +178,19 @@ On a 4-core cloud machine, in seconds, fastest of three runs:
 
 | Operation | Baryon | pandas 3.0 | Polars 2.1 |
 | --- | --- | --- | --- |
-| `filter`: rows where a column is over 0.5 | 0.14 | 0.12 | 0.02 |
-| `assign`: a column computed from two others | 0.05 | 0.07 | 0.04 |
-| `groupby`: sum and mean for 1000 keys | 3.58 | 0.19 | 0.12 |
-| `sort`: `sort_values` by a float column | 3.62 | 1.29 | 0.52 |
-| `merge`: inner join to a table of 1000 rows | 4.39 | 0.94 | 0.12 |
-| `missing`: a mask and a mean over a column with gaps | 0.22 | 0.14 | 0.02 |
+| `filter`: rows where a column is over 0.5 | 0.08 | 0.12 | 0.02 |
+| `assign`: a column computed from two others | 0.08 | 0.07 | 0.03 |
+| `groupby`: sum and mean for 1000 keys | 1.11 | 0.24 | 0.10 |
+| `sort`: `sort_values` by a float column | 1.14 | 1.36 | 0.47 |
+| `merge`: inner join to a table of 1000 rows | 1.06 | 0.98 | 0.09 |
+| `missing`: a mask and a mean over a column with gaps | 0.25 | 0.14 | 0.03 |
 
-Baryon runs each column operation as one compiled loop on one core, which is why `filter` and
-`assign` are level with pandas. Sorting, grouping and joining are first versions written to be
-correct and easy to read: each sorts the rows by key with a merge sort on one core, where
-pandas and Polars hash the keys and Polars uses every core. These numbers are the starting line
-for that work, not the finish. The benchmark's own page says how each number is measured and
-how to run it on your machine.
+Baryon runs each operation on one core, as pandas does, and is level with pandas except in
+`groupby`, where about half the time goes to sums that are correctly rounded
+([Grouping](../reference/dataframe-operations.md#grouping)); pandas's are not. Polars is
+ahead everywhere because it uses every core. Running Baryon's column loops on every core is
+the next step, and these numbers are its starting line. The benchmark's own page says how each
+number is measured and how to run it on your machine.
 
 ## Where to go next
 

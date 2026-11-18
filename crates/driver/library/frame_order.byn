@@ -1,0 +1,239 @@
+"""The sort behind a `DataFrame`'s `sort_values`, `groupby` and `merge`, written in Baryon
+(decision 0045).
+
+The compiler calls these functions; a program cannot import this file. Each gives the
+positions of a frame's rows in the order of one column and leaves the columns alone, so a
+sort by several columns is one call for each, the last column first, and every sort here is
+stable: rows with equal values keep the order they came in.
+
+`ordered` sorts by a column of any number type with a merge sort. The compiler calls
+`ordered_floats` for a column of `f64` and `ordered_integers` for one of `i64` in its place:
+the first deals the values into buckets and sorts each, the second counts the rows of each
+value, and both take about `n` steps where a merge sort takes `n log n` comparisons. A column
+of `str` is sorted as the integers `text_codes` of `<std>/frame_joins.byn` gives it, and
+`ordered_flags` sorts a column of `bool`. Roadmap item 3.13.12 measured them: at 10 million
+rows, see `bench/dataframe/README.md`.
+"""
+
+from math import inf
+
+
+def _merged[T: Number](
+    keys: Array[T, 1],
+    order: Array[i64, 1],
+    to_keys: InOut[Array[T, 1]],
+    to_order: InOut[Array[i64, 1]],
+    base: int,
+    end: int,
+    width: int,
+    ascending: bool,
+):
+    """One pass of a merge sort over elements `base` to `end`: `keys`, sorted in runs of
+    `width` with their positions in `order`, are merged two runs at a time into `to_keys` and
+    `to_order`, which are then sorted in runs of twice the width. Of two equal values the one
+    from the earlier run goes first, which keeps the sort stable."""
+    low = base
+    while low < end:
+        middle = min(low + width, end)
+        high = min(low + 2 * width, end)
+        left = low
+        right = middle
+        for at in range(low, high):
+            from_left = right >= high
+            if left < middle and right < high:
+                if ascending:
+                    from_left = not (keys[right] < keys[left])
+                else:
+                    from_left = not (keys[right] > keys[left])
+            if from_left:
+                to_order[at] = order[left]
+                to_keys[at] = keys[left]
+                left += 1
+            else:
+                to_order[at] = order[right]
+                to_keys[at] = keys[right]
+                right += 1
+        low = high
+
+
+def _sorted[T: Number](
+    keys: InOut[Array[T, 1]],
+    order: InOut[Array[i64, 1]],
+    spare_keys: InOut[Array[T, 1]],
+    spare: InOut[Array[i64, 1]],
+    base: int,
+    end: int,
+    ascending: bool,
+):
+    """Sorts elements `base` to `end` of `keys`, which hold no NaN, and moves `order` with
+    them; the sort is stable. Up to 32 elements are sorted by insertion, which is the fastest
+    way for so few. More are sorted in runs of 8 by insertion and the runs merged, each pass
+    going to `spare_keys` and `spare` and the next one back, so nothing is copied between
+    passes."""
+    run = 32 if end - base <= 32 else 8
+    low = base
+    while low < end:
+        high = min(low + run, end)
+        for at in range(low + 1, high):
+            key = keys[at]
+            row = order[at]
+            slot = at
+            while slot > low and (keys[slot - 1] > key if ascending else keys[slot - 1] < key):
+                keys[slot] = keys[slot - 1]
+                order[slot] = order[slot - 1]
+                slot -= 1
+            keys[slot] = key
+            order[slot] = row
+        low = high
+    width = run
+    while width < end - base:
+        _merged(keys, order, spare_keys, spare, base, end, width, ascending)
+        _merged(spare_keys, spare, keys, order, base, end, 2 * width, ascending)
+        width *= 4
+
+
+def ordered[T: Number](
+    column: Array[T, 1], start: Array[i64, 1], ascending: bool
+) -> Array[i64, 1]:
+    """The positions `start` put in the order of the values of `column` they name: rising when
+    `ascending`, falling when not. The sort is stable, so rows with equal values keep the order
+    they have in `start`; sorting by the last key first and the first key last therefore
+    sorts by several keys. NaN goes last in both directions, as in pandas.
+
+    The values are copied out of `column` first and sorted with their positions, so the sort
+    reads memory in order instead of jumping through `column`: `n log n` comparisons, and two
+    arrays of `n` values and two of `n` positions."""
+    count = len(start)
+    order = start.copy()
+    spare = start.copy()
+    keys = Array([column[at] for at in start])
+    spare_keys = keys.copy()
+    valid = 0
+    for at in range(count):
+        value = spare_keys[at]
+        if value == value:
+            order[valid] = start[at]
+            keys[valid] = value
+            valid += 1
+    missing = valid
+    for at in range(count):
+        value = spare_keys[at]
+        if value != value:
+            order[missing] = start[at]
+            missing += 1
+    _sorted(keys, order, spare_keys, spare, 0, valid, ascending)
+    return order
+
+
+def ordered_floats(
+    column: Array[f64, 1], start: Array[i64, 1], ascending: bool
+) -> Array[i64, 1]:
+    """`ordered` for a column of `f64`, in the same stable order, faster for a long column.
+
+    More than 4096 values are first dealt into buckets, about one for every 16 values, by
+    where each lies between the smallest and the largest. A bucket holds only values smaller
+    than the next bucket's, so sorting each bucket, which fits in the processor's cache, sorts
+    the column. For values spread evenly that is about `n` steps. Values crowded into a few
+    buckets, as when one is far from all the others, cost a merge sort of each crowded bucket,
+    `n log n` comparisons at most. A column with an infinity, or of one value, is sorted by
+    `ordered`. Memory: two arrays of `n` values, two of `n` positions, and one counter for
+    each bucket."""
+    count = len(start)
+    if count <= 4096:
+        return ordered(column, start, ascending)
+    low = inf
+    high = -inf
+    valid = 0
+    for at in start:
+        value = column[at]
+        if value == value:
+            low = min(low, value)
+            high = max(high, value)
+            valid += 1
+    spread = high - low
+    if valid < 2 or not (spread > 0.0) or spread - spread != 0.0:
+        return ordered(column, start, ascending)
+    buckets = valid // 16 + 1
+    scale = f64(buckets - 1) / spread
+    places = Array.fill((buckets + 1,), 0)
+    for at in start:
+        value = column[at]
+        if value == value:
+            slot = min(int((value - low) * scale), buckets - 1)
+            if not ascending:
+                slot = buckets - 1 - slot
+            places[slot + 1] += 1
+    for slot in range(buckets):
+        places[slot + 1] += places[slot]
+    order = start.copy()
+    keys = Array.zeros(count)
+    missing = valid
+    for at in start:
+        value = column[at]
+        if value == value:
+            slot = min(int((value - low) * scale), buckets - 1)
+            if not ascending:
+                slot = buckets - 1 - slot
+            keys[places[slot]] = value
+            order[places[slot]] = at
+            places[slot] += 1
+        else:
+            order[missing] = at
+            missing += 1
+    # The second pair of arrays is needed only to merge a crowded bucket.
+    spare = Array.fill((0,), 0)
+    spare_keys = Array.zeros(0)
+    base = 0
+    for slot in range(buckets):
+        end = places[slot]
+        if end - base > 32 and len(spare) == 0:
+            spare = order.copy()
+            spare_keys = keys.copy()
+        if end - base > 1:
+            _sorted(keys, order, spare_keys, spare, base, end, ascending)
+        base = end
+    return order
+
+
+def ordered_integers(
+    column: Array[i64, 1], start: Array[i64, 1], ascending: bool
+) -> Array[i64, 1]:
+    """`ordered` for a column of integers, in the same stable order. When the values lie in a
+    range not much wider than the number of rows, as group keys, the numbers that stand for
+    text and row numbers do, it is a counting sort: one pass counts the rows of each value,
+    and one pass puts each row in its value's place. Cost: two passes over the rows and an
+    array with one counter for each integer of the range, in place of `n log n` comparisons.
+    A wider range is sorted by `ordered`."""
+    count = len(start)
+    if count < 2:
+        return start.copy()
+    low = column[start[0]]
+    high = low
+    for at in start:
+        low = min(low, column[at])
+        high = max(high, column[at])
+    limit = 4 * count + 1024
+    if low < -limit or high > limit or high - low > limit:
+        if low < -4611686018427387904 or high > 4611686018427387904 or high - low > limit:
+            return ordered(column, start, ascending)
+    places = Array.fill((high - low + 2,), 0)
+    for at in start:
+        slot = column[at] - low if ascending else high - column[at]
+        places[slot + 1] += 1
+    for slot in range(high - low + 1):
+        places[slot + 1] += places[slot]
+    order = start.copy()
+    for at in start:
+        slot = column[at] - low if ascending else high - column[at]
+        order[places[slot]] = at
+        places[slot] += 1
+    return order
+
+
+def ordered_flags(
+    column: Array[bool, 1], start: Array[i64, 1], ascending: bool
+) -> Array[i64, 1]:
+    """`ordered` for a column of `bool`, where `False` comes before `True`. Cost: one more
+    array of `n` integers."""
+    numbers = Array([1 if flag else 0 for flag in column])
+    return ordered(numbers, start, ascending)
