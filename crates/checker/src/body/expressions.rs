@@ -427,7 +427,9 @@ impl<'db> Body<'db> {
         )
     }
 
-    /// `value if condition else other`: both branches have one type.
+    /// `value if condition else other`: both branches have one type, or, where the context
+    /// needs a type, both fit it and the expression has that type. So `None if c else x`
+    /// is an `f64 | None` where one is expected, as each branch alone would be.
     fn conditional(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
         let condition = self.tree.child(node, Role::Condition);
         self.condition(condition);
@@ -458,6 +460,12 @@ impl<'db> Body<'db> {
         };
         if relations::compatible(self.db, value, other) {
             return value;
+        }
+        if let Some(expected) = expected
+            && relations::compatible(self.db, expected, value)
+            && relations::compatible(self.db, expected, other)
+        {
+            return expected;
         }
         let message = format!(
             "both branches must have one type, found `{}` and `{}`",

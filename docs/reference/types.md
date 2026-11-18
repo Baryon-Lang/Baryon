@@ -422,6 +422,12 @@ def describe(distance: f64 | None) -> str:
 Using a `T | None` as a `T` without the check is a compile error. There is no null pointer and no
 sentinel value: `None` on a value type costs a flag, not an allocation.
 
+A `T` or `None` goes wherever a `T | None` is expected, and so does a conditional expression
+whose branches are one of each: `best: f64 | None = None if empty else total / count`, or the
+same as a return value or an argument. Without an expected type, the branches of a conditional
+must have one type, so `None if empty else total` on its own is an error; annotate the
+variable. A conditional of two members of a [union](#unions-of-structs) works the same way.
+
 The compiler follows the program's branches to know where a variable has been checked:
 
 - Inside `if x is not None:`, and after `if x is None:` whose body ends in `return`, `raise`,
