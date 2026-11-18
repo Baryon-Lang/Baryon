@@ -191,3 +191,8 @@ correct and easy to read: each sorts the rows by key with a merge sort on one co
 pandas and Polars hash the keys and Polars uses every core. These numbers are the starting line
 for that work, not the finish. The benchmark's own page says how each number is measured and
 how to run it on your machine.
+
+## Where to go next
+
+[Special functions](special-functions.md) is the last page of this guide: `scipy.special`'s
+functions in Baryon, moving a program from SciPy, and their speed.
