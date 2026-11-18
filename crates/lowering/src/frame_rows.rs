@@ -124,8 +124,8 @@ impl<'db> Builder<'db> {
     ///
     /// A mask of another length than the frame panics here, at the mask, before any column
     /// is read. A mask that may hold `None` chooses the rows where it is `True`, not those
-    /// where it is `None`. A slice follows Python: its bounds are clamped to the frame, and a step of 0
-    /// panics.
+    /// where it is `None`. A slice follows Python: its bounds are clamped to the frame, and a
+    /// step of 0 panics.
     pub(crate) fn frame_rows(&mut self, place: Place, value: NodeId, index: NodeId, node: NodeId) {
         let source = self.borrow(value);
         let count = self.counted_rows(value, &source, node);
