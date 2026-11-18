@@ -66,6 +66,7 @@ mod frame_stack;
 mod frames;
 mod generics;
 mod h5by;
+mod indices;
 mod library;
 mod loops;
 mod managers;

@@ -318,6 +318,16 @@ impl<'db> Body<'db> {
             return chosen;
         }
         let unknown = self.lowerer.unknown();
+        // A list of positions on a rank-1 `Array` is the `selection` module's to give a
+        // meaning; any other value that is not an integer cannot index (roadmap 1.9.53).
+        let ranked = match base.kind(self.db) {
+            TypeKind::Array { rank, .. } => *rank > 1,
+            TypeKind::List(_) | TypeKind::Str | TypeKind::Tuple(_) | TypeKind::Fixed { .. } => true,
+            _ => false,
+        };
+        if ranked && let Some(error) = self.whole_indices(&indices) {
+            return error;
+        }
         match (base.kind(self.db), indices.as_slice()) {
             (TypeKind::List(_), [_]) if sliced => base,
             (TypeKind::List(item), [_]) => *item,
