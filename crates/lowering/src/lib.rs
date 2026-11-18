@@ -330,6 +330,7 @@ mod operators;
 mod optional_arithmetic;
 mod optional_arrays;
 mod optional_masks;
+mod optional_text;
 mod parallel;
 mod paths;
 mod patterns;

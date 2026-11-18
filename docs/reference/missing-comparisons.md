@@ -7,7 +7,7 @@ they give can do and how two such masks [combine](#combining-masks)
 
 ## Comparisons
 
-`==`, `!=`, `<`, `<=`, `>` and `>=` compare numbers element by element and give an
+`==`, `!=`, `<`, `<=`, `>` and `>=` compare element by element and give an
 `Array[bool | None, 1]`: `None` wherever a side is `None`, as pandas's nullable columns do
 (Collins, 2026-11-14). Whether a missing bid is above 2.0 is not known, so the answer is
 missing too:
@@ -24,11 +24,29 @@ def main():
 
 This prints `[False None True]` twice, then the one row whose bid is 2.5.
 
+Text compares the same way, by the order Python gives `str`, and `bool`s compare by `==`
+and `!=`:
+
+```python
+def main():
+    names: Array[str | None, 1] = Array(["ada", None, "cy"])
+    flags: Array[bool | None, 1] = Array([True, None, False])
+    print(names == "ada")
+    print(names > "b")
+    print(flags == False)
+```
+
+This prints `[True None False]`, `[False None True]` and `[False None True]`.
+
 ## The rules
 
 - **The other side** is what [arithmetic](missing-values.md#arithmetic) takes: another
   array with missing values, an `Array` of numbers of one dimension, or a single number, on
   either side. Integers compare with floats as floats. The lengths must match.
+- **Text compares with text and `bool`s with `bool`s:** the other side of an
+  `Array[str | None, 1]` is another, an `Array[str, 1]` or one `str`, and that of an
+  `Array[bool | None, 1]` is another, an `Array[bool, 1]` or one `bool`. `bool`s have no
+  order, so `flags < flags` is an error, as it is for two plain `bool`s.
 - **As a mask of a frame, `None` chooses nothing.** `quotes[quotes.bid > 2.0]` keeps the
   rows where the comparison is `True` and leaves out those where it is `False` or `None`,
   as pandas does.
@@ -37,11 +55,12 @@ This prints `[False None True]` twice, then the one row whose bid is 2.5.
 - **For a plain mask, fill it:** `(bids > 2.0).fillna(False)` is an `Array[bool, 1]`, which
   can be counted with `sum()`.
 - **`==` is not a test for `None`.** `bids == None` is not written; ask `bids.isna()`.
-- **Not built yet:** comparing text or `bool`s that may be `None`, a chain `1.0 < bids <
-  2.0`, `in`, and such a mask choosing elements of an array of text, of an array of more
-  than one dimension, or of an array with missing values.
-- **Cost:** one loop over the stored values and one pass over the bitmaps. As a mask, two
-  more passes make the plain mask of a byte for each element.
+- **Not built yet:** a chain `1.0 < bids < 2.0`, `in`, and such a mask choosing elements
+  of an array of text, of an array of more than one dimension, or of an array with missing
+  values.
+- **Cost:** one loop over the stored values and one pass over the bitmaps. Text is one
+  pass that compares each pair of texts, and one over the bitmaps. As a mask, two more
+  passes make the plain mask of a byte for each element.
 
 ## Combining masks
 

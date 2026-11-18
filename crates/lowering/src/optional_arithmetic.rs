@@ -16,6 +16,7 @@
 //!
 //! A comparison, `bids > 1.0`, gives an `Array[bool | None, 1]` the same way. No comparison
 //! panics, so it is always one loop over the stored values of its two sides.
+//! A comparison of text is not a loop the backend fuses and is in [`crate::optional_text`].
 
 use crate::builder::Builder;
 use crate::operators::{arithmetic, comparison};

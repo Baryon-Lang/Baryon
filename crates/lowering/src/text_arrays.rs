@@ -304,7 +304,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The operator and the two sides of the comparison `node`, which has one link.
-    fn compared(&self, node: NodeId) -> Option<(Operator, NodeId, NodeId)> {
+    pub(crate) fn compared(&self, node: NodeId) -> Option<(Operator, NodeId, NodeId)> {
         let comparator = self.tree.children_with(node, Role::Item).next()?;
         let left = self.tree.child(node, Role::Left)?;
         let right = self.tree.child(comparator, Role::Right)?;
@@ -326,15 +326,8 @@ impl<'db> Builder<'db> {
         } else {
             (right, left, true)
         };
-        // The numbers the library knows the comparisons by.
-        let how = match (operator, turned) {
-            (Operator::Equal, _) => 0,
-            (Operator::NotEqual, _) => 1,
-            (Operator::Less, false) | (Operator::Greater, true) => 2,
-            (Operator::LessEqual, false) | (Operator::GreaterEqual, true) => 3,
-            (Operator::Greater, false) | (Operator::Less, true) => 4,
-            (Operator::GreaterEqual, false) | (Operator::LessEqual, true) => 5,
-            _ => return self.unsupported(node, "this comparison of an array of `str`"),
+        let Some(how) = comparison_number(operator, turned) else {
+            return self.unsupported(node, "this comparison of an array of `str`");
         };
         let int = self.int_type();
         let source = self.borrow(array);
@@ -383,4 +376,20 @@ impl<'db> Builder<'db> {
         };
         self.assign(place, result, node);
     }
+}
+
+/// The number the library's `text_compared` and `text_compared_to` know the comparison
+/// `operator` by. `turned` says the array is on the right of one `str`, which turns an
+/// order round, `"m" < names` being `names > "m"`. `None` for an operator that does not
+/// compare element by element, such as `in`.
+pub(crate) fn comparison_number(operator: Operator, turned: bool) -> Option<i128> {
+    Some(match (operator, turned) {
+        (Operator::Equal, _) => 0,
+        (Operator::NotEqual, _) => 1,
+        (Operator::Less, false) | (Operator::Greater, true) => 2,
+        (Operator::LessEqual, false) | (Operator::GreaterEqual, true) => 3,
+        (Operator::Greater, false) | (Operator::Less, true) => 4,
+        (Operator::GreaterEqual, false) | (Operator::LessEqual, true) => 5,
+        _ => return None,
+    })
 }

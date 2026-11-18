@@ -310,9 +310,9 @@ impl<'db> Body<'db> {
                 }
                 None => self.operands(left_node, right_node),
             };
-            if self.is_text_array(left_type) || self.is_text_array(right_type) {
+            if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
                 let compared =
-                    self.text_array_comparison(comparator, operator, left_type, right_type);
+                    self.optional_array_comparison(comparator, operator, left_type, right_type);
                 if count > 1 {
                     self.lowerer.error(
                         node,
@@ -323,9 +323,9 @@ impl<'db> Body<'db> {
                 }
                 return compared;
             }
-            if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
+            if self.is_text_array(left_type) || self.is_text_array(right_type) {
                 let compared =
-                    self.optional_array_comparison(comparator, operator, left_type, right_type);
+                    self.text_array_comparison(comparator, operator, left_type, right_type);
                 if count > 1 {
                     self.lowerer.error(
                         node,
