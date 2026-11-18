@@ -16,7 +16,9 @@ quadrature rules (3.18.10), from `gauss_quadrature.txt`, and those in
 [`../../build/special_bessel.rs`](../../build/special_bessel.rs) its Bessel functions of real
 order and spherical Bessel functions (3.18.5), from `bessel_real.txt`, and those in
 [`../../build/special_waves.rs`](../../build/special_waves.rs) its Airy, Kelvin and Struve
-functions (3.18.7), from `airy.txt`, `kelvin.txt` and `struve.txt`. Each line is a
+functions (3.18.7), from `airy.txt`, `kelvin.txt` and `struve.txt`, and those in
+[`../../build/special_hypergeometric.rs`](../../build/special_hypergeometric.rs) its confluent
+hypergeometric functions (3.18.8), from `hypergeometric.txt`. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -1741,5 +1743,162 @@ for v, x in ((0.0, -1.0), (1.0, -3.0), (2.0, -2.0), (-3.0, -4.5)):
         add("struve", v, x, max(abs(h), modulus) if -x > abs(v) else abs(h), h)
         add("modstruve", v, x, abs(l), l)
 with open("struve.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Hypergeometric functions
+
+In `hypergeometric.txt` each case holds, before the reference value, the size its error is
+measured against: the largest of |f| and |t ∂f/∂t| for each argument t, the error that rounding
+the arguments to `f64` alone would make. ∂f/∂x is exact, (1/b) ₀F₁(; b + 1; x),
+(a/b) M(a + 1, b + 1, x) or −a U(a + 1, b + 1, x); the others are central differences with a step
+of 10⁻²⁵ at 60 digits. The parameters keep to the ranges where the reference says the functions
+hold. The script below recorded the cases with its own seed, with mpmath 1.4.1's `hyp0f1`,
+`hyp1f1` and `hyperu` at 60 digits; run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318081)
+lines = []
+STEP = mpmath.mpf(10) ** -25
+
+
+def add(name, arguments, size, value):
+    fields = " ".join(repr(float(t)) for t in arguments)
+    lines.append(f"{name} {fields} {float(size)!r} {float(value)!r}")
+
+
+def slope(f, point, index):
+    # The derivative of f in its argument `index`, by a central difference at 60 digits.
+    above = list(point)
+    below = list(point)
+    above[index] += STEP
+    below[index] -= STEP
+    return (f(*above) - f(*below)) / (2 * STEP)
+
+
+def record(name, f, arguments, shifted):
+    # Each case is measured against the largest of |f| and |t ∂f/∂t| for each argument t: the
+    # error a rounding of the arguments alone would make. ∂/∂x is exact, `shifted`.
+    try:
+        with mpmath.workdps(60):
+            point = [mpmath.mpf(t) for t in arguments]
+            value = f(*point)
+            if not 1e-300 < abs(value) < 1e300:
+                return
+            size = max(abs(value), abs(point[-1] * shifted(*point)))
+            for index in range(len(point) - 1):
+                size = max(size, abs(point[index] * slope(f, point, index)))
+            if size > 1e300:
+                return
+    except (mpmath.libmp.NoConvergence, ZeroDivisionError, ValueError):
+        return
+    add(name, arguments, size, value)
+
+
+def hyp0f1(b, x):
+    return mpmath.hyp0f1(b, x, maxterms=10**6, maxprec=20000)
+
+
+def hyp1f1(a, b, x):
+    return mpmath.hyp1f1(a, b, x, maxterms=10**6, maxprec=20000)
+
+
+def hyperu(a, b, x):
+    return mpmath.hyperu(a, b, x, maxterms=10**6, maxprec=20000)
+
+
+def parameter(limit):
+    # Uniform, whole, near 0, near a whole number, and spread over decades.
+    r = random.random()
+    if r < 0.3:
+        return random.uniform(-limit, limit)
+    if r < 0.45:
+        return float(round(random.uniform(-limit, limit)))
+    if r < 0.6:
+        return random.uniform(-2.0, 3.0)
+    if r < 0.7:
+        return round(random.uniform(-40.0, 40.0)) + random.choice([1e-9, -1e-9, 1e-5, -1e-5])
+    return math.copysign(10 ** random.uniform(-4.0, math.log10(limit)), random.uniform(-1, 1))
+
+
+for _ in range(400):
+    b = random.choice([
+        random.uniform(-30.0, 30.0),
+        random.uniform(0.0, 3.0),
+        math.copysign(10 ** random.uniform(-2.0, 3.0), random.uniform(-1, 1)),
+    ])
+    # b from −300 up: further down, I_{b−1} overflows where the series cancels.
+    if b <= 0 and b == int(b) or b < -300.0:
+        continue
+    x = math.copysign(10 ** random.uniform(-3.0, 4.5), random.uniform(-1, 1))
+    record("hyp0f1", hyp0f1, (b, x), lambda b, x: hyp0f1(b + 1, x) / b)
+count = 0
+while count < 1200:
+    # |a| at most 100 and |x| at most 1,000, where the reference says hyp1f1 holds, except b
+    # within 0.01 of 0 with x below −30.
+    a, b = parameter(100.0), parameter(150.0)
+    if b <= 0 and b == int(b):
+        continue
+    x = math.copysign(10 ** random.uniform(-4.0, 3.0), random.uniform(-1, 1))
+    if abs(b) < 0.01 and x < -30.0:
+        continue
+    before = len(lines)
+    record("hyp1f1", hyp1f1, (a, b, x), lambda a, b, x: a / b * hyp1f1(a + 1, b + 1, x))
+    count += len(lines) - before
+count = 0
+while count < 800:
+    # a from −35 up, where the reference says hyperu holds, except a below 0 and not whole with
+    # b above a + 1 and within 0.001 of a whole number.
+    a, b = parameter(150.0), parameter(150.0)
+    if a < -35.0:
+        continue
+    if a < 0 and a != int(a) and b > a + 1 and abs(b - round(b)) < 1e-3:
+        continue
+    x = 10 ** random.uniform(-5.0, 3.5)
+    before = len(lines)
+    record("hyperu", hyperu, (a, b, x), lambda a, b, x: -a * hyperu(a + 1, b + 1, x))
+    count += len(lines) - before
+# The ends, with SciPy's value or, where it differs, the limit the reference documents.
+inf = math.inf
+nan = math.nan
+ends = [
+    ("hyp0f1", (-2.0, 1.0), nan),
+    ("hyp0f1", (1.5, 0.0), 1.0),
+    ("hyp0f1", (inf, 3.0), 1.0),
+    ("hyp0f1", (2.0, inf), inf),
+    ("hyp0f1", (-0.5, inf), -inf),
+    ("hyp0f1", (1.0, -inf), 0.0),
+    ("hyp0f1", (0.25, -inf), nan),
+    ("hyp0f1", (nan, 1.0), nan),
+    ("hyp1f1", (1.0, -2.0, 1.0), inf),
+    ("hyp1f1", (-1.0, -2.0, 3.0), 2.5),
+    ("hyp1f1", (1.0, 2.0, 0.0), 1.0),
+    ("hyp1f1", (0.0, 2.0, 5.0), 1.0),
+    ("hyp1f1", (2.0, 3.0, inf), inf),
+    ("hyp1f1", (-2.0, 3.0, inf), inf),
+    ("hyp1f1", (-3.0, 3.0, inf), -inf),
+    ("hyp1f1", (2.0, 3.0, -inf), 0.0),
+    ("hyp1f1", (-2.5, 3.0, -inf), inf),
+    ("hyp1f1", (1.0, 2.0, nan), nan),
+    ("hyp1f1", (inf, 1.0, 1.0), nan),
+    ("hyp1f1", (1.0, inf, 1.0), 1.0),
+    ("hyperu", (-2.0, 3.0, 0.0), 12.0),
+    ("hyperu", (0.5, 0.5, 0.0), math.sqrt(math.pi)),
+    ("hyperu", (-1.5, 0.5, 0.0), 0.0),
+    ("hyperu", (1.0, 1.0, 0.0), inf),
+    ("hyperu", (1.0, 2.0, inf), 0.0),
+    ("hyperu", (-2.5, 1.0, inf), inf),
+    ("hyperu", (1.0, 1.0, -1.0), nan),
+    ("hyperu", (0.0, 2.0, 3.0), 1.0),
+    ("hyperu", (inf, 1.0, 1.0), nan),
+]
+for name, arguments, value in ends:
+    add(name, arguments, abs(value) if math.isfinite(value) and value != 0 else 1.0, value)
+with open("hypergeometric.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```

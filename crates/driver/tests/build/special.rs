@@ -137,6 +137,12 @@ def main() -> Raises[None, OSError | ValueError]:
 /// H past the turning point x = |v|, the larger of H and the modulus √(J² + Y²), since H is Y
 /// plus a smooth part there; and elsewhere the value itself. The worst are 36, 13 and 57 ULP.
 ///
+/// The hypergeometric functions are held to the size their case records: the largest of |f| and
+/// |t ∂f/∂t| for each argument t, the error that rounding the arguments alone would make. `hyp0f1`
+/// is held to 16 ULP of it and `hyp1f1` to 64; the worst are 13 and 55. `hyperu` is held to 512:
+/// for b below about −30 and |a| below 1 the series it is summed from cancel by up to 64 times,
+/// and the worst is 385 ULP there, at b = −146.
+///
 /// The nodes of Gauss quadrature, `roots_..._x`, are held to 16 ULP of the larger of themselves and
 /// the gap to the nearest node: Newton's method on the polynomial leaves 7 at worst. Their weights,
 /// `roots_..._w`, are held to 32 ULP for each node of the rule, the first argument, n: a weight is
@@ -170,6 +176,9 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         _ if name.starts_with("airy") => 64.0,
         "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" => 32.0,
         "struve" | "modstruve" => 128.0,
+        "hyp0f1" => 16.0,
+        "hyp1f1" => 64.0,
+        "hyperu" => 512.0,
         _ if name.starts_with("roots_") && name.ends_with("_w") => 32.0 * first,
         _ if name.starts_with("roots_") => 16.0,
         _ => 8.0,
@@ -194,9 +203,9 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
 /// weight of Gauss quadrature is measured against the size its case records in the place of `x`:
 /// a weight against itself, and a node against the larger of itself and the gap to its nearest
 /// neighbour, since Newton's method fixes a node near 0 only to a fraction of that gap.
-/// The Bessel functions of real order and the spherical Bessel functions, and the Airy, Kelvin
-/// and Struve functions, are measured against the size their case records in the place of `x`,
-/// as the tolerances above describe.
+/// The Bessel functions of real order and the spherical Bessel functions, and the Airy, Kelvin,
+/// Struve and hypergeometric functions, are measured against the size their case records in the
+/// place of `x`, as the tolerances above describe.
 fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
         "gammaln" | "psi" | "betaln" | "expi" | "chi" | "ellipj_sn" | "ellipj_cn" | "ellipj_dn" => {
@@ -213,7 +222,7 @@ fn scale(name: &str, want: f64, x: f64) -> f64 {
             .max((2.0 / (std::f64::consts::PI * x.abs())).sqrt()),
         _ if name.starts_with("roots_") || name.starts_with("airy") => x,
         "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" | "struve"
-        | "modstruve" => x,
+        | "modstruve" | "hyp0f1" | "hyp1f1" | "hyperu" => x,
         _ => want.abs(),
     }
 }
