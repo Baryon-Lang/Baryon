@@ -76,6 +76,7 @@ mod optional_comparisons;
 mod optional_lists;
 mod optional_loops;
 mod optional_selection;
+mod optional_stores;
 mod optional_text_comparisons;
 mod overflow;
 mod ownership;
