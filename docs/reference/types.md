@@ -895,7 +895,8 @@ Inside a generic function, a type parameter is its own type: a `T` matches only 
 operations its bound allows apply to it. It is not a conversion, so `T(0)` is an error, and it
 has no methods but its trait's, so `x.copy()` on an unbounded `T` is one too. A number literal
 takes the type `T` under `Float`; under `Number` only an integer literal does, since `T` may be an
-integer type, so `x * 0.5` needs `[T: Float]`. Under `VectorSpace` a literal is an `f64`, which is what scales a vector.
+integer type, so `x * 0.5` needs `[T: Float]`. Under `VectorSpace` a literal is an `f64`, which
+is what scales a vector.
 
 ### Traits
 
