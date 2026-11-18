@@ -204,3 +204,53 @@ def main():
         "aq xy ['az', 'baq']\n"
     );
 }
+
+/// A value with no format specification in an f-string is written as `print` writes it, for
+/// every type `print` writes (roadmap 1.9.57): a list, a tuple, a struct, an enum member, an
+/// array, a dict, `None` and a `T | None` either way, inside `print(..., file=f)` too. Before,
+/// each but the numbers and `str` stopped the backend with "values of type ... in an f-string".
+#[test]
+fn f_strings_write_any_value_as_print_writes_it() {
+    let program = "\
+class Point(Struct):
+    x: f64
+    name: str
+
+
+class Phase(Enum):
+    SOLID = 1
+    GAS = 2
+
+
+def label(v: f64 | None) -> str:
+    return f\"v={v}\"
+
+
+def main() -> Raises[None, OSError]:
+    xs = [1, 2, 3]
+    t = (1, \"a\", 2.5)
+    p = Point(1.5, \"p\")
+    a = Array([1.0, 2.5])
+    d = {\"k\": 1}
+    print(f\"{xs} {t} {p} {Phase.GAS} {a} {d} {None} {label(None)} {label(2.0)}\")
+    s = f\"[{xs}|{t}]\"
+    print(s, len(s))
+    with open(\"out.txt\", \"w\") as f:
+        print(f\"inside {p}\", file=f)
+    with open(\"out.txt\") as f:
+        print(f.read(), end=\"\")
+";
+    let directory = package("f_string_values", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program)
+        .current_dir(&directory)
+        .output()
+        .unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "[1, 2, 3] (1, 'a', 2.5) Point(x=1.5, name='p') Phase.GAS [1.  2.5] {'k': 1} None v=None \
+         v=2.0\n[[1, 2, 3]|(1, 'a', 2.5)] 25\ninside Point(x=1.5, name='p')\n"
+    );
+}
