@@ -1,5 +1,6 @@
 //! Names after a dot: a module's member, an enum's member, a struct's field or method, its own
-//! or an embedded struct's (the `embed` module), and an array's attributes.
+//! or an embedded struct's (the `embed` module), and an array's attributes; and the errors for
+//! a method used as a value or a struct value called as a function (decision 0026).
 
 use super::Body;
 use crate::embed::{self, Lookup, Own};
@@ -185,6 +186,22 @@ impl<'db> Body<'db> {
             arguments: Vec::new(),
         };
         Type::new(self.db, TypeKind::Enum(nominal))
+    }
+
+    /// Reports the call `node` of `callee`, a value of the struct type `ty`, such as `p(3.0)`
+    /// on a struct that defines `__call__`. Version 0 calls only functions (decision 0026);
+    /// the method can be called by name. Before, this failed in lowering.
+    pub(super) fn called_struct(&mut self, node: NodeId, callee: &str, ty: Type<'db>) -> Type<'db> {
+        let message = format!(
+            "`{callee}` has type `{}`, which cannot be called in version 0",
+            self.show(ty)
+        );
+        let hint = format!(
+            "calling a struct value through its `__call__` method is not supported yet \
+             (decision 0026); call the method by name: `{callee}.__call__(...)`"
+        );
+        self.lowerer
+            .error(node, &message, "a struct, not a function", Some(&hint))
     }
 
     /// `Class.name` on a class that is not an enum: an error when `name` is one of the class's

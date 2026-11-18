@@ -336,16 +336,7 @@ impl<'db> Body<'db> {
             }
             TypeKind::Struct(_) => {
                 self.untyped(arguments);
-                let message = format!(
-                    "`{callee}` has type `{}`, which cannot be called in version 0",
-                    self.show(ty)
-                );
-                let hint = format!(
-                    "calling a struct value through its `__call__` method is not supported yet \
-                     (decision 0026); call the method by name: `{callee}.__call__(...)`"
-                );
-                self.lowerer
-                    .error(node, &message, "a struct, not a function", Some(&hint))
+                self.called_struct(node, callee, ty)
             }
             _ if relations::is_open(self.db, ty) || !self.is_value_scalar(ty) => {
                 self.untyped(arguments)
