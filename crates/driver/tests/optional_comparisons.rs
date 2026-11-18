@@ -22,8 +22,9 @@ fn check_one(text: &str) -> String {
         .join("\n\n")
 }
 
-/// Each comparison gives an array of `bool`s with missing values, so each annotation here
-/// holds, and such a mask chooses rows of a frame.
+/// Each comparison gives an array of `bool`s with missing values, and so do `&`, `|`, `^` and
+/// `~` of such masks, so each annotation here holds. Such a mask chooses rows of a frame and
+/// chooses and sets elements of an array.
 #[test]
 fn comparisons_keep_the_gaps_in_the_type() {
     let program = r#"
@@ -36,6 +37,13 @@ def uses(asks: Array[f64, 1], counts: Array[i64 | None, 1]):
     mixed: Array[bool | None, 1] = counts >= bids
     summed: Array[bool | None, 1] = bids + asks < 2.0 * bids
     plain: Array[bool, 1] = (bids > 1.0).fillna(False)
+    both: Array[bool | None, 1] = (bids > 1.0) & (counts < 3)
+    either: Array[bool | None, 1] = (bids > 1.0) | (asks > 1.0)
+    one: Array[bool | None, 1] = (asks > 1.0) ^ (bids > 1.0)
+    turned: Array[bool | None, 1] = ~(bids > 1.0)
+    chosen: Array[f64, 1] = asks[bids > 1.0]
+    work = asks.copy()
+    work[~(bids > 1.0)] = 0.0
     frame = DataFrame({"bid": bids.copy(), "ask": asks.copy()})
     rows = frame[frame.bid > frame.ask]
     kept: Array[f64 | None, 1] = rows.bid.copy()
@@ -60,10 +68,10 @@ def uses(grid: Array[f64, 2], plain: Array[f64, 1]):
     h: Array[bool, 1] = bids > 1.0
     if bids > 1.0:
         pass
-    i = plain[bids > 1.0]
+    i = grid[bids > 1.0]
     j = bids[bids > 1.0]
-    k = (bids > 1.0) & (bids < 2.0)
-    l = ~(bids > 1.0)
+    k = (bids > 1.0) & True
+    l = (bids > 1.0) | bids
     m = (bids > 1.0).sum()
 "#;
 
@@ -130,11 +138,11 @@ error: a condition must be a `bool`, found `Array[bool | None, 1]`
    |        ^^^^^^^^^^ not a `bool`
    = note: compare explicitly, such as `n != 0` or `x is not None`
 
-error: choosing an array's elements with a mask is not built for an array with missing values yet
+error: choosing elements with it, other than of a rank-1 `Array` by a mask, is not built for an array with missing values yet
   --> main.byn:15:9
    |
-15 |     i = plain[bids > 1.0]
-   |         ^^^^^^^^^^^^^^^^^ an array that may hold `None`
+15 |     i = grid[bids > 1.0]
+   |         ^^^^^^^^^^^^^^^^ an array that may hold `None`
    = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and the comparisons; the rest comes with roadmap item 3.13.6
 
 error: a slice, a mask or a list of positions is not built for an array with missing values yet
@@ -147,15 +155,15 @@ error: a slice, a mask or a list of positions is not built for an array with mis
 error: `&` is not built for an array with missing values yet
   --> main.byn:17:9
    |
-17 |     k = (bids > 1.0) & (bids < 2.0)
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
+17 |     k = (bids > 1.0) & True
+   |         ^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
    = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and the comparisons; the rest comes with roadmap item 3.13.6
 
-error: `~` is not built for an array with missing values yet
+error: `|` is not built for an array with missing values yet
   --> main.byn:18:9
    |
-18 |     l = ~(bids > 1.0)
-   |         ^^^^^^^^^^^^^ an array that may hold `None`
+18 |     l = (bids > 1.0) | bids
+   |         ^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
    = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and the comparisons; the rest comes with roadmap item 3.13.6
 
 error: the method `sum` is not built for an array with missing values yet

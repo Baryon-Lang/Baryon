@@ -329,6 +329,7 @@ mod netcdf;
 mod operators;
 mod optional_arithmetic;
 mod optional_arrays;
+mod optional_masks;
 mod parallel;
 mod paths;
 mod patterns;

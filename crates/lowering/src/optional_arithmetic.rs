@@ -201,7 +201,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The length of the one-dimensional array of values at `values`, an `i64`.
-    fn values_length(&mut self, values: &Place, node: NodeId) -> Operand<'db> {
+    pub(crate) fn values_length(&mut self, values: &Place, node: NodeId) -> Operand<'db> {
         let length = self.temporary(self.int_type(), node);
         self.assign(Place::from(length), Rvalue::Length(values.clone(), 0), node);
         Operand::Copy(Place::from(length))
@@ -210,7 +210,7 @@ impl<'db> Builder<'db> {
     /// A new validity bitmap whose bit is 1 only where the bit of every one of `bitmaps` is:
     /// a copy of the one, or the library's `both_bits` of each with the rest. The caller owns
     /// it. `None` after a report.
-    fn joined_bitmaps(&mut self, bitmaps: &[Place], node: NodeId) -> Option<Local> {
+    pub(crate) fn joined_bitmaps(&mut self, bitmaps: &[Place], node: NodeId) -> Option<Local> {
         let (first, rest) = bitmaps.split_first()?;
         let ty = self.bitmap_type();
         let mut joined = self.temporary(ty, node);
