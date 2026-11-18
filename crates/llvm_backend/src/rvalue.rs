@@ -379,6 +379,10 @@ impl<'db> Function<'_, '_, 'db> {
     /// Whether the `T | None` at `place` holds a value: its flag.
     fn is_present(&mut self, place: &Place) -> Result<String, Unsupported> {
         let (address, ty) = self.place(place)?;
+        // A `T | None` whose `T` is the type `None` is `None` itself (roadmap 1.9.51).
+        if matches!(ty.kind(self.types.db), TypeKind::None) {
+            return Ok("false".to_owned());
+        }
         let llvm = self.types.value(ty)?;
         let flag = self.emit(&format!(
             "getelementptr inbounds {llvm}, ptr {address}, i32 0, i32 1"
