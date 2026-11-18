@@ -46,6 +46,7 @@ from special_hyp0f1 import hyp0f1 as hyp0f1
 from special_hyp1f1 import hyp1f1 as hyp1f1
 from special_hyperu import hyperu as hyperu
 from special_hyp2f1 import hyp2f1 as hyp2f1
+from special_parabolic import pbdv as pbdv, pbvv as pbvv
 from special_incomplete_gamma import gammainc as gammainc, gammaincc as gammaincc
 from special_incomplete_gamma import gammaincinv as gammaincinv, gammainccinv as gammainccinv
 from special_incomplete_beta import betainc as betainc, betaincc as betaincc

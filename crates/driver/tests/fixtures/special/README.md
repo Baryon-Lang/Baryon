@@ -19,7 +19,9 @@ order and spherical Bessel functions (3.18.5), from `bessel_real.txt`, and those
 functions (3.18.7), from `airy.txt`, `kelvin.txt` and `struve.txt`, and those in
 [`../../build/special_hypergeometric.rs`](../../build/special_hypergeometric.rs) its confluent
 hypergeometric functions (3.18.8), from `hypergeometric.txt`, and the Gauss function `hyp2f1`,
-from `gauss.txt`. Each line is a
+from `gauss.txt`, and those in
+[`../../build/special_parabolic.rs`](../../build/special_parabolic.rs) its parabolic cylinder
+functions (3.18.14), from `parabolic.txt`. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -2023,6 +2025,104 @@ ends = [
 for arguments, value in ends:
     add(arguments, abs(value) if math.isfinite(value) and value != 0 else 1.0, value)
 with open("gauss.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Parabolic cylinder functions
+
+In `parabolic.txt` each case holds, before the reference value, the size its error is measured
+against, as in `hypergeometric.txt`: the largest of |f|, |v ∂f/∂v| and |x ∂f/∂x|, by central
+differences with a step of 10⁻²⁵ at 60 digits. `pbdv_d` and `pbvv_d` are the derivatives, the
+second place of each tuple. The script below recorded the cases with its own seed, with
+mpmath 1.4.1's `pcfd` and `pcfv` at 60 digits; run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318141)
+lines = []
+STEP = mpmath.mpf(10) ** -25
+HALF = mpmath.mpf(1) / 2
+
+
+def d(v, x):
+    return mpmath.pcfd(v, x)
+
+
+def v_(v, x):
+    # SciPy's V_v(x) is DLMF's V(a, x) with a = −v − ½.
+    return mpmath.pcfv(-v - HALF, x)
+
+
+FUNCTIONS = [
+    ("pbdv", d),
+    ("pbdv_d", lambda v, x: x / 2 * d(v, x) - d(v + 1, x)),
+    ("pbvv", v_),
+    ("pbvv_d", lambda v, x: v_(v - 1, x) - x / 2 * v_(v, x)),
+]
+
+
+def record(name, f, v, x):
+    # Each case is measured against the largest of |f|, |v ∂f/∂v| and |x ∂f/∂x|, the error a
+    # rounding of the arguments alone would make, by central differences at 60 digits.
+    with mpmath.workdps(60):
+        pv, px = mpmath.mpf(v), mpmath.mpf(x)
+        value = f(pv, px)
+        if not 1e-300 < abs(value) < 1e300:
+            return
+        along_v = (f(pv + STEP, px) - f(pv - STEP, px)) / (2 * STEP)
+        along_x = (f(pv, px + STEP) - f(pv, px - STEP)) / (2 * STEP)
+        size = max(abs(value), abs(pv * along_v), abs(px * along_x))
+        if size > 1e300:
+            return
+    lines.append(f"{name} {v!r} {x!r} {float(size)!r} {float(value)!r}")
+
+
+for _ in range(450):
+    # Orders uniform, whole, near 0 and out to ±60; arguments near 0, across the turning
+    # points and out to ±60, where e^(x²/4) passes 1e300.
+    v = random.choice([
+        random.uniform(-10.0, 10.0),
+        random.uniform(-60.0, 60.0),
+        float(random.randint(-15, 15)),
+        random.uniform(-3.0, 3.0),
+    ])
+    x = random.choice([
+        random.uniform(-6.0, 6.0),
+        random.uniform(-35.0, 35.0),
+        random.uniform(-60.0, 60.0),
+        math.copysign(10 ** random.uniform(-4.0, 1.0), random.uniform(-1, 1)),
+    ])
+    for name, f in FUNCTIONS:
+        record(name, f, v, x)
+# The ends: the limit, where SciPy gives NaN.
+inf = math.inf
+nan = math.nan
+ends = [
+    ("pbdv", (2.5, inf), 0.0),
+    ("pbdv_d", (2.5, inf), 0.0),
+    ("pbdv", (2.0, -inf), 0.0),
+    ("pbdv", (2.5, -inf), -inf),
+    ("pbdv_d", (2.5, -inf), inf),
+    ("pbdv", (-1.3, -inf), inf),
+    ("pbdv", (nan, 1.0), nan),
+    ("pbdv", (inf, 1.0), nan),
+    ("pbvv", (2.5, inf), inf),
+    ("pbvv_d", (2.5, inf), inf),
+    ("pbvv", (2.0, -inf), -inf),
+    ("pbvv_d", (2.0, -inf), inf),
+    ("pbvv", (2.5, -inf), 0.0),
+    ("pbvv", (1.0, -inf), inf),
+    ("pbvv", (1.0, nan), nan),
+    ("pbvv", (-inf, 1.0), nan),
+]
+for name, (v, x), value in ends:
+    size = abs(value) if math.isfinite(value) and value != 0 else 1.0
+    lines.append(f"{name} {v!r} {x!r} {size!r} {value!r}")
+with open("parabolic.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
 

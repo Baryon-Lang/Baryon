@@ -174,7 +174,8 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         "jv" | "yv" | "jve" | "yve" | "jvp" | "yvp" | "spherical_jn" | "spherical_yn" | "iv"
         | "ive" | "kv" | "kve" | "ivp" | "kvp" | "spherical_in" | "spherical_kn" => 256.0,
         _ if name.starts_with("airy") => 64.0,
-        "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" => 32.0,
+        "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" | "pbdv" | "pbdv_d"
+        | "pbvv" | "pbvv_d" => 32.0,
         "struve" | "modstruve" | "hyp2f1" => 128.0,
         "hyp0f1" => 16.0,
         "hyp1f1" => 64.0,
@@ -222,7 +223,8 @@ fn scale(name: &str, want: f64, x: f64) -> f64 {
             .max((2.0 / (std::f64::consts::PI * x.abs())).sqrt()),
         _ if name.starts_with("roots_") || name.starts_with("airy") => x,
         "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" | "struve"
-        | "modstruve" | "hyp0f1" | "hyp1f1" | "hyperu" | "hyp2f1" => x,
+        | "modstruve" | "hyp0f1" | "hyp1f1" | "hyperu" | "hyp2f1" | "pbdv" | "pbdv_d" | "pbvv"
+        | "pbvv_d" => x,
         _ => want.abs(),
     }
 }
