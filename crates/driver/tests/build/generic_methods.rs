@@ -290,3 +290,29 @@ def main():
     assert!(ran.status.success(), "{}", stderr(&ran));
     assert_eq!(String::from_utf8_lossy(&ran.stdout), "15.0 28\n");
 }
+
+/// An annotated local that holds a function takes the function's own type, as an unannotated
+/// one does (roadmap 1.9.42, decision 0026), so passing it on builds and calls the function
+/// directly, in `main` and inside a function that received it as a `Callable`. Before, the
+/// local took the `Callable` type and the backend stopped on the call.
+#[test]
+fn an_annotated_local_holding_a_function_passes_it_on() {
+    let program = "\
+def square(x: f64) -> f64:
+    return x * x
+
+
+def apply(f: Callable[[f64], f64], x: f64) -> f64:
+    g: Callable[[f64], f64] = f
+    return g(x)
+
+
+def main():
+    f: Callable[[f64], f64] = square
+    print(apply(f, 3.0))
+";
+    assert_eq!(
+        output("callable-annotated-local", program).unwrap(),
+        "9.0\n"
+    );
+}

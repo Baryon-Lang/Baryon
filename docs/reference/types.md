@@ -775,8 +775,10 @@ A parameter of type `Callable[[f64, Vec3], Vec3]` takes a function with that sig
 one copy of the receiving function per function passed to it, so the passed function is inlined
 and the call costs nothing ([decision 0026](../decisions/0026-functions-as-arguments.md)).
 The receiving function may pass the parameter on to another `Callable` parameter or copy it into
-a local. Which function a name holds must be known when compiling, so a local that holds one of
-two different functions depending on a branch is reported when building.
+a local. A local may hold a module-level function too, `f = sq`, with or without an annotation:
+`f: Callable[[f64], f64] = sq` checks `sq`'s signature, and `f` is still `sq`. Which function a
+name holds must be known when compiling, so a local that holds one of two different functions
+depending on a branch is reported when building.
 
 These forms need a function value at run time, which version 0 leaves out. Each is a checker
 error that names decision 0026, at the expression or annotation:
