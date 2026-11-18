@@ -232,13 +232,15 @@ Baryon is faster for `hyp1f1`, `jv`, `airy` and `expi`, level for `kv`, `ellipk`
 `eval_legendre`, and slower for the rest, by up to 3.9 times, for `zeta` and `ndtri`. The slower
 functions use general methods held to the accuracy above, such as series and iterations, where
 SciPy's Cephes fits one short rational or polynomial formula to each range of the argument. Roadmap
-3.18.17 speeds them up, slowest first, with formulas fitted for Baryon where they keep the accuracy,
+3.18.17 sped them up, slowest first, with formulas fitted for Baryon where they keep the accuracy,
 and with shorter routes to the same answer:
 `ellipk`, `ellipe`, `erf`, `erfc` and `j0` took 0.6, 1.5, 0.5, 0.4 and 1.2 seconds before it;
 `ndtri`, which now starts from a fitted value, 3.7; `zeta`, which now stops summing once the
 rest cannot change the result, 7.0; `gamma`, which now sums its series in four chains at once,
 0.33; `hyp1f1`, which below 0 now goes straight to Kummer's transformation, whose terms do not
 cancel, 20.5; and `hyp2f1`, which below 0 now tries Pfaff's transformation first, 13.5.
+Where speed and accuracy pulled apart, accuracy won: the rest of the gap is idea I.68 in the
+[roadmap](../../ROADMAP.md).
 [`bench/special`](../../bench/special/README.md) holds both programs, to run on your own machine.
 
 ## Where to go next
