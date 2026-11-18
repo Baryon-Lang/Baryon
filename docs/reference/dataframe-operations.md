@@ -62,8 +62,11 @@ print(trades.sort_values(["price", "volume"], ascending=[False, True]))
 - **`ascending` is a `bool`**, which need not be known when compiling, or a list written
   out with one `bool` for each column. The columns are string literals, checked when
   compiling.
-- **Cost:** for `n` rows, about `n log n` comparisons for each column sorted by, two arrays
-  of `n` integers while sorting, and one copy of every column.
+- **Cost:** for `n` rows, one sort for each column sorted by, four arrays of `n` numbers while
+  sorting, and one copy of every column. A sort takes about `n` steps for a column of `f64`
+  whose values are spread evenly between the smallest and the largest, and for a column of
+  `i64`, `str` or `bool` whose values lie in a range not much wider than `n`. Any other
+  column takes about `n log n` comparisons.
 - **A complex column has no order**, so sorting by one is a compile error. pandas's other
   arguments, such as `na_position=`, `key=` and `inplace=`, are not built.
 
@@ -129,9 +132,9 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   already, and a complex column can be neither a key nor a value.
 - **The result is a new frame**, with no struct for its rows until it meets one, as for
   [`assign`](dataframes.md#choosing-and-changing-columns).
-- **Cost:** for `n` rows, a sort by the keys, about `n log n` comparisons for each key
-  column, then one pass over a column for each argument of `agg`. A column that is not
-  `f64` or `i64` is converted to one of them first, which copies it.
+- **Cost:** for `n` rows, a sort for each key column, which costs what it does in
+  [`sort_values`](#sorting), then one pass over a column for each argument of `agg`. A
+  column that is not `f64` or `i64` is converted to one of them first, which copies it.
 - **Sums of floats are correctly rounded**: they use `math.fsum`, which loses nothing to
   the order of the values. pandas's sums are compensated but not exact, so a last digit can
   differ; so can that of `var` and `std` of an `f32` column, which are worked out in `f64`

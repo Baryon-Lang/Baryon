@@ -405,7 +405,9 @@ This prints `[2 0 1] [171.  189.5 410. ]`.
   real part.
 - `a` is read, not changed. Arrays of higher rank and NumPy's `axis=` and `kind=` are not
   built.
-- **Cost:** about `n log n` comparisons, and two arrays of `n` positions while it runs.
+- **Cost:** about `n` steps for `f64` elements spread evenly between the smallest and the
+  largest and for `i64` elements in a range not much wider than `n`, and about `n log n`
+  comparisons otherwise. Four arrays of `n` numbers while it runs.
 
 ### Distinct elements
 

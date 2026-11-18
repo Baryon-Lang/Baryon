@@ -65,6 +65,10 @@ pub(crate) const LIBRARY: [(&str, &str); 80] = [
         include_str!("../library/frame_missing.byn"),
     ),
     (
+        "<std>/frame_order.byn",
+        include_str!("../library/frame_order.byn"),
+    ),
+    (
         "<std>/frame_outer.byn",
         include_str!("../library/frame_outer.byn"),
     ),
