@@ -78,7 +78,8 @@ impl<'db> Body<'db> {
     }
 
     /// `df.dropna()` or `df.fillna(value)` on a frame of type `base`, the call `function` of
-    /// the method `callee`. `dropna()` gives the rows with no `None` in any column, and
+    /// the method `callee`. `dropna()` gives the rows with no `None` in any column, or in
+    /// the columns and by the rule its arguments give (the `frame_dropna` module), and
     /// `fillna` every row with the value in place of each `None`; in both, a column that
     /// held `T | None` holds `T` in the result. `fillna` takes one value for every column
     /// that may hold `None`, or a dict from a column's name to its value, which fills the
@@ -96,19 +97,10 @@ impl<'db> Body<'db> {
         };
         let given = arguments.positional.len() + arguments.keywords.len();
         let filled: Vec<bool> = match (callee, given) {
-            ("dropna", 0) => vec![true; columns.len()],
-            ("dropna", _) => {
-                self.untyped(arguments);
-                return Some(self.lowerer.error(
-                    function,
-                    "`dropna` of a `DataFrame` takes no arguments yet",
-                    "wrong arguments",
-                    Some(
-                        "`df.dropna()` drops each row with a `None` in any column; to look at \
-                         some columns only, take them first: `df[[\"bid\", \"ask\"]].dropna()`",
-                    ),
-                ));
-            }
+            ("dropna", _) => match self.dropped_columns(function, base, columns, arguments) {
+                Some(dropped) => dropped,
+                None => return Some(Type::new(self.db, TypeKind::Unknown)),
+            },
             ("fillna", _) => {
                 let value = match self.fill_value(function, arguments) {
                     Ok(value) => value,

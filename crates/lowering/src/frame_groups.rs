@@ -428,7 +428,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The text the string literal `node` writes, without its quotes.
-    fn written_text(&self, node: NodeId) -> &'db str {
+    pub(crate) fn written_text(&self, node: NodeId) -> &'db str {
         let text = self.text_of(node);
         text.get(1..text.len().saturating_sub(1)).unwrap_or(text)
     }

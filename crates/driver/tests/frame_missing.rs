@@ -45,7 +45,7 @@ def uses(quotes: DataFrame[Quote], rows: list[Quote], prices: DataFrame[Price]):
     longest = words.max()
     first: f64 = quotes[0].bid
     narrow = quotes.fillna({"price": 1.0})
-    full = quotes.dropna(how="all")
+    full = quotes.dropna(thresh=2)
     order = quotes.bid.argsort()
     groups = quotes.groupby("price").agg(top=("bid", "top"))
     joined = prices.merge(quotes, on="bid")
@@ -91,12 +91,12 @@ error: the column `price` cannot hold `None`
 20 |     narrow = quotes.fillna({"price": 1.0})
    |                             ^^^^^^^ has nothing to fill
 
-error: `dropna` of a `DataFrame` takes no arguments yet
-  --> main.byn:21:12
+error: `dropna` of a `DataFrame` has no argument `thresh`
+  --> main.byn:21:26
    |
-21 |     full = quotes.dropna(how="all")
-   |            ^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-   = note: `df.dropna()` drops each row with a `None` in any column; to look at some columns only, take them first: `df[["bid", "ask"]].dropna()`
+21 |     full = quotes.dropna(thresh=2)
+   |                          ^^^^^^ not an argument that is built
+   = note: `how=` and `subset=` are built; `thresh=` and `axis=` are not
 
 error: the method `argsort` is not built for an array with missing values yet
   --> main.byn:22:13
