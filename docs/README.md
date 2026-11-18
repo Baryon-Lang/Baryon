@@ -5,7 +5,7 @@ missing or unclear, that is a bug: open an issue.
 
 ## Learning the language
 
-How to code in Baryon is taught by four guide pages, read in order. CI runs every step of each
+How to code in Baryon is taught by six guide pages, read in order. CI runs every step of each
 as written, so every program in them builds and prints what the page shows.
 
 1. The [beginner's guide](guide/README.md) installs `baryon`, runs a first program, lets the
@@ -18,6 +18,8 @@ as written, so every program in them builds and prints what the page shows.
    text tables and `.npy`, NetCDF, HDF5 and FITS, compression, and plots with `byplot`.
 5. [A worked analysis with DataFrame](guide/dataframes.md) writes one pandas analysis again in
    Baryon, missing values included, and times `DataFrame` against pandas and Polars.
+6. [Special functions](guide/special-functions.md) covers `scipy.special`'s functions in
+   Baryon, what changes when a program moves from SciPy, and how fast they run.
 
 To work in an editor, [Coding Baryon in VS Code](guide/vscode.md) sets up VS Code and walks
 through a first program there.

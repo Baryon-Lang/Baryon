@@ -362,6 +362,7 @@ machine, and the least affected by other work on the computer.
 | `kernels/<name>/<name>.cpp`, `<name>.f90` | One kernel in each language |
 | `kernels/<name>/baryon/main.byn` | Its Baryon twin, which prints the same checksum |
 | `kernels/support/` | The shared generator, timer, argument parsing and report, in each language |
+| `special/` | `special` against `scipy.special` on 10 million arguments per function; [its README](special/README.md) runs it |
 | `src/` | The harness: `cargo kernels` |
 | `baselines/` | Recorded baselines, one JSON file per platform |
 | `dataframe/` | The `DataFrame` benchmark against pandas and Polars, with [its own page](dataframe/README.md) |

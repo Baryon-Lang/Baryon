@@ -191,3 +191,8 @@ Baryon runs each operation on one core, as pandas does, and is level with pandas
 ahead everywhere because it uses every core. Running Baryon's column loops on every core is
 the next step, and these numbers are its starting line. The benchmark's own page says how each
 number is measured and how to run it on your machine.
+
+## Where to go next
+
+[Special functions](special-functions.md) is the last page of this guide: `scipy.special`'s
+functions in Baryon, moving a program from SciPy, and their speed.

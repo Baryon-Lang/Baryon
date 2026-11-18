@@ -9,7 +9,7 @@ and every output shown is what the command printed, so if a step does not work f
 bug: please open an issue. The compiler is a prototype and does not build the whole language yet;
 [What builds today](../reference/status.md) lists what it does.
 
-This guide is the first of five pages that together teach how to code in Baryon. Read them in
+This guide is the first of six pages that together teach how to code in Baryon. Read them in
 order:
 
 | Page | What it teaches |
@@ -19,6 +19,7 @@ order:
 | [Arrays and numbers](arrays-and-numbers.md) | `Array`, parallel and vector loops, `math`, exact sums, random numbers, `linalg`, `fft` and `stats` |
 | [Data, files and plots](data-files-and-plots.md) | `DataFrame`, files and paths, text tables and `.npy`, NetCDF, HDF5 and FITS, compression, and plots with `byplot` |
 | [A worked analysis with DataFrame](dataframes.md) | One pandas analysis written again in Baryon, with missing values, and how fast `DataFrame` runs beside pandas and Polars |
+| [Special functions](special-functions.md) | `scipy.special`'s functions: probability, elliptic integrals, Bessel functions and Gauss quadrature; moving from SciPy; speed against SciPy |
 
 [Coding Baryon in VS Code](vscode.md) sets up an editor alongside them.
 

@@ -1,0 +1,94 @@
+import sys
+from special import (
+    airy, betainc, digamma, ellipe, ellipk, erf, erfc, eval_legendre, expi, gamma, gammainc,
+    gammaln, hyp1f1, hyp2f1, j0, jv, kv, ndtri, stdtr, zeta,
+)
+
+
+def main():
+    """Calls the function `sys.argv[1]` names on 10 million evenly spaced arguments and prints
+    the sum of the results, which the SciPy side prints too, so the two can be compared."""
+    n = 10_000_000
+    which = sys.argv[1].copy()
+    total = 0.0
+    if which == "gamma":
+        for i in range(n):
+            x = 0.1 + 19.9 * ((i + 0.5) / n)
+            total += gamma(x)
+    elif which == "gammaln":
+        for i in range(n):
+            x = 0.1 + 99.9 * ((i + 0.5) / n)
+            total += gammaln(x)
+    elif which == "digamma":
+        for i in range(n):
+            x = 0.1 + 99.9 * ((i + 0.5) / n)
+            total += digamma(x)
+    elif which == "erf":
+        for i in range(n):
+            x = -5.0 + 10.0 * ((i + 0.5) / n)
+            total += erf(x)
+    elif which == "erfc":
+        for i in range(n):
+            x = -5.0 + 30.0 * ((i + 0.5) / n)
+            total += erfc(x)
+    elif which == "ndtri":
+        for i in range(n):
+            x = 0.0 + 1.0 * ((i + 0.5) / n)
+            total += ndtri(x)
+    elif which == "j0":
+        for i in range(n):
+            x = 0.0 + 100.0 * ((i + 0.5) / n)
+            total += j0(x)
+    elif which == "jv":
+        for i in range(n):
+            x = 0.0 + 100.0 * ((i + 0.5) / n)
+            total += jv(2.5, x)
+    elif which == "kv":
+        for i in range(n):
+            x = 0.01 + 49.99 * ((i + 0.5) / n)
+            total += kv(1.3, x)
+    elif which == "airy":
+        for i in range(n):
+            x = -20.0 + 40.0 * ((i + 0.5) / n)
+            total += airy(x)[0]
+    elif which == "gammainc":
+        for i in range(n):
+            x = 0.0 + 20.0 * ((i + 0.5) / n)
+            total += gammainc(3.7, x)
+    elif which == "betainc":
+        for i in range(n):
+            x = 0.0 + 1.0 * ((i + 0.5) / n)
+            total += betainc(2.5, 3.5, x)
+    elif which == "stdtr":
+        for i in range(n):
+            x = -10.0 + 20.0 * ((i + 0.5) / n)
+            total += stdtr(5.0, x)
+    elif which == "ellipk":
+        for i in range(n):
+            x = -10.0 + 11.0 * ((i + 0.5) / n)
+            total += ellipk(x)
+    elif which == "ellipe":
+        for i in range(n):
+            x = -10.0 + 11.0 * ((i + 0.5) / n)
+            total += ellipe(x)
+    elif which == "expi":
+        for i in range(n):
+            x = -50.0 + 100.0 * ((i + 0.5) / n)
+            total += expi(x)
+    elif which == "zeta":
+        for i in range(n):
+            x = 1.01 + 48.99 * ((i + 0.5) / n)
+            total += zeta(x)
+    elif which == "eval_legendre":
+        for i in range(n):
+            x = -1.0 + 2.0 * ((i + 0.5) / n)
+            total += eval_legendre(10, x)
+    elif which == "hyp1f1":
+        for i in range(n):
+            x = -50.0 + 100.0 * ((i + 0.5) / n)
+            total += hyp1f1(1.5, 2.5, x)
+    elif which == "hyp2f1":
+        for i in range(n):
+            x = -10.0 + 10.99 * ((i + 0.5) / n)
+            total += hyp2f1(0.5, 1.5, 2.5, x)
+    print(total)
