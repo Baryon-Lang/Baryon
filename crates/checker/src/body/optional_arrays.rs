@@ -201,10 +201,11 @@ impl<'db> Body<'db> {
     }
 
     /// Reports the assignment whose target is `target` when it writes into an array with
-    /// missing values in a way that is not built, and returns whether it did. One element of
-    /// numbers or `bool`s, `values[i] = 2.0` or `values[i] = None`, is built and checked as
-    /// any assignment to a `T | None` is. An element of text is not, since text is stored
-    /// end to end, and neither are several elements at once, `values[mask] = 0.0`.
+    /// missing values in a way that is not built, and returns whether it did. Numbers and
+    /// `bool`s are built: one element, `values[i] = 2.0` or `values[i] = None`, checked as
+    /// any assignment to a `T | None` is, and the elements a slice, a mask, positions or a
+    /// list chooses, `values[mask] = None`, which all take the one value. Text is not,
+    /// since it is stored end to end.
     fn optional_array_element_assigned(&mut self, target: NodeId) -> bool {
         let base = (self.tree.kind(target) == SyntaxKind::Subscript)
             .then(|| self.tree.child(target, Role::Value))
@@ -218,12 +219,13 @@ impl<'db> Body<'db> {
         let one = self.typed.expression(target).is_none_or(|ty| {
             matches!(ty.kind(self.db), TypeKind::Optional(_)) || relations::is_open(self.db, ty)
         });
-        let what = if matches!(element.kind(self.db), TypeKind::Str) {
-            "assigning an element of text"
-        } else if one {
+        if !matches!(element.kind(self.db), TypeKind::Str) {
             return false;
+        }
+        let what = if one {
+            "assigning an element of text"
         } else {
-            "assigning through a slice, a mask or positions"
+            "assigning elements of text"
         };
         self.optional_array_unbuilt(target, what);
         true

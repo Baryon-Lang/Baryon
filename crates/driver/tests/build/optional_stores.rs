@@ -1,6 +1,7 @@
-//! Assigning one element of an array with missing values (roadmap 3.13.6, decision 0045),
-//! built and run: `bids[i] = 2.0` puts a number where there was a number or a `None`, and
-//! `bids[i] = None` takes one out.
+//! Assigning elements of an array with missing values (roadmap 3.13.6, decision 0045), built
+//! and run: `bids[i] = 2.0` puts a number where there was a number or a `None`,
+//! `bids[i] = None` takes one out, and `bids[mask] = None` does either to every element a
+//! mask, positions, a list or a slice chooses.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -81,6 +82,80 @@ def main():
     assert_eq!(output, "");
     assert!(
         report.contains("panic: index 2 is out of range for dimension 0 of length 2"),
+        "{report}"
+    );
+    Ok(())
+}
+
+/// A mask, a mask that may hold `None`, a slice with a step, an array of positions and a
+/// list each choose the elements that take one value or `None`, in an array of floats,
+/// `bool`s and integers and through an `InOut` parameter.
+#[test]
+fn chosen_elements_are_assigned() -> io::Result<()> {
+    let program = r"
+def clear(values: InOut[Array[f64 | None, 1]]):
+    values[values > 2.0] = None
+
+
+def main():
+    bids: Array[f64 | None, 1] = Array([1.5, None, 2.5, 4.0, None, 6.0, 7.0, 8.0, 9.0, 10.0])
+    bids[bids > 7.5] = 0.0
+    print(bids)
+    bids[bids.isna()] = -1.0
+    print(bids)
+    bids[1:4] = None
+    print(bids)
+    bids[::-3] = 5.0
+    print(bids)
+    bids[Array([0, 9])] = None
+    bids[[2, 2]] = 3.0
+    print(bids, bids.count())
+    clear(bids)
+    print(bids)
+    flags: Array[bool | None, 1] = Array([True, None, False])
+    flags[[True, True, False]] = None
+    maybe: bool | None = True
+    flags[2:] = maybe
+    print(flags)
+    counts: Array[i64 | None, 1] = Array([1, 2, 3])
+    counts[counts == 2] = None
+    print(counts)
+    counts[:] = 7
+    print(counts)
+";
+    let (code, output, report) = run("optional_stores_chosen", program)?;
+    assert_eq!(code, Some(0), "{report}");
+    assert_eq!(
+        output,
+        "[1.5 None 2.5 4.0 None 6.0 7.0 0.0 0.0 0.0]\n\
+         [1.5 -1.0 2.5 4.0 -1.0 6.0 7.0 0.0 0.0 0.0]\n\
+         [1.5 None None None -1.0 6.0 7.0 0.0 0.0 0.0]\n\
+         [5.0 None None 5.0 -1.0 6.0 5.0 0.0 0.0 5.0]\n\
+         [None None 3.0 5.0 -1.0 6.0 5.0 0.0 0.0 None] 7\n\
+         [None None None None -1.0 None None 0.0 0.0 None]\n\
+         [None None True]\n\
+         [1 None 3]\n\
+         [7 7 7]\n"
+    );
+    Ok(())
+}
+
+/// A position outside the array and a mask of another length stop the program.
+#[test]
+fn a_bad_choice_panics() -> io::Result<()> {
+    let start = "def main():\n    counts: Array[i64 | None, 1] = Array([1, 2, 3])\n";
+    let past = format!("{start}    counts[[5]] = 1\n");
+    let (code, _, report) = run("optional_stores_past", &past)?;
+    assert_eq!(code, Some(101));
+    assert!(
+        report.contains("panic: index 5 is out of range for dimension 0 of length 3"),
+        "{report}"
+    );
+    let short = format!("{start}    counts[[True]] = 1\n");
+    let (code, _, report) = run("optional_stores_short", &short)?;
+    assert_eq!(code, Some(101));
+    assert!(
+        report.contains("panic: array lengths differ in dimension 0: 3 and 1"),
         "{report}"
     );
     Ok(())

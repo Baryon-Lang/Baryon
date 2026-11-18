@@ -177,6 +177,9 @@ impl<'db> Builder<'db> {
         if self.is_list_slice(target) {
             return self.list_slice_store(target, value);
         }
+        if self.is_optional_selection(target) {
+            return self.optional_selection_store(target, value);
+        }
         if self.is_selection(target) {
             return self.selection_store(target, value);
         }
