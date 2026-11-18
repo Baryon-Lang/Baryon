@@ -1,5 +1,5 @@
 """The error function family for `special` (roadmap 3.18.3): `erf`, `erfc`, `erfcx`,
-`erfinv`, `erfcinv`, the normal distribution's `ndtr`, `ndtri` and `log_ndtr`, and Dawson's
+`erfinv`, `erfcinv`, the normal distribution's `ndtr` and `log_ndtr`, and Dawson's
 integral `dawsn`.
 
 The compiler reads this file for `<std>/special.byn`; a program cannot import it.
@@ -11,7 +11,6 @@ from math import exp, floor, fma, inf, isnan, log, log1p, nan, pi, sqrt
 _SQRT_PI: Final = 1.7724538509055159  # √π
 _ONE_OVER_SQRT_PI: Final = 0.5641895835477563  # 1/√π
 _TWO_OVER_SQRT_PI: Final = 1.1283791670955126  # 2/√π
-_SQRT_TWO: Final = 1.4142135623730951  # √2
 _ONE_OVER_SQRT_TWO: Final = 0.7071067811865476  # 1/√2, rounded to f64
 _ONE_OVER_SQRT_TWO_LOW: Final = -4.833646656726457e-17  # 1/√2 minus `_ONE_OVER_SQRT_TWO`
 
@@ -382,21 +381,6 @@ def ndtr(x: f64) -> f64:
         return 0.0
     high, low = _over_root_two(-x)
     return 0.5 * _erfc_of_sum(high, low)
-
-
-def ndtri(p: f64) -> f64:
-    """The inverse of `ndtr`, as `scipy.special.ndtri`: the `x` with Φ(x) = p, for `p`
-    from 0 to 1. −∞ at 0, ∞ at 1 and NaN outside [0, 1].
-
-    ```python
-    from special import ndtri
-
-    print(ndtri(0.975)) # 1.959963984540054
-    ```
-    """
-    if isnan(p) or p < 0.0 or p > 1.0:
-        return nan
-    return -_SQRT_TWO * erfcinv(2.0 * p)
 
 
 def log_ndtr(x: f64) -> f64:

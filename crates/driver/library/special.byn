@@ -25,7 +25,8 @@ from special_gamma import loggamma as loggamma, psi as psi, digamma as digamma
 from special_gamma import polygamma as polygamma, factorial as factorial
 from special_beta import beta as beta, betaln as betaln, poch as poch
 from special_error import erf as erf, erfc as erfc, erfcx as erfcx, erfinv as erfinv
-from special_error import erfcinv as erfcinv, ndtr as ndtr, ndtri as ndtri, log_ndtr as log_ndtr
+from special_error import erfcinv as erfcinv, ndtr as ndtr, log_ndtr as log_ndtr
+from special_ndtri import ndtri as ndtri
 from special_error import dawsn as dawsn
 from special_bessel_jy import j0 as j0, j1 as j1, y0 as y0, y1 as y1, jn as jn, yn as yn
 from special_bessel_ik import i0e as i0e, i1e as i1e, i0 as i0, i1 as i1, k0e as k0e, k1e as k1e
