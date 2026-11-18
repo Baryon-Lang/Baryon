@@ -296,7 +296,12 @@ impl<'db> Expander<'_, '_, 'db> {
 
     /// Ends the block being written with a call of `builtin`, which cannot fail, and continues
     /// in a new block after it.
-    fn call(&mut self, builtin: Builtin, arguments: Vec<Argument<'db>>, destination: Place) {
+    pub(super) fn call(
+        &mut self,
+        builtin: Builtin,
+        arguments: Vec<Argument<'db>>,
+        destination: Place,
+    ) {
         let next = self.new_block();
         self.finish(
             TerminatorKind::Call {
