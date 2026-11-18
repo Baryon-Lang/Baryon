@@ -139,9 +139,9 @@ def main() -> Raises[None, OSError | ValueError]:
 ///
 /// The hypergeometric functions are held to the size their case records: the largest of |f| and
 /// |t ∂f/∂t| for each argument t, the error that rounding the arguments alone would make. `hyp0f1`
-/// is held to 16 ULP of it and `hyp1f1` to 64; the worst are 13 and 55. `hyperu` is held to 512:
-/// for b below about −30 and |a| below 1 the series it is summed from cancel by up to 64 times,
-/// and the worst is 385 ULP there, at b = −146.
+/// is held to 16 ULP of it, `hyp1f1` to 64 and `hyp2f1` to 128; the worst are 13, 55 and 68.
+/// `hyperu` is held to 512: for b below about −30 and |a| below 1 the series it is summed from
+/// cancel by up to 64 times, and the worst is 385 ULP there, at b = −146.
 ///
 /// The nodes of Gauss quadrature, `roots_..._x`, are held to 16 ULP of the larger of themselves and
 /// the gap to the nearest node: Newton's method on the polynomial leaves 7 at worst. Their weights,
@@ -175,7 +175,7 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         | "ive" | "kv" | "kve" | "ivp" | "kvp" | "spherical_in" | "spherical_kn" => 256.0,
         _ if name.starts_with("airy") => 64.0,
         "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" => 32.0,
-        "struve" | "modstruve" => 128.0,
+        "struve" | "modstruve" | "hyp2f1" => 128.0,
         "hyp0f1" => 16.0,
         "hyp1f1" => 64.0,
         "hyperu" => 512.0,
@@ -222,7 +222,7 @@ fn scale(name: &str, want: f64, x: f64) -> f64 {
             .max((2.0 / (std::f64::consts::PI * x.abs())).sqrt()),
         _ if name.starts_with("roots_") || name.starts_with("airy") => x,
         "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" | "struve"
-        | "modstruve" | "hyp0f1" | "hyp1f1" | "hyperu" => x,
+        | "modstruve" | "hyp0f1" | "hyp1f1" | "hyperu" | "hyp2f1" => x,
         _ => want.abs(),
     }
 }
