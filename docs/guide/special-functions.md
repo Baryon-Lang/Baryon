@@ -210,10 +210,10 @@ means SciPy was faster.
 | `gamma(x)` | 0.1 to 20 | 0.33 | 0.13 | 2.6 |
 | `gammaln(x)` | 0.1 to 100 | 0.19 | 0.11 | 1.6 |
 | `digamma(x)` | 0.1 to 100 | 0.18 | 0.12 | 1.5 |
-| `erf(x)` | −5 to 5 | 0.50 | 0.14 | 3.6 |
-| `erfc(x)` | −5 to 25 | 0.38 | 0.13 | 2.9 |
+| `erf(x)` | −5 to 5 | 0.20 | 0.14 | 1.4 |
+| `erfc(x)` | −5 to 25 | 0.20 | 0.13 | 1.5 |
 | `ndtri(p)` | 0 to 1 | 0.50 | 0.13 | 3.8 |
-| `j0(x)` | 0 to 100 | 1.20 | 0.30 | 3.9 |
+| `j0(x)` | 0 to 100 | 0.38 | 0.30 | 1.3 |
 | `jv(2.5, x)` | 0 to 100 | 2.07 | 3.45 | 0.6 |
 | `kv(1.3, x)` | 0.01 to 50 | 2.73 | 2.57 | 1.1 |
 | `airy(x)` | −20 to 20 | 7.09 | 12.85 | 0.6 |
@@ -229,12 +229,13 @@ means SciPy was faster.
 | `hyp2f1(0.5, 1.5, 2.5, x)` | −10 to 0.99 | 13.49 | 5.13 | 2.6 |
 
 Baryon is faster for `jv`, `airy` and `expi`, level for `kv`, `ellipk`, `ellipe` and
-`eval_legendre`, and slower for the rest, by up to 3.9 times, for `zeta`, `j0` and `ndtri`. The
-slower functions use general methods held to the accuracy above, such as series and iterations,
-where SciPy's Cephes fits one short rational or polynomial formula to each range of the argument.
-Roadmap 3.18.17 speeds them up, slowest first. `ellipk` and `ellipe` are now formulas fitted for
-Baryon and took 0.6 and 1.5 seconds before it; `ndtri` starts from one and took 3.7; `zeta`, which
-now stops summing once the rest cannot change the result, took 7.0.
+`eval_legendre`, and slower for the rest, by up to 3.9 times, for `zeta` and `ndtri`. The slower
+functions use general methods held to the accuracy above, such as series and iterations, where
+SciPy's Cephes fits one short rational or polynomial formula to each range of the argument. Roadmap
+3.18.17 speeds them up, slowest first, with formulas fitted for Baryon where they keep the accuracy:
+`ellipk`, `ellipe`, `erf`, `erfc` and `j0` took 0.6, 1.5, 0.5, 0.4 and 1.2 seconds before it;
+`ndtri`, which now starts from a fitted value, 3.7; and `zeta`, which now stops summing once the
+rest cannot change the result, 7.0.
 [`bench/special`](../../bench/special/README.md) holds both programs, to run on your own machine.
 
 ## Where to go next

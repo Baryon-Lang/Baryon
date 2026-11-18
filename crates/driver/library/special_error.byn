@@ -8,8 +8,8 @@ The compiler reads this file for `<std>/special.byn`; a program cannot import it
 from math import exp, floor, fma, inf, isnan, log, log1p, nan, pi, sqrt
 
 
-_SQRT_PI: Final = 1.7724538509055159  # √π
-_ONE_OVER_SQRT_PI: Final = 0.5641895835477563  # 1/√π
+_SQRT_PI: Final = 1.7724538509055159  # √π, rounded to f64
+_SQRT_PI_LOW: Final = 1.453787399267733e-16  # √π minus `_SQRT_PI`
 _TWO_OVER_SQRT_PI: Final = 1.1283791670955126  # 2/√π
 _ONE_OVER_SQRT_TWO: Final = 0.7071067811865476  # 1/√2, rounded to f64
 _ONE_OVER_SQRT_TWO_LOW: Final = -4.833646656726457e-17  # 1/√2 minus `_ONE_OVER_SQRT_TWO`
@@ -43,26 +43,42 @@ def _erf_small(x: f64) -> f64:
     return x * s
 
 
-def _erfcx_continued_fraction(x: f64) -> f64:
-    """exp(x²) erfc(x) for `x` from 3 up, by Laplace's continued fraction
-    1 / (√π (x + (1/2) / (x + 1 / (x + (3/2) / (x + ⋯))))), evaluated from its depth up.
-    Forty levels reach full precision at 3, twenty at 4 and ten from 8 up."""
-    depth = 10
-    if x < 4.0:
-        depth = 40
-    elif x < 8.0:
-        depth = 20
-    t = x
-    for k in range(depth, 0, -1):
-        t = x + 0.5 * k / t
-    return _ONE_OVER_SQRT_PI / t
+def _erfcx_far(x: f64) -> f64:
+    """exp(x²) erfc(x) for `x` from 3 up, as (1 + z S(z)) / (x√π) with z = 1/x² and S a
+    rational function of degree 6 fitted with mpmath (roadmap 3.18.17; the script is in
+    `crates/driver/tests/fixtures/special/README.md`). 1 + z S(z) goes to 1 as x grows, the
+    leading term of the asymptotic series, so S's own rounding is scaled down by z; x√π is
+    carried as two `f64`s. Within 1 ULP. Laplace's continued fraction, which it replaces,
+    needed forty divisions at 3, each waiting on the last."""
+    if x > 1.0e300:
+        # x√π's low part would be NaN at ∞; z S(z) is far below one ULP of 1 here.
+        return 1.0 / (x * _SQRT_PI)
+    z = 1.0 / (x * x)
+    top = -22.92408295222807
+    top = top * z - 739.6718091884331
+    top = top * z - 1337.869991325137
+    top = top * z - 739.0218664945072
+    top = top * z - 164.65104321370845
+    top = top * z - 15.425469619121236
+    top = top * z - 0.5
+    bottom = 1234.1180305415423
+    bottom = bottom * z + 4364.517728300567
+    bottom = bottom * z + 4534.94489040098
+    bottom = bottom * z + 1930.97045372872
+    bottom = bottom * z + 374.07849528492864
+    bottom = bottom * z + 32.350939238242276
+    bottom = bottom * z + 1.0
+    ratio = fma(z, top / bottom, 1.0)
+    root = x * _SQRT_PI
+    root_low = fma(x, _SQRT_PI, -root) + x * _SQRT_PI_LOW
+    return ratio / root * (1.0 - root_low / root)
 
 
 def _erfcx_positive(x: f64) -> f64:
     """exp(x²) erfc(x) for `x` from 0.5 up: the Taylor series of the function around the
-    middle of each half-unit interval below 3, and the continued fraction above."""
+    middle of each half-unit interval below 3, and a fitted rational function above."""
     if x >= 3.0:
-        return _erfcx_continued_fraction(x)
+        return _erfcx_far(x)
     if x < 1.0:
         d = x - 0.75
         s = -1.0639550902512525e-08
