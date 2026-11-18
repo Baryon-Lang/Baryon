@@ -163,6 +163,38 @@ impl<'db> Builder<'db> {
         Some(Place::from(read))
     }
 
+    /// The type a `for` loop over an array with missing values gives its variable: `T | None`
+    /// for the array's elements `inner`, and the unknown type when there are none.
+    pub(crate) fn ty_or(&self, inner: Option<Type<'db>>) -> Type<'db> {
+        match inner {
+            Some(element) => Type::new(self.db, TypeKind::Optional(element)),
+            None => Type::new(self.db, TypeKind::Unknown),
+        }
+    }
+
+    /// The element at the position `at` of the array of numbers or `bool`s with missing
+    /// values at `array`, for a `for` loop whose variable is an `element`, a `T | None`: a
+    /// temporary the library's `optional_element` fills. The loop keeps `at` inside the
+    /// array. Cost: one call that reads the bitmap and the values on each pass.
+    pub(crate) fn optional_loop_element(
+        &mut self,
+        array: &Place,
+        at: Local,
+        element: Type<'db>,
+        node: NodeId,
+    ) -> Place {
+        let inner = match element.kind(self.db) {
+            TypeKind::Optional(inner) => *inner,
+            _ => element,
+        };
+        let values = array.clone().project(Projection::Field(VALUES));
+        let bits = array.clone().project(Projection::Field(VALIDITY));
+        let arguments = vec![values, bits, Place::from(at)];
+        let read = self.frame_call("optional_element", vec![inner], arguments, element, node);
+        // After a report the program is not built, and the loop still needs a place to name.
+        Place::from(read.unwrap_or_else(|| self.temporary(element, node)))
+    }
+
     /// Whether `node` is `names[index]` on an array of text with missing values, which
     /// names no place: each read copies the text into a new `str | None`.
     pub(crate) fn is_optional_text_item(&self, node: NodeId) -> bool {

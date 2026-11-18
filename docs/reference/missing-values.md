@@ -56,8 +56,7 @@ This prints `3`.
 ```python
 def total(values: Array[f64 | None, 1]) -> f64:
     result = 0.0
-    for at in range(len(values)):
-        value = values[at]
+    for value in values:
         if value is not None:
             result += value
     return result
@@ -72,9 +71,43 @@ def main():
 This prints `1.5 None 2.5`, then `4.0`.
 
 - **An index out of range stops the program**, as it does for any array.
+- **A `for` loop gives each element in turn**, an `f64 | None` here, alone or inside
+  `enumerate`, `zip` and `reversed`, and in a comprehension:
+  `[bid for bid in bids if bid is not None]`. The array is borrowed for the loop, as any
+  array is. Not built yet: a loop over text that may be `None`; read `names[at]` in a loop
+  over `range(len(names))`.
 - **`len(bids)` counts every element**, the missing ones too.
 - **`bids.copy()`** gives a new array with its own memory, gaps included. As with any array,
   `kept = bids` moves the array, and a copy keeps both.
+
+## Choosing elements
+
+A mask, an array of positions and a slice choose elements as they do for
+[an array of numbers](arrays.md#choosing-elements), and give a new array with missing
+values, each `None` staying a `None`:
+
+```python
+def main():
+    bids: Array[f64 | None, 1] = Array([1.5, None, 2.5, 4.0])
+    print(bids[1:3])
+    print(bids[Array([3, 0, 1])])
+    print(bids[bids.notna()])
+    print(bids[bids > 2.0])
+```
+
+This prints `[None 2.5]`, `[4.0 1.5 None]`, `[1.5 2.5 4.0]` and `[2.5 4.0]`.
+
+- **A mask is an `Array[bool, 1]` of the array's length**, or one that may hold `None`
+  itself, such as a [comparison](missing-comparisons.md): that one chooses where it is
+  `True` and not where it is `None`, as pandas does.
+- **Positions are an `Array[i64, 1]`**, in any order and with repeats. A position outside
+  the array stops the program.
+- **A slice is a copy**, not a view, as a slice of [an array of text](text-arrays.md) is:
+  the bits that mark the gaps cannot be shared from the middle of a byte. Its bounds are
+  clamped to the array as Python's are, and a step of 0 stops the program.
+- **Not built yet:** a `list` of positions, `bids[[0, 2]]`; write `bids[Array([0, 2])]`.
+- **Cost:** what the same choice costs an array of numbers, and one more pass that
+  chooses the bits. A slice costs an array of 8 bytes for each element it takes as well.
 
 ## Where the gaps are
 
@@ -445,8 +478,8 @@ Each of these is a compile error that names what an array with missing values ha
 - `**`, the bitwise operators and the in-place operators, `bids += 1.0`;
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `count`, `sum`, `mean`,
   `min`, `max`, `var` and `std`: `median`, `argsort`; and `min` and `max` of text;
-- a slice, a mask or a list of positions, `bids[1:3]`;
+- a `list` of positions, `bids[[0, 2]]`;
 - assigning an element, `bids[0] = 2.0`;
-- a `for` loop over the array;
+- a `for` loop over text that may be `None`;
 - `print` of a tuple or a list that holds one, or that holds a frame with such a column;
 - one as a struct field.

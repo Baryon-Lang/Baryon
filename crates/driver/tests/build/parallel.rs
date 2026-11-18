@@ -249,3 +249,53 @@ def main():
     )
     .unwrap();
 }
+
+/// A `Callable` parameter called inside a `prange` body (roadmap 1.9.45): one received
+/// function, and two parameters of one signature that received different functions, one also
+/// copied into a local before the loop; and a local of `main` that holds a function. Each call in the outlined body is a direct call of the
+/// function the instance received. Before, the build stopped on "values of type `Callable`".
+#[test]
+fn callables_are_called_inside_prange() {
+    let program = "\
+def square(x: f64) -> f64:
+    return x * x
+
+
+def cube(x: f64) -> f64:
+    return x * x * x
+
+
+def fill(f: Callable[[f64], f64], n: i64) -> Array[f64, 1]:
+    out = Array.zeros(n)
+    for i in prange(n):
+        out[i] = f(float(i))
+    return out
+
+
+def both[T: Float](f: Callable[[T], T], g: Callable[[T], T], n: i64, one: T) -> T:
+    h = g
+    total = one - one
+    for i in prange(n):
+        total += f(one) + h(one) + g(one)
+    return total
+
+
+def main():
+    print(fill(square, 4))
+    print(both(square, cube, 4, 2.0))
+    h = cube
+    out = Array.zeros(3)
+    for i in prange(3):
+        out[i] = h(float(i))
+    print(out)
+";
+    let directory = package("prange_callables", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "[0. 1. 4. 9.]\n80.0\n[0. 1. 8.]\n"
+    );
+}

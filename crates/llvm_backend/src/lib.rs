@@ -168,6 +168,7 @@ mod module;
 mod pairwise;
 mod panic;
 mod parallel;
+mod parallel_chunk;
 mod parts;
 mod paths;
 mod print;

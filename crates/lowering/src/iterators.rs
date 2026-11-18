@@ -16,6 +16,7 @@
 //! element that is not copied, such as a `str` in a list, is borrowed in place as in a plain
 //! loop, so the same rule holds: its variable may be used only inside the loops that bind it.
 //! A `str` is read forward one character at a time, so `reversed` of a `str` is not lowered yet.
+//! The walk of `range` is built in the `range_walks` module.
 
 use crate::builder::Builder;
 use crate::collections::Elements;
@@ -27,7 +28,7 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Type, TypeKind};
 
 /// What one sequence of a loop reads on each pass.
-enum Walk<'db> {
+pub(crate) enum Walk<'db> {
     /// The elements of an array, a list, a tuple or a `str`, borrowed at `collection`.
     Elements {
         /// The borrowed collection.
@@ -193,89 +194,8 @@ impl<'db> Builder<'db> {
         }
     }
 
-    /// The walk of `range(…)` at `node`: its first number, and how many numbers it has, which
-    /// is `ceil((stop - start) / step)` when that is above zero and zero otherwise, as Python's
-    /// `len(range(…))` is. `None` after an error, or for a step known only at run time.
-    fn range_walk(&mut self, node: NodeId, reversed: bool) -> Option<Walk<'db>> {
-        let (positional, _) = self.call_arguments(node);
-        let (first, bound, step) = match *positional.as_slice() {
-            [bound] => (None, bound, Some(1)),
-            [first, bound] => (Some(first), bound, Some(1)),
-            [first, bound, stride] => (Some(first), bound, self.constant_integer(stride)),
-            _ => None?,
-        };
-        let Some(step) = step.filter(|&step| step != 0) else {
-            self.unsupported(
-                node,
-                "a `range` step that is not a constant inside `enumerate`, `zip` or `reversed`",
-            );
-            return None;
-        };
-        let ty = self.ty(first.unwrap_or(bound));
-        let start = self.temporary(ty, node);
-        match first {
-            Some(first) => self.write(Place::from(start), ty, first),
-            None => self.assign(
-                Place::from(start),
-                Rvalue::Use(Operand::Constant(Constant::integer(ty, 0))),
-                node,
-            ),
-        }
-        let end = self.temporary(ty, bound);
-        self.write(Place::from(end), ty, bound);
-        // The distance to cover in the step's direction, then the steps it takes, rounded up.
-        let (from, to) = if step > 0 { (start, end) } else { (end, start) };
-        let distance = self.binary_locals(BinaryOperator::Subtract, (to, from), ty, node);
-        let length = self.temporary(self.int_type(), node);
-        let zero = Rvalue::Use(Operand::Constant(Constant::integer(self.int_type(), 0)));
-        self.assign(Place::from(length), zero, node);
-        let positive = self.temporary(self.boolean_type(), node);
-        self.assign(
-            Place::from(positive),
-            Rvalue::Binary(
-                BinaryOperator::Greater,
-                Operand::Copy(Place::from(distance)),
-                Operand::Constant(Constant::integer(ty, 0)),
-            ),
-            node,
-        );
-        let (count, join) = (self.new_block(), self.new_block());
-        self.branch(Operand::Copy(Place::from(positive)), (count, join), node);
-        self.start(count);
-        let size = step.unsigned_abs();
-        let rounded = Rvalue::Binary(
-            BinaryOperator::Add,
-            Operand::Copy(Place::from(distance)),
-            Operand::Constant(Constant::integer(ty, i128::try_from(size - 1).ok()?)),
-        );
-        self.assign(Place::from(distance), rounded, node);
-        let steps = Rvalue::Binary(
-            BinaryOperator::FloorDivide,
-            Operand::Copy(Place::from(distance)),
-            Operand::Constant(Constant::integer(ty, i128::try_from(size).ok()?)),
-        );
-        let counted = self.temporary(ty, node);
-        self.assign(Place::from(counted), steps, node);
-        let as_int = self.convert(
-            Operand::Copy(Place::from(counted)),
-            ty,
-            self.int_type(),
-            node,
-        );
-        self.assign(Place::from(length), Rvalue::Use(as_int), node);
-        self.jump(&mut Some(join), node);
-        self.start(join);
-        Some(Walk::Range {
-            first: start,
-            step,
-            length,
-            reversed,
-            ty,
-        })
-    }
-
     /// `left operator right` of two locals of type `ty`, into a new temporary.
-    fn binary_locals(
+    pub(crate) fn binary_locals(
         &mut self,
         operator: BinaryOperator,
         (left, right): (Local, Local),
@@ -299,8 +219,10 @@ impl<'db> Builder<'db> {
     /// over it is. `None` after an error.
     fn elements_walk(&mut self, node: NodeId, reversed: bool) -> Option<Walk<'db>> {
         let ty = self.ty(node);
+        let gaps = self.optional_array_element(node);
         let element = match ty.kind(self.db) {
             _ if self.is_text_array(node) => Type::new(self.db, TypeKind::Str),
+            _ if gaps.is_some() => self.ty_or(gaps),
             TypeKind::Array { element, rank: 1 } | TypeKind::List(element) => *element,
             TypeKind::Fixed { element, shape } if shape.rank() == 1 => *element,
             TypeKind::Tuple(items) if !items.is_empty() => items[0],
@@ -421,6 +343,9 @@ impl<'db> Builder<'db> {
                 match elements {
                     Elements::Indexed => collection.clone().project(Projection::Index(vec![at])),
                     Elements::TextArray => self.text_array_element(collection, at, target),
+                    Elements::Optional => {
+                        self.optional_loop_element(collection, at, *element, target)
+                    }
                     Elements::Tuple(count) => {
                         let item = self.temporary(*element, target);
                         self.tuple_item(target, (collection, *count), at, &mut |builder, place| {

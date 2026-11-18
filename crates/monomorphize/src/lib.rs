@@ -165,6 +165,7 @@ pub fn instantiate<'db>(
         .map(|(_, &argument)| argument);
     callable_parameters(db, &mut body, received);
     callables::copied(db, &mut body);
+    callables::shared(db, &mut body);
     direct_calls(db, &mut body);
     whole_array_arithmetic(db, &mut body);
     body
