@@ -41,6 +41,9 @@ from special_airy import airy as airy, airye as airye
 from special_kelvin import kelvin as kelvin, ber as ber, bei as bei, ker as ker, kei as kei
 from special_kelvin import berp as berp, beip as beip, kerp as kerp, keip as keip
 from special_struve import struve as struve, modstruve as modstruve
+from special_hyp0f1 import hyp0f1 as hyp0f1
+from special_hyp1f1 import hyp1f1 as hyp1f1
+from special_hyperu import hyperu as hyperu
 from special_incomplete_gamma import gammainc as gammainc, gammaincc as gammaincc
 from special_incomplete_gamma import gammaincinv as gammaincinv, gammainccinv as gammainccinv
 from special_incomplete_beta import betainc as betainc, betaincc as betaincc

@@ -82,6 +82,9 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `airy`, `airye` | 64 ULP, of the envelope √(Ai² + Bi²) or √(Ai′² + Bi′²) below 0 | 36 ULP at x = −11.9 | 394,000 ULP at `airy(-8408.2)`; NaN from x = 103.9 for Bi and past about 1e8 for all |
 | `ber`, `bei`, `ker`, `kei`, `berp`, `beip`, `kerp`, `keip`, `kelvin` | 32 ULP of the size of the complex value each is a part of | 13 ULP | 4.4 million ULP at `ker(9.70)` |
 | `struve`, `modstruve` | 128 ULP, of the larger of H and the modulus √(J² + Y²) past the turning point x = \|v\| | 57 ULP at `struve(-1.56, 26.3)` | 13,138 ULP at `modstruve(0.28, 13.6)` |
+| `hyp0f1` | 16 ULP, of the largest of \|f\| and \|t ∂f/∂t\| for each argument t | 13 ULP at `hyp0f1(-8.88, -162.2)` | 2,469 ULP at `hyp0f1(0.40, -35.7)`; NaN at `hyp0f1(-237.8, -965.8)`, where the value is 60.1 |
+| `hyp1f1` | 64 ULP, of the same | 55 ULP at `hyp1f1(0.00037, -123.7, -115.2)` | 3e43 at `hyp1f1(0.00033, -92.95, -213.5)`, where the value is 0.99 |
+| `hyperu` | 512 ULP, of the same | 385 ULP at `hyperu(0.017, -146.0, 0.0019)` | 3e-256 at `hyperu(143.0, -27.0, 2.42)`, where the value is 3e-284; NaN at `hyperu(84.8, -14.7, 1.04)` |
 | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer` | 8 ULP for each degree, of the largest value the recurrence passes through | 29 ULP for `eval_gegenbauer` at degree 85 | 439 ULP for `eval_jacobi` at degree 85 |
 | `eval_hermite`, `eval_hermitenorm` | The same | 156 ULP at degree 78 | 698 ULP for `eval_hermite` at degree 75 |
 | `lpmv` | 64 ULP of the largest value the recurrence passes through | 24 ULP | 154 ULP |
@@ -489,6 +492,85 @@ worst is 57 ULP, near zeros of H at negative orders; SciPy loses up to 13,138 UL
   x = 1e9: `struve(0.5, 1e10)` is 1e10 there, where the value is about 8e-6.
 - As SciPy gives: a negative x is NaN unless v is whole, where Hᵥ(−x) = (−1)^{v+1} Hᵥ(x) and the
   same for L; at v = ∞ both are 0, and at v = −∞ H is NaN and L 0.
+
+## Hypergeometric functions
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `hyp0f1(b, x)` | The confluent hypergeometric limit function ₀F₁(; b; x) = Σ xᵏ/((b)ₖ k!) | `scipy.special.hyp0f1` |
+| `hyp1f1(a, b, x)` | Kummer's function M(a, b, x) = ₁F₁(a; b; x) = Σ (a)ₖ xᵏ/((b)ₖ k!) | `scipy.special.hyp1f1` |
+| `hyperu(a, b, x)` | Tricomi's function U(a, b, x), the solution of Kummer's equation that behaves as x⁻ᵃ for large x | `scipy.special.hyperu` |
+
+(b)ₖ = b (b + 1) ⋯ (b + k − 1) is the rising factorial. M and U solve Kummer's equation
+x w″ + (b − x) w′ − a w = 0, which describes the hydrogen atom's radial wave functions, the
+Coulomb wave functions and the quantum harmonic oscillator; ₀F₁ is a Bessel function in another
+form. All three take real `f64` arguments; U needs x at least 0.
+
+```python
+from special import hyp0f1, hyp1f1, hyperu
+
+
+def main():
+    print(hyp0f1(1.5, -2.25))       # 0.04704000268662233, sin(3)/3
+    print(hyp1f1(1.0, 2.0, 1.0))    # 1.7182818284590455, e − 1
+    print(hyperu(1.0, 1.0, 1.0))    # 0.5963473623231939, e E₁(1)
+```
+
+**How they work.** No one method holds over the whole plane of a, b and x, so each value takes
+the first of several that keeps its digits:
+
+- ₀F₁ is its series where the terms barely cancel, which is always for b and x above 0, and
+  elsewhere the Bessel function it equals, Γ(b) (√x)^{1−b} I_{b−1}(2√x) above 0 and the same
+  with J below (DLMF 10.39.9 and 10.16.9). The argument 2√|x| is carried as two `f64`s, and
+  the part rounding would drop is put back by a step along the Bessel function's slope.
+- M is its series where the terms barely cancel; the same series in double-double arithmetic
+  (`math.f64x2`) where they cancel by less than 10¹⁴; the asymptotic expansion for large |x|
+  (DLMF 13.7.2), where the term it drops is below e⁻⁴⁰ of the one it keeps; and, for a below 0
+  and x above 0, the recurrences: b is raised above x, a is taken down its recurrence, which is
+  stable there, and b brought back down by its own (DLMF 13.3.1 and 13.3.2). A negative x is
+  sent to a positive one by Kummer's transformation M(a, b, x) = eˣ M(b − a, b, −x).
+- U is its asymptotic expansion for large x (DLMF 13.7.3); the polynomial it is for a whole a at
+  most 0 (DLMF 13.2.7); for a at least 1, its integral 1/Γ(a) ∫₀^∞ t^{a−1} (1 + t)^{b−a−1}
+  e^{−xt} dt (DLMF 13.4.4) by double-exponential quadrature centred on the integrand's peak; for
+  a whole b, the series with a logarithm (DLMF 13.2.9); otherwise two of Kummer's M
+  (DLMF 13.2.42); and last the same integral through x^{1−b} U(a − b + 1, 2 − b, x), or the
+  recurrence in a run down from two values by quadrature.
+
+**Accuracy.** A small change in a parameter can move these functions far, so each case is
+measured against the largest of |f| and |t ∂f/∂t| for each argument t: the error that rounding
+the arguments to `f64` alone would make, which no method can beat. The tests reach parameters
+from −300 to 1,000 for ₀F₁ and from −150 to 150 for M and U, and arguments to ±3e4.
+
+| Function | Tested where | Worst | Cases SciPy misses by more than 64 ULP |
+| --- | --- | --- | --- |
+| `hyp0f1` | b from −300 | 13 ULP | 39 of 398, some by giving ∞ |
+| `hyp1f1` | \|a\| up to 100, \|x\| up to 1,000 | 55 ULP | 37 of 1,204 |
+| `hyperu` | a from −35 | 385 ULP | 194 of 803, some by giving ∞ |
+
+U's worst cases, from 64 to 385 ULP, are at b below about −30 with |a| below 1, where the series
+it is summed from cancel by up to 64 times. Outside the tested ranges these can lose digits:
+
+- ₀F₁ overflows to ∞ for b below about −300 where x is large, since I_{b−1} does.
+- M loses digits where |a| is above 100 and x is below about −380, and can give NaN for x
+  below −1,000. For b within 0.01 of 0 and x below −30 it can be off by about 1,000 ULP.
+- U loses digits for a below −35, and for a below 0 and not whole with b above a + 1 and
+  within 0.001 of a whole number, where Kummer's two M cancel and the recurrence in a is
+  unstable.
+
+### At the ends
+
+- ₀F₁: a b of 0 or a negative whole number is a pole, NaN as SciPy gives; an infinite b gives 1.
+  At x = ∞ the value is ∞ with the sign of Γ(b), and at x = −∞, where the function oscillates
+  as |x|^{1/4 − b/2}, 0 for b above ½ and NaN otherwise, where SciPy gives NaN. Where the value
+  overflows this gives ∞, where SciPy gives 0: `hyp0f1(1.0, 1e6)`.
+- M: a b of 0 or a negative whole number is ∞, as SciPy gives, unless a is a negative whole
+  number no further from 0, where the series is a polynomial that stops first. An infinite b
+  gives 1 and an infinite a NaN. At x = ±∞ this gives the limit, ∞ or 0 with its sign, where
+  SciPy gives NaN or, for `hyp1f1(2.0, 3.0, inf)`, does not return.
+- U: a negative x, or an infinite a or b, is NaN, as SciPy gives. At x = 0, Γ(1 − b)/Γ(a − b + 1)
+  for b below 1 and ∞ from 1 up, as SciPy gives, except for a whole a at most 0, where U is a
+  polynomial and this gives its value: `hyperu(-2.0, 3.0, 0.0)` is 12, where SciPy gives ∞. At
+  x = ∞ this gives the limit, 0 for a above 0 and ∞ below, where SciPy gives NaN.
 
 ## Incomplete gamma and beta functions
 
@@ -996,6 +1078,9 @@ for those working on the library. A panic inside a function names the file it is
 | `special_airy` | `airy` and `airye` |
 | `special_kelvin` | `kelvin`, `ber`, `bei`, `ker`, `kei`, `berp`, `beip`, `kerp` and `keip` |
 | `special_struve` | `struve` and `modstruve` |
+| `special_hyp0f1` | `hyp0f1` |
+| `special_hyp1f1` | `hyp1f1` |
+| `special_hyperu` | `hyperu` |
 | `special_incomplete_gamma` | `gammainc`, `gammaincc`, `gammaincinv` and `gammainccinv` |
 | `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
 | `special_distributions` | `bdtr`, `bdtrc`, `bdtri`, `nbdtr`, `nbdtrc`, `nbdtri`, `pdtr`, `pdtrc`, `pdtri`, `chdtr`, `chdtrc`, `chdtri`, `fdtr`, `fdtrc`, `fdtri`, `gdtr`, `gdtrc`, `stdtr` and `stdtrit` |
@@ -1015,6 +1100,6 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of a complex
-argument and hypergeometric functions. Carlson's integrals of
+argument and the Gauss hypergeometric function `hyp2f1`. Carlson's integrals of
 complex arguments are not built. `loggamma` of a complex argument comes with the complex Bessel
 functions (3.18.6). See [What builds today](status.md).
