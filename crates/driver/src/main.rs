@@ -2,10 +2,10 @@
 //!
 //! ```text
 //! baryon check <directory>
-//! baryon build [--release] [--timings] <directory> <output>
-//! baryon run [--release] [--timings] <directory>
-//! baryon test [--release] [--timings] [-k <text>] <directory>
-//! baryon watch [--release] [--run] <directory> <output>
+//! baryon build [--release] [--blas] [--timings] <directory> <output>
+//! baryon run [--release] [--blas] [--timings] <directory>
+//! baryon test [--release] [--blas] [--timings] [-k <text>] <directory>
+//! baryon watch [--release] [--blas] [--run] <directory> <output>
 //! baryon doc <directory> <output>
 //! baryon lsp
 //! baryon --version
@@ -35,6 +35,11 @@
 //! optimized (`clang -O2`) (decision 0048). Both carry line tables; in a debug build, integer
 //! arithmetic that overflows panics, and in a release build it wraps around ([`Profile`],
 //! decision 0030).
+//!
+//! `--blas`, also anywhere after `build`, `run`, `test` or `watch`, makes `@` of two `f32` or
+//! `f64` matrices call the system BLAS, `OpenBLAS` on Linux and Accelerate on macOS, and links
+//! the program with it (decision 0040). It is many times faster on large matrices, but the
+//! products are added in BLAS's order, so the last bits can differ from a build without it.
 //!
 //! `--timings`, also anywhere after `build`, `run` or `test`, prints to standard error how long
 //! each stage of the build took, once the executable is linked ([`Timings`]). It is how a
@@ -82,10 +87,14 @@ use std::{env, fs};
 use timings::Timings;
 
 /// How to call the command, printed when the arguments are wrong.
-const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] [-k <text>] <directory> | baryon watch [--release] [--run] <directory> <output> | baryon doc <directory> <output> | baryon lsp";
+const USAGE: &str = "usage: baryon check <directory> | baryon build [--release] [--blas] [--timings] <directory> <output> | baryon run [--release] [--blas] [--timings] <directory> | baryon test [--release] [--blas] [--timings] [-k <text>] <directory> | baryon watch [--release] [--blas] [--run] <directory> <output> | baryon doc <directory> <output> | baryon lsp";
 
 /// The flag that makes `build`, `run` and `test` compile a release build.
 const RELEASE: &str = "--release";
+
+/// The flag that makes `build`, `run`, `test` and `watch` build `@` of matrices through the
+/// system BLAS (decision 0040).
+const BLAS: &str = "--blas";
 
 /// The flag that makes `build`, `run` and `test` print how long each stage of the build took.
 const TIMINGS: &str = "--timings";
@@ -107,24 +116,30 @@ fn main() -> ExitCode {
     } else {
         Profile::Debug
     };
+    let blas = take_flag(&mut arguments, builds, BLAS);
     let timings = take_flag(&mut arguments, builds, TIMINGS);
+    let options = BuildOptions {
+        profile,
+        blas,
+        timings,
+    };
     let filter = take_filter(&mut arguments);
     let watching = arguments.first().is_some_and(|command| command == "watch");
     let run_each = take_flag(&mut arguments, watching, RUN);
     let outcome = match arguments.as_slice() {
         [command, directory] if command == "check" => check(Path::new(directory)),
         [command, directory, output] if command == "build" => {
-            build(Path::new(directory), Path::new(output), profile, timings)
+            build(Path::new(directory), Path::new(output), options)
         }
-        [command, directory] if command == "run" => run(Path::new(directory), profile, timings),
+        [command, directory] if command == "run" => run(Path::new(directory), options),
         [command, directory, output] if command == "watch" && !timings => {
-            watch::watch(Path::new(directory), Path::new(output), profile, run_each)
+            watch::watch(Path::new(directory), Path::new(output), options, run_each)
         }
         [command, directory, output] if command == "doc" => {
             document(Path::new(directory), Path::new(output))
         }
         [command, directory] if command == "test" => {
-            test(Path::new(directory), profile, timings, filter.as_deref())
+            test(Path::new(directory), options, filter.as_deref())
         }
         [flag] if flag == "--version" || flag == "-V" => {
             // A tester's bug report starts with this line.
@@ -184,6 +199,18 @@ fn println_to_stdout(line: &str) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// How a command that builds was asked to build: the flags `build`, `run`, `test` and `watch`
+/// share.
+#[derive(Clone, Copy)]
+pub(crate) struct BuildOptions {
+    /// Debug or release ([`Profile`]).
+    pub(crate) profile: Profile,
+    /// Whether `@` of matrices goes through the system BLAS, `--blas`.
+    pub(crate) blas: bool,
+    /// Whether to print how long each stage took, `--timings`.
+    pub(crate) timings: bool,
+}
+
 /// Loads the package rooted at `root` into a new session, and returns it with the number of
 /// files loaded and the number of lines in them.
 ///
@@ -237,8 +264,9 @@ fn check(root: &Path) -> Result<ExitCode, String> {
 ///
 /// Fails with a message when a file cannot be read, or when `clang` or the runtime archive is
 /// missing or the link fails.
-fn build(root: &Path, output: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String> {
-    let files = match compile(root, output, profile, timings, |session, directory| {
+fn build(root: &Path, output: &Path, options: BuildOptions) -> Result<ExitCode, String> {
+    let profile = options.profile;
+    let files = match compile(root, output, options, |session, directory| {
         session
             .compile_parts(directory, profile, parts(profile))
             .map(|modules| (modules, Vec::new()))
@@ -264,11 +292,12 @@ fn build(root: &Path, output: &Path, profile: Profile, timings: bool) -> Result<
 ///
 /// Fails with a message when the package cannot be built for the reasons [`build`] gives, or
 /// the program cannot be started.
-fn run(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String> {
+fn run(root: &Path, options: BuildOptions) -> Result<ExitCode, String> {
+    let profile = options.profile;
     let scratch = env::temp_dir().join(format!("baryon-run-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("program");
-    let built = compile(root, &program, profile, timings, |session, directory| {
+    let built = compile(root, &program, options, |session, directory| {
         session
             .compile_parts(directory, profile, parts(profile))
             .map(|modules| (modules, Vec::new()))
@@ -295,16 +324,12 @@ fn run(root: &Path, profile: Profile, timings: bool) -> Result<ExitCode, String>
 ///
 /// Fails with a message when the package cannot be built for the reasons [`build`] gives, the
 /// program cannot be started, or the report cannot be written.
-fn test(
-    root: &Path,
-    profile: Profile,
-    timings: bool,
-    filter: Option<&str>,
-) -> Result<ExitCode, String> {
+fn test(root: &Path, options: BuildOptions, filter: Option<&str>) -> Result<ExitCode, String> {
+    let profile = options.profile;
     let scratch = env::temp_dir().join(format!("baryon-test-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let program = scratch.join("tests");
-    let built = compile(root, &program, profile, timings, |session, directory| {
+    let built = compile(root, &program, options, |session, directory| {
         session.compile_tests_parts(directory, profile, parts(profile))
     });
     let ran = built.and_then(|built| match built {
@@ -329,19 +354,19 @@ fn test(
 fn compile(
     root: &Path,
     output: &Path,
-    profile: Profile,
-    timings: bool,
+    options: BuildOptions,
     program: impl FnOnce(&Session, Option<&str>) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>>,
 ) -> Result<Result<(usize, Vec<String>), ExitCode>, String> {
     let started = Instant::now();
-    let (session, files, lines) = load(root)?;
+    let (mut session, files, lines) = load(root)?;
+    session.set_blas(options.blas);
     let loaded = Loaded {
         session: &session,
         files,
         lines,
         load: started.elapsed(),
     };
-    compile_loaded(&loaded, root, output, profile, timings, None, program)
+    compile_loaded(&loaded, root, output, options, None, program)
 }
 
 /// A package already read into a [`Session`]: what [`compile_loaded`] builds. `baryon watch`
@@ -366,8 +391,7 @@ pub(crate) fn compile_loaded(
     loaded: &Loaded<'_>,
     root: &Path,
     output: &Path,
-    profile: Profile,
-    timings: bool,
+    options: BuildOptions,
     kept: Option<&mut link::Objects>,
     program: impl FnOnce(&Session, Option<&str>) -> Result<(Vec<String>, Vec<String>), Vec<Diagnostic>>,
 ) -> Result<Result<(usize, Vec<String>), ExitCode>, String> {
@@ -389,8 +413,9 @@ pub(crate) fn compile_loaded(
         }
     };
     let compiled = Instant::now();
-    let linked = link::link(&modules, output, profile == Profile::Release, kept)?;
-    if timings {
+    let optimize = options.profile == Profile::Release;
+    let linked = link::link(&modules, output, optimize, session.blas(), kept)?;
+    if options.timings {
         let report = Timings {
             files,
             lines,

@@ -15,6 +15,7 @@ use std::sync::{Mutex, Once, PoisonError};
 mod array_files;
 mod array_methods;
 mod axes;
+mod blas;
 mod broadcast;
 mod builtins;
 mod bz2;

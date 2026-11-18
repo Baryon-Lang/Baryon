@@ -8,6 +8,7 @@
 
 mod accumulate;
 mod array_files;
+mod blas;
 mod complex;
 mod dict;
 mod files;
@@ -43,6 +44,7 @@ pub use accumulate::{
 pub use array_files::{
     ArrayHeader, ElementLayout, baryon_rt_array_from_file, baryon_rt_array_to_file,
 };
+pub use blas::{Gemm, baryon_rt_matrix_product_f32, baryon_rt_matrix_product_f64};
 pub use complex::{
     baryon_rt_power_complex64, baryon_rt_power_complex128, baryon_rt_print_complex64,
     baryon_rt_print_complex128,
