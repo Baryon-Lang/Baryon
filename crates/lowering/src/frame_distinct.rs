@@ -10,6 +10,7 @@
 //! gives for its text, which is one more sort of that column.
 
 use crate::builder::Builder;
+use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{Constant, ConstantValue, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
@@ -118,6 +119,9 @@ impl<'db> Builder<'db> {
             return self.array_argsort(place, array, node);
         }
         let source = self.borrow(array);
+        if let Some(element) = self.optional_array_element(array) {
+            return self.optional_compared(place, method == "unique", (source, element), node);
+        }
         if matches!(method, "min" | "max") {
             return self.text_extreme(place, method == "max", (array, source), node);
         }
@@ -158,6 +162,72 @@ impl<'db> Builder<'db> {
             return;
         };
         self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);
+    }
+
+    /// `values.unique()`, when `distinct`, or `values.nunique()` of the array with missing
+    /// values of `element`s borrowed at `source`, into `place`. The elements are compared
+    /// as `drop_duplicates` compares a column that may hold `None`
+    /// ([`Builder::optional_keys`]), so a `None` equals a `None`. `unique` keeps the first
+    /// of each distinct element, one `None` among them where it first stands, as pandas
+    /// does; `nunique` counts the distinct elements that are there, a `None` and a NaN not
+    /// counted. Cost: that of a plain array, and the two key arrays.
+    fn optional_compared(
+        &mut self,
+        place: Place,
+        distinct: bool,
+        (source, element): (Place, Type<'db>),
+        node: NodeId,
+    ) {
+        let Some(keys) = self.optional_keys(&source, element, node) else {
+            return;
+        };
+        let Some(ids) = self.key_ids(&keys, node) else {
+            return;
+        };
+        let positions = self.positions_type();
+        let arguments = vec![Place::from(ids)];
+        let Some(rows) = self.frame_call("first_rows", Vec::new(), arguments, positions, node)
+        else {
+            return;
+        };
+        self.drop_later(rows);
+        let rows = Place::from(rows);
+        let bits = source.clone().project(Projection::Field(VALIDITY));
+        if distinct {
+            let values = source.project(Projection::Field(VALUES));
+            let Some(values) = self.values_call("taken", element, vec![values, rows.clone()], node)
+            else {
+                return;
+            };
+            let bitmap = self.bitmap_type();
+            let arguments = vec![bits, rows];
+            let Some(bits) = self.frame_call("taken_bits", Vec::new(), arguments, bitmap, node)
+            else {
+                return;
+            };
+            let whole = self.with_bits(element, values, bits, node);
+            return self.assign(place, Rvalue::Use(whole), node);
+        }
+        let boolean = self.boolean_type();
+        let wanted = Operand::Constant(Constant {
+            ty: boolean,
+            value: ConstantValue::Bool(true),
+        });
+        let wanted = Place::from(self.held(boolean, wanted, node));
+        let arguments = vec![bits, rows, wanted];
+        let Some(there) =
+            self.frame_call("valid_positions", Vec::new(), arguments, positions, node)
+        else {
+            return;
+        };
+        self.drop_later(there);
+        let [_, (values, compared)] = keys;
+        let (int, arguments) = (self.int_type(), vec![values, Place::from(there)]);
+        let Some(count) = self.frame_call("counted_values", vec![compared], arguments, int, node)
+        else {
+            return;
+        };
+        self.assign(place, Rvalue::Use(Operand::Move(Place::from(count))), node);
     }
 
     /// `names.min()` or `names.max()` of the text array `array`, borrowed at `source`, into

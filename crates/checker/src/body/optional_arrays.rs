@@ -10,13 +10,13 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Integer, Primitive, Type, TypeKind};
 
 /// What an array with missing values can do, for messages.
-const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]`, which \
-                     gives a `T | None` and for numbers and `bool`s can be assigned, `for` \
-                     loops over numbers and `bool`s, slices, masks and arrays of positions, \
-                     the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, \
-                     `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, \
-                     for `bool`s `sum`, `any` and `all`, the comparisons, and for numbers \
-                     `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6";
+const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]`, which gives a \
+                     `T | None` and for numbers and `bool`s can be assigned, `for` loops over \
+                     numbers and `bool`s, slices, masks and arrays of positions, the methods \
+                     `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, \
+                     `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for \
+                     `bool`s `sum`, `any` and `all`, the comparisons, and for numbers `+`, `-`, \
+                     `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.
@@ -79,8 +79,9 @@ impl<'db> Body<'db> {
     /// `Array[bool, 1]` that is true where an element is `None`, and `notna()` one that is
     /// true where it is not, as in pandas; `copy()` gives a new array with its own memory;
     /// `argsort()` gives the positions that put the elements in rising order with the
-    /// `None`s last, an `Array[i64, 1]`; and the reductions skip `None`. No other method is
-    /// built.
+    /// `None`s last, an `Array[i64, 1]`; `unique()` gives the distinct elements, one `None`
+    /// among them, and `nunique()` how many there are, a `None` not counted, as in pandas;
+    /// and the reductions skip `None`. No other method is built.
     pub(super) fn optional_array_method(
         &mut self,
         node: NodeId,
@@ -96,12 +97,22 @@ impl<'db> Body<'db> {
             let element = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
             return Type::new(self.db, TypeKind::Array { element, rank: 1 });
         }
-        if plain && name == "argsort" {
-            let element = Type::new(
+        if plain && name == "unique" {
+            return base;
+        }
+        if plain && matches!(name, "argsort" | "nunique") {
+            let whole = TypeKind::Primitive(Primitive::Integer(Integer::I64));
+            let int = Type::new(self.db, whole);
+            if name == "nunique" {
+                return int;
+            }
+            return Type::new(
                 self.db,
-                TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+                TypeKind::Array {
+                    element: int,
+                    rank: 1,
+                },
             );
-            return Type::new(self.db, TypeKind::Array { element, rank: 1 });
         }
         if let &TypeKind::OptionalArray(element) = base.kind(self.db) {
             if let Some(narrowed) = self.optional_array_narrowed(node, element, name, arguments) {

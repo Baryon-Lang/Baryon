@@ -215,6 +215,26 @@ def main():
 - **Cost:** about `n log n` comparisons and five arrays of `n` positions, of which the
   result is kept. Text costs one more sort.
 
+## Distinct elements
+
+`bids.unique()` gives the distinct elements in the order they first appear, an array of the
+same type, and `bids.nunique()` how many there are, an `i64`, as they do for
+[any array](arrays.md#distinct-elements):
+
+```python
+def main():
+    bids: Array[f64 | None, 1] = Array([3.0, None, 1.0, 3.0, None])
+    print(bids.unique())   # [3.0 None 1.0]
+    print(bids.nunique())  # 2
+```
+
+- **`unique` keeps one `None`**, where the first one stands, as pandas does.
+- **`nunique` does not count `None`**, nor a `NaN`, as pandas does not: it is how many
+  distinct values are there.
+- **Text and `bool`s too.**
+- **Cost:** a sort, about `n log n` comparisons, and six arrays of `n` integers that are
+  freed, one more sort for text.
+
 ## Arithmetic
 
 `+`, `-`, `*`, `/`, `//` and `%`, and `-bids`, work element by element on numbers, and give
@@ -374,8 +394,8 @@ def main():
 Each of these is a compile error that names what an array with missing values has today:
 
 - `**`, the bitwise operators and the in-place operators, `bids += 1.0`;
-- methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `count`,
-  `sum`, `mean`, `min`, `max`, `var` and `std`: `unique`, `nunique`; and `min` and `max` of
+- methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`,
+  `nunique`, `count`, `sum`, `mean`, `min`, `max`, `var` and `std`; and `min` and `max` of
   text;
 - assigning an element of text, or several elements at once, `bids[mask] = 0.0`;
 - a `for` loop over text that may be `None`;
