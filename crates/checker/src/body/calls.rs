@@ -91,7 +91,7 @@ impl<'db> Body<'db> {
             }
             Some(Definition::Local(_)) => {
                 let ty = self.expression(function, None);
-                self.call_value(node, &callee, ty, &arguments)
+                self.call_value((node, function), &callee, ty, &arguments)
             }
             None if self.environ_value(function) => {
                 let method = self.tree.child(function, Role::Attribute);
@@ -302,16 +302,17 @@ impl<'db> Body<'db> {
         }
     }
 
-    /// A call to a value, such as a `Callable` parameter.
+    /// A call to a value, such as a `Callable` parameter or a struct with `__call__`. `node` is
+    /// the call and `function` the expression called.
     pub(super) fn call_value(
         &mut self,
-        node: NodeId,
+        (node, function): (NodeId, NodeId),
         callee: &str,
         ty: Type<'db>,
         arguments: &Arguments,
     ) -> Type<'db> {
         if let TypeKind::Function { callable, .. } = ty.kind(self.db) {
-            return self.call_value(node, callee, *callable, arguments);
+            return self.call_value((node, function), callee, *callable, arguments);
         }
         match ty.kind(self.db) {
             TypeKind::Callable {
@@ -334,10 +335,7 @@ impl<'db> Body<'db> {
                 };
                 self.check_call(node, callee, &signature, None, Callee::Value, arguments)
             }
-            TypeKind::Struct(_) => {
-                self.untyped(arguments);
-                self.called_struct(node, callee, ty)
-            }
+            TypeKind::Struct(_) => self.called_struct((node, function), callee, ty, arguments),
             _ if relations::is_open(self.db, ty) || !self.is_value_scalar(ty) => {
                 self.untyped(arguments)
             }
@@ -488,7 +486,8 @@ impl<'db> Body<'db> {
                 self.show(found)
             );
             let label = format!("type `{}`", self.show(found));
-            self.lowerer.error(argument, &message, &label, None);
+            let note = self.callable_struct_note(parameter.ty, found);
+            self.lowerer.error(argument, &message, &label, note);
         } else if parameter.mode == Mode::InOut {
             self.changed_exactly(argument, parameter, found);
         }

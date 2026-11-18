@@ -3,11 +3,13 @@
 //! a method used as a value or a struct value called as a function (decision 0026).
 
 use super::Body;
+use super::calls::Arguments;
+use super::exclusive::Passed;
 use crate::embed::{self, Lookup, Own};
 use crate::outline::{Base, Kind, outline};
 use database::Definition;
 use syntax::{NodeId, Role};
-use types::{Declaration, Item, Key, Nominal, Type, TypeKind};
+use types::{Callee, Declaration, Item, Key, Nominal, Type, TypeKind};
 
 /// What a name after a dot refers to on a struct.
 pub(super) enum Member<'db> {
@@ -188,20 +190,57 @@ impl<'db> Body<'db> {
         Type::new(self.db, TypeKind::Enum(nominal))
     }
 
-    /// Reports the call `node` of `callee`, a value of the struct type `ty`, such as `p(3.0)`
-    /// on a struct that defines `__call__`. Version 0 calls only functions (decision 0026);
-    /// the method can be called by name. Before, this failed in lowering.
-    pub(super) fn called_struct(&mut self, node: NodeId, callee: &str, ty: Type<'db>) -> Type<'db> {
-        let message = format!(
-            "`{callee}` has type `{}`, which cannot be called in version 0",
-            self.show(ty)
-        );
-        let hint = format!(
-            "calling a struct value through its `__call__` method is not supported yet \
-             (decision 0026); call the method by name: `{callee}.__call__(...)`"
-        );
-        self.lowerer
-            .error(node, &message, "a struct, not a function", Some(&hint))
+    /// The call `node` of `function`, a value of the struct type `ty` named `callee`: a call of
+    /// its `__call__` method, with the value as `self`, as Python calls an object (decision 0058).
+    /// `p(3.0)` is checked and recorded exactly as `p.__call__(3.0)`, so it costs what a method
+    /// call costs. A struct without `__call__` cannot be called.
+    pub(super) fn called_struct(
+        &mut self,
+        (node, function): (NodeId, NodeId),
+        callee: &str,
+        ty: Type<'db>,
+        arguments: &Arguments,
+    ) -> Type<'db> {
+        let Some((item, signature)) = self.dunder_method(ty, "__call__") else {
+            self.untyped(arguments);
+            let message = format!(
+                "`{callee}` has type `{}`, which cannot be called",
+                self.show(ty)
+            );
+            let hint =
+                "a struct is called through a `__call__` method, which this one does not define";
+            return self
+                .lowerer
+                .error(node, &message, "not a function", Some(hint));
+        };
+        let receiver = signature.parameters.first().map(|parameter| Passed {
+            node: function,
+            mode: parameter.mode,
+            ty,
+        });
+        self.check_call(
+            node,
+            callee,
+            &signature,
+            receiver,
+            Callee::Method(item),
+            arguments,
+        )
+    }
+
+    /// The note for a struct with `__call__` passed where a `Callable` is expected: such a value
+    /// can be called, but a `Callable` parameter takes only a module-level function, and
+    /// decision 0058 leaves callable values out, since one would act as a closure.
+    pub(super) fn callable_struct_note(
+        &self,
+        expected: Type<'db>,
+        found: Type<'db>,
+    ) -> Option<&'static str> {
+        let callable = matches!(expected.kind(self.db), TypeKind::Callable { .. });
+        (callable && self.dunder_method(found, "__call__").is_some()).then_some(
+            "a struct with `__call__` can be called, but a `Callable` takes only a module-level \
+             function (decisions 0026 and 0058); pass a function that calls it",
+        )
     }
 
     /// `Class.name` on a class that is not an enum: an error when `name` is one of the class's
