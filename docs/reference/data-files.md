@@ -364,12 +364,15 @@ the same calls, fill values and padding included; the tests compare them.
   old one and then renames it over it, so even a crash or a full disk in the middle of a change
   leaves the old file or the new one, never one cut short, and the file keeps its permissions.
   A variable is filled with its type's fill value until it is
-  written. Each change and each write reads the whole file into memory and writes it again,
-  which is quick for the small headers of classic files but makes many small definitions of a
-  large file slow: define everything first, then write the values. The file must fit in
-  memory, records added included: a write that would not fit raises `OSError` with the kind
-  `INVALID_DATA`, or, on a system that promises more memory than it has, can end the program.
-  Writing in place is idea I.53 on the roadmap.
+  written.
+- **What a change costs.** A new dimension, variable or attribute changes the header's length,
+  which moves every value, so the file is copied into its new layout: one pass over the file
+  through a buffer of a megabyte, whatever its size (a definition on a 1 GB file takes about
+  4 s and 13 MB of memory). A write of values, `var[...] = values`, still reads the whole file
+  into memory and writes it again, so the file must fit in memory, records added included: a
+  write that would not fit raises `OSError` with the kind `INVALID_DATA`, or, on a system that
+  promises more memory than it has, can end the program. Define everything first, then write
+  the values. Writing values in place is row 3.14.7 on the roadmap.
 - **A type is named as `netCDF4` names it** (`"f4"`, `"f8"`, `"i1"`, `"i2"`, `"i4"`) or as NumPy
   names or codes it (`"float32"`, `"f"`, `"int16"`, `"h"` and so on). `dimensions` is a tuple of
   names, or one name, and up to four of them so far.
