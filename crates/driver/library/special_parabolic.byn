@@ -1,0 +1,163 @@
+"""Parabolic cylinder functions for `special` (roadmap 3.18.14): `pbdv` and `pbvv`, Weber's
+functions D_v(x) and V_v(x) with their derivatives, for real v and x.
+
+Both solve w″ − (x²/4 + a) w = 0 with a = −v − ½ (DLMF 12.2). D_v(x) = U(a, x) is the solution
+that decays as x grows; V_v(x) = V(a, x) grows there. Each is built from x of 0 up:
+
+- D_v(x) is 2^(v/2) e^(−x²/4) U(−v/2, ½, x²/2), Tricomi's function of `hyperu` (DLMF 12.7.14);
+- V_v(x) is V(a, 0) u₁ + V′(a, 0) u₂ (DLMF 12.4.2), with u₁ = e^(−x²/4) M(−v/2, ½, x²/2) and
+  u₂ = x e^(−x²/4) M((1 − v)/2, 3/2, x²/2) the even and odd solutions of `hyp1f1`
+  (DLMF 12.7.12 and 12.7.13), and V(a, 0), V′(a, 0) from DLMF 12.2.8 and 12.2.9.
+
+Below 0 both come from the same two at |x|, by DLMF 12.2.15 and 12.2.18 with the reflection
+formula of Γ folded in, so that no pole of Γ is reached at a whole v:
+D_v(−x) = cos(πv) D_v(x) + π/Γ(−v) V_v(x) and
+V_v(−x) = −sin(πv)/Γ(1 + v) D_v(x) − cos(πv) V_v(x).
+
+e^(−x²/4) is taken with x² carried as two `f64`s, so it is rounded once, not with the
+rounding of x² magnified by x²/4.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import copysign, exp, fma, inf, isinf, isnan, log, nan, pi, pow
+from special_common import cospi, is_integer, sinpi
+from special_gamma import gammaln, gammasgn, rgamma
+from special_hyp1f1 import hyp1f1
+from special_hyperu import hyperu
+
+_SQRT_TWO: Final = 1.4142135623730951  # √2
+_SQRT_TWO_OVER_PI: Final = 0.7978845608028654  # √(2/π)
+
+
+def _gauss(x: f64) -> f64:
+    """e^(−x²/4), with x² formed as an exact sum of two `f64`s."""
+    square = x * x
+    low = fma(x, x, -square)
+    return exp(-0.25 * square) * (1.0 - 0.25 * low)
+
+
+def _decaying(v: f64, x: f64) -> f64:
+    """D_v(x) for x at least 0: 2^(v/2) e^(−x²/4) U(−v/2, ½, x²/2)."""
+    return pow(2.0, 0.5 * v) * _gauss(x) * hyperu(-0.5 * v, 0.5, 0.5 * x * x)
+
+
+def _growing_far(v: f64, x: f64, shift: f64 = 0.0) -> f64:
+    """V_v(x) for large x by its asymptotic expansion (DLMF 12.9.2),
+    √(2/π) e^(x²/4) x^(−v−1) Σ (v + 1)₂ₛ / (s! (2x²)ˢ), or NaN where the terms do not fall to
+    1e-17 of the sum. The exponential and the power are taken as one `exp` once e^(x²/4) alone
+    would overflow, or when a caller passes a `shift`, the log of a factor it multiplies by,
+    so that a value past the largest `f64` scaled by a tiny factor is not lost."""
+    term = 1.0
+    total = 1.0
+    w = 0.5 / (x * x)
+    for s in range(1, 200):
+        term *= (v + 2.0 * s - 1.0) * (v + 2.0 * s) * w / s
+        total += term
+        if abs(term) <= 1.0e-17 * abs(total):
+            square = x * x
+            low = fma(x, x, -square)
+            if square < 2800.0 and shift == 0.0:
+                lead = exp(0.25 * square) * pow(x, -v - 1.0)
+            else:
+                lead = exp(0.25 * square - (v + 1.0) * log(x) + shift)
+            return _SQRT_TWO_OVER_PI * lead * (1.0 + 0.25 * low) * total
+        if s > 2 and abs(term) > abs(total):
+            return nan
+    return nan
+
+
+def _growing(v: f64, x: f64) -> f64:
+    """V_v(x) for x at least 0: V(a, 0) u₁ + V′(a, 0) u₂ with a = −v − ½, or past x = 37,
+    where e^(x²/2) in u₁ and u₂ would overflow, the asymptotic expansion."""
+    if x > 37.0:
+        far = _growing_far(v, x)
+        if not isnan(far):
+            return far
+    scale = pow(2.0, -0.5 * v) * _gauss(x)
+    z = 0.5 * x * x
+    even = -sinpi(0.5 * v) * rgamma(1.0 + 0.5 * v) * hyp1f1(-0.5 * v, 0.5, z)
+    odd = _SQRT_TWO * cospi(0.5 * v) * rgamma(0.5 + 0.5 * v) * x * hyp1f1(0.5 - 0.5 * v, 1.5, z)
+    return scale * (even + odd)
+
+
+def _d(v: f64, x: f64) -> f64:
+    """D_v(x) for any finite x."""
+    if x >= 0.0:
+        return _decaying(v, x)
+    y = -x
+    reciprocal = rgamma(-v)
+    if reciprocal == 0.0:
+        # A whole v from 0 up: D_n(−x) = (−1)ⁿ D_n(x).
+        return cospi(v) * _decaying(v, y)
+    if y > 37.0:
+        # π/Γ(−v) V_v(y) with 1/Γ(−v) folded into the exponential: V_v alone can pass the
+        # largest `f64` where the product does not.
+        far = _growing_far(v, y, -gammaln(-v))
+        if not isnan(far):
+            return cospi(v) * _decaying(v, y) + pi * gammasgn(-v) * far
+    return cospi(v) * _decaying(v, y) + pi * reciprocal * _growing(v, y)
+
+
+def _v(v: f64, x: f64) -> f64:
+    """V_v(x) for any finite x."""
+    if x >= 0.0:
+        return _growing(v, x)
+    y = -x
+    return -sinpi(v) * rgamma(1.0 + v) * _decaying(v, y) - cospi(v) * _growing(v, y)
+
+
+def pbdv(v: f64, x: f64) -> tuple[f64, f64]:
+    """The parabolic cylinder function D_v(x) and its derivative D_v′(x), as
+    `scipy.special.pbdv`.
+
+    D_v′ is x/2 D_v(x) − D_{v+1}(x) (DLMF 12.8.3). For a whole v = n, D_n(x) is
+    e^(−x²/4) Heₙ(x), a Hermite polynomial times a Gaussian.
+
+    ```python
+    from special import pbdv
+
+    d, slope = pbdv(1.0, 2.0)
+    print(d)        # 0.7357588823428848, 2/e
+    print(slope)    # -0.3678794411714422, −1/e
+    ```
+    """
+    if isnan(v) or isnan(x) or isinf(v):
+        return (nan, nan)
+    if x == inf or (x == -inf and is_integer(v)):
+        return (0.0, 0.0)
+    if x == -inf:
+        # D_v(x) grows as π/Γ(−v) V_v(|x|) and falls toward its far end.
+        sign = copysign(1.0, rgamma(-v))
+        return (sign * inf, -sign * inf)
+    value = _d(v, x)
+    return (value, 0.5 * x * value - _d(v + 1.0, x))
+
+
+def pbvv(v: f64, x: f64) -> tuple[f64, f64]:
+    """The parabolic cylinder function V_v(x) and its derivative V_v′(x), as
+    `scipy.special.pbvv`: V(a, x) of DLMF 12.2 with a = −v − ½.
+
+    V_v′ is V_{v−1}(x) − x/2 V_v(x) (DLMF 12.8.9).
+
+    ```python
+    from special import pbvv
+
+    value, slope = pbvv(0.5, 1.0)
+    print(value)    # 0.22003508652565454
+    print(slope)    # 0.9226713556199727
+    ```
+    """
+    if isnan(v) or isnan(x) or isinf(v):
+        return (nan, nan)
+    if x == inf:
+        return (inf, inf)
+    if x == -inf:
+        # V_v(x) grows as −cos(πv) V_v(|x|), or falls to 0 where cos(πv) is 0.
+        turn = cospi(v)
+        if turn == 0.0:
+            return (0.0, 0.0)
+        sign = -copysign(1.0, turn)
+        return (sign * inf, -sign * inf)
+    value = _v(v, x)
+    return (value, _v(v - 1.0, x) - 0.5 * x * value)
