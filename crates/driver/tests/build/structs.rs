@@ -193,3 +193,46 @@ def main():
     )
     .unwrap();
 }
+
+/// A struct with `__call__` is called where it is made, not only through a name (roadmap
+/// 1.9.46): the result of a method, of a function and of a constructor, borrowed by a `self`
+/// that reads it or moved into one that is `Owned`, and dropped after the call.
+#[test]
+fn results_of_calls_are_called_through_call() {
+    let program = "\
+class Poly(Struct):
+    c: Array[f64, 1]
+
+    def derivative(self) -> Poly:
+        out: Array[f64, 1] = Array.zeros(len(self.c) - 1)
+        for i in range(len(out)):
+            out[i] = f64(i + 1) * self.c[i + 1]
+        return Poly(out)
+
+    def __call__(self, t: f64) -> f64:
+        total = 0.0
+        for i in range(len(self.c)):
+            total = total * t + self.c[len(self.c) - 1 - i]
+        return total
+
+
+class Bag(Struct):
+    items: list[str]
+
+    def __call__(self: Owned[Self], last: str) -> list[str]:
+        items = self.items
+        items.append(last.copy())
+        return items
+
+
+def make() -> Poly:
+    return Poly(Array([1.0, 2.0, 3.0]))
+
+
+def main():
+    p = make()
+    print(p.derivative()(2.0), make()(1.0), p.derivative().derivative()(5.0))
+    print(Bag([\"a\"])(\"b\"))
+";
+    prints("call-dunder-result", program, "14.0 6.0 6.0\n['a', 'b']\n").unwrap();
+}

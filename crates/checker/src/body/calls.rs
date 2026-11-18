@@ -106,6 +106,12 @@ impl<'db> Body<'db> {
                 let grouped = grouped.and_then(|frame| self.frame_agg(node, frame, &arguments));
                 grouped.unwrap_or_else(|| self.method_call(node, function, &arguments, expected))
             }
+            // Any other expression, such as the result of a call, `p.derivative()(2.0)`, or
+            // an element, `fs[0](2.0)`, is called as its value is.
+            None if self.tree.kind(function) != SyntaxKind::Name => {
+                let ty = self.expression(function, None);
+                self.call_value((node, function), &callee, ty, &arguments)
+            }
             Some(_) | None => self.untyped(&arguments),
         };
         if !self.typed.calls.contains_key(&Key(node)) {
