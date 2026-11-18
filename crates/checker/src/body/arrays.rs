@@ -99,6 +99,11 @@ impl<'db> Body<'db> {
                 Some("for example `Array.fill((n,), 1.0)`"),
             );
         }
+        if fill_value.is_none()
+            && let Some(error) = self.union_has_no_zero(node, name, element, rank)
+        {
+            return error;
+        }
         if matches!(element.kind(self.db), TypeKind::Str) {
             let message = format!("`Array.{name}` cannot make an array of `str` yet");
             return self.lowerer.error(
