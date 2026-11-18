@@ -388,37 +388,35 @@ def _general(a: f64, b: f64, c: f64, x: f64) -> f64:
         value = _reflected(first, second, base, x)
         if not isnan(value):
             return value
+    # The least cancelling of the four series, stopping at the first that barely cancels.
+    # Below 0, Pfaff's forms go first: their x/(x − 1) is positive and nearer 0 than x, so
+    # their terms often all have one sign where those in x alternate, and they end sooner.
+    z = x / (x - 1.0)
+    start = 0
+    if x < 0.0:
+        start = 2
     best = inf
     choice = -1
     total = nan
-    if fabs(x) < 1.0:
-        here, size = _series(first, second, base, x)
-        cancelled = _cancellation(here, size)
-        if cancelled < best:
-            best = cancelled
-            total = here
-            choice = 0
-        if best > _CLEAN:
+    for k in range(4):
+        if best <= _CLEAN:
+            break
+        candidate = (start + k) % 4
+        here = nan
+        size = inf
+        if candidate == 0 and fabs(x) < 1.0:
+            here, size = _series(first, second, base, x)
+        elif candidate == 1 and fabs(x) < 1.0:
             here, size = _series(left, right, base, x)
-            cancelled = _cancellation(here, size)
-            if cancelled < best:
-                best = cancelled
-                total = here
-                choice = 1
-    z = x / (x - 1.0)
-    if best > _CLEAN and fabs(z) < 1.0:
-        here, size = _series(first, right, base, z)
+        elif candidate == 2 and fabs(z) < 1.0:
+            here, size = _series(first, right, base, z)
+        elif candidate == 3 and fabs(z) < 1.0:
+            here, size = _series(second, left, base, z)
         cancelled = _cancellation(here, size)
         if cancelled < best:
             best = cancelled
             total = here
-            choice = 2
-        here, size = _series(second, left, base, z)
-        cancelled = _cancellation(here, size)
-        if cancelled < best:
-            best = cancelled
-            total = here
-            choice = 3
+            choice = candidate
     value = nan
     if choice == 0:
         value = _finish(first, second, base, x, total, best)

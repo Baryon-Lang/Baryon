@@ -246,6 +246,17 @@ def hyp1f1(a: f64, b: f64, x: f64) -> f64:
         return _infinite(a, b, x)
     if x > 0.0:
         return _positive(a, b, x)
+    if b > 0.0 and b >= a:
+        # Kummer's transformation before M(a, b, x)'s own series: the terms of M(b − a, b, −x)
+        # are all positive, so its series keeps its digits in `f64`, where M(a, b, x)'s would
+        # cancel and be summed again in double-double, at 20 times the cost. The expansion
+        # still comes first where it holds, since a long series gathers rounding error; only
+        # past x = −40, where e⁻ʸ alone is below the e⁻⁴⁰ the expansion may drop.
+        if x < _DROPPED:
+            far = _below(a, b, -x)
+            if not isnan(far) and not isinf(far):
+                return far
+        return _kummer(a, b, x)
     total, size = _series(a, b, x)
     cancelled = _cancellation(total, size)
     if cancelled <= _CLEAN:
@@ -255,6 +266,11 @@ def hyp1f1(a: f64, b: f64, x: f64) -> f64:
     far = _below(a, b, -x)
     if not isnan(far) and not isinf(far):
         return far
+    return _kummer(a, b, x)
+
+
+def _kummer(a: f64, b: f64, x: f64) -> f64:
+    """M(a, b, x) for x below 0 by Kummer's transformation, eˣ M(b − a, b, −x)."""
     value = _positive(b - a, b, -x)
     if isinf(value):
         # M(b − a, b, −x) is past the largest `f64` though eˣ times it is not: its series is

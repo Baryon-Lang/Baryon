@@ -541,7 +541,9 @@ the first of several that keeps its digits:
   (DLMF 13.7.2), where the term it drops is below e⁻⁴⁰ of the one it keeps; and, for a below 0
   and x above 0, the recurrences: b is raised above x, a is taken down its recurrence, which is
   stable there, and b brought back down by its own (DLMF 13.3.1 and 13.3.2). A negative x is
-  sent to a positive one by Kummer's transformation M(a, b, x) = eˣ M(b − a, b, −x).
+  sent to a positive one by Kummer's transformation M(a, b, x) = eˣ M(b − a, b, −x): at once
+  for b above 0 and at least a, where the new series' terms are all positive, and otherwise
+  where M's own series cancels.
 - U is its asymptotic expansion for large x (DLMF 13.7.3); the polynomial it is for a whole a at
   most 0 (DLMF 13.2.7); for a at least 1, its integral 1/Γ(a) ∫₀^∞ t^{a−1} (1 + t)^{b−a−1}
   e^{−xt} dt (DLMF 13.4.4) by double-exponential quadrature centred on the integrand's peak; for
@@ -550,7 +552,7 @@ the first of several that keeps its digits:
   recurrence in a run down from two values by quadrature.
 - F is the series of whichever of four equal forms cancels least: F itself, Euler's
   (1 − x)^{c−a−b} F(c − a, c − b; c; x), and Pfaff's two in x/(x − 1) (DLMF 15.8.1), in `f64`
-  or double-double. Near x = 1, and far below 0 through Pfaff's form, it is a series in 1 − x
+  or double-double. The first that barely cancels is taken; below 0 Pfaff's are tried first. Near x = 1, and far below 0 through Pfaff's form, it is a series in 1 − x
   (DLMF 15.8.4), which has two parts that grow as 1/ε where c − a − b is ε from a whole number:
   there the parts are joined term by term, and at ε = 0 the series with a logarithm
   (DLMF 15.8.10) takes over. Below −1 it can also be a series in 1/x (DLMF 15.8.2). A
