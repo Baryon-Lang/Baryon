@@ -14,7 +14,6 @@ use std::sync::{Mutex, Once, PoisonError};
 
 mod array_files;
 mod array_methods;
-mod array_powers;
 mod axes;
 mod broadcast;
 mod builtins;
