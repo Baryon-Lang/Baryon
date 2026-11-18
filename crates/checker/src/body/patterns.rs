@@ -29,6 +29,7 @@ impl<'db> Body<'db> {
             return true;
         };
         let subject = self.expression(value, None);
+        let outer = self.subject;
         let entry = self.state.clone();
         let mut ends = Vec::new();
         let mut rows = Vec::new();
@@ -38,6 +39,8 @@ impl<'db> Body<'db> {
         for case in cases {
             self.state.clone_from(&entry);
             let written = self.tree.child(case, Role::Pattern);
+            // A case body's own `match` changes the subject, so each pattern sets it again.
+            self.subject = Some(value);
             let pattern = match written {
                 Some(pattern) => self.pattern(pattern, remaining),
                 None => Pattern::Wild,
@@ -63,6 +66,7 @@ impl<'db> Body<'db> {
                 });
             }
         }
+        self.subject = outer;
         // A subject of unknown type has had its error; its cases count as covering it.
         let missing = (!relations::is_open(self.db, subject))
             .then(|| exhaustive::missing(&rows, &self.space(subject)))
@@ -123,6 +127,7 @@ impl<'db> Body<'db> {
             SyntaxKind::PatternAs => {
                 if let Some(name) = self.tree.child(node, Role::Name) {
                     self.bind(name, ty, None);
+                    self.borrowing_capture(name, ty);
                 }
                 match self.tree.child(node, Role::Pattern) {
                     Some(inner) => self.pattern(inner, ty),

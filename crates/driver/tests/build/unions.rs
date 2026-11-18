@@ -152,6 +152,83 @@ def main():
     );
 }
 
+/// A capture that is not a copy type borrows its part of a read-only subject in place
+/// (decision 0032, roadmap 1.9.50): the array and `str` inside a method's `self.mask` and
+/// `self.label`, a field of a borrowed parameter, and the `str` and list fields of a borrowed
+/// union's member. Before, lowering stopped on "capturing a value that is not a copy type".
+#[test]
+fn captures_borrow_from_read_only_subjects() {
+    let program = "\
+class Named(Struct):
+    name: str
+    tags: list[str]
+
+
+class Empty(Struct):
+    pass
+
+
+Thing = Named | Empty
+
+
+class Grid(Struct):
+    values: Array[f64, 1]
+    mask: Array[bool, 1] | None
+    label: str | None
+
+    def total(self) -> f64:
+        s = 0.0
+        match self.mask:
+            case None:
+                s = self.values.sum()
+            case m:
+                for i in range(len(self.values)):
+                    if m[i]:
+                        s += self.values[i]
+        return s
+
+    def title(self) -> str:
+        match self.label:
+            case None:
+                return \"untitled\"
+            case text:
+                return text.copy()
+
+
+def describe(t: Thing) -> str:
+    match t:
+        case Named(name, tags):
+            return f\"{name} {len(tags)} {tags[0]}\"
+        case Empty():
+            return \"empty\"
+
+
+def count(g: Grid) -> int:
+    match g.mask:
+        case None:
+            return 0
+        case m:
+            n = 0
+            for b in m:
+                if b:
+                    n += 1
+            return n
+
+
+def main():
+    g = Grid(Array([1.0, 2.0, 3.0]), Array([True, False, True]), f\"grid{1}\")
+    print(g.total(), g.title(), count(g))
+    h = Grid(Array([1.0, 2.0]), None, None)
+    print(h.total(), h.title(), count(h))
+    print(describe(Named(f\"n{2}\", [f\"a{3}\"])), describe(Empty()))
+";
+    let printed = "4.0 grid1 2\n3.0 untitled 0\nn2 1 a3 empty\n";
+    assert_eq!(
+        run("unions-captures", program).unwrap(),
+        (printed.to_owned(), String::new())
+    );
+}
+
 /// Decision 0032's molecules: a method every member shares, called on the union, and a union
 /// whose members all name `Body` passed where a `T: Body` is expected; both run the method of
 /// the member each value holds.
