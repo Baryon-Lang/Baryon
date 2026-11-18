@@ -365,8 +365,8 @@ impl<'db> Body<'db> {
         if name == "decode" && is_array {
             return Some(self.decode(node, base, arguments));
         }
-        if matches!(name, "mean" | "var" | "std") {
-            return Some(self.statistic(node, (base, element), name, arguments));
+        if matches!(name, "mean" | "var" | "std" | "any" | "all") {
+            return Some(self.summary(node, (base, element), name, arguments));
         }
         let reduced = if name == "sum" {
             self.summed(element)

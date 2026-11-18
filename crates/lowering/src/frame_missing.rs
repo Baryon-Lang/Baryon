@@ -201,6 +201,14 @@ impl<'db> Builder<'db> {
         if method == "sum" {
             return self.sum_of(place, (&Place::from(there), gathered, result), node);
         }
+        if matches!(method, "any" | "all") {
+            return self.truth_of(
+                place,
+                method == "all",
+                (&Place::from(there), gathered),
+                node,
+            );
+        }
         // The mean and the spread are those of the elements gathered, NaN when there are
         // none, as they are of an empty array.
         let (_, keywords) = self.call_arguments(node);

@@ -138,6 +138,8 @@ This prints `2 3`, then `4.0 2.0 1.5 2.5`.
 
 - **`count()` is how many elements are there**, an `i64`; `len` counts the gaps too. It works
   for every element type. The others take integers and floats.
+- **A mask of `bool`s has `sum()`, `any()` and `all()`**, which skip `None` too: see
+  [Comparing missing values](missing-comparisons.md#the-rules).
 - **Each gives what the method gives `bids.dropna()`**, bit for bit: a float sum adds in the
   same [pairwise order](arrays.md#the-order-sum-adds-in), `mean()` of integers is an `f64`,
   and a `NaN` that is there makes `min()` and `max()` `NaN`, since `NaN` is a number and not

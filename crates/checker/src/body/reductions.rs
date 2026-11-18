@@ -3,6 +3,7 @@
 //! and `sorted(values, reverse=flag)` of a list.
 //!
 //! `min` and `max` of two or more numbers are the `builtins` module's. These take one sequence.
+//! The methods `mask.any()` and `mask.all()` of an array of `bool`s are checked here too.
 
 use super::calls::Arguments;
 use super::{Body, numbers, relations};
@@ -203,5 +204,63 @@ impl<'db> Body<'db> {
             self.show(ty)
         );
         self.lowerer.error(sequence, &message, "not numbers", None)
+    }
+
+    /// A method that sums up a whole array: the statistics `mean`, `var` and `std`, and the
+    /// tests `any` and `all`, the method `name` called at `node` with `arguments` on the
+    /// array `base` of `element`s.
+    pub(super) fn summary(
+        &mut self,
+        node: NodeId,
+        of: (Type<'db>, Type<'db>),
+        name: &str,
+        arguments: &Arguments,
+    ) -> Type<'db> {
+        if matches!(name, "any" | "all") {
+            self.truth_test(node, of, name, arguments)
+        } else {
+            self.statistic(node, of, name, arguments)
+        }
+    }
+
+    /// `mask.any()` or `mask.all()`, the method `name` called at `node` with `arguments` on
+    /// the array `base` of `element`s: a `bool`, whether any element is `True` or whether
+    /// every one is, over the whole array whatever its rank, as in `NumPy`. So `any()` of an
+    /// empty array is `False` and `all()` of one is `True`.
+    ///
+    /// The elements must be `bool`s. `NumPy` also takes numbers and reads a nonzero one as
+    /// true; here that is written as the comparison it means, `(a != 0).any()`. `axis=` is
+    /// not built.
+    fn truth_test(
+        &mut self,
+        node: NodeId,
+        (base, element): (Type<'db>, Type<'db>),
+        name: &str,
+        arguments: &Arguments,
+    ) -> Type<'db> {
+        let boolean = matches!(
+            element.kind(self.db),
+            TypeKind::Primitive(types::Primitive::Bool)
+        );
+        if !boolean {
+            self.untyped(arguments);
+            let message = format!(
+                "`{name}` needs an array of `bool`s, found `{}`",
+                self.show(base)
+            );
+            let hint = format!("compare first, for example `(a != 0).{name}()`");
+            return self
+                .lowerer
+                .error(node, &message, "not `bool`s", Some(&hint));
+        }
+        if !arguments.positional.is_empty() || !arguments.keywords.is_empty() {
+            self.untyped(arguments);
+            let message = format!("`{name}` takes no arguments yet");
+            let hint = format!("`mask.{name}()` tests the whole array; `axis=` is not built");
+            return self
+                .lowerer
+                .error(node, &message, "an argument", Some(&hint));
+        }
+        element
     }
 }

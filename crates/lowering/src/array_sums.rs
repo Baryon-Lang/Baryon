@@ -86,6 +86,51 @@ impl<'db> Builder<'db> {
         self.assign(place, rvalue, node);
     }
 
+    /// `mask.any()`, or `mask.all()` when `all` is set, of the array of `bool`s at `source`,
+    /// of type `ty`, into `place`: whether an element is `True`, or whether every one is.
+    ///
+    /// The `True` elements are counted as `mask.sum()` counts them, a loop the backend
+    /// vectorizes, and the count is compared with 0 or with the number of elements. So an
+    /// empty array gives `False` for `any` and `True` for `all`, as `NumPy` does. Cost: one
+    /// pass over the whole array; it does not stop at the first element that settles it.
+    pub(crate) fn truth_of(
+        &mut self,
+        place: Place,
+        all: bool,
+        (source, ty): (&Place, types::Type<'db>),
+        node: NodeId,
+    ) {
+        let int = self.int_type();
+        let count = self.temporary(int, node);
+        self.sum_of(Place::from(count), (source, ty, int), node);
+        let count = Operand::Copy(Place::from(count));
+        if !all {
+            let zero = Operand::Constant(self.number_constant(int, 0));
+            let found = Rvalue::Binary(BinaryOperator::NotEqual, count, zero);
+            return self.assign(place, found, node);
+        }
+        let size = self.temporary(int, node);
+        let one = Operand::Constant(self.number_constant(int, 1));
+        self.assign(Place::from(size), Rvalue::Use(one), node);
+        for dimension in 0..self.rank(ty) {
+            let length = self.length(source, ty, dimension, node);
+            let operands = (Operand::Copy(Place::from(size)), length);
+            self.arithmetic(
+                Place::from(size),
+                BinaryOperator::Multiply,
+                operands,
+                int,
+                node,
+            );
+        }
+        let size = Operand::Copy(Place::from(size));
+        self.assign(
+            place,
+            Rvalue::Binary(BinaryOperator::Equal, count, size),
+            node,
+        );
+    }
+
     /// The type a sum of elements of type `element` adds in: `int` for `bool`, which counts the
     /// `True` elements as `NumPy` does (roadmap 1.9.36), and `element` itself otherwise.
     pub(crate) fn summand(&self, element: types::Type<'db>) -> types::Type<'db> {
