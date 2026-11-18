@@ -85,6 +85,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `hyp0f1` | 16 ULP, of the largest of \|f\| and \|t ∂f/∂t\| for each argument t | 13 ULP at `hyp0f1(-8.88, -162.2)` | 2,469 ULP at `hyp0f1(0.40, -35.7)`; NaN at `hyp0f1(-237.8, -965.8)`, where the value is 60.1 |
 | `hyp1f1` | 64 ULP, of the same | 55 ULP at `hyp1f1(0.00037, -123.7, -115.2)` | 3e43 at `hyp1f1(0.00033, -92.95, -213.5)`, where the value is 0.99 |
 | `hyperu` | 512 ULP, of the same | 385 ULP at `hyperu(0.017, -146.0, 0.0019)` | 3e-256 at `hyperu(143.0, -27.0, 2.42)`, where the value is 3e-284; NaN at `hyperu(84.8, -14.7, 1.04)` |
+| `hyp2f1` | 128 ULP, of the same | 68 ULP at `hyp2f1(-13.0, -0.381, 0.0145, 0.995)` | 1.6e22 ULP at `hyp2f1(-18.000000001, 19.0, 1.445, 0.970)`, 3.6 million where the value is 0.035 |
 | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer` | 8 ULP for each degree, of the largest value the recurrence passes through | 29 ULP for `eval_gegenbauer` at degree 85 | 439 ULP for `eval_jacobi` at degree 85 |
 | `eval_hermite`, `eval_hermitenorm` | The same | 156 ULP at degree 78 | 698 ULP for `eval_hermite` at degree 75 |
 | `lpmv` | 64 ULP of the largest value the recurrence passes through | 24 ULP | 154 ULP |
@@ -500,20 +501,25 @@ worst is 57 ULP, near zeros of H at negative orders; SciPy loses up to 13,138 UL
 | `hyp0f1(b, x)` | The confluent hypergeometric limit function ₀F₁(; b; x) = Σ xᵏ/((b)ₖ k!) | `scipy.special.hyp0f1` |
 | `hyp1f1(a, b, x)` | Kummer's function M(a, b, x) = ₁F₁(a; b; x) = Σ (a)ₖ xᵏ/((b)ₖ k!) | `scipy.special.hyp1f1` |
 | `hyperu(a, b, x)` | Tricomi's function U(a, b, x), the solution of Kummer's equation that behaves as x⁻ᵃ for large x | `scipy.special.hyperu` |
+| `hyp2f1(a, b, c, x)` | Gauss's hypergeometric function F(a, b; c; x) = ₂F₁(a, b; c; x) = Σ (a)ₖ (b)ₖ xᵏ/((c)ₖ k!) | `scipy.special.hyp2f1` |
 
 (b)ₖ = b (b + 1) ⋯ (b + k − 1) is the rising factorial. M and U solve Kummer's equation
 x w″ + (b − x) w′ − a w = 0, which describes the hydrogen atom's radial wave functions, the
 Coulomb wave functions and the quantum harmonic oscillator; ₀F₁ is a Bessel function in another
-form. All three take real `f64` arguments; U needs x at least 0.
+form. Gauss's F solves x(1 − x) w″ + (c − (a + b + 1)x) w′ − ab w = 0, and holds most of the
+elementary functions and the orthogonal polynomials as special cases: log(1 + x) is
+x F(1, 1; 2; −x). All four take real `f64` arguments; U needs x at least 0, and F is real only
+up to x = 1, past which it is a polynomial or complex.
 
 ```python
-from special import hyp0f1, hyp1f1, hyperu
+from special import hyp0f1, hyp1f1, hyp2f1, hyperu
 
 
 def main():
     print(hyp0f1(1.5, -2.25))       # 0.04704000268662233, sin(3)/3
     print(hyp1f1(1.0, 2.0, 1.0))    # 1.7182818284590455, e − 1
     print(hyperu(1.0, 1.0, 1.0))    # 0.5963473623231939, e E₁(1)
+    print(hyp2f1(1.0, 1.0, 2.0, -3.0))  # 0.4620981203732966, log(4)/3
 ```
 
 **How they work.** No one method holds over the whole plane of a, b and x, so each value takes
@@ -535,17 +541,28 @@ the first of several that keeps its digits:
   a whole b, the series with a logarithm (DLMF 13.2.9); otherwise two of Kummer's M
   (DLMF 13.2.42); and last the same integral through x^{1−b} U(a − b + 1, 2 − b, x), or the
   recurrence in a run down from two values by quadrature.
+- F is the series of whichever of four equal forms cancels least: F itself, Euler's
+  (1 − x)^{c−a−b} F(c − a, c − b; c; x), and Pfaff's two in x/(x − 1) (DLMF 15.8.1), in `f64`
+  or double-double. Near x = 1, and far below 0 through Pfaff's form, it is a series in 1 − x
+  (DLMF 15.8.4), which has two parts that grow as 1/ε where c − a − b is ε from a whole number:
+  there the parts are joined term by term, and at ε = 0 the series with a logarithm
+  (DLMF 15.8.10) takes over. Below −1 it can also be a series in 1/x (DLMF 15.8.2). A
+  polynomial is summed in x, 1 − x or 1/x, whichever cancels least. Each derived parameter,
+  such as a − b + 1, is kept as an exact sum of two `f64`s, so a factor (a − b + 1 + k) near 0
+  keeps its digits.
 
 **Accuracy.** A small change in a parameter can move these functions far, so each case is
 measured against the largest of |f| and |t ∂f/∂t| for each argument t: the error that rounding
 the arguments to `f64` alone would make, which no method can beat. The tests reach parameters
-from −300 to 1,000 for ₀F₁ and from −150 to 150 for M and U, and arguments to ±3e4.
+from −300 to 1,000 for ₀F₁, from −150 to 150 for M and U and from −20 to 20 for F, and
+arguments to ±3e4.
 
 | Function | Tested where | Worst | Cases SciPy misses by more than 64 ULP |
 | --- | --- | --- | --- |
 | `hyp0f1` | b from −300 | 13 ULP | 39 of 398, some by giving ∞ |
 | `hyp1f1` | \|a\| up to 100, \|x\| up to 1,000 | 55 ULP | 37 of 1,204 |
 | `hyperu` | a from −35 | 385 ULP | 194 of 803, some by giving ∞ |
+| `hyp2f1` | \|a\|, \|b\|, \|c\| up to 20 | 68 ULP | 143 of 1,243 |
 
 U's worst cases, from 64 to 385 ULP, are at b below about −30 with |a| below 1, where the series
 it is summed from cancel by up to 64 times. Outside the tested ranges these can lose digits:
@@ -556,6 +573,10 @@ it is summed from cancel by up to 64 times. Outside the tested ranges these can 
 - U loses digits for a below −35, and for a below 0 and not whole with b above a + 1 and
   within 0.001 of a whole number, where Kummer's two M cancel and the recurrence in a is
   unstable.
+- F holds over most of the range to |a|, |b|, |c| of 50, but where all its forms cancel there,
+  usually with c − a − b or b − a near a whole number, it can lose its digits or give NaN: 10 of
+  1,200 trial cases, half with parameters to 50 and half to 10, did, all with a parameter above
+  25. SciPy misses 149 of the same cases.
 
 ### At the ends
 
@@ -571,6 +592,13 @@ it is summed from cancel by up to 64 times. Outside the tested ranges these can 
   for b below 1 and ∞ from 1 up, as SciPy gives, except for a whole a at most 0, where U is a
   polynomial and this gives its value: `hyperu(-2.0, 3.0, 0.0)` is 12, where SciPy gives ∞. At
   x = ∞ this gives the limit, 0 for a above 0 and ∞ below, where SciPy gives NaN.
+- F: past x = 1 it is complex unless a or b is a whole number at most 0, where it is a
+  polynomial and this gives its value, as SciPy gives; elsewhere this gives NaN, where SciPy
+  gives ∞. At x = 1 it is Γ(c)Γ(c − a − b)/(Γ(c − a)Γ(c − b)) for c − a − b above 0 and ∞
+  otherwise, as SciPy gives. A c of 0 or a negative whole number is ∞ unless a or b ends the
+  series first, as SciPy gives. An infinite c gives 1, and an infinite a or b NaN. At x = ±∞ a
+  polynomial gives ∞ with the sign of its last term, and F gives 0 at −∞ for a and b above 0,
+  where SciPy gives NaN.
 
 ## Incomplete gamma and beta functions
 
@@ -1081,6 +1109,7 @@ for those working on the library. A panic inside a function names the file it is
 | `special_hyp0f1` | `hyp0f1` |
 | `special_hyp1f1` | `hyp1f1` |
 | `special_hyperu` | `hyperu` |
+| `special_hyp2f1` | `hyp2f1` |
 | `special_incomplete_gamma` | `gammainc`, `gammaincc`, `gammaincinv` and `gammainccinv` |
 | `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
 | `special_distributions` | `bdtr`, `bdtrc`, `bdtri`, `nbdtr`, `nbdtrc`, `nbdtri`, `pdtr`, `pdtrc`, `pdtri`, `chdtr`, `chdtrc`, `chdtri`, `fdtr`, `fdtrc`, `fdtri`, `gdtr`, `gdtrc`, `stdtr` and `stdtrit` |
@@ -1099,7 +1128,7 @@ A new function goes in the file of its family, and a name of `special` gets its 
 
 ## Not built yet
 
-The rest of `scipy.special` comes in the sub-rows of roadmap 3.18: Bessel functions of a complex
-argument and the Gauss hypergeometric function `hyp2f1`. Carlson's integrals of
-complex arguments are not built. `loggamma` of a complex argument comes with the complex Bessel
-functions (3.18.6). See [What builds today](status.md).
+The rest of `scipy.special` comes in the sub-rows of roadmap 3.18, Bessel functions of a complex
+argument (3.18.6) among them. The hypergeometric functions and Carlson's integrals of complex
+arguments are not built. `loggamma` of a complex argument comes with the complex Bessel functions.
+See [What builds today](status.md).

@@ -99,8 +99,8 @@ The calls and the printed tables are pandas's. What differs:
   it.
 - **A frame moves**, like an array: `concat` takes the frames it stacks, so the program passes a
   copy of `stars` to keep using it.
-- Missing values, and the joins and file readers that need them, are not built yet
-  ([What builds today](../reference/status.md#dataframes)).
+- A value that may be missing is declared, as `magnitude: f64 | None`, and is `None`, never
+  `NaN`. [A worked analysis with DataFrame](dataframes.md) uses one.
 
 [DataFrames](../reference/dataframes.md) and
 [Sorting, grouping and joining](../reference/dataframe-operations.md) list every operation.
@@ -278,6 +278,8 @@ DejaVu Sans labels.
 
 ## Where to go next
 
+- [A worked analysis with DataFrame](dataframes.md) writes a pandas analysis again in Baryon,
+  line for line, and times `DataFrame` against pandas and Polars.
 - [Coding Baryon in VS Code](vscode.md) sets up the editor, and `baryon watch` rebuilds a
   program each time you save it ([The `baryon` command](../reference/commands.md#baryon-watch)).
 - [Differences from Python](../reference/differences-from-python.md) lists every place a

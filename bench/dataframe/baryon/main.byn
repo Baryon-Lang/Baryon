@@ -1,0 +1,88 @@
+"""The DataFrame benchmark: one operation on a table of `rows` rows, named on the command line."""
+
+import sys
+
+
+class Trade(Struct):
+    key: i64
+    value: f64
+    other: f64
+
+
+class Sector(Struct):
+    key: i64
+    weight: f64
+
+
+def trades(rows: i64) -> DataFrame[Trade]:
+    """The table every operation reads: `rows` rows of made-up numbers, the same in every
+    library, with 1000 different keys."""
+    key = Array.fill((rows,), 0)
+    value = Array.zeros(rows)
+    other = Array.zeros(rows)
+    for i in range(rows):
+        key[i] = (i * 7919) % 1000
+        value[i] = f64((i * 2654435761) % 1000003) / 1000003.0
+        other[i] = f64((i * 40503) % 999983) / 999983.0
+    return DataFrame({"key": key, "value": value, "other": other})
+
+
+class Quote(Struct):
+    bid: f64 | None
+    other: f64
+
+
+def quotes(rows: i64) -> DataFrame[Quote]:
+    """A table whose `bid` is missing in every tenth row, and is `value` of `trades`
+    elsewhere."""
+    other = Array.zeros(rows)
+    for i in range(rows):
+        other[i] = f64((i * 40503) % 999983) / 999983.0
+    bids: list[f64 | None] = []
+    for i in range(rows):
+        if i % 10 == 0:
+            bids.append(None)
+        else:
+            bids.append(f64((i * 2654435761) % 1000003) / 1000003.0)
+    return DataFrame({"bid": Array(bids), "other": other})
+
+
+def sectors() -> DataFrame[Sector]:
+    """A table with one row for each key, to join to."""
+    key = Array.fill((1000,), 0)
+    weight = Array.zeros(1000)
+    for i in range(1000):
+        key[i] = i
+        weight[i] = f64(i % 7) + 0.5
+    return DataFrame({"key": key, "weight": weight})
+
+
+def main() -> Raises[None, ValueError]:
+    operation = sys.argv[1].copy()
+    rows = int(sys.argv[2])
+    if operation == "missing_setup":
+        print(len(quotes(rows)))
+        return
+    if operation == "missing":
+        gaps = quotes(rows)
+        chosen = gaps[gaps.bid > 0.5]
+        print(len(chosen), f"{chosen.other.sum():.6f}", f"{gaps.bid.mean():.6f}")
+        return
+    table = trades(rows)
+    if operation == "setup":
+        print(f"{table.value.sum():.6f}")
+    elif operation == "filter":
+        kept = table[table.value > 0.5]
+        print(len(kept), f"{kept.other.sum():.6f}")
+    elif operation == "assign":
+        wider = table.assign(total=table.value * 2.0 + table.other)
+        print(f"{wider.total.sum():.6f}")
+    elif operation == "groupby":
+        groups = table.groupby("key").agg(total=("value", "sum"), mean=("other", "mean"))
+        print(len(groups), f"{groups.total.sum():.6f}", f"{groups.mean.sum():.6f}")
+    elif operation == "sort":
+        ordered = table.sort_values("value")
+        print(f"{ordered.other[0]:.6f}", f"{ordered.other[rows - 1]:.6f}")
+    elif operation == "merge":
+        joined = table.merge(sectors(), on="key")
+        print(len(joined), f"{(joined.value * joined.weight).sum():.6f}")

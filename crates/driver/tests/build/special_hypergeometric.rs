@@ -1,6 +1,6 @@
-//! The confluent hypergeometric functions of `special` (roadmap 3.18.8), `hyp0f1`, `hyp1f1` and
-//! `hyperu`, built and run and checked against the values mpmath records, as
-//! [`super::special`] checks the other families, with its tolerances.
+//! The hypergeometric functions of `special` (roadmap 3.18.8), the confluent `hyp0f1`, `hyp1f1`
+//! and `hyperu` and Gauss's `hyp2f1`, built and run and checked against the values mpmath
+//! records, as [`super::special`] checks the other families, with its tolerances.
 
 use super::special::check;
 
@@ -34,4 +34,27 @@ fn hypergeometric_functions_match_the_recorded_values() {
         "hypergeometric.txt",
     )
     .unwrap();
+}
+
+/// The program for `hyp2f1`: the name, a, b, c and x, the size and the reference.
+const GAUSS: &str = "\
+from special import hyp2f1
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            a = float(fields[1])
+            b = float(fields[2])
+            c = float(fields[3])
+            print(hyp2f1(a, b, c, float(fields[4])))
+";
+
+/// `hyp2f1` at the 1,253 cases of `gauss.txt`: parameters up to 20 in size, c − a − b whole
+/// and near whole, x across (−1, 1), within 1e-8 of 1 and down to −1e4, polynomials past 1,
+/// and the ends.
+#[test]
+fn gauss_function_matches_the_recorded_values() {
+    check("special-gauss", GAUSS, "gauss.txt").unwrap();
 }
