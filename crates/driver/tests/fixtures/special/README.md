@@ -2032,10 +2032,13 @@ Some functions are a ratio of fitted polynomials rather than a series (roadmap 3
 rational function costs a dozen multiplications, where a series or an iteration costs many
 more. This script, run with mpmath 1.4, prints the coefficients of each, lowest power first,
 exactly as the library holds them: `_centre`, `_near_tail` and `_far_tail` in
-`special_ndtri.byn`, and `_k_fitted` and `_e_fitted` in `special_elliptic.byn`. The tests in
-`error_functions.txt` and `elliptic_functions.txt` check the result.
+`special_ndtri.byn`, `_k_fitted` and `_e_fitted` in `special_elliptic.byn`, the four
+`_hankel_` functions in `special_bessel_jy.byn` and `_erfcx_far` in `special_error.byn`. The
+tests in `error_functions.txt`, `elliptic_functions.txt` and `bessel_functions.txt` check the
+result.
 
 ```python
+
 import mpmath as mp
 
 
@@ -2104,4 +2107,32 @@ points = [(1 - mp.cos(mp.pi * (i + 0.5) / 600)) / 2 for i in range(600)]
 points += [mp.mpf(10) ** (-k) for k in range(2, 40, 2)]
 print("_k_fitted", fit_logarithmic(lambda x: mp.ellipk(1 - x), points, 9))
 print("_e_fitted", fit_logarithmic(lambda x: mp.ellipe(1 - x), points, 10))
+
+
+def hankel(order, x):
+    """P and x Q of Hankel's expansion of Jₙ and Yₙ, from mpmath's J and Y."""
+    chi = x - (2 * order + 1) * mp.pi / 4
+    j, y, s = mp.besselj(order, x), mp.bessely(order, x), mp.sqrt(mp.pi * x / 2)
+    return s * (j * mp.cos(chi) + y * mp.sin(chi)), s * (y * mp.cos(chi) - j * mp.sin(chi)) * x
+
+
+mp.mp.dps = 60
+far = chebyshev(0, mp.mpf(1) / 25, 200)
+for order in (0, 1):
+    p = lambda z: hankel(order, 1 / mp.sqrt(z))[0] if z > 0 else mp.mpf(1)
+    q = lambda z: hankel(order, 1 / mp.sqrt(z))[1] if z > 0 else mp.mpf(4 * order * order - 1) / 8
+    print(f"_hankel_p{order}", fit(p, far, lambda z: z, 7, 7, 6))
+    print(f"_hankel_q{order}", fit(q, far, lambda z: z, 7, 7, 6))
+
+
+def scaled_erfc_rest(z):
+    """(x√π exp(x²) erfc(x) − 1) / z at z = 1/x², from mpmath's U(½, ½, x²), which stays
+    accurate where its `erfc` of a large argument does not."""
+    if z == 0:
+        return mp.mpf(-0.5)
+    return (mp.hyperu(0.5, 0.5, 1 / z) / mp.sqrt(z) - 1) / z
+
+
+mp.mp.dps = 60
+print("_erfcx_far", fit(scaled_erfc_rest, chebyshev(0, mp.mpf(1) / 9, 300), lambda z: z, 6, 6, 8))
 ```
