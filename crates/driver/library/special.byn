@@ -59,3 +59,10 @@ from special_orthogonal import eval_hermitenorm as eval_hermitenorm, eval_laguer
 from special_orthogonal import eval_genlaguerre as eval_genlaguerre, eval_jacobi as eval_jacobi
 from special_orthogonal import eval_gegenbauer as eval_gegenbauer, lpmv as lpmv
 from special_orthogonal import sph_harm_y as sph_harm_y
+from special_quadrature import roots_legendre as roots_legendre, roots_chebyt as roots_chebyt
+from special_quadrature import roots_chebyu as roots_chebyu, roots_hermite as roots_hermite
+from special_quadrature import roots_hermitenorm as roots_hermitenorm
+from special_quadrature import roots_laguerre as roots_laguerre
+from special_quadrature import roots_genlaguerre as roots_genlaguerre
+from special_quadrature import roots_jacobi as roots_jacobi
+from special_quadrature import roots_gegenbauer as roots_gegenbauer
