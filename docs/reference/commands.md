@@ -146,8 +146,9 @@ such as array bounds, stays on in both ([Integer overflow](types.md#integer-over
 
 `--blas`, anywhere after `build`, `run`, `test` or `watch`, makes `a @ b` of two `Array`
 matrices of `f64`, or of `f32`, call the system BLAS: `cblas_dgemm` or `cblas_sgemm` from
-OpenBLAS on Linux and from Accelerate on macOS ([decision 0040](../decisions/0040-linear-algebra-and-fft.md)).
-BLAS is tuned for each processor and uses every core, so large products run many times faster:
+OpenBLAS on Linux and from Accelerate on macOS
+([decision 0040](../decisions/0040-linear-algebra-and-fft.md)). BLAS is tuned for each
+processor and uses every core, so large products run many times faster:
 
 | `a @ b`, two `f64` matrices, Linux x86_64, 4 cores | Without `--blas` | With `--blas` | Faster by |
 | --- | --- | --- | --- |
@@ -169,11 +170,11 @@ What changes with the flag:
   on Linux and `VECLIB_MAXIMUM_THREADS` on macOS set fewer, which helps when `@` is called
   inside a `prange` loop that already uses every core.
 - **Linking.** The program is linked with the BLAS library, dynamically
-  ([decision 0040](../decisions/0040-linear-algebra-and-fft.md#amendment-2026-11-14-how---blas-links-on-linux)). On Linux the machine that runs it
-  needs OpenBLAS's shared library, which the `libopenblas0` package installs and
-  `libopenblas-dev` brings with it; without it the program does not start, and the system
-  says `error while loading shared libraries: libopenblas.so.0`. A build without OpenBLAS
-  installed stops with exit status 2, the linker's message and how to install it:
+  ([decision 0040](../decisions/0040-linear-algebra-and-fft.md#amendment-2026-11-14-how---blas-links-on-linux)).
+  On Linux the machine that runs it needs OpenBLAS's shared library, which the
+  `libopenblas0` package installs and `libopenblas-dev` brings with it; without it the program
+  does not start, and the system says `error while loading shared libraries:
+  libopenblas.so.0`. A build without OpenBLAS installed stops with exit status 2, the linker's message and how to install it:
 
   ```text
   baryon: ld.lld: error: unable to find library -lopenblas
