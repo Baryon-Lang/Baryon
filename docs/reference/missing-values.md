@@ -56,8 +56,7 @@ This prints `3`.
 ```python
 def total(values: Array[f64 | None, 1]) -> f64:
     result = 0.0
-    for at in range(len(values)):
-        value = values[at]
+    for value in values:
         if value is not None:
             result += value
     return result
@@ -72,6 +71,11 @@ def main():
 This prints `1.5 None 2.5`, then `4.0`.
 
 - **An index out of range stops the program**, as it does for any array.
+- **A `for` loop gives each element in turn**, an `f64 | None` here, alone or inside
+  `enumerate`, `zip` and `reversed`, and in a comprehension:
+  `[bid for bid in bids if bid is not None]`. The array is borrowed for the loop, as any
+  array is. Not built yet: a loop over text that may be `None`; read `names[at]` in a loop
+  over `range(len(names))`.
 - **`len(bids)` counts every element**, the missing ones too.
 - **`bids.copy()`** gives a new array with its own memory, gaps included. As with any array,
   `kept = bids` moves the array, and a copy keeps both.
@@ -476,6 +480,6 @@ Each of these is a compile error that names what an array with missing values ha
   `min`, `max`, `var` and `std`: `median`, `argsort`; and `min` and `max` of text;
 - a `list` of positions, `bids[[0, 2]]`;
 - assigning an element, `bids[0] = 2.0`;
-- a `for` loop over the array;
+- a `for` loop over text that may be `None`;
 - `print` of a tuple or a list that holds one, or that holds a frame with such a column;
 - one as a struct field.

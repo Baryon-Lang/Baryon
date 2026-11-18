@@ -337,6 +337,7 @@ mod paths;
 mod patterns;
 mod process;
 mod random;
+mod range_walks;
 mod reductions;
 mod selection;
 mod slices;
