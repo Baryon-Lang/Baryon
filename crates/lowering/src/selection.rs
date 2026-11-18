@@ -1,7 +1,9 @@
 //! Choosing elements of an array with another array (language reference, "Arrays", "Choosing
 //! elements"; roadmap 3.13.1): `a[mask]` keeps the elements where a `bool` array is `True`, and
 //! `a[positions]` takes the elements at the positions an `i64` array lists. Each is a new
-//! array, built by plain loops: a mask is counted first, so the result is allocated once.
+//! array, built by plain loops: a mask is counted first, so the result is allocated once. A
+//! mask that may hold `None`, as a comparison with an array with missing values gives,
+//! chooses where it is `True`, as in pandas.
 
 use crate::builder::Builder;
 use mir::{BinaryOperator, Check, Constant, Local, Operand, Place, Projection, Rvalue};
@@ -15,10 +17,11 @@ impl<'db> Builder<'db> {
     /// of a text array, `names[1:3]`, is a new array too ([`Builder::text_selection`]).
     pub(crate) fn is_selection(&self, node: NodeId) -> bool {
         self.tree.kind(node) == SyntaxKind::Subscript
-            && self
-                .tree
-                .child(node, Role::Index)
-                .is_some_and(|index| self.is_array(self.ty(index)) || self.is_text_slice(node))
+            && self.tree.child(node, Role::Index).is_some_and(|index| {
+                self.is_array(self.ty(index))
+                    || self.optional_array_element(index).is_some()
+                    || self.is_text_slice(node)
+            })
             && self
                 .tree
                 .child(node, Role::Value)
@@ -41,6 +44,16 @@ impl<'db> Builder<'db> {
         }
         let (ty, by_type) = (self.ty(node), self.ty(index));
         let source = self.borrow(value);
+        if self.optional_array_element(index).is_some() {
+            // A mask that may hold `None` chooses where it is `True`, as a plain mask.
+            let length = self.length(&source, self.ty(value), 0, node);
+            let result = self.temporary(ty, node);
+            if let Some(mask) = self.chosen_mask(length.clone(), index) {
+                self.masked(result, &source, &Place::from(mask), &length, node);
+                self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);
+            }
+            return;
+        }
         let by = self.borrow(index);
         let length = self.length(&source, self.ty(value), 0, node);
         let chosen = self.length(&by, by_type, 0, index);
@@ -78,14 +91,24 @@ impl<'db> Builder<'db> {
         let stored = self.temporary(element, value);
         let operand = self.operand_as(value, element);
         self.assign(Place::from(stored), Rvalue::Use(operand), value);
-        let by = self.borrow(index);
         let destination = self.borrow(array);
         let length = self.length(&destination, array_type, 0, target);
-        let chosen = self.length(&by, by_type, 0, index);
-        let masked = self.element(by_type) == self.boolean_type();
-        if masked {
-            self.same_length(0, length.clone(), chosen.clone(), index);
-        }
+        let optional = self.optional_array_element(index).is_some();
+        let (by, chosen, masked) = if optional {
+            // A mask that may hold `None` sets where it is `True`, as a plain mask.
+            let Some(mask) = self.chosen_mask(length.clone(), index) else {
+                return;
+            };
+            (Place::from(mask), length.clone(), true)
+        } else {
+            let by = self.borrow(index);
+            let chosen = self.length(&by, by_type, 0, index);
+            let masked = self.element(by_type) == self.boolean_type();
+            if masked {
+                self.same_length(0, length.clone(), chosen.clone(), index);
+            }
+            (by, chosen, masked)
+        };
         self.loop_nest(
             &[chosen],
             &mut Vec::new(),

@@ -1,7 +1,8 @@
 //! Comparisons on arrays with missing values (roadmap 3.13.6, decision 0045), built and run:
 //! `==`, `!=`, `<`, `<=`, `>` and `>=` give an array of `bool`s that is `None` wherever a
-//! side is `None`, as pandas's nullable arrays do, and such a mask chooses the rows of a
-//! frame where it is `True`.
+//! side is `None`, as pandas's nullable arrays do. Such masks combine with `&`, `|`, `^` and
+//! `~` by pandas's rules, and choose the rows of a frame and the elements of an array where
+//! they are `True`.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -123,8 +124,94 @@ def main():
     Ok(())
 }
 
-/// Arrays of different lengths do not compare, and a mask of another length than the frame
-/// chooses nothing: the program panics and names both lengths.
+/// Masks that may hold `None` combine by pandas's rules: `False & None` is `False` and
+/// `True | None` is `True`, since the side that is there settles the answer, and every other
+/// combination with a `None` is `None`. A plain mask can be either side. All nine pairs of
+/// `True`, `False` and `None` are here.
+#[test]
+fn masks_with_gaps_combine() -> io::Result<()> {
+    let program = r"
+def main():
+    t: Array[bool | None, 1] = Array([True, True, True, False, False, False, None, None, None])
+    u: Array[bool | None, 1] = Array([True, False, None, True, False, None, True, False, None])
+    p = Array([True, False, True, False, True, False, True, False, True])
+    print(t & u)
+    print(t | u)
+    print(t ^ u)
+    print(~t)
+    print(t & p)
+    print(p | t)
+    print(p ^ t)
+    bids: Array[f64 | None, 1] = Array([1.5, None, 2.5, 4.0])
+    asks = Array([2.0, 3.0, 2.0, 9.0])
+    print((bids > 2.0) & (asks < 5.0))
+    print((bids > 2.0) | (asks < 2.5))
+    print(~(bids > 2.0) & ~(bids > 3.0))
+    empty: Array[bool | None, 1] = Array([])
+    print(empty & empty, ~empty)
+";
+    let (code, output, report) = run("optional_comparisons_combined", program)?;
+    assert_eq!(code, Some(0), "{report}");
+    assert_eq!(
+        output,
+        "[True False None False False False None False None]\n\
+         [True True True True False None True None None]\n\
+         [False True None True False None None None None]\n\
+         [False False False True True True None None None]\n\
+         [True False True False False False None False None]\n\
+         [True True True False True False True None True]\n\
+         [False True False False True False None None None]\n\
+         [False None True False]\n\
+         [True None True True]\n\
+         [True None False False]\n\
+         [] []\n"
+    );
+    Ok(())
+}
+
+/// A combined mask chooses rows of a frame, and a mask that may hold `None` chooses and
+/// sets elements of a plain array: where it is `None` nothing is chosen and nothing is set.
+#[test]
+fn masks_with_gaps_choose_elements() -> io::Result<()> {
+    let program = r#"
+def main():
+    bids: Array[f64 | None, 1] = Array([1.5, None, 2.5, 4.0])
+    asks = Array([2.0, 3.0, 2.0, 9.0])
+    quotes = DataFrame({"bid": bids.copy(), "ask": asks.copy()})
+    print(quotes[(quotes.bid > 2.0) & (quotes.ask < 5.0)])
+    print(quotes[~(quotes.bid > 2.0)])
+    print(quotes[(quotes.bid > 2.0) | (quotes.ask < 2.5)])
+    print(asks[bids > 2.0])
+    kept = asks[(bids > 2.0) | (asks > 8.0)]
+    print(kept)
+    counts = Array([1, 2, 3, 4])
+    print(counts[~(bids > 2.0)])
+    asks[bids > 2.0] = 0.0
+    print(asks)
+"#;
+    let (code, output, report) = run("optional_comparisons_chosen", program)?;
+    assert_eq!(code, Some(0), "{report}");
+    assert_eq!(
+        output,
+        "\x20  bid  ask\n\
+         0  2.5  2.0\n\
+         \x20  bid  ask\n\
+         0  1.5  2.0\n\
+         \x20  bid  ask\n\
+         0  1.5  2.0\n\
+         1  2.5  2.0\n\
+         2  4.0  9.0\n\
+         [2. 9.]\n\
+         [2. 9.]\n\
+         [1]\n\
+         [2. 3. 0. 0.]\n"
+    );
+    Ok(())
+}
+
+/// Arrays of different lengths do not compare, a mask of another length than the frame
+/// chooses nothing, and masks of different lengths do not combine: the program panics and
+/// names both lengths.
 #[test]
 fn lengths_must_match() -> io::Result<()> {
     let compared = r"
@@ -151,6 +238,19 @@ def main():
     assert_eq!(output, "");
     assert!(
         report.contains("panic: array lengths differ in dimension 0: 3 and 2"),
+        "{report}"
+    );
+    let combined = r"
+def main():
+    a: Array[f64 | None, 1] = Array([1.5, None])
+    c = Array([1.0, 2.0, 3.0])
+    print((a > 1.0) & (c > 1.0))
+";
+    let (code, output, report) = run("optional_comparisons_combined_length", combined)?;
+    assert_eq!(code, Some(101));
+    assert_eq!(output, "");
+    assert!(
+        report.contains("panic: array lengths differ in dimension 0: 2 and 3"),
         "{report}"
     );
     Ok(())

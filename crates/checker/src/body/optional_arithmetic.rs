@@ -1,7 +1,8 @@
 //! Arithmetic on arrays with missing values (decision 0045, part 3): `bids + asks`,
 //! `bids * 2.0` and `-bids` give an array with missing values that is `None` wherever a
 //! side is `None`, as pandas's nullable columns do. A comparison, `bids > 1.0`, gives an
-//! `Array[bool | None, 1]` the same way (Collins, 2026-11-14): `None` where a side is.
+//! `Array[bool | None, 1]` the same way (Collins, 2026-11-14): `None` where a side is. Two
+//! such masks combine with `&`, `|` and `^`, and `~` turns one around, by pandas's rules.
 
 use super::{Body, numbers, relations};
 use syntax::{NodeId, Operator};
@@ -12,7 +13,7 @@ impl<'db> Body<'db> {
     /// other side is one too, a one-dimensional `Array` of numbers or a single number, and
     /// the elements combine as two numbers would, so the result's elements have the type
     /// the same operator gives two plain arrays, an `f64` for `/` of two integers. `+`, `-`,
-    /// `*`, `/`, `//` and `%` are built.
+    /// `*`, `/`, `//` and `%` are built, and `&`, `|` and `^` of two masks of `bool`s.
     pub(super) fn optional_array_arithmetic(
         &mut self,
         node: NodeId,
@@ -23,6 +24,13 @@ impl<'db> Body<'db> {
         let symbol = operator.symbol();
         if relations::is_open(self.db, left) || relations::is_open(self.db, right) {
             return self.lowerer.unknown();
+        }
+        if matches!(
+            operator,
+            Operator::BitAnd | Operator::BitOr | Operator::BitXor
+        ) && let Some(mask) = self.optional_mask_operation(left, right)
+        {
+            return mask;
         }
         if !matches!(
             operator,
@@ -125,7 +133,7 @@ impl<'db> Body<'db> {
 
     /// `-values` or `+values` at `node` on the array with missing values `operand`, whose
     /// elements must be numbers: an array of the same type, `None` where `operand` is. `~`
-    /// waits for comparisons and masks on such arrays.
+    /// takes a mask of `bool`s and gives one; `~` of integers is not built.
     pub(super) fn optional_array_unary(
         &mut self,
         node: NodeId,
@@ -133,6 +141,9 @@ impl<'db> Body<'db> {
         operand: Type<'db>,
     ) -> Type<'db> {
         let symbol = operator.symbol();
+        if operator == Operator::Invert && self.is_mask(operand) {
+            return operand;
+        }
         if !matches!(operator, Operator::Negate | Operator::Plus) {
             return self.optional_array_unbuilt(node, &format!("`{symbol}`"));
         }
@@ -142,6 +153,29 @@ impl<'db> Body<'db> {
         let message = format!("`{symbol}` does not apply to `{}`", self.show(operand));
         self.lowerer
             .error(node, &message, "its elements are not numbers", None)
+    }
+
+    /// Whether `ty` is a one-dimensional array of `bool`s, with or without missing values.
+    fn is_mask(&self, ty: Type<'db>) -> bool {
+        let boolean = |element: Type<'db>| {
+            matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool))
+        };
+        match ty.kind(self.db) {
+            TypeKind::OptionalArray(element) | TypeKind::Array { element, rank: 1 } => {
+                boolean(*element)
+            }
+            _ => false,
+        }
+    }
+
+    /// The type of `left & right`, `left | right` or `left ^ right` where a side is a mask
+    /// that may hold `None` and the other is one too or an `Array[bool, 1]`: an
+    /// `Array[bool | None, 1]`, combined by the rules pandas uses, where `False & None` is
+    /// `False` and `True | None` is `True`. `None` for any other sides, which are not built.
+    fn optional_mask_operation(&self, left: Type<'db>, right: Type<'db>) -> Option<Type<'db>> {
+        let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
+        (self.is_mask(left) && self.is_mask(right))
+            .then(|| Type::new(self.db, TypeKind::OptionalArray(boolean)))
     }
 
     /// The type that stands for `ty` when the checker combines the operands of arithmetic on

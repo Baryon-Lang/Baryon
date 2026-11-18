@@ -119,6 +119,9 @@ pub(crate) fn ready<'db>(
         monomorphize::forward_callables(db, &mut body, &|item| callable_positions(db, item));
         monomorphize::trait_calls(db, &mut body, implementation);
     }
+    // A local that holds a module-level function, `f = sq`, is called directly in every body,
+    // not only in a generic instance, where `instantiate` already did it (roadmap 1.9.43).
+    monomorphize::direct_calls(db, &mut body);
     array_fusion::fuse(db, &mut body);
     drop_elaboration::elaborate(db, &mut body, declared);
     array_expansion::expand(db, &mut body, declared);

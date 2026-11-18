@@ -799,7 +799,8 @@ one copy of the receiving function per function passed to it, so the passed func
 and the call costs nothing ([decision 0026](../decisions/0026-functions-as-arguments.md)).
 The receiving function may pass the parameter on to another `Callable` parameter or copy it into
 a local. A local may hold a module-level function too, `f = sq`, with or without an annotation:
-`f: Callable[[f64], f64] = sq` checks `sq`'s signature, and `f` is still `sq`. Which function a
+`f: Callable[[f64], f64] = sq` checks `sq`'s signature, and `f` is still `sq`, so `f(2.0)` is a
+direct call of `sq`, and a function that raises raises through it. Which function a
 name holds must be known when compiling, so a local that holds one of two different functions
 depending on a branch is reported when building.
 

@@ -58,6 +58,11 @@ impl<'db> Builder<'db> {
                 self.assign(place, Rvalue::Use(operand), node);
             }
             SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation
+                if self.is_optional_mask_operation(node) =>
+            {
+                self.optional_mask_operation(place, node);
+            }
+            SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation
                 if self.is_optional_arithmetic(node) =>
             {
                 self.optional_arithmetic(place, node);

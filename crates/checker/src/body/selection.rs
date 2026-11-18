@@ -6,7 +6,9 @@
 //! - `a[positions]`, with `positions` an `Array[i64, 1]`, is a new array of the elements of `a`
 //!   at those positions, in that order.
 //!
-//! `a` is a rank-1 `Array` in this first version, and the result is one of the same type.
+//! `a` is a rank-1 `Array` in this first version, and the result is one of the same type. A
+//! mask may hold `None`, as `a[bids > 1.0]` does when `bids` has missing values: an element
+//! whose mask is `None` is not chosen, as in pandas.
 
 use super::Body;
 use syntax::{NodeId, Role, SyntaxKind};
@@ -24,23 +26,32 @@ impl<'db> Body<'db> {
         indices: &[NodeId],
     ) -> Option<Type<'db>> {
         let recorded = |index: &NodeId| self.recorded(*index);
-        if !self.is_optional_array(base)
-            && indices
-                .iter()
-                .filter_map(recorded)
-                .any(|ty| self.is_optional_array(ty))
+        let rank_one = |ty: Type<'db>| match ty.kind(self.db) {
+            TypeKind::Array { element, rank: 1 } => Some(*element),
+            _ => None,
+        };
+        // A mask that may hold `None` chooses where it is `True`, as in pandas.
+        let gaps = indices
+            .iter()
+            .filter_map(recorded)
+            .find_map(|ty| match ty.kind(self.db) {
+                TypeKind::OptionalArray(element) => Some(*element),
+                _ => None,
+            });
+        if let Some(element) = gaps
+            && !self.is_optional_array(base)
         {
-            let what = "choosing an array's elements with a mask";
+            let boolean = matches!(element.kind(self.db), TypeKind::Primitive(Primitive::Bool));
+            if indices.len() == 1 && boolean && rank_one(base).is_some() {
+                return Some(base);
+            }
+            let what = "choosing elements with it, other than of a rank-1 `Array` by a mask,";
             return Some(self.optional_array_unbuilt(node, what));
         }
         let by = indices
             .iter()
             .filter_map(recorded)
             .find(|&ty| self.is_any_array(ty))?;
-        let rank_one = |ty: Type<'db>| match ty.kind(self.db) {
-            TypeKind::Array { element, rank: 1 } => Some(*element),
-            _ => None,
-        };
         let chooses = rank_one(by).is_some_and(|element| {
             matches!(
                 element.kind(self.db),
@@ -87,7 +98,7 @@ impl<'db> Body<'db> {
         (sliced && text)
             || index
                 .and_then(|index| self.recorded(index))
-                .is_some_and(|ty| self.is_any_array(ty))
+                .is_some_and(|ty| self.is_any_array(ty) || self.is_optional_array(ty))
     }
 
     /// The type the checker recorded for the expression `node`, once it has been typed.

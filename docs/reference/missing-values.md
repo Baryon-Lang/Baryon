@@ -196,9 +196,9 @@ This prints `[0.5 None 1.5]`, then `[1.75 None 3.25]`.
 
 ## Comparisons
 
-`bids > 2.0` gives an `Array[bool | None, 1]`, `None` wherever `bids` is, and such a mask
-chooses rows of a frame, `quotes[quotes.bid > 2.0]`. See
-[Comparing missing values](missing-comparisons.md).
+`bids > 2.0` gives an `Array[bool | None, 1]`, `None` wherever `bids` is. Such masks
+combine with `&`, `|`, `^` and `~`, and choose rows of a frame, `quotes[quotes.bid > 2.0]`,
+and elements of an array. See [Comparing missing values](missing-comparisons.md).
 
 ## Text that may be `None`
 
@@ -440,7 +440,7 @@ def main():
 Each of these is a compile error that names what an array with missing values has today:
 
 - `**`, the bitwise operators and the in-place operators, `bids += 1.0`;
-- comparisons of text or `bool`s, and `&`, `|` and `~` of two masks that may hold `None`;
+- comparisons of text or `bool`s;
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `count`, `sum`, `mean`,
   `min`, `max`, `var` and `std`: `median`, `argsort`; and `min` and `max` of text;
 - a slice, a mask or a list of positions, `bids[1:3]`;

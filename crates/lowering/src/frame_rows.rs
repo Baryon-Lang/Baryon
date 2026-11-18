@@ -94,7 +94,7 @@ impl<'db> Builder<'db> {
     /// must have `count` elements, which is checked when the program runs. The mask is
     /// dropped when the statement ends. `None` after a report. Cost: two passes and two
     /// arrays of a byte for each element.
-    fn chosen_mask(&mut self, count: Operand<'db>, index: NodeId) -> Option<Local> {
+    pub(crate) fn chosen_mask(&mut self, count: Operand<'db>, index: NodeId) -> Option<Local> {
         let base = self.borrow(index);
         let values = base.clone().project(Projection::Field(VALUES));
         let bits = base.project(Projection::Field(VALIDITY));

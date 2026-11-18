@@ -317,11 +317,13 @@ fn whole_array_arithmetic<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db
     }
 }
 
-/// Turns each call of a local whose type is now one function's own type into a direct call of
-/// that function, in `body` and its outlined `prange` bodies. After substitution, a `Callable`
-/// parameter holds the function this instance received (decision 0026), so the call needs no
-/// function value and the backend can inline it.
-fn direct_calls<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
+/// Turns each call of a local whose type is one function's own type into a direct call of that
+/// function, in `body` and its outlined `prange` bodies. After substitution, a `Callable`
+/// parameter holds the function this instance received (decision 0026); in any body, a local
+/// written `f = sq` holds `sq`. Either way the call needs no function value and the backend can
+/// inline it. [`instantiate`] calls this for generic instances; the driver calls it for every
+/// other body, so `f = sq; f(2.0)` builds in `main` too (roadmap 1.9.43).
+pub fn direct_calls<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
     for outlined in &mut body.outlined {
         direct_calls(db, outlined);
     }
@@ -329,13 +331,18 @@ fn direct_calls<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
         let TerminatorKind::Call { callee, .. } = &mut block.terminator.kind else {
             continue;
         };
-        let Callee::Value(Operand::Copy(place) | Operand::Move(place)) = callee else {
-            continue;
+        let ty = match callee {
+            Callee::Value(Operand::Copy(place) | Operand::Move(place))
+                if place.projections.is_empty() =>
+            {
+                body.locals[place.local.index()].ty
+            }
+            // A local that holds a function reads as the function itself, a constant of its
+            // type that takes no bytes.
+            Callee::Value(Operand::Constant(constant)) => constant.ty,
+            _ => continue,
         };
-        if !place.projections.is_empty() {
-            continue;
-        }
-        if let TypeKind::Function { item, .. } = body.locals[place.local.index()].ty.kind(db) {
+        if let TypeKind::Function { item, .. } = ty.kind(db) {
             *callee = Callee::Function {
                 item: *item,
                 type_arguments: Vec::new(),

@@ -57,6 +57,10 @@ pub(crate) const LIBRARY: [(&str, &str); 77] = [
         include_str!("../library/frame_joins.byn"),
     ),
     (
+        "<std>/frame_masks.byn",
+        include_str!("../library/frame_masks.byn"),
+    ),
+    (
         "<std>/frame_missing.byn",
         include_str!("../library/frame_missing.byn"),
     ),
