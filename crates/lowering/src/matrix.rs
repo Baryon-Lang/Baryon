@@ -15,9 +15,18 @@
 //! When `right` is a vector, each entry is summed in a local along a row of `left`. The result
 //! is built in a temporary and moved to its place at the end, so `x = m @ x` reads the old `x`
 //! throughout.
+//!
+//! In a package built with `--blas` (decision 0040, roadmap 3.10.2), two `Array` matrices of
+//! one float type, `f32` or `f64`, multiply by a [`Builtin::MatrixProduct`] call instead of the
+//! loops: the system BLAS, many times faster on large matrices, without the fixed order, so
+//! the last bits can differ. Vectors, `Fixed` arrays, integers and mixed element types keep
+//! the loops.
 
 use crate::builder::Builder;
-use mir::{BinaryOperator, Local, Operand, Place, Projection, Rvalue};
+use mir::{
+    Argument, BinaryOperator, Builtin, Callee, Local, Operand, Place, Projection, Rvalue,
+    TerminatorKind,
+};
 use syntax::{NodeId, Role};
 use types::{Type, TypeKind};
 
@@ -63,22 +72,74 @@ impl<'db> Builder<'db> {
             Rvalue::Use(zeros)
         };
         self.assign(Place::from(result), start, node);
+        let float = self.is_float(element) || self.is_float_parameter(element);
+        let arrays = [left_type, right_type]
+            .iter()
+            .all(|ty| matches!(ty.kind(self.db), TypeKind::Array { .. }));
+        if *self.package.blas(self.db)
+            && float
+            && arrays
+            && (left_rank, right_rank) == (2, 2)
+            && (left_element, right_element) == (element, element)
+        {
+            let nothing = self.temporary(Type::new(self.db, TypeKind::None), node);
+            self.then(node, |target| TerminatorKind::Call {
+                callee: Callee::Builtin(Builtin::MatrixProduct),
+                arguments: vec![
+                    Argument::Borrow(left),
+                    Argument::Borrow(right),
+                    Argument::InOut(Place::from(result)),
+                ],
+                destination: Place::from(nothing),
+                target,
+                error: None,
+            });
+        } else {
+            self.loops(
+                &left,
+                &right,
+                result,
+                (left_element, right_element, element),
+                (&lengths, &inner),
+                (left_rank, right_rank),
+                node,
+            );
+        }
+        let moved = self.take(Place::from(result), ty);
+        self.assign(place, Rvalue::Use(moved), node);
+    }
+
+    /// The loop nest of `left @ right` into the temporary `result`, whose shape is `lengths`, with
+    /// `inner` the length `p` runs over: by rows when `right` is a matrix, by entries when it is
+    /// a vector.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the operands and shapes `@` already worked out"
+    )]
+    fn loops(
+        &mut self,
+        left: &Place,
+        right: &Place,
+        result: Local,
+        (left_element, right_element, element): (Type<'db>, Type<'db>, Type<'db>),
+        (lengths, inner): (&[Operand<'db>], &Operand<'db>),
+        (left_rank, right_rank): (u32, u32),
+        node: NodeId,
+    ) {
         let (total, product) = (self.temporary(element, node), self.temporary(element, node));
         let (a, b) = (self.temporary(element, node), self.temporary(element, node));
         let operands = Operands {
-            left: &left,
-            right: &right,
+            left,
+            right,
             result,
             elements: (left_element, right_element, element),
             locals: (a, b, product, total),
         };
         if right_rank == 2 {
-            self.by_rows(&operands, &lengths, &inner, left_rank == 2, node);
+            self.by_rows(&operands, lengths, inner, left_rank == 2, node);
         } else {
-            self.by_entries(&operands, &lengths, &inner, left_rank == 2, node);
+            self.by_entries(&operands, lengths, inner, left_rank == 2, node);
         }
-        let moved = self.take(Place::from(result), ty);
-        self.assign(place, Rvalue::Use(moved), node);
     }
 
     /// `a = left[...]` and `b = right[...]` at the indices `row` and `column`, each converted to

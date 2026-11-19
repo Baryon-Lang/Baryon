@@ -120,6 +120,35 @@ impl Session {
         Ok(file)
     }
 
+    /// Builds `@` of two `f32` or `f64` matrices through the system BLAS when `blas` is set,
+    /// as `baryon build --blas` asks (decision 0040), or with compiled loops when not, the
+    /// default. Only the compiled bodies change; checking does not. A program built with it
+    /// must be linked with a BLAS library, which `cblas_dgemm` and `cblas_sgemm` come from.
+    ///
+    /// ```
+    /// use driver::{Profile, Session};
+    ///
+    /// let mut session = Session::new();
+    /// session.add_file(
+    ///     "main.byn",
+    ///     "def main():\n    a = Array.zeros((2, 2))\n    print(a @ a)\n",
+    /// )?;
+    /// assert!(!session.compile(None, Profile::Release).unwrap().contains("cblas_dgemm"));
+    /// session.set_blas(true);
+    /// assert!(session.blas());
+    /// assert!(session.compile(None, Profile::Release).unwrap().contains("@cblas_dgemm"));
+    /// # Ok::<(), source::SourceError>(())
+    /// ```
+    pub fn set_blas(&mut self, blas: bool) {
+        self.package.set_blas(&mut self.database).to(blas);
+    }
+
+    /// Whether `@` of matrices is built through BLAS ([`set_blas`](Self::set_blas)).
+    #[must_use]
+    pub fn blas(&self) -> bool {
+        *self.package.blas(&self.database)
+    }
+
     /// Replaces the text of `file`, as an editor does on every keystroke. The file keeps its
     /// name and id.
     ///
