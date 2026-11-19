@@ -20,16 +20,6 @@ const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]
                      rest comes with roadmap item 3.24";
 
 impl<'db> Body<'db> {
-    /// Whether `ty` is a frame with a column that may hold `None`.
-    pub(super) fn has_missing_column(&self, ty: Type<'db>) -> bool {
-        match ty.kind(self.db) {
-            TypeKind::DataFrame { columns, .. } => columns
-                .iter()
-                .any(|column| matches!(column.element.kind(self.db), TypeKind::Optional(_))),
-            _ => false,
-        }
-    }
-
     /// Whether `ty` is an array with missing values.
     pub(super) fn is_optional_array(&self, ty: Type<'db>) -> bool {
         matches!(ty.kind(self.db), TypeKind::OptionalArray(_))
@@ -236,29 +226,5 @@ impl<'db> Body<'db> {
         };
         self.optional_array_unbuilt(target, what);
         true
-    }
-
-    /// Reports a value that holds an array with missing values, or a frame with a column
-    /// that may hold `None`, inside another value shown by `print` or an f-string at
-    /// `node`, which cannot write one yet. An array with missing values alone is shown, and
-    /// so is such a frame alone, and so are tuples and lists that hold such arrays (roadmap
-    /// 3.24.4). What is left is such an array in a dict or behind a `T | None`, and such a
-    /// frame inside anything.
-    pub(super) fn shows_no_optional_array(&mut self, node: NodeId, ty: Type<'db>) {
-        let alone = self.is_optional_array(ty) || self.has_missing_column(ty);
-        let holds = relations::holds_optional_array(self.db, ty)
-            || relations::holds_missing_column(self.db, ty);
-        if holds && !alone && !relations::shows_optional_arrays(self.db, ty) {
-            self.lowerer.error(
-                node,
-                "a value that holds an array with missing values cannot be shown yet",
-                "holds an array that may hold `None`",
-                Some(
-                    "show the array or the frame alone, `print(values)`, or in a tuple or a \
-                     list; a dict, a `T | None` and a frame inside another value are not \
-                     built",
-                ),
-            );
-        }
     }
 }

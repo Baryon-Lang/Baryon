@@ -1,5 +1,5 @@
-//! `print` and an f-string of a tuple or a list that holds an array with missing values
-//! (roadmap 3.24.4, decision 0045), built and run.
+//! `print` and an f-string of a tuple, a list, a dict or a `T | None` that holds an array
+//! with missing values or a frame (roadmap 3.24.4 and 3.24.5, decision 0045), built and run.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -62,4 +62,119 @@ fn tuples_and_lists_show_the_arrays_they_hold() {
     let (code, stdout, report) = run("holders-of-gap-arrays-shown", PROGRAM).unwrap();
     assert_eq!((code, report.as_str()), (Some(0), ""));
     assert_eq!(stdout, EXPECTED.concat());
+}
+
+/// A dict writes each entry as `key: value` with the array as it prints alone, a `T | None`
+/// writes the array or `None`, and a frame inside a tuple, a list or a dict writes its
+/// table where Python writes it, with or without missing values (roadmap 3.24.5). An empty
+/// dict is `{}`.
+#[test]
+fn dicts_optionals_and_held_frames_are_shown() {
+    let program = r#"
+def pick(flag: bool) -> Array[f64 | None, 1] | None:
+    if flag:
+        return Array([1.5, None])
+    return None
+
+
+def main():
+    bids: Array[f64 | None, 1] = Array([1.0, None])
+    names: Array[str | None, 1] = Array(["a", None])
+    df = DataFrame({"a": Array([1, 2]), "s": Array(["x", "y"])})
+    gaps = DataFrame({"bids": bids.copy(), "names": names.copy()})
+    print({1: bids.copy(), 2: bids.copy()})
+    print({"k": (names.copy(), "t"), "j": (names.copy(), "u")})
+    print({(1, "a"): [bids.copy()], (2, "b"): []})
+    print(pick(True), pick(False))
+    print((pick(True), 1, pick(False)))
+    print([pick(False), pick(True)])
+    print(f"{pick(True)} and {pick(False)}")
+    print((df.copy(), 1))
+    print([gaps.copy(), gaps.copy()])
+    print({"f": gaps.copy()})
+    print({True: {"in": bids.copy()}})
+    empty: dict[str, Array[f64 | None, 1]] = {}
+    print(empty, f"{empty}")
+"#;
+    let expected = [
+        "{1: [1.0 None], 2: [1.0 None]}\n",
+        "{'k': (['a' None], 't'), 'j': (['a' None], 'u')}\n",
+        "{(1, 'a'): [[1.0 None]], (2, 'b'): []}\n",
+        "[1.5 None] None\n",
+        "([1.5 None], 1, None)\n",
+        "[None, [1.5 None]]\n",
+        "[1.5 None] and None\n",
+        "(   a  s\n",
+        "0  1  x\n",
+        "1  2  y, 1)\n",
+        "[   bids names\n",
+        "0   1.0     a\n",
+        "1  <NA>  <NA>,    bids names\n",
+        "0   1.0     a\n",
+        "1  <NA>  <NA>]\n",
+        "{'f':    bids names\n",
+        "0   1.0     a\n",
+        "1  <NA>  <NA>}\n",
+        "{True: {'in': [1.0 None]}}\n",
+        "{} {}\n",
+    ];
+    let (code, stdout, report) = run("shown-entries", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, expected.concat());
+}
+
+/// The same texts for a dict and a frame that may be `None` borrowed as parameters, in
+/// `print` and in an f-string, and for a list built again in each turn of a loop, where
+/// every turn frees the texts it made.
+#[test]
+fn held_values_are_shown_from_parameters_and_in_loops() {
+    let program = r#"
+class Quote(Struct):
+    bid: f64 | None
+    size: i64
+
+
+def load(flag: bool) -> DataFrame[Quote] | None:
+    if flag:
+        bids: Array[f64 | None, 1] = Array([1.0, None])
+        return DataFrame({"bid": bids, "size": Array([3, 4])})
+    return None
+
+
+def show(held: dict[str, Array[i64 | None, 1]], maybe: DataFrame[Quote] | None) -> str:
+    print(held, maybe)
+    return f"{held}|{maybe}"
+
+
+def main():
+    sizes: Array[i64 | None, 1] = Array([None, 7])
+    held = {"sizes": sizes}
+    print(load(True))
+    print(load(False))
+    print(show(held, load(True)))
+    print(show(held, None))
+    for turn in range(2):
+        print([(load(turn == 0), turn)])
+"#;
+    let expected = [
+        "    bid  size\n",
+        "0   1.0     3\n",
+        "1  <NA>     4\n",
+        "None\n",
+        "{'sizes': [None 7]}     bid  size\n",
+        "0   1.0     3\n",
+        "1  <NA>     4\n",
+        "{'sizes': [None 7]}|    bid  size\n",
+        "0   1.0     3\n",
+        "1  <NA>     4\n",
+        "{'sizes': [None 7]} None\n",
+        "{'sizes': [None 7]}|None\n",
+        "[(    bid  size\n",
+        "0   1.0     3\n",
+        "1  <NA>     4, 0)]\n",
+        "[(None, 1)]\n",
+    ];
+    let (code, stdout, report) = run("shown-entries-borrowed", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, expected.concat());
 }

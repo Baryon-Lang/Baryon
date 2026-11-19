@@ -52,7 +52,6 @@ def uses(quotes: DataFrame[Quote], rows: list[Quote], prices: DataFrame[Price]):
     stacked = quotes.bid.median()
     for row in quotes.itertuples():
         total = row.bid + 1.0
-    print((quotes.copy(), 1))
     kept = quotes.bid
     wrong: DataFrame[Quote] = DataFrame({"price": Array([1.0]), "bid": Array(["a"])})
 "#;
@@ -133,24 +132,17 @@ error: this value may be `None`
    |                 ^^^^^^^ has type `f64 | None`
    = note: give it a name and check it first: `if value is not None:`
 
-error: a value that holds an array with missing values cannot be shown yet
-  --> main.byn:28:11
-   |
-28 |     print((quotes.copy(), 1))
-   |           ^^^^^^^^^^^^^^^^^^ holds an array that may hold `None`
-   = note: show the array or the frame alone, `print(values)`, or in a tuple or a list; a dict, a `T | None` and a frame inside another value are not built
-
 error: a column cannot be moved out of its `DataFrame`
-  --> main.byn:29:12
+  --> main.byn:28:12
    |
-29 |     kept = quotes.bid
+28 |     kept = quotes.bid
    |            ^^^^^^^^^^ moved out of the frame
    = note: a column can be read, passed to a call or assigned to; to keep it on its own, copy it: `quotes.bid.copy()`
 
 error: list items must share one type, found `f64 | None` and `str`
-  --> main.byn:30:79
+  --> main.byn:29:79
    |
-30 |     wrong: DataFrame[Quote] = DataFrame({"price": Array([1.0]), "bid": Array(["a"])})
+29 |     wrong: DataFrame[Quote] = DataFrame({"price": Array([1.0]), "bid": Array(["a"])})
    |                                                                               ^^^ a different type"#;
 
 /// A program that uses a frame with a column that may hold `None` only in the ways that are
