@@ -1,5 +1,6 @@
 //! The pairwise leaf built-ins (decision 0041): each calls its runtime function with the count,
 //! the start or the leaf sums, and stores the result. The C program stands in for the runtime.
+//! `SumAlong`, which array expansion always rewrites, is reported rather than built.
 
 use super::{Database, build, end, parameter, primitive, run, span};
 use mir::{Argument, Body, Builtin, Callee, Local, LocalKind, Operand, Place, TerminatorKind};
@@ -97,4 +98,54 @@ fn pairwise_built_ins_call_the_runtime() {
     let text = super::module(&database, &functions);
     let executable = build("pairwise", &text, MAIN);
     assert_eq!(run(&executable, &[]), Ok("3 228 3315\n".to_owned()));
+}
+
+/// `SumAlong` is array expansion's to rewrite into loops (decision 0041, amended), so a call of
+/// it that reaches the backend is reported, not built.
+#[test]
+fn sums_along_an_axis_are_left_to_array_expansion() {
+    let database = Database::default();
+    let f64 = primitive(&database, Primitive::Float(Float::F64));
+    let i64 = primitive(&database, Primitive::Integer(Integer::I64));
+    let matrix = Type::new(
+        &database,
+        TypeKind::Array {
+            element: f64,
+            rank: 2,
+        },
+    );
+    let vector = Type::new(
+        &database,
+        TypeKind::Array {
+            element: f64,
+            rank: 1,
+        },
+    );
+    let body = calling(
+        vector,
+        &[matrix, i64],
+        Builtin::SumAlong,
+        vec![
+            Argument::Borrow(Place::from(Local::new(1))),
+            Argument::Owned(Operand::Copy(Place::from(Local::new(2)))),
+        ],
+    );
+    let symbol = super::symbol_of(&database);
+    let sources = super::sources();
+    let mut module = crate::Module::new(
+        &database,
+        &sources,
+        &super::no_structs,
+        &super::no_names,
+        &symbol,
+    );
+    assert_eq!(
+        module
+            .define("along", &body, &[])
+            .map_err(|error| error.to_string()),
+        Err(
+            "the LLVM backend does not compile a sum along an axis left by array expansion yet"
+                .to_owned()
+        )
+    );
 }
