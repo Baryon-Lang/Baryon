@@ -43,6 +43,7 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |
 | [Linear algebra and FFT](linear-algebra.md) | `linalg` and `fft`: solving systems, factoring matrices and Fourier transforms, with NumPy's names, and `LinAlgError` |
 | [Files and processes](files-and-processes.md) | Command-line arguments, the exit status and environment variables: `sys` and `os` |
+| [CSV files](csv-files.md) | `DataFrame.read_csv(path)`: a CSV file read into a `DataFrame` whose type the program names, how each type of column reads its cells, empty cells as `None`, the errors, and the differences from pandas |
 | [Data files](data-files.md) | Text tables, NumPy's `.npy` files, FITS, NetCDF and HDF5, each with its Python library's names: `Array.loadtxt`, `Array.save`, `fits.getdata`, `netCDF4.Dataset` and `h5by.File` |
 | [Plotting](plotting.md) | The `byplot` and `ticker` modules: line, scatter, bar, histogram, image and contour plots with matplotlib's names and look, saved as SVG, PNG or PDF |
 | [Compression](compression.md) | `zlib`, `gzip`, `compression.zstd`, `bz2` and `lzma`, with Python's names, on byte arrays |

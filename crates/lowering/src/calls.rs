@@ -139,6 +139,9 @@ impl<'db> Builder<'db> {
             }
             (None, [rows]) if name == "DataFrame" => self.frame_from_rows(place, *rows, node),
             (None, [list]) if name == "concat" => self.frame_concat(place, *list, node),
+            (Some(("DataFrame", "read_csv")), [path]) => {
+                self.frame_read_csv(place, *path, node);
+            }
             (Some(("DataFrame", method)), [frame, rest @ ..]) => {
                 self.frame_method(place, method, (*frame, rest), node);
             }

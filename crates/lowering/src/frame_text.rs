@@ -209,12 +209,12 @@ impl<'db> Builder<'db> {
         self.frame_call(function, types, vec![from, rows], array, node)
     }
 
-    /// Calls the function `name` of `<std>/frames.byn`, `<std>/frame_joins.byn`,
-    /// `<std>/frame_missing.byn`, `<std>/frame_outer.byn`, `<std>/frame_masks.byn` or
-    /// `<std>/frame_order.byn` with `type_arguments`, borrowing each of `arguments`, and gives
-    /// the temporary of type `returns` that holds its result. The sort `ordered` of a column
-    /// of `i64` or of `f64` is called as `ordered_integers` or `ordered_floats`, which sort
-    /// those types in about `n` steps (roadmap 3.13.12).
+    /// Calls the function `name` of `<std>/frames.byn`, `<std>/frame_csv.byn`,
+    /// `<std>/frame_joins.byn`, `<std>/frame_missing.byn`, `<std>/frame_outer.byn`,
+    /// `<std>/frame_masks.byn` or `<std>/frame_order.byn` with `type_arguments`, borrowing
+    /// each of `arguments`, and gives the temporary of type `returns` that holds its result.
+    /// The sort `ordered` of a column of `i64` or of `f64` is called as `ordered_integers` or
+    /// `ordered_floats`, which sort those types in about `n` steps (roadmap 3.13.12).
     /// The functions called this way take every parameter borrowed and raise nothing. `None`
     /// after reporting that the library's file or the function is missing, which happens only
     /// when the library's files were left out of the package.
@@ -281,13 +281,14 @@ impl<'db> Builder<'db> {
         });
     }
 
-    /// The function `name` that `<std>/frames.byn`, `<std>/frame_joins.byn`,
-    /// `<std>/frame_missing.byn`, `<std>/frame_outer.byn`, `<std>/frame_masks.byn` or
-    /// `<std>/frame_order.byn` defines at its top level. Costs one pass over the top-level
-    /// statements of each file looked in.
-    fn frame_function(&self, name: &str) -> Option<Item<'db>> {
+    /// The function `name` that `<std>/frames.byn`, `<std>/frame_csv.byn`,
+    /// `<std>/frame_joins.byn`, `<std>/frame_missing.byn`, `<std>/frame_outer.byn`,
+    /// `<std>/frame_masks.byn` or `<std>/frame_order.byn` defines at its top level. Costs
+    /// one pass over the top-level statements of each file looked in.
+    pub(crate) fn frame_function(&self, name: &str) -> Option<Item<'db>> {
         [
             "frames",
+            "frame_csv",
             "frame_joins",
             "frame_missing",
             "frame_outer",

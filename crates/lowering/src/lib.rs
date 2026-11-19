@@ -301,6 +301,7 @@ mod facts;
 mod files;
 mod fits;
 mod frame_counts;
+mod frame_csv;
 mod frame_describe;
 mod frame_distinct;
 mod frame_dropna;
