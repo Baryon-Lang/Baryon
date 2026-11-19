@@ -89,6 +89,8 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `hyperu` | 512 ULP, of the same | 385 ULP at `hyperu(0.017, -146.0, 0.0019)` | 3e-256 at `hyperu(143.0, -27.0, 2.42)`, where the value is 3e-284; NaN at `hyperu(84.8, -14.7, 1.04)` |
 | `hyp2f1` | 128 ULP, of the same | 68 ULP at `hyp2f1(-13.0, -0.381, 0.0145, 0.995)` | 1.6e22 ULP at `hyp2f1(-18.000000001, 19.0, 1.445, 0.970)`, 3.6 million where the value is 0.035 |
 | `pbdv`, `pbvv`, with their derivatives | 32 ULP, of the largest of \|f\|, \|v ∂f/∂v\| and \|x ∂f/∂x\| | 10 ULP at the derivative of `pbdv(1.62, 3.31)` | 2.4e270 ULP at the derivative of `pbvv(4.0, -9.32)`, where the value is 151,288; NaN at `pbdv(54.4, -47.3)` |
+| `mathieu_a`, `mathieu_b` | 16 ULP, of the larger of \|a\| and \|q ∂a/∂q\| | 1 ULP | 4e15 ULP at `mathieu_a(22, -265.6)`, 92.3 where the value is 569.5 |
+| `mathieu_cem`, `mathieu_sem`, with their derivatives | 16 ULP, of the largest of \|f\|, \|q ∂f/∂q\|, \|x ∂f/∂x\| and the sum of the sizes of the Fourier terms | 7 ULP at the derivative of `mathieu_cem(1, 125.9, -175.8)` | 1.8e15 ULP at `mathieu_cem(22, -265.6, 90)`, −1.5e-5 where the value is −1.64 |
 | `pbwa`, with its derivative | 32 ULP, of the largest of \|f\|, \|a ∂f/∂a\| and \|x ∂f/∂x\| | 0 ULP: every case rounds as mpmath's value does | 20,104 ULP at `pbwa(3.50, 2.55)`; NaN past \|x\| = 5 |
 | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer` | 8 ULP for each degree, of the largest value the recurrence passes through | 29 ULP for `eval_gegenbauer` at degree 85 | 439 ULP for `eval_jacobi` at degree 85 |
 | `eval_hermite`, `eval_hermitenorm` | The same | 156 ULP at degree 78 | 698 ULP for `eval_hermite` at degree 75 |
@@ -677,6 +679,64 @@ keeps 11 digits of the value.
 - Where the value passes the largest `f64` it is ∞, and where it falls below the smallest it is
   0: `pbdv(1.0, 100.0)` is 0, the value being 2e-1084.
 
+## Mathieu functions
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `mathieu_a(m, q)` | The characteristic value a_m(q) of the even function ce_m, for a whole m from 0 up | `scipy.special.mathieu_a` |
+| `mathieu_b(m, q)` | The characteristic value b_m(q) of the odd function se_m, for a whole m from 1 up | `scipy.special.mathieu_b` |
+| `mathieu_cem(m, q, x)` | ce_m(x, q) and its derivative, as a tuple, with x in degrees | `scipy.special.mathieu_cem` |
+| `mathieu_sem(m, q, x)` | se_m(x, q) and its derivative, as a tuple, with x in degrees | `scipy.special.mathieu_sem` |
+
+Mathieu's equation y″ + (a − 2q cos 2x) y = 0 (DLMF 28.2) describes waves in an elliptic
+membrane or waveguide, a pendulum whose pivot is shaken, and the motion of an ion in a Paul
+trap. Its solutions of period π or 2π exist only for the characteristic values of a, one for
+each order m: a_m(q) for the even solution ce_m and b_m(q) for the odd solution se_m. At q = 0
+they are cos mx and sin mx, and a_m and b_m are m². The angle x is in degrees and the
+derivative per radian, as SciPy has them.
+
+```python
+from special import mathieu_a, mathieu_cem
+
+
+def main():
+    print(mathieu_a(2.0, 1.5))    # 4.746779468115387
+    value, slope = mathieu_cem(2.0, 1.5, 30.0)
+    print(value)                  # 0.7944735999023059
+    print(slope)                  # -1.1494447465718143
+```
+
+**How they work.** ce_m and se_m are Fourier series in cos kx or sin kx, with k running over the
+even or the odd numbers as m does. Their coefficients satisfy a three-term recurrence (DLMF
+28.4.5 to 28.4.8), so a characteristic value is an eigenvalue of a symmetric tridiagonal matrix,
+one matrix for each parity of m and kind, and the coefficients are its eigenvector. Bisection
+on the count of eigenvalues below a point finds the eigenvalue of rank m to within ¼, and
+Rayleigh quotient iteration finishes it. A twisted factorization of the matrix less the value
+gives the coefficients, as LAPACK's MRRR does, each step dividing by a pivot that is not small.
+They are scaled as SciPy scales them, so that the square of each function integrates to π over a
+period.
+
+The sign follows DLMF 28.2.29: ce_m(0) and se_m′(0) are above 0. For q above 0 the functions
+gather about x = 90° and are exponentially small at 0, so a sum for ce_m(0) cancels to nothing.
+There the sign is set at 90° instead, where the sum is largest and the count of zeros between
+0° and 90° fixes it for every q.
+
+**Accuracy.** mpmath has no Mathieu functions, so the reference values are the same eigenvalues
+and eigenvectors found at 60 digits (the script is in the fixtures' README). The characteristic
+values are measured against the larger of |a| and |q ∂a/∂q|, and the functions against the
+largest of |f|, |q ∂f/∂q|, |x ∂f/∂x| and the sum of the sizes of their Fourier terms. Where a
+function is exponentially small, away from where it gathers, those terms cancel, and the
+function keeps the precision of the largest. The tests reach orders to 40 and q from −1,000 to
+1,000. The worst error is 1 ULP for the characteristic values and 7 for the functions. SciPy
+misses 34 of the 1,254 cases by more than 64 ULP, and gives `mathieu_a(22, -265.6)` as 92.3
+where it is 569.5. A call costs about 7 µs, against SciPy's 1 µs, most of it in the bisection.
+
+### At the ends
+
+- An order that is not a whole number, or below 0 for `mathieu_a` and `mathieu_cem` or below 1
+  for `mathieu_b` and `mathieu_sem`, gives NaN, as SciPy gives. So do a NaN argument and an
+  infinite x.
+
 ## Incomplete gamma and beta functions
 
 | Function | Result | SciPy |
@@ -1202,6 +1262,7 @@ for those working on the library. A panic inside a function names the file it is
 | `special_integrals` | `exp1`, `expi`, `expn`, `sici`, `shichi` and `fresnel` |
 | `special_zeta` | `zeta`, `zetac` and `spence` |
 | `special_lambertw` | `lambertw` |
+| `special_mathieu` | `mathieu_a`, `mathieu_b`, `mathieu_cem` and `mathieu_sem` |
 | `special_orthogonal` | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_hermite`, `eval_hermitenorm`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer`, `lpmv` and `sph_harm_y` |
 | `special_carlson` | `elliprc`, `elliprd`, `elliprf`, `elliprg` and `elliprj`, and `carlson_rf`, `carlson_rd` and `carlson_rg`, the same integrals without the checks of their arguments |
 | `special_elliptic` | `ellipk`, `ellipkm1`, `ellipe`, `ellipkinc`, `ellipeinc` and `ellipj` |
@@ -1213,7 +1274,9 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18, Bessel functions of a complex
-argument (3.18.6) among them. Of 3.18.14, the Mathieu functions and the spheroidal wave
-functions are still to come. The hypergeometric functions and Carlson's integrals of complex
-arguments are not built. `loggamma` of a complex argument comes with the complex Bessel functions.
+argument (3.18.6) among them. Of 3.18.14, the modified Mathieu functions, `mathieu_modcem1`
+and the rest, the Fourier coefficients `mathieu_even_coef` and `mathieu_odd_coef`, and the
+spheroidal wave functions are still to come. The hypergeometric functions and Carlson's
+integrals of complex arguments are not built. `loggamma` of a complex argument comes with the
+complex Bessel functions.
 See [What builds today](status.md).

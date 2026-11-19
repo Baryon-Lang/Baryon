@@ -2028,6 +2028,195 @@ with open("gauss.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
 
+## Mathieu functions
+
+mpmath has no Mathieu functions, so the script below finds them at 60 digits itself, by
+methods that need no care about rounding at that precision: the characteristic value by
+bisection on the count of eigenvalues of the tridiagonal matrix the Fourier coefficients
+satisfy (DLMF 28.4.5 to 28.4.8), with 60 rows past the ones that matter, and the coefficients
+by a twisted factorization of that matrix less the value. Each is scaled and signed as SciPy
+and DLMF 28.2.29 say. In `mathieu.txt` each case holds, before the reference value, the size its
+error is measured against: for `mathieu_a` and `mathieu_b` the larger of |a| and |q ∂a/∂q|, and
+for the functions and their derivatives (`_d`) the largest of |f|, |q ∂f/∂q|, |x ∂f/∂x| and the
+sum of the sizes of the Fourier terms. The script recorded the cases with mpmath 1.4.1; run it
+from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+from mpmath import mpf
+
+
+def family(m, cosine):
+    if cosine:
+        return 'ce_odd' if m % 2 else 'ce_even'
+    return 'se_odd' if m % 2 else 'se_even'
+
+
+def rows(fam, q, n):
+    start = {'ce_even': 0, 'ce_odd': 1, 'se_odd': 1, 'se_even': 2}[fam]
+    orders = [start + 2 * i for i in range(n)]
+    diag = [mpf(k) ** 2 for k in orders]
+    if fam == 'ce_odd':
+        diag[0] = 1 + q
+    if fam == 'se_odd':
+        diag[0] = 1 - q
+    off = [q] * (n - 1)
+    if fam == 'ce_even':
+        off[0] = q * mpmath.sqrt(2)
+    return orders, diag, off
+
+
+def count(diag, off, x):
+    c = 0
+    p = mpf(1)
+    for i in range(len(diag)):
+        s = diag[i] - x - (off[i - 1] ** 2 / p if i else 0)
+        if s == 0:
+            s = mpf(-10) ** -200
+        if s < 0:
+            c += 1
+        p = s
+    return c
+
+
+def solve(m, q, cosine):
+    """Characteristic value and normalised coefficients at the working precision."""
+    q = mpf(q)
+    fam = family(m, cosine)
+    index = m // 2 if cosine else (m - 1) // 2
+    n = int(m / 2 + 3 * mpmath.sqrt(abs(q))) + 60
+    orders, diag, off = rows(fam, q, n)
+    low, high = -3 * abs(q) - 2, mpf(orders[-1]) ** 2 + 3 * abs(q) + 2
+    for _ in range(mpmath.mp.prec + 40):
+        mid = (low + high) / 2
+        if count(diag, off, mid) > index:
+            high = mid
+        else:
+            low = mid
+    a = (low + high) / 2
+    # The eigenvector by a twisted factorization of the matrix less a: pivots from the top and
+    # from the bottom, set to 1 where they meet with the smallest residue and carried outward,
+    # each step dividing by a pivot that is not small.
+    up = [mpf(0)] * n
+    down = [mpf(0)] * n
+    for i in range(n):
+        up[i] = diag[i] - a - (off[i - 1] ** 2 / up[i - 1] if i else 0)
+    for i in range(n - 1, -1, -1):
+        down[i] = diag[i] - a - (off[i] ** 2 / down[i + 1] if i < n - 1 else 0)
+    twist = min(range(n), key=lambda i: abs(up[i] + down[i] - diag[i] + a))
+    v = [mpf(0)] * n
+    v[twist] = mpf(1)
+    for i in range(twist - 1, -1, -1):
+        v[i] = -off[i] * v[i + 1] / up[i]
+    for i in range(twist + 1, n):
+        v[i] = -off[i - 1] * v[i - 1] / down[i]
+    norm = mpmath.sqrt(sum(t * t for t in v))
+    v = [t / norm for t in v]
+    sign = sum(v) if cosine else sum(k * t for k, t in zip(orders, v))
+    if sign < 0:
+        v = [-t for t in v]
+    if fam == 'ce_even':
+        v[0] /= mpmath.sqrt(2)
+    return a, orders, v
+
+
+def function(m, q, x_degrees, cosine):
+    a, orders, v = solve(m, q, cosine)
+    x = mpmath.mpf(x_degrees) * mpmath.pi / 180
+    if cosine:
+        f = sum(t * mpmath.cos(k * x) for k, t in zip(orders, v))
+        d = sum(-k * t * mpmath.sin(k * x) for k, t in zip(orders, v))
+    else:
+        f = sum(t * mpmath.sin(k * x) for k, t in zip(orders, v))
+        d = sum(k * t * mpmath.cos(k * x) for k, t in zip(orders, v))
+    return f, d
+
+
+def term_sizes(m, q, cosine):
+    """Σ |A_k| and Σ k |A_k|, the sizes of the terms of the value and of the derivative."""
+    _, orders, v = solve(m, q, cosine)
+    return sum(abs(t) for t in v), sum(k * abs(t) for k, t in zip(orders, v))
+
+random.seed(3181416)
+lines = []
+STEP = mpmath.mpf(10) ** -25
+
+
+def characteristic(m, q, cosine):
+    return solve(m, q, cosine)[0]
+
+
+def record_value(name, m, q, cosine):
+    # Measured against the larger of |a| and |q ∂a/∂q|, the error a rounding of q alone makes.
+    with mpmath.workdps(60):
+        pq = mpmath.mpf(q)
+        value = characteristic(m, pq, cosine)
+        up = characteristic(m, pq + STEP, cosine)
+        down = characteristic(m, pq - STEP, cosine)
+        along_q = (up - down) / (2 * STEP)
+        size = max(abs(value), abs(pq * along_q))
+    lines.append(f"{name} {float(m)!r} {q!r} {float(size)!r} {float(value)!r}")
+
+
+def record_function(name, m, q, x, cosine):
+    # Measured against the largest of |f|, |q ∂f/∂q|, |x ∂f/∂x| and the sum of the sizes of the
+    # Fourier terms, for the value and for the derivative alike: where the function is
+    # exponentially small, its terms cancel, and a sum keeps the precision of its largest term.
+    with mpmath.workdps(60):
+        pq, px = mpmath.mpf(q), mpmath.mpf(x)
+        f, d = function(m, pq, px, cosine)
+        f_up, d_up = function(m, pq + STEP, px, cosine)
+        f_down, d_down = function(m, pq - STEP, px, cosine)
+        _, d_right = function(m, pq, px + STEP, cosine)
+        _, d_left = function(m, pq, px - STEP, cosine)
+        radians = px * mpmath.pi / 180
+        second = (d_right - d_left) / (2 * STEP) * 180 / mpmath.pi
+        terms, slope_terms = term_sizes(m, pq, cosine)
+        sizes = [
+            max(abs(f), abs(pq * (f_up - f_down) / (2 * STEP)), abs(radians * d), terms),
+            max(abs(d), abs(pq * (d_up - d_down) / (2 * STEP)), abs(radians * second),
+                slope_terms),
+        ]
+    for suffix, value, size in (("", f, sizes[0]), ("_d", d, sizes[1])):
+        lines.append(f"{name}{suffix} {float(m)!r} {q!r} {x!r} {float(size)!r} {float(value)!r}")
+
+
+for _ in range(220):
+    # Orders mostly small, some to 40; q of either sign, near 0 and out to 1,000 and beyond m²,
+    # where the functions gather about one point; x across two periods in degrees.
+    m = random.choice([random.randint(0, 5), random.randint(0, 15), random.randint(0, 40)])
+    q = random.choice([
+        random.uniform(-5.0, 5.0),
+        math.copysign(10 ** random.uniform(-4.0, 3.0), random.uniform(-1, 1)),
+        random.uniform(-200.0, 200.0),
+    ])
+    x = random.choice([
+        random.uniform(-360.0, 360.0),
+        random.uniform(0.0, 180.0),
+        float(random.choice([0, 45, 90, 180, -90])),
+    ])
+    record_value("mathieu_a", m, q, True)
+    record_function("mathieu_cem", m, q, x, True)
+    if m >= 1:
+        record_value("mathieu_b", m, q, False)
+        record_function("mathieu_sem", m, q, x, False)
+# The ends: an order that is not a whole number of the kind, or NaN, gives NaN.
+nan = math.nan
+for name, args in [("mathieu_a", (-1.0, 1.0)), ("mathieu_a", (1.5, 1.0)),
+                   ("mathieu_b", (0.0, 1.0)), ("mathieu_a", (2.0, nan)),
+                   ("mathieu_b", (nan, 1.0))]:
+    lines.append(f"{name} {args[0]!r} {args[1]!r} 1.0 nan")
+for name, args in [("mathieu_cem", (1.5, 1.0, 10.0)), ("mathieu_sem", (0.0, 1.0, 10.0)),
+                   ("mathieu_cem", (1.0, 1.0, math.inf)), ("mathieu_sem", (1.0, nan, 10.0))]:
+    for suffix in ("", "_d"):
+        lines.append(f"{name}{suffix} {args[0]!r} {args[1]!r} {args[2]!r} 1.0 nan")
+with open("mathieu.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
 ## Parabolic cylinder functions
 
 In `parabolic.txt` each case holds, before the reference value, the size its error is measured

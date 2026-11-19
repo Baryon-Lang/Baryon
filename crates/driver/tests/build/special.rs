@@ -164,6 +164,7 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         "j0" | "j1" | "jn" | "y0" | "y1" | "i0" | "i1" | "i0e" | "i1e" | "k0" | "k1" | "k0e"
         | "k1e" | "kn" | "exp1" | "expi" | "expn" | "si" | "ci" | "shi" | "chi" | "fresnel_s"
         | "fresnel_c" | "zeta" | "zetac" | "hurwitz" | "spence" => 16.0,
+        _ if name.starts_with("mathieu_") => 16.0,
         "gammainc" | "gammaincc" | "gammaincinv" | "gammainccinv" => 16.0 * logarithm / shape,
         "betainc" | "betaincc" | "betaincinv" | "betainccinv" => 32.0 * logarithm / shape,
         "bdtr" | "bdtrc" | "bdtri" | "nbdtr" | "nbdtrc" | "nbdtri" | "pdtr" | "pdtrc" | "pdtri"
@@ -206,7 +207,9 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
 /// neighbour, since Newton's method fixes a node near 0 only to a fraction of that gap.
 /// The Bessel functions of real order and the spherical Bessel functions, and the Airy, Kelvin,
 /// Struve and hypergeometric functions, are measured against the size their case records in the
-/// place of `x`, as the tolerances above describe.
+/// place of `x`, as the tolerances above describe. So are the Mathieu functions, whose size is
+/// the largest of the value, |q ∂f/∂q|, |x ∂f/∂x| and the sum of the sizes of their Fourier
+/// terms, which cancel where the function is exponentially small.
 fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
         "gammaln" | "psi" | "betaln" | "expi" | "chi" | "ellipj_sn" | "ellipj_cn" | "ellipj_dn" => {
@@ -221,7 +224,12 @@ fn scale(name: &str, want: f64, x: f64) -> f64 {
         "j0" | "j1" | "jn" | "y0" | "y1" | "yn" if x.abs() > 1.0 => want
             .abs()
             .max((2.0 / (std::f64::consts::PI * x.abs())).sqrt()),
-        _ if name.starts_with("roots_") || name.starts_with("airy") => x,
+        _ if name.starts_with("roots_")
+            || name.starts_with("airy")
+            || name.starts_with("mathieu_") =>
+        {
+            x
+        }
         "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" | "struve"
         | "modstruve" | "hyp0f1" | "hyp1f1" | "hyperu" | "hyp2f1" | "pbdv" | "pbdv_d" | "pbvv"
         | "pbvv_d" | "pbwa" | "pbwa_d" => x,
