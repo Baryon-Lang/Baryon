@@ -273,7 +273,10 @@ def report(step: i64, name: str, energy: f64) -> str:
 
 `report(7, "argon", -1.25)` returns `step    7: argon =    -1.2500 {ok}`. Fill, alignment, sign,
 `#`, `0`, width, `,` and `_` grouping, precision and the type letters `d b o x X e E f F g G %`
-and `s` all work as in Python, and a value with no specification is written as `print` writes it.
+and `s` all work as in Python, and a value with no specification is written as `print` writes it,
+whatever its type: `f"{xs}"` of a list is `[1, 2, 3]` and `f"{p}"` of a struct is
+`Point(x=1.5, y=2.0)`. A specification on a value other than a number, `bool` or `str`, such as
+`{xs:>10}`, is not built yet.
 The compiler checks each specification against its value's type, so `{name:+}` on a `str` is a
 compile error rather than a run-time one. Not supported yet: the `z` flag, the `n` and `c` type
 letters, `!r`, `{value=}`, `\N{name}` escapes, and a

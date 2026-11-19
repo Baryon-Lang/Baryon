@@ -24,7 +24,7 @@
 //! | [`baryon_rt_chunk_count`], [`baryon_rt_parallel_for`] | Run a `prange` loop on the thread pool, in fixed chunks |
 //! | [`baryon_rt_accumulator_new`], [`baryon_rt_accumulator_slot`], [`baryon_rt_accumulator_table`], [`baryon_rt_accumulator_chunk_done`], [`baryon_rt_accumulator_finish`] | Give each chunk of a `prange` loop private blocks of an array listed in `accumulate=`, and combine them into it in the fixed tree |
 //! | [`baryon_rt_print_i64`], [`baryon_rt_print_u64`], [`baryon_rt_print_f64`], [`baryon_rt_print_f32`], [`baryon_rt_print_bool`], [`baryon_rt_print_str`] | Print one argument of `print` to standard output, or a field of an error that ends `main` to standard error, as Python writes it |
-//! | [`baryon_rt_text_new`], [`baryon_rt_text_str`], [`baryon_rt_text_i64`], [`baryon_rt_text_u64`], [`baryon_rt_text_f64`], [`baryon_rt_text_f32`], [`baryon_rt_text_bool`], [`baryon_rt_text_finish`] | Build an owned `str` from pieces, each value formatted with a [`FormatSpec`] as Python's `format` writes it: an f-string, a `copy()` or a `+` |
+//! | [`baryon_rt_text_new`], [`baryon_rt_text_str`], [`baryon_rt_text_i64`], [`baryon_rt_text_u64`], [`baryon_rt_text_f64`], [`baryon_rt_text_f32`], [`baryon_rt_text_bool`], [`baryon_rt_text_captured`], [`baryon_rt_text_finish`] | Build an owned `str` from pieces, each value formatted with a [`FormatSpec`] as Python's `format` writes it: an f-string, a `copy()` or a `+` |
 //! | [`baryon_rt_sum_f64`], [`baryon_rt_sum_f32`] | Add a float array's elements in `NumPy`'s pairwise order, for `a.sum()` |
 //! | [`baryon_rt_sum_strided_f64`], [`baryon_rt_sum_strided_f32`] | The same for an `Array` that may be a view, with any strides |
 //! | [`baryon_rt_pairwise_leaves`], [`baryon_rt_pairwise_leaf_end`], [`baryon_rt_pairwise_combine_f64`], [`baryon_rt_pairwise_combine_f32`] | Sum a whole-array expression one pairwise leaf at a time without storing it, with the bits of `a.sum()` (decision 0041) |
@@ -113,7 +113,7 @@ mod sum;
 pub use abi::{
     ArrayHeader, CompletedProcess, ELEMENT_BOOL, ELEMENT_COMPLEX64, ELEMENT_COMPLEX128,
     ELEMENT_F32, ELEMENT_F64, ELEMENT_I8, ELEMENT_I16, ELEMENT_I32, ELEMENT_I64, ELEMENT_U8,
-    ELEMENT_U16, ELEMENT_U32, ELEMENT_U64, ElementLayout, OsError, OwnedList, OwnedText,
+    ELEMENT_U16, ELEMENT_U32, ELEMENT_U64, ElementLayout, Gemm, OsError, OwnedList, OwnedText,
     RaisedEndOfInput, RaisedError, RaisedValueError, TextBuilder, TextValue, ValueError,
     baryon_rt_accumulator_chunk_done, baryon_rt_accumulator_finish, baryon_rt_accumulator_new,
     baryon_rt_accumulator_slot, baryon_rt_accumulator_table, baryon_rt_allocate,
@@ -128,27 +128,29 @@ pub use abi::{
     baryon_rt_file_read_lines, baryon_rt_file_standard, baryon_rt_file_write, baryon_rt_fits_cards,
     baryon_rt_fits_read, baryon_rt_fits_write, baryon_rt_flush, baryon_rt_hdf5_chunks,
     baryon_rt_hdf5_open, baryon_rt_hdf5_read, baryon_rt_hdf5_write, baryon_rt_input,
-    baryon_rt_netcdf_chunks, baryon_rt_netcdf_define, baryon_rt_netcdf_open, baryon_rt_netcdf_read,
-    baryon_rt_netcdf_write, baryon_rt_pairwise_combine_f32, baryon_rt_pairwise_combine_f64,
-    baryon_rt_pairwise_leaf_end, baryon_rt_pairwise_leaves, baryon_rt_panic,
-    baryon_rt_panic_exponent, baryon_rt_panic_index, baryon_rt_panic_key,
-    baryon_rt_panic_length_mismatch, baryon_rt_panic_slice, baryon_rt_parallel_for,
-    baryon_rt_path_is, baryon_rt_path_join, baryon_rt_path_list, baryon_rt_path_make_directory,
-    baryon_rt_path_part, baryon_rt_path_remove, baryon_rt_path_rename, baryon_rt_philox_new,
-    baryon_rt_philox_uniform, baryon_rt_power_complex64, baryon_rt_power_complex128,
-    baryon_rt_print_array, baryon_rt_print_bool, baryon_rt_print_complex64,
-    baryon_rt_print_complex128, baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64,
-    baryon_rt_print_str, baryon_rt_print_str_quoted, baryon_rt_print_u64, baryon_rt_round_f32,
-    baryon_rt_round_f64, baryon_rt_round_i64, baryon_rt_sort, baryon_rt_sort_str,
-    baryon_rt_str_compare, baryon_rt_str_contains, baryon_rt_str_encode, baryon_rt_str_ends_with,
-    baryon_rt_str_find, baryon_rt_str_join, baryon_rt_str_length, baryon_rt_str_lower,
-    baryon_rt_str_parse_float, baryon_rt_str_parse_int, baryon_rt_str_replace, baryon_rt_str_split,
+    baryon_rt_matrix_product_f32, baryon_rt_matrix_product_f64, baryon_rt_netcdf_chunks,
+    baryon_rt_netcdf_define, baryon_rt_netcdf_open, baryon_rt_netcdf_read, baryon_rt_netcdf_write,
+    baryon_rt_pairwise_combine_f32, baryon_rt_pairwise_combine_f64, baryon_rt_pairwise_leaf_end,
+    baryon_rt_pairwise_leaves, baryon_rt_panic, baryon_rt_panic_exponent, baryon_rt_panic_index,
+    baryon_rt_panic_key, baryon_rt_panic_length_mismatch, baryon_rt_panic_slice,
+    baryon_rt_parallel_for, baryon_rt_path_is, baryon_rt_path_join, baryon_rt_path_list,
+    baryon_rt_path_make_directory, baryon_rt_path_part, baryon_rt_path_remove,
+    baryon_rt_path_rename, baryon_rt_philox_new, baryon_rt_philox_uniform,
+    baryon_rt_power_complex64, baryon_rt_power_complex128, baryon_rt_print_array,
+    baryon_rt_print_bool, baryon_rt_print_complex64, baryon_rt_print_complex128,
+    baryon_rt_print_f32, baryon_rt_print_f64, baryon_rt_print_i64, baryon_rt_print_str,
+    baryon_rt_print_str_quoted, baryon_rt_print_u64, baryon_rt_round_f32, baryon_rt_round_f64,
+    baryon_rt_round_i64, baryon_rt_sort, baryon_rt_sort_str, baryon_rt_str_compare,
+    baryon_rt_str_contains, baryon_rt_str_encode, baryon_rt_str_ends_with, baryon_rt_str_find,
+    baryon_rt_str_join, baryon_rt_str_length, baryon_rt_str_lower, baryon_rt_str_parse_float,
+    baryon_rt_str_parse_int, baryon_rt_str_replace, baryon_rt_str_split,
     baryon_rt_str_split_whitespace, baryon_rt_str_starts_with, baryon_rt_str_strip,
     baryon_rt_str_strip_characters, baryon_rt_str_take, baryon_rt_str_upper,
     baryon_rt_subprocess_run, baryon_rt_sum_f32, baryon_rt_sum_f64, baryon_rt_sum_strided_f32,
-    baryon_rt_sum_strided_f64, baryon_rt_text_bool, baryon_rt_text_complex64,
-    baryon_rt_text_complex128, baryon_rt_text_f32, baryon_rt_text_f64, baryon_rt_text_finish,
-    baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str, baryon_rt_text_u64,
+    baryon_rt_sum_strided_f64, baryon_rt_text_bool, baryon_rt_text_captured,
+    baryon_rt_text_complex64, baryon_rt_text_complex128, baryon_rt_text_f32, baryon_rt_text_f64,
+    baryon_rt_text_finish, baryon_rt_text_i64, baryon_rt_text_new, baryon_rt_text_str,
+    baryon_rt_text_u64,
 };
 pub use accumulate::Accumulator;
 pub use dict::{DictLayout, KeyPart, STR_PART, Table};

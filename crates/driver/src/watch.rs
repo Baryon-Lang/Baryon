@@ -32,9 +32,9 @@
 //! macOS; a look every 200 ms keeps the wait for a save well under the rebuild itself.
 
 use crate::link::Objects;
-use crate::{Loaded, compile_loaded, package};
+use crate::{BuildOptions, Loaded, compile_loaded, package};
 use database::File;
-use driver::{Profile, Session};
+use driver::Session;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write as _};
@@ -59,14 +59,16 @@ struct Package {
 }
 
 impl Package {
-    /// Reads every file of the package rooted at `root` into a new session.
+    /// Reads every file of the package rooted at `root` into a new session, which builds `@`
+    /// of matrices through BLAS when `blas` is set.
     ///
     /// # Errors
     ///
     /// Fails with a message when the directory cannot be listed, or a file read or too large.
-    fn load(root: &Path) -> Result<Self, String> {
+    fn load(root: &Path, blas: bool) -> Result<Self, String> {
         let paths = package::files(root).map_err(|error| format!("{}: {error}", root.display()))?;
         let mut session = Session::new();
+        session.set_blas(blas);
         let mut files = BTreeMap::new();
         for path in paths {
             let text = read(&path)?;
@@ -107,7 +109,7 @@ impl Package {
     }
 }
 
-/// Runs `baryon watch` on the package rooted at `root`: builds `output` for `profile`, then
+/// Runs `baryon watch` on the package rooted at `root`: builds `output` as `build` asks, then
 /// rebuilds it after each change to the package's files, running it after each build when `run`
 /// is set. Returns only on an error that a save cannot fix.
 ///
@@ -118,12 +120,12 @@ impl Package {
 pub(crate) fn watch(
     root: &Path,
     output: &Path,
-    profile: Profile,
+    options: BuildOptions,
     run: bool,
 ) -> Result<ExitCode, String> {
     let mut stamps = look(root)?;
     let started = Instant::now();
-    let mut package = Package::load(root)?;
+    let mut package = Package::load(root, options.blas)?;
     let mut load = started.elapsed();
     let mut objects = Objects::default();
     loop {
@@ -131,7 +133,7 @@ pub(crate) fn watch(
             &package.loaded(load),
             root,
             output,
-            profile,
+            options,
             run,
             &mut objects,
         )?;
@@ -150,7 +152,7 @@ pub(crate) fn watch(
                     .filter(|&(path, stamp)| stamps.get(path) != Some(stamp))
                     .try_for_each(|(path, _)| package.update(path))
             } else {
-                Package::load(root).map(|loaded| package = loaded)
+                Package::load(root, options.blas).map(|loaded| package = loaded)
             };
             load = started.elapsed();
             match refreshed {
@@ -191,21 +193,25 @@ fn rebuild(
     loaded: &Loaded<'_>,
     root: &Path,
     output: &Path,
-    profile: Profile,
+    options: BuildOptions,
     run: bool,
     objects: &mut Objects,
 ) -> Result<(), String> {
     let started = Instant::now();
+    // `watch` prints its own report of each build instead of the stages' times.
+    let quiet = BuildOptions {
+        timings: false,
+        ..options
+    };
     let built = compile_loaded(
         loaded,
         root,
         output,
-        profile,
-        false,
+        quiet,
         Some(objects),
         |session, directory| {
             session
-                .compile_chunks(directory, profile)
+                .compile_chunks(directory, options.profile)
                 .map(|modules| (modules, Vec::new()))
         },
     )?;

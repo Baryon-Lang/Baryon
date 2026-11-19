@@ -100,6 +100,20 @@ const DEBUG: &[&str] = &["-O0"];
 /// exact, so results do not change.
 const MATH_LIBRARY: &str = "-lm";
 
+/// The libraries a program built with `--blas` is linked with, for `cblas_dgemm` and
+/// `cblas_sgemm` (decision 0040): Accelerate, part of macOS, or `OpenBLAS` on Linux, which the
+/// `libopenblas-dev` package installs on Debian and Ubuntu.
+const BLAS_LIBRARIES: &[&str] = if cfg!(target_os = "macos") {
+    &["-framework", "Accelerate"]
+} else {
+    &["-lopenblas"]
+};
+
+/// What a `--blas` build that cannot find `OpenBLAS` says, after the linker's own message.
+const BLAS_MISSING: &str = "`--blas` links with OpenBLAS, which was not found: install it with \
+     `sudo apt install libopenblas-dev` on Debian or Ubuntu, or `sudo dnf install openblas-devel` \
+     on Fedora";
+
 /// Compiles the LLVM modules `modules`, at `-O2` for a release build and `-O0` for a debug build
 /// (`optimize`, decision 0048), and links them with the runtime into the executable `output`,
 /// keeping the modules' line tables (`-g`) so debuggers and panic backtraces show `.byn` lines.
@@ -111,6 +125,9 @@ const MATH_LIBRARY: &str = "-lm";
 /// they were, so `dsymutil` collects them into `output.dSYM` beside the executable before the
 /// scratch directory, and the object files with it, is removed. `clang` runs `dsymutil` itself
 /// only for source files it compiles, not for an LLVM module.
+///
+/// With `blas`, the program is linked with the system BLAS ([`BLAS_LIBRARIES`]); a Linux
+/// machine without `OpenBLAS` gets an error saying how to install it.
 ///
 /// With `kept`, a module whose text is there skips `clang`: its kept machine code is written
 /// to the scratch directory instead. Afterwards `kept` holds the machine code of exactly this
@@ -124,6 +141,7 @@ pub(crate) fn link(
     modules: &[String],
     output: &Path,
     optimize: bool,
+    blas: bool,
     kept: Option<&mut Objects>,
 ) -> Result<Linked, String> {
     let runtime = runtime()?;
@@ -162,6 +180,7 @@ pub(crate) fn link(
             .args(&objects)
             .arg(MATH_LIBRARY)
             .arg(&runtime)
+            .args(if blas { BLAS_LIBRARIES } else { &[] })
             .args(SYSTEM_LIBRARIES)
             .arg(DROP_UNUSED)
             .arg("-o")
@@ -181,7 +200,19 @@ pub(crate) fn link(
         let linked = linking
             .wait_with_output()
             .map_err(|error| format!("{clang}: {error}"))
-            .and_then(|finished| clang_failure(&clang, &finished));
+            .and_then(|finished| {
+                let missing = blas
+                    && !finished.status.success()
+                    && String::from_utf8_lossy(&finished.stderr).contains("openblas");
+                if missing {
+                    Err(format!(
+                        "{}\n{BLAS_MISSING}",
+                        String::from_utf8_lossy(&finished.stderr).trim_end()
+                    ))
+                } else {
+                    clang_failure(&clang, &finished)
+                }
+            });
         linked.and(kept)
     })
     .and_then(|()| {

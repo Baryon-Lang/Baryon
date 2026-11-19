@@ -146,3 +146,18 @@ change, and match NumPy on the hard cases the tests list: Jordan blocks, badly s
 matrices, nearly repeated and complex conjugate eigenvalues, companion matrices, zero and
 rank-deficient matrices. They are slower than LAPACK on large matrices, about ten times for an
 `svd` of 300 × 300, a gap for roadmap 3.1 to 3.3 to close as for the rest of `linalg`.
+
+## Amendment, 2026-11-14: how `--blas` links on Linux
+
+Collins chose dynamic linking on 2026-11-14 (roadmap 3.10.2).
+
+On Linux, a program built with `--blas` is linked with `-lopenblas`, the shared library. It adds
+nothing to the program's size, but the machine that runs the program needs OpenBLAS's shared
+library (the `libopenblas0` package); without it the program does not start, and the system's
+loader names `libopenblas.so.0`. The other option, linking `libopenblas.a` into the program, made
+every program about 27 MB larger, because OpenBLAS carries kernels for every processor. The
+machine that builds needs `libopenblas-dev`; a build without it stops with an error that says how
+to install it, and never falls back to compiled loops, since the flag asked for BLAS. macOS links
+Accelerate, which is part of the system. A program built without `--blas` refers to no BLAS
+library: the runtime receives `cblas_dgemm` or `cblas_sgemm` only as an address that the compiled
+program passes in.

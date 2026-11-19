@@ -3,6 +3,8 @@
 //! `NumPy`'s numbers bit for bit, so `NumPy` solves the very same system. Results are printed to 12
 //! significant digits, since `LAPACK`, under `NumPy`, adds in its own order.
 
+mod blas;
+
 use super::examples::prints;
 use super::{baryon_build, package, panic_report, stderr};
 use std::process::Command;
