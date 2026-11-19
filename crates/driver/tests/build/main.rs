@@ -29,6 +29,7 @@ mod fft;
 mod files;
 mod fits;
 mod float_generics;
+mod frame_arguments;
 mod frame_benchmark;
 mod frame_columns;
 mod frame_csv;

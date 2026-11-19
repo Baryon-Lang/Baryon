@@ -279,7 +279,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The value the call `node` gives its keyword argument `name`, if it writes one.
-    fn keyword_of(&self, node: NodeId, name: &str) -> Option<NodeId> {
+    pub(crate) fn keyword_of(&self, node: NodeId, name: &str) -> Option<NodeId> {
         self.written(node)
             .into_iter()
             .filter(|&argument| self.tree.kind(argument) == SyntaxKind::Keyword)

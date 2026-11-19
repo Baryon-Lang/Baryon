@@ -14,7 +14,9 @@
 //! A column that may hold `None` is sorted by the values that are there, and its rows that
 //! hold `None` come last in both directions, in the order they had (decision 0045): the row
 //! positions are split in two by the validity bitmap, the first part is sorted, and the two
-//! are put end to end again, three more arrays of positions.
+//! are put end to end again, three more arrays of positions. `na_position="first"` (roadmap
+//! 3.13.16) puts the rows with a missing value first instead: the rows that hold `None`, then
+//! those that hold NaN, which costs one more pass over a column of real numbers.
 
 use crate::builder::Builder;
 use crate::optional_arrays::VALUES;
@@ -35,7 +37,7 @@ impl<'db> Builder<'db> {
             .into_iter()
             .flat_map(|list| self.tree.children_with(list, Role::Item))
             .collect();
-        let (mut by, mut ascending) = (None, None);
+        let (mut by, mut ascending, mut first) = (None, None, false);
         for argument in written {
             if self.tree.kind(argument) != SyntaxKind::Keyword {
                 by = Some(argument);
@@ -46,6 +48,9 @@ impl<'db> Builder<'db> {
             match name.map(|name| self.text_of(name)) {
                 Some("by") => by = value,
                 Some("ascending") => ascending = value,
+                Some("na_position") => {
+                    first = value.is_some_and(|value| self.written_text(value) == "first");
+                }
                 _ => {}
             }
         }
@@ -99,7 +104,8 @@ impl<'db> Builder<'db> {
                 several => several.get(index).copied().unwrap_or(rising),
             };
             let values = source.clone().project(Projection::Field(position));
-            let Some(next) = self.ordered_by(values, column.element, (order, direction), key)
+            let Some(next) =
+                self.ordered_by(values, column.element, (order, direction, first), key)
             else {
                 return;
             };
@@ -109,18 +115,21 @@ impl<'db> Builder<'db> {
     }
 
     /// The row positions `by.0` put in the order of the column stored at `values`, whose
-    /// elements are `element`s, rising when the `bool` local `by.1` is true: one stable
-    /// sort by one key of `sort_values`, at `key`. The new positions are dropped when the
+    /// elements are `element`s, rising when the `bool` local `by.1` is true, with the rows
+    /// that hold a missing value first when `by.2`, as `na_position="first"` asks: one
+    /// stable sort by one key of `sort_values`, at `key`. The new positions are dropped when the
     /// statement ends. `None` after a report.
     ///
     /// A column of `str` is sorted by the integers that stand for its text. A column that
     /// may hold `None` is sorted by the values that are there, and the rows that hold `None`
-    /// go last in both directions, in the order they had.
+    /// go last in both directions, in the order they had. Put first, the rows that hold
+    /// `None` come before those that hold NaN, the mirror of their order when last; the
+    /// library's `missing_first` moves the NaN rows of a column of real numbers.
     fn ordered_by(
         &mut self,
         values: Place,
         element: Type<'db>,
-        (order, direction): (Local, Local),
+        (order, direction, first): (Local, Local, bool),
         key: NodeId,
     ) -> Option<Local> {
         let positions = self.positions_type();
@@ -143,11 +152,24 @@ impl<'db> Builder<'db> {
         } else {
             ("ordered", vec![element])
         };
+        let floats = matches!(
+            element.kind(self.db),
+            TypeKind::Primitive(Primitive::Float(_))
+        );
+        let column = values.clone();
         let arguments = vec![values, Place::from(order), Place::from(direction)];
         let mut sorted = self.frame_call(function, type_arguments, arguments, positions, key)?;
         self.drop_later(sorted);
+        if first && floats {
+            let arguments = vec![column, Place::from(sorted)];
+            sorted = self.frame_call("missing_first", vec![element], arguments, positions, key)?;
+            self.drop_later(sorted);
+        }
         if let Some(gone) = gone {
-            let ends = vec![Place::from(sorted), Place::from(gone)];
+            let mut ends = vec![Place::from(sorted), Place::from(gone)];
+            if first {
+                ends.reverse();
+            }
             let int = self.int_type();
             sorted = self.frame_call("joined", vec![int], ends, positions, key)?;
             self.drop_later(sorted);

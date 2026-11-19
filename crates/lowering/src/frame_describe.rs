@@ -1,9 +1,11 @@
 //! Summing up the columns of a frame (decision 0045, roadmap 3.13.9): `df.describe()`, a
 //! new frame of eight rows: the column `statistic` with the names `count`, `mean`, `std`,
 //! `min`, `25%`, `50%`, `75%` and `max`, then one `f64` column for each column of numbers.
+//! `percentiles=` puts the percentiles it lists in place of the three quartiles (roadmap
+//! 3.13.16), so the frame has five rows and one for each.
 //!
 //! The work is Baryon code in the standard library's `<std>/frame_joins.byn` (decision
-//! 0038): `statistic_names` makes the first column, and `described` the eight numbers of one
+//! 0038): `statistic_names` makes the first column, and `described` the numbers of one
 //! column. A column that may hold `None` is described by the values that are there. Cost for
 //! `n` rows: a copy and a sort of each column of numbers, and one more copy
 //! of a column that is not `f64`.
@@ -28,8 +30,24 @@ impl Builder<'_> {
         let float = Type::new(self.db, TypeKind::Primitive(Primitive::Float(Float::F64)));
         let numbers = self.array_of(float);
         let text = erase(self.db, Type::new(self.db, TypeKind::TextArray));
-        let Some(names) = self.frame_call("statistic_names", Vec::new(), Vec::new(), text, node)
-        else {
+        // The percentiles shown: the list written, or the quartiles the library gives.
+        let written = self
+            .written(node)
+            .first()
+            .map(|&argument| self.keyword_value(argument));
+        let parts = if let Some(written) = written {
+            self.borrow(written)
+        } else {
+            let list = Type::new(self.db, TypeKind::List(float));
+            let Some(parts) = self.frame_call("quartiles", Vec::new(), Vec::new(), list, node)
+            else {
+                return;
+            };
+            self.drop_later(parts);
+            Place::from(parts)
+        };
+        let shown = vec![parts.clone()];
+        let Some(names) = self.frame_call("statistic_names", Vec::new(), shown, text, node) else {
             return;
         };
         let mut made = vec![Operand::Move(Place::from(names))];
@@ -65,9 +83,13 @@ impl Builder<'_> {
                 _ => (stored, column.element),
             };
             let values = self.converted(values, element, float, node);
-            let Some(described) =
-                self.frame_call("described", Vec::new(), vec![values], numbers, node)
-            else {
+            let Some(described) = self.frame_call(
+                "described",
+                Vec::new(),
+                vec![values, parts.clone()],
+                numbers,
+                node,
+            ) else {
                 return;
             };
             made.push(Operand::Move(Place::from(described)));

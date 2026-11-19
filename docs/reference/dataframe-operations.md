@@ -51,6 +51,10 @@ print(trades.sort_values(["price", "volume"], ascending=[False, True]))
   before `True`.
 - **`None` goes after everything**, rising or falling, in a
   [column that may hold `None`](missing-values.md#in-a-dataframe).
+- **`na_position="first"` puts missing values first** instead, in every column sorted by
+  and in both directions, as in pandas: `df.sort_values("price", na_position="first")`. The
+  rows that hold `None` come before those that hold NaN, which pandas does not tell
+  apart. It is `"first"` or `"last"`, written out.
 - **A column of `str` is sorted by code point**, the order of Python's `<` on `str`, as in
   pandas: `"Zed"` comes before `"apple"`, and the empty text comes first. The text is
   turned into whole numbers in that order first, which costs one more sort of that column
@@ -249,7 +253,13 @@ With trades of the symbols 7, 3 and 5 and the listings above, this prints:
 
 `df.drop_duplicates()` gives a new frame without the rows that repeat: of the rows that
 hold the same value in every column, the first is kept. `subset` names the columns to
-compare, one or a list.
+compare, one or a list, and `keep` says which of the rows that repeat stays:
+
+| `keep` | The rows kept |
+| --- | --- |
+| `"first"`, or left out | The first of each set of rows that repeat |
+| `"last"` | The last of each set |
+| `False` | Only the rows that do not repeat at all |
 
 ```python
 print(trades.drop_duplicates(subset="symbol"))
@@ -271,8 +281,9 @@ With four trades of the symbols 7, 3, 7 and 5, this prints the first trade of ea
   one more sort of that column, comparing text.
 - **The frame is read, not taken.**
 - **A complex column cannot be compared yet**: leave it out with `subset`.
-- **Only the first of the rows that repeat can be kept.** pandas's `keep="last"` and
-  `keep=False`, and its `inplace=` and `ignore_index=`, are not built.
+- **`keep` is written out**, as `"first"`, `"last"` or `False`; anything else is a compile
+  error, where pandas raises `ValueError`. pandas's `inplace=` and `ignore_index=` are not
+  built.
 - **Cost:** for `n` rows, a sort of `n` row positions for each column compared, then one
   pass and one copy of the rows kept.
 
@@ -305,8 +316,20 @@ With four trades of the symbols 7, 3, 7 and 5, this prints:
 - **No column counted by may be named `count`**, since the result would have two columns
   of that name. This is a compile error; `rename` the column first.
 - **The frame is read, not taken.** A complex column cannot be counted by yet.
-- **pandas's other arguments are not built**: `sort=`, `ascending=`, `normalize=` and
-  `dropna=`. Sort the result with `sort_values` for another order.
+- **Four arguments change the count**, with pandas's names and meanings, each written out
+  as `True` or `False`:
+
+  | Argument | What it does |
+  | --- | --- |
+  | `ascending=True` | The smallest count comes first |
+  | `sort=False` | No sort: the values stay in the order they first appear |
+  | `normalize=True` | The last column is `proportion`, an `f64`: each count divided by the number of rows counted |
+  | `dropna=False` | A NaN or a `None` is counted as a value like any other |
+
+  With `normalize=True` no column counted by may be named `proportion`. With
+  `dropna=False` a column that may hold `None` and holds a NaN too has a row for each,
+  where pandas, which has one missing value, has one row
+  ([Missing values in a DataFrame](missing-values-in-frames.md)).
 - **Cost:** for `n` rows, a sort of `n` row positions for each column counted by, one more
   sort for a column of `str`, then one pass and a sort of the distinct values by count.
 
@@ -347,8 +370,13 @@ With the prices 189.5, 410.0, 191.0 and 20.0 and the volumes 100, 250, 50 and 10
 - **A quartile between two values is taken on the line between them**, as pandas and
   NumPy's `percentile` take it.
 - **The frame is read, not taken.**
-- **pandas's arguments are not built**: `percentiles=`, `include=` and `exclude=`. Choose
-  columns first, `df[["price"]].describe()`.
+- **`percentiles=` chooses the percentiles shown** in place of the three quartiles:
+  `df.describe(percentiles=[0.1, 0.9])` has the rows `10%` and `90%`, and no `50%` unless
+  it is listed. They are shown in rising order and named as pandas names them, `12.5%` for
+  `0.125`; an empty list shows none. The list is written out, of numbers from 0 to 1, none
+  twice: a mistake is a compile error, where pandas raises `ValueError`.
+- **pandas's `include=` and `exclude=` are not built.** Choose columns first,
+  `df[["price"]].describe()`.
 - **Cost:** for `n` rows, one copy and one sort of each column of numbers.
 
 ## Stacking frames

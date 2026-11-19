@@ -49,7 +49,7 @@ def sorted_trades(trades: DataFrame[Trade], rising: bool) -> DataFrame[Trade]:
 }
 
 /// `sort_values` reports arguments in another form than its own, such as pandas's
-/// `na_position=`; a column the frame does not have, a name that is not a string literal, no
+/// `key=`; a column the frame does not have, a name that is not a string literal, no
 /// columns and one column twice; an `ascending` that is not a `bool` or lists another number
 /// of directions than there are columns; and a complex column, which has no order.
 #[test]
@@ -63,7 +63,7 @@ class Trade(Struct):
 def sorting(trades: DataFrame[Trade], name: str, waves: Array[complex, 1]):
     a = trades.sort_values()
     b = trades.sort_values("price", "volume")
-    c = trades.sort_values("price", na_position="first")
+    c = trades.sort_values("price", key="absolute size")
     d = trades.sort_values("cost")
     e = trades.sort_values(name)
     f = trades.sort_values([])
@@ -75,26 +75,26 @@ def sorting(trades: DataFrame[Trade], name: str, waves: Array[complex, 1]):
 "#;
     assert_eq!(
         check_one(program),
-        r#"error: `sort_values` takes the columns to sort by, then `ascending=`
+        r#"error: `sort_values` takes the columns to sort by, then `ascending=` and `na_position=`
  --> main.byn:7:9
   |
 7 |     a = trades.sort_values()
   |         ^^^^^^^^^^^^^^^^^^^^ wrong arguments
-  = note: for example `df.sort_values("price")` or `df.sort_values(["symbol", "price"], ascending=[True, False])`; the sort is always stable and missing values always come last
+  = note: for example `df.sort_values("price")` or `df.sort_values(["symbol", "price"], ascending=[True, False])`; the sort is always stable, and missing values come last unless `na_position="first"`
 
-error: `sort_values` takes the columns to sort by, then `ascending=`
+error: `sort_values` takes the columns to sort by, then `ascending=` and `na_position=`
  --> main.byn:8:9
   |
 8 |     b = trades.sort_values("price", "volume")
   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-  = note: for example `df.sort_values("price")` or `df.sort_values(["symbol", "price"], ascending=[True, False])`; the sort is always stable and missing values always come last
+  = note: for example `df.sort_values("price")` or `df.sort_values(["symbol", "price"], ascending=[True, False])`; the sort is always stable, and missing values come last unless `na_position="first"`
 
-error: `sort_values` takes the columns to sort by, then `ascending=`
+error: `sort_values` takes the columns to sort by, then `ascending=` and `na_position=`
  --> main.byn:9:9
   |
-9 |     c = trades.sort_values("price", na_position="first")
+9 |     c = trades.sort_values("price", key="absolute size")
   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-  = note: for example `df.sort_values("price")` or `df.sort_values(["symbol", "price"], ascending=[True, False])`; the sort is always stable and missing values always come last
+  = note: for example `df.sort_values("price")` or `df.sort_values(["symbol", "price"], ascending=[True, False])`; the sort is always stable, and missing values come last unless `na_position="first"`
 
 error: `DataFrame[Trade]` has no column `cost`
   --> main.byn:10:28
