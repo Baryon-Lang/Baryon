@@ -56,6 +56,15 @@ impl<'db> Body<'db> {
             })
             .collect();
         let mut bindings: Vec<Option<Type<'db>>> = vec![None; names.len()];
+        // `args: tuple[*Ts] = ()` left out makes `Ts` empty before anything else can fix it,
+        // so a callback that wants extra arguments is then the error (the decision 0026
+        // amendment).
+        let empty = Type::new(self.db, TypeKind::Tuple(Vec::new()));
+        for (index, parameter) in parameters.iter().enumerate() {
+            if arguments.iter().all(|&(_, given)| given != index) {
+                self.unify(parameter.ty, empty, &names, &mut bindings);
+            }
+        }
         let mut found: Vec<Option<Type<'db>>> = vec![None; arguments.len()];
         for literals in [false, true] {
             for (slot, &(argument, index)) in arguments.iter().enumerate() {
@@ -263,11 +272,7 @@ impl<'db> Body<'db> {
                 self.unify(*a, *b, names, bindings);
             }
             (TypeKind::Optional(a), _) => self.unify(*a, found, names, bindings),
-            (TypeKind::Tuple(a), TypeKind::Tuple(b)) if a.len() == b.len() => {
-                for (&a, &b) in a.iter().zip(b) {
-                    self.unify(a, b, names, bindings);
-                }
-            }
+            (TypeKind::Tuple(a), TypeKind::Tuple(b)) => self.unify_lists(a, b, names, bindings),
             (TypeKind::Struct(a), TypeKind::Struct(b)) | (TypeKind::Enum(a), TypeKind::Enum(b))
                 if a.file == b.file && a.name == b.name =>
             {
@@ -284,13 +289,42 @@ impl<'db> Body<'db> {
                     parameters: b,
                     returns: s,
                 },
-            ) if a.len() == b.len() => {
-                for (&a, &b) in a.iter().zip(b) {
-                    self.unify(a, b, names, bindings);
-                }
+            ) => {
+                self.unify_lists(a, b, names, bindings);
                 self.unify(*r, *s, names, bindings);
             }
             _ => {}
+        }
+    }
+
+    /// Unifies the lists `declared` and `found` element by element: tuple elements or
+    /// `Callable` parameters. A `*Ts` ending `declared` takes every element of `found` left
+    /// after the others, as a tuple, zero included (the decision 0026 amendment). Lists of
+    /// different lengths otherwise tell nothing.
+    fn unify_lists(
+        &self,
+        declared: &[Type<'db>],
+        found: &[Type<'db>],
+        names: &[(File, NodeId)],
+        bindings: &mut [Option<Type<'db>>],
+    ) {
+        if let Some((last, fixed)) = declared.split_last()
+            && let TypeKind::Unpacked(pack) = last.kind(self.db)
+            && found.len() >= fixed.len()
+        {
+            let (head, rest) = found.split_at(fixed.len());
+            for (&a, &b) in fixed.iter().zip(head) {
+                self.unify(a, b, names, bindings);
+            }
+            // In a generic caller `rest` may be its own `*Us`, which splices back in.
+            let rest = Type::new(self.db, TypeKind::Tuple(rest.to_vec()));
+            self.unify(*pack, rest, names, bindings);
+            return;
+        }
+        if declared.len() == found.len() {
+            for (&a, &b) in declared.iter().zip(found) {
+                self.unify(a, b, names, bindings);
+            }
         }
     }
 

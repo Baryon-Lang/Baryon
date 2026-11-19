@@ -130,6 +130,7 @@ mod traits;
 mod unions;
 mod user_iterators;
 mod utf8_text;
+mod variadic;
 mod vector;
 mod watching;
 mod zlib;

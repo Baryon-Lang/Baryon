@@ -38,6 +38,9 @@ impl<'db> Body<'db> {
         if let Some(error) = self.untyped_call(node, function, &arguments) {
             return error;
         }
+        if let Some(error) = self.star_outside_value(function, resolved, &arguments) {
+            return error;
+        }
         let callee = self.tree.text(function, self.text).to_owned();
         let ty = match resolved {
             Some(&Definition::Item(file, name)) if self.is_path_class(file, name) => {

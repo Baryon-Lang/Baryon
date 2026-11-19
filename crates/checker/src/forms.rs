@@ -156,7 +156,7 @@ impl<'db> Lowerer<'db> {
             );
         }
         let items: Vec<NodeId> = self.tree.children_with(parameters, Role::Item).collect();
-        let parameters = items.into_iter().map(|item| self.lower(item)).collect();
+        let parameters = self.items(&items);
         let returns = self.lower(returns);
         Type::new(
             self.db,

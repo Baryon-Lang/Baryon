@@ -62,7 +62,7 @@ reason in a line.
 ## What Python has that version 0 does not
 
 `lambda` and nested functions, generators and `yield`, `async`, `global` and `nonlocal`, `del`
-other than `del d[k]`, `*args` and `**kwargs`, star assignment, `:=`, `set` displays, `set` comprehensions,
+other than `del d[k]`, `*args` in a definition, `*` on anything but a tuple in a call, `**kwargs`, star assignment, `:=`, `set` displays, `set` comprehensions,
 generator expressions, `try` with `finally` or `else`, `raise ... from`, `for` and `while` with `else`, `with` other
 than `with unsafe:`, files and [context managers](syntax.md#with-and-context-managers), decorators other than `@test`, `@bench` and `@layout("C")`, and the `type`
 statement. The compiler rejects each with a message; none is silently ignored. Some will come

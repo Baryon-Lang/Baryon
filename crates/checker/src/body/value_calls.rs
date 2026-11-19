@@ -21,11 +21,23 @@ impl<'db> Body<'db> {
         if let TypeKind::Function { callable, .. } = ty.kind(self.db) {
             return self.call_value((node, function), callee, *callable, arguments);
         }
+        if let Some(star) = self.starred(arguments)
+            && !matches!(
+                ty.kind(self.db),
+                TypeKind::Callable { .. } | TypeKind::Unknown
+            )
+        {
+            return self.misplaced_star(arguments.positional[star], arguments);
+        }
         match ty.kind(self.db) {
             TypeKind::Callable {
                 parameters,
                 returns,
             } => {
+                if let Some(star) = self.starred(arguments) {
+                    let (parameters, returns) = (parameters.clone(), *returns);
+                    return self.spread_call(node, callee, (&parameters, returns), arguments, star);
+                }
                 let signature = Signature {
                     type_parameters: Vec::new(),
                     parameters: parameters

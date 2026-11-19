@@ -166,7 +166,10 @@ impl<'db> Lowerer<'db> {
     pub(crate) fn lower(&mut self, node: NodeId) -> Type<'db> {
         match self.tree.kind(node) {
             SyntaxKind::None => Type::new(self.db, TypeKind::None),
-            SyntaxKind::Name => self.named(node, node, None),
+            SyntaxKind::Name => {
+                let ty = self.named(node, node, None);
+                self.bare_pack(node, ty)
+            }
             SyntaxKind::Attribute => match self.tree.child(node, Role::Attribute) {
                 Some(attribute) => self.named(node, attribute, None),
                 None => self.unknown(),
@@ -205,7 +208,12 @@ impl<'db> Lowerer<'db> {
 
     /// The type a name means. `node` is the whole annotation, where errors point; `name` the
     /// `Name` node to look up; `subscript` the subscript that gives it arguments, if any.
-    fn named(&mut self, node: NodeId, name: NodeId, subscript: Option<NodeId>) -> Type<'db> {
+    pub(crate) fn named(
+        &mut self,
+        node: NodeId,
+        name: NodeId,
+        subscript: Option<NodeId>,
+    ) -> Type<'db> {
         let written = self.tree.text(name, self.text);
         match self.resolution.definition(name) {
             None => self.unknown(),
@@ -320,7 +328,7 @@ impl<'db> Lowerer<'db> {
                 Type::new(self.db, TypeKind::Dict { key, value })
             }
             ("tuple", items) => {
-                let items = items.iter().map(|&item| self.lower(item)).collect();
+                let items = self.items(items);
                 Type::new(self.db, TypeKind::Tuple(items))
             }
             ("Array", &[element, rank]) => self.array(element, rank),

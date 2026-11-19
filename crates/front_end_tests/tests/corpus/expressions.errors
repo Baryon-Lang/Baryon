@@ -42,13 +42,6 @@ error: assignment expressions `:=` are not supported
   |         ^^^^^^^^^^^^^^^
   = note: assign on the line before: `n = len(items)`
 
-error: `*` unpacking in a call is not supported
-  --> expressions.byn:11:10
-   |
-11 |     show(*items)
-   |          ^^^^^^
-   = note: pass each argument by position or by name
-
 error: `**` unpacking in a call is not supported
   --> expressions.byn:12:10
    |
