@@ -72,9 +72,10 @@ This prints `1.5 None 2.5`, then `4.0`.
 
 - **An index out of range stops the program**, as it does for any array.
 - **`bids[i] = 2.0` and `bids[i] = None` change one element** of an array of numbers or
-  `bool`s, and take any `f64 | None`. An element of text cannot be assigned, as in
-  [an array of text](text-arrays.md), and neither can several at once, `bids[mask] = 0.0`:
-  build the array again with `fillna` or from a list.
+  `bool`s, and take any `f64 | None`. So does every element a mask, positions, a list or
+  a slice chooses: `bids[bids > 100.0] = None`, `bids[1:3] = 0.0`. An element of text
+  cannot be assigned, as in [an array of text](text-arrays.md): build the array again
+  with `fillna` or from a list.
 - **A `for` loop gives each element in turn**, an `f64 | None` here, alone or inside
   `enumerate`, `zip` and `reversed`, and in a comprehension:
   `[bid for bid in bids if bid is not None]`. The array is borrowed for the loop, as any
@@ -397,7 +398,7 @@ Each of these is a compile error that names what an array with missing values ha
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`,
   `nunique`, `count`, `sum`, `mean`, `min`, `max`, `var` and `std`; and `min` and `max` of
   text;
-- assigning an element of text, or several elements at once, `bids[mask] = 0.0`;
+- assigning an element of text;
 - a `for` loop over text that may be `None`;
 - `print` of a tuple or a list that holds one, or that holds a frame with such a column;
 - one as a struct field.

@@ -14,6 +14,10 @@ is right wherever the result is known. These functions give the result's validit
 - `and_bits` and `or_bits` give the bitmap of `left & right` and of `left | right`.
 - `full_bits` gives the bitmap of a mask that holds no `None`, so that a plain mask can be a
   side.
+
+`set_optional_where` and `set_optional_at` are the other use of a mask: they store one value,
+or `None`, in the elements of an array with missing values that a mask or positions choose,
+`bids[mask] = None`.
 """
 
 
@@ -61,3 +65,45 @@ def or_bits(
         if (first and second) or (first and left[at]) or (second and right[at]):
             bits[at // 8] = bits[at // 8] | (u8(1) << u8(at % 8))
     return bits
+
+
+def set_optional_where[T: Copy](
+    values: InOut[Array[T, 1]],
+    bits: InOut[Array[u8, 1]],
+    mask: Array[bool, 1],
+    item: T | None,
+    filler: T,
+) -> None:
+    """Stores `item` in each element of the array stored as `values` and `bits` where `mask`
+    is `True`, in place: the value with its bit set to 1, or `filler` with its bit set to 0
+    for `None`. The compiler has checked that `mask` is as long as the array. Cost: one
+    pass over the mask."""
+    for at in range(len(mask)):
+        if mask[at]:
+            bit = u8(1) << u8(at % 8)
+            if item is not None:
+                values[at] = item
+                bits[at // 8] = bits[at // 8] | bit
+            else:
+                values[at] = filler
+                bits[at // 8] = bits[at // 8] & (u8(255) ^ bit)
+
+
+def set_optional_at[T: Copy](
+    values: InOut[Array[T, 1]],
+    bits: InOut[Array[u8, 1]],
+    positions: Array[i64, 1],
+    item: T | None,
+    filler: T,
+) -> None:
+    """Stores `item` in the element of the array stored as `values` and `bits` at each of
+    `positions`, in place, as `set_optional_where` stores it. A position below 0 or past
+    the end panics before anything is stored for it. Cost: one pass over the positions."""
+    for at in positions:
+        bit = u8(1) << u8(at % 8)
+        if item is not None:
+            values[at] = item
+            bits[at // 8] = bits[at // 8] | bit
+        else:
+            values[at] = filler
+            bits[at // 8] = bits[at // 8] & (u8(255) ^ bit)

@@ -48,10 +48,7 @@ impl<'db> Body<'db> {
             // A slice takes a number for every element, `a[1:n] = 0.0` (reference, "Slices").
             // So do the elements an array chooses, `a[a < 0.0] = 0.0` (roadmap 3.13.1).
             let chosen = self.is_selection(target);
-            let filled = match held.kind(self.db) {
-                TypeKind::Array { element, .. } if self.is_view(target) || chosen => Some(*element),
-                _ => None,
-            };
+            let filled = self.filled_element(target, held, chosen);
             let ty = self.expression(value, Some(filled.unwrap_or(held)));
             if let Some(element) = filled
                 && chosen
@@ -117,6 +114,20 @@ impl<'db> Body<'db> {
         self.consume(value, ty);
         for target in targets {
             self.bind(target, ty, Some(value));
+        }
+    }
+
+    /// The type each element takes when the assignment target `target`, of type `held`, is
+    /// a slice of an array or, when `chosen`, the elements an array chooses: the element
+    /// type, `a[1:n] = 0.0`, or a `T | None` for an array with missing values,
+    /// `bids[mask] = None`. `None` for any other target.
+    fn filled_element(&self, target: NodeId, held: Type<'db>, chosen: bool) -> Option<Type<'db>> {
+        match held.kind(self.db) {
+            TypeKind::Array { element, .. } if self.is_view(target) || chosen => Some(*element),
+            &TypeKind::OptionalArray(element) if chosen => {
+                Some(Type::new(self.db, TypeKind::Optional(element)))
+            }
+            _ => None,
         }
     }
 

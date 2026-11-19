@@ -41,7 +41,7 @@ def uses(asks: Array[f64, 1]):
     part = bids[[0.5]]
     chosen = bids[asks]
     bids[0] = "two"
-    bids[asks > 1.0] = 2.0
+    bids[asks > 1.0] = asks
     Array(["a", None])[0] = "b"
     more = bids ** 2.0
     less = ~bids
@@ -133,12 +133,12 @@ error: expected `f64 | None`, found `str`
 16 |     bids[0] = "two"
    |               ^^^^^ the target holds `f64 | None`
 
-error: assigning through a slice, a mask or positions is not built for an array with missing values yet
-  --> main.byn:17:5
+error: the chosen elements take one `f64 | None`, found `Array[f64, 1]`
+  --> main.byn:17:24
    |
-17 |     bids[asks > 1.0] = 2.0
-   |     ^^^^^^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops over numbers and `bool`s, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
+17 |     bids[asks > 1.0] = asks
+   |                        ^^^^ not a single value
+   = note: every chosen element is set to the same value, as in `a[a < 0.0] = 0.0`
 
 error: assigning an element of text is not built for an array with missing values yet
   --> main.byn:18:5
