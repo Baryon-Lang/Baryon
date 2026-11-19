@@ -237,14 +237,9 @@ def main() -> Raises[None, OSError | ValueError]:
     );
 }
 
-/// Columns of the narrower number types (roadmap 3.14.4.1): every whole number type reads
-/// its least and greatest value, `u64` past the range of `i64`, and `f32` reads each cell
-/// rounded to an `f32`. A cell outside its type's range raises `ValueError` where pandas
-/// keeps the low bits. `to_csv` writes the bytes pandas writes for the same columns, an
-/// `f32` in the form pandas writes: scientific from a million up.
-#[test]
-fn narrow_number_columns_are_read_and_written() {
-    let body = "\
+/// The program of `narrow_number_columns_are_read_and_written`: a frame of every narrow
+/// number type read and written back, then a file that does not fit for each of four types.
+const NARROW: &str = "\
 class Row(Struct):
     g: u64
     c: i32
@@ -319,6 +314,14 @@ def main() -> Raises[None, OSError]:
     except ValueError as error:
         print(error.message)
 ";
+
+/// Columns of the narrower number types (roadmap 3.14.4.1): every whole number type reads
+/// its least and greatest value, `u64` past the range of `i64`, and `f32` reads each cell
+/// rounded to an `f32`. A cell outside its type's range raises `ValueError` where pandas
+/// keeps the low bits. `to_csv` writes the bytes pandas writes for the same columns, an
+/// `f32` in the form pandas writes: scientific from a million up.
+#[test]
+fn narrow_number_columns_are_read_and_written() {
     let all = "a,b,c,d,e,f,g,h,o\n\
                -128,-32768,-2147483648,255,65535,4294967295,18446744073709551615,0.1,\n\
                127,32767,2147483647,0, +7 ,0,0,16777217,5\n\
@@ -336,7 +339,7 @@ def main() -> Raises[None, OSError]:
         ("large.csv", "g\n18446744073709551616\n"),
         ("single.csv", "h\n1.5\n\n1_0\n"),
     ];
-    let (ran, directory) = run("csv_narrow", body, &files).unwrap();
+    let (ran, directory) = run("csv_narrow", NARROW, &files).unwrap();
     assert_eq!(stderr(&ran), "");
     assert_eq!(
         String::from_utf8_lossy(&ran.stdout),
