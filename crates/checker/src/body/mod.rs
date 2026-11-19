@@ -102,6 +102,7 @@ mod union_methods;
 mod untyped_calls;
 mod user_iterators;
 mod value_calls;
+mod written_constructors;
 
 use crate::lower::Lowerer;
 use crate::outline::Entry;

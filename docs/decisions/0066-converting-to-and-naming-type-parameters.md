@@ -41,8 +41,9 @@ struct until after 0.3.0.
    type arguments, `Box[f64]([])`, as a class function already is. They are the class's, and the
    arguments are checked against them: `Pair[f64](1, 2)` makes the literals `f64`, and
    `Pair[f64](x, y)` with `x: f32` is an error. Writing none keeps today's inference from the
-   arguments. The type is not taken from an annotation: `c: Box[f64] = Box([])` stays an error
-   that suggests `Box[f64]([])`.
+   arguments. The type is not taken from an annotation: `c: Box[f64] = Box([])` stays an error.
+   A written type argument is checked against its parameter's bound, as an inferred one is:
+   `Pair[str]("a", "b")` is an error for `class Pair[T: Number]`.
 
 ## Alternatives
 

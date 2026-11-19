@@ -92,3 +92,40 @@ def main():
         "panic: the value does not fit in `i8`\n  --> main.byn:9:19\n"
     );
 }
+
+/// A generic struct built with its type arguments written builds as one built from inferred
+/// arguments (decision 0066, roadmap 1.9.61): `Box[f64]([])` starts an empty list of `f64`,
+/// `Pair[f64](1, 2)` makes its integer literals `f64`, `Pair[i8](3, 4)` makes them `i8`, and a
+/// generic function builds `Box[T]([])` at the `T` its argument fixes.
+#[test]
+fn structs_built_with_written_type_arguments_build() {
+    let program = "\
+class Pair[T: Number](Struct):
+    a: T
+    b: T
+
+
+class Box[T](Struct):
+    items: list[T]
+
+
+def empty[T](like: T) -> Box[T]:
+    return Box[T]([])
+
+
+def main():
+    b = Box[f64]([])
+    b.items.append(2.5)
+    p = Pair[f64](1, 2)
+    q = Pair[i8](3, 4)
+    e = empty(7)
+    e.items.append(7)
+    print(len(b.items), b.items, p.a + p.b, q.a + q.b, e.items)
+";
+    let directory = package("written_constructors", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), "1 [2.5] 3.0 7 [7]\n");
+}
