@@ -64,7 +64,6 @@ impl<'db> Body<'db> {
                 for (&argument, &ty) in all.iter().zip(&types) {
                     self.shows_no_path(argument, ty);
                     self.shows_no_text_array(argument, ty);
-                    self.shows_no_optional_array(argument, ty);
                 }
                 let keywords = &types[arguments.positional.len()..];
                 self.print_keywords(arguments, keywords);

@@ -1,5 +1,5 @@
-"""The text of a tuple or a list that holds an array with missing values, written in Baryon
-(decision 0045, roadmap 3.24.4).
+"""The text of a tuple, a list or a dict that holds an array with missing values or a frame,
+written in Baryon (decision 0045, roadmap 3.24.4 and 3.24.5).
 
 The compiler calls these functions; a program cannot import this file.
 
@@ -8,7 +8,8 @@ knows every value in it. It does not know an array with missing values, whose te
 `optional_shown` of `<std>/frame_missing.byn` makes. So the compiler writes such a tuple or
 list piece by piece: the text of each array, and between them what Python writes. The
 functions here make the pieces the compiler cannot write alone: a `str` in quotes, which is
-how a `str` stands inside a tuple or a list, and the items of a list put together.
+how a `str` stands inside a tuple or a list, and the items of a list or the entries of a dict
+put together.
 """
 
 
@@ -31,3 +32,10 @@ def listed(texts: list[str]) -> str:
     """A list as `print` writes it, from the text of each of its items: the texts with a
     comma and a space between two, the whole in brackets. Cost: one copy of each text."""
     return "[" + ", ".join(texts) + "]"
+
+
+def braced(texts: list[str]) -> str:
+    """A dict as `print` writes it, from the text of each of its entries, `key: value`: the
+    texts with a comma and a space between two, the whole in braces. Cost: one copy of each
+    text."""
+    return "{" + ", ".join(texts) + "}"

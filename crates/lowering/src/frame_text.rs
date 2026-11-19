@@ -20,7 +20,8 @@ impl<'db> Builder<'db> {
     /// The place to read as text where the expression `node`, of type `ty` and borrowed at
     /// `place`, is printed or formatted in an f-string: a frame's table, the elements of an
     /// array with missing values with `None` for each gap (the library's `optional_shown`),
-    /// a tuple or a list that holds such an array (the `shown_holders` module),
+    /// a tuple, a list, a dict or a `T | None` that holds such an array or a frame (the
+    /// `shown_holders` module),
     /// a text array's elements as `NumPy` shows them, which the library's `text_shown` writes,
     /// each into a new `str` dropped with the statement's temporaries, a `Path`'s text
     /// ([`Builder::text_place`]), and any other value as it is.
@@ -80,11 +81,13 @@ impl<'db> Builder<'db> {
     /// whose values are `element`s: the library's `optional_float_cells` for `f64`,
     /// `optional_single_cells` for `f32` and `optional_cells` for integers and `bool`, each
     /// of which writes `<NA>` for a missing value. The cells of text are those of its
-    /// values, from `text_cells`, with `<NA>` put in by `gap_cells`. `None` after a report.
+    /// values, from `text_cells`, with `<NA>` put in by `gap_cells`; that list is added to
+    /// `made`, for the caller to drop. `None` after a report.
     fn optional_cells(
         &mut self,
         column: &Place,
         element: Type<'db>,
+        made: &mut Vec<Local>,
         node: NodeId,
     ) -> Option<Local> {
         let text = Type::new(self.db, TypeKind::Str);
@@ -92,7 +95,7 @@ impl<'db> Builder<'db> {
         if matches!(element.kind(self.db), TypeKind::Str) {
             let values = column.clone().project(Projection::Field(VALUES));
             let plain = self.frame_call("text_cells", Vec::new(), vec![values], list, node)?;
-            self.drop_later(plain);
+            made.push(plain);
             let int = self.int_type();
             let count = self.optional_array_length(column, element, node);
             let count = Place::from(self.held(int, count, node));
@@ -134,6 +137,27 @@ impl<'db> Builder<'db> {
     /// costs the same for a frame of any length.
     fn frame_text(&mut self, node: NodeId, frame: &Place) -> Option<Place> {
         let columns = self.frame_columns(node)?;
+        let (result, made) = self.table_text(columns, self.ty(node), frame, node)?;
+        for local in made {
+            self.drop_later(local);
+        }
+        self.drop_later(result);
+        Some(Place::from(result))
+    }
+
+    /// The text of the frame of `columns` stored at `frame` as the tuple type `storage`: a
+    /// new `str` the caller owns, with the lists made on the way, which the caller drops
+    /// once the text is made. A frame printed alone leaves them to the statement's end; one
+    /// inside a list is written in a loop, so each turn drops its own (the `shown_holders`
+    /// module). `None` after a report.
+    pub(crate) fn table_text(
+        &mut self,
+        columns: &[Column<'db>],
+        storage: Type<'db>,
+        frame: &Place,
+        node: NodeId,
+    ) -> Option<(Local, Vec<Local>)> {
+        let mut made = Vec::new();
         let text = Type::new(self.db, TypeKind::Str);
         let list = Type::new(self.db, TypeKind::List(text));
         let mut cells = Vec::with_capacity(columns.len());
@@ -147,7 +171,9 @@ impl<'db> Builder<'db> {
             }));
             let stored = frame.clone().project(Projection::Field(position));
             let formatted = match column.element.kind(self.db) {
-                TypeKind::Optional(element) => self.optional_cells(&stored, *element, node)?,
+                TypeKind::Optional(element) => {
+                    self.optional_cells(&stored, *element, &mut made, node)?
+                }
                 TypeKind::Primitive(Primitive::Float(Float::F64)) => {
                     self.frame_call("float_cells", Vec::new(), vec![stored], list, node)?
                 }
@@ -167,21 +193,19 @@ impl<'db> Builder<'db> {
         }
         let headings = self.temporary(list, node);
         self.assign(Place::from(headings), Rvalue::Aggregate(list, names), node);
-        self.drop_later(headings);
         // Which columns hold `str`: the library gives their headings no room for a sign.
         let flag_list = Type::new(self.db, TypeKind::List(boolean));
         let text_columns = self.temporary(flag_list, node);
         let aggregate = Rvalue::Aggregate(flag_list, flags);
         self.assign(Place::from(text_columns), aggregate, node);
-        self.drop_later(text_columns);
         let table_type = Type::new(self.db, TypeKind::List(list));
         let table = self.temporary(table_type, node);
         let aggregate = Rvalue::Aggregate(table_type, cells);
         self.assign(Place::from(table), aggregate, node);
-        self.drop_later(table);
+        made.extend([headings, text_columns, table]);
         let count = self.temporary(self.int_type(), node);
         let first = frame.clone().project(Projection::Field(0));
-        let stored = match self.ty(node).kind(self.db) {
+        let stored = match storage.kind(self.db) {
             TypeKind::Tuple(stored) => stored.first().copied(),
             _ => None,
         };
@@ -194,8 +218,7 @@ impl<'db> Builder<'db> {
             Place::from(count),
         ];
         let result = self.frame_call("frame_text", Vec::new(), arguments, text, node)?;
-        self.drop_later(result);
-        Some(Place::from(result))
+        Some((result, made))
     }
 
     /// The column of `str` at `column` as whole numbers that stand for its text in keys:

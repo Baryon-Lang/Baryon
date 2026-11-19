@@ -240,7 +240,13 @@ impl<'db> Builder<'db> {
 
     /// Writes the first position at or after `from` that holds an entry, or -1, into
     /// `position`.
-    fn next_entry(&mut self, dict: &Place, position: Local, from: Operand<'db>, node: NodeId) {
+    pub(crate) fn next_entry(
+        &mut self,
+        dict: &Place,
+        position: Local,
+        from: Operand<'db>,
+        node: NodeId,
+    ) {
         self.then(node, |next| TerminatorKind::Call {
             callee: Callee::Builtin(Builtin::DictNext),
             arguments: vec![Argument::Borrow(dict.clone()), Argument::Owned(from)],
@@ -252,7 +258,7 @@ impl<'db> Builder<'db> {
 
     /// A `bool` operand saying whether the position in `position` is 0 or more: an entry was
     /// found.
-    fn at_least_zero(&mut self, position: Local, node: NodeId) -> Operand<'db> {
+    pub(crate) fn at_least_zero(&mut self, position: Local, node: NodeId) -> Operand<'db> {
         let flag = self.temporary(self.boolean_type(), node);
         let zero = Operand::Constant(Constant::integer(self.int_type(), 0));
         self.assign(
