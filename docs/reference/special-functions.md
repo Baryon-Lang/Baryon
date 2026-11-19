@@ -94,6 +94,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `pbwa`, with its derivative | 32 ULP, of the largest of \|f\|, \|a ∂f/∂a\| and \|x ∂f/∂x\| | 0 ULP: every case rounds as mpmath's value does | 20,104 ULP at `pbwa(3.50, 2.55)`; NaN past \|x\| = 5 |
 | `pro_cv`, `obl_cv`, `pro_cv_seq`, `obl_cv_seq` | 64 ULP, of the larger of \|λ\| and \|c ∂λ/∂c\| | 22 ULP at `pro_cv(3, 3, 164.7)` | 34 ULP at c above 0; for c below 0 the value at c = 0 |
 | `pro_ang1`, `obl_ang1` and their `_cv` forms, with their derivatives | 16 ULP, of the largest of \|S\|, \|c ∂S/∂c\|, \|x ∂S/∂x\| and the sum of the sizes of the Legendre terms | 8 ULP at `obl_ang1(4, 16, 7.53, 0.950)` | 2.5e40 ULP at `pro_ang1(2, 22, 158.7, -0.103)`, −2.9e27 where the value is −26.0; a crash at c above 170 |
+| `pro_rad1`, `pro_rad2`, `obl_rad1`, `obl_rad2` and their `_cv` forms, with their derivatives | 128 ULP, of the largest of \|R\|, \|c ∂R/∂c\|, \|x ∂R/∂x\|, the modulus of the two kinds, the sum of the sizes of the Bessel terms and \|R\| times the normalizing sum's cancellation | 54 ULP at the derivative of `obl_rad2(7, 8, 30.6, 0)` | 1.6e23 ULP at the derivative of `obl_rad2(3, 14, 3.39, 0.984)`, −5.9e14 where the value is 1.9e6 |
 | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer` | 8 ULP for each degree, of the largest value the recurrence passes through | 29 ULP for `eval_gegenbauer` at degree 85 | 439 ULP for `eval_jacobi` at degree 85 |
 | `eval_hermite`, `eval_hermitenorm` | The same | 156 ULP at degree 78 | 698 ULP for `eval_hermite` at degree 75 |
 | `lpmv` | 64 ULP of the largest value the recurrence passes through | 24 ULP | 154 ULP |
@@ -799,6 +800,11 @@ of the 894 cases by more than 64 ULP, and gives `mathieu_modsem1(10, 0.00135, 0.
 | `obl_ang1(m, n, c, x)` | The oblate angular function and its derivative | `scipy.special.obl_ang1` |
 | `pro_ang1_cv(m, n, c, cv, x)` | `pro_ang1` with the characteristic value given, so that it is not found again for each x | `scipy.special.pro_ang1_cv` |
 | `obl_ang1_cv(m, n, c, cv, x)` | `obl_ang1` with the characteristic value given | `scipy.special.obl_ang1_cv` |
+| `pro_rad1(m, n, c, x)` | The prolate radial function of the first kind R⁽¹⁾_mn(c, x) and its derivative in x, for x > 1 and c > 0 | `scipy.special.pro_rad1` |
+| `pro_rad2(m, n, c, x)` | The prolate radial function of the second kind R⁽²⁾_mn(c, x) and its derivative | `scipy.special.pro_rad2` |
+| `obl_rad1(m, n, c, x)` | The oblate radial function of the first kind and its derivative, for x ≥ 0 and c > 0 | `scipy.special.obl_rad1` |
+| `obl_rad2(m, n, c, x)` | The oblate radial function of the second kind and its derivative | `scipy.special.obl_rad2` |
+| `pro_rad1_cv`, `pro_rad2_cv`, `obl_rad1_cv`, `obl_rad2_cv` `(m, n, c, cv, x)` | The radial functions with the characteristic value given | `scipy.special.pro_rad1_cv` and the rest |
 
 The wave equation separates in prolate spheroidal coordinates, which fit a cigar, an elongated
 nucleus or a pair of charges, and in oblate ones, which fit a disc or a flattened planet. The
@@ -865,6 +871,61 @@ above 170, where it crashes the program. A call costs about 5 µs, against SciPy
   for n − m near 20 and about 720 for small n − m, the oblate angular functions give NaN.
   There the functions near ±1 approach the largest `f64` in any case: 3e425 at
   `obl_ang1(1, 3, 1000, 0.999)`. The prolate functions are scaled at 0 for every c.
+
+### Radial functions
+
+The radial part of the same separation is the radial spheroidal equation, with ξ the radial
+coordinate: ξ > 1 for prolate spheroids, where ((ξ² − 1) R′)′ − (λ − c²ξ² + m²/(ξ² − 1)) R = 0,
+and ξ ≥ 0 for oblate ones, where ((ξ² + 1) R′)′ − (λ − c²ξ² − m²/(ξ² + 1)) R = 0. λ is the same
+characteristic value. The first kind R⁽¹⁾ is the solution that behaves like the spherical Bessel
+function j_n(cξ) far out, and the second kind R⁽²⁾ the one that behaves like y_n(cξ), so that
+R⁽¹⁾ + i R⁽²⁾ is an outgoing wave, the one a scattering problem matches at the surface ξ = ξ₀.
+
+```python
+from special import obl_rad2, pro_rad1
+
+
+def main():
+    value, slope = pro_rad1(1.0, 2.0, 2.5, 1.5)
+    print(value)    # 0.31149518137922233
+    print(slope)    # 0.07075345545840275
+    value, slope = obl_rad2(1.0, 2.0, 2.5, 0.5)
+    print(value)    # -0.5863137687362597
+    print(slope)    # 0.859163447108363
+```
+
+**How they work.** Each radial function is a series over the angular coefficients d_r, of
+spherical Bessel functions j (first kind) or y (second kind) of cξ (DLMF 30.11.3 and 30.11.7),
+divided by the normalizing sum Σ d_r (r + 2m)!/r!. The series of j converges everywhere. The
+series of y converges only far enough out, so nearer in Baryon starts from the series at the
+nearest point where it is exact and carries R and R′ inward along the equation by Taylor steps,
+each at most 3/c long and at most half the distance to the nearest singular point (ξ = 1, or ±i
+for oblate spheroids). The module documentation of `special_spheroidal_radial` gives the
+details and the measurements behind the step length.
+
+**Accuracy.** The reference values are the same series and steps at 60 digits (the script is in
+the fixtures' README). Each case is measured against the largest of |R|, |c ∂R/∂c|, |ξ ∂R/∂ξ|,
+the modulus √(R⁽¹⁾² + R⁽²⁾²) the two kinds oscillate under, the sum of the sizes of the Bessel
+terms, and |R| times the cancellation of the normalizing sum. The tests reach orders to 22, c
+from 0.01 to 50, prolate ξ from 1 + 10⁻⁶ and oblate ξ from 0, both to 30. The worst error is 54
+ULP, for the derivative of `obl_rad2(7, 8, 30.6, 0)`: every inward step rounds by about one
+unit of the modulus. Of the 604 cases with values, SciPy misses 150 by more than 128 ULP: 122
+for `obl_rad2`, 24 for `pro_rad2` and 4 for `obl_rad1`. Its second kinds near the spheroid are
+often wrong in the leading digit: `obl_rad2(1, 2, 2.5, 0.5)` is −0.249 against −0.586, and
+`pro_rad2(1, 2, 2.5, 1.05)` is −1.545 against −1.597.
+
+### At the ends of the radial functions
+
+- The m, n and characteristic value are checked as for the angular functions. A c that is not
+  above 0, or not finite, gives NaN: the series are in cξ. So does a prolate ξ at most 1 or an
+  oblate ξ below 0.
+- At ξ = ∞ both kinds and their derivatives are 0. At ξ = 0 the oblate first kind is the limit
+  of its series.
+- For prolate spheroids the normalizing sum cancels by about e^c: 3.7 × 10³ at c = 10 and
+  6.7 × 10⁷ at c = 20 for low n − m. Where it cancels by more than 10⁸, so that fewer than 8
+  digits would be left, the prolate functions give NaN; in the tests that is
+  `pro_rad1(7, 8, 30.6, 23.4)` and its second kind. SciPy gives a value there. The oblate sum
+  cancels by about 2 at most.
 
 ## Incomplete gamma and beta functions
 
@@ -1394,6 +1455,7 @@ for those working on the library. A panic inside a function names the file it is
 | `special_mathieu` | `mathieu_a`, `mathieu_b`, `mathieu_cem` and `mathieu_sem` |
 | `special_mathieu_radial` | `mathieu_modcem1`, `mathieu_modcem2`, `mathieu_modsem1`, `mathieu_modsem2`, `mathieu_even_coef` and `mathieu_odd_coef` |
 | `special_spheroidal` | `pro_cv`, `obl_cv`, `pro_cv_seq`, `obl_cv_seq`, `pro_ang1`, `obl_ang1`, `pro_ang1_cv` and `obl_ang1_cv` |
+| `special_spheroidal_radial` | `pro_rad1`, `pro_rad2`, `obl_rad1`, `obl_rad2` and their `_cv` forms |
 | `special_orthogonal` | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_hermite`, `eval_hermitenorm`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer`, `lpmv` and `sph_harm_y` |
 | `special_carlson` | `elliprc`, `elliprd`, `elliprf`, `elliprg` and `elliprj`, and `carlson_rf`, `carlson_rd` and `carlson_rg`, the same integrals without the checks of their arguments |
 | `special_elliptic` | `ellipk`, `ellipkm1`, `ellipe`, `ellipkinc`, `ellipeinc` and `ellipj` |
@@ -1405,7 +1467,6 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18, Bessel functions of a complex
-argument (3.18.6) among them. Of 3.18.14, the radial spheroidal functions are still to come. The
-hypergeometric functions and Carlson's integrals of complex arguments are not built. `loggamma`
-of a complex argument comes with the complex Bessel functions.
+argument (3.18.6) among them. The hypergeometric functions and Carlson's integrals of complex
+arguments are not built. `loggamma` of a complex argument comes with the complex Bessel functions.
 See [What builds today](status.md).

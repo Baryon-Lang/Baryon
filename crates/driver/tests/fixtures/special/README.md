@@ -2680,6 +2680,309 @@ if __name__ == "__main__":
         out.write("\n".join(lines) + "\n")
 ```
 
+## Radial spheroidal functions
+
+`spheroidal_radial.txt` holds the radial spheroidal functions of both kinds and their
+derivatives (`_d`), some with the characteristic value given (`_cv`, which then precedes x), for
+[`../../build/special_mathieu.rs`](../../build/special_mathieu.rs). The script finds λ and the
+coefficients d_r as the angular script does, at 60 digits, and sums the series of spherical
+Bessel functions (DLMF 30.11.3 and 30.11.7). For the second kind inside ξ = 2 it carries R and R′
+inward from there along the radial equation by Taylor steps, at 60 digits, so its steps are not
+Baryon's. Before the reference value each case holds the size its error is measured against:
+the largest of |R|, |c ∂R/∂c|, |x ∂R/∂x|, the modulus √(R⁽¹⁾² + R⁽²⁾²) of the two kinds, the sum
+of the sizes of the Bessel terms and |R| times the cancellation of the normalizing sum Σ w_r.
+Where that sum cancels by more than 10⁸ the reference is NaN, as Baryon gives. The script
+recorded the cases with mpmath 1.4.1; run it from this directory with `python3 -I`:
+
+```python
+"""Writes spheroidal_radial.txt: radial spheroidal functions at 60 digits."""
+import math
+import random
+from multiprocessing import Pool
+
+import mpmath
+from mpmath import mpf
+
+
+def legendre_all(m, top, x):
+    """P^m_k(x) for k = m..top without the Condon-Shortley phase, with derivatives, |x| < 1."""
+    x = mpf(x)
+    w = 1 - x * x
+    p = [mpmath.fac2(2 * m - 1) * w ** (mpf(m) / 2)]
+    if top > m:
+        p.append(x * (2 * m + 1) * p[0])
+    for k in range(m + 1, top):
+        p.append(((2 * k + 1) * x * p[-1] - (k + m) * p[-2]) / (k - m + 1))
+    dp = [(-m * x * p[0]) / w]
+    for i in range(1, len(p)):
+        k = m + i
+        dp.append(((k + m) * p[i - 1] - k * x * p[i]) / w)
+    return p, dp
+
+
+def legendre(m, k, x):
+    p, dp = legendre_all(m, k, x)
+    return p[-1], dp[-1]
+
+
+def recurrence(m, n, c2, size):
+    p = (n - m) % 2
+    rs = [p + 2 * i for i in range(size)]
+    diag, off = [], []
+    for r in rs:
+        k = m + r
+        diag.append(k * (k + 1) + (2 * k * (k + 1) - 2 * m * m - 1) * c2
+                    / ((2 * k - 1) * (2 * k + 3)))
+    for r in rs[:-1]:
+        k = m + r
+        alpha = (2 * m + r + 2) * (2 * m + r + 1) * c2 / ((2 * k + 3) * (2 * k + 5))
+        gamma = (r + 2) * (r + 1) * c2 / ((2 * k + 1) * (2 * k + 3))
+        off.append((alpha, gamma))
+    return rs, diag, off
+
+
+def count(diag, sym, x):
+    c, p = 0, mpf(1)
+    for i in range(len(diag)):
+        s = diag[i] - x - (sym[i - 1] ** 2 / p if i else 0)
+        if s == 0:
+            s = mpf(10) ** -200
+        if s < 0:
+            c += 1
+        p = s
+    return c
+
+
+def solve(m, n, c, prolate=True):
+    """Characteristic value, orders r and Flammer-scaled d_r. The scaling sums the series at 0,
+    which cancels badly for oblate functions at large c (they gather near x = ±1), so the
+    precision is raised until the cancellation leaves the working digits whole."""
+    extra = 0
+    while True:
+        with mpmath.workdps(mpmath.mp.dps + extra):
+            lam, rs, d, lost = _solve(m, n, c, prolate)
+        if lost + 30 < extra + mpmath.mp.dps:
+            with mpmath.workdps(mpmath.mp.dps + extra):
+                return +lam, rs, [+t for t in d]
+        extra = int(lost) + 30
+
+
+def _solve(m, n, c, prolate):
+    m, n = int(m), int(n)
+    c2 = mpf(c) ** 2 * (1 if prolate else -1)
+    index = (n - m) // 2
+    size = index + int(abs(mpf(c))) + 60
+    rs, diag, off = recurrence(m, n, c2, size)
+    # alpha*gamma is positive both ways (c2 squared), so the symmetric form is real.
+    sym = [mpmath.sqrt(a * g) for a, g in off]
+    if not prolate:
+        sym = [-s for s in sym]
+    low = min(diag) - 2 * sum(abs(s) for s in sym) - 1
+    high = max(diag) + 2 * sum(abs(s) for s in sym) + 1
+    for _ in range(mpmath.mp.prec + 40):
+        mid = (low + high) / 2
+        if count(diag, sym, mid) > index:
+            high = mid
+        else:
+            low = mid
+    lam = (low + high) / 2
+    N = len(diag)
+    up = [mpf(0)] * N
+    down = [mpf(0)] * N
+    for i in range(N):
+        up[i] = diag[i] - lam - (sym[i - 1] ** 2 / up[i - 1] if i else 0)
+    for i in range(N - 1, -1, -1):
+        down[i] = diag[i] - lam - (sym[i] ** 2 / down[i + 1] if i < N - 1 else 0)
+    twist = min(range(N), key=lambda i: abs(up[i] + down[i] - diag[i] + lam))
+    v = [mpf(0)] * N
+    v[twist] = mpf(1)
+    for i in range(twist - 1, -1, -1):
+        v[i] = -sym[i] * v[i + 1] / up[i]
+    for i in range(twist + 1, N):
+        v[i] = -sym[i - 1] * v[i - 1] / down[i]
+    # Back from the symmetric vector to d: d_{i+1}/d_i scale = sqrt(gamma_{i+1}/alpha_i).
+    d = [v[0]]
+    scale = mpf(1)
+    for i, (a, g) in enumerate(off):
+        scale *= mpmath.sqrt(g / a)
+        d.append(v[i + 1] * scale)
+    # Flammer: S(0) = P^m_n(0), or S'(0) = P^m_n'(0) when n - m is odd.
+    p = (n - m) % 2
+    want = legendre(m, n, mpf(0))[p]
+    p0 = legendre_all(m, m + rs[-1], 0)[p]
+    have = sum(t * p0[r] for t, r in zip(d, rs))
+    lost = mpmath.log10(sum(abs(t * p0[r]) for t, r in zip(d, rs)) / abs(have))
+    d = [t * want / have for t in d]
+    return lam, rs, d, lost
+
+
+def bessel_series(m, n, c, x, sign, kind, lam, rs, d):
+    """R and R' from the Bessel series; sign = -1 prolate, +1 oblate."""
+    c = mpf(c); x = mpf(x); z = c * x
+    total = slope = norm = mpf(0)
+    total_size = slope_size = norm_size = mpf(0)
+    for t, r in zip(d, rs):
+        w = t * mpmath.factorial(r + 2 * m) / mpmath.factorial(r)
+        norm += w
+        norm_size += abs(w)
+        k = m + r
+        nu = k + mpf(1) / 2
+        root = mpmath.sqrt(mpmath.pi / (2 * z))
+        f = mpmath.besselj if kind == 1 else mpmath.bessely
+        b = root * f(nu, z)
+        db = root * f(nu - 1, z) - (k + 1) / z * b  # b_k' = b_{k-1} - (k+1)/z b_k
+        e = (-1) ** ((r + m - n) // 2)
+        total += e * w * b
+        slope += e * w * db
+        total_size += abs(w * b)
+        slope_size += abs(w * db)
+    p = x * x + sign
+    g = (p / (x * x)) ** (mpf(m) / 2)
+    dg = g * (-sign * m) / (x * p)
+    sizes = (g * total_size / abs(norm), (abs(dg) * total_size + g * c * slope_size) / abs(norm),
+             norm_size / abs(norm))
+    return (g * total / norm, (dg * total + g * c * slope) / norm, sizes)
+
+
+def taylor_step(m, c, lam, sign, x0, h, y, dy):
+    """Steps y, y' of P² R'' + 2ξ P R' - ((λ - c²ξ²) P - s m²) R = 0 from x0 to x0 + h."""
+    # Coefficients in t = ξ - x0.
+    P = [x0 * x0 + sign, 2 * x0, mpf(1)]
+    def mul(a, b):
+        out = [mpf(0)] * (len(a) + len(b) - 1)
+        for i, u in enumerate(a):
+            for j, v in enumerate(b):
+                out[i + j] += u * v
+        return out
+    A = mul(P, P)
+    B = mul([2 * x0, mpf(2)], P)
+    q = [lam - c * c * x0 * x0, -2 * c * c * x0, -c * c]
+    C = [-v for v in mul(q, P)]
+    C[0] += sign * m * m
+    u = [y, dy]
+    total, slope = u[0] + u[1] * h, u[1]
+    size = abs(total)
+    N = 0
+    while True:
+        # coefficient of t^N
+        acc = mpf(0)
+        for j in range(1, len(A)):
+            if N - j + 2 >= 0 and N - j + 2 < len(u):
+                acc += A[j] * (N - j + 2) * (N - j + 1) * u[N - j + 2]
+        for j in range(len(B)):
+            if 0 <= N - j + 1 < len(u):
+                acc += B[j] * (N - j + 1) * u[N - j + 1]
+        for j in range(len(C)):
+            if 0 <= N - j < len(u):
+                acc += C[j] * u[N - j]
+        u.append(-acc / (A[0] * (N + 2) * (N + 1)))
+        k = N + 2
+        term = u[k] * h ** k
+        total += term
+        slope += k * u[k] * h ** (k - 1)
+        size = max(size, abs(term))
+        N += 1
+        if abs(term) < mpf(10) ** (-mpmath.mp.dps - 5) * size and N > 6:
+            break
+    return total, slope
+
+
+def radial(m, n, c, x, prolate, kind, start=None):
+    sign = -1 if prolate else 1
+    lam, rs, d = solve(m, n, c, prolate)
+    c = mpf(c); x = mpf(x)
+    if start is None:
+        start = mpf(2) if prolate else mpf(2)
+    if kind == 1 or x >= start:
+        if x == 0:
+            x = mpf(10) ** -50
+        return bessel_series(m, n, c, x, sign, kind, lam, rs, d)
+    y, dy, sizes = bessel_series(m, n, c, start, sign, kind, lam, rs, d)
+    sizes = (0, 0, sizes[2])
+    here = start
+    while here > x:
+        radius = (here - 1) if prolate else mpmath.sqrt(here * here + 1)
+        h = max(-radius / 2, -1 / (2 * c), x - here)
+        y, dy = taylor_step(m, c, lam, sign, here, h, y, dy)
+        here += h
+    return y, dy, sizes
+
+
+STEP = mpf(10) ** -25
+
+
+def case(args):
+    # Measured against the largest of |R|, |c ∂R/∂c|, |x ∂R/∂x|, the modulus √(R1² + R2²) of the
+    # two kinds, the sum of the sizes of the Bessel terms, and |R| times the cancellation of the
+    # normalizing sum Σ w_r, for the value and the derivative alike (the derivative's own
+    # x-slope from the radial equation, its modulus from the two derivatives).
+    name, m, n, c, x, prolate, first, given = args
+    with mpmath.workdps(60):
+        pc, px = mpf(c), mpf(x)
+        kind = 1 if first else 2
+        f, df, terms = radial(m, n, pc, px, prolate, kind)
+        f_up, df_up, _ = radial(m, n, pc + STEP, px, prolate, kind)
+        f_down, df_down, _ = radial(m, n, pc - STEP, px, prolate, kind)
+        g, dg, _ = radial(m, n, pc, px, prolate, 3 - kind)
+        lam = solve(m, n, pc, prolate)[0]
+        sign = -1 if prolate else 1
+        p = px * px + sign
+        second = (((lam - pc * pc * px * px) * p - sign * m * m) * f - 2 * px * p * df) / (p * p)
+        sizes = [max(abs(f), abs(pc * (f_up - f_down) / (2 * STEP)), abs(px * df),
+                     mpmath.sqrt(f * f + g * g), terms[0], terms[2] * abs(f)),
+                 max(abs(df), abs(pc * (df_up - df_down) / (2 * STEP)), abs(px * second),
+                     mpmath.sqrt(df * df + dg * dg), terms[1], terms[2] * abs(df))]
+    if terms[2] > 1e8:
+        # The functions give NaN where Σ w_r cancels by more than 10⁸ (prolate c above about 20).
+        f = df = mpmath.nan
+    middle = f" {float(lam)!r}" if given else ""
+    return [f"{name}{suffix} {float(m)!r} {float(n)!r} {c!r}{middle} {x!r} {float(size)!r} "
+            f"{float(value)!r}" for suffix, value, size in
+            (("", f, sizes[0]), ("_d", df, sizes[1]))]
+
+
+random.seed(3181419)
+jobs = []
+for _ in range(70):
+    # Orders mostly small; c from 0.01 to 50; prolate x from 1 + 1e-6 to 30, oblate x from 0 to
+    # 30, both reaching the region the second kind is carried through by Taylor steps.
+    m = random.choice([random.randint(0, 3), random.randint(0, 10)])
+    n = m + random.choice([random.randint(0, 4), random.randint(0, 12)])
+    c = random.choice([random.uniform(0.5, 5.0), 10 ** random.uniform(-2.0, 1.7)])
+    xp = random.choice([1 + 10 ** random.uniform(-6.0, 0.0), random.uniform(1.0, 30.0)])
+    xo = random.choice([10 ** random.uniform(-4.0, 1.5), random.uniform(0.0, 3.0), 0.0])
+    for first, kind in ((True, "1"), (False, "2")):
+        jobs.append((f"pro_rad{kind}", m, n, c, xp, True, first, False))
+        jobs.append((f"obl_rad{kind}", m, n, c, xo, False, first, False))
+for _ in range(6):
+    m = random.randint(0, 4)
+    n = m + random.randint(0, 6)
+    c = random.uniform(0.5, 5.0)
+    for first, kind in ((True, "1"), (False, "2")):
+        jobs.append((f"pro_rad{kind}_cv", m, n, c, random.uniform(1.01, 4.0), True, first, True))
+        jobs.append((f"obl_rad{kind}_cv", m, n, c, random.uniform(0.01, 4.0), False, first, True))
+
+
+def run(job):
+    return case(job)
+
+
+if __name__ == "__main__":
+    with Pool() as pool:
+        lines = [line for result in pool.map(run, jobs, chunksize=1) for line in result]
+    nan, inf = math.nan, math.inf
+    # The ends: x at most 1 (prolate) or below 0 (oblate), c at most 0, and orders not allowed,
+    # give NaN.
+    for name, m, n, c, x in [("pro_rad1", 1.0, 2.0, 2.5, 1.0), ("pro_rad2", 1.0, 2.0, 2.5, 0.5),
+                             ("obl_rad1", 1.0, 2.0, 2.5, -0.5), ("obl_rad2", 1.0, 2.0, 0.0, 1.0),
+                             ("pro_rad1", 1.0, 2.0, -2.5, 1.5), ("pro_rad2", 2.0, 1.0, 2.5, 1.5),
+                             ("obl_rad1", 0.5, 2.0, 2.5, 1.0), ("obl_rad2", 1.0, 2.0, nan, 1.0)]:
+        for suffix in ("", "_d"):
+            lines.append(f"{name}{suffix} {m!r} {n!r} {c!r} {x!r} 1.0 nan")
+    with open("spheroidal_radial.txt", "w") as out:
+        out.write("\n".join(lines) + "\n")
+```
+
 ## Parabolic cylinder functions
 
 In `parabolic.txt` each case holds, before the reference value, the size its error is measured

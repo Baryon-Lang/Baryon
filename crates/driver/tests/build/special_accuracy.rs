@@ -54,7 +54,9 @@
 /// The spheroidal angular functions are held to 16 ULP of the size their case records, and their
 /// characteristic values to 64: λ is an eigenvalue of a matrix whose entries reach about c²/2,
 /// so for prolate c above about 100, where λ is near c(2(n − m) + 1), the bisection resolves it
-/// only to about c²/(2λ) ULP. The worst are 8 and 22 ULP.
+/// only to about c²/(2λ) ULP. The worst are 8 and 22 ULP. The radial functions are held to 128:
+/// the second kind inside its series' reach is carried by Taylor steps, each of which rounds by
+/// about a ULP of its modulus, and the worst is 54 ULP, for oblate c near 30 at ξ = 0.
 ///
 /// The nodes of Gauss quadrature, `roots_..._x`, are held to 16 ULP of the larger of themselves and
 /// the gap to the nearest node: Newton's method on the polynomial leaves 7 at worst. Their weights,
@@ -80,6 +82,7 @@ pub(super) fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         _ if name.starts_with("mathieu_mod") => 32.0,
         "pro_cv" | "obl_cv" | "pro_cv_seq" | "obl_cv_seq" => 64.0,
         _ if name.starts_with("pro_ang1") || name.starts_with("obl_ang1") => 16.0,
+        _ if name.starts_with("pro_rad") || name.starts_with("obl_rad") => 128.0,
         "gammainc" | "gammaincc" | "gammaincinv" | "gammainccinv" => 16.0 * logarithm / shape,
         "betainc" | "betaincc" | "betaincinv" | "betainccinv" => 32.0 * logarithm / shape,
         "bdtr" | "bdtrc" | "bdtri" | "nbdtr" | "nbdtrc" | "nbdtri" | "pdtr" | "pdtrc" | "pdtri"
@@ -127,6 +130,9 @@ pub(super) fn tolerance(name: &str, want: f64, first: f64) -> f64 {
 /// terms, which cancel where the function is exponentially small, and the spheroidal functions,
 /// whose size is the same with c in the place of q and Legendre terms in the place of Fourier
 /// terms; their characteristic values are measured against the larger of |λ| and |c ∂λ/∂c|.
+/// A radial function's size adds the modulus √(R1² + R2²) of the two kinds, the envelope they
+/// oscillate under, its Bessel terms in the place of Legendre terms, and |R| times the
+/// cancellation of the normalizing sum Σ w_r, which costs prolate functions digits as c grows.
 pub(super) fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
         "gammaln" | "psi" | "betaln" | "expi" | "chi" | "ellipj_sn" | "ellipj_cn" | "ellipj_dn" => {
