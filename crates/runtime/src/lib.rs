@@ -105,6 +105,7 @@ mod paths;
 mod philox;
 mod print;
 mod print_array;
+mod shortest;
 mod streams;
 mod strings;
 mod subprocess;

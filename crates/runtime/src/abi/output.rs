@@ -19,6 +19,7 @@
 //! That prints `7 0.5`.
 
 use crate::print;
+use crate::shortest::shortest;
 
 /// Prints a signed integer in decimal, as Python does: `-12`.
 ///
@@ -56,7 +57,7 @@ pub extern "C" fn baryon_rt_print_u64(stream: i32, value: u64) {
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
 pub extern "C" fn baryon_rt_print_f64(stream: i32, value: f64) {
-    print::write(stream, &print::float(&format!("{value:e}")));
+    print::write(stream, &print::float(&shortest(value)));
 }
 
 /// Prints an `f32` with the fewest digits that read back as the same `f32`, placed as Python's
@@ -70,7 +71,7 @@ pub extern "C" fn baryon_rt_print_f64(stream: i32, value: f64) {
 #[allow(unsafe_code, reason = "exported to compiled code")]
 #[unsafe(no_mangle)]
 pub extern "C" fn baryon_rt_print_f32(stream: i32, value: f32) {
-    print::write(stream, &print::float(&format!("{value:e}")));
+    print::write(stream, &print::float(&shortest(value)));
 }
 
 /// Prints a `bool` as Python does: `True` or `False`.

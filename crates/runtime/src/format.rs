@@ -8,6 +8,7 @@
 //! fours for binary, octal and hexadecimal), and `g` drops trailing zeros. A value with the empty
 //! specification is written as `print` writes it, so `f"{x}"` and `print(x)` agree.
 
+use crate::shortest::shortest;
 use crate::{complex, print};
 
 /// A format specification's parts, laid out for C: the form the compiler passes them in, as a
@@ -149,9 +150,9 @@ pub(crate) fn float(value: f64, single: bool, spec: &FormatSpec) -> String {
                 reason = "an `f32` value widened to `f64` narrows back exactly"
             )]
             let shortest = if single {
-                format!("{:e}", magnitude as f32)
+                shortest(magnitude as f32)
             } else {
-                format!("{magnitude:e}")
+                shortest(magnitude)
             };
             (print::float(&shortest), "")
         }
@@ -166,7 +167,7 @@ pub(crate) fn float(value: f64, single: bool, spec: &FormatSpec) -> String {
             fixed(magnitude * 100.0, precision.unwrap_or(6), alternate),
             "%",
         ),
-        _ => (print::float(&format!("{magnitude:e}")), ""),
+        _ => (print::float(&shortest(magnitude)), ""),
     };
     let body = if upper { body.to_uppercase() } else { body };
     // Only the digits before the point are grouped.
@@ -214,9 +215,9 @@ pub(crate) fn complex(real: f64, imaginary: f64, single: bool, spec: &FormatSpec
             reason = "an `f32` part widened to `f64` narrows back exactly"
         )]
         let shortest = if single {
-            format!("{:e}", value.abs() as f32)
+            shortest(value.abs() as f32)
         } else {
-            format!("{:e}", value.abs())
+            shortest(value.abs())
         };
         let body = complex::part(&shortest);
         let sign = sign(value.is_sign_negative() && !value.is_nan(), part_spec);
