@@ -210,9 +210,10 @@ impl<'db> Builder<'db> {
     }
 
     /// Calls the function `name` of `<std>/frames.byn`, `<std>/frame_csv.byn`,
-    /// `<std>/frame_joins.byn`, `<std>/frame_missing.byn`, `<std>/frame_outer.byn`,
-    /// `<std>/frame_masks.byn` or `<std>/frame_order.byn` with `type_arguments`, borrowing
-    /// each of `arguments`, and gives the temporary of type `returns` that holds its result.
+    /// `<std>/frame_csv_types.byn`, `<std>/frame_joins.byn`, `<std>/frame_missing.byn`,
+    /// `<std>/frame_outer.byn`, `<std>/frame_masks.byn` or `<std>/frame_order.byn` with
+    /// `type_arguments`, borrowing each of `arguments`, and gives the temporary of type
+    /// `returns` that holds its result.
     /// The sort `ordered` of a column of `i64` or of `f64` is called as `ordered_integers` or
     /// `ordered_floats`, which sort those types in about `n` steps (roadmap 3.13.12).
     /// The functions called this way take every parameter borrowed and raise nothing. `None`
@@ -282,13 +283,14 @@ impl<'db> Builder<'db> {
     }
 
     /// The function `name` that `<std>/frames.byn`, `<std>/frame_csv.byn`,
-    /// `<std>/frame_joins.byn`, `<std>/frame_missing.byn`, `<std>/frame_outer.byn`,
-    /// `<std>/frame_masks.byn` or `<std>/frame_order.byn` defines at its top level. Costs
-    /// one pass over the top-level statements of each file looked in.
+    /// `<std>/frame_csv_types.byn`, `<std>/frame_joins.byn`, `<std>/frame_missing.byn`,
+    /// `<std>/frame_outer.byn`, `<std>/frame_masks.byn` or `<std>/frame_order.byn` defines at
+    /// its top level. Costs one pass over the top-level statements of each file looked in.
     pub(crate) fn frame_function(&self, name: &str) -> Option<Item<'db>> {
         [
             "frames",
             "frame_csv",
+            "frame_csv_types",
             "frame_joins",
             "frame_missing",
             "frame_outer",

@@ -10,10 +10,10 @@
 //!
 //! The file's header names its columns; each column of the schema is read from the column
 //! of that name, wherever it stands, and columns the schema does not name are skipped. A
-//! column of `f64`, `i64`, `bool` or `str` is read, and one of those that may be `None`,
-//! where an empty cell is `None`. The call can fail with `OSError`, when the file cannot be
-//! read, and with `ValueError`, when the header lacks a column or a cell is not a value of
-//! its column's type.
+//! column of floats, of whole numbers, of `bool` or of `str` is read, and one of those that
+//! may be `None`, where an empty cell is `None`. The call can fail with `OSError`, when the
+//! file cannot be read, and with `ValueError`, when the header lacks a column or a cell is
+//! not a value of its column's type.
 //!
 //! `df.to_csv(path)` writes a frame as such a file, the bytes
 //! `pandas.DataFrame.to_csv(path, index=False)` writes: a frame has no row index (decision
@@ -25,7 +25,7 @@
 use super::Body;
 use super::calls::Arguments;
 use syntax::NodeId;
-use types::{Call, Callee, Float, Integer, Key, Primitive, Type, TypeKind};
+use types::{Call, Callee, Key, Primitive, Type, TypeKind};
 
 /// How a call is written, for the hints.
 const EXAMPLE: &str = "for example `trades: DataFrame[Trade] = DataFrame.read_csv(\"trades.csv\")`";
@@ -102,8 +102,8 @@ impl<'db> Body<'db> {
                     &message,
                     "not built yet",
                     Some(
-                        "a column of `f64`, `i64`, `bool` or `str` is read, and one of those \
-                         that may be `None`; read the column as one of them and convert it",
+                        "a column of floats, of whole numbers, of `bool` or of `str` is read, \
+                         and one of those that may be `None`",
                     ),
                 );
             }
@@ -117,8 +117,8 @@ impl<'db> Body<'db> {
         self.raises_library_errors(node, frame, &["OSError", "ValueError"])
     }
 
-    /// Whether `read_csv` reads a column whose elements are `element`s: an `f64`, an `i64`, a
-    /// `bool` or a `str`, or one of them or `None`.
+    /// Whether `read_csv` reads, and `to_csv` writes, a column whose elements are `element`s:
+    /// a float, a whole number, a `bool` or a `str`, or one of them or `None`.
     fn is_csv_element(&self, element: Type<'db>) -> bool {
         let element = match element.kind(self.db) {
             TypeKind::Optional(value) => *value,
@@ -128,16 +128,14 @@ impl<'db> Body<'db> {
             element.kind(self.db),
             TypeKind::Str
                 | TypeKind::Primitive(
-                    Primitive::Bool
-                        | Primitive::Float(Float::F64)
-                        | Primitive::Integer(Integer::I64)
+                    Primitive::Bool | Primitive::Float(_) | Primitive::Integer(_)
                 )
         )
     }
 
     /// The call `node` of `to_csv` on a frame of type `base`: nothing, after checking the
-    /// path and that every column is of a type the writer has, a number other than `f32`
-    /// and complex, a `bool` or a `str`, or one of them or `None`. `None`, with nothing
+    /// path and that every column is of a type the writer has, a number that is not
+    /// complex, a `bool` or a `str`, or one of them or `None`. `None`, with nothing
     /// checked, for any other method.
     pub(super) fn csv_method(
         &mut self,
@@ -178,7 +176,7 @@ impl<'db> Body<'db> {
         let found = self.expression(path, Some(str));
         self.expect(path, str, found, "a path is");
         for column in columns {
-            if !self.is_written_element(column.element) {
+            if !self.is_csv_element(column.element) {
                 let message = format!(
                     "`to_csv` cannot write the column `{}` of type `{}` yet",
                     column.name,
@@ -189,7 +187,7 @@ impl<'db> Body<'db> {
                     &message,
                     "not built yet",
                     Some(
-                        "a column of `f64`, of whole numbers, of `bool` or of `str` is \
+                        "a column of floats, of whole numbers, of `bool` or of `str` is \
                          written, and one of those that may be `None`",
                     ),
                 ));
@@ -197,21 +195,5 @@ impl<'db> Body<'db> {
         }
         let nothing = Type::new(self.db, TypeKind::None);
         Some(self.raises_library_error(node, nothing, "OSError"))
-    }
-
-    /// Whether `to_csv` writes a column whose elements are `element`s: an `f64`, a whole
-    /// number, a `bool` or a `str`, or one of them or `None`.
-    fn is_written_element(&self, element: Type<'db>) -> bool {
-        let element = match element.kind(self.db) {
-            TypeKind::Optional(value) => *value,
-            _ => element,
-        };
-        matches!(
-            element.kind(self.db),
-            TypeKind::Str
-                | TypeKind::Primitive(
-                    Primitive::Bool | Primitive::Float(Float::F64) | Primitive::Integer(_)
-                )
-        )
     }
 }

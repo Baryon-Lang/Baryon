@@ -1,0 +1,181 @@
+"""CSV columns of the narrower number types, read and written in Baryon (roadmap 3.14.4.1,
+decision 0045).
+
+The compiler calls these functions for `DataFrame.read_csv(path)` and `df.to_csv(path)`, as
+it calls those of `<std>/frame_csv.byn`, when a column is of a number type other than `f64`
+and `i64`; a program cannot import this file.
+
+- `csv_i8`, `csv_i16`, `csv_i32`, `csv_u8`, `csv_u16` and `csv_u32` read a column of that
+  type: its cells as `i64`, each checked against the type's range, then narrowed.
+- `csv_u64` reads a column of `u64`, whose larger half no `i64` holds, digit by digit.
+- `csv_f32` reads a column of `f32`: each cell as `f64`, then rounded to `f32`, as pandas
+  reads one.
+- `csv_single_cells` and `csv_optional_single_cells` give the cells of a column of `f32` for
+  `to_csv`, as pandas writes them.
+
+Cost: a column of a narrow type is read into an array of `i64` or `f64` first, which is freed
+once the narrow array is filled.
+"""
+
+from frame_csv import csv_bad, csv_empty, csv_floats_as, csv_there, csv_whole
+
+
+def csv_i8(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[i8, 1], OSError | ValueError]:
+    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `i8`, as
+    `csv_whole` reads it: a cell outside the type's range is a `ValueError`."""
+    wide = csv_whole(data, bounds, column, columns, optional, name, "i8", (-128, 127))
+    result = Array.fill((len(wide),), i8(0))
+    for row in range(len(wide)):
+        result[row] = i8(wide[row])
+    return result
+
+
+def csv_i16(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[i16, 1], OSError | ValueError]:
+    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `i16`, as
+    `csv_whole` reads it: a cell outside the type's range is a `ValueError`."""
+    wide = csv_whole(data, bounds, column, columns, optional, name, "i16", (-32768, 32767))
+    result = Array.fill((len(wide),), i16(0))
+    for row in range(len(wide)):
+        result[row] = i16(wide[row])
+    return result
+
+
+def csv_i32(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[i32, 1], OSError | ValueError]:
+    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `i32`, as
+    `csv_whole` reads it: a cell outside the type's range is a `ValueError`."""
+    limits = (-2147483648, 2147483647)
+    wide = csv_whole(data, bounds, column, columns, optional, name, "i32", limits)
+    result = Array.fill((len(wide),), i32(0))
+    for row in range(len(wide)):
+        result[row] = i32(wide[row])
+    return result
+
+
+def csv_u8(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[u8, 1], OSError | ValueError]:
+    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `u8`, as
+    `csv_whole` reads it: a cell outside the type's range is a `ValueError`."""
+    wide = csv_whole(data, bounds, column, columns, optional, name, "u8", (0, 255))
+    result = Array.fill((len(wide),), u8(0))
+    for row in range(len(wide)):
+        result[row] = u8(wide[row])
+    return result
+
+
+def csv_u16(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[u16, 1], OSError | ValueError]:
+    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `u16`, as
+    `csv_whole` reads it: a cell outside the type's range is a `ValueError`."""
+    wide = csv_whole(data, bounds, column, columns, optional, name, "u16", (0, 65535))
+    result = Array.fill((len(wide),), u16(0))
+    for row in range(len(wide)):
+        result[row] = u16(wide[row])
+    return result
+
+
+def csv_u32(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[u32, 1], OSError | ValueError]:
+    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `u32`, as
+    `csv_whole` reads it: a cell outside the type's range is a `ValueError`."""
+    wide = csv_whole(data, bounds, column, columns, optional, name, "u32", (0, 4294967295))
+    result = Array.fill((len(wide),), u32(0))
+    for row in range(len(wide)):
+        result[row] = u32(wide[row])
+    return result
+
+
+def csv_u64(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[u64, 1], OSError | ValueError]:
+    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `u64`: each
+    cell is digits alone, with an optional `+` before them and spaces around them allowed.
+    A number past 2^64 - 1, or anything else, is a `ValueError`. An empty cell is 0 when
+    `optional` and a `ValueError` otherwise."""
+    rows = len(bounds) // (2 * columns)
+    result = Array.fill((rows,), u64(0))
+    most = ~u64(0)
+    for row in range(rows):
+        at = 2 * (row * columns + column)
+        if bounds[at] == bounds[at + 1]:
+            if not optional:
+                raise ValueError(csv_empty(name, row))
+            continue
+        text = data[bounds[at] : bounds[at + 1]].decode().strip()
+        digits = text[1:] if text.startswith("+") else text.copy()
+        if digits == "":
+            raise ValueError(csv_bad(name, row, text, "u64"))
+        value = u64(0)
+        for digit in digits:
+            found = "0123456789".find(digit)
+            if found < 0:
+                raise ValueError(csv_bad(name, row, text, "u64"))
+            last = u64(found)
+            if value > (most - last) // u64(10):
+                raise ValueError(csv_bad(name, row, text, "u64"))
+            value = value * u64(10) + last
+        result[row] = value
+    return result
+
+
+def csv_f32(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[f32, 1], OSError | ValueError]:
+    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `f32`, as
+    `csv_floats_as` reads it: each cell as `f64`, rounded to the nearest `f32`."""
+    wide = csv_floats_as(data, bounds, column, columns, optional, name, "f32")
+    result = Array.fill((len(wide),), f32(0.0))
+    for row in range(len(wide)):
+        result[row] = f32(wide[row])
+    return result
+
+
+def _single(value: f32) -> str:
+    """`value` as pandas writes an `f32` in a CSV file, which is as NumPy writes one: the
+    fewest digits that read back as the same `f32`, in scientific form, `1.2345675e+06`,
+    from a million up and below 0.0001, and in plain form, `123456.7`, between them.
+
+    `print` writes the same digits and keeps the plain form up to 1e16, so only a plain
+    text of seven or more digits before the point is rewritten."""
+    text = f"{value}"
+    if "e" in text or "n" in text:
+        return text
+    sign = "-" if text.startswith("-") else ""
+    parts = text.lstrip("-").split(".")
+    whole = parts[0].copy()
+    if len(whole) < 7:
+        return text
+    digits = (whole + parts[1]).rstrip("0")
+    exponent = len(whole) - 1
+    if len(digits) == 1:
+        return f"{sign}{digits}e+{exponent:02}"
+    return f"{sign}{digits[0:1]}.{digits[1:]}e+{exponent:02}"
+
+
+def csv_single_cells(column: Array[f32, 1]) -> list[str]:
+    """The cells of a column of `f32` for `to_csv`: each number as `_single` writes it, and
+    an empty cell for NaN, as pandas writes one."""
+    cells: list[str] = []
+    for value in column:
+        if value != value:
+            cells.append("")
+        else:
+            cells.append(_single(value))
+    return cells
+
+
+def csv_optional_single_cells(values: Array[f32, 1], bits: Array[u8, 1]) -> list[str]:
+    """`csv_single_cells` for a column that may hold `None`, whose cell is empty too."""
+    cells = csv_single_cells(values)
+    for row in range(len(cells)):
+        if not csv_there(bits, row):
+            cells[row] = ""
+    return cells
