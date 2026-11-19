@@ -291,6 +291,17 @@ build new text, which the value owns and frees when it is dropped.
 `(a, b, c)` is a tuple: a fixed number of values, each with its own type, written `tuple[int, f64]`.
 Tuples unpack in assignments and `for` loops: `x, y, z = position`.
 
+Where the tuple's type is written, in an annotation, a return type or a parameter, an item may
+be `None` or a plain value where that type has a `T | None`, and a member where it has a union,
+as in Python:
+
+```python
+def root(x: f64) -> tuple[f64, f64 | None]:
+    if x < 0.0:
+        return (x, None)
+    return (x, x ** 0.5)
+```
+
 ## Lists
 
 `list[T]` is a growable sequence of values of one type `T`, stored contiguously on the heap: Rust's

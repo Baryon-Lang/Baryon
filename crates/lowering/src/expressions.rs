@@ -87,7 +87,21 @@ impl<'db> Builder<'db> {
             SyntaxKind::Call => self.call(place, node),
             SyntaxKind::Tuple => {
                 let items: Vec<NodeId> = self.tree.children_with(node, Role::Item).collect();
-                let operands = items.into_iter().map(|item| self.operand(item)).collect();
+                // An item the checker widened, such as a `None` in a `tuple[f64, f64 | None]`,
+                // is converted to its place's type, as a list's items are. A tuple that splices
+                // a `*args` has no place per item and builds its items as they are.
+                let places = match ty.kind(self.db) {
+                    TypeKind::Tuple(places) if places.len() == items.len() => places.clone(),
+                    _ => Vec::new(),
+                };
+                let operands = items
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, item)| match places.get(index) {
+                        Some(&to) => self.operand_as(item, to),
+                        None => self.operand(item),
+                    })
+                    .collect();
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
             SyntaxKind::List => self.list_display(place, node),
