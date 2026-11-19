@@ -110,7 +110,7 @@ error: `agg` has no reduction `top`
    |
 23 |     groups = quotes.groupby("price").agg(top=("bid", "top"))
    |                                                      ^^^^^ not a reduction
-   = note: it has `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`
+   = note: it has `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`, `size`, `nunique`
 
 error: `DataFrame[Price]` has no column `bid`
   --> main.byn:24:38

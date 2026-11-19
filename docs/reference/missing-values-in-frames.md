@@ -61,8 +61,9 @@ This prints `3 None 3.0`, then `[False  True False]`.
   pandas shows `<NA>`.
 - **`groupby` leaves out a row whose key is `None`**, as it leaves out one whose key is
   `NaN`, and the key column of the result keeps its type.
-- **`agg` reduces the values that are there.** `count` is how many a group has and `sum`
-  adds them. A group may have none: its count and sum are 0, its `mean`, `var`, `std` and
+- **`agg` reduces the values that are there.** `count` is how many a group has, `nunique`
+  how many different ones, and `sum` adds them; `size` alone counts every row. A group may
+  have none: its count, `nunique` and sum are 0, its `mean`, `var`, `std` and
   `median` are `NaN`, as for a group of `NaN`s, and its `min`, `max`, `first` and `last`
   are `None`, so those four give a column that may hold `None`. pandas shows `<NA>` for
   all of them but the count and the sum.

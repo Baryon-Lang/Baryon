@@ -22,23 +22,25 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Column, Float, Integer, Primitive, Type, TypeKind};
 
 /// The reductions of `agg`, each at the number the library's `group_floats` and
-/// `group_integers` know it by.
-const REDUCTIONS: [&str; 10] = [
-    "sum", "min", "max", "first", "last", "count", "mean", "var", "std", "median",
+/// `group_integers` know it by. The last two, `size` and `nunique`, are counted by the
+/// [`frame_group_counts`](crate::frame_group_counts) module.
+const REDUCTIONS: [&str; 12] = [
+    "sum", "min", "max", "first", "last", "count", "mean", "var", "std", "median", "size",
+    "nunique",
 ];
 
 /// The rows of a frame sorted into groups: what each reduction reads.
-struct Groups {
+pub(crate) struct Groups {
     /// The local holding the rows' positions, sorted by the keys.
-    order: Local,
+    pub(crate) order: Local,
     /// The local holding where each group starts in `order`, and last where `order` ends.
-    starts: Local,
+    pub(crate) starts: Local,
     /// The local holding how many rows the frame has, those left out of `order` included.
-    count: Local,
+    pub(crate) count: Local,
     /// Whether a group may have no rows, which the groups of a column that may hold `None`
     /// may once its `None`s are left out. The library's `group_integers` reads the first
     /// row of every group, so such groups go through `group_present_integers`.
-    gaps: bool,
+    pub(crate) gaps: bool,
 }
 
 impl<'db> Builder<'db> {
@@ -104,9 +106,13 @@ impl<'db> Builder<'db> {
             };
             let values = source.clone().project(Projection::Field(position));
             let read = (values, column);
-            let column = match column.element.kind(self.db) {
-                TypeKind::Str => self.group_text(&groups, read, how, argument),
-                TypeKind::Optional(_) => self.group_optional(&groups, read, how, new, argument),
+            let column = match (how, column.element.kind(self.db)) {
+                (10, _) => self.group_sizes(&groups, argument),
+                (11, _) => self.group_distinct(&groups, read, argument),
+                (_, TypeKind::Str) => self.group_text(&groups, read, how, argument),
+                (_, TypeKind::Optional(_)) => {
+                    self.group_optional(&groups, read, how, new, argument)
+                }
                 _ => self.group_column(&groups, read, how, new, argument),
             };
             let Some(column) = column else {
@@ -263,20 +269,9 @@ impl<'db> Builder<'db> {
         let &TypeKind::Optional(element) = column.element.kind(self.db) else {
             return None;
         };
-        let positions = self.positions_type();
         let bits = stored.clone().project(Projection::Field(VALIDITY));
-        let arguments = vec![bits.clone(), Place::from(groups.order)];
-        let order = self.frame_call("present_rows", Vec::new(), arguments, positions, node)?;
-        self.drop_later(order);
-        let arguments = vec![bits, Place::from(groups.order), Place::from(groups.starts)];
-        let starts = self.frame_call("present_starts", Vec::new(), arguments, positions, node)?;
-        self.drop_later(starts);
-        let there = Groups {
-            order,
-            starts,
-            count: groups.count,
-            gaps: true,
-        };
+        let there = self.present_groups(groups, bits, node)?;
+        let starts = there.starts;
         let values = Column {
             name: column.name.clone(),
             element,

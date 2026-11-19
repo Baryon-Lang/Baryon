@@ -33,6 +33,7 @@ mod frame_benchmark;
 mod frame_columns;
 mod frame_csv;
 mod frame_distinct;
+mod frame_group_counts;
 mod frame_groups;
 mod frame_join_keys;
 mod frame_joins;
