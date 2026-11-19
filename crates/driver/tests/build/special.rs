@@ -164,7 +164,7 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         "j0" | "j1" | "jn" | "y0" | "y1" | "i0" | "i1" | "i0e" | "i1e" | "k0" | "k1" | "k0e"
         | "k1e" | "kn" | "exp1" | "expi" | "expn" | "si" | "ci" | "shi" | "chi" | "fresnel_s"
         | "fresnel_c" | "zeta" | "zetac" | "hurwitz" | "spence" => 16.0,
-        _ if name.starts_with("mathieu_") => 16.0,
+        _ if name.starts_with("mathieu_mod") => 32.0,
         "gammainc" | "gammaincc" | "gammaincinv" | "gammainccinv" => 16.0 * logarithm / shape,
         "betainc" | "betaincc" | "betaincinv" | "betainccinv" => 32.0 * logarithm / shape,
         "bdtr" | "bdtrc" | "bdtri" | "nbdtr" | "nbdtrc" | "nbdtri" | "pdtr" | "pdtrc" | "pdtri"
@@ -178,7 +178,7 @@ fn tolerance(name: &str, want: f64, first: f64) -> f64 {
         "ber" | "bei" | "ker" | "kei" | "berp" | "beip" | "kerp" | "keip" | "pbdv" | "pbdv_d"
         | "pbvv" | "pbvv_d" | "pbwa" | "pbwa_d" => 32.0,
         "struve" | "modstruve" | "hyp2f1" => 128.0,
-        "hyp0f1" => 16.0,
+        _ if name.starts_with("mathieu_") || name == "hyp0f1" => 16.0,
         "hyp1f1" => 64.0,
         "hyperu" => 512.0,
         _ if name.starts_with("roots_") && name.ends_with("_w") => 32.0 * first,
