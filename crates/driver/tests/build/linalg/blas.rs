@@ -1,6 +1,9 @@
 //! `@` of matrices through the system BLAS, `--blas` (decision 0040, roadmap 3.10.2): the
 //! program gives the same results as without the flag on matrices whose products are exact.
-//! CI installs `OpenBLAS` on Linux; macOS has Accelerate.
+//! CI installs `OpenBLAS` on Linux; macOS has Accelerate. On a machine without `OpenBLAS` the
+//! test prints why and passes without checking, so `cargo xtask ci` still runs for a
+//! contributor who has not installed `libopenblas-dev`; under CI, where the variable `CI` is
+//! set, a missing library fails the test, so CI always checks BLAS for real.
 
 use crate::{BARYON, baryon_build, build_runtime, package, stderr};
 use std::process::Command;
@@ -75,10 +78,24 @@ fn blas_builds_print_what_loops_print() {
         .arg(&blas)
         .output()
         .unwrap();
+    if !output.status.success() && openblas_missing(&stderr(&output)) {
+        eprintln!(
+            "skipped: `--blas` needs OpenBLAS, which is not installed here; install \
+             `libopenblas-dev` to run this test"
+        );
+        return;
+    }
     assert!(output.status.success(), "{}", stderr(&output));
     for program in [loops, blas] {
         let ran = Command::new(&program).output().unwrap();
         assert!(ran.status.success(), "{}", stderr(&ran));
         assert_eq!(String::from_utf8_lossy(&ran.stdout), PRINTED);
     }
+}
+
+/// Whether a failed `--blas` build failed only because `OpenBLAS` is not installed, outside CI:
+/// the driver's own message for a missing library says so, and GitHub Actions sets `CI`, where
+/// the library must be present.
+fn openblas_missing(message: &str) -> bool {
+    std::env::var_os("CI").is_none() && message.contains("links with OpenBLAS, which was not found")
 }
