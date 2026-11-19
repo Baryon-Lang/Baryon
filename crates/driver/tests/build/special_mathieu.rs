@@ -78,7 +78,7 @@ def main() -> Raises[None, OSError | ValueError]:
 
 /// The radial functions and their derivatives, and some Fourier coefficients, at the 906 cases of
 /// `mathieu_radial.txt`: orders to 12, q from 1e-3 to 200, z from −1 to 3, and arguments
-/// SciPy gives NaN for.
+/// `SciPy` gives NaN for.
 #[test]
 fn radial_mathieu_functions_match_the_recorded_values() {
     check("special-mathieu-radial", RADIAL, "mathieu_radial.txt").unwrap();
