@@ -5,8 +5,9 @@ into programs yet.
 
 A CSV file (comma-separated values) is a table as text: one row on each line, the cells split
 by commas, and the first line naming the columns. Spreadsheets, databases and instruments all
-write it. `DataFrame.read_csv(path)` reads one into a [`DataFrame`](dataframes.md), with the
-name `pandas.read_csv` has ([decision 0045](../decisions/0045-dataframe.md), roadmap 3.14.4).
+write it. `DataFrame.read_csv(path)` reads one into a [`DataFrame`](dataframes.md) and
+`df.to_csv(path)` writes a frame as one, with the names pandas has
+([decision 0045](../decisions/0045-dataframe.md), roadmap 3.14.4).
 A table of numbers alone, with no header, is read into an `Array` with
 [`Array.loadtxt`](data-files.md#text-tables).
 
@@ -78,10 +79,57 @@ The file is read as pandas reads one with its defaults:
 - A line ends with `"\n"`, `"\r\n"` or `"\r"`. A blank line is skipped.
 - The file is UTF-8. A byte-order mark at its start is skipped.
 
+## Writing a file
+
+`df.to_csv(path)` writes a frame as a CSV file and gives nothing back. A file that is there
+already is replaced.
+
+```python
+def main() -> Raises[None, OSError]:
+    trades = DataFrame({
+        "symbol": Array(["AAPL", "MSFT", "BRK,B"]),
+        "price": Array([189.5, None, 171.0]),
+        "volume": Array([100, 250, 50]),
+    })
+    trades.to_csv("trades.csv")
+```
+
+```text
+symbol,price,volume
+AAPL,189.5,100
+MSFT,,250
+"BRK,B",171.0,50
+```
+
+The bytes are the ones `pandas.DataFrame.to_csv(path, index=False)` writes for the same
+columns. A frame has no row index ([decision 0045](../decisions/0045-dataframe.md)), so no
+index column is written.
+
+- **The first line names the columns**, in the frame's order, and each row follows on a line
+  of its own, ended by `"\n"`. A frame of no rows writes the header alone.
+- **A cell is written as `print` writes the value.** An `f64` is the shortest text that reads
+  back as the same number, `189.5`, `100.0` or `1e-07`. A whole number of any width is its
+  digits, and a `bool` is `True` or `False`.
+- **`None` and NaN are empty cells.** `read_csv` reads the empty cell back as `None` into a
+  column that may hold it and as NaN into a column of `f64`.
+- **Text is quoted only where it must be**: a cell that holds a comma, a double quote or a
+  line end goes in double quotes, with each double quote inside written twice. A column's
+  name is quoted the same way.
+- **A frame of one column writes an empty cell as `""`**, since a blank line is skipped when
+  the file is read.
+
+The writer has columns of `f64`, of every whole number type, of `bool` and of `str`, and each
+of them with `| None`. A column of another type is a compile error that names it.
+
+Two values do not come back as they were when the file is read again. An empty text in a
+column of `str | None` is written as an empty cell, which reads back as `None`. NaN in a
+column of `f64 | None` is written as an empty cell too, which reads back as `None`.
+
 ## Errors
 
 `DataFrame.read_csv` can fail in two ways, and the function that calls it handles both or
-lists them in its `Raises`, as with any [error](errors.md).
+lists them in its `Raises`, as with any [error](errors.md). `to_csv` can fail with `OSError`
+alone, when the file cannot be made or written.
 
 - `OSError` when the file cannot be opened or read.
 - `ValueError` when the file does not fit the schema. Its `message` names the file, or the
@@ -104,6 +152,10 @@ columns it gives are as large as the same columns built any other way. Reading a
 million rows and four columns, of text, `f64`, `i64` and `bool`, took 0.78 s on the
 development machine, where pandas 3.0.5 took 0.20 s; the reader has not been tuned yet.
 
+`to_csv` builds the text of every cell before it writes the first, and frees it all before
+it returns. Writing the same million rows
+took 2.5 s, where pandas took 2.0 s.
+
 ## Differences from pandas
 
 - **The types are given, never guessed.** pandas reads every column and guesses each type
@@ -120,11 +172,15 @@ development machine, where pandas 3.0.5 took 0.20 s; the reader has not been tun
   column the schema does not name is skipped, and one it names that the file lacks is an
   error.
 - **No keywords yet.** `sep=`, `header=`, `names=`, `skiprows=`, `nrows=`, `na_values=` and
-  the rest are compile errors that name the keyword, never ignored.
+  the rest are compile errors that name the keyword, never ignored. The same holds for
+  `to_csv`: `index=`, `sep=`, `columns=`, `na_rep=`, `float_format=` and the rest.
+- **`to_csv` writes no index column.** pandas writes its row index as a first column unless
+  `index=False` is given. A frame has no index here, so the file is the one pandas writes
+  with `index=False`.
+- **`to_csv` needs a path.** In pandas, `df.to_csv()` with no path gives the text back.
 
 ## Not built yet
 
-- Writing: `df.to_csv(path)`.
-- Columns of the other number types, such as `f32` and `i32`: read `f64` or `i64` and
-  convert.
-- Every keyword of `pandas.read_csv`.
+- Reading columns of the other number types, such as `f32` and `i32`: read `f64` or `i64`
+  and convert. Writing a column of `f32` (roadmap 3.14.4.1).
+- Every keyword of `pandas.read_csv` and of `to_csv` (roadmap 3.14.4.2).

@@ -1,4 +1,5 @@
-//! CSV files read into a frame (decision 0045, roadmap 3.14.4): `DataFrame.read_csv(path)`.
+//! CSV files read into a frame and written from one (decision 0045, roadmap 3.14.4):
+//! `DataFrame.read_csv(path)` and `df.to_csv(path)`.
 //!
 //! The reader is Baryon code in `<std>/frame_csv.byn`, which knows nothing of the schema, so
 //! this module calls it once for the file and once or more for each column the checker
@@ -14,12 +15,16 @@
 //! The first two steps can fail, so each call has the error edge of the `read_csv` call. A
 //! column that is built stays an owning temporary until the last call that can fail has
 //! returned, so an error in a later column frees the earlier ones.
+//!
+//! `to_csv` goes the other way: one call for each column gives its cells as text, by the
+//! column's type, and `csv_write` writes them with the header. Only the last call can fail.
 
 use crate::builder::Builder;
 use crate::frames::erase;
+use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{Argument, Callee, Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::NodeId;
-use types::{Column, Primitive, Type, TypeKind};
+use types::{Column, Float, Primitive, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// `DataFrame.read_csv(path)` into `place`, the frame's type being the call's own, which
@@ -47,7 +52,7 @@ impl<'db> Builder<'db> {
         let cells = self.temporary(Type::new(self.db, TypeKind::Tuple(found)), node);
         let path = self.borrow(path);
         let given = vec![Argument::Borrow(path), Argument::Borrow(Place::from(names))];
-        if !self.csv_call("csv_cells", given, cells, node) {
+        if !self.csv_call("csv_cells", given, Place::from(cells), node) {
             return;
         }
         self.drop_later(cells);
@@ -141,7 +146,7 @@ impl<'db> Builder<'db> {
             given.extend([gaps, name]);
             let given = given.into_iter().map(Argument::Borrow).collect();
             let values = self.temporary(self.array_of(element), node);
-            if !self.csv_call(function, given, values, node) {
+            if !self.csv_call(function, given, Place::from(values), node) {
                 return None;
             }
             values
@@ -161,25 +166,98 @@ impl<'db> Builder<'db> {
         Some(whole)
     }
 
+    /// `frame.to_csv(path)`, which gives nothing, into `place`: each column's cells as text
+    /// from the library, then the file written by its `csv_write`.
+    ///
+    /// Cost at run time: one text for each cell of the frame, all held until the file is
+    /// written.
+    pub(crate) fn frame_to_csv(&mut self, place: Place, frame: NodeId, path: NodeId, node: NodeId) {
+        let Some(columns) = self.frame_columns(frame) else {
+            return self.unsupported(node, "`to_csv` of a value that is not a frame");
+        };
+        let text = Type::new(self.db, TypeKind::Str);
+        let list = Type::new(self.db, TypeKind::List(text));
+        let table_type = Type::new(self.db, TypeKind::List(list));
+        let int = self.int_type();
+        let first = match self.ty(frame).kind(self.db) {
+            TypeKind::Tuple(stored) => stored.first().copied(),
+            _ => None,
+        };
+        let stored = self.borrow(frame);
+        let mut cells = Vec::with_capacity(columns.len());
+        let mut names = Vec::with_capacity(columns.len());
+        for (position, column) in (0..).zip(columns) {
+            let at = stored.clone().project(Projection::Field(position));
+            let (element, optional) = match column.element.kind(self.db) {
+                TypeKind::Optional(value) => (*value, true),
+                _ => (column.element, false),
+            };
+            let given = if optional {
+                [VALUES, VALIDITY]
+                    .map(|part| at.clone().project(Projection::Field(part)))
+                    .to_vec()
+            } else {
+                vec![at]
+            };
+            let (function, types) = match (element.kind(self.db), optional) {
+                (TypeKind::Str, false) => ("csv_text_cells", Vec::new()),
+                (TypeKind::Str, true) => ("csv_optional_text_cells", Vec::new()),
+                (TypeKind::Primitive(Primitive::Float(Float::F64)), false) => {
+                    ("csv_float_cells", Vec::new())
+                }
+                (TypeKind::Primitive(Primitive::Float(Float::F64)), true) => {
+                    ("csv_optional_float_cells", Vec::new())
+                }
+                (_, false) => ("csv_plain_cells", vec![element]),
+                (_, true) => ("csv_optional_plain_cells", vec![element]),
+            };
+            let Some(formatted) = self.frame_call(function, types, given, list, node) else {
+                return;
+            };
+            cells.push(Operand::Move(Place::from(formatted)));
+            names.push(Operand::Constant(Constant {
+                ty: text,
+                value: ConstantValue::Str(column.name.clone()),
+            }));
+        }
+        let table = self.temporary(table_type, node);
+        self.assign(
+            Place::from(table),
+            Rvalue::Aggregate(table_type, cells),
+            node,
+        );
+        self.drop_later(table);
+        let headings = self.temporary(list, node);
+        self.assign(Place::from(headings), Rvalue::Aggregate(list, names), node);
+        self.drop_later(headings);
+        let rows = stored.project(Projection::Field(0));
+        let rows = self.column_length(rows, first, node);
+        let rows = Place::from(self.held(int, rows, node));
+        let path = self.borrow(path);
+        let given = [path, Place::from(headings), Place::from(table), rows];
+        let given = given.into_iter().map(Argument::Borrow).collect();
+        self.csv_call("csv_write", given, place, node);
+    }
+
     /// Calls the function `name` of `<std>/frame_csv.byn`, which can fail with the errors of
-    /// the `read_csv` call `node`, its result written into `result`. `false` after reporting
-    /// that the library's file or the function is missing.
+    /// the `read_csv` or `to_csv` call `node`, its result written into `result`. `false` after
+    /// reporting that the library's file or the function is missing.
     fn csv_call(
         &mut self,
         name: &str,
         arguments: Vec<Argument<'db>>,
-        result: Local,
+        result: Place,
         node: NodeId,
     ) -> bool {
         let Some(item) = self.frame_function(name) else {
-            self.unsupported(node, "`DataFrame.read_csv` without the standard library");
+            self.unsupported(node, "a CSV file without the standard library");
             return false;
         };
         let callee = Callee::Function {
             item,
             type_arguments: Vec::new(),
         };
-        self.raising_callee(callee, arguments, Place::from(result), node);
+        self.raising_callee(callee, arguments, result, node);
         true
     }
 }

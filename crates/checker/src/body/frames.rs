@@ -418,6 +418,9 @@ impl<'db> Body<'db> {
         if let Some(frame) = self.describe_method(function, base, callee, arguments) {
             return frame;
         }
+        if let Some(nothing) = self.csv_method(function, base, callee, arguments) {
+            return nothing;
+        }
         let given = arguments.positional.len() + arguments.keywords.len();
         self.untyped(arguments);
         match (callee, given) {
@@ -443,8 +446,8 @@ impl<'db> Body<'db> {
                     Some(
                         "a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop`, \
                          `rename`, `sort_values`, `groupby(...).agg(...)`, `merge`, \
-                         `drop_duplicates`, `dropna` and `fillna` today; the rest of decision \
-                         0045's methods come with roadmap items 3.13.6, 3.13.8 and 3.13.9",
+                         `drop_duplicates`, `dropna`, `fillna` and `to_csv` today; the rest of \
+                         decision 0045's methods come with roadmap items 3.13.6, 3.13.8 and 3.13.9",
                     ),
                 )
             }
