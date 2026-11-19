@@ -1,6 +1,7 @@
 //! Arithmetic on arrays with missing values (roadmap 3.13.6, decision 0045), built and run:
-//! `+`, `-`, `*`, `/`, `//`, `%`, `**` and unary `-` give `None` wherever a side is `None`,
-//! and what pandas's nullable arrays give everywhere else.
+//! `+`, `-`, `*`, `/`, `//`, `%`, `**` and unary `-`, and `&`, `|`, `^` and `~` of whole
+//! numbers, give `None` wherever a side is `None`, and what pandas's nullable arrays give
+//! everywhere else.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -305,6 +306,52 @@ def main():
     assert!(
         report.contains("panic: negative exponent -1 in integer `**`"),
         "{report}"
+    );
+    Ok(())
+}
+
+/// `&`, `|`, `^` and `~` on whole numbers with missing values (roadmap 3.24.1) work bit by
+/// bit and give `None` wherever a side is `None`, as pandas's nullable integers do: between
+/// two such arrays, with a plain array or a number on either side, in one expression with
+/// arithmetic, in place, on unsigned numbers and on a column of a frame. Masks of `bool`s
+/// keep their own rules.
+#[test]
+fn bits_with_gaps() -> io::Result<()> {
+    let program = r#"
+def main():
+    k: Array[i64 | None, 1] = Array([6, None, 3])
+    j: Array[i64 | None, 1] = Array([3, 1, None])
+    print(k & j)
+    print(k | 3)
+    print(5 ^ k)
+    print(~k)
+    print(k & Array([1, 1, 1]))
+    print((k + 1) & ~j | 8)
+    k &= 2
+    k |= j
+    k ^= k
+    print(k)
+    small: Array[u8 | None, 1] = Array([u8(255), None, u8(3)])
+    print(~small, small & u8(15))
+    flags: Array[bool | None, 1] = Array([True, None, False])
+    print(~flags, flags & flags)
+    frame = DataFrame({"k": j})
+    print(frame.k & 1)
+"#;
+    let (code, output, report) = run("optional_arithmetic_bits", program)?;
+    assert_eq!(code, Some(0), "{report}");
+    assert_eq!(
+        output,
+        "[2 None None]\n\
+         [7 None 3]\n\
+         [3 None 6]\n\
+         [-7 None -4]\n\
+         [0 None 1]\n\
+         [12 None None]\n\
+         [0 None None]\n\
+         [0 None 252] [15 None 3]\n\
+         [False None True] [True None False]\n\
+         [1 1 None]\n"
     );
     Ok(())
 }
