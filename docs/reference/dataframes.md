@@ -115,6 +115,10 @@ The list is read, not moved: each field is copied into its column in one pass ov
 `rows` is still usable afterwards. An empty list gives a frame of no rows; `DataFrame([])` needs
 the context to name the type, as `empty: DataFrame[Trade] = DataFrame([])` does.
 
+`DataFrame.read_csv(path)` reads a frame from a [CSV file](csv-files.md), its columns found by
+the names of the schema's fields. The context names the type here too:
+`trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv")`.
+
 ## Columns
 
 `df.name` and `df["name"]` both read the column `name`, as in pandas. Each is an array of rank 1

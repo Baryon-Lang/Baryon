@@ -7,7 +7,7 @@
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-pub(crate) const LIBRARY: [(&str, &str); 86] = [
+pub(crate) const LIBRARY: [(&str, &str); 87] = [
     ("<std>/arrays.byn", include_str!("../library/arrays.byn")),
     ("<std>/artist.byn", include_str!("../library/artist.byn")),
     ("<std>/axis.byn", include_str!("../library/axis.byn")),
@@ -52,6 +52,10 @@ pub(crate) const LIBRARY: [(&str, &str); 86] = [
     ("<std>/figure.byn", include_str!("../library/figure.byn")),
     ("<std>/fits.byn", include_str!("../library/fits.byn")),
     ("<std>/font.byn", include_str!("../library/font.byn")),
+    (
+        "<std>/frame_csv.byn",
+        include_str!("../library/frame_csv.byn"),
+    ),
     (
         "<std>/frame_joins.byn",
         include_str!("../library/frame_joins.byn"),
