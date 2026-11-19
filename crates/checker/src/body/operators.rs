@@ -65,7 +65,19 @@ impl<'db> Body<'db> {
         let symbol = operator.symbol();
         match (left.kind(self.db), right.kind(self.db)) {
             (TypeKind::Primitive(a), TypeKind::Primitive(b)) => {
+                let fraction =
+                    |p: &Primitive| matches!(p, Primitive::Float(_) | Primitive::Complex(_));
                 let result = match operator {
+                    Operator::BitAnd
+                    | Operator::BitOr
+                    | Operator::BitXor
+                    | Operator::LeftShift
+                    | Operator::RightShift
+                        if fraction(a) || fraction(b) =>
+                    {
+                        let found = if fraction(a) { *a } else { *b };
+                        return self.bits_of_fraction(node, operator, found);
+                    }
                     Operator::BitAnd
                     | Operator::BitOr
                     | Operator::BitXor
@@ -120,6 +132,26 @@ impl<'db> Body<'db> {
             }
             _ => unknown,
         }
+    }
+
+    /// Reports a bitwise operator or a shift given `found`, a float or complex number (roadmap
+    /// 1.9.65). Before, `1.5 & 2.5` said `&` cannot mix `f64` and `f64`, which reads as two
+    /// different types.
+    fn bits_of_fraction(
+        &mut self,
+        node: NodeId,
+        operator: Operator,
+        found: Primitive,
+    ) -> Type<'db> {
+        let symbol = operator.symbol();
+        let wanted = if matches!(operator, Operator::LeftShift | Operator::RightShift) {
+            "whole numbers"
+        } else {
+            "whole numbers or `bool`s"
+        };
+        let message = format!("`{symbol}` needs {wanted}, found `{found}`");
+        self.lowerer
+            .error(node, &message, "not a whole number", None)
     }
 
     /// Reports two numbers an operator or a built-in function, `symbol`, cannot mix, suggesting a conversion.

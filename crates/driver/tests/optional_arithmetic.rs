@@ -122,12 +122,11 @@ error: `-` does not apply to `Array[bool | None, 1]`
 12 |     turned = -flags
    |              ^^^^^^ its elements are not numbers
 
-error: `&` cannot mix `f64` and `f64`
+error: `&` needs whole numbers or `bool`s, found `f64`
   --> main.byn:13:14
    |
 13 |     masked = bids & bids
-   |              ^^^^^^^^^^^ different number types
-   = note: convert one side so both are the same type, such as `f64(x)`
+   |              ^^^^^^^^^^^ not a whole number
 
 error: `in` is not built for an array with missing values yet
   --> main.byn:14:18
