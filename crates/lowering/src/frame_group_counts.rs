@@ -101,6 +101,7 @@ impl<'db> Builder<'db> {
             starts,
             count: groups.count,
             gaps: true,
+            key: None,
         })
     }
 }

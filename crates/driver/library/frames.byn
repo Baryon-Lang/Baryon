@@ -19,7 +19,9 @@ Grouping, for `df.groupby(...).agg(...)`: the rows are sorted by the key columns
 `kept_rows` leaves out those with a missing key; `group_marks`, once for each key column,
 then `group_starts` find where each group starts; `group_keys` gives one row of each group
 to read its keys from; and `group_floats` or `group_integers` reduces one column, which the
-compiler has converted to `f64` or `i64`, to one value for each group.
+compiler has converted to `f64` or `i64`, to one value for each group. For one key of
+whole numbers `run_starts` of `<std>/frame_order.byn` finds the starts, and its
+`keyed_sums` the sums and means of floats (roadmap 3.13.21).
 
 Printing, for `print(df)` and a frame in an f-string: each column is formatted with
 `float_cells`, `single_cells`, `cells` or `text_cells`, by the type of its elements, and
