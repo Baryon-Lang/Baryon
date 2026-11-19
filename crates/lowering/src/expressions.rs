@@ -2,6 +2,7 @@
 //! statements and, for `and`, `or`, conditionals and calls, blocks.
 
 use crate::builder::Builder;
+use crate::frames::erase;
 use database::Definition;
 use mir::{Constant, ConstantValue, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
@@ -237,8 +238,10 @@ impl<'db> Builder<'db> {
                     (Place::from(local), self.local_type(local))
                 };
                 // A loop variable that borrows its element is narrowed as any variable is
-                // (roadmap 1.9.35).
-                let read = self.typed.expression(node);
+                // (roadmap 1.9.35). The local holds the stored form of a frame, a text array
+                // or an array with gaps, so the type read is compared in that form too
+                // (roadmap 1.9.55).
+                let read = self.typed.expression(node).map(|ty| erase(self.db, ty));
                 Some(match read {
                     Some(read) if read != held && self.optional_value(held) == Some(read) => {
                         place.project(Projection::Value)

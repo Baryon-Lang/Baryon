@@ -177,3 +177,47 @@ def main():
         "none some some\nNone\n1\nt2\nNone 1 t2\nTrue False\n"
     );
 }
+
+/// A checked `T | None` whose `T` is a frame, a text array or an array with gaps reads the
+/// value inside (roadmap 1.9.55). These are stored as tuples of arrays, and the read compared
+/// the checker's type with the stored one, so it read the whole optional: the backend stopped
+/// on "values of type `tuple[Array[f64, 1], Array[i64, 1]] | None`", or `clang` on a store.
+#[test]
+fn optional_frames_and_text_arrays_read_their_value_once_checked() {
+    let program = "\
+class P(Struct):
+    x: f64
+    n: i64
+    name: str
+
+
+def pick(df: DataFrame[P], take: bool) -> DataFrame[P] | None:
+    if take:
+        return df.head(1)
+    return None
+
+
+def main():
+    df: DataFrame[P] = DataFrame([P(1.0, 2, \"a\"), P(3.0, 4, \"b\")])
+    best = pick(df, True)
+    if best is not None:
+        b = best.copy()
+        print(len(b), b.x[0], best.name[0], best.n.sum())
+    print(pick(df, False) is None)
+    texts: Array[str, 1] | None = Array([\"u\", \"v\"])
+    if texts is not None:
+        print(texts[1], len(texts))
+    gaps: Array[f64 | None, 1] | None = Array([1.0, None])
+    if gaps is not None:
+        print(gaps[1] is None)
+";
+    let directory = package("optional_frames", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "1 1.0 a 2\nTrue\nv 2\nTrue\n"
+    );
+}
