@@ -273,7 +273,9 @@ impl<'db> Builder<'db> {
         match self.tree.kind(node) {
             SyntaxKind::BinaryOperation if self.is_array(ty) && !self.is_matrix_product(node) => {
                 let syntax = self.tree.node(node).operator();
-                let Some(operator) = arithmetic(syntax) else {
+                // `**` is one operation on each pair of elements (roadmap 1.9.58).
+                let power = (syntax == Operator::Power).then_some(BinaryOperator::Power);
+                let Some(operator) = arithmetic(syntax).or(power) else {
                     self.unsupported(node, &format!("`{}` on arrays", syntax.symbol()));
                     return None;
                 };

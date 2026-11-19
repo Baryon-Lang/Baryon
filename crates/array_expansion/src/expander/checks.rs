@@ -18,6 +18,17 @@ impl<'db> Expander<'_, '_, 'db> {
     pub(super) fn checked(
         &mut self,
         operator: BinaryOperator,
+        operands: (Operand<'db>, Operand<'db>),
+        ty: Type<'db>,
+    ) -> Operand<'db> {
+        self.checked_as((operator, Check::NoOverflow(operator)), operands, ty)
+    }
+
+    /// [`checked`](Self::checked) with the check `check` reported when it overflows, such as
+    /// [`NoPowerOverflow`](Check::NoPowerOverflow) for a multiplication inside `**`.
+    pub(super) fn checked_as(
+        &mut self,
+        (operator, check): (BinaryOperator, Check<'db>),
         (left, right): (Operand<'db>, Operand<'db>),
         ty: Type<'db>,
     ) -> Operand<'db> {
@@ -34,7 +45,7 @@ impl<'db> Expander<'_, '_, 'db> {
         self.finish(
             TerminatorKind::Assert {
                 condition: Operand::Copy(Place::from(fits)),
-                check: Check::NoOverflow(operator),
+                check,
                 target: next,
             },
             next,

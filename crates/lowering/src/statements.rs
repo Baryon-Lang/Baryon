@@ -273,7 +273,9 @@ impl<'db> Builder<'db> {
             let operands = (Operand::Copy(place.clone()), self.operand_as(value, ty));
             return self.integer_power(place, operands, ty, statement);
         }
-        let Some(operator) = arithmetic(syntax) else {
+        // `a **= b` on an array is `**` of each element (roadmap 1.9.58).
+        let power = (array && syntax == Operator::Power).then_some(mir::BinaryOperator::Power);
+        let Some(operator) = arithmetic(syntax).or(power) else {
             return self.unsupported(statement, &format!("`{}=`", syntax.symbol()));
         };
         let Some(mut place) = self.place(target) else {

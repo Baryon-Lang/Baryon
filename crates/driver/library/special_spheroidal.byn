@@ -220,7 +220,7 @@ def _series(m: f64, cv: f64, gamma2: f64, x: f64, odd: bool) -> tuple[f64, f64, 
 def spheroidal_coefficients(m: f64, n: f64, gamma2: f64, cv: f64) -> Array[f64, 1]:
     """The coefficients d_r of S_mn for the characteristic value `cv`, r = p, p + 2, … with p
     the parity of n − m, scaled as Flammer scales them (the module's documentation says how).
-    The radial functions will sum their Bessel series over them.
+    `special_spheroidal_radial` sums its Bessel series over them.
 
     The scale is found at the first of the points x₀ = 1 − 0.8^k, k = 0, 1, …, 20, where the
     expected error is below 16 units of rounding, or else at the point where it is least: the
