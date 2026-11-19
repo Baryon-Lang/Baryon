@@ -873,7 +873,9 @@ are then checked against them: `Box[f64]([])` is a `Box` with an empty `list[f64
 type argument must satisfy its parameter's bound, as an inferred one must, wherever it is written:
 `p: Pair[str]`, `Pair[str].both("a")` and `Pair[str]("a", "b")` are each an error for
 `class Pair[T: Number]`. Type arguments are never taken from an annotation, so
-`c: Box[f64] = Box([])` is an error. A call whose
+`c: Box[f64] = Box([])` is an error. A built-in constructor takes none written:
+`Array[f64, 1]([1.0])` and `DataFrame[Trade]({...})` are errors, and the type goes on the
+variable instead, `a: Array[i64 | None, 1] = Array([10, None])`. A call whose
 arguments leave a type parameter unfixed, such as `make()` for `def make[T]() -> list[T]`, is an
 error too. A `None` passed for a `T | None` fixes `T` only when no other argument
 does: `pick(None, 3)` with `def pick[T: Number](a: T | None, b: T | None)` takes `T` from the
