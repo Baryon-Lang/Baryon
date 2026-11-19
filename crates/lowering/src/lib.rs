@@ -342,6 +342,7 @@ mod range_walks;
 mod reductions;
 mod selection;
 mod slices;
+mod spread;
 mod statements;
 mod statistics;
 mod streams;

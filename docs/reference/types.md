@@ -846,6 +846,47 @@ print(apply(twice_f64, 1.5))        # 3.0
 A function with an optional callback, such as SciPy's `jac=None`, is two functions in version 0:
 one that takes the callback and one that does not.
 
+### Extra arguments for a callback
+
+SciPy's solvers take a callback and a tuple `args` of extra values to pass it, as
+`solve_ivp(fun, ..., args=(k, m))`. Baryon writes this with a *variadic type parameter*, a type
+parameter that stands for a list of types instead of one type. It is written `*Ts` in the type
+parameter list; `tuple[*Ts]` is a tuple of those types, and `Callable[[f64, *Ts], f64]` a function
+that takes an `f64` and then one argument of each. A call spreads a tuple into separate
+arguments with `*`, `f(x, *args)` ([decision 0026](../decisions/0026-functions-as-arguments.md),
+amended).
+
+```python
+def apply[*Ts](f: Callable[[f64, *Ts], f64], x: f64, args: tuple[*Ts] = ()) -> f64:
+    return f(x, *args)
+
+
+def double(x: f64) -> f64:
+    return 2.0 * x
+
+
+def line(x: f64, slope: f64, offset: f64) -> f64:
+    return slope * x + offset
+
+
+print(apply(double, 2.0))               # 4.0, Ts is empty
+print(apply(line, 2.0, (3.0, 1.0)))     # 7.0, Ts is f64, f64
+```
+
+The compiler finds `Ts` from the tuple passed as `args`, or from the function when `args` is
+left out, and the two must agree: `apply(line, 2.0)` is an error, since `line` needs two more
+`f64` values. Like any generic, `apply` is compiled once per set of types, so the spread costs
+nothing at run time. The rules in version 0:
+
+- a function has at most one variadic type parameter, and a class has none;
+- `*Ts` comes last, in the type parameter list, in `tuple[...]` and in a `Callable`'s parameters;
+- `Ts` alone, without `*`, is an error: it is a list of types, not one type;
+- a `tuple[*Ts]` parameter defaults only to `()`;
+- `*` in a call unpacks a tuple, as the last argument, with no keyword arguments, into a call of
+  a `Callable` parameter or local. A tuple of known length spreads the same way,
+  `f(1.0, *t)` with `t: tuple[f64, f64]`. A list does not, since its length is not known when
+  compiling.
+
 ## Generics
 
 Functions and structs take type parameters with Python 3.12's syntax. A bound after `:` names the

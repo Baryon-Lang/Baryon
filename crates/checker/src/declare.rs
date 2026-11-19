@@ -28,6 +28,7 @@ impl<'db> Lowerer<'db> {
     pub(crate) fn declaration(&mut self, entry: &Entry) -> Declaration<'db> {
         if matches!(entry.kind, Kind::Function | Kind::Class(_)) {
             self.bounds(entry.statement);
+            self.variadic(entry.statement, entry.kind == Kind::Function);
         }
         match &entry.kind {
             Kind::Function => Declaration::Function(self.signature(entry)),
@@ -90,6 +91,33 @@ impl<'db> Lowerer<'db> {
                      or a trait declared as `class Body(Protocol)`",
                 ),
             );
+        }
+    }
+
+    /// Reports a `*Ts` a definition may not declare (the decision 0026 amendment): one on a
+    /// class, or a second one on a function, whose types could not be told apart at a call.
+    fn variadic(&mut self, definition: NodeId, function: bool) {
+        let packs = crate::packs::packs(self.db, self.file, definition);
+        let extra = if function {
+            packs.get(1..)
+        } else {
+            Some(packs.as_slice())
+        };
+        for &pack in extra.unwrap_or_default() {
+            let (message, label, hint) = if function {
+                (
+                    "a function has at most one variadic type parameter",
+                    "a second `*Ts`",
+                    "one `*Ts` takes every type left; pass the rest in one tuple",
+                )
+            } else {
+                (
+                    "a class cannot have a variadic type parameter",
+                    "`*Ts` on a class",
+                    "only a function takes `*Ts`, for a callback's extra arguments",
+                )
+            };
+            self.error(pack, message, label, Some(hint));
         }
     }
 

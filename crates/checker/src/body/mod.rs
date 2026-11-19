@@ -93,6 +93,7 @@ mod reductions;
 pub(crate) mod relations;
 mod selection;
 mod shared;
+mod spread_calls;
 mod statistics;
 mod streams;
 mod subprocess;
@@ -269,6 +270,9 @@ impl<'db> Body<'db> {
                 self.state.assigned.insert(name);
             }
             if let Some(default) = self.tree.child(node, Role::Default) {
+                if self.variadic_default(default, ty) {
+                    continue;
+                }
                 let found = self.expression(default, Some(ty));
                 self.expect(default, ty, found, "the parameter's type is");
             }

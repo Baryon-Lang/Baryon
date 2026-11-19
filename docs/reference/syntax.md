@@ -229,7 +229,7 @@ The whole program is the example [`energy_audit.byn`](../examples/energy_audit.b
 | `is None`, `is not None` | yes | `is` and `is not` compare only with `None` |
 | `in`, `not in` | yes | On lists, strings, tuples and dicts |
 | Conditional `a if c else b` | yes | |
-| Calls with positional and keyword arguments | yes | No `*args` or `**kwargs`, in calls or in definitions |
+| Calls with positional and keyword arguments | yes | `f(x, *args)` only on a tuple, last, to call a `Callable` (see [Extra arguments for a callback](types.md#extra-arguments-for-a-callback)); no `*args` in definitions and no `**kwargs` |
 | Attributes `a.b`, subscripts `a[i, j]`, slices `a[1:n, ::2]` | yes | See [Arrays](arrays.md) |
 | Tuples and lists `(a, b)`, `[a, b]` | yes | |
 | List comprehensions `[f(x) for x in xs if p(x)]` | yes | Produce a `list` |

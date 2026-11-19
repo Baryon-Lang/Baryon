@@ -422,16 +422,17 @@ impl<'db> Builder<'db> {
     /// `derivative(t, state)`, into `place`. Each argument is borrowed, the mode a `Callable`
     /// gives every parameter. Monomorphization turns it into a direct call of the function the
     /// instance received (decision 0026), or the function a local holds (roadmap 1.9.43). A
-    /// function that can raise gets the call's error edge, as a direct call of it does.
+    /// function that can raise gets the call's error edge, as a direct call of it does. A
+    /// `*args` argument is an [`Argument::Spread`] of its tuple.
     fn value_call(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
         let Some(function) = self.tree.child(node, Role::Function) else {
             return self.unsupported(node, "this call");
         };
         let callee = self.operand(function);
-        let passed = arguments
-            .iter()
-            .map(|&argument| Argument::Borrow(self.borrow(argument)))
-            .collect();
+        let mut passed = Vec::with_capacity(arguments.len());
+        for &argument in arguments {
+            self.pass_to_value(argument, &mut passed);
+        }
         // A function that raises raises through the call, as any call of it does.
         self.raising_callee(Callee::Value(callee), passed, place, node);
     }
