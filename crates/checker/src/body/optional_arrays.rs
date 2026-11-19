@@ -16,7 +16,8 @@ const BUILT: &str = "an array with missing values has `len`, `print`, `values[i]
                      `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, \
                      `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and \
                      `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, \
-                     `*`, `/`, `//`, `%` and `**`; the rest comes with roadmap item 3.24";
+                     `*`, `/`, `//`, `%` and `**`, for whole numbers `&`, `|`, `^` and `~`; the \
+                     rest comes with roadmap item 3.24";
 
 impl<'db> Body<'db> {
     /// Whether `ty` is a frame with a column that may hold `None`.

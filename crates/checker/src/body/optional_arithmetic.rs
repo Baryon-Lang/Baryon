@@ -13,7 +13,9 @@ impl<'db> Body<'db> {
     /// other side is one too, a one-dimensional `Array` of numbers or a single number, and
     /// the elements combine as two numbers would, so the result's elements have the type
     /// the same operator gives two plain arrays, an `f64` for `/` of two integers. `+`, `-`,
-    /// `*`, `/`, `//` and `%` are built, and `&`, `|` and `^` of two masks of `bool`s.
+    /// `*`, `/`, `//`, `%` and `**` are built, `&`, `|` and `^` of whole numbers (roadmap
+    /// 3.24.1), and `&`, `|` and `^` of two masks of `bool`s. The shifts are not, since
+    /// plain arrays do not have them yet.
     pub(super) fn optional_array_arithmetic(
         &mut self,
         node: NodeId,
@@ -32,6 +34,14 @@ impl<'db> Body<'db> {
         {
             return mask;
         }
+        let bits = matches!(
+            operator,
+            Operator::BitAnd | Operator::BitOr | Operator::BitXor
+        );
+        if bits && (self.is_mask(left) || self.is_mask(right)) {
+            // A mask with anything but a mask: not whole numbers, and not built.
+            return self.optional_array_unbuilt(node, &format!("`{symbol}`"));
+        }
         if !matches!(
             operator,
             Operator::Add
@@ -41,6 +51,9 @@ impl<'db> Body<'db> {
                 | Operator::FloorDivide
                 | Operator::Modulo
                 | Operator::Power
+                | Operator::BitAnd
+                | Operator::BitOr
+                | Operator::BitXor
         ) {
             return self.optional_array_unbuilt(node, &format!("`{symbol}`"));
         }
@@ -135,7 +148,8 @@ impl<'db> Body<'db> {
 
     /// `-values` or `+values` at `node` on the array with missing values `operand`, whose
     /// elements must be numbers: an array of the same type, `None` where `operand` is. `~`
-    /// takes a mask of `bool`s and gives one; `~` of integers is not built.
+    /// takes a mask of `bool`s and gives one, or whole numbers, each with its bits flipped
+    /// (roadmap 3.24.1).
     pub(super) fn optional_array_unary(
         &mut self,
         node: NodeId,
@@ -145,6 +159,21 @@ impl<'db> Body<'db> {
         let symbol = operator.symbol();
         if operator == Operator::Invert && self.is_mask(operand) {
             return operand;
+        }
+        if operator == Operator::Invert {
+            let whole = matches!(
+                self.without_gaps(operand).kind(self.db),
+                TypeKind::Array { element, .. } if matches!(
+                    element.kind(self.db),
+                    TypeKind::Primitive(Primitive::Integer(_))
+                )
+            );
+            if whole {
+                return operand;
+            }
+            let message = format!("`~` does not apply to `{}`", self.show(operand));
+            let label = "its elements are not whole numbers or `bool`s";
+            return self.lowerer.error(node, &message, label, None);
         }
         if !matches!(operator, Operator::Negate | Operator::Plus) {
             return self.optional_array_unbuilt(node, &format!("`{symbol}`"));

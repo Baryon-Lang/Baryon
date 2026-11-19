@@ -278,7 +278,12 @@ This prints `[0.5 None 1.5]`, then `[1.75 None 3.25]`.
   variable's type, so `counts /= 2` on integers is a compile error, as it is for any
   array. Only a variable takes one: write `quotes.assign(bid=quotes.bid + 1.0)` for a
   column.
-- **Not built yet:** the bitwise operators on numbers.
+- **`&`, `|`, `^` and `~` work bit by bit on whole numbers**, `counts & 1` or `~counts`, and
+  in place, `counts &= 1`, with the same rule: `None` wherever a side is `None`, as pandas's
+  nullable integers give. On floats they are a compile error, as for plain arrays. Masks of
+  `bool`s have their own rules, under [Comparisons](#comparisons).
+- **Not built yet:** the shifts `<<` and `>>`, which plain arrays do not have yet either
+  (roadmap idea I.69).
 - **Cost:** floats are one fused loop over the stored values, like any
   [array expression](arrays.md#whole-array-arithmetic), plus one pass over the bitmaps.
   Integers copy the elements that are there out of each array first, compute, and put the
@@ -405,8 +410,7 @@ def main():
 
 Each of these is a compile error that names what an array with missing values has today:
 
-- the bitwise operators and the shifts, and an in-place operator on a column,
-  `quotes.bid += 1.0`;
+- the shifts `<<` and `>>`, and an in-place operator on a column, `quotes.bid += 1.0`;
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`,
   `nunique`, `count`, `sum`, `mean`, `min`, `max`, `var` and `std`;
 - assigning an element of text;

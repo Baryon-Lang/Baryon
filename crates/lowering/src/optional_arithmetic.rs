@@ -59,7 +59,8 @@ impl<'db> Builder<'db> {
     }
 
     /// Whether `node` is an operator this module computes element by element: `+`, `-`, `*`,
-    /// `/`, `//`, `%` or `**` of two operands, or `-` or `+` of one.
+    /// `/`, `//`, `%`, `**`, `&`, `|` or `^` of two operands, or `-`, `+` or `~` of one. A
+    /// mask of `bool`s never comes here: [`crate::optional_masks`] takes it first.
     fn is_gap_operation(&self, node: NodeId) -> bool {
         let operator = || self.tree.node(node).operator();
         match self.tree.kind(node) {
@@ -72,8 +73,14 @@ impl<'db> Builder<'db> {
                     | Operator::FloorDivide
                     | Operator::Modulo
                     | Operator::Power
+                    | Operator::BitAnd
+                    | Operator::BitOr
+                    | Operator::BitXor
             ),
-            SyntaxKind::UnaryOperation => matches!(operator(), Operator::Negate | Operator::Plus),
+            SyntaxKind::UnaryOperation => matches!(
+                operator(),
+                Operator::Negate | Operator::Plus | Operator::Invert
+            ),
             _ => false,
         }
     }
@@ -377,6 +384,7 @@ impl<'db> Builder<'db> {
             let value = self.gap_tree(self.tree.child(node, Role::Value)?, operands)?;
             return Some(match operator {
                 Operator::Negate => Elementwise::Unary(UnaryOperator::Negate, Box::new(value)),
+                Operator::Invert => Elementwise::Unary(UnaryOperator::BitNot, Box::new(value)),
                 _ => value,
             });
         }
