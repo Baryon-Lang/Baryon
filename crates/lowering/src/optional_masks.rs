@@ -36,7 +36,8 @@ impl Builder<'_> {
     }
 
     /// The operation `node` on masks, whose result is a mask that may hold `None`, into
-    /// `place`. Each side is read once, an expression into a temporary first. Two sides
+    /// `place`: an expression, or an in-place statement, `ok &= other`, whose target is the
+    /// left side. Each side is read once, an expression into a temporary first. Two sides
     /// must have the same length, which is checked when the program runs.
     pub(crate) fn optional_mask_operation(&mut self, place: Place, node: NodeId) {
         let boolean = self.boolean_type();
@@ -51,9 +52,14 @@ impl Builder<'_> {
             let turned = Elementwise::Unary(UnaryOperator::Not, Box::new(leaf(&values)));
             (turned, self.joined_bitmaps(&[bits], node))
         } else {
+            let sides = match self.tree.kind(node) {
+                // `ok &= other`: the target is the left side.
+                SyntaxKind::AugmentedAssign => (Role::Target, Role::Value),
+                _ => (Role::Left, Role::Right),
+            };
             let (Some(left), Some(right)) = (
-                self.tree.child(node, Role::Left),
-                self.tree.child(node, Role::Right),
+                self.tree.child(node, sides.0),
+                self.tree.child(node, sides.1),
             ) else {
                 return;
             };

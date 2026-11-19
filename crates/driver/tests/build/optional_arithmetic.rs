@@ -355,3 +355,63 @@ def main():
     );
     Ok(())
 }
+
+/// An in-place operator on a column of a frame that may hold `None` (roadmap 3.24.2) gives
+/// the column the array the operator would give, by attribute or by name, with a number, a
+/// plain column, an array with missing values or the column itself, for floats, integers
+/// and masks, and through an `InOut` frame. A mask keeps the masks' rule, `False & None`
+/// is `False`, in a column and in a variable. A value of another length stops the program
+/// and leaves the frame's columns one length.
+#[test]
+fn in_place_operators_replace_a_column() -> io::Result<()> {
+    let program = r#"
+class Quote(Struct):
+    bid: f64 | None
+    size: i64 | None
+    ok: bool | None
+
+
+def bump(quotes: InOut[DataFrame[Quote]], by: f64):
+    quotes.bid += by
+    quotes["size"] -= 1
+
+
+def main():
+    quotes: DataFrame[Quote] = DataFrame({
+        "bid": Array([1.5, None, 3.0]),
+        "size": Array([10, 20, None]),
+        "ok": Array([True, None, False]),
+    })
+    bump(quotes, 2.0)
+    quotes.size //= 3
+    quotes["size"] **= 2
+    quotes.size |= 1
+    other: Array[bool | None, 1] = Array([True, True, None])
+    quotes.ok &= other
+    print(quotes)
+    other |= quotes.ok
+    print(other)
+    quotes.bid *= Array([2.0, 2.0, 2.0])
+    quotes.bid -= quotes.bid / 2.0
+    extra: Array[f64 | None, 1] = Array([None, 1.0, 1.0])
+    quotes["bid"] += extra
+    print(quotes.bid)
+    quotes.bid += Array([1.0, 2.0])
+"#;
+    let (code, output, report) = run("optional_arithmetic_column_in_place", program)?;
+    assert_eq!(code, Some(101));
+    assert_eq!(
+        output,
+        "    bid  size     ok\n\
+         0   3.5     9   True\n\
+         1  <NA>    37   <NA>\n\
+         2   5.0  <NA>  False\n\
+         [True True None]\n\
+         [None None 6.0]\n"
+    );
+    assert!(
+        report.contains("panic: array lengths differ in dimension 0: 3 and 2"),
+        "{report}"
+    );
+    Ok(())
+}
