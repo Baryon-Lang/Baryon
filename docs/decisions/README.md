@@ -58,7 +58,7 @@ What becomes easier, what becomes harder, and what we give up.
 | [0023. The language is named Baryon, its files end in `.byn`, and its tool is `baryon`](0023-language-name-baryon.md) | Accepted |
 | [0024. Accumulated arrays compile to an `Accumulate` statement over lazily made private blocks](0024-compiling-accumulated-arrays.md) | Accepted |
 | [0025. The VS Code extension lives in `editors/vscode/` and highlights with Python's grammar](0025-vscode-extension.md) | Accepted |
-| [0026. A function passed as an argument is a compile-time argument, compiled once per function](0026-functions-as-arguments.md) | Accepted |
+| [0026. A function passed as an argument is a compile-time argument, compiled once per function](0026-functions-as-arguments.md) | Accepted, amended 2026-11-19 |
 | [0027. When a default parameter value is evaluated](0027-default-parameter-evaluation.md) | Accepted |
 | [0028. `random.Philox` gives the same numbers as NumPy's Philox, and the compiler builds it in](0028-philox-random-numbers.md) | Accepted |
 | [0029. The runtime keeps the standard library; programs drop unused code, not `std`](0029-runtime-size.md) | Accepted |
@@ -96,4 +96,6 @@ What becomes easier, what becomes harder, and what we give up.
 | [0061. AstroBaryon ships in the standard distribution until a package registry exists](0061-astrobaryon-ships-with-baryon.md) | Accepted |
 | [0062. A standard-library module re-exports a name with `from x import name as name`](0062-standard-library-reexports.md) | Accepted |
 | [0064. Bytes become text by UTF-8: `str.encode`, `Array.decode` and compressed text files](0064-utf-8-text-from-bytes.md) | Accepted |
+| [0065. `integrate` keeps SciPy's calls, with a generic state and `method=` chosen when compiling](0065-integrate-api.md) | Accepted |
 | [0066. Converting to a type parameter, and type arguments on a constructor](0066-converting-to-and-naming-type-parameters.md) | Accepted |
+| [0069. `interpolate` keeps SciPy's names, with scalar calls, 2-D grids and panics for bad input](0069-interpolate-api.md) | Accepted |

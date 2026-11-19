@@ -1,6 +1,6 @@
 # 0026. A function passed as an argument is a compile-time argument, compiled once per function
 
-Status: Accepted
+Status: Accepted, amended 2026-11-19
 Date: 2026-11-08
 Roadmap: 1.9.12
 
@@ -104,3 +104,39 @@ Each of these is a checker error that names this record, never a miscompile:
   record, as an interface crate must. `mir` needs no change: `Callee::Value` and
   `Callee::Function` already exist. The checker, lowering, monomorphization and the driver follow
   together.
+
+## Amendment, 2026-11-19: variadic generics for `args=`
+
+Collins accepted this amendment on 2026-11-19 (card 42, variadic generics; card 44, points 1 and
+2). It is built in roadmap row 3.19.2.
+
+SciPy passes a callback's extra parameters as a tuple, which it spreads into the call:
+`solve_ivp(lorenz, (0, 40), y0, args=(10.0, 28.0, 8 / 3))` calls
+`lorenz(t, y, 10.0, 28.0, 8 / 3)`. In version 0 a callback can only take that tuple as one
+parameter and unpack it, and `args` cannot be left out, because a generic parameter cannot have
+a default. Python types this pattern with variadic generics, PEP 646.
+
+### What is added
+
+- **`*Ts` in a type parameter list.** `def solve_ivp[S: VectorSpace, *Ts](...)`. `Ts` stands for
+  a list of types, of any length, zero included. A function has at most one.
+- **`*Ts` in two places only:** at the end of a `Callable`'s parameters, as in
+  `Callable[[f64, S, *Ts], S]`, and in `tuple[*Ts]`.
+- **`f(*args)` at a call,** when `args` is a tuple. Its length is known when compiling, so the
+  call passes each element as its own argument.
+- **One generic default.** `args: tuple[*Ts] = ()` is the only generic parameter that may have
+  a default. Leaving `args` out makes `Ts` empty, so `solve_ivp(f, span, y0)` works with no
+  `args`. Every other default on a generic parameter stays an error.
+
+The checker binds `Ts` from the tuple passed, or from the `Callable` passed when `args` is left
+out, and checks that the two agree. Monomorphization keys on the tuple's element types, like any
+other type arguments. Each instance's call is then direct, with no tuple at run time, so passing
+`args` still costs nothing.
+
+### Not added
+
+- `def f(*args)`, a function that takes any number of arguments.
+- A star on a list, `f(*xs)` with `xs: list[f64]`.
+
+Python allows both. Each would be a row of its own. SciPy's calls, and callbacks with named
+parameters, port unchanged without them.
