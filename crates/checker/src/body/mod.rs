@@ -83,6 +83,7 @@ mod operators;
 mod optional_arithmetic;
 mod optional_arrays;
 mod parallel;
+mod parameter_conversions;
 mod paths;
 mod patterns;
 mod process;
