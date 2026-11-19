@@ -131,8 +131,9 @@
 //! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
 //! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, indexing and slicing lists and
 //! strings, `match` captures of values that are not copy types or inside `|`, `raise ... from`, an
-//! `except` that names its error through a module, calls that leave out an argument of a generic function other than a literal or `Final`
-//! constant of a type every instance shares, the built-in functions and methods other than
+//! `except` that names its error through a module, calls that leave out an argument of a generic
+//! function other than a literal or `Final` constant of a type every instance shares, the
+//! built-in functions and methods other than
 //! `print`, `min` and `max` of numbers, `len` of an array, `round` with one argument, the `math`
 //! functions above, the array constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a
 //! `Fixed` array, `**` on integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`,
