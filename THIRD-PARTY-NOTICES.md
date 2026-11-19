@@ -11,7 +11,8 @@ that new content be listed here in the pull request that adds it.
 The adaptive quadrature routines `dqagse`, `dqagpe`, `dqagie`, `dqk21`, `dqk15i`, `dqelg` and
 `dqpsrt` of QUADPACK, by R. Piessens, E. de Doncker-Kapenga, C. Überhuber and D. Kahaner,
 translated to Baryon step for step for `integrate.quad` (roadmap 3.19.4 and 3.19.5), with the
-21-point and 15-point Gauss-Kronrod nodes and weights they hold. QUADPACK is in the public domain, as Netlib distributes it, so no license applies.
+21-point and 15-point Gauss-Kronrod nodes and weights they hold. QUADPACK is in the public
+domain, as Netlib distributes it, so no license applies.
 
 | File | Holds |
 | --- | --- |
