@@ -98,6 +98,7 @@ mod plotting_pdf;
 mod plotting_png;
 mod print;
 mod process;
+mod quad;
 mod reductions;
 mod shapes;
 mod slices;

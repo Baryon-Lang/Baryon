@@ -110,8 +110,10 @@ impl<'db> Builder<'db> {
     /// argument out. A literal or `Final` constant has the same value whenever it is evaluated,
     /// so the call writes it itself, at the type the checker gave it in `item`'s body, which is
     /// the parameter's type. Any other default is computed by a function of its own, called at
-    /// each such call (decision 0027, the `defaults` module). `None` after reporting a default
-    /// of a generic function, whose types name that function's type parameters.
+    /// each such call (decision 0027, the `defaults` module). A generic function's default is
+    /// built only when it is a literal or `Final` constant of a type that names none of the
+    /// function's type parameters, such as `epsabs: f64 = 1.49e-8`: its value is the same in
+    /// every instance. `None` after reporting any other default of a generic function.
     pub(crate) fn default_value(
         &mut self,
         item: Item<'db>,
@@ -121,12 +123,10 @@ impl<'db> Builder<'db> {
         let Declaration::Function(signature) = &self.db.declaration(item).declaration else {
             return None;
         };
-        if !signature.type_parameters.is_empty() {
-            self.unsupported(
-                node,
-                "leaving out a defaulted argument of a generic function",
-            );
-            return None;
+        let generic = !signature.type_parameters.is_empty();
+        let declared = signature.parameters.get(position)?.ty;
+        if generic && self.is_generic(declared) {
+            return self.generic_default(node);
         }
         let tree = self.db.parse(item.file(self.db)).tree();
         let (function, class) = crate::definition(tree, item.name(self.db))?;
@@ -148,6 +148,9 @@ impl<'db> Builder<'db> {
         if let (Some(constant), Ok(_)) = (constant, callee.finish()) {
             return Some(DefaultArgument::Constant(constant));
         }
+        if generic {
+            return self.generic_default(node);
+        }
         let file = item.file(self.db);
         let name = tree.child(parameter, Role::Name)?;
         Some(DefaultArgument::Computed(Item::new(
@@ -156,6 +159,16 @@ impl<'db> Builder<'db> {
             file,
             name,
         )))
+    }
+
+    /// Reports the call `node`, which leaves out a default of a generic function that is not a
+    /// constant of a type every instance shares, and returns `None`.
+    fn generic_default(&mut self, node: NodeId) -> Option<DefaultArgument<'db>> {
+        self.unsupported(
+            node,
+            "leaving out a defaulted argument of a generic function",
+        );
+        None
     }
 
     /// Whether `node` is a literal: a number, possibly signed, `True`, `False`, `None` or a

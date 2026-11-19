@@ -6,6 +6,20 @@ opposed to a dependency `Cargo.toml` declares, with its license and the files th
 license below permits the use made of it. [Rule 6](CONTRIBUTING.md#rule-6-few-dependencies) asks
 that new content be listed here in the pull request that adds it.
 
+## QUADPACK
+
+The adaptive quadrature routines `dqagse`, `dqagpe`, `dqk21`, `dqelg` and `dqpsrt` of QUADPACK,
+by R. Piessens, E. de Doncker-Kapenga, C. Überhuber and D. Kahaner, translated to Baryon step for
+step for `integrate.quad` (roadmap 3.19.4), with the 21-point Gauss-Kronrod nodes and weights
+they hold. QUADPACK is in the public domain, as Netlib distributes it, so no license applies.
+
+| File | Holds |
+| --- | --- |
+| [`crates/driver/library/integrate_quadpack.byn`](crates/driver/library/integrate_quadpack.byn) | `dqk21` with its nodes and weights, `dqelg`, `dqpsrt` and the end of `dqagse` and `dqagpe` |
+| [`crates/driver/library/integrate_quad.byn`](crates/driver/library/integrate_quad.byn) | The bodies of `dqagse` and `dqagpe` |
+
+The source is the Fortran SciPy shipped under `scipy/integrate/quadpack/` until version 1.14.
+
 ## DejaVu Sans
 
 The outlines, advances, kerning and character codes of DejaVu Sans, the font matplotlib draws

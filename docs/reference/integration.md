@@ -1,8 +1,10 @@
 # Numerical integration
 
 The `integrate` module is SciPy's `scipy.integrate` written in Baryon
-([decision 0054](../decisions/0054-scipy-module-names.md)), with SciPy's names. Today it
-holds the fixed rules, which integrate samples already taken at known points (roadmap 3.19.3):
+([decision 0054](../decisions/0054-scipy-module-names.md)), with SciPy's names. It holds
+[`quad`](#quad-integrating-a-function), which integrates a function over a finite interval
+(roadmap 3.19.4), and the fixed rules, which integrate samples already taken at known points
+(roadmap 3.19.3):
 
 | Function | Result | SciPy |
 | --- | --- | --- |
@@ -60,8 +62,90 @@ Samples that do not fit a rule are a mistake in the program, so they panic where
 panic: assertion failed: n == intervals, "romb needs one plus a power of 2 samples"
 ```
 
+## `quad`: integrating a function
+
+`quad(func, a, b, args=(), epsabs=1.49e-8, epsrel=1.49e-8, limit=50, points=None)` gives the
+integral of `func` from `a` to `b` and an estimate of its absolute error, as the tuple
+`(integral, error)`. It runs QUADPACK's QAGS, translated step for step from its Fortran, which
+SciPy 1.18 runs too, so both the integral and the error have SciPy's bits.
+
+QAGS applies the 21-point Gauss-Kronrod rule to the interval, then keeps halving the piece with
+the largest error estimate until the total error is at most
+max(`epsabs`, `epsrel` × |integral|), or `limit` pieces are used. When the halving converges
+slowly, as near a singularity such as 1/√x at 0, Wynn's epsilon algorithm extrapolates the
+sequence of estimates. `func` is never called at `a` or `b`, so an integrand that is infinite at
+an end, such as 1/√x from 0, is fine.
+
+`func` takes the point `x: f64` first and returns an `f64`. Extra parameters come after it and
+are passed as the tuple `args`, one element per parameter, as in SciPy; they may be of any
+types, through a [variadic type parameter](types.md#extra-arguments-for-a-callback). `func` is
+inlined into `quad`, so the call costs nothing
+([decision 0026](../decisions/0026-functions-as-arguments.md)).
+
+```python
+import math
+from integrate import quad, IntegrationError
+
+
+def gaussian(x: f64, mu: f64, sigma: f64) -> f64:
+    z = (x - mu) / sigma
+    return math.exp(-0.5 * z * z) / (sigma * math.sqrt(2.0 * math.pi))
+
+
+def bump(x: f64) -> f64:
+    return abs(x - 0.3)
+
+
+def main() -> Raises[None, IntegrationError]:
+    area, error = quad(gaussian, -1.0, 1.0, (0.0, 1.0))
+    print(f"{area:.6f} +- {error:.1e}")        # 0.682689 +- 7.6e-15
+    print(quad(bump, 0.0, 1.0, points=[0.3]))   # (0.29, 3.219646771412954e-15)
+```
+
+`points` lists places inside the interval where `func` is hard to integrate: a jump, a kink or
+a singularity. QAGP, QAGS's variant, then starts from the pieces between them. Points outside
+the interval, and repeats, are dropped, as SciPy drops them. There must be fewer points than
+`limit`.
+
+`a > b` integrates backwards and gives the negated integral; `a == b` gives `(0.0, 0.0)` without
+calling `func`. `quad` calls `func` at most 21 × (2 × `limit` − 1) times and keeps 6 × `limit`
+numbers.
+
+### When `quad` fails
+
+Where SciPy warns with an `IntegrationWarning` and still returns a value, `quad` raises
+`IntegrationError`, whose `message` is SciPy's text
+([decision 0065](../decisions/0065-integrate-api.md) point 3). A large error estimate is easy to
+miss, and Baryon has no warnings. Each of QUADPACK's five failures raises it:
+
+| Failure | `message` begins |
+| --- | --- |
+| `limit` pieces used | `The maximum number of subdivisions (50) has been achieved.` |
+| Roundoff stops the tolerance being reached | `The occurrence of roundoff error is detected` |
+| Very bad behavior somewhere in the interval | `Extremely bad integrand behavior occurs` |
+| The extrapolation does not converge | `The algorithm does not converge.` |
+| The integral is probably divergent | `The integral is probably divergent, or slowly convergent.` |
+
+Note that `limit=1` always raises the first, even for an integrand the first rule integrates
+exactly, as SciPy always warns.
+
+Arguments that make no sense panic, where SciPy raises `ValueError` (decision 0065): `limit`
+below 1, `epsabs <= 0` with `epsrel` below max(50 × 2.2e-16, 5e-29), a break point outside the
+interval with too small a `limit`, or as many break points as `limit`.
+
+```text
+panic: assertion failed: limit >= 1, "Invalid 'limit' argument. There must be at least one subinterval"
+```
+
 ## Differences from SciPy
 
 - The samples are rank-1. SciPy's `axis=` and arrays of higher rank are not built yet.
 - `x` must be an array; SciPy also takes a list.
-- Adaptive quadrature (`quad`) and ODE solvers (`solve_ivp`) are not built yet (roadmap 3.19).
+- `quad` raises `IntegrationError` where SciPy warns, and panics where SciPy raises
+  `ValueError`. The panic for too many break points leaves out the two numbers SciPy's message
+  has.
+- `quad` takes a finite `a` and `b`. Infinite limits and `weight=` are roadmap 3.19.5, and
+  `full_output=` is not built: its third value would change the shape of every call
+  (decision 0065).
+- `quad`'s `points` is a `list[f64]`; SciPy also takes an array or a tuple.
+- ODE solvers (`solve_ivp`) are not built yet (roadmap 3.19).

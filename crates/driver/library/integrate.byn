@@ -12,6 +12,7 @@ decision 0040 for shapes).
 """
 
 import math
+from integrate_quad import IntegrationError as IntegrationError, quad as quad
 
 
 def trapezoid(y: Array[f64, 1], x: Array[f64, 1] | None = None, dx: f64 = 1.0) -> f64:
