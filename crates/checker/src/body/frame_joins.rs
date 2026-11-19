@@ -5,13 +5,14 @@
 //! keep the rows of one frame or both that have no partner, and the other frame's columns
 //! then may hold `None`. Its columns are those of `left`, then those
 //! of `right` that are not keys; two columns left with one name are told apart as pandas
-//! tells them, with `_x` for the left one and `_y` for the right one. The keys are string
-//! literals, checked against both frames when compiling, and a key must have one type in
-//! both.
+//! tells them, with `_x` for the left one and `_y` for the right one, or with the two
+//! `suffixes=`. The keys are string literals, checked against both frames when compiling,
+//! and a key must have one type in both. `left_on=` and `right_on=` name a key that has two
+//! names ([`frame_join_keys`](super::frame_join_keys)); both of its columns are kept.
 
 use super::Body;
 use super::calls::Arguments;
-use syntax::{NodeId, SyntaxKind};
+use syntax::NodeId;
 use types::{Column, Primitive, Type, TypeKind};
 
 /// The join a `merge` makes, which `how=` names.
@@ -47,11 +48,19 @@ impl<'db> Body<'db> {
                 .find(|&&(keyword, _)| body.tree.text(keyword, body.text) == name)
                 .map(|&(_, value)| value)
         };
-        let (on, how) = (named(self, "on"), named(self, "how"));
-        let known = usize::from(on.is_some()) + usize::from(how.is_some());
-        let (&[other], Some(on), true) = (
+        let how = named(self, "how");
+        let written = ["on", "left_on", "right_on", "suffixes"].map(|name| named(self, name));
+        let [on, left_on, right_on, suffixes] = written;
+        let known = written.iter().flatten().count() + usize::from(how.is_some());
+        // The keys are `on=`, or `left_on=` and `right_on=` together, never both forms.
+        let keyed = match (on, left_on, right_on) {
+            (Some(on), None, None) => Some((on, on)),
+            (None, Some(left_on), Some(right_on)) => Some((left_on, right_on)),
+            _ => None,
+        };
+        let (&[other], Some((left_on, right_on)), true) = (
             arguments.positional.as_slice(),
-            on,
+            keyed,
             known == arguments.keywords.len(),
         ) else {
             self.untyped(arguments);
@@ -61,7 +70,8 @@ impl<'db> Body<'db> {
                 "wrong arguments",
                 Some(
                     "for example `trades.merge(names, on=\"symbol\")` or \
-                     `on=[\"symbol\", \"day\"]`; the key columns have one name in both frames",
+                     `on=[\"symbol\", \"day\"]`; a key with two names is `left_on=` and \
+                     `right_on=` together, in place of `on=`",
                 ),
             ));
         };
@@ -78,53 +88,52 @@ impl<'db> Body<'db> {
             return Some(self.lowerer.unknown());
         };
         let kind = self.join_kind(how);
-        let mut complete = kind.is_some();
-        let keys = if self.tree.kind(on) == SyntaxKind::List {
-            self.column_names(on, base)
-        } else {
-            self.column_name(on, base).map(|name| vec![name])
+        let ends = self.join_suffixes(suffixes);
+        let keys = self.join_keys([left_on, right_on], [base, right]);
+        let (Some(kind), Some(ends), Some(keys)) = (kind, ends, keys) else {
+            return Some(self.lowerer.unknown());
         };
-        complete &= keys.is_some();
-        let keys = keys.unwrap_or_default();
-        if complete && keys.is_empty() {
-            self.lowerer.error(
-                on,
-                "`merge` needs at least one column to join on",
-                "no columns",
-                None,
-            );
-            complete = false;
-        }
-        for key in left.iter().filter(|column| keys.contains(&column.name)) {
-            complete &= self.joins(on, key, right);
+        let mut complete = true;
+        for (name, other) in &keys {
+            if let Some(key) = left.iter().find(|column| column.name == *name) {
+                complete &= self.joins(right_on, key, other, right);
+            }
         }
         if !complete {
             return Some(self.lowerer.unknown());
         }
-        let kind = kind.unwrap_or(Join::Inner);
-        Some(self.joined_columns(node, [left, found], &keys, kind))
+        Some(self.joined_columns(node, [left, found], &keys, kind, &ends))
     }
 
     /// The type of the frame a join of kind `kind` of frames with the columns `left` and
     /// `right`, the two of `sides`, on `keys` gives, for the call `node`: the columns of
-    /// `left`, then those of `right` that are no keys. As in pandas, a column the two frames
-    /// share that is no key gets `_x` on the left and `_y` on the right; two columns still
-    /// left with one name are an error. A column that is no key, of a frame that may have no
-    /// row for a row of the result, may hold `None` there (decision 0045): the right frame's
-    /// in a left join, the left frame's in a right join, and both in an outer join.
+    /// `left`, then those of `right`, without a key's right column when the key has one name
+    /// in both frames. Each of `keys` is a key's name in the left frame and in the right. As
+    /// in pandas, a column name the two frames share, a key with one name aside, gets the
+    /// first of `ends` on the left and the second on the right, `_x` and `_y` unless
+    /// `suffixes=` says otherwise; two columns still left with one name are an error. A
+    /// column of a frame that may have no row for a row of the result may hold `None` there
+    /// (decision 0045): the right frame's in a left join, the left frame's in a right join,
+    /// and both in an outer join. A key with one name is the exception, since it is read
+    /// from whichever frame has the row; a key with two names is two columns like any other.
     fn joined_columns(
         &mut self,
         node: NodeId,
         [left, right]: [&[Column<'db>]; 2],
-        keys: &[String],
+        keys: &[(String, String)],
         kind: Join,
+        ends: &[String; 2],
     ) -> Type<'db> {
+        let one = |name: &String| {
+            keys.iter()
+                .any(|(first, second)| first == name && second == name)
+        };
         let shared = |name: &String, others: &[Column<'db>]| {
-            !keys.contains(name) && others.iter().any(|column| column.name == *name)
+            !one(name) && others.iter().any(|column| column.name == *name)
         };
         let gaps = |side: Join, column: &Column<'db>| {
             let optional = matches!(column.element.kind(self.db), TypeKind::Optional(_));
-            if optional || keys.contains(&column.name) || !(kind == side || kind == Join::Outer) {
+            if optional || one(&column.name) || !(kind == side || kind == Join::Outer) {
                 column.element
             } else {
                 Type::new(self.db, TypeKind::Optional(column.element))
@@ -133,7 +142,7 @@ impl<'db> Body<'db> {
         let mut columns: Vec<Column<'db>> = Vec::with_capacity(left.len() + right.len());
         for column in left {
             let suffix = if shared(&column.name, right) {
-                "_x"
+                ends[0].as_str()
             } else {
                 ""
             };
@@ -143,8 +152,12 @@ impl<'db> Body<'db> {
                 element: gaps(Join::Right, column),
             });
         }
-        for column in right.iter().filter(|column| !keys.contains(&column.name)) {
-            let suffix = if shared(&column.name, left) { "_y" } else { "" };
+        for column in right.iter().filter(|column| !one(&column.name)) {
+            let suffix = if shared(&column.name, left) {
+                ends[1].as_str()
+            } else {
+                ""
+            };
             columns.push(Column {
                 name: format!("{}{suffix}", column.name),
                 // A left join may find no right row.
@@ -164,7 +177,10 @@ impl<'db> Body<'db> {
                     node,
                     &message,
                     "one name for two columns",
-                    Some("rename one of them first, with `rename(columns={...})`"),
+                    Some(
+                        "give `merge` two different `suffixes=`, or rename one of them first, \
+                         with `rename(columns={...})`",
+                    ),
                 );
             }
         }
@@ -196,24 +212,34 @@ impl<'db> Body<'db> {
         None
     }
 
-    /// Whether the key column `key` of the left frame can be joined with the frame of type
-    /// `right`: `right` has a column of that name and of the same type, and the type has an
-    /// order. A mistake is reported at `on`.
-    fn joins(&mut self, on: NodeId, key: &Column<'db>, right: Type<'db>) -> bool {
+    /// Whether the key column `key` of the left frame can be joined with the column `other`
+    /// of the right frame, of type `right`: there is such a column, of the same type, and
+    /// the type has an order. A mistake is reported at `on`.
+    fn joins(&mut self, on: NodeId, key: &Column<'db>, other: &str, right: Type<'db>) -> bool {
         let TypeKind::DataFrame { columns, .. } = right.kind(self.db) else {
             return false;
         };
-        let Some(other) = columns.iter().find(|column| column.name == key.name) else {
-            self.no_column(on, right, &key.name);
+        let Some(other) = columns.iter().find(|column| column.name == other) else {
+            self.no_column(on, right, other);
             return false;
         };
         if other.element != key.element {
-            let message = format!(
-                "the column `{}` is `{}` in one frame and `{}` in the other",
-                key.name,
-                self.show(key.element),
-                self.show(other.element)
-            );
+            let message = if other.name == key.name {
+                format!(
+                    "the column `{}` is `{}` in one frame and `{}` in the other",
+                    key.name,
+                    self.show(key.element),
+                    self.show(other.element)
+                )
+            } else {
+                format!(
+                    "the column `{}` is `{}` and the column `{}` is `{}`",
+                    key.name,
+                    self.show(key.element),
+                    other.name,
+                    self.show(other.element)
+                )
+            };
             self.lowerer.error(
                 on,
                 &message,
