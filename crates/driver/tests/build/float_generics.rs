@@ -1,5 +1,5 @@
 //! Functions generic over a float type, `[T: Float]`, built at `f32` and `f64` (roadmap
-//! 3.10.1), and conversions to a type parameter, `T(x)` (roadmap 1.9.59).
+//! 3.10.1), conversions to a type parameter, `T(x)` (roadmap 1.9.59), and `**` on one (1.9.70).
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::process::Command;
@@ -128,4 +128,40 @@ def main():
     let ran = Command::new(&program).output().unwrap();
     assert!(ran.status.success(), "{ran:?}");
     assert_eq!(String::from_utf8_lossy(&ran.stdout), "1 [2.5] 3.0 7 [7]\n");
+}
+
+/// `**` on a `T` under `Float` builds as the instance's `math.pow` (roadmap 1.9.70): a norm
+/// raises a sum to `T(0.5)` at `f64` and `f32`, and a power of two `T`s and of a `T` and a
+/// literal follow the float rules.
+#[test]
+fn powers_of_a_float_type_parameter_build() {
+    let program = "\
+def norm[T: Float](xs: Array[T, 1]) -> T:
+    s = T(0)
+    for x in xs:
+        s += x * x
+    return s ** T(0.5)
+
+
+def cube[T: Float](x: T) -> T:
+    return x ** 3.0
+
+
+def main():
+    print(norm(Array([3.0, 4.0])))
+    narrow = Array.zeros(2, f32)
+    narrow[0] = f32(6.0)
+    narrow[1] = f32(8.0)
+    print(norm(narrow))
+    print(cube(2.0), cube(f32(1.5)), cube(-2.0) ** 2.0)
+";
+    let directory = package("float-generic-powers", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "5.0\n10.0\n8.0 3.375 64.0\n"
+    );
 }
