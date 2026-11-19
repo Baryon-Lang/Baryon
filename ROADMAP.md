@@ -349,7 +349,7 @@ the REPL, and three external users have written something real.
 | 3.19.1 | Decision record 0065 for the `integrate` API: generic state, `method=` chosen when compiling from a literal, `solve_ivp` reporting failure in `status` and `quad` raising `IntegrationError`, `OdeResult` with SciPy's fields, events left for a later card (Collins, cards 42, 43 and 44) | 0.5 | 3.19 | Done | Claude | [#527](https://github.com/Baryon-Lang/Baryon/pull/527) |
 | 3.19.2 | Variadic generics: `*Ts` in a type parameter list, in a `Callable` and in `tuple[*Ts]`, and `f(*args)` on a tuple, so a callback takes SciPy's `args=` one by one; amends decision 0026 (Collins, card 42) | 2.5 | 3.19.1 | Done | Claude | [#533](https://github.com/Baryon-Lang/Baryon/pull/533), [#538](https://github.com/Baryon-Lang/Baryon/pull/538) |
 | 3.19.3 | Fixed rules on arrays, with no callbacks: `trapezoid`, `simpson`, `cumulative_trapezoid` and `romb` | 1.5 | 3.19 | Done | Claude | [#475](https://github.com/Baryon-Lang/Baryon/pull/475) |
-| 3.19.4 | `quad` on finite intervals in QUADPACK's manner (QAGS: 21-point Gauss-Kronrod with Wynn's epsilon algorithm), with `points=` | 4 | 3.19.2 | Planned | — | — |
+| 3.19.4 | `quad` on finite intervals in QUADPACK's manner (QAGS: 21-point Gauss-Kronrod with Wynn's epsilon algorithm), with `points=` | 4 | 3.19.2 | Done | Claude | [#545](https://github.com/Baryon-Lang/Baryon/pull/545) |
 | 3.19.5 | `quad` on infinite intervals (QAGI) and with `weight=` (QAWO, QAWF, QAWC, QAWS) | 4 | 3.19.4 | Planned | — | — |
 | 3.19.6 | `fixed_quad`, `dblquad`, `tplquad` and `nquad` | 3 | 3.19.4 | Planned | — | — |
 | 3.19.7 | `solve_ivp` with RK45: step-size control, `t_eval` and `OdeResult` | 3 | 3.19.2 | Planned | — | — |
