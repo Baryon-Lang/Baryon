@@ -14,9 +14,10 @@
 use super::{Broadcast, Expander};
 use crate::leaves::{ArrayLeaf, fused};
 use mir::{
-    Argument, BinaryOperator, BlockId, Body, Builtin, Callee, Elementwise, Local, LocalKind,
-    Operand, Place, Projection, Rvalue, SliceIndex, StatementKind, TerminatorKind,
+    Argument, BinaryOperator, BlockId, Body, Builtin, Callee, ConstantValue, Elementwise, Local,
+    LocalKind, Operand, Place, Projection, Rvalue, SliceIndex, StatementKind, TerminatorKind,
 };
+use source::Span;
 use types::{Primitive, Shape, Type, TypeKind};
 
 /// The number of elements the buffer holds: the largest leaf of the pairwise tree.
@@ -24,22 +25,28 @@ const LEAF: u64 = 128;
 
 /// A whole-array expression whose result is only summed: what [`summed`] found.
 pub(crate) struct Summed<'db> {
-    /// Where the sum goes: the destination of the call of [`Builtin::Sum`].
+    /// Where the sum goes: the destination of the call of [`Builtin::Sum`] or
+    /// [`Builtin::SumAlong`].
     pub(crate) destination: Place,
     /// The block the call continues to, which drops the temporary.
     pub(crate) target: BlockId,
     /// The position of that drop in the target block.
     pub(crate) drop: usize,
-    /// The type of the buffer one leaf's values are written into: a `Fixed` vector of 128
-    /// elements of the expression's float type.
-    pub(crate) buffer: Type<'db>,
-    /// The expression's float element type.
+    /// The expression's element type: a float, an integer or `bool`.
     pub(crate) element: Type<'db>,
+    /// The type of the buffer one leaf's values are written into, for a float sum: a `Fixed`
+    /// vector of 128 elements of the element type.
+    pub(crate) buffer: Type<'db>,
+    /// The axis a call of [`Builtin::SumAlong`] sums along; `None` for [`Builtin::Sum`].
+    pub(crate) axis: Option<u32>,
+    /// The call's span, which an integer sum's overflow checks report, as lowering's own loop
+    /// reported them.
+    pub(crate) span: Span,
 }
 
 /// Whether the statement at `position`, the last of `block`, assigns a whole-array expression
-/// of floats to a temporary that the block's call of [`Builtin::Sum`] sums and its target drops,
-/// with nothing else naming it.
+/// of real numbers or `bool`s to a temporary that the block's call of [`Builtin::Sum`] or
+/// [`Builtin::SumAlong`] sums and its target drops, with nothing else naming it.
 pub(crate) fn summed<'db>(
     db: &'db dyn salsa::Database,
     body: &Body<'db>,
@@ -55,23 +62,25 @@ pub(crate) fn summed<'db>(
         return None;
     };
     let declaration = body.locals.get(stored.local.index())?;
-    let TypeKind::Array { element, .. } = declaration.ty.kind(db) else {
+    let TypeKind::Array { element, rank } = declaration.ty.kind(db) else {
         return None;
     };
-    let float = matches!(element.kind(db), TypeKind::Primitive(Primitive::Float(_)));
-    let shape = Shape::new(vec![LEAF])?;
+    let real = matches!(
+        element.kind(db),
+        TypeKind::Primitive(Primitive::Float(_) | Primitive::Integer(_) | Primitive::Bool)
+    );
+    if !real || declaration.kind != LocalKind::Temporary || !stored.projections.is_empty() {
+        return None;
+    }
     let buffer = Type::new(
         db,
         TypeKind::Fixed {
             element: *element,
-            shape,
+            shape: Shape::new(vec![LEAF])?,
         },
     );
-    if !float || declaration.kind != LocalKind::Temporary || !stored.projections.is_empty() {
-        return None;
-    }
     let TerminatorKind::Call {
-        callee: Callee::Builtin(Builtin::Sum),
+        callee: Callee::Builtin(builtin),
         arguments,
         destination,
         target,
@@ -80,9 +89,23 @@ pub(crate) fn summed<'db>(
     else {
         return None;
     };
-    if arguments.as_slice() != [Argument::Borrow(stored.clone())] {
-        return None;
-    }
+    let summed_array = Argument::Borrow(stored.clone());
+    let axis = match (builtin, arguments.as_slice()) {
+        (Builtin::Sum, [only]) if *only == summed_array => None,
+        (Builtin::SumAlong, [array, Argument::Owned(Operand::Constant(axis))])
+            if *array == summed_array =>
+        {
+            let ConstantValue::Integer(axis) = axis.value else {
+                return None;
+            };
+            Some(
+                u32::try_from(axis)
+                    .ok()
+                    .filter(|axis| *axis < *rank && *rank > 1)?,
+            )
+        }
+        _ => return None,
+    };
     let drop = body.blocks[target.index()]
         .statements
         .iter()
@@ -103,25 +126,38 @@ pub(crate) fn summed<'db>(
         destination: destination.clone(),
         target: *target,
         drop,
-        buffer,
         element: *element,
+        buffer,
+        axis,
+        span: data.terminator.span,
     })
 }
 
 impl<'db> Expander<'_, '_, 'db> {
     /// Writes the sum of `tree` in one pass, as the module documentation describes, for the call
-    /// as `summed` found it. `leaves` are the expression's array leaves.
+    /// as `summed` found it. `leaves` are the expression's array leaves. An integer sum, and a sum
+    /// along an axis, are written by the `exact` module.
     pub(crate) fn sum(
         mut self,
         tree: &Elementwise<'db>,
         leaves: &[ArrayLeaf<'db>],
         summed: Summed<'db>,
     ) {
+        let float = matches!(
+            summed.element.kind(self.db),
+            TypeKind::Primitive(Primitive::Float(_))
+        );
+        if summed.axis.is_some() {
+            return self.sum_along(tree, leaves, &summed);
+        }
+        if !float {
+            return self.sum_exact(tree, leaves, &summed);
+        }
         let Summed {
             destination,
             target,
-            buffer,
             element,
+            buffer,
             ..
         } = summed;
         let mut broadcast = Broadcast::default();

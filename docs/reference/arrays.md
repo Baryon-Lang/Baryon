@@ -484,8 +484,11 @@ adds in the same tree, so it has the same bits as storing the expression and sum
 `numpy.sum`. It never stores the expression: the compiler computes the elements one leaf of the
 tree at a time, at most 128 of them, into a small buffer, sums each leaf, and adds the leaf sums
 in the tree's order ([decision 0041](../decisions/0041-one-pass-reductions.md)). That saves an
-array as large as the expression and a pass over it. It applies to `Array`s of floats; a sum
-along an axis of an expression still stores the expression first.
+array as large as the expression and a pass over it. It applies to `Array`s of floats, and also
+of integers and `bool`s, whose sum of an expression, such as `(a * b + r).sum()` or
+`(a > 0.0).sum()`, keeps one running total and checks each `+` for overflow as before. A sum
+along an axis of an expression is one pass too, as the next section says. `Fixed` arrays, which
+are small, store the expression first.
 
 `a.dot(b)` of floats adds its products in the same tree: each product `a[i] * b[i]` is rounded,
 never fused with the add that follows, and the products are summed as `sum` sums its elements. So
@@ -522,6 +525,13 @@ summed by the pairwise tree of [`a.sum()`](#the-order-sum-adds-in). Along any ot
 result starts at `0.0` and the elements are added one at a time from the first, which reads the
 array in row-major order. Integer sums are exact in any order, and overflow is checked as `+`
 checks it.
+
+A sum along an axis of a whole-array expression, such as `((u - v) * (u - v)).sum(axis=0)`,
+adds in the same orders without storing the expression (decision 0041's amendment). Along any
+axis but the last of floats, each value is computed and added into its place. Along the last
+axis, each row is computed into a buffer one row long and summed by the pairwise tree, so each
+row keeps its bits. Either way the only memory is the result, and one row, instead of an array
+as large as the expression.
 
 `a.min(axis=k)` and `a.max(axis=k)` follow the rules of `a.min()`: a NaN anywhere in a line makes
 that result NaN, and an axis of length 0 panics, even when the other axes are long, as NumPy

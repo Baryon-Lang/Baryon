@@ -6,7 +6,8 @@
 
 use crate::builder::Builder;
 use mir::{
-    Argument, BinaryOperator, Builtin, Callee, Operand, Place, Projection, Rvalue, TerminatorKind,
+    Argument, BinaryOperator, Builtin, Callee, LocalKind, Operand, Place, Projection, Rvalue,
+    StatementKind, TerminatorKind,
 };
 use syntax::NodeId;
 use types::TypeKind;
@@ -19,7 +20,9 @@ impl<'db> Builder<'db> {
     /// length (Collins, 2026-11-08, roadmap I.22). Integers are added in a loop nest from 0 in
     /// row-major order (decision 0008), since integer addition is exact in any order; each
     /// addition is checked for overflow as `+` is, so a debug build panics and a release build
-    /// wraps (decision 0030). An empty array sums to 0.
+    /// wraps (decision 0030). An empty array sums to 0. The sum of a whole-array expression,
+    /// such as `(a * b).sum()`, of floats or integers, is left to array expansion, which adds in
+    /// the same order without storing the expression (decision 0041, amended).
     pub(crate) fn array_sum(&mut self, place: Place, array: NodeId, node: NodeId) {
         let ty = self.ty(array);
         let element = self.element(ty);
@@ -33,7 +36,58 @@ impl<'db> Builder<'db> {
         }
         let source = self.borrow(array);
         let result = self.ty(node);
+        if self.just_assigned_expression(&source) {
+            return self.expression_sum(place, (&source, element, result), node);
+        }
         self.sum_of(place, (&source, ty, result), node);
+    }
+
+    /// Whether the last statement of the current block assigns a whole-array expression to
+    /// `place`, a temporary `Array` with no projection: the shape array expansion sums or
+    /// reduces in one pass when a call of `Builtin::Sum` or `Builtin::SumAlong` reads it next
+    /// and nothing else does (decision 0041, amended).
+    pub(crate) fn just_assigned_expression(&self, place: &Place) -> bool {
+        let Some(declaration) = self.body.locals.get(place.local.index()) else {
+            return false;
+        };
+        let last = self.body.blocks[self.current().index()].statements.last();
+        place.projections.is_empty()
+            && declaration.kind == LocalKind::Temporary
+            && matches!(declaration.ty.kind(self.db), TypeKind::Array { .. })
+            && matches!(
+                last.map(|statement| &statement.kind),
+                Some(StatementKind::Assign(stored, Rvalue::Elementwise(_))) if stored == place
+            )
+    }
+
+    /// `e.sum()` of a whole-array expression `e` that has just been computed into the
+    /// temporary `source`, with elements of type `element`, into `place` as `result`: a call of
+    /// [`Builtin::Sum`] and a drop of `source` right after it, the shape array expansion sums
+    /// without storing `e` (decision 0041, amended). It adds as [`sum_of`](Self::sum_of)
+    /// would: floats in the pairwise tree, integers and `bool`s one at a time with checked `+`.
+    fn expression_sum(
+        &mut self,
+        place: Place,
+        (source, element, result): (&Place, types::Type<'db>, types::Type<'db>),
+        node: NodeId,
+    ) {
+        let counted = self.summand(element);
+        let total = self.temporary(counted, node);
+        let next = self.new_block();
+        self.terminate(
+            TerminatorKind::Call {
+                callee: Callee::Builtin(Builtin::Sum),
+                arguments: vec![Argument::Borrow(source.clone())],
+                destination: Place::from(total),
+                target: next,
+                error: None,
+            },
+            node,
+        );
+        self.start(next);
+        self.drop_now(source.local, node);
+        let rvalue = self.coerce(Operand::Copy(Place::from(total)), counted, result);
+        self.assign(place, rvalue, node);
     }
 
     /// The sum of the array at `source`, of type `ty`, into `place` as type `result`, as

@@ -2,6 +2,7 @@
 
 mod broadcast;
 mod checks;
+mod exact;
 mod power;
 mod summed;
 

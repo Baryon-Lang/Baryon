@@ -18,6 +18,10 @@
 //! panics, as `NumPy`'s does, even when the result would be empty. An array of rank 1 reduces to
 //! one number, as `a.sum()` does.
 //!
+//! A sum along an axis of a whole-array expression, `((u - v) * (u - v)).sum(axis=0)`, is a call
+//! of [`Builtin::SumAlong`] instead, which array expansion turns into these loops over the
+//! expression without storing it (decision 0041, amended).
+//!
 //! Cost: one pass over the array, plus one call per row for a float sum along the last axis.
 
 use crate::builder::Builder;
@@ -60,6 +64,9 @@ impl<'db> Builder<'db> {
         }
         let source = self.borrow(array);
         let result_type = self.ty(node);
+        if method == "sum" && self.just_assigned_expression(&source) {
+            return self.sum_along_expression(place, (&source, result_type), axis, node);
+        }
         self.reduce_along(place, method, (&source, ty, result_type), axis, node);
     }
 
@@ -131,6 +138,37 @@ impl<'db> Builder<'db> {
                 self.extreme_along(&reduced, (element, method == "min"), node);
             }
         }
+        let moved = self.take(Place::from(result), result_type);
+        self.assign(place, Rvalue::Use(moved), node);
+    }
+
+    /// `e.sum(axis)` of a whole-array expression `e` that has just been computed into the
+    /// temporary `source`, into `place` as `result_type`: a call of [`Builtin::SumAlong`], which
+    /// array expansion turns into the loops [`reduce_along`](Self::reduce_along) would write,
+    /// in the same order, without storing `e` (decision 0041, amended). `source` is dropped
+    /// right after the call, so array expansion finds the three statements together.
+    fn sum_along_expression(
+        &mut self,
+        place: Place,
+        (source, result_type): (&Place, types::Type<'db>),
+        axis: u32,
+        node: NodeId,
+    ) {
+        let result = self.temporary(result_type, node);
+        let axis = Operand::Constant(Constant::integer(self.int_type(), i128::from(axis)));
+        let next = self.new_block();
+        self.terminate(
+            TerminatorKind::Call {
+                callee: Callee::Builtin(Builtin::SumAlong),
+                arguments: vec![Argument::Borrow(source.clone()), Argument::Owned(axis)],
+                destination: Place::from(result),
+                target: next,
+                error: None,
+            },
+            node,
+        );
+        self.start(next);
+        self.drop_now(source.local, node);
         let moved = self.take(Place::from(result), result_type);
         self.assign(place, Rvalue::Use(moved), node);
     }
