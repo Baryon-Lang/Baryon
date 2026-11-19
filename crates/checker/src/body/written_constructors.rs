@@ -11,6 +11,15 @@
 //! ```text
 //! error: `Pair` needs `T` to be a `Number`, found `str`
 //! ```
+//!
+//! A built-in constructor takes no written type arguments: `Array[i64 | None, 1]([10, None])`
+//! and `DataFrame[Trade]({...})` are errors that say to name the type on the variable
+//! (roadmap 1.9.66). Taking them is idea I.70. The arguments are still checked against the
+//! written type, as against an annotation, so the one error is the only one.
+//!
+//! ```text
+//! error: `Array` takes no type arguments at a call
+//! ```
 
 use super::Body;
 use super::calls::Arguments;
@@ -79,5 +88,38 @@ impl<'db> Body<'db> {
             Callee::Constructor(item),
             arguments,
         ))
+    }
+
+    /// The type of `function(arguments)` at `node`, where `function` is a subscript that names
+    /// the built-in `builtin` with type arguments written, which is an error. An `Array` or
+    /// `DataFrame` still checks its arguments against the written type, as it does against
+    /// an annotation; any other built-in types them alone.
+    pub(super) fn written_builtin(
+        &mut self,
+        node: NodeId,
+        function: NodeId,
+        builtin: &str,
+        arguments: &Arguments,
+    ) -> Type<'db> {
+        let written = self.tree.text(function, self.text).to_owned();
+        let message = format!("`{builtin}` takes no type arguments at a call");
+        let hint = format!("name the type on the variable: `x: {written} = {builtin}(...)`");
+        let error = self
+            .lowerer
+            .error(function, &message, "type arguments written", Some(&hint));
+        match builtin {
+            "Array" | "DataFrame" => {
+                let expected = self.lowerer.lower(function);
+                if builtin == "Array" {
+                    self.array_from_list(node, arguments, Some(expected));
+                } else {
+                    self.frame_new(node, arguments, Some(expected));
+                }
+            }
+            _ => {
+                self.untyped(arguments);
+            }
+        }
+        error
     }
 }

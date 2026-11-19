@@ -412,3 +412,44 @@ error: rows of a `DataFrame` cannot be assigned
    = note: assign their values by column: `df.price[0] = 1.0`, or `df.price[mask] = 1.0` for the rows a mask chooses"#
     );
 }
+
+/// A built-in constructor takes no written type arguments (roadmap 1.9.66): `Array[...](...)`
+/// and `DataFrame[...](...)` are errors that say to name the type on the variable, where
+/// before the first stopped in lowering and the second reported a list-type error. Their
+/// arguments are still checked against the written type, so a valid one adds no error.
+#[test]
+fn built_in_constructors_take_no_type_arguments() {
+    let program = r#"class Trade(Struct):
+    price: f64
+
+
+def main():
+    a = Array[i64 | None, 1]([10, None])
+    f = DataFrame[Trade]({"price": Array([1.5])})
+    xs = list[f64]([1.0])
+"#;
+    assert_eq!(
+        check_one(program),
+        "\
+error: `Array` takes no type arguments at a call
+ --> main.byn:6:9
+  |
+6 |     a = Array[i64 | None, 1]([10, None])
+  |         ^^^^^^^^^^^^^^^^^^^^ type arguments written
+  = note: name the type on the variable: `x: Array[i64 | None, 1] = Array(...)`
+
+error: `DataFrame` takes no type arguments at a call
+ --> main.byn:7:9
+  |
+7 |     f = DataFrame[Trade]({\"price\": Array([1.5])})
+  |         ^^^^^^^^^^^^^^^^ type arguments written
+  = note: name the type on the variable: `x: DataFrame[Trade] = DataFrame(...)`
+
+error: `list` takes no type arguments at a call
+ --> main.byn:8:10
+  |
+8 |     xs = list[f64]([1.0])
+  |          ^^^^^^^^^ type arguments written
+  = note: name the type on the variable: `x: list[f64] = list(...)`"
+    );
+}

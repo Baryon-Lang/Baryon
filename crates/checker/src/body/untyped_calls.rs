@@ -8,6 +8,9 @@
 //!   method, `x.copy()` for `def last[T](xs: list[T])`;
 //! - a generic function or constructor whose arguments do not fix one of its type parameters,
 //!   `make()` for `def make[T]() -> list[T]`;
+//! - a built-in constructor with its type arguments written, `Array[f64, 1]([1.0])` or
+//!   `DataFrame[Trade]({...})`, which only a user struct takes (decision 0066; the
+//!   `written_constructors` module);
 //! - a member a standard module does not have, `math.nothing(1.0)`, or `norm(r)` after
 //!   `from linalg import norm` (roadmap 1.9.52), and such a member read as a value with no
 //!   call, `zlib.nothing` or `math.sqrt` (roadmap 1.9.56).
@@ -27,8 +30,8 @@ use types::{Key, Signature, Type, TypeKind};
 impl<'db> Body<'db> {
     /// The type of `function(arguments)` at `node` when `function` is a type parameter in
     /// scope, `T(0)`, which converts under `Number` or `Float` and is an error otherwise, or a
-    /// class with its type arguments written, `Box[f64]([])` (the `written_constructors`
-    /// module); `None` for any other call.
+    /// class with its type arguments written, `Box[f64]([])`, or a built-in one, which is an
+    /// error (the `written_constructors` module); `None` for any other call.
     pub(super) fn untyped_call(
         &mut self,
         node: NodeId,
@@ -62,7 +65,10 @@ impl<'db> Body<'db> {
             SyntaxKind::Subscript => {
                 let class = self.tree.child(function, Role::Value)?;
                 let &Definition::Item(file, name) = self.lowerer.definition(class)? else {
-                    return None;
+                    let &Definition::Builtin(builtin) = self.lowerer.definition(class)? else {
+                        return None;
+                    };
+                    return Some(self.written_builtin(node, function, builtin, arguments));
                 };
                 if !matches!(
                     outline(self.db, file).get(name).map(|entry| &entry.kind),
