@@ -53,9 +53,10 @@ impl<'db> Body<'db> {
                     .enumerate()
                     .map(|(index, item)| {
                         // Building a tuple moves each value into it.
-                        let ty = self.expression(item, expected_items.get(index).copied());
+                        let written = expected_items.get(index).copied();
+                        let ty = self.expression(item, written);
                         self.consume(item, ty);
-                        ty
+                        self.widened(written, ty)
                     })
                     .collect();
                 Type::new(self.db, TypeKind::Tuple(items))

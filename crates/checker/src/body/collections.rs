@@ -122,4 +122,22 @@ impl<'db> Body<'db> {
             _ => unknown,
         }
     }
+
+    /// The type a tuple item takes: `written`, the item type the context gives, when `found`
+    /// stands for it as a `None` or a `T` stands for `T | None`, or a member for its union;
+    /// otherwise `found`. So `return (x, None)` builds a `tuple[f64, f64 | None]` where the
+    /// function returns one, and lowering converts the item as it does a list's.
+    pub(super) fn widened(&self, written: Option<Type<'db>>, found: Type<'db>) -> Type<'db> {
+        match written {
+            Some(written)
+                if matches!(
+                    written.kind(self.db),
+                    TypeKind::Optional(_) | TypeKind::Union(_)
+                ) && relations::compatible(self.db, written, found) =>
+            {
+                written
+            }
+            _ => found,
+        }
+    }
 }

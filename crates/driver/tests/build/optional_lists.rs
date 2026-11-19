@@ -1,5 +1,6 @@
-//! A list written with `None` among its items (roadmap 3.13.6, decision 0045 part 3), built and
-//! run: with no annotation the list takes the type `list[T | None]`, wherever it is written.
+//! A list or tuple written with `None` among its items (roadmap 3.13.6 and 1.9.68, decision
+//! 0045 part 3), built and run: with no annotation the list takes the type `list[T | None]`,
+//! wherever it is written, and a tuple takes the `T | None` its context gives.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -48,6 +49,47 @@ def main():
     assert_eq!(
         String::from_utf8_lossy(&run.stdout),
         "4.0 3\n11.0 5\n0.5\ngap\n5\ngap\na\n2 2 2.5\n3 2 4.0 [False  True False]\n"
+    );
+    Ok(())
+}
+
+/// A tuple written with `None` or a plain value where its type has a `T | None` takes that
+/// type (roadmap 1.9.68): `return (x, None)` from a function that returns
+/// `tuple[f64, f64 | None]`, an annotated variable, and an argument, as in Python.
+#[test]
+fn a_tuple_takes_none_where_its_type_allows() -> io::Result<()> {
+    let program = r#"
+def root(x: f64) -> tuple[f64, f64 | None]:
+    if x < 0.0:
+        return (x, None)
+    return (x, x ** 0.5)
+
+
+def show(pair: tuple[i64 | None, str]):
+    first = pair[0]
+    if first is None:
+        print("none", pair[1])
+    else:
+        print(first + 1, pair[1])
+
+
+def main():
+    print(root(-4.0), root(9.0))
+    value, maybe = root(-1.0)
+    print(value, maybe is None)
+    t: tuple[f64, f64 | None] = (1.5, None)
+    print(t, t[1] is None)
+    show((None, "a"))
+    show((2, "b"))
+"#;
+    let directory = package("optional_tuples", &[("main.byn", program)])?;
+    let (output, executable) = baryon_build(&directory)?;
+    assert!(output.status.success(), "{}", stderr(&output));
+    let run = Command::new(&executable).output()?;
+    assert_eq!(run.status.code(), Some(0), "{}", panic_report(&run));
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "(-4.0, None) (9.0, 3.0)\n-1.0 True\n(1.5, None) True\nnone a\n3 b\n"
     );
     Ok(())
 }
