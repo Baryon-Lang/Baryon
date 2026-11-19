@@ -1,4 +1,5 @@
-//! Arithmetic on arrays with missing values: `bids + asks`, `bids * 2.0` and `-bids`, where
+//! Arithmetic on arrays with missing values: `bids + asks`, `bids * 2.0`, `bids ** 2.0` and
+//! `-bids`, where
 //! a side is an `Array[T | None, 1]` (decision 0045, part 3).
 //!
 //! The result has `None` wherever a side has `None`, so its validity bitmap is the sides'
@@ -21,7 +22,7 @@
 use crate::builder::Builder;
 use crate::operators::{arithmetic, comparison};
 use crate::optional_arrays::{VALIDITY, VALUES};
-use mir::{Elementwise, Local, Operand, Place, Projection, Rvalue, UnaryOperator};
+use mir::{BinaryOperator, Elementwise, Local, Operand, Place, Projection, Rvalue, UnaryOperator};
 use syntax::{NodeId, Operator, Role, SyntaxKind};
 use types::Type;
 
@@ -41,6 +42,16 @@ struct Leaves<'db> {
     positions: Vec<Option<usize>>,
 }
 
+/// The IR operator for an arithmetic operator of the source between arrays with missing
+/// values: those of [`arithmetic`] and `**`, which is one operation on each pair of
+/// elements (roadmap 1.9.58).
+fn gap_operator(operator: Operator) -> Option<BinaryOperator> {
+    match operator {
+        Operator::Power => Some(BinaryOperator::Power),
+        _ => arithmetic(operator),
+    }
+}
+
 impl<'db> Builder<'db> {
     /// Whether `node` is arithmetic whose result is an array with missing values.
     pub(crate) fn is_optional_arithmetic(&self, node: NodeId) -> bool {
@@ -48,7 +59,7 @@ impl<'db> Builder<'db> {
     }
 
     /// Whether `node` is an operator this module computes element by element: `+`, `-`, `*`,
-    /// `/`, `//` or `%` of two operands, or `-` or `+` of one.
+    /// `/`, `//`, `%` or `**` of two operands, or `-` or `+` of one.
     fn is_gap_operation(&self, node: NodeId) -> bool {
         let operator = || self.tree.node(node).operator();
         match self.tree.kind(node) {
@@ -60,6 +71,7 @@ impl<'db> Builder<'db> {
                     | Operator::Divide
                     | Operator::FloorDivide
                     | Operator::Modulo
+                    | Operator::Power
             ),
             SyntaxKind::UnaryOperation => matches!(operator(), Operator::Negate | Operator::Plus),
             _ => false,
@@ -100,7 +112,7 @@ impl<'db> Builder<'db> {
         else {
             return;
         };
-        if arithmetic(self.tree.node(statement).operator()).is_none() {
+        if gap_operator(self.tree.node(statement).operator()).is_none() {
             return self.unsupported(statement, "this in-place operator on missing values");
         }
         let Some(whole) = self.optional_arithmetic_value(statement, element) else {
@@ -351,7 +363,7 @@ impl<'db> Builder<'db> {
         if self.tree.kind(node) == SyntaxKind::AugmentedAssign {
             let left = operands.next().map(Elementwise::Leaf)?;
             let right = self.gap_tree(self.tree.child(node, Role::Value)?, operands)?;
-            let operator = arithmetic(operator)?;
+            let operator = gap_operator(operator)?;
             return Some(Elementwise::Binary(
                 operator,
                 Box::new(left),
@@ -371,7 +383,7 @@ impl<'db> Builder<'db> {
         let left = self.gap_tree(self.tree.child(node, Role::Left)?, operands)?;
         let right = self.gap_tree(self.tree.child(node, Role::Right)?, operands)?;
         Some(Elementwise::Binary(
-            arithmetic(operator)?,
+            gap_operator(operator)?,
             Box::new(left),
             Box::new(right),
         ))
