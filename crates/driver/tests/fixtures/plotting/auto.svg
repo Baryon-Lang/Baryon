@@ -2,7 +2,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="460.8pt" height="345.6pt" viewBox="0 0 460.8 345.6" version="1.1">
 <rect width="460.8" height="345.6" fill="#ffffff"/>
 <clipPath id="axes"><rect x="57.600" y="41.472" width="357.120" height="266.112"/></clipPath>
-<image x="57.600" y="41.472" width="357.120" height="266.112" preserveAspectRatio="none" clip-path="url(#axes)" style="image-rendering:pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAYAAAC09K7GAAAAPklEQVR4AQEzAMz/AP/////o6Oj/0dHR/7q6uv8AoqKi/4uLi/90dHT/XV1d/wBFRUX/Li4u/xcXF/8AAAD/ldAd4yx+FfwAAAAASUVORK5CYII="/>
+<image x="57.600" y="41.472" width="357.120" height="266.112" preserveAspectRatio="none" clip-path="url(#axes)" style="image-rendering:pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAYAAAC09K7GAAAAN0lEQVR4nA3BgQAAQQhFwW+xFlmEkUUWWYSRRRZZvLsZ8bs7dpeZQd1NVZGZRARyd8yM9x6S+ACV0B3jhrgoAgAAAABJRU5ErkJggg=="/>
 <path d="M57.600 307.584L414.720 41.472" clip-path="url(#axes)" fill="none" stroke="#d62728" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="round"/>
 <rect x="57.600" y="41.472" width="357.120" height="266.112" fill="none" stroke="#000000" stroke-width="0.8" stroke-linejoin="miter"/>
 <path d="M57.600 307.584L57.600 311.084" fill="none" stroke="#000000" stroke-width="0.8" stroke-linecap="butt" stroke-linejoin="round"/>

@@ -8,7 +8,8 @@ The compiler reads this file for `<std>/special.byn`; a program cannot import it
 
 from math import inf, isinf, isnan, nan, sqrt
 from special_common import floor_count
-from special_error import square, ndtr, ndtri
+from special_error import square, ndtr
+from special_ndtri import ndtri
 from special_incomplete_gamma import gammainc, gammaincc, gammainccinv
 from special_incomplete_beta import beta_parts, beta_inverse
 

@@ -2,16 +2,74 @@
 the complete integrals `ellipk`, `ellipkm1` and `ellipe`, the incomplete `ellipkinc` and
 `ellipeinc`, and Jacobi's `ellipj`, of real arguments.
 
-Every integral is written through Carlson's integrals in `special_carlson`; `ellipj` is the
+The complete integrals are fitted polynomials in 1 − m and its logarithm; the incomplete ones
+are written through Carlson's integrals in `special_carlson`; `ellipj` is the
 arithmetic-geometric mean with descending Landen transformations. The parameter is m = k², as in
 `SciPy`.
 
 The compiler reads this file for `<std>/special.byn`; a program cannot import it.
 """
 
-from math import asin, asinh, atan, copysign, cos, cosh, exp, fmod, inf, isinf, isnan, nan, pi
+from math import asin, asinh, atan, copysign, cos, cosh, exp, fmod, inf, isinf, isnan, log, nan, pi
 from math import sin, sqrt, tanh
 from special_carlson import carlson_rd, carlson_rf, carlson_rg
+
+
+def _k_fitted(x: f64) -> f64:
+    """K(1 − x) for x from 0 to 1, as P(x) − log(x) Q(x) with P and Q polynomials of degree 9
+    fitted with mpmath (roadmap 3.18.17; the script is in
+    `crates/driver/tests/fixtures/special/README.md`): within 2 ULP, and far cheaper than
+    Carlson's iteration. The form is the one K takes near x = 0, where it grows like
+    −½ log(x)."""
+    p = 0.00025277786052794587
+    p = p * x + 0.003562311968025004
+    p = p * x + 0.010437407226006794
+    p = p * x + 0.01098921288806152
+    p = p * x + 0.007866779675595879
+    p = p * x + 0.008989529983947447
+    p = p * x + 0.014945146090459535
+    p = p * x + 0.030885209619222694
+    p = p * x + 0.09657359036315792
+    p = p * x + 1.386294361119892
+    q = 5.5372232560223274e-05
+    q = q * x + 0.0015094931596494213
+    q = q * x + 0.008590116490309734
+    q = q * x + 0.02003847271575029
+    q = q * x + 0.029296000313158668
+    q = q * x + 0.03731284853484459
+    q = q * x + 0.04882637989990894
+    q = q * x + 0.07031248894855154
+    q = q * x + 0.12499999999012737
+    q = q * x + 0.49999999999999994
+    return p - log(x) * q
+
+
+def _e_fitted(x: f64) -> f64:
+    """E(1 − x) for x from 0 to 1, as P(x) − log(x) Q(x) with polynomials of degree 10 fitted
+    the same way as `_k_fitted`: within 1 ULP."""
+    p = 0.0001427287438025567
+    p = p * x + 0.0023916186780680738
+    p = p * x + 0.008516285638904953
+    p = p * x + 0.010822333638407268
+    p = p * x + 0.007934511996836759
+    p = p * x + 0.007631457981297083
+    p = p * x + 0.011573100559770658
+    p = p * x + 0.021831913704060388
+    p = p * x + 0.05680519529215019
+    p = p * x + 0.4431471805615987
+    p = p * x + 1.0
+    q = 3.0351294587607222e-05
+    q = q * x + 0.0009542173034215312
+    q = q * x + 0.006280872663116946
+    q = q * x + 0.016608112304414953
+    q = q * x + 0.026052952792904007
+    q = q * x + 0.033462510017063615
+    q = q * x + 0.042716816281392386
+    q = q * x + 0.05859363854733535
+    q = q * x + 0.09374999960261746
+    q = q * x + 0.2499999999998209
+    q = q * x - 7.992564293672842e-20
+    return p - log(x) * q
 
 
 def ellipk(m: f64) -> f64:
@@ -31,7 +89,7 @@ def ellipk(m: f64) -> f64:
         return inf
     if isinf(m):
         return 0.0
-    return carlson_rf(0.0, 1.0 - m, 1.0)
+    return ellipkm1(1.0 - m)
 
 
 def ellipkm1(p: f64) -> f64:
@@ -51,7 +109,10 @@ def ellipkm1(p: f64) -> f64:
         return inf
     if isinf(p):
         return 0.0
-    return carlson_rf(0.0, p, 1.0)
+    if p > 1.0:
+        # m = 1 − p below 0: K(m) = K(m / (m − 1)) / √(1 − m), with 1 − m / (m − 1) = 1 / p.
+        return _k_fitted(1.0 / p) / sqrt(p)
+    return _k_fitted(p)
 
 
 def ellipe(m: f64) -> f64:
@@ -69,7 +130,12 @@ def ellipe(m: f64) -> f64:
         return nan
     if isinf(m):
         return inf
-    return 2.0 * carlson_rg(0.0, 1.0 - m, 1.0)
+    if m == 1.0:
+        return 1.0
+    if m < 0.0:
+        # E(m) = √(1 − m) E(m / (m − 1)), and 1 − m / (m − 1) = 1 / (1 − m).
+        return sqrt(1.0 - m) * _e_fitted(1.0 / (1.0 - m))
+    return _e_fitted(1.0 - m)
 
 
 def _reduce(phi: f64) -> tuple[f64, f64]:

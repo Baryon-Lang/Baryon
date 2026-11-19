@@ -11,8 +11,8 @@ and the compiler puts them together.
 
 - `optional_parts` builds the two arrays from a list, for `Array(items)`.
 - `optional_element` reads one element as a `T | None`, for `values[i]`.
-- `missing` gives the mask `isna()` and `notna()` return, and `both` joins the masks of a
-  frame's columns for `dropna()`.
+- `missing` gives the mask `isna()` and `notna()` return, and `both` and `any_there` join
+  the masks of a frame's columns for `dropna()` and `dropna(how="all")`.
 - `masked_bits` and `taken_bits` rebuild the bitmap for the rows of a frame that a mask or
   positions choose.
 - `valid_positions` splits row positions into those with a value and those without, for
@@ -21,7 +21,10 @@ and the compiler puts them together.
 - `filled` gives the values with one value where an element is `None`, for `fillna(value)`.
 - `present_count`, `present` and `present_extreme` count, gather and compare the elements
   that are there, for `count()`, `sum()`, `mean()`, `min()` and `max()`.
-- `presence` and `present_rows` let `drop_duplicates` and `value_counts` compare rows whose
+- `both_bits` and `spread` serve arithmetic: the bitmap of a result that is `None` where
+  either side is, and the results computed for the elements that are there put back in
+  their places.
+- `absence` and `present_rows` let `drop_duplicates` and `value_counts` compare rows whose
   columns may hold `None`.
 - `present_starts`, `group_bits` and `group_present_integers` reduce a column that may hold
   `None` for `groupby`, each group by the values that are there.
@@ -65,6 +68,21 @@ def optional_element[T: Copy](values: Array[T, 1], bits: Array[u8, 1], at: int) 
     if _valid(bits, at):
         return values[at]
     return None
+
+
+def set_optional_element[T: Copy](
+    values: InOut[Array[T, 1]], bits: InOut[Array[u8, 1]], at: int, item: T | None, filler: T
+) -> None:
+    """Stores `item` as element `at` of the array stored as `values` and `bits`, in place:
+    the value with its bit set to 1, or `filler` with its bit set to 0 for `None`. The
+    compiler has checked that `at` is in range."""
+    bit = u8(1) << u8(at % 8)
+    if item is not None:
+        values[at] = item
+        bits[at // 8] = bits[at // 8] | bit
+    else:
+        values[at] = filler
+        bits[at // 8] = bits[at // 8] & (u8(255) ^ bit)
 
 
 def _word(item: str | None) -> str:
@@ -135,6 +153,15 @@ def both(mask: Array[bool, 1], bits: Array[u8, 1]) -> Array[bool, 1]:
     return Array([mask[at] and _valid(bits, at) for at in range(len(mask))])
 
 
+def any_there(mask: Array[bool, 1], bits: Array[u8, 1]) -> Array[bool, 1]:
+    """A new mask that is true where `mask` is or the validity bitmap `bits` has its bit set.
+
+    `dropna(how="all")` of a frame joins the masks of its columns this way, so a row is kept
+    when any column has a value in it.
+    """
+    return Array([mask[at] or _valid(bits, at) for at in range(len(mask))])
+
+
 def filled[T: Copy](values: Array[T, 1], bits: Array[u8, 1], value: T) -> Array[T, 1]:
     """A copy of `values` with `value` where the validity bitmap `bits` says `None`."""
     result = values.copy()
@@ -144,14 +171,37 @@ def filled[T: Copy](values: Array[T, 1], bits: Array[u8, 1], value: T) -> Array[
     return result
 
 
-def presence(bits: Array[u8, 1], count: int) -> Array[i64, 1]:
-    """For each of the `count` elements the validity bitmap `bits` covers, 1 when it is there
-    and 0 when it is `None`: a key column that keeps rows with a `None` apart from rows with
-    a value, for `drop_duplicates` and `value_counts`. Cost: one pass and the new array."""
-    flags = Array.fill((count,), 0)
+def both_bits(left: Array[u8, 1], right: Array[u8, 1]) -> Array[u8, 1]:
+    """The validity bitmap with a 1 only where `left` and `right` both have one: that of
+    `a + b`, which is `None` where either side is. The two cover the same number of
+    elements."""
+    result = left.copy()
+    for at in range(len(left)):
+        result[at] = left[at] & right[at]
+    return result
+
+
+def spread[T: Copy](dense: Array[T, 1], bits: Array[u8, 1], count: int, filler: T) -> Array[T, 1]:
+    """The opposite of `present`: `count` elements, those of `dense` in order where the
+    validity bitmap `bits` has a 1, and `filler` under each `None`."""
+    result = Array.fill((count,), filler)
+    taken = 0
     for at in range(count):
         if _valid(bits, at):
-            flags[at] = 1
+            result[at] = dense[taken]
+            taken += 1
+    return result
+
+
+def absence(bits: Array[u8, 1], count: int) -> Array[i64, 1]:
+    """For each of the `count` elements the validity bitmap `bits` covers, 0 when it is there
+    and 1 when it is `None`: a key column that keeps rows with a `None` apart from rows with
+    a value, for `drop_duplicates`, `value_counts` and `merge`, and sorts them after the
+    rows with a value, where an outer `merge` puts them. Cost: one pass and the new array."""
+    flags = Array.fill((count,), 1)
+    for at in range(count):
+        if _valid(bits, at):
+            flags[at] = 0
     return flags
 
 

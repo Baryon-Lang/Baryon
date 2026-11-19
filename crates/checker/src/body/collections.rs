@@ -112,7 +112,8 @@ impl<'db> Body<'db> {
             TypeKind::Standard(types::StandardType::File) | TypeKind::TextArray => {
                 Type::new(self.db, TypeKind::Str)
             }
-            TypeKind::OptionalArray(_) => self.optional_array_unbuilt(iterator, "a `for` loop"),
+            // Each pass reads the next element of an array with missing values, or `None`.
+            TypeKind::OptionalArray(element) => Type::new(self.db, TypeKind::Optional(*element)),
             TypeKind::Primitive(_) | TypeKind::None => {
                 let message = format!("a value of type `{}` cannot be looped over", self.show(ty));
                 self.lowerer

@@ -113,6 +113,7 @@ impl<'db> Body<'db> {
             _ if self.has_no_members(base) => {
                 return self.no_method(function, base, &callee, arguments);
             }
+            TypeKind::Parameter { .. } => return self.parameter_method(function, base, arguments),
             _ => return self.untyped(arguments),
         };
         match self.member(function, &nominal, base, attribute) {
@@ -144,7 +145,10 @@ impl<'db> Body<'db> {
                 let method = Callee::Method(item);
                 self.check_call(node, &callee, &signature, receiver, method, arguments)
             }
-            Some(Member::Field(ty)) => self.call_value(node, &callee, ty, arguments),
+            Some(Member::Field(ty)) => {
+                self.typed.expressions.insert(Key(function), ty);
+                self.call_value((node, function), &callee, ty, arguments)
+            }
             Some(Member::Copy) => {
                 let builtin = Callee::Builtin("struct.copy".to_owned());
                 self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments)

@@ -43,6 +43,10 @@ impl<'db> Builder<'db> {
         match (method, arguments) {
             ("copy", [array]) if !fixed => self.array_copy(place, *array, node),
             ("sum", [array]) => self.array_sum(place, *array, node),
+            ("any" | "all", [array]) => {
+                let (source, ty) = (self.borrow(*array), self.ty(*array));
+                self.truth_of(place, method == "all", (&source, ty), node);
+            }
             ("min" | "max", [array]) if !self.is_text_array(*array) => {
                 self.array_extreme(place, method == "min", *array, node);
             }

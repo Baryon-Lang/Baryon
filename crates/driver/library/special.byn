@@ -25,11 +25,28 @@ from special_gamma import loggamma as loggamma, psi as psi, digamma as digamma
 from special_gamma import polygamma as polygamma, factorial as factorial
 from special_beta import beta as beta, betaln as betaln, poch as poch
 from special_error import erf as erf, erfc as erfc, erfcx as erfcx, erfinv as erfinv
-from special_error import erfcinv as erfcinv, ndtr as ndtr, ndtri as ndtri, log_ndtr as log_ndtr
+from special_error import erfcinv as erfcinv, ndtr as ndtr, log_ndtr as log_ndtr
+from special_ndtri import ndtri as ndtri
 from special_error import dawsn as dawsn
 from special_bessel_jy import j0 as j0, j1 as j1, y0 as y0, y1 as y1, jn as jn, yn as yn
 from special_bessel_ik import i0e as i0e, i1e as i1e, i0 as i0, i1 as i1, k0e as k0e, k1e as k1e
 from special_bessel_ik import k0 as k0, k1 as k1, kn as kn
+from special_bessel_real import jv as jv, yv as yv, iv as iv, kv as kv, jve as jve, yve as yve
+from special_bessel_real import ive as ive, kve as kve, jvp as jvp, yvp as yvp, ivp as ivp
+from special_bessel_real import kvp as kvp
+from special_bessel_spherical import spherical_jn as spherical_jn
+from special_bessel_spherical import spherical_yn as spherical_yn
+from special_bessel_spherical import spherical_in as spherical_in
+from special_bessel_spherical import spherical_kn as spherical_kn
+from special_airy import airy as airy, airye as airye
+from special_kelvin import kelvin as kelvin, ber as ber, bei as bei, ker as ker, kei as kei
+from special_kelvin import berp as berp, beip as beip, kerp as kerp, keip as keip
+from special_struve import struve as struve, modstruve as modstruve
+from special_hyp0f1 import hyp0f1 as hyp0f1
+from special_hyp1f1 import hyp1f1 as hyp1f1
+from special_hyperu import hyperu as hyperu
+from special_hyp2f1 import hyp2f1 as hyp2f1
+from special_parabolic import pbdv as pbdv, pbvv as pbvv, pbwa as pbwa
 from special_incomplete_gamma import gammainc as gammainc, gammaincc as gammaincc
 from special_incomplete_gamma import gammaincinv as gammaincinv, gammainccinv as gammainccinv
 from special_incomplete_beta import betainc as betainc, betaincc as betaincc
@@ -49,6 +66,14 @@ from special_integrals import exp1 as exp1, expi as expi, expn as expn, sici as 
 from special_integrals import shichi as shichi, fresnel as fresnel
 from special_zeta import zeta as zeta, zetac as zetac, spence as spence
 from special_lambertw import lambertw as lambertw
+from special_mathieu import mathieu_a as mathieu_a, mathieu_b as mathieu_b
+from special_mathieu import mathieu_cem as mathieu_cem, mathieu_sem as mathieu_sem
+from special_mathieu_radial import mathieu_modcem1 as mathieu_modcem1
+from special_mathieu_radial import mathieu_modcem2 as mathieu_modcem2
+from special_mathieu_radial import mathieu_modsem1 as mathieu_modsem1
+from special_mathieu_radial import mathieu_modsem2 as mathieu_modsem2
+from special_mathieu_radial import mathieu_even_coef as mathieu_even_coef
+from special_mathieu_radial import mathieu_odd_coef as mathieu_odd_coef
 from special_elliptic import ellipk as ellipk, ellipkm1 as ellipkm1, ellipe as ellipe
 from special_elliptic import ellipkinc as ellipkinc, ellipeinc as ellipeinc, ellipj as ellipj
 from special_carlson import elliprc as elliprc, elliprd as elliprd, elliprf as elliprf

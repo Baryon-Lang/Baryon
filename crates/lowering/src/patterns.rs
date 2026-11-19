@@ -10,13 +10,16 @@
 //! the last case cannot happen.
 //!
 //! The first version handles the patterns the checker accepts (literals, enum members, `True`,
-//! `False`, `None`, tuples, class patterns, captures, `_` and `a | b`), with two limits: a capture must be of a
-//! copy type, since moving part of the subject out needs the move rules settled for patterns,
-//! and an `a | b` pattern may not capture.
+//! `False`, `None`, tuples, class patterns, captures, `_` and `a | b`), with two limits: a capture
+//! that is not of a copy type must borrow its part of a read-only parameter, which it names in
+//! place (decision 0032, roadmap 1.9.50), since moving part of an owned subject out is not built
+//! yet; and an `a | b` pattern may not capture.
 
 use crate::builder::Builder;
-use mir::{BinaryOperator, BlockId, Operand, Place, Projection, Rvalue, TerminatorKind};
+use database::Definition;
+use mir::{BinaryOperator, BlockId, LocalKind, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
+use types::Mode;
 use types::{Type, TypeKind};
 
 /// A capture a matched pattern assigns: the name's node, and the place and type of the part of
@@ -41,6 +44,8 @@ impl<'db> Builder<'db> {
             {
                 return;
             }
+            // A capture that borrows part of the subject names it only inside its case.
+            let aliases = self.aliases.clone();
             for (name, place, ty) in captures {
                 if !self.capture(name, place, ty) {
                     return;
@@ -55,6 +60,7 @@ impl<'db> Builder<'db> {
                 });
             }
             self.block(case, Role::Body);
+            self.aliases = aliases;
             self.jump(&mut end, case);
             self.start(next);
         }
@@ -247,8 +253,23 @@ impl<'db> Builder<'db> {
             place
         };
         if !self.is_copy(wanted) {
-            self.unsupported(name, "capturing a value that is not a copy type");
-            return false;
+            // A part of a read-only parameter is borrowed in place, as a loop variable borrows
+            // its element (decision 0032, roadmap 1.9.50): the parameter's owner frees it.
+            let borrowed = matches!(
+                self.body.locals[place.local.index()].kind,
+                LocalKind::Parameter {
+                    mode: Mode::Borrow,
+                    ..
+                }
+            );
+            if !borrowed {
+                self.unsupported(name, "moving a captured value out of its subject");
+                return false;
+            }
+            if let Some(&Definition::Local(binding)) = self.definition(name) {
+                self.aliases.insert(binding, (place, wanted));
+            }
+            return true;
         }
         self.assign(
             Place::from(variable),

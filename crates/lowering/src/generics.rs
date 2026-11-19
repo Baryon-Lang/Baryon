@@ -10,8 +10,8 @@
 //! then has type `U`, which the caller's own instances replace.
 
 use crate::builder::Builder;
-use syntax::Role;
-use types::{Item, Signature, Type, TypeKind};
+use syntax::{Role, SyntaxKind};
+use types::{Declaration, Item, Signature, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// The type parameters a call of `item` gives `type_arguments` for, in the same order: the
@@ -33,6 +33,39 @@ impl<'db> Builder<'db> {
             .filter_map(|parameter| tree.child(parameter, Role::Name))
             .map(|name| Type::new(self.db, TypeKind::Parameter { file, name }))
             .chain(signature.type_parameters.iter().copied())
+            .collect()
+    }
+
+    /// The types of the fields of the struct `item`, in declaration order, as the struct type
+    /// `built` has them; empty when `item` is not a struct. A generic struct's type parameters
+    /// are replaced by `built`'s type arguments, so `Slot(1.0, 2.0)` for
+    /// `class Slot[T]` with the field `a: T | None` converts the `1.0` into the `f64 | None` it
+    /// is stored as (roadmap 1.9.47).
+    pub(crate) fn field_types(&self, item: Item<'db>, built: Type<'db>) -> Vec<Type<'db>> {
+        let Declaration::Struct { fields, .. } = &self.db.declaration(item).declaration else {
+            return Vec::new();
+        };
+        let arguments = match built.kind(self.db) {
+            TypeKind::Struct(nominal) => nominal.arguments.clone(),
+            _ => Vec::new(),
+        };
+        let file = item.file(self.db);
+        let tree = self.db.parse(file).tree();
+        let parameters: Vec<Type<'db>> = tree
+            .children_with(tree.root(), Role::Body)
+            .find(|&statement| {
+                tree.kind(statement) == SyntaxKind::ClassDefinition
+                    && tree.child(statement, Role::Name) == Some(item.name(self.db))
+            })
+            .and_then(|class| tree.child(class, Role::TypeParameters))
+            .into_iter()
+            .flat_map(|list| tree.children_with(list, Role::Item))
+            .filter_map(|parameter| tree.child(parameter, Role::Name))
+            .map(|name| Type::new(self.db, TypeKind::Parameter { file, name }))
+            .collect();
+        fields
+            .iter()
+            .map(|field| self.instantiate(field.ty, &parameters, &arguments))
             .collect()
     }
 
@@ -72,7 +105,11 @@ impl<'db> Builder<'db> {
                 key: map(*key),
                 value: map(*value),
             },
-            TypeKind::Optional(value) => TypeKind::Optional(map(*value)),
+            // `T | None` with `T` the type `None` is `None`: a union's repeats do not matter.
+            TypeKind::Optional(value) => match map(*value) {
+                none if matches!(none.kind(self.db), TypeKind::None) => return none,
+                value => TypeKind::Optional(value),
+            },
             TypeKind::Array { element, rank } => TypeKind::Array {
                 element: map(*element),
                 rank: *rank,

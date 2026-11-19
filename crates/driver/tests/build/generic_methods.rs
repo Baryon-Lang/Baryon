@@ -2,6 +2,7 @@
 //! generic structs, `Callable` parameters passed on, and arguments to generic parameters,
 //! built and run (roadmap 1.9.18, decision 0026).
 
+use super::examples::prints;
 use super::{baryon_build, package, stderr};
 use std::io;
 use std::process::Command;
@@ -289,4 +290,83 @@ def main():
     let ran = Command::new(&program).output().unwrap();
     assert!(ran.status.success(), "{}", stderr(&ran));
     assert_eq!(String::from_utf8_lossy(&ran.stdout), "15.0 28\n");
+}
+
+/// An annotated local that holds a function takes the function's own type, as an unannotated
+/// one does (roadmap 1.9.42, decision 0026), so passing it on builds and calls the function
+/// directly, in `main` and inside a function that received it as a `Callable`. Before, the
+/// local took the `Callable` type and the backend stopped on the call.
+#[test]
+fn an_annotated_local_holding_a_function_passes_it_on() {
+    let program = "\
+def square(x: f64) -> f64:
+    return x * x
+
+
+def apply(f: Callable[[f64], f64], x: f64) -> f64:
+    g: Callable[[f64], f64] = f
+    return g(x)
+
+
+def main():
+    f: Callable[[f64], f64] = square
+    print(apply(f, 3.0))
+";
+    assert_eq!(
+        output("callable-annotated-local", program).unwrap(),
+        "9.0\n"
+    );
+}
+
+/// A local that holds a module-level function is called directly in a function that is not
+/// generic (roadmap 1.9.43): in a loop, annotated, passed on, and holding a function that
+/// raises, whose error reaches the caller's `except`. A function passed to a generic one that
+/// raises does the same; before, its error was lost and the program hung.
+#[test]
+fn locals_holding_functions_are_called() {
+    let program = "\
+def sq(x: f64) -> f64:
+    return x * x
+
+
+def checked(x: f64) -> Raises[f64, ValueError]:
+    if x < 0.0:
+        raise ValueError(\"negative\")
+    return x
+
+
+def apply(f: Callable[[f64], f64], x: f64) -> f64:
+    g = f
+    return g(x) + f(x)
+
+
+def attempt(f: Callable[[f64], Raises[f64, ValueError]], x: f64) -> Raises[f64, ValueError]:
+    return f(x)
+
+
+def main():
+    f = sq
+    total = 0.0
+    for i in range(3):
+        total += f(float(i))
+    print(f(2.0), total, apply(f, 1.0))
+    h: Callable[[f64], f64] = sq
+    print(h(3.0))
+    c = checked
+    try:
+        print(c(1.0), attempt(checked, 2.0))
+        print(c(-1.0))
+    except ValueError as error:
+        print(error)
+    try:
+        print(attempt(c, -2.0))
+    except ValueError as error:
+        print(error)
+";
+    prints(
+        "local-functions",
+        program,
+        "4.0 5.0 2.0\n9.0\n1.0 2.0\nValueError(message='negative')\nValueError(message='negative')\n",
+    )
+    .unwrap();
 }

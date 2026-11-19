@@ -24,7 +24,7 @@ impl<'db> Body<'db> {
             return self.text_array_unbuilt(node, &format!("`{}`", operator.symbol()));
         }
         if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
-            return self.optional_array_unbuilt(node, &format!("`{}`", operator.symbol()));
+            return self.optional_array_arithmetic(node, operator, left_type, right_type);
         }
         if operator == Operator::Divide
             && let Some(path) = self.path_join(node, left_type, right_type)
@@ -156,7 +156,7 @@ impl<'db> Body<'db> {
             return self.text_array_unbuilt(node, &format!("`{}`", operator.symbol()));
         }
         if self.is_optional_array(operand) {
-            return self.optional_array_unbuilt(node, &format!("`{}`", operator.symbol()));
+            return self.optional_array_unary(node, operator, operand);
         }
         if matches!(operator, Operator::Negate | Operator::Plus)
             && self.number_context(operand) == Some(operand)
@@ -310,6 +310,19 @@ impl<'db> Body<'db> {
                 }
                 None => self.operands(left_node, right_node),
             };
+            if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
+                let compared =
+                    self.optional_array_comparison(comparator, operator, left_type, right_type);
+                if count > 1 {
+                    self.lowerer.error(
+                        node,
+                        "a chain of comparisons cannot compare arrays",
+                        "more than one comparison",
+                        Some("compare in pairs and combine them: `(a < b) & (b < c)`"),
+                    );
+                }
+                return compared;
+            }
             if self.is_text_array(left_type) || self.is_text_array(right_type) {
                 let compared =
                     self.text_array_comparison(comparator, operator, left_type, right_type);
@@ -322,10 +335,6 @@ impl<'db> Body<'db> {
                     );
                 }
                 return compared;
-            }
-            if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
-                let what = format!("`{}`", operator.symbol());
-                return self.optional_array_unbuilt(comparator, &what);
             }
             let ordering = matches!(
                 operator,

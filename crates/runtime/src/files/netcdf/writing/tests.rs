@@ -312,3 +312,36 @@ fn huge_record_positions_are_refused_before_anything_is_made() {
     }
     assert_eq!(fs::read(&path).unwrap(), before);
 }
+
+#[test]
+fn a_definition_streams_records_past_one_buffer() {
+    // 200,000 records of three `i2`s, 1.2 MB, more than one buffer of the copy, then a second
+    // record variable, which pads every slot of the first from 6 bytes to 8.
+    let path = file("stream");
+    apply(&path, &["C\t1", "D\tt\t0", "D\tx\t3", "V\ta\ti2\tt,x"]);
+    let count: usize = 200_000;
+    let values: Vec<i64> = (0..i64::try_from(count * 3).unwrap())
+        .map(|value| value % 30_000)
+        .collect();
+    write(&path, ("a", &[]), Pixel::I64, &[count, 3], &longs(&values)).unwrap();
+    let before = fs::read(&path).unwrap();
+    let old = read_header(&path).unwrap();
+    let start = usize::try_from(old.variables[0].begin).unwrap();
+    apply(&path, &["A\ta\tstr\tunits\tm", "V\tb\ti1\tt"]);
+    let after = fs::read(&path).unwrap();
+    let new = read_header(&path).unwrap();
+    // Each record now holds `a`'s 8 bytes, read from where its record began, the first two
+    // bytes of the next record and zeros past the end, then `b`'s byte of fill and padding.
+    let mut records = Vec::new();
+    for record in 0..count {
+        let from = start + record * 6;
+        let mut slot = before[from..(from + 8).min(before.len())].to_vec();
+        slot.resize(8, 0);
+        records.extend(slot);
+        records.extend([0x81, 0x81, 0x81, 0x81]);
+    }
+    let begin = usize::try_from(new.variables[0].begin).unwrap();
+    assert_eq!(after.len(), begin + records.len());
+    assert!(after[begin..] == records[..], "the records moved wrongly");
+    fs::remove_file(&path).unwrap();
+}

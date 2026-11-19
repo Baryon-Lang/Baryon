@@ -1,0 +1,200 @@
+"""Airy functions for `special` (roadmap 3.18.7): `airy` and the scaled `airye`, each giving
+Ai, Ai′, Bi and Bi′ at once.
+
+Near 0 they come from their Maclaurin series. Elsewhere they are Bessel functions of order ⅓
+and ⅔ at ζ = ⅔|x|^{3/2} (DLMF 9.6): K and I above 0, J and Y below it, from
+`special_bessel_steed`. ζ is formed as two `f64`s, and the part that rounding would drop is put
+back by a first-order Taylor step, so the phase of the oscillation below 0 and the exponent above
+it are as exact as `x` itself: rounding ζ to one `f64` would lose up to ζ ULP, 1,900 at
+x = −200.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, fma, inf, isinf, isnan, nan, pi, sqrt
+from special_bessel_steed import bessel_ik, bessel_jy
+
+_AI_ZERO: Final = 0.35502805388781723926  # Ai(0) = 1/(3^{2/3} Γ(⅔))
+_SLOPE_ZERO: Final = 0.25881940379280679840  # −Ai′(0) = 1/(3^{1/3} Γ(⅓))
+_ROOT_THREE: Final = 1.7320508075688772  # √3
+_SERIES_BELOW: Final = -2.0  # the series is used from here
+_SERIES_ABOVE: Final = 1.0  # to here, where its terms cancel by at most a factor of 3
+
+
+def _zeta(t: f64) -> tuple[f64, f64]:
+    """ζ = ⅔ t^{3/2} for `t` above 0, as a sum `high + low` of two `f64`s, exact to about 32
+    digits: √t and t√t are each carried with their rounding error, found by `fma`."""
+    root = sqrt(t)
+    root_low = fma(-root, root, t) / (2.0 * root)
+    power = t * root
+    power_low = fma(t, root, -power) + t * root_low
+    high = 2.0 * power / 3.0
+    low = (fma(-high, 3.0, 2.0 * power) + 2.0 * power_low) / 3.0
+    return high, low
+
+
+def _series(x: f64) -> tuple[f64, f64, f64, f64]:
+    """Ai, Ai′, Bi and Bi′ from the Maclaurin series Ai = c₁ f − c₂ g and Bi = √3 (c₁ f + c₂ g)
+    (DLMF 9.4.1), f = Σ 3ᵏ (⅓)ₖ x^{3k}/(3k)! and g = Σ 3ᵏ (⅔)ₖ x^{3k+1}/(3k + 1)!, and the
+    series of f′ and g′ term by term, for x from −2 to 1."""
+    cube = x * x * x
+    f = 1.0
+    f_term = 1.0
+    f_slope = 0.0
+    f_slope_term = x * x / 2.0
+    g = x
+    g_term = x
+    g_slope = 1.0
+    g_slope_term = 1.0
+    for k in range(1, 60):
+        three = 3.0 * k
+        f_term *= cube / ((three - 1.0) * three)
+        g_term *= cube / (three * (three + 1.0))
+        f += f_term
+        g += g_term
+        f_slope += f_slope_term
+        f_slope_term *= cube / (three * (three + 2.0))
+        g_slope_term *= cube / ((three - 2.0) * three)
+        g_slope += g_slope_term
+        if abs(f_slope_term) + abs(g_slope_term) + abs(g_term) <= 1.0e-18 * (
+            abs(f) + abs(f_slope) + abs(g_slope)
+        ):
+            break
+    first = _AI_ZERO * f
+    second = _SLOPE_ZERO * g
+    first_slope = _AI_ZERO * f_slope
+    second_slope = _SLOPE_ZERO * g_slope
+    return (
+        first - second,
+        first_slope - second_slope,
+        _ROOT_THREE * (first + second),
+        _ROOT_THREE * (first_slope + second_slope),
+    )
+
+
+def _above(x: f64, scaled: bool) -> tuple[f64, f64, f64, f64]:
+    """Ai, Ai′, Bi and Bi′ for x above the series, or Ai eᶻ, Ai′ eᶻ, Bi e⁻ᶻ and Bi′ e⁻ᶻ when
+    `scaled` (DLMF 9.6.1 to 9.6.9): Ai = √x K_⅓(ζ)/(π√3), Ai′ = −x K_⅔(ζ)/(π√3),
+    Bi = √x (2 I_⅓(ζ)/√3 + K_⅓(ζ)/π) and Bi′ = x (2 I_⅔(ζ)/√3 + K_⅔(ζ)/π), every term of one
+    sign. I and K come scaled, as I e⁻ᶻ and K eᶻ, so neither overflows on the way; the scale is
+    taken off at the end, in halves, so Bi stays finite as long as it is."""
+    high, low = _zeta(x)
+    i_third, k_third, i_third_slope, k_third_slope = bessel_ik(1.0 / 3.0, high, True)
+    i_two, k_two, i_two_slope, k_two_slope = bessel_ik(2.0 / 3.0, high, True)
+    # The slope of I e⁻ᶻ is (I′ − I) e⁻ᶻ, and of K eᶻ it is (K′ + K) eᶻ.
+    i_third += low * (i_third_slope - i_third)
+    k_third += low * (k_third_slope + k_third)
+    i_two += low * (i_two_slope - i_two)
+    k_two += low * (k_two_slope + k_two)
+    root = sqrt(x)
+    factor = 1.0 / (pi * _ROOT_THREE)
+    ai = root * factor * k_third
+    ai_slope = -x * factor * k_two
+    if scaled:
+        shrink = exp(-2.0 * high) * (1.0 - 2.0 * low)
+        bi = root * (2.0 / _ROOT_THREE * i_third + shrink * k_third / pi)
+        bi_slope = x * (2.0 / _ROOT_THREE * i_two + shrink * k_two / pi)
+        return ai, ai_slope, bi, bi_slope
+    half = exp(high / 2.0) * (1.0 + low / 2.0)
+    shrink = 1.0 / (half * half)
+    bi = root * (2.0 / _ROOT_THREE * i_third * half * half + shrink * k_third / pi)
+    bi_slope = x * (2.0 / _ROOT_THREE * i_two * half * half + shrink * k_two / pi)
+    return ai * shrink, ai_slope * shrink, bi, bi_slope
+
+
+def _below(x: f64) -> tuple[f64, f64, f64, f64]:
+    """Ai, Ai′, Bi and Bi′ for x below the series, t = −x (DLMF 9.6.6 to 9.6.9 with the
+    reflection J₋ᵥ = cos(νπ) Jᵥ − sin(νπ) Yᵥ): Ai = (√t/2)(J_⅓ − Y_⅓/√3),
+    Ai′ = (t/2)(J_⅔ + Y_⅔/√3), Bi = −(√t/2)(J_⅓/√3 + Y_⅓) and Bi′ = (t/2)(J_⅔/√3 − Y_⅔), all at
+    ζ. The scale of `airye` is 1 here, since ζ of a negative x is imaginary."""
+    t = -x
+    high, low = _zeta(t)
+    j_third, y_third, j_third_slope, y_third_slope = bessel_jy(1.0 / 3.0, high)
+    j_two, y_two, j_two_slope, y_two_slope = bessel_jy(2.0 / 3.0, high)
+    j_third += low * j_third_slope
+    y_third += low * y_third_slope
+    j_two += low * j_two_slope
+    y_two += low * y_two_slope
+    half_root = sqrt(t) / 2.0
+    half = t / 2.0
+    return (
+        half_root * (j_third - y_third / _ROOT_THREE),
+        half * (j_two + y_two / _ROOT_THREE),
+        -half_root * (j_third / _ROOT_THREE + y_third),
+        half * (j_two / _ROOT_THREE - y_two),
+    )
+
+
+def _airy(x: f64, scaled: bool) -> tuple[f64, f64, f64, f64]:
+    """`airy`, or `airye` when `scaled`, for every `x`."""
+    if isnan(x):
+        return nan, nan, nan, nan
+    if isinf(x):
+        if x < 0.0:
+            return 0.0, nan, 0.0, nan
+        if scaled:
+            return 0.0, -inf, 0.0, inf
+        return 0.0, 0.0, inf, inf
+    if x >= _SERIES_BELOW and x <= _SERIES_ABOVE:
+        ai, ai_slope, bi, bi_slope = _series(x)
+        if not scaled or x <= 0.0:
+            return ai, ai_slope, bi, bi_slope
+        high, low = _zeta(x)
+        grow = exp(high) * (1.0 + low)
+        return ai * grow, ai_slope * grow, bi / grow, bi_slope / grow
+    if isinf(_zeta(abs(x))[0]):
+        return _far(x, scaled)
+    if x < 0.0:
+        return _below(x)
+    return _above(x, scaled)
+
+
+def _far(x: f64, scaled: bool) -> tuple[f64, f64, f64, f64]:
+    """Past |x| = 1.5e205, where ζ overflows: the first terms of the expansions for large x
+    (DLMF 9.7.5 and 9.7.6), which are exact there, for `airye` above 0 and 0 or ∞ for `airy`.
+    Below 0 the phase ζ is lost, so every value is NaN."""
+    if x < 0.0:
+        return nan, nan, nan, nan
+    quarter = sqrt(sqrt(x))
+    if not scaled:
+        return 0.0, 0.0, inf, inf
+    root_pi = sqrt(pi)
+    return (
+        1.0 / (2.0 * root_pi * quarter),
+        -quarter / (2.0 * root_pi),
+        1.0 / (root_pi * quarter),
+        quarter / root_pi,
+    )
+
+
+def airy(x: f64) -> tuple[f64, f64, f64, f64]:
+    """The Airy functions and their derivatives, (Ai(x), Ai′(x), Bi(x), Bi′(x)), as
+    `scipy.special.airy` for a real `x`: the solutions of w″ = x w that fall and grow above 0
+    and oscillate below it. Where `SciPy` gives NaN, from x = 103.9 for Bi and Bi′ and past
+    |x| = 1e8 or so for all four, this gives Bi = ∞ and the true values. At x = −∞, Ai and Bi are
+    0, and Ai′ and Bi′, which oscillate without bound, NaN.
+
+    ```python
+    from special import airy
+
+    ai, ai_slope, bi, bi_slope = airy(1.0)
+    print(ai)  # 0.13529241631288147
+    ```
+    """
+    return _airy(x, False)
+
+
+def airye(x: f64) -> tuple[f64, f64, f64, f64]:
+    """The exponentially scaled Airy functions, (Ai eᶻ, Ai′ eᶻ, Bi e⁻ᶻ, Bi′ e⁻ᶻ) with
+    ζ = ⅔ x^{3/2}, as `scipy.special.airye` for a real `x`, which stay finite where Ai underflows
+    and Bi overflows. Below 0 ζ is imaginary and the scale is 1, so these are `airy`'s values,
+    where `SciPy` gives NaN for the first two.
+
+    ```python
+    from special import airye
+
+    ai, ai_slope, bi, bi_slope = airye(10.0)
+    print(bi)  # 0.3183401053367345
+    ```
+    """
+    return _airy(x, True)

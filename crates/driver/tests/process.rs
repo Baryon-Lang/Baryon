@@ -209,3 +209,47 @@ def fail() -> Raises[None, OSError]:
   |            ^^^^^^^^^^^^^ not defined on this struct"
     );
 }
+
+/// A call of a member a standard module does not have is reported at the call, as `os` and
+/// `sys` report theirs (roadmap 1.9.52): a `math` function, a name imported from a module
+/// written in Baryon, and one reached through the module. Before, each passed the checker
+/// with an unknown type and the build stopped on "lowering does not handle this call yet".
+#[test]
+fn missing_members_of_standard_modules_are_reported() {
+    let program = r"
+import math
+import special
+from linalg import norm
+
+
+def use_them(x: f64) -> f64:
+    return math.nothing(x) + norm(x) + special.nothing(x)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `math.nothing` is not in Baryon yet
+ --> main.byn:7:12
+  |
+7 |     return math.nothing(x) + norm(x) + special.nothing(x)
+  |            ^^^^^^^^^^^^^^^ not built
+  = note: the language reference lists what `math` has; the roadmap's Ideas table is the place \
+to ask for more
+
+error: `linalg.norm` is not in Baryon yet
+ --> main.byn:7:30
+  |
+7 |     return math.nothing(x) + norm(x) + special.nothing(x)
+  |                              ^^^^^^^ not built
+  = note: the language reference lists what `linalg` has; the roadmap's Ideas table is the place \
+to ask for more
+
+error: `special.nothing` is not in Baryon yet
+ --> main.byn:7:40
+  |
+7 |     return math.nothing(x) + norm(x) + special.nothing(x)
+  |                                        ^^^^^^^^^^^^^^^^^^ not built
+  = note: the language reference lists what `special` has; the roadmap's Ideas table is the \
+place to ask for more"
+    );
+}

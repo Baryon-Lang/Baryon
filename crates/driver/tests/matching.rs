@@ -151,3 +151,45 @@ error: `<` cannot order `Boundary` values
    = note: enum members are compared with `==` and `!=`"
     );
 }
+
+/// A capture that is not a copy type borrows its part of a read-only subject (decision 0032,
+/// roadmap 1.9.50), so it cannot be moved or changed; a copy can. Before, `return m` passed the
+/// checker, which would have freed the caller's array twice.
+#[test]
+fn captures_of_a_borrowed_subject_cannot_be_moved_or_changed() {
+    let program = r"
+def take(mask: Array[bool, 1] | None) -> Array[bool, 1] | None:
+    match mask:
+        case None:
+            return None
+        case m:
+            return m
+
+
+def clear(names: list[str] | None) -> list[str]:
+    match names:
+        case None:
+            return []
+        case kept:
+            kept.append('x')
+            return kept.copy()
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `m` borrows part of `mask`, so it cannot be moved
+ --> main.byn:6:20
+  |
+6 |             return m
+  |                    ^ moved here
+  = note: a capture borrows from a borrowed subject (decision 0032); work on a copy: `m.copy()`
+
+error: `kept` borrows part of `names`, so it cannot be changed
+  --> main.byn:14:13
+   |
+14 |             kept.append('x')
+   |             ^^^^ changed here
+   = note: a capture borrows from a borrowed subject (decision 0032); work on a copy: \
+`kept.copy()`"
+    );
+}

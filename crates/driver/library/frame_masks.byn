@@ -1,0 +1,109 @@
+"""Masks that may hold `None`, combined with `&` and `|`, written in Baryon (decision 0045).
+
+The compiler calls these functions; a program cannot import this file.
+
+A comparison on an array with missing values gives an `Array[bool | None, 1]`: `True`,
+`False`, or `None` where the answer is not known. Two such masks combine by the rules
+pandas, Arrow and SQL share: the result is known whenever one side settles it. `False & None`
+is `False`, since no value of the missing side could make it `True`; `True | None` is `True`
+for the same reason; `True & None` and `False | None` are `None`.
+
+The values of the result are the two sides' stored values combined as plain `bool`s, which
+is right wherever the result is known. These functions give the result's validity bitmap:
+
+- `and_bits` and `or_bits` give the bitmap of `left & right` and of `left | right`.
+- `full_bits` gives the bitmap of a mask that holds no `None`, so that a plain mask can be a
+  side.
+
+`set_optional_where` and `set_optional_at` are the other use of a mask: they store one value,
+or `None`, in the elements of an array with missing values that a mask or positions choose,
+`bids[mask] = None`.
+"""
+
+
+def _there(bits: Array[u8, 1], at: int) -> bool:
+    """Whether element `at` is there: its bit in the validity bitmap `bits` is 1."""
+    return ((bits[at // 8] >> u8(at % 8)) & u8(1)) == u8(1)
+
+
+def full_bits(count: int) -> Array[u8, 1]:
+    """The validity bitmap of `count` elements that are all there. The bits past `count` in
+    the last byte are 0."""
+    bits = Array.fill(((count + 7) // 8,), u8(0))
+    for at in range(count):
+        bits[at // 8] = bits[at // 8] | (u8(1) << u8(at % 8))
+    return bits
+
+
+def and_bits(
+    left: Array[bool, 1], left_bits: Array[u8, 1], right: Array[bool, 1], right_bits: Array[u8, 1]
+) -> Array[u8, 1]:
+    """The validity bitmap of `left & right`, two masks of one length with their bitmaps: an
+    element is known where both sides are there, or where one side is there and `False`.
+    Cost: one pass and the new bitmap."""
+    count = len(left)
+    bits = Array.fill(((count + 7) // 8,), u8(0))
+    for at in range(count):
+        first = _there(left_bits, at)
+        second = _there(right_bits, at)
+        if (first and second) or (first and not left[at]) or (second and not right[at]):
+            bits[at // 8] = bits[at // 8] | (u8(1) << u8(at % 8))
+    return bits
+
+
+def or_bits(
+    left: Array[bool, 1], left_bits: Array[u8, 1], right: Array[bool, 1], right_bits: Array[u8, 1]
+) -> Array[u8, 1]:
+    """The validity bitmap of `left | right`, two masks of one length with their bitmaps: an
+    element is known where both sides are there, or where one side is there and `True`.
+    Cost: one pass and the new bitmap."""
+    count = len(left)
+    bits = Array.fill(((count + 7) // 8,), u8(0))
+    for at in range(count):
+        first = _there(left_bits, at)
+        second = _there(right_bits, at)
+        if (first and second) or (first and left[at]) or (second and right[at]):
+            bits[at // 8] = bits[at // 8] | (u8(1) << u8(at % 8))
+    return bits
+
+
+def set_optional_where[T: Copy](
+    values: InOut[Array[T, 1]],
+    bits: InOut[Array[u8, 1]],
+    mask: Array[bool, 1],
+    item: T | None,
+    filler: T,
+) -> None:
+    """Stores `item` in each element of the array stored as `values` and `bits` where `mask`
+    is `True`, in place: the value with its bit set to 1, or `filler` with its bit set to 0
+    for `None`. The compiler has checked that `mask` is as long as the array. Cost: one
+    pass over the mask."""
+    for at in range(len(mask)):
+        if mask[at]:
+            bit = u8(1) << u8(at % 8)
+            if item is not None:
+                values[at] = item
+                bits[at // 8] = bits[at // 8] | bit
+            else:
+                values[at] = filler
+                bits[at // 8] = bits[at // 8] & (u8(255) ^ bit)
+
+
+def set_optional_at[T: Copy](
+    values: InOut[Array[T, 1]],
+    bits: InOut[Array[u8, 1]],
+    positions: Array[i64, 1],
+    item: T | None,
+    filler: T,
+) -> None:
+    """Stores `item` in the element of the array stored as `values` and `bits` at each of
+    `positions`, in place, as `set_optional_where` stores it. A position below 0 or past
+    the end panics before anything is stored for it. Cost: one pass over the positions."""
+    for at in positions:
+        bit = u8(1) << u8(at % 8)
+        if item is not None:
+            values[at] = item
+            bits[at // 8] = bits[at // 8] | bit
+        else:
+            values[at] = filler
+            bits[at // 8] = bits[at // 8] & (u8(255) ^ bit)

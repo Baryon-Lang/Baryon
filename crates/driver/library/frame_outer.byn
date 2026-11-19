@@ -1,0 +1,180 @@
+"""Left, right and outer joins of two frames, written in Baryon (decision 0045).
+
+The compiler calls these functions; a program cannot import this file.
+
+`<std>/frame_joins.byn` numbers the keys of the two frames and pairs the rows of an inner
+join. The joins here also keep rows that have no partner, so a pair may hold -1 for the frame
+that has no row for it, and the columns taken from that frame hold `None` there:
+
+- `outer_pairs` lists the pairs of a left, right or outer join.
+- `taken_gaps` and `text_taken_gaps` take a column's elements at the rows of the pairs, with
+  a filler where the row is -1, and `gap_bits` gives the validity bitmap that marks those
+  as `None`. `taken_gap_bits` does so for a column that already may hold `None`.
+- `either`, `text_either` and `either_bits` give a key column of an outer join, whose value
+  comes from the left frame where the pair has a left row and from the right frame where it
+  has none.
+"""
+
+
+def outer_pairs(ids: Array[i64, 1], left_count: int, how: int) -> Array[i64, 1]:
+    """The pairs of a join that keeps rows without a partner, one after another: a row of
+    the left frame, then a row of the right frame, with -1 for the frame that has no row.
+    `ids` holds the number of each row's key, the left frame's `left_count` rows first, a
+    smaller number for a key that sorts first. `how` is 1 for a left join, 2 for a right
+    join and 3 for an outer join.
+
+    The order is pandas's. A left join follows the left frame's rows, and for one left row
+    the right frame's rows in order. A right join follows the right frame's rows, and for
+    one right row the left frame's in order. An outer join follows the keys in sorted order,
+    and for one key the left frame's rows, then for each the right frame's.
+
+    Cost: three passes over the rows and four lists of the number of rows or of keys.
+    """
+    total = len(ids)
+    groups = 0
+    for at in range(total):
+        groups = max(groups, ids[at] + 1)
+    # Where each key's rows start among the left rows, and among the right rows, sorted by
+    # key.
+    left_starts = [0 for group in range(groups + 1)]
+    right_starts = [0 for group in range(groups + 1)]
+    for at in range(total):
+        if at < left_count:
+            left_starts[ids[at] + 1] += 1
+        else:
+            right_starts[ids[at] + 1] += 1
+    for group in range(groups):
+        left_starts[group + 1] += left_starts[group]
+        right_starts[group + 1] += right_starts[group]
+    left_filled = [start for start in left_starts]
+    right_filled = [start for start in right_starts]
+    left_rows = [0 for at in range(left_count)]
+    right_rows = [0 for at in range(left_count, total)]
+    for at in range(total):
+        group = ids[at]
+        if at < left_count:
+            left_rows[left_filled[group]] = at
+            left_filled[group] += 1
+        else:
+            right_rows[right_filled[group]] = at - left_count
+            right_filled[group] += 1
+    pairs: list[int] = []
+    if how == 1:
+        for at in range(left_count):
+            group = ids[at]
+            for slot in range(right_starts[group], right_starts[group + 1]):
+                pairs.append(at)
+                pairs.append(right_rows[slot])
+            if right_starts[group] == right_starts[group + 1]:
+                pairs.append(at)
+                pairs.append(-1)
+    elif how == 2:
+        for at in range(left_count, total):
+            group = ids[at]
+            for slot in range(left_starts[group], left_starts[group + 1]):
+                pairs.append(left_rows[slot])
+                pairs.append(at - left_count)
+            if left_starts[group] == left_starts[group + 1]:
+                pairs.append(-1)
+                pairs.append(at - left_count)
+    else:
+        for group in range(groups):
+            for slot in range(left_starts[group], left_starts[group + 1]):
+                for other in range(right_starts[group], right_starts[group + 1]):
+                    pairs.append(left_rows[slot])
+                    pairs.append(right_rows[other])
+                if right_starts[group] == right_starts[group + 1]:
+                    pairs.append(left_rows[slot])
+                    pairs.append(-1)
+            if left_starts[group] == left_starts[group + 1]:
+                for other in range(right_starts[group], right_starts[group + 1]):
+                    pairs.append(-1)
+                    pairs.append(right_rows[other])
+    return Array(pairs)
+
+
+def taken_gaps[T: Copy](column: Array[T, 1], rows: Array[i64, 1], filler: T) -> Array[T, 1]:
+    """The elements of `column` at `rows`, in that order, with `filler` where a row is -1.
+    Cost: one pass and the new array."""
+    result = Array.fill((len(rows),), filler)
+    for at in range(len(rows)):
+        if rows[at] >= 0:
+            result[at] = column[rows[at]]
+    return result
+
+
+def text_taken_gaps(column: Array[str, 1], rows: Array[i64, 1]) -> Array[str, 1]:
+    """`taken_gaps` for a column of `str`, with an empty text where a row is -1. Cost: one
+    copy of each element taken, in a list, before the array is built from the list."""
+    return Array([column[rows[at]].copy() if rows[at] >= 0 else "" for at in range(len(rows))])
+
+
+def gap_bits(rows: Array[i64, 1]) -> Array[u8, 1]:
+    """The validity bitmap of a column taken at `rows` from a column that holds no `None`:
+    bit `at` is 1 where `rows[at]` is a row and 0 where it is -1."""
+    bits = Array.fill(((len(rows) + 7) // 8,), u8(0))
+    for at in range(len(rows)):
+        if rows[at] >= 0:
+            bits[at // 8] = bits[at // 8] | (u8(1) << u8(at % 8))
+    return bits
+
+
+def taken_gap_bits(bits: Array[u8, 1], rows: Array[i64, 1]) -> Array[u8, 1]:
+    """`gap_bits` for a column that may hold `None`, whose validity bitmap is `bits`: bit
+    `at` is 1 where `rows[at]` is a row whose element is there."""
+    result = Array.fill(((len(rows) + 7) // 8,), u8(0))
+    for at in range(len(rows)):
+        row = rows[at]
+        if row >= 0 and ((bits[row // 8] >> u8(row % 8)) & u8(1)) == u8(1):
+            result[at // 8] = result[at // 8] | (u8(1) << u8(at % 8))
+    return result
+
+
+def either[T: Copy](
+    left: Array[T, 1],
+    right: Array[T, 1],
+    left_rows: Array[i64, 1],
+    right_rows: Array[i64, 1],
+    filler: T,
+) -> Array[T, 1]:
+    """A key column of an outer join: for each pair, the left frame's key where the pair has
+    a left row, and the right frame's where it has none. Every pair has one of the two.
+    Cost: one pass and the new array."""
+    result = Array.fill((len(left_rows),), filler)
+    for at in range(len(left_rows)):
+        if left_rows[at] >= 0:
+            result[at] = left[left_rows[at]]
+        else:
+            result[at] = right[right_rows[at]]
+    return result
+
+
+def text_either(
+    left: Array[str, 1], right: Array[str, 1], left_rows: Array[i64, 1], right_rows: Array[i64, 1]
+) -> Array[str, 1]:
+    """`either` for a key of `str`. Cost: one copy of each key, in a list, before the array
+    is built from the list."""
+    return Array([
+        left[left_rows[at]].copy() if left_rows[at] >= 0 else right[right_rows[at]].copy()
+        for at in range(len(left_rows))
+    ])
+
+
+def either_bits(
+    left: Array[u8, 1], right: Array[u8, 1], left_rows: Array[i64, 1], right_rows: Array[i64, 1]
+) -> Array[u8, 1]:
+    """The validity bitmap of a key column of an outer join whose key may hold `None`: bit
+    `at` is the bit of the left frame's key where the pair has a left row, and of the right
+    frame's where it has none. `left` and `right` are the two keys' bitmaps."""
+    result = Array.fill(((len(left_rows) + 7) // 8,), u8(0))
+    for at in range(len(left_rows)):
+        row = left_rows[at]
+        there = False
+        if row >= 0:
+            there = ((left[row // 8] >> u8(row % 8)) & u8(1)) == u8(1)
+        else:
+            row = right_rows[at]
+            there = ((right[row // 8] >> u8(row % 8)) & u8(1)) == u8(1)
+        if there:
+            result[at // 8] = result[at // 8] | (u8(1) << u8(at % 8))
+    return result

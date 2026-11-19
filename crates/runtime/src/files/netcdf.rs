@@ -27,6 +27,7 @@ mod netcdf4;
 mod reading;
 mod selection;
 mod storage;
+mod streaming;
 mod writing;
 
 pub(crate) use header::read_header;

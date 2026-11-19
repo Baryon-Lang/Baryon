@@ -105,6 +105,16 @@ impl<'db> Body<'db> {
                 found[slot] = Some(ty);
             }
         }
+        // Only when nothing else fixes it does a `None` for a `T | None` make `T` the type
+        // `None`, as `maybe(None)` does; `pick(None, 3)` takes `T` from the `3`.
+        for (slot, &(_, index)) in arguments.iter().enumerate() {
+            if let (TypeKind::Optional(declared), Some(ty)) =
+                (parameters[index].ty.kind(self.db), found[slot])
+                && matches!(ty.kind(self.db), TypeKind::None)
+            {
+                self.unify(*declared, ty, &names, &mut bindings);
+            }
+        }
         for (slot, &(argument, index)) in arguments.iter().enumerate() {
             let parameter = &parameters[index];
             let expected = self
@@ -269,7 +279,9 @@ impl<'db> Body<'db> {
     ) {
         let db = self.db;
         match (declared.kind(db), found.kind(db)) {
-            (_, TypeKind::Unknown) => {}
+            // `None` fits any `T | None` and tells nothing of `T`: `pick(None, 3)` takes `T`
+            // from the `3`.
+            (_, TypeKind::Unknown) | (TypeKind::Optional(_), TypeKind::None) => {}
             (_, TypeKind::Function { callable, .. }) => {
                 self.unify(declared, *callable, names, bindings);
             }

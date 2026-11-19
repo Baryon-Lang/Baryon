@@ -209,13 +209,15 @@ impl<'db> Builder<'db> {
         self.frame_call(function, types, vec![from, rows], array, node)
     }
 
-    /// Calls the function `name` of `<std>/frames.byn`, `<std>/frame_joins.byn` or
-    /// `<std>/frame_missing.byn` with
-    /// `type_arguments`, borrowing each of `arguments`, and gives the temporary of type
-    /// `returns` that holds its result. The functions called this way take every parameter
-    /// borrowed and raise nothing. `None` after reporting that the library's file or the
-    /// function is missing, which happens only when the library's files were left out of the
-    /// package.
+    /// Calls the function `name` of `<std>/frames.byn`, `<std>/frame_joins.byn`,
+    /// `<std>/frame_missing.byn`, `<std>/frame_outer.byn`, `<std>/frame_masks.byn` or
+    /// `<std>/frame_order.byn` with `type_arguments`, borrowing each of `arguments`, and gives
+    /// the temporary of type `returns` that holds its result. The sort `ordered` of a column
+    /// of `i64` or of `f64` is called as `ordered_integers` or `ordered_floats`, which sort
+    /// those types in about `n` steps (roadmap 3.13.12).
+    /// The functions called this way take every parameter borrowed and raise nothing. `None`
+    /// after reporting that the library's file or the function is missing, which happens only
+    /// when the library's files were left out of the package.
     pub(crate) fn frame_call(
         &mut self,
         name: &str,
@@ -224,6 +226,14 @@ impl<'db> Builder<'db> {
         returns: Type<'db>,
         node: NodeId,
     ) -> Option<Local> {
+        let float = Type::new(self.db, TypeKind::Primitive(Primitive::Float(Float::F64)));
+        let (name, type_arguments) = if name == "ordered" && type_arguments == [self.int_type()] {
+            ("ordered_integers", Vec::new())
+        } else if name == "ordered" && type_arguments == [float] {
+            ("ordered_floats", Vec::new())
+        } else {
+            (name, type_arguments)
+        };
         let Some(item) = self.frame_function(name) else {
             self.unsupported(node, "a `DataFrame` as text without the standard library");
             return None;
@@ -242,22 +252,59 @@ impl<'db> Builder<'db> {
         Some(result)
     }
 
-    /// The function `name` that `<std>/frames.byn`, `<std>/frame_joins.byn` or
-    /// `<std>/frame_missing.byn` defines at its top level. Costs one pass over the top-level
+    /// Calls the procedure `name` of the same files with the one type argument `element`,
+    /// which changes each of `changed` in place and borrows each of `read`, in that order,
+    /// and returns nothing. Reports and does nothing when the library is missing.
+    pub(crate) fn frame_update(
+        &mut self,
+        name: &str,
+        element: Type<'db>,
+        (changed, read): (Vec<Place>, Vec<Place>),
+        node: NodeId,
+    ) {
+        let Some(item) = self.frame_function(name) else {
+            return self.unsupported(node, "a `DataFrame` as text without the standard library");
+        };
+        let nothing = self.temporary(Type::new(self.db, TypeKind::None), node);
+        let changed = changed.into_iter().map(Argument::InOut);
+        self.then(node, |next| TerminatorKind::Call {
+            callee: Callee::Function {
+                item,
+                type_arguments: vec![element],
+            },
+            arguments: changed
+                .chain(read.into_iter().map(Argument::Borrow))
+                .collect(),
+            destination: Place::from(nothing),
+            target: next,
+            error: None,
+        });
+    }
+
+    /// The function `name` that `<std>/frames.byn`, `<std>/frame_joins.byn`,
+    /// `<std>/frame_missing.byn`, `<std>/frame_outer.byn`, `<std>/frame_masks.byn` or
+    /// `<std>/frame_order.byn` defines at its top level. Costs one pass over the top-level
     /// statements of each file looked in.
     fn frame_function(&self, name: &str) -> Option<Item<'db>> {
-        ["frames", "frame_joins", "frame_missing"]
-            .into_iter()
-            .find_map(|module| {
-                let file = database::modules(self.db, self.package).library(module)?;
-                let tree = self.db.parse(file).tree();
-                let text = file.source(self.db).text();
-                let function = tree
-                    .children_with(tree.root(), Role::Body)
-                    .filter(|&statement| tree.kind(statement) == SyntaxKind::FunctionDefinition)
-                    .filter_map(|function| tree.child(function, Role::Name))
-                    .find(|&function| tree.text(function, text) == name)?;
-                Some(Item::new(self.db, self.package, file, function))
-            })
+        [
+            "frames",
+            "frame_joins",
+            "frame_missing",
+            "frame_outer",
+            "frame_masks",
+            "frame_order",
+        ]
+        .into_iter()
+        .find_map(|module| {
+            let file = database::modules(self.db, self.package).library(module)?;
+            let tree = self.db.parse(file).tree();
+            let text = file.source(self.db).text();
+            let function = tree
+                .children_with(tree.root(), Role::Body)
+                .filter(|&statement| tree.kind(statement) == SyntaxKind::FunctionDefinition)
+                .filter_map(|function| tree.child(function, Role::Name))
+                .find(|&function| tree.text(function, text) == name)?;
+            Some(Item::new(self.db, self.package, file, function))
+        })
     }
 }

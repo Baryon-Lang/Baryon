@@ -30,7 +30,14 @@ def uses(bids: Array[f64 | None, 1], sizes: Array[i64 | None, 1], prices: Array[
     wrong = bids.fillna("none")
     both = bids.fillna(0.0, 1.0)
     df = DataFrame({"bid": bids.copy(), "size": sizes.copy(), "price": prices.copy()})
-    rows = df.dropna(subset=["bid"])
+    rows = df.dropna(subset=["none"])
+    some = df.dropna(how="some")
+    first = df.dropna("any")
+    wide = df.dropna(axis=1, subset=["bid", "bid"])
+    rule = "all"
+    ruled = df.dropna(how=rule)
+    still: Array[f64, 1] = df.dropna(how="all").bid.copy()
+    other: Array[i64, 1] = df.dropna(subset="bid").size.copy()
     mixed = df.fillna(0.0)
     plain = df.fillna({"price": 1.0})
     unknown = df.fillna({"ask": 1.0})
@@ -67,43 +74,89 @@ error: `fillna` takes the value that replaces each `None`
   |            ^^^^^^^^^^^^^^^^^^^^^ wrong arguments
   = note: for example `values.fillna(0.0)`
 
-error: `dropna` of a `DataFrame` takes no arguments yet
- --> main.byn:7:12
+error: `DataFrame[bid: f64 | None, size: i64 | None, price: f64]` has no column `none`
+ --> main.byn:7:30
   |
-7 |     rows = df.dropna(subset=["bid"])
-  |            ^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-  = note: `df.dropna()` drops each row with a `None` in any column; to look at some columns only, take them first: `df[["bid", "ask"]].dropna()`
+7 |     rows = df.dropna(subset=["none"])
+  |                              ^^^^^^ not a column
+  = note: its columns are `bid`, `size`, `price`
+
+error: `how` is `"any"` or `"all"`, written as a string literal
+ --> main.byn:8:26
+  |
+8 |     some = df.dropna(how="some")
+  |                          ^^^^^^ not a rule for dropping rows
+  = note: the result's type depends on it, so it must be known when compiling
+
+error: `dropna` of a `DataFrame` takes `how=` and `subset=`, each by name
+ --> main.byn:9:13
+  |
+9 |     first = df.dropna("any")
+  |             ^^^^^^^^^^^^^^^^ wrong arguments
+  = note: for example `df.dropna(subset=["bid", "ask"])`
+
+error: `dropna` of a `DataFrame` has no argument `axis`
+  --> main.byn:10:22
+   |
+10 |     wide = df.dropna(axis=1, subset=["bid", "bid"])
+   |                      ^^^^ not an argument that is built
+   = note: `how=` and `subset=` are built; `thresh=` and `axis=` are not
+
+error: the column `bid` is named twice
+  --> main.byn:10:45
+   |
+10 |     wide = df.dropna(axis=1, subset=["bid", "bid"])
+   |                                             ^^^^^ a second time
+
+error: `how` is `"any"` or `"all"`, written as a string literal
+  --> main.byn:12:27
+   |
+12 |     ruled = df.dropna(how=rule)
+   |                           ^^^^ not a rule for dropping rows
+   = note: the result's type depends on it, so it must be known when compiling
+
+error: expected `Array[f64, 1]`, found `Array[f64 | None, 1]`
+  --> main.byn:13:28
+   |
+13 |     still: Array[f64, 1] = df.dropna(how="all").bid.copy()
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the annotation says `Array[f64, 1]`
+
+error: expected `Array[i64, 1]`, found `Array[i64 | None, 1]`
+  --> main.byn:14:28
+   |
+14 |     other: Array[i64, 1] = df.dropna(subset="bid").size.copy()
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the annotation says `Array[i64, 1]`
 
 error: expected `i64`, found `f64`
- --> main.byn:8:23
-  |
-8 |     mixed = df.fillna(0.0)
-  |                       ^^^ a column holds `i64`
-  = note: one value fills every column that may hold `None`; give each column its own with a dict, `df.fillna({"bid": 0.0, "size": 0})`
+  --> main.byn:15:23
+   |
+15 |     mixed = df.fillna(0.0)
+   |                       ^^^ a column holds `i64`
+   = note: one value fills every column that may hold `None`; give each column its own with a dict, `df.fillna({"bid": 0.0, "size": 0})`
 
 error: the column `price` cannot hold `None`
- --> main.byn:9:24
-  |
-9 |     plain = df.fillna({"price": 1.0})
-  |                        ^^^^^^^ has nothing to fill
+  --> main.byn:16:24
+   |
+16 |     plain = df.fillna({"price": 1.0})
+   |                        ^^^^^^^ has nothing to fill
 
 error: `DataFrame[bid: f64 | None, size: i64 | None, price: f64]` has no column `ask`
-  --> main.byn:10:26
+  --> main.byn:17:26
    |
-10 |     unknown = df.fillna({"ask": 1.0})
+17 |     unknown = df.fillna({"ask": 1.0})
    |                          ^^^^^ not a column
    = note: its columns are `bid`, `size`, `price`
 
 error: expected `f64`, found `str`
-  --> main.byn:11:30
+  --> main.byn:18:30
    |
-11 |     text = df.fillna({"bid": "none"})
+18 |     text = df.fillna({"bid": "none"})
    |                              ^^^^^^ the column holds `f64`
 
 error: `fillna` takes the value that replaces each `None`
-  --> main.byn:12:12
+  --> main.byn:19:12
    |
-12 |     none = df.fillna()
+19 |     none = df.fillna()
    |            ^^^^^^^^^^^ wrong arguments
    = note: for example `values.fillna(0.0)`"#;
 

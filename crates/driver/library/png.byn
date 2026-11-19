@@ -4,28 +4,31 @@ embeds in an SVG file and saves as PNG (decision 0046).
 It is internal to the standard library: `byplot` and the files under it import it, and a
 program cannot, so a program's own `png.byn` is never hidden by it.
 
-`encode` puts the image data in uncompressed deflate blocks, which every PNG reader takes, for
-the images inside an SVG file, computing the checksums PNG and zlib need, CRC-32 and Adler-32,
-itself; idea I.54 moves it onto `zlib`. `write_png`, for the PNG files `savefig` writes,
-compresses them with `zlib`.
+Both `encode`, for the images inside an SVG file, and `write_png`, for the PNG files `savefig`
+writes, compress the rows with `zlib` at its default level, and take each chunk's CRC-32 from
+`zlib.crc32` (idea I.54, roadmap 3.15.9).
 """
 
-from zlib import compress
+from zlib import compress, crc32
 
 
 def encode(pixels: Array[u8, 3]) -> list[u8]:
     """The bytes of a PNG file holding `pixels`, an image `height` by `width` by 4: red, green,
-    blue and alpha, 0 to 255, rows from the top, its data in uncompressed deflate blocks, as
-    the images inside an SVG file are written. Costs about 4 bytes and a few operations a
-    pixel.
+    blue and alpha, 0 to 255, rows from the top, its data compressed with `zlib` at its default
+    level, as the images inside an SVG file are written. Costs one pass of `zlib.compress` over
+    about 4 bytes a pixel; a plot's image of smooth colours shrinks to a fraction of that.
+
+    # Panics
+
+    Only if `zlib.compress` raises at its default level and window, which it never does.
     """
-    raw: list[u8] = []
-    for row in range(pixels.shape[0]):
-        raw.append(u8(0))  # no filter on the row
-        for column in range(pixels.shape[1]):
-            for channel in range(4):
-                raw.append(pixels[row, column, channel])
-    return _assemble(pixels.shape[1], pixels.shape[0], _zlib_stored(raw))
+    data: list[u8] = []
+    try:
+        for byte in compress(_rows(pixels)):
+            data.append(byte)
+    except OSError:
+        assert False, "zlib.compress at its default level never fails"
+    return _assemble(pixels.shape[1], pixels.shape[0], data)
 
 
 def write_png(pixels: Array[u8, 3]) -> Raises[Array[u8, 1], OSError]:
@@ -37,6 +40,15 @@ def write_png(pixels: Array[u8, 3]) -> Raises[Array[u8, 1], OSError]:
 
     `OSError` only if `zlib.compress` fails, which it never does for a valid image.
     """
+    packed: list[u8] = []
+    for byte in compress(_rows(pixels)):
+        packed.append(byte)
+    return Array(_assemble(pixels.shape[1], pixels.shape[0], packed))
+
+
+def _rows(pixels: Array[u8, 3]) -> Array[u8, 1]:
+    """The rows of `pixels` as PNG compresses them: each row's filter byte, 0 for no filter,
+    then its pixels' red, green, blue and alpha bytes, from the top row down."""
     height = pixels.shape[0]
     width = pixels.shape[1]
     raw: Array[u8, 1] = Array.zeros(height * (4 * width + 1), u8)
@@ -47,10 +59,7 @@ def write_png(pixels: Array[u8, 3]) -> Raises[Array[u8, 1], OSError]:
             for channel in range(4):
                 raw[at] = pixels[row, column, channel]
                 at += 1
-    packed: list[u8] = []
-    for byte in compress(raw):
-        packed.append(byte)
-    return Array(_assemble(width, height, packed))
+    return raw
 
 
 def _assemble(width: int, height: int, data: list[u8]) -> list[u8]:
@@ -62,10 +71,9 @@ def _assemble(width: int, height: int, data: list[u8]) -> list[u8]:
     _put32(header, u32(height))
     for value in [8, 6, 0, 0, 0]:  # 8 bits a channel, RGBA, deflate, no filter, no interlace
         header.append(u8(value))
-    table = _crc_table()
-    _chunk(out, "IHDR", header, table)
-    _chunk(out, "IDAT", data, table)
-    _chunk(out, "IEND", [], table)
+    _chunk(out, "IHDR", header)
+    _chunk(out, "IDAT", data)
+    _chunk(out, "IEND", [])
     return out
 
 
@@ -75,7 +83,7 @@ def _put32(data: InOut[list[u8]], value: u32) -> None:
         data.append(u8((value >> u32(shift)) & u32(255)))
 
 
-def _chunk(out: InOut[list[u8]], kind: str, data: list[u8], table: list[u32]) -> None:
+def _chunk(out: InOut[list[u8]], kind: str, data: list[u8]) -> None:
     """Appends a PNG chunk to `out`: its length, its four-letter `kind`, `data`, and the CRC-32
     of the kind and the data. The kinds written here are all capitals, so the letters are found
     by their place in the alphabet, as `str` has no `encode` yet."""
@@ -87,53 +95,4 @@ def _chunk(out: InOut[list[u8]], kind: str, data: list[u8], table: list[u32]) ->
         named.append(byte)
     for byte in named:
         out.append(byte)
-    _put32(out, _crc(named, table))
-
-
-def _crc_table() -> list[u32]:
-    """The 256 entries that make CRC-32 a byte at a time, for the polynomial PNG and zlib use."""
-    table: list[u32] = []
-    for n in range(256):
-        c = u32(n)
-        for _ in range(8):
-            if c & u32(1) == u32(1):
-                c = u32(0xEDB88320) ^ (c >> u32(1))
-            else:
-                c = c >> u32(1)
-        table.append(c)
-    return table
-
-
-def _crc(data: list[u8], table: list[u32]) -> u32:
-    """The CRC-32 of `data`, as PNG's specification computes it."""
-    c = u32(0xFFFFFFFF)
-    for byte in data:
-        c = table[int((c ^ u32(byte)) & u32(255))] ^ (c >> u32(8))
-    return c ^ u32(0xFFFFFFFF)
-
-
-def _zlib_stored(raw: list[u8]) -> list[u8]:
-    """`raw` as a zlib stream of uncompressed deflate blocks of at most 65535 bytes, ended by its
-    Adler-32 checksum."""
-    out: list[u8] = [u8(0x78), u8(0x01)]
-    start = 0
-    while True:
-        size = min(65535, len(raw) - start)
-        last = start + size == len(raw)
-        out.append(u8(1) if last else u8(0))
-        out.append(u8(size & 255))
-        out.append(u8(size >> 8))
-        out.append(u8((65535 - size) & 255))
-        out.append(u8((65535 - size) >> 8))
-        for k in range(start, start + size):
-            out.append(raw[k])
-        start += size
-        if last:
-            break
-    a = u32(1)
-    b = u32(0)
-    for byte in raw:
-        a = (a + u32(byte)) % u32(65521)
-        b = (b + a) % u32(65521)
-    _put32(out, (b << u32(16)) | a)
-    return out
+    _put32(out, u32(crc32(Array(named))))

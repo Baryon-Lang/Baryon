@@ -1,0 +1,111 @@
+"""The confluent hypergeometric limit function for `special` (roadmap 3.18.8): `hyp0f1`,
+₀F₁(; b; x) = Σ xᵏ / ((b)ₖ k!), for real b and x.
+
+Where its terms barely cancel, which is always for x and b above 0, it is its series. Elsewhere
+it is a Bessel function (DLMF 10.39.9 and 10.16.9): Γ(b) (√x)^{1−b} I_{b−1}(2√x) above 0 and
+Γ(b) (√|x|)^{1−b} J_{b−1}(2√|x|) below. The argument 2√|x| is formed as two `f64`s and the part
+that rounding would drop is put back by a first-order Taylor step, since rounding it alone costs
+up to √|x| ULP, and the factor Γ(b) (√|x|)^{1−b} is built as a product of b terms near 1, so it
+neither overflows nor rounds its exponent.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, fabs, floor, fma, inf, isinf, isnan, nan, pow, sqrt
+from special_bessel_real import ive, jv, jvp
+from special_gamma import gamma, gammasgn
+
+_EPSILON: Final = 1.0e-17  # where the series stops
+_CANCEL: Final = 4.0  # the series is kept where its terms sum to at most this over its value
+_TERMS: Final = 3000  # the most terms the series takes
+
+
+def _settled(b: f64, x: f64, k: int) -> bool:
+    """Whether the series' terms only fall after term k + 1: b + k is past 0 and the next
+    ratio, x / ((b + k + 1)(k + 2)), is below 1 in size. For b below 0 the terms can shrink
+    and then grow again once b + k crosses 0."""
+    return k + b > 0.0 and fabs(x) < fabs((b + k + 1.0) * (k + 2.0))
+
+
+def _series(b: f64, x: f64) -> tuple[f64, f64]:
+    """₀F₁(; b; x) by its series, and the sum of its terms' sizes; NaN with an infinite size
+    where it has not converged."""
+    term = 1.0
+    total = 1.0
+    size = 1.0
+    for k in range(_TERMS):
+        term *= x / ((b + k) * (k + 1.0))
+        total += term
+        size += fabs(term)
+        if fabs(term) <= _EPSILON * fabs(total) and _settled(b, x, k):
+            return total, size
+    return nan, inf
+
+
+def _bessel(b: f64, x: f64) -> f64:
+    """₀F₁(; b; x) as Γ(b) (z/2)^{−ν} times I_ν(z) or J_ν(z), ν = b − 1 and z = 2√|x|. The
+    rounding error of z is put back by I or J's slope, (I e⁻ᶻ)′ = (I_{ν+1} + (ν/z − 1) I_ν) e⁻ᶻ
+    for the scaled I. Γ(b) (z/2)^{−ν} is Γ(b₀) (z/2)^{1−b₀} times (b₀ + k)/(z/2) for each step
+    from b₀ in [1, 2) up to b, or divided by such factors going down, and eᶻ is multiplied in
+    last, in halves."""
+    nu = b - 1.0
+    root = sqrt(fabs(x))
+    high = 2.0 * root
+    low = 2.0 * fma(-root, root, fabs(x)) / (2.0 * root)
+    if x > 0.0:
+        value = ive(nu, high)
+        value += low * (ive(nu + 1.0, high) + (nu / high - 1.0) * value)
+    else:
+        value = jv(nu, high) + low * jvp(nu, high)
+    half = high / 2.0
+    shift = floor(b) - 1.0
+    start = b - shift
+    product = value * gamma(start) * pow(half, 1.0 - start) * (1.0 - nu * low / high)
+    # Each factor is b less a whole number, formed from b itself: from the rounded start, the
+    # last factor going down, b + 1 for b just above −1, would lose the digits of b.
+    if shift > 0.0:
+        for k in range(int(shift)):
+            product *= (b - (shift - k)) / half
+    else:
+        for k in range(1, int(-shift) + 1):
+            product /= (b - (shift + k)) / half
+    if x > 0.0:
+        grow = exp(high / 2.0) * (1.0 + low / 2.0)
+        product = product * grow * grow
+    return product
+
+
+def hyp0f1(b: f64, x: f64) -> f64:
+    """The confluent hypergeometric limit function ₀F₁(; b; x), as `scipy.special.hyp0f1` for
+    real arguments: the solution of x w″ + b w′ − w = 0 that is 1 at x = 0.
+
+    A b of 0 or a negative whole number is a pole, NaN as `SciPy` gives; an infinite b gives 1.
+    At x = ∞ this gives ±∞ with the sign of Γ(b), and at x = −∞, where the function oscillates
+    as |x|^{1/4 − b/2}, 0 for b above ½ and NaN otherwise, where `SciPy` gives NaN. Where the
+    value overflows this gives ∞: `SciPy` gives 0 for `hyp0f1(1.0, 1e6)`.
+
+    ```python
+    from special import hyp0f1
+
+    print(hyp0f1(1.5, -2.25))  # 0.0470400026866224, sin(3)/3
+    ```
+    """
+    if isnan(b) or isnan(x):
+        return nan
+    if b <= 0.0 and b == floor(b):
+        return nan
+    if x == 0.0 or isinf(b):
+        return 1.0
+    if isinf(x):
+        if x > 0.0:
+            return gammasgn(b) * inf
+        if b > 0.5:
+            return 0.0
+        return nan
+    total, size = _series(b, x)
+    if size <= _CANCEL * fabs(total) and not isinf(total):
+        return total
+    value = _bessel(b, x)
+    if isnan(value) and not isnan(total):
+        return total
+    return value

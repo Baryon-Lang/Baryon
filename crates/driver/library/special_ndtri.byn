@@ -1,0 +1,144 @@
+"""`ndtri` for `special`, the inverse of the standard normal cumulative distribution
+(roadmap 3.18.17): a first value from one of three fitted rational functions, then one step of
+Newton's or Halley's method.
+
+Each rational function is the ratio of two polynomials whose coefficients were fitted with
+mpmath by the script in `crates/driver/tests/fixtures/special/README.md`. The ranges and
+variables follow the shape Wichura used for Algorithm AS 241: the centre in q = p − ½, the tails
+in t = √(−log p), where the answer is close to a linear function of t. The fit alone is within
+6 ULP, its error coming from rounding as it is evaluated; one step with `erf` or `erfcx`, the
+same forms `erfinv` and `erfcinv` iterate, brings that to 3 ULP and the usual case to the
+correctly rounded value, at the cost of one more function evaluation, where solving from a rough
+guess took several.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, fma, inf, isnan, log, nan, sqrt
+from special_error import erf, erfcx
+
+_SQRT_TWO: Final = 1.4142135623730951  # √2, rounded to f64
+_SQRT_TWO_LOW: Final = -9.667293313452913e-17  # √2 minus `_SQRT_TWO`
+_ONE_OVER_SQRT_TWO: Final = 0.7071067811865476  # 1/√2, rounded to f64
+_SQRT_PI: Final = 1.7724538509055159  # √π
+_TWO_OVER_SQRT_PI: Final = 1.1283791670955126  # 2/√π
+
+
+def _times_sqrt_two(u: f64) -> f64:
+    """√2 u with √2 carried as two `f64`s, so the product is rounded once, not twice."""
+    return fma(u, _SQRT_TWO, u * _SQRT_TWO_LOW)
+
+
+def _centre(s: f64) -> f64:
+    """x / q for p = ½ + q with |q| up to 0.425, as a function of s = 0.180625 − q²."""
+    top = 2468.9441911518475
+    top = top * s + 33014.17326269531
+    top = top * s + 66635.35296292062
+    top = top * s + 45611.95030474664
+    top = top * s + 13669.059899841046
+    top = top * s + 1966.1728987199367
+    top = top * s + 132.97557689143136
+    top = top * s + 3.3871328727963665
+    bottom = 5150.707469439267
+    bottom = bottom * s + 28403.528154082906
+    bottom = bottom * s + 38971.52767336617
+    bottom = bottom * s + 21082.49148022746
+    bottom = bottom * s + 5371.535872983864
+    bottom = bottom * s + 685.4400439140328
+    bottom = bottom * s + 42.264294833629165
+    bottom = bottom * s + 1.0
+    return top / bottom
+
+
+def _near_tail(u: f64) -> f64:
+    """−x for t = √(−log p) from 1.6094 (p = 0.075) to 5 (p = 1.4e-11), in u = t − 1.6."""
+    top = 0.00010482635130338566
+    top = top * u + 0.003860233732791605
+    top = top * u + 0.053072311777485455
+    top = top * u + 0.38005840548127906
+    top = top * u + 1.6008386502441891
+    top = top * u + 4.076752556345997
+    top = top * u + 6.056308087861362
+    top = top * u + 4.706668454635969
+    top = top * u + 1.4234371107496837
+    bottom = 7.551696991766469e-11
+    bottom = bottom * u + 7.411536823034576e-05
+    bottom = bottom * u + 0.002611729516947833
+    bottom = bottom * u + 0.0335549621010427
+    bottom = bottom * u + 0.2203162791774979
+    bottom = bottom * u + 0.8311673069053772
+    bottom = bottom * u + 1.813541778702739
+    bottom = bottom * u + 2.106815778982091
+    bottom = bottom * u + 1.0
+    return top / bottom
+
+
+def _far_tail(u: f64) -> f64:
+    """−x for t = √(−log p) from 5 to 27.3, the smallest `f64`, in u = t − 5."""
+    top = 2.002426855980713e-07
+    top = top * u + 2.7044641367535464e-05
+    top = top * u + 0.0012405170932204253
+    top = top * u + 0.02650247867855188
+    top = top * u + 0.2963536421732608
+    top = top * u + 1.7841226471720093
+    top = top * u + 5.462856577354085
+    top = top * u + 6.657904643501103
+    bottom = 2.01950637729198e-15
+    bottom = bottom * u + 1.415920361559922e-07
+    bottom = bottom * u + 1.8415832828186977e-05
+    bottom = bottom * u + 0.0007855881372347891
+    bottom = bottom * u + 0.01486064552413838
+    bottom = bottom * u + 0.136854946905292
+    bottom = bottom * u + 0.5996927732266742
+    bottom = bottom * u + 1.0
+    return top / bottom
+
+
+def ndtri(p: f64) -> f64:
+    """The inverse of `ndtr`, as `scipy.special.ndtri`: the `x` with Φ(x) = p, for `p`
+    from 0 to 1. −∞ at 0, ∞ at 1 and NaN outside [0, 1].
+
+    For |p − ½| up to 0.425 the first value is q times a rational function of 0.180625 − q²,
+    refined by one Halley step on erf(x/√2) = 2q. Beyond, it is a rational function of
+    t = √(−log p), with p replaced by 1 − p above ½, which is exact there, refined by one
+    Newton step on −v² + log erfcx(v) = log 2p, v = |x|/√2, which stays finite for the
+    smallest `p`.
+
+    ```python
+    from special import ndtri
+
+    print(ndtri(0.975)) # 1.959963984540054
+    ```
+    """
+    if isnan(p) or p < 0.0 or p > 1.0:
+        return nan
+    q = p - 0.5
+    if abs(q) <= 0.425:
+        # One Halley step on erf(u) = 2q, u = x/√2, whose error does not grow near 0.
+        u = q * _centre(0.180625 - q * q) * _ONE_OVER_SQRT_TWO
+        error = erf(u) - 2.0 * q
+        slope = _TWO_OVER_SQRT_PI * exp(-u * u)
+        u -= error / (slope * (1.0 + u * error / slope))
+        return _times_sqrt_two(u)
+    if p == 0.0:
+        return -inf
+    if p == 1.0:
+        return inf
+    smaller = p
+    if q > 0.0:
+        smaller = 1.0 - p
+    t = sqrt(-log(smaller))
+    x = 0.0
+    if t <= 5.0:
+        x = _near_tail(t - 1.6)
+    else:
+        x = _far_tail(t - 5.0)
+    # One Newton step on log erfc(v) = −v² + log erfcx(v) = log 2p, v = |x|/√2, which stays
+    # finite for the smallest p.
+    v = x * _ONE_OVER_SQRT_TWO
+    scaled = erfcx(v)
+    v += (-v * v + log(scaled) - log(2.0 * smaller)) * _SQRT_PI * scaled / 2.0
+    x = _times_sqrt_two(v)
+    if q < 0.0:
+        return -x
+    return x

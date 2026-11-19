@@ -448,3 +448,43 @@ error: `Point` has no field or method `missing`
    |               ^^^^^^^ not defined on this struct"#
     );
 }
+
+/// A value that is not an integer cannot index a list, a `str`, a tuple, a `Fixed` array or an
+/// `Array` of rank 2 or more (roadmap 1.9.53): only a rank-1 `Array` takes a choice of
+/// elements. Before, a list, a tuple or a struct as the index passed the checker, and the
+/// build failed in `clang`.
+#[test]
+fn values_that_are_not_integers_cannot_index() {
+    let program = r"
+class P(Struct, Copy):
+    x: int
+
+
+def use_them(xs: list[int], s: str, grid: Array[f64, 2], p: P) -> None:
+    print(xs[[0, 1]], s[(0, 1)], grid[p, 0])
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: an index must be an integer, found `list[i64]`
+ --> main.byn:6:14
+  |
+6 |     print(xs[[0, 1]], s[(0, 1)], grid[p, 0])
+  |              ^^^^^^ not an integer
+  = note: only a rank-1 `Array` takes a choice of elements, `a[mask]` or `a[positions]`
+
+error: an index must be an integer, found `tuple[i64, i64]`
+ --> main.byn:6:25
+  |
+6 |     print(xs[[0, 1]], s[(0, 1)], grid[p, 0])
+  |                         ^^^^^^ not an integer
+  = note: only a rank-1 `Array` takes a choice of elements, `a[mask]` or `a[positions]`
+
+error: an index must be an integer, found `P`
+ --> main.byn:6:39
+  |
+6 |     print(xs[[0, 1]], s[(0, 1)], grid[p, 0])
+  |                                       ^ not an integer
+  = note: only a rank-1 `Array` takes a choice of elements, `a[mask]` or `a[positions]`"
+    );
+}

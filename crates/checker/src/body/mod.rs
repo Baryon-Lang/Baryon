@@ -35,6 +35,7 @@ mod axes;
 mod binding;
 mod builtins;
 mod calls;
+mod captures;
 mod class_functions;
 mod class_patterns;
 mod collections;
@@ -54,6 +55,7 @@ mod flow;
 mod formatted;
 mod frame_describe;
 mod frame_distinct;
+mod frame_dropna;
 mod frame_groups;
 mod frame_joins;
 mod frame_missing;
@@ -64,6 +66,7 @@ mod frame_stack;
 mod frames;
 mod generics;
 mod h5by;
+mod indices;
 mod library;
 mod loops;
 mod managers;
@@ -76,6 +79,7 @@ mod netcdf_writing;
 mod npy;
 mod numbers;
 mod operators;
+mod optional_arithmetic;
 mod optional_arrays;
 mod parallel;
 mod paths;
@@ -93,7 +97,9 @@ mod text;
 mod text_arrays;
 mod text_tables;
 mod union_methods;
+mod untyped_calls;
 mod user_iterators;
+mod value_calls;
 
 use crate::lower::Lowerer;
 use crate::outline::Entry;
@@ -129,6 +135,8 @@ pub(crate) fn check<'db>(
         caught: Vec::new(),
         bound: BTreeSet::new(),
         modes: BTreeMap::new(),
+        subject: None,
+        captures: BTreeMap::new(),
         loops: Vec::new(),
         loop_ends: BTreeSet::new(),
         held: Vec::new(),
@@ -189,6 +197,12 @@ struct Body<'db> {
     bound: BTreeSet<NodeId>,
     /// How each parameter, by its `Name` node, receives its argument (the `moves` module).
     modes: BTreeMap<NodeId, types::Mode>,
+    /// The subject of the `match` whose patterns are being checked, which a capture of a part
+    /// that is not a copy type borrows (the `captures` module).
+    subject: Option<NodeId>,
+    /// The captures that borrow part of their `match` subject, each `Name` binding with the
+    /// subject it borrows from (the `captures` module).
+    captures: BTreeMap<NodeId, NodeId>,
     /// The enclosing `for` loops over collections, innermost last (the `loops` module).
     loops: Vec<loops::Loop>,
     /// The loop targets that ended a borrow: a loop variable that borrows an element is
@@ -402,9 +416,9 @@ impl<'db> Body<'db> {
     fn number_context(&self, ty: Type<'db>) -> Option<Type<'db>> {
         match ty.kind(self.db) {
             TypeKind::Primitive(primitive) if numbers::is_number(*primitive) => Some(ty),
-            TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
-                self.number_context(*element)
-            }
+            TypeKind::Array { element, .. }
+            | TypeKind::Fixed { element, .. }
+            | TypeKind::OptionalArray(element) => self.number_context(*element),
             // `3 in counts` looks up a key, so the literal takes the key type.
             TypeKind::Dict { key, .. } => self.number_context(*key),
             _ => self.generic_literal(ty),

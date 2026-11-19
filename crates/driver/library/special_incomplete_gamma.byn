@@ -6,7 +6,7 @@ The compiler reads this file for `<std>/special.byn`; a program cannot import it
 
 from math import exp, expm1, inf, isinf, isnan, log, log1p, nan, pi, pow, sqrt
 from special_gamma import rgamma_near_one, rgamma_near_two, stirling, gamma, gammaln
-from special_error import ndtri
+from special_ndtri import ndtri
 
 
 def log1pmx(t: f64) -> f64:

@@ -80,10 +80,12 @@ cargo install --locked cargo-deny@0.20.2
 
 ## Documentation
 
-New to Baryon? Start with the [beginner's guide](docs/guide/README.md), the first of four pages
+New to Baryon? Start with the [beginner's guide](docs/guide/README.md), the first of six pages
 on how to code in Baryon: then [a tour of the language](docs/guide/language-tour.md),
-[arrays and numbers](docs/guide/arrays-and-numbers.md), and
-[data, files and plots](docs/guide/data-files-and-plots.md). To try it in an editor,
+[arrays and numbers](docs/guide/arrays-and-numbers.md),
+[data, files and plots](docs/guide/data-files-and-plots.md),
+[a worked analysis with DataFrame](docs/guide/dataframes.md), and
+[special functions](docs/guide/special-functions.md). To try it in an editor,
 [Coding Baryon in VS Code](docs/guide/vscode.md) sets up VS Code, from building `baryon` to
 running and testing a first program. [`CHANGELOG.md`](CHANGELOG.md) says what each release
 holds.

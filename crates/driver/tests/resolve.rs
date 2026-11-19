@@ -237,14 +237,32 @@ fn a_standard_module_reexports_from_its_internal_files() {
 /// plain import stays the file's own: `byplot` imports `save_axes` from its internal `figure`,
 /// and `linalg` imports `sqrt` from `math`, and neither name is `byplot`'s or `linalg`'s. Had
 /// either import been followed, the call would have the found function's type and the `str`
-/// annotations below would be errors; a name a standard module does not define is left for
-/// lowering to report.
+/// annotations below would be errors. A name a standard module does not define is reported
+/// at its call as not in Baryon (roadmap 1.9.52), not as a type error.
 #[test]
 fn a_plain_import_in_a_standard_file_is_not_reexported() {
+    let note = "  = note: the language reference lists what";
     let helper = "from byplot import save_axes\n\n\ndef main():\n    label: str = save_axes(1)\n    print(label)\n";
-    assert_eq!(check_one(helper), "");
+    assert_eq!(
+        check_one(helper),
+        format!(
+            "error: `byplot.save_axes` is not in Baryon yet\n --> main.byn:5:18\n  |\n5 |     \
+             label: str = save_axes(1)\n  |                  ^^^^^^^^^^^^ not built\n{note} \
+             `byplot` has; the roadmap's Ideas table is the place to ask for more"
+        )
+    );
     let standard = "import linalg\nfrom linalg import sqrt\n\n\ndef main():\n    label: str = sqrt(4.0)\n    other: str = linalg.sqrt(4.0)\n    print(label, other)\n";
-    assert_eq!(check_one(standard), "");
+    assert_eq!(
+        check_one(standard),
+        format!(
+            "error: `linalg.sqrt` is not in Baryon yet\n --> main.byn:6:18\n  |\n6 |     \
+             label: str = sqrt(4.0)\n  |                  ^^^^^^^^^ not built\n{note} `linalg` \
+             has; the roadmap's Ideas table is the place to ask for more\n\nerror: `linalg.sqrt` \
+             is not in Baryon yet\n --> main.byn:7:18\n  |\n7 |     other: str = \
+             linalg.sqrt(4.0)\n  |                  ^^^^^^^^^^^^^^^^ not built\n{note} `linalg` \
+             has; the roadmap's Ideas table is the place to ask for more"
+        )
+    );
 }
 
 /// A program's own modules pass on every name they import, with or without `as`, as Python's

@@ -239,19 +239,20 @@ fn(_1: tuple[i64, bool]) -> i64 {
     );
 }
 
-/// Capturing a value that owns memory would move part of the subject, which waits on the move
-/// rules for patterns.
+/// Capturing a value that owns memory from a subject the function owns would move part of
+/// the subject, which is not built yet. From a read-only parameter, the capture borrows its
+/// part instead and is built (roadmap 1.9.50).
 #[test]
 fn captures_of_owning_values_are_not_lowered_yet() {
     let program = r"
-def first(names: tuple[str, i64]) -> i64:
+def first(names: Owned[tuple[str, i64]]) -> i64:
     match names:
         case (name, count):
             return count
 ";
     assert_eq!(
         lower(program, &["first"]),
-        r"error: lowering does not handle capturing a value that is not a copy type yet
+        r"error: lowering does not handle moving a captured value out of its subject yet
  --> main.byn:3:15
   |
 3 |         case (name, count):

@@ -7,7 +7,7 @@ The compiler reads this file for `<std>/special.byn`; a program cannot import it
 from math import exp, expm1, isinf, isnan, log, log1p, nan, pi, pow, sqrt
 from special_gamma import rgamma_near_one, rgamma_near_two, stirling
 from special_beta import log_gamma_ratio, beta, betaln
-from special_error import ndtri
+from special_ndtri import ndtri
 from special_incomplete_gamma import log_minus_linear
 
 

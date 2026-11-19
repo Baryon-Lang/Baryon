@@ -69,8 +69,8 @@ error: expected `i64`, found `DataFrame[symbol: i64, lot: i32, price_x: f64, pri
 }
 
 /// `merge` without the other frame or without `on=`, with an argument it does not have, with
-/// something that is no frame, and with a `how` that is not the inner join or not a string
-/// literal are each reported.
+/// something that is no frame, and with a `how` that names no join or is not a string
+/// literal are each reported, and an outer join's columns that are no keys may hold `None`.
 #[test]
 fn merge_arguments_in_another_form_are_reported() {
     let program = r#"
@@ -91,8 +91,9 @@ def joining(trades: DataFrame[Trade], listings: DataFrame[Listing], name: str):
     b = trades.merge(listings)
     c = trades.merge(listings, on="symbol", suffixes=("_l", "_r"))
     d = trades.merge(trades.price, on="symbol")
-    e = trades.merge(listings, on="symbol", how="left")
+    e = trades.merge(listings, on="symbol", how="sideways")
     f = trades.merge(listings, on="symbol", how=name)
+    g: int = trades.merge(listings, on="symbol", how="outer")
 "#;
     assert_eq!(
         check_one(program),
@@ -123,19 +124,25 @@ error: `merge` joins two `DataFrame`s, found `Array[f64, 1]`
 17 |     d = trades.merge(trades.price, on="symbol")
    |                      ^^^^^^^^^^^^ not a `DataFrame`
 
-error: `merge` joins only with `how="inner"` yet
+error: `how` is `"inner"`, `"left"`, `"right"` or `"outer"`, written as a string literal
   --> main.byn:18:49
    |
-18 |     e = trades.merge(listings, on="symbol", how="left")
-   |                                                 ^^^^^^ not an inner join
-   = note: a left, right or outer join gives rows with missing values, which come with roadmap item 3.13.6
+18 |     e = trades.merge(listings, on="symbol", how="sideways")
+   |                                                 ^^^^^^^^^^ not a join
+   = note: the result's type depends on it, so it must be known when compiling
 
-error: `how` is `"inner"`, written as a string literal
+error: `how` is `"inner"`, `"left"`, `"right"` or `"outer"`, written as a string literal
   --> main.byn:19:49
    |
 19 |     f = trades.merge(listings, on="symbol", how=name)
-   |                                                 ^^^^ not an inner join
-   = note: the result's type depends on it, so it must be known when compiling"#
+   |                                                 ^^^^ not a join
+   = note: the result's type depends on it, so it must be known when compiling
+
+error: expected `i64`, found `DataFrame[symbol: i64, price_x: f64 | None, volume: i64 | None, lot: i32 | None, price_y: f64 | None]`
+  --> main.byn:20:14
+   |
+20 |     g: int = trades.merge(listings, on="symbol", how="outer")
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the annotation says `i64`"#
     );
 }
 

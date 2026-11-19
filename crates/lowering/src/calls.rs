@@ -61,7 +61,7 @@ impl<'db> Builder<'db> {
         match &call.callee {
             types::Callee::Function(_) | types::Callee::Method(_) => {}
             types::Callee::Constructor(item) => {
-                let fields = self.field_types(*item);
+                let fields = self.field_types(*item, ty);
                 let operands = arguments
                     .into_iter()
                     .enumerate()
@@ -180,9 +180,14 @@ impl<'db> Builder<'db> {
             (Some(("Array", method @ ("isna" | "notna"))), [array]) => {
                 self.optional_array_missing(place, *array, method == "isna", node);
             }
-            (Some(("Array", method @ ("count" | "sum" | "min" | "max" | "mean"))), [array])
-                if self.optional_array_element(*array).is_some() =>
-            {
+            (
+                Some((
+                    "Array",
+                    method @ ("count" | "sum" | "min" | "max" | "mean" | "var" | "std" | "any"
+                    | "all"),
+                )),
+                [array, ..],
+            ) if self.optional_array_element(*array).is_some() => {
                 self.optional_array_reduced(place, method, *array, node);
             }
             (Some(("Array", "dropna")), [array]) => {
@@ -395,7 +400,8 @@ impl<'db> Builder<'db> {
     /// A call of a `Callable` value, such as the parameter `derivative` in
     /// `derivative(t, state)`, into `place`. Each argument is borrowed, the mode a `Callable`
     /// gives every parameter. Monomorphization turns it into a direct call of the function the
-    /// instance received (decision 0026).
+    /// instance received (decision 0026), or the function a local holds (roadmap 1.9.43). A
+    /// function that can raise gets the call's error edge, as a direct call of it does.
     fn value_call(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
         let Some(function) = self.tree.child(node, Role::Function) else {
             return self.unsupported(node, "this call");
@@ -405,27 +411,8 @@ impl<'db> Builder<'db> {
             .iter()
             .map(|&argument| Argument::Borrow(self.borrow(argument)))
             .collect();
-        let next = self.new_block();
-        self.terminate(
-            TerminatorKind::Call {
-                callee: Callee::Value(callee),
-                arguments: passed,
-                destination: place,
-                target: next,
-                error: None,
-            },
-            node,
-        );
-        self.start(next);
-    }
-
-    /// The declared types of the fields of the struct `item`, in declaration order; empty when
-    /// `item` is not a struct. A generic struct's fields keep their type parameters.
-    fn field_types(&self, item: Item<'db>) -> Vec<types::Type<'db>> {
-        match &self.db.declaration(item).declaration {
-            Declaration::Struct { fields, .. } => fields.iter().map(|field| field.ty).collect(),
-            _ => Vec::new(),
-        }
+        // A function that raises raises through the call, as any call of it does.
+        self.raising_callee(Callee::Value(callee), passed, place, node);
     }
 
     /// A place holding `argument` as the parameter type `ty`, to borrow. An argument that

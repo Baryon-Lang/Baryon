@@ -109,6 +109,12 @@ impl<'db> Lowerer<'db> {
         }
     }
 
+    /// Whether `binding`, the `Name` node a local name resolves to, is a type parameter in
+    /// scope rather than a variable: the `T` of `def f[T](x: T)` or of `class Box[T]`.
+    pub(crate) fn is_type_parameter(&self, binding: NodeId) -> bool {
+        self.type_parameters.contains(&binding)
+    }
+
     /// The type parameters of `definition`, as types, in order.
     pub(crate) fn parameter_types(&self, definition: NodeId) -> Vec<Type<'db>> {
         crate::outline::type_parameters(self.tree, definition)

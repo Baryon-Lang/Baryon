@@ -154,6 +154,7 @@
 
 mod bases;
 mod body;
+mod callables;
 mod classes;
 mod conformance;
 mod constant;

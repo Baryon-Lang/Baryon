@@ -177,8 +177,14 @@ impl<'db> Builder<'db> {
         if self.is_list_slice(target) {
             return self.list_slice_store(target, value);
         }
+        if self.is_optional_selection(target) {
+            return self.optional_selection_store(target, value);
+        }
         if self.is_selection(target) {
             return self.selection_store(target, value);
+        }
+        if self.is_optional_element(target) {
+            return self.optional_element_store(target, value);
         }
         if self.is_column(target) {
             return self.column_store(target, value);
@@ -237,6 +243,9 @@ impl<'db> Builder<'db> {
         };
         if self.is_selection(target) {
             return self.unsupported(statement, "in-place operators on elements an array chooses");
+        }
+        if self.is_optional_augmented(statement) {
+            return self.optional_augmented(statement);
         }
         let ty = self.ty(target);
         let array = self.is_array(ty);

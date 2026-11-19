@@ -48,10 +48,7 @@ impl<'db> Body<'db> {
             // A slice takes a number for every element, `a[1:n] = 0.0` (reference, "Slices").
             // So do the elements an array chooses, `a[a < 0.0] = 0.0` (roadmap 3.13.1).
             let chosen = self.is_selection(target);
-            let filled = match held.kind(self.db) {
-                TypeKind::Array { element, .. } if self.is_view(target) || chosen => Some(*element),
-                _ => None,
-            };
+            let filled = self.filled_element(target, held, chosen);
             let ty = self.expression(value, Some(filled.unwrap_or(held)));
             if let Some(element) = filled
                 && chosen
@@ -120,6 +117,20 @@ impl<'db> Body<'db> {
         }
     }
 
+    /// The type each element takes when the assignment target `target`, of type `held`, is
+    /// a slice of an array or, when `chosen`, the elements an array chooses: the element
+    /// type, `a[1:n] = 0.0`, or a `T | None` for an array with missing values,
+    /// `bids[mask] = None`. `None` for any other target.
+    fn filled_element(&self, target: NodeId, held: Type<'db>, chosen: bool) -> Option<Type<'db>> {
+        match held.kind(self.db) {
+            TypeKind::Array { element, .. } if self.is_view(target) || chosen => Some(*element),
+            &TypeKind::OptionalArray(element) if chosen => {
+                Some(Type::new(self.db, TypeKind::Optional(element)))
+            }
+            _ => None,
+        }
+    }
+
     /// `name: annotation = value`: the annotation fixes the variable's type.
     pub(super) fn annotated(&mut self, statement: NodeId) {
         let ty = match self.tree.child(statement, Role::Annotation) {
@@ -127,6 +138,11 @@ impl<'db> Body<'db> {
             None => self.lowerer.unknown(),
         };
         let value = self.tree.child(statement, Role::Value);
+        if let (Some(target), Some(value)) = (self.tree.child(statement, Role::Target), value)
+            && matches!(ty.kind(self.db), TypeKind::Callable { .. })
+        {
+            return self.annotated_function(target, value, ty);
+        }
         if let Some(target) = self.tree.child(statement, Role::Target) {
             self.bind(target, ty, None);
             if value.is_none()
@@ -141,6 +157,22 @@ impl<'db> Body<'db> {
             self.consume(value, found);
             self.expect(value, ty, found, "the annotation says");
         }
+    }
+
+    /// `target: Callable[...] = value`, such as `f: Callable[[f64], f64] = sq`. The local takes
+    /// the type of the function assigned, `sq`'s own type, as `f = sq` does (decision 0026), so
+    /// the function is known when compiling and passing `f` on calls `sq` directly. The
+    /// annotation only checks the signature. Assigning another function later is then the
+    /// usual "a variable keeps one type" error, as for `f = sq`.
+    fn annotated_function(&mut self, target: NodeId, value: NodeId, ty: Type<'db>) {
+        let found = self.expression(value, Some(ty));
+        self.consume(value, found);
+        self.expect(value, ty, found, "the annotation says");
+        let held = match found.kind(self.db) {
+            TypeKind::Function { .. } if relations::compatible(self.db, ty, found) => found,
+            _ => ty,
+        };
+        self.bind(target, held, None);
     }
 
     /// `target += value` and the other in-place operators: the result must keep the target's
@@ -169,7 +201,22 @@ impl<'db> Body<'db> {
             return;
         }
         let operand = self.expression(value, self.number_context(current));
-        let result = self.combine(statement, operator, current, operand);
+        if self.maybe_none(value, operand) {
+            return;
+        }
+        let gaps = self.is_optional_array(current) || self.is_optional_array(operand);
+        if gaps && self.tree.kind(target) != SyntaxKind::Name {
+            // A variable is given the new array; a column or a field is not yet.
+            let what = format!("`{}=` on anything but a variable", operator.symbol());
+            self.optional_array_unbuilt(statement, &what);
+            return;
+        }
+        // `bids += 1.0` is `bids = bids + 1.0` for an array with missing values.
+        let result = if gaps {
+            self.optional_array_arithmetic(statement, operator, current, operand)
+        } else {
+            self.combine(statement, operator, current, operand)
+        };
         if !relations::compatible(self.db, current, result) {
             let message = format!(
                 "`{}=` gives `{}`, but the target has type `{}`",

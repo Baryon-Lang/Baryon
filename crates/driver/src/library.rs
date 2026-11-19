@@ -7,7 +7,7 @@
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-pub(crate) const LIBRARY: [(&str, &str); 66] = [
+pub(crate) const LIBRARY: [(&str, &str); 85] = [
     ("<std>/arrays.byn", include_str!("../library/arrays.byn")),
     ("<std>/artist.byn", include_str!("../library/artist.byn")),
     ("<std>/axis.byn", include_str!("../library/axis.byn")),
@@ -57,13 +57,29 @@ pub(crate) const LIBRARY: [(&str, &str); 66] = [
         include_str!("../library/frame_joins.byn"),
     ),
     (
+        "<std>/frame_masks.byn",
+        include_str!("../library/frame_masks.byn"),
+    ),
+    (
         "<std>/frame_missing.byn",
         include_str!("../library/frame_missing.byn"),
+    ),
+    (
+        "<std>/frame_order.byn",
+        include_str!("../library/frame_order.byn"),
+    ),
+    (
+        "<std>/frame_outer.byn",
+        include_str!("../library/frame_outer.byn"),
     ),
     ("<std>/frames.byn", include_str!("../library/frames.byn")),
     ("<std>/gzip.byn", include_str!("../library/gzip.byn")),
     ("<std>/h5by.byn", include_str!("../library/h5by.byn")),
     ("<std>/image.byn", include_str!("../library/image.byn")),
+    (
+        "<std>/integrate.byn",
+        include_str!("../library/integrate.byn"),
+    ),
     ("<std>/legend.byn", include_str!("../library/legend.byn")),
     ("<std>/linalg.byn", include_str!("../library/linalg.byn")),
     (
@@ -99,12 +115,28 @@ pub(crate) const LIBRARY: [(&str, &str); 66] = [
     ("<std>/raster.byn", include_str!("../library/raster.byn")),
     ("<std>/special.byn", include_str!("../library/special.byn")),
     (
+        "<std>/special_airy.byn",
+        include_str!("../library/special_airy.byn"),
+    ),
+    (
         "<std>/special_bessel_ik.byn",
         include_str!("../library/special_bessel_ik.byn"),
     ),
     (
         "<std>/special_bessel_jy.byn",
         include_str!("../library/special_bessel_jy.byn"),
+    ),
+    (
+        "<std>/special_bessel_real.byn",
+        include_str!("../library/special_bessel_real.byn"),
+    ),
+    (
+        "<std>/special_bessel_spherical.byn",
+        include_str!("../library/special_bessel_spherical.byn"),
+    ),
+    (
+        "<std>/special_bessel_steed.byn",
+        include_str!("../library/special_bessel_steed.byn"),
     ),
     (
         "<std>/special_beta.byn",
@@ -139,6 +171,26 @@ pub(crate) const LIBRARY: [(&str, &str); 66] = [
         include_str!("../library/special_helpers.byn"),
     ),
     (
+        "<std>/special_hurwitz.byn",
+        include_str!("../library/special_hurwitz.byn"),
+    ),
+    (
+        "<std>/special_hyp0f1.byn",
+        include_str!("../library/special_hyp0f1.byn"),
+    ),
+    (
+        "<std>/special_hyp1f1.byn",
+        include_str!("../library/special_hyp1f1.byn"),
+    ),
+    (
+        "<std>/special_hyp2f1.byn",
+        include_str!("../library/special_hyp2f1.byn"),
+    ),
+    (
+        "<std>/special_hyperu.byn",
+        include_str!("../library/special_hyperu.byn"),
+    ),
+    (
         "<std>/special_incomplete_beta.byn",
         include_str!("../library/special_incomplete_beta.byn"),
     ),
@@ -151,6 +203,10 @@ pub(crate) const LIBRARY: [(&str, &str); 66] = [
         include_str!("../library/special_integrals.byn"),
     ),
     (
+        "<std>/special_kelvin.byn",
+        include_str!("../library/special_kelvin.byn"),
+    ),
+    (
         "<std>/special_kolmogorov.byn",
         include_str!("../library/special_kolmogorov.byn"),
     ),
@@ -159,12 +215,32 @@ pub(crate) const LIBRARY: [(&str, &str); 66] = [
         include_str!("../library/special_lambertw.byn"),
     ),
     (
+        "<std>/special_mathieu.byn",
+        include_str!("../library/special_mathieu.byn"),
+    ),
+    (
+        "<std>/special_mathieu_radial.byn",
+        include_str!("../library/special_mathieu_radial.byn"),
+    ),
+    (
+        "<std>/special_ndtri.byn",
+        include_str!("../library/special_ndtri.byn"),
+    ),
+    (
         "<std>/special_orthogonal.byn",
         include_str!("../library/special_orthogonal.byn"),
     ),
     (
+        "<std>/special_parabolic.byn",
+        include_str!("../library/special_parabolic.byn"),
+    ),
+    (
         "<std>/special_quadrature.byn",
         include_str!("../library/special_quadrature.byn"),
+    ),
+    (
+        "<std>/special_struve.byn",
+        include_str!("../library/special_struve.byn"),
     ),
     (
         "<std>/special_zeta.byn",

@@ -332,6 +332,8 @@ def main():
   that order; a position may repeat. Each position is bounds-checked as an index is, so one
   below 0 or past the end panics. NumPy counts a negative position from the end; here only a
   negative literal index does, as in [Indexing](#indexing).
+- A `list` chooses as the array of its items does, as in NumPy: `prices[[3, 0]]` is
+  `prices[Array([3, 0])]`. The list is copied into an array first, one allocation.
 - Either is a new array that owns its elements, not a view, so it can be kept in a name,
   returned, or chosen from again: `volume[order][volume[order] > 60]`.
 - `a[mask] = value` and `a[positions] = value` set every chosen element to one value, which is
@@ -349,6 +351,7 @@ set.
 | --- | --- |
 | `a.copy()` | A new contiguous array with the same elements |
 | `a.sum()`, `a.min()`, `a.max()` | The sum, smallest and largest element. The sum of `bool` elements counts the `True` ones and is an `int`, as in NumPy: `(a > 0.0).sum()` is how many elements are positive |
+| `mask.any()`, `mask.all()` | Whether an element of an array of `bool`s is `True`, and whether every one is, over the whole array whatever its rank, as in NumPy: `(a > 0.0).all()`. Of an empty array `any()` is `False` and `all()` is `True`. An array of numbers is compared first, `(a != 0).any()`, and `axis=` is not built. Cost: one pass over the whole array |
 | `a.sum(axis=k)`, `a.min(axis=k)`, `a.max(axis=k)` | The sums, smallest and largest elements along axis `k`: an array with that axis removed. See [Reductions along an axis](#reductions-along-an-axis) |
 | `a.mean()`, `a.mean(axis=k)` | The mean of the elements, or of each line along axis `k`, with NumPy's bits. See [Means and variances](#means-and-variances) |
 | `a.var(ddof=0)`, `a.std(ddof=0)`, each with `axis=k` | The variance and standard deviation of float elements, dividing by `n - ddof`, with NumPy's bits |
@@ -405,7 +408,9 @@ This prints `[2 0 1] [171.  189.5 410. ]`.
   real part.
 - `a` is read, not changed. Arrays of higher rank and NumPy's `axis=` and `kind=` are not
   built.
-- **Cost:** about `n log n` comparisons, and two arrays of `n` positions while it runs.
+- **Cost:** about `n` steps for `f64` elements spread evenly between the smallest and the
+  largest and for `i64` elements in a range not much wider than `n`, and about `n log n`
+  comparisons otherwise. Four arrays of `n` numbers while it runs.
 
 ### Distinct elements
 

@@ -62,6 +62,22 @@ impl<'db> Builder<'db> {
             }
         }
         let ty = self.ty(array);
+        let source = self.borrow(array);
+        self.statistic_of(place, method, (&source, ty), ddof, node);
+    }
+
+    /// The mean, variance or standard deviation, the method `method`, of every element of
+    /// the array at `source.0`, whose type is `source.1`, into `place`, for the call `node`:
+    /// `ddof` is the argument of that name, 0 when it is not given. An array with missing
+    /// values is reduced this way too, through the array of its elements that are there.
+    pub(crate) fn statistic_of(
+        &mut self,
+        place: Place,
+        method: &str,
+        (source, ty): (&Place, Type<'db>),
+        ddof: Option<NodeId>,
+        node: NodeId,
+    ) {
         let element = self.element(ty);
         let result = self.ty(node);
         let real = matches!(element.kind(self.db), TypeKind::Primitive(_))
@@ -73,16 +89,15 @@ impl<'db> Builder<'db> {
                 &format!("`{method}` of an array whose elements are not real numbers"),
             );
         }
-        let source = self.borrow(array);
-        let count = self.element_count(&source, ty, node);
+        let count = self.element_count(source, ty, node);
         let mean = self.temporary(result, node);
-        self.sum_of(Place::from(mean), (&source, ty, result), node);
+        self.sum_of(Place::from(mean), (source, ty, result), node);
         self.divide(mean, count, result, node);
         if method == "mean" {
             return self.assign(place, Rvalue::Use(Operand::Copy(Place::from(mean))), node);
         }
         let variance = self.temporary(result, node);
-        self.sum_of_squares(variance, (&source, ty), mean, node);
+        self.sum_of_squares(variance, (source, ty), mean, node);
         let freedom = self.freedom(count, ddof, node);
         self.divide(variance, freedom, result, node);
         let variance = Operand::Copy(Place::from(variance));

@@ -1,0 +1,264 @@
+"""The radial (modified) Mathieu functions for `special` (roadmap 3.18.14): `mathieu_modcem1`,
+`mathieu_modcem2`, `mathieu_modsem1` and `mathieu_modsem2` with their derivatives, and the
+Fourier coefficients themselves, `mathieu_even_coef` and `mathieu_odd_coef`.
+
+The radial functions solve the modified Mathieu equation w″ − (a − 2q cosh 2z) w = 0
+(DLMF 28.20), the equation the angular functions' x becomes at x = iz, with the same
+characteristic value a. They are sums of products of Bessel functions over the Fourier
+coefficients of `special_mathieu` (DLMF 28.24.1 to 28.24.4): with h = √q, u = h e^(−z) and
+v = h e^z,
+
+- Mc_m(z, q) = Σ (−1)^(ℓ+n) (A_{2ℓ+p}/A_{2s+p}) T_ℓ, with
+  T_ℓ = J_{ℓ−s}(u) C_{ℓ+s+p}(v) + J_{ℓ+s+p}(u) C_{ℓ−s}(v), halved when p = 0 and s = 0;
+- Ms_m(z, q) is the same sum over the B, with the plus in T_ℓ turned into a minus,
+
+where p is 0 or 1 as m is even or odd, n is ⌊m/2⌋, ℓ starts at 1 for Ms of even m and at 0
+otherwise, and C is J for the first kind and Y for the second. The index s is free: it is taken at
+the largest coefficient, so that the terms do not cancel there.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, isfinite, nan, sqrt
+from special_bessel_jy import jn, y0, y1
+from special_mathieu import allowed, fourier_coefficients
+
+
+def _signed(ladder: Array[f64, 1], k: int) -> f64:
+    """C_k from the ladder C₀, C₁, … for any whole k, with C₋ₖ = (−1)ᵏ Cₖ."""
+    if k >= 0:
+        return ladder[k]
+    if k % 2 == 0:
+        return ladder[-k]
+    return -ladder[-k]
+
+
+def _slope(ladder: Array[f64, 1], k: int) -> f64:
+    """C_k′, as (C_{k−1} − C_{k+1})/2, which holds for J and Y alike."""
+    return 0.5 * (_signed(ladder, k - 1) - _signed(ladder, k + 1))
+
+
+def _first_ladder(x: f64, top: int) -> Array[f64, 1]:
+    """J₀(x) to J_top(x), each from `jn`, which keeps every one accurate where an upward
+    recurrence would lose the small ones."""
+    ladder = Array.zeros(top + 1, f64)
+    for k in range(top + 1):
+        ladder[k] = jn(k, x)
+    return ladder
+
+
+def _second_ladder(x: f64, top: int) -> Array[f64, 1]:
+    """Y₀(x) to Y_top(x) by the upward recurrence Y_{k+1} = (2k/x) Y_k − Y_{k−1}, stable for Y,
+    which grows with the order."""
+    ladder = Array.zeros(top + 1, f64)
+    ladder[0] = y0(x)
+    if top > 0:
+        ladder[1] = y1(x)
+    for k in range(1, top):
+        ladder[k + 1] = 2.0 * k / x * ladder[k] - ladder[k - 1]
+    return ladder
+
+
+def _radial(m: f64, q: f64, z: f64, cosine: bool, second: bool) -> tuple[f64, f64]:
+    """Mc or Ms (`cosine` or not) of the first or `second` kind, and its derivative in z, for q
+    above 0, by the Bessel product series of the module's documentation."""
+    coefficients = fourier_coefficients(m, q, cosine, 0)
+    odd = 1 if m - 2.0 * int(0.5 * m) == 1.0 else 0
+    # ℓ of the first coefficient: 1 for Ms of even m, whose B start at B₂, else 0.
+    start = 1 if (not cosine and odd == 0) else 0
+    largest = 0
+    for i in range(coefficients.shape[0]):
+        if abs(coefficients[i]) > abs(coefficients[largest]):
+            largest = i
+    count = coefficients.shape[0]
+    s = largest + start
+    top = count + start + s + 2
+    h = sqrt(q)
+    u = h * exp(-z)
+    v = h * exp(z)
+    inner = _first_ladder(u, top)
+    outer = _second_ladder(v, top) if second else _first_ladder(v, top)
+    n = int(0.5 * m)
+    sign = 1.0 if cosine else -1.0
+    value = 0.0
+    slope = 0.0
+    size = 0.0
+    for i in range(count):
+        ell = i + start
+        weight = coefficients[i] / coefficients[largest]
+        if (ell + n) % 2 == 1:
+            weight = -weight
+        low = ell - s
+        high = ell + s + odd
+        first = _signed(inner, low) * _signed(outer, high)
+        other = _signed(inner, high) * _signed(outer, low)
+        turn = -u * _slope(inner, low) * _signed(outer, high)
+        turn += v * _signed(inner, low) * _slope(outer, high)
+        turn += sign * (-u * _slope(inner, high) * _signed(outer, low))
+        turn += sign * v * _signed(inner, high) * _slope(outer, low)
+        term = abs(weight) * (abs(first) + abs(other))
+        if not isfinite(term):
+            # Past here Y of a small v has overflowed while the coefficients have fallen
+            # faster still: the terms left are far below the sum.
+            break
+        value += weight * (first + sign * other)
+        slope += weight * turn
+        size += term
+        # Past the largest coefficient the terms fall: the coefficients faster than any Y
+        # grows, since A_ℓ Y_{ℓ+s}(v) falls like (√q/2)^ℓ/ℓ!. Not the coefficients alone, as
+        # one of 1e-20 times a Y of 1e9 still counts.
+        if i > largest and term < 1.0e-20 * size:
+            break
+    if cosine and odd == 0 and s == 0:
+        return (0.5 * value, 0.5 * slope)
+    return (value, slope)
+
+
+def _checked(m: f64, q: f64, z: f64, cosine: bool, second: bool) -> tuple[f64, f64]:
+    """The radial function after the checks every one of them makes: a whole m its kind
+    allows, q above 0 and finite arguments, or NaN in both places, as SciPy gives."""
+    if not allowed(m, 0.0 if cosine else 1.0) or not q > 0.0 or z != z:
+        return (nan, nan)
+    if abs(q) == abs(q) + 1.0 or abs(z) == abs(z) + 1.0:
+        return (nan, nan)
+    if z >= 0.0:
+        return _radial(m, q, z, cosine, second)
+    return _reflected(m, q, -z, cosine, second)
+
+
+def _reflected(m: f64, q: f64, y: f64, cosine: bool, second: bool) -> tuple[f64, f64]:
+    """The radial function and its derivative at z = −y, for y above 0, from the functions at
+    y, where u = h e^(−z) stays below v and the series need no large Bessel J of u against a
+    large Y of a small v.
+
+    The first kind has a parity: Mc⁽¹⁾ is even in z and Ms⁽¹⁾ odd. The second kind at −z is
+    another solution, so a combination of the two at z, fixed by the values and slopes at 0,
+    where Mc⁽¹⁾′ and Ms⁽¹⁾ are 0: Mc⁽²⁾(−y) = 2 (Mc⁽²⁾(0)/Mc⁽¹⁾(0)) Mc⁽¹⁾(y) − Mc⁽²⁾(y) and
+    Ms⁽²⁾(−y) = −2 (Ms⁽²⁾′(0)/Ms⁽¹⁾′(0)) Ms⁽¹⁾(y) + Ms⁽²⁾(y). The Wronskian Mc⁽¹⁾Mc⁽²⁾′ −
+    Mc⁽¹⁾′Mc⁽²⁾ = 2/π keeps each divisor away from 0."""
+    value, slope = _radial(m, q, y, cosine, False)
+    if not second:
+        if cosine:
+            return (value, -slope)
+        return (-value, slope)
+    other, other_slope = _radial(m, q, y, cosine, True)
+    first_origin, first_origin_slope = _radial(m, q, 0.0, cosine, False)
+    second_origin, second_origin_slope = _radial(m, q, 0.0, cosine, True)
+    if cosine:
+        weight = 2.0 * second_origin / first_origin
+        return (weight * value - other, other_slope - weight * slope)
+    weight = -2.0 * second_origin_slope / first_origin_slope
+    return (weight * value + other, -weight * slope - other_slope)
+
+
+def mathieu_modcem1(m: f64, q: f64, z: f64) -> tuple[f64, f64]:
+    """The even radial Mathieu function of the first kind, Mc⁽¹⁾_m(z, q), and its derivative in
+    z, as `scipy.special.mathieu_modcem1`, for a whole m from 0 up and q above 0.
+
+    ```python
+    from special import mathieu_modcem1
+
+    value, slope = mathieu_modcem1(2.0, 1.5, 0.7)
+    print(value)    # 0.5011385205497332
+    print(slope)    # 0.17377242730164202
+    ```
+    """
+    return _checked(m, q, z, True, False)
+
+
+def mathieu_modcem2(m: f64, q: f64, z: f64) -> tuple[f64, f64]:
+    """The even radial Mathieu function of the second kind, Mc⁽²⁾_m(z, q), and its derivative
+    in z, as `scipy.special.mathieu_modcem2`: the first kind's Bessel J of h e^z turned into Y.
+
+    ```python
+    from special import mathieu_modcem2
+
+    print(mathieu_modcem2(2.0, 1.5, 0.7)[0])    # -0.34465045918069703
+    ```
+    """
+    return _checked(m, q, z, True, True)
+
+
+def mathieu_modsem1(m: f64, q: f64, z: f64) -> tuple[f64, f64]:
+    """The odd radial Mathieu function of the first kind, Ms⁽¹⁾_m(z, q), and its derivative in
+    z, as `scipy.special.mathieu_modsem1`, for a whole m from 1 up and q above 0.
+
+    ```python
+    from special import mathieu_modsem1
+
+    print(mathieu_modsem1(2.0, 1.5, 0.7)[0])    # 0.4100506040303216
+    ```
+    """
+    return _checked(m, q, z, False, False)
+
+
+def mathieu_modsem2(m: f64, q: f64, z: f64) -> tuple[f64, f64]:
+    """The odd radial Mathieu function of the second kind, Ms⁽²⁾_m(z, q), and its derivative
+    in z, as `scipy.special.mathieu_modsem2`.
+
+    ```python
+    from special import mathieu_modsem2
+
+    print(mathieu_modsem2(2.0, 1.5, 0.7)[0])    # -0.41152730819016664
+    ```
+    """
+    return _checked(m, q, z, False, True)
+
+
+def _scipy_count(m: f64, q: f64) -> int:
+    """How many coefficients SciPy returns: ⌊q_m + m/2⌋, with q_m its fitted estimate of how
+    many matter (`specfun.f`'s routine FCOEF)."""
+    root = sqrt(q)
+    if q < 1.0:
+        estimate = 7.5 + 56.1 * root - 134.7 * q + 90.7 * root * q
+    else:
+        estimate = 17.0 + 3.1 * root - 0.126 * q + 0.0037 * root * q
+    return int(estimate + 0.5 * m)
+
+
+def _coefficients(m: f64, q: f64, cosine: bool) -> Raises[Array[f64, 1], ValueError]:
+    """The first coefficients of ce_m or se_m, as many as SciPy returns."""
+    if not allowed(m, 0.0 if cosine else 1.0):
+        raise ValueError("m must be a whole number at least 0" if cosine else
+                         "m must be a whole number at least 1")
+    if not q >= 0.0 or abs(q) == abs(q) + 1.0:
+        raise ValueError("q must be a finite number at least 0")
+    count = _scipy_count(m, q)
+    # Twenty more than are returned, so that the last returned is not cut short by the end of
+    # the matrix.
+    every = fourier_coefficients(m, q, cosine, count + 20)
+    result = Array.zeros(count, f64)
+    for i in range(count):
+        result[i] = every[i]
+    return result
+
+
+def mathieu_even_coef(m: f64, q: f64) -> Raises[Array[f64, 1], ValueError]:
+    """The Fourier coefficients of ce_m(x, q), A₀, A₂, … for an even m and A₁, A₃, … for an odd
+    one, as `scipy.special.mathieu_even_coef` returns them and as many: scaled so that
+    2A₀² + A₂² + … = 1, or the plain sum of squares 1. A q below 0 or an m that is not a whole
+    number from 0 up raises `ValueError`, as SciPy does.
+
+    ```python
+    from special import mathieu_even_coef
+
+    coefficients = mathieu_even_coef(2.0, 1.5)
+    print(coefficients.shape[0])    # 21
+    print(coefficients[1])          # 0.9061913477138984
+    ```
+    """
+    return _coefficients(m, q, True)
+
+
+def mathieu_odd_coef(m: f64, q: f64) -> Raises[Array[f64, 1], ValueError]:
+    """The Fourier coefficients of se_m(x, q), B₂, B₄, … for an even m and B₁, B₃, … for an
+    odd one, as `scipy.special.mathieu_odd_coef` returns them and as many. An m that is not a
+    whole number from 1 up raises `ValueError`.
+
+    ```python
+    from special import mathieu_odd_coef
+
+    print(mathieu_odd_coef(3.0, 1.5)[1])    # 0.9836977453549693
+    ```
+    """
+    return _coefficients(m, q, False)

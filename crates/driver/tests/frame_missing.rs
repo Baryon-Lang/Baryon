@@ -42,14 +42,14 @@ def uses(quotes: DataFrame[Quote], rows: list[Quote], prices: DataFrame[Price]):
     names: DataFrame[Named] = DataFrame({"name": Array(["a"])})
     words = Array(["a", None])
     filled = words.fillna(1)
-    longest = words.max()
+    longest = words.sum()
     first: f64 = quotes[0].bid
     narrow = quotes.fillna({"price": 1.0})
-    full = quotes.dropna(how="all")
-    order = quotes.bid.argsort()
+    full = quotes.dropna(thresh=2)
+    order = quotes.bid.cumsum()
     groups = quotes.groupby("price").agg(top=("bid", "top"))
     joined = prices.merge(quotes, on="bid")
-    stacked = quotes.bid.std()
+    stacked = quotes.bid.median()
     for row in quotes.itertuples():
         total = row.bid + 1.0
     print((quotes.copy(), 1))
@@ -71,12 +71,12 @@ error: expected `str`, found `i64`
 17 |     filled = words.fillna(1)
    |                           ^ the array holds `str`
 
-error: the method `max` is not built for an array with missing values yet
+error: the method `sum` is not built for an array with missing values yet
   --> main.byn:18:15
    |
-18 |     longest = words.max()
+18 |     longest = words.sum()
    |               ^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes with roadmap item 3.13.6
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
 
 error: this value may be `None`
   --> main.byn:19:18
@@ -91,19 +91,19 @@ error: the column `price` cannot hold `None`
 20 |     narrow = quotes.fillna({"price": 1.0})
    |                             ^^^^^^^ has nothing to fill
 
-error: `dropna` of a `DataFrame` takes no arguments yet
-  --> main.byn:21:12
+error: `dropna` of a `DataFrame` has no argument `thresh`
+  --> main.byn:21:26
    |
-21 |     full = quotes.dropna(how="all")
-   |            ^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-   = note: `df.dropna()` drops each row with a `None` in any column; to look at some columns only, take them first: `df[["bid", "ask"]].dropna()`
+21 |     full = quotes.dropna(thresh=2)
+   |                          ^^^^^^ not an argument that is built
+   = note: `how=` and `subset=` are built; `thresh=` and `axis=` are not
 
-error: the method `argsort` is not built for an array with missing values yet
+error: the method `cumsum` is not built for an array with missing values yet
   --> main.byn:22:13
    |
-22 |     order = quotes.bid.argsort()
-   |             ^^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes with roadmap item 3.13.6
+22 |     order = quotes.bid.cumsum()
+   |             ^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
 
 error: `agg` has no reduction `top`
   --> main.byn:23:54
@@ -119,12 +119,12 @@ error: `DataFrame[Price]` has no column `bid`
    |                                      ^^^^^ not a column
    = note: its columns are `price`
 
-error: the method `std` is not built for an array with missing values yet
+error: the method `median` is not built for an array with missing values yet
   --> main.byn:25:15
    |
-25 |     stacked = quotes.bid.std()
-   |               ^^^^^^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None`, and the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `count` and, for numbers, `sum`, `min`, `max` and `mean`; the rest comes with roadmap item 3.13.6
+25 |     stacked = quotes.bid.median()
+   |               ^^^^^^^^^^^^^^^^^^^ an array that may hold `None`
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
 
 error: this value may be `None`
   --> main.byn:27:17

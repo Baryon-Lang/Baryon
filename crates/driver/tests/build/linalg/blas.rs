@@ -2,7 +2,7 @@
 //! program gives the same results as without the flag on matrices whose products are exact.
 //! CI installs `OpenBLAS` on Linux; macOS has Accelerate.
 
-use super::{BARYON, baryon_build, build_runtime, package, stderr};
+use crate::{BARYON, baryon_build, build_runtime, package, stderr};
 use std::process::Command;
 
 /// Matrices of small integers, so every product and sum is exact and BLAS must print the same

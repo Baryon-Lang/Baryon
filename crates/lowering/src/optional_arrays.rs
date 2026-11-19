@@ -8,7 +8,7 @@
 
 use crate::builder::Builder;
 use crate::frames::erase;
-use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
+use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
 
@@ -161,6 +161,129 @@ impl<'db> Builder<'db> {
             self.frame_call("optional_element", vec![element], arguments, optional, node)?
         };
         Some(Place::from(read))
+    }
+
+    /// The type a `for` loop over an array with missing values gives its variable: `T | None`
+    /// for the array's elements `inner`, and the unknown type when there are none.
+    pub(crate) fn ty_or(&self, inner: Option<Type<'db>>) -> Type<'db> {
+        match inner {
+            Some(element) => Type::new(self.db, TypeKind::Optional(element)),
+            None => Type::new(self.db, TypeKind::Unknown),
+        }
+    }
+
+    /// The element at the position `at` of the array of numbers or `bool`s with missing
+    /// values at `array`, for a `for` loop whose variable is an `element`, a `T | None`: a
+    /// temporary the library's `optional_element` fills. The loop keeps `at` inside the
+    /// array. Cost: one call that reads the bitmap and the values on each pass.
+    pub(crate) fn optional_loop_element(
+        &mut self,
+        array: &Place,
+        at: Local,
+        element: Type<'db>,
+        node: NodeId,
+    ) -> Place {
+        let inner = match element.kind(self.db) {
+            TypeKind::Optional(inner) => *inner,
+            _ => element,
+        };
+        let values = array.clone().project(Projection::Field(VALUES));
+        let bits = array.clone().project(Projection::Field(VALIDITY));
+        if matches!(inner.kind(self.db), TypeKind::Str) {
+            return self.optional_text_loop_element((values, bits), at, element, node);
+        }
+        let arguments = vec![values, bits, Place::from(at)];
+        let read = self.frame_call("optional_element", vec![inner], arguments, element, node);
+        // After a report the program is not built, and the loop still needs a place to name.
+        Place::from(read.unwrap_or_else(|| self.temporary(element, node)))
+    }
+
+    /// The element at the position `at` of the array of text with missing values stored as
+    /// `values` and `bits`, for a `for` loop whose variable is an `element`, a `str | None`.
+    /// Where the element is there it holds a `str` that borrows the array's bytes, as a
+    /// loop over a text array gives, so nothing is copied and nothing is dropped; where it
+    /// is not, `None`. Cost: one call that reads the bitmap on each pass.
+    fn optional_text_loop_element(
+        &mut self,
+        (values, bits): (Place, Place),
+        at: Local,
+        element: Type<'db>,
+        node: NodeId,
+    ) -> Place {
+        let item = self.temporary(element, node);
+        let boolean = self.boolean_type();
+        let arguments = vec![bits, Place::from(at)];
+        let Some(there) = self.frame_call("_valid", Vec::new(), arguments, boolean, node) else {
+            return Place::from(item);
+        };
+        let (present, absent, after) = (self.new_block(), self.new_block(), self.new_block());
+        self.terminate(
+            TerminatorKind::Branch {
+                condition: Operand::Copy(Place::from(there)),
+                then: present,
+                otherwise: absent,
+            },
+            node,
+        );
+        self.start(present);
+        let text = self.text_array_element(&values, at, node);
+        let held = Rvalue::Aggregate(element, vec![Operand::Move(text)]);
+        self.assign(Place::from(item), held, node);
+        self.terminate(TerminatorKind::Goto(after), node);
+        self.start(absent);
+        let nothing = Operand::Constant(Constant {
+            ty: element,
+            value: ConstantValue::None,
+        });
+        self.assign(Place::from(item), Rvalue::Use(nothing), node);
+        self.terminate(TerminatorKind::Goto(after), node);
+        self.start(after);
+        Place::from(item)
+    }
+
+    /// Whether `node` is `values[index]` naming one element of an array with missing values.
+    pub(crate) fn is_optional_element(&self, node: NodeId) -> bool {
+        self.tree.kind(node) == SyntaxKind::Subscript
+            && !self.is_selection(node)
+            && self
+                .tree
+                .child(node, Role::Value)
+                .is_some_and(|value| self.optional_array_element(value).is_some())
+    }
+
+    /// `values[index] = value`, where `target` names one element of an array of numbers or
+    /// `bool`s with missing values: the element becomes `value`, a number or `None`. The
+    /// value is computed first, then `index` is checked to be in range, and the library's
+    /// `set_optional_element` writes the stored value and its validity bit in place. Under
+    /// a `None` it stores the filler, so the stored values never depend on what was there.
+    pub(crate) fn optional_element_store(&mut self, target: NodeId, value: NodeId) {
+        let (Some(array), Some(index)) = (
+            self.tree.child(target, Role::Value),
+            self.tree.child(target, Role::Index),
+        ) else {
+            return;
+        };
+        let Some(element) = self.optional_array_element(array) else {
+            return;
+        };
+        let Some(filler) = self.filler(element) else {
+            return self.unsupported(target, "assigning an element of this array");
+        };
+        let optional = Type::new(self.db, TypeKind::Optional(element));
+        let item = self.temporary(optional, value);
+        self.write(Place::from(item), optional, value);
+        let Some(base) = self.changed_place(array) else {
+            return;
+        };
+        let length = self.optional_array_length(&base, element, target);
+        let position = Place::from(self.index_within(Some(length), 0, index, false));
+        let filler = Place::from(self.held(element, Operand::Constant(filler), target));
+        let changed = vec![
+            base.clone().project(Projection::Field(VALUES)),
+            base.project(Projection::Field(VALIDITY)),
+        ];
+        let read = vec![position, Place::from(item), filler];
+        self.frame_update("set_optional_element", element, (changed, read), target);
     }
 
     /// Whether `node` is `names[index]` on an array of text with missing values, which

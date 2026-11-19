@@ -12,7 +12,16 @@ exponential integrals, zeta and Spence's function, and Lambert W function (3.18.
 functions (3.18.9), from `elliptic_functions.txt`, and those in
 [`../../build/special_polynomials.rs`](../../build/special_polynomials.rs) its orthogonal
 polynomials and spherical harmonics (3.18.10), from `orthogonal_polynomials.txt`, and its Gauss
-quadrature rules (3.18.10), from `gauss_quadrature.txt`. Each line is a
+quadrature rules (3.18.10), from `gauss_quadrature.txt`, and those in
+[`../../build/special_bessel.rs`](../../build/special_bessel.rs) its Bessel functions of real
+order and spherical Bessel functions (3.18.5), from `bessel_real.txt`, and those in
+[`../../build/special_waves.rs`](../../build/special_waves.rs) its Airy, Kelvin and Struve
+functions (3.18.7), from `airy.txt`, `kelvin.txt` and `struve.txt`, and those in
+[`../../build/special_hypergeometric.rs`](../../build/special_hypergeometric.rs) its confluent
+hypergeometric functions (3.18.8), from `hypergeometric.txt`, and the Gauss function `hyp2f1`,
+from `gauss.txt`, and those in
+[`../../build/special_parabolic.rs`](../../build/special_parabolic.rs) its parabolic cylinder
+functions (3.18.14), from `parabolic.txt`. Each line is a
 function's name, its arguments and the value the function should give, separated by spaces and
 written as Python's `repr` writes a float:
 
@@ -1270,4 +1279,1408 @@ for family, alpha in (("genlaguerre", -1.0), ("gegenbauer", -0.5)):
         add("roots_" + family + "_w", 3, i, alpha, 0.0, 1.0, w[i])
 with open("gauss_quadrature.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
+```
+
+## Bessel functions of real order
+
+In `bessel_real.txt` each case holds, before the reference value, the size its error is
+measured against. Past the turning point x = |v|, J and Y and their derivatives are measured
+against the modulus √(J² + Y²), the envelope they oscillate under; everywhere else, and for I
+and K always, against the value itself. A case of `jvp`, `yvp`, `ivp` or `kvp` holds the order
+of the derivative after the argument, and a case of a spherical function holds 1 there for its
+derivative and 0 for its value. mpmath's `besselk` gives no derivative, so the script sums K at
+neighbouring orders (DLMF 10.29.5) at 50 digits instead. The script below recorded the cases
+with its own seed, with mpmath 1.4.1 and SciPy 1.18.1 at the ends; run it from this directory
+with `python3 -I`:
+
+```python
+import math
+
+import mpmath
+import numpy
+import scipy.special
+
+generator = numpy.random.default_rng(318005)
+inf, nan = math.inf, math.nan
+lines = []
+
+
+def add(name, arguments, size, value):
+    lines.append(" ".join([name] + [repr(x) if isinstance(x, float) else str(x) for x in arguments]
+                          + [repr(float(size)), repr(float(value))]))
+
+
+def besselk_slope(v, x, n):
+    """The n-th derivative of K_v(x), which mpmath's besselk does not give, by DLMF 10.29.5."""
+    return sum(mpmath.binomial(n, k) * mpmath.besselk(v - n + 2 * k, x)
+               for k in range(n + 1)) / (-2) ** n
+
+
+def order():
+    """An order: small, whole or half-whole, or anywhere up to 60 in size, of either sign."""
+    kind = generator.uniform()
+    if kind < 0.3:
+        v = float(generator.uniform(0, 3))
+    elif kind < 0.45:
+        v = float(generator.integers(0, 40))
+    elif kind < 0.6:
+        v = float(generator.integers(0, 40)) + 0.5
+    else:
+        v = float(generator.uniform(0, 60))
+    if generator.uniform() < 0.3:
+        v = -v
+    return v
+
+
+def argument(v):
+    """An argument: spread from 1e-3 to 1e4 on a log scale, near the turning point |v|, or
+    far out, up to 1e8."""
+    kind = generator.uniform()
+    if kind < 0.6:
+        return float(10 ** generator.uniform(-3, 4))
+    if kind < 0.85:
+        return float(abs(v) * generator.uniform(0.8, 1.2) + generator.uniform(0, 1))
+    return float(10 ** generator.uniform(4, 8))
+
+
+with mpmath.workdps(50):
+    for _ in range(500):
+        v = order()
+        x = argument(v)
+        V, X = mpmath.mpf(v), mpmath.mpf(x)
+        j, y = mpmath.besselj(V, X), mpmath.bessely(V, X)
+        jp, yp = mpmath.besselj(V, X, derivative=1), mpmath.bessely(V, X, derivative=1)
+        modulus, slope = mpmath.sqrt(j * j + y * y), mpmath.sqrt(jp * jp + yp * yp)
+        # Past the turning point |v| the functions oscillate, and are measured against the
+        # modulus sqrt(J² + Y²), their envelope; before it, against themselves.
+        inside = x <= abs(v)
+        add("jv", [v, x], abs(j) if inside else modulus, j)
+        add("yv", [v, x], abs(y) if inside else modulus, y)
+        add("jvp", [v, x, 1], abs(jp) if inside else slope, jp)
+        add("yvp", [v, x, 1], abs(yp) if inside else slope, yp)
+        if x < 700:
+            i, k = mpmath.besseli(V, X), mpmath.besselk(V, X)
+            add("iv", [v, x], abs(i), i)
+            add("kv", [v, x], abs(k), k)
+            ip, kp = mpmath.besseli(V, X, derivative=1), besselk_slope(V, X, 1)
+            add("ivp", [v, x, 1], abs(ip), ip)
+            add("kvp", [v, x, 1], abs(kp), kp)
+        ie = mpmath.besseli(V, X) * mpmath.exp(-X)
+        ke = mpmath.besselk(V, X) * mpmath.exp(X)
+        add("ive", [v, x], abs(ie), ie)
+        add("kve", [v, x], abs(ke), ke)
+    # Higher derivatives at moderate arguments.
+    for _ in range(40):
+        v = order()
+        x = float(10 ** generator.uniform(-1, 2))
+        n = int(generator.integers(2, 5))
+        V, X = mpmath.mpf(v), mpmath.mpf(x)
+        jp, yp = mpmath.besselj(V, X, derivative=n), mpmath.bessely(V, X, derivative=n)
+        slope = mpmath.sqrt(jp * jp + yp * yp)
+        add("jvp", [v, x, n], slope, jp)
+        add("yvp", [v, x, n], slope, yp)
+        ip, kp = mpmath.besseli(V, X, derivative=n), besselk_slope(V, X, n)
+        add("ivp", [v, x, n], abs(ip), ip)
+        add("kvp", [v, x, n], abs(kp), kp)
+    # Negative arguments at whole orders.
+    for _ in range(20):
+        v = float(generator.integers(-20, 21))
+        x = -float(10 ** generator.uniform(-2, 2.5))
+        V, X = mpmath.mpf(v), mpmath.mpf(x)
+        j = mpmath.besselj(V, X)
+        add("jv", [v, x], mpmath.sqrt(j * j + mpmath.bessely(V, -X) ** 2), j)
+        i = mpmath.besseli(V, X)
+        add("iv", [v, x], abs(i), i)
+        add("ive", [v, x], abs(i) * mpmath.exp(X), i * mpmath.exp(X))
+    # Spherical Bessel functions and their derivatives, of either sign of argument.
+    def spherical(kind, n, x):
+        """jₙ, yₙ, iₙ or kₙ at 50 digits; below 0 by their parity, and kₙ by SciPy's closed
+        form, which continues it there."""
+        if kind == "kn" and x < 0:
+            return (mpmath.pi / 2 * mpmath.exp(-x) / x
+                    * sum(mpmath.factorial(n + k) / (mpmath.factorial(k) * mpmath.factorial(n - k))
+                          * (2 * x) ** -k for k in range(n + 1)))
+        if x < 0:
+            sign = (-1) ** n if kind in ("jn", "in") else (-1) ** (n + 1)
+            return sign * spherical(kind, n, -x)
+        cylinder = {"jn": mpmath.besselj, "yn": mpmath.bessely, "in": mpmath.besseli,
+                    "kn": mpmath.besselk}[kind]
+        return mpmath.sqrt(mpmath.pi / (2 * x)) * cylinder(n + mpmath.mpf(0.5), x)
+
+    def slope(kind, n, x):
+        """The derivative, by DLMF 10.51.2 and 10.51.5 at 50 digits."""
+        if n == 0:
+            return {"jn": -1, "yn": -1, "in": 1, "kn": -1}[kind] * spherical(kind, 1, x)
+        below = -1 if kind == "kn" else 1
+        return below * spherical(kind, n - 1, x) - (n + 1) / x * spherical(kind, n, x)
+
+    for _ in range(150):
+        n = int(generator.integers(0, 12)) if generator.uniform() < 0.5 else int(
+            generator.integers(0, 60))
+        x = float(10 ** generator.uniform(-3, 3.5))
+        if generator.uniform() < 0.15:
+            x = -x
+        X = mpmath.mpf(x)
+        for kind in ("jn", "yn", "in", "kn"):
+            if kind in ("in", "kn") and abs(x) > 700:
+                continue
+            for derivative in (0, 1):
+                value = slope(kind, n, X) if derivative else spherical(kind, n, X)
+                size = abs(value)
+                if kind in ("jn", "yn") and abs(x) > n:
+                    pair = [slope(k, n, X) if derivative else spherical(k, n, X)
+                            for k in ("jn", "yn")]
+                    size = mpmath.sqrt(pair[0] ** 2 + pair[1] ** 2)
+                add("spherical_" + kind, [n, x, derivative], size, value)
+# Large orders, from 60 to 250, where the recurrences of Steed's method run long. mpmath's
+# besselk needs more digits here, as I₋ᵥ − Iᵥ cancels.
+with mpmath.workdps(150):
+    for _ in range(100):
+        v = float(generator.uniform(60, 250))
+        x = float(10 ** generator.uniform(0, 3.3))
+        V, X = mpmath.mpf(v), mpmath.mpf(x)
+        j, y = mpmath.besselj(V, X), mpmath.bessely(V, X)
+        modulus = mpmath.sqrt(j * j + y * y)
+        inside = x <= abs(v)
+        for name, value in (("jv", j), ("yv", y)):
+            if 1e-300 < abs(value) < 1e300:
+                add(name, [v, x], abs(value) if inside else modulus, value)
+        for name, value in (("iv", mpmath.besseli(V, X)), ("kv", mpmath.besselk(V, X))):
+            if 1e-300 < abs(value) < 1e300:
+                add(name, [v, x], abs(value), value)
+# The ends, as SciPy 1.18.1 gives them, except where SciPy's value is not the limit, which the
+# reference lists. At x = 0 and a negative order v that is not whole, J_v and I_v are infinite
+# with the sign of 1/gamma(v + 1), where SciPy gives +inf for iv and NaN for jve and ive, and
+# Y_v is 0 when -v is half-whole, since Y_v = ±J_(-v) there, where SciPy gives an infinity.
+# The scaled forms are their functions at 0 and at an infinite order, where SciPy gives NaN,
+# and ive and kve stay finite past 1e10. yv and kv at an infinite order, K of either sign, and
+# jv, yv and iv at an infinite argument, are their limits.
+large = mpmath.mpf(10) ** 10
+ends = {
+    ("yv", -0.5, 0.0): 0.0, ("yv", -1.5, 0.0): 0.0, ("iv", -1.5, 0.0): -inf,
+    ("jve", -0.5, 0.0): inf, ("jve", -1.5, 0.0): -inf,
+    ("ive", -0.5, 0.0): inf, ("ive", -1.5, 0.0): -inf,
+    ("yve", 0.0, 0.0): -inf, ("yve", 1.0, 0.0): -inf, ("yve", 0.5, 0.0): -inf,
+    ("yve", -0.5, 0.0): 0.0, ("yve", -1.0, 0.0): inf, ("yve", -1.5, 0.0): 0.0,
+    ("yve", 2.5, 0.0): -inf, ("yve", -2.0, 0.0): -inf,
+    ("ive", 0.0, 1e10): float(1 / mpmath.sqrt(2 * mpmath.pi * large)),
+    ("ive", 0.7, 1e10): float(mpmath.besseli(0.7, large) * mpmath.exp(-large)),
+    ("kve", 0.0, 1e10): float(mpmath.besselk(0, large) * mpmath.exp(large)),
+    ("kve", 0.7, 1e10): float(mpmath.besselk(0.7, large) * mpmath.exp(large)),
+    ("kv", -inf, 1.0): inf, ("kve", -inf, 1.0): inf,
+    ("jv", 0.5, inf): 0.0, ("yv", 0.5, inf): 0.0, ("iv", 0.5, inf): inf, ("ive", 0.5, inf): 0.0,
+    ("kve", 0.5, inf): 0.0, ("jve", 0.5, inf): 0.0, ("yve", 0.5, inf): 0.0,
+    ("yv", inf, 1.0): -inf, ("kv", inf, 1.0): inf, ("kve", inf, 1.0): inf,
+    ("jv", -inf, 1.0): nan, ("iv", -inf, 1.0): nan, ("jve", inf, 1.0): 0.0,
+    ("ive", inf, 1.0): 0.0, ("yve", inf, 1.0): -inf,
+}
+points = [(0.0, 0.0), (1.0, 0.0), (0.5, 0.0), (-0.5, 0.0), (-1.0, 0.0), (-1.5, 0.0), (2.5, 0.0),
+          (-2.0, 0.0), (2.0, -1.5), (2.5, -1.5), (-3.0, -1.5), (0.5, inf), (0.5, -inf), (inf, 1.0),
+          (-inf, 1.0), (nan, 1.0), (1.0, nan), (0.0, 1e10), (0.7, 1e10)]
+for name in ("jv", "yv", "iv", "kv", "jve", "yve", "ive", "kve"):
+    for v, x in points:
+        with numpy.errstate(all="ignore"):
+            value = float(getattr(scipy.special, name)(v, x))
+        value = ends.get((name, v, x), value)
+        if math.isfinite(value) and value != 0.0 and (name, v, x) not in ends:
+            continue
+        add(name, [v, x], 1.0, value)
+# The spherical functions' ends, as SciPy gives them, except yₙ′(0) for n from 1, which is ∞
+# where SciPy gives NaN, and iₙ′(∞), which is ∞ where SciPy gives NaN from n = 3.
+for kind in ("jn", "yn", "in", "kn"):
+    for derivative in (False, True):
+        for n, x in [(0, 0.0), (1, 0.0), (2, 0.0), (-1, 1.0), (0, inf), (0, -inf), (3, inf),
+                     (0, nan)]:
+            with numpy.errstate(all="ignore"):
+                value = float(getattr(scipy.special, "spherical_" + kind)(n, x, derivative))
+            if kind == "yn" and derivative and x == 0.0 and n >= 1:
+                value = inf
+            if kind == "in" and derivative and x == inf:
+                value = inf
+            add("spherical_" + kind, [n, x, int(derivative)], 1.0, value)
+with open("bessel_real.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Airy functions
+
+In `airy.txt` each case holds, before the reference value, the size its error is measured
+against: below 0, where Ai and Bi oscillate, the envelope √(Ai² + Bi²) for Ai and Bi and
+√(Ai′² + Bi′²) for the derivatives; above 0, the value itself. Each of `airy` and `airye` is
+recorded as four names, one for each value it returns. The script below recorded the cases with
+its own seed, with mpmath 1.4.1 at 60 digits; run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318007)
+lines = []
+
+
+def add(name, x, size, value):
+    lines.append(f"{name} {x!r} {float(size)!r} {float(value)!r}")
+
+
+def record(x):
+    with mpmath.workdps(60):
+        m = mpmath.mpf(x)
+        ai, aip = mpmath.airyai(m), mpmath.airyai(m, derivative=1)
+        bi, bip = mpmath.airybi(m), mpmath.airybi(m, derivative=1)
+        if x < 0:
+            # Below 0 each value is measured against its envelope, √(Ai² + Bi²) or
+            # √(Ai′² + Bi′²), and the scale of `airye` is 1.
+            values = mpmath.sqrt(ai ** 2 + bi ** 2)
+            slopes = mpmath.sqrt(aip ** 2 + bip ** 2)
+            sizes = [values, slopes, values, slopes]
+            scaled = [ai, aip, bi, bip]
+        else:
+            zeta = 2 * m ** mpmath.mpf(1.5) / 3
+            scaled = [ai * mpmath.exp(zeta), aip * mpmath.exp(zeta),
+                      bi * mpmath.exp(-zeta), bip * mpmath.exp(-zeta)]
+            sizes = None
+        for name, value, size in zip(("ai", "aip", "bi", "bip"), (ai, aip, bi, bip),
+                                     sizes or (ai, aip, bi, bip)):
+            if abs(value) < 1e-300 or abs(value) > 1e300:
+                continue
+            add("airy_" + name, x, abs(size), value)
+        for name, value, size in zip(("ai", "aip", "bi", "bip"), scaled, sizes or scaled):
+            add("airye_" + name, x, abs(size), value)
+
+
+points = [random.uniform(-2.0, 1.0) for _ in range(150)]
+points += [-math.exp(random.uniform(math.log(2.0), math.log(1e4))) for _ in range(150)]
+points += [math.exp(random.uniform(0.0, math.log(103.0))) for _ in range(120)]
+points += [math.exp(random.uniform(math.log(103.0), math.log(1e8))) for _ in range(30)]
+points += [0.0, 1.0, -2.0, 1e-300, -1e-300, -2.3381074104597670, -1.0187929716474710]
+for x in points:
+    record(x)
+# The ends. Where SciPy gives NaN, at x = ±∞ and past |x| = 1e8 or so, these are the limits
+# and the true values; past |x| = 1.5e205, where ζ overflows, `airye` above 0 is the first term
+# of each expansion, exact there, and below 0 every value is NaN, since the phase is lost.
+inf, nan = math.inf, math.nan
+huge = 1e210
+quarter = huge ** 0.25
+root_pi = math.sqrt(math.pi)
+ends = [
+    ("airy", inf, (0.0, 0.0, inf, inf)),
+    ("airye", inf, (0.0, -inf, 0.0, inf)),
+    ("airy", -inf, (0.0, nan, 0.0, nan)),
+    ("airye", -inf, (0.0, nan, 0.0, nan)),
+    ("airy", nan, (nan, nan, nan, nan)),
+    ("airye", nan, (nan, nan, nan, nan)),
+    ("airy", huge, (0.0, 0.0, inf, inf)),
+    ("airye", huge, (1 / (2 * root_pi * quarter), -quarter / (2 * root_pi),
+                     1 / (root_pi * quarter), quarter / root_pi)),
+    ("airy", -huge, (nan, nan, nan, nan)),
+    ("airye", -huge, (nan, nan, nan, nan)),
+    ("airy", 200.0, (0.0, 0.0, inf, inf)),
+]
+for family, x, values in ends:
+    for name, value in zip(("ai", "aip", "bi", "bip"), values):
+        add(family + "_" + name, x, abs(value) if math.isfinite(value) else 1.0, value)
+with open("airy.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Kelvin functions
+
+In `kelvin.txt` each case holds, before the reference value, the size its error is measured
+against: the modulus of the complex value the function is a part of, |ber + i bei| for `ber` and
+`bei` and so on, since each part passes through 0 as the phase turns. The script below recorded
+the cases with its own seed, with mpmath 1.4.1 at 60 digits; run it from this directory with
+`python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318070)
+lines = []
+
+
+def add(name, x, size, value):
+    lines.append(f"{name} {x!r} {float(size)!r} {float(value)!r}")
+
+
+def record(x):
+    with mpmath.workdps(60):
+        m = mpmath.mpf(abs(x))
+        z = m * mpmath.expjpi(mpmath.mpf(1) / 4)
+        rot = mpmath.expjpi(mpmath.mpf(1) / 4)
+        i0, i1 = mpmath.besseli(0, z), mpmath.besseli(1, z)
+        k0, k1 = mpmath.besselk(0, z), mpmath.besselk(1, z)
+        be, bep = i0, rot * i1
+        ke, kep = k0, -rot * k1
+        if x < 0:
+            bep = -bep
+        # Each part is measured against the size of the complex value it belongs to.
+        for name, value in (("ber", be.real), ("bei", be.imag), ("berp", bep.real),
+                            ("beip", bep.imag)):
+            size = abs(be) if name in ("ber", "bei") else abs(bep)
+            if size < 1e300:
+                add(name, x, size, value)
+        if x > 0:
+            for name, value in (("ker", ke.real), ("kei", ke.imag), ("kerp", kep.real),
+                                ("keip", kep.imag)):
+                size = abs(ke) if name in ("ker", "kei") else abs(kep)
+                if size > 1e-300:
+                    add(name, x, size, value)
+
+
+points = [random.uniform(0.0, 1.0) for _ in range(60)]
+points += [random.uniform(1.0, 30.0) for _ in range(200)]
+points += [math.exp(random.uniform(math.log(30.0), math.log(1000.0))) for _ in range(80)]
+points += [-random.uniform(0.0, 50.0) for _ in range(30)]
+points += [1e-10, 1.0, 1.01, 1.08, 2.0, 2.5, 1003.0]
+for x in points:
+    record(x)
+# The ends: at 0, the series' first terms, with ker = ∞ and ker′ = −∞; below 0, ker and kei
+# and their derivatives NaN; at x = ∞, where SciPy gives NaN for all, ker and kei and their
+# derivatives 0 and the rest NaN; and from x = 1004 the overflow of ber and bei, with the sign of
+# the phase.
+inf, nan = math.inf, math.nan
+names = ("ber", "bei", "ker", "kei", "berp", "beip", "kerp", "keip")
+ends = [
+    (0.0, (1.0, 0.0, inf, -math.pi / 4, 0.0, 0.0, -inf, 0.0)),
+    (inf, (nan, nan, 0.0, 0.0, nan, nan, 0.0, 0.0)),
+    (nan, (nan,) * 8),
+    (-2.0, (None, None, nan, nan, None, None, nan, nan)),
+]
+with mpmath.workdps(60):
+    z = 1100 * mpmath.expjpi(mpmath.mpf(1) / 4)
+    be, bep = mpmath.besseli(0, z), mpmath.expjpi(mpmath.mpf(1) / 4) * mpmath.besseli(1, z)
+    signs = [math.copysign(inf, float(mpmath.sign(part)))
+             for part in (be.real, be.imag, bep.real, bep.imag)]
+ends.append((1100.0, (signs[0], signs[1], 0.0, 0.0, signs[2], signs[3], 0.0, 0.0)))
+for x, values in ends:
+    for name, value in zip(names, values):
+        if value is not None:
+            add(name, x, abs(value) if math.isfinite(value) and value != 0 else 1.0, value)
+with open("kelvin.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Struve functions
+
+In `struve.txt` each case holds, before the reference value, the size its error is measured
+against: for H past the turning point x = |v|, where it oscillates about Yᵥ, the envelope
+max(|H|, √(Jᵥ² + Yᵥ²)); everywhere else, and for L always, the value itself. The script below
+recorded the cases with its own seed, with mpmath 1.4.1's `struveh` and `struvel` at 60 digits;
+run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318071)
+lines = []
+
+
+def add(name, v, x, size, value):
+    lines.append(f"{name} {v!r} {x!r} {float(size)!r} {float(value)!r}")
+
+
+def record(v, x):
+    with mpmath.workdps(60):
+        mv, mx = mpmath.mpf(v), mpmath.mpf(x)
+        h = mpmath.struveh(mv, mx)
+        l = mpmath.struvel(mv, mx)
+        modulus = mpmath.hypot(mpmath.besselj(mv, mx), mpmath.bessely(mv, mx))
+        # Past the turning point x = |v|, H is measured against the larger of itself and the
+        # modulus √(Jᵥ² + Yᵥ²) that Yᵥ, of which it is a sum, oscillates under; before it, and
+        # L everywhere, against itself.
+        size = abs(h)
+        if x > abs(v):
+            size = max(size, modulus)
+        if 1e-300 < abs(h) < 1e300:
+            add("struve", v, x, size, h)
+        if 1e-300 < abs(l) < 1e300:
+            add("modstruve", v, x, abs(l), l)
+
+
+for _ in range(400):
+    v = random.uniform(-10.0, 30.0)
+    x = math.exp(random.uniform(math.log(1e-3), math.log(500.0)))
+    record(v, x)
+for _ in range(100):
+    v = float(random.randint(-6, 12)) + random.choice([0.0, 0.5])
+    x = math.exp(random.uniform(math.log(1e-2), math.log(200.0)))
+    record(v, x)
+for _ in range(60):
+    v = random.uniform(-5.0, 5.0)
+    x = math.exp(random.uniform(math.log(500.0), math.log(1e9)))
+    record(v, x)
+for _ in range(40):
+    v = random.uniform(30.0, 100.0)
+    x = math.exp(random.uniform(math.log(1.0), math.log(300.0)))
+    record(v, x)
+# The ends. At x = 0, the first term of the series: 0 above order −1, 2/π at −1, and below it
+# an infinity with the sign of 1/Γ(v + 3/2), except at the orders −3/2, −5/2 and so on, where
+# the function is ±J₋ᵥ(0) = 0 and SciPy gives ∞ or NaN. At x = ∞, H is 0 below order 1, 2/π at
+# 1 and ∞ above, where SciPy gives ∞, and L is ∞, where SciPy gives NaN at order 0. A negative
+# x is NaN unless v is whole, and NaN gives NaN.
+inf, nan = math.inf, math.nan
+ends = [(0.0, 0.0, 0.0, 0.0), (-1.0, 0.0, 2 / math.pi, 2 / math.pi), (-1.2, 0.0, inf, inf),
+        (-1.5, 0.0, 0.0, 0.0), (-2.0, 0.0, -inf, -inf), (-2.5, 0.0, 0.0, 0.0),
+        (-3.0, 0.0, inf, inf), (0.5, -2.0, nan, nan), (0.0, inf, 0.0, inf),
+        (1.0, inf, 2 / math.pi, inf), (2.0, inf, inf, inf), (inf, 1.0, 0.0, 0.0),
+        (-inf, 1.0, nan, 0.0), (nan, 1.0, nan, nan), (1.0, nan, nan, nan), (0.0, 1000.0, None, inf)]
+for v, x, h, l in ends:
+    for name, value in (("struve", h), ("modstruve", l)):
+        if value is not None:
+            add(name, v, x, abs(value) if math.isfinite(value) and value != 0 else 1.0, value)
+# Whole orders at negative x, by Hᵥ(−x) = (−1)^{v+1} Hᵥ(x) and the same for L.
+for v, x in ((0.0, -1.0), (1.0, -3.0), (2.0, -2.0), (-3.0, -4.5)):
+    with mpmath.workdps(60):
+        sign = (-1) ** (int(v) + 1)
+        h = sign * mpmath.struveh(v, -x)
+        l = sign * mpmath.struvel(v, -x)
+        modulus = mpmath.hypot(mpmath.besselj(v, -x), mpmath.bessely(v, -x))
+        add("struve", v, x, max(abs(h), modulus) if -x > abs(v) else abs(h), h)
+        add("modstruve", v, x, abs(l), l)
+with open("struve.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Hypergeometric functions
+
+In `hypergeometric.txt` each case holds, before the reference value, the size its error is
+measured against: the largest of |f| and |t ∂f/∂t| for each argument t, the error that rounding
+the arguments to `f64` alone would make. ∂f/∂x is exact, (1/b) ₀F₁(; b + 1; x),
+(a/b) M(a + 1, b + 1, x) or −a U(a + 1, b + 1, x); the others are central differences with a step
+of 10⁻²⁵ at 60 digits. The parameters keep to the ranges where the reference says the functions
+hold. The script below recorded the cases with its own seed, with mpmath 1.4.1's `hyp0f1`,
+`hyp1f1` and `hyperu` at 60 digits; run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318081)
+lines = []
+STEP = mpmath.mpf(10) ** -25
+
+
+def add(name, arguments, size, value):
+    fields = " ".join(repr(float(t)) for t in arguments)
+    lines.append(f"{name} {fields} {float(size)!r} {float(value)!r}")
+
+
+def slope(f, point, index):
+    # The derivative of f in its argument `index`, by a central difference at 60 digits.
+    above = list(point)
+    below = list(point)
+    above[index] += STEP
+    below[index] -= STEP
+    return (f(*above) - f(*below)) / (2 * STEP)
+
+
+def record(name, f, arguments, shifted):
+    # Each case is measured against the largest of |f| and |t ∂f/∂t| for each argument t: the
+    # error a rounding of the arguments alone would make. ∂/∂x is exact, `shifted`.
+    try:
+        with mpmath.workdps(60):
+            point = [mpmath.mpf(t) for t in arguments]
+            value = f(*point)
+            if not 1e-300 < abs(value) < 1e300:
+                return
+            size = max(abs(value), abs(point[-1] * shifted(*point)))
+            for index in range(len(point) - 1):
+                size = max(size, abs(point[index] * slope(f, point, index)))
+            if size > 1e300:
+                return
+    except (mpmath.libmp.NoConvergence, ZeroDivisionError, ValueError):
+        return
+    add(name, arguments, size, value)
+
+
+def hyp0f1(b, x):
+    return mpmath.hyp0f1(b, x, maxterms=10**6, maxprec=20000)
+
+
+def hyp1f1(a, b, x):
+    return mpmath.hyp1f1(a, b, x, maxterms=10**6, maxprec=20000)
+
+
+def hyperu(a, b, x):
+    return mpmath.hyperu(a, b, x, maxterms=10**6, maxprec=20000)
+
+
+def parameter(limit):
+    # Uniform, whole, near 0, near a whole number, and spread over decades.
+    r = random.random()
+    if r < 0.3:
+        return random.uniform(-limit, limit)
+    if r < 0.45:
+        return float(round(random.uniform(-limit, limit)))
+    if r < 0.6:
+        return random.uniform(-2.0, 3.0)
+    if r < 0.7:
+        return round(random.uniform(-40.0, 40.0)) + random.choice([1e-9, -1e-9, 1e-5, -1e-5])
+    return math.copysign(10 ** random.uniform(-4.0, math.log10(limit)), random.uniform(-1, 1))
+
+
+for _ in range(400):
+    b = random.choice([
+        random.uniform(-30.0, 30.0),
+        random.uniform(0.0, 3.0),
+        math.copysign(10 ** random.uniform(-2.0, 3.0), random.uniform(-1, 1)),
+    ])
+    # b from −300 up: further down, I_{b−1} overflows where the series cancels.
+    if b <= 0 and b == int(b) or b < -300.0:
+        continue
+    x = math.copysign(10 ** random.uniform(-3.0, 4.5), random.uniform(-1, 1))
+    record("hyp0f1", hyp0f1, (b, x), lambda b, x: hyp0f1(b + 1, x) / b)
+count = 0
+while count < 1200:
+    # |a| at most 100 and |x| at most 1,000, where the reference says hyp1f1 holds, except b
+    # within 0.01 of 0 with x below −30.
+    a, b = parameter(100.0), parameter(150.0)
+    if b <= 0 and b == int(b):
+        continue
+    x = math.copysign(10 ** random.uniform(-4.0, 3.0), random.uniform(-1, 1))
+    if abs(b) < 0.01 and x < -30.0:
+        continue
+    before = len(lines)
+    record("hyp1f1", hyp1f1, (a, b, x), lambda a, b, x: a / b * hyp1f1(a + 1, b + 1, x))
+    count += len(lines) - before
+count = 0
+while count < 800:
+    # a from −35 up, where the reference says hyperu holds, except a below 0 and not whole with
+    # b above a + 1 and within 0.001 of a whole number.
+    a, b = parameter(150.0), parameter(150.0)
+    if a < -35.0:
+        continue
+    if a < 0 and a != int(a) and b > a + 1 and abs(b - round(b)) < 1e-3:
+        continue
+    x = 10 ** random.uniform(-5.0, 3.5)
+    before = len(lines)
+    record("hyperu", hyperu, (a, b, x), lambda a, b, x: -a * hyperu(a + 1, b + 1, x))
+    count += len(lines) - before
+# The ends, with SciPy's value or, where it differs, the limit the reference documents.
+inf = math.inf
+nan = math.nan
+ends = [
+    ("hyp0f1", (-2.0, 1.0), nan),
+    ("hyp0f1", (1.5, 0.0), 1.0),
+    ("hyp0f1", (inf, 3.0), 1.0),
+    ("hyp0f1", (2.0, inf), inf),
+    ("hyp0f1", (-0.5, inf), -inf),
+    ("hyp0f1", (1.0, -inf), 0.0),
+    ("hyp0f1", (0.25, -inf), nan),
+    ("hyp0f1", (nan, 1.0), nan),
+    ("hyp1f1", (1.0, -2.0, 1.0), inf),
+    ("hyp1f1", (-1.0, -2.0, 3.0), 2.5),
+    ("hyp1f1", (1.0, 2.0, 0.0), 1.0),
+    ("hyp1f1", (0.0, 2.0, 5.0), 1.0),
+    ("hyp1f1", (2.0, 3.0, inf), inf),
+    ("hyp1f1", (-2.0, 3.0, inf), inf),
+    ("hyp1f1", (-3.0, 3.0, inf), -inf),
+    ("hyp1f1", (2.0, 3.0, -inf), 0.0),
+    ("hyp1f1", (-2.5, 3.0, -inf), inf),
+    ("hyp1f1", (1.0, 2.0, nan), nan),
+    ("hyp1f1", (inf, 1.0, 1.0), nan),
+    ("hyp1f1", (1.0, inf, 1.0), 1.0),
+    ("hyperu", (-2.0, 3.0, 0.0), 12.0),
+    ("hyperu", (0.5, 0.5, 0.0), math.sqrt(math.pi)),
+    ("hyperu", (-1.5, 0.5, 0.0), 0.0),
+    ("hyperu", (1.0, 1.0, 0.0), inf),
+    ("hyperu", (1.0, 2.0, inf), 0.0),
+    ("hyperu", (-2.5, 1.0, inf), inf),
+    ("hyperu", (1.0, 1.0, -1.0), nan),
+    ("hyperu", (0.0, 2.0, 3.0), 1.0),
+    ("hyperu", (inf, 1.0, 1.0), nan),
+]
+for name, arguments, value in ends:
+    add(name, arguments, abs(value) if math.isfinite(value) and value != 0 else 1.0, value)
+with open("hypergeometric.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## The Gauss hypergeometric function
+
+In `gauss.txt` each case holds, before the reference value, the size its error is measured
+against, as for the confluent functions: the largest of |F| and |t ∂F/∂t| for each of a, b, c
+and x. ∂F/∂x is exact, (ab/c) F(a + 1, b + 1; c + 1; x); the others are central differences with
+a step of 10⁻²⁵ at 60 digits. The script below recorded the cases with its own seed, with
+mpmath 1.4.1's `hyp2f1` at 60 digits; run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318082)
+lines = []
+STEP = mpmath.mpf(10) ** -25
+
+
+def add(arguments, size, value):
+    fields = " ".join(repr(float(t)) for t in arguments)
+    lines.append(f"hyp2f1 {fields} {float(size)!r} {float(value)!r}")
+
+
+def f(a, b, c, x):
+    return mpmath.hyp2f1(a, b, c, x, maxterms=10**6, maxprec=20000)
+
+
+def record(arguments):
+    # Measured against the largest of |F| and |t ∂F/∂t| for each argument t; ∂F/∂x is
+    # (ab/c) F(a + 1, b + 1; c + 1; x), the others central differences at 60 digits.
+    try:
+        with mpmath.workdps(60):
+            a, b, c, x = (mpmath.mpf(t) for t in arguments)
+            value = f(a, b, c, x)
+            if not 1e-300 < abs(value) < 1e300:
+                return False
+            size = max(abs(value), abs(x * a * b / c * f(a + 1, b + 1, c + 1, x)))
+            point = [a, b, c, x]
+            for index in range(3):
+                above = list(point)
+                below = list(point)
+                above[index] += STEP
+                below[index] -= STEP
+                size = max(size, abs(point[index] * (f(*above) - f(*below)) / (2 * STEP)))
+            if size > 1e300:
+                return False
+    except (mpmath.libmp.NoConvergence, ZeroDivisionError, ValueError):
+        return False
+    add(arguments, size, value)
+    return True
+
+
+def parameter():
+    # Parameters up to 20 in size, where the reference says hyp2f1 holds: uniform, whole,
+    # near 0, near a whole number, and spread over decades.
+    r = random.random()
+    if r < 0.35:
+        return random.uniform(-20.0, 20.0)
+    if r < 0.5:
+        return float(round(random.uniform(-20.0, 20.0)))
+    if r < 0.7:
+        return random.uniform(-2.0, 3.0)
+    if r < 0.8:
+        return round(random.uniform(-20.0, 20.0)) + random.choice([1e-9, -1e-9, 1e-5, -1e-5])
+    return math.copysign(10 ** random.uniform(-4.0, math.log10(20.0)), random.uniform(-1, 1))
+
+
+def point():
+    # Across (−1, 1), close to 1, and far below −1.
+    r = random.random()
+    if r < 0.3:
+        return random.uniform(-1.0, 1.0)
+    if r < 0.6:
+        return 1.0 - 10 ** random.uniform(-8.0, 0.0)
+    if r < 0.8:
+        return -(10 ** random.uniform(-3.0, 4.0))
+    return random.uniform(-0.6, 0.6)
+
+
+count = 0
+while count < 1200:
+    a, b, c = parameter(), parameter(), parameter()
+    if c <= 0 and c == int(c):
+        continue
+    if random.random() < 0.15:
+        # c − a − b whole or near it, where the series in 1 − x needs its logarithm.
+        c = a + b + random.choice([0.0, 1.0, 2.0, -1.0, 3.0, 1e-7, 0.01])
+    count += record((a, b, c, point()))
+# Polynomials past x = 1, where the function is real.
+for _ in range(40):
+    a = float(random.randint(-12, -1))
+    b, c = parameter(), parameter()
+    if c <= 0 and c == int(c):
+        continue
+    record((a, b, c, random.uniform(1.0, 50.0)))
+# The ends, with SciPy's value or, where it differs, the one the reference documents.
+inf = math.inf
+nan = math.nan
+ends = [
+    ((1.0, 1.0, 2.0, 2.0), nan),
+    ((0.5, 0.5, 1.5, 1.0), math.pi / 2),
+    ((1.0, 1.0, 1.5, 1.0), inf),
+    ((1.0, 1.0, 2.0, 1.0), inf),
+    ((1.0, 2.0, -3.0, 0.5), inf),
+    ((-2.0, 1.0, -3.0, 0.5), 17.0 / 12.0),
+    ((-2.0, 1.0, -1.0, 0.5), inf),
+    ((-2.0, 3.0, 4.0, 5.0), 8.5),
+    ((1.0, 1.0, 2.0, 0.0), 1.0),
+    ((1.0, 1.0, inf, 0.5), 1.0),
+    ((inf, 1.0, 2.0, 0.5), nan),
+    ((1.0, 1.0, 2.0, -inf), 0.0),
+    ((-1.0, 1.0, 2.0, inf), -inf),
+    ((-2.0, 1.0, 2.0, -inf), inf),
+    ((1.0, 1.0, 2.0, nan), nan),
+]
+for arguments, value in ends:
+    add(arguments, abs(value) if math.isfinite(value) and value != 0 else 1.0, value)
+with open("gauss.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Mathieu functions
+
+mpmath has no Mathieu functions, so the script below finds them at 60 digits itself, by
+methods that need no care about rounding at that precision: the characteristic value by
+bisection on the count of eigenvalues of the tridiagonal matrix the Fourier coefficients
+satisfy (DLMF 28.4.5 to 28.4.8), with 60 rows past the ones that matter, and the coefficients
+by a twisted factorization of that matrix less the value. Each is scaled and signed as SciPy
+and DLMF 28.2.29 say. In `mathieu.txt` each case holds, before the reference value, the size its
+error is measured against: for `mathieu_a` and `mathieu_b` the larger of |a| and |q ∂a/∂q|, and
+for the functions and their derivatives (`_d`) the largest of |f|, |q ∂f/∂q|, |x ∂f/∂x| and the
+sum of the sizes of the Fourier terms. The script recorded the cases with mpmath 1.4.1; run it
+from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+from mpmath import mpf
+
+
+def family(m, cosine):
+    if cosine:
+        return 'ce_odd' if m % 2 else 'ce_even'
+    return 'se_odd' if m % 2 else 'se_even'
+
+
+def rows(fam, q, n):
+    start = {'ce_even': 0, 'ce_odd': 1, 'se_odd': 1, 'se_even': 2}[fam]
+    orders = [start + 2 * i for i in range(n)]
+    diag = [mpf(k) ** 2 for k in orders]
+    if fam == 'ce_odd':
+        diag[0] = 1 + q
+    if fam == 'se_odd':
+        diag[0] = 1 - q
+    off = [q] * (n - 1)
+    if fam == 'ce_even':
+        off[0] = q * mpmath.sqrt(2)
+    return orders, diag, off
+
+
+def count(diag, off, x):
+    c = 0
+    p = mpf(1)
+    for i in range(len(diag)):
+        s = diag[i] - x - (off[i - 1] ** 2 / p if i else 0)
+        if s == 0:
+            s = mpf(-10) ** -200
+        if s < 0:
+            c += 1
+        p = s
+    return c
+
+
+def solve(m, q, cosine):
+    """Characteristic value and normalised coefficients at the working precision."""
+    q = mpf(q)
+    fam = family(m, cosine)
+    index = m // 2 if cosine else (m - 1) // 2
+    n = int(m / 2 + 3 * mpmath.sqrt(abs(q))) + 60
+    orders, diag, off = rows(fam, q, n)
+    low, high = -3 * abs(q) - 2, mpf(orders[-1]) ** 2 + 3 * abs(q) + 2
+    for _ in range(mpmath.mp.prec + 40):
+        mid = (low + high) / 2
+        if count(diag, off, mid) > index:
+            high = mid
+        else:
+            low = mid
+    a = (low + high) / 2
+    # The eigenvector by a twisted factorization of the matrix less a: pivots from the top and
+    # from the bottom, set to 1 where they meet with the smallest residue and carried outward,
+    # each step dividing by a pivot that is not small.
+    up = [mpf(0)] * n
+    down = [mpf(0)] * n
+    for i in range(n):
+        up[i] = diag[i] - a - (off[i - 1] ** 2 / up[i - 1] if i else 0)
+    for i in range(n - 1, -1, -1):
+        down[i] = diag[i] - a - (off[i] ** 2 / down[i + 1] if i < n - 1 else 0)
+    twist = min(range(n), key=lambda i: abs(up[i] + down[i] - diag[i] + a))
+    v = [mpf(0)] * n
+    v[twist] = mpf(1)
+    for i in range(twist - 1, -1, -1):
+        v[i] = -off[i] * v[i + 1] / up[i]
+    for i in range(twist + 1, n):
+        v[i] = -off[i - 1] * v[i - 1] / down[i]
+    norm = mpmath.sqrt(sum(t * t for t in v))
+    v = [t / norm for t in v]
+    sign = sum(v) if cosine else sum(k * t for k, t in zip(orders, v))
+    if sign < 0:
+        v = [-t for t in v]
+    if fam == 'ce_even':
+        v[0] /= mpmath.sqrt(2)
+    return a, orders, v
+
+
+def function(m, q, x_degrees, cosine):
+    a, orders, v = solve(m, q, cosine)
+    x = mpmath.mpf(x_degrees) * mpmath.pi / 180
+    if cosine:
+        f = sum(t * mpmath.cos(k * x) for k, t in zip(orders, v))
+        d = sum(-k * t * mpmath.sin(k * x) for k, t in zip(orders, v))
+    else:
+        f = sum(t * mpmath.sin(k * x) for k, t in zip(orders, v))
+        d = sum(k * t * mpmath.cos(k * x) for k, t in zip(orders, v))
+    return f, d
+
+
+def term_sizes(m, q, cosine):
+    """Σ |A_k| and Σ k |A_k|, the sizes of the terms of the value and of the derivative."""
+    _, orders, v = solve(m, q, cosine)
+    return sum(abs(t) for t in v), sum(k * abs(t) for k, t in zip(orders, v))
+
+random.seed(3181416)
+lines = []
+STEP = mpmath.mpf(10) ** -25
+
+
+def characteristic(m, q, cosine):
+    return solve(m, q, cosine)[0]
+
+
+def record_value(name, m, q, cosine):
+    # Measured against the larger of |a| and |q ∂a/∂q|, the error a rounding of q alone makes.
+    with mpmath.workdps(60):
+        pq = mpmath.mpf(q)
+        value = characteristic(m, pq, cosine)
+        up = characteristic(m, pq + STEP, cosine)
+        down = characteristic(m, pq - STEP, cosine)
+        along_q = (up - down) / (2 * STEP)
+        size = max(abs(value), abs(pq * along_q))
+    lines.append(f"{name} {float(m)!r} {q!r} {float(size)!r} {float(value)!r}")
+
+
+def record_function(name, m, q, x, cosine):
+    # Measured against the largest of |f|, |q ∂f/∂q|, |x ∂f/∂x| and the sum of the sizes of the
+    # Fourier terms, for the value and for the derivative alike: where the function is
+    # exponentially small, its terms cancel, and a sum keeps the precision of its largest term.
+    with mpmath.workdps(60):
+        pq, px = mpmath.mpf(q), mpmath.mpf(x)
+        f, d = function(m, pq, px, cosine)
+        f_up, d_up = function(m, pq + STEP, px, cosine)
+        f_down, d_down = function(m, pq - STEP, px, cosine)
+        _, d_right = function(m, pq, px + STEP, cosine)
+        _, d_left = function(m, pq, px - STEP, cosine)
+        radians = px * mpmath.pi / 180
+        second = (d_right - d_left) / (2 * STEP) * 180 / mpmath.pi
+        terms, slope_terms = term_sizes(m, pq, cosine)
+        sizes = [
+            max(abs(f), abs(pq * (f_up - f_down) / (2 * STEP)), abs(radians * d), terms),
+            max(abs(d), abs(pq * (d_up - d_down) / (2 * STEP)), abs(radians * second),
+                slope_terms),
+        ]
+    for suffix, value, size in (("", f, sizes[0]), ("_d", d, sizes[1])):
+        lines.append(f"{name}{suffix} {float(m)!r} {q!r} {x!r} {float(size)!r} {float(value)!r}")
+
+
+for _ in range(220):
+    # Orders mostly small, some to 40; q of either sign, near 0 and out to 1,000 and beyond m²,
+    # where the functions gather about one point; x across two periods in degrees.
+    m = random.choice([random.randint(0, 5), random.randint(0, 15), random.randint(0, 40)])
+    q = random.choice([
+        random.uniform(-5.0, 5.0),
+        math.copysign(10 ** random.uniform(-4.0, 3.0), random.uniform(-1, 1)),
+        random.uniform(-200.0, 200.0),
+    ])
+    x = random.choice([
+        random.uniform(-360.0, 360.0),
+        random.uniform(0.0, 180.0),
+        float(random.choice([0, 45, 90, 180, -90])),
+    ])
+    record_value("mathieu_a", m, q, True)
+    record_function("mathieu_cem", m, q, x, True)
+    if m >= 1:
+        record_value("mathieu_b", m, q, False)
+        record_function("mathieu_sem", m, q, x, False)
+# The ends: an order that is not a whole number of the kind, or NaN, gives NaN.
+nan = math.nan
+for name, args in [("mathieu_a", (-1.0, 1.0)), ("mathieu_a", (1.5, 1.0)),
+                   ("mathieu_b", (0.0, 1.0)), ("mathieu_a", (2.0, nan)),
+                   ("mathieu_b", (nan, 1.0))]:
+    lines.append(f"{name} {args[0]!r} {args[1]!r} 1.0 nan")
+for name, args in [("mathieu_cem", (1.5, 1.0, 10.0)), ("mathieu_sem", (0.0, 1.0, 10.0)),
+                   ("mathieu_cem", (1.0, 1.0, math.inf)), ("mathieu_sem", (1.0, nan, 10.0))]:
+    for suffix in ("", "_d"):
+        lines.append(f"{name}{suffix} {args[0]!r} {args[1]!r} {args[2]!r} 1.0 nan")
+with open("mathieu.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Radial Mathieu functions
+
+`mathieu_radial.txt` holds the radial functions and their derivatives (`_d`), each a Bessel
+product series over the 60-digit Fourier coefficients of the script for `mathieu.txt` (DLMF
+28.24.1 to 28.24.4), summed at 60 digits with mpmath's `besselj` and `bessely`, and some of the
+coefficients themselves, by their place in the array. Before the reference value each case holds
+the size its error is measured against: for a radial function the largest of |f|, |q ∂f/∂q|,
+|z ∂f/∂z| and the sum of the sizes of its Bessel products, and for a coefficient the largest
+coefficient. The script repeats the eigen-solver of the one above and recorded the cases with
+mpmath 1.4.1; run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+from mpmath import mpf
+
+
+def family(m, cosine):
+    if cosine:
+        return 'ce_odd' if m % 2 else 'ce_even'
+    return 'se_odd' if m % 2 else 'se_even'
+
+
+def rows(fam, q, n):
+    start = {'ce_even': 0, 'ce_odd': 1, 'se_odd': 1, 'se_even': 2}[fam]
+    orders = [start + 2 * i for i in range(n)]
+    diag = [mpf(k) ** 2 for k in orders]
+    if fam == 'ce_odd':
+        diag[0] = 1 + q
+    if fam == 'se_odd':
+        diag[0] = 1 - q
+    off = [q] * (n - 1)
+    if fam == 'ce_even':
+        off[0] = q * mpmath.sqrt(2)
+    return orders, diag, off
+
+
+def count(diag, off, x):
+    c = 0
+    p = mpf(1)
+    for i in range(len(diag)):
+        s = diag[i] - x - (off[i - 1] ** 2 / p if i else 0)
+        if s == 0:
+            s = mpf(-10) ** -200
+        if s < 0:
+            c += 1
+        p = s
+    return c
+
+
+def solve(m, q, cosine):
+    """Characteristic value and normalised coefficients at the working precision."""
+    q = mpf(q)
+    fam = family(m, cosine)
+    index = m // 2 if cosine else (m - 1) // 2
+    n = int(m / 2 + 3 * mpmath.sqrt(abs(q))) + 60
+    orders, diag, off = rows(fam, q, n)
+    low, high = -3 * abs(q) - 2, mpf(orders[-1]) ** 2 + 3 * abs(q) + 2
+    for _ in range(mpmath.mp.prec + 40):
+        mid = (low + high) / 2
+        if count(diag, off, mid) > index:
+            high = mid
+        else:
+            low = mid
+    a = (low + high) / 2
+    # The eigenvector by a twisted factorization of the matrix less a: pivots from the top and
+    # from the bottom, set to 1 where they meet with the smallest residue and carried outward,
+    # each step dividing by a pivot that is not small.
+    up = [mpf(0)] * n
+    down = [mpf(0)] * n
+    for i in range(n):
+        up[i] = diag[i] - a - (off[i - 1] ** 2 / up[i - 1] if i else 0)
+    for i in range(n - 1, -1, -1):
+        down[i] = diag[i] - a - (off[i] ** 2 / down[i + 1] if i < n - 1 else 0)
+    twist = min(range(n), key=lambda i: abs(up[i] + down[i] - diag[i] + a))
+    v = [mpf(0)] * n
+    v[twist] = mpf(1)
+    for i in range(twist - 1, -1, -1):
+        v[i] = -off[i] * v[i + 1] / up[i]
+    for i in range(twist + 1, n):
+        v[i] = -off[i - 1] * v[i - 1] / down[i]
+    norm = mpmath.sqrt(sum(t * t for t in v))
+    v = [t / norm for t in v]
+    sign = sum(v) if cosine else sum(k * t for k, t in zip(orders, v))
+    if sign < 0:
+        v = [-t for t in v]
+    if fam == 'ce_even':
+        v[0] /= mpmath.sqrt(2)
+    return a, orders, v
+
+
+STEP = mpmath.mpf(10) ** -25
+
+
+def radial(m, q, z, cosine, kind):
+    """Mc or Ms of the first (kind 1) or second (kind 2) kind, its z-derivative, and the sums
+    of the sizes of the terms of each, by the Bessel product series of DLMF 28.24.1 to
+    28.24.4, with s at the largest coefficient."""
+    a, orders, coefficients = solve(m, mpf(q), cosine)
+    big = max(abs(c) for c in coefficients)
+    kept = [(k, c) for k, c in zip(orders, coefficients) if abs(c) > big * mpf(10) ** -45]
+    h = mpmath.sqrt(mpf(q))
+    u = h * mpmath.exp(-mpf(z))
+    v = h * mpmath.exp(mpf(z))
+    other = mpmath.besselj if kind == 1 else mpmath.bessely
+    odd = m % 2
+    n = m // 2
+    largest = max(range(len(kept)), key=lambda i: abs(kept[i][1]))
+    s = kept[largest][0] // 2
+    scale = kept[largest][1]
+    sign = 1 if cosine else -1
+    total = slope = total_size = slope_size = 0
+    for k, c in kept:
+        ell = k // 2
+        weight = (-1) ** (ell + n) * c / scale
+        for (p, r), w in (((ell - s, ell + s + odd), 1), ((ell + s + odd, ell - s), sign)):
+            jp = mpmath.besselj(p, u)
+            cr = other(r, v)
+            inward = -u * mpmath.besselj(p, u, 1) * cr
+            outward = v * jp * other(r, v, 1)
+            total += weight * w * jp * cr
+            slope += weight * w * (inward + outward)
+            total_size += abs(weight * jp * cr)
+            slope_size += abs(weight * inward) + abs(weight * outward)
+    if cosine and not odd and s == 0:
+        total, slope, total_size, slope_size = total / 2, slope / 2, total_size / 2, slope_size / 2
+    return a, total, slope, total_size, slope_size
+
+
+def record_radial(name, m, q, z, cosine, kind):
+    # Measured against the largest of |f|, |q ∂f/∂q|, |z ∂f/∂z| and the sum of the sizes of
+    # the Bessel products, for the value and for the derivative alike. ∂/∂q is a central
+    # difference; the derivative's own z-derivative comes from the equation,
+    # f″ = (a − 2q cosh 2z) f.
+    with mpmath.workdps(60):
+        pq, pz = mpf(q), mpf(z)
+        a, f, d, f_terms, d_terms = radial(m, pq, pz, cosine, kind)
+        _, f_up, d_up, _, _ = radial(m, pq + STEP, pz, cosine, kind)
+        _, f_down, d_down, _, _ = radial(m, pq - STEP, pz, cosine, kind)
+        second = (a - 2 * pq * mpmath.cosh(2 * pz)) * f
+        sizes = [
+            max(abs(f), abs(pq * (f_up - f_down) / (2 * STEP)), abs(pz * d), f_terms),
+            max(abs(d), abs(pq * (d_up - d_down) / (2 * STEP)), abs(pz * second), d_terms),
+        ]
+    for suffix, value, size in (("", f, sizes[0]), ("_d", d, sizes[1])):
+        lines.append(f"{name}{suffix} {float(m)!r} {q!r} {z!r} {float(size)!r} {float(value)!r}")
+
+
+def record_coefficient(name, m, q, index, cosine):
+    # Measured against the largest coefficient: the eigenvector is accurate to that size.
+    with mpmath.workdps(60):
+        _, _, coefficients = solve(m, mpf(q), cosine)
+        size = max(abs(c) for c in coefficients)
+    lines.append(f"{name} {float(m)!r} {q!r} {float(index)!r} {float(size)!r} "
+                 f"{float(coefficients[index])!r}")
+
+
+random.seed(3181417)
+lines = []
+for _ in range(110):
+    # Orders mostly small, q above 0 from 1e-3 to 200, z from −1 to 3; SciPy has no values
+    # for q at most 0.
+    m = random.choice([random.randint(0, 4), random.randint(0, 12)])
+    q = random.choice([random.uniform(0.05, 10.0), 10 ** random.uniform(-3.0, 2.3)])
+    z = random.choice([random.uniform(0.0, 3.0), random.uniform(-1.0, 1.0),
+                       10 ** random.uniform(-3.0, 0.0)])
+    for kind in (1, 2):
+        record_radial(f"mathieu_modcem{kind}", m, q, z, True, kind)
+        if m >= 1:
+            record_radial(f"mathieu_modsem{kind}", m, q, z, False, kind)
+for _ in range(40):
+    m = random.randint(0, 12)
+    q = random.choice([random.uniform(0.0, 10.0), 10 ** random.uniform(-3.0, 2.3)])
+    record_coefficient("mathieu_even_coef", m, q, random.randint(0, 8), True)
+    if m >= 1:
+        record_coefficient("mathieu_odd_coef", m, q, random.randint(0, 8), False)
+# The ends: q at most 0, an order its kind does not allow, or NaN, gives NaN.
+nan = math.nan
+for name, args in [("mathieu_modcem1", (2.0, 0.0, 1.0)), ("mathieu_modcem2", (2.0, -1.0, 1.0)),
+                   ("mathieu_modsem1", (0.0, 1.0, 1.0)), ("mathieu_modsem2", (1.5, 1.0, 1.0)),
+                   ("mathieu_modcem1", (1.0, nan, 1.0)), ("mathieu_modsem2", (1.0, 1.0, nan))]:
+    for suffix in ("", "_d"):
+        lines.append(f"{name}{suffix} {args[0]!r} {args[1]!r} {args[2]!r} 1.0 nan")
+with open("mathieu_radial.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Parabolic cylinder functions
+
+In `parabolic.txt` each case holds, before the reference value, the size its error is measured
+against, as in `hypergeometric.txt`: the largest of |f|, |v ∂f/∂v| and |x ∂f/∂x|, by central
+differences with a step of 10⁻²⁵ at 60 digits. `pbdv_d` and `pbvv_d` are the derivatives, the
+second place of each tuple. The script below recorded the cases with its own seed, with
+mpmath 1.4.1's `pcfd` and `pcfv` at 60 digits; run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(318141)
+lines = []
+STEP = mpmath.mpf(10) ** -25
+HALF = mpmath.mpf(1) / 2
+
+
+def d(v, x):
+    return mpmath.pcfd(v, x)
+
+
+def v_(v, x):
+    # SciPy's V_v(x) is DLMF's V(a, x) with a = −v − ½.
+    return mpmath.pcfv(-v - HALF, x)
+
+
+FUNCTIONS = [
+    ("pbdv", d),
+    ("pbdv_d", lambda v, x: x / 2 * d(v, x) - d(v + 1, x)),
+    ("pbvv", v_),
+    ("pbvv_d", lambda v, x: v_(v - 1, x) - x / 2 * v_(v, x)),
+]
+
+
+def record(name, f, v, x):
+    # Each case is measured against the largest of |f|, |v ∂f/∂v| and |x ∂f/∂x|, the error a
+    # rounding of the arguments alone would make, by central differences at 60 digits.
+    with mpmath.workdps(60):
+        pv, px = mpmath.mpf(v), mpmath.mpf(x)
+        value = f(pv, px)
+        if not 1e-300 < abs(value) < 1e300:
+            return
+        along_v = (f(pv + STEP, px) - f(pv - STEP, px)) / (2 * STEP)
+        along_x = (f(pv, px + STEP) - f(pv, px - STEP)) / (2 * STEP)
+        size = max(abs(value), abs(pv * along_v), abs(px * along_x))
+        if size > 1e300:
+            return
+    lines.append(f"{name} {v!r} {x!r} {float(size)!r} {float(value)!r}")
+
+
+for _ in range(450):
+    # Orders uniform, whole, near 0 and out to ±60; arguments near 0, across the turning
+    # points and out to ±60, where e^(x²/4) passes 1e300.
+    v = random.choice([
+        random.uniform(-10.0, 10.0),
+        random.uniform(-60.0, 60.0),
+        float(random.randint(-15, 15)),
+        random.uniform(-3.0, 3.0),
+    ])
+    x = random.choice([
+        random.uniform(-6.0, 6.0),
+        random.uniform(-35.0, 35.0),
+        random.uniform(-60.0, 60.0),
+        math.copysign(10 ** random.uniform(-4.0, 1.0), random.uniform(-1, 1)),
+    ])
+    for name, f in FUNCTIONS:
+        record(name, f, v, x)
+# The ends: the limit, where SciPy gives NaN.
+inf = math.inf
+nan = math.nan
+ends = [
+    ("pbdv", (2.5, inf), 0.0),
+    ("pbdv_d", (2.5, inf), 0.0),
+    ("pbdv", (2.0, -inf), 0.0),
+    ("pbdv", (2.5, -inf), -inf),
+    ("pbdv_d", (2.5, -inf), inf),
+    ("pbdv", (-1.3, -inf), inf),
+    ("pbdv", (nan, 1.0), nan),
+    ("pbdv", (inf, 1.0), nan),
+    ("pbvv", (2.5, inf), inf),
+    ("pbvv_d", (2.5, inf), inf),
+    ("pbvv", (2.0, -inf), -inf),
+    ("pbvv_d", (2.0, -inf), inf),
+    ("pbvv", (2.5, -inf), 0.0),
+    ("pbvv", (1.0, -inf), inf),
+    ("pbvv", (1.0, nan), nan),
+    ("pbvv", (-inf, 1.0), nan),
+]
+for name, (v, x), value in ends:
+    size = abs(value) if math.isfinite(value) and value != 0 else 1.0
+    lines.append(f"{name} {v!r} {x!r} {size!r} {value!r}")
+with open("parabolic.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Weber's function
+
+In `weber.txt` the cases of `pbwa` hold, before the reference value, the size its error is
+measured against, the largest of |f|, |a ∂f/∂a| and |x ∂f/∂x|, as in `parabolic.txt`.
+`pbwa_d` is the derivative, by central differences of mpmath's `pcfw` with a step of 10⁻²⁵ at
+60 digits. The script below recorded the cases with mpmath 1.4.1; run it from this directory
+with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+
+random.seed(3181415)
+lines = []
+STEP = mpmath.mpf(10) ** -25
+
+
+def w(a, x):
+    return mpmath.pcfw(a, x)
+
+
+def slope(a, x):
+    return (w(a, x + STEP) - w(a, x - STEP)) / (2 * STEP)
+
+
+FUNCTIONS = [("pbwa", w), ("pbwa_d", slope)]
+
+
+def record(name, f, a, x):
+    # Each case is measured against the largest of |f|, |a ∂f/∂a| and |x ∂f/∂x|, the error a
+    # rounding of the arguments alone would make, by central differences at 60 digits.
+    with mpmath.workdps(60):
+        pa, px = mpmath.mpf(a), mpmath.mpf(x)
+        value = f(pa, px)
+        along_a = (f(pa + STEP, px) - f(pa - STEP, px)) / (2 * STEP)
+        along_x = (f(pa, px + STEP) - f(pa, px - STEP)) / (2 * STEP)
+        size = max(abs(value), abs(pa * along_a), abs(px * along_x))
+    lines.append(f"{name} {a!r} {x!r} {float(size)!r} {float(value)!r}")
+
+
+for _ in range(300):
+    # Parameters across the domain, whole and near 0, and its edges; arguments across it,
+    # through the turning points at ±2√a, near 0 and at its edges.
+    a = random.choice([
+        random.uniform(-5.0, 5.0),
+        float(random.randint(-5, 5)),
+        random.uniform(-0.5, 0.5),
+        random.choice([-5.0, 5.0]),
+    ])
+    x = random.choice([
+        random.uniform(-10.0, 10.0),
+        random.uniform(-5.0, 5.0),
+        math.copysign(10 ** random.uniform(-4.0, 0.0), random.uniform(-1, 1)),
+        random.choice([-10.0, 10.0]),
+    ])
+    for name, f in FUNCTIONS:
+        record(name, f, a, x)
+# Outside the domain, |a| above 5 or |x| above 10, and at NaN, the answer is NaN.
+inf = math.inf
+nan = math.nan
+for name in ("pbwa", "pbwa_d"):
+    for a, x in [(5.5, 1.0), (-6.0, 1.0), (1.0, 10.5), (1.0, -inf), (inf, 0.0), (nan, 1.0),
+                 (1.0, nan)]:
+        lines.append(f"{name} {a!r} {x!r} 1.0 nan")
+with open("weber.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
+## Fitted coefficients
+
+Some functions are a ratio of fitted polynomials rather than a series (roadmap 3.18.17): one
+rational function costs a dozen multiplications, where a series or an iteration costs many
+more. This script, run with mpmath 1.4, prints the coefficients of each, lowest power first,
+exactly as the library holds them: `_centre`, `_near_tail` and `_far_tail` in
+`special_ndtri.byn`, `_k_fitted` and `_e_fitted` in `special_elliptic.byn`, the four
+`_hankel_` functions in `special_bessel_jy.byn` and `_erfcx_far` in `special_error.byn`. The
+tests in `error_functions.txt`, `elliptic_functions.txt` and `bessel_functions.txt` check the
+result.
+
+```python
+
+import mpmath as mp
+
+
+def fit(function, points, variable, numerator, denominator, steps):
+    """Coefficients of P/Q, Q(0) = 1, fitting `function` at `points` in relative error:
+    linear least squares on P − fQ, reweighted by 1/|Q| `steps` times (Loeb's method)."""
+    weights = [mp.mpf(1)] * len(points)
+    for _ in range(steps):
+        rows, right = [], []
+        for u, w0 in zip(points, weights):
+            z, v = variable(u), function(u)
+            w = 1 / (abs(v) * w0)
+            rows.append([w * z**k for k in range(numerator + 1)]
+                        + [-w * v * z**k for k in range(1, denominator + 1)])
+            right.append(w * v)
+        solution, _ = mp.qr_solve(mp.matrix(rows), mp.matrix(right))
+        top = [solution[k] for k in range(numerator + 1)]
+        bottom = [mp.mpf(1)] + [solution[numerator + k] for k in range(1, denominator + 1)]
+        weights = [abs(mp.polyval(bottom[::-1], variable(u))) for u in points]
+    return [float(c) for c in top], [float(c) for c in bottom]
+
+
+def chebyshev(low, high, n):
+    """`n` Chebyshev points on [low, high], which spread the error evenly."""
+    return [(low + high) / 2 + (high - low) / 2 * mp.cos(mp.pi * (i + 0.5) / n) for i in range(n)]
+
+
+def quantile(p):
+    """The normal quantile Φ⁻¹(p), at 420 digits so 1 − 2p keeps the smallest `p`."""
+    with mp.workdps(420):
+        value = -mp.sqrt(2) * mp.erfinv(1 - 2 * mp.mpf(p))
+    return +value
+
+
+mp.mp.dps = 90
+def centre(s):
+    """x / q at s = 0.180625 − q², for p = ½ + q."""
+    q = mp.sqrt(mp.mpf(0.180625) - s)
+    return quantile(mp.mpf(0.5) + q) / q
+def tail(t):
+    """−x at t = √(−log p)."""
+    return -quantile(mp.exp(-t * t))
+print("_centre", fit(centre, chebyshev(0, mp.mpf(0.425) ** 2, 400), lambda s: s, 7, 7, 8))
+near = chebyshev(mp.mpf(1.6094), 5, 400)
+print("_near_tail", fit(tail, near, lambda t: t - mp.mpf(1.6), 8, 8, 8))
+print("_far_tail", fit(tail, chebyshev(5, mp.mpf(27.3), 400), lambda t: t - 5, 7, 7, 8))
+
+
+def fit_logarithmic(function, points, degree):
+    """Coefficients of P and Q, polynomials of `degree`, fitting `function`(x) as
+    P(x) − log(x) Q(x) at `points` in relative error, by linear least squares."""
+    rows, right = [], []
+    for x in points:
+        v = function(x)
+        w = 1 / abs(v)
+        rows.append([w * x**k for k in range(degree + 1)]
+                    + [-w * mp.log(x) * x**k for k in range(degree + 1)])
+        right.append(w * v)
+    solution, _ = mp.qr_solve(mp.matrix(rows), mp.matrix(right))
+    return ([float(solution[k]) for k in range(degree + 1)],
+            [float(solution[degree + 1 + k]) for k in range(degree + 1)])
+
+
+mp.mp.dps = 80
+points = [(1 - mp.cos(mp.pi * (i + 0.5) / 600)) / 2 for i in range(600)]
+points += [mp.mpf(10) ** (-k) for k in range(2, 40, 2)]
+print("_k_fitted", fit_logarithmic(lambda x: mp.ellipk(1 - x), points, 9))
+print("_e_fitted", fit_logarithmic(lambda x: mp.ellipe(1 - x), points, 10))
+
+
+def hankel(order, x):
+    """P and x Q of Hankel's expansion of Jₙ and Yₙ, from mpmath's J and Y."""
+    chi = x - (2 * order + 1) * mp.pi / 4
+    j, y, s = mp.besselj(order, x), mp.bessely(order, x), mp.sqrt(mp.pi * x / 2)
+    return s * (j * mp.cos(chi) + y * mp.sin(chi)), s * (y * mp.cos(chi) - j * mp.sin(chi)) * x
+
+
+mp.mp.dps = 60
+far = chebyshev(0, mp.mpf(1) / 25, 200)
+for order in (0, 1):
+    p = lambda z: hankel(order, 1 / mp.sqrt(z))[0] if z > 0 else mp.mpf(1)
+    q = lambda z: hankel(order, 1 / mp.sqrt(z))[1] if z > 0 else mp.mpf(4 * order * order - 1) / 8
+    print(f"_hankel_p{order}", fit(p, far, lambda z: z, 7, 7, 6))
+    print(f"_hankel_q{order}", fit(q, far, lambda z: z, 7, 7, 6))
+
+
+def scaled_erfc_rest(z):
+    """(x√π exp(x²) erfc(x) − 1) / z at z = 1/x², from mpmath's U(½, ½, x²), which stays
+    accurate where its `erfc` of a large argument does not."""
+    if z == 0:
+        return mp.mpf(-0.5)
+    return (mp.hyperu(0.5, 0.5, 1 / z) / mp.sqrt(z) - 1) / z
+
+
+mp.mp.dps = 60
+print("_erfcx_far", fit(scaled_erfc_rest, chebyshev(0, mp.mpf(1) / 9, 300), lambda z: z, 6, 6, 8))
 ```
