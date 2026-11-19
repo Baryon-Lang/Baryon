@@ -2,6 +2,7 @@
 
 mod broadcast;
 mod checks;
+mod power;
 mod summed;
 
 pub(crate) use summed::summed;
@@ -307,6 +308,9 @@ impl<'a, 'b, 'db> Expander<'a, 'b, 'db> {
                 );
                 if divides && integer {
                     self.nonzero_divisor(&right, ty);
+                }
+                if *operator == BinaryOperator::Power {
+                    return (self.power((left, right), ty), ty);
                 }
                 let overflows = matches!(
                     operator,

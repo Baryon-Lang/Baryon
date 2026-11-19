@@ -187,6 +187,9 @@ direction = residual + beta * direction
   zero divisor, as they do for two integers. Float division by zero gives NumPy's infinities and
   NaN; [Numbers](types.md#numbers) has the rule.
 - `-a` negates each element and `+a` keeps it. Both need an array of numbers.
+- `**` raises each element to a power, as `**` on two numbers does: `x ** 2`, `2.0 ** x` and
+  `a ** b` of two arrays, and `x **= 2` in place. An integer power is checked for overflow,
+  and a negative integer exponent panics, where NumPy raises `ValueError`.
 - An expression of element-wise operations runs as a single loop with no temporary arrays.
   `x += alpha * direction` reads each element of `direction` once and writes each element of `x`
   once.
