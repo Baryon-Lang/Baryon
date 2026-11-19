@@ -56,20 +56,23 @@ def main() -> Raises[None, OSError | ValueError]:
 - **Columns are matched by name.** Each field is read from the column whose header is the
   field's name, wherever it stands in the file. A column the schema does not name, `venue`
   above, is skipped. When a name is in the header twice, the first column is read.
-- **A field's type says how its cells are read.** The reader has `f64`, `i64`, `bool` and
-  `str`, and each of them with `| None`.
+- **A field's type says how its cells are read.** The reader has the floats `f64` and `f32`,
+  every whole number type from `i8` to `u64`, `bool` and `str`, and each of them with
+  `| None`.
 
   | Field | A cell holds |
   | --- | --- |
   | `f64` | a number as Python's `float` reads it, `1.5`, `2.5e3`, `inf`, `-inf` or `nan`, with spaces around it allowed |
+  | `f32` | the same, rounded to the nearest `f32` |
   | `i64` | a whole number with an optional sign, `100`, `-3` or `+4`, with spaces around it allowed |
+  | `i8`, `i16`, `i32`, `u8`, `u16`, `u32`, `u64` | the same, within the type's range: `-128` to `127` for an `i8`, `0` to `18446744073709551615` for a `u64` |
   | `bool` | `True` or `False`, in that case, all lower case or all upper case |
   | `str` | any text, kept as it is |
 
 - **An empty cell is `None`** in a column whose field is a `T | None`, a
   [missing value](missing-values-in-frames.md). In a column of `f64` it is NaN, as pandas
-  reads it. In a column of `str` it is the empty text. In a column of `i64` or `bool` it is
-  an error, since those have no value for it.
+  reads it. In a column of `str` it is the empty text. In a column of whole numbers or of
+  `bool` it is an error, since those have no value for it.
   A row that ends before its last column has empty cells there.
 
 The file is read as pandas reads one with its defaults:
@@ -118,8 +121,13 @@ index column is written.
 - **A frame of one column writes an empty cell as `""`**, since a blank line is skipped when
   the file is read.
 
-The writer has columns of `f64`, of every whole number type, of `bool` and of `str`, and each
-of them with `| None`. A column of another type is a compile error that names it.
+The writer has columns of `f64` and `f32`, of every whole number type, of `bool` and of
+`str`, and each of them with `| None`. A column of another type, such as complex numbers, is
+a compile error that names it.
+
+An `f32` is written as NumPy writes one, which is what pandas writes: the fewest digits that
+read back as the same `f32`, in scientific form from a million up, `1.2345675e+06`, where
+`print` keeps `1234567.5`.
 
 Two values do not come back as they were when the file is read again. An empty text in a
 column of `str | None` is written as an empty cell, which reads back as `None`. NaN in a
@@ -139,6 +147,7 @@ alone, when the file cannot be made or written.
   | --- | --- |
   | has no column a field names | `trades.csv: the header has no column 'volume'` |
   | holds a cell that is not a value of its field's type | `column 'volume', row 2: could not read '1e3' as i64` |
+  | holds a number outside the range of its field's type | `column 'lots', row 2: could not read '70000' as i16` |
   | has an empty cell where the field has no `None` | `column 'volume', row 2: the cell is empty, and the column's type has no None` |
   | has a row with more cells than the header | `trades.csv: expected 4 fields in row 2, saw 5` |
   | is empty | `trades.csv: no columns to read, the file is empty` |
@@ -148,7 +157,9 @@ alone, when the file cannot be made or written.
 
 The whole file is held in memory while its columns are built, with 16 bytes more for each
 cell of a column the schema names, and all of that is freed before `read_csv` returns. The
-columns it gives are as large as the same columns built any other way. Reading a file of one
+columns it gives are as large as the same columns built any other way. A column of `f32` or
+of a whole number type narrower than `i64` is read as `f64` or `i64` first, 8 bytes for each
+cell, and narrowed. Reading a file of one
 million rows and four columns, of text, `f64`, `i64` and `bool`, took 0.78 s on the
 development machine, where pandas 3.0.5 took 0.20 s; the reader has not been tuned yet.
 
@@ -168,6 +179,8 @@ took 2.5 s, where pandas took 2.0 s.
   field `str | None` to get `None`, as pandas's missing value is read here.
 - **An `i64` cell is a whole number.** pandas reads `1.0` into an `int64` column; here it is
   an error, as is a `bool` cell written `1`, `0`, `yes` or `no`.
+- **A number too large for its column is an error.** Given `dtype="int16"`, pandas reads
+  `70000` as 4464, the low 16 bits. Here it is a `ValueError` that names the cell.
 - **The schema chooses the columns.** pandas has `usecols=` for reading some of them. Here a
   column the schema does not name is skipped, and one it names that the file lacks is an
   error.
@@ -181,6 +194,5 @@ took 2.5 s, where pandas took 2.0 s.
 
 ## Not built yet
 
-- Reading columns of the other number types, such as `f32` and `i32`: read `f64` or `i64`
-  and convert. Writing a column of `f32` (roadmap 3.14.4.1).
 - Every keyword of `pandas.read_csv` and of `to_csv` (roadmap 3.14.4.2).
+- Columns of complex numbers.

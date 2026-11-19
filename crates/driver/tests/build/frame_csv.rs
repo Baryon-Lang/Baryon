@@ -236,3 +236,134 @@ def main() -> Raises[None, OSError | ValueError]:
         "name,note,price,bid,volume,lots,small,byte,live,seen\n"
     );
 }
+
+/// The program of `narrow_number_columns_are_read_and_written`: a frame of every narrow
+/// number type read and written back, then a file that does not fit for each of four types.
+const NARROW: &str = "\
+class Row(Struct):
+    g: u64
+    c: i32
+    f: u32
+    h: f32
+    o: i16 | None
+    b: i16
+    e: u16
+    a: i8
+    d: u8
+
+
+class Small(Struct):
+    a: i8
+
+
+class Byte(Struct):
+    d: u8
+
+
+class Large(Struct):
+    g: u64
+
+
+class Single(Struct):
+    h: f32 | None
+
+
+def small(path: str) -> Raises[int, OSError | ValueError]:
+    rows: DataFrame[Small] = DataFrame.read_csv(path)
+    return len(rows)
+
+
+def byte(path: str) -> Raises[int, OSError | ValueError]:
+    rows: DataFrame[Byte] = DataFrame.read_csv(path)
+    return len(rows)
+
+
+def large(path: str) -> Raises[int, OSError | ValueError]:
+    rows: DataFrame[Large] = DataFrame.read_csv(path)
+    return len(rows)
+
+
+def single(path: str) -> Raises[int, OSError | ValueError]:
+    rows: DataFrame[Single] = DataFrame.read_csv(path)
+    return len(rows)
+
+
+def main() -> Raises[None, OSError]:
+    try:
+        rows: DataFrame[Row] = DataFrame.read_csv(\"all.csv\")
+        print(rows.g)
+        print(rows.o)
+        print(rows.a, rows.d)
+        rows.to_csv(\"back.csv\")
+    except ValueError as error:
+        print(error.message)
+    try:
+        print(small(\"small.csv\"))
+    except ValueError as error:
+        print(error.message)
+    try:
+        print(byte(\"byte.csv\"))
+    except ValueError as error:
+        print(error.message)
+    try:
+        print(large(\"large.csv\"))
+    except ValueError as error:
+        print(error.message)
+    try:
+        print(single(\"single.csv\"))
+    except ValueError as error:
+        print(error.message)
+";
+
+/// Columns of the narrower number types (roadmap 3.14.4.1): every whole number type reads
+/// its least and greatest value, `u64` past the range of `i64`, and `f32` reads each cell
+/// rounded to an `f32`. A cell outside its type's range raises `ValueError` where pandas
+/// keeps the low bits. `to_csv` writes the bytes pandas writes for the same columns, an
+/// `f32` in the form pandas writes: scientific from a million up.
+#[test]
+fn narrow_number_columns_are_read_and_written() {
+    let all = "a,b,c,d,e,f,g,h,o\n\
+               -128,-32768,-2147483648,255,65535,4294967295,18446744073709551615,0.1,\n\
+               127,32767,2147483647,0, +7 ,0,0,16777217,5\n\
+               1,2,3,4,5,6, +42 ,1234567.5,\n\
+               0,0,0,0,0,0,0,nan,-3\n\
+               0,0,0,0,0,0,0,0.0001,1\n\
+               0,0,0,0,0,0,0,1e-5,1\n\
+               0,0,0,0,0,0,0,-2.5e6,1\n\
+               0,0,0,0,0,0,0,inf,1\n\
+               0,0,0,0,0,0,0,123456.7,1\n";
+    let files = [
+        ("all.csv", all),
+        ("small.csv", "a\n127\n128\n"),
+        ("byte.csv", "d\n-1\n"),
+        ("large.csv", "g\n18446744073709551616\n"),
+        ("single.csv", "h\n1.5\n\n1_0\n"),
+    ];
+    let (ran, directory) = run("csv_narrow", NARROW, &files).unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "[18446744073709551615                    0                   42\n                    \
+         0                    0                    0\n                    \
+         0                    0                    0]\n\
+         [None 5 None -3 1 1 1 1 1]\n\
+         [-128  127    1    0    0    0    0    0    0] [255   0   4   0   0   0   0   0   0]\n\
+         column 'a', row 2: could not read '128' as i8\n\
+         column 'd', row 1: could not read '-1' as u8\n\
+         column 'g', row 1: could not read '18446744073709551616' as u64\n\
+         column 'h', row 2: could not read '1_0' as f32\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(directory.join("package").join("back.csv")).unwrap(),
+        "g,c,f,h,o,b,e,a,d\n\
+         18446744073709551615,-2147483648,4294967295,0.1,,-32768,65535,-128,255\n\
+         0,2147483647,0,1.6777216e+07,5,32767,7,127,0\n\
+         42,3,6,1.2345675e+06,,2,5,1,4\n\
+         0,0,0,,-3,0,0,0,0\n\
+         0,0,0,1e-04,1,0,0,0,0\n\
+         0,0,0,1e-05,1,0,0,0,0\n\
+         0,0,0,-2.5e+06,1,0,0,0,0\n\
+         0,0,0,inf,1,0,0,0,0\n\
+         0,0,0,123456.7,1,0,0,0,0\n"
+    );
+}

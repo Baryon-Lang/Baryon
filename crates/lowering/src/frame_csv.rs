@@ -7,9 +7,10 @@
 //!
 //! 1. `csv_cells(path, names)` reads the file and finds the cells of the columns `names`.
 //! 2. For a column of numbers or `bool`s, `csv_floats`, `csv_integers` or `csv_bools` reads
-//!    its cells. For a column of `str`, `csv_text_bytes` and `csv_text_offsets` give the two
-//!    buffers of a text array. For a column that may hold `None`, `csv_validity` gives the
-//!    bitmap that goes beside the values.
+//!    its cells, or the function of a narrower number type in `<std>/frame_csv_types.byn`.
+//!    For a column of `str`, `csv_text_bytes` and `csv_text_offsets` give the two buffers of
+//!    a text array. For a column that may hold `None`, `csv_validity` gives the bitmap that
+//!    goes beside the values.
 //! 3. The columns move into the frame's tuple.
 //!
 //! The first two steps can fail, so each call has the error edge of the `read_csv` call. A
@@ -24,7 +25,30 @@ use crate::frames::erase;
 use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{Argument, Callee, Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::NodeId;
-use types::{Column, Float, Primitive, Type, TypeKind};
+use types::{Column, Float, Integer, Primitive, Type, TypeDb, TypeKind};
+
+/// The function of the library that reads a column of numbers or `bool`s whose elements are
+/// `element`s from a CSV file: one for each type, since each checks its own range. `None`
+/// for a type the reader does not have, which the checker has refused.
+fn reader<'db>(db: &'db dyn TypeDb, element: Type<'db>) -> Option<&'static str> {
+    let TypeKind::Primitive(primitive) = element.kind(db) else {
+        return None;
+    };
+    Some(match primitive {
+        Primitive::Bool => "csv_bools",
+        Primitive::Float(Float::F64) => "csv_floats",
+        Primitive::Float(Float::F32) => "csv_f32",
+        Primitive::Integer(Integer::I8) => "csv_i8",
+        Primitive::Integer(Integer::I16) => "csv_i16",
+        Primitive::Integer(Integer::I32) => "csv_i32",
+        Primitive::Integer(Integer::I64) => "csv_integers",
+        Primitive::Integer(Integer::U8) => "csv_u8",
+        Primitive::Integer(Integer::U16) => "csv_u16",
+        Primitive::Integer(Integer::U32) => "csv_u32",
+        Primitive::Integer(Integer::U64) => "csv_u64",
+        Primitive::Complex(_) => return None,
+    })
+}
 
 impl<'db> Builder<'db> {
     /// `DataFrame.read_csv(path)` into `place`, the frame's type being the call's own, which
@@ -120,14 +144,9 @@ impl<'db> Builder<'db> {
             self.assign(Place::from(values), parts, node);
             values
         } else {
-            let function = match element.kind(self.db) {
-                TypeKind::Primitive(Primitive::Float(_)) => "csv_floats",
-                TypeKind::Primitive(Primitive::Integer(_)) => "csv_integers",
-                TypeKind::Primitive(Primitive::Bool) => "csv_bools",
-                _ => {
-                    self.unsupported(node, "`DataFrame.read_csv` of a column of this type");
-                    return None;
-                }
+            let Some(function) = reader(self.db, element) else {
+                self.unsupported(node, "`DataFrame.read_csv` of a column of this type");
+                return None;
             };
             let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
             let gaps = Operand::Constant(Constant {
@@ -207,6 +226,12 @@ impl<'db> Builder<'db> {
                 }
                 (TypeKind::Primitive(Primitive::Float(Float::F64)), true) => {
                     ("csv_optional_float_cells", Vec::new())
+                }
+                (TypeKind::Primitive(Primitive::Float(Float::F32)), false) => {
+                    ("csv_single_cells", Vec::new())
+                }
+                (TypeKind::Primitive(Primitive::Float(Float::F32)), true) => {
+                    ("csv_optional_single_cells", Vec::new())
                 }
                 (_, false) => ("csv_plain_cells", vec![element]),
                 (_, true) => ("csv_optional_plain_cells", vec![element]),

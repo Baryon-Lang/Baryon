@@ -67,7 +67,7 @@ class Trade(Struct):
 
 class Wide(Struct):
     symbol: str
-    price: f32
+    price: complex128
 
 
 def main() -> Raises[None, OSError | ValueError]:
@@ -96,12 +96,12 @@ error: `DataFrame.read_csv` needs the frame's type from the context
    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ which columns, of which types?
    = note: a compiled program cannot learn the columns from the file: write the schema as a struct and annotate the variable, `trades: DataFrame[Trade] = DataFrame.read_csv(path)`
 
-error: `DataFrame.read_csv` cannot read the column `price` of type `f32` yet
+error: `DataFrame.read_csv` cannot read the column `price` of type `complex128` yet
   --> main.byn:14:29
    |
 14 |     wide: DataFrame[Wide] = DataFrame.read_csv("trades.csv")
    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not built yet
-   = note: a column of `f64`, `i64`, `bool` or `str` is read, and one of those that may be `None`; read the column as one of them and convert it
+   = note: a column of floats, of whole numbers, of `bool` or of `str` is read, and one of those that may be `None`
 
 error: `DataFrame.read_csv` takes the path of the file
   --> main.byn:15:30
@@ -151,7 +151,7 @@ class Trade(Struct):
 
 
 class Sample(Struct):
-    width: f32
+    width: complex128
     count: i64
 
 
@@ -187,12 +187,12 @@ error: expected `str`, found `i64`
 15 |     trades.to_csv(3)
    |                   ^ a path is `str`
 
-error: `to_csv` cannot write the column `width` of type `f32` yet
+error: `to_csv` cannot write the column `width` of type `complex128` yet
   --> main.byn:16:5
    |
 16 |     samples.to_csv("samples.csv")
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not built yet
-   = note: a column of `f64`, of whole numbers, of `bool` or of `str` is written, and one of those that may be `None`
+   = note: a column of floats, of whole numbers, of `bool` or of `str` is written, and one of those that may be `None`
 
 error: `trades.to_csv` can fail with `OSError`, which is not handled here
   --> main.byn:21:5

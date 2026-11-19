@@ -168,26 +168,33 @@ def csv_cells(
     return (data, bounds)
 
 
-def _bad(name: str, row: int, text: str, kind: str) -> str:
+def csv_bad(name: str, row: int, text: str, kind: str) -> str:
     """The message for a cell of the column `name` in the 0-based data row `row` whose text
     is not a `kind`."""
     return f"column '{name}', row {row + 1}: could not read '{text}' as {kind}"
 
 
-def _empty(name: str, row: int) -> str:
+def csv_empty(name: str, row: int) -> str:
     """The message for an empty cell of the column `name`, whose type has no `None`, in the
     0-based data row `row`."""
     where = f"column '{name}', row {row + 1}"
     return where + ": the cell is empty, and the column's type has no None"
 
 
-def csv_floats(
-    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+def csv_floats_as(
+    data: Array[u8, 1],
+    bounds: list[int],
+    column: int,
+    columns: int,
+    optional: bool,
+    name: str,
+    kind: str,
 ) -> Raises[Array[f64, 1], OSError | ValueError]:
-    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `f64`. An
-    empty cell is 0.0 when `optional`, to stand under a `None`, and NaN otherwise, as pandas
-    reads it into a `float64` column. A cell that is not a number is a `ValueError`. `inf`,
-    `-inf` and `nan` are numbers, as in pandas."""
+    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `f64` for
+    a column of the type named `kind`, `f64` or `f32`, which the error names. An empty cell
+    is 0.0 when `optional`, to stand under a `None`, and NaN otherwise, as pandas reads it
+    into a column of floats. A cell that is not a number is a `ValueError`. `inf`, `-inf`
+    and `nan` are numbers, as in pandas."""
     rows = len(bounds) // (2 * columns)
     result = Array.fill((rows,), 0.0)
     for row in range(rows):
@@ -198,35 +205,62 @@ def csv_floats(
             continue
         text = data[bounds[at] : bounds[at + 1]].decode().strip()
         if "_" in text:
-            raise ValueError(_bad(name, row, text, "f64"))
+            raise ValueError(csv_bad(name, row, text, kind))
         try:
             result[row] = float(text)
         except ValueError:
-            raise ValueError(_bad(name, row, text, "f64"))
+            raise ValueError(csv_bad(name, row, text, kind))
     return result
 
 
-def csv_integers(
+def csv_floats(
     data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[f64, 1], OSError | ValueError]:
+    """`csv_floats_as` for a column of `f64`."""
+    return csv_floats_as(data, bounds, column, columns, optional, name, "f64")
+
+
+def csv_whole(
+    data: Array[u8, 1],
+    bounds: list[int],
+    column: int,
+    columns: int,
+    optional: bool,
+    name: str,
+    kind: str,
+    limits: tuple[int, int],
 ) -> Raises[Array[i64, 1], OSError | ValueError]:
-    """`csv_floats` for a column of `i64`: each cell is a whole number, with an optional
-    sign."""
+    """`csv_floats_as` for a column of the whole number type named `kind`, read as `i64`:
+    each cell is a whole number, with an optional sign, from `limits[0]` to `limits[1]`,
+    the least and the greatest value of the type. A number outside them is a `ValueError`,
+    where pandas keeps its low bits. An empty cell is 0 when `optional` and a `ValueError`
+    otherwise."""
     rows = len(bounds) // (2 * columns)
     result = Array.fill((rows,), 0)
     for row in range(rows):
         at = 2 * (row * columns + column)
         if bounds[at] == bounds[at + 1]:
             if not optional:
-                raise ValueError(_empty(name, row))
+                raise ValueError(csv_empty(name, row))
             continue
         text = data[bounds[at] : bounds[at + 1]].decode().strip()
         if "_" in text:
-            raise ValueError(_bad(name, row, text, "i64"))
+            raise ValueError(csv_bad(name, row, text, kind))
         try:
             result[row] = int(text)
         except ValueError:
-            raise ValueError(_bad(name, row, text, "i64"))
+            raise ValueError(csv_bad(name, row, text, kind))
+        if result[row] < limits[0] or result[row] > limits[1]:
+            raise ValueError(csv_bad(name, row, text, kind))
     return result
+
+
+def csv_integers(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[i64, 1], OSError | ValueError]:
+    """`csv_whole` for a column of `i64`."""
+    limits = (-9223372036854775807 - 1, 9223372036854775807)
+    return csv_whole(data, bounds, column, columns, optional, name, "i64", limits)
 
 
 def csv_bools(
@@ -240,13 +274,13 @@ def csv_bools(
         at = 2 * (row * columns + column)
         if bounds[at] == bounds[at + 1]:
             if not optional:
-                raise ValueError(_empty(name, row))
+                raise ValueError(csv_empty(name, row))
             continue
         text = data[bounds[at] : bounds[at + 1]].decode().strip()
         if text in ["True", "true", "TRUE"]:
             result[row] = True
         elif text not in ["False", "false", "FALSE"]:
-            raise ValueError(_bad(name, row, text, "bool"))
+            raise ValueError(csv_bad(name, row, text, "bool"))
     return result
 
 
@@ -293,7 +327,7 @@ def csv_validity(bounds: list[int], column: int, columns: int) -> Array[u8, 1]:
     return bits
 
 
-def _there(bits: Array[u8, 1], at: int) -> bool:
+def csv_there(bits: Array[u8, 1], at: int) -> bool:
     """Whether element `at` is there: its bit in the validity bitmap `bits` is 1."""
     return ((bits[at // 8] >> u8(at % 8)) & u8(1)) == u8(1)
 
@@ -324,7 +358,7 @@ def csv_optional_float_cells(values: Array[f64, 1], bits: Array[u8, 1]) -> list[
     """`csv_float_cells` for a column that may hold `None`, whose cell is empty too."""
     cells = csv_float_cells(values)
     for row in range(len(cells)):
-        if not _there(bits, row):
+        if not csv_there(bits, row):
             cells[row] = ""
     return cells
 
@@ -339,7 +373,7 @@ def csv_optional_plain_cells[T: Copy](values: Array[T, 1], bits: Array[u8, 1]) -
     """`csv_plain_cells` for a column that may hold `None`, whose cell is empty."""
     cells: list[str] = []
     for row in range(len(values)):
-        if _there(bits, row):
+        if csv_there(bits, row):
             cells.append(f"{values[row]}")
         else:
             cells.append("")
@@ -355,7 +389,7 @@ def csv_optional_text_cells(values: Array[str, 1], bits: Array[u8, 1]) -> list[s
     """`csv_text_cells` for a column that may hold `None`, whose cell is empty."""
     cells = csv_text_cells(values)
     for row in range(len(cells)):
-        if not _there(bits, row):
+        if not csv_there(bits, row):
             cells[row] = ""
     return cells
 
