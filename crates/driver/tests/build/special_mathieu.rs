@@ -136,3 +136,56 @@ def main() -> Raises[None, OSError | ValueError]:
 fn spheroidal_functions_match_the_recorded_values() {
     check("special-spheroidal", SPHEROIDAL, "spheroidal.txt").unwrap();
 }
+
+/// The program for `spheroidal_radial.txt`: m, n, c and x, or m, n, c, the characteristic value
+/// and x for the `_cv` forms.
+const SPHEROIDAL_RADIAL: &str = "\
+from special import pro_rad1, pro_rad2, obl_rad1, obl_rad2, pro_rad1_cv, pro_rad2_cv
+from special import obl_rad1_cv, obl_rad2_cv
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            m = float(fields[1])
+            n = float(fields[2])
+            c = float(fields[3])
+            fourth = float(fields[4])
+            pair = (0.0, 0.0)
+            if name.startswith(\"pro_rad1_cv\"):
+                pair = pro_rad1_cv(m, n, c, fourth, float(fields[5]))
+            elif name.startswith(\"pro_rad2_cv\"):
+                pair = pro_rad2_cv(m, n, c, fourth, float(fields[5]))
+            elif name.startswith(\"obl_rad1_cv\"):
+                pair = obl_rad1_cv(m, n, c, fourth, float(fields[5]))
+            elif name.startswith(\"obl_rad2_cv\"):
+                pair = obl_rad2_cv(m, n, c, fourth, float(fields[5]))
+            elif name.startswith(\"pro_rad1\"):
+                pair = pro_rad1(m, n, c, fourth)
+            elif name.startswith(\"pro_rad2\"):
+                pair = pro_rad2(m, n, c, fourth)
+            elif name.startswith(\"obl_rad1\"):
+                pair = obl_rad1(m, n, c, fourth)
+            else:
+                pair = obl_rad2(m, n, c, fourth)
+            if name.endswith(\"_d\"):
+                print(pair[1])
+            else:
+                print(pair[0])
+";
+
+/// The radial spheroidal functions of both kinds and their derivatives, with the characteristic
+/// value found or given, at the cases of `spheroidal_radial.txt`: orders to 10 and 12 above them,
+/// c from 0.01 to 50, prolate x from 1 + 1e-6 to 30 and oblate x from 0 to 30, and arguments
+/// that are not allowed.
+#[test]
+fn radial_spheroidal_functions_match_the_recorded_values() {
+    check(
+        "special-spheroidal-radial",
+        SPHEROIDAL_RADIAL,
+        "spheroidal_radial.txt",
+    )
+    .unwrap();
+}

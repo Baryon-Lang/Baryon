@@ -78,6 +78,10 @@ from special_spheroidal import pro_cv as pro_cv, obl_cv as obl_cv, pro_cv_seq as
 from special_spheroidal import obl_cv_seq as obl_cv_seq, pro_ang1 as pro_ang1
 from special_spheroidal import obl_ang1 as obl_ang1, pro_ang1_cv as pro_ang1_cv
 from special_spheroidal import obl_ang1_cv as obl_ang1_cv
+from special_spheroidal_radial import pro_rad1 as pro_rad1, pro_rad2 as pro_rad2
+from special_spheroidal_radial import obl_rad1 as obl_rad1, obl_rad2 as obl_rad2
+from special_spheroidal_radial import pro_rad1_cv as pro_rad1_cv, pro_rad2_cv as pro_rad2_cv
+from special_spheroidal_radial import obl_rad1_cv as obl_rad1_cv, obl_rad2_cv as obl_rad2_cv
 from special_elliptic import ellipk as ellipk, ellipkm1 as ellipkm1, ellipe as ellipe
 from special_elliptic import ellipkinc as ellipkinc, ellipeinc as ellipeinc, ellipj as ellipj
 from special_carlson import elliprc as elliprc, elliprd as elliprd, elliprf as elliprf
