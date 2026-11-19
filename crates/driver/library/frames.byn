@@ -51,6 +51,17 @@ def taken[T](column: Array[T, 1], positions: Array[i64, 1]) -> Array[T, 1]:
     return column[positions]
 
 
+def repeated[T: Copy](count: int, value: T) -> Array[T, 1]:
+    """A column of `count` rows that all hold `value`: what `df.assign(fee=0.5)` adds."""
+    return Array.fill((count,), value)
+
+
+def text_repeated(count: int, text: str) -> Array[str, 1]:
+    """A column of `count` rows that all hold a copy of `text`: `df.assign(venue="NYSE")`.
+    Cost: `count` copies of the text."""
+    return Array([text.copy() for row in range(count)])
+
+
 def slice_positions(
     count: int, start: int, stop: int, step: int, starts: bool, stops: bool
 ) -> Array[i64, 1]:
