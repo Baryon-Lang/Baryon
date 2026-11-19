@@ -103,6 +103,7 @@ mod process;
 mod quad;
 mod reductions;
 mod shapes;
+mod shown_holders;
 mod slices;
 mod snappy;
 mod sorting;

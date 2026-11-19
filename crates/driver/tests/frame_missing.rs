@@ -138,7 +138,7 @@ error: a value that holds an array with missing values cannot be shown yet
    |
 28 |     print((quotes.copy(), 1))
    |           ^^^^^^^^^^^^^^^^^^ holds an array that may hold `None`
-   = note: show the array or the frame alone: `print(values)`
+   = note: show the array or the frame alone, `print(values)`, or in a tuple or a list; a dict, a `T | None` and a frame inside another value are not built
 
 error: a column cannot be moved out of its `DataFrame`
   --> main.byn:29:12

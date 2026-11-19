@@ -53,8 +53,8 @@ def uses(asks: Array[f64, 1]):
     least = min(bids)
     for name in Array(["a", None]):
         size = len(name)
-    print((bids.copy(), 1))
-    text = f"{[bids.copy()]}"
+    print({1: bids.copy()})
+    text = f"{[{2: bids.copy()}]}"
     moved = bids
     again = len(bids)
 "#;
@@ -204,16 +204,16 @@ error: `min` is not built for an array with missing values yet
 error: a value that holds an array with missing values cannot be shown yet
   --> main.byn:29:11
    |
-29 |     print((bids.copy(), 1))
+29 |     print({1: bids.copy()})
    |           ^^^^^^^^^^^^^^^^ holds an array that may hold `None`
-   = note: show the array or the frame alone: `print(values)`
+   = note: show the array or the frame alone, `print(values)`, or in a tuple or a list; a dict, a `T | None` and a frame inside another value are not built
 
 error: a value that holds an array with missing values cannot be shown yet
   --> main.byn:30:15
    |
-30 |     text = f"{[bids.copy()]}"
-   |               ^^^^^^^^^^^^^ holds an array that may hold `None`
-   = note: show the array or the frame alone: `print(values)`
+30 |     text = f"{[{2: bids.copy()}]}"
+   |               ^^^^^^^^^^^^^^^^^^ holds an array that may hold `None`
+   = note: show the array or the frame alone, `print(values)`, or in a tuple or a list; a dict, a `T | None` and a frame inside another value are not built
 
 error: `bids` was moved
   --> main.byn:32:17

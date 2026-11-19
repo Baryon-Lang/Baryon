@@ -406,8 +406,11 @@ def main():
   as [a frame's floats](dataframes.md#printing) do.
 - **A long array is cut** as NumPy cuts one: of more than 1000 elements the first three and
   the last three print, with `...` between. A long frame prints its first and last 5 rows.
-- **Alone only.** A tuple or a list that holds an array with missing values, or a frame
-  with such a column, is a compile error in `print`. Print each one alone.
+- **In a tuple or a list** an array with missing values is written the same way, as an
+  array without gaps is: `print((bids, 1))` writes `([1.5 None 2.25], 1)` and
+  `print([bids, asks])` writes one after the other between brackets, at any depth. A
+  frame with such a column inside a tuple or a list, and such an array in a dict or behind
+  a `T | None`, are compile errors in `print`. Print each one alone.
 - **Cost:** one text for each element or row shown.
 
 ## What is not built
@@ -419,7 +422,8 @@ Each of these is a compile error that names what an array with missing values ha
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`,
   `nunique`, `count`, `sum`, `mean`, `min`, `max`, `var` and `std`;
 - assigning an element of text;
-- `print` of a tuple or a list that holds one, or that holds a frame with such a column;
+- `print` of a dict or a `T | None` that holds one, or of a tuple or a list that holds a
+  frame with such a column;
 - one as a struct field;
 - more than one dimension: `Array[f64 | None, 2]`.
 
