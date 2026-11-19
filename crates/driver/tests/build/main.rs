@@ -50,6 +50,7 @@ mod h5by;
 mod hoisting;
 mod inflate;
 mod integrate;
+mod interpolation;
 mod kernels;
 mod linalg;
 mod list_choosers;
