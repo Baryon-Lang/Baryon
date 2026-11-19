@@ -8,6 +8,7 @@
 
 use crate::Unsupported;
 use crate::function::Function;
+use crate::print::{CAPTURE, Form};
 use crate::ty::Number;
 use mir::{Piece, Place};
 use types::{FormatSpec, TypeKind};
@@ -119,9 +120,22 @@ impl Function<'_, '_, '_> {
         spec: &str,
     ) -> Result<(), Unsupported> {
         let (address, ty) = self.place(place)?;
-        let value = self
-            .load(&address, ty)?
-            .ok_or_else(|| Unsupported::new("`None` in an f-string"))?;
+        // A specification on a value `print` writes is a choice Python makes at run time, a
+        // `TypeError` for most types, which the language has not settled yet.
+        let shown = ty.display(self.types.db).to_string();
+        let printed = || {
+            Unsupported::new(format!(
+                "values of type `{shown}` with a format specification in an f-string"
+            ))
+        };
+        let Some(value) = self.load(&address, ty)? else {
+            if spec != "null" {
+                return Err(printed());
+            }
+            self.print_text(CAPTURE, b"None");
+            self.append_captured(builder, spec);
+            return Ok(());
+        };
         if matches!(ty.kind(self.types.db), TypeKind::Str) {
             let (bytes, length) = self.text_parts(&value);
             self.append(builder, "str", &format!("ptr {bytes}, i64 {length}"), spec);
@@ -148,15 +162,29 @@ impl Function<'_, '_, '_> {
                 };
                 (if signed { "i64" } else { "u64" }, format!("i64 {widened}"))
             }
+            None if spec != "null" => return Err(printed()),
             None => {
-                return Err(Unsupported::new(format!(
-                    "values of type `{}` in an f-string",
-                    ty.display(self.types.db)
-                )));
+                self.print_value(CAPTURE, &value, ty, Form::Print)?;
+                self.append_captured(builder, spec);
+                return Ok(());
             }
         };
         self.append(builder, kind, &argument, spec);
         Ok(())
+    }
+
+    /// Appends to `builder`, with the specification at `spec`, the text the code before this
+    /// call printed to the runtime's held stream: a value of any other type is printed there
+    /// with the calls `print` makes for it, so an f-string writes what `print` writes
+    /// (roadmap 1.9.57).
+    fn append_captured(&mut self, builder: &str, spec: &str) {
+        self.declare(
+            "baryon_rt_text_captured",
+            "declare void @baryon_rt_text_captured(ptr, ptr) nounwind",
+        );
+        self.line(&format!(
+            "call void @baryon_rt_text_captured(ptr {builder}, ptr {spec})"
+        ));
     }
 
     /// Calls `baryon_rt_text_{kind}` on `builder` with `value`, its typed argument or arguments,
