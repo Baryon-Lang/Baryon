@@ -109,14 +109,21 @@ impl<'db> Body<'db> {
     /// no argument fixed, and returns the unknown type: `make()` for
     /// `def make[T]() -> list[T]`. Nothing is reported when checking the call reported an
     /// error already, its count of errors grown past `before`: a wrong argument leaves its
-    /// type parameter unfixed too.
+    /// type parameter unfixed too. Nor is it when a parameter's type is unknown, from an error
+    /// reported where the function is declared, such as `Array[T | None, 1]` (roadmap
+    /// 1.9.73): no argument can fix a type parameter that parameter no longer names.
     pub(super) fn unfixed_type_argument(
         &mut self,
         (node, before): (NodeId, usize),
         callee: &str,
         signature: &Signature<'db>,
     ) -> Option<Type<'db>> {
-        if self.lowerer.diagnostics.len() > before {
+        if self.lowerer.diagnostics.len() > before
+            || signature
+                .parameters
+                .iter()
+                .any(|parameter| relations::is_unknown(self.db, parameter.ty))
+        {
             return None;
         }
         let call = self.typed.calls.get(&Key(node))?;
