@@ -42,7 +42,8 @@ This prints `3 None 3.0`, then `[False  True False]`.
 - **`sort_values` puts `None` last.** `quotes.sort_values("bid")` sorts the rows that have a
   bid and puts the rows whose bid is `None` after them, in the order they had, whether the
   sort is rising or falling. A `NaN` is a number, so it comes after the other numbers and
-  before the `None`s. The sort is stable, as for any frame.
+  before the `None`s. The sort is stable, as for any frame. `na_position="first"` turns
+  this round: the `None`s, then the `NaN`s, then the numbers.
 - **`assign`, `drop` and `rename` change the columns** as for any frame. A column `assign`
   gives may hold `None`, `quotes.assign(ask=quotes.bid.copy())`, and a list written with
   `None` for a column that already may hold it needs no annotation,
@@ -54,7 +55,10 @@ This prints `3 None 3.0`, then `[False  True False]`.
   neither. pandas compares its nullable columns the same way.
 - **`value_counts` counts no row with a `None`** in a column it counts by, as it counts none
   with a `NaN`, which is what pandas does unless told otherwise. The columns of its result
-  keep their types, so `quotes.value_counts("bid")` has a `bid` of `f64 | None`.
+  keep their types, so `quotes.value_counts("bid")` has a `bid` of `f64 | None`. With
+  `dropna=False` a `None` is counted as a value. A `NaN` is another value, so a column of
+  `f64 | None` that holds both has a row for each, where pandas, which has one missing
+  value, has one row.
 - **`describe` sums up the values that are there.** The `count` of a column that may hold
   `None` is how many values it has, and the mean, the deviation and the quartiles are
   theirs. A column with no values at all has a count of 0 and `NaN` for the rest, where

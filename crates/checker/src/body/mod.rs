@@ -56,6 +56,7 @@ mod formatted;
 mod frame_csv;
 mod frame_describe;
 mod frame_distinct;
+mod frame_distinct_options;
 mod frame_dropna;
 mod frame_groups;
 mod frame_join_keys;

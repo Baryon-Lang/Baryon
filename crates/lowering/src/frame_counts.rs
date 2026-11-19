@@ -10,14 +10,21 @@
 //! falling order, so values with one count stay in the order they first appear, as in
 //! pandas. Cost for `n` rows: `n log n` comparisons for each column named, and a copy of
 //! the distinct values.
+//!
+//! Four options, written as `True` or `False`, change the steps (roadmap 3.13.16):
+//! `dropna=False` skips `valued_rows`, so a missing value is counted like any other;
+//! `sort=False` skips the sort; `ascending=True` sorts the counts rising; and
+//! `normalize=True` ends with the library's `proportions`, each count as a part of their
+//! sum, in a column named `proportion`.
 
 use crate::builder::Builder;
+use crate::frame_distinct::Key;
 use crate::optional_arrays::VALIDITY;
 use mir::{Constant, ConstantValue, Operand, Place, Projection, Rvalue};
-use syntax::NodeId;
-use types::{Primitive, TypeKind};
+use syntax::{NodeId, SyntaxKind};
+use types::{Column, Float, Primitive, Type, TypeKind};
 
-impl Builder<'_> {
+impl<'db> Builder<'db> {
     /// The call `node` of `value_counts` on the frame `frame`, into `place`. The checker has
     /// made sure of the columns named and that none is called `count`.
     pub(crate) fn frame_counts(&mut self, place: Place, frame: NodeId, node: NodeId) {
@@ -42,44 +49,28 @@ impl Builder<'_> {
         let Some(mut rows) = call(self, "first_rows", Vec::new(), vec![ids.clone()]) else {
             return;
         };
-        // A value with a NaN in it is not counted, as in pandas.
-        for (key, element) in &keys {
-            if matches!(
-                element.kind(self.db),
-                TypeKind::Primitive(Primitive::Float(_))
-            ) {
-                let arguments = vec![key.clone(), rows];
-                let Some(kept) = call(self, "valued_rows", vec![*element], arguments) else {
-                    return;
-                };
-                rows = kept;
-            }
-        }
-        // Nor is a value with a `None` in it.
-        for (&position, column) in compared.iter().zip(
-            compared
-                .iter()
-                .filter_map(|&at| columns.get(usize::try_from(at).ok()?)),
-        ) {
-            if matches!(column.element.kind(self.db), TypeKind::Optional(_)) {
-                let stored = source.clone().project(Projection::Field(position));
-                let bits = stored.project(Projection::Field(VALIDITY));
-                let Some(kept) = call(self, "present_rows", Vec::new(), vec![bits, rows]) else {
-                    return;
-                };
-                rows = kept;
-            }
+        let flag = |builder: &Self, name: &str, default: bool| {
+            builder.keyword_of(node, name).map_or(default, |value| {
+                builder.tree.kind(value) == SyntaxKind::True
+            })
+        };
+        if flag(self, "dropna", true) {
+            let Some(kept) = self.valued_keys(rows, &source, (&compared, &keys), columns, node)
+            else {
+                return;
+            };
+            rows = kept;
         }
         let Some(counts) = call(self, "id_counts", Vec::new(), vec![ids, rows.clone()]) else {
             return;
         };
         let distinct = self.temporary(int, node);
         self.assign(Place::from(distinct), Rvalue::Length(rows.clone(), 0), node);
-        let falling = Operand::Constant(Constant {
+        let rising = Operand::Constant(Constant {
             ty: boolean,
-            value: ConstantValue::Bool(false),
+            value: ConstantValue::Bool(flag(self, "ascending", false)),
         });
-        let falling = Place::from(self.held(boolean, falling, node));
+        let rising = Place::from(self.held(boolean, rising, node));
         let Some(start) = call(
             self,
             "row_positions",
@@ -88,9 +79,15 @@ impl Builder<'_> {
         ) else {
             return;
         };
-        let sorted = vec![counts.clone(), start, falling];
-        let Some(order) = call(self, "ordered", vec![int], sorted) else {
-            return;
+        // Unsorted, the values stay in the order they first appear.
+        let order = if flag(self, "sort", true) {
+            let sorted = vec![counts.clone(), start, rising];
+            let Some(order) = call(self, "ordered", vec![int], sorted) else {
+                return;
+            };
+            order
+        } else {
+            start
         };
         let Some(rows) = call(self, "taken", vec![int], vec![rows, order.clone()]) else {
             return;
@@ -113,7 +110,64 @@ impl Builder<'_> {
         let Some(count) = self.frame_call("taken", vec![int], arguments, positions, node) else {
             return;
         };
-        made.push(Operand::Move(Place::from(count)));
+        let mut last = count;
+        if flag(self, "normalize", false) {
+            self.drop_later(count);
+            let float = Type::new(self.db, TypeKind::Primitive(Primitive::Float(Float::F64)));
+            let parts = self.array_of(float);
+            let arguments = vec![Place::from(count)];
+            let Some(shares) = self.frame_call("proportions", Vec::new(), arguments, parts, node)
+            else {
+                return;
+            };
+            last = shares;
+        }
+        made.push(Operand::Move(Place::from(last)));
         self.assign(place, Rvalue::Aggregate(ty, made), node);
+    }
+
+    /// The positions `rows`, one row of each distinct value of a `value_counts`, without
+    /// those whose value has a NaN or a `None` in it, which pandas does not count unless
+    /// `dropna=False`. `source` is the frame borrowed, and `compared` are the positions of
+    /// its columns counted by and the keys made of them, as
+    /// [`Builder::compared_columns`] gives them, and `columns` all its columns. The
+    /// positions are dropped when the statement ends. `None` after a report.
+    fn valued_keys(
+        &mut self,
+        rows: Place,
+        source: &Place,
+        (compared, keys): (&[u32], &[Key<'db>]),
+        columns: &[Column<'db>],
+        node: NodeId,
+    ) -> Option<Place> {
+        let positions = self.positions_type();
+        let mut rows = rows;
+        for (key, element) in keys {
+            if matches!(
+                element.kind(self.db),
+                TypeKind::Primitive(Primitive::Float(_))
+            ) {
+                let arguments = vec![key.clone(), rows];
+                let kept =
+                    self.frame_call("valued_rows", vec![*element], arguments, positions, node)?;
+                self.drop_later(kept);
+                rows = Place::from(kept);
+            }
+        }
+        for (&position, column) in compared.iter().zip(
+            compared
+                .iter()
+                .filter_map(|&at| columns.get(usize::try_from(at).ok()?)),
+        ) {
+            if matches!(column.element.kind(self.db), TypeKind::Optional(_)) {
+                let stored = source.clone().project(Projection::Field(position));
+                let arguments = vec![stored.project(Projection::Field(VALIDITY)), rows];
+                let kept =
+                    self.frame_call("present_rows", Vec::new(), arguments, positions, node)?;
+                self.drop_later(kept);
+                rows = Place::from(kept);
+            }
+        }
+        Some(rows)
     }
 }

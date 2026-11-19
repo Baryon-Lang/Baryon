@@ -1,6 +1,7 @@
 //! Leaving out the rows of a frame that repeat (decision 0045, roadmap 3.13.9):
 //! `df.drop_duplicates()` and `df.drop_duplicates(subset=[...])`, a new frame with the
-//! first of every set of rows that hold the same values in the columns compared.
+//! first of every set of rows that hold the same values in the columns compared, or as
+//! `keep=` asks, the last of each or only the rows that do not repeat (roadmap 3.13.16).
 //!
 //! The work is Baryon code in the standard library's `<std>/frame_joins.byn` (decision
 //! 0038). Each row gets the number of its key the way a join numbers them, `first_rows`
@@ -32,13 +33,11 @@ impl<'db> Builder<'db> {
         node: NodeId,
     ) -> Option<(Place, Vec<u32>, Vec<Key<'db>>)> {
         let columns = self.frame_columns(frame)?;
-        let subset = self.written(node).first().map(|&argument| {
-            if self.tree.kind(argument) == SyntaxKind::Keyword {
-                self.keyword_value(argument)
-            } else {
-                argument
-            }
-        });
+        let subset = self
+            .written(node)
+            .into_iter()
+            .find(|&argument| self.tree.kind(argument) != SyntaxKind::Keyword)
+            .or_else(|| self.keyword_of(node, "subset"));
         let mut compared: Vec<u32> = Vec::new();
         match subset {
             Some(subset) => {
@@ -80,7 +79,9 @@ impl<'db> Builder<'db> {
     }
 
     /// The call `node` of `drop_duplicates` on the frame `frame`, into `place`. The checker
-    /// has made sure of the columns `subset` names.
+    /// has made sure of the columns `subset` names and of `keep`, which chooses the library
+    /// function that picks the rows: the first of each set of rows that repeat, the last
+    /// with `keep="last"`, or with `keep=False` only the rows that do not repeat.
     pub(crate) fn frame_distinct(&mut self, place: Place, frame: NodeId, node: NodeId) {
         let Some((source, _, keys)) = self.compared_columns(frame, node) else {
             return;
@@ -88,10 +89,14 @@ impl<'db> Builder<'db> {
         let Some(ids) = self.key_ids(&keys, node) else {
             return;
         };
+        let kept = match self.keyword_of(node, "keep") {
+            Some(keep) if self.tree.kind(keep) == SyntaxKind::False => "single_rows",
+            Some(keep) if self.written_text(keep) == "last" => "last_rows",
+            _ => "first_rows",
+        };
         let positions = self.positions_type();
         let arguments = vec![Place::from(ids)];
-        let Some(rows) = self.frame_call("first_rows", Vec::new(), arguments, positions, node)
-        else {
+        let Some(rows) = self.frame_call(kept, Vec::new(), arguments, positions, node) else {
             return;
         };
         self.drop_later(rows);

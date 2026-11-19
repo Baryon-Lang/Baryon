@@ -125,6 +125,17 @@ def ordered[T: Number](
     return order
 
 
+def missing_first[T: Number](column: Array[T, 1], order: Array[i64, 1]) -> Array[i64, 1]:
+    """The positions `order` with those where `column` holds NaN moved to the front, each
+    part in the order it had: `sort_values(na_position="first")` after the sort has put them
+    last. Cost: two passes over `order`."""
+    moved = [at for at in order if column[at] != column[at]]
+    for at in order:
+        if column[at] == column[at]:
+            moved.append(at)
+    return Array(moved)
+
+
 def ordered_floats(
     column: Array[f64, 1], start: Array[i64, 1], ascending: bool
 ) -> Array[i64, 1]:
