@@ -97,19 +97,22 @@ impl<'db> Builder<'db> {
         }
     }
 
-    /// Whether the statement `statement` is an in-place operator on a variable that holds
-    /// an array with missing values, `bids += 1.0`.
+    /// Whether the statement `statement` is an in-place operator on an array with missing
+    /// values, `bids += 1.0` or `quotes.bid += 1.0`.
     pub(crate) fn is_optional_augmented(&self, statement: NodeId) -> bool {
         self.tree
             .child(statement, Role::Target)
             .is_some_and(|target| self.optional_array_element(target).is_some())
     }
 
-    /// `target += value` and the other in-place arithmetic operators, the statement
-    /// `statement`, on a variable that holds an array with missing values: the variable is
-    /// given the array `target + value` would be, and the one it held is dropped. The new
-    /// array is computed first, so the value may read the target. Cost: that of the
-    /// arithmetic, a new array and a new bitmap.
+    /// `target += value` and the other in-place operators, the statement `statement`, on a
+    /// variable or a column of a frame that holds an array with missing values (roadmap
+    /// 3.24.2): the target is given the array `target + value` would be, and the one it held
+    /// is dropped. The new array is computed first, so the value may read the target, and it
+    /// has the target's length, since arithmetic checks that its sides have one length, so a
+    /// frame's columns keep one length. Masks of `bool`s combine by
+    /// [`Builder::optional_mask_operation`]'s rules. Cost: that of the arithmetic, a new
+    /// array and a new bitmap.
     pub(crate) fn optional_augmented(&mut self, statement: NodeId) {
         let Some(target) = self.tree.child(statement, Role::Target) else {
             return;
@@ -122,11 +125,16 @@ impl<'db> Builder<'db> {
         if gap_operator(self.tree.node(statement).operator()).is_none() {
             return self.unsupported(statement, "this in-place operator on missing values");
         }
-        let Some(whole) = self.optional_arithmetic_value(statement, element) else {
-            return;
-        };
         let result = self.temporary(ty, statement);
-        self.assign(Place::from(result), Rvalue::Use(whole), statement);
+        if element == self.boolean_type() {
+            // Masks combine by their own rules, where `False & None` is `False`.
+            self.optional_mask_operation(Place::from(result), statement);
+        } else {
+            let Some(whole) = self.optional_arithmetic_value(statement, element) else {
+                return;
+            };
+            self.assign(Place::from(result), Rvalue::Use(whole), statement);
+        }
         self.replace(place, Operand::Move(Place::from(result)), target);
     }
 

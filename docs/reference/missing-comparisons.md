@@ -97,6 +97,9 @@ and `[2.]`.
 
 - **Either side can be a plain mask**, an `Array[bool, 1]`, and the result may still hold
   `None`. The lengths must match.
+- **In place:** `ok &= other`, `ok |= other` and `ok ^= other` follow the same table, on a
+  variable or on a column of a frame, `quotes.ok &= other`. The target must be a mask that
+  may hold `None` already, since an in-place operator keeps its target's type.
 - **Write the parentheses.** `&` binds tighter than `>`, as in Python, so `bids > 2.0 &
   flags` is not `(bids > 2.0) & flags`.
 - **`~` and a `None`:** `quotes[~(quotes.bid > 2.0)]` does not choose the rows whose bid is

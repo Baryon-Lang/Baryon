@@ -160,3 +160,34 @@ error: expected `Array[f64, 1]`, found `Array[f64 | None, 1]`
 fn mistakes_in_arithmetic_are_reported() {
     assert_eq!(check_one(MISTAKES), EXPECTED);
 }
+
+/// An in-place operator replaces a variable or a column of a frame (roadmap 3.24.2). An
+/// array held anywhere else, here in a list, is not replaced yet, and a column keeps its
+/// type as a variable does.
+#[test]
+fn in_place_operators_need_a_variable_or_a_column() {
+    let program = r#"
+def main():
+    quotes = DataFrame({"bid": Array([1.5, None]), "ask": Array([2.0, 2.5])})
+    quotes.bid += 1.0
+    quotes["bid"] *= quotes.ask
+    quotes.ask += quotes.bid
+    held = [quotes.bid.copy()]
+    held[0] += 1.0
+"#;
+    let expected = r"
+error: `+=` gives `Array[f64 | None, 1]`, but the target has type `Array[f64, 1]`
+ --> main.byn:5:5
+  |
+5 |     quotes.ask += quotes.bid
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^ would change the target's type
+  = note: a variable keeps one type for its whole scope; convert the value, or use a new name
+
+error: `+=` on anything but a variable or a column is not built for an array with missing values yet
+ --> main.byn:7:5
+  |
+7 |     held[0] += 1.0
+  |     ^^^^^^^^^^^^^^ an array that may hold `None`
+  = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and `**`, for whole numbers `&`, `|`, `^` and `~`; the rest comes with roadmap item 3.24";
+    assert_eq!(check_one(program), expected.trim_start());
+}

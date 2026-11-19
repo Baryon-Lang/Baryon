@@ -205,9 +205,13 @@ impl<'db> Body<'db> {
             return;
         }
         let gaps = self.is_optional_array(current) || self.is_optional_array(operand);
-        if gaps && self.tree.kind(target) != SyntaxKind::Name {
-            // A variable is given the new array; a column or a field is not yet.
-            let what = format!("`{}=` on anything but a variable", operator.symbol());
+        let replaceable = self.tree.kind(target) == SyntaxKind::Name || self.is_column_read(target);
+        if gaps && !replaceable {
+            // A variable or a column of a frame is given the new array; nothing else is yet.
+            let what = format!(
+                "`{}=` on anything but a variable or a column",
+                operator.symbol()
+            );
             self.optional_array_unbuilt(statement, &what);
             return;
         }
