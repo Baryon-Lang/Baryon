@@ -132,7 +132,7 @@ pub(super) fn tolerance(name: &str, want: f64, first: f64) -> f64 {
 /// terms; their characteristic values are measured against the larger of |λ| and |c ∂λ/∂c|.
 /// A radial function's size adds the modulus √(R1² + R2²) of the two kinds, the envelope they
 /// oscillate under, its Bessel terms in the place of Legendre terms, and |R| times the
-/// cancellation of the normalizing sum Σ w_r, which costs prolate functions digits as c grows.
+/// cancellation of the normalizing sum Σ `w_r`, which costs prolate functions digits as c grows.
 pub(super) fn scale(name: &str, want: f64, x: f64) -> f64 {
     match name {
         "gammaln" | "psi" | "betaln" | "expi" | "chi" | "ellipj_sn" | "ellipj_cn" | "ellipj_dn" => {
