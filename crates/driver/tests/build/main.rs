@@ -34,6 +34,7 @@ mod frame_columns;
 mod frame_csv;
 mod frame_distinct;
 mod frame_groups;
+mod frame_join_keys;
 mod frame_joins;
 mod frame_missing;
 mod frame_order;

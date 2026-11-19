@@ -9,7 +9,9 @@
 //! A key of `str` is joined on the integers the library's `text_codes` gives for the text of
 //! the two columns end to end, and a column of `str` is copied with `text_taken`. A key that
 //! may hold `None` is joined as two columns ([`Builder::optional_keys`]), and a column that
-//! may hold `None` is copied with its validity bitmap.
+//! may hold `None` is copied with its validity bitmap. A key that `left_on=` and `right_on=`
+//! give two names (roadmap 3.13.15) is matched the same way, and its two columns are then
+//! copied like any column that is no key.
 //!
 //! `how="left"`, `"right"` and `"outer"` keep the rows that have no partner: the library's
 //! `outer_pairs` lists the pairs, and the [`frame_outer`](crate::frame_outer) module builds
@@ -34,13 +36,13 @@ impl<'db> Builder<'db> {
         node: NodeId,
     ) {
         let ty = self.ty(node);
-        let on = self
-            .written(node)
-            .into_iter()
-            .filter(|&argument| self.tree.kind(argument) == SyntaxKind::Keyword)
-            .find(|&argument| self.keyword_name(argument) == Some("on"))
-            .map(|argument| self.keyword_value(argument));
-        let (Some(&right), Some(on)) = (rest.first(), on) else {
+        // `on=` names each key once; `left_on=` and `right_on=` name it in each frame.
+        let on = self.keyword_of(node, "on");
+        let sides = (
+            on.or_else(|| self.keyword_of(node, "left_on")),
+            on.or_else(|| self.keyword_of(node, "right_on")),
+        );
+        let (Some(&right), (Some(left_on), Some(right_on))) = (rest.first(), sides) else {
             return self.unsupported(node, "this `merge`");
         };
         let (Some(left_columns), Some(right_columns)) =
@@ -55,14 +57,17 @@ impl<'db> Builder<'db> {
         // Each key column of the two frames end to end, a `bool` key as the integers 0 and 1.
         let mut keys: Vec<(Place, Type<'db>)> = Vec::new();
         let mut names = Vec::new();
-        for key in self.listed(on) {
-            let (Some((left_at, column)), Some((right_at, _))) = (
+        for (key, other) in self.listed(left_on).into_iter().zip(self.listed(right_on)) {
+            let (Some((left_at, column)), Some((right_at, found))) = (
                 self.named_column(left_columns, key),
-                self.named_column(right_columns, key),
+                self.named_column(right_columns, other),
             ) else {
                 return self.unsupported(key, "this column to join on");
             };
-            names.push(column.name.as_str());
+            // A key with one name in both frames is one column of the result.
+            if column.name == found.name {
+                names.push(column.name.as_str());
+            }
             let sides = [
                 left_source.clone().project(Projection::Field(left_at)),
                 right_source.clone().project(Projection::Field(right_at)),
@@ -271,6 +276,15 @@ impl<'db> Builder<'db> {
         }
         let arguments = vec![Place::from(order), Place::from(marks)];
         call(self, "group_ids", None, arguments, positions)
+    }
+
+    /// The value the call `node` gives its keyword argument `name`, if it writes one.
+    fn keyword_of(&self, node: NodeId, name: &str) -> Option<NodeId> {
+        self.written(node)
+            .into_iter()
+            .filter(|&argument| self.tree.kind(argument) == SyntaxKind::Keyword)
+            .find(|&argument| self.keyword_name(argument) == Some(name))
+            .map(|argument| self.keyword_value(argument))
     }
 
     /// The name of the keyword argument `argument`, `on` in `on="symbol"`.

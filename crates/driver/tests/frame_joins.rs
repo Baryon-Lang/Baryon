@@ -89,7 +89,7 @@ class Listing(Struct):
 def joining(trades: DataFrame[Trade], listings: DataFrame[Listing], name: str):
     a = trades.merge(on="symbol")
     b = trades.merge(listings)
-    c = trades.merge(listings, on="symbol", suffixes=("_l", "_r"))
+    c = trades.merge(listings, on="symbol", sort=True)
     d = trades.merge(trades.price, on="symbol")
     e = trades.merge(listings, on="symbol", how="sideways")
     f = trades.merge(listings, on="symbol", how=name)
@@ -102,21 +102,21 @@ def joining(trades: DataFrame[Trade], listings: DataFrame[Listing], name: str):
    |
 14 |     a = trades.merge(on="symbol")
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-   = note: for example `trades.merge(names, on="symbol")` or `on=["symbol", "day"]`; the key columns have one name in both frames
+   = note: for example `trades.merge(names, on="symbol")` or `on=["symbol", "day"]`; a key with two names is `left_on=` and `right_on=` together, in place of `on=`
 
 error: `merge` takes the other frame, then the columns to join on as `on=`
   --> main.byn:15:9
    |
 15 |     b = trades.merge(listings)
    |         ^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-   = note: for example `trades.merge(names, on="symbol")` or `on=["symbol", "day"]`; the key columns have one name in both frames
+   = note: for example `trades.merge(names, on="symbol")` or `on=["symbol", "day"]`; a key with two names is `left_on=` and `right_on=` together, in place of `on=`
 
 error: `merge` takes the other frame, then the columns to join on as `on=`
   --> main.byn:16:9
    |
-16 |     c = trades.merge(listings, on="symbol", suffixes=("_l", "_r"))
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-   = note: for example `trades.merge(names, on="symbol")` or `on=["symbol", "day"]`; the key columns have one name in both frames
+16 |     c = trades.merge(listings, on="symbol", sort=True)
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+   = note: for example `trades.merge(names, on="symbol")` or `on=["symbol", "day"]`; a key with two names is `left_on=` and `right_on=` together, in place of `on=`
 
 error: `merge` joins two `DataFrame`s, found `Array[f64, 1]`
   --> main.byn:17:22
@@ -206,6 +206,6 @@ error: the joined frame would have two columns named `price_x`
    |
 20 |     e = trades.merge(named, on="symbol")
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ one name for two columns
-   = note: rename one of them first, with `rename(columns={...})`"#
+   = note: give `merge` two different `suffixes=`, or rename one of them first, with `rename(columns={...})`"#
     );
 }

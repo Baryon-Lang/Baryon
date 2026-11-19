@@ -167,12 +167,22 @@ With four trades of the symbols 7, 3, 7 and 5, this prints:
 2       7  191.0     300  100
 ```
 
-- **The keys have one name and one type in both frames.** Join on several columns with a
-  list, `on=["symbol", "day"]`. A key of two types is a compile error; to join columns of
-  two names, `rename` one first.
-- **The result's columns** are those of `left`, in order, then those of `right` that are
-  no keys. A column the two frames share that is no key appears twice, as `price_x` from
-  the left and `price_y` from the right, as in pandas.
+- **`on=` names keys that have one name in both frames.** Join on several columns with a
+  list, `on=["symbol", "day"]`. A key has one type in both frames; two types are a compile
+  error.
+- **`left_on=` and `right_on=` name a key that has two names**, the column in `left` and
+  the column in `right`: `trades.merge(listings, left_on="symbol", right_on="ticker")`, or
+  two lists of one length for several keys. They are given together and in place of
+  `on=`. Both columns are kept, as in pandas, each among its own frame's columns, so the
+  result here has `symbol` and `ticker`. A key written with the same name on both sides is
+  one column, as with `on=`.
+- **The result's columns** are those of `left`, in order, then those of `right`, without
+  the keys that have one name. A column name the two frames share otherwise appears twice,
+  as `price_x` from the left and `price_y` from the right, as in pandas.
+- **`suffixes=("_bought", "_listed")` replaces `_x` and `_y`.** It is a tuple or a list of
+  two string literals; `""` or `None` leaves that frame's name as it is. Two columns left
+  with one name are a compile error, where pandas raises when the line runs.
+- **The keys and the suffixes are literals**, since the result's type lists its columns.
 - **The rows follow `left`**: its rows in order, and for one row of `left` its partners in
   the order of `right`. pandas documents the same order but does not always give it when
   rows have several partners; sort both results to compare them.
@@ -185,7 +195,7 @@ With four trades of the symbols 7, 3, 7 and 5, this prints:
   its rows until it meets one.
 - **This is the inner join**, which `how="inner"` also names: a row with no partner is
   left out. [The other joins](#left-right-and-outer-joins) keep such rows.
-- **pandas's other arguments**, such as `left_on=`, `right_on=` and `suffixes=`, are not
+- **pandas's other arguments**, such as `sort=`, `indicator=` and `validate=`, are not
   built.
 - **Cost:** for `n` rows in the two frames together and `k` pairs, a sort of `n` rows for
   each key column, then `n + k` steps and one copy of each column of the result.
