@@ -846,6 +846,41 @@ a negative value is NaN, as for the other `math` functions. `f64x2` is `Copy`. `
 its two fields; print `a.to_str()` for the decimal value. Keep `f64x2` code out of
 `with fastmath:`, whose reordering silently removes the extra digits.
 
+## Interpolation
+
+`Array.interp(x, xp, fp)` is NumPy's `interp`: the piecewise linear interpolation of the points
+`(xp[i], fp[i])` at each element of `x`, as a new `Array[f64, 1]`
+([decision 0069](../decisions/0069-interpolate-api.md)). Each value has the bits
+`numpy.interp` gives, so a test can compare with NumPy using `==`.
+
+```python
+def temperature_at(times: Array[f64, 1]) -> Array[f64, 1]:
+    """Temperatures read every 6 hours, interpolated at `times`, in hours."""
+    hours = Array([0.0, 6.0, 12.0, 18.0, 24.0])
+    celsius = Array([4.1, 3.2, 11.8, 9.5, 4.4])
+    return Array.interp(times, hours, celsius)
+```
+
+- `xp` must increase. That is not checked, as NumPy does not check it; points out of order give
+  values that mean nothing.
+- Below `xp[0]` the result is `left`, by default `fp[0]`, and above the last point it is
+  `right`, by default the last value: `Array.interp(x, xp, fp, left=0.0, right=0.0)`.
+- With `period=`, `x` and `xp` are taken modulo the period, for angles or times of day, and `xp`
+  need not be sorted. `left` and `right` are ignored then, as in NumPy.
+- A NaN in `x` gives NaN.
+- `xp` and `fp` of different lengths, an empty `xp`, or `period=0.0` panic with NumPy's message
+  where NumPy raises `ValueError`, as [decision 0040](../decisions/0040-linear-algebra-and-fft.md)
+  does for shapes that do not fit.
+
+Differences from NumPy:
+
+- `x` must be an array. NumPy also takes one number and gives one back. Here, write
+  `Array.interp(Array([t]), xp, fp)[0]` until functions apply element by element (idea I.61).
+- Complex `fp` is not built yet.
+
+Cost: a bisection of `xp` for each element of `x`, so `O(len(x) * log(len(xp)))`, and one new
+array as long as `x`. With `period=`, `xp` is also sorted into a copy.
+
 ## Random numbers
 
 `random.Philox` is a counter-based random number generator: the numbers of stream `k` of a seed

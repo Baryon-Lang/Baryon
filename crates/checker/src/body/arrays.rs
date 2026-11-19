@@ -43,6 +43,7 @@ impl<'db> Body<'db> {
             "savetxt" => return self.array_savetxt(node, arguments),
             "load" => return self.array_load(node, arguments, expected),
             "save" => return self.array_save(node, arguments),
+            "interp" => return self.array_interp(node, arguments),
             _ => {}
         }
         if !matches!(name, "zeros" | "ones" | "fill") {
