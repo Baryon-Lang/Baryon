@@ -243,6 +243,10 @@ pub(crate) const LIBRARY: [(&str, &str); 86] = [
         include_str!("../library/special_quadrature.byn"),
     ),
     (
+        "<std>/special_spheroidal.byn",
+        include_str!("../library/special_spheroidal.byn"),
+    ),
+    (
         "<std>/special_struve.byn",
         include_str!("../library/special_struve.byn"),
     ),

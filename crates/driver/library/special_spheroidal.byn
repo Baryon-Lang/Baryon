@@ -1,0 +1,465 @@
+"""Spheroidal wave functions for `special` (roadmap 3.18.14): the characteristic values `pro_cv`,
+`obl_cv`, `pro_cv_seq` and `obl_cv_seq`, and the angular functions `pro_ang1`, `obl_ang1`,
+`pro_ang1_cv` and `obl_ang1_cv` with their derivatives.
+
+Separating the wave equation in prolate or oblate spheroidal coordinates gives the spheroidal
+wave equation (DLMF 30.2.1),
+
+    ((1 − x²) w′)′ + (λ − γ² x² − m²/(1 − x²)) w = 0,
+
+with γ² = c² for prolate spheroids and γ² = −c² for oblate ones. Its solutions on −1 < x < 1
+that stay finite at both ends, the angular functions S_mn(c, x), exist only for characteristic
+values λ_mn(c), one for each whole n ≥ m. Each is a series of associated Legendre functions,
+S_mn = Σ d_r P^m_{m+r}(x), with r running over the even or the odd numbers as n − m does
+(DLMF 30.8). P^m_k here has no Condon–Shortley phase (−1)^m, as in SciPy. Put into the
+equation, the coefficients satisfy a three-term recurrence (Flammer's 3.1.4):
+
+    α_r d_{r+2} + (β_r − λ) d_r + γ_r d_{r−2} = 0, with, for k = m + r,
+    α_r = (2m + r + 2)(2m + r + 1) γ² / ((2k + 3)(2k + 5)),
+    β_r = k(k + 1) + (2k(k + 1) − 2m² − 1) γ² / ((2k − 1)(2k + 3)),
+    γ_r = r(r − 1) γ² / ((2k − 3)(2k − 1)).
+
+α_r γ_{r+2} is above 0 for either sign of γ², so scaling d_r makes the matrix symmetric, with
+γ²/|γ²| √(α_r γ_{r+2}) beside the diagonal. λ_mn is the eigenvalue of rank (n − m)/2 among those
+of its parity, found as `special_mathieu` finds a Mathieu characteristic value: bisection on the
+count of eigenvalues below a point, then Rayleigh quotient iteration, and the coefficients by a
+twisted factorization of the matrix less λ.
+
+The functions are scaled as Flammer scales them, and SciPy after him: S_mn(c, 0) = P^m_n(0)
+when n − m is even and S_mn′(c, 0) = P^m_n′(0) when it is odd. Summing the series at 0 to find
+that scale cancels for oblate functions at large c, which gather near x = ±1 and are
+exponentially small at 0: by a factor of 10¹⁸ at c = 60. So the scale is found at a point x₀
+where the Legendre series does not cancel, through the power series of the solution about 0,
+S = (1 − x²)^(m/2) Σ a_k x^k, which grows from 0 to x₀ without cancelling: with a₀ = 1 or a₁ = 1
+and a_{k+2} = ((k(k + 2m + 1) − λ + m(m + 1)) a_k + γ² a_{k−2}) / ((k + 1)(k + 2)), it gives
+S(0) or S′(0) as the Legendre series at x₀ over the power series there. SciPy sums at 0.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import inf, isfinite, nan, pow, sqrt
+from special_common import is_integer
+
+
+def _matrix(m: f64, parity: int, gamma2: f64, n: int) -> tuple[Array[f64, 1], Array[f64, 1],
+                                                                Array[f64, 1]]:
+    """The n × n symmetric matrix of the recurrence for orders m + r, with r = parity,
+    parity + 2, …: its diagonal β_r, the entry beside the i-th diagonal entry, between rows i
+    and i + 1, and the ratio D_{i+1}/D_i that takes its eigenvector to the coefficients d,
+    d_i = D_i v_i. The ratio is √(γ_{r+2}/α_r), in which γ² cancels, so it holds as c goes to 0."""
+    diagonal = Array.zeros(n, f64)
+    off = Array.zeros(n, f64)
+    ratio = Array.zeros(n, f64)
+    for i in range(n):
+        r = float(parity + 2 * i)
+        k = m + r
+        diagonal[i] = k * (k + 1.0) + (2.0 * k * (k + 1.0) - 2.0 * m * m - 1.0) * gamma2 / (
+            (2.0 * k - 1.0) * (2.0 * k + 3.0))
+        # α_r and γ_{r+2}, each without its factor γ².
+        above = (2.0 * m + r + 2.0) * (2.0 * m + r + 1.0) / ((2.0 * k + 3.0) * (2.0 * k + 5.0))
+        below = (r + 2.0) * (r + 1.0) / ((2.0 * k + 1.0) * (2.0 * k + 3.0))
+        off[i] = gamma2 * sqrt(above * below)
+        ratio[i] = sqrt(below / above)
+    return (diagonal, off, ratio)
+
+
+def _count_below(diagonal: Array[f64, 1], off: Array[f64, 1], x: f64) -> int:
+    """How many eigenvalues of the matrix are below x: the number of negative pivots of its
+    LDLᵀ factorization less x (Sylvester's law of inertia), a pivot of 0 taken as a tiny
+    negative one."""
+    count = 0
+    pivot = 1.0
+    for i in range(diagonal.shape[0]):
+        shift = diagonal[i] - x
+        if i > 0:
+            shift -= off[i - 1] * off[i - 1] / pivot
+        if shift == 0.0:
+            shift = -1.0e-300
+        if shift < 0.0:
+            count += 1
+        pivot = shift
+    return count
+
+
+def _twisted(diagonal: Array[f64, 1], off: Array[f64, 1], a: f64) -> tuple[Array[f64, 1], f64]:
+    """An eigenvector of the matrix for a close to an eigenvalue, with 1 at one place and not
+    scaled, and the residue γ there, by the twisted factorization `special_mathieu` describes:
+    pivots from the top and from the bottom, the vector set to 1 where they meet with the
+    smallest residue and carried outward, each step dividing by a pivot that is not small."""
+    n = diagonal.shape[0]
+    upper = Array.zeros(n, f64)
+    lower = Array.zeros(n, f64)
+    for i in range(n):
+        upper[i] = diagonal[i] - a
+        if i > 0:
+            upper[i] -= off[i - 1] * off[i - 1] / upper[i - 1]
+        if upper[i] == 0.0:
+            upper[i] = 1.0e-300
+    for i in range(n - 1, -1, -1):
+        lower[i] = diagonal[i] - a
+        if i < n - 1:
+            lower[i] -= off[i] * off[i] / lower[i + 1]
+        if lower[i] == 0.0:
+            lower[i] = 1.0e-300
+    twist = 0
+    residue = upper[0] + lower[0] - (diagonal[0] - a)
+    for i in range(1, n):
+        candidate = upper[i] + lower[i] - (diagonal[i] - a)
+        if abs(candidate) < abs(residue):
+            residue = candidate
+            twist = i
+    vector = Array.zeros(n, f64)
+    vector[twist] = 1.0
+    for i in range(twist - 1, -1, -1):
+        vector[i] = -off[i] * vector[i + 1] / upper[i]
+    for i in range(twist + 1, n):
+        vector[i] = -off[i - 1] * vector[i - 1] / lower[i]
+    return (vector, residue)
+
+
+def _characteristic(diagonal: Array[f64, 1], off: Array[f64, 1], index: int) -> f64:
+    """The eigenvalue of rank `index`, counted from 0 upward. Bisection from Gershgorin's bounds
+    narrows it to within ¼, below the gap to its neighbours of the same parity, which is about
+    4n + 6 for small c and 4c for large c; Rayleigh quotient iteration then takes it to the last
+    bit. Should a step leave the bracket, bisection goes on to the last bit instead."""
+    n = diagonal.shape[0]
+    low = inf
+    high = -inf
+    for i in range(n):
+        reach = abs(off[i])
+        if i > 0:
+            reach += abs(off[i - 1])
+        low = min(low, diagonal[i] - reach)
+        high = max(high, diagonal[i] + reach)
+    low -= 1.0
+    high += 1.0
+    while high - low > 0.25:
+        middle = 0.5 * (low + high)
+        if _count_below(diagonal, off, middle) > index:
+            high = middle
+        else:
+            low = middle
+    a = 0.5 * (low + high)
+    for _ in range(8):
+        vector, residue = _twisted(diagonal, off, a)
+        total = 0.0
+        for i in range(n):
+            total += vector[i] * vector[i]
+        step = residue / total
+        a += step
+        if abs(step) <= 1.0e-16 * abs(a) or step == 0.0:
+            break
+    if low <= a and a <= high:
+        return a
+    for _ in range(2000):
+        middle = 0.5 * (low + high)
+        if middle == low or middle == high:
+            break
+        if _count_below(diagonal, off, middle) > index:
+            high = middle
+        else:
+            low = middle
+    return 0.5 * (low + high)
+
+
+def _legendre(m: f64, top: int, x: f64) -> tuple[Array[f64, 1], Array[f64, 1]]:
+    """P^m_k(x) and its derivative for k = m, m + 1, …, top, at index k − m, without the
+    Condon–Shortley phase, for |x| < 1: upward from P^m_m = (2m − 1)!! (1 − x²)^(m/2) by the
+    three-term recurrence and, for the derivative, the same recurrence differentiated, which
+    keeps its precision near x = ±1 where (1 − x²) P′ = (k + m) P_{k−1} − k x P_k cancels."""
+    order = int(m)
+    count = top - order + 1
+    value = Array.zeros(count, f64)
+    slope = Array.zeros(count, f64)
+    # (1 − x)(1 + x) rather than 1 − x²: near x = ±1 the product keeps its precision, where
+    # 1 − x² loses it all and (1 − x²)^(m/2) multiplies the loss by m/2.
+    rest = (1.0 - x) * (1.0 + x)
+    product = 1.0
+    for j in range(1, 2 * order, 2):
+        product *= float(j)
+    value[0] = product * pow(rest, 0.5 * m)
+    if order > 0:
+        slope[0] = -m * x * product * pow(rest, 0.5 * m - 1.0)
+    if count > 1:
+        value[1] = (2.0 * m + 1.0) * x * value[0]
+        slope[1] = (2.0 * m + 1.0) * (value[0] + x * slope[0])
+    for i in range(1, count - 1):
+        k = m + float(i)
+        value[i + 1] = ((2.0 * k + 1.0) * x * value[i] - (k + m) * value[i - 1]) / (k - m + 1.0)
+        slope[i + 1] = ((2.0 * k + 1.0) * (value[i] + x * slope[i]) - (k + m) * slope[i - 1]) / (
+            k - m + 1.0)
+    return (value, slope)
+
+
+def _series(m: f64, cv: f64, gamma2: f64, x: f64, odd: bool) -> tuple[f64, f64, f64]:
+    """The power series Σ a_k x^k of the module's documentation, even with a₀ = 1 or odd with
+    a₁ = 1, the sum of the sizes of its terms, and how many terms it took. It converges as x^k
+    does: a few hundred terms at x = 0.9, a few thousand at 0.988, the last x₀ tried."""
+    shift = cv - m * (m + 1.0)
+    k = 1.0 if odd else 0.0
+    previous = 0.0
+    current = 1.0
+    power = x if odd else 1.0
+    total = power
+    size = abs(power)
+    for _ in range(20000):
+        following = ((k * (k + 2.0 * m + 1.0) - shift) * current + gamma2 * previous) / (
+            (k + 1.0) * (k + 2.0))
+        previous = current
+        current = following
+        k += 2.0
+        power *= x * x
+        term = current * power
+        total += term
+        size += abs(term)
+        if k > 10.0 and abs(term) <= 1.0e-17 * size:
+            break
+    return (total, size, 0.5 * k)
+
+
+def spheroidal_coefficients(m: f64, n: f64, gamma2: f64, cv: f64) -> Array[f64, 1]:
+    """The coefficients d_r of S_mn for the characteristic value `cv`, r = p, p + 2, … with p
+    the parity of n − m, scaled as Flammer scales them (the module's documentation says how).
+    The radial functions will sum their Bessel series over them.
+
+    The scale is found at the first of the points x₀ = 1 − 0.8^k, k = 0, 1, …, 20, where the
+    expected error is below 16 units of rounding, or else at the point where it is least: the
+    cancellation of the Legendre series, times that of the power series, times 1 + K/256 for a
+    power series of K terms, which rounds once for each and has more of them the nearer x₀ is
+    to 1. With no point below 10⁴, the coefficients are NaN. At x₀ = 0 the scale is the Legendre
+    series alone, and every prolate function and every oblate one for small c is scaled
+    there."""
+    parity = int(n - m) % 2
+    index = int(n - m) // 2
+    size = index + int(sqrt(abs(gamma2))) + 25
+    diagonal, off, ratio = _matrix(m, parity, gamma2, size)
+    vector, _ = _twisted(diagonal, off, cv)
+    # d_i = D_i v_i. Each ratio is about r/(2m + r), below 1, so D falls and cannot overflow.
+    scale = 1.0
+    for i in range(size):
+        vector[i] *= scale
+        scale *= ratio[i]
+    top = int(m) + parity + 2 * (size - 1)
+    wanted = _legendre(m, int(n), 0.0)
+    want = wanted[0][int(n - m)]
+    if parity == 1:
+        want = wanted[1][int(n - m)]
+    # NaN unless some point is expected to leave less than 10⁴ units of rounding: for oblate c
+    # past a few hundred, more as m is larger, the power series overflows before x₀ is near
+    # enough to 1 for the Legendre series not to cancel.
+    best = nan
+    least = inf
+    for step in range(21):
+        x = 1.0 - pow(0.8, float(step))
+        values, slopes = _legendre(m, top, x)
+        total = 0.0
+        size_of_terms = 0.0
+        for i in range(size):
+            term = vector[i] * values[parity + 2 * i]
+            if x == 0.0 and parity == 1:
+                term = vector[i] * slopes[parity + 2 * i]
+            total += term
+            size_of_terms += abs(term)
+        # The error each point is expected to leave, in units of rounding: the cancellation of
+        # the Legendre series, times that of the power series and a share of its term count.
+        expected = size_of_terms / abs(total)
+        if x > 0.0:
+            power, power_size, terms = _series(m, cv, gamma2, x, parity == 1)
+            expected *= power_size / abs(power) * (1.0 + terms / 256.0)
+            total /= pow((1.0 - x) * (1.0 + x), 0.5 * m) * power
+        if not isfinite(expected) or total == 0.0 or not isfinite(total):
+            continue
+        if expected < least:
+            least = expected
+            best = total
+        if expected < 16.0:
+            break
+    if least > 1.0e4:
+        best = nan
+    factor = want / best
+    for i in range(size):
+        vector[i] *= factor
+    return vector
+
+
+def _valid(m: f64, n: f64, c: f64) -> bool:
+    """Whether m and n are whole numbers with 0 ≤ m ≤ n and n − m at most 198, as SciPy
+    requires, and c is finite."""
+    if not (m >= 0.0 and n >= m and n - m <= 198.0 and abs(c) < inf):
+        return False
+    return is_integer(m) and is_integer(n) and m < 1.0e6
+
+
+def _cv(m: f64, n: f64, gamma2: f64) -> f64:
+    """λ_mn for whole 0 ≤ m ≤ n, from the matrix of n's parity."""
+    parity = int(n - m) % 2
+    index = int(n - m) // 2
+    size = index + int(sqrt(abs(gamma2))) + 25
+    diagonal, off, _ = _matrix(m, parity, gamma2, size)
+    return _characteristic(diagonal, off, index)
+
+
+def _sequence(m: f64, n: f64, gamma2: f64) -> Raises[Array[f64, 1], ValueError]:
+    """λ_mm, λ_m(m+1), …, λ_mn, checked as SciPy checks them."""
+    if not (m >= 0.0 and is_integer(m) and n == n and is_integer(n)):
+        raise ValueError("m and n must be whole numbers, m at least 0")
+    if n - m > 199.0:
+        raise ValueError("n - m must be at most 199")
+    if not abs(gamma2) < inf:
+        raise ValueError("c must be finite")
+    count = max(int(n - m) + 1, 0)
+    result = Array.zeros(count, f64)
+    for i in range(count):
+        result[i] = _cv(m, m + float(i), gamma2)
+    return result
+
+
+def _angular(m: f64, n: f64, gamma2: f64, cv: f64, x: f64) -> tuple[f64, f64]:
+    """S_mn(c, x) and its derivative in x for the characteristic value `cv`."""
+    if not (abs(x) < 1.0 and cv == cv):
+        return (nan, nan)
+    parity = int(n - m) % 2
+    vector = spheroidal_coefficients(m, n, gamma2, cv)
+    size = vector.shape[0]
+    values, slopes = _legendre(m, int(m) + parity + 2 * (size - 1), x)
+    value = 0.0
+    slope = 0.0
+    for i in range(size):
+        value += vector[i] * values[parity + 2 * i]
+        slope += vector[i] * slopes[parity + 2 * i]
+    return (value, slope)
+
+
+def pro_cv(m: f64, n: f64, c: f64) -> f64:
+    """The characteristic value λ_mn(c) of the prolate spheroidal wave functions, as
+    `scipy.special.pro_cv`: the λ for which the angular equation has a solution finite at
+    x = ±1. m and n are whole numbers with 0 ≤ m ≤ n and n − m ≤ 198; anything else gives NaN.
+    λ depends on c², so a c below 0 gives what |c| gives; SciPy takes it as 0.
+
+    ```python
+    from special import pro_cv
+
+    print(pro_cv(1.0, 2.0, 2.5))    # 8.53103224320361
+    ```
+    """
+    if not _valid(m, n, c):
+        return nan
+    return _cv(m, n, c * c)
+
+
+def obl_cv(m: f64, n: f64, c: f64) -> f64:
+    """The characteristic value λ_mn(c) of the oblate spheroidal wave functions, as
+    `scipy.special.obl_cv`, with the same m, n and c as `pro_cv`.
+
+    ```python
+    from special import obl_cv
+
+    print(obl_cv(1.0, 2.0, 2.5))    # 3.1669885590311315
+    ```
+    """
+    if not _valid(m, n, c):
+        return nan
+    return _cv(m, n, -c * c)
+
+
+def pro_cv_seq(m: f64, n: f64, c: f64) -> Raises[Array[f64, 1], ValueError]:
+    """The prolate characteristic values λ_mm(c), λ_m(m+1)(c), …, λ_mn(c), as
+    `scipy.special.pro_cv_seq`: empty for n below m.
+
+    # Errors
+
+    `ValueError` when m or n is not a whole number, m is below 0, n − m is above 199 or c is
+    not finite. SciPy gives values for an m below 0 that no function has, and none for a c
+    that is NaN.
+
+    ```python
+    from special import pro_cv_seq
+
+    print(pro_cv_seq(0.0, 3.0, 1.0)[3])    # 12.514462145094065
+    ```
+    """
+    return _sequence(m, n, c * c)
+
+
+def obl_cv_seq(m: f64, n: f64, c: f64) -> Raises[Array[f64, 1], ValueError]:
+    """The oblate characteristic values λ_mm(c), …, λ_mn(c), as `scipy.special.obl_cv_seq`.
+
+    # Errors
+
+    `ValueError` for the arguments `pro_cv_seq` rejects.
+
+    ```python
+    from special import obl_cv_seq
+
+    print(obl_cv_seq(1.0, 3.0, 1.0)[0])    # 1.7953045872818187
+    ```
+    """
+    return _sequence(m, n, -c * c)
+
+
+def pro_ang1(m: f64, n: f64, c: f64, x: f64) -> tuple[f64, f64]:
+    """The prolate angular function S_mn(c, x) of the first kind and its derivative in x, as
+    `scipy.special.pro_ang1`, scaled as the module says, for −1 < x < 1; any other x, or an m, n
+    or c that `pro_cv` rejects, gives NaN. A c below 0 gives what |c| gives; SciPy takes it as 0.
+
+    ```python
+    from special import pro_ang1
+
+    value, slope = pro_ang1(1.0, 2.0, 2.5, 0.3)
+    print(value)    # 0.8264370864845382
+    print(slope)    # 2.2715029151580763
+    ```
+    """
+    if not _valid(m, n, c):
+        return (nan, nan)
+    return _angular(m, n, c * c, _cv(m, n, c * c), x)
+
+
+def obl_ang1(m: f64, n: f64, c: f64, x: f64) -> tuple[f64, f64]:
+    """The oblate angular function S_mn(−ic, x) of the first kind and its derivative in x, as
+    `scipy.special.obl_ang1`, with the arguments of `pro_ang1`.
+
+    ```python
+    from special import obl_ang1
+
+    value, slope = obl_ang1(1.0, 2.0, 2.5, 0.3)
+    print(value)    # 0.8956249130889659
+    print(slope)    # 2.9413583918556476
+    ```
+    """
+    if not _valid(m, n, c):
+        return (nan, nan)
+    return _angular(m, n, -c * c, _cv(m, n, -c * c), x)
+
+
+def pro_ang1_cv(m: f64, n: f64, c: f64, cv: f64, x: f64) -> tuple[f64, f64]:
+    """`pro_ang1` with the characteristic value given, as `scipy.special.pro_ang1_cv`, which
+    saves finding it again for each x. `cv` should be `pro_cv(m, n, c)`; for any other value the
+    result belongs to no solution, and differs from SciPy's.
+
+    ```python
+    from special import pro_ang1_cv, pro_cv
+
+    cv = pro_cv(1.0, 2.0, 2.5)
+    print(pro_ang1_cv(1.0, 2.0, 2.5, cv, 0.3)[0])    # 0.8264370864845382
+    ```
+    """
+    if not _valid(m, n, c):
+        return (nan, nan)
+    return _angular(m, n, c * c, cv, x)
+
+
+def obl_ang1_cv(m: f64, n: f64, c: f64, cv: f64, x: f64) -> tuple[f64, f64]:
+    """`obl_ang1` with the characteristic value given, as `scipy.special.obl_ang1_cv`. `cv`
+    should be `obl_cv(m, n, c)`.
+
+    ```python
+    from special import obl_ang1_cv, obl_cv
+
+    cv = obl_cv(1.0, 2.0, 2.5)
+    print(obl_ang1_cv(1.0, 2.0, 2.5, cv, 0.3)[0])    # 0.8956249130889659
+    ```
+    """
+    if not _valid(m, n, c):
+        return (nan, nan)
+    return _angular(m, n, -c * c, cv, x)
