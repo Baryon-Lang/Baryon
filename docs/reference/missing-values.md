@@ -405,4 +405,8 @@ Each of these is a compile error that names what an array with missing values ha
   `nunique`, `count`, `sum`, `mean`, `min`, `max`, `var` and `std`;
 - assigning an element of text;
 - `print` of a tuple or a list that holds one, or that holds a frame with such a column;
-- one as a struct field.
+- one as a struct field;
+- more than one dimension: `Array[f64 | None, 2]`.
+
+`**` is roadmap row 3.13.14. The rest is part of row 3.24, missing values in arrays of every
+rank.
