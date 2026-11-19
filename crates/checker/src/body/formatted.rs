@@ -3,7 +3,7 @@
 //! run time is an error at compile time.
 
 use super::Body;
-use syntax::{NodeId, Role, SyntaxKind};
+use syntax::{Flags, NodeId, Role, SyntaxKind};
 use types::{FormatClass, FormatSpec, Primitive, Type, TypeKind};
 
 impl<'db> Body<'db> {
@@ -13,6 +13,9 @@ impl<'db> Body<'db> {
         for part in parts {
             match self.tree.kind(part) {
                 SyntaxKind::Interpolation => {
+                    if !self.in_message {
+                        self.unsupported_flags(part);
+                    }
                     let value = self.tree.child(part, Role::Value);
                     let ty = value.map(|value| self.expression(value, None));
                     if let (Some(value), Some(ty)) = (value, ty) {
@@ -30,6 +33,34 @@ impl<'db> Body<'db> {
                 _ => {}
             }
         }
+    }
+
+    /// Reports `{value=}`, `!r` and `!a` on the interpolation `part`, which are not built yet
+    /// (language reference, "Strings"), so the error comes from the checker with the rest of
+    /// the program's errors rather than stopping lowering. `!s` is what an interpolation does
+    /// anyway, so it is allowed. An `assert` message is not lowered yet, so they pass there.
+    fn unsupported_flags(&mut self, part: NodeId) {
+        let flags = self.tree.node(part).flags();
+        let (message, note) = if flags.contains(Flags::DEBUG) {
+            (
+                "`{value=}` in an f-string is not supported yet",
+                "write the name before the value: `f\"xs={xs}\"`",
+            )
+        } else if flags.contains(Flags::CONVERT_REPR) {
+            (
+                "`!r` in an f-string is not supported yet",
+                "leave out `!r`; for text, write the quotes: `f\"'{name}'\"`",
+            )
+        } else if flags.contains(Flags::CONVERT_ASCII) {
+            (
+                "`!a` in an f-string is not supported yet",
+                "leave out `!a`; the value is shown as `print` shows it",
+            )
+        } else {
+            return;
+        };
+        self.lowerer
+            .error(part, message, "not supported yet", Some(note));
     }
 
     /// Checks the format specification `format` against `ty`, the type of the value it formats,

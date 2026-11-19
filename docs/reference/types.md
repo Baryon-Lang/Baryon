@@ -279,8 +279,10 @@ whatever its type: `f"{xs}"` of a list is `[1, 2, 3]` and `f"{p}"` of a struct i
 `{xs:>10}`, is not built yet.
 The compiler checks each specification against its value's type, so `{name:+}` on a `str` is a
 compile error rather than a run-time one. Not supported yet: the `z` flag, the `n` and `c` type
-letters, `!r`, `{value=}`, `\N{name}` escapes, and a
-specification built from other values, such as `{x:{width}}`.
+letters, `!r`, `!a`, `{value=}`, `\N{name}` escapes, and a
+specification built from other values, such as `{x:{width}}`. The compiler reports `!r`, `!a`
+and `{value=}` where they are written; `!s` is allowed, since it is what an interpolation does
+anyway.
 
 A `str` is a pointer and a length. A literal points at the program's own copy of its text and is
 never copied ([decision 0022](../decisions/0022-str-values.md)); an f-string, `+` and `s.copy()`
