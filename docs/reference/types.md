@@ -304,6 +304,11 @@ def root(x: f64) -> tuple[f64, f64 | None]:
     return (x, x ** 0.5)
 ```
 
+With no type written, a tuple or dict whose part is only ever `None`, such as
+`print((1.5, None))` or `{"a": None}`, is a compile error for now: the compiler does not yet
+store the type `None` on its own inside another value. Write the type
+with room for a value, `t: tuple[f64, f64 | None] = (1.5, None)`.
+
 ## Lists
 
 `list[T]` is a growable sequence of values of one type `T`, stored contiguously on the heap: Rust's

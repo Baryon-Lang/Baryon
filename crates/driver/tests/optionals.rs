@@ -181,3 +181,32 @@ error: this value may be `None`
    = note: give it a name and check it first: `if value is not None:`"
     );
 }
+
+/// A tuple or dict whose part is only ever `None`, with no type written, is reported (roadmap
+/// 1.9.72): the backend stores no value of the type `None` inside another value yet. Each
+/// note shows the written type that makes room for a value; with it, each builds.
+#[test]
+fn a_value_holding_only_none_is_reported() {
+    let program = r#"
+def main():
+    print((1.5, None))
+    names = {"a": None}
+    t: tuple[f64, f64 | None] = (1.5, None)
+"#;
+    assert_eq!(
+        check_one(program),
+        r#"error: a tuple cannot hold the type `None` on its own yet
+ --> main.byn:2:17
+  |
+2 |     print((1.5, None))
+  |                 ^^^^ only ever `None`
+  = note: write the type it holds, with `| None`: `t: tuple[f64, f64 | None] = (1.5, None)`
+
+error: a dict cannot hold the type `None` on its own yet
+ --> main.byn:3:13
+  |
+3 |     names = {"a": None}
+  |             ^^^^^^^^^^^ only ever `None`
+  = note: write the type it holds, with `| None`: `d: dict[str, f64 | None] = {"a": None}`"#
+    );
+}
