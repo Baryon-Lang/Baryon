@@ -352,6 +352,11 @@ impl<'db> Builder<'db> {
             .push(Statement { kind, span });
     }
 
+    /// The block statements are being added to.
+    pub(crate) fn current(&self) -> BlockId {
+        self.current
+    }
+
     /// Adds `place = rvalue`, for `node`.
     pub(crate) fn assign(&mut self, place: Place, rvalue: mir::Rvalue<'db>, node: NodeId) {
         self.push(StatementKind::Assign(place, rvalue), node);
@@ -436,6 +441,17 @@ impl<'db> Builder<'db> {
                 self.push(StatementKind::Drop(Place::from(local)), node);
             }
         }
+    }
+
+    /// Drops the owning temporary `local` now, for `node`, rather than when its statement ends.
+    /// A whole-array sum drops its temporary right after the call that sums it, so array
+    /// expansion finds the three statements it fuses together, even when the sum is an argument
+    /// of a longer statement, `print((a * b).sum())`.
+    pub(crate) fn drop_now(&mut self, local: Local, node: NodeId) {
+        for scope in &mut self.temporaries {
+            scope.retain(|&temporary| temporary != local);
+        }
+        self.push(StatementKind::Drop(Place::from(local)), node);
     }
 
     /// Ends what [`enter`](Self::enter) started without dropping its temporaries, which the
