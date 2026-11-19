@@ -68,6 +68,18 @@ pub(crate) fn holds_optional_array<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> b
     })
 }
 
+/// Whether `print` can write `ty`, a value that holds an array with missing values or a
+/// frame with a column that may hold `None`: every such array is reached through tuples and
+/// lists alone, and no such frame is held.
+pub(crate) fn shows_optional_arrays<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
+    match ty.kind(db) {
+        TypeKind::OptionalArray(_) => true,
+        TypeKind::Tuple(items) => items.iter().all(|&item| shows_optional_arrays(db, item)),
+        &TypeKind::List(item) => shows_optional_arrays(db, item),
+        _ => !holds_optional_array(db, ty) && !holds_missing_column(db, ty),
+    }
+}
+
 /// Whether `ty` is or holds a frame with a column that may hold `None`.
 pub(crate) fn holds_missing_column<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> bool {
     contains(db, ty, &|ty| match ty.kind(db) {

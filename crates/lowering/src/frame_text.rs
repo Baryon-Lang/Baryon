@@ -20,26 +20,25 @@ impl<'db> Builder<'db> {
     /// The place to read as text where the expression `node`, of type `ty` and borrowed at
     /// `place`, is printed or formatted in an f-string: a frame's table, the elements of an
     /// array with missing values with `None` for each gap (the library's `optional_shown`),
+    /// a tuple or a list that holds such an array (the `shown_holders` module),
     /// a text array's elements as `NumPy` shows them, which the library's `text_shown` writes,
     /// each into a new `str` dropped with the statement's temporaries, a `Path`'s text
     /// ([`Builder::text_place`]), and any other value as it is.
     pub(crate) fn shown_place(&mut self, node: NodeId, place: Place, ty: Type<'db>) -> Place {
         if let Some(element) = self.optional_array_element(node) {
-            let text = Type::new(self.db, TypeKind::Str);
-            let arguments = vec![
-                place.clone().project(Projection::Field(VALUES)),
-                place.clone().project(Projection::Field(VALIDITY)),
-            ];
-            let shown = if matches!(element.kind(self.db), TypeKind::Str) {
-                self.frame_call("text_optional_shown", Vec::new(), arguments, text, node)
-            } else {
-                self.frame_call("optional_shown", vec![element], arguments, text, node)
-            };
-            if let Some(shown) = shown {
+            if let Some(shown) = self.optional_array_text(&place, element, node) {
                 self.drop_later(shown);
                 return Place::from(shown);
             }
             return place;
+        }
+        // The type the checker gave, in which an array with missing values is still one.
+        if let Some(shown) = self
+            .typed
+            .expression(node)
+            .and_then(|written| self.holder_text(&place, written, node))
+        {
+            return shown;
         }
         if self.is_text_array(node) {
             let text = Type::new(self.db, TypeKind::Str);
@@ -53,6 +52,27 @@ impl<'db> Builder<'db> {
         match self.frame_text(node, &place) {
             Some(text) => text,
             None => self.text_place(place, ty),
+        }
+    }
+
+    /// The text, a new `str` the caller owns, of the array with missing values of
+    /// `element`s stored at `place`, as `print` writes it: the library's `optional_shown`,
+    /// or `text_optional_shown` for text. `None` after a report.
+    pub(crate) fn optional_array_text(
+        &mut self,
+        place: &Place,
+        element: Type<'db>,
+        node: NodeId,
+    ) -> Option<Local> {
+        let text = Type::new(self.db, TypeKind::Str);
+        let arguments = vec![
+            place.clone().project(Projection::Field(VALUES)),
+            place.clone().project(Projection::Field(VALIDITY)),
+        ];
+        if matches!(element.kind(self.db), TypeKind::Str) {
+            self.frame_call("text_optional_shown", Vec::new(), arguments, text, node)
+        } else {
+            self.frame_call("optional_shown", vec![element], arguments, text, node)
         }
     }
 
@@ -284,8 +304,9 @@ impl<'db> Builder<'db> {
 
     /// The function `name` that `<std>/frames.byn`, `<std>/frame_csv.byn`,
     /// `<std>/frame_csv_types.byn`, `<std>/frame_joins.byn`, `<std>/frame_missing.byn`,
-    /// `<std>/frame_outer.byn`, `<std>/frame_masks.byn` or `<std>/frame_order.byn` defines at
-    /// its top level. Costs one pass over the top-level statements of each file looked in.
+    /// `<std>/frame_outer.byn`, `<std>/frame_masks.byn`, `<std>/frame_order.byn` or
+    /// `<std>/frame_holders.byn` defines at its top level. Costs one pass over the top-level
+    /// statements of each file looked in.
     pub(crate) fn frame_function(&self, name: &str) -> Option<Item<'db>> {
         [
             "frames",
@@ -296,6 +317,7 @@ impl<'db> Builder<'db> {
             "frame_outer",
             "frame_masks",
             "frame_order",
+            "frame_holders",
         ]
         .into_iter()
         .find_map(|module| {

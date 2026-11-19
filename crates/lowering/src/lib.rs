@@ -344,6 +344,7 @@ mod random;
 mod range_walks;
 mod reductions;
 mod selection;
+mod shown_holders;
 mod slices;
 mod spread;
 mod statements;
