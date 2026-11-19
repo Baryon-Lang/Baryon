@@ -55,12 +55,31 @@ pub enum Builtin {
     /// [`Power`](MathFunction::Power) of complex numbers, where every argument and the
     /// destination have one complex type instead. The call cannot fail.
     Math(MathFunction),
-    /// `a.sum()` of an `Array` or `Fixed` array of floats: one argument, the array, passed
-    /// `Borrow`; the destination has the element type. The elements are added in row-major
-    /// order in `NumPy`'s pairwise tree, so the result has the same bits as `numpy.sum` of the
-    /// same array and rounding error grows with the logarithm of the length, not the length.
-    /// Integer sums need no tree, since integer addition is exact, and lower to a loop.
+    /// `a.sum()` of an `Array` or `Fixed` array: one argument, the array, passed `Borrow`; the
+    /// destination has the element type, or `i64` for an array of `bool`s.
+    ///
+    /// Floats are added in row-major order in `NumPy`'s pairwise tree, so the result has the
+    /// same bits as `numpy.sum` of the same array and rounding error grows with the logarithm of
+    /// the length, not the length.
+    ///
+    /// Integers and `bool`s need no tree, since integer addition is exact: they are added one at
+    /// a time in row-major order with checked `+` (decision 0030), so an overflow panics at the
+    /// same element as lowering's own loop would, and a `bool` counts as 0 or 1. Lowering writes
+    /// this form only on a temporary it has just assigned a whole-array expression to, which
+    /// array expansion then sums without storing (decision 0041, amended); a sum of a stored
+    /// integer array is lowered to a loop instead, so no backend builds it.
     Sum,
+    /// `a.sum(axis=k)` of a whole-array expression (decision 0041, amended): two arguments, the
+    /// array, an `Array` of rank 2 or more passed `Borrow`, and the axis, a non-negative `i64`
+    /// constant below the array's rank, passed `Owned`; the destination gets a new `Array` of
+    /// the array's element type, or `i64` for `bool`s, with the array's lengths less the axis.
+    /// Each element of it is the sum of the values along the axis, in the order lowering's own
+    /// loops add them: floats along the last axis in [`Sum`](Self::Sum)'s pairwise tree, every
+    /// other case one at a time in row-major order, with checked `+` for integers. Lowering
+    /// writes it only on a temporary it has just assigned a whole-array expression to, and array
+    /// expansion rewrites every call into loops, so no backend builds it. The call cannot fail
+    /// except by an integer overflow, which panics.
+    SumAlong,
     /// `a.dot(b)` of two rank-1 `Array` or `Fixed` arrays of floats: two arguments, the arrays,
     /// each passed `Borrow`, of one element type and the same length, which lowering checks
     /// first; the destination has the element type. Each product is rounded to the element
@@ -291,6 +310,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Input.name(), "input");
     /// assert_eq!(mir::Builtin::Math(mir::MathFunction::Sqrt).name(), "math.sqrt");
     /// assert_eq!(mir::Builtin::Sum.name(), "sum");
+    /// assert_eq!(mir::Builtin::SumAlong.name(), "sum along an axis");
     /// assert_eq!(mir::Builtin::Dot.name(), "dot");
     /// assert_eq!(mir::Builtin::MatrixProduct.name(), "@ through BLAS");
     /// assert_eq!(mir::Builtin::PairwiseCombine.name(), "pairwise combine");
@@ -317,6 +337,7 @@ impl Builtin {
             Self::FlushOutput => "flush of print",
             Self::Math(function) => function.name(),
             Self::Sum => "sum",
+            Self::SumAlong => "sum along an axis",
             Self::Dot => "dot",
             Self::MatrixProduct => "@ through BLAS",
             Self::PairwiseLeaves => "pairwise leaves",

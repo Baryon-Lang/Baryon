@@ -496,6 +496,7 @@ fn binary_name(operator: BinaryOperator) -> &'static str {
         BinaryOperator::Divide => "Divide",
         BinaryOperator::FloorDivide => "FloorDivide",
         BinaryOperator::Remainder => "Remainder",
+        BinaryOperator::Power => "Power",
         BinaryOperator::BitAnd => "BitAnd",
         BinaryOperator::BitOr => "BitOr",
         BinaryOperator::BitXor => "BitXor",

@@ -331,8 +331,10 @@ prints
 ```
 
 Any length works. A power of two uses the radix-2 algorithm, 0.08 s for 2²⁰ points on one core,
-about twice NumPy's time. Any other length uses Bluestein's algorithm, three power-of-two
-transforms of at least twice the length, so it costs about six times as much. The twiddle factors
+about twice NumPy's time. A length whose prime factors are all 23 or less, such as 1000, 3072 or
+10⁶, uses a mixed-radix algorithm, one pass for each factor, at most about twice the time of a
+power of two near it. Any other length uses Bluestein's algorithm, three power-of-two transforms
+of at least twice the length, so it costs about six times as much. The twiddle factors
 come from `cos` and `sin` for each angle, never from repeated multiplication, so the error stays
 within a few units in the last place of the largest entry, as NumPy's does.
 

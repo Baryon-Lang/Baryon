@@ -53,6 +53,10 @@ pub(crate) const LIBRARY: [(&str, &str); 87] = [
     ("<std>/fits.byn", include_str!("../library/fits.byn")),
     ("<std>/font.byn", include_str!("../library/font.byn")),
     (
+        "<std>/frame_csv.byn",
+        include_str!("../library/frame_csv.byn"),
+    ),
+    (
         "<std>/frame_joins.byn",
         include_str!("../library/frame_joins.byn"),
     ),

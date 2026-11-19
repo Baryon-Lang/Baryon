@@ -189,6 +189,9 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Append => self.list_append(arguments, target),
             Builtin::Pop => self.list_pop(arguments, destination, target),
             Builtin::Sum => self.sum(arguments, destination, target),
+            Builtin::SumAlong => Err(Unsupported::new(
+                "a sum along an axis left by array expansion",
+            )),
             Builtin::Dot => self.dot(arguments, destination, target),
             Builtin::PairwiseLeaves | Builtin::PairwiseLeafEnd => {
                 self.pairwise_leaf(arguments, destination, target)

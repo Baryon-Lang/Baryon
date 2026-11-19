@@ -53,6 +53,7 @@ mod fits;
 mod fits_header;
 mod flow;
 mod formatted;
+mod frame_csv;
 mod frame_describe;
 mod frame_distinct;
 mod frame_dropna;

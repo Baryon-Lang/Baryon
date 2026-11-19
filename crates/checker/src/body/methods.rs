@@ -181,6 +181,9 @@ impl<'db> Body<'db> {
             Some(Definition::Builtin("Array")) if !subscript => {
                 Some(self.array_function(node, callee, arguments, expected))
             }
+            Some(Definition::Builtin("DataFrame")) if !subscript => {
+                Some(self.frame_function(node, callee, arguments, expected))
+            }
             Some(&Definition::Item(file, name)) => {
                 let parameters = match outline(self.db, file).get(name).map(|entry| &entry.kind) {
                     Some(Kind::Class(class)) if class.base == Base::Struct => {
