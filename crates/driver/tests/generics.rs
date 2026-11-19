@@ -242,11 +242,11 @@ error: `self` has type `Bag[i64]`, found `Bag[f64]`
 }
 
 /// Calls the checker cannot type are reported where they are written (roadmap 1.9.48 and
-/// 1.9.49): a type parameter called as a conversion under a bound that allows none, a generic struct built with its type
-/// arguments written, a method on a type parameter with no trait that has it, and a generic
-/// function whose arguments do not fix its type parameter. Before, each got an unknown type
-/// with no error, and the build stopped on "lowering does not handle this call yet" or "the
-/// LLVM backend does not compile values of type `unknown` yet".
+/// 1.9.49): a type parameter called as a conversion under a bound that allows none, a method
+/// on a type parameter with no trait that has it, and a generic function whose arguments do
+/// not fix its type parameter. Before, each got an unknown type with no error, and the build
+/// stopped on "lowering does not handle this call yet" or "the LLVM backend does not compile
+/// values of type `unknown` yet".
 #[test]
 fn calls_the_checker_cannot_type_are_reported() {
     let program = r"
@@ -292,14 +292,6 @@ error: `T` has no method `copy`
    = note: a type parameter has only what its bound allows, and a trait has methods only: bound \
 it by a trait that lists the method
 
-error: `Box` is built without its type arguments written
-  --> main.byn:20:9
-   |
-20 |     b = Box[f64]([1.0])
-   |         ^^^^^^^^^^^^^^^ type arguments written
-   = note: the arguments say what they are, `Box(...)`; give an empty list a typed variable \
-first, `items: list[f64] = []`
-
 error: `make` does not say what `T` is from its arguments
   --> main.byn:21:10
    |
@@ -342,5 +334,50 @@ error: `T(...)` converts one value, found 2
   |
 4 |     return x + T(1, 2)
   |                ^^^^^^^ wrong number of arguments"
+    );
+}
+
+/// A generic struct built with its type arguments written checks its arguments against the
+/// fields at those arguments (decision 0066, roadmap 1.9.61): a written argument that breaks
+/// its parameter's bound is an error, as an inferred one is, and so is a field of another
+/// type. Without the written arguments, an empty list still has no element type.
+#[test]
+fn a_struct_built_with_written_type_arguments_checks_its_fields() {
+    let program = r#"
+class Pair[T: Number](Struct):
+    a: T
+    b: T
+
+
+class Box[T](Struct):
+    items: list[T]
+
+
+def main():
+    p = Pair[str]("a", "b")
+    q = Pair[f64](f32(1.5), 2.0)
+    c: Box[f64] = Box([])
+"#;
+    assert_eq!(
+        check_one(program),
+        "\
+error: `Pair` needs `T` to be a `Number`, found `str`
+  --> main.byn:11:9
+   |
+11 |     p = Pair[str](\"a\", \"b\")
+   |         ^^^^^^^^^ bound not satisfied
+
+error: `a` has type `f64`, found `f32`
+  --> main.byn:12:19
+   |
+12 |     q = Pair[f64](f32(1.5), 2.0)
+   |                   ^^^^^^^^ type `f32`
+
+error: an empty list needs its type written
+  --> main.byn:13:23
+   |
+13 |     c: Box[f64] = Box([])
+   |                       ^^ the item type is unknown
+   = note: for example `values: list[f64] = []`"
     );
 }

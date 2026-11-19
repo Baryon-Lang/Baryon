@@ -866,7 +866,11 @@ from the arguments. Each type parameter takes the type of the first argument tha
 left to right and number literals last, so `largest(x, 0)` with `x: f32` makes the `0` an `f32`.
 Every other argument must then have the same type: `largest(x, n)` with `x: f64` and `n: i64` is an
 error, as in non-generic code. A generic struct is built the same way: `Pair(1.5, 2.5)` is a
-`Pair[f64]`, and writing its type arguments, `Pair[f64](1.5, 2.5)`, is an error. A call whose
+`Pair[f64]`. Its type arguments may also be written, as on a class function, and the arguments
+are then checked against them: `Box[f64]([])` is a `Box` with an empty `list[f64]`, and
+`Pair[f64](1, 2)` makes its literals `f64`
+([decision 0066](../decisions/0066-converting-to-and-naming-type-parameters.md)). They are never
+taken from an annotation, so `c: Box[f64] = Box([])` is an error. A call whose
 arguments leave a type parameter unfixed, such as `make()` for `def make[T]() -> list[T]`, is an
 error too. A `None` passed for a `T | None` fixes `T` only when no other argument
 does: `pick(None, 3)` with `def pick[T: Number](a: T | None, b: T | None)` takes `T` from the

@@ -4,8 +4,6 @@
 //!
 //! - a type parameter called as a conversion, `T(0)`, under a bound other than `Number` or
 //!   `Float`, the two that allow it (decision 0066);
-//! - a generic struct built with its type arguments written, `Box[f64]([])`, where version 0
-//!   finds them from the arguments;
 //! - a method called on a value whose type is a type parameter with no trait that has the
 //!   method, `x.copy()` for `def last[T](xs: list[T])`;
 //! - a generic function or constructor whose arguments do not fix one of its type parameters,
@@ -27,9 +25,10 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Key, Signature, Type, TypeKind};
 
 impl<'db> Body<'db> {
-    /// The error for `function(arguments)` at `node` when `function` is a type parameter in
-    /// scope, `T(0)`, or a generic struct with its type arguments written, `Box[f64]([])`;
-    /// `None` for any other call.
+    /// The type of `function(arguments)` at `node` when `function` is a type parameter in
+    /// scope, `T(0)`, which converts under `Number` or `Float` and is an error otherwise, or a
+    /// class with its type arguments written, `Box[f64]([])` (the `written_constructors`
+    /// module); `None` for any other call.
     pub(super) fn untyped_call(
         &mut self,
         node: NodeId,
@@ -71,17 +70,7 @@ impl<'db> Body<'db> {
                 ) {
                     return None;
                 }
-                self.untyped(arguments);
-                let class = self.tree.text(class, self.text);
-                let message = format!("`{class}` is built without its type arguments written");
-                let hint = format!(
-                    "the arguments say what they are, `{class}(...)`; give an empty list a typed \
-                     variable first, `items: list[f64] = []`"
-                );
-                Some(
-                    self.lowerer
-                        .error(node, &message, "type arguments written", Some(&hint)),
-                )
+                self.written_constructor(node, function, (file, name), arguments)
             }
             _ => None,
         }
