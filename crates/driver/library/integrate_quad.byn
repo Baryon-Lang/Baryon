@@ -15,8 +15,9 @@ compiler reads this file for `<std>/integrate.byn`, which re-exports `quad` and
 `IntegrationError` (decision 0062); a program cannot import it.
 """
 
+from math import inf
 from integrate_quadpack import EPSILON, HUGE, TINY, Extrapolation, bisect, conclude
-from integrate_quadpack import intervals, kronrod21, sort_errors, total_area
+from integrate_quadpack import intervals, kronrod21, rule, sort_errors, total_area
 
 
 class IntegrationError(Exception):
@@ -33,17 +34,21 @@ def _qags[*Ts](
     args: tuple[*Ts],
     tolerance: tuple[f64, f64],
     limit: int,
+    transform: tuple[int, f64],
 ) -> tuple[f64, f64, int]:
     """The integral of `f` over [a, b] by `dqagse`, its error estimate and QUADPACK's code
-    `ier`, 0 on success. `tolerance` is (`epsabs`, `epsrel`); `limit` is at least 1. Calls `f`
-    21 times, then 42 times per halving, for at most 21 × (2 × `limit` − 1) calls."""
+    `ier`, 0 on success; or, when `transform` is not (0, _), by `dqagie` over an infinite
+    interval mapped onto [a, b] = [0, 1] (see `kronrod15i`). `tolerance` is (`epsabs`,
+    `epsrel`); `limit` is at least 1. On a finite interval, calls `f` 21 times, then 42 times
+    per halving, for at most 21 × (2 × `limit` − 1) calls; an infinite one takes 15 per rule,
+    30 over the whole line."""
     epsabs, epsrel = tolerance
     if epsabs <= 0.0 and epsrel < max(50.0 * EPSILON, 0.5e-28):
         return (0.0, 0.0, 6)
     r = intervals(limit)
     r.lower[0] = a
     r.upper[0] = b
-    result, error, whole, deviation = kronrod21(f, a, b, args)
+    result, error, whole, deviation = rule(f, args, transform, a, b)
     dres = abs(result)
     errbnd = max(epsabs, epsrel * dres)
     r.area[0] = result
@@ -80,7 +85,9 @@ def _qags[*Ts](
     last = 2
     while True:
         erlast = errmax
-        a1, b1, b2, area12, erro12, previous, counted = bisect(f, args, r, maxerr, last)
+        a1, b1, b2, area12, erro12, previous, counted = bisect(
+            f, args, transform, r, maxerr, last
+        )
         errsum = errsum + erro12 - errmax
         area = area + area12 - previous
         if counted:
@@ -259,7 +266,9 @@ def _qagp[*Ts](
     while last <= limit:
         level = r.level[maxerr - 1] + 1
         erlast = errmax
-        a1, b1, b2, area12, erro12, previous, counted = bisect(f, args, r, maxerr, last)
+        a1, b1, b2, area12, erro12, previous, counted = bisect(
+            f, args, (0, 0.0), r, maxerr, last
+        )
         errsum = errsum + erro12 - errmax
         area = area + area12 - previous
         if counted:
@@ -452,10 +461,17 @@ def quad[*Ts](
     result = 0.0
     error = 0.0
     ier = 6
+    infinite = low == -inf or high == inf
     if points is None:
-        if limit >= 1:
-            result, error, ier = _qags(func, low, high, args, (epsabs, epsrel), limit)
+        if limit >= 1 and not infinite:
+            result, error, ier = _qags(func, low, high, args, (epsabs, epsrel), limit, (0, 0.0))
+        elif limit >= 1:
+            transform = (1, low)
+            if low == -inf:
+                transform = (2, 0.0) if high == inf else (-1, high)
+            result, error, ier = _qags(func, 0.0, 1.0, args, (epsabs, epsrel), limit, transform)
     else:
+        assert not infinite, "Infinity inputs cannot be used with break points."
         breaks = _breaks(points, low, high)
         result, error, ier = _qagp(func, low, high, args, (epsabs, epsrel), limit, breaks)
     if ier == 6:

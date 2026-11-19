@@ -14,6 +14,7 @@ use std::process::Command;
 
 /// The program that calls `quad` the ways the test checks, one call per line of output.
 const PROGRAM: &str = r#"import math
+from math import inf
 from integrate import quad, IntegrationError
 
 
@@ -211,40 +212,47 @@ fn quad_gives_scipys_bits_and_failures() {
 
 /// Arguments `SciPy` rejects with `ValueError` panic with `SciPy`'s message (decision 0065 point
 /// 3): `limit` below 1, `epsabs <= 0` with too small an `epsrel`, as many break points as
-/// `limit`, and a break point outside the interval.
+/// `limit`, a break point outside the interval, and break points on an infinite interval.
 #[test]
 fn invalid_arguments_panic() {
     let cases = [
         (
-            "limit=0",
+            "0.0, 3.0, limit=0",
             "limit >= 1, \"Invalid 'limit' argument. There must be at least one subinterval\"",
-            413,
+            422,
             9,
         ),
         (
-            "epsabs=0.0, epsrel=1e-15",
+            "0.0, 3.0, epsabs=0.0, epsrel=1e-15",
             "not tight, ( \"If 'epsabs'<=0, 'epsrel' must be greater than both 5e-29 and \
              50*(machine epsilon).\" )",
-            409,
+            418,
             5,
         ),
         (
-            "points=[1.0, 2.0], limit=2",
+            "0.0, 3.0, points=[1.0, 2.0], limit=2",
             "len(points) < limit, \"Number of break points must be less than subinterval \
              limit\"",
-            419,
+            428,
             9,
         ),
         (
-            "points=[1.0, 5.0], limit=1",
+            "0.0, 3.0, points=[1.0, 5.0], limit=1",
             "inside, \"All break points in 'points' must lie within the integration limits.\"",
-            418,
+            427,
+            9,
+        ),
+        (
+            "0.0, inf, points=[1.0]",
+            "not infinite, \"Infinity inputs cannot be used with break points.\"",
+            474,
             9,
         ),
     ];
     for (index, (arguments, assertion, line, column)) in cases.into_iter().enumerate() {
         let program = format!(
             "\
+from math import inf
 from integrate import quad, IntegrationError
 
 
@@ -253,7 +261,7 @@ def square(x: f64) -> f64:
 
 
 def main() -> Raises[None, IntegrationError]:
-    print(quad(square, 0.0, 3.0, {arguments}))
+    print(quad(square, {arguments}))
 "
         );
         let (code, stdout, report) = run(&format!("quad-invalid-{index}"), &program).unwrap();
@@ -261,9 +269,142 @@ def main() -> Raises[None, IntegrationError]:
         assert_eq!(
             report,
             format!(
-                "panic: assertion failed: {assertion}\n  --> <std>/integrate_quad.byn:{line}:{column}\n"
+                "panic: assertion failed: {assertion}\n  \
+                 --> <std>/integrate_quad.byn:{line}:{column}\n"
             ),
             "{arguments}"
         );
     }
+}
+
+/// The program that calls `quad` over infinite intervals, one call per line of output.
+const INFINITE: &str = r#"import math
+from math import inf
+from integrate import quad, IntegrationError
+
+
+def bell(x: f64) -> f64:
+    return 1.0 / (1.0 + x * x)
+
+
+def scaled(x: f64, k: f64) -> f64:
+    return k / (k * k + x * x)
+
+
+def tail(x: f64) -> f64:
+    return 1.0 / ((1.0 + x) * (1.0 + x))
+
+
+def root(x: f64) -> f64:
+    return 1.0 / ((1.0 + x) * math.sqrt(x))
+
+
+def odd(x: f64) -> f64:
+    return x / (1.0 + x * x * x * x)
+
+
+def inverse(x: f64) -> f64:
+    return 1.0 / x
+
+
+def slow(x: f64) -> f64:
+    return 1.0 / math.sqrt(x)
+
+
+def wave(x: f64) -> f64:
+    return (x - 3.0) / ((1.0 + (x - 3.0) * (x - 3.0)) * (1.0 + (x - 3.0) * (x - 3.0)))
+
+
+def main():
+    try:
+        print(quad(bell, -inf, inf))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(bell, 0.0, inf))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(bell, -inf, 0.0))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(bell, inf, -inf))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(scaled, 1.0, inf, (2.0,)))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(tail, 0.0, inf))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(tail, inf, 0.0))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(root, 0.0, inf))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(odd, -inf, inf))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(wave, -inf, 2.0))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(bell, inf, inf))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(bell, 0.0, inf, limit=1))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(inverse, 1.0, inf))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+    try:
+        print(quad(slow, 1.0, inf))
+    except IntegrationError as error:
+        print(error.message.replace("\n", "|"))
+"#;
+
+/// What `SciPy` 1.18.1 prints for the same calls.
+const INFINITE_EXPECTED: &str = "\
+    (3.141592653589793, 5.155583041103855e-10)\n\
+    (1.5707963267948966, 2.5777915205519274e-10)\n\
+    (1.5707963267948966, 2.5777915205519274e-10)\n\
+    (-3.141592653589793, 5.155583041103855e-10)\n\
+    (1.1071487177940906, 1.2889314817856373e-10)\n\
+    (1.0, 1.1102230246251565e-14)\n\
+    (-1.0, 1.1102230246251565e-14)\n\
+    (3.141592653591123, 3.770408874004261e-09)\n\
+    (0.0, 0.0)\n\
+    (-0.24999999999999994, 1.0524504433644551e-09)\n\
+    (0.0, 0.0)\n\
+    The maximum number of subdivisions (1) has been achieved.|  If increasing the limit yields \
+    no improvement it is advised to analyze |  the integrand in order to determine the \
+    difficulties.  If the position of a |  local difficulty can be determined (singularity, \
+    discontinuity) one will |  probably gain from splitting up the interval and calling the \
+    integrator |  on the subranges.  Perhaps a special-purpose integrator should be used.\n\
+    The maximum number of subdivisions (50) has been achieved.|  If increasing the limit yields \
+    no improvement it is advised to analyze |  the integrand in order to determine the \
+    difficulties.  If the position of a |  local difficulty can be determined (singularity, \
+    discontinuity) one will |  probably gain from splitting up the interval and calling the \
+    integrator |  on the subranges.  Perhaps a special-purpose integrator should be used.\n\
+    The integral is probably divergent, or slowly convergent.\n";
+
+/// Infinite intervals by QUADPACK's QAGI, which maps each onto (0, 1]: the whole line, each
+/// half-line, reversed limits, `args`, an odd integrand whose halves cancel, an interval from
+/// infinity to itself, and the subdivision limit and divergence.
+#[test]
+fn infinite_intervals_give_scipys_bits() {
+    let (code, stdout, report) = run("quad-infinite", INFINITE).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, INFINITE_EXPECTED);
 }
