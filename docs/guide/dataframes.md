@@ -5,31 +5,42 @@ can see what carries over and what changes. Then it shows how fast the same oper
 table of 10 million rows. It assumes you have read
 [Data, files and plots](data-files-and-plots.md), which introduces `DataFrame`.
 
-The data is three days of weather from three stations. Two thermometers failed, so two
-temperatures are *missing*: the table has a row for them, but no number.
+The data is three days of weather from three stations, in a CSV file. Two thermometers
+failed, so two temperatures are *missing*: the file has a row for them, with an empty cell
+where the number would be. Save it in the directory you run the programs from.
+
+File `readings.csv`:
+
+```text
+station,day,temperature,rain
+Alta,1,-4.5,0.0
+Alta,2,,1.2
+Alta,3,-2.0,0.4
+Bergen,1,6.5,12.5
+Bergen,2,7.0,8.0
+Bergen,3,,15.5
+Oslo,1,3.0,2.0
+Oslo,2,4.5,0.0
+```
 
 ## The pandas original
 
 ```python
 import pandas as pd
 
-readings = pd.DataFrame({
-    "station": ["Alta", "Alta", "Alta", "Bergen", "Bergen", "Bergen", "Oslo", "Oslo"],
-    "day": [1, 2, 3, 1, 2, 3, 1, 2],
-    "temperature": [-4.5, None, -2.0, 6.5, 7.0, None, 3.0, 4.5],
-    "rain": [0.0, 1.2, 0.4, 12.5, 8.0, 15.5, 2.0, 0.0],
-})
+readings = pd.read_csv("readings.csv")
 print(readings)
 print(readings.temperature.isna().sum(), "readings are missing")
 
-readings = readings.assign(fahrenheit=readings.temperature * 1.8 + 32.0)
+readings = readings.assign(fahrenheit=readings.temperature * 1.8 + 32.0, source="manual")
 
 mild = readings[(readings.temperature > 0.0) & (readings.rain < 10.0)]
 print(mild)
 
 summary = readings.groupby("station", as_index=False).agg(
-    mean=("temperature", "mean"),
+    days=("day", "size"),
     measured=("temperature", "count"),
+    mean=("temperature", "mean"),
     rain=("rain", "sum"),
 )
 print(summary)
@@ -43,10 +54,13 @@ print(joined.sort_values("rain", ascending=False))
 
 print(len(readings.dropna()), "complete rows")
 print(readings.temperature.fillna(0.0).mean())
+
+joined.to_csv("summary.csv", index=False)
 ```
 
-It prints the readings, counts the gaps, adds a Fahrenheit column, chooses the mild dry days,
-summarizes each station, joins the stations' elevations and sorts by rain.
+It reads and prints the readings, counts the gaps, adds two columns, chooses the mild dry
+days, summarizes each station, joins the stations' elevations, sorts by rain and writes the
+result to a file.
 
 ## The same analysis in Baryon
 
@@ -65,18 +79,13 @@ class Station(Struct):
     elevation: f64
 
 
-def main():
-    readings: DataFrame[Reading] = DataFrame({
-        "station": Array(["Alta", "Alta", "Alta", "Bergen", "Bergen", "Bergen", "Oslo", "Oslo"]),
-        "day": Array([1, 2, 3, 1, 2, 3, 1, 2]),
-        "temperature": Array([-4.5, None, -2.0, 6.5, 7.0, None, 3.0, 4.5]),
-        "rain": Array([0.0, 1.2, 0.4, 12.5, 8.0, 15.5, 2.0, 0.0]),
-    })
+def main() -> Raises[None, OSError | ValueError]:
+    readings: DataFrame[Reading] = DataFrame.read_csv("readings.csv")
     print(readings)
     print(readings.temperature.isna().sum(), "readings are missing")
 
-    # Step 1: a new column. A missing temperature stays missing.
-    wider = readings.assign(fahrenheit=readings.temperature * 1.8 + 32.0)
+    # Step 1: new columns. A missing temperature stays missing; one value fills every row.
+    wider = readings.assign(fahrenheit=readings.temperature * 1.8 + 32.0, source="manual")
 
     # Step 2: choose rows. A row whose temperature is missing is not chosen.
     mild = wider[(wider.temperature > 0.0) & (wider.rain < 10.0)]
@@ -84,8 +93,9 @@ def main():
 
     # Step 3: one row for each station. The mean skips the missing readings.
     summary = wider.groupby("station").agg(
-        mean=("temperature", "mean"),
+        days=("day", "size"),
         measured=("temperature", "count"),
+        mean=("temperature", "mean"),
         rain=("rain", "sum"),
     )
     print(summary)
@@ -101,6 +111,9 @@ def main():
     # Step 5: take the gaps out, or fill them.
     print(len(wider.dropna()), "complete rows")
     print(wider.temperature.fillna(0.0).mean())
+
+    # Step 6: write the result.
+    joined.to_csv("summary.csv")
 ```
 
 ```text
@@ -115,82 +128,126 @@ $ baryon run weather
 6    Oslo    1          3.0   2.0
 7    Oslo    2          4.5   0.0
 2 readings are missing
-  station  day  temperature  rain  fahrenheit
-0  Bergen    2          7.0   8.0        44.6
-1    Oslo    1          3.0   2.0        37.4
-2    Oslo    2          4.5   0.0        40.1
-  station  mean  measured  rain
-0    Alta -3.25         2   1.6
-1  Bergen  6.75         2  36.0
-2    Oslo  3.75         2   2.0
-  station  mean  measured  rain  elevation
-0  Bergen  6.75         2  36.0       12.0
-1    Oslo  3.75         2   2.0       <NA>
-2    Alta -3.25         2   1.6        3.0
+  station  day  temperature  rain  fahrenheit  source
+0  Bergen    2          7.0   8.0        44.6  manual
+1    Oslo    1          3.0   2.0        37.4  manual
+2    Oslo    2          4.5   0.0        40.1  manual
+  station  days  measured  mean  rain
+0    Alta     3         2 -3.25   1.6
+1  Bergen     3         2  6.75  36.0
+2    Oslo     2         2  3.75   2.0
+  station  days  measured  mean  rain  elevation
+0  Bergen     3         2  6.75  36.0       12.0
+1    Oslo     2         2  3.75   2.0       <NA>
+2    Alta     3         2 -3.25   1.6        3.0
 6 complete rows
 1.8125
 ```
 
+It also writes `summary.csv`, byte for byte the file pandas writes:
+
+```text
+station,days,measured,mean,rain,elevation
+Alta,3,2,-3.25,1.6,3.0
+Bergen,3,2,6.75,36.0,12.0
+Oslo,2,2,3.75,2.0,
+```
+
 Every method call is the one pandas has, with the same arguments. Step by step:
 
-1. **A new column.** `assign` adds `fahrenheit`. Arithmetic on a missing temperature gives a
-   missing result, so rows 1 and 5 have no Fahrenheit value either.
+1. **New columns.** `assign` adds `fahrenheit` and `source`. Arithmetic on a missing
+   temperature gives a missing result, so rows 1 and 5 have no Fahrenheit value either. One
+   value, `"manual"`, fills every row, as in pandas.
 2. **Choosing rows.** A comparison with a missing value is itself missing, neither `True` nor
    `False`, and a row whose mask is missing is not chosen. Row 5 (Bergen, day 3, no temperature)
    is left out although nothing says it was cold. `&` follows pandas's rules:
    `False & missing` is `False`, and `True & missing` is missing.
-3. **Grouping.** `mean` and `count` skip the missing readings, so each station's mean is over
-   the two days it measured.
+3. **Grouping.** `size` counts a station's rows and `count` the temperatures it measured;
+   `mean` skips the missing readings, so each station's mean is over the days it measured.
 4. **Joining.** `how="left"` keeps every row of `summary`. Oslo is not in `stations`, so its
    `elevation` is missing, and the compiler gives that column the type `f64 | None` without
    being told.
 5. **Taking gaps out.** `dropna()` drops the rows that have one, and `fillna(0.0)` puts a
    number in their place.
+6. **Writing.** `to_csv` writes the header and the rows, with an empty cell for Oslo's missing
+   elevation.
 
 ## What changed from pandas
 
 - **The columns are declared.** `Reading` and `Station` are *schemas*: structs that name each
   column and its type. `temperature: f64 | None` says a temperature may be missing; `rain: f64`
-  says rain never is, and the compiler holds you to it.
-- **A column is built from an array.** pandas takes a Python list; Baryon takes
-  `Array([...])`, which stores the numbers side by side with no object for each.
-- **A missing value is `None`, never `NaN`.** pandas turns the `None` in the list into the
-  float `NaN` and prints `NaN`. Baryon keeps it as `None`, in integer and text columns too, and
-  prints `<NA>` as pandas does for its own nullable types.
+  says rain never is, and the compiler holds you to it. `read_csv` needs the schema, because a
+  compiled program cannot learn a file's columns when it runs: the annotation
+  `readings: DataFrame[Reading]` tells it which columns to read and how. An empty cell under
+  `rain` would stop the program with a `ValueError` that names the column and the row.
+- **Reading a file can fail, and the function says so.** `main` lists `OSError` and
+  `ValueError` in its `Raises`, the two ways `read_csv` fails. [Errors](../reference/errors.md)
+  explains `Raises`.
+- **A column is built from an array.** For the `stations` table pandas takes a Python list;
+  Baryon takes `Array([...])`, which stores the numbers side by side with no object for each.
+- **A missing value is `None`, never `NaN`.** pandas reads the empty cell as the float `NaN`
+  and prints `NaN`. Baryon reads it as `None`, in integer and text columns too, and prints
+  `<NA>` as pandas does for its own nullable types.
   [Missing values](../reference/missing-values.md) has the rules.
-- **A variable keeps one type.** `readings.assign(...)` has one more column than `readings`, so
-  it is a different type and needs a new name, `wider`. pandas lets you reuse `readings`.
+- **A variable keeps one type.** `readings.assign(...)` has two more columns than `readings`,
+  so it is a different type and needs a new name, `wider`. pandas lets you reuse `readings`.
 - **A frame moves.** `assign` takes over the columns of `readings` instead of copying them, so
   the program uses `wider` from then on. Write `readings.copy().assign(...)` to keep both.
 - **There is no row index.** pandas prints the mild days as rows 4, 6 and 7, their labels in
   the original table. Baryon numbers the rows of every result from 0. For the same reason
-  `groupby` needs no `as_index=False`: the key is always an ordinary column.
+  `groupby` needs no `as_index=False`, and `to_csv` no `index=False`: the key is always an
+  ordinary column, and there is no index to write.
 
-Nothing else differs: the two programs print the same numbers.
-[DataFrames](../reference/dataframes.md) and
-[Sorting, grouping and joining](../reference/dataframe-operations.md) list every operation.
+Nothing else differs: the two programs print the same numbers and write the same file.
+
+## More that carries over
+
+The analysis above uses a small part of what a frame can do. These are written as in pandas
+too, and each has its page in the reference:
+
+| pandas | Where it is described |
+| --- | --- |
+| `df.drop("a", axis=1)`, `df.rename(columns={...})`, `df[["a", "b"]]` | [Choosing and changing columns](../reference/dataframes.md#choosing-and-changing-columns) |
+| `sort_values(["a", "b"], ascending=[True, False], na_position="first")` | [Sorting, grouping and joining](../reference/dataframe-operations.md) |
+| `agg` with `sum`, `mean`, `min`, `max`, `count`, `size`, `nunique`, `first`, `last`, `std`, `var`, `median` | [Grouping](../reference/dataframe-operations.md#grouping) |
+| `merge` with `how=`, `left_on=`, `right_on=` and `suffixes=` | [Sorting, grouping and joining](../reference/dataframe-operations.md) |
+| `drop_duplicates(keep="last")`, `value_counts(normalize=True)`, `describe(percentiles=[0.1, 0.9])` | [Sorting, grouping and joining](../reference/dataframe-operations.md) |
+| `isna`, `notna`, `fillna`, `dropna`, arithmetic and masks with missing values | [Missing values in frames](../reference/missing-values-in-frames.md) |
+| `DataFrame.read_csv(path)`, `df.to_csv(path)` | [CSV files](../reference/csv-files.md) |
+
+[What builds today](../reference/status.md) lists what is not built yet, such as the keyword
+arguments of `read_csv`.
 
 ## How fast is it
 
-[`bench/dataframe`](../../bench/dataframe/README.md) runs six operations on a table of 10
-million rows in Baryon, pandas and Polars, and checks that all three compute the same answer.
-On a 4-core cloud machine, in seconds, fastest of three runs:
+[`bench/dataframe`](../../bench/dataframe/README.md) runs nine operations on a table of 10
+million rows in Baryon, pandas and Polars, and checks that they compute the same answer. On a
+4-core cloud machine, in seconds, fastest of three runs:
 
 | Operation | Baryon | pandas 3.0 | Polars 2.1 |
 | --- | --- | --- | --- |
-| `filter`: rows where a column is over 0.5 | 0.08 | 0.12 | 0.02 |
-| `assign`: a column computed from two others | 0.08 | 0.07 | 0.03 |
-| `groupby`: sum and mean for 1000 keys | 1.11 | 0.24 | 0.10 |
-| `sort`: `sort_values` by a float column | 1.14 | 1.36 | 0.47 |
-| `merge`: inner join to a table of 1000 rows | 1.06 | 0.98 | 0.09 |
-| `missing`: a mask and a mean over a column with gaps | 0.25 | 0.14 | 0.03 |
+| `filter`: rows where a column is over 0.5 | 0.09 | 0.14 | 0.02 |
+| `assign`: a column computed from two others | 0.03 | 0.08 | 0.03 |
+| `groupby`: sum and mean for 1000 keys | 0.97 | 0.22 | 0.10 |
+| `sort`: `sort_values` by a float column | 1.07 | 1.39 | 0.47 |
+| `merge`: inner join to a table of 1000 rows | 1.16 | 0.98 | 0.09 |
+| `missing`: a mask and a mean over a column with gaps | 0.22 | 0.14 | 0.03 |
+| `counts`: `size` and `nunique` for 1000 keys | 1.68 | 1.95 | not measured |
+| `write`: `to_csv` of three columns, 424 MB | 29.6 | 34.3 | not measured |
+| `read`: `read_csv` of that file | 7.7 | 2.9 | not measured |
 
-Baryon runs each operation on one core, as pandas does, and is level with pandas except in
-`groupby`, where about half the time goes to sums that are correctly rounded
-([Grouping](../reference/dataframe-operations.md#grouping)); pandas's are not. Polars is
-ahead everywhere because it uses every core. Running Baryon's column loops on every core is
-the next step, and these numbers are its starting line. The benchmark's own page says how each
-number is measured and how to run it on your machine.
+The Baryon and pandas columns are from 2026-11-19. The Polars column is from the day before,
+on the same kind of machine; Polars was not installed where the last three operations were
+added.
+
+Baryon runs each operation on one core, as pandas does. It is ahead of pandas in five of the
+nine and close behind in `merge`. It is well behind in three: `groupby`, where about half the
+time goes to sums that are correctly rounded
+([Grouping](../reference/dataframe-operations.md#grouping)), which pandas's are not;
+`missing`; and `read`, whose reader has not been tuned yet. Polars is ahead
+where it was measured because it uses every core. Running Baryon's column loops on every core
+is the next step, and these numbers are its starting line. The benchmark's own page says how
+each number is measured and how to run it on your machine.
 
 ## Where to go next
 

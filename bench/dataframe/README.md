@@ -1,7 +1,8 @@
 # DataFrame benchmark
 
-Six `DataFrame` operations on a table of 10 million rows, written three times: in Baryon, in
-pandas and in Polars. It is the measurement roadmap item 3.13.10 asks for. The parallel and
+Nine `DataFrame` operations on a table of 10 million rows, written in Baryon, in pandas and,
+for the first six, in Polars. It is the measurement roadmap item 3.13.10 asks for; item
+3.13.20 added the last three operations. The parallel and
 fused versions of the column loops start from these numbers, as the faster sorts of item
 3.13.12 did: performance work begins with a benchmark that shows the problem and ends with one
 that shows the gain.
@@ -22,7 +23,9 @@ python3 bench/dataframe/run.py --baryon target/release/baryon
 | `--runs <n>` | Runs of each operation; the fastest counts | 3 |
 | `--baryon <path>` | The compiler to build the Baryon program with | `baryon` on the `PATH` |
 
-The run fails if a library's checksum differs from Baryon's.
+The run fails if a library's checksum differs from Baryon's, or if the CSV file Baryon writes
+is not byte for byte the file pandas writes. `write` and `read` use a temporary directory
+that needs 0.5 GB for each library at 10 million rows.
 
 ## The table and the operations
 
@@ -43,12 +46,51 @@ so the checksums can be compared digit for digit:
 | `sort` | `sort_values("value")`, stable | `other` in the first and last row |
 | `merge` | inner `merge` on `key` with a table of 1000 rows, one for each key | rows, sum of `value * weight` |
 | `missing` | `value` with every tenth row missing as `bid`: `gaps[gaps.bid > 0.5]` and `gaps.bid.mean()` | rows kept, sum of their `other`, the mean |
+| `counts` | `groupby("key")` with the `size` of each group and the `nunique` of `other` | groups, sum of each result column |
+| `write` | `table.to_csv(path)`, 424 MB at 10 million rows | rows, and the file compared with pandas's |
+| `read` | `DataFrame.read_csv(path)` of that file | rows, sum of `value`, sum of `key` |
 
 ## Results
 
 Linux x86-64, a shared cloud machine with 4 cores (Intel Xeon, 2.1 GHz) and 15 GB of memory,
-2026-11-18: pandas 3.0.5 on NumPy 2.5.3, Polars 2.1.0, `baryon build --release`. Seconds,
-fastest of 3. Your numbers will differ.
+2026-11-19: pandas 3.0.5 on NumPy 2.5.3, `baryon build --release`. Seconds, fastest of 3. Your
+numbers will differ. Polars was not installed on this machine, so its column is `absent`; its
+numbers for the first six operations are in the run of the day before, below.
+
+```text
+operation     Baryon    pandas    Polars  checksum
+filter         0.092     0.137    absent  identical
+assign         0.033     0.075    absent  identical
+groupby        0.966     0.223    absent  identical
+sort           1.072     1.385    absent  identical
+merge          1.158     0.978    absent  identical
+missing        0.218     0.138    absent  identical
+counts         1.681     1.953    absent  identical
+write         29.567    34.270    absent  identical
+read           7.659     2.909    absent  identical
+```
+
+What they say:
+
+- `filter`, `assign` and `missing` are single compiled loops over the columns. The first two
+  are ahead of pandas on one core; `missing` is behind it.
+- `sort` is ahead of pandas and `merge` close behind. `sort_values` by a column of `f64`
+  deals the values into buckets and sorts each one, and half of what is left is copying the
+  three columns into their new order. `merge` sorts the keys of both frames by counting.
+- `groupby` is four times behind pandas. About half of its time is the sums: Baryon's `sum`
+  and `mean` of a group are correctly rounded (`math.fsum`), where pandas's are compensated
+  but not exact. The rest is gathering each group's values through the sorted positions.
+- `counts` is ahead of pandas. `nunique` numbers the column's values with a sort; `size`
+  needs only the groups. How the time divides between them has not been measured.
+- `write` is ahead of pandas and writes the same bytes, 20 million floats among them, each
+  in its shortest text that reads back exactly.
+- `read` is 2.6 times behind pandas. The reader holds the whole file and an index of its
+  cells before it builds the columns, and has not been tuned yet.
+
+### With Polars, 2026-11-18
+
+The same machine type a day earlier, with Polars 2.1.0, before `counts`, `write` and `read`
+were added:
 
 ```text
 operation     Baryon    pandas    Polars  checksum
@@ -60,21 +102,13 @@ merge          1.056     0.979     0.086  identical
 missing        0.247     0.139     0.026  identical
 ```
 
-What they say:
-
-- `filter`, `assign` and `missing` are single compiled loops over the columns, and are level
-  with pandas on one core. Polars is ahead because it uses every core.
-- `sort` and `merge` are level with pandas. `sort_values` by a column of `f64` deals the
-  values into buckets and sorts each one, and half of what is left is copying the three
-  columns into their new order. `merge` sorts the keys of both frames by counting.
-- `groupby` is five times behind pandas. About half of its time is the sums: Baryon's `sum`
-  and `mean` of a group are correctly rounded (`math.fsum`), where pandas's are compensated
-  but not exact. The rest is gathering each group's values through the sorted positions.
-- Polars is 2 to 12 times ahead on these three, with every core and hash tables.
+Polars is 2 to 12 times ahead of Baryon, with every core and hash tables. The Baryon and
+pandas columns differ between the two days by what a shared machine gives from one run to
+the next.
 
 ### Before roadmap item 3.13.12
 
-The first measurement, on the same machine and day, which the faster sorts started from:
+The first measurement, on 2026-11-18, which the faster sorts started from:
 
 ```text
 operation     Baryon    pandas    Polars  checksum
@@ -95,10 +129,10 @@ than it. Item 3.13.12 replaced it (`crates/driver/library/frame_order.byn`).
 Baryon has no clock module yet, so the Baryon program runs one operation for each process, and
 `run.py` times the whole process. A process that only builds the table (`setup`, or
 `missing_setup` for the table with gaps) is timed the same way, and its fastest time is taken
-off. At 10 million rows building the table takes about 0.2 seconds, so an operation under
-about 0.05 seconds is measured to no better than a few hundredths of a second. `frames.py`
-times each pandas and Polars operation alone with `time.perf_counter`, after the table is
-built.
+off. `read` builds no table, so its time is the whole process. At 10 million rows building the
+table takes about 0.2 seconds, so an operation under about 0.05 seconds is measured to no
+better than a few hundredths of a second. `frames.py` times each pandas and Polars operation
+alone with `time.perf_counter`, after the table is built.
 
 Known asymmetries:
 
@@ -113,8 +147,8 @@ Known asymmetries:
 | Path | Contents |
 | --- | --- |
 | `baryon/main.byn` | The Baryon program: `main.byn <operation> <rows>` prints the checksum |
-| `frames.py` | The same operations in pandas and Polars, timed |
+| `frames.py` | The same operations in pandas, and the first six in Polars, timed |
 | `run.py` | Builds and times the Baryon program, runs `frames.py`, prints the table |
 
 `crates/driver/tests/build/frame_benchmark.rs` builds the Baryon program in CI and checks its
-checksums against pandas's at 1000 rows.
+checksums against pandas's at 1000 rows, with the first lines of the file `write` makes.

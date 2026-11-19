@@ -1,4 +1,5 @@
-"""The DataFrame benchmark: one operation on a table of `rows` rows, named on the command line."""
+"""The DataFrame benchmark: one operation on a table of `rows` rows, named on the command line.
+`write` and `read` take a third argument, the path of the CSV file."""
 
 import sys
 
@@ -57,9 +58,13 @@ def sectors() -> DataFrame[Sector]:
     return DataFrame({"key": key, "weight": weight})
 
 
-def main() -> Raises[None, ValueError]:
+def main() -> Raises[None, OSError | ValueError]:
     operation = sys.argv[1].copy()
     rows = int(sys.argv[2])
+    if operation == "read":
+        loaded: DataFrame[Trade] = DataFrame.read_csv(sys.argv[3])
+        print(len(loaded), f"{loaded.value.sum():.6f}", loaded.key.sum())
+        return
     if operation == "missing_setup":
         print(len(quotes(rows)))
         return
@@ -86,3 +91,9 @@ def main() -> Raises[None, ValueError]:
     elif operation == "merge":
         joined = table.merge(sectors(), on="key")
         print(len(joined), f"{(joined.value * joined.weight).sum():.6f}")
+    elif operation == "counts":
+        counted = table.groupby("key").agg(rows=("value", "size"), different=("other", "nunique"))
+        print(len(counted), counted.rows.sum(), counted.different.sum())
+    elif operation == "write":
+        table.to_csv(sys.argv[3])
+        print(len(table))
