@@ -11,6 +11,10 @@
 //! ```text
 //! error: `T(...)` converts a real number, found `complex128`
 //! ```
+//!
+//! The reverse, a number conversion of a `T`'s value such as `f64(x)`, is not built yet
+//! (roadmap 1.9.69): under `Number` a `complex128` type argument would reach the backend, so
+//! taking it needs a rule for that case first (idea I.72).
 
 use super::Body;
 use super::calls::Arguments;
@@ -79,5 +83,29 @@ impl<'db> Body<'db> {
         };
         self.typed.calls.insert(Key(node), call);
         Some(parameter)
+    }
+
+    /// Reports `name(argument)`, a conversion to a number type, when `ty`, the argument's type,
+    /// is a type parameter: `f64(x)` with `x: T` is not built yet (roadmap 1.9.69, idea I.72).
+    /// `None` for any other argument, which the caller checks as before.
+    pub(super) fn conversion_of_parameter(
+        &mut self,
+        argument: NodeId,
+        name: &str,
+        ty: Type<'db>,
+    ) -> Option<Type<'db>> {
+        if !matches!(ty.kind(self.db), TypeKind::Parameter { .. }) {
+            return None;
+        }
+        let message = format!(
+            "`{name}(...)` cannot convert a value of type `{}` yet",
+            self.show(ty)
+        );
+        Some(self.lowerer.error(
+            argument,
+            &message,
+            "a type parameter's value",
+            Some("convert the other value to the type parameter instead, as in `x * T(k)`"),
+        ))
     }
 }

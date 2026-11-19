@@ -973,7 +973,9 @@ operations its bound allows apply to it. Under `Number` or `Float` it converts o
 an integer or a float of any width, as the number type it stands for would: `T(len(xs))` is
 `f32(len(xs))` in the `f32` copy, and `T(n)` panics in the `i8` copy where `i8(n)` would
 ([decision 0066](../decisions/0066-converting-to-and-naming-type-parameters.md)). Under any other
-bound `T(0)` is an error. A type parameter has no methods but its trait's, so `x.copy()` on an
+bound `T(0)` is an error. The reverse, a number conversion of a `T`'s value such as `f64(x)`,
+is not built yet and is a compile error; convert the other value to `T` instead, as in
+`x * T(k)`. A type parameter has no methods but its trait's, so `x.copy()` on an
 unbounded `T` is an error too. A number literal
 takes the type `T` under `Float`; under `Number` only an integer literal does, since `T` may be an
 integer type, so `x * 0.5` needs `[T: Float]`. Under `VectorSpace` a literal is an `f64`, which

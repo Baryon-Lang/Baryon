@@ -337,6 +337,26 @@ error: `T(...)` converts one value, found 2
     );
 }
 
+/// A number conversion of a type parameter's value, `f64(x)` with `x: T`, is reported as not
+/// built yet (roadmap 1.9.69, idea I.72), under `Number` and `Float` alike.
+#[test]
+fn a_number_conversion_of_a_type_parameter_is_reported() {
+    let program = r"
+def scaled[T: Number](x: T, k: f64) -> T:
+    return T(f64(x) * k)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `f64(...)` cannot convert a value of type `T` yet
+ --> main.byn:2:18
+  |
+2 |     return T(f64(x) * k)
+  |                  ^ a type parameter's value
+  = note: convert the other value to the type parameter instead, as in `x * T(k)`"
+    );
+}
+
 /// A generic struct built with its type arguments written checks its arguments against the
 /// fields at those arguments (decision 0066, roadmap 1.9.61): a written argument that breaks
 /// its parameter's bound is an error, as an inferred one is, and so is a field of another

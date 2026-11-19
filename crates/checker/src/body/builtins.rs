@@ -44,6 +44,9 @@ impl<'db> Body<'db> {
             if matches!(types[0].kind(self.db), TypeKind::Str) {
                 return self.number_from_text(node, name, target);
             }
+            if let Some(ty) = self.conversion_of_parameter(all[0], name, types[0]) {
+                return ty;
+            }
             return primitive(self.db, target);
         }
         if let Some(ty) = self.complex_builtin(name, &all, &types) {
