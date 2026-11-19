@@ -193,14 +193,14 @@ error: `agg` has no reduction `total`
    |
 12 |     k = trades.groupby("symbol").agg(n=("price", "total"))
    |                                                  ^^^^^^^ not a reduction
-   = note: it has `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`
+   = note: it has `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`, `size`, `nunique`
 
 error: a reduction of `agg` is written as a string literal
   --> main.byn:13:50
    |
 13 |     l = trades.groupby("symbol").agg(n=("price", name))
    |                                                  ^^^^ not a string literal
-   = note: one of `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`
+   = note: one of `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`, `size`, `nunique`
 
 error: `symbol` is a column the rows are grouped by
   --> main.byn:14:41
@@ -227,4 +227,38 @@ error: the column `z` holds `complex128`, which `groupby` cannot reduce
 18 |     q = waved.groupby("k").agg(n=("z", "sum"))
    |                                   ^^^ complex numbers"#
     );
+}
+
+/// `size` reads a column of any type, a complex one too. `nunique` needs values that can be
+/// told apart in order, so a complex column is refused, and a key stays no value for
+/// either (roadmap 3.13.17).
+#[test]
+fn the_counting_reductions_are_checked() {
+    let program = r#"
+def main():
+    df = DataFrame({"g": Array([1, 1]), "z": Array([1j, 2j]), "s": Array(["a", "b"])})
+    a = df.groupby("g").agg(n=("z", "nunique"))
+    b = df.groupby("g").agg(n=("z", "size"), m=("s", "mean"))
+    c = df.groupby("g").agg(n=("g", "size"))
+"#;
+    let expected = r#"error: the column `z` holds `complex128`, which `groupby` cannot count
+ --> main.byn:3:32
+  |
+3 |     a = df.groupby("g").agg(n=("z", "nunique"))
+  |                                ^^^ complex numbers
+
+error: `agg` cannot reduce `s`, a column of `str`, with `mean`
+ --> main.byn:4:49
+  |
+4 |     b = df.groupby("g").agg(n=("z", "size"), m=("s", "mean"))
+  |                                                 ^^^ a column of `str`
+  = note: a column of `str` has `count`, `size`, `nunique`, `first`, `last`, `min` and `max`
+
+error: `g` is a column the rows are grouped by
+ --> main.byn:5:32
+  |
+5 |     c = df.groupby("g").agg(n=("g", "size"))
+  |                                ^^^ a key, not a value
+  = note: each group has one value of it, which the result already holds"#;
+    assert_eq!(check_one(program), expected);
 }

@@ -61,7 +61,7 @@ const EXPECTED: &str = r#"error: `agg` cannot reduce `symbol`, a column of `str`
    |
 12 |     g = trades.groupby("price").agg(first=("symbol", "first"), mean=("symbol", "mean"))
    |                                                                      ^^^^^^^^ a column of `str`
-   = note: a column of `str` has `count`, `first`, `last`, `min` and `max`
+   = note: a column of `str` has `count`, `size`, `nunique`, `first`, `last`, `min` and `max`
 
 error: a column cannot be moved out of its `DataFrame`
   --> main.byn:17:12

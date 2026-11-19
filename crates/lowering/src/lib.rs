@@ -305,6 +305,7 @@ mod frame_csv;
 mod frame_describe;
 mod frame_distinct;
 mod frame_dropna;
+mod frame_group_counts;
 mod frame_groups;
 mod frame_joins;
 mod frame_missing;

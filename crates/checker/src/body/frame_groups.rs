@@ -14,8 +14,9 @@ use syntax::{NodeId, Role, SyntaxKind};
 use types::{Call, Callee, Column, Float, Integer, Key, Primitive, Type, TypeKind};
 
 /// The ways `agg` makes one value of a group's values, as pandas names them.
-const REDUCTIONS: [&str; 10] = [
-    "sum", "min", "max", "first", "last", "count", "mean", "var", "std", "median",
+const REDUCTIONS: [&str; 12] = [
+    "sum", "min", "max", "first", "last", "count", "mean", "var", "std", "median", "size",
+    "nunique",
 ];
 
 impl<'db> Body<'db> {
@@ -208,6 +209,19 @@ impl<'db> Body<'db> {
             name: stored.name.clone(),
             element: optional.unwrap_or(stored.element),
         };
+        let whole = Type::new(
+            self.db,
+            TypeKind::Primitive(Primitive::Integer(Integer::I64)),
+        );
+        // `size` counts a group's rows, whatever the column holds, and `nunique` its
+        // different values, `None` and NaN left out, as pandas counts them (roadmap
+        // 3.13.17).
+        if how == "size" {
+            return Some(whole);
+        }
+        if how == "nunique" {
+            return self.orderable(column, read, "count").then_some(whole);
+        }
         if matches!(read.element.kind(self.db), TypeKind::Str) {
             let reduced = self.text_reduction(column, read, &how)?;
             // The text picked from a group whose texts are all `None` is `None`.
@@ -261,7 +275,10 @@ impl<'db> Body<'db> {
                     node,
                     &message,
                     "a column of `str`",
-                    Some("a column of `str` has `count`, `first`, `last`, `min` and `max`"),
+                    Some(
+                        "a column of `str` has `count`, `size`, `nunique`, `first`, `last`, \
+                         `min` and `max`",
+                    ),
                 );
                 None
             }

@@ -104,6 +104,8 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
 | `"min"`, `"max"` | The least and the greatest value | The column's type |
 | `"first"`, `"last"` | The first and the last value, in the frame's order | The column's type |
 | `"count"` | How many values there are | `i64` |
+| `"size"` | How many rows the group has, a row whose value is NaN or `None` too | `i64` |
+| `"nunique"` | How many different values there are | `i64` |
 | `"mean"` | The mean | `f64`; `f32` for an `f32` column |
 | `"var"`, `"std"` | The sample variance and standard deviation, dividing by one less than the count | The same |
 | `"median"` | The middle value, or the mean of the two middle values | The same |
@@ -114,12 +116,14 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
 - **The groups come out sorted by their keys**, rising, and rows keep their order inside a
   group, which is what `first` and `last` see. A key of `str` is in the order of Python's
   `<`, by code point, and texts are one group only when exactly equal.
-- **A column of `str` has five of the reductions**: `count`, an `i64`, and `first`,
-  `last`, `min` and `max`, which give a `str`, the smallest and largest by `<`. The
+- **A column of `str` has seven of the reductions**: `count`, `size` and `nunique`, each
+  an `i64`, and `first`, `last`, `min` and `max`, which give a `str`, the smallest and
+  largest by `<`. The
   others are compile errors. pandas's `sum` of text, which joins the texts of a group, is
   not built. `min` and `max` cost one sort of the column, comparing text.
 - **NaN is left out, as in pandas.** A row whose key is NaN belongs to no group. A NaN
-  value is skipped by every reduction, so `count` counts the values that are numbers. A
+  value is skipped by every reduction but `size`, so `count` counts the values that are
+  numbers and `nunique` the different numbers. A
   group with no numbers has the sum 0, the count 0, and NaN for the rest; `var` and `std`
   of one value are NaN.
 - **`None` is left out too**, in a [column that may hold `None`](missing-values.md#in-a-dataframe):
