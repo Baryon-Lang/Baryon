@@ -78,6 +78,11 @@ dependencies:
 cargo install --locked cargo-deny@0.20.2
 ```
 
+On Linux, the test of [`--blas`](docs/reference/commands.md#matrix-products-through-blas) needs
+OpenBLAS (`sudo apt install libopenblas-dev`) and Valgrind runs the ownership sweep. Without
+either, the check still passes: the `--blas` test prints why it skipped, and the sweep runs its
+programs without Valgrind. CI has both, and there a missing OpenBLAS fails the test.
+
 ## Documentation
 
 New to Baryon? Start with the [beginner's guide](docs/guide/README.md), the first of six pages
