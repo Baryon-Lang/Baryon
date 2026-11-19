@@ -1,27 +1,16 @@
-//! A `NetCDF` classic file held in memory for the `writing` module (decision 0047): its header
-//! and every variable's stored bytes, read from a file and written to one again in the layout
-//! the C library `netCDF4` calls gives a file: the header, the fixed-size variables, then the
-//! records.
+//! The layout of a `NetCDF` classic file for the `writing` module (decision 0047): each
+//! variable's slot and fill value, where the C library `netCDF4` calls puts each variable, and
+//! the rename that makes a rewritten file the file in one step.
 
 use super::encoding::{encode, encode_header};
-use super::{Header, Kind, Values, Variable, read_header};
-use crate::files::{ErrorKind, OsFailure};
+use super::{Header, Kind, Values, Variable};
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
 /// The size of the buffers that stream a file: a megabyte, many records' worth for most files.
 pub(super) const BUFFER: usize = 1 << 20;
-
-/// A file in memory: its header and every variable's slots.
-pub(super) struct Contents {
-    /// The header. The variables' sizes and beginnings are worked out again when it is written.
-    pub(super) header: Header,
-    /// For each variable, in the header's order, its stored bytes: one slot for a fixed-size
-    /// variable, and one slot for each record of a record variable, each [`slot`] bytes long.
-    pub(super) slots: Vec<Vec<u8>>,
-}
 
 /// The bytes of one slot of `variable` of `header`: its values' size padded to a multiple of
 /// 4, or unpadded for the only record variable.
@@ -66,71 +55,6 @@ pub(super) fn fill(variable: &Variable) -> Vec<u8> {
             Kind::Double => vec![0x47, 0x9E, 0, 0, 0, 0, 0, 0],
         },
     }
-}
-
-/// Reads the whole file at `path` into memory.
-pub(super) fn load(path: &str) -> Result<Contents, OsFailure> {
-    let header = read_header(path)?;
-    if header.netcdf4.is_some() {
-        return Err(OsFailure::new(
-            ErrorKind::InvalidData,
-            "the file is a NetCDF-4 (HDF5) file, which is not written yet",
-            path,
-        ));
-    }
-    let failed = |error: io::Error| OsFailure::from_io(&error, path);
-    let mut file = fs::File::open(path).map_err(failed)?;
-    let length = file.metadata().map_err(failed)?.len();
-    let step = header.record_size();
-    let mut slots = Vec::new();
-    for variable in &header.variables {
-        let short = || {
-            OsFailure::new(
-                ErrorKind::InvalidData,
-                format!("the file ends inside the NetCDF variable {}", variable.name),
-                path,
-            )
-        };
-        let size = slot(&header, variable);
-        let count = if header.is_record(variable) {
-            header.records
-        } else {
-            1
-        };
-        if size == 0 || count == 0 {
-            slots.push(Vec::new());
-            continue;
-        }
-        // The header is checked against the file's length before anything is allocated, so a
-        // corrupt header that claims more than the file holds is an error, not a huge
-        // allocation: every slot read lies inside the file.
-        let end = (count - 1)
-            .checked_mul(step)
-            .and_then(|last| variable.begin.checked_add(last))
-            .and_then(|last| last.checked_add(size as u64))
-            .filter(|&end| end <= length)
-            .ok_or_else(short)?;
-        debug_assert!(end <= length);
-        let total = usize::try_from(count)
-            .ok()
-            .and_then(|count| count.checked_mul(size))
-            .ok_or_else(short)?;
-        let mut bytes = vec![0_u8; total];
-        for (record, chunk) in bytes.chunks_mut(size).enumerate() {
-            // Within the file, as checked above.
-            let start = variable.begin + record as u64 * step;
-            file.seek(SeekFrom::Start(start)).map_err(failed)?;
-            file.read_exact(chunk).map_err(|error| {
-                if error.kind() == io::ErrorKind::UnexpectedEof {
-                    short()
-                } else {
-                    failed(error)
-                }
-            })?;
-        }
-        slots.push(bytes);
-    }
-    Ok(Contents { header, slots })
 }
 
 /// `header` with each variable's size and beginning set as the module's layout puts them: the
@@ -182,35 +106,9 @@ pub(super) fn laid_out(header: &Header) -> Result<Header, String> {
     Ok(laid)
 }
 
-/// Writes `contents` to `path`, laid out as the module's documentation says, replacing the file.
-pub(super) fn save(path: &str, contents: &Contents) -> Result<(), OsFailure> {
-    let header = laid_out(&contents.header)
-        .map_err(|message| OsFailure::new(ErrorKind::InvalidData, &message, path))?;
-    let slots: Vec<usize> = header
-        .variables
-        .iter()
-        .map(|variable| slot(&header, variable))
-        .collect();
-    let mut bytes = encode_header(&header);
-    for (index, variable) in header.variables.iter().enumerate() {
-        if !header.is_record(variable) {
-            bytes.extend_from_slice(&contents.slots[index]);
-        }
-    }
-    for record in 0..usize::try_from(header.records).unwrap_or(0) {
-        for (index, variable) in header.variables.iter().enumerate() {
-            if header.is_record(variable) {
-                let size = slots[index];
-                bytes.extend_from_slice(&contents.slots[index][record * size..(record + 1) * size]);
-            }
-        }
-    }
-    replace(path, |file| file.write_all(&bytes)).map_err(|error| OsFailure::from_io(&error, path))
-}
-
 /// Makes what `contents` writes the file at `path` in one step: it is written to a new file beside
 /// it, flushed to the disk, then renamed over it, so a program that stops partway, a crash or a
-/// full disk leave the old file or the new one, never one cut short. Each change rewrites the
+/// full disk leave the old file or the new one, never one cut short. A definition rewrites the
 /// whole file, so a file cut short would lose everything written before it, not just the
 /// change.
 ///
