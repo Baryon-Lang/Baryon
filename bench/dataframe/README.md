@@ -59,33 +59,36 @@ numbers for the first six operations are in the run of the day before, below.
 
 ```text
 operation     Baryon    pandas    Polars  checksum
-filter         0.092     0.137    absent  identical
-assign         0.033     0.075    absent  identical
-groupby        0.966     0.223    absent  identical
-sort           1.072     1.385    absent  identical
-merge          1.158     0.978    absent  identical
-missing        0.218     0.138    absent  identical
-counts         1.681     1.953    absent  identical
-write         29.567    34.270    absent  identical
-read           7.659     2.909    absent  identical
+filter         0.108     0.124    absent  identical
+assign         0.032     0.065    absent  identical
+groupby        0.870     0.177    absent  identical
+sort           0.907     1.255    absent  identical
+merge          0.948     0.916    absent  identical
+missing        0.198     0.152    absent  identical
+counts         1.648     1.817    absent  identical
+write         25.874    30.878    absent  identical
+read           4.026     2.684    absent  identical
 ```
 
 What they say:
 
 - `filter`, `assign` and `missing` are single compiled loops over the columns. The first two
   are ahead of pandas on one core; `missing` is behind it.
-- `sort` is ahead of pandas and `merge` close behind. `sort_values` by a column of `f64`
+- `sort` is ahead of pandas and `merge` level with it. `sort_values` by a column of `f64`
   deals the values into buckets and sorts each one, and half of what is left is copying the
   three columns into their new order. `merge` sorts the keys of both frames by counting.
-- `groupby` is four times behind pandas. About half of its time is the sums: Baryon's `sum`
+- `groupby` is five times behind pandas. About half of its time is the sums: Baryon's `sum`
   and `mean` of a group are correctly rounded (`math.fsum`), where pandas's are compensated
   but not exact. The rest is gathering each group's values through the sorted positions.
 - `counts` is ahead of pandas. `nunique` numbers the column's values with a sort; `size`
   needs only the groups. How the time divides between them has not been measured.
 - `write` is ahead of pandas and writes the same bytes, 20 million floats among them, each
   in its shortest text that reads back exactly.
-- `read` is 2.6 times behind pandas. The reader holds the whole file and an index of its
-  cells before it builds the columns, and has not been tuned yet.
+- `read` is 1.5 times behind pandas. It was 2.9 times behind, 7.659 s against 2.909 s, in
+  the run of the same day before roadmap 3.14.4.3, which stopped copying each cell of a whole
+  number and stopped `float` and `int` allocating for text without underscores. What is left
+  is one copy of each cell of a float, made so that `float` can read it as text, and the index
+  of the cells the reader builds before the columns.
 
 ### With Polars, 2026-11-18
 

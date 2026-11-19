@@ -5,14 +5,23 @@
 //! `&str`s, calls these, and writes a failure as a raised `ValueError`. Each reads the text once,
 //! and allocates only to take out underscores or to write a message.
 
+use std::borrow::Cow;
+
 use crate::print::quoted;
 use crate::strings::is_python_whitespace;
 
 /// The digits of `text` with Python's underscores taken out, or `None` when an underscore is not
 /// between two digits, as Python's `int` and `float` require (PEP 515): `1_000` is a thousand,
 /// `_1`, `1_` and `1__0` are not numbers.
-fn without_underscores(text: &str) -> Option<String> {
+///
+/// Text without an underscore, which is nearly all text, is given back as it is, borrowed, so
+/// reading a number allocates nothing: a CSV file of ten million rows reads each cell through
+/// here (roadmap 3.14.4.3).
+fn without_underscores(text: &str) -> Option<Cow<'_, str>> {
     let bytes = text.as_bytes();
+    if !bytes.contains(&b'_') {
+        return Some(Cow::Borrowed(text));
+    }
     for (at, &byte) in bytes.iter().enumerate() {
         if byte == b'_' {
             let before = at.checked_sub(1).and_then(|before| bytes.get(before));
@@ -22,7 +31,7 @@ fn without_underscores(text: &str) -> Option<String> {
             }
         }
     }
-    Some(text.replace('_', ""))
+    Some(Cow::Owned(text.replace('_', "")))
 }
 
 /// The integer `text` writes, as Python's `int(text)` reads it: whitespace around it, an
@@ -73,6 +82,15 @@ pub(crate) fn parse_integer(text: &str) -> Result<i64, String> {
 pub(crate) fn parse_float(text: &str) -> Result<f64, String> {
     let invalid = || format!("could not convert string to float: {}", quoted(text));
     let trimmed = text.trim_matches(is_python_whitespace);
+    // Nearly every number is digits, a point, a sign and an exponent, and nothing else. One
+    // pass sees that, and then the text is a number exactly when Rust reads it as one: of
+    // these bytes Rust accepts only what Python does. The slower steps below are for the
+    // words and the underscores.
+    let plain =
+        |byte: u8| byte.is_ascii_digit() || matches!(byte, b'.' | b'e' | b'E' | b'+' | b'-');
+    if !trimmed.is_empty() && trimmed.bytes().all(plain) {
+        return trimmed.parse().map_err(|_| invalid());
+    }
     let allowed =
         |byte: u8| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'+' | b'-');
     if trimmed.is_empty() || !trimmed.bytes().all(allowed) {
@@ -82,8 +100,8 @@ pub(crate) fn parse_float(text: &str) -> Result<f64, String> {
     if trimmed.len() - unsigned.len() > 1 {
         return Err(invalid());
     }
-    let word = unsigned.to_ascii_lowercase();
-    if matches!(word.as_str(), "inf" | "infinity" | "nan") {
+    let is_word = |word: &str| unsigned.eq_ignore_ascii_case(word);
+    if is_word("inf") || is_word("infinity") || is_word("nan") {
         return trimmed.parse().map_err(|_| invalid());
     }
     if !unsigned.bytes().all(|byte| {
@@ -164,6 +182,23 @@ mod tests {
         ] {
             assert!(parse_float(text).is_err(), "{text}");
         }
+        // Text of digits, points, signs and exponent letters alone takes the one-pass way,
+        // which must refuse what the slower way refuses.
+        for text in [
+            "+-1", "-", "+", "1e+", "-.", "1e5e5", "1-", "e", "++1", "1.e", "+ 1",
+        ] {
+            assert!(parse_float(text).is_err(), "{text}");
+        }
+        for (text, value) in [
+            ("-.5e+2", -50.0),
+            ("1.e2", 100.0),
+            ("+0", 0.0),
+            ("\t9\n", 9.0),
+        ] {
+            assert_eq!(parse_float(text), Ok(value), "{text}");
+        }
+        assert_eq!(parse_float("+INF"), Ok(f64::INFINITY));
+        assert!(parse_float("-nan").is_ok_and(f64::is_nan));
         assert_eq!(
             parse_float("1,5"),
             Err("could not convert string to float: '1,5'".to_owned())

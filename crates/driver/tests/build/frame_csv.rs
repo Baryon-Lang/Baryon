@@ -315,6 +315,79 @@ def main() -> Raises[None, OSError]:
         print(error.message)
 ";
 
+/// The schema of `plain_and_other_numbers_read_alike`: a whole number and a float.
+const COUNTS: &str = "\
+class Count(Struct):
+    big: i64
+    rate: f64
+
+
+def rows(path: str) -> Raises[int, OSError | ValueError]:
+    counts: DataFrame[Count] = DataFrame.read_csv(path)
+    return len(counts)
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    counts: DataFrame[Count] = DataFrame.read_csv(\"counts.csv\")
+    print(counts.big)
+    print(counts.rate)
+    for name in [\"long\", \"mixed\", \"spaced\", \"signs\"]:
+        try:
+            print(rows(name + \".csv\"))
+        except ValueError as error:
+            print(error.message)
+";
+
+/// A cell of digits alone and a float of digits, a point, a sign and an exponent are read
+/// without a copy (roadmap 3.14.4.3), and every other cell the slower way. Both ways give
+/// what pandas reads: leading zeros, eighteen digits (the longest the quick way takes) and
+/// nineteen, the least and greatest `i64`, a sign, spaces around a number. A cell that is
+/// not a number raises the same `ValueError` whichever way saw it first, and names the cell
+/// without the spaces around it.
+#[test]
+fn plain_and_other_numbers_read_alike() {
+    let files = [
+        (
+            "counts.csv",
+            "big,rate\n007,1.5\n999999999999999999, 2.5 \n1000000000000000000,+.5\n\
+             9223372036854775807,1e3\n-9223372036854775808,-1E-2\n +12 ,5.\n",
+        ),
+        ("long.csv", "big,rate\n1,1\n99999999999999999999,1\n"),
+        ("mixed.csv", "big,rate\n1,1\n12a,1\n"),
+        ("spaced.csv", "big,rate\n1, 1_0 \n"),
+        ("signs.csv", "big,rate\n1,+-1\n"),
+    ];
+    let directory = package(
+        "csv_plain",
+        &[
+            ("main.byn", COUNTS),
+            files[0],
+            files[1],
+            files[2],
+            files[3],
+            files[4],
+        ],
+    )
+    .unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&executable)
+        .current_dir(directory.join("package"))
+        .output()
+        .unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "[                   7   999999999999999999  1000000000000000000\n  \
+         9223372036854775807 -9223372036854775808                   12]\n\
+         [ 1.5e+00  2.5e+00  5.0e-01  1.0e+03 -1.0e-02  5.0e+00]\n\
+         column 'big', row 2: could not read '99999999999999999999' as i64\n\
+         column 'big', row 2: could not read '12a' as i64\n\
+         column 'rate', row 1: could not read '1_0' as f64\n\
+         column 'rate', row 1: could not read '+-1' as f64\n"
+    );
+}
+
 /// Columns of the narrower number types (roadmap 3.14.4.1): every whole number type reads
 /// its least and greatest value, `u64` past the range of `i64`, and `f32` reads each cell
 /// rounded to an `f32`. A cell outside its type's range raises `ValueError` where pandas

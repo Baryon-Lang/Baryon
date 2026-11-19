@@ -226,15 +226,15 @@ million rows in Baryon, pandas and Polars, and checks that they compute the same
 
 | Operation | Baryon | pandas 3.0 | Polars 2.1 |
 | --- | --- | --- | --- |
-| `filter`: rows where a column is over 0.5 | 0.09 | 0.14 | 0.02 |
-| `assign`: a column computed from two others | 0.03 | 0.08 | 0.03 |
-| `groupby`: sum and mean for 1000 keys | 0.97 | 0.22 | 0.10 |
-| `sort`: `sort_values` by a float column | 1.07 | 1.39 | 0.47 |
-| `merge`: inner join to a table of 1000 rows | 1.16 | 0.98 | 0.09 |
-| `missing`: a mask and a mean over a column with gaps | 0.22 | 0.14 | 0.03 |
-| `counts`: `size` and `nunique` for 1000 keys | 1.68 | 1.95 | not measured |
-| `write`: `to_csv` of three columns, 424 MB | 29.6 | 34.3 | not measured |
-| `read`: `read_csv` of that file | 7.7 | 2.9 | not measured |
+| `filter`: rows where a column is over 0.5 | 0.11 | 0.12 | 0.02 |
+| `assign`: a column computed from two others | 0.03 | 0.07 | 0.03 |
+| `groupby`: sum and mean for 1000 keys | 0.87 | 0.18 | 0.10 |
+| `sort`: `sort_values` by a float column | 0.91 | 1.26 | 0.47 |
+| `merge`: inner join to a table of 1000 rows | 0.95 | 0.92 | 0.09 |
+| `missing`: a mask and a mean over a column with gaps | 0.20 | 0.15 | 0.03 |
+| `counts`: `size` and `nunique` for 1000 keys | 1.65 | 1.82 | not measured |
+| `write`: `to_csv` of three columns, 424 MB | 25.9 | 30.9 | not measured |
+| `read`: `read_csv` of that file | 4.0 | 2.7 | not measured |
 
 The Baryon and pandas columns are from 2026-11-19. The Polars column is from the day before,
 on the same kind of machine; Polars was not installed where the last three operations were
@@ -244,7 +244,7 @@ Baryon runs each operation on one core, as pandas does. It is ahead of pandas in
 nine and close behind in `merge`. It is well behind in three: `groupby`, where about half the
 time goes to sums that are correctly rounded
 ([Grouping](../reference/dataframe-operations.md#grouping)), which pandas's are not;
-`missing`; and `read`, whose reader has not been tuned yet. Polars is ahead
+`missing`; and `read`, which copies each float's text before reading it. Polars is ahead
 where it was measured because it uses every core. Running Baryon's column loops on every core
 is the next step, and these numbers are its starting line. The benchmark's own page says how
 each number is measured and how to run it on your machine.
