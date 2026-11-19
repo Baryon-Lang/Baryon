@@ -154,8 +154,8 @@ impl<'db> Body<'db> {
         let TypeKind::Tuple(items) = ty.kind(self.db) else {
             return false;
         };
-        if !matches!(items.as_slice(), [only] if matches!(only.kind(self.db), TypeKind::Unpacked(_)))
-        {
+        let pack = |item: &Type<'db>| matches!(item.kind(self.db), TypeKind::Unpacked(_));
+        if !matches!(items.as_slice(), [only] if pack(only)) {
             return false;
         }
         let empty = self.tree.kind(default) == SyntaxKind::Tuple

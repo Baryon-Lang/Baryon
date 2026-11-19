@@ -197,11 +197,6 @@ impl<'db> Builder<'db> {
         signature
             .parameters
             .get(position)
-            .is_some_and(|parameter| match parameter.ty.kind(self.db) {
-                TypeKind::Tuple(items) => {
-                    matches!(items.as_slice(), [only] if matches!(only.kind(self.db), TypeKind::Unpacked(_)))
-                }
-                _ => false,
-            })
+            .is_some_and(|parameter| crate::spread::is_pack_tuple(self.db, parameter.ty))
     }
 }

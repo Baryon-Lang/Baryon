@@ -431,30 +431,7 @@ impl<'db> Builder<'db> {
         let callee = self.operand(function);
         let mut passed = Vec::with_capacity(arguments.len());
         for &argument in arguments {
-            let tuple = (self.tree.kind(argument) == SyntaxKind::Starred)
-                .then(|| self.tree.child(argument, Role::Value))
-                .flatten();
-            let Some(tuple) = tuple else {
-                passed.push(Argument::Borrow(self.borrow(argument)));
-                continue;
-            };
-            // `*args` (the decision 0026 amendment): each element of a tuple whose type is
-            // known is borrowed here; a `tuple[*Ts]` is spread by monomorphization, once the
-            // instance knows how many elements it has.
-            let place = self.borrow(tuple);
-            match self.ty(tuple).kind(self.db) {
-                TypeKind::Tuple(items)
-                    if !items
-                        .iter()
-                        .any(|item| matches!(item.kind(self.db), TypeKind::Unpacked(_))) =>
-                {
-                    let count = u32::try_from(items.len()).unwrap_or(u32::MAX);
-                    passed.extend((0..count).map(|field| {
-                        Argument::Borrow(place.clone().project(Projection::Field(field)))
-                    }));
-                }
-                _ => passed.push(Argument::Spread(place)),
-            }
+            self.pass_to_value(argument, &mut passed);
         }
         // A function that raises raises through the call, as any call of it does.
         self.raising_callee(Callee::Value(callee), passed, place, node);
