@@ -99,6 +99,7 @@ mod process;
 mod reductions;
 mod shapes;
 mod slices;
+mod snappy;
 mod sorting;
 mod special;
 mod special_bessel;
