@@ -923,6 +923,15 @@ does: `pick(None, 3)` with `def pick[T: Number](a: T | None, b: T | None)` takes
 `3`. When only `None` fixes it, `T` is the type `None`, and `T | None` is then `None`, since
 a union's repeats do not matter: `show(None)` for `def show[T](x: T | None)` builds.
 
+A generic function's body is compiled once for all its type arguments, so for now it cannot
+show four kinds of value whose text the library writes: a frame, an array with missing values,
+a text array and a `Path`. A call that gives `T` one of them, or a value that holds one, is an
+error when the function prints its `T` or puts it in an f-string, `print(value)` or
+`f"{value}"` for `value: T`; print the value outside the function instead. The compiler finds
+such a use where the value printed starts at a parameter, `value`, `xs[0]` or `p.field`; one
+copied into a local variable first, or passed to another generic function, is not seen and
+prints the parts the compiler stores it in. Showing them through a type parameter is idea I.71.
+
 A generic struct's method called through its class finds the class's type arguments the same
 way, from all its arguments: `Pair.both(1.5)` is the `both` of `Pair[f64]`, and
 `Pair.total(p)` takes them from `p`. The class's type parameters come first, then the method's

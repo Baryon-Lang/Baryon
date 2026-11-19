@@ -389,6 +389,7 @@ impl<'db> Body<'db> {
         } else {
             self.generic_call(node, callee, signature, parameters, &pairs)
         };
+        self.shown_through_parameters(node, callee, &target, signature, &type_arguments);
         let mut slots = vec![None; signature.parameters.len()];
         for (slot, argument) in receiver
             .as_ref()

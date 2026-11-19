@@ -269,3 +269,77 @@ fn mistakes_with_an_array_with_missing_values_are_reported() {
 fn the_built_uses_of_an_array_with_missing_values_check_clean() {
     assert_eq!(check_one(BUILT), "");
 }
+
+/// A generic function that shows its `T` is an error at a call that makes `T` a frame, an
+/// array with missing values, a text array or a `Path`, or a value that holds one (roadmap
+/// 1.9.67): its body is built once, where the value's type is `T`, so it would print the
+/// parts the compiler stores the value in. A function that shows something else, and a call
+/// at a type that prints alone, are not reported.
+#[test]
+fn values_shown_through_a_type_parameter_are_reported() {
+    let program = r#"
+from pathlib import Path
+
+
+def say[T](value: T):
+    print(value)
+
+
+def first[T](xs: list[T]) -> str:
+    return f"{xs[0]}"
+
+
+def count[T](value: T) -> i64:
+    print("counting")
+    return 1
+
+
+def main():
+    gaps: Array[f64 | None, 1] = Array([1.0, None])
+    say(gaps)
+    say(DataFrame({"price": Array([1.5])}))
+    print(first([Path("/a")]))
+    say(Array(["x"]))
+    n = count(gaps)
+    say(1.5)
+"#;
+    assert_eq!(
+        check_one(program),
+        "\
+error: `say` shows its `T`, an array with missing values here, which cannot be shown \
+through a type parameter yet
+  --> main.byn:19:5
+   |
+19 |     say(gaps)
+   |     ^^^^^^^^^ shown through a type parameter
+   = note: show the value outside the generic function, `print(value)`; showing it \
+through `T` is idea I.71
+
+error: `say` shows its `T`, a frame here, which cannot be shown \
+through a type parameter yet
+  --> main.byn:20:5
+   |
+20 |     say(DataFrame({\"price\": Array([1.5])}))
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ shown through a type parameter
+   = note: show the value outside the generic function, `print(value)`; showing it \
+through `T` is idea I.71
+
+error: `first` shows its `T`, a `Path` here, which cannot be shown \
+through a type parameter yet
+  --> main.byn:21:11
+   |
+21 |     print(first([Path(\"/a\")]))
+   |           ^^^^^^^^^^^^^^^^^^^ shown through a type parameter
+   = note: show the value outside the generic function, `print(value)`; showing it \
+through `T` is idea I.71
+
+error: `say` shows its `T`, a text array here, which cannot be shown \
+through a type parameter yet
+  --> main.byn:22:5
+   |
+22 |     say(Array([\"x\"]))
+   |     ^^^^^^^^^^^^^^^^^ shown through a type parameter
+   = note: show the value outside the generic function, `print(value)`; showing it \
+through `T` is idea I.71"
+    );
+}

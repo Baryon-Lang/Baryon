@@ -69,7 +69,7 @@ impl<'db> Body<'db> {
 
     /// Whether a value of type `ty` is or holds a `Path`. `depth` counts the types entered, and
     /// stops a struct that holds a list of itself.
-    fn holds_path(&self, ty: Type<'db>, depth: u8) -> bool {
+    pub(super) fn holds_path(&self, ty: Type<'db>, depth: u8) -> bool {
         if self.is_path(ty) {
             return true;
         }
