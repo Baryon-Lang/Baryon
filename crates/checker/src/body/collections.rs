@@ -113,12 +113,7 @@ impl<'db> Body<'db> {
                 Type::new(self.db, TypeKind::Str)
             }
             // Each pass reads the next element of an array with missing values, or `None`.
-            TypeKind::OptionalArray(element) if !matches!(element.kind(self.db), TypeKind::Str) => {
-                Type::new(self.db, TypeKind::Optional(*element))
-            }
-            TypeKind::OptionalArray(_) => {
-                self.optional_array_unbuilt(iterator, "a `for` loop over text that may be `None`")
-            }
+            TypeKind::OptionalArray(element) => Type::new(self.db, TypeKind::Optional(*element)),
             TypeKind::Primitive(_) | TypeKind::None => {
                 let message = format!("a value of type `{}` cannot be looped over", self.show(ty));
                 self.lowerer

@@ -8,7 +8,7 @@
 
 use crate::builder::Builder;
 use crate::frames::erase;
-use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
+use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
 
@@ -189,10 +189,56 @@ impl<'db> Builder<'db> {
         };
         let values = array.clone().project(Projection::Field(VALUES));
         let bits = array.clone().project(Projection::Field(VALIDITY));
+        if matches!(inner.kind(self.db), TypeKind::Str) {
+            return self.optional_text_loop_element((values, bits), at, element, node);
+        }
         let arguments = vec![values, bits, Place::from(at)];
         let read = self.frame_call("optional_element", vec![inner], arguments, element, node);
         // After a report the program is not built, and the loop still needs a place to name.
         Place::from(read.unwrap_or_else(|| self.temporary(element, node)))
+    }
+
+    /// The element at the position `at` of the array of text with missing values stored as
+    /// `values` and `bits`, for a `for` loop whose variable is an `element`, a `str | None`.
+    /// Where the element is there it holds a `str` that borrows the array's bytes, as a
+    /// loop over a text array gives, so nothing is copied and nothing is dropped; where it
+    /// is not, `None`. Cost: one call that reads the bitmap on each pass.
+    fn optional_text_loop_element(
+        &mut self,
+        (values, bits): (Place, Place),
+        at: Local,
+        element: Type<'db>,
+        node: NodeId,
+    ) -> Place {
+        let item = self.temporary(element, node);
+        let boolean = self.boolean_type();
+        let arguments = vec![bits, Place::from(at)];
+        let Some(there) = self.frame_call("_valid", Vec::new(), arguments, boolean, node) else {
+            return Place::from(item);
+        };
+        let (present, absent, after) = (self.new_block(), self.new_block(), self.new_block());
+        self.terminate(
+            TerminatorKind::Branch {
+                condition: Operand::Copy(Place::from(there)),
+                then: present,
+                otherwise: absent,
+            },
+            node,
+        );
+        self.start(present);
+        let text = self.text_array_element(&values, at, node);
+        let held = Rvalue::Aggregate(element, vec![Operand::Move(text)]);
+        self.assign(Place::from(item), held, node);
+        self.terminate(TerminatorKind::Goto(after), node);
+        self.start(absent);
+        let nothing = Operand::Constant(Constant {
+            ty: element,
+            value: ConstantValue::None,
+        });
+        self.assign(Place::from(item), Rvalue::Use(nothing), node);
+        self.terminate(TerminatorKind::Goto(after), node);
+        self.start(after);
+        Place::from(item)
     }
 
     /// Whether `node` is `values[index]` naming one element of an array with missing values.

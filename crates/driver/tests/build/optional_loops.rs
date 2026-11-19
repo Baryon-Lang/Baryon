@@ -1,6 +1,6 @@
 //! `for` loops over arrays with missing values (roadmap 3.13.6, decision 0045), built and
 //! run: each pass gives the next element as a `T | None`, alone, inside `enumerate`, `zip`
-//! and `reversed`, and in a comprehension.
+//! and `reversed`, and in a comprehension. Text that may be `None` is borrowed from the array.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -55,6 +55,58 @@ def main():
         String::from_utf8_lossy(&run.stdout),
         "4.0\n1.5\nNone\n2.5\n0 None\n1 2\n2 3\n1.5 True\nNone None\n2.5 False\n\
          False\nNone\nTrue\n[1.5, 2.5]\n[0, 2, 3]\nNone\n2.5\n1\n"
+    );
+    Ok(())
+}
+
+/// A loop over text that may be `None` gives each element as a `str | None` that borrows
+/// the array's bytes, alone and inside `enumerate`, `zip` and `reversed`, with `continue`
+/// and `break`. An empty array runs no pass.
+#[test]
+fn loops_over_text_borrow_each_element() -> io::Result<()> {
+    let program = r#"
+def main():
+    names: Array[str | None, 1] = Array(["delta", None, "", "beta"])
+    for name in names:
+        if name is not None:
+            print(name, len(name))
+        else:
+            print("gone")
+    for at, name in enumerate(names):
+        print(at, name)
+    lengths = [len(name) if name is not None else -1 for name in reversed(names)]
+    print(lengths)
+    kept: list[str] = []
+    ids: Array[i64 | None, 1] = Array([1, None, 3, 4])
+    for name, id in zip(names, ids):
+        print(name, id)
+        if name is not None:
+            kept.append(name.copy())
+    print(kept)
+    total = 0
+    for name in names:
+        if name is None:
+            continue
+        if name == "":
+            break
+        total += len(name)
+    print(total)
+    for name in names[0:0]:
+        print("never")
+"#;
+    let directory = package("optional_loops_text", &[("main.byn", program)])?;
+    let (output, executable) = baryon_build(&directory)?;
+    assert!(output.status.success(), "{}", stderr(&output));
+    let run = Command::new(&executable).output()?;
+    assert_eq!(run.status.code(), Some(0), "{}", panic_report(&run));
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "delta 5\ngone\n 0\nbeta 4\n\
+         0 delta\n1 None\n2 \n3 beta\n\
+         [4, 0, -1, 5]\n\
+         delta 1\nNone None\n 3\nbeta 4\n\
+         ['delta', '', 'beta']\n\
+         5\n"
     );
     Ok(())
 }

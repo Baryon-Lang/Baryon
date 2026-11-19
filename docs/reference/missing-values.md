@@ -79,8 +79,8 @@ This prints `1.5 None 2.5`, then `4.0`.
 - **A `for` loop gives each element in turn**, an `f64 | None` here, alone or inside
   `enumerate`, `zip` and `reversed`, and in a comprehension:
   `[bid for bid in bids if bid is not None]`. The array is borrowed for the loop, as any
-  array is. Not built yet: a loop over text that may be `None`; read `names[at]` in a loop
-  over `range(len(names))`.
+  array is. Text that may be `None` is borrowed from the array, as a loop over
+  [an array of text](text-arrays.md) borrows it: `name.copy()` keeps one.
 - **`len(bids)` counts every element**, the missing ones too.
 - **`bids.copy()`** gives a new array with its own memory, gaps included. As with any array,
   `kept = bids` moves the array, and a copy keeps both.
@@ -399,6 +399,5 @@ Each of these is a compile error that names what an array with missing values ha
   `nunique`, `count`, `sum`, `mean`, `min`, `max`, `var` and `std`; and `min` and `max` of
   text;
 - assigning an element of text;
-- a `for` loop over text that may be `None`;
 - `print` of a tuple or a list that holds one, or that holds a frame with such a column;
 - one as a struct field.
