@@ -204,13 +204,19 @@ impl<'db> Body<'db> {
         if self.maybe_none(value, operand) {
             return;
         }
-        if self.is_optional_array(current) || self.is_optional_array(operand) {
-            // `a = a + b` builds; changing the array in place does not yet.
-            let what = format!("`{}=`", operator.symbol());
+        let gaps = self.is_optional_array(current) || self.is_optional_array(operand);
+        if gaps && self.tree.kind(target) != SyntaxKind::Name {
+            // A variable is given the new array; a column or a field is not yet.
+            let what = format!("`{}=` on anything but a variable", operator.symbol());
             self.optional_array_unbuilt(statement, &what);
             return;
         }
-        let result = self.combine(statement, operator, current, operand);
+        // `bids += 1.0` is `bids = bids + 1.0` for an array with missing values.
+        let result = if gaps {
+            self.optional_array_arithmetic(statement, operator, current, operand)
+        } else {
+            self.combine(statement, operator, current, operand)
+        };
         if !relations::compatible(self.db, current, result) {
             let message = format!(
                 "`{}=` gives `{}`, but the target has type `{}`",

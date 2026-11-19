@@ -268,8 +268,12 @@ This prints `[0.5 None 1.5]`, then `[1.75 None 3.25]`.
   gap. pandas turns it into `<NA>`.
 - **A column works the same way**, since a column that may hold `None` reads as such an
   array: `quotes.assign(mid=(quotes.bid + quotes.ask) / 2.0)`.
-- **Not built yet:** `**`, the bitwise operators, and the
-  in-place forms: write `bids = bids + 1.0` for `bids += 1.0`.
+- **`bids += 1.0` is `bids = bids + 1.0`**, and so for `-=`, `*=`, `/=`, `//=` and `%=`:
+  the variable is given a new array and the old one is freed. The result must keep the
+  variable's type, so `counts /= 2` on integers is a compile error, as it is for any
+  array. Only a variable takes one: write `quotes.assign(bid=quotes.bid + 1.0)` for a
+  column.
+- **Not built yet:** `**` and the bitwise operators.
 - **Cost:** floats are one fused loop over the stored values, like any
   [array expression](arrays.md#whole-array-arithmetic), plus one pass over the bitmaps.
   Integers copy the elements that are there out of each array first, compute, and put the
@@ -396,7 +400,7 @@ def main():
 
 Each of these is a compile error that names what an array with missing values has today:
 
-- `**`, the bitwise operators and the in-place operators, `bids += 1.0`;
+- `**` and the bitwise operators, and an in-place operator on a column, `quotes.bid += 1.0`;
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`,
   `nunique`, `count`, `sum`, `mean`, `min`, `max`, `var` and `std`;
 - assigning an element of text;

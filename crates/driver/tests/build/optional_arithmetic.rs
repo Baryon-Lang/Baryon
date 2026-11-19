@@ -180,3 +180,57 @@ def main():
     );
     Ok(())
 }
+
+/// `+=` and the other in-place operators give a variable the array the operator would,
+/// with a number, a plain array, another array with missing values or an expression that
+/// reads the variable, through an `InOut` parameter, and for integers, where a zero beside
+/// a `None` does not divide and one that is there stops the program.
+#[test]
+fn in_place_operators_rebind() -> io::Result<()> {
+    let program = r"
+def bump(values: InOut[Array[f64 | None, 1]]):
+    values *= 2.0
+
+
+def main():
+    bids: Array[f64 | None, 1] = Array([1.5, None, 2.5])
+    asks: Array[f64 | None, 1] = Array([None, 1.0, 0.5])
+    bids += 1.0
+    print(bids)
+    bids -= asks
+    print(bids)
+    bids /= Array([2.0, 2.0, 2.0])
+    print(bids)
+    bids += bids * 2.0
+    print(bids)
+    bump(bids)
+    print(bids)
+    counts: Array[i64 | None, 1] = Array([7, None, 9])
+    counts //= 2
+    counts %= 3
+    counts *= counts
+    print(counts)
+    zero: Array[i64 | None, 1] = Array([0, None, 3])
+    gap: Array[i64 | None, 1] = Array([None, 0, 3])
+    zero //= gap
+    print(zero)
+    zero //= Array([1, 1, 0])
+";
+    let (code, output, report) = run("optional_arithmetic_in_place", program)?;
+    assert_eq!(code, Some(101));
+    assert_eq!(
+        output,
+        "[2.5 None 3.5]\n\
+         [None None 3.0]\n\
+         [None None 1.5]\n\
+         [None None 4.5]\n\
+         [None None 9.0]\n\
+         [0 None 1]\n\
+         [None None 1]\n"
+    );
+    assert!(
+        report.contains("panic: integer division by zero"),
+        "{report}"
+    );
+    Ok(())
+}

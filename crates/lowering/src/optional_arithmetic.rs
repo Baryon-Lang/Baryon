@@ -73,29 +73,68 @@ impl<'db> Builder<'db> {
         let Some(element) = self.optional_array_element(node) else {
             return;
         };
-        let mut leaves = Leaves::default();
-        self.gather_leaves(node, element, &mut leaves);
-        let Some(((first, _), rest)) = leaves.arrays.split_first() else {
+        if let Some(whole) = self.optional_arithmetic_value(node, element) {
+            self.assign(place, Rvalue::Use(whole), node);
+        }
+    }
+
+    /// Whether the statement `statement` is an in-place operator on a variable that holds
+    /// an array with missing values, `bids += 1.0`.
+    pub(crate) fn is_optional_augmented(&self, statement: NodeId) -> bool {
+        self.tree
+            .child(statement, Role::Target)
+            .is_some_and(|target| self.optional_array_element(target).is_some())
+    }
+
+    /// `target += value` and the other in-place arithmetic operators, the statement
+    /// `statement`, on a variable that holds an array with missing values: the variable is
+    /// given the array `target + value` would be, and the one it held is dropped. The new
+    /// array is computed first, so the value may read the target. Cost: that of the
+    /// arithmetic, a new array and a new bitmap.
+    pub(crate) fn optional_augmented(&mut self, statement: NodeId) {
+        let Some(target) = self.tree.child(statement, Role::Target) else {
             return;
         };
+        let (Some(element), Some((place, ty))) =
+            (self.optional_array_element(target), self.target(target))
+        else {
+            return;
+        };
+        if arithmetic(self.tree.node(statement).operator()).is_none() {
+            return self.unsupported(statement, "this in-place operator on missing values");
+        }
+        let Some(whole) = self.optional_arithmetic_value(statement, element) else {
+            return;
+        };
+        let result = self.temporary(ty, statement);
+        self.assign(Place::from(result), Rvalue::Use(whole), statement);
+        self.replace(place, Operand::Move(Place::from(result)), target);
+    }
+
+    /// The array with missing values of `element`s that the arithmetic `node` gives, an
+    /// expression or an in-place statement: its values and its validity bitmap as one
+    /// value. `None` after a report.
+    fn optional_arithmetic_value(
+        &mut self,
+        node: NodeId,
+        element: Type<'db>,
+    ) -> Option<Operand<'db>> {
+        let mut leaves = Leaves::default();
+        self.gather_leaves(node, element, &mut leaves);
+        let ((first, _), rest) = leaves.arrays.split_first()?;
         let count = self.values_length(first, node);
         for (other, _) in rest {
             let found = self.values_length(other, node);
             self.same_length(0, count.clone(), found, node);
         }
-        let Some(bits) = self.joined_bitmaps(&leaves.bitmaps, node) else {
-            return;
-        };
+        let bits = self.joined_bitmaps(&leaves.bitmaps, node)?;
         let fused = leaves.arrays.iter().all(|(_, ty)| self.is_float(*ty));
         let values = if fused {
             self.gap_values(node, element, &leaves.operands)
         } else {
             self.gathered_values(node, element, &leaves, (bits, count))
-        };
-        if let Some(values) = values {
-            let whole = self.with_bits(element, values, bits, node);
-            self.assign(place, Rvalue::Use(whole), node);
-        }
+        }?;
+        Some(self.with_bits(element, values, bits, node))
     }
 
     /// Whether `node` is a comparison whose result is an array with missing values.
@@ -165,6 +204,17 @@ impl<'db> Builder<'db> {
     /// Reads every operand of the arithmetic at `node` once, in the order written, into
     /// `leaves`. A single number converts to `element`, the result's element type.
     fn gather_leaves(&mut self, node: NodeId, element: Type<'db>, leaves: &mut Leaves<'db>) {
+        if self.tree.kind(node) == SyntaxKind::AugmentedAssign {
+            // `target += value` reads its target, then the leaves of its value.
+            for (role, whole) in [(Role::Target, true), (Role::Value, false)] {
+                match self.tree.child(node, role) {
+                    Some(child) if whole => self.leaf(child, element, leaves),
+                    Some(child) => self.gather_leaves(child, element, leaves),
+                    None => {}
+                }
+            }
+            return;
+        }
         if self.is_optional_arithmetic(node) {
             for role in [Role::Left, Role::Right, Role::Value] {
                 if let Some(child) = self.tree.child(node, role) {
@@ -297,10 +347,20 @@ impl<'db> Builder<'db> {
         node: NodeId,
         operands: &mut impl Iterator<Item = Operand<'db>>,
     ) -> Option<Elementwise<'db>> {
+        let operator = self.tree.node(node).operator();
+        if self.tree.kind(node) == SyntaxKind::AugmentedAssign {
+            let left = operands.next().map(Elementwise::Leaf)?;
+            let right = self.gap_tree(self.tree.child(node, Role::Value)?, operands)?;
+            let operator = arithmetic(operator)?;
+            return Some(Elementwise::Binary(
+                operator,
+                Box::new(left),
+                Box::new(right),
+            ));
+        }
         if !self.is_optional_arithmetic(node) {
             return operands.next().map(Elementwise::Leaf);
         }
-        let operator = self.tree.node(node).operator();
         if self.tree.kind(node) == SyntaxKind::UnaryOperation {
             let value = self.gap_tree(self.tree.child(node, Role::Value)?, operands)?;
             return Some(match operator {
