@@ -3,6 +3,7 @@
 //! same way, and `**` writes its result through a pointer to `{ real, imaginary }`, the layout of
 //! the complex type.
 
+use crate::shortest::shortest;
 use crate::{complex, print};
 
 /// Prints a `complex128` as Python's `repr` writes it: `(1+2j)`, `2j`, `(-0-2j)`.
@@ -16,11 +17,7 @@ use crate::{complex, print};
 #[unsafe(no_mangle)]
 pub extern "C" fn baryon_rt_print_complex128(stream: i32, real: f64, imaginary: f64) {
     let positive_zero = real == 0.0 && real.is_sign_positive();
-    let text = complex::repr(
-        &format!("{real:e}"),
-        &format!("{imaginary:e}"),
-        positive_zero,
-    );
+    let text = complex::repr(&shortest(real), &shortest(imaginary), positive_zero);
     print::write(stream, &text);
 }
 
@@ -36,11 +33,7 @@ pub extern "C" fn baryon_rt_print_complex128(stream: i32, real: f64, imaginary: 
 #[unsafe(no_mangle)]
 pub extern "C" fn baryon_rt_print_complex64(stream: i32, real: f32, imaginary: f32) {
     let positive_zero = real == 0.0 && real.is_sign_positive();
-    let text = complex::repr(
-        &format!("{real:e}"),
-        &format!("{imaginary:e}"),
-        positive_zero,
-    );
+    let text = complex::repr(&shortest(real), &shortest(imaginary), positive_zero);
     print::write(stream, &text);
 }
 
