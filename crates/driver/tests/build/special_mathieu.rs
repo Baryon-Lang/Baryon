@@ -1,6 +1,7 @@
-//! The Mathieu functions of `special` (roadmap 3.18.14), `mathieu_a`, `mathieu_b`, `mathieu_cem`
-//! and `mathieu_sem`, built and run and checked against the values mpmath records, as
-//! [`super::special`] checks the other families, with its tolerances.
+//! The Mathieu and spheroidal wave functions of `special` (roadmap 3.18.14): `mathieu_a`,
+//! `mathieu_b`, `mathieu_cem`, `mathieu_sem` and the radial Mathieu functions, and the spheroidal
+//! characteristic values and angular functions, built and run and checked against the values
+//! mpmath records, as [`super::special`] checks the other families, with its tolerances.
 
 use super::special::check;
 
@@ -82,4 +83,56 @@ def main() -> Raises[None, OSError | ValueError]:
 #[test]
 fn radial_mathieu_functions_match_the_recorded_values() {
     check("special-mathieu-radial", RADIAL, "mathieu_radial.txt").unwrap();
+}
+
+/// The program for `spheroidal.txt`: the characteristic values read m, n and c; the angular
+/// functions x after them, or the characteristic value and then x for the `_cv` forms; and the
+/// sequences the place of the value in the array.
+const SPHEROIDAL: &str = "\
+from special import pro_cv, obl_cv, pro_cv_seq, obl_cv_seq, pro_ang1, obl_ang1, pro_ang1_cv
+from special import obl_ang1_cv
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            m = float(fields[1])
+            n = float(fields[2])
+            c = float(fields[3])
+            pair = (0.0, 0.0)
+            if name == \"pro_cv\":
+                print(pro_cv(m, n, c))
+                continue
+            elif name == \"obl_cv\":
+                print(obl_cv(m, n, c))
+                continue
+            elif name == \"pro_cv_seq\":
+                print(pro_cv_seq(m, n, c)[int(fields[4])])
+                continue
+            elif name == \"obl_cv_seq\":
+                print(obl_cv_seq(m, n, c)[int(fields[4])])
+                continue
+            elif name.startswith(\"pro_ang1_cv\"):
+                pair = pro_ang1_cv(m, n, c, float(fields[4]), float(fields[5]))
+            elif name.startswith(\"obl_ang1_cv\"):
+                pair = obl_ang1_cv(m, n, c, float(fields[4]), float(fields[5]))
+            elif name.startswith(\"pro_ang1\"):
+                pair = pro_ang1(m, n, c, float(fields[4]))
+            else:
+                pair = obl_ang1(m, n, c, float(fields[4]))
+            if name.endswith(\"_d\"):
+                print(pair[1])
+            else:
+                print(pair[0])
+";
+
+/// The spheroidal characteristic values, alone and in sequences, and the angular functions and
+/// their derivatives, with the characteristic value found or given, at the cases of
+/// `spheroidal.txt`: orders to 30 and 40 above them, c from 1e-4 to 250 and below 0, x across
+/// −1 < x < 1 and near its ends, and arguments that are not allowed.
+#[test]
+fn spheroidal_functions_match_the_recorded_values() {
+    check("special-spheroidal", SPHEROIDAL, "spheroidal.txt").unwrap();
 }

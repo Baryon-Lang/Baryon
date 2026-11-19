@@ -2406,6 +2406,280 @@ with open("mathieu_radial.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
 
+## Spheroidal wave functions
+
+`spheroidal.txt` holds the prolate and oblate characteristic values (`pro_cv`, `obl_cv`), some of
+them as elements of `pro_cv_seq` and `obl_cv_seq` by their place in the array, and the angular
+functions and their derivatives (`_d`), some with the characteristic value given (`_cv`, which
+then precedes x). mpmath has no spheroidal functions, so the script finds the characteristic
+value as an eigenvalue of Flammer's symmetric tridiagonal recurrence (DLMF 30.8) by bisection on
+the count of eigenvalues below a point, the coefficients by a twisted factorization, all at 60
+digits, and scales them so that S(0) = P^m_n(0), or S′(0) = P^m_n′(0) when n − m is odd. For
+oblate functions at large c that sum at 0 cancels by many orders of magnitude, so the precision
+is raised until 30 digits survive it. Before the reference value each case holds the size its
+error is measured against: for a characteristic value the larger of |λ| and |c ∂λ/∂c|, and for
+a function the largest of |S|, |c ∂S/∂c|, |x ∂S/∂x| and the sum of the sizes of its Legendre
+terms. The script recorded the cases with mpmath 1.4.1; run it from this directory with
+`python3 -I`:
+
+```python
+"""Writes spheroidal.txt: spheroidal characteristic values and angular functions at 60 digits."""
+import math
+import random
+from multiprocessing import Pool
+
+import mpmath
+from mpmath import mpf
+
+
+def legendre_all(m, top, x):
+    """P^m_k(x) for k = m..top without the Condon-Shortley phase, with derivatives, |x| < 1."""
+    x = mpf(x)
+    w = 1 - x * x
+    p = [mpmath.fac2(2 * m - 1) * w ** (mpf(m) / 2)]
+    if top > m:
+        p.append(x * (2 * m + 1) * p[0])
+    for k in range(m + 1, top):
+        p.append(((2 * k + 1) * x * p[-1] - (k + m) * p[-2]) / (k - m + 1))
+    dp = [(-m * x * p[0]) / w]
+    for i in range(1, len(p)):
+        k = m + i
+        dp.append(((k + m) * p[i - 1] - k * x * p[i]) / w)
+    return p, dp
+
+
+def legendre(m, k, x):
+    p, dp = legendre_all(m, k, x)
+    return p[-1], dp[-1]
+
+
+def recurrence(m, n, c2, size):
+    p = (n - m) % 2
+    rs = [p + 2 * i for i in range(size)]
+    diag, off = [], []
+    for r in rs:
+        k = m + r
+        diag.append(k * (k + 1) + (2 * k * (k + 1) - 2 * m * m - 1) * c2
+                    / ((2 * k - 1) * (2 * k + 3)))
+    for r in rs[:-1]:
+        k = m + r
+        alpha = (2 * m + r + 2) * (2 * m + r + 1) * c2 / ((2 * k + 3) * (2 * k + 5))
+        gamma = (r + 2) * (r + 1) * c2 / ((2 * k + 1) * (2 * k + 3))
+        off.append((alpha, gamma))
+    return rs, diag, off
+
+
+def count(diag, sym, x):
+    c, p = 0, mpf(1)
+    for i in range(len(diag)):
+        s = diag[i] - x - (sym[i - 1] ** 2 / p if i else 0)
+        if s == 0:
+            s = mpf(10) ** -200
+        if s < 0:
+            c += 1
+        p = s
+    return c
+
+
+def solve(m, n, c, prolate=True):
+    """Characteristic value, orders r and Flammer-scaled d_r. The scaling sums the series at 0,
+    which cancels badly for oblate functions at large c (they gather near x = ±1), so the
+    precision is raised until the cancellation leaves the working digits whole."""
+    extra = 0
+    while True:
+        with mpmath.workdps(mpmath.mp.dps + extra):
+            lam, rs, d, lost = _solve(m, n, c, prolate)
+        if lost + 30 < extra + mpmath.mp.dps:
+            with mpmath.workdps(mpmath.mp.dps + extra):
+                return +lam, rs, [+t for t in d]
+        extra = int(lost) + 30
+
+
+def _solve(m, n, c, prolate):
+    m, n = int(m), int(n)
+    c2 = mpf(c) ** 2 * (1 if prolate else -1)
+    index = (n - m) // 2
+    size = index + int(abs(mpf(c))) + 60
+    rs, diag, off = recurrence(m, n, c2, size)
+    # alpha*gamma is positive both ways (c2 squared), so the symmetric form is real.
+    sym = [mpmath.sqrt(a * g) for a, g in off]
+    if not prolate:
+        sym = [-s for s in sym]
+    low = min(diag) - 2 * sum(abs(s) for s in sym) - 1
+    high = max(diag) + 2 * sum(abs(s) for s in sym) + 1
+    for _ in range(mpmath.mp.prec + 40):
+        mid = (low + high) / 2
+        if count(diag, sym, mid) > index:
+            high = mid
+        else:
+            low = mid
+    lam = (low + high) / 2
+    N = len(diag)
+    up = [mpf(0)] * N
+    down = [mpf(0)] * N
+    for i in range(N):
+        up[i] = diag[i] - lam - (sym[i - 1] ** 2 / up[i - 1] if i else 0)
+    for i in range(N - 1, -1, -1):
+        down[i] = diag[i] - lam - (sym[i] ** 2 / down[i + 1] if i < N - 1 else 0)
+    twist = min(range(N), key=lambda i: abs(up[i] + down[i] - diag[i] + lam))
+    v = [mpf(0)] * N
+    v[twist] = mpf(1)
+    for i in range(twist - 1, -1, -1):
+        v[i] = -sym[i] * v[i + 1] / up[i]
+    for i in range(twist + 1, N):
+        v[i] = -sym[i - 1] * v[i - 1] / down[i]
+    # Back from the symmetric vector to d: d_{i+1}/d_i scale = sqrt(gamma_{i+1}/alpha_i).
+    d = [v[0]]
+    scale = mpf(1)
+    for i, (a, g) in enumerate(off):
+        scale *= mpmath.sqrt(g / a)
+        d.append(v[i + 1] * scale)
+    # Flammer: S(0) = P^m_n(0), or S'(0) = P^m_n'(0) when n - m is odd.
+    p = (n - m) % 2
+    want = legendre(m, n, mpf(0))[p]
+    p0 = legendre_all(m, m + rs[-1], 0)[p]
+    have = sum(t * p0[r] for t, r in zip(d, rs))
+    lost = mpmath.log10(sum(abs(t * p0[r]) for t, r in zip(d, rs)) / abs(have))
+    d = [t * want / have for t in d]
+    return lam, rs, d, lost
+
+
+def angular(m, n, c, x, prolate=True):
+    lam, rs, d = solve(m, n, c, prolate)
+    x = mpf(x)
+    p, dp = legendre_all(m, m + rs[-1], x)
+    f = sum(t * p[r] for t, r in zip(d, rs))
+    df = sum(t * dp[r] for t, r in zip(d, rs))
+    return f, df
+
+
+STEP = mpf(10) ** -25
+
+
+def characteristic(m, n, c, prolate):
+    return solve(m, n, c, prolate)[0]
+
+
+def angular(m, n, c, x, prolate):
+    """S, S', the sizes of the terms of each, and λ."""
+    lam, rs, d = solve(m, n, c, prolate)
+    p, dp = legendre_all(m, m + rs[-1], x)
+    f = sum(t * p[r] for t, r in zip(d, rs))
+    df = sum(t * dp[r] for t, r in zip(d, rs))
+    return (f, df, sum(abs(t * p[r]) for t, r in zip(d, rs)),
+            sum(abs(t * dp[r]) for t, r in zip(d, rs)), lam)
+
+
+def value_case(args):
+    # Measured against the larger of |λ| and |c ∂λ/∂c|, the error a rounding of c alone makes.
+    name, m, n, c, prolate = args
+    with mpmath.workdps(60):
+        pc = mpf(c)
+        value = characteristic(m, n, pc, prolate)
+        along = (characteristic(m, n, pc + STEP, prolate)
+                 - characteristic(m, n, pc - STEP, prolate)) / (2 * STEP)
+        size = max(abs(value), abs(pc * along))
+    return [f"{name} {float(m)!r} {float(n)!r} {c!r} {float(size)!r} {float(value)!r}"]
+
+
+def function_case(args):
+    # Measured against the largest of |S|, |c ∂S/∂c|, |x ∂S/∂x| and the sum of the sizes of the
+    # Legendre terms, for the value and the derivative alike: where the function is
+    # exponentially small its terms cancel, and a sum keeps the precision of its largest term.
+    name, m, n, c, x, prolate, given = args
+    with mpmath.workdps(60):
+        pc, px = mpf(c), mpf(x)
+        f, df, terms, slope_terms, lam = angular(m, n, pc, px, prolate)
+        f_up, df_up, _, _, _ = angular(m, n, pc + STEP, px, prolate)
+        f_down, df_down, _, _, _ = angular(m, n, pc - STEP, px, prolate)
+        gamma2 = pc * pc if prolate else -pc * pc
+        rest = 1 - px * px
+        second = (2 * px * df - (lam - gamma2 * px * px - m * m / rest) * f) / rest
+        sizes = [
+            max(abs(f), abs(pc * (f_up - f_down) / (2 * STEP)), abs(px * df), terms),
+            max(abs(df), abs(pc * (df_up - df_down) / (2 * STEP)), abs(px * second),
+                slope_terms),
+        ]
+    middle = f" {float(lam)!r}" if given else ""
+    return [f"{name}{suffix} {float(m)!r} {float(n)!r} {c!r}{middle} {x!r} {float(size)!r} "
+            f"{float(value)!r}" for suffix, value, size in
+            (("", f, sizes[0]), ("_d", df, sizes[1]))]
+
+
+def sequence_case(args):
+    name, m, n, c, i, prolate = args
+    line = value_case((name, m, m + i, c, prolate))[0].split()
+    return [f"{name} {float(m)!r} {float(n)!r} {c!r} {i} {line[-2]} {line[-1]}"]
+
+
+random.seed(3181418)
+jobs = []
+for _ in range(130):
+    # Orders mostly small, some to 20 and 40 above m; c near 0, of moderate size, and out to 200,
+    # where oblate functions gather near ±1 and their scale at 0 cancels in any sum; x across
+    # the interval, near its ends and at 0.
+    m = random.choice([random.randint(0, 3), random.randint(0, 10), random.randint(0, 20)])
+    n = m + random.choice([random.randint(0, 4), random.randint(0, 12), random.randint(0, 40)])
+    c = random.choice([
+        random.uniform(0.0, 5.0),
+        10 ** random.uniform(-4.0, 2.0),
+        random.uniform(0.0, 100.0),
+        random.uniform(100.0, 200.0),
+        -random.uniform(0.0, 20.0),
+    ])
+    x = random.choice([
+        random.uniform(-1.0, 1.0),
+        math.copysign(1 - 10 ** random.uniform(-4.0, -1.0), random.uniform(-1, 1)),
+        0.0,
+    ])
+    for prolate, prefix in ((True, "pro"), (False, "obl")):
+        jobs.append((value_case, (f"{prefix}_cv", m, n, c, prolate)))
+        jobs.append((function_case, (f"{prefix}_ang1", m, n, c, x, prolate, False)))
+for _ in range(10):
+    m = random.randint(0, 5)
+    n = m + random.randint(0, 8)
+    c = random.uniform(0.0, 10.0)
+    x = random.uniform(-1.0, 1.0)
+    for prolate, prefix in ((True, "pro"), (False, "obl")):
+        jobs.append((function_case, (f"{prefix}_ang1_cv", m, n, c, x, prolate, True)))
+        jobs.append((sequence_case, (f"{prefix}_cv_seq", m, n, c, random.randint(0, n - m),
+                                     prolate)))
+
+for _ in range(30):
+    # Large c and large orders, where the oblate scale at 0 cancels the most, x anywhere.
+    m = random.randint(0, 30)
+    n = m + random.randint(0, 30)
+    c = random.uniform(100.0, 250.0)
+    x = random.choice([
+        random.uniform(-1.0, 1.0),
+        math.copysign(1 - 10 ** random.uniform(-5.0, -1.0), random.uniform(-1, 1)),
+    ])
+    jobs.append((value_case, ("obl_cv", m, n, c, False)))
+    jobs.append((function_case, ("obl_ang1", m, n, c, x, False, False)))
+
+
+def run(job):
+    return job[0](job[1])
+
+
+if __name__ == "__main__":
+    with Pool() as pool:
+        lines = [line for result in pool.map(run, jobs, chunksize=1) for line in result]
+    # The ends: orders that are not whole, n below m or more than 198 above it, c not finite,
+    # and x outside −1 < x < 1, give NaN.
+    nan, inf = math.nan, math.inf
+    for prefix in ("pro", "obl"):
+        for m, n, c in [(0.5, 2.0, 1.0), (2.0, 1.0, 1.0), (-1.0, 2.0, 1.0), (0.0, 199.0, 1.0),
+                        (1.0, 2.0, inf), (1.0, 2.0, nan), (nan, 2.0, 1.0)]:
+            lines.append(f"{prefix}_cv {m!r} {n!r} {c!r} 1.0 nan")
+        for m, n, c, x in [(1.0, 2.0, 1.0, 1.0), (1.0, 2.0, 1.0, -1.0), (1.0, 2.0, 1.0, 1.5),
+                           (1.0, 2.0, 1.0, nan), (1.5, 2.0, 1.0, 0.3)]:
+            for suffix in ("", "_d"):
+                lines.append(f"{prefix}_ang1{suffix} {m!r} {n!r} {c!r} {x!r} 1.0 nan")
+    with open("spheroidal.txt", "w") as out:
+        out.write("\n".join(lines) + "\n")
+```
+
 ## Parabolic cylinder functions
 
 In `parabolic.txt` each case holds, before the reference value, the size its error is measured

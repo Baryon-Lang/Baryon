@@ -92,6 +92,8 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `mathieu_a`, `mathieu_b` | 16 ULP, of the larger of \|a\| and \|q ∂a/∂q\| | 1 ULP | 4e15 ULP at `mathieu_a(22, -265.6)`, 92.3 where the value is 569.5 |
 | `mathieu_cem`, `mathieu_sem`, with their derivatives | 16 ULP, of the largest of \|f\|, \|q ∂f/∂q\|, \|x ∂f/∂x\| and the sum of the sizes of the Fourier terms | 7 ULP at the derivative of `mathieu_cem(1, 125.9, -175.8)` | 1.8e15 ULP at `mathieu_cem(22, -265.6, 90)`, −1.5e-5 where the value is −1.64 |
 | `pbwa`, with its derivative | 32 ULP, of the largest of \|f\|, \|a ∂f/∂a\| and \|x ∂f/∂x\| | 0 ULP: every case rounds as mpmath's value does | 20,104 ULP at `pbwa(3.50, 2.55)`; NaN past \|x\| = 5 |
+| `pro_cv`, `obl_cv`, `pro_cv_seq`, `obl_cv_seq` | 64 ULP, of the larger of \|λ\| and \|c ∂λ/∂c\| | 22 ULP at `pro_cv(3, 3, 164.7)` | 34 ULP at c above 0; for c below 0 the value at c = 0 |
+| `pro_ang1`, `obl_ang1` and their `_cv` forms, with their derivatives | 16 ULP, of the largest of \|S\|, \|c ∂S/∂c\|, \|x ∂S/∂x\| and the sum of the sizes of the Legendre terms | 8 ULP at `obl_ang1(4, 16, 7.53, 0.950)` | 2.5e40 ULP at `pro_ang1(2, 22, 158.7, -0.103)`, −2.9e27 where the value is −26.0; a crash at c above 170 |
 | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer` | 8 ULP for each degree, of the largest value the recurrence passes through | 29 ULP for `eval_gegenbauer` at degree 85 | 439 ULP for `eval_jacobi` at degree 85 |
 | `eval_hermite`, `eval_hermitenorm` | The same | 156 ULP at degree 78 | 698 ULP for `eval_hermite` at degree 75 |
 | `lpmv` | 64 ULP of the largest value the recurrence passes through | 24 ULP | 154 ULP |
@@ -785,6 +787,85 @@ of the 894 cases by more than 64 ULP, and gives `mathieu_modsem1(10, 0.00135, 0.
 - `mathieu_even_coef` and `mathieu_odd_coef` raise `ValueError` for an order their kind does
   not allow and for q below 0, as SciPy does.
 
+## Spheroidal wave functions
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `pro_cv(m, n, c)` | The prolate characteristic value λ_mn(c), for whole m and n with 0 ≤ m ≤ n | `scipy.special.pro_cv` |
+| `obl_cv(m, n, c)` | The oblate characteristic value λ_mn(c) | `scipy.special.obl_cv` |
+| `pro_cv_seq(m, n, c)` | λ_mm(c), λ_m(m+1)(c), …, λ_mn(c), as an `Array[f64, 1]` | `scipy.special.pro_cv_seq` |
+| `obl_cv_seq(m, n, c)` | The oblate λ_mm(c), …, λ_mn(c) | `scipy.special.obl_cv_seq` |
+| `pro_ang1(m, n, c, x)` | The prolate angular function S_mn(c, x) and its derivative in x, as a tuple, for −1 < x < 1 | `scipy.special.pro_ang1` |
+| `obl_ang1(m, n, c, x)` | The oblate angular function and its derivative | `scipy.special.obl_ang1` |
+| `pro_ang1_cv(m, n, c, cv, x)` | `pro_ang1` with the characteristic value given, so that it is not found again for each x | `scipy.special.pro_ang1_cv` |
+| `obl_ang1_cv(m, n, c, cv, x)` | `obl_ang1` with the characteristic value given | `scipy.special.obl_ang1_cv` |
+
+The wave equation separates in prolate spheroidal coordinates, which fit a cigar, an elongated
+nucleus or a pair of charges, and in oblate ones, which fit a disc or a flattened planet. The
+angular part is the spheroidal wave equation ((1 − x²) w′)′ + (λ − γ²x² − m²/(1 − x²)) w = 0
+(DLMF 30.2.1), with γ² = c² for prolate spheroids and −c² for oblate ones, and c half the focal
+distance times the wavenumber. Its solutions finite at x = ±1 exist only for the characteristic
+values λ_mn(c), one for each whole n ≥ m. At c = 0 they are the associated Legendre functions
+P^m_n(x) and λ is n(n + 1). As in SciPy, P^m_n has no Condon–Shortley phase (−1)^m, so it is
+`lpmv(m, n, x)` times (−1)^m.
+
+```python
+from special import obl_cv, pro_ang1, pro_cv
+
+
+def main():
+    print(pro_cv(1.0, 2.0, 2.5))    # 8.53103224320361
+    print(obl_cv(1.0, 2.0, 2.5))    # 3.1669885590311315
+    value, slope = pro_ang1(1.0, 2.0, 2.5, 0.3)
+    print(value)                    # 0.8264370864845382
+    print(slope)                    # 2.2715029151580763
+```
+
+**How they work.** Each angular function is a series Σ d_r P^m_{m+r}(x), with r running over
+the even or the odd numbers as n − m does, and its coefficients satisfy a three-term recurrence
+(DLMF 30.8, Flammer's 3.1.4). Scaled, the recurrence is a symmetric tridiagonal matrix, and the
+characteristic value is its eigenvalue of rank (n − m)/2 among those of the same parity, found
+as the Mathieu values are: bisection to within ¼, Rayleigh quotient iteration, and a twisted
+factorization for the coefficients. The functions are scaled as Flammer scales them, and SciPy
+after him: S_mn(c, 0) = P^m_n(0) when n − m is even and S′_mn(c, 0) = P^m_n′(0) when it is
+odd.
+
+That scaling needs the series at 0, and for oblate functions at large c the series cancels
+there: they gather near x = ±1 and are exponentially small at 0, so the sum loses a factor of
+10¹⁸ at c = 60. Baryon finds the scale instead at a point x₀ where the Legendre series does not
+cancel, and carries it back to 0 with the power series of the solution about 0, which grows
+from 0 to x₀ without cancelling. SciPy sums at 0.
+
+**Accuracy.** mpmath has no spheroidal functions, so the reference values are the same
+eigenvalues and coefficients found at 60 digits, with the precision raised wherever the sum at 0
+cancels, scaled by that sum (the script is in the fixtures' README). The characteristic values
+are measured against the larger of |λ| and |c ∂λ/∂c|, and the functions against the largest of
+|S|, |c ∂S/∂c|, |x ∂S/∂x| and the sum of the sizes of their Legendre terms. The tests reach
+orders to 30, n − m to 40, c to 250 and x near ±1. The worst error is 8 ULP for the functions
+and 22 for the characteristic values: λ is an eigenvalue of a matrix with entries as large as
+c²/2, and for prolate c above about 100, where λ is near c(2(n − m) + 1), about c²/(2λ)
+ULP are lost, in SciPy as here. Of the 930 cases, SciPy misses 384 by more than 64 ULP: 156
+because it takes a c below 0 as 0, 154 angular functions, some by 10⁴⁰ times, and 74 at c
+above 170, where it crashes the program. A call costs about 5 µs, against SciPy's 10 µs.
+
+### At the ends
+
+- An m or n that is not a whole number, an m below 0, an n below m, or an n more than 198
+  above m gives NaN, as SciPy gives. So does a c that is not finite, and an x outside
+  −1 < x < 1.
+- λ depends on c², so a c below 0 gives what |c| gives. SciPy takes such a c as 0 and gives
+  the Legendre function.
+- `pro_cv_seq` and `obl_cv_seq` give an empty array for n below m and raise `ValueError` when
+  m or n is not a whole number, m is below 0, n − m is above 199 or c is not finite. SciPy gives
+  values for an m below 0, which no function has, and nothing at all for a c that is NaN.
+- The `_cv` forms take the characteristic value as given. For any value other than the one
+  `pro_cv` or `obl_cv` returns, the result belongs to no solution and differs from SciPy's.
+- The tests reach c = 250. For larger c the oblate scale is found nearer and nearer x = ±1,
+  and the error it is expected to leave grows; where that passes 10⁴ ULP, from c of about 300
+  for n − m near 20 and about 720 for small n − m, the oblate angular functions give NaN.
+  There the functions near ±1 approach the largest `f64` in any case: 3e425 at
+  `obl_ang1(1, 3, 1000, 0.999)`. The prolate functions are scaled at 0 for every c.
+
 ## Incomplete gamma and beta functions
 
 | Function | Result | SciPy |
@@ -1312,6 +1393,7 @@ for those working on the library. A panic inside a function names the file it is
 | `special_lambertw` | `lambertw` |
 | `special_mathieu` | `mathieu_a`, `mathieu_b`, `mathieu_cem` and `mathieu_sem` |
 | `special_mathieu_radial` | `mathieu_modcem1`, `mathieu_modcem2`, `mathieu_modsem1`, `mathieu_modsem2`, `mathieu_even_coef` and `mathieu_odd_coef` |
+| `special_spheroidal` | `pro_cv`, `obl_cv`, `pro_cv_seq`, `obl_cv_seq`, `pro_ang1`, `obl_ang1`, `pro_ang1_cv` and `obl_ang1_cv` |
 | `special_orthogonal` | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_hermite`, `eval_hermitenorm`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer`, `lpmv` and `sph_harm_y` |
 | `special_carlson` | `elliprc`, `elliprd`, `elliprf`, `elliprg` and `elliprj`, and `carlson_rf`, `carlson_rd` and `carlson_rg`, the same integrals without the checks of their arguments |
 | `special_elliptic` | `ellipk`, `ellipkm1`, `ellipe`, `ellipkinc`, `ellipeinc` and `ellipj` |
@@ -1323,7 +1405,7 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18, Bessel functions of a complex
-argument (3.18.6) among them. Of 3.18.14, the spheroidal wave functions are still to come. The
+argument (3.18.6) among them. Of 3.18.14, the radial spheroidal functions are still to come. The
 hypergeometric functions and Carlson's integrals of complex arguments are not built. `loggamma`
 of a complex argument comes with the complex Bessel functions.
 See [What builds today](status.md).
