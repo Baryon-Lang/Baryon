@@ -235,9 +235,10 @@ pub enum BinaryOperator {
     /// `%`: the remainder that has the sign of the divisor, as Python defines it.
     Remainder,
     /// `**` of every pair of elements, only inside an [`Elementwise`] tree (roadmap 1.9.58).
-    /// `**` on two numbers is a call instead, of [`MathFunction::Power`](crate::MathFunction::Power)
-    /// for floats and complex numbers and a loop of checked multiplications for integers, and
-    /// array expansion makes the same per element, so no other rvalue holds it.
+    /// `**` on two numbers is a call instead, of
+    /// [`MathFunction::Power`](crate::MathFunction::Power) for floats and complex numbers and a
+    /// loop of checked multiplications for integers, and array expansion makes the same per
+    /// element, so no other rvalue holds it.
     Power,
     /// `&`.
     BitAnd,
