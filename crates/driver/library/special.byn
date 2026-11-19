@@ -74,6 +74,10 @@ from special_mathieu_radial import mathieu_modsem1 as mathieu_modsem1
 from special_mathieu_radial import mathieu_modsem2 as mathieu_modsem2
 from special_mathieu_radial import mathieu_even_coef as mathieu_even_coef
 from special_mathieu_radial import mathieu_odd_coef as mathieu_odd_coef
+from special_spheroidal import pro_cv as pro_cv, obl_cv as obl_cv, pro_cv_seq as pro_cv_seq
+from special_spheroidal import obl_cv_seq as obl_cv_seq, pro_ang1 as pro_ang1
+from special_spheroidal import obl_ang1 as obl_ang1, pro_ang1_cv as pro_ang1_cv
+from special_spheroidal import obl_ang1_cv as obl_ang1_cv
 from special_elliptic import ellipk as ellipk, ellipkm1 as ellipkm1, ellipe as ellipe
 from special_elliptic import ellipkinc as ellipkinc, ellipeinc as ellipeinc, ellipj as ellipj
 from special_carlson import elliprc as elliprc, elliprd as elliprd, elliprf as elliprf
