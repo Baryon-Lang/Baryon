@@ -65,7 +65,9 @@ impl<'db> Substitution<'_, 'db> {
             | TypeKind::Unknown => {
                 return ty;
             }
-            TypeKind::Tuple(items) => TypeKind::Tuple(list(items)),
+            // A bound `*Ts` becomes its types in place (the 0026 amendment).
+            TypeKind::Tuple(items) => TypeKind::Tuple(types::spliced(self.db, list(items))),
+            TypeKind::Unpacked(pack) => TypeKind::Unpacked(self.ty(*pack)),
             TypeKind::List(item) => TypeKind::List(self.ty(*item)),
             TypeKind::Dict { key, value } => TypeKind::Dict {
                 key: self.ty(*key),
@@ -97,7 +99,7 @@ impl<'db> Substitution<'_, 'db> {
                 parameters,
                 returns,
             } => TypeKind::Callable {
-                parameters: list(parameters),
+                parameters: types::spliced(self.db, list(parameters)),
                 returns: self.ty(*returns),
             },
             TypeKind::Fallible { value, errors } => TypeKind::Fallible {

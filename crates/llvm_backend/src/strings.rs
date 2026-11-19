@@ -107,7 +107,7 @@ impl<'db> Function<'_, '_, 'db> {
     ) -> Result<(String, String), Unsupported> {
         let value = match argument {
             Argument::Owned(operand) => self.value(operand)?.0,
-            Argument::Borrow(place) | Argument::InOut(place) => {
+            Argument::Borrow(place) | Argument::InOut(place) | Argument::Spread(place) => {
                 let (address, ty) = self.place(place)?;
                 self.load(&address, ty)?
                     .ok_or_else(|| Unsupported::new("`None` where a `str` is needed"))?

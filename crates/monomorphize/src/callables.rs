@@ -93,6 +93,7 @@ pub(crate) fn shared<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
         for (position, argument) in arguments.iter().enumerate() {
             let (Argument::Borrow(place)
             | Argument::InOut(place)
+            | Argument::Spread(place)
             | Argument::Owned(Operand::Copy(place) | Operand::Move(place))) = argument
             else {
                 continue;
@@ -159,6 +160,7 @@ pub fn forward_callables<'db>(
                 Some(
                     Argument::Borrow(place)
                     | Argument::InOut(place)
+                    | Argument::Spread(place)
                     | Argument::Owned(Operand::Copy(place) | Operand::Move(place)),
                 ) => function_of(db, body, place),
                 Some(Argument::Owned(Operand::Constant(constant))) => {

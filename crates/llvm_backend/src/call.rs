@@ -158,6 +158,9 @@ impl<'db> Function<'_, '_, 'db> {
                     }
                 }
                 Argument::InOut(place) => ("ptr".to_owned(), self.place(place)?.0),
+                Argument::Spread(_) => {
+                    return Err(Unsupported::new("a `*args` left by monomorphization"));
+                }
                 Argument::Owned(operand) => {
                     let Some((value, ty)) = self.operand(operand)? else {
                         continue;

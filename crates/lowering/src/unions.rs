@@ -283,6 +283,7 @@ fn argument_place(argument: &Argument<'_>) -> Option<Place> {
     match argument {
         Argument::Borrow(place)
         | Argument::InOut(place)
+        | Argument::Spread(place)
         | Argument::Owned(Operand::Copy(place) | Operand::Move(place)) => Some(place.clone()),
         Argument::Owned(Operand::Constant(_)) => None,
     }
@@ -293,6 +294,7 @@ fn with_place<'db>(argument: &Argument<'db>, place: Place) -> Argument<'db> {
     match argument {
         Argument::Borrow(_) => Argument::Borrow(place),
         Argument::InOut(_) => Argument::InOut(place),
+        Argument::Spread(_) => Argument::Spread(place),
         Argument::Owned(Operand::Move(_)) => Argument::Owned(Operand::Move(place)),
         Argument::Owned(_) => Argument::Owned(Operand::Copy(place)),
     }

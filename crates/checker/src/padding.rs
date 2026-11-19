@@ -199,7 +199,9 @@ impl<'db> Substitution<'_, 'db> {
                     .and_then(|index| self.arguments.get(index).copied())
                     .unwrap_or(ty);
             }
-            TypeKind::Tuple(items) => TypeKind::Tuple(all(items)),
+            // A bound `*Ts` becomes its types in place (the 0026 amendment).
+            TypeKind::Tuple(items) => TypeKind::Tuple(types::spliced(db, all(items))),
+            TypeKind::Unpacked(pack) => TypeKind::Unpacked(self.apply(db, *pack)),
             TypeKind::List(item) => TypeKind::List(self.apply(db, *item)),
             TypeKind::Dict { key, value } => TypeKind::Dict {
                 key: self.apply(db, *key),
@@ -229,7 +231,7 @@ impl<'db> Substitution<'_, 'db> {
                 parameters,
                 returns,
             } => TypeKind::Callable {
-                parameters: all(parameters),
+                parameters: types::spliced(db, all(parameters)),
                 returns: self.apply(db, *returns),
             },
             TypeKind::Fallible { value, errors } => TypeKind::Fallible {
