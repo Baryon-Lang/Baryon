@@ -2,7 +2,8 @@
 //! 1.9.49) instead of passing on an unknown type that a later stage stops on with a message
 //! about itself, such as "lowering does not handle this call yet":
 //!
-//! - a type parameter called as a conversion, `T(0)`, which no bound allows;
+//! - a type parameter called as a conversion, `T(0)`, under a bound other than `Number` or
+//!   `Float`, the two that allow it (decision 0066);
 //! - a generic struct built with its type arguments written, `Box[f64]([])`, where version 0
 //!   finds them from the arguments;
 //! - a method called on a value whose type is a type parameter with no trait that has the
@@ -43,17 +44,19 @@ impl<'db> Body<'db> {
                 if !self.lowerer.is_type_parameter(binding) {
                     return None;
                 }
-                self.untyped(arguments);
                 let name = self.tree.text(function, self.text);
+                if let Some(ty) = self.parameter_conversion(node, name, binding, arguments) {
+                    return Some(ty);
+                }
+                self.untyped(arguments);
                 let message = format!("`{name}` is a type parameter, which cannot be called");
                 Some(self.lowerer.error(
                     node,
                     &message,
                     "not a function",
                     Some(
-                        "a type parameter has only what its bound allows; a conversion names a \
-                         number type, such as `f64(n)`, and a literal takes the type `T` under \
-                         `Float`",
+                        "a type parameter converts a number only under `Number` or `Float`, as \
+                         `T(n)`; a conversion otherwise names a number type, such as `f64(n)`",
                     ),
                 ))
             }

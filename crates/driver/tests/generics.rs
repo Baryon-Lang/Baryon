@@ -242,7 +242,7 @@ error: `self` has type `Bag[i64]`, found `Bag[f64]`
 }
 
 /// Calls the checker cannot type are reported where they are written (roadmap 1.9.48 and
-/// 1.9.49): a type parameter called as a conversion, a generic struct built with its type
+/// 1.9.49): a type parameter called as a conversion under a bound that allows none, a generic struct built with its type
 /// arguments written, a method on a type parameter with no trait that has it, and a generic
 /// function whose arguments do not fix its type parameter. Before, each got an unknown type
 /// with no error, and the build stopped on "lowering does not handle this call yet" or "the
@@ -254,11 +254,9 @@ class Box[T](Struct):
     items: list[T]
 
 
-def mean[T: Float](xs: Array[T, 1]) -> T:
-    s: T = 0.0
-    for i in range(len(xs)):
-        s += xs[i]
-    return s / T(len(xs))
+def twice[T: VectorSpace](xs: list[T]) -> T:
+    s = xs[0] + xs[0]
+    return s * T(len(xs))
 
 
 def last[T](xs: list[T]) -> T:
@@ -279,35 +277,70 @@ def use_them() -> int:
         check_one(program),
         "\
 error: `T` is a type parameter, which cannot be called
- --> main.byn:9:16
+ --> main.byn:7:16
   |
-9 |     return s / T(len(xs))
+7 |     return s * T(len(xs))
   |                ^^^^^^^^^^ not a function
-  = note: a type parameter has only what its bound allows; a conversion names a number type, \
-such as `f64(n)`, and a literal takes the type `T` under `Float`
+  = note: a type parameter converts a number only under `Number` or `Float`, as `T(n)`; a \
+conversion otherwise names a number type, such as `f64(n)`
 
 error: `T` has no method `copy`
-  --> main.byn:13:12
+  --> main.byn:11:12
    |
-13 |     return xs[len(xs) - 1].copy()
+11 |     return xs[len(xs) - 1].copy()
    |            ^^^^^^^^^^^^^^^^^^^^ not known for a type parameter
    = note: a type parameter has only what its bound allows, and a trait has methods only: bound \
 it by a trait that lists the method
 
 error: `Box` is built without its type arguments written
-  --> main.byn:22:9
+  --> main.byn:20:9
    |
-22 |     b = Box[f64]([1.0])
+20 |     b = Box[f64]([1.0])
    |         ^^^^^^^^^^^^^^^ type arguments written
    = note: the arguments say what they are, `Box(...)`; give an empty list a typed variable \
 first, `items: list[f64] = []`
 
 error: `make` does not say what `T` is from its arguments
-  --> main.byn:23:10
+  --> main.byn:21:10
    |
-23 |     xs = make()
+21 |     xs = make()
    |          ^^^^^^ type argument not found
    = note: a type argument is never written at a call; give the function a parameter whose \
 argument fixes `T`"
+    );
+}
+
+/// `T(x)` under `Number` or `Float` converts one real number (decision 0066, roadmap 1.9.59):
+/// a complex value, a `bool` or two values are errors at the call, as each is for `f64(...)`.
+#[test]
+fn a_conversion_to_a_type_parameter_takes_one_real_number() {
+    let program = r"
+def wrong[T: Number](x: T, z: complex128, flag: bool) -> T:
+    a = T(z)
+    b = T(flag)
+    return x + T(1, 2)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `T(...)` converts a real number, found `complex128`
+ --> main.byn:2:11
+  |
+2 |     a = T(z)
+  |           ^ not a real number
+  = note: an integer or a float of any width converts to a type parameter
+
+error: `T(...)` converts a real number, found `bool`
+ --> main.byn:3:11
+  |
+3 |     b = T(flag)
+  |           ^^^^ not a real number
+  = note: an integer or a float of any width converts to a type parameter
+
+error: `T(...)` converts one value, found 2
+ --> main.byn:4:16
+  |
+4 |     return x + T(1, 2)
+  |                ^^^^^^^ wrong number of arguments"
     );
 }
