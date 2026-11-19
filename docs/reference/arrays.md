@@ -842,6 +842,8 @@ parallel streams never share state ([decision 0028](../decisions/0028-philox-ran
   panics.
 - `generator.uniform()` draws the next `f64` in `[0, 1)`. It changes the generator, so
   `generator` must be a variable or an `InOut` parameter.
+- `Philox` is also the generator's type, so a function takes one as
+  `def walk(generator: InOut[Philox]) -> f64:`, or `random.Philox` after `import random`.
 
 A `Philox` moves; it is not a copy type, so two values can never draw the same numbers by
 accident. Give each `prange` chunk its own stream, as the

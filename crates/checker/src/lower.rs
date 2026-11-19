@@ -203,7 +203,10 @@ impl<'db> Lowerer<'db> {
     fn named(&mut self, node: NodeId, name: NodeId, subscript: Option<NodeId>) -> Type<'db> {
         let written = self.tree.text(name, self.text);
         match self.resolution.definition(name) {
-            None | Some(Definition::Standard { .. }) => self.unknown(),
+            None => self.unknown(),
+            Some(Definition::Standard { module, member }) => {
+                self.standard_type(node, module, member.as_deref(), subscript)
+            }
             Some(Definition::Builtin("DataFrame")) => self.frame(node, subscript),
             Some(Definition::Builtin(builtin)) => self.builtin(node, builtin, subscript),
             Some(&Definition::Item(file, item)) => self.item(node, written, file, item, subscript),

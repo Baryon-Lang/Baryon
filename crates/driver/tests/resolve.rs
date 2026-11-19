@@ -170,6 +170,8 @@ fn imports_in_a_circle_are_reported() {
     );
 }
 
+/// Standard modules resolve by name; `random.Philox` read as a value rather than called is
+/// reported by the checker (roadmap 1.9.56).
 #[test]
 fn standard_library_modules_are_accepted_by_name() {
     let nbody = "def step() -> f64:\n    return 1.0\n";
@@ -181,7 +183,7 @@ fn standard_library_modules_are_accepted_by_name() {
             ("physics/forces.byn", forces),
             ("main.byn", program)
         ]),
-        "error: the standard library module `math` has no submodules\n --> main.byn:4:8\n  |\n4 | import math.special\n  |        ^^^^^^^^^^^^ no such module"
+        "error: the standard library module `math` has no submodules\n --> main.byn:4:8\n  |\n4 | import math.special\n  |        ^^^^^^^^^^^^ no such module\n\nerror: `random.Philox` is not a value in Baryon\n  --> main.byn:10:38\n   |\n10 |     print(math.pi, sqrt(2.0), random.Philox, physics.forces.total())\n   |                                      ^^^^^^ not a constant\n   = note: only a module's constants are read without a call, such as `math.pi`; the language reference lists what `random` has"
     );
 }
 

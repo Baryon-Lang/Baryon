@@ -253,3 +253,68 @@ error: `special.nothing` is not in Baryon yet
 place to ask for more"
     );
 }
+
+/// A standard module's member read as a value or written as a type is reported where it is
+/// written (roadmap 1.9.56), where before each was an unknown type the build stopped on: only
+/// a constant such as `math.pi` is read without a call, and only `random.Philox` names a type,
+/// so a generator can be an `InOut` parameter.
+#[test]
+fn standard_members_are_values_and_types_only_where_baryon_has_them() {
+    let program = r"
+import math
+import random
+import zlib
+from random import Philox
+
+
+def draw(g: InOut[Philox], h: InOut[random.Philox]) -> f64:
+    return g.uniform() + h.uniform() + math.pi
+
+
+def misuse(x: zlib.Thing, m: random) -> f64:
+    f = math.sqrt
+    try:
+        return zlib.nothing
+    except zlib.error:
+        return 0.0
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `zlib.Thing` is not a type in Baryon
+  --> main.byn:11:15
+   |
+11 | def misuse(x: zlib.Thing, m: random) -> f64:
+   |               ^^^^^^^^^^ not a type
+   = note: the language reference lists the types `zlib` has
+
+error: `random` is a module, not a type
+  --> main.byn:11:30
+   |
+11 | def misuse(x: zlib.Thing, m: random) -> f64:
+   |                              ^^^^^^ expected a type
+
+error: `math.sqrt` is not a value in Baryon
+  --> main.byn:12:14
+   |
+12 |     f = math.sqrt
+   |              ^^^^ not a constant
+   = note: only a module's constants are read without a call, such as `math.pi`; the language \
+reference lists what `math` has
+
+error: `zlib.error` is not a type in Baryon
+  --> main.byn:15:12
+   |
+15 |     except zlib.error:
+   |            ^^^^^^^^^^ not a type
+   = note: the language reference lists the types `zlib` has
+
+error: `zlib.nothing` is not a value in Baryon
+  --> main.byn:14:21
+   |
+14 |         return zlib.nothing
+   |                     ^^^^^^^ not a constant
+   = note: only a module's constants are read without a call, such as `math.pi`; the language \
+reference lists what `zlib` has"
+    );
+}

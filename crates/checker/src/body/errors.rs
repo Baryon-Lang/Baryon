@@ -12,6 +12,7 @@
 
 use super::Body;
 use super::flow::{End, Skip};
+use super::relations;
 use crate::outline::{Base, Kind, outline};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Key, Type, TypeKind};
@@ -140,7 +141,7 @@ impl<'db> Body<'db> {
     }
 
     /// The error types an `except` names, one or a parenthesized tuple of them, reporting any
-    /// that is not an error type.
+    /// that is not an error type. An unknown type was reported where it is written.
     fn except_types(&mut self, handler: NodeId) -> Vec<Type<'db>> {
         let Some(written) = self.tree.child(handler, Role::Type) else {
             return Vec::new();
@@ -155,7 +156,7 @@ impl<'db> Body<'db> {
             let ty = self.lowerer.lower(node);
             if self.is_error(ty) {
                 errors.push(ty);
-            } else {
+            } else if !relations::is_unknown(self.db, ty) {
                 let message = format!("`{}` is not an error type", self.show(ty));
                 self.lowerer.error(
                     node,
