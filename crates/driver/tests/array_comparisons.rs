@@ -82,12 +82,11 @@ error: `~` does not apply to `Array[f64, 1]`
 4 |     e = ~a
   |         ^^ its elements are not `bool`s or integers
 
-error: `&` cannot mix `f64` and `f64`
+error: `&` needs whole numbers or `bool`s, found `f64`
  --> main.byn:5:9
   |
 5 |     f = a & a
-  |         ^^^^^ different number types
-  = note: convert one side so both are the same type, such as `f64(x)`
+  |         ^^^^^ not a whole number
 
 error: a condition must be a `bool`, found `Array[bool, 1]`
  --> main.byn:6:8
@@ -310,5 +309,37 @@ error: `<<` does not apply to arrays
 4 |     a <<= 2
   |     ^^^^^^^ an array
   = note: a shift applies to single whole numbers: shift each element in a loop"
+    );
+}
+
+/// `&`, `|`, `^`, `<<` and `>>` given a float or a complex number say what they need (roadmap
+/// 1.9.65). Before, `1.5 | 2.5` said `|` cannot mix `f64` and `f64`, as if the types differed.
+#[test]
+fn bitwise_operators_on_fractions_say_what_they_need() {
+    let program = r"def bits(x: f64, z: complex128) -> i64:
+    a = x | 2.5
+    b = 1 ^ z
+    c = x >> 1
+    return 0
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `|` needs whole numbers or `bool`s, found `f64`
+ --> main.byn:2:9
+  |
+2 |     a = x | 2.5
+  |         ^^^^^^^ not a whole number
+
+error: `^` needs whole numbers or `bool`s, found `complex128`
+ --> main.byn:3:9
+  |
+3 |     b = 1 ^ z
+  |         ^^^^^ not a whole number
+
+error: `>>` needs whole numbers, found `f64`
+ --> main.byn:4:9
+  |
+4 |     c = x >> 1
+  |         ^^^^^^ not a whole number"
     );
 }
