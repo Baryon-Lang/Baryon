@@ -136,6 +136,40 @@ impl<'db> Builder<'db> {
         Some(flags)
     }
 
+    /// `names.min()` or `names.max()`, the largest when `largest`, of the array of text with
+    /// missing values stored as `values` and `bits`, into `place`: a new `str`, a copy of the
+    /// text that comes first or last by Python's `<` among those that are there, of which
+    /// the caller has checked there is one. The texts that are there are gathered into a
+    /// text array, freed when the statement ends, and the library's `text_extreme` scans it.
+    fn optional_text_extreme(
+        &mut self,
+        place: Place,
+        largest: bool,
+        (values, bits): (Place, Place),
+        node: NodeId,
+    ) {
+        let texts = erase(self.db, Type::new(self.db, TypeKind::TextArray));
+        let arguments = vec![values, bits];
+        let Some(there) = self.frame_call("text_present", Vec::new(), arguments, texts, node)
+        else {
+            return;
+        };
+        self.drop_later(there);
+        let boolean = self.boolean_type();
+        let largest = Operand::Constant(Constant {
+            ty: boolean,
+            value: ConstantValue::Bool(largest),
+        });
+        let largest = Place::from(self.held(boolean, largest, node));
+        let text = Type::new(self.db, TypeKind::Str);
+        let arguments = vec![Place::from(there), largest];
+        let Some(result) = self.frame_call("text_extreme", Vec::new(), arguments, text, node)
+        else {
+            return;
+        };
+        self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);
+    }
+
     /// `values.count()`, `sum()`, `min()`, `max()`, `mean()`, `var()` or `std()`, the method
     /// `method`, on the array with missing values `array`, into `place`: the reduction of the
     /// elements that are there.
@@ -174,6 +208,9 @@ impl<'db> Builder<'db> {
         }
         if matches!(method, "min" | "max") {
             self.not_empty(std::slice::from_ref(&count), false, node);
+            if matches!(element.kind(self.db), TypeKind::Str) {
+                return self.optional_text_extreme(place, method == "max", (values, bits), node);
+            }
             let Some(start) = self.filler(element) else {
                 return self.unsupported(node, "this reduction of an array with missing values");
             };

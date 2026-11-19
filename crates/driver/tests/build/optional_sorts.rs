@@ -1,6 +1,7 @@
-//! `argsort`, `unique` and `nunique` of an array with missing values (roadmap 3.13.6, decision
-//! 0045), built and run: the positions that put the elements in rising order, with those of
-//! the `None`s last, and the distinct elements, a `None` among them, and how many are there.
+//! `argsort`, `unique`, `nunique` and text `min` and `max` of an array with missing values
+//! (roadmap 3.13.6, decision 0045), built and run: the positions that put the elements in
+//! rising order, with those of the `None`s last; the distinct elements, a `None` among
+//! them, and how many are there; and the first and last text by `<`.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -98,6 +99,34 @@ def main():
          [5 4] 2\n\
          [] 0\n\
          [None 4] 1\n"
+    );
+    Ok(())
+}
+
+/// `min` and `max` of text that may be `None` give a new `str`, the first and the last by
+/// `<` among the texts that are there, and panic when none is, as those of numbers do.
+#[test]
+fn text_extremes_skip_none() -> io::Result<()> {
+    let program = r#"
+def main():
+    names: Array[str | None, 1] = Array(["delta", None, "", "beta", None, "zeta"])
+    print(names.min() == "", names.max())
+    one: Array[str | None, 1] = Array([None, "b"])
+    low = one.min()
+    print(low, one.max(), len(low))
+    gone: Array[str | None, 1] = Array([None])
+    print(gone.max())
+"#;
+    let directory = package("optional_sorts_extremes", &[("main.byn", program)])?;
+    let (output, executable) = baryon_build(&directory)?;
+    assert!(output.status.success(), "{}", stderr(&output));
+    let run = Command::new(&executable).output()?;
+    assert_eq!(run.status.code(), Some(101));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "True zeta\nb b 1\n");
+    let report = panic_report(&run);
+    assert!(
+        report.contains("panic: `gone.max()` of an empty array"),
+        "{report}"
     );
     Ok(())
 }
