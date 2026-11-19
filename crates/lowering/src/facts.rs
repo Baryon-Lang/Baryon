@@ -28,7 +28,8 @@ impl<'db> Builder<'db> {
             | TypeKind::Dict { .. }
             | TypeKind::Array { .. }
             | TypeKind::DataFrame { .. }
-            | TypeKind::Standard(_) => false,
+            | TypeKind::Standard(_)
+            | TypeKind::Unpacked(_) => false,
             TypeKind::Tuple(items) | TypeKind::Union(items) => {
                 items.iter().all(|&item| self.is_copy(item))
             }

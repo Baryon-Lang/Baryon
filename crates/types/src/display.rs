@@ -91,6 +91,7 @@ impl fmt::Display for Displayed<'_> {
                 )
             }
             TypeKind::Parameter { file, name: node } => formatter.write_str(name(db, *file, *node)),
+            TypeKind::Unpacked(pack) => write!(formatter, "*{}", pack.display(db)),
             TypeKind::Unknown => formatter.write_str("unknown"),
         }
     }

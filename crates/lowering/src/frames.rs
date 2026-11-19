@@ -45,6 +45,7 @@ pub(crate) fn erase<'db>(db: &'db dyn TypeDb, ty: Type<'db>) -> Type<'db> {
         | TypeKind::Parameter { .. }
         | TypeKind::Unknown => return ty,
         TypeKind::Tuple(items) => TypeKind::Tuple(all(items)),
+        TypeKind::Unpacked(pack) => TypeKind::Unpacked(map(*pack)),
         TypeKind::List(item) => TypeKind::List(map(*item)),
         TypeKind::Dict { key, value } => TypeKind::Dict {
             key: *key,

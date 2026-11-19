@@ -258,7 +258,7 @@ pub(crate) fn statement_writes(statement: &StatementKind<'_>, local: Local) -> b
 pub(crate) fn terminator_writes(terminator: &TerminatorKind<'_>, local: Local) -> bool {
     let argument_writes = |arguments: &[Argument<'_>]| {
         arguments.iter().any(|argument| match argument {
-            Argument::Borrow(_) => false,
+            Argument::Borrow(_) | Argument::Spread(_) => false,
             Argument::InOut(place) => place.local == local,
             Argument::Owned(operand) => moved(operand, local),
         })

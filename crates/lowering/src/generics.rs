@@ -99,7 +99,9 @@ impl<'db> Builder<'db> {
             | TypeKind::Function { .. }
             | TypeKind::Standard(_)
             | TypeKind::Unknown => return ty,
-            TypeKind::Tuple(items) => TypeKind::Tuple(list(items)),
+            // A bound `*Ts` becomes its types in place (the 0026 amendment).
+            TypeKind::Tuple(items) => TypeKind::Tuple(types::spliced(self.db, list(items))),
+            TypeKind::Unpacked(pack) => TypeKind::Unpacked(map(*pack)),
             TypeKind::List(item) => TypeKind::List(map(*item)),
             TypeKind::Dict { key, value } => TypeKind::Dict {
                 key: map(*key),
@@ -135,7 +137,7 @@ impl<'db> Builder<'db> {
                 parameters: callable,
                 returns,
             } => TypeKind::Callable {
-                parameters: list(callable),
+                parameters: types::spliced(self.db, list(callable)),
                 returns: map(*returns),
             },
             TypeKind::Fallible { value, errors } => TypeKind::Fallible {

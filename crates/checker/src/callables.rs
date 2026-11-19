@@ -85,6 +85,7 @@ fn holds_callable<'db>(db: &'db dyn Db, ty: Type<'db>, parameter: bool) -> bool 
         TypeKind::List(element)
         | TypeKind::Optional(element)
         | TypeKind::OptionalArray(element)
+        | TypeKind::Unpacked(element)
         | TypeKind::Array { element, .. }
         | TypeKind::Fixed { element, .. } => holds_callable(db, *element, false),
         TypeKind::Dict { key, value } => any(&[*key, *value]),

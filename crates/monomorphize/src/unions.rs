@@ -75,6 +75,7 @@ pub(crate) fn argument_place<'a>(argument: &'a mut Argument<'_>) -> Option<&'a m
     match argument {
         Argument::Borrow(place)
         | Argument::InOut(place)
+        | Argument::Spread(place)
         | Argument::Owned(Operand::Copy(place) | Operand::Move(place)) => Some(place),
         Argument::Owned(Operand::Constant(_)) => None,
     }
@@ -85,6 +86,7 @@ fn place_of<'a>(argument: &'a Argument<'_>) -> Option<&'a Place> {
     match argument {
         Argument::Borrow(place)
         | Argument::InOut(place)
+        | Argument::Spread(place)
         | Argument::Owned(Operand::Copy(place) | Operand::Move(place)) => Some(place),
         Argument::Owned(Operand::Constant(_)) => None,
     }

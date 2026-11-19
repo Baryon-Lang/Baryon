@@ -385,4 +385,9 @@ pub enum Argument<'db> {
     InOut(Place),
     /// An `Owned` argument: the value moves, or for a copy type copies, into the callee.
     Owned(Operand<'db>),
+    /// `*args` in a generic body: each element of the tuple at the place, borrowed, as an
+    /// argument of its own (the decision 0026 amendment). The tuple's type is `tuple[*Ts]`, so
+    /// how many elements it has is known only in an instance: monomorphization replaces this
+    /// with one [`Borrow`](Self::Borrow) of each element, and no later stage sees it.
+    Spread(Place),
 }

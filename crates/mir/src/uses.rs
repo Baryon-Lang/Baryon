@@ -172,7 +172,9 @@ impl Uses {
     fn arguments(&mut self, arguments: &[Argument<'_>]) {
         for argument in arguments {
             match argument {
-                Argument::Borrow(place) | Argument::InOut(place) => self.place(place),
+                Argument::Borrow(place) | Argument::InOut(place) | Argument::Spread(place) => {
+                    self.place(place);
+                }
                 Argument::Owned(operand) => self.operand(operand),
             }
         }

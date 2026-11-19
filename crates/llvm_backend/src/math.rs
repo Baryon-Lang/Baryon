@@ -50,7 +50,7 @@ impl<'db> Function<'_, '_, 'db> {
         for argument in arguments {
             let value = match argument {
                 Argument::Owned(operand) => self.value(operand)?.0,
-                Argument::Borrow(place) | Argument::InOut(place) => {
+                Argument::Borrow(place) | Argument::InOut(place) | Argument::Spread(place) => {
                     self.place_value(place)?
                         .ok_or_else(|| Unsupported::new("`None` where a value is needed"))?
                         .0

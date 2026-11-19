@@ -222,7 +222,9 @@ impl<'db> Function<'_, '_, 'db> {
     /// value, a copy of it on the stack.
     fn argument_address(&mut self, argument: &Argument<'db>) -> Result<String, Unsupported> {
         match argument {
-            Argument::Borrow(place) | Argument::InOut(place) => Ok(self.place(place)?.0),
+            Argument::Borrow(place) | Argument::InOut(place) | Argument::Spread(place) => {
+                Ok(self.place(place)?.0)
+            }
             Argument::Owned(operand) => {
                 let (value, ty) = self.value(operand)?;
                 if !self.types.by_value(ty) {

@@ -125,7 +125,7 @@ impl<'db> Function<'_, '_, 'db> {
     fn file_argument(&mut self, argument: &Argument<'db>) -> Result<String, Unsupported> {
         match argument {
             Argument::Owned(operand) => Ok(self.value(operand)?.0),
-            Argument::Borrow(place) | Argument::InOut(place) => {
+            Argument::Borrow(place) | Argument::InOut(place) | Argument::Spread(place) => {
                 let (address, _) = self.place(place)?;
                 Ok(self.emit(&format!("load ptr, ptr {address}")))
             }

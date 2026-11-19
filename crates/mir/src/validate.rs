@@ -358,7 +358,9 @@ fn has_parameter(db: &dyn Db, ty: Type<'_>) -> bool {
         | TypeKind::Standard(_)
         | TypeKind::Unknown => false,
         TypeKind::Tuple(items) | TypeKind::Union(items) => any(items),
-        TypeKind::List(item) | TypeKind::Optional(item) => has_parameter(db, *item),
+        TypeKind::List(item) | TypeKind::Optional(item) | TypeKind::Unpacked(item) => {
+            has_parameter(db, *item)
+        }
         TypeKind::Dict { key, value } => has_parameter(db, *key) || has_parameter(db, *value),
         TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
             has_parameter(db, *element)
