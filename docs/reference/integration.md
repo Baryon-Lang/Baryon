@@ -2,9 +2,9 @@
 
 The `integrate` module is SciPy's `scipy.integrate` written in Baryon
 ([decision 0054](../decisions/0054-scipy-module-names.md)), with SciPy's names. It holds
-[`quad`](#quad-integrating-a-function), which integrates a function over a finite interval
-(roadmap 3.19.4), and the fixed rules, which integrate samples already taken at known points
-(roadmap 3.19.3):
+[`quad`](#quad-integrating-a-function), which integrates a function over a finite or infinite
+interval (roadmap 3.19.4 and 3.19.5), and the fixed rules, which integrate samples already taken
+at known points (roadmap 3.19.3):
 
 | Function | Result | SciPy |
 | --- | --- | --- |
@@ -111,6 +111,32 @@ the interval, and repeats, are dropped, as SciPy drops them. There must be fewer
 calling `func`. `quad` calls `func` at most 21 × (2 × `limit` − 1) times and keeps 6 × `limit`
 numbers.
 
+### Infinite intervals
+
+`a` may be `-inf` and `b` may be `inf`, from `math`. `quad` then runs QUADPACK's QAGI, as SciPy
+does: it maps the infinite interval onto (0, 1] with x = `a` + (1 − t)/t, or the mirror image for
+`-inf`, and applies the same halving with the 15-point Gauss-Kronrod rule to the mapped
+integrand. On (−∞, ∞) each point t adds `func` at x and at −x. `limit=1` uses 15 points of
+`func`, or 30 on the whole line, and each halving 30 more, or 60.
+
+```python
+from math import inf
+from integrate import quad, IntegrationError
+
+
+def lorentz(x: f64) -> f64:
+    return 1.0 / (1.0 + x * x)
+
+
+def main() -> Raises[None, IntegrationError]:
+    print(quad(lorentz, 0.0, inf))     # (1.5707963267948966, 2.5777915205519274e-10)
+    print(quad(lorentz, -inf, inf))    # (3.141592653589793, 5.155583041103855e-10)
+```
+
+`func` must fall off fast enough for the integral to exist; one that does not, such as 1/x,
+raises `IntegrationError`. `points` cannot be used with an infinite limit: as in SciPy, the call
+panics.
+
 ### When `quad` fails
 
 Where SciPy warns with an `IntegrationWarning` and still returns a value, `quad` raises
@@ -144,8 +170,7 @@ panic: assertion failed: limit >= 1, "Invalid 'limit' argument. There must be at
 - `quad` raises `IntegrationError` where SciPy warns, and panics where SciPy raises
   `ValueError`. The panic for too many break points leaves out the two numbers SciPy's message
   has.
-- `quad` takes a finite `a` and `b`. Infinite limits and `weight=` are roadmap 3.19.5, and
-  `full_output=` is not built: its third value would change the shape of every call
-  (decision 0065).
+- `quad`'s `weight=` is roadmap 3.19.5, and `full_output=` is not built: its third value would
+  change the shape of every call (decision 0065).
 - `quad`'s `points` is a `list[f64]`; SciPy also takes an array or a tuple.
 - ODE solvers (`solve_ivp`) are not built yet (roadmap 3.19).
