@@ -254,3 +254,29 @@ def main() -> Raises[None, OSError]:
          v=2.0\n[[1, 2, 3]|(1, 'a', 2.5)] 25\ninside Point(x=1.5, name='p')\n"
     );
 }
+
+/// A float halfway between two strings of its fewest digits takes the even one wherever it is
+/// written as text, as Python's `repr` and `NumPy` write it (roadmap 1.9.62): `print`,
+/// f-strings and printed arrays all started from Rust's digits, which take the upper one.
+#[test]
+fn a_float_halfway_between_its_shortest_digits_takes_the_even_one() {
+    let program = "\
+def main():
+    x = 1125899906842624.25
+    y = f32(45635.3125)
+    print(x, f\"{x}\", y, f\"{y}\", f32(2425435.25), 0.1 + 0.2)
+    c: Array[f32, 1] = Array.zeros((1,))
+    c[0] = y
+    print(c)
+";
+    let directory = package("float_ties", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "1125899906842624.2 1125899906842624.2 45635.312 45635.312 2425435.2 \
+         0.30000000000000004\n[45635.312]\n"
+    );
+}

@@ -13,17 +13,20 @@
 //!   exponent as many digits as the widest, at least two: `[1.5e-05 1.0e+03]`.
 //! - **`nan` and `inf`** right-aligned to the width of the others.
 //!
-//! Rust's `{:e}` gives the same fewest digits as `NumPy`'s Dragon4 in unique mode, and Rust's
-//! `{:.8}` and `{:.8e}` round the exact binary value, halves to even, as Dragon4 does at its
-//! cutoff.
+//! [`shortest`] gives the same fewest digits as `NumPy`'s Dragon4 in unique mode, a tie going to
+//! the even digit, and Rust's `{:.8}` and `{:.8e}` round the exact binary value, halves to even,
+//! as Dragon4 does at its cutoff.
 
 use std::fmt::{Display, LowerExp};
+use std::str::FromStr;
+
+use crate::shortest::shortest;
 
 /// The most digits a float shows after the point; `NumPy`'s default `precision`.
 const PRECISION: usize = 8;
 
 /// A float width an array can hold: `f32` or `f64`.
-pub(crate) trait Float: Copy + Display + LowerExp + PartialOrd {
+pub(crate) trait Float: Copy + Display + LowerExp + PartialOrd + FromStr {
     /// The magnitude from which a positional array switches to scientific notation: 10 to the
     /// power of the type's decimal precision, at most 8.
     const SCIENTIFIC_FROM: f64;
@@ -206,8 +209,8 @@ fn sign_of<T: Float>(value: T, sign: Sign) -> &'static str {
 /// `value`'s digits in positional notation: its fewest digits when they need at most
 /// [`PRECISION`] after the point, else rounded to [`PRECISION`], trailing zeros dropped.
 fn positional_digits<T: Float>(value: T, sign: Sign) -> Digits {
-    let shortest = format!("{value:e}");
-    let (mantissa, exponent) = split_exponent(&shortest);
+    let fewest = shortest(value);
+    let (mantissa, exponent) = split_exponent(&fewest);
     let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
     let point = i64::from(exponent) + 1;
     let after = i64::try_from(digits.len()).unwrap_or(i64::MAX) - point;
@@ -241,13 +244,13 @@ fn positional_digits<T: Float>(value: T, sign: Sign) -> Digits {
 /// `value`'s digits in scientific notation: its fewest digits when they need at most
 /// [`PRECISION`] after the point, else rounded to [`PRECISION`], trailing zeros dropped.
 fn scientific_digits<T: Float>(value: T, sign: Sign) -> Digits {
-    let shortest = format!("{value:e}");
-    let (mantissa, _) = split_exponent(&shortest);
+    let fewest = shortest(value);
+    let (mantissa, _) = split_exponent(&fewest);
     let after = mantissa
         .split_once('.')
         .map_or(0, |(_, fraction)| fraction.len());
     let text = if after <= PRECISION {
-        shortest
+        fewest
     } else {
         format!("{value:.PRECISION$e}")
     };
@@ -261,7 +264,7 @@ fn scientific_digits<T: Float>(value: T, sign: Sign) -> Digits {
     }
 }
 
-/// Rust's `{:e}` text split into its mantissa and its decimal exponent.
+/// A float's `{:e}` text split into its mantissa and its decimal exponent.
 fn split_exponent(text: &str) -> (&str, i32) {
     match text.split_once('e') {
         Some((mantissa, exponent)) => (mantissa, exponent.parse().unwrap_or(0)),
