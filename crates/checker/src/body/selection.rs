@@ -113,7 +113,7 @@ impl<'db> Body<'db> {
     }
 
     /// Whether `ty` is an `Array` or a `Fixed` array.
-    fn is_any_array(&self, ty: Type<'db>) -> bool {
+    pub(super) fn is_any_array(&self, ty: Type<'db>) -> bool {
         matches!(
             ty.kind(self.db),
             TypeKind::Array { .. } | TypeKind::Fixed { .. }

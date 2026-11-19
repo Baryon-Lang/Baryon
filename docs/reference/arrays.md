@@ -303,6 +303,8 @@ def main():
   `counts > 1.5` compares an integer array as floats.
 - `&`, `|` and `^` combine two arrays of `bool`s element by element: and, or, and exclusive or.
   `~mask` is `not` of each element. All four also apply to integer arrays, bit by bit.
+- `<<` and `>>` shift single whole numbers only: `a << 1` on an array is an error. Shift each
+  element in a loop.
 - Python's `and`, `or` and `not` take one `bool`, not an array, so write `&`, `|` and `~`.
   They bind tighter than comparisons, as in Python: the parentheses in
   `(prices > 180.0) & (volume >= 250)` are needed.
