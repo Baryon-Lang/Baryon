@@ -127,3 +127,71 @@ def main():
         "{report}"
     );
 }
+
+/// One value in `assign` fills every row (roadmap 3.13.18): a number, a `bool` or a `str`,
+/// a literal or computed, added at the end or replacing a column, also on a frame with no
+/// rows. `drop` and `rename` take pandas's `axis=1` and `axis="columns"` forms. The
+/// expected text is what pandas 3.0.5 prints for the same program.
+#[test]
+fn one_value_fills_a_column_and_axis_names_the_columns() {
+    let program = r#"
+def main():
+    venue = "NY" + "SE"
+    rate = 0.25
+    trades = DataFrame({
+        "symbol": Array(["b", "a", "c"]),
+        "price": Array([2.5, 4.0, 1.5]),
+        "volume": Array([10, 30, 5]),
+    })
+    print(trades.copy().assign(fee=0.5))
+    print(trades.copy().assign(lot=100, live=True, venue=venue, note="x", cost=trades.price * rate))
+    print(trades.copy().assign(price=1.0, half=rate / 2.0))
+    print(trades.copy().drop("volume", axis=1))
+    print(trades.copy().drop(["price", "volume"], axis="columns"))
+    print(trades.copy().drop(labels="symbol", axis=1))
+    print(trades.copy().rename({"price": "cost"}, axis=1))
+    print(trades.copy().rename(mapper={"symbol": "ticker"}, axis="columns"))
+    none = trades[trades.price > 9.0]
+    print(none.assign(fee=0.5, venue="x"))
+"#;
+    let expected = [
+        "  symbol  price  volume  fee\n",
+        "0      b    2.5      10  0.5\n",
+        "1      a    4.0      30  0.5\n",
+        "2      c    1.5       5  0.5\n",
+        "  symbol  price  volume  lot  live venue note   cost\n",
+        "0      b    2.5      10  100  True  NYSE    x  0.625\n",
+        "1      a    4.0      30  100  True  NYSE    x  1.000\n",
+        "2      c    1.5       5  100  True  NYSE    x  0.375\n",
+        "  symbol  price  volume   half\n",
+        "0      b    1.0      10  0.125\n",
+        "1      a    1.0      30  0.125\n",
+        "2      c    1.0       5  0.125\n",
+        "  symbol  price\n",
+        "0      b    2.5\n",
+        "1      a    4.0\n",
+        "2      c    1.5\n",
+        "  symbol\n",
+        "0      b\n",
+        "1      a\n",
+        "2      c\n",
+        "   price  volume\n",
+        "0    2.5      10\n",
+        "1    4.0      30\n",
+        "2    1.5       5\n",
+        "  symbol  cost  volume\n",
+        "0      b   2.5      10\n",
+        "1      a   4.0      30\n",
+        "2      c   1.5       5\n",
+        "  ticker  price  volume\n",
+        "0      b    2.5      10\n",
+        "1      a    4.0      30\n",
+        "2      c    1.5       5\n",
+        "Empty DataFrame\n",
+        "Columns: [symbol, price, volume, fee, venue]\n",
+        "Index: []\n",
+    ];
+    let (code, stdout, report) = run("frames-schema-scalar", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(stdout, expected.concat());
+}

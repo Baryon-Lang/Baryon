@@ -288,9 +288,9 @@ Each of these gives a new frame, whose type the compiler works out:
 | Expression | The frame it gives |
 | --- | --- |
 | `df[["a", "b"]]` | Copies of the columns named, in the order written |
-| `df.assign(name=values)` | The frame with a column added at the end, or replaced where it stands when `name` is already a column |
-| `df.drop(columns=["a"])`, `df.drop(columns="a")` | The frame without the columns named |
-| `df.rename(columns={"old": "new"})` | The frame with columns under new names |
+| `df.assign(name=values)`, `df.assign(name=0.5)` | The frame with a column added at the end, or replaced where it stands when `name` is already a column. One value fills every row |
+| `df.drop(columns=["a"])`, `df.drop(columns="a")`, `df.drop("a", axis=1)` | The frame without the columns named |
+| `df.rename(columns={"old": "new"})`, `df.rename({"old": "new"}, axis=1)` | The frame with columns under new names |
 
 ```python
 priced = trades.assign(notional=trades.price * trades.volume)
@@ -328,8 +328,16 @@ print(value)
   column twice, leaving no columns, and giving two columns one name are compile errors too.
 - **A new column is an array of rank 1** with the frame's number of rows, or `assign` panics.
   The array moves in, so a column of the same or another frame is copied first:
-  `df.assign(backup=df.price.copy())`. To give every row one value, build the array:
-  `df.assign(fee=Array.fill(len(df), 0.25))`.
+  `df.assign(backup=df.price.copy())`.
+- **One value fills every row**, as in pandas: `df.assign(fee=0.25, venue="NYSE")`. The value
+  is a number, a `bool` or a `str`, a literal or computed, and the column has its type, so
+  `fee=1` gives a column of `i64`. A value that may be `None` is a compile error.
+- **`axis=1` and `axis="columns"` name the columns**, as in pandas: `df.drop("a", axis=1)`
+  is `df.drop(columns="a")`, and `df.rename({"old": "new"}, axis="columns")` is
+  `df.rename(columns={"old": "new"})`. The first argument can also be written `labels=` in
+  `drop` and `mapper=` in `rename`. The axis is written out. A `DataFrame` has no row index,
+  so `axis=0`, `axis="index"` and a first argument with no `axis`, which name row labels in
+  pandas, are compile errors.
 - **The arguments of `assign` are computed before the frame is taken**, so they can read
   it, as `trades.price * trades.volume` does above. Each one sees the frame as it was: a
   column added earlier in the same call cannot be read by a later argument.
