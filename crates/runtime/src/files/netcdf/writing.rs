@@ -10,14 +10,15 @@
 //! the type's fill value, padding included: a write that adds records fills them for every
 //! record variable before it writes its values, as the C library does.
 //!
-//! Cost: a definition changes the header's length, which moves every variable, so the
-//! `streaming` module copies the file into its new layout through a fixed buffer: one pass over
-//! the file and a few megabytes of memory. A write of values still reads the whole file into
-//! memory and writes it again (the `storage` module), so a program should define everything
-//! first and write values after.
+//! Cost (row 3.14.7): a definition changes the header's length, which moves every variable, so
+//! the `streaming` module copies the file into its new layout through a fixed buffer: one pass
+//! over the file and a few megabytes of memory, written beside it and renamed over it. A write
+//! of values moves nothing, so it is made in place: only the bytes it changes are written, the
+//! records it adds and the header's record count, whatever the file's size. A program should
+//! still define everything first and write values after.
 
 use super::encoding::store;
-use super::storage::{Contents, fill, load, save, slot};
+use super::storage::{BUFFER, fill, slot};
 use super::streaming::{check, rewrite};
 use super::{
     Attribute, Header, Item, Kind, SubscriptFailure, Values, Variable, is_whole, read_header,
@@ -25,6 +26,8 @@ use super::{
 };
 use crate::files::fits::Pixel;
 use crate::files::{ErrorKind, OsFailure};
+use std::fs;
+use std::io::{self, Seek, SeekFrom, Write};
 
 /// One change to a file, as a line of text the standard library's `netCDF4` module writes,
 /// a tag and fields separated by tabs.
@@ -94,7 +97,7 @@ fn classic(path: &str) -> Result<Header, OsFailure> {
             path,
         ));
     }
-    let length = std::fs::metadata(path)
+    let length = fs::metadata(path)
         .map_err(|error| OsFailure::from_io(&error, path))?
         .len();
     check(path, &header, length)?;
@@ -126,8 +129,7 @@ pub(crate) fn write(
     let invalid = |message: String| {
         SubscriptFailure::Os(OsFailure::new(ErrorKind::InvalidData, message, path))
     };
-    let mut contents = load(path)?;
-    let header = &contents.header;
+    let header = &classic(path)?;
     let Some(index) = header
         .variables
         .iter()
@@ -177,75 +179,147 @@ pub(crate) fn write(
         .chunks_exact(pixel.size())
         .flat_map(|element| store(element, pixel, kind, scale))
         .collect();
-    let size = slot(header, variable);
-    let width = kind.size();
+    let width = kind.size() as u64;
+    let step = header.record_size();
     let inner = lengths[usize::from(record)..].to_vec();
-    if record {
-        let needed = selection.axes[0]
+    let needed = if record {
+        selection.axes[0]
             .positions
             .iter()
             .max()
-            .map_or(0, |&last| last.saturating_add(1));
-        add_records(&mut contents, needed).map_err(invalid)?;
-    }
+            .map_or(0, |&last| last.saturating_add(1))
+    } else {
+        0
+    };
+    // Every run's place is worked out before the file is touched, so a write that does not
+    // fit is refused with the file as it was.
+    let mut runs: Vec<(u64, std::ops::Range<usize>)> = Vec::new();
     let mut taken: usize = 0;
-    let slots = &mut contents.slots[index];
     selection.runs(record, &inner, |at, offset, count| {
         let too_large = || invalid(format!("the NetCDF variable {name} is too large to write"));
-        let bytes = |value: u64, width: usize| usize::try_from(value).ok()?.checked_mul(width);
-        let start = bytes(at.unwrap_or(0), size)
-            .zip(bytes(offset, width))
-            .and_then(|(record, inner)| record.checked_add(inner));
-        let (Some(start), Some(length)) = (start, bytes(count, width)) else {
+        let place = at
+            .unwrap_or(0)
+            .checked_mul(step)
+            .zip(offset.checked_mul(width))
+            .and_then(|(record, inner)| record.checked_add(inner))
+            .and_then(|start| start.checked_add(variable.begin));
+        let length = count
+            .checked_mul(width)
+            .and_then(|length| usize::try_from(length).ok());
+        let (Some(place), Some(length)) = (place, length) else {
             return Err(too_large());
         };
-        let (Some(end), Some(from)) = (start.checked_add(length), taken.checked_add(length)) else {
-            return Err(too_large());
-        };
-        let (Some(slot), Some(values)) = (slots.get_mut(start..end), stored.get(taken..from))
-        else {
-            return Err(too_large());
-        };
-        slot.copy_from_slice(values);
+        let from = taken
+            .checked_add(length)
+            .filter(|&from| from <= stored.len())
+            .ok_or_else(too_large)?;
+        match runs.last_mut() {
+            // A run that starts where the last one ends joins it: one write, not two.
+            Some((start, range)) if *start + (range.len() as u64) == place => range.end = from,
+            _ => runs.push((place, taken..from)),
+        }
         taken = from;
         Ok(())
     })?;
-    save(path, &contents).map_err(SubscriptFailure::Os)
+    put(path, header, needed, &runs, &stored)
+        .map_err(|error| SubscriptFailure::Os(OsFailure::from_io(&error, path)))
 }
 
-/// Adds records to `contents` until it has `needed`, each filled for every record variable,
-/// padding and all, as the C library fills the records a write adds.
+/// Writes the values of `runs`, each a place in the file at `path` and the range of `stored`
+/// that goes there, in place, after adding records until the file has `needed`. Only the
+/// bytes a write changes are written: the records it adds, filled for every record variable,
+/// padding and all, as the C library fills them; its values; and the header's record count.
+///
+/// The order keeps the file valid whatever stops the write (decision 0047, row 3.14.7): the
+/// new records go past the end, where a reader that trusts the record count does not look,
+/// and are flushed to the disk; then the values; then the count, flushed again, so the count
+/// never claims a record that is not there. A crash in the middle may leave some of the values
+/// written and others not, but never a file cut short. Records that fail to be added are cut
+/// off again, so a full disk leaves the file as it was.
 ///
 /// # Errors
 ///
-/// A message, before anything is added, when the records would not fit in memory: the room
-/// for them is reserved first, so a huge record number is an error, never an abort.
-fn add_records(contents: &mut Contents, needed: u64) -> Result<(), String> {
-    let header = &contents.header;
-    let blank: Vec<(usize, Vec<u8>, usize)> = header
+/// The first error the operating system gives.
+fn put(
+    path: &str,
+    header: &Header,
+    needed: u64,
+    runs: &[(u64, std::ops::Range<usize>)],
+    stored: &[u8],
+) -> io::Result<()> {
+    let mut file = fs::OpenOptions::new().read(true).write(true).open(path)?;
+    let grows = needed > header.records;
+    if grows {
+        let length = file.metadata()?.len();
+        let added = add_records(&mut file, header, needed);
+        if added.is_err() {
+            // The error to report is the first; the file keeps its records either way.
+            let _ = file.set_len(length);
+        }
+        added?;
+        file.sync_data()?;
+    }
+    for (place, range) in runs {
+        file.seek(SeekFrom::Start(*place))?;
+        file.write_all(&stored[range.clone()])?;
+    }
+    file.sync_data()?;
+    if grows {
+        let count = u32::try_from(needed).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "too many records for the header",
+            )
+        })?;
+        file.seek(SeekFrom::Start(4))?;
+        file.write_all(&count.to_be_bytes())?;
+        file.sync_data()?;
+    }
+    Ok(())
+}
+
+/// Writes the records from `header`'s last one up to `needed` at the end of the records in
+/// `file`, each filled for every record variable, through a buffer of about a megabyte.
+///
+/// # Errors
+///
+/// The first error the operating system gives.
+fn add_records(file: &mut fs::File, header: &Header, needed: u64) -> io::Result<()> {
+    let step = header.record_size();
+    let records: Vec<&Variable> = header
         .variables
         .iter()
-        .enumerate()
-        .filter(|(_, variable)| header.is_record(variable))
-        .map(|(index, variable)| (index, fill(variable), slot(header, variable)))
+        .filter(|variable| header.is_record(variable))
         .collect();
-    let added = needed.saturating_sub(header.records);
-    let too_many = || format!("{needed} records of a NetCDF file do not fit in memory");
-    for (index, _, size) in &blank {
-        let room = usize::try_from(added)
-            .ok()
-            .and_then(|added| added.checked_mul(*size))
-            .ok_or_else(too_many)?;
-        contents.slots[*index]
-            .try_reserve_exact(room)
-            .map_err(|_| too_many())?;
+    let Some(first) = records.iter().map(|variable| variable.begin).min() else {
+        return Ok(());
+    };
+    let too_large = || io::Error::new(io::ErrorKind::InvalidData, "a record past 2^64 bytes");
+    let one = usize::try_from(step).map_err(|_| too_large())?;
+    // One record, each variable's fill value at its place in it.
+    let mut record = vec![0_u8; one];
+    for variable in &records {
+        let size = slot(header, variable);
+        let at = usize::try_from(variable.begin - first).map_err(|_| too_large())?;
+        let place = record.get_mut(at..at + size).ok_or_else(too_large)?;
+        place.copy_from_slice(&filled(&fill(variable), size));
     }
-    for _ in header.records..needed {
-        for (index, filling, size) in &blank {
-            contents.slots[*index].extend(filled(filling, *size));
-        }
+    let start = header
+        .records
+        .checked_mul(step)
+        .and_then(|offset| offset.checked_add(first))
+        .ok_or_else(too_large)?;
+    file.seek(SeekFrom::Start(start))?;
+    let per_block = (BUFFER / one.max(1)).max(1);
+    let block = record.repeat(per_block);
+    let mut left = needed - header.records;
+    while left > 0 {
+        let count = left.min(per_block as u64);
+        // At most `per_block`, which is a `usize`.
+        let count = usize::try_from(count).unwrap_or(per_block);
+        file.write_all(&block[..count * one])?;
+        left -= count as u64;
     }
-    contents.header.records = contents.header.records.max(needed);
     Ok(())
 }
 
