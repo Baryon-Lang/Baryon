@@ -18,7 +18,7 @@ order:
 | [A tour of the language](language-tour.md) | Values, strings and collections; structs, enums and unions; generics and traits; who owns a value; errors; modules |
 | [Arrays and numbers](arrays-and-numbers.md) | `Array`, parallel and vector loops, `math`, exact sums, random numbers, `linalg`, `fft` and `stats` |
 | [Data, files and plots](data-files-and-plots.md) | `DataFrame`, files and paths, text tables and `.npy`, NetCDF, HDF5 and FITS, compression, and plots with `byplot` |
-| [A worked analysis with DataFrame](dataframes.md) | One pandas analysis written again in Baryon, with missing values, and how fast `DataFrame` runs beside pandas and Polars |
+| [A worked analysis with DataFrame](dataframes.md) | One pandas analysis written again in Baryon, from a CSV file with missing values to a CSV file, and how fast `DataFrame` runs beside pandas and Polars |
 | [Special functions](special-functions.md) | `scipy.special`'s functions: probability, elliptic integrals, Bessel functions and Gauss quadrature; moving from SciPy; speed against SciPy |
 
 [Coding Baryon in VS Code](vscode.md) sets up an editor alongside them.

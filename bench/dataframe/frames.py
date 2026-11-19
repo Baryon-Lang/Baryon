@@ -1,7 +1,11 @@
 """The same operations as main.byn in pandas and in Polars, each timed alone.
 
-Usage: python3 frames.py pandas|polars ROWS RUNS. Prints one line for each operation: its
-name, the fastest of RUNS times in seconds, and the same checksum main.byn prints.
+Usage: python3 frames.py pandas|polars ROWS RUNS CSV. Prints one line for each operation: its
+name, the fastest of RUNS times in seconds, and the same checksum main.byn prints. CSV is the
+path of the file `write` makes and `read` reads.
+
+The Polars list has the first six operations only: `counts`, `write` and `read` were added on
+a machine without Polars, and an operation is not added here without running it.
 """
 
 import sys
@@ -25,7 +29,7 @@ def sector_columns():
     return i, (i % 7) + 0.5
 
 
-def pandas_operations(rows):
+def pandas_operations(rows, path):
     import pandas as pd
 
     key, value, other = columns(rows)
@@ -60,8 +64,21 @@ def pandas_operations(rows):
         kept = gaps[gaps.bid > 0.5]
         return f"{len(kept)} {kept.other.sum():.6f} {gaps.bid.mean():.6f}"
 
+    def counts():
+        groups = table.groupby("key").agg(rows=("value", "size"), different=("other", "nunique"))
+        return f"{len(groups)} {groups.rows.sum()} {groups.different.sum()}"
+
+    def write():
+        table.to_csv(path, index=False)
+        return f"{len(table)}"
+
+    def read():
+        loaded = pd.read_csv(path)
+        return f"{len(loaded)} {loaded.value.sum():.6f} {loaded.key.sum()}"
+
     return [("filter", filter_rows), ("assign", assign), ("groupby", groupby),
-            ("sort", sort), ("merge", merge), ("missing", missing)]
+            ("sort", sort), ("merge", merge), ("missing", missing),
+            ("counts", counts), ("write", write), ("read", read)]
 
 
 def polars_operations(rows):
@@ -108,7 +125,10 @@ def polars_operations(rows):
 
 def main():
     library, rows, runs = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-    operations = pandas_operations(rows) if library == "pandas" else polars_operations(rows)
+    if library == "pandas":
+        operations = pandas_operations(rows, sys.argv[4])
+    else:
+        operations = polars_operations(rows)
     for name, operation in operations:
         best = float("inf")
         for _ in range(runs):
