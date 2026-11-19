@@ -241,14 +241,24 @@ def _value(m: f64, q: f64, cosine: bool) -> f64:
     return _characteristic(family, q, _index(m, cosine), _size(m, q))
 
 
+def fourier_coefficients(m: f64, q: f64, cosine: bool, least: int) -> Array[f64, 1]:
+    """The Fourier coefficients of ce_m (`cosine`) or se_m for a whole m its kind allows,
+    scaled and signed as the module says, at least `least` of them: A₀, A₂, … or A₁, A₃, …
+    for ce, and B₁, B₃, … or B₂, B₄, … for se. The radial functions of `special_mathieu_radial`
+    sum their Bessel products over them, and `mathieu_even_coef` returns them."""
+    family = _family(m, cosine)
+    n = max(_size(m, q), least)
+    index = _index(m, cosine)
+    a = m * m if q == 0.0 else _characteristic(family, q, index, n)
+    return _coefficients(family, q, a, n, index)
+
+
 def _function(m: f64, q: f64, x: f64, cosine: bool) -> tuple[f64, f64]:
     """ce_m(x, q) or se_m(x, q) and its derivative in x, for x in degrees and the derivative
     per radian, as SciPy gives them."""
     family = _family(m, cosine)
-    n = _size(m, q)
-    index = _index(m, cosine)
-    a = m * m if q == 0.0 else _characteristic(family, q, index, n)
-    vector = _coefficients(family, q, a, n, index)
+    vector = fourier_coefficients(m, q, cosine, 0)
+    n = vector.shape[0]
     turn = x / 180.0
     value = 0.0
     slope = 0.0
@@ -263,8 +273,9 @@ def _function(m: f64, q: f64, x: f64, cosine: bool) -> tuple[f64, f64]:
     return (value, slope)
 
 
-def _allowed(m: f64, least: f64) -> bool:
-    """Whether m is a whole number from `least` up."""
+def allowed(m: f64, least: f64) -> bool:
+    """Whether m is a whole number from `least` up, below 1e9, as each Mathieu function
+    requires of its order; `special_mathieu_radial` checks its orders with it too."""
     return m == m and m >= least and is_integer(m) and m < 1.0e9
 
 
@@ -279,7 +290,7 @@ def mathieu_a(m: f64, q: f64) -> f64:
     print(mathieu_a(2.0, 1.5))    # 4.746779468115387
     ```
     """
-    if not _allowed(m, 0.0) or q != q:
+    if not allowed(m, 0.0) or q != q:
         return nan
     return _value(m, q, True)
 
@@ -294,7 +305,7 @@ def mathieu_b(m: f64, q: f64) -> f64:
     print(mathieu_b(2.0, 1.5))    # 3.814290870563324
     ```
     """
-    if not _allowed(m, 1.0) or q != q:
+    if not allowed(m, 1.0) or q != q:
         return nan
     return _value(m, q, False)
 
@@ -311,7 +322,7 @@ def mathieu_cem(m: f64, q: f64, x: f64) -> tuple[f64, f64]:
     print(slope)    # -1.1494447465718143
     ```
     """
-    if not _allowed(m, 0.0) or q != q or x != x or abs(x) == inf:
+    if not allowed(m, 0.0) or q != q or x != x or abs(x) == inf:
         return (nan, nan)
     return _function(m, q, x, True)
 
@@ -328,6 +339,6 @@ def mathieu_sem(m: f64, q: f64, x: f64) -> tuple[f64, f64]:
     print(slope)    # 1.2043246333574347
     ```
     """
-    if not _allowed(m, 1.0) or q != q or x != x or abs(x) == inf:
+    if not allowed(m, 1.0) or q != q or x != x or abs(x) == inf:
         return (nan, nan)
     return _function(m, q, x, False)

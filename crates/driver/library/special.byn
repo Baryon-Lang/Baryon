@@ -68,6 +68,12 @@ from special_zeta import zeta as zeta, zetac as zetac, spence as spence
 from special_lambertw import lambertw as lambertw
 from special_mathieu import mathieu_a as mathieu_a, mathieu_b as mathieu_b
 from special_mathieu import mathieu_cem as mathieu_cem, mathieu_sem as mathieu_sem
+from special_mathieu_radial import mathieu_modcem1 as mathieu_modcem1
+from special_mathieu_radial import mathieu_modcem2 as mathieu_modcem2
+from special_mathieu_radial import mathieu_modsem1 as mathieu_modsem1
+from special_mathieu_radial import mathieu_modsem2 as mathieu_modsem2
+from special_mathieu_radial import mathieu_even_coef as mathieu_even_coef
+from special_mathieu_radial import mathieu_odd_coef as mathieu_odd_coef
 from special_elliptic import ellipk as ellipk, ellipkm1 as ellipkm1, ellipe as ellipe
 from special_elliptic import ellipkinc as ellipkinc, ellipeinc as ellipeinc, ellipj as ellipj
 from special_carlson import elliprc as elliprc, elliprd as elliprd, elliprf as elliprf

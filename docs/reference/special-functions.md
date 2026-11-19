@@ -731,11 +731,59 @@ function keeps the precision of the largest. The tests reach orders to 40 and q 
 misses 34 of the 1,254 cases by more than 64 ULP, and gives `mathieu_a(22, -265.6)` as 92.3
 where it is 569.5. A call costs about 7 µs, against SciPy's 1 µs, most of it in the bisection.
 
+### Radial functions and coefficients
+
+| Function | Result | SciPy |
+| --- | --- | --- |
+| `mathieu_modcem1(m, q, z)` | The even radial function of the first kind, Mc⁽¹⁾_m(z, q), and its derivative in z, as a tuple | `scipy.special.mathieu_modcem1` |
+| `mathieu_modcem2(m, q, z)` | The even radial function of the second kind, Mc⁽²⁾_m(z, q), and its derivative | `scipy.special.mathieu_modcem2` |
+| `mathieu_modsem1(m, q, z)` | The odd radial function of the first kind, Ms⁽¹⁾_m(z, q), and its derivative | `scipy.special.mathieu_modsem1` |
+| `mathieu_modsem2(m, q, z)` | The odd radial function of the second kind, Ms⁽²⁾_m(z, q), and its derivative | `scipy.special.mathieu_modsem2` |
+| `mathieu_even_coef(m, q)` | The Fourier coefficients of ce_m, A₀, A₂, … or A₁, A₃, …, as an `Array[f64, 1]` as long as SciPy's | `scipy.special.mathieu_even_coef` |
+| `mathieu_odd_coef(m, q)` | The Fourier coefficients of se_m, B₂, B₄, … or B₁, B₃, … | `scipy.special.mathieu_odd_coef` |
+
+The radial functions solve the modified equation w″ − (a − 2q cosh 2z) w = 0 (DLMF 28.20),
+which Mathieu's equation becomes at x = iz, with the same characteristic value. In an elliptic
+membrane they carry the wave from the centre outward, as the angular functions carry it around:
+Mc⁽¹⁾ and Ms⁽¹⁾ are regular at the focal line z = 0, like the Bessel function J, and Mc⁽²⁾ and
+Ms⁽²⁾ are the second solutions, like Y. They are given for q above 0 only, as SciPy gives them.
+
+```python
+from special import mathieu_even_coef, mathieu_modcem1
+
+
+def main() -> Raises[None, ValueError]:
+    value, slope = mathieu_modcem1(2.0, 1.5, 0.7)
+    print(value)                             # 0.5011385205497332
+    print(mathieu_even_coef(2.0, 1.5)[1])    # 0.9061913477138984
+```
+
+**How they work.** Each radial function is a sum, over the angular function's Fourier
+coefficients, of products of Bessel functions of h e^(−z) and h e^z, with h = √q (DLMF 28.24.1
+to 28.24.4). The products are centred on the largest coefficient, as DLMF advises, so that
+the terms do not cancel there. J comes from `jn` at each order and Y from the upward
+recurrence, which is stable for Y. The coefficient functions return the same coefficients
+`mathieu_cem` and `mathieu_sem` sum, as many as SciPy returns.
+
+**Accuracy.** The reference values are the same sums at 60 digits, over the 60-digit
+coefficients, with mpmath's Bessel functions. Each is measured against the largest of |f|,
+|q ∂f/∂q|, |z ∂f/∂z| and the sum of the sizes of its Bessel products, and a coefficient against
+the largest coefficient. The tests reach orders to 12, q from 0.001 to 200 and z from −1 to 3.
+The worst error is 16 ULP, for `mathieu_modsem1` near z = 0, where the rounding of h e^(∓z)
+moves the two products of each term apart; the coefficients are within 3 ULP. SciPy misses 124
+of the 894 cases by more than 64 ULP, and gives `mathieu_modsem1(10, 0.00135, 0.362)` as
+−1.4e-10 where it is 4.5e-23. A call costs about 15 µs, against SciPy's 5 µs.
+
 ### At the ends
 
-- An order that is not a whole number, or below 0 for `mathieu_a` and `mathieu_cem` or below 1
-  for `mathieu_b` and `mathieu_sem`, gives NaN, as SciPy gives. So do a NaN argument and an
-  infinite x.
+- An order that is not a whole number, or below 0 for `mathieu_a`, `mathieu_cem` and the
+  `modcem` functions or below 1 for the others, gives NaN, as SciPy gives. So do a NaN argument
+  and an infinite x.
+- The radial functions give NaN for q at most 0, as SciPy gives. For z below 0 the first kind
+  follows its parity, Mc⁽¹⁾ even and Ms⁽¹⁾ odd, and the second kind is the same series, as in
+  SciPy.
+- `mathieu_even_coef` and `mathieu_odd_coef` raise `ValueError` for an order their kind does
+  not allow and for q below 0, as SciPy does.
 
 ## Incomplete gamma and beta functions
 
@@ -1263,6 +1311,7 @@ for those working on the library. A panic inside a function names the file it is
 | `special_zeta` | `zeta`, `zetac` and `spence` |
 | `special_lambertw` | `lambertw` |
 | `special_mathieu` | `mathieu_a`, `mathieu_b`, `mathieu_cem` and `mathieu_sem` |
+| `special_mathieu_radial` | `mathieu_modcem1`, `mathieu_modcem2`, `mathieu_modsem1`, `mathieu_modsem2`, `mathieu_even_coef` and `mathieu_odd_coef` |
 | `special_orthogonal` | `eval_legendre`, `eval_chebyt`, `eval_chebyu`, `eval_hermite`, `eval_hermitenorm`, `eval_laguerre`, `eval_genlaguerre`, `eval_jacobi`, `eval_gegenbauer`, `lpmv` and `sph_harm_y` |
 | `special_carlson` | `elliprc`, `elliprd`, `elliprf`, `elliprg` and `elliprj`, and `carlson_rf`, `carlson_rd` and `carlson_rg`, the same integrals without the checks of their arguments |
 | `special_elliptic` | `ellipk`, `ellipkm1`, `ellipe`, `ellipkinc`, `ellipeinc` and `ellipj` |
@@ -1274,9 +1323,7 @@ A new function goes in the file of its family, and a name of `special` gets its 
 ## Not built yet
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18, Bessel functions of a complex
-argument (3.18.6) among them. Of 3.18.14, the modified Mathieu functions, `mathieu_modcem1`
-and the rest, the Fourier coefficients `mathieu_even_coef` and `mathieu_odd_coef`, and the
-spheroidal wave functions are still to come. The hypergeometric functions and Carlson's
-integrals of complex arguments are not built. `loggamma` of a complex argument comes with the
-complex Bessel functions.
+argument (3.18.6) among them. Of 3.18.14, the spheroidal wave functions are still to come. The
+hypergeometric functions and Carlson's integrals of complex arguments are not built. `loggamma`
+of a complex argument comes with the complex Bessel functions.
 See [What builds today](status.md).

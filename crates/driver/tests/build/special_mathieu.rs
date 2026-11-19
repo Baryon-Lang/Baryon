@@ -40,3 +40,46 @@ def main() -> Raises[None, OSError | ValueError]:
 fn mathieu_functions_match_the_recorded_values() {
     check("special-mathieu", MATHIEU, "mathieu.txt").unwrap();
 }
+
+/// The program for `mathieu_radial.txt`: the radial functions read as the angular ones are, with
+/// z in the place of x, and a coefficient by its place in the array.
+const RADIAL: &str = "\
+from special import mathieu_modcem1, mathieu_modcem2, mathieu_modsem1, mathieu_modsem2
+from special import mathieu_even_coef, mathieu_odd_coef
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open(\"cases.txt\") as cases:
+        for line in cases:
+            fields = line.split()
+            name = fields[0].copy()
+            m = float(fields[1])
+            q = float(fields[2])
+            z = float(fields[3])
+            if name == \"mathieu_even_coef\":
+                print(mathieu_even_coef(m, q)[int(z)])
+            elif name == \"mathieu_odd_coef\":
+                print(mathieu_odd_coef(m, q)[int(z)])
+            else:
+                pair = (0.0, 0.0)
+                if name.startswith(\"mathieu_modcem1\"):
+                    pair = mathieu_modcem1(m, q, z)
+                elif name.startswith(\"mathieu_modcem2\"):
+                    pair = mathieu_modcem2(m, q, z)
+                elif name.startswith(\"mathieu_modsem1\"):
+                    pair = mathieu_modsem1(m, q, z)
+                else:
+                    pair = mathieu_modsem2(m, q, z)
+                if name.endswith(\"_d\"):
+                    print(pair[1])
+                else:
+                    print(pair[0])
+";
+
+/// The radial functions and their derivatives, and some Fourier coefficients, at the 906 cases of
+/// `mathieu_radial.txt`: orders to 12, q from 1e-3 to 200, z from −1 to 3, and arguments
+/// `SciPy` gives NaN for.
+#[test]
+fn radial_mathieu_functions_match_the_recorded_values() {
+    check("special-mathieu-radial", RADIAL, "mathieu_radial.txt").unwrap();
+}

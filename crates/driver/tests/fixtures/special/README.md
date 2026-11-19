@@ -2217,6 +2217,195 @@ with open("mathieu.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
 
+## Radial Mathieu functions
+
+`mathieu_radial.txt` holds the radial functions and their derivatives (`_d`), each a Bessel
+product series over the 60-digit Fourier coefficients of the script for `mathieu.txt` (DLMF
+28.24.1 to 28.24.4), summed at 60 digits with mpmath's `besselj` and `bessely`, and some of the
+coefficients themselves, by their place in the array. Before the reference value each case holds
+the size its error is measured against: for a radial function the largest of |f|, |q ∂f/∂q|,
+|z ∂f/∂z| and the sum of the sizes of its Bessel products, and for a coefficient the largest
+coefficient. The script repeats the eigen-solver of the one above and recorded the cases with
+mpmath 1.4.1; run it from this directory with `python3 -I`:
+
+```python
+import math
+import random
+
+import mpmath
+from mpmath import mpf
+
+
+def family(m, cosine):
+    if cosine:
+        return 'ce_odd' if m % 2 else 'ce_even'
+    return 'se_odd' if m % 2 else 'se_even'
+
+
+def rows(fam, q, n):
+    start = {'ce_even': 0, 'ce_odd': 1, 'se_odd': 1, 'se_even': 2}[fam]
+    orders = [start + 2 * i for i in range(n)]
+    diag = [mpf(k) ** 2 for k in orders]
+    if fam == 'ce_odd':
+        diag[0] = 1 + q
+    if fam == 'se_odd':
+        diag[0] = 1 - q
+    off = [q] * (n - 1)
+    if fam == 'ce_even':
+        off[0] = q * mpmath.sqrt(2)
+    return orders, diag, off
+
+
+def count(diag, off, x):
+    c = 0
+    p = mpf(1)
+    for i in range(len(diag)):
+        s = diag[i] - x - (off[i - 1] ** 2 / p if i else 0)
+        if s == 0:
+            s = mpf(-10) ** -200
+        if s < 0:
+            c += 1
+        p = s
+    return c
+
+
+def solve(m, q, cosine):
+    """Characteristic value and normalised coefficients at the working precision."""
+    q = mpf(q)
+    fam = family(m, cosine)
+    index = m // 2 if cosine else (m - 1) // 2
+    n = int(m / 2 + 3 * mpmath.sqrt(abs(q))) + 60
+    orders, diag, off = rows(fam, q, n)
+    low, high = -3 * abs(q) - 2, mpf(orders[-1]) ** 2 + 3 * abs(q) + 2
+    for _ in range(mpmath.mp.prec + 40):
+        mid = (low + high) / 2
+        if count(diag, off, mid) > index:
+            high = mid
+        else:
+            low = mid
+    a = (low + high) / 2
+    # The eigenvector by a twisted factorization of the matrix less a: pivots from the top and
+    # from the bottom, set to 1 where they meet with the smallest residue and carried outward,
+    # each step dividing by a pivot that is not small.
+    up = [mpf(0)] * n
+    down = [mpf(0)] * n
+    for i in range(n):
+        up[i] = diag[i] - a - (off[i - 1] ** 2 / up[i - 1] if i else 0)
+    for i in range(n - 1, -1, -1):
+        down[i] = diag[i] - a - (off[i] ** 2 / down[i + 1] if i < n - 1 else 0)
+    twist = min(range(n), key=lambda i: abs(up[i] + down[i] - diag[i] + a))
+    v = [mpf(0)] * n
+    v[twist] = mpf(1)
+    for i in range(twist - 1, -1, -1):
+        v[i] = -off[i] * v[i + 1] / up[i]
+    for i in range(twist + 1, n):
+        v[i] = -off[i - 1] * v[i - 1] / down[i]
+    norm = mpmath.sqrt(sum(t * t for t in v))
+    v = [t / norm for t in v]
+    sign = sum(v) if cosine else sum(k * t for k, t in zip(orders, v))
+    if sign < 0:
+        v = [-t for t in v]
+    if fam == 'ce_even':
+        v[0] /= mpmath.sqrt(2)
+    return a, orders, v
+
+
+STEP = mpmath.mpf(10) ** -25
+
+
+def radial(m, q, z, cosine, kind):
+    """Mc or Ms of the first (kind 1) or second (kind 2) kind, its z-derivative, and the sums
+    of the sizes of the terms of each, by the Bessel product series of DLMF 28.24.1 to
+    28.24.4, with s at the largest coefficient."""
+    a, orders, coefficients = solve(m, mpf(q), cosine)
+    big = max(abs(c) for c in coefficients)
+    kept = [(k, c) for k, c in zip(orders, coefficients) if abs(c) > big * mpf(10) ** -45]
+    h = mpmath.sqrt(mpf(q))
+    u = h * mpmath.exp(-mpf(z))
+    v = h * mpmath.exp(mpf(z))
+    other = mpmath.besselj if kind == 1 else mpmath.bessely
+    odd = m % 2
+    n = m // 2
+    largest = max(range(len(kept)), key=lambda i: abs(kept[i][1]))
+    s = kept[largest][0] // 2
+    scale = kept[largest][1]
+    sign = 1 if cosine else -1
+    total = slope = total_size = slope_size = 0
+    for k, c in kept:
+        ell = k // 2
+        weight = (-1) ** (ell + n) * c / scale
+        for (p, r), w in (((ell - s, ell + s + odd), 1), ((ell + s + odd, ell - s), sign)):
+            jp = mpmath.besselj(p, u)
+            cr = other(r, v)
+            inward = -u * mpmath.besselj(p, u, 1) * cr
+            outward = v * jp * other(r, v, 1)
+            total += weight * w * jp * cr
+            slope += weight * w * (inward + outward)
+            total_size += abs(weight * jp * cr)
+            slope_size += abs(weight * inward) + abs(weight * outward)
+    if cosine and not odd and s == 0:
+        total, slope, total_size, slope_size = total / 2, slope / 2, total_size / 2, slope_size / 2
+    return a, total, slope, total_size, slope_size
+
+
+def record_radial(name, m, q, z, cosine, kind):
+    # Measured against the largest of |f|, |q ∂f/∂q|, |z ∂f/∂z| and the sum of the sizes of
+    # the Bessel products, for the value and for the derivative alike. ∂/∂q is a central
+    # difference; the derivative's own z-derivative comes from the equation,
+    # f″ = (a − 2q cosh 2z) f.
+    with mpmath.workdps(60):
+        pq, pz = mpf(q), mpf(z)
+        a, f, d, f_terms, d_terms = radial(m, pq, pz, cosine, kind)
+        _, f_up, d_up, _, _ = radial(m, pq + STEP, pz, cosine, kind)
+        _, f_down, d_down, _, _ = radial(m, pq - STEP, pz, cosine, kind)
+        second = (a - 2 * pq * mpmath.cosh(2 * pz)) * f
+        sizes = [
+            max(abs(f), abs(pq * (f_up - f_down) / (2 * STEP)), abs(pz * d), f_terms),
+            max(abs(d), abs(pq * (d_up - d_down) / (2 * STEP)), abs(pz * second), d_terms),
+        ]
+    for suffix, value, size in (("", f, sizes[0]), ("_d", d, sizes[1])):
+        lines.append(f"{name}{suffix} {float(m)!r} {q!r} {z!r} {float(size)!r} {float(value)!r}")
+
+
+def record_coefficient(name, m, q, index, cosine):
+    # Measured against the largest coefficient: the eigenvector is accurate to that size.
+    with mpmath.workdps(60):
+        _, _, coefficients = solve(m, mpf(q), cosine)
+        size = max(abs(c) for c in coefficients)
+    lines.append(f"{name} {float(m)!r} {q!r} {float(index)!r} {float(size)!r} "
+                 f"{float(coefficients[index])!r}")
+
+
+random.seed(3181417)
+lines = []
+for _ in range(110):
+    # Orders mostly small, q above 0 from 1e-3 to 200, z from −1 to 3; SciPy has no values
+    # for q at most 0.
+    m = random.choice([random.randint(0, 4), random.randint(0, 12)])
+    q = random.choice([random.uniform(0.05, 10.0), 10 ** random.uniform(-3.0, 2.3)])
+    z = random.choice([random.uniform(0.0, 3.0), random.uniform(-1.0, 1.0),
+                       10 ** random.uniform(-3.0, 0.0)])
+    for kind in (1, 2):
+        record_radial(f"mathieu_modcem{kind}", m, q, z, True, kind)
+        if m >= 1:
+            record_radial(f"mathieu_modsem{kind}", m, q, z, False, kind)
+for _ in range(40):
+    m = random.randint(0, 12)
+    q = random.choice([random.uniform(0.0, 10.0), 10 ** random.uniform(-3.0, 2.3)])
+    record_coefficient("mathieu_even_coef", m, q, random.randint(0, 8), True)
+    if m >= 1:
+        record_coefficient("mathieu_odd_coef", m, q, random.randint(0, 8), False)
+# The ends: q at most 0, an order its kind does not allow, or NaN, gives NaN.
+nan = math.nan
+for name, args in [("mathieu_modcem1", (2.0, 0.0, 1.0)), ("mathieu_modcem2", (2.0, -1.0, 1.0)),
+                   ("mathieu_modsem1", (0.0, 1.0, 1.0)), ("mathieu_modsem2", (1.5, 1.0, 1.0)),
+                   ("mathieu_modcem1", (1.0, nan, 1.0)), ("mathieu_modsem2", (1.0, 1.0, nan))]:
+    for suffix in ("", "_d"):
+        lines.append(f"{name}{suffix} {args[0]!r} {args[1]!r} {args[2]!r} 1.0 nan")
+with open("mathieu_radial.txt", "w") as out:
+    out.write("\n".join(lines) + "\n")
+```
+
 ## Parabolic cylinder functions
 
 In `parabolic.txt` each case holds, before the reference value, the size its error is measured
