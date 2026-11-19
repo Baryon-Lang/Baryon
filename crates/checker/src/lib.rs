@@ -167,6 +167,7 @@ mod outline;
 mod padding;
 mod standard_types;
 mod traits;
+mod written_bounds;
 
 use database::{File, Package};
 use diagnostics::Diagnostic;
@@ -299,7 +300,8 @@ pub fn implementation<'db>(
 /// declaration and, for a function, of its body, in source order, methods after their class,
 /// then the errors that compare classes, such as a struct missing a method of a trait it names
 /// (the `classes` module), then a warning for each struct whose fields would take fewer bytes in
-/// another order (the `padding` module).
+/// another order (the `padding` module), then the type arguments written in a definition's
+/// annotations that break their parameters' bounds (the `written_bounds` module).
 ///
 /// The application caches this per file in a tracked function. See the crate example.
 #[must_use]
@@ -317,5 +319,6 @@ pub fn check_file(db: &dyn TypeDb, package: Package, file: File) -> Vec<Diagnost
         })
         .chain(classes::check(db, package, file))
         .chain(padding::padding(db, package, file))
+        .chain(written_bounds::check(db, package, file))
         .collect()
 }

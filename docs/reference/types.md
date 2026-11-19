@@ -869,8 +869,11 @@ error, as in non-generic code. A generic struct is built the same way: `Pair(1.5
 `Pair[f64]`. Its type arguments may also be written, as on a class function, and the arguments
 are then checked against them: `Box[f64]([])` is a `Box` with an empty `list[f64]`, and
 `Pair[f64](1, 2)` makes its literals `f64`
-([decision 0066](../decisions/0066-converting-to-and-naming-type-parameters.md)). They are never
-taken from an annotation, so `c: Box[f64] = Box([])` is an error. A call whose
+([decision 0066](../decisions/0066-converting-to-and-naming-type-parameters.md)). A written
+type argument must satisfy its parameter's bound, as an inferred one must, wherever it is written:
+`p: Pair[str]`, `Pair[str].both("a")` and `Pair[str]("a", "b")` are each an error for
+`class Pair[T: Number]`. Type arguments are never taken from an annotation, so
+`c: Box[f64] = Box([])` is an error. A call whose
 arguments leave a type parameter unfixed, such as `make()` for `def make[T]() -> list[T]`, is an
 error too. A `None` passed for a `T | None` fixes `T` only when no other argument
 does: `pick(None, 3)` with `def pick[T: Number](a: T | None, b: T | None)` takes `T` from the

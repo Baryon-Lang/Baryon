@@ -381,3 +381,90 @@ error: an empty list needs its type written
    = note: for example `values: list[f64] = []`"
     );
 }
+
+/// A type argument written on a class is checked against its parameter's bound wherever it is
+/// written (decision 0066, roadmap 1.9.63): in a field, an alias, a parameter, a local
+/// annotation and on a class function, as on a constructor. A struct that names a user trait
+/// satisfies it in its own field, `children: Holder[Node]`, and one that does not is reported.
+#[test]
+fn written_type_arguments_are_checked_against_their_bounds() {
+    let program = r#"
+class Shape(Protocol):
+    def area(self) -> f64: ...
+
+
+class Holder[T: Shape](Struct):
+    items: list[T]
+
+
+class Node(Struct, Shape):
+    children: Holder[Node]
+
+    def area(self) -> f64:
+        return 1.0
+
+
+class Plain(Struct):
+    held: Holder[Plain]
+
+
+class Pair[T: Number](Struct):
+    a: T
+    b: T
+
+    def both(x: T) -> Pair[T]:
+        return Pair(x, x)
+
+
+Text = Pair[str]
+
+
+def take(p: Pair[bool]) -> i64:
+    return 0
+
+
+def main():
+    p: Pair[str] = Pair[str]("a", "b")
+    q = Pair[bool].both(True)
+    r: Pair[f32] = Pair[f32].both(f32(1.0))
+"#;
+    assert_eq!(
+        check_one(program),
+        "\
+error: `Pair` needs `T` to be a `Number`, found `str`
+  --> main.byn:36:8
+   |
+36 |     p: Pair[str] = Pair[str](\"a\", \"b\")
+   |        ^^^^^^^^^ bound not satisfied
+
+error: `Pair` needs `T` to be a `Number`, found `str`
+  --> main.byn:36:20
+   |
+36 |     p: Pair[str] = Pair[str](\"a\", \"b\")
+   |                    ^^^^^^^^^ bound not satisfied
+
+error: `Pair` needs `T` to be a `Number`, found `bool`
+  --> main.byn:37:9
+   |
+37 |     q = Pair[bool].both(True)
+   |         ^^^^^^^^^^ bound not satisfied
+
+error: `Holder` needs `T` to be a `Shape`, found `Plain`
+  --> main.byn:17:11
+   |
+17 |     held: Holder[Plain]
+   |           ^^^^^^^^^^^^^ bound not satisfied
+
+error: `Pair` needs `T` to be a `Number`, found `str`
+  --> main.byn:28:8
+   |
+28 | Text = Pair[str]
+   |        ^^^^^^^^^ bound not satisfied
+
+error: `Pair` needs `T` to be a `Number`, found `bool`
+  --> main.byn:31:13
+   |
+31 | def take(p: Pair[bool]) -> i64:
+   |             ^^^^^^^^^^ bound not satisfied"
+    );
+}

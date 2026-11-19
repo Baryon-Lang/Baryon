@@ -15,10 +15,21 @@ use types::{
 impl<'db> Lowerer<'db> {
     /// What the definition `entry` declares, with the errors found.
     pub(crate) fn declare(mut self, entry: &Entry) -> Checked<'db> {
+        let declaration = self.declaration(entry);
+        Checked {
+            declaration,
+            diagnostics: self.diagnostics,
+        }
+    }
+
+    /// What `entry` declares, with the errors found added to the lowerer's. [`Self::declare`]
+    /// keeps both; the `written_bounds` module reads the definition's annotations again
+    /// through it, for the written type arguments.
+    pub(crate) fn declaration(&mut self, entry: &Entry) -> Declaration<'db> {
         if matches!(entry.kind, Kind::Function | Kind::Class(_)) {
             self.bounds(entry.statement);
         }
-        let declaration = match &entry.kind {
+        match &entry.kind {
             Kind::Function => Declaration::Function(self.signature(entry)),
             Kind::Class(class) if class.base == Base::Enum => self.enumeration(entry.statement),
             Kind::Class(class) if class.base == Base::Protocol => {
@@ -34,10 +45,6 @@ impl<'db> Lowerer<'db> {
             }
             Kind::Constant => self.constant_declaration(entry.statement),
             Kind::Unsupported => Declaration::Alias(self.unknown()),
-        };
-        Checked {
-            declaration,
-            diagnostics: self.diagnostics,
         }
     }
 
