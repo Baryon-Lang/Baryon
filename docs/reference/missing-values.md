@@ -273,12 +273,12 @@ This prints `[0.5 None 1.5]`, then `[1.75 None 3.25]`.
   gap. pandas turns it into `<NA>`.
 - **A column works the same way**, since a column that may hold `None` reads as such an
   array: `quotes.assign(mid=(quotes.bid + quotes.ask) / 2.0)`.
-- **`bids += 1.0` is `bids = bids + 1.0`**, and so for `-=`, `*=`, `/=`, `//=` and `%=`:
+- **`bids += 1.0` is `bids = bids + 1.0`**, and so for `-=`, `*=`, `/=`, `//=`, `%=` and `**=`:
   the variable is given a new array and the old one is freed. The result must keep the
   variable's type, so `counts /= 2` on integers is a compile error, as it is for any
   array. Only a variable takes one: write `quotes.assign(bid=quotes.bid + 1.0)` for a
   column.
-- **Not built yet:** `**` and the bitwise operators.
+- **Not built yet:** the bitwise operators on numbers.
 - **Cost:** floats are one fused loop over the stored values, like any
   [array expression](arrays.md#whole-array-arithmetic), plus one pass over the bitmaps.
   Integers copy the elements that are there out of each array first, compute, and put the
