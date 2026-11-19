@@ -143,14 +143,18 @@ def _single(value: f32) -> str:
     fewest digits that read back as the same `f32`, in scientific form, `1.2345675e+06`,
     from a million up and below 0.0001, and in plain form, `123456.7`, between them.
 
-    `print` writes the same digits and keeps the plain form up to 1e16, so only a plain
-    text of seven or more digits before the point is rewritten."""
+    `print` writes the same digits and keeps the plain form up to 1e16, so a plain text
+    of seven or more digits before the point is rewritten. So is `0.0001`: the nearest
+    `f32` to it is a little below 0.0001, which is where NumPy changes form, by the value
+    and not by its digits."""
     text = f"{value}"
     if "e" in text or "n" in text:
         return text
     sign = "-" if text.startswith("-") else ""
     parts = text.lstrip("-").split(".")
     whole = parts[0].copy()
+    if whole == "0" and parts[1] == "0001":
+        return sign + "1e-04"
     if len(whole) < 7:
         return text
     digits = (whole + parts[1]).rstrip("0")

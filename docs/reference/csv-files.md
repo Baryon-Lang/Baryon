@@ -190,11 +190,6 @@ took 2.5 s, where pandas took 2.0 s.
 - **`to_csv` writes no index column.** pandas writes its row index as a first column unless
   `index=False` is given. A frame has no index here, so the file is the one pandas writes
   with `index=False`.
-- **A float midway between two shortest texts is written with the upper one.** `print`
-  writes the `f32` 45635.3125 as `45635.313`, and so does `to_csv`; NumPy and pandas write
-  `45635.312`, rounding the tie to the even digit. Both read back as the same number. Such
-  ties are common among `f32` values and rare among `f64` values. Roadmap 1.9.62 makes
-  `print` round them to even, and `to_csv` with it.
 - **`to_csv` needs a path.** In pandas, `df.to_csv()` with no path gives the text back.
 
 ## Not built yet
