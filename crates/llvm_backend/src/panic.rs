@@ -251,6 +251,7 @@ pub(crate) fn symbol(operator: mir::BinaryOperator) -> &'static str {
         Operator::Divide => "/",
         Operator::FloorDivide => "//",
         Operator::Remainder => "%",
+        Operator::Power => "**",
         Operator::BitAnd => "&",
         Operator::BitOr => "|",
         Operator::BitXor => "^",

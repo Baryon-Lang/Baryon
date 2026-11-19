@@ -52,6 +52,10 @@ pub enum Invalid {
     /// expression. A view is a borrow and owns no memory, so any of these would store a borrow
     /// or free memory it does not own.
     WholeView(BlockId),
+    /// A block holds [`Power`](crate::BinaryOperator::Power) outside a whole-array expression.
+    /// `**` on two numbers is a call, and array expansion makes one per element, so `Power`
+    /// belongs only in an [`Elementwise`](crate::Elementwise) tree (roadmap 1.9.58).
+    ScalarPower(BlockId),
 }
 
 impl fmt::Display for Invalid {
@@ -130,6 +134,13 @@ impl fmt::Display for Invalid {
                     block.index()
                 )
             }
+            Self::ScalarPower(block) => {
+                write!(
+                    formatter,
+                    "bb{} holds `**` outside a whole-array expression",
+                    block.index()
+                )
+            }
             Self::UnknownUnitStride(block) => {
                 write!(
                     formatter,
@@ -165,6 +176,7 @@ impl Body<'_> {
     /// - a view, a place that ends in a [`Slice`](crate::Projection::Slice), is only borrowed, read
     ///   by [`Length`](crate::Rvalue::Length), a leaf of a whole-array expression or the destination
     ///   of one: never moved, copied whole, dropped or assigned anything else;
+    /// - [`Power`](crate::BinaryOperator::Power) appears only in a whole-array expression;
     /// - each block marked as a `simd` loop header exists, and each block and local that
     ///   [`Body::unit_strides`] names,
     /// - each outlined body keeps these rules too.
@@ -251,6 +263,9 @@ impl Body<'_> {
             }
             if uses.whole_view {
                 problems.push(Invalid::WholeView(id));
+            }
+            if uses.scalar_power {
+                problems.push(Invalid::ScalarPower(id));
             }
             for local in uses.accumulated {
                 if !accumulated.contains(&local) {
