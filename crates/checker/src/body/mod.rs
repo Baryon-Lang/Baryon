@@ -125,7 +125,8 @@ pub(crate) fn check<'db>(
     let Declaration::Function(signature) = &db.declaration(item).declaration else {
         return TypedBody::default();
     };
-    let lowerer = Lowerer::new(db, package, file, entry.class, entry.statement);
+    let mut lowerer = Lowerer::new(db, package, file, entry.class, entry.statement);
+    lowerer.bounds = crate::written_bounds::Bounds::Reported;
     let mut body = Body {
         db,
         tree: lowerer.tree,

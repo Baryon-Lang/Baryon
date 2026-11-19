@@ -6,7 +6,7 @@
 //! against those types, so `[]` is an empty `list[f64]` and `Pair[f64](1, 2)` makes its
 //! literals `f64`. The call is recorded as the struct's constructor, and its type is the struct
 //! with those arguments, which lowering builds as it builds `Box(xs)`. A written type argument
-//! is checked against its parameter's bound, as an inferred one is.
+//! is checked against its parameter's bound as it is lowered (the `written_bounds` module).
 //!
 //! ```text
 //! error: `Pair` needs `T` to be a `Number`, found `str`
@@ -16,9 +16,8 @@ use super::Body;
 use super::calls::Arguments;
 use super::relations;
 use crate::outline::{Base, Kind, outline};
-use crate::traits::bound;
 use database::File;
-use syntax::{NodeId, Role};
+use syntax::NodeId;
 use types::{Callee, Declaration, Item, Mode, Parameter, Signature, Type, TypeKind};
 
 impl<'db> Body<'db> {
@@ -48,7 +47,6 @@ impl<'db> Body<'db> {
         };
         let type_arguments = nominal.arguments.clone();
         let callee = self.tree.text(function, self.text).to_owned();
-        self.written_bounds(function, (file, &parameters), &type_arguments);
         let item = Item::new(self.db, self.lowerer.package, file, name);
         let Declaration::Struct { fields, .. } = self.db.declaration(item).declaration.clone()
         else {
@@ -81,40 +79,5 @@ impl<'db> Body<'db> {
             Callee::Constructor(item),
             arguments,
         ))
-    }
-
-    /// Reports each written type argument of `function` that does not satisfy the bound of
-    /// its parameter in `parameters`, declared in `file`: `Pair[str](...)` for
-    /// `class Pair[T: Number]`, as an inferred `Pair("a", "b")` is reported.
-    fn written_bounds(
-        &mut self,
-        function: NodeId,
-        (file, parameters): (File, &[NodeId]),
-        type_arguments: &[Type<'db>],
-    ) {
-        for (&parameter, &ty) in parameters.iter().zip(type_arguments) {
-            let Some(bound) = bound(self.db, self.lowerer.package, file, parameter) else {
-                continue;
-            };
-            if self.satisfies(bound, ty) {
-                continue;
-            }
-            let class = self
-                .tree
-                .child(function, Role::Value)
-                .map_or("", |class| self.tree.text(class, self.text));
-            let name = self
-                .db
-                .parse(file)
-                .tree()
-                .text(parameter, file.source(self.db).text());
-            let message = format!(
-                "`{class}` needs `{name}` to be a `{}`, found `{}`",
-                bound.name(self.db),
-                self.show(ty)
-            );
-            self.lowerer
-                .error(function, &message, "bound not satisfied", None);
-        }
     }
 }

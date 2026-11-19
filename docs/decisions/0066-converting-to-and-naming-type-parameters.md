@@ -43,7 +43,8 @@ struct until after 0.3.0.
    `Pair[f64](x, y)` with `x: f32` is an error. Writing none keeps today's inference from the
    arguments. The type is not taken from an annotation: `c: Box[f64] = Box([])` stays an error.
    A written type argument is checked against its parameter's bound, as an inferred one is:
-   `Pair[str]("a", "b")` is an error for `class Pair[T: Number]`.
+   `Pair[str]("a", "b")` is an error for `class Pair[T: Number]`, and so is `Pair[str]`
+   written anywhere else, in an annotation or on a class function.
 
 ## Alternatives
 

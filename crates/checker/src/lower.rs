@@ -6,6 +6,7 @@
 //! been reported by the resolver: it lowers to [`TypeKind::Unknown`] without a second error.
 
 use crate::outline::{Base, Kind, outline};
+use crate::written_bounds::Bounds;
 use database::{Definition, File, Package, Resolution};
 use diagnostics::Diagnostic;
 use syntax::{Flags, NodeId, Operator, Role, SyntaxKind, SyntaxTree};
@@ -32,6 +33,9 @@ pub(crate) struct Lowerer<'db> {
     type_parameters: Vec<NodeId>,
     /// The errors found so far, in the order found.
     pub(crate) diagnostics: Vec<Diagnostic>,
+    /// Whether each written type argument of a class is checked against its parameter's bound
+    /// as it is lowered, and where the errors go (the `written_bounds` module).
+    pub(crate) bounds: Bounds,
 }
 
 /// The builtin types that take arguments, each with an example of how to write it.
@@ -106,6 +110,7 @@ impl<'db> Lowerer<'db> {
             self_type,
             type_parameters,
             diagnostics: Vec::new(),
+            bounds: Bounds::Unchecked,
         }
     }
 
@@ -369,11 +374,12 @@ impl<'db> Lowerer<'db> {
                         _ => self.arity(node, written, expected, found),
                     };
                 }
-                let arguments = arguments
+                let arguments: Vec<_> = arguments
                     .unwrap_or_default()
                     .into_iter()
                     .map(|argument| self.lower(argument))
                     .collect();
+                self.written_bounds(node, written, file, &class.type_parameters, &arguments);
                 let nominal = Nominal {
                     file,
                     name,
