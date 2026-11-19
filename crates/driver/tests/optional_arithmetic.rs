@@ -41,6 +41,9 @@ def uses(asks: Array[f64, 1], counts: Array[i64 | None, 1]):
     shared: Array[f64 | None, 1] = counts / counts
     half: Array[f64 | None, 1] = counts / 2
     mixed: Array[f64 | None, 1] = counts * bids
+    squared: Array[f64 | None, 1] = bids ** 2
+    cubed: Array[i64 | None, 1] = counts ** 3
+    raised: Array[f64 | None, 1] = counts ** bids
     present: Array[f64, 1] = (bids + asks).fillna(0.0)
 ";
     assert_eq!(check_one(program), "");
@@ -54,7 +57,7 @@ def uses(grid: Array[f64, 2]):
     counts: Array[i64 | None, 1] = Array([1, None])
     flags: Array[bool | None, 1] = Array([True, None])
     names: Array[str | None, 1] = Array(["a", None])
-    power = bids ** 2.0
+    shifted = counts << 1
     both = flags + flags
     joined = names + names
     wide = bids + grid
@@ -63,18 +66,18 @@ def uses(grid: Array[f64, 2]):
     turned = -flags
     masked = counts & counts
     larger = bids in bids
-    bids **= 2.0
+    counts <<= 1
     counts /= 2
     plain: Array[f64, 1] = bids + 1.0
 "#;
 
 /// What the checker reports for [`MISTAKES`], in source order.
-const EXPECTED: &str = r#"error: `**` is not built for an array with missing values yet
- --> main.byn:6:13
+const EXPECTED: &str = r#"error: `<<` is not built for an array with missing values yet
+ --> main.byn:6:15
   |
-6 |     power = bids ** 2.0
-  |             ^^^^^^^^^^^ an array that may hold `None`
-  = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
+6 |     shifted = counts << 1
+  |               ^^^^^^^^^^^ an array that may hold `None`
+  = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and `**`; the rest comes with roadmap item 3.24
 
 error: `+` cannot combine `Array[bool | None, 1]` and `Array[bool | None, 1]`
  --> main.byn:7:12
@@ -109,7 +112,7 @@ error: `~` is not built for an array with missing values yet
    |
 11 |     flipped = ~counts
    |               ^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and `**`; the rest comes with roadmap item 3.24
 
 error: `-` does not apply to `Array[bool | None, 1]`
   --> main.byn:12:14
@@ -122,21 +125,21 @@ error: `&` is not built for an array with missing values yet
    |
 13 |     masked = counts & counts
    |              ^^^^^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and `**`; the rest comes with roadmap item 3.24
 
 error: `in` is not built for an array with missing values yet
   --> main.byn:14:18
    |
 14 |     larger = bids in bids
    |                  ^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and `**`; the rest comes with roadmap item 3.24
 
-error: `**` is not built for an array with missing values yet
+error: `<<` is not built for an array with missing values yet
   --> main.byn:15:5
    |
-15 |     bids **= 2.0
+15 |     counts <<= 1
    |     ^^^^^^^^^^^^ an array that may hold `None`
-   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//` and `%`; the rest comes with roadmap item 3.13.6
+   = note: an array with missing values has `len`, `print`, `values[i]`, which gives a `T | None` and for numbers and `bool`s can be assigned, `for` loops, slices, masks and arrays of positions, the methods `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`, `nunique`, `count` and, for numbers, `sum`, `min`, `max`, `mean`, `var` and `std`, for `bool`s `sum`, `any` and `all`, for text `min` and `max`, the comparisons, and for numbers `+`, `-`, `*`, `/`, `//`, `%` and `**`; the rest comes with roadmap item 3.24
 
 error: `/=` gives `Array[f64 | None, 1]`, but the target has type `Array[i64 | None, 1]`
   --> main.byn:16:5

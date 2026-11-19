@@ -1,6 +1,6 @@
 //! Arithmetic on arrays with missing values (roadmap 3.13.6, decision 0045), built and run:
-//! `+`, `-`, `*`, `/`, `//`, `%` and unary `-` give `None` wherever a side is `None`, and
-//! what pandas's nullable arrays give everywhere else.
+//! `+`, `-`, `*`, `/`, `//`, `%`, `**` and unary `-` give `None` wherever a side is `None`,
+//! and what pandas's nullable arrays give everywhere else.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -230,6 +230,80 @@ def main():
     );
     assert!(
         report.contains("panic: integer division by zero"),
+        "{report}"
+    );
+    Ok(())
+}
+
+/// `**` and `**=` (roadmap 3.13.14) raise each element to a power, between arrays with
+/// missing values, a plain array and a number, for floats and for integers, in an
+/// expression of several operators and on the columns of a frame. The result is `None`
+/// wherever a side is, with no exception: `None ** 0.0` and `1.0 ** None` are `None`, where
+/// pandas gives 1. An integer power is computed only where both sides are there, so a huge
+/// exponent beside a `None` does not overflow, and a negative exponent that is there stops
+/// the program as it does for plain arrays.
+#[test]
+fn powers_with_gaps() -> io::Result<()> {
+    let program = r"
+class Quote(Struct):
+    bid: f64 | None
+    size: i64 | None
+
+
+def main():
+    a: Array[f64 | None, 1] = Array([1.5, None, 3.0, None])
+    b: Array[f64 | None, 1] = Array([2.0, 2.0, None, 0.0])
+    plain = Array([2.0, 0.5, 1.0, 0.0])
+    print(a ** b)
+    print(a ** 2.0)
+    print(2.0 ** a)
+    print(a ** plain)
+    print(plain ** a)
+    print(a ** 2)
+    print((a + 1.0) ** 2.0 - a ** b)
+    print(1.0 ** a)
+    print(a ** 0.0)
+    n: Array[i64 | None, 1] = Array([2, None, 3037000499, 10])
+    m: Array[i64 | None, 1] = Array([10, 3, None, -1])
+    print(n ** Array([2, 70, 2, 3]))
+    print(Array([3, 2, 2, -2]) ** (m + 1))
+    print(n ** a)
+    c = a ** b
+    c **= 2.0
+    c **= b
+    print(c)
+    k: Array[i64 | None, 1] = Array([2, None, 3])
+    k **= 2
+    k **= k
+    print(k)
+    quotes = DataFrame([Quote(1.5, 2), Quote(None, 3), Quote(2.0, None)])
+    print(quotes.bid ** quotes.size)
+    print(quotes.size ** 2)
+    print(n ** m)
+";
+    let (code, output, report) = run("optional_arithmetic_power", program)?;
+    assert_eq!(code, Some(101));
+    assert_eq!(
+        output,
+        "[2.25 None None None]\n\
+         [2.25 None 9.0 None]\n\
+         [2.8284271247461903 None 8.0 None]\n\
+         [2.25 None 3.0 None]\n\
+         [2.8284271247461903 None 1.0 None]\n\
+         [2.25 None 9.0 None]\n\
+         [4.0 None None None]\n\
+         [1.0 None 1.0 None]\n\
+         [1.0 None 1.0 None]\n\
+         [4 None 9223372030926249001 1000]\n\
+         [177147 16 None 1]\n\
+         [2.8284271247461903 None 2.8011385460385662e+28 None]\n\
+         [25.62890625 None None None]\n\
+         [256 None 387420489]\n\
+         [2.25 None None]\n\
+         [4 9 None]\n"
+    );
+    assert!(
+        report.contains("panic: negative exponent -1 in integer `**`"),
         "{report}"
     );
     Ok(())

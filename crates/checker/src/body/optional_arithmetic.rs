@@ -40,6 +40,7 @@ impl<'db> Body<'db> {
                 | Operator::Divide
                 | Operator::FloorDivide
                 | Operator::Modulo
+                | Operator::Power
         ) {
             return self.optional_array_unbuilt(node, &format!("`{symbol}`"));
         }

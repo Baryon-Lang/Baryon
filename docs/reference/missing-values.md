@@ -238,8 +238,8 @@ def main():
 
 ## Arithmetic
 
-`+`, `-`, `*`, `/`, `//` and `%`, and `-bids`, work element by element on numbers, and give
-`None` wherever a side is `None`, as pandas's nullable columns do:
+`+`, `-`, `*`, `/`, `//`, `%` and `**`, and `-bids`, work element by element on numbers, and
+give `None` wherever a side is `None`, as pandas's nullable columns do:
 
 ```python
 def main():
@@ -264,16 +264,21 @@ This prints `[0.5 None 1.5]`, then `[1.75 None 3.25]`.
   and `//` and `%` by a zero that is there stop the program.
 - **`/` of two integers gives floats**, as it does for plain arrays, and `inf` or `NaN` for
   a zero divisor that is there.
+- **`**` has no exception to the rule.** `bids ** 0.0` and `1.0 ** bids` are `None` where
+  `bids` is. pandas gives 1 for both, since any number to the power 0 is 1 and 1 to any
+  power is 1. Fill the gaps first to get that, `bids.fillna(1.0) ** 0.0`. A negative
+  integer exponent that is there stops the program, as it does for
+  [plain arrays](arrays.md#whole-array-arithmetic).
 - **A `NaN` the arithmetic makes stays a `NaN`.** `2.5 % 0.0` is `NaN`, a number, and not a
   gap. pandas turns it into `<NA>`.
 - **A column works the same way**, since a column that may hold `None` reads as such an
   array: `quotes.assign(mid=(quotes.bid + quotes.ask) / 2.0)`.
-- **`bids += 1.0` is `bids = bids + 1.0`**, and so for `-=`, `*=`, `/=`, `//=` and `%=`:
+- **`bids += 1.0` is `bids = bids + 1.0`**, and so for `-=`, `*=`, `/=`, `//=`, `%=` and `**=`:
   the variable is given a new array and the old one is freed. The result must keep the
   variable's type, so `counts /= 2` on integers is a compile error, as it is for any
   array. Only a variable takes one: write `quotes.assign(bid=quotes.bid + 1.0)` for a
   column.
-- **Not built yet:** `**` and the bitwise operators.
+- **Not built yet:** the bitwise operators on numbers.
 - **Cost:** floats are one fused loop over the stored values, like any
   [array expression](arrays.md#whole-array-arithmetic), plus one pass over the bitmaps.
   Integers copy the elements that are there out of each array first, compute, and put the
@@ -400,7 +405,8 @@ def main():
 
 Each of these is a compile error that names what an array with missing values has today:
 
-- `**` and the bitwise operators, and an in-place operator on a column, `quotes.bid += 1.0`;
+- the bitwise operators and the shifts, and an in-place operator on a column,
+  `quotes.bid += 1.0`;
 - methods other than `isna`, `notna`, `dropna`, `fillna`, `copy`, `argsort`, `unique`,
   `nunique`, `count`, `sum`, `mean`, `min`, `max`, `var` and `std`;
 - assigning an element of text;
@@ -408,5 +414,4 @@ Each of these is a compile error that names what an array with missing values ha
 - one as a struct field;
 - more than one dimension: `Array[f64 | None, 2]`.
 
-`**` is roadmap row 3.13.14. The rest is part of row 3.24, missing values in arrays of every
-rank.
+They are part of roadmap row 3.24, missing values in arrays of every rank.
