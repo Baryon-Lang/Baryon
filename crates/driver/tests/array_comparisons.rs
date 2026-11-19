@@ -276,3 +276,39 @@ error: expected `f64`, found `Array[i32, 1]`
   |                  ^^^^^^^^^^^^^ the annotation says `f64`"
     );
 }
+
+/// `<<` and `>>` are not element-wise (roadmap 1.9.64): with an array on either side, or in
+/// place on one, each is an error at the operation. Before, the checker let it through and the
+/// build stopped in lowering.
+#[test]
+fn shifts_on_arrays_are_reported() {
+    let program = r"def shifts(a: InOut[Array[i64, 1]], x: Fixed[i64, (2,)]) -> i64:
+    b = a << 1
+    c = 1 >> x
+    a <<= 2
+    return 3 << 1
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `<<` does not apply to arrays
+ --> main.byn:2:9
+  |
+2 |     b = a << 1
+  |         ^^^^^^ an array
+  = note: a shift applies to single whole numbers: shift each element in a loop
+
+error: `>>` does not apply to arrays
+ --> main.byn:3:9
+  |
+3 |     c = 1 >> x
+  |         ^^^^^^ an array
+  = note: a shift applies to single whole numbers: shift each element in a loop
+
+error: `<<` does not apply to arrays
+ --> main.byn:4:5
+  |
+4 |     a <<= 2
+  |     ^^^^^^^ an array
+  = note: a shift applies to single whole numbers: shift each element in a loop"
+    );
+}
