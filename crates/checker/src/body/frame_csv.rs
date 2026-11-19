@@ -1,4 +1,5 @@
-//! CSV files read into a frame (decision 0045, roadmap 3.14.4): `DataFrame.read_csv(path)`.
+//! CSV files read into a frame and written from one (decision 0045, roadmap 3.14.4):
+//! `DataFrame.read_csv(path)` and `df.to_csv(path)`.
 //!
 //! A compiled program cannot learn a file's columns when it runs, so the schema comes from
 //! the context, as the rank of `Array.loadtxt` does (decision 0043):
@@ -14,8 +15,12 @@
 //! read, and with `ValueError`, when the header lacks a column or a cell is not a value of
 //! its column's type.
 //!
-//! The first version takes the path alone: every keyword `pandas.read_csv` has is an error
-//! that names it, never silently ignored.
+//! `df.to_csv(path)` writes a frame as such a file, the bytes
+//! `pandas.DataFrame.to_csv(path, index=False)` writes: a frame has no row index (decision
+//! 0045), so no index column is written. It can fail with `OSError`.
+//!
+//! The first version of each takes the path alone: every keyword pandas has is an error that
+//! names it, never silently ignored.
 
 use super::Body;
 use super::calls::Arguments;
@@ -126,6 +131,86 @@ impl<'db> Body<'db> {
                     Primitive::Bool
                         | Primitive::Float(Float::F64)
                         | Primitive::Integer(Integer::I64)
+                )
+        )
+    }
+
+    /// The call `node` of `to_csv` on a frame of type `base`: nothing, after checking the
+    /// path and that every column is of a type the writer has, a number other than `f32`
+    /// and complex, a `bool` or a `str`, or one of them or `None`. `None`, with nothing
+    /// checked, for any other method.
+    pub(super) fn csv_method(
+        &mut self,
+        node: NodeId,
+        base: Type<'db>,
+        callee: &str,
+        arguments: &Arguments,
+    ) -> Option<Type<'db>> {
+        if callee != "to_csv" {
+            return None;
+        }
+        let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
+            return None;
+        };
+        if let Some(&(keyword, _)) = arguments.keywords.first() {
+            self.untyped(arguments);
+            let message = format!(
+                "`to_csv` does not take `{}` yet",
+                self.tree.text(keyword, self.text)
+            );
+            let hint = "this version writes a comma-separated file with a header row and no \
+                        index column, given its path alone";
+            return Some(
+                self.lowerer
+                    .error(keyword, &message, "not built yet", Some(hint)),
+            );
+        }
+        let &[path] = arguments.positional.as_slice() else {
+            self.untyped(arguments);
+            return Some(self.lowerer.error(
+                node,
+                "`to_csv` takes the path of the file to write",
+                "wrong arguments",
+                Some("for example `trades.to_csv(\"trades.csv\")`"),
+            ));
+        };
+        let str = Type::new(self.db, TypeKind::Str);
+        let found = self.expression(path, Some(str));
+        self.expect(path, str, found, "a path is");
+        for column in columns {
+            if !self.is_written_element(column.element) {
+                let message = format!(
+                    "`to_csv` cannot write the column `{}` of type `{}` yet",
+                    column.name,
+                    self.show(column.element)
+                );
+                return Some(self.lowerer.error(
+                    node,
+                    &message,
+                    "not built yet",
+                    Some(
+                        "a column of `f64`, of whole numbers, of `bool` or of `str` is \
+                         written, and one of those that may be `None`",
+                    ),
+                ));
+            }
+        }
+        let nothing = Type::new(self.db, TypeKind::None);
+        Some(self.raises_library_error(node, nothing, "OSError"))
+    }
+
+    /// Whether `to_csv` writes a column whose elements are `element`s: an `f64`, a whole
+    /// number, a `bool` or a `str`, or one of them or `None`.
+    fn is_written_element(&self, element: Type<'db>) -> bool {
+        let element = match element.kind(self.db) {
+            TypeKind::Optional(value) => *value,
+            _ => element,
+        };
+        matches!(
+            element.kind(self.db),
+            TypeKind::Str
+                | TypeKind::Primitive(
+                    Primitive::Bool | Primitive::Float(Float::F64) | Primitive::Integer(_)
                 )
         )
     }

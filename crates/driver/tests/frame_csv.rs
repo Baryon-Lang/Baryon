@@ -1,6 +1,6 @@
-//! Checking `DataFrame.read_csv` (decision 0045, roadmap 3.14.4), end to end: programs that
-//! call it go through the parser, the syntax check, the resolver and the checker, and the
-//! rendered diagnostics are compared in full.
+//! Checking `DataFrame.read_csv` and `to_csv` (decision 0045, roadmap 3.14.4), end to end:
+//! programs that call them go through the parser, the syntax check, the resolver and the
+//! checker, and the rendered diagnostics are compared in full.
 
 use driver::Session;
 
@@ -136,5 +136,69 @@ error: `DataFrame.read_csv` can fail with `ValueError`, which is not handled her
 21 |     trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv")
    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ can fail with `ValueError`
    = note: catch it with `try:` and `except ValueError:`, or let it pass on by declaring `-> Raises[None, ValueError]`"#;
+    assert_eq!(check_one(program), expected);
+}
+
+/// `to_csv` checks with a path alone, in a function that lets `OSError` pass on. A keyword of
+/// pandas that is not built, no path, a path that is not text, a column type the writer does
+/// not have and an `OSError` that is not handled are each named.
+#[test]
+fn writing_a_file_checks() {
+    let program = r#"
+class Trade(Struct):
+    symbol: str
+    price: f64 | None
+
+
+class Sample(Struct):
+    width: f32
+    count: i64
+
+
+def save(trades: DataFrame[Trade], samples: DataFrame[Sample]) -> Raises[None, OSError]:
+    trades.to_csv("trades.csv")
+    trades.to_csv("trades.csv", index=False)
+    trades.to_csv()
+    trades.to_csv(3)
+    samples.to_csv("samples.csv")
+
+
+def main():
+    trades = DataFrame({"symbol": Array(["A"]), "price": Array([1.5, None])})
+    trades.to_csv("trades.csv")
+"#;
+    let expected = r#"error: `to_csv` does not take `index` yet
+  --> main.byn:13:33
+   |
+13 |     trades.to_csv("trades.csv", index=False)
+   |                                 ^^^^^ not built yet
+   = note: this version writes a comma-separated file with a header row and no index column, given its path alone
+
+error: `to_csv` takes the path of the file to write
+  --> main.byn:14:5
+   |
+14 |     trades.to_csv()
+   |     ^^^^^^^^^^^^^^^ wrong arguments
+   = note: for example `trades.to_csv("trades.csv")`
+
+error: expected `str`, found `i64`
+  --> main.byn:15:19
+   |
+15 |     trades.to_csv(3)
+   |                   ^ a path is `str`
+
+error: `to_csv` cannot write the column `width` of type `f32` yet
+  --> main.byn:16:5
+   |
+16 |     samples.to_csv("samples.csv")
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not built yet
+   = note: a column of `f64`, of whole numbers, of `bool` or of `str` is written, and one of those that may be `None`
+
+error: `trades.to_csv` can fail with `OSError`, which is not handled here
+  --> main.byn:21:5
+   |
+21 |     trades.to_csv("trades.csv")
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ can fail with `OSError`
+   = note: catch it with `try:` and `except OSError:`, or let it pass on by declaring `-> Raises[None, OSError]`"#;
     assert_eq!(check_one(program), expected);
 }

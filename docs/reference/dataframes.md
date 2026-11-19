@@ -118,6 +118,7 @@ the context to name the type, as `empty: DataFrame[Trade] = DataFrame([])` does.
 `DataFrame.read_csv(path)` reads a frame from a [CSV file](csv-files.md), its columns found by
 the names of the schema's fields. The context names the type here too:
 `trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv")`.
+`trades.to_csv("trades.csv")` writes a frame as such a file, with no index column.
 
 ## Columns
 

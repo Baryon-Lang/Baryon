@@ -1,10 +1,11 @@
-//! CSV files read into a frame (decision 0045, roadmap 3.14.4), built and run:
-//! `DataFrame.read_csv(path)` reads a file as `pandas.read_csv` reads it with its defaults,
-//! into the columns the frame's type names, and raises `OSError` or `ValueError` when it
-//! cannot.
+//! CSV files read into a frame and written from one (decision 0045, roadmap 3.14.4), built
+//! and run: `DataFrame.read_csv(path)` reads a file as `pandas.read_csv` reads it with its
+//! defaults, into the columns the frame's type names, and raises `OSError` or `ValueError`
+//! when it cannot. `df.to_csv(path)` writes the bytes
+//! `pandas.DataFrame.to_csv(path, index=False)` writes.
 //!
 //! The values each test expects were checked against pandas 3.0.5 reading the same bytes
-//! with `dtype=` set to the schema's types.
+//! with `dtype=` set to the schema's types, and writing the same columns.
 
 use super::{Scratch, baryon_build, package, stderr};
 use std::io;
@@ -164,5 +165,74 @@ def main() -> Raises[None, OSError | ValueError]:
     assert_eq!(
         String::from_utf8_lossy(&ran.stdout),
         "[1.5 nan nan]\n[2.5 None nan]\n"
+    );
+}
+
+/// `to_csv` writes the bytes `pandas.DataFrame.to_csv(path, index=False)` writes for the same
+/// columns: text quoted only where it holds a comma, a double quote or a line end, a float
+/// as its shortest text, NaN and `None` as empty cells, whole numbers of any width and
+/// `True` and `False`. A frame of one column writes an empty cell as `""`, a frame of no
+/// rows writes its header alone, and the file reads back with `read_csv`. A path that cannot
+/// be written raises `OSError`.
+#[test]
+fn frames_are_written_as_pandas_writes_them() {
+    let body = "\
+class Row(Struct):
+    name: str
+    bid: f64 | None
+    volume: i64
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    small: Array[i32, 1] = Array([1, -2, 3, 4])
+    byte: Array[u8, 1] = Array([255, 0, 7, 9])
+    frame = DataFrame({
+        \"name\": Array([\"AAPL\", \"BRK,B\", \"say \\\"hi\\\"\", \"\"]),
+        \"note\": Array([\"a\", None, \"two\\nlines\", \"\"]),
+        \"price\": Array([189.5, float(\"nan\"), 1e-7, 100.0]),
+        \"bid\": Array([1.0, None, 2.5e20, -0.0]),
+        \"volume\": Array([100, -3, 0, 9007199254740993]),
+        \"lots\": Array([1, None, 3, 4]),
+        \"small\": small,
+        \"byte\": byte,
+        \"live\": Array([True, False, True, True]),
+        \"seen\": Array([True, None, False, None]),
+    })
+    frame.to_csv(\"out.csv\")
+    back: DataFrame[Row] = DataFrame.read_csv(\"out.csv\")
+    print(back.name)
+    print(back.bid)
+    print(back.volume)
+    one = DataFrame({\"only\": Array([\"x\", \"\", \"z\"])})
+    one.to_csv(\"one.csv\")
+    none = frame[frame.price > 1e300]
+    none.to_csv(\"none.csv\")
+    try:
+        frame.to_csv(\"absent/out.csv\")
+    except OSError as error:
+        print(error.filename, error.errno)
+";
+    let (ran, directory) = run("csv_write", body, &[]).unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "['AAPL' 'BRK,B' 'say \"hi\"' '']\n\
+         [1.0 None 2.5e+20 -0.0]\n\
+         [             100               -3                0 9007199254740993]\n\
+         absent/out.csv 2\n"
+    );
+    let written = |name: &str| std::fs::read_to_string(directory.join("package").join(name));
+    assert_eq!(
+        written("out.csv").unwrap(),
+        "name,note,price,bid,volume,lots,small,byte,live,seen\n\
+         AAPL,a,189.5,1.0,100,1,1,255,True,True\n\
+         \"BRK,B\",,,,-3,,-2,0,False,\n\
+         \"say \"\"hi\"\"\",\"two\nlines\",1e-07,2.5e+20,0,3,3,7,True,False\n\
+         ,,100.0,-0.0,9007199254740993,4,4,9,True,\n"
+    );
+    assert_eq!(written("one.csv").unwrap(), "only\nx\n\"\"\nz\n");
+    assert_eq!(
+        written("none.csv").unwrap(),
+        "name,note,price,bid,volume,lots,small,byte,live,seen\n"
     );
 }

@@ -17,7 +17,7 @@ formats one at a time, those that need no outside library first.
 | Format | Read | Write |
 | --- | --- | --- |
 | [Text tables](#text-tables) of numbers: CSV, whitespace-separated columns | `Array.loadtxt(fname)` | `Array.savetxt(fname, X)` |
-| [CSV files](csv-files.md) with a header row and columns of mixed types | `DataFrame.read_csv(path)` | not yet (roadmap 3.14.4) |
+| [CSV files](csv-files.md) with a header row and columns of mixed types | `DataFrame.read_csv(path)` | `df.to_csv(path)` |
 | [`.npy` files](#npy-files), NumPy's own format | `Array.load(file)` | `Array.save(file, arr)` |
 | [FITS images and headers](#fits-files), astronomy's format | `fits.getdata(filename)`, `fits.getheader(filename)` | `fits.writeto(filename, data, header)` |
 | [NetCDF files](#netcdf-files), classic and NetCDF-4, the format of climate and weather data | `Dataset(filename).variables[name][:]` | `ds.variables[name][:] = values`, classic formats only |
