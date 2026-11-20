@@ -6,10 +6,10 @@ Roadmap: 1.17
 
 ## Context
 
-The Phase 1 gate says a program "edits in VS Code with live diagnostics", and Collins asked for
-the easiest way to support the language in an editor, with syntax highlighting a must. Roadmap
-item 1.17 is the VS Code extension. Three choices in it are hard to reverse or reach past one
-crate, so they get a record (`CONTRIBUTING.md` rule 7). None of them changes the language.
+The Phase 1 gate says a program "edits in VS Code with live diagnostics", and the chief designer
+asked for the easiest way to support the language in an editor, with syntax highlighting a must.
+Roadmap item 1.17 is the VS Code extension. Three choices in it are hard to reverse or reach past
+one crate, so they get a record (`CONTRIBUTING.md` rule 7). None of them changes the language.
 
 1. **Which editor?** A Baryon IDE of our own would be months of work that VS Code, the most used
    editor among the scientists we write for, already does. Any editor with a Language Server
@@ -45,8 +45,8 @@ crate, so they get a record (`CONTRIBUTING.md` rule 7). None of them changes the
   struct types, parameter modes, `Raises`, the traits, `prange` and `simd` with scopes every color
   theme already styles. It skips strings, comments and f-strings.
 - **The extension is packaged as a `.vsix` file and installed from it.** Publishing to the
-  Visual Studio Marketplace waits for Collins, because it puts the name and the `baryon-lang`
-  publisher in public.
+  Visual Studio Marketplace waits for the chief designer, because it puts the name and the
+  `baryon-lang` publisher in public.
 - **The language server client, the second half of 1.17, is plain JavaScript on Microsoft's
   `vscode-languageclient` package**, the client nearly every VS Code language extension uses.
   Writing the protocol's client side ourselves would duplicate a maintained library for no gain,

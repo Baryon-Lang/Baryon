@@ -125,8 +125,8 @@ impl<'db> Body<'db> {
     /// `rank` is the shape's rank, when it is known, for the array type the hint writes out.
     ///
     /// A union has no zero or one of its own, and picking a member to stand for it would choose
-    /// a value the program never wrote (Collins, 2026-11-13, row 1.9.33). The error points to
-    /// the two ways that state the members: a list of them with the array type written out, or
+    /// a value the program never wrote (chief designer, 2026-11-13, row 1.9.33). The error points
+    /// to the two ways that state the members: a list of them with the array type written out, or
     /// `Array.fill` with one. Lifting the error later breaks no program.
     pub(super) fn union_has_no_zero(
         &mut self,

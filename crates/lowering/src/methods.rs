@@ -180,7 +180,7 @@ impl<'db> Builder<'db> {
     /// panics, through a [`Check::NotEmpty`], since it has no smallest element. A float NaN
     /// anywhere gives NaN, as `numpy.min` does: a NaN element replaces the best so far, and
     /// nothing compares smaller or larger than a NaN to replace it. A list follows the same
-    /// rule rather than Python's, whose answer depends on where the NaN is (Collins,
+    /// rule rather than Python's, whose answer depends on where the NaN is (chief designer,
     /// 2026-11-10).
     pub(crate) fn array_extreme(
         &mut self,

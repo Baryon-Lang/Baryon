@@ -1,6 +1,6 @@
 # Building a New Compiled Language: Technical Plan
 
-First written Nov 4, 2026 by Collins Simpson. Brought up to date with decision records 0004 to
+First written Nov 4, 2026 by the chief designer. Brought up to date with decision records 0004 to
 0016 on Nov 6, 2026, and with records 0017 to 0023 on Nov 8, 2026.
 
 This plan explains why the language and its compiler are shaped the way they are. It is not where
@@ -305,7 +305,7 @@ tooling on top of the language, which is why it can follow the MVP without reope
   on top of it (roadmap 3.11, 3.12). Without it the analytics half is not credible.
 - **Python interop** (roadmap 3.17, Phase 4): call Python libraries that will never be rewritten,
   and exchange arrays with zero copy. It comes late, after Phase 2 and the native libraries:
-  native Baryon is how most work gets done (Collins, 2026-11-12). Idea
+  native Baryon is how most work gets done (chief designer, 2026-11-12). Idea
   [I.5](../../ROADMAP.md#ideas), exporting functions to Python in Phase 2, was dropped for the
   same reason.
 

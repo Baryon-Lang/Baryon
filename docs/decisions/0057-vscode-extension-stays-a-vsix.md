@@ -14,7 +14,7 @@ and a Marketplace version could advertise features ahead of the latest released 
 ## Decision
 
 The extension is not published on the Marketplace yet. It stays a `.vsix` file attached to each
-release, and the question is revisited closer to 1.0. Collins chose this on 2026-11-13.
+release, and the question is revisited closer to 1.0. The chief designer chose this on 2026-11-13.
 
 ## Consequences
 

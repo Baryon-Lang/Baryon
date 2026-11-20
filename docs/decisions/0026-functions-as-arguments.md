@@ -107,8 +107,8 @@ Each of these is a checker error that names this record, never a miscompile:
 
 ## Amendment, 2026-11-19: variadic generics for `args=`
 
-Collins accepted this amendment on 2026-11-19 (card 42, variadic generics; card 44, points 1 and
-2). It is built in roadmap row 3.19.2.
+The chief designer accepted this amendment on 2026-11-19 (card 42, variadic generics; card 44,
+points 1 and 2). It is built in roadmap row 3.19.2.
 
 SciPy passes a callback's extra parameters as a tuple, which it spreads into the call:
 `solve_ivp(lorenz, (0, 40), y0, args=(10.0, 28.0, 8 / 3))` calls

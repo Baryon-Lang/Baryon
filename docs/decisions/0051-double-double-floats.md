@@ -1,6 +1,6 @@
 # 0051. Double-double floats are an `f64x2` struct in `math`, with methods until operators exist
 
-Status: Accepted (Collins, 2026-11-13)
+Status: Accepted (chief designer, 2026-11-13)
 Date: 2026-11-13
 Roadmap: 3.33
 
@@ -16,9 +16,9 @@ operation, because neither x86_64 nor Apple silicon has one in hardware, and Bar
 
 Baryon cannot yet let a struct define `+` or `*` (roadmap D.19), and a struct has no functions
 called on the class itself, such as `f64x2.of(x)`. So the question was how the type is spelled
-until operators exist. Collins chose among three options on 2026-11-13: methods on an `f64x2`
-struct imported from `math` (this record), functions in a module of their own, such as
-`dd.add(a, b)`, or waiting for D.19 and building nothing yet. He took the first.
+until operators exist. The chief designer chose among three options on 2026-11-13: methods on an
+`f64x2` struct imported from `math` (this record), functions in a module of their own, such as
+`dd.add(a, b)`, or waiting for D.19 and building nothing yet. The first was chosen.
 
 ## Decision
 
@@ -53,10 +53,10 @@ struct imported from `math` (this record), functions in a module of their own, s
 
 ## Amendment, 2026-11-14: `f64x2.of(x)`, as chosen
 
-This corrects the record to match Collins's choice. The card he answered, asked on
+This corrects the record to match the chief designer's choice. The card, asked on
 2026-11-12 in the extended-precision sums work, listed `f64x2.of(x)` in its recommended option
 ("`a.add(b)`, `a.mul(b)`, `a.sqrt()`, `a.lt(b)`, `f64x2.of(x)`, `a.to_f64()`, `a.to_str()`"),
-and he took that recommendation on 2026-11-13. Point 2 shipped only the constructor because a
+and that recommendation was taken on 2026-11-13. Point 2 shipped only the constructor because a
 struct had no functions called on its class then. Row 1.9.28
 ([#398](https://github.com/Baryon-Lang/Baryon/pull/398)) made such functions work, so `f64x2`
 now has `of` as chosen (roadmap 3.33.1):

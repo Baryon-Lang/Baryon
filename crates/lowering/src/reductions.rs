@@ -3,7 +3,7 @@
 //! of two or more numbers by comparing each in turn.
 //!
 //! A list sums as CPython 3.12 sums it, so a program ported from Python gets the same bits
-//! (Collins, 2026-11-10):
+//! (chief designer, 2026-11-10):
 //!
 //! - Integers, with an integer start, add exactly from the first, each `+` checked for overflow
 //!   as the operator is (decision 0030).

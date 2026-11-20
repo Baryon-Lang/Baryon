@@ -1,7 +1,7 @@
 //! Arithmetic on arrays with missing values (decision 0045, part 3): `bids + asks`,
 //! `bids * 2.0` and `-bids` give an array with missing values that is `None` wherever a
 //! side is `None`, as pandas's nullable columns do. A comparison, `bids > 1.0`, gives an
-//! `Array[bool | None, 1]` the same way (Collins, 2026-11-14): `None` where a side is. Two
+//! `Array[bool | None, 1]` the same way (chief designer, 2026-11-14): `None` where a side is. Two
 //! such masks combine with `&`, `|` and `^`, and `~` turns one around, by pandas's rules.
 
 use super::{Body, numbers, relations};

@@ -36,7 +36,7 @@ The options:
 
 ## Decision
 
-Option 1, a built-in `ValueError`, as Python. Collins chose this on 2026-11-10.
+Option 1, a built-in `ValueError`, as Python. The chief designer chose this on 2026-11-10.
 
 ```python
 class ValueError(Exception):
