@@ -1,6 +1,6 @@
 # 0052. HDF5 files are read with h5py's names
 
-Status: Accepted (Collins, 2026-11-13), amended 2026-11-13 and 2026-11-14
+Status: Accepted (chief designer, 2026-11-13), amended 2026-11-13 and 2026-11-14
 Date: 2026-11-12
 Roadmap: 3.14.6.1
 
@@ -35,9 +35,9 @@ and what a missing name, a bad subscript or a filter Baryon does not have raises
 is new: the codecs are written in Baryon (decision 0049), while the file's structure is
 binary, and the runtime reads binary structures fastest.
 
-Collins chose among three options on 2026-11-13: h5py's names (this record), a Baryon-only
-`hdf5` module shaped like `netCDF4`, or HDF5 only through `netCDF4.Dataset`. He took the
-first.
+The chief designer chose among three options on 2026-11-13: h5py's names (this record), a
+Baryon-only `hdf5` module shaped like `netCDF4`, or HDF5 only through `netCDF4.Dataset`. The first
+was chosen.
 
 ## Decision
 
@@ -101,9 +101,9 @@ first.
 
 ## Amendment, 2026-11-13: the module is `h5by`
 
-Collins set this rule on 2026-11-13: no Baryon name contains "py"; a name taken from a Python
-package uses a short Baryon abbreviation instead. The coordinator picked `by`, as in `.byn`. So
-the module of point 1 is `h5by`, not `h5py`: a program writes `import h5by`, `h5by.File(path)`,
+The chief designer set this rule on 2026-11-13: no Baryon name contains "py"; a name taken from a
+Python package uses a short Baryon abbreviation instead. The coordinator picked `by`, as in `.byn`.
+So the module of point 1 is `h5by`, not `h5py`: a program writes `import h5by`, `h5by.File(path)`,
 and gives a lookup the type `h5by.Group` or `h5by.Dataset`.
 
 Everything inside the module keeps h5py's names and behavior, as point 1 says: `f[name]`,
@@ -113,8 +113,8 @@ reference and this record still name h5py where they mean the Python library.
 
 ## Amendment, 2026-11-14: writing
 
-Point 7 left writing to row 3.14.6.2. Collins settled what it writes on 2026-11-13 (card 22)
-and narrowed it on 2026-11-14 (card 35):
+Point 7 left writing to row 3.14.6.2. The chief designer settled what it writes on 2026-11-13 (card
+22) and narrowed it on 2026-11-14 (card 35):
 
 1. **`h5by.File(path, "w")` writes h5py's default layout**, the "earliest" one: a version 0
    superblock, version 1 object headers, symbol table groups and version 1 B-trees. The

@@ -17,8 +17,8 @@ impl<'db> Builder<'db> {
     ///
     /// Floats are added in `NumPy`'s pairwise tree, by a call of [`Builtin::Sum`], so the result
     /// has the same bits as `numpy.sum` and rounding error grows only with the logarithm of the
-    /// length (Collins, 2026-11-08, roadmap I.22). Integers are added in a loop nest from 0 in
-    /// row-major order (decision 0008), since integer addition is exact in any order; each
+    /// length (chief designer, 2026-11-08, roadmap I.22). Integers are added in a loop nest from 0
+    /// in row-major order (decision 0008), since integer addition is exact in any order; each
     /// addition is checked for overflow as `+` is, so a debug build panics and a release build
     /// wraps (decision 0030). An empty array sums to 0. The sum of a whole-array expression,
     /// such as `(a * b).sum()`, of floats or integers, is left to array expansion, which adds in

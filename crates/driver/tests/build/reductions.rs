@@ -36,7 +36,8 @@ def main():
 }
 
 /// A NaN anywhere in a list makes its `min` and `max` NaN, as for an array, wherever the NaN
-/// is (Collins, 2026-11-10); Python's answer would depend on the order. An empty list panics.
+/// is (chief designer, 2026-11-10); Python's answer would depend on the order. An empty list
+/// panics.
 #[test]
 fn min_of_a_list_with_nan_is_nan_and_of_an_empty_list_panics() {
     let program = r"

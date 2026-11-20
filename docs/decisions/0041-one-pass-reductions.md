@@ -13,8 +13,8 @@ array is summed: one allocation, `n` writes and `n` reads more than the sum need
 which computes the same bits without the array, 3.3 ms.
 
 The result must keep its bits. `a.sum()` of floats adds in NumPy's pairwise tree (roadmap I.22,
-Collins, 2026-11-08), so `(a * b).sum()` has the bits of `numpy.sum(a * b)`. Adding one element
-at a time would be one pass, but different bits, and more rounding error.
+chief designer, 2026-11-08), so `(a * b).sum()` has the bits of `numpy.sum(a * b)`. Adding one
+element at a time would be one pass, but different bits, and more rounding error.
 
 NumPy's tree splits a run of more than 128 values at the multiple of 8 nearest below its middle,
 and adds a run of at most 128, a *leaf*, in 8 running totals. The leaves depend only on the
@@ -77,7 +77,7 @@ stack.
 
 ## Amendment, 2026-11-19: integer sums and sums along an axis
 
-Collins accepted this amendment on 2026-11-19 (roadmap 3.9.1, idea I.46).
+The chief designer accepted this amendment on 2026-11-19 (roadmap 3.9.1, idea I.46).
 
 The two cases the record left out still store the expression: `(a * b + r).sum()` of integers
 and `((u - v) * (u - v)).sum(axis=0)`. Measured with the release driver on 4 million elements,

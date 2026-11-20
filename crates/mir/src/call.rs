@@ -236,7 +236,7 @@ pub enum Builtin {
     /// has type `None`. The elements are numbers, `bool`s or `str`s, which Python orders: numbers
     /// by value, `str`s by code point with a prefix first. The sort is stable, also from the
     /// largest, so equal elements keep their order, as Python's does, and every float NaN goes
-    /// last either way, as `numpy.sort` puts it (Collins, 2026-11-10). It is a merge sort:
+    /// last either way, as `numpy.sort` puts it (chief designer, 2026-11-10). It is a merge sort:
     /// O(n log n) comparisons and a buffer of half the list. The call cannot fail.
     Sort,
     /// `round(x, digits)` (roadmap 1.13.13): two arguments, each passed `Owned`, the number, an

@@ -1,6 +1,6 @@
 # 0045. A `DataFrame` has a schema the compiler checks, columns that are arrays, and pandas's names
 
-Status: Accepted (Collins, 2026-11-12)
+Status: Accepted (chief designer, 2026-11-12)
 Date: 2026-11-11
 Roadmap: 3.13, 3.13.1 to 3.13.10, 3.14.4, D.21
 
@@ -25,8 +25,8 @@ The forces:
 3. **The language has no closures, no operators on user types (D.19), no reference counting and
    no run-time type information.** pandas leans on all four: `df.apply(lambda ...)`, `Series`
    arithmetic, buffers shared between frames, and columns whose type is found at run time.
-4. **Collins's standing choices.** Native first, never wrapped Python. Library names stay the
-   ones Python users know wherever the behavior is the same (decisions 0039, 0040, 0042, 0043).
+4. **The chief designer's standing choices.** Native first, never wrapped Python. Library names stay
+   the ones Python users know wherever the behavior is the same (decisions 0039, 0040, 0042, 0043).
    A large copy is never hidden (the `dict.get` choice of 1.13.14).
 5. **Missing values are open (D.21)**, and a table cannot be read from a real file without them.
 
@@ -64,8 +64,8 @@ and runs on today's compiler, and it found what is missing:
 
 ## Decision
 
-Collins accepted this on 2026-11-12, choosing the schema in the type over columns found at run
-time, `None` with a validity bit over `NaN` as missing and over masked arrays, and pandas's
+The chief designer accepted this on 2026-11-12, choosing the schema in the type over columns found
+at run time, `None` with a validity bit over `NaN` as missing and over masked arrays, and pandas's
 names without a row index over Polars's names and over a row index.
 
 ### 1. The schema is part of the type (way A)
@@ -168,13 +168,13 @@ One form serves arrays and tables: an element type `T | None`.
 `unique()` and `nunique()` are methods of a rank-1 array, so `df.symbol.unique()` reads as it
 does in pandas, and `unique` gives the values in the order they first appear, as pandas does
 and `np.unique` does not. `df.value_counts("symbol")` is a method of the frame and gives a frame
-with the columns `symbol` and `count`. Collins chose this on 2026-11-13 over NumPy's sorted
-order and over methods of the frame only.
+with the columns `symbol` and `count`. The chief designer chose this on 2026-11-13 over NumPy's
+sorted order and over methods of the frame only.
 
 `df.describe()` gives a frame whose first column, `statistic`, a column of `str`, holds the
 names pandas has as its row index (`count`, `mean`, `std`, `min`, `25%`, `50%`, `75%`,
 `max`), followed by one `f64` column for each column of numbers under its own name. Polars
-lays `describe` out the same way. Collins chose this on 2026-11-13 over one row for each
+lays `describe` out the same way. The chief designer chose this on 2026-11-13 over one row for each
 column and over leaving `describe` out until frames have row labels.
 
 `DataFrame` and `concat` are built-in names, as `Array` is. `read_csv` takes its schema from the

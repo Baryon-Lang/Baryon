@@ -12,9 +12,9 @@
 //! missing name.
 //!
 //! In h5py `f[name]` gives a group or a dataset, whichever the file holds; in Baryon the type
-//! comes from how the value is used, as Collins chose on 2026-11-13. A lookup indexed again by
-//! a name, `f["run1"]["temp"]`, asked for its `keys()`, or on the right of `in`, is a `Group`;
-//! a lookup given the type `h5by.Group` is one too; any other lookup is a `Dataset`. A
+//! comes from how the value is used, as the chief designer chose on 2026-11-13. A lookup indexed
+//! again by a name, `f["run1"]["temp"]`, asked for its `keys()`, or on the right of `in`, is a
+//! `Group`; a lookup given the type `h5by.Group` is one too; any other lookup is a `Dataset`. A
 //! variable that holds a lookup takes its type there, so `g = f["run1"]` then `g["temp"]` is a
 //! compile error that asks for `g: h5by.Group = f["run1"]`.
 

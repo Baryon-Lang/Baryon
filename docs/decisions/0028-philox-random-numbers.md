@@ -23,8 +23,8 @@ language cannot express. So the compiler has to know the type until the library 
 
 ### The numbers match `numpy.random.Philox` bit for bit
 
-Collins chose this on 2026-11-08, as he chose NumPy's pairwise `sum` (roadmap I.22): a NumPy run
-can check every value, and 64-bit multiplies are cheap on the CPUs Baryon targets first.
+The chief designer chose this on 2026-11-08, as with NumPy's pairwise `sum` (roadmap I.22): a
+NumPy run can check every value, and 64-bit multiplies are cheap on the CPUs Baryon targets first.
 
 - The generator is Philox4x64-10 (Salmon et al., "Parallel random numbers: as easy as 1, 2, 3",
   SC 2011), as NumPy's `Philox` bit generator and Random123 implement it.

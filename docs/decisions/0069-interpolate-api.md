@@ -18,8 +18,8 @@ compiled each API shape the port needs. It found four limits of the language tod
 - **No constructor that computes.** Record 0068, proposed, adds one, `__init__`, so
   `CubicSpline(x, y)` keeps SciPy's name.
 
-Collins accepted the seven points of the study on 2026-11-19 (card 47, "Accept all seven").
-Point 1 is record 0068. This record holds the other six.
+The chief designer accepted the seven points of the study on 2026-11-19 (card 47, "Accept all
+seven"). Point 1 is record 0068. This record holds the other six.
 
 ## Decision
 

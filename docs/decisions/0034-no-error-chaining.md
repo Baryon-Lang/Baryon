@@ -33,7 +33,7 @@ to be built. There are three ways to read it:
 
 ## Decision
 
-Option 1, reject it. Collins chose this on 2026-11-10.
+Option 1, reject it. The chief designer chose this on 2026-11-10.
 
 - The syntax check reports `raise ... from` as not supported, at the `from` keyword, labelled
   "errors do not chain", with two notes: that an error reaches the caller without the error that

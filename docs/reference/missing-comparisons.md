@@ -9,7 +9,7 @@ they give can do and how two such masks [combine](#combining-masks)
 
 `==`, `!=`, `<`, `<=`, `>` and `>=` compare element by element and give an
 `Array[bool | None, 1]`: `None` wherever a side is `None`, as pandas's nullable columns do
-(Collins, 2026-11-14). Whether a missing bid is above 2.0 is not known, so the answer is
+(chief designer, 2026-11-14). Whether a missing bid is above 2.0 is not known, so the answer is
 missing too:
 
 ```python

@@ -179,7 +179,7 @@ impl<'db> Body<'db> {
         item
     }
 
-    /// Reports `prange` as the iterator of a comprehension clause (Collins, 2026-11-10): a
+    /// Reports `prange` as the iterator of a comprehension clause (chief designer, 2026-11-10): a
     /// parallel loop is a `for` statement, where the checker's sharing rules apply, so the error
     /// shows that form. A parallel map that fills the list in order could be added later without
     /// breaking code (roadmap idea I.41).

@@ -44,9 +44,9 @@ kind.
 
 ## Decision
 
-**A union of structs** (option A, chosen by Collins on 2026-11-09). Each kind is an ordinary
-struct. The sum type is the union of those structs, written with `|` and usually named with a type
-alias. A value is taken apart with `match` and Python's class patterns.
+**A union of structs** (option A, chosen by the chief designer on 2026-11-09). Each kind is an
+ordinary struct. The sum type is the union of those structs, written with `|` and usually named with
+a type alias. A value is taken apart with `match` and Python's class patterns.
 
 ### Declaring
 

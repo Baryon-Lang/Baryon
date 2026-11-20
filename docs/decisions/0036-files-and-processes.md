@@ -17,7 +17,7 @@ The forces:
 1. **It should read like Python.** A Python programmer reaches for `open`, `with`, `sys.argv`,
    `os.environ`, `pathlib.Path` and `subprocess.run` without thinking. Every name Baryon shares
    with Python must mean what it means there, or be a compile error that says why.
-2. **It must be native Baryon** (Collins, 2026-11-10: "true Baryon functionality, not Baryon
+2. **It must be native Baryon** (chief designer, 2026-11-10: "true Baryon functionality, not Baryon
    wrapped in Python"). No Python interpreter, no Python library underneath.
 3. **It must fit the rules the language already has.** Errors are values declared with
    `Raises[T, E]` ([decision 0005](0005-error-handling.md)), and error types form no hierarchy
@@ -38,10 +38,10 @@ workstream (roadmap 1.13.12). This record relies on it and does not define parsi
 
 ## Decision
 
-Python's modules and names, a subset of each, with one error type. Collins chose parts 1 to 4
-on 2026-11-10, each the recommended option: Python's names, one `OSError` with a `kind`,
+Python's modules and names, a subset of each, with one error type. The chief designer chose parts 1
+to 4 on 2026-11-10, each the recommended option: Python's names, one `OSError` with a `kind`,
 `with open(...)`, and arrays as the only binary data in 0.3.0. The rest of the record follows
-from those choices and the rules above, and Collins accepted the whole record, read-only
+from those choices and the rules above, and the chief designer accepted the whole record, read-only
 environment and no shell included, the same day.
 
 ### 1. Python's modules and names

@@ -6,8 +6,8 @@ Roadmap: 3.10
 
 ## Context
 
-Roadmap 3.10 adds linear algebra and fast Fourier transforms. Collins settled the split on
-2026-11-10: matrix multiply, solve, LU, Cholesky, QR, symmetric eigenvalues and the FFT are
+Roadmap 3.10 adds linear algebra and fast Fourier transforms. The chief designer settled the split
+on 2026-11-10: matrix multiply, solve, LU, Cholesky, QR, symmetric eigenvalues and the FFT are
 written natively, in Baryon and its runtime, and tested against NumPy and SciPy; LAPACK is used
 underneath only for general eigenvalues and the singular value decomposition; and the system
 BLAS, or Accelerate on macOS, is an opt-in for peak matrix-multiply speed. Users see only
@@ -26,7 +26,7 @@ programs depend on them:
 
 ## Decision
 
-Collins accepted this on 2026-11-11: a singular matrix raises `LinAlgError`, as NumPy does, and the record as written.
+The chief designer accepted this on 2026-11-11: a singular matrix raises `LinAlgError`, as NumPy does, and the record as written.
 
 ### Names: NumPy's, then SciPy's
 
@@ -121,9 +121,10 @@ same-bits guarantee, as NumPy does, and its reference entry says so.
 - **`numpy.linalg` as the module path.** Ports would change less, but Baryon is not NumPy, and the
   design plan's `linalg` and `fft` read as Baryon's own.
 - **Everything in the Rust runtime.** Faster to write the first time, but it would hide the
-  compiler's speed gaps behind hand-tuned Rust, and Collins asked for true Baryon.
-- **LAPACK for everything.** Fastest to ship, but it is the wrapped C library Collins ruled out, it
-  needs LAPACK installed for every program that solves a system, and its results vary by machine.
+  compiler's speed gaps behind hand-tuned Rust, and the chief designer asked for true Baryon.
+- **LAPACK for everything.** Fastest to ship, but it is the wrapped C library the chief designer
+  ruled out, it needs LAPACK installed for every program that solves a system, and its results vary
+  by machine.
 
 ## Consequences
 
@@ -136,7 +137,7 @@ same-bits guarantee, as NumPy does, and its reference entry says so.
 
 ## Amendment, 2026-11-11: `eig` and `svd` in Baryon
 
-Collins accepted this amendment on 2026-11-11.
+The chief designer accepted this amendment on 2026-11-11.
 
 The first version of this record called LAPACK's `dgeev` and `dgesdd` for `eig` and `svd`. Calling
 them needs compiler plumbing that does not exist yet (built-ins in `mir`, a foreign call in the
@@ -149,7 +150,7 @@ rank-deficient matrices. They are slower than LAPACK on large matrices, about te
 
 ## Amendment, 2026-11-14: how `--blas` links on Linux
 
-Collins chose dynamic linking on 2026-11-14 (roadmap 3.10.2).
+The chief designer chose dynamic linking on 2026-11-14 (roadmap 3.10.2).
 
 On Linux, a program built with `--blas` is linked with `-lopenblas`, the shared library. It adds
 nothing to the program's size, but the machine that runs the program needs OpenBLAS's shared

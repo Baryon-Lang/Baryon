@@ -46,7 +46,7 @@ What bears on the choice:
 
 ## Decision
 
-Collins chose this on 2026-11-09.
+The chief designer chose this on 2026-11-09.
 
 **`print` writes an `Array` or `Fixed` array exactly as NumPy's `print` writes an
 `ndarray` with the default print options**, byte for byte:

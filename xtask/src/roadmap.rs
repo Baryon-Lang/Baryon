@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn accepts_well_formed_items() {
         let text = table(
-            "| 0.1 | Spec | 3 | — | Done | Collins | [#1](https://example.com/1) |\n\
+            "| 0.1 | Spec | 3 | — | Done | Chief designer | [#1](https://example.com/1) |\n\
              | 1.1 | Lexer | 1 | 0.1 | In progress | Claude | — |\n\
              | I.1 | Idea | — | 0.1, 1.1 | Idea | — | — |\n",
         );

@@ -3,7 +3,7 @@
 //!
 //! The result has the array's lengths without axis `k`, and each element reduces the line of
 //! elements along `k` that passes through it. The order of the additions is `NumPy`'s, so a float
-//! sum has the same bits as `numpy.sum(a, axis=k)` (Collins, 2026-11-11):
+//! sum has the same bits as `numpy.sum(a, axis=k)` (chief designer, 2026-11-11):
 //!
 //! - Along the last axis, each line is one row in memory, and each is added in the pairwise tree
 //!   of `a.sum()` by a call of [`Builtin::Sum`] on a view of the row.
