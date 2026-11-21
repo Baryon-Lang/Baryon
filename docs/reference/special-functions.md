@@ -37,6 +37,7 @@ the true result. One ULP is a relative error of about 1.1e-16 to 2.2e-16.
 | `gamma` | 8 ULP | 5 ULP | 4 ULP |
 | `rgamma` | 8 ULP | 3 ULP | 0 from 171.62 up, where the true value is still above 1e-311 |
 | `gammaln` | 8 ULP of the larger of the result and 1 | 1 ULP | 2 ULP |
+| `loggamma` of a `complex128`, each part | 32 ULP of the larger of \|log Γ(z)\| and \|z ψ(z)\| | 21 ULP at `loggamma(0.899 + 0.349j)` | 58 ULP; 4 ULP at `loggamma(3+0j)`, which Baryon gives exactly |
 | `psi` | 8 ULP of the larger of the result and 1 | 4 ULP | 13 ULP |
 | `polygamma` | 8 ULP | 6 ULP | 5 ULP |
 | `beta` | 8 ULP plus 2 for each unit of the result's logarithm | 202 ULP at `beta(176.6, 301.9)`, about 3e-138 | 5,120 ULP |
@@ -117,6 +118,7 @@ relative error; a logarithm of −316 costs about 200 ULP.
 | `rgamma(x)` | 1/Γ(x), finite where Γ overflows | `scipy.special.rgamma` |
 | `gammaln(x)` | log\|Γ(x)\| | `scipy.special.gammaln` |
 | `loggamma(x)` | log Γ(x) for x ≥ 0, NaN below | `scipy.special.loggamma` of a real argument |
+| `loggamma(z)` | The principal branch of log Γ(z) for a `complex128` z, an overload of the same name ([decision 0067](../decisions/0067-library-overloading.md)) | `scipy.special.loggamma` of a complex argument |
 | `gammasgn(x)` | The sign of Γ(x), 1.0 or −1.0 | `scipy.special.gammasgn` |
 | `psi(x)`, `digamma(x)` | ψ(x) = Γ′(x) / Γ(x) | `scipy.special.psi` |
 | `polygamma(n, x)` | The `n`th derivative of ψ, with `n` an `int` | `scipy.special.polygamma` |
@@ -144,6 +146,13 @@ How each is computed:
 - **A function of a sum**, such as Γ(a + b) in `beta` or Γ(z + m) in `poch`, adds the error of
   rounding `a + b`, found exactly by Knuth's two-sum, times the derivative. Without it the
   rounding of the sum would cost up to ψ(a + b) (a + b) ULP.
+- **The complex `loggamma`** is the principal branch: the continuation of the real log Γ from
+  the positive axis, cut along the negative axis, so its imaginary part grows past π instead of
+  wrapping. It follows SciPy's method: Stirling's series past Re z = 7 or |Im z| = 7; Taylor
+  series within 0.2 of 1 and 2, and within 0.5 of 1.5, which SciPy lacks; the reflection formula
+  left of Re z = 0.1, plus the multiple of 2πi that keeps the branch; and the recurrence
+  elsewhere. On the real axis it is `gammaln`, with −π⌈−x⌉ i on the cut from above and its
+  negative from below, by the sign of the zero, as SciPy gives.
 - **`betaln` and `poch` with large arguments** take the difference of two log-gamma values
   from Stirling's series directly, as a `log1p`, so `betaln(1.0, 1e300)` and `poch(1e10, 0.5)`
   keep their digits instead of subtracting two numbers near 700.
@@ -162,6 +171,7 @@ gives, so a program's NaNs and infinities land where they did:
 | `gammaln(0.0)`, `gammaln(-1.0)`, `gammaln(inf)` | `inf` |
 | `gammaln(-inf)` | `-inf` |
 | `loggamma(-0.5)` | `nan` |
+| `loggamma(complex(-2.0, 0.0))`, `loggamma(complex(0.0, 0.0))`, a part infinite or NaN | `nan+nanj` |
 | `gammasgn(-1.0)` | `nan` |
 | `psi(0.0)`, `psi(-0.0)` | `-inf`, `inf` |
 | `psi(-1.0)` | `nan` |
@@ -1426,7 +1436,7 @@ for those working on the library. A panic inside a function names the file it is
 | File | Holds |
 | --- | --- |
 | `special_common` | The whole-number tests `is_integer` and `is_odd`, `floor_count`, which rounds a count down, `sinpi` and `cospi`, and the constants more than one family uses |
-| `special_gamma` | `gamma`, `rgamma`, `gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma`, `polygamma` and `factorial`, which `polygamma` uses |
+| `special_gamma` | `gamma`, `rgamma`, `gammasgn`, `gammaln`, `psi`, `digamma`, `polygamma` and `factorial`, which `polygamma` uses |
 | `special_hurwitz` | The Hurwitz zeta function, which `polygamma` and `zeta` sum |
 | `special_beta` | `beta`, `betaln` and `poch` |
 | `special_error` | `erf`, `erfc`, `erfcx`, `erfinv`, `erfcinv`, `ndtr`, `log_ndtr` and `dawsn` |
@@ -1448,6 +1458,7 @@ for those working on the library. A panic inside a function names the file it is
 | `special_incomplete_beta` | `betainc`, `betaincc`, `betaincinv` and `betainccinv` |
 | `special_distributions` | `bdtr`, `bdtrc`, `bdtri`, `nbdtr`, `nbdtrc`, `nbdtri`, `pdtr`, `pdtrc`, `pdtri`, `chdtr`, `chdtrc`, `chdtri`, `fdtr`, `fdtrc`, `fdtri`, `gdtr`, `gdtrc`, `stdtr` and `stdtrit` |
 | `special_kolmogorov` | `kolmogorov`, `kolmogi`, `smirnov`, `smirnovi` and `owens_t` |
+| `special_loggamma` | `loggamma`, of a real and of a complex argument |
 | `special_helpers` | `expit`, `log_expit`, `logit`, `xlogy`, `xlog1py`, `entr`, `rel_entr`, `kl_div`, `binom`, `comb`, `perm`, `logsumexp` and `softmax` |
 | `special_integrals` | `exp1`, `expi`, `expn`, `sici`, `shichi` and `fresnel` |
 | `special_zeta` | `zeta`, `zetac` and `spence` |
@@ -1468,5 +1479,5 @@ A new function goes in the file of its family, and a name of `special` gets its 
 
 The rest of `scipy.special` comes in the sub-rows of roadmap 3.18, Bessel functions of a complex
 argument (3.18.6) among them. The hypergeometric functions and Carlson's integrals of complex
-arguments are not built. `loggamma` of a complex argument comes with the complex Bessel functions.
+arguments are not built.
 See [What builds today](status.md).

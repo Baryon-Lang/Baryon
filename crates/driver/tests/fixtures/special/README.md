@@ -3151,6 +3151,63 @@ with open("weber.txt", "w") as out:
     out.write("\n".join(lines) + "\n")
 ```
 
+## The complex loggamma
+
+`loggamma_complex.txt` holds the real (`_re`) and imaginary (`_im`) parts of the principal
+branch of log Γ(z), for [`../../build/special_complex.rs`](../../build/special_complex.rs). Each
+case gives the real and imaginary parts of z, then the size its error is measured against, the
+larger of |log Γ(z)| and |z ψ(z)|, the error a rounding of z itself makes, then the reference.
+The points cover the whole plane, the discs around 1 and 2, every scale from 10⁻³ to 10³, the
+poles at close range and the negative axis from both sides of the cut: mpmath gives the value
+from above, and the script takes the conjugate below, where the imaginary part is −0.0. The
+script recorded the cases with mpmath 1.4.1; run it from this directory with `python3 -I`:
+
+```python
+"""Writes loggamma_complex.txt: the complex loggamma at 50 digits."""
+import random
+
+import mpmath
+
+random.seed(31806)
+mpmath.mp.dps = 50
+points = []
+for _ in range(300):
+    kind = random.random()
+    if kind < 0.3:
+        z = complex(random.uniform(-10, 10), random.uniform(-10, 10))
+    elif kind < 0.5:
+        z = complex(random.uniform(0.5, 2.5), random.uniform(-0.5, 0.5))
+    elif kind < 0.7:
+        z = complex(random.choice([-1, 1]) * 10 ** random.uniform(-3, 3),
+                    random.choice([-1, 1]) * 10 ** random.uniform(-3, 3))
+    elif kind < 0.85:
+        n = random.randint(-8, 0)
+        z = complex(n + random.choice([-1, 1]) * 10 ** random.uniform(-8, -1),
+                    random.choice([-1, 1]) * 10 ** random.uniform(-8, -1))
+    else:
+        z = complex(random.uniform(-20, 20), random.choice([0.0, -0.0]))
+        if z.real <= 0 and z.real == int(z.real):
+            continue
+    points.append(z)
+points += [complex(1.0, 2.0), complex(-2.5, 0.0), complex(-2.5, -0.0), complex(3.0, 0.0),
+           complex(1.0, 0.0), complex(2.0, 0.0), complex(1e300, 1e300)]
+lines = []
+for z in points:
+    w = mpmath.loggamma(mpmath.mpc(z.real, z.imag))
+    if z.imag == 0 and z.real < 0:
+        # mpmath takes the value from above the cut; below it is the conjugate.
+        if str(z.imag).startswith('-'):
+            w = mpmath.conj(w)
+    at = mpmath.mpc(z.real, z.imag)
+    size = max(abs(w), abs(at * mpmath.digamma(at)))
+    for part, value in (("re", w.real), ("im", w.imag)):
+        lines.append(f"loggamma_{part} {z.real!r} {z.imag!r} {float(size)!r} {float(value)!r}")
+for z in ["nan 0.0", "0.0 0.0", "-2.0 0.0", "inf 0.0", "0.0 inf"]:
+    for part in ("re", "im"):
+        lines.append(f"loggamma_{part} {z} 1.0 nan")
+open("loggamma_complex.txt", "w").write("\n".join(lines) + "\n")
+```
+
 ## Fitted coefficients
 
 Some functions are a ratio of fitted polynomials rather than a series (roadmap 3.18.17): one

@@ -1,6 +1,6 @@
 """The gamma function and its relatives for `special` (roadmap 3.18.1): `gamma`, `rgamma`,
-`gammasgn`, `gammaln`, `loggamma`, `psi`, `digamma` and `polygamma`, with `factorial` (roadmap
-3.18.11), which `polygamma` uses.
+`gammasgn`, `gammaln`, `psi`, `digamma` and `polygamma`, with `factorial` (roadmap 3.18.11),
+which `polygamma` uses. `loggamma` is in `special_loggamma`.
 
 The coefficients are Taylor coefficients of 1/Γ and Bernoulli numbers, computed with mpmath and
 rounded to `f64`. The compiler reads this file for `<std>/special.byn`; a program cannot import
@@ -277,25 +277,6 @@ def gammaln(x: f64) -> f64:
         return log(_rising(y, steps) / (1.0 + _rgamma_minus_one(y)))
     logarithm = log(x)
     return x * (logarithm - 1.0) - 0.5 * logarithm + HALF_LOG_TWO_PI + stirling(x)
-
-
-def loggamma(x: f64) -> f64:
-    """The logarithm of the gamma function, as `scipy.special.loggamma` of a real argument:
-    `gammaln(x)` from 0 up, and NaN below 0, where Γ can be negative and its logarithm is not
-    real.
-
-    Infinity at +0.0 and at −0.0, as SciPy gives. The complex `loggamma` is not built yet.
-
-    ```python
-    from special import loggamma
-
-    print(loggamma(3.0))    # 0.6931471805599453, log 2
-    print(loggamma(-0.5))   # nan
-    ```
-    """
-    if x < 0.0:
-        return nan
-    return gammaln(x)
 
 
 def _psi_near_root(x: f64) -> f64:

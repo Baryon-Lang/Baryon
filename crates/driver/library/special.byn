@@ -21,7 +21,8 @@ and never sees the files behind it.
 """
 
 from special_gamma import gamma as gamma, rgamma as rgamma, gammasgn as gammasgn, gammaln as gammaln
-from special_gamma import loggamma as loggamma, psi as psi, digamma as digamma
+from special_gamma import psi as psi, digamma as digamma
+from special_loggamma import loggamma as loggamma
 from special_gamma import polygamma as polygamma, factorial as factorial
 from special_beta import beta as beta, betaln as betaln, poch as poch
 from special_error import erf as erf, erfc as erfc, erfcx as erfcx, erfinv as erfinv
