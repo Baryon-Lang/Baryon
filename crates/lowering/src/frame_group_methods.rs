@@ -27,12 +27,11 @@ impl<'db> Builder<'db> {
         }
     }
 
-    /// What the `groupby` inside the call `node`, a reduction of a grouping, was given: the
-    /// node that names the key columns, its first argument or `by=`, and whether the groups
-    /// come sorted by their keys, which `sort=False` turns off (decision 0045's amendment,
-    /// point 3). `as_index=False` changes nothing, so it is not read.
-    pub(crate) fn grouping_arguments(&self, node: NodeId) -> Option<(NodeId, bool)> {
-        let grouping = self.grouping_call(node)?;
+    /// What `grouping`, the call `df.groupby(...)`, was given: the node that names the key
+    /// columns, its first argument or `by=`, and whether the groups come sorted by their
+    /// keys, which `sort=False` turns off (decision 0045's amendment, point 3).
+    /// `as_index=False` changes nothing, so it is not read.
+    pub(crate) fn grouping_arguments(&self, grouping: NodeId) -> Option<(NodeId, bool)> {
         let by = match self.keyword_of(grouping, "by") {
             Some(by) => by,
             None => self.written(grouping).first().copied()?,

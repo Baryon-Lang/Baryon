@@ -280,6 +280,48 @@ busy = [row for row in trades.itertuples() if row.volume >= 100]
   form the compiler vectorizes.
 - **The frame needs a struct to give**, as for `df[i]`.
 
+## Looping over groups
+
+`for key, group in df.groupby("symbol"):` runs once for each group of rows that share a key,
+in the order of the keys ([grouping](dataframe-operations.md#grouping) has the rules for
+keys). `key` is the group's key and `group` a new frame of the group's rows, with every
+column of `df`, the key columns included:
+
+```python
+for symbol, rows in trades.groupby("symbol"):
+    print(symbol, len(rows), rows.price.mean())
+for key, rows in trades.groupby(["venue", "symbol"]):
+    print(key, rows.volume.sum())
+```
+
+With five trades of the symbols 7, 3, 7, 3 and 9, at the venues east, west, west, west and
+east, this prints:
+
+```text
+3 2 407.75
+7 2 190.25
+9 1 171.0
+('east', 7) 100
+('east', 9) 75
+('west', 3) 300
+('west', 7) 300
+```
+
+- **The key is one value for one key column, and a tuple for a list of them**, a list of one
+  included: `for key, group in df.groupby(["symbol"]):` gives the tuple `(3,)`, as in
+  pandas. A key column that may hold `None` gives a key of that type, though a row whose
+  key is `None` is in no group.
+- **The loop borrows each group.** `group` is a new frame that the loop frees before the
+  next pass, so it is read inside the loop: passed to a function, reduced, grouped again.
+  To keep one, keep `group.copy()`; to keep a key of `str`, `key.copy()`. A loop over a
+  list of lists borrows its elements the same way.
+- **The frame is borrowed for the loop**, as in a loop over rows.
+- **`sort=False`** visits the groups in the order their keys first appear.
+- **`df.groupby(...)` is still not a value.** `g = df.groupby("symbol")` is a compile error;
+  the loop and the reductions are the forms it has.
+- **Cost:** the sort that finds the groups, once, then one copy of each group's rows. A
+  reduction, `df.groupby("symbol").sum()`, does the same work without the copies.
+
 ## Choosing and changing columns
 
 A frame's type lists its columns, so a frame never gains, loses or renames a column in place.

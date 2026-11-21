@@ -78,11 +78,11 @@ impl<'db> Body<'db> {
             self.untyped(arguments);
             self.lowerer.error(
                 node,
-                "`agg` takes each new column by name, as a pair of a column and a reduction",
+                "`agg` takes new columns by name, a dict of reductions, or one reduction's name",
                 "wrong arguments",
                 Some(
-                    "for example `.agg(total=(\"volume\", \"sum\"), \
-                     mean_price=(\"price\", \"mean\"))`",
+                    "for example `.agg(total=(\"volume\", \"sum\"))`, \
+                     `.agg({\"volume\": \"sum\"})` or `.agg(\"sum\")`",
                 ),
             );
             return Some(self.lowerer.unknown());

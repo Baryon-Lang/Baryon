@@ -83,7 +83,8 @@ impl<'db> Body<'db> {
     /// The type of each element a `for` loop over `iterator` sees.
     pub(super) fn iteration(&mut self, iterator: NodeId) -> Type<'db> {
         let view = self.dict_iteration(iterator);
-        if let Some(element) = view.or_else(|| self.rows_iteration(iterator)) {
+        let view = view.or_else(|| self.rows_iteration(iterator));
+        if let Some(element) = view.or_else(|| self.grouping_iteration(iterator)) {
             return element;
         }
         if let Some(element) = self.builtin_iteration(iterator) {

@@ -61,6 +61,7 @@ impl<'db> Body<'db> {
             .map(|iterator| {
                 self.dict_view_receiver(iterator)
                     .or(rows)
+                    .or_else(|| self.grouping_receiver(iterator))
                     .unwrap_or(iterator)
             })
             .filter(|&collection| self.place_root(collection).is_some());
@@ -149,6 +150,7 @@ impl<'db> Body<'db> {
             .map(|iterator| {
                 self.dict_view_receiver(iterator)
                     .or(rows)
+                    .or_else(|| self.grouping_receiver(iterator))
                     .unwrap_or(iterator)
             })
             .filter(|&collection| self.place_root(collection).is_some());

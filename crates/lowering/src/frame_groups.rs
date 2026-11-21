@@ -61,7 +61,8 @@ impl<'db> Builder<'db> {
         else {
             return self.unsupported(node, "this `groupby`");
         };
-        let Some((by, sorted)) = self.grouping_arguments(node) else {
+        let grouping = self.grouping_call(node);
+        let Some((by, sorted)) = grouping.and_then(|call| self.grouping_arguments(call)) else {
             return self.unsupported(node, "this `groupby`");
         };
         let source = self.borrow(frame);
@@ -136,7 +137,7 @@ impl<'db> Builder<'db> {
     /// The `count` rows of a frame sorted into groups by `keys`, each a key column's place
     /// and its column: rows with a missing key left out, the rest sorted by the keys, the
     /// last key first, and the start of each group found.
-    fn groups(
+    pub(crate) fn groups(
         &mut self,
         count: Local,
         keys: &[(Place, &Column<'db>)],

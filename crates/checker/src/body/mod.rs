@@ -59,6 +59,7 @@ mod frame_describe;
 mod frame_distinct;
 mod frame_distinct_options;
 mod frame_dropna;
+mod frame_group_loops;
 mod frame_group_methods;
 mod frame_groups;
 mod frame_join_keys;

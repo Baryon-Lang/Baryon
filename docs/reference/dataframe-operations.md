@@ -142,8 +142,9 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   `False` written out. `dropna=False`, a group for the rows whose key is missing, is not
   built yet.
 - **`groupby` and its reduction are written together.** The groups are not a value: `g =
-  df.groupby("symbol")` is a compile error. Group by several columns with a list,
-  `df.groupby(["symbol", "day"])`.
+  df.groupby("symbol")` is a compile error. A `for` loop can walk the groups:
+  [looping over groups](dataframes.md#looping-over-groups). Group by several columns with
+  a list, `df.groupby(["symbol", "day"])`.
 - **Every name is a string literal**, checked when compiling: the keys, the columns read
   and the reductions. A key column cannot be read by `agg`, since the result holds it
   already, and a complex column can be neither a key nor a value.

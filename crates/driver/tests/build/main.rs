@@ -35,6 +35,7 @@ mod frame_columns;
 mod frame_csv;
 mod frame_distinct;
 mod frame_group_counts;
+mod frame_group_loops;
 mod frame_group_methods;
 mod frame_group_sums;
 mod frame_groups;
