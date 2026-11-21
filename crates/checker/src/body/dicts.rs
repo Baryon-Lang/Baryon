@@ -88,7 +88,10 @@ impl<'db> Body<'db> {
             }
         }
         let unknown = self.lowerer.unknown();
-        let (key, value) = (key.unwrap_or(unknown), value.unwrap_or(unknown));
+        let (key, mut value) = (key.unwrap_or(unknown), value.unwrap_or(unknown));
+        if matches!(value.kind(self.db), TypeKind::None) {
+            value = self.bare_none(node, "a dict", "d: dict[str, f64 | None] = {\"a\": None}");
+        }
         if expected.is_none()
             && let Some((message, label, hint)) = key_error(self.db, key)
             && let Some(first) = self.tree.children_with(node, Role::Item).next()

@@ -123,11 +123,17 @@ impl<'db> Body<'db> {
         }
     }
 
-    /// The type a tuple item takes: `written`, the item type the context gives, when `found`
-    /// stands for it as a `None` or a `T` stands for `T | None`, or a member for its union;
-    /// otherwise `found`. So `return (x, None)` builds a `tuple[f64, f64 | None]` where the
-    /// function returns one, and lowering converts the item as it does a list's.
-    pub(super) fn widened(&self, written: Option<Type<'db>>, found: Type<'db>) -> Type<'db> {
+    /// The type the tuple item `item` takes: `written`, the item type the context gives, when
+    /// `found` stands for it as a `None` or a `T` stands for `T | None`, or a member for its
+    /// union; otherwise `found`. So `return (x, None)` builds a `tuple[f64, f64 | None]` where
+    /// the function returns one, and lowering converts the item as it does a list's. A `None`
+    /// with no such written type is reported ([`Body::bare_none`]).
+    pub(super) fn tuple_item(
+        &mut self,
+        item: NodeId,
+        written: Option<Type<'db>>,
+        found: Type<'db>,
+    ) -> Type<'db> {
         match written {
             Some(written)
                 if matches!(
@@ -137,7 +143,22 @@ impl<'db> Body<'db> {
             {
                 written
             }
+            _ if matches!(found.kind(self.db), TypeKind::None) => {
+                self.bare_none(item, "a tuple", "t: tuple[f64, f64 | None] = (1.5, None)")
+            }
             _ => found,
         }
+    }
+
+    /// Reports `at`, a part of `what` (a tuple or a dict) whose type is `None` on its own, as
+    /// in `(1.5, None)` or `{"a": None}` with no type written (roadmap 1.9.72). The
+    /// backend stores no value of the type `None` inside another value yet, and a written
+    /// type such as `f64 | None` is almost always what is meant, so the note shows it in
+    /// `example`. Returns the unknown type, so the one mistake gives one message.
+    pub(super) fn bare_none(&mut self, at: NodeId, what: &str, example: &str) -> Type<'db> {
+        let message = format!("{what} cannot hold the type `None` on its own yet");
+        let note = format!("write the type it holds, with `| None`: `{example}`");
+        self.lowerer
+            .error(at, &message, "only ever `None`", Some(&note))
     }
 }

@@ -279,8 +279,10 @@ whatever its type: `f"{xs}"` of a list is `[1, 2, 3]` and `f"{p}"` of a struct i
 `{xs:>10}`, is not built yet.
 The compiler checks each specification against its value's type, so `{name:+}` on a `str` is a
 compile error rather than a run-time one. Not supported yet: the `z` flag, the `n` and `c` type
-letters, `!r`, `{value=}`, `\N{name}` escapes, and a
-specification built from other values, such as `{x:{width}}`.
+letters, `!r`, `!a`, `{value=}`, `\N{name}` escapes, and a
+specification built from other values, such as `{x:{width}}`. The compiler reports `!r`, `!a`
+and `{value=}` where they are written; `!s` is allowed, since it is what an interpolation does
+anyway.
 
 A `str` is a pointer and a length. A literal points at the program's own copy of its text and is
 never copied ([decision 0022](../decisions/0022-str-values.md)); an f-string, `+` and `s.copy()`
@@ -301,6 +303,11 @@ def root(x: f64) -> tuple[f64, f64 | None]:
         return (x, None)
     return (x, x ** 0.5)
 ```
+
+With no type written, a tuple or dict whose part is only ever `None`, such as
+`print((1.5, None))` or `{"a": None}`, is a compile error for now: the compiler does not yet
+store the type `None` on its own inside another value. Write the type
+with room for a value, `t: tuple[f64, f64 | None] = (1.5, None)`.
 
 ## Lists
 
@@ -989,7 +996,7 @@ declares its own ([decision 0031](../decisions/0031-traits-are-protocols.md)).
 | Trait | A type satisfies it if it supports | Satisfied by |
 | --- | --- | --- |
 | `Number` | `+ - * /`, comparison, and literals | Every number type |
-| `Float` | `Number`, plus the `math` functions | `f32`, `f64` |
+| `Float` | `Number`, plus the `math` functions and `**`, which is `math.pow` | `f32`, `f64` |
 | `VectorSpace` | `+` and `-` with itself, and `*` by an `f64` on either side | `f64`, `Fixed[f64, ...]`, `Array[f64, ...]` |
 | `Copy` | Copying on assignment | See [copy types](values-and-references.md#copy-types) |
 

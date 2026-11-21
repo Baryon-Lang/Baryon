@@ -21,7 +21,8 @@ quote; a line ends with `"\\n"`, `"\\r\\n"` or `"\\r"`; a blank line is skipped;
 fewer fields than the header has empty cells at its end, and a row with more is an error.
 
 Cost: the whole file is held in memory while its columns are built, with 16 bytes for each
-cell of a wanted column. Each cell of a number is copied once to be read.
+cell of a wanted column. A whole number of digits alone is read where it lies; any other
+cell of a number is copied once to be read (roadmap 3.14.4.3).
 For `to_csv` the compiler asks for each column's cells as text, by the column's type, and
 hands them to `csv_write` with the names:
 
@@ -68,6 +69,14 @@ def _record(data: InOut[Array[u8, 1]], start: int, fields: InOut[list[int]]) -> 
                 else:
                     at += 1
                     break
+        if write == at:
+            # Nothing was taken out, so the bytes stay where they are and are only read.
+            while at < count:
+                byte = data[at]
+                if byte == u8(44) or byte == u8(10) or byte == u8(13):
+                    break
+                at += 1
+            write = at
         while at < count:
             byte = data[at]
             if byte == u8(44) or byte == u8(10) or byte == u8(13):
@@ -203,13 +212,15 @@ def csv_floats_as(
             if not optional:
                 result[row] = nan
             continue
-        text = data[bounds[at] : bounds[at + 1]].decode().strip()
+        # `float` skips the spaces around a number itself, so the cell is stripped only to
+        # be named in an error.
+        text = data[bounds[at] : bounds[at + 1]].decode()
         if "_" in text:
-            raise ValueError(csv_bad(name, row, text, kind))
+            raise ValueError(csv_bad(name, row, text.strip(), kind))
         try:
             result[row] = float(text)
         except ValueError:
-            raise ValueError(csv_bad(name, row, text, kind))
+            raise ValueError(csv_bad(name, row, text.strip(), kind))
     return result
 
 
@@ -218,6 +229,24 @@ def csv_floats(
 ) -> Raises[Array[f64, 1], OSError | ValueError]:
     """`csv_floats_as` for a column of `f64`."""
     return csv_floats_as(data, bounds, column, columns, optional, name, "f64")
+
+
+def _digits(data: Array[u8, 1], start: int, end: int) -> int:
+    """The whole number the bytes of `data` from `start` to `end` write when they are one to
+    eighteen of the digits `0` to `9` and nothing else, and -1 otherwise.
+
+    Nearly every cell of a column of whole numbers is such a run, and reading it here copies
+    nothing; `csv_whole` reads any other cell, one with a sign, spaces or more digits, the
+    slow way, through `int`. Eighteen digits always fit in an `i64`. 48 is the byte `0`."""
+    if end <= start or end - start > 18:
+        return -1
+    value = 0
+    for at in range(start, end):
+        digit = int(data[at]) - 48
+        if digit < 0 or digit > 9:
+            return -1
+        value = value * 10 + digit
+    return value
 
 
 def csv_whole(
@@ -234,7 +263,9 @@ def csv_whole(
     each cell is a whole number, with an optional sign, from `limits[0]` to `limits[1]`,
     the least and the greatest value of the type. A number outside them is a `ValueError`,
     where pandas keeps its low bits. An empty cell is 0 when `optional` and a `ValueError`
-    otherwise."""
+    otherwise. A cell of digits alone is read by `_digits`, with no copy, and is never below
+    `limits[0]`, which is 0 or less; a cell it gives -1 for, or a number above `limits[1]`,
+    goes through `int`, which also writes the error."""
     rows = len(bounds) // (2 * columns)
     result = Array.fill((rows,), 0)
     for row in range(rows):
@@ -242,6 +273,10 @@ def csv_whole(
         if bounds[at] == bounds[at + 1]:
             if not optional:
                 raise ValueError(csv_empty(name, row))
+            continue
+        plain = _digits(data, bounds[at], bounds[at + 1])
+        if plain >= 0 and plain <= limits[1]:
+            result[row] = plain
             continue
         text = data[bounds[at] : bounds[at + 1]].decode().strip()
         if "_" in text:
