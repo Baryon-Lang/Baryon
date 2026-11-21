@@ -1,3 +1,5 @@
+<img src="docs/brand/baryon-logo.svg" alt="The Baryon logo" width="96" align="right">
+
 # Baryon: A new language for math and physics
 
 A compiled language that reads like Python and runs like Rust, C and Fortran, built so that
@@ -111,6 +113,7 @@ contributing to the compiler, or integrating one of its crates.
 | `bench/` | Baseline physics kernels in C++ and Fortran, and `cargo kernels`, which times them |
 | `docs/README.md` | Map of all documentation |
 | `docs/architecture.md` | Crate kinds and dependency rules |
+| `docs/brand/` | Baryon's logo |
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan and the AstroBaryon roadmap |
 | `docs/guide/` | How to code in Baryon, from installing it to data and plots, and the VS Code setup guide, all run in CI as written |
