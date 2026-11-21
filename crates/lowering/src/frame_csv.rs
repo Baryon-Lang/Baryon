@@ -1,8 +1,8 @@
 //! CSV files read into a frame and written from one (decision 0045, roadmap 3.14.4):
 //! `DataFrame.read_csv(path)` and `df.to_csv(path)`, each with `sep=` for the character
-//! between fields, with `na_values=` and `na_rep=` for how a missing value is spelled, and
-//! `read_csv` with `skiprows=` and `nrows=` for the part of the file to read (roadmap
-//! 3.14.4.2).
+//! between fields, with `na_values=` and `na_rep=` for how a missing value is spelled,
+//! `read_csv` with `skiprows=` and `nrows=` for the part of the file to read, and `to_csv`
+//! with `header=` and `columns=` for the part of the frame to write (roadmap 3.14.4.2).
 //!
 //! The reader is Baryon code in `<std>/frame_csv.byn`, which knows nothing of the schema, so
 //! this module calls it once for the file and once or more for each column the checker
@@ -221,7 +221,10 @@ impl<'db> Builder<'db> {
         };
         let mut cells = Vec::with_capacity(columns.len());
         let mut names = Vec::with_capacity(columns.len());
-        for (position, column) in (0..).zip(columns) {
+        let Some(chosen) = self.csv_chosen(columns, node) else {
+            return self.unsupported(node, "`to_csv` of a column the frame lacks");
+        };
+        for (position, column) in chosen {
             let at = stored.clone().project(Projection::Field(position));
             let (element, optional) = match column.element.kind(self.db) {
                 TypeKind::Optional(value) => (*value, true),
@@ -288,7 +291,9 @@ impl<'db> Builder<'db> {
         let rows = self.column_length(rows, first, node);
         let rows = Place::from(self.held(int, rows, node));
         let path = self.borrow(path);
-        let given = [path, Place::from(headings), Place::from(table), rows, sep];
+        let header = self.csv_header(node);
+        let table = Place::from(table);
+        let given = [path, Place::from(headings), table, rows, sep, header];
         let given = given.into_iter().map(Argument::Borrow).collect();
         self.csv_call("csv_write", given, place, node);
     }
@@ -343,6 +348,38 @@ impl<'db> Builder<'db> {
         let int = self.int_type();
         let without = Operand::Constant(Constant::integer(int, without));
         Place::from(self.held(int, without, node))
+    }
+
+    /// The columns the call `node` of `to_csv` writes, of the frame's `columns`, each with
+    /// its position in the tuple that stores the frame: the ones `columns=` lists by name,
+    /// in its order, and all of them without it. `None` when a name is no column, which
+    /// the checker has refused.
+    fn csv_chosen(
+        &self,
+        columns: &'db [Column<'db>],
+        node: NodeId,
+    ) -> Option<Vec<(u32, &'db Column<'db>)>> {
+        let Some(listed) = self.keyword_of(node, "columns") else {
+            return Some((0..).zip(columns).collect());
+        };
+        self.listed(listed)
+            .into_iter()
+            .map(|name| self.named_column(columns, name))
+            .collect()
+    }
+
+    /// The place of the `bool` that says whether the call `node` of `to_csv` writes the
+    /// header row: what `header=` gives, and true without it.
+    fn csv_header(&mut self, node: NodeId) -> Place {
+        if let Some(written) = self.keyword_of(node, "header") {
+            return self.borrow(written);
+        }
+        let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
+        let written = Operand::Constant(Constant {
+            ty: boolean,
+            value: ConstantValue::Bool(true),
+        });
+        Place::from(self.held(boolean, written, node))
     }
 
     /// The place of the cell that the call `node` of `to_csv` writes for a missing value, in

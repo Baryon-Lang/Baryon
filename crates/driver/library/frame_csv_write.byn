@@ -96,18 +96,19 @@ def csv_optional_text_cells(
 
 
 def csv_write(
-    path: str, names: list[str], columns: list[list[str]], rows: int, sep: str
+    path: str, names: list[str], columns: list[list[str]], rows: int, sep: str, header: bool
 ) -> Raises[None, OSError]:
-    """Writes the CSV file `path`: the header `names`, then `rows` lines of the cells
-    `columns` holds, a list for each column, split by `sep` and each line ended by `"\\n"`,
-    as `pandas.DataFrame.to_csv(path, index=False, sep=sep)` writes them. A row of one
-    empty cell is written `""`, as pandas writes it, since an empty line would be skipped
-    when read.
+    """Writes the CSV file `path`: the header `names`, unless `header` is false, then `rows`
+    lines of the cells `columns` holds, a list for each column, split by `sep` and each line
+    ended by `"\\n"`, as `pandas.DataFrame.to_csv(path, index=False, sep=sep, header=header)`
+    writes them. A row of one empty cell is written `""`, as pandas writes it, since an
+    empty line would be skipped when read.
 
     Raises `OSError` when the file cannot be made or written.
     """
     with open(path, "w") as out:
-        out.write(sep.join([_quoted(name, sep) for name in names]) + "\n")
+        if header:
+            out.write(sep.join([_quoted(name, sep) for name in names]) + "\n")
         for row in range(rows):
             line = ""
             for position in range(len(columns)):

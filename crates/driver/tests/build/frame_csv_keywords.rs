@@ -3,7 +3,8 @@
 //! `pandas.read_csv(path, sep=...)` reads it, and written with the bytes
 //! `pandas.DataFrame.to_csv(path, index=False, sep=...)` writes. `na_values=` names more cells
 //! to read as missing, and `na_rep=` is the text written for a missing value. `skiprows=`
-//! passes over lines before the header and `nrows=` stops after so many rows.
+//! passes over lines before the header and `nrows=` stops after so many rows. `header=False`
+//! leaves the header row out of a file written, and `columns=` chooses its columns.
 //!
 //! What each test expects was checked against pandas 3.0.5 on the same bytes.
 
@@ -273,5 +274,54 @@ fn a_part_of_a_file_is_read() {
          a  b\n\
          0  1  2\n\
          1\n"
+    );
+}
+
+/// The program of `a_part_of_a_frame_is_written`.
+const WRITTEN: &str = r#"
+def main() -> Raises[None, OSError]:
+    frame = DataFrame({
+        "name": Array(["a", "b,c", ""]),
+        "price": Array([1.5, None, 3.0]),
+        "volume": Array([1, 2, 3]),
+    })
+    frame.to_csv("plain.csv", header=False)
+    frame.to_csv("some.csv", columns=["volume", "name"])
+    quiet = len(frame) > 5
+    frame.to_csv("both.csv", columns=["price"], header=quiet, na_rep="NA", sep=";")
+    frame.to_csv("one.csv", columns=["name"], header=False)
+    frame.to_csv("all.csv", header=True, columns=["name", "price", "volume"])
+"#;
+
+/// `header=False` writes the rows alone, and `columns=` writes the columns it names in the
+/// order it names them. A file of one column still writes an empty cell as `""`. Each file
+/// is the bytes pandas 3.0.5 writes with the same keywords and `index=False`.
+#[test]
+fn a_part_of_a_frame_is_written() {
+    let directory = package("frame_csv_written", &[("main.byn", WRITTEN)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let home = directory.join("package");
+    let ran = match valgrind() {
+        Some(mut valgrind) => valgrind.arg(&executable).current_dir(&home).output(),
+        None => Command::new(&executable).current_dir(&home).output(),
+    }
+    .unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert!(ran.status.success());
+    let written = |name: &str| std::fs::read_to_string(home.join(name));
+    assert_eq!(
+        written("plain.csv").unwrap(),
+        "a,1.5,1\n\"b,c\",,2\n,3.0,3\n"
+    );
+    assert_eq!(
+        written("some.csv").unwrap(),
+        "volume,name\n1,a\n2,\"b,c\"\n3,\n"
+    );
+    assert_eq!(written("both.csv").unwrap(), "1.5\nNA\n3.0\n");
+    assert_eq!(written("one.csv").unwrap(), "a\n\"b,c\"\n\"\"\n");
+    assert_eq!(
+        written("all.csv").unwrap(),
+        "name,price,volume\na,1.5,1\n\"b,c\",,2\n,3.0,3\n"
     );
 }

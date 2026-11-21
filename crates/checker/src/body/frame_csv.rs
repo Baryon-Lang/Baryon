@@ -21,12 +21,13 @@
 //!
 //! Each takes the path and `sep=`, the character between fields; `read_csv` takes
 //! `na_values=`, more cells to read as missing, `nrows=` and `skiprows=`, and `to_csv` takes
-//! `na_rep=`, the text to write for a missing value (roadmap 3.14.4.2). Every other keyword
-//! pandas has is an error that names it, never silently ignored.
+//! `na_rep=`, the text to write for a missing value, `header=` and `columns=` (roadmap
+//! 3.14.4.2). Every other keyword pandas has is an error that names it, never silently
+//! ignored.
 
 use super::calls::Arguments;
 use super::{Body, relations};
-use syntax::NodeId;
+use syntax::{NodeId, Role, SyntaxKind};
 use types::{Call, Callee, Integer, Key, Primitive, Type, TypeKind};
 
 /// How a call is written, for the hints.
@@ -51,7 +52,7 @@ impl<'db> Body<'db> {
                 .lowerer
                 .error(node, &message, "not defined", Some(hint));
         }
-        if let Err(refused) = self.csv_keywords(true, arguments) {
+        if let Err(refused) = self.csv_keywords(None, arguments) {
             return refused;
         }
         let &[path] = arguments.positional.as_slice() else {
@@ -110,15 +111,22 @@ impl<'db> Body<'db> {
         self.raises_library_errors(node, frame, &["OSError", "ValueError"])
     }
 
-    /// Checks the keyword arguments of `read_csv`, when `reading`, or of `to_csv` (roadmap
-    /// 3.14.4.2). Five are built. `sep=`, on both, is the character between fields.
-    /// `na_values=` of `read_csv` is a `str` or a `list[str]`: the cells read as missing
-    /// besides the empty one. Its `nrows=` and `skiprows=` are each an `int`: how many
-    /// rows to read at most, and how many lines to pass over before the header. `na_rep=`
-    /// of `to_csv` is the `str` written for a missing value. `Err`, with the unknown type
+    /// Checks the keyword arguments of `read_csv`, or of `to_csv` on a frame of type
+    /// `frame` (roadmap 3.14.4.2). Seven are built. `sep=`, on both, is the character
+    /// between fields. `na_values=` of `read_csv` is a `str` or a `list[str]`: the cells
+    /// read as missing besides the empty one. Its `nrows=` and `skiprows=` are each an
+    /// `int`: how many rows to read at most, and how many lines to pass over before the
+    /// header. `na_rep=` of `to_csv` is the `str` written for a missing value, its
+    /// `header=` a `bool` that says whether the header row is written, and its `columns=`
+    /// the columns to write, as `written_columns` checks them. `Err`, with the unknown type
     /// and every argument marked untyped, after reporting a keyword that is not built yet
     /// or a separator that is not one character.
-    fn csv_keywords(&mut self, reading: bool, arguments: &Arguments) -> Result<(), Type<'db>> {
+    fn csv_keywords(
+        &mut self,
+        frame: Option<Type<'db>>,
+        arguments: &Arguments,
+    ) -> Result<(), Type<'db>> {
+        let reading = frame.is_none();
         let function = if reading {
             "`DataFrame.read_csv`"
         } else {
@@ -141,6 +149,12 @@ impl<'db> Body<'db> {
                     let found = self.expression(value, Some(int));
                     self.expect(value, int, found, &format!("`{name}` is"));
                 }
+                ("header", false) => {
+                    let boolean = Type::new(self.db, TypeKind::Primitive(Primitive::Bool));
+                    let found = self.expression(value, Some(boolean));
+                    self.expect(value, boolean, found, "`header` is");
+                }
+                ("columns", false) => self.written_columns(value, frame),
                 ("na_rep", false) => {
                     let found = self.expression(value, Some(str));
                     self.expect(value, str, found, "`na_rep` is");
@@ -152,8 +166,8 @@ impl<'db> Body<'db> {
                         "this version takes the path, `sep=`, `na_values=`, `nrows=` and \
                          `skiprows=`, for a file with a header row"
                     } else {
-                        "this version takes the path, `sep=` and `na_rep=`, and writes a \
-                         header row and no index column"
+                        "this version takes the path, `sep=`, `na_rep=`, `header=` and \
+                         `columns=`, and writes no index column"
                     };
                     return Err(self
                         .lowerer
@@ -162,6 +176,32 @@ impl<'db> Body<'db> {
             }
         }
         Ok(())
+    }
+
+    /// Checks `value`, the `columns=` of `to_csv` on a frame of type `frame`: a list, written
+    /// out, of one or more of the frame's column names, each a string literal and none
+    /// twice, since the columns of the file are settled when compiling. Anything else is
+    /// reported.
+    fn written_columns(&mut self, value: NodeId, frame: Option<Type<'db>>) {
+        let list = self.tree.kind(value) == SyntaxKind::List;
+        let listed = list && self.tree.children_with(value, Role::Item).next().is_some();
+        match frame {
+            Some(frame) if listed => {
+                self.column_names(value, frame);
+            }
+            _ => {
+                // An empty list has no type to report, only no names.
+                if !list {
+                    self.expression(value, None);
+                }
+                self.lowerer.error(
+                    value,
+                    "`columns` of `to_csv` is a list of column names, written out",
+                    "not a list of names",
+                    Some("for example `columns=[\"symbol\", \"price\"]`"),
+                );
+            }
+        }
     }
 
     /// Checks `value`, the `sep=` of the call of `function` whose arguments are `arguments`:
@@ -226,7 +266,7 @@ impl<'db> Body<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return None;
         };
-        if let Err(refused) = self.csv_keywords(false, arguments) {
+        if let Err(refused) = self.csv_keywords(Some(base), arguments) {
             return Some(refused);
         }
         let &[path] = arguments.positional.as_slice() else {
