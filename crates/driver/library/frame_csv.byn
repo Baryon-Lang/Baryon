@@ -16,9 +16,10 @@ the names of the columns it wants and then asks for each column by the type its 
   `None`.
 
 The file is read as `pandas.read_csv` reads one with its defaults: fields separated by
-commas, a field in double quotes may hold commas, line ends and, written twice, a double
-quote; a line ends with `"\\n"`, `"\\r\\n"` or `"\\r"`; a blank line is skipped; a row with
-fewer fields than the header has empty cells at its end, and a row with more is an error.
+commas, or by the one character given as `sep=` (roadmap 3.14.4.2); a field in double
+quotes may hold separators, line ends and, written twice, a double quote; a line ends with
+`"\\n"`, `"\\r\\n"` or `"\\r"`; a blank line is skipped; a row with fewer fields than the header
+has empty cells at its end, and a row with more is an error.
 
 Cost: the whole file is held in memory while its columns are built, with 16 bytes for each
 cell of a wanted column. A whole number of digits alone is read where it lies; any other
@@ -38,16 +39,19 @@ Cost of writing: one text for each cell, all held until the file is written.
 from math import isnan, nan
 
 
-def _record(data: InOut[Array[u8, 1]], start: int, fields: InOut[list[int]]) -> int:
-    """Reads the record that starts at byte `start` of `data`, and gives where the next one
-    starts. For each field it appends two numbers to `fields`: where the field's bytes start
-    and where they end.
+def _record(
+    data: InOut[Array[u8, 1]], start: int, fields: InOut[list[int]], split: u8
+) -> int:
+    """Reads the record that starts at byte `start` of `data`, whose fields the byte `split`
+    separates, and gives where the next one starts. For each field it appends two numbers
+    to `fields`: where the field's bytes start and where they end.
 
     A quoted field is rewritten in place without its quotes, a doubled quote inside it
     becoming one, so every field is a plain run of bytes afterwards. The rewritten field is
     never longer than the original, so nothing unread is overwritten.
 
-    The bytes it looks for are 34, a double quote; 44, a comma; 10, `"\\n"`; and 13, `"\\r"`.
+    The bytes it looks for are 34, a double quote; `split`, 44 for a comma; 10, `"\\n"`; and
+    13, `"\\r"`.
     """
     count = len(data)
     at = start
@@ -73,13 +77,13 @@ def _record(data: InOut[Array[u8, 1]], start: int, fields: InOut[list[int]]) -> 
             # Nothing was taken out, so the bytes stay where they are and are only read.
             while at < count:
                 byte = data[at]
-                if byte == u8(44) or byte == u8(10) or byte == u8(13):
+                if byte == split or byte == u8(10) or byte == u8(13):
                     break
                 at += 1
             write = at
         while at < count:
             byte = data[at]
-            if byte == u8(44) or byte == u8(10) or byte == u8(13):
+            if byte == split or byte == u8(10) or byte == u8(13):
                 break
             data[write] = byte
             write += 1
@@ -90,7 +94,7 @@ def _record(data: InOut[Array[u8, 1]], start: int, fields: InOut[list[int]]) -> 
             return at
         byte = data[at]
         at += 1
-        if byte == u8(44):
+        if byte == split:
             continue
         if byte == u8(13) and at < count and data[at] == u8(10):
             at += 1
@@ -124,9 +128,11 @@ def _position(data: Array[u8, 1], header: list[int], name: str) -> int:
 
 
 def csv_cells(
-    path: str, names: list[str]
+    path: str, names: list[str], sep: str
 ) -> Raises[tuple[Array[u8, 1], list[int]], OSError | ValueError]:
-    """Reads the CSV file `path` and finds the cells of the columns `names`.
+    """Reads the CSV file `path`, whose fields `sep` separates, and finds the cells of the
+    columns `names`. `sep` is one character of one byte that is not a double quote, which
+    the compiler has checked: `","` unless the program wrote `sep=`.
 
     Gives the file's bytes, with quoted fields rewritten in place as `_record` does, and the
     bounds of each cell: for each data row, for each of `names` in turn, where the cell
@@ -137,6 +143,7 @@ def csv_cells(
     header.
     """
     data = Array.fromfile(path, u8)
+    split = sep.encode()[0]
     # The columns of text are built from these bytes, so they must be UTF-8 as a whole.
     checked = data.decode()
     at = 0
@@ -146,7 +153,7 @@ def csv_cells(
     if at >= len(data):
         raise ValueError(f"{path}: no columns to read, the file is empty")
     header: list[int] = []
-    at = _record(data, at, header)
+    at = _record(data, at, header, split)
     width = len(header) // 2
     positions: list[int] = []
     for name in names:
@@ -161,7 +168,7 @@ def csv_cells(
     while at < len(data):
         while len(fields) > 0:
             fields.pop()
-        at = _record(data, at, fields)
+        at = _record(data, at, fields, split)
         row += 1
         seen = len(fields) // 2
         if seen > width:
@@ -367,11 +374,11 @@ def csv_there(bits: Array[u8, 1], at: int) -> bool:
     return ((bits[at // 8] >> u8(at % 8)) & u8(1)) == u8(1)
 
 
-def _quoted(text: str) -> str:
-    """`text` as a cell of a CSV file, as pandas writes it: in double quotes, each double
-    quote inside written twice, when it holds a comma, a double quote or a line end, and as
-    it is otherwise."""
-    if "," in text or "\"" in text or "\n" in text or "\r" in text:
+def _quoted(text: str, sep: str) -> str:
+    """`text` as a cell of a CSV file whose fields `sep` separates, as pandas writes it: in
+    double quotes, each double quote inside written twice, when it holds `sep`, a double
+    quote or a line end, and as it is otherwise."""
+    if sep in text or "\"" in text or "\n" in text or "\r" in text:
         return "\"" + text.replace("\"", "\"\"") + "\""
     return text.copy()
 
@@ -415,14 +422,17 @@ def csv_optional_plain_cells[T: Copy](values: Array[T, 1], bits: Array[u8, 1]) -
     return cells
 
 
-def csv_text_cells(column: Array[str, 1]) -> list[str]:
-    """The cells of a column of `str` for `to_csv`, each quoted where it must be."""
-    return [_quoted(text) for text in column]
+def csv_text_cells(column: Array[str, 1], sep: str) -> list[str]:
+    """The cells of a column of `str` for `to_csv` with fields separated by `sep`, each
+    quoted where it must be."""
+    return [_quoted(text, sep) for text in column]
 
 
-def csv_optional_text_cells(values: Array[str, 1], bits: Array[u8, 1]) -> list[str]:
+def csv_optional_text_cells(
+    values: Array[str, 1], bits: Array[u8, 1], sep: str
+) -> list[str]:
     """`csv_text_cells` for a column that may hold `None`, whose cell is empty."""
-    cells = csv_text_cells(values)
+    cells = csv_text_cells(values, sep)
     for row in range(len(cells)):
         if not csv_there(bits, row):
             cells[row] = ""
@@ -430,22 +440,22 @@ def csv_optional_text_cells(values: Array[str, 1], bits: Array[u8, 1]) -> list[s
 
 
 def csv_write(
-    path: str, names: list[str], columns: list[list[str]], rows: int
+    path: str, names: list[str], columns: list[list[str]], rows: int, sep: str
 ) -> Raises[None, OSError]:
     """Writes the CSV file `path`: the header `names`, then `rows` lines of the cells
-    `columns` holds, a list for each column, split by commas and each line ended by `"\\n"`,
-    as `pandas.DataFrame.to_csv(path, index=False)` writes them. A row of one empty cell is
+    `columns` holds, a list for each column, split by `sep` and each line ended by `"\\n"`,
+    as `pandas.DataFrame.to_csv(path, index=False, sep=sep)` writes them. A row of one empty cell is
     written `""`, as pandas writes it, since an empty line would be skipped when read.
 
     Raises `OSError` when the file cannot be made or written.
     """
     with open(path, "w") as out:
-        out.write(",".join([_quoted(name) for name in names]) + "\n")
+        out.write(sep.join([_quoted(name, sep) for name in names]) + "\n")
         for row in range(rows):
             line = ""
             for position in range(len(columns)):
                 if position > 0:
-                    line += ","
+                    line += sep
                 line += columns[position][row]
             if line == "":
                 line = "\"\""

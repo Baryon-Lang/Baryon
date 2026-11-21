@@ -1,11 +1,12 @@
 //! CSV files read into a frame and written from one (decision 0045, roadmap 3.14.4):
-//! `DataFrame.read_csv(path)` and `df.to_csv(path)`.
+//! `DataFrame.read_csv(path)` and `df.to_csv(path)`, each with `sep=` for the character
+//! between fields (roadmap 3.14.4.2).
 //!
 //! The reader is Baryon code in `<std>/frame_csv.byn`, which knows nothing of the schema, so
 //! this module calls it once for the file and once or more for each column the checker
 //! found in the frame's type:
 //!
-//! 1. `csv_cells(path, names)` reads the file and finds the cells of the columns `names`.
+//! 1. `csv_cells(path, names, sep)` reads the file and finds the cells of the columns `names`.
 //! 2. For a column of numbers or `bool`s, `csv_floats`, `csv_integers` or `csv_bools` reads
 //!    its cells, or the function of a narrower number type in `<std>/frame_csv_types.byn`.
 //!    For a column of `str`, `csv_text_bytes` and `csv_text_offsets` give the two buffers of
@@ -75,7 +76,9 @@ impl<'db> Builder<'db> {
         let found = vec![self.bitmap_type(), list(int)];
         let cells = self.temporary(Type::new(self.db, TypeKind::Tuple(found)), node);
         let path = self.borrow(path);
-        let given = vec![Argument::Borrow(path), Argument::Borrow(Place::from(names))];
+        let sep = self.csv_separator(node);
+        let given = [path, Place::from(names), sep];
+        let given = given.into_iter().map(Argument::Borrow).collect();
         if !self.csv_call("csv_cells", given, Place::from(cells), node) {
             return;
         }
@@ -203,6 +206,7 @@ impl<'db> Builder<'db> {
             _ => None,
         };
         let stored = self.borrow(frame);
+        let sep = self.csv_separator(node);
         let mut cells = Vec::with_capacity(columns.len());
         let mut names = Vec::with_capacity(columns.len());
         for (position, column) in (0..).zip(columns) {
@@ -211,13 +215,17 @@ impl<'db> Builder<'db> {
                 TypeKind::Optional(value) => (*value, true),
                 _ => (column.element, false),
             };
-            let given = if optional {
+            let mut given = if optional {
                 [VALUES, VALIDITY]
                     .map(|part| at.clone().project(Projection::Field(part)))
                     .to_vec()
             } else {
                 vec![at]
             };
+            // Text is quoted where it holds the separator, so its cells need it.
+            if matches!(element.kind(self.db), TypeKind::Str) {
+                given.push(sep.clone());
+            }
             let (function, types) = match (element.kind(self.db), optional) {
                 (TypeKind::Str, false) => ("csv_text_cells", Vec::new()),
                 (TypeKind::Str, true) => ("csv_optional_text_cells", Vec::new()),
@@ -259,9 +267,24 @@ impl<'db> Builder<'db> {
         let rows = self.column_length(rows, first, node);
         let rows = Place::from(self.held(int, rows, node));
         let path = self.borrow(path);
-        let given = [path, Place::from(headings), Place::from(table), rows];
+        let given = [path, Place::from(headings), Place::from(table), rows, sep];
         let given = given.into_iter().map(Argument::Borrow).collect();
         self.csv_call("csv_write", given, place, node);
+    }
+
+    /// The place of the text that separates the fields of the file the call `node`,
+    /// `read_csv` or `to_csv`, reads or writes: what `sep=` gives, one character the checker
+    /// has seen written out, and `","` without it.
+    fn csv_separator(&mut self, node: NodeId) -> Place {
+        if let Some(sep) = self.keyword_of(node, "sep") {
+            return self.borrow(sep);
+        }
+        let text = Type::new(self.db, TypeKind::Str);
+        let comma = Operand::Constant(Constant {
+            ty: text,
+            value: ConstantValue::Str(",".to_owned()),
+        });
+        Place::from(self.held(text, comma, node))
     }
 
     /// Calls the function `name` of `<std>/frame_csv.byn`, which can fail with the errors of
