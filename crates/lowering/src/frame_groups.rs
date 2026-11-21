@@ -28,7 +28,7 @@ use types::{Column, Float, Integer, Primitive, Type, TypeKind};
 /// The reductions of `agg`, each at the number the library's `group_floats` and
 /// `group_integers` know it by. The last two, `size` and `nunique`, are counted by the
 /// [`frame_group_counts`](crate::frame_group_counts) module.
-const REDUCTIONS: [&str; 12] = [
+pub(crate) const REDUCTIONS: [&str; 12] = [
     "sum", "min", "max", "first", "last", "count", "mean", "var", "std", "median", "size",
     "nunique",
 ];
@@ -61,10 +61,7 @@ impl<'db> Builder<'db> {
         else {
             return self.unsupported(node, "this `groupby`");
         };
-        let grouping = self
-            .tree
-            .child(node, Role::Function)
-            .and_then(|function| self.tree.child(function, Role::Value));
+        let grouping = self.grouping_call(node);
         let by = grouping.and_then(|grouping| self.written(grouping).first().copied());
         let Some(by) = by.map(|by| self.keyword_value(by)) else {
             return self.unsupported(node, "this `groupby`");
@@ -96,33 +93,25 @@ impl<'db> Builder<'db> {
             };
             made.push(taken);
         }
-        let reduced = self.written(node);
-        for (argument, new) in reduced.into_iter().zip(&result[keys.len()..]) {
-            let pair: Vec<NodeId> = self
-                .tree
-                .children_with(self.keyword_value(argument), Role::Item)
-                .collect();
-            let (Some(&read), Some(&how)) = (pair.first(), pair.get(1)) else {
-                return self.unsupported(argument, "this column of `agg`");
-            };
-            let how = REDUCTIONS
-                .iter()
-                .position(|name| *name == self.written_text(how))
-                .and_then(|how| i128::try_from(how).ok());
-            let (Some((position, column)), Some(how)) = (self.named_column(columns, read), how)
-            else {
-                return self.unsupported(argument, "this column of `agg`");
-            };
-            let values = source.clone().project(Projection::Field(position));
-            let read = (values, column);
-            let column = match (how, column.element.kind(self.db)) {
+        let Some(reductions) = self.group_reductions(node, &result[keys.len()..]) else {
+            return self.unsupported(node, "this reduction of a grouping");
+        };
+        for ((argument, read, how), new) in reductions.into_iter().zip(&result[keys.len()..]) {
+            let found = (0_u32..)
+                .zip(columns)
+                .find(|(_, column)| column.name == read);
+            let read = found.map(|(position, column)| {
+                (source.clone().project(Projection::Field(position)), column)
+            });
+            let column = match (how, read) {
                 (10, _) => self.group_sizes(&groups, argument),
-                (11, _) => self.group_distinct(&groups, read, argument),
-                (_, TypeKind::Str) => self.group_text(&groups, read, how, argument),
-                (_, TypeKind::Optional(_)) => {
-                    self.group_optional(&groups, read, how, new, argument)
-                }
-                _ => self.group_column(&groups, read, how, new, argument),
+                (_, None) => return self.unsupported(argument, "this column of a grouping"),
+                (11, Some(read)) => self.group_distinct(&groups, read, argument),
+                (_, Some(read)) => match read.1.element.kind(self.db) {
+                    TypeKind::Str => self.group_text(&groups, read, how, argument),
+                    TypeKind::Optional(_) => self.group_optional(&groups, read, how, new, argument),
+                    _ => self.group_column(&groups, read, how, new, argument),
+                },
             };
             let Some(column) = column else {
                 return;

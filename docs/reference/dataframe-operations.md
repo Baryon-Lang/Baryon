@@ -2,9 +2,10 @@
 
 This page continues [DataFrames](dataframes.md), which describes the type, its columns and
 its rows. The operations here read every row of a frame and build a new frame:
-`sort_values` puts the rows in order, `groupby(...).agg(...)` reduces the rows that share a
-key to one row, `merge` pairs the rows of two frames, `drop_duplicates` leaves out the
-rows that repeat, `value_counts` counts them, `describe` sums up each column of numbers,
+`sort_values` puts the rows in order, `groupby(...)` with `agg(...)` or a reduction such as
+`sum()` reduces the rows that share a key to one row, `merge` pairs the rows of two frames,
+`drop_duplicates` leaves out the rows that repeat, `value_counts` counts them, `describe`
+sums up each column of numbers,
 and `concat` stacks frames. Each keeps
 pandas's name and arguments ([decision 0045](../decisions/0045-dataframe.md)), and the
 compiler works out the columns of each result.
@@ -132,7 +133,7 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   of one value are NaN.
 - **`None` is left out too**, in a [column that may hold `None`](missing-values.md#in-a-dataframe):
   a row whose key is `None` belongs to no group, and `agg` reduces the values that are there.
-- **`groupby` and `agg` are written together.** The groups are not a value: `g =
+- **`groupby` and its reduction are written together.** The groups are not a value: `g =
   df.groupby("symbol")` is a compile error. Group by several columns with a list,
   `df.groupby(["symbol", "day"])`.
 - **Every name is a string literal**, checked when compiling: the keys, the columns read
@@ -150,6 +151,65 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   the order of the values. pandas's sums are compensated but not exact, so a last digit can
   differ; so can that of `var` and `std` of an `f32` column, which are worked out in `f64`
   here and then rounded.
+
+### Reductions as methods
+
+Each reduction of the table is a method of the grouping too, as in pandas. It reduces every
+column that is not a key, or the columns chosen first with `["price"]`, with
+`[["price", "volume"]]` or with `.volume`, and each new column keeps the name of the column
+it reduces. `size()` gives the key columns and a column `size`. Each line is another way to
+write an `agg`, with the same types, order and cost
+([decision 0045](../decisions/0045-dataframe.md), amended 2026-11-19).
+
+```python
+print(trades.groupby("symbol").sum(numeric_only=True))
+print(trades.groupby("symbol")["price"].mean())
+print(trades.groupby(["venue", "symbol"])[["price", "volume"]].max())
+print(trades.groupby("venue").volume.median())
+print(trades.groupby("symbol").size())
+```
+
+With five trades of the symbols 7, 3, 7, 3 and 9, at the venues east, west, west, west and
+east, this prints:
+
+```text
+   symbol  price  volume
+0       3  815.5     300
+1       7  380.5     400
+2       9  171.0      75
+   symbol   price
+0       3  407.75
+1       7  190.25
+2       9  171.00
+  venue  symbol  price  volume
+0  east       7  189.5     100
+1  east       9  171.0      75
+2  west       3  410.0     250
+3  west       7  191.0     300
+  venue  volume
+0  east    87.5
+1  west   250.0
+   symbol  size
+0       3     2
+1       7     2
+2       9     1
+```
+
+- **The result is always a frame**, with the keys as columns. pandas gives this with
+  `as_index=False`; without it pandas makes the keys the index, and
+  `df.groupby("symbol")["price"].mean()` a Series.
+- **A column of `str` has no sum, mean, spread or median**, so `trades.groupby("symbol").sum()`
+  is a compile error here that names `venue`. Write `numeric_only=True`, with `True` written
+  out, to leave the columns of `str` out, as in pandas, or choose the columns. `min`, `max`,
+  `first`, `last`, `count` and `nunique` reduce text as they do in `agg`. pandas joins the
+  texts for `sum`, and raises for `mean` when the line runs.
+- **`numeric_only=`** is taken by `sum`, `mean`, `min`, `max`, `first`, `last`, `std`, `var`
+  and `median`, the methods that take it in pandas. `count`, `nunique` and `size` take no
+  arguments, and no method takes any other.
+- **A key cannot be chosen yet.** `trades.groupby("symbol")["symbol"].max()` is a compile
+  error for now, where pandas reduces the key as any column: the result already holds the
+  key, and a frame has one column of each name. For the same reason `size()` of a frame
+  with a key named `size` is a compile error.
 
 ## Joining
 

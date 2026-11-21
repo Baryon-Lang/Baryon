@@ -433,9 +433,12 @@ impl<'db> Body<'db> {
             ),
             ("groupby", _) => self.lowerer.error(
                 function,
-                "`groupby` is followed by `.agg(...)`, which says what to work out for each group",
+                "`groupby` is followed by a reduction, which says what to work out for each group",
                 "groups with nothing worked out",
-                Some("for example `df.groupby(\"symbol\").agg(total=(\"volume\", \"sum\"))`"),
+                Some(
+                    "for example `df.groupby(\"symbol\").sum()` or \
+                     `df.groupby(\"symbol\").agg(total=(\"volume\", \"sum\"))`",
+                ),
             ),
             _ => {
                 let message = format!("a `DataFrame` has no method `{callee}` yet");

@@ -84,12 +84,12 @@ def grouping(trades: DataFrame[Trade], name: str, waves: Array[complex, 1]):
 "#;
     assert_eq!(
         check_one(program),
-        r#"error: `groupby` is followed by `.agg(...)`, which says what to work out for each group
+        r#"error: `groupby` is followed by a reduction, which says what to work out for each group
  --> main.byn:8:9
   |
 8 |     a = trades.groupby("symbol")
   |         ^^^^^^^^^^^^^^^^^^^^^^^^ groups with nothing worked out
-  = note: for example `df.groupby("symbol").agg(total=("volume", "sum"))`
+  = note: for example `df.groupby("symbol").sum()` or `df.groupby("symbol").agg(total=("volume", "sum"))`
 
 error: `groupby` takes the columns whose values make the groups
  --> main.byn:9:9
