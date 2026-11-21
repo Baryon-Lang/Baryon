@@ -1,5 +1,5 @@
 //! Pairwise summation of floats: the order `a.sum()` adds an array's elements in (roadmap I.22,
-//! chosen by Collins on 2026-11-08).
+//! chosen by the chief designer on 2026-11-08).
 //!
 //! Adding `n` floats one at a time lets rounding error grow with `n`. Adding them as a balanced
 //! tree of pairs lets it grow only with `log2(n)`, at the same cost. This is `NumPy`'s tree, step

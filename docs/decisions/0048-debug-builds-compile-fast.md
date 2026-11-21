@@ -49,7 +49,7 @@ and a second backend to keep in step with the first.
 
 ## Decision
 
-Collins chose this on 2026-11-12.
+The chief designer chose this on 2026-11-12.
 
 - **A debug build is for the edit-run loop and is not optimized.** `baryon build`, `run` and
   `test` without `--release` compile at `clang -O0` (roadmap 2.5). A release build stays at
@@ -91,5 +91,5 @@ Collins chose this on 2026-11-12.
   which `clang -O0` on 4 cores is 0.3 s, `baryon` itself 0.45 s and the link 0.17 s. A code
   generator that took no time at all would make it 0.9 / 0.6 = 1.5 times faster, so no
   Cranelift prototype can pass the twice test above. Roadmap 2.1 stays planned for its other
-  role, the REPL's JIT (3.11, decision 0020). Collins chose the same day to drop Cranelift as
-  the debug backend; the design plan names it only as the REPL's JIT.
+  role, the REPL's JIT (3.11, decision 0020). The chief designer chose the same day to drop
+  Cranelift as the debug backend; the design plan names it only as the REPL's JIT.

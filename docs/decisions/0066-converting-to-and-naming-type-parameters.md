@@ -20,9 +20,9 @@ code, and the pre-0.3.0 bug sweep found both. No decision record covered them:
   empty list fixes no `T`. The workaround is two lines: `e: list[f64] = []`, then `Box(e)`. A
   class function already takes them: `Bag[f64].empty()`.
 
-Collins chose on 2026-11-19 at 02:12 UTC (card 50, "Accept all four"): allow `T(x)` from any
-number when `T` is bounded by `Number` or `Float`, with decision 0014's panics on loss, and allow
-`Box[f64]([])`. The same card accepted `.copy()` on any `T` (row 1.9.60), which this record
+The chief designer chose on 2026-11-19 at 02:12 UTC (card 50, "Accept all four"): allow `T(x)` from
+any number when `T` is bounded by `Number` or `Float`, with decision 0014's panics on loss, and
+allow `Box[f64]([])`. The same card accepted `.copy()` on any `T` (row 1.9.60), which this record
 gains by amendment once its last detail is settled, and held narrowing a field of a borrowed
 struct until after 0.3.0.
 

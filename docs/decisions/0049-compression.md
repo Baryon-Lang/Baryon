@@ -1,6 +1,6 @@
 # 0049. Compression keeps Python's module names, works on byte arrays, and raises `OSError`
 
-Status: Accepted (Collins, 2026-11-12)
+Status: Accepted (chief designer, 2026-11-12)
 Date: 2026-11-12
 Roadmap: 3.27
 
@@ -28,9 +28,9 @@ Three questions had to be settled when compiling that Python settles while runni
 - **Where the codecs are written.** In Baryon, as `linalg` and `fft` are (decision 0040), or in
   the runtime's Rust, as the bytes of `.npy` and NetCDF files are read.
 
-Collins chose among three options on 2026-11-12: Python's module names with `OSError` for bad
-data (this record), Python's names with Python's error classes, or one Baryon-only `compression`
-module with a `format=` argument. He took the first.
+The chief designer chose among three options on 2026-11-12: Python's module names with `OSError` for
+bad data (this record), Python's names with Python's error classes, or one Baryon-only `compression`
+module with a `format=` argument. The first was chosen.
 
 ## Decision
 

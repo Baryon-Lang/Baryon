@@ -15,8 +15,8 @@ for that.
 ## Decision
 
 Both, in order. Units are checked at compile time and erased first. A run-time unit for values
-read from files, like AstroPy's `Quantity`, follows for AstroBaryon (row 4.2.3). Collins chose
-this on 2026-11-13. Units build on operators on user types
+read from files, like AstroPy's `Quantity`, follows for AstroBaryon (row 4.2.3). The chief designer
+chose this on 2026-11-13. Units build on operators on user types
 ([decision 0058](0058-operators-are-dunder-methods.md)).
 
 ## Consequences

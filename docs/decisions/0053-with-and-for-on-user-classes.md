@@ -25,9 +25,9 @@ double underscores). `with m as x:` calls `m.__enter__()` and binds its result, 
 `m.__exit__(...)` however the block ends. `for x in v:` calls `iter(v)`, which calls
 `v.__iter__()`, then `__next__()` on the result until it raises `StopIteration`.
 
-Collins approved Python's dunder methods for both statements on 2026-11-13 at 02:49 UTC ("Go
-with all recommendations for 1-9", item 8 of the open questions). He rejected the other
-options: library-only `with` forms, and Baryon names of our own. What remains to settle is how
+The chief designer approved Python's dunder methods for both statements on 2026-11-13 at 02:49 UTC
+("Go with all recommendations for 1-9", item 8 of the open questions). The other options
+were rejected: library-only `with` forms, and Baryon names of our own. What remains to settle is how
 the two protocols fit the language's ownership rules
 ([Values and references](../reference/values-and-references.md)), errors as values
 ([decision 0005](0005-error-handling.md)), and traits

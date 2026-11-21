@@ -338,7 +338,7 @@ impl<'db> Body<'db> {
     /// the value cannot be copied out, or `None` when it can: a copy type, a `str`, or a tuple
     /// of them. A `str` is copied as a key is, since it is short text. Copying a list or an
     /// array out of a lookup would hide a large copy, so the program asks with `in` and borrows
-    /// `d[k]` instead (Collins's choice for roadmap 1.13.14).
+    /// `d[k]` instead (the chief designer's choice for roadmap 1.13.14).
     fn copied_out(&mut self, node: NodeId, what: &str, value: Type<'db>) -> Option<Type<'db>> {
         if copies_out(self.db, value) {
             return None;

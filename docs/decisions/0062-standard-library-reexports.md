@@ -64,8 +64,8 @@ def gamma(x: f64) -> f64:
 
 ## Decision
 
-**A** (Collins, 2026-11-14, card 34). In a standard-library file, and only there, an import of
-the form `from module import name as name` re-exports `name`: a program importing the file's
+**A** (chief designer, 2026-11-14, card 34). In a standard-library file, and only there, an import
+of the form `from module import name as name` re-exports `name`: a program importing the file's
 module finds the definition the import names, wherever that is. Only this form counts: a plain
 `from module import name`, an `as` with another name, and `import module as module` stay the
 file's own. A name starting with `_` is never re-exported.

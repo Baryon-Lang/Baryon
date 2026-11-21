@@ -20,7 +20,7 @@ million steps either way, against 1.05 s written by hand. The state type matters
 same RK4 on an `Array[f64, 1]` was 8.4 times slower than on a `Fixed[f64, (3,)]`, because each
 `y + h * k` allocates.
 
-Collins chose:
+The chief designer chose:
 
 - variadic generics for `args=` (card 42), recorded in the 0026 amendment of 2026-11-19;
 - the seven API points below (card 43, "Accept all seven", 2026-11-14);

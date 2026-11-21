@@ -75,7 +75,7 @@ impl<'db> Builder<'db> {
     /// The shared float variables the `simd` loop `statement` sums or multiplies into, with
     /// the operator. Vectorizing such a loop as it stands would let LLVM regroup the additions
     /// in a way that depends on the machine, and a float sum must give the same bits
-    /// everywhere (Collins, 2026-11-08), so these loops add into fixed lanes instead (the
+    /// everywhere (chief designer, 2026-11-08), so these loops add into fixed lanes instead (the
     /// `lanes` module). `min` and `max` give the same result in any order, and complex sums
     /// stay as written, unvectorized, until they get lanes of their own (roadmap idea I.37).
     pub(crate) fn float_reductions(

@@ -13,7 +13,7 @@ installer, which do not exist, and building them first would delay AstroBaryon.
 ## Decision
 
 AstroBaryon ships in the standard distribution. It moves to its own package once a package
-registry exists. Collins chose this on 2026-11-13.
+registry exists. The chief designer chose this on 2026-11-13.
 
 ## Consequences
 

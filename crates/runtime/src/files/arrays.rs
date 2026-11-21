@@ -41,7 +41,7 @@ pub(crate) struct Element<'a> {
 ///
 /// Fails as the operating system does (no such file, no permission, a directory), with
 /// `INVALID_DATA` when the bytes after `offset` are not a whole number of elements or are fewer
-/// than `count` elements (Collins, 2026-11-11: never a shorter array, as `NumPy` gives), and
+/// than `count` elements (chief designer, 2026-11-11: never a shorter array, as `NumPy` gives), and
 /// with the system's "Invalid argument" for a negative `offset`.
 pub(crate) fn read<'a>(
     path: &str,

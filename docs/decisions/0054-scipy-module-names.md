@@ -15,9 +15,9 @@ a program ports line for line. AstroBaryon (4.2) is built on all six.
 
 What the modules themselves are called is still open. Two rules bear on it:
 
-- **No "py" in a Baryon name** (Collins, 2026-11-13). A Python library adapted into Baryon never
-  carries "py" in its name; `pyplot` became `byplot` and `h5py` became `h5by`. `scipy` cannot be
-  kept as it is.
+- **No "py" in a Baryon name** (chief designer, 2026-11-13). A Python library adapted into Baryon
+  never carries "py" in its name; `pyplot` became `byplot` and `h5py` became `h5by`. `scipy` cannot
+  be kept as it is.
 - **The NumPy precedent.** Baryon already writes NumPy's submodules without the `numpy.` prefix:
   `linalg` and `fft` (decision 0040), and `stats` for NumPy's statistics functions (decision
   0042). Decision 0042 also says that 3.23's distributions join `stats` under SciPy's names.
@@ -71,7 +71,7 @@ from sciby.special import gamma, jv
 
 ## Decision
 
-**A** (Collins, 2026-11-13): top-level `special`, `integrate`, `optimize`, `interpolate`,
+**A** (chief designer, 2026-11-13): top-level `special`, `integrate`, `optimize`, `interpolate`,
 `spatial` and `ndimage`, with SciPy's distributions in the existing `stats`.
 
 Inside each module:

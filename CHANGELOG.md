@@ -7,8 +7,8 @@ published to a package registry yet. Releases are time-based: one every two week
 
 ## 0.2.0: Linux and macOS, real data and the first libraries
 
-Cut early, on Collins's call of 2026-11-13, as the first run of the full release process; the
-two-week schedule continues from it (roadmap R.5 and R.6). It holds everything merged to `main`
+Cut early, on the chief designer's call of 2026-11-13, as the first run of the full release process;
+the two-week schedule continues from it (roadmap R.5 and R.6). It holds everything merged to `main`
 since 0.1.0: the Linux and macOS checkpoint (R.2), the real-data checkpoint (R.3), the native
 numeric and data libraries that followed, and every fix since, among them the double frees closed
 by #175 and #176.

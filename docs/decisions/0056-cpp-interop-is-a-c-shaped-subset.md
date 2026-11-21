@@ -15,7 +15,7 @@ was between full interop, a C-shaped subset, and none.
 
 C++ interop is a C-shaped subset: Baryon calls `extern "C"` functions and plain structs from C++
 libraries, reusing the C interop. No templates and no exceptions cross the boundary. It still
-comes after AstroBaryon, as all interop does. Collins chose this on 2026-11-13.
+comes after AstroBaryon, as all interop does. The chief designer chose this on 2026-11-13.
 
 ## Consequences
 

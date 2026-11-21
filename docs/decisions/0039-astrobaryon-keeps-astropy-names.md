@@ -8,8 +8,8 @@ Roadmap: D.24
 
 AstroBaryon (roadmap 4.2) is Baryon's astronomy library: AstroPy's capability written natively
 in Baryon, designed from the astronomy standards rather than translated from AstroPy's Python
-([AstroBaryon roadmap](../design/astrobaryon-roadmap.md)). Collins made documentation and an
-easy move from AstroPy its first priority.
+([AstroBaryon roadmap](../design/astrobaryon-roadmap.md)). The chief designer made documentation and
+an easy move from AstroPy its first priority.
 
 Two ways to name its API were open:
 
@@ -24,7 +24,7 @@ native file and process library.
 
 ## Decision
 
-Collins chose option 1 on 2026-11-11.
+The chief designer chose option 1 on 2026-11-11.
 
 - AstroBaryon's modules, classes, functions and arguments take AstroPy's names wherever their
   behavior is the same.

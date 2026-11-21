@@ -26,7 +26,7 @@ not.
 
 ## Decision
 
-Collins chose this on 2026-11-09.
+The chief designer chose this on 2026-11-09.
 
 - **Two build modes.** `baryon build`, `run` and `test` make a *debug build* by default and a
   *release build* with `--release`. Both are optimized (`clang -O2`) and keep line tables, so a

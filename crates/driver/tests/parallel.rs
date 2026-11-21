@@ -382,8 +382,8 @@ def pairs(forces: InOut[Array[f64, 1]], n: i64):
     );
 }
 
-/// `prange` cannot drive a comprehension, at any depth (Collins, 2026-11-10): a parallel loop
-/// is a `for` statement, and the error shows that form. `simd(range(…))` and `range` can.
+/// `prange` cannot drive a comprehension, at any depth (chief designer, 2026-11-10): a parallel
+/// loop is a `for` statement, and the error shows that form. `simd(range(…))` and `range` can.
 #[test]
 fn prange_in_a_comprehension_is_reported() {
     let program = "

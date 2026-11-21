@@ -32,7 +32,7 @@ def main():
     );
 }
 
-/// `sorted` puts every NaN last, either way, as `numpy.sort` does (Collins, 2026-11-10);
+/// `sorted` puts every NaN last, either way, as `numpy.sort` does (chief designer, 2026-11-10);
 /// Python's order would depend on where the NaN starts.
 #[test]
 fn sorted_puts_nan_last() {

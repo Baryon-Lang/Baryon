@@ -5,8 +5,8 @@
 //! stream, as each read of `sys.argv` gives a new list, so a module needs no variable to hold
 //! it. `print` to a file writes to it, so it can fail with `OSError` as `f.write` can; `print`
 //! to `sys.stdout` or `sys.stderr`, named where `file=` is written, never fails, as `print`
-//! without `file=` never does (Collins, 2026-11-11). `input` raises `EOFError` at the end of the
-//! input.
+//! without `file=` never does (chief designer, 2026-11-11). `input` raises `EOFError` at the end of
+//! the input.
 
 use super::Body;
 use super::calls::Arguments;

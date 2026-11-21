@@ -17,9 +17,9 @@ Python has `text.encode()` and `data.decode()`, each taking an encoding, UTF-8 b
 `io.TextIOWrapper`, which decodes as it reads, encodes as it writes, and turns `"\r\n"` and
 `"\r"` into `"\n"` on reading.
 
-Collins chose on 2026-11-14 at 05:35 UTC (card 33, "Add UTF-8 text now"): add `str.encode()` and
-`Array[u8, 1].decode()` for UTF-8, with `ValueError` for bytes that are not UTF-8, and the text
-modes of `gzip.open` and `lzma.open`, the class picked from the mode literal.
+The chief designer chose on 2026-11-14 at 05:35 UTC (card 33, "Add UTF-8 text now"): add
+`str.encode()` and `Array[u8, 1].decode()` for UTF-8, with `ValueError` for bytes that are not
+UTF-8, and the text modes of `gzip.open` and `lzma.open`, the class picked from the mode literal.
 
 ## Decision
 

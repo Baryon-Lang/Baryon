@@ -6,7 +6,7 @@
 //! and copyright notices go with every copy of the software, binaries included. The release
 //! workflow runs this command after the release build and puts the file it writes,
 //! `CRATE-LICENSES.md`, in each archive beside `LICENSE`, `LICENSE-MIT` and
-//! `THIRD-PARTY-NOTICES.md` (Collins, 2026-11-14, before release 0.2.0).
+//! `THIRD-PARTY-NOTICES.md` (chief designer, 2026-11-14, before release 0.2.0).
 //!
 //! Which crates: the packages `cargo metadata` resolves for the build machine's platform,
 //! reached from the `driver` and `runtime` crates through normal dependencies only. Build and

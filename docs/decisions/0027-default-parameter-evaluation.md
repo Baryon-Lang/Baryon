@@ -79,5 +79,5 @@ caller's names or the function's other parameters (the checker already enforces 
   expression and its names.
 - Rejected B gives up exact Python compatibility for defaults. Rejected C would be simpler still,
   but forbids a fresh-array default that physics code commonly wants, such as a work buffer.
-- Collins chose A on 2026-11-08. Until lowering builds it (roadmap 1.9.13), `baryon build` keeps
-  reporting a call that leaves out a non-constant default as not built yet.
+- The chief designer chose A on 2026-11-08. Until lowering builds it (roadmap 1.9.13), `baryon
+  build` keeps reporting a call that leaves out a non-constant default as not built yet.

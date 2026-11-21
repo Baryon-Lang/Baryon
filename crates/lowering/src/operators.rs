@@ -27,6 +27,11 @@ impl<'db> Builder<'db> {
         // others depend on whether the number is an integer: `//` and `%` check the divisor,
         // and `/` converts integers to `f64`. Under `Float` the instance is a float, so `/` is
         // its float division too.
+        // Under `Float`, `**` is the instance's `math.pow`, as on a float.
+        if syntax == Operator::Power && self.is_float_parameter(ty) {
+            let operands = vec![self.operand_as(left, ty), self.operand_as(right, ty)];
+            return self.math_call(place, MathFunction::Power, operands, node);
+        }
         let generic = matches!(ty.kind(self.db), TypeKind::Parameter { .. })
             && (matches!(
                 syntax,
