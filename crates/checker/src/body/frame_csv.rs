@@ -20,14 +20,14 @@
 //! 0045), so no index column is written. It can fail with `OSError`.
 //!
 //! Each takes the path and `sep=`, the character between fields; `read_csv` takes
-//! `na_values=`, more cells to read as missing, and `to_csv` takes `na_rep=`, the text to
-//! write for a missing value (roadmap 3.14.4.2). Every other keyword pandas has is an error
-//! that names it, never silently ignored.
+//! `na_values=`, more cells to read as missing, `nrows=` and `skiprows=`, and `to_csv` takes
+//! `na_rep=`, the text to write for a missing value (roadmap 3.14.4.2). Every other keyword
+//! pandas has is an error that names it, never silently ignored.
 
 use super::calls::Arguments;
 use super::{Body, relations};
 use syntax::NodeId;
-use types::{Call, Callee, Key, Primitive, Type, TypeKind};
+use types::{Call, Callee, Integer, Key, Primitive, Type, TypeKind};
 
 /// How a call is written, for the hints.
 const EXAMPLE: &str = "for example `trades: DataFrame[Trade] = DataFrame.read_csv(\"trades.csv\")`";
@@ -111,11 +111,13 @@ impl<'db> Body<'db> {
     }
 
     /// Checks the keyword arguments of `read_csv`, when `reading`, or of `to_csv` (roadmap
-    /// 3.14.4.2). Three are built. `sep=`, on both, is the character between fields.
+    /// 3.14.4.2). Five are built. `sep=`, on both, is the character between fields.
     /// `na_values=` of `read_csv` is a `str` or a `list[str]`: the cells read as missing
-    /// besides the empty one. `na_rep=` of `to_csv` is the `str` written for a missing
-    /// value. `Err`, with the unknown type and every argument marked untyped, after
-    /// reporting a keyword that is not built yet or a separator that is not one character.
+    /// besides the empty one. Its `nrows=` and `skiprows=` are each an `int`: how many
+    /// rows to read at most, and how many lines to pass over before the header. `na_rep=`
+    /// of `to_csv` is the `str` written for a missing value. `Err`, with the unknown type
+    /// and every argument marked untyped, after reporting a keyword that is not built yet
+    /// or a separator that is not one character.
     fn csv_keywords(&mut self, reading: bool, arguments: &Arguments) -> Result<(), Type<'db>> {
         let function = if reading {
             "`DataFrame.read_csv`"
@@ -133,6 +135,12 @@ impl<'db> Body<'db> {
                         self.expect(value, str, found, "`na_values` is a `list[str]` or a");
                     }
                 }
+                (name @ ("nrows" | "skiprows"), true) => {
+                    let int = TypeKind::Primitive(Primitive::Integer(Integer::I64));
+                    let int = Type::new(self.db, int);
+                    let found = self.expression(value, Some(int));
+                    self.expect(value, int, found, &format!("`{name}` is"));
+                }
                 ("na_rep", false) => {
                     let found = self.expression(value, Some(str));
                     self.expect(value, str, found, "`na_rep` is");
@@ -141,8 +149,8 @@ impl<'db> Body<'db> {
                     let message = format!("{function} does not take `{name}` yet");
                     self.untyped(arguments);
                     let hint = if reading {
-                        "this version takes the path, `sep=` and `na_values=`, for a file \
-                         with a header row"
+                        "this version takes the path, `sep=`, `na_values=`, `nrows=` and \
+                         `skiprows=`, for a file with a header row"
                     } else {
                         "this version takes the path, `sep=` and `na_rep=`, and writes a \
                          header row and no index column"

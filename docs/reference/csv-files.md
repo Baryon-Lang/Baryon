@@ -135,12 +135,14 @@ column of `f64 | None` is written as an empty cell too, which reads back as `Non
 
 ## Keywords
 
-Both functions take the path first. Three keywords of pandas are built so far:
+Both functions take the path first. Five keywords of pandas are built so far:
 
 | Keyword | Of | Meaning | Default |
 | --- | --- | --- | --- |
 | `sep=` | both | The character between the cells of a row | `","` |
 | `na_values=` | `read_csv` | More cells to read as missing: a `str` or a `list[str]` | none |
+| `skiprows=` | `read_csv` | How many lines to pass over before the header: an `int` | `0` |
+| `nrows=` | `read_csv` | How many rows to read at most: an `int` | every row |
 | `na_rep=` | `to_csv` | The text written for a missing value: a `str` | `""` |
 
 ```python
@@ -176,9 +178,18 @@ def main() -> Raises[None, OSError | ValueError]:
   a quote or a line end. An empty text in a column of `str | None` is not missing and stays
   an empty cell.
 
-Any other keyword is a compile error that names it, never ignored. The next to come, in this
-order, are `nrows=` and `skiprows=`, then `header=False` and `columns=` of `to_csv` (roadmap
-3.14.4.2).
+- **`skiprows` counts lines from the top of the file.** The header is the first line that
+  is not blank after them. Every line counts, a blank one too, and a quoted cell that
+  holds a line end does not end its line, as in pandas. A negative count skips nothing.
+  pandas also takes a list of line numbers and a function, which are compile errors here.
+- **`nrows` stops the reading.** At most that many rows after the header are read, and the
+  rest of the file is not looked at, so a row that would be an error there is none. `0`
+  gives a frame of no rows, a count past the end reads what there is, and a negative one
+  raises `ValueError`. Reading the first rows of a large file still loads the whole file
+  into memory first.
+
+Any other keyword is a compile error that names it, never ignored. The next to come are
+`header=False` and `columns=` of `to_csv` (roadmap 3.14.4.2).
 
 ## Errors
 
@@ -198,6 +209,8 @@ alone, when the file cannot be made or written.
   | has an empty cell where the field has no `None` | `column 'volume', row 2: the cell is empty, and the column's type has no None` |
   | has a row with more cells than the header | `trades.csv: expected 4 fields in row 2, saw 5` |
   | is empty | `trades.csv: no columns to read, the file is empty` |
+  | has `skiprows` lines or fewer | `trades.csv: no columns to read after skipping 9 lines` |
+  | is read with a negative `nrows` | `trades.csv: nrows is -1, and it cannot be less than 0` |
   | is not UTF-8 | the message `decode` gives for the bytes |
 
 ## Cost
@@ -232,10 +245,10 @@ took 2.5 s, where pandas took 2.0 s.
 - **The schema chooses the columns.** pandas has `usecols=` for reading some of them. Here a
   column the schema does not name is skipped, and one it names that the file lacks is an
   error.
-- **Three keywords so far.** [`sep=`, `na_values=` and `na_rep=`](#keywords) are built.
-  `header=`, `names=`, `skiprows=`, `nrows=` and the rest are compile errors that name the
-  keyword, never ignored. The same holds for `to_csv`: `index=`, `columns=`,
-  `float_format=` and the rest.
+- **Five keywords so far.** [`sep=`, `na_values=`, `skiprows=`, `nrows=` and
+  `na_rep=`](#keywords) are built. `header=`, `names=`, `usecols=` and the rest are compile
+  errors that name the keyword, never ignored. The same holds for `to_csv`: `index=`,
+  `columns=`, `float_format=` and the rest.
 - **`to_csv` writes no index column.** pandas writes its row index as a first column unless
   `index=False` is given. A frame has no index here, so the file is the one pandas writes
   with `index=False`.
@@ -243,6 +256,6 @@ took 2.5 s, where pandas took 2.0 s.
 
 ## Not built yet
 
-- The keywords of `pandas.read_csv` and of `to_csv` other than `sep=`, `na_values=` and
-  `na_rep=` (roadmap 3.14.4.2).
+- The keywords of `pandas.read_csv` and of `to_csv` other than the five under
+  [Keywords](#keywords) (roadmap 3.14.4.2).
 - Columns of complex numbers.

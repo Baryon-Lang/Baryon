@@ -21,6 +21,7 @@ quotes may hold separators, line ends and, written twice, a double quote; a line
 `"\\n"`, `"\\r\\n"` or `"\\r"`; a blank line is skipped; a row with fewer fields than the header
 has empty cells at its end, and a row with more is an error. Only an empty cell is missing,
 and `na_values=` names more cells to read as empty ones.
+`skiprows=` passes over lines before the header and `nrows=` stops after so many rows.
 
 Cost: the whole file is held in memory while its columns are built, with 16 bytes for each
 cell of a wanted column. A whole number of digits alone is read where it lies; any other
@@ -100,6 +101,29 @@ def _skip_blank(data: Array[u8, 1], start: int) -> int:
     return at
 
 
+def _skip_lines(data: Array[u8, 1], start: int, lines: int) -> int:
+    """Where the line `lines` lines after byte `start` of `data` begins, for `skiprows=`:
+    every line counts, a blank one too, and a line end inside double quotes ends no line,
+    which is how pandas counts them. The end of `data` when it has fewer lines."""
+    at = start
+    left = lines
+    quoted = False
+    while left > 0 and at < len(data):
+        byte = data[at]
+        at += 1
+        if byte == u8(34):
+            quoted = not quoted
+        elif quoted:
+            continue
+        elif byte == u8(10):
+            left -= 1
+        elif byte == u8(13):
+            if at < len(data) and data[at] == u8(10):
+                at += 1
+            left -= 1
+    return at
+
+
 def _position(data: Array[u8, 1], header: list[int], name: str) -> int:
     """Which field of the header, whose bounds are `header`, is `name`; -1 when none is. The
     first one counts when a name is there twice."""
@@ -139,7 +163,7 @@ def csv_spelling(text: str) -> list[str]:
 
 
 def csv_cells(
-    path: str, names: list[str], sep: str, missing: list[str]
+    path: str, names: list[str], sep: str, missing: list[str], skip: int, limit: int
 ) -> Raises[tuple[Array[u8, 1], list[int]], OSError | ValueError]:
     """Reads the CSV file `path`, whose fields `sep` separates, and finds the cells of the
     columns `names`. `sep` is one character of one byte that is not a double quote, which
@@ -155,10 +179,18 @@ def csv_cells(
     bounds of each cell: for each data row, for each of `names` in turn, where the cell
     starts and where it ends. A cell its row is too short to hold is empty.
 
+    `skip` is what the program wrote as `skiprows=`, and 0 without it: so many lines are
+    passed over before the header, as `_skip_lines` counts them, and none when it is
+    negative, as in pandas. `limit` is what it wrote as `nrows=`, and the largest `int`
+    without it: reading stops after so many data rows, and what follows them is not looked
+    at, so it cannot be an error.
+
     Raises `OSError` when the file cannot be read, and `ValueError` when it is not UTF-8,
-    holds no header, its header lacks one of `names`, or a row has more fields than the
-    header.
+    holds no header, its header lacks one of `names`, a row has more fields than the
+    header, or `limit` is negative.
     """
+    if limit < 0:
+        raise ValueError(f"{path}: nrows is {limit}, and it cannot be less than 0")
     data = Array.fromfile(path, u8)
     split = sep.encode()[0]
     # The columns of text are built from these bytes, so they must be UTF-8 as a whole.
@@ -166,8 +198,10 @@ def csv_cells(
     at = 0
     if checked.startswith("﻿"):
         at = 3
-    at = _skip_blank(data, at)
+    at = _skip_blank(data, _skip_lines(data, at, skip))
     if at >= len(data):
+        if skip > 0 and len(data) > 0:
+            raise ValueError(f"{path}: no columns to read after skipping {skip} lines")
         raise ValueError(f"{path}: no columns to read, the file is empty")
     header: list[int] = []
     at = _record(data, at, header, split)
@@ -184,7 +218,7 @@ def csv_cells(
     some = len(spellings) > 0
     row = 0
     at = _skip_blank(data, at)
-    while at < len(data):
+    while at < len(data) and row < limit:
         while len(fields) > 0:
             fields.pop()
         at = _record(data, at, fields, split)

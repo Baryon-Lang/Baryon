@@ -1,14 +1,15 @@
 //! CSV files read into a frame and written from one (decision 0045, roadmap 3.14.4):
 //! `DataFrame.read_csv(path)` and `df.to_csv(path)`, each with `sep=` for the character
-//! between fields, and with `na_values=` and `na_rep=` for how a missing value is spelled
-//! (roadmap 3.14.4.2).
+//! between fields, with `na_values=` and `na_rep=` for how a missing value is spelled, and
+//! `read_csv` with `skiprows=` and `nrows=` for the part of the file to read (roadmap
+//! 3.14.4.2).
 //!
 //! The reader is Baryon code in `<std>/frame_csv.byn`, which knows nothing of the schema, so
 //! this module calls it once for the file and once or more for each column the checker
 //! found in the frame's type:
 //!
-//! 1. `csv_cells(path, names, sep, missing)` reads the file and finds the cells of the
-//!    columns `names`.
+//! 1. `csv_cells(path, names, sep, missing, skip, limit)` reads the file and finds the
+//!    cells of the columns `names`, after `skiprows=` lines and for `nrows=` rows at most.
 //! 2. For a column of numbers or `bool`s, `csv_floats`, `csv_integers` or `csv_bools` reads
 //!    its cells, or the function of a narrower number type in `<std>/frame_csv_types.byn`.
 //!    For a column of `str`, `csv_text_bytes` and `csv_text_offsets` give the two buffers of
@@ -83,7 +84,9 @@ impl<'db> Builder<'db> {
         let Some(missing) = self.csv_spellings(node) else {
             return;
         };
-        let given = [path, Place::from(names), sep, missing];
+        let skip = self.csv_count(node, "skiprows", 0);
+        let limit = self.csv_count(node, "nrows", i128::from(i64::MAX));
+        let given = [path, Place::from(names), sep, missing, skip, limit];
         let given = given.into_iter().map(Argument::Borrow).collect();
         if !self.csv_call("csv_cells", given, Place::from(cells), node) {
             return;
@@ -329,6 +332,17 @@ impl<'db> Builder<'db> {
         let one = self.frame_call("csv_spelling", Vec::new(), vec![given], list, node)?;
         self.drop_later(one);
         Some(Place::from(one))
+    }
+
+    /// The place of the whole number the call `node` of `read_csv` gives as the keyword
+    /// `name`, `skiprows` or `nrows`, and of `without` when it is not written.
+    fn csv_count(&mut self, node: NodeId, name: &str, without: i128) -> Place {
+        if let Some(written) = self.keyword_of(node, name) {
+            return self.borrow(written);
+        }
+        let int = self.int_type();
+        let without = Operand::Constant(Constant::integer(int, without));
+        Place::from(self.held(int, without, node))
     }
 
     /// The place of the cell that the call `node` of `to_csv` writes for a missing value, in
