@@ -109,6 +109,7 @@ mod snappy;
 mod sorting;
 mod special;
 mod special_bessel;
+mod special_complex;
 mod special_elliptic;
 mod special_everyday;
 mod special_hypergeometric;

@@ -30,8 +30,8 @@ impl<'db> Body<'db> {
                 self.interpolations(node);
                 Type::new(self.db, TypeKind::Str)
             }
-            SyntaxKind::Name => self.name(node),
-            SyntaxKind::Attribute => self.attribute(node),
+            SyntaxKind::Name => self.name(node, expected),
+            SyntaxKind::Attribute => self.attribute(node, expected),
             SyntaxKind::Subscript => self.subscript(node, expected),
             SyntaxKind::Call => {
                 let ty = self.call(node, expected);
@@ -167,8 +167,8 @@ impl<'db> Body<'db> {
         }
     }
 
-    /// The type of a name read as a value.
-    pub(super) fn name(&mut self, node: NodeId) -> Type<'db> {
+    /// The type of a name read as a value; `expected` picks an overloaded function's overload.
+    pub(super) fn name(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
         match self.lowerer.definition(node) {
             Some(&Definition::Local(binding)) => {
                 // A read after a borrowing loop is reported once, as that, even when the loop
@@ -191,7 +191,12 @@ impl<'db> Body<'db> {
                     .copied()
                     .unwrap_or_else(|| self.lowerer.unknown())
             }
-            Some(&Definition::Item(file, name)) => self.item_value(node, file, name),
+            Some(&Definition::Item(file, name)) => {
+                match self.overload_value(node, file, name, expected) {
+                    Ok(name) => self.item_value(node, file, name),
+                    Err(error) => error,
+                }
+            }
             Some(Definition::Standard {
                 module: "math",
                 member: Some(member),

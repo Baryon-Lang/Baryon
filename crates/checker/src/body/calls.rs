@@ -193,6 +193,18 @@ impl<'db> Body<'db> {
         name: NodeId,
         arguments: &Arguments,
     ) -> Type<'db> {
+        let overloads = self.overloads(file, name);
+        let name = if overloads.is_empty() {
+            name
+        } else {
+            match self.choose_overload(node, callee, file, &overloads, arguments) {
+                Ok(chosen) => chosen,
+                Err(error) => {
+                    self.untyped(arguments);
+                    return error;
+                }
+            }
+        };
         let Some(kind) = outline(self.db, file)
             .get(name)
             .map(|entry| entry.kind.clone())

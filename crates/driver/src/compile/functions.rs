@@ -5,6 +5,7 @@
 
 use crate::Session;
 use database::{File, Package};
+use std::collections::BTreeMap;
 use syntax::{NodeId, Role, SyntaxKind, SyntaxTree};
 use types::{Declaration, Item, TypeDb, TypeKind};
 
@@ -120,6 +121,8 @@ pub(super) fn file_functions(
             library: library.is_some(),
         });
     };
+    // How many functions each name has defined so far.
+    let mut defined: BTreeMap<&str, usize> = BTreeMap::new();
     for statement in tree.children_with(tree.root(), Role::Body) {
         let Some(node) = name(statement) else {
             continue;
@@ -127,13 +130,15 @@ pub(super) fn file_functions(
         let own = tree.text(node, text);
         match tree.kind(statement) {
             SyntaxKind::FunctionDefinition => {
-                push(
-                    statement,
-                    node,
-                    format!("{module}.{own}"),
-                    own == "main",
-                    false,
-                );
+                // A library name defined again is an overload (decision 0067); the second and
+                // later ones count themselves into their symbols, which stay apart.
+                let earlier = defined.entry(own).or_insert(0);
+                *earlier += 1;
+                let symbol = match *earlier {
+                    1 => format!("{module}.{own}"),
+                    count => format!("{module}.{own}#{count}"),
+                };
+                push(statement, node, symbol, own == "main", false);
             }
             SyntaxKind::ClassDefinition => {
                 // A trait's methods have no bodies: each instance of a generic function

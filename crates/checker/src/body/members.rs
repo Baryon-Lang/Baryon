@@ -32,8 +32,10 @@ pub(super) enum Member<'db> {
 }
 
 impl<'db> Body<'db> {
-    /// `value.name`: a module's member, an enum's member, or a struct's field.
-    pub(super) fn attribute(&mut self, node: NodeId) -> Type<'db> {
+    /// `value.name`: a module's member, an enum's member, or a struct's field. `expected` is the
+    /// type the context needs, which picks the overload a module's overloaded function stands
+    /// for.
+    pub(super) fn attribute(&mut self, node: NodeId, expected: Option<Type<'db>>) -> Type<'db> {
         let (Some(value), Some(attribute)) = (
             self.tree.child(node, Role::Value),
             self.tree.child(node, Role::Attribute),
@@ -41,7 +43,7 @@ impl<'db> Body<'db> {
             return self.lowerer.unknown();
         };
         if self.lowerer.definition(attribute).is_some() {
-            return self.name(attribute);
+            return self.name(attribute, expected);
         }
         if let Some(&Definition::Item(file, class)) = self.lowerer.definition(value) {
             return self.class_attribute(node, file, class, attribute);

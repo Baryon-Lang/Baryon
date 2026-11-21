@@ -905,6 +905,37 @@ nothing at run time. The rules in version 0:
   `f(1.0, *t)` with `t: tuple[f64, f64]`. A list does not, since its length is not known when
   compiling.
 
+## Overloaded library functions
+
+Some functions of the standard library have more than one *overload*: one name defined more than
+once, for different argument types, as SciPy's `loggamma` takes a real or a complex number
+([decision 0067](../decisions/0067-library-overloading.md)). A call runs the overload its
+arguments fit, and each overload has its own return type:
+
+```python
+from special import loggamma
+
+
+def main():
+    print(loggamma(2.5))                    # 0.2846828704729192, an f64
+    print(loggamma(complex(1.0, 2.0)))      # (-1.876078786430929+0.12964631630978873j)
+```
+
+The rules:
+
+- Only the standard library defines overloads. In a program's own module a name defined twice is
+  an error, as before.
+- A number literal fits a wider number type too, and takes its nearest one: an int literal an
+  integer type, then `f64`, then `complex128`; a float literal `f64`, then `complex128`. So
+  `loggamma(3)` is the real `loggamma`. Any other call that fits two overloads equally well is an
+  error naming both.
+- A call no overload fits is an error that lists the overloads.
+- An overloaded name used as a value, without calling it, must go where a `Callable` is expected,
+  such as `apply(special.loggamma, z)` with `f: Callable[[complex128], complex128]`; it stands for
+  the overload with that signature.
+- An overload may be generic only when its bound excludes every other overload's argument types,
+  as `[T: Float]` excludes `complex128`, so no call fits two.
+
 ## Generics
 
 Functions and structs take type parameters with Python 3.12's syntax. A bound after `:` names the

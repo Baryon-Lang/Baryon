@@ -85,6 +85,7 @@ mod numbers;
 mod operators;
 mod optional_arithmetic;
 mod optional_arrays;
+mod overloads;
 mod parallel;
 mod parameter_conversions;
 mod paths;
@@ -167,6 +168,9 @@ pub(crate) fn check<'db>(
         body.missing_return(entry.name);
     }
     body.lent_conditionals();
+    if entry.class.is_none() {
+        body.overlapping_overloads(entry.name);
+    }
     let mut typed = body.typed;
     typed.locals = body
         .locals

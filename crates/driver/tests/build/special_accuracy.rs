@@ -9,7 +9,9 @@
 /// Fresnel integrals, zeta and Spence's function are held to 16: each is a series or a continued
 /// fraction of many terms. The Bessel functions are held to 16, since each is a sum or a recurrence
 /// of many terms, and `yn` to 32: its upward recurrence adds about half a ULP at each order, and
-/// the cases reach order 30. `beta` is held to 8 ULP plus 2 for each unit of the logarithm of the
+/// the cases reach order 30. Each part of the complex `loggamma` is held to 32 ULP of the size its
+/// case records: between the series around 1, 1.5 and 2 the recurrence from Re z = 7 subtracts
+/// logarithms near 2 to leave about 0.1, and the worst is 21 ULP. `beta` is held to 8 ULP plus 2 for each unit of the logarithm of the
 /// value: above 171 it is `exp(betaln)`, and the exponential turns each ULP of the logarithm's
 /// absolute error into its size in relative error. `binom` and `comb` are held to the same: past
 /// 1,000 factors they are 1/beta, and a product of hundreds of factors rounds once for each.
@@ -70,7 +72,7 @@ pub(super) fn tolerance(name: &str, want: f64, first: f64) -> f64 {
     let shape = first.abs().clamp(1e-3, 1.0);
     match name {
         "beta" | "binom" | "comb" => 8.0 + 2.0 * want.abs().ln().abs(),
-        "yn" => 32.0,
+        "yn" | "loggamma_re" | "loggamma_im" => 32.0,
         "ellipj_sn" | "ellipj_cn" | "ellipj_dn" | "ellipj_ph" => 128.0,
         "lpmv" => 64.0,
         "eval_legendre" | "eval_chebyt" | "eval_chebyu" | "eval_hermite" | "eval_hermitenorm"
@@ -115,7 +117,9 @@ pub(super) fn tolerance(name: &str, want: f64, first: f64) -> f64 {
 /// the reference and their envelope √(2/(π|x|)), for `|x|` above 1. Each part of the complex
 /// `lambertw` is measured against the size of the whole value, |W|, which its case records in
 /// the place of `x`: a part far smaller than the other has only the precision of the larger.
-/// Jacobi's sn, cn and dn are at most 1 in size and come from sines and cosines of the amplitude,
+/// Each part of the complex `loggamma` is measured against the larger of |log Γ(z)| and
+/// |z ψ(z)|, the error that rounding the argument alone would make, which its case records in
+/// the place of `x`. Jacobi's sn, cn and dn are at most 1 in size and come from sines and cosines of the amplitude,
 /// so they too are measured against the larger of the reference and 1. An orthogonal polynomial,
 /// `lpmv` and a part of `sph_harm_y` are measured against the largest size their recurrence
 /// passes through on the way to the degree, which the case records in the place of `x`: near
@@ -150,6 +154,7 @@ pub(super) fn scale(name: &str, want: f64, x: f64) -> f64 {
         _ if name.starts_with("roots_")
             || name.starts_with("airy")
             || name.starts_with("mathieu_")
+            || name.starts_with("loggamma_")
             || name.starts_with("pro_")
             || name.starts_with("obl_") =>
         {
