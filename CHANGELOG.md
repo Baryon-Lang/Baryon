@@ -114,6 +114,8 @@ A value that is absent is `None`, kept apart from the float `NaN`, as pandas kee
 - Array arithmetic: integer and true division, and `min` and `max` of `bool` arrays (#443).
 - A `Callable` called inside a `prange` loop (#485), a local that holds a function outside
   generic code (#471), and an optional frame read after it was checked (#509).
+- `**` on a value whose type is a parameter bound by `Float`, which passed the checker and then
+  stopped the build (#555).
 - Shortest float text breaks ties to the even digit, as Python does (#524), and an f-string
   writes any value as `print` does (#513).
 - Mistakes that reached the backend and failed there are now compile errors that say what is
