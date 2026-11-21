@@ -1,4 +1,5 @@
-//! Checking `DataFrame.read_csv` and `to_csv` (decision 0045, roadmap 3.14.4), end to end:
+//! Checking `DataFrame.read_csv` and `to_csv` (decision 0045, roadmap 3.14.4 and 3.14.4.2), end
+//! to end:
 //! programs that call them go through the parser, the syntax check, the resolver and the
 //! checker, and the rendered diagnostics are compared in full.
 
@@ -71,7 +72,7 @@ class Wide(Struct):
 
 
 def main() -> Raises[None, OSError | ValueError]:
-    trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv", sep=";")
+    trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv", usecols=["price"])
     untyped = DataFrame.read_csv("trades.csv")
     wide: DataFrame[Wide] = DataFrame.read_csv("trades.csv")
     none: DataFrame[Trade] = DataFrame.read_csv()
@@ -82,12 +83,12 @@ def main() -> Raises[None, OSError | ValueError]:
 def unhandled():
     trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv")
 "#;
-    let expected = r#"error: `DataFrame.read_csv` does not take `sep` yet
+    let expected = r#"error: `DataFrame.read_csv` does not take `usecols` yet
   --> main.byn:12:65
    |
-12 |     trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv", sep=";")
-   |                                                                 ^^^ not built yet
-   = note: this version reads a comma-separated file with a header row, given its path alone
+12 |     trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv", usecols=["price"])
+   |                                                                 ^^^^^^^ not built yet
+   = note: this version takes the path and `sep=`, for a file with a header row and no index column
 
 error: `DataFrame.read_csv` needs the frame's type from the context
   --> main.byn:13:15
@@ -172,7 +173,7 @@ def main():
    |
 13 |     trades.to_csv("trades.csv", index=False)
    |                                 ^^^^^ not built yet
-   = note: this version writes a comma-separated file with a header row and no index column, given its path alone
+   = note: this version takes the path and `sep=`, for a file with a header row and no index column
 
 error: `to_csv` takes the path of the file to write
   --> main.byn:14:5
@@ -200,5 +201,73 @@ error: `trades.to_csv` can fail with `OSError`, which is not handled here
 21 |     trades.to_csv("trades.csv")
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ can fail with `OSError`
    = note: catch it with `try:` and `except OSError:`, or let it pass on by declaring `-> Raises[None, OSError]`"#;
+    assert_eq!(check_one(program), expected);
+}
+
+/// `sep=` (roadmap 3.14.4.2) checks as a string literal of one character, a tab included, on
+/// both functions. A text of several characters, an empty one, a quote, a character outside
+/// ASCII, a variable and a number are each reported at the value.
+#[test]
+fn the_separator_is_one_character_written_out() {
+    let program = r#"
+class Trade(Struct):
+    symbol: str
+    price: f64 | None
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv", sep=";")
+    tabbed: DataFrame[Trade] = DataFrame.read_csv("trades.tsv", sep="\t")
+    trades.to_csv("out.csv", sep="|")
+    trades.to_csv("out.tsv", sep='\t')
+    semicolon = ";"
+    two: DataFrame[Trade] = DataFrame.read_csv("trades.csv", sep="::")
+    none: DataFrame[Trade] = DataFrame.read_csv("trades.csv", sep="")
+    named: DataFrame[Trade] = DataFrame.read_csv("trades.csv", sep=semicolon)
+    trades.to_csv("out.csv", sep='"')
+    trades.to_csv("out.csv", sep="§")
+    trades.to_csv("out.csv", sep=9)
+"#;
+    let expected = r#"error: `sep` of `DataFrame.read_csv` is one character, written out
+  --> main.byn:12:66
+   |
+12 |     two: DataFrame[Trade] = DataFrame.read_csv("trades.csv", sep="::")
+   |                                                                  ^^^^ not one character
+   = note: for example `sep=";"` or `sep="\t"`; a quote, a backslash and a character outside ASCII cannot split fields
+
+error: `sep` of `DataFrame.read_csv` is one character, written out
+  --> main.byn:13:67
+   |
+13 |     none: DataFrame[Trade] = DataFrame.read_csv("trades.csv", sep="")
+   |                                                                   ^^ not one character
+   = note: for example `sep=";"` or `sep="\t"`; a quote, a backslash and a character outside ASCII cannot split fields
+
+error: `sep` of `DataFrame.read_csv` is one character, written out
+  --> main.byn:14:68
+   |
+14 |     named: DataFrame[Trade] = DataFrame.read_csv("trades.csv", sep=semicolon)
+   |                                                                    ^^^^^^^^^ not one character
+   = note: for example `sep=";"` or `sep="\t"`; a quote, a backslash and a character outside ASCII cannot split fields
+
+error: `sep` of `to_csv` is one character, written out
+  --> main.byn:15:34
+   |
+15 |     trades.to_csv("out.csv", sep='"')
+   |                                  ^^^ not one character
+   = note: for example `sep=";"` or `sep="\t"`; a quote, a backslash and a character outside ASCII cannot split fields
+
+error: `sep` of `to_csv` is one character, written out
+  --> main.byn:16:34
+   |
+16 |     trades.to_csv("out.csv", sep="§")
+   |                                  ^^^ not one character
+   = note: for example `sep=";"` or `sep="\t"`; a quote, a backslash and a character outside ASCII cannot split fields
+
+error: `sep` of `to_csv` is one character, written out
+  --> main.byn:17:34
+   |
+17 |     trades.to_csv("out.csv", sep=9)
+   |                                  ^ not one character
+   = note: for example `sep=";"` or `sep="\t"`; a quote, a backslash and a character outside ASCII cannot split fields"#;
     assert_eq!(check_one(program), expected);
 }

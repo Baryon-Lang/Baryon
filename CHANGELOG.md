@@ -19,6 +19,8 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   ([Sorting, grouping and joining DataFrames](docs/reference/dataframe-operations.md)).
 - `groupby` with a sum and a mean of 10 million rows takes 0.24 s, down from 0.87 s, with the same
   results bit for bit.
+- `DataFrame.read_csv` and `to_csv` take `sep=`, one character written out, such as `";"` or
+  `"\t"` ([CSV files](docs/reference/csv-files.md#keywords)).
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 

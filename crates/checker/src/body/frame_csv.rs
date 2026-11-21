@@ -19,8 +19,8 @@
 //! `pandas.DataFrame.to_csv(path, index=False)` writes: a frame has no row index (decision
 //! 0045), so no index column is written. It can fail with `OSError`.
 //!
-//! The first version of each takes the path alone: every keyword pandas has is an error that
-//! names it, never silently ignored.
+//! Each takes the path and `sep=`, the character between fields (roadmap 3.14.4.2): every
+//! other keyword pandas has is an error that names it, never silently ignored.
 
 use super::Body;
 use super::calls::Arguments;
@@ -49,17 +49,8 @@ impl<'db> Body<'db> {
                 .lowerer
                 .error(node, &message, "not defined", Some(hint));
         }
-        if let Some(&(keyword, _)) = arguments.keywords.first() {
-            self.untyped(arguments);
-            let message = format!(
-                "`DataFrame.read_csv` does not take `{}` yet",
-                self.tree.text(keyword, self.text)
-            );
-            let hint = "this version reads a comma-separated file with a header row, given \
-                        its path alone";
-            return self
-                .lowerer
-                .error(keyword, &message, "not built yet", Some(hint));
+        if let Err(refused) = self.csv_keywords("`DataFrame.read_csv`", arguments) {
+            return refused;
         }
         let &[path] = arguments.positional.as_slice() else {
             self.untyped(arguments);
@@ -117,6 +108,44 @@ impl<'db> Body<'db> {
         self.raises_library_errors(node, frame, &["OSError", "ValueError"])
     }
 
+    /// Checks the keyword arguments of `function`, `read_csv` or `to_csv` as a message names
+    /// it. `sep=` is the one built (roadmap 3.14.4.2): the character between fields, written
+    /// out as a string literal of one character, since a file split by a text the program
+    /// works out could not be checked here. `Err`, with the unknown type and every argument
+    /// marked untyped, after reporting a keyword that is not built yet or a separator that
+    /// is not one character.
+    fn csv_keywords(&mut self, function: &str, arguments: &Arguments) -> Result<(), Type<'db>> {
+        for &(keyword, value) in &arguments.keywords {
+            let name = self.tree.text(keyword, self.text);
+            if name != "sep" {
+                let message = format!("{function} does not take `{name}` yet");
+                self.untyped(arguments);
+                let hint = "this version takes the path and `sep=`, for a file with a header \
+                            row and no index column";
+                return Err(self
+                    .lowerer
+                    .error(keyword, &message, "not built yet", Some(hint)));
+            }
+            let written = self.literal_text(value);
+            let one = written.is_some_and(|text| {
+                text == "\\t"
+                    || (text.len() == 1 && !matches!(text, "\\" | "\"" | "'") && text.is_ascii())
+            });
+            if !one {
+                self.untyped(arguments);
+                let message = format!("`sep` of {function} is one character, written out");
+                let hint = "for example `sep=\";\"` or `sep=\"\\t\"`; a quote, a backslash and a \
+                            character outside ASCII cannot split fields";
+                return Err(self
+                    .lowerer
+                    .error(value, &message, "not one character", Some(hint)));
+            }
+            let str = Type::new(self.db, TypeKind::Str);
+            self.expression(value, Some(str));
+        }
+        Ok(())
+    }
+
     /// Whether `read_csv` reads, and `to_csv` writes, a column whose elements are `element`s:
     /// a float, a whole number, a `bool` or a `str`, or one of them or `None`.
     fn is_csv_element(&self, element: Type<'db>) -> bool {
@@ -150,18 +179,8 @@ impl<'db> Body<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return None;
         };
-        if let Some(&(keyword, _)) = arguments.keywords.first() {
-            self.untyped(arguments);
-            let message = format!(
-                "`to_csv` does not take `{}` yet",
-                self.tree.text(keyword, self.text)
-            );
-            let hint = "this version writes a comma-separated file with a header row and no \
-                        index column, given its path alone";
-            return Some(
-                self.lowerer
-                    .error(keyword, &message, "not built yet", Some(hint)),
-            );
+        if let Err(refused) = self.csv_keywords("`to_csv`", arguments) {
+            return Some(refused);
         }
         let &[path] = arguments.positional.as_slice() else {
             self.untyped(arguments);
