@@ -22,7 +22,7 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
 - `lzma.compress` writes xz data that Python's `lzma.decompress` reads. Presets 4 to 9 compress
   like preset 3 with their larger dictionary for now, so their output runs about 4% to 28% larger
   than Python's; an optimal parser to close the gap is row 3.27.12
-  ([`lzma.compress`](docs/reference/compression.md#lzmacompress)).
+  ([`lzma.compress`](docs/reference/lzma.md#lzmacompress)).
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 
