@@ -5,6 +5,7 @@
   "version": "0.3.0",
   "publisher": "baryon-lang",
   "license": "Apache-2.0 OR MIT",
+  "icon": "icons/baryon.png",
   "private": true,
   "repository": {
     "type": "git",
@@ -15,6 +16,8 @@
     "extension.js",
     "language-configuration.json",
     "syntaxes/*.json",
+    "icons/baryon.png",
+    "icons/baryon-file.svg",
     "README.md",
     "node_modules/**"
   ],
@@ -54,6 +57,10 @@
         "extensions": [
           ".byn"
         ],
+        "icon": {
+          "light": "./icons/baryon-file.svg",
+          "dark": "./icons/baryon-file.svg"
+        },
         "configuration": "./language-configuration.json"
       }
     ],

@@ -99,3 +99,4 @@ What becomes easier, what becomes harder, and what we give up.
 | [0065. `integrate` keeps SciPy's calls, with a generic state and `method=` chosen when compiling](0065-integrate-api.md) | Accepted |
 | [0066. Converting to a type parameter, and type arguments on a constructor](0066-converting-to-and-naming-type-parameters.md) | Accepted |
 | [0069. `interpolate` keeps SciPy's names, with scalar calls, 2-D grids and panics for bad input](0069-interpolate-api.md) | Accepted |
+| [0070. Baryon's logo is the Kanizsa B in brass on forest green](0070-baryon-logo.md) | Accepted |
