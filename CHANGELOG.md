@@ -50,7 +50,8 @@ A value that is absent is `None`, kept apart from the float `NaN`, as pandas kee
 - **Grouping**: `size` and `nunique` in `groupby(...).agg(...)`.
 - **pandas's arguments** on summaries and `sort_values`, `assign` of one value for every row, and
   `drop` and `rename` with `axis=1` or `axis="columns"`.
-- **Speed**: sorting float and integer keys in about n steps. The
+- **Speed**: sorting float and integer keys in about n steps, and `read_csv` reading number cells
+  where they lie instead of copying each one, 7.7 s to 4.0 s for 10 million rows (#556). The
   [DataFrame guide](docs/guide/dataframes.md#how-fast-is-it) compares nine operations on 10
   million rows with pandas and Polars: Baryon is ahead of pandas in five and behind in
   `groupby`, `merge`, missing values and `read_csv`.
