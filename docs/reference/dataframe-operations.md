@@ -119,8 +119,12 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   new columns, in the order given to `agg`. The keys are ordinary columns, since a frame has
   no row index; pandas makes them the index, and shows this frame after `reset_index()`.
 - **The groups come out sorted by their keys**, rising, and rows keep their order inside a
-  group, which is what `first` and `last` see. A key of `str` is in the order of Python's
-  `<`, by code point, and texts are one group only when exactly equal.
+  group, which is what `first` and `last` see. `df.groupby("symbol", sort=False)` gives the
+  groups in the order their keys first appear in the frame instead, as in pandas; it still
+  sorts the rows to find the groups, and then puts the result's rows in that order, which
+  costs one more sort of a number for each group and a copy of the reduced columns. A key
+  of `str` is in the order of Python's `<`, by code point, and texts are one group only
+  when exactly equal.
 - **A column of `str` has seven of the reductions**: `count`, `size` and `nunique`, each
   an `i64`, and `first`, `last`, `min` and `max`, which give a `str`, the smallest and
   largest by `<`. The
@@ -133,6 +137,10 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   of one value are NaN.
 - **`None` is left out too**, in a [column that may hold `None`](missing-values.md#in-a-dataframe):
   a row whose key is `None` belongs to no group, and `agg` reduces the values that are there.
+- **`as_index=False` is accepted and changes nothing**, since the keys are always columns
+  here. `as_index=True` is a compile error: a frame has no index. Both flags are `True` or
+  `False` written out. `dropna=False`, a group for the rows whose key is missing, is not
+  built yet.
 - **`groupby` and its reduction are written together.** The groups are not a value: `g =
   df.groupby("symbol")` is a compile error. Group by several columns with a list,
   `df.groupby(["symbol", "day"])`.

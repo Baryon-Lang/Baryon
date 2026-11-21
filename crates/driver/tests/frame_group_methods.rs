@@ -1,6 +1,6 @@
 //! The reductions of a grouping written as methods (roadmap 3.13.22, decision 0045's
 //! amendment of 2026-11-19), through every stage up to the type checker: the type each
-//! gives, and the mistakes it reports.
+//! gives, and the mistakes it reports; and the arguments of `groupby` (roadmap 3.13.23).
 //!
 //! These tests live in the driver because they need several implementations, and only an
 //! application crate may depend on more than one (decision 0001).
@@ -150,4 +150,81 @@ error: `groupby` is followed by a reduction, which says what to work out for eac
 #[test]
 fn reductions_written_as_methods_are_typed_and_checked() {
     assert_eq!(check_one(PROGRAM), EXPECTED);
+}
+
+/// The program of `arguments_of_groupby_are_checked`.
+const ARGUMENTS: &str = r#"
+def main() -> None:
+    df = DataFrame({"k": Array([2, 1]), "v": Array([1.5, 2.5])})
+    flag = False
+    kept: int = df.groupby("k", as_index=False, sort=False).sum()
+    a = df.groupby("k", as_index=True).sum()
+    b = df.groupby("k", sort=flag).sum()
+    c = df.groupby("k", as_index=flag).agg(n=("v", "count"))
+    d = df.groupby("k", dropna=False).sum()
+    e = df.groupby("k", sort=False, sort=True).sum()
+    f = df.groupby("k", by="k").sum()
+    g = df.groupby(sort=False).sum()
+"#;
+
+/// The diagnostics of [`ARGUMENTS`].
+const ARGUMENTS_EXPECTED: &str = r#"error: expected `i64`, found `DataFrame[k: i64, v: f64]`
+ --> main.byn:4:17
+  |
+4 |     kept: int = df.groupby("k", as_index=False, sort=False).sum()
+  |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the annotation says `i64`
+
+error: a `DataFrame` has no index for `as_index=True` to make of the keys
+ --> main.byn:5:34
+  |
+5 |     a = df.groupby("k", as_index=True).sum()
+  |                                  ^^^^ no index
+  = note: leave it out or write `as_index=False`: keys are columns of the result
+
+error: `sort` of `groupby` is `True` or `False`, written out
+ --> main.byn:6:30
+  |
+6 |     b = df.groupby("k", sort=flag).sum()
+  |                              ^^^^ not `True` or `False`
+
+error: `as_index` of `groupby` is `True` or `False`, written out
+ --> main.byn:7:34
+  |
+7 |     c = df.groupby("k", as_index=flag).agg(n=("v", "count"))
+  |                                  ^^^^ not `True` or `False`
+
+error: `groupby` does not take `dropna=` yet
+ --> main.byn:8:25
+  |
+8 |     d = df.groupby("k", dropna=False).sum()
+  |                         ^^^^^^ not built yet
+  = note: a row whose key is missing is in no group
+
+error: `groupby` takes the columns whose values make the groups
+ --> main.byn:9:9
+  |
+9 |     e = df.groupby("k", sort=False, sort=True).sum()
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+  = note: for example `df.groupby("symbol")` or `df.groupby(["symbol", "day"])`
+
+error: `groupby` takes the columns whose values make the groups
+  --> main.byn:10:9
+   |
+10 |     f = df.groupby("k", by="k").sum()
+   |         ^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+   = note: for example `df.groupby("symbol")` or `df.groupby(["symbol", "day"])`
+
+error: `groupby` takes the columns whose values make the groups
+  --> main.byn:11:9
+   |
+11 |     g = df.groupby(sort=False).sum()
+   |         ^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+   = note: for example `df.groupby("symbol")` or `df.groupby(["symbol", "day"])`"#;
+
+/// `as_index=False` and `sort=False` change no type (roadmap 3.13.23). The mistakes:
+/// `as_index=True`, a flag that is not written out, `dropna=`, a keyword given twice, the
+/// keys given twice, and no keys.
+#[test]
+fn arguments_of_groupby_are_checked() {
+    assert_eq!(check_one(ARGUMENTS), ARGUMENTS_EXPECTED);
 }

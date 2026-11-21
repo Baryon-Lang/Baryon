@@ -195,8 +195,8 @@ Every method call is the one pandas has, with the same arguments. Step by step:
   the program uses `wider` from then on. Write `readings.copy().assign(...)` to keep both.
 - **There is no row index.** pandas prints the mild days as rows 4, 6 and 7, their labels in
   the original table. Baryon numbers the rows of every result from 0. For the same reason
-  `groupby` needs no `as_index=False`, and `to_csv` no `index=False`: the key is always an
-  ordinary column, and there is no index to write.
+  `groupby` needs no `as_index=False`, though it takes it, and `to_csv` no `index=False`: the
+  key is always an ordinary column, and there is no index to write.
 
 Nothing else differs: the two programs print the same numbers and write the same file.
 
