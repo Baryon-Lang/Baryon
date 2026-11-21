@@ -253,10 +253,12 @@ impl<'db> Body<'db> {
         }
     }
 
-    /// Each argument's type and literal kind, checked without an expected type. What the check
-    /// reports is discarded: the chosen overload's check reports it again.
+    /// Each argument's type and literal kind, checked without an expected type. The check is a
+    /// trial: what it reports is discarded, and the ownership state it changed, such as a move
+    /// or a borrow, is put back, since the chosen overload's check reads the arguments again.
     fn given(&mut self, arguments: &Arguments) -> Vec<(Option<String>, Given<'db>)> {
         let before = self.lowerer.diagnostics.len();
+        let state = self.state.clone();
         let mut given = Vec::new();
         for &argument in &arguments.positional {
             let ty = self.expression(argument, None);
@@ -280,6 +282,7 @@ impl<'db> Body<'db> {
             ));
         }
         self.lowerer.diagnostics.truncate(before);
+        self.state = state;
         given
     }
 

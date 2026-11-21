@@ -164,3 +164,42 @@ error: this generic overload also takes the arguments of `def scale(x: complex12
   = note: a generic overload's bound must exclude every concrete overload's types"
     );
 }
+
+#[test]
+fn an_argument_that_moves_is_checked_once() {
+    // Choosing the overload reads the arguments' types; the move in `first(xs)` must still
+    // happen once, or the chosen overload's check reports a read after the move.
+    let program = r"
+from special import loggamma
+
+
+def first(xs: Owned[list[f64]]) -> f64:
+    return xs[0]
+
+
+def main():
+    xs = [3.0, 4.0]
+    print(loggamma(first(xs)))
+";
+    assert_eq!(check_one(program), "");
+}
+
+#[test]
+fn an_argument_that_borrows_is_checked_once() {
+    let program = r"
+from special import loggamma
+
+
+def grow(xs: InOut[list[f64]]) -> f64:
+    xs.append(1.0)
+    return xs[0]
+
+
+def main():
+    xs = [3.0, 4.0]
+    print(loggamma(grow(xs)))
+    xs.append(2.0)
+    print(len(xs))
+";
+    assert_eq!(check_one(program), "");
+}
