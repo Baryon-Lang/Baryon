@@ -7,7 +7,7 @@
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-pub(crate) const LIBRARY: [(&str, &str); 96] = [
+pub(crate) const LIBRARY: [(&str, &str); 100] = [
     ("<std>/arrays.byn", include_str!("../library/arrays.byn")),
     ("<std>/artist.byn", include_str!("../library/artist.byn")),
     ("<std>/axis.byn", include_str!("../library/axis.byn")),
@@ -87,6 +87,22 @@ pub(crate) const LIBRARY: [(&str, &str); 96] = [
     (
         "<std>/frame_outer.byn",
         include_str!("../library/frame_outer.byn"),
+    ),
+    (
+        "<std>/frame_parquet.byn",
+        include_str!("../library/frame_parquet.byn"),
+    ),
+    (
+        "<std>/frame_parquet_pages.byn",
+        include_str!("../library/frame_parquet_pages.byn"),
+    ),
+    (
+        "<std>/frame_parquet_text.byn",
+        include_str!("../library/frame_parquet_text.byn"),
+    ),
+    (
+        "<std>/frame_parquet_types.byn",
+        include_str!("../library/frame_parquet_types.byn"),
     ),
     ("<std>/frames.byn", include_str!("../library/frames.byn")),
     ("<std>/gzip.byn", include_str!("../library/gzip.byn")),

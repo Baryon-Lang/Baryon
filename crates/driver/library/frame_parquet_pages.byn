@@ -1,0 +1,387 @@
+"""Parquet files: the pages of one column, decoded in Baryon (roadmap 3.14.6.3, decision
+0045).
+
+`parquet_column` reads one column of a file that `parquet_plan` of `<std>/frame_parquet.byn`
+has planned, and `<std>/frame_parquet_types.byn` turns what it gives into the array of the
+type the program's schema names. A program cannot import this file.
+
+A column is stored in chunks, one for each row group, and a chunk in pages. Each page starts
+with a Thrift header that says what it is and how many bytes follow:
+
+- a dictionary page holds the distinct values of the chunk, written plainly;
+- a data page holds, for a column whose values may be missing, a level for each row, 1
+  where the value is there, and then the values that are there: written plainly, or as
+  positions in the dictionary. Version 1 of the page compresses the levels with the values;
+  version 2 keeps the levels outside and says how many bytes they take.
+
+Levels and dictionary positions are in Parquet's hybrid of runs and bit-packed groups, which
+`_hybrid` decodes. Values written plainly are their bytes, lowest first: 4 for `INT32` and
+`FLOAT`, 8 for `INT64` and `DOUBLE`, a bit for a `BOOLEAN`, and a length in 4 bytes and then
+the bytes for a `BYTE_ARRAY`.
+
+The codecs are the library's own: Snappy and LZ4 raw blocks (`<std>/parquet_snappy.byn`,
+`<std>/parquet_lz4.byn`), gzip (`zlib`) and Zstandard (`compression.zstd`). Brotli and LZO
+are not read yet.
+
+Cost: each page is decompressed into a new array and its values copied once more into the
+column's bytes, so reading holds the file, one page and the column at the same time.
+"""
+
+from compression import zstd
+from frame_parquet import parquet_load, thrift_field, thrift_skip, thrift_zigzag
+from parquet_lz4 import lz4_decompress
+from parquet_snappy import snappy_decompress
+import zlib
+
+
+class Column(Struct):
+    """One column of a file, decoded but not yet of its type.
+
+    `raw` holds the values that are there, in order, with none for a missing value: the
+    plain bytes of each number end to end, one byte, 0 or 1, for each `BOOLEAN`, and the
+    bytes of each `BYTE_ARRAY` end to end. For a `BYTE_ARRAY`, `ends[k]` is where value `k`
+    starts in `raw` and `ends[k + 1]` where it ends; `raw` may be longer than the last of
+    them. `valid` has a bit for each row of the file, lowest bit first, 1 where the value
+    is there, and `present` counts them."""
+
+    raw: Array[u8, 1]
+    ends: Array[i64, 1]
+    valid: Array[u8, 1]
+    present: int
+
+
+def _hybrid(
+    data: Array[u8, 1], start: int, end: int, width: int, out: InOut[Array[i32, 1]]
+) -> bool:
+    """Decodes `len(out)` numbers of `width` bits each from the bytes of `data` from `start`
+    to `end`, in Parquet's mix of runs of one value and groups of eight packed values.
+    False when the bytes end before the numbers do."""
+    count = len(out)
+    at = start
+    done = 0
+    mask = (1 << width) - 1
+    while done < count:
+        head = 0
+        shift = 0
+        while True:
+            if at >= end or shift > 28:
+                return False
+            byte = int(data[at])
+            at += 1
+            head = head | ((byte & 127) << shift)
+            if byte < 128:
+                break
+            shift += 7
+        if head & 1 == 1:
+            packed = (head >> 1) * 8
+            take = min(packed, count - done)
+            if width == 1:
+                for k in range(take):
+                    spot = at + (k >> 3)
+                    if spot >= end:
+                        return False
+                    out[done + k] = i32((int(data[spot]) >> (k & 7)) & 1)
+            else:
+                for k in range(take):
+                    low = k * width
+                    spot = at + (low >> 3)
+                    shift = low & 7
+                    value = 0
+                    for part in range((shift + width + 7) >> 3):
+                        if spot + part >= end:
+                            return False
+                        value = value | (int(data[spot + part]) << (8 * part))
+                    out[done + k] = i32((value >> shift) & mask)
+            at += (packed * width + 7) >> 3
+            done += take
+        else:
+            run = head >> 1
+            value = 0
+            for part in range((width + 7) >> 3):
+                if at >= end:
+                    return False
+                value = value | (int(data[at]) << (8 * part))
+                at += 1
+            take = min(run, count - done)
+            for k in range(take):
+                out[done + k] = i32(value & mask)
+            done += take
+    return True
+
+
+def _grow(raw: InOut[Array[u8, 1]], used: int, more: int) -> None:
+    """Makes room in `raw` for `more` bytes after its first `used`: when it is too short it
+    is replaced by an array twice as long as is needed, holding the same first bytes, so
+    adding a byte at a time costs a constant on average."""
+    if used + more <= len(raw):
+        return
+    longer = Array.zeros(2 * (used + more), u8)
+    for at in range(used):
+        longer[at] = raw[at]
+    raw = longer
+
+
+def _inflate(
+    part: Array[u8, 1], codec: int, size: int, path: str
+) -> Raises[Array[u8, 1], OSError | ValueError]:
+    """The `size` bytes that `part`, the body of a page of the file `path`, holds under the
+    codec numbered `codec` as Parquet numbers them: 0 none, 1 Snappy, 2 gzip, 6 Zstandard
+    and 7 LZ4 raw. Raises the `OSError` of the codec for bytes it cannot read, and
+    `ValueError` for a codec that is not read yet or bytes that are not `size` long."""
+    if codec != 0 and codec != 1 and codec != 2 and codec != 6 and codec != 7:
+        names = ["", "", "", "LZO", "Brotli", "LZ4 in Hadoop's frames"]
+        name = names[codec].copy() if codec >= 3 and codec <= 5 else f"number {codec}"
+        raise ValueError(f"{path}: the file is compressed with {name}, which is not read yet")
+    page = Array.zeros(0, u8)
+    if codec == 0:
+        page = part.copy()
+    elif codec == 1:
+        page = snappy_decompress(part)
+    elif codec == 2:
+        page = zlib.decompress(part, 31)
+    elif codec == 6:
+        page = zstd.decompress(part)
+    else:
+        page = lz4_decompress(part, size)
+    if len(page) != size:
+        raise ValueError(f"{path}: a page is not as long as its header says")
+    return page
+
+
+def _mark(valid: InOut[Array[u8, 1]], row: int) -> None:
+    """Sets the bit of `row` in the validity bitmap `valid`."""
+    valid[row >> 3] = valid[row >> 3] | (u8(1) << u8(row & 7))
+
+
+def _header(data: Array[u8, 1], at: int, end: int, head: InOut[list[int]]) -> int:
+    """Reads the page header at byte `at` of `data`, in a chunk that ends at `end`, and
+    gives where the page's body starts. `head` gets eight numbers: the page's kind (0 a
+    data page, 2 a dictionary page, 3 a data page of version 2, -1 when the header is
+    damaged), its length uncompressed and compressed, how many values it holds with the
+    missing ones, the encoding of its values, and for version 2 the bytes of its definition
+    and repetition levels and 1 when its values are compressed."""
+    cur = [at, 0, 0]
+    head[0] = -1
+    head[4] = -1
+    head[5] = 0
+    head[6] = 0
+    head[7] = 1
+    while cur[0] <= end:
+        field = thrift_field(data, cur)
+        if field == 0:
+            break
+        if cur[1] >= 1 and cur[1] <= 3:
+            head[cur[1] - 1] = thrift_zigzag(data, cur)
+        elif (cur[1] == 5 or cur[1] == 7 or cur[1] == 8) and field == 12:
+            outer = cur[1]
+            second = outer == 8
+            cur[1] = 0
+            while cur[0] <= end:
+                inner = thrift_field(data, cur)
+                if inner == 0:
+                    break
+                if cur[1] == 1:
+                    head[3] = thrift_zigzag(data, cur)
+                elif cur[1] == (4 if second else 2):
+                    head[4] = thrift_zigzag(data, cur)
+                elif second and (cur[1] == 5 or cur[1] == 6):
+                    head[cur[1]] = thrift_zigzag(data, cur)
+                elif second and cur[1] == 7:
+                    head[7] = 1 if inner == 1 else 0
+                else:
+                    thrift_skip(data, cur, inner, 0)
+            cur[1] = outer
+        else:
+            thrift_skip(data, cur, field, 0)
+    if cur[0] > end:
+        head[0] = -1
+    return cur[0]
+
+
+def parquet_column(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Column, OSError | ValueError]:
+    """Decodes column `column` of the columns that `plan` plans, named `name`, from `data`,
+    the bytes of the file `path`: every page of every row group, in order.
+
+    Raises `ValueError` when the column's type, an encoding or the codec is not read yet,
+    or a page is damaged: cut short, longer than its chunk, holding more values than the
+    chunk has left or a dictionary position past the dictionary. Raises the codec's
+    `OSError` for compressed bytes it cannot read. Nothing is read outside `data`.
+    """
+    rows = plan[0]
+    columns = plan[2]
+    physical = plan[3 + 4 * column]
+    optional = plan[4 + 4 * column] == 1
+    width = 0
+    if physical == 0:
+        width = 1
+    elif physical == 1 or physical == 4:
+        width = 4
+    elif physical == 2 or physical == 5:
+        width = 8
+    elif physical != 6:
+        raise ValueError(f"{path}: the column '{name}' is of a type that is not read yet")
+    valid = Array.zeros((rows + 7) // 8, u8)
+    raw = Array.zeros(rows * width, u8)
+    ends = Array.zeros(rows + 1 if width == 0 else 0, i64)
+    present = 0
+    used = 0
+    row = 0
+    damaged = f"{path}: the pages of the column '{name}' are damaged"
+    for group in range(plan[1]):
+        base = 3 + 4 * columns + 5 * (columns * group + column)
+        codec = plan[base]
+        left = plan[base + 1]
+        at = plan[base + 2]
+        end = at + plan[base + 3]
+        if row + left > rows:
+            raise ValueError(damaged)
+        table = Array.zeros(0, u8)
+        table_ends = Array.zeros(0, i64)
+        entries = 0
+        head = [0, 0, 0, 0, 0, 0, 0, 0]
+        while left > 0 and at < end:
+            body = _header(data, at, end, head)
+            kind = head[0]
+            size = head[1]
+            packed = head[2]
+            values = head[3]
+            encoding = head[4]
+            levels = head[5]
+            at = body + packed
+            if kind < 0 or packed < 0 or size < 0 or at > end or values < 0:
+                raise ValueError(damaged)
+            if kind != 0 and kind != 2 and kind != 3:
+                continue
+            if encoding == 2:
+                encoding = 8 if kind != 2 else 0
+            if kind == 2:
+                page = _inflate(data[body:at], codec, size, path)
+                if encoding != 0:
+                    raise ValueError(damaged)
+                entries = values
+                if width == 0:
+                    table = Array.zeros(len(page), u8)
+                    table_ends = Array.zeros(entries + 1, i64)
+                    spot = 0
+                    kept = 0
+                    for entry in range(entries):
+                        if spot + 4 > len(page):
+                            raise ValueError(damaged)
+                        length = parquet_load(page, spot)
+                        spot += 4
+                        if spot + length > len(page):
+                            raise ValueError(damaged)
+                        for k in range(length):
+                            table[kept + k] = page[spot + k]
+                        spot += length
+                        kept += length
+                        table_ends[entry + 1] = kept
+                else:
+                    if entries * width > len(page) or physical == 0:
+                        raise ValueError(damaged)
+                    table = page.copy()
+                continue
+            if values > left:
+                raise ValueError(damaged)
+            # A data page: the levels that say which values are there, then the values.
+            marks = Array.zeros(values, i32)
+            page = Array.zeros(0, u8)
+            spot = 0
+            if kind == 0:
+                page = _inflate(data[body:at], codec, size, path)
+                if optional:
+                    if len(page) < 4:
+                        raise ValueError(damaged)
+                    length = parquet_load(page, 0)
+                    if 4 + length > len(page) or not _hybrid(page, 4, 4 + length, 1, marks):
+                        raise ValueError(damaged)
+                    spot = 4 + length
+            else:
+                if head[6] != 0 or levels < 0 or levels > packed:
+                    raise ValueError(damaged)
+                if optional and not _hybrid(data, body, body + levels, 1, marks):
+                    raise ValueError(damaged)
+                if head[7] == 1:
+                    page = _inflate(data[body + levels : at], codec, size - levels, path)
+                else:
+                    page = data[body + levels : at].copy()
+            there = values
+            if optional:
+                there = 0
+                for k in range(values):
+                    if marks[k] == i32(1):
+                        _mark(valid, row + k)
+                        there += 1
+            else:
+                for k in range(values):
+                    _mark(valid, row + k)
+            stop = len(page)
+            if encoding == 0 and width == 0:
+                for k in range(there):
+                    if spot + 4 > stop:
+                        raise ValueError(damaged)
+                    length = parquet_load(page, spot)
+                    spot += 4
+                    if spot + length > stop:
+                        raise ValueError(damaged)
+                    _grow(raw, used, length)
+                    for b in range(length):
+                        raw[used + b] = page[spot + b]
+                    spot += length
+                    used += length
+                    ends[present + k + 1] = used
+            elif encoding == 0 and physical == 0:
+                if spot + ((there + 7) >> 3) > stop:
+                    raise ValueError(damaged)
+                for k in range(there):
+                    raw[used + k] = u8((int(page[spot + (k >> 3)]) >> (k & 7)) & 1)
+                used += there
+            elif encoding == 0:
+                if spot + there * width > stop:
+                    raise ValueError(damaged)
+                for b in range(there * width):
+                    raw[used + b] = page[spot + b]
+                used += there * width
+            elif encoding == 3 and physical == 0:
+                bits = Array.zeros(there, i32)
+                if spot + 4 > stop or not _hybrid(page, spot + 4, stop, 1, bits):
+                    raise ValueError(damaged)
+                for k in range(there):
+                    raw[used + k] = u8(bits[k])
+                used += there
+            elif encoding == 8 and physical != 0:
+                picks = Array.zeros(there, i32)
+                if there > 0:
+                    if spot >= stop or int(page[spot]) > 32:
+                        raise ValueError(damaged)
+                    if not _hybrid(page, spot + 1, stop, int(page[spot]), picks):
+                        raise ValueError(damaged)
+                for k in range(there):
+                    pick = int(picks[k])
+                    if pick >= entries:
+                        raise ValueError(damaged)
+                    if width == 0:
+                        first = table_ends[pick]
+                        length = table_ends[pick + 1] - first
+                        _grow(raw, used, length)
+                        for b in range(length):
+                            raw[used + b] = table[first + b]
+                        used += length
+                        ends[present + k + 1] = used
+                    else:
+                        for b in range(width):
+                            raw[used + b] = table[pick * width + b]
+                        used += width
+            else:
+                message = f"{path}: the column '{name}' uses the encoding {encoding}"
+                raise ValueError(message + ", which is not read yet")
+            present += there
+            left -= values
+            row += values
+        if left != 0:
+            raise ValueError(damaged)
+    if row != rows:
+        raise ValueError(damaged)
+    return Column(raw, ends, valid, present)

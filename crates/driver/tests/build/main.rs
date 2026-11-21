@@ -46,6 +46,7 @@ mod frame_joins;
 mod frame_missing;
 mod frame_order;
 mod frame_outer;
+mod frame_parquet;
 mod frame_rows;
 mod frame_sort;
 mod frame_stack;

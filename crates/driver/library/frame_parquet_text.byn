@@ -1,0 +1,128 @@
+"""Parquet files: columns of text, of `bool` and of `u64` as a program's schema names them,
+in Baryon (roadmap 3.14.6.3, decision 0045).
+
+These are the functions of `<std>/frame_parquet_types.byn` for the three types that are not
+read as an `f64` or an `i64` first; that file's documentation says what each takes, gives
+and raises. A program cannot import this file.
+
+A column of `str` comes back as a text array stores it: the bytes of every text end to end,
+and where each one starts, a missing value taking no bytes.
+"""
+
+from frame_parquet import parquet_load
+from frame_parquet_pages import Column, parquet_column
+from frame_parquet_types import parquet_gap, parquet_refused, parquet_there
+
+
+def _text(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[tuple[Array[u8, 1], Array[i64, 1]], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `str`: the two buffers of a text array, then the validity
+    bitmap. The column is a `BYTE_ARRAY` that the file marks as text or does not mark, and
+    its bytes are UTF-8, or it is a `ValueError`."""
+    note = plan[5 + 4 * column]
+    if plan[3 + 4 * column] != 6 or (note != 0 and note != 1):
+        raise ValueError(parquet_refused(plan, column, path, name, "str"))
+    got = parquet_column(data, plan, column, path, name)
+    rows = plan[0]
+    used = got.ends[got.present]
+    held = Array.zeros(used, u8)
+    for at in range(used):
+        held[at] = got.raw[at]
+    try:
+        checked = held.decode()
+    except ValueError:
+        raise ValueError(f"{path}: the column '{name}' holds bytes that are not UTF-8 text")
+    offsets = Array.zeros(rows + 1, i64)
+    value = 0
+    for row in range(rows):
+        offsets[row + 1] = offsets[row]
+        if parquet_there(got.valid, row):
+            offsets[row + 1] += got.ends[value + 1] - got.ends[value]
+            value += 1
+    return ((held, offsets), got.valid.copy())
+
+
+def parquet_str(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[u8, 1], Array[i64, 1]], OSError | ValueError]:
+    """The column for a field of `str`; a missing value is a `ValueError`."""
+    both = _text(data, plan, column, path, name)
+    parquet_gap(both[1], plan[0], path, name)
+    return (both[0][0].copy(), both[0][1].copy())
+
+
+def parquet_optional_str(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[tuple[Array[u8, 1], Array[i64, 1]], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `str | None`: its two buffers and its validity bitmap."""
+    return _text(data, plan, column, path, name)
+
+
+def parquet_optional_bool(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[bool, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `bool | None`: its values, false under a missing one, and
+    its validity bitmap. The column is a `BOOLEAN`."""
+    if plan[3 + 4 * column] != 0:
+        raise ValueError(parquet_refused(plan, column, path, name, "bool"))
+    got = parquet_column(data, plan, column, path, name)
+    rows = plan[0]
+    result = Array.fill((rows,), False)
+    value = 0
+    for row in range(rows):
+        if parquet_there(got.valid, row):
+            result[row] = got.raw[value] == u8(1)
+            value += 1
+    return (result, got.valid.copy())
+
+
+def parquet_bool(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[bool, 1], OSError | ValueError]:
+    """The column for a field of `bool`; a missing value is a `ValueError`."""
+    both = parquet_optional_bool(data, plan, column, path, name)
+    parquet_gap(both[1], plan[0], path, name)
+    return both[0].copy()
+
+
+def parquet_optional_u64(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[u64, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `u64 | None`: its values, 0 under a missing one, and its
+    validity bitmap. The column is an `INT32` or an `INT64`; a value below 0 in a column
+    the file does not mark unsigned is a `ValueError`."""
+    physical = plan[3 + 4 * column]
+    note = plan[5 + 4 * column]
+    if (physical != 1 and physical != 2) or note == 1 or note == 9:
+        raise ValueError(parquet_refused(plan, column, path, name, "u64"))
+    got = parquet_column(data, plan, column, path, name)
+    rows = plan[0]
+    result = Array.zeros(rows, u64)
+    unsigned = note >= 200
+    at = 0
+    for row in range(rows):
+        if not parquet_there(got.valid, row):
+            continue
+        low = parquet_load(got.raw, at)
+        high = 0
+        if physical == 2:
+            high = parquet_load(got.raw, at + 4)
+            at += 4
+        elif low >= 2147483648 and not unsigned:
+            high = 4294967295
+        at += 4
+        if high >= 2147483648 and not unsigned:
+            where = f"{path}: column '{name}', row {row + 1}"
+            raise ValueError(f"{where}: could not read a number below 0 as u64")
+        result[row] = u64(low) | (u64(high) << u64(32))
+    return (result, got.valid.copy())
+
+
+def parquet_u64(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[u64, 1], OSError | ValueError]:
+    """The column for a field of `u64`; a missing value is a `ValueError`."""
+    both = parquet_optional_u64(data, plan, column, path, name)
+    parquet_gap(both[1], plan[0], path, name)
+    return both[0].copy()
