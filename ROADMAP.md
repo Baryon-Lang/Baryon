@@ -226,6 +226,7 @@ the Fortran version, and edits in VS Code with live diagnostics; all four test s
 | 1.14.2 | `Array` methods `a.min()`, `a.max()`, `a.dot(b)`, `a.round()` and `a.fill(value)`, and the matrix product `@` on rank-1 and rank-2 arrays as loop nests; BLAS comes with 3.10. Done: `Builtin::Dot`, float dot products in the pairwise order of `sum`, and `Check::NotEmpty`, for `min` and `max` of an empty array, in `mir`; the runtime's pairwise dot product, the methods on `Array` and `Fixed` arrays, and `@` of a matrix and a matrix, a matrix and a vector, or a vector and a matrix, in the checker, lowering and the LLVM backend | 0.5 | 1.9.6 | Done | Claude | [arrays](docs/reference/arrays.md), [#129](https://github.com/Baryon-Lang/Baryon/pull/129), [#139](https://github.com/Baryon-Lang/Baryon/pull/139) |
 | 1.14.3 | Cut the runtime cost of `prange(..., accumulate=)` without changing a bit of any result, from the half-list Lennard-Jones benchmark of 1.14.1: a fresh private block filled in one pass instead of zeroed then filled, a scalar's block found with a shift instead of a division, and compiled code reading the chunk's block table itself, calling the runtime only on its first add into a block (decision 0024 amended). 22% fewer instructions; 4,000 atoms on 4 threads went from 1.82 s to 1.66 s. Smaller blocks were measured and were slower | 0.5 | 1.14.1 | Done | Claude | [0024](docs/decisions/0024-compiling-accumulated-arrays.md), [#356](https://github.com/Baryon-Lang/Baryon/pull/356) |
 | 1.14.4 | Close the serial Lennard-Jones gap to gfortran without changing a bit of any result: `math.trunc` to `int` lowers to the checked float-to-integer conversion alone, which already rounds toward zero and checks the range, so x86-64 without SSE4.1 no longer calls the C library's `trunc` three times per pair and spills every float register around each call. 4,000 atoms, 200 steps went from 5.40 s to 4.22 s best of 5, against gfortran's 4.37 s, same checksum | 0.25 | 1.14.3 | Done | Claude | [#450](https://github.com/Baryon-Lang/Baryon/pull/450) |
+| 1.14.5 | Name the native array and numerics layer NumBaryon in the documentation (the chief designer, 2026-11-21): the README, the Arrays reference, the arrays guide and this roadmap say what it covers, built-in arrays plus the `math`, `random`, `stats`, `linalg` and `fft` modules, and that it is not a package to import. No identifier, module or import changes | 0.05 | 1.14.4 | Done | Claude | [#565](https://github.com/Baryon-Lang/Baryon/pull/565) |
 | 1.15 | Formatter built on the syntax tree. Dropped: existing Python formatters such as Ruff and Black format the files | 2 | 1.2 | Dropped | — | [0004](docs/decisions/0004-python-syntax.md) |
 | 1.16 | Language server: diagnostics, go to definition, hover, completion, fixes | 4 | 1.8 | Planned | — | — |
 | 1.16.1 | `baryon lsp`: a language server over standard input and output that publishes `baryon check`'s diagnostics as the user types, from the same incremental session | 0.5 | 1.11.2 | Done | Claude | [0019](docs/decisions/0019-language-server-protocol.md), [#35](https://github.com/Baryon-Lang/Baryon/pull/35) |
@@ -268,6 +269,10 @@ base libraries 3.18 to 3.32 (chief designer, 2026-11-12): see the order in [Rele
 
 Gate: within 5% of gfortran on every kernel, the 30-line load, group, fit and plot script runs in
 the REPL, and three external users have written something real.
+
+NumBaryon, the native array and numerics layer (a documentation name, not a package; see
+[Arrays](docs/reference/arrays.md#numbaryon)), is built in rows 1.14, 3.9, 3.10, 3.16, 3.23, 3.24
+and 3.25.
 
 | ID | Item | Weeks | Depends on | Status | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |

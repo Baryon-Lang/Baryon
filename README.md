@@ -29,6 +29,8 @@ def heat_step(u: Array[f64, 2], alpha: f64) -> Array[f64, 2]:
   code.
 - **Built for science.** N-dimensional arrays, complex numbers, parallel loops, reproducible
   random numbers and per-block floating-point control are part of the language, not add-ons.
+  Together with the `math`, `random`, `stats`, `linalg` and `fft` modules they are
+  [NumBaryon](docs/reference/arrays.md#numbaryon), Baryon's native answer to NumPy.
 - **Documented to learn from.** Every feature, crate and function is documented with tested
   examples, so the language can be learned and integrated from its documentation alone.
 

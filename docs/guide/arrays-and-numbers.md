@@ -2,6 +2,8 @@
 
 Numeric code in Baryon is built on `Array`, an n-dimensional array with NumPy's names and
 NumPy's results, and on the libraries around it: `math`, `random`, `stats`, `linalg` and `fft`.
+Together they are called [NumBaryon](../reference/arrays.md#numbaryon). The name is not a
+package: arrays are built in, and each library is imported under its own name.
 This page shows each in a program that builds and runs today, as CI checks. It assumes you have
 read the [tour of the language](language-tour.md).
 

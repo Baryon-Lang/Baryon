@@ -16,6 +16,21 @@ array types, chosen by one question: is the shape known when the code is written
 `Fixed[f64, (3, 3)]` a 3 × 3 matrix. The rank (number of dimensions) of an `Array` is part of its
 type; the lengths of its dimensions are not.
 
+## NumBaryon
+
+NumBaryon is the name of Baryon's array and numerics layer: what NumPy is to Python. It is a name
+for documentation, not a package. Its arrays are built into the language and need no import:
+`Array`, `Fixed`, slicing, broadcasting, `@` and the array methods in this chapter. Its libraries
+are ordinary standard-library modules, imported under their own names, never under `numbaryon`:
+
+- `math` and `random` for numbers ([random numbers](#random-numbers));
+- `stats` for statistics ([Statistics](statistics.md));
+- `linalg` and `fft` for linear algebra and Fourier transforms
+  ([Linear algebra and FFT](linear-algebra.md)).
+
+NumBaryon keeps NumPy's names and results wherever it matches NumPy, so this reference often
+compares the two.
+
 ## Element types
 
 An array's elements are all of one copy type: a number, `bool`, a `Fixed` array, or a struct
