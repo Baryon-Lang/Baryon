@@ -5,7 +5,149 @@ published to a package registry yet. Releases are time-based: one every two week
 `main` holds that day, and numbered 0.x, one step of 0.1 each.
 [`ROADMAP.md`](ROADMAP.md#releases) tracks the steps of the release in progress.
 
+## 0.3.0: missing values, CSV files and SciPy's special functions
+
+The first release since 0.1.0 to be published: 0.2.0 was prepared but never published, and the chief
+designer folded it into this one on 2026-11-21, so 0.3.0 holds everything in the 0.2.0 notes below
+and the 140 changes merged since, among them missing values in arrays and tables, CSV files, the
+rest of SciPy's special functions, numerical integration, and the fixes from two bug sweeps. [What
+builds today](docs/reference/status.md) lists, chapter by chapter, what the compiler does not build
+yet. Please [open an issue](https://github.com/Baryon-Lang/Baryon/issues) for anything wrong,
+unclear or missing, with what `baryon --version` prints.
+
+### Platforms and install
+
+As in the 0.2.0 notes below: Linux on x86_64 with glibc 2.35 or newer and `clang` 15 or newer, and
+macOS 13.5 or newer on Apple silicon. Download `baryon-0.3.0-x86_64-unknown-linux-gnu.tar.gz` or
+`baryon-0.3.0-aarch64-apple-darwin.tar.gz` as the [beginner's
+guide](docs/guide/README.md#1-install-baryon) shows, or build from source with `cargo`. Each archive
+holds both licenses, `THIRD-PARTY-NOTICES.md` and `CRATE-LICENSES.md`.
+
+### Missing values
+
+A value that is absent is `None`, kept apart from the float `NaN`, as pandas keeps them apart
+([missing values](docs/reference/missing-values.md)).
+
+- **Arrays with gaps**, `Array[T | None, 1]` of numbers, `bool`s or text: built from a
+  `list[T | None]`, read and assigned by position, mask or list of positions, looped over, with
+  `isna`, `notna`, `dropna` and `fillna`; sums, means, `min`, `max`, `var` and `std` that skip
+  `None`; arithmetic, `**`, bitwise operators on whole numbers and in-place operators, where
+  `None` on either side gives `None`; [comparisons](docs/reference/missing-comparisons.md) and
+  masks combined with `&`, `|`, `^` and `~`; `any`, `all`, `argsort`, `unique` and `nunique`; and
+  `print` in pandas's form, also inside tuples, lists, dicts and unions.
+- **Columns with gaps** in a `DataFrame`, a field `bid: f64 | None`
+  ([missing values in a DataFrame](docs/reference/missing-values-in-frames.md)): built, chosen,
+  sorted with `na_position=`, grouped, joined, stacked, compared, described and printed;
+  `df.dropna()` with `how=` and `subset=`, and `df.fillna()`.
+
+### DataFrame
+
+- **[CSV files](docs/reference/csv-files.md)**: `DataFrame.read_csv(path)` into a frame whose
+  columns the type names, of `f64`, `f32`, every whole number type, `bool` and text, with gaps
+  where a cell is empty, and `df.to_csv(path)`.
+- **Joins**: `merge` with `how="left"`, `"right"` and `"outer"`, whose rows without a partner hold
+  `None`, and with `left_on=`, `right_on=` and `suffixes=`.
+- **Grouping**: `size` and `nunique` in `groupby(...).agg(...)`.
+- **pandas's arguments** on summaries and `sort_values`, `assign` of one value for every row, and
+  `drop` and `rename` with `axis=1` or `axis="columns"`.
+- **Speed**: sorting float and integer keys in about n steps. The
+  [DataFrame guide](docs/guide/dataframes.md#how-fast-is-it) compares nine operations on 10
+  million rows with pandas and Polars: Baryon is ahead of pandas in five and behind in
+  `groupby`, `merge`, missing values and `read_csv`.
+
+### Numerical libraries
+
+- **[Special functions](docs/reference/special-functions.md)**: SciPy's special functions beyond
+  the gamma family and the error functions: Bessel functions of whole, real and spherical order,
+  Airy, Kelvin and Struve functions; incomplete gamma and beta functions; distribution functions,
+  Kolmogorov's and Owen's T; exponential integrals, zeta, the dilogarithm and Lambert W; elliptic
+  integrals and Jacobi's elliptic functions; orthogonal polynomials and spherical harmonics; the
+  nodes and weights of Gauss quadrature; the confluent and Gauss hypergeometric functions;
+  parabolic cylinder, Mathieu and spheroidal wave functions; and the everyday helpers and
+  counting functions. Each is tested against high-precision values. A new
+  [guide](docs/guide/special-functions.md) works through four physics problems with them and
+  compares their speed with SciPy's.
+- **[Numerical integration](docs/reference/integration.md)**
+  ([decision 0065](docs/decisions/0065-integrate-api.md)): `integrate.quad` on finite and infinite
+  intervals, QUADPACK's QAGS, QAGI and, with `points=`, QAGP; and the fixed rules `trapezoid`,
+  `cumulative_trapezoid`, `simpson` and `romb`, with SciPy's bits.
+- **[Interpolation](docs/reference/arrays.md#interpolation)**: `Array.interp`, NumPy's
+  one-dimensional linear interpolation, with NumPy's bits. The rest of `scipy.interpolate` is
+  planned ([decision 0069](docs/decisions/0069-interpolate-api.md)).
+- **Matrix products through BLAS**: with
+  [`--blas`](docs/reference/commands.md#matrix-products-through-blas), `@` of two `f32` or `f64`
+  matrices calls the system's BLAS, such as OpenBLAS or Accelerate.
+- **FFT** of any length whose prime factors are small, through a mixed-radix transform.
+- **`f64x2.of(x)`** builds a double-double float from an `f64`.
+
+### Files and compression
+
+- `gzip.open` in the binary and text modes, and `lzma.open` to read xz and `.lzma` files as bytes
+  or text.
+- `text.encode()` into an `Array[u8, 1]` of UTF-8 bytes, and `data.decode()` back
+  ([decision 0064](docs/decisions/0064-utf-8-text-from-bytes.md)).
+- NetCDF files stream their definitions instead of loading the whole file, and write values in
+  place.
+- `byplot` compresses the images inside SVG files with `zlib`.
+
+### New in the language
+
+- **Variadic generics**
+  ([extra arguments for a callback](docs/reference/types.md#extra-arguments-for-a-callback)):
+  a type parameter `*Ts` that stands for a list of types, and `f(*args)` on a tuple, so a
+  library can pass a caller's extra arguments on to a callback, as `quad(f, a, b, args=(k,))`
+  does.
+- **Converting to a type parameter**, `T(x)`, and type arguments written on a struct's
+  constructor, `Box[f64]([])`
+  ([decision 0066](docs/decisions/0066-converting-to-and-naming-type-parameters.md)).
+- **A struct called like a function** through its `__call__` method.
+- **A list written with `None`** and no annotation takes its type from the other elements.
+- **A local that holds a function** can be annotated and called.
+- **`match` captures** that borrow a read-only subject.
+- **Standard-library modules split into files** re-export their names
+  ([decision 0062](docs/decisions/0062-standard-library-reexports.md)).
+
+### Fixed
+
+- The two known bugs of 0.2.0: a false "moved" error on `entry.name` in a `for` loop over paths,
+  and a `try` that reuses one name in two `except ... as` clauses (#439).
+- Array arithmetic: integer and true division, and `min` and `max` of `bool` arrays (#443).
+- A `Callable` called inside a `prange` loop (#485), a local that holds a function outside
+  generic code (#471), and an optional frame read after it was checked (#509).
+- `**` on a value whose type is a parameter bound by `Float`, which passed the checker and then
+  stopped the build (#555).
+- Shortest float text breaks ties to the even digit, as Python does (#524), and an f-string
+  writes any value as `print` does (#513).
+- Mistakes that reached the backend and failed there are now compile errors that say what is
+  wrong: `Array.zeros` of a union, callbacks decision 0026 leaves out, calls on type parameters
+  the checker cannot type, members a standard module lacks, a non-integer index, `None` in an
+  in-place operator, shifts and bitwise operators on arrays that are not whole numbers, type
+  arguments that break their bounds or are written on built-in constructors, and values or
+  number conversions a type parameter cannot show.
+
+### Decisions made for this release
+
+Decisions [0062](docs/decisions/0062-standard-library-reexports.md),
+[0064](docs/decisions/0064-utf-8-text-from-bytes.md),
+[0065](docs/decisions/0065-integrate-api.md),
+[0066](docs/decisions/0066-converting-to-and-naming-type-parameters.md) and
+[0069](docs/decisions/0069-interpolate-api.md) were accepted since 0.2.0; the
+[decision index](docs/decisions/README.md) lists each with its status.
+
+### Known limits
+
+- [What builds today](docs/reference/status.md) lists what `baryon check` accepts that the compiler
+  does not build yet, among them Parquet files, writing HDF5 files, `df[mask] = ...`, `concat` of
+  frames with different columns, `quad` with `weight=`, `solve_ivp` and the rest of
+  `scipy.interpolate`. Each is reported as an error that names it, never miscompiled.
+- `groupby`, `merge` and `read_csv` are slower than pandas on large tables, and every DataFrame
+  operation runs on one core.
+- No packages outside the standard library, no interop with Python or C++, and no REPL yet.
+
 ## 0.2.0: Linux and macOS, real data and the first libraries
+
+Never published: its notes are kept here because 0.3.0 is the first release to carry these
+changes.
 
 Cut early, on the chief designer's call of 2026-11-13, as the first run of the full release process;
 the two-week schedule continues from it (roadmap R.5 and R.6). It holds everything merged to `main`

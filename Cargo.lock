@@ -19,7 +19,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "array_expansion"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "mir",
@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "array_fusion"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "mir",
@@ -77,7 +77,7 @@ dependencies = [
 
 [[package]]
 name = "bench"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
 ]
@@ -90,7 +90,7 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
 name = "bounds_hoisting"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "mir",
@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "checker"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "diagnostics",
@@ -210,7 +210,7 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "database"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "diagnostics",
  "salsa",
@@ -220,14 +220,14 @@ dependencies = [
 
 [[package]]
 name = "diagnostics"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "source",
 ]
 
 [[package]]
 name = "documentation"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "source",
  "syntax",
@@ -235,7 +235,7 @@ dependencies = [
 
 [[package]]
 name = "driver"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "array_expansion",
  "array_fusion",
@@ -267,7 +267,7 @@ checksum = "9bda8e21c04aca2ae33ffc2fd8c23134f3cac46db123ba97bd9d3f3b8a4a85e1"
 
 [[package]]
 name = "drop_elaboration"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "mir",
@@ -303,7 +303,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "front_end_tests"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "diagnostics",
  "parser",
@@ -428,7 +428,7 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "llvm_backend"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "mir",
@@ -449,7 +449,7 @@ dependencies = [
 
 [[package]]
 name = "lowering"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "diagnostics",
@@ -491,7 +491,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "mir"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "salsa",
@@ -502,7 +502,7 @@ dependencies = [
 
 [[package]]
 name = "monomorphize"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "mir",
@@ -552,7 +552,7 @@ dependencies = [
 
 [[package]]
 name = "parser"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "diagnostics",
  "ruff_python_ast",
@@ -690,7 +690,7 @@ dependencies = [
 
 [[package]]
 name = "resolver"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "diagnostics",
@@ -800,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "runtime"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "rustc-hash"
@@ -924,7 +924,7 @@ checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 
 [[package]]
 name = "source"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "static_assertions"
@@ -956,14 +956,14 @@ dependencies = [
 
 [[package]]
 name = "syntax"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "source",
 ]
 
 [[package]]
 name = "syntax_check"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "diagnostics",
  "source",
@@ -1029,7 +1029,7 @@ checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
 
 [[package]]
 name = "types"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "database",
  "diagnostics",
@@ -1061,7 +1061,7 @@ checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 
 [[package]]
 name = "xtask"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
 ]
