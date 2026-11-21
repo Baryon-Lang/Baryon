@@ -5,6 +5,14 @@ published to a package registry yet. Releases are time-based: one every two week
 `main` holds that day, and numbered 0.x, one step of 0.1 each.
 [`ROADMAP.md`](ROADMAP.md#releases) tracks the steps of the release in progress.
 
+## Unreleased
+
+Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
+
+- The array and numerics layer has a name, NumBaryon: built-in arrays plus the `math`, `random`,
+  `stats`, `linalg` and `fft` modules. It is a name for the documentation, not a package, so no
+  program changes ([Arrays](docs/reference/arrays.md#numbaryon)).
+
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 
 The first release since 0.1.0 to be published: 0.2.0 was prepared but never published, and the chief
