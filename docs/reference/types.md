@@ -989,7 +989,7 @@ declares its own ([decision 0031](../decisions/0031-traits-are-protocols.md)).
 | Trait | A type satisfies it if it supports | Satisfied by |
 | --- | --- | --- |
 | `Number` | `+ - * /`, comparison, and literals | Every number type |
-| `Float` | `Number`, plus the `math` functions | `f32`, `f64` |
+| `Float` | `Number`, plus the `math` functions and `**`, which is `math.pow` | `f32`, `f64` |
 | `VectorSpace` | `+` and `-` with itself, and `*` by an `f64` on either side | `f64`, `Fixed[f64, ...]`, `Array[f64, ...]` |
 | `Copy` | Copying on assignment | See [copy types](values-and-references.md#copy-types) |
 
