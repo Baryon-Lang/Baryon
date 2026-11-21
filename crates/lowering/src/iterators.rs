@@ -20,6 +20,7 @@
 
 use crate::builder::Builder;
 use crate::collections::Elements;
+use crate::frame_group_loops::GroupWalk;
 use crate::frame_rows::Rows;
 use crate::loops::Pass;
 use database::Definition;
@@ -64,6 +65,8 @@ pub(crate) enum Walk<'db> {
     Group(Vec<Walk<'db>>),
     /// The rows of `df.itertuples()`, walked from the last to the first when the flag is set.
     Rows(Rows<'db>, bool),
+    /// The groups of `df.groupby(...)`, each a key and a new frame of the group's rows.
+    Groups(GroupWalk<'db>),
 }
 
 impl<'db> Builder<'db> {
@@ -74,6 +77,7 @@ impl<'db> Builder<'db> {
             self.builtin_called(iterator),
             Some("enumerate" | "zip" | "reversed")
         ) || self.itertuples_frame(iterator).is_some()
+            || self.grouping_frame(iterator).is_some()
     }
 
     /// `for target in iterator: body` where `iterator` calls `enumerate`, `zip` or `reversed`
@@ -153,6 +157,9 @@ impl<'db> Builder<'db> {
     fn walk(&mut self, node: NodeId, reversed: bool) -> Option<Walk<'db>> {
         if let Some(rows) = self.rows(node) {
             return Some(Walk::Rows(rows, reversed));
+        }
+        if self.grouping_frame(node).is_some() {
+            return self.group_walk(node).map(Walk::Groups);
         }
         let builtin = self.builtin_called(node);
         let (positional, keywords) = self.call_arguments(node);
@@ -256,6 +263,7 @@ impl<'db> Builder<'db> {
             Walk::Range { ty, .. } => *ty,
             Walk::Count { .. } => self.int_type(),
             Walk::Rows(rows, _) => rows.row,
+            Walk::Groups(groups) => groups.element,
             Walk::Group(parts) => {
                 let items = parts.iter().map(|part| self.walk_type(part)).collect();
                 Type::new(self.db, TypeKind::Tuple(items))
@@ -269,6 +277,7 @@ impl<'db> Builder<'db> {
             Walk::Elements { length, .. } | Walk::Range { length, .. } => lengths.push(*length),
             Walk::Count { .. } => {}
             Walk::Rows(rows, _) => lengths.push(rows.length),
+            Walk::Groups(groups) => lengths.push(groups.length),
             Walk::Group(parts) => {
                 for part in parts {
                     Self::walk_lengths(part, lengths);
@@ -411,6 +420,7 @@ impl<'db> Builder<'db> {
                 let at = self.position(counter, (rows.length, *reversed), target);
                 self.row_at(rows, at, target)
             }
+            Walk::Groups(groups) => self.group_at(groups, counter, target),
             Walk::Group(parts) => {
                 let operands = parts
                     .iter()

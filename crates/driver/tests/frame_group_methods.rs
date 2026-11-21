@@ -325,19 +325,19 @@ error: `agg` has no reduction `total`
    |                             ^^^^^^^ not a reduction
    = note: it has `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`, `size`, `nunique`
 
-error: `agg` takes each new column by name, as a pair of a column and a reduction
+error: `agg` takes new columns by name, a dict of reductions, or one reduction's name
   --> main.byn:15:9
    |
 15 |     j = df.groupby("k").agg(how)
    |         ^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-   = note: for example `.agg(total=("volume", "sum"), mean_price=("price", "mean"))`
+   = note: for example `.agg(total=("volume", "sum"))`, `.agg({"volume": "sum"})` or `.agg("sum")`
 
-error: `agg` takes each new column by name, as a pair of a column and a reduction
+error: `agg` takes new columns by name, a dict of reductions, or one reduction's name
   --> main.byn:16:9
    |
 16 |     k = df.groupby("k").agg({"v": "sum"}, n=("v", "count"))
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-   = note: for example `.agg(total=("volume", "sum"), mean_price=("price", "mean"))`"#;
+   = note: for example `.agg(total=("volume", "sum"))`, `.agg({"volume": "sum"})` or `.agg("sum")`"#;
 
 /// `agg` with a dict gives each named column reduced under its own name, and `agg` with
 /// one name the columns that method gives (roadmap 3.13.24). The mistakes: text under a

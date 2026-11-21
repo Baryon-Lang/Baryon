@@ -160,19 +160,19 @@ def grouping(trades: DataFrame[Trade], name: str, waves: Array[complex, 1]):
 "#;
     assert_eq!(
         check_one(program),
-        r#"error: `agg` takes each new column by name, as a pair of a column and a reduction
+        r#"error: `agg` takes new columns by name, a dict of reductions, or one reduction's name
  --> main.byn:8:9
   |
 8 |     g = trades.groupby("symbol").agg()
   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-  = note: for example `.agg(total=("volume", "sum"), mean_price=("price", "mean"))`
+  = note: for example `.agg(total=("volume", "sum"))`, `.agg({"volume": "sum"})` or `.agg("sum")`
 
-error: `agg` takes each new column by name, as a pair of a column and a reduction
+error: `agg` takes new columns by name, a dict of reductions, or one reduction's name
  --> main.byn:9:9
   |
 9 |     h = trades.groupby("symbol").agg(1.5)
   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-  = note: for example `.agg(total=("volume", "sum"), mean_price=("price", "mean"))`
+  = note: for example `.agg(total=("volume", "sum"))`, `.agg({"volume": "sum"})` or `.agg("sum")`
 
 error: a column of `agg` is a pair: the column to read and how to reduce it
   --> main.byn:10:40

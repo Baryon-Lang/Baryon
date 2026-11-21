@@ -12,6 +12,13 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
 - The array and numerics layer has a name, NumBaryon: built-in arrays plus the `math`, `random`,
   `stats`, `linalg` and `fft` modules. It is a name for the documentation, not a package, so no
   program changes ([Arrays](docs/reference/arrays.md#numbaryon)).
+- `groupby` takes more of the forms pandas has: `as_index=False` and `sort=False`, `size()` and
+  the other reductions as methods, a choice of columns as `df.groupby(k)[["a", "b"]].sum()`,
+  `agg` with a dict or with one reduction's name, and a loop over the groups,
+  `for key, group in df.groupby(k):`
+  ([Sorting, grouping and joining DataFrames](docs/reference/dataframe-operations.md)).
+- `groupby` with a sum and a mean of 10 million rows takes 0.24 s, down from 0.87 s, with the same
+  results bit for bit.
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 
