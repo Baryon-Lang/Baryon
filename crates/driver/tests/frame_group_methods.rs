@@ -1,6 +1,8 @@
 //! The reductions of a grouping written as methods (roadmap 3.13.22, decision 0045's
 //! amendment of 2026-11-19), through every stage up to the type checker: the type each
-//! gives, and the mistakes it reports; and the arguments of `groupby` (roadmap 3.13.23).
+//! gives, and the mistakes it reports;
+//! the arguments of `groupby` (roadmap 3.13.23); and `agg` with a dict or one name (roadmap
+//! 3.13.24).
 //!
 //! These tests live in the driver because they need several implementations, and only an
 //! application crate may depend on more than one (decision 0001).
@@ -227,4 +229,121 @@ error: `groupby` takes the columns whose values make the groups
 #[test]
 fn arguments_of_groupby_are_checked() {
     assert_eq!(check_one(ARGUMENTS), ARGUMENTS_EXPECTED);
+}
+
+/// The program of `the_other_forms_of_agg_are_typed_and_checked`.
+const FORMS: &str = r#"
+def main() -> None:
+    df = DataFrame({"k": Array([2, 1]), "s": Array(["b", "a"]), "v": Array([1.5, 2.5])})
+    how = "sum"
+    kept: int = df.groupby("k").agg({"v": "mean", "s": "count"})
+    also: int = df.groupby("s").agg("median")
+    a = df.groupby("k").agg("sum")
+    b = df.groupby("k").agg(["sum", "mean"])
+    c = df.groupby("k").agg({})
+    d = df.groupby("k").agg({"v": "sum", "v": "max"})
+    e = df.groupby("k").agg({"k": "max"})
+    f = df.groupby("k").agg({"w": "max"})
+    g = df.groupby("k").agg({"v": how})
+    h = df.groupby("k").agg({"s": "mean"})
+    i = df.groupby("k").agg("total")
+    j = df.groupby("k").agg(how)
+    k = df.groupby("k").agg({"v": "sum"}, n=("v", "count"))
+"#;
+
+/// The diagnostics of [`FORMS`].
+const FORMS_EXPECTED: &str = r#"error: expected `i64`, found `DataFrame[k: i64, v: f64, s: i64]`
+ --> main.byn:4:17
+  |
+4 |     kept: int = df.groupby("k").agg({"v": "mean", "s": "count"})
+  |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the annotation says `i64`
+
+error: expected `i64`, found `DataFrame[s: str, k: f64, v: f64]`
+ --> main.byn:5:17
+  |
+5 |     also: int = df.groupby("s").agg("median")
+  |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the annotation says `i64`
+
+error: `sum` of every column cannot reduce `s`, a column of `str`
+ --> main.byn:6:29
+  |
+6 |     a = df.groupby("k").agg("sum")
+  |                             ^^^^^ a column of `str`
+  = note: write `sum(numeric_only=True)` to leave the columns of `str` out, or choose the columns to reduce
+
+error: `agg` does not take a list of reductions
+ --> main.byn:7:29
+  |
+7 |     b = df.groupby("k").agg(["sum", "mean"])
+  |                             ^^^^^^^^^^^^^^^ two levels of column names
+  = note: pandas names each new column by a column and a reduction; here, name each: `.agg(total=("volume", "sum"), mean=("volume", "mean"))`
+
+error: `agg` needs at least one column
+ --> main.byn:8:29
+  |
+8 |     c = df.groupby("k").agg({})
+  |                             ^^ no columns
+
+error: the result would have two columns named `v`
+ --> main.byn:9:42
+  |
+9 |     d = df.groupby("k").agg({"v": "sum", "v": "max"})
+  |                                          ^^^ one name for two columns
+
+error: a grouping cannot reduce `k`, one of its keys, yet
+  --> main.byn:10:30
+   |
+10 |     e = df.groupby("k").agg({"k": "max"})
+   |                              ^^^ a key, not a value
+   = note: the result already holds each group's value of it
+
+error: `DataFrame[k: i64, s: str, v: f64]` has no column `w`
+  --> main.byn:11:30
+   |
+11 |     f = df.groupby("k").agg({"w": "max"})
+   |                              ^^^ not a column
+   = note: its columns are `k`, `s`, `v`
+
+error: a reduction of `agg` is written as a string literal
+  --> main.byn:12:35
+   |
+12 |     g = df.groupby("k").agg({"v": how})
+   |                                   ^^^ not a string literal
+   = note: one of `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`, `size`, `nunique`
+
+error: `mean` cannot reduce `s`, a column of `str`
+  --> main.byn:13:30
+   |
+13 |     h = df.groupby("k").agg({"s": "mean"})
+   |                              ^^^ a column of `str`
+   = note: a column of `str` has `count`, `size`, `nunique`, `first`, `last`, `min` and `max`
+
+error: `agg` has no reduction `total`
+  --> main.byn:14:29
+   |
+14 |     i = df.groupby("k").agg("total")
+   |                             ^^^^^^^ not a reduction
+   = note: it has `sum`, `min`, `max`, `first`, `last`, `count`, `mean`, `var`, `std`, `median`, `size`, `nunique`
+
+error: `agg` takes each new column by name, as a pair of a column and a reduction
+  --> main.byn:15:9
+   |
+15 |     j = df.groupby("k").agg(how)
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+   = note: for example `.agg(total=("volume", "sum"), mean_price=("price", "mean"))`
+
+error: `agg` takes each new column by name, as a pair of a column and a reduction
+  --> main.byn:16:9
+   |
+16 |     k = df.groupby("k").agg({"v": "sum"}, n=("v", "count"))
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+   = note: for example `.agg(total=("volume", "sum"), mean_price=("price", "mean"))`"#;
+
+/// `agg` with a dict gives each named column reduced under its own name, and `agg` with
+/// one name the columns that method gives (roadmap 3.13.24). The mistakes: text under a
+/// sum, a list of reductions, an empty dict, a column twice, a key, a missing column, a
+/// reduction that is not written out or not one of `agg`'s, and a dict beside keywords.
+#[test]
+fn the_other_forms_of_agg_are_typed_and_checked() {
+    assert_eq!(check_one(FORMS), FORMS_EXPECTED);
 }

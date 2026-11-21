@@ -203,6 +203,18 @@ east, this prints:
 2       9     1
 ```
 
+`agg` takes two more forms. A dict reduces each column it names its own way and keeps the
+columns' names, and one name is that method:
+
+```python
+trades.groupby("symbol").agg({"price": "mean", "volume": "sum"})
+trades.groupby("symbol").agg("max")  # trades.groupby("symbol").max()
+```
+
+`agg(["sum", "mean"])` is a compile error: in pandas its result has two levels of column
+names, which a frame here does not have. Name each new column, as the first form of `agg`
+does.
+
 - **The result is always a frame**, with the keys as columns. pandas gives this with
   `as_index=False`; without it pandas makes the keys the index, and
   `df.groupby("symbol")["price"].mean()` a Series.

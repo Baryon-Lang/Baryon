@@ -87,7 +87,8 @@ impl<'db> Builder<'db> {
     /// the column points at, the name of the column read, and the reduction, as the number
     /// [`REDUCTIONS`] holds it at. `None` when the syntax is not what the checker passed.
     ///
-    /// `agg` names all three in each argument. A method reads the column that has the new
+    /// `agg` names all three in each argument, or in each entry of its dict. A method, and
+    /// `agg` with one name, reads the column that has the new
     /// column's name; `size` reads none, so the name it is given is not looked up.
     pub(crate) fn group_reductions(
         &self,
@@ -106,8 +107,30 @@ impl<'db> Builder<'db> {
             let read = made.iter().map(|new| (node, new.name.clone(), how));
             return Some(read.collect());
         }
+        let written = self.written(node);
+        match *written.as_slice() {
+            // `agg("sum")` is `sum()`.
+            [form] if self.tree.kind(form) == SyntaxKind::StringLiteral => {
+                let how = numbered(self.written_text(form))?;
+                let read = made.iter().map(|new| (node, new.name.clone(), how));
+                return Some(read.collect());
+            }
+            // `agg({"v": "sum"})` reduces the column each entry names its own way.
+            [form] if self.tree.kind(form) == SyntaxKind::Dictionary => {
+                let entries = self.tree.children_with(form, Role::Item);
+                return entries
+                    .map(|entry| {
+                        let read = self.tree.child(entry, Role::Key)?;
+                        let how = self.tree.child(entry, Role::Value)?;
+                        let how = numbered(self.written_text(how))?;
+                        Some((entry, self.written_text(read).to_owned(), how))
+                    })
+                    .collect();
+            }
+            _ => {}
+        }
         let mut reductions = Vec::with_capacity(made.len());
-        for argument in self.written(node) {
+        for argument in written {
             let pair: Vec<NodeId> = self
                 .tree
                 .children_with(self.keyword_value(argument), Role::Item)

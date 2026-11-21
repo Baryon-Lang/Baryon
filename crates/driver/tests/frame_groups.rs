@@ -147,7 +147,7 @@ class Trade(Struct):
 
 def grouping(trades: DataFrame[Trade], name: str, waves: Array[complex, 1]):
     g = trades.groupby("symbol").agg()
-    h = trades.groupby("symbol").agg("sum")
+    h = trades.groupby("symbol").agg(1.5)
     i = trades.groupby("symbol").agg(n="count")
     j = trades.groupby("symbol").agg(n=("cost", "sum"))
     k = trades.groupby("symbol").agg(n=("price", "total"))
@@ -170,8 +170,8 @@ def grouping(trades: DataFrame[Trade], name: str, waves: Array[complex, 1]):
 error: `agg` takes each new column by name, as a pair of a column and a reduction
  --> main.byn:9:9
   |
-9 |     h = trades.groupby("symbol").agg("sum")
-  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
+9 |     h = trades.groupby("symbol").agg(1.5)
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
   = note: for example `.agg(total=("volume", "sum"), mean_price=("price", "mean"))`
 
 error: a column of `agg` is a pair: the column to read and how to reduce it

@@ -10,6 +10,8 @@
 //!
 //! The reductions written as methods, `df.groupby("symbol").sum()`, are the
 //! [`frame_group_methods`](super::frame_group_methods) module's, which shares the rules here.
+//! `agg` with a dict or with one name is the [`frame_agg_forms`](super::frame_agg_forms)
+//! module's.
 
 use super::Body;
 use super::calls::Arguments;
@@ -63,7 +65,16 @@ impl<'db> Body<'db> {
             self.untyped(arguments);
             return Some(self.lowerer.unknown());
         };
-        if !arguments.positional.is_empty() || arguments.keywords.is_empty() {
+        let form = match (
+            arguments.positional.as_slice(),
+            arguments.keywords.is_empty(),
+        ) {
+            (&[form], true) => self.agg_form(form, base, &keys, &mut result),
+            _ => None,
+        };
+        if let Some(added) = form {
+            complete &= added;
+        } else if !arguments.positional.is_empty() || arguments.keywords.is_empty() {
             self.untyped(arguments);
             self.lowerer.error(
                 node,
@@ -253,24 +264,7 @@ impl<'db> Body<'db> {
             return None;
         };
         let name = self.column_name(column, base);
-        let Some(how) = self.literal_text(how).map(str::to_owned) else {
-            self.expression(how, None);
-            let hint = format!("one of `{}`", REDUCTIONS.join("`, `"));
-            self.lowerer.error(
-                how,
-                "a reduction of `agg` is written as a string literal",
-                "not a string literal",
-                Some(&hint),
-            );
-            return None;
-        };
-        if !REDUCTIONS.contains(&how.as_str()) {
-            let message = format!("`agg` has no reduction `{how}`");
-            let hint = format!("it has `{}`", REDUCTIONS.join("`, `"));
-            self.lowerer
-                .error(items[1], &message, "not a reduction", Some(&hint));
-            return None;
-        }
+        let how = self.agg_reduction(how)?;
         let name = name?;
         if keys.contains(&name) {
             let message = format!("`{name}` is a column the rows are grouped by");
